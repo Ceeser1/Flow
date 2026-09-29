@@ -26,6 +26,14 @@
 //
 // Songs the window plays come from a local copy when there is one, else
 // straight from the server (renderer: Store.audioSrc).
+//
+// Profiles: people sharing the server's songs, each with their own
+// playlists, favourites and stats (@flow/core/profiles). Signing in to one
+// gives a token that says which; the server answers with that profile's
+// library. Each waiting command remembers the profile it was made in and only
+// goes (and shows) while signed in to it; the shared ones (a song's names, its
+// deletion) go whoever is signed in. A playlist marked for download keeps its
+// songs here while another profile is signed in (offlineKeep).
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -58,25 +66,32 @@ const cacheFile = () => path.join(paths.ensure(paths.rootDir()), 'server-library
 const syncFile = () => path.join(paths.ensure(paths.rootDir()), 'server-sync.json');
 
 function emptySync(serverId = '') {
-  return { serverId, token: '', queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, offline: [], fetched: {} };
+  return {
+    serverId, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, offline: [], offlineKeep: {}, fetched: {},
+  };
+}
+
+function cleanProfile(p) {
+  return p && typeof p === 'object' && p.id ? { id: String(p.id), name: String(p.name || ''), pin: !!p.pin } : null;
 }
 
 function loadSync() {
   const raw = readJson(syncFile());
   const s = { ...emptySync(), ...(raw && typeof raw === 'object' ? raw : {}) };
   for (const key of ['queue', 'sent', 'offline']) if (!Array.isArray(s[key])) s[key] = [];
-  for (const key of ['songMap', 'listMap', 'fetched']) if (!s[key] || typeof s[key] !== 'object') s[key] = {};
+  for (const key of ['songMap', 'listMap', 'fetched', 'offlineKeep']) if (!s[key] || typeof s[key] !== 'object') s[key] = {};
+  s.profile = cleanProfile(s.profile);
   if (s.snapshot && (typeof s.snapshot !== 'object' || !s.snapshot.songs || !s.snapshot.lists)) s.snapshot = null;
   return s;
 }
 
 function loadCache() {
   const raw = readJson(cacheFile());
-  if (!raw || typeof raw !== 'object' || !raw.library) return { serverId: '', rev: -1, library: null };
-  return { serverId: String(raw.serverId || ''), rev: Number(raw.rev), library: model.sanitize(raw.library) };
+  if (!raw || typeof raw !== 'object' || !raw.library) return { serverId: '', rev: -1, library: null, profile: '' };
+  return { serverId: String(raw.serverId || ''), rev: Number(raw.rev), library: model.sanitize(raw.library), profile: String(raw.profile || '') };
 }
 
-let cache = { serverId: '', rev: -1, library: null };
+let cache = { serverId: '', rev: -1, library: null, profile: '' };
 let sync = emptySync();
 let loaded = false;
 
@@ -219,8 +234,9 @@ async function call(pathname, opts = {}) {
 
 // ---- state for the window ----
 
-// The connection in use: base address, token, which address it is.
-const conn = { base: '', token: '', via: '', name: '', address: '' };
+// The connection in use: base address, token, which address it is, whether
+// the server knows profiles.
+const conn = { base: '', token: '', via: '', name: '', address: '', profiles: false };
 const status = {
   state: 'off', // off | connecting | online | offline | password | error
   message: '',
@@ -228,7 +244,31 @@ const status = {
   note: '', // why songs wait (a metered connection), or '' 
   syncing: false,
   lastSync: 0,
+  profiles: null, // the server's profiles [{ id, name, pin }]; null: it has none to offer
 };
+
+// ---- profiles ----
+
+// Commands that do the same whoever sends them: the songs are shared.
+const SHARED_TYPES = new Set(['editSong', 'deleteSong', 'setLoudness', 'setDuration']);
+
+/** The profile signed in to ('' for none). */
+function currentProfile() {
+  return sync.profile ? sync.profile.id : '';
+}
+
+/**
+ * A waiting command goes (and shows) while signed in to the profile it was
+ * made in. An upload goes either way (the song is everyone's), but only
+ * brings its favourite, stats and playlists into its own profile.
+ */
+function mine(c) {
+  return SHARED_TYPES.has(c.type) || c.type === 'upload' || (c.profile || '') === currentProfile();
+}
+
+function newCommand(type, args) {
+  return { cid: newCid(), at: Date.now(), type, ...args, profile: currentProfile() };
+}
 
 let hooks = { onView: () => {}, onStatus: () => {}, onNotice: () => {} };
 let view = null;
@@ -253,9 +293,12 @@ function publicStatus() {
     address: conn.address,
     base: status.state === 'online' ? conn.base : '',
     token: status.state === 'online' ? conn.token : '',
-    queued: sync.queue.length,
+    queued: sync.queue.filter(mine).length,
     offline: sync.offline.slice(),
     hasSecret: !!s.serverSecret,
+    profile: sync.profile,
+    profiles: status.profiles,
+    profilesSupported: conn.profiles,
   };
 }
 
@@ -299,7 +342,7 @@ function buildView() {
   const d = JSON.parse(JSON.stringify(cache.library || model.emptyLibrary()));
   // Sent but not in the copy yet (its answer came before the library did),
   // then everything still waiting.
-  const pending = [...sync.sent.filter((x) => x.rev > cache.rev).map((x) => x.cmd), ...sync.queue];
+  const pending = [...sync.sent.filter((x) => x.rev > cache.rev).map((x) => x.cmd), ...sync.queue.filter(mine)];
   for (const c of pending) {
     const cmd = c.type === 'upload' ? uploadAsAddSong(c) : c;
     if (!cmd) continue;
@@ -349,7 +392,7 @@ function adoptServer(id) {
   if (sync.serverId === id) return;
   const hadOther = !!sync.serverId;
   sync = emptySync(id);
-  cache = { serverId: id, rev: -1, library: null };
+  cache = { serverId: id, rev: -1, library: null, profile: '' };
   saveSync();
   saveCache();
   if (hadOther) hooks.onNotice('This is a different Flow Server than before. Your Local Files will be synchronized with it.', 'info');
@@ -409,10 +452,10 @@ function connect() {
         continue;
       }
       adoptServer(String(hello.id || base));
-      let token = '';
+      // Without a password the token only says which profile this is.
+      let token = decrypt(sync.token);
       try {
         if (hello.password) {
-          token = decrypt(sync.token);
           if (token) {
             const probe = await request(base, `/api/library?since=${cache.rev}`, { token, timeout: 15000 });
             if (probe.status === 401) token = '';
@@ -428,7 +471,8 @@ function connect() {
         continue;
       }
       if (gen !== generation) return false;
-      Object.assign(conn, { base, token, via, name: String(hello.name || 'Flow Server'), address });
+      const profiles = Array.isArray(hello.features) && hello.features.includes('profiles');
+      Object.assign(conn, { base, token, via, name: String(hello.name || 'Flow Server'), address, profiles });
       if (via === 'remote') lastHomeTry = Date.now();
       retryStep = 0;
       setState('online');
@@ -438,6 +482,7 @@ function connect() {
         wentWrong(err);
         return false;
       }
+      loadProfiles().catch(() => {});
       schedulePoll();
       afterConnect();
       return true;
@@ -521,12 +566,22 @@ function wentWrong(err) {
 
 /** Fetches the server's library when it changed. Resolves true when it did. */
 async function refresh() {
-  const since = cache.library ? `?since=${cache.rev}` : '';
+  // `as`: the profile the copy is of. Signed in to another since, the server
+  // sends the whole library even when nothing changed.
+  const since = cache.library ? `?since=${cache.rev}&as=${encodeURIComponent(cache.profile)}` : '';
   const r = await request(conn.base, `/api/library${since}`, { token: conn.token, timeout: 30000 });
   if (r.status === 401) throw new AuthError('Signed out.');
   if (r.status === 204) return false;
   if (r.status !== 200 || !r.json || !r.json.library) throw new Error((r.json && r.json.error) || `The server answered ${r.status}.`);
-  cache = { serverId: sync.serverId, rev: Number(r.json.rev), library: model.sanitize(r.json.library) };
+  const profile = cleanProfile(r.json.profile);
+  const before = sync.profile;
+  if (before && (!profile || profile.id !== before.id)) {
+    // Deleted or signed out on the server, by another device.
+    hooks.onNotice(`You are no longer logged in as "${before.name}": the profile was deleted or signed out on the server.`, 'info');
+    loadProfiles().catch(() => {});
+  }
+  sync.profile = profile;
+  cache = { serverId: sync.serverId, rev: Number(r.json.rev), library: model.sanitize(r.json.library), profile: currentProfile() };
   sync.sent = sync.sent.filter((x) => x.rev > cache.rev);
   saveCache();
   saveSync();
@@ -546,7 +601,7 @@ function newCid() {
  * and sent. Resolves what the change resolves to (a new playlist, a count).
  */
 function command(type, args) {
-  const cmd = { cid: newCid(), at: Date.now(), type, ...args };
+  const cmd = newCommand(type, args);
   const result = applyCommand(getView(), cmd);
   sync.queue.push(cmd);
   saveSync();
@@ -601,8 +656,8 @@ async function transfersAllowed() {
 function flush() {
   if (flushing) return flushing;
   flushing = (async () => {
-    if (status.state !== 'online' || !sync.queue.length) return;
-    const uploads = sync.queue.filter((c) => c.type === 'upload').length;
+    if (status.state !== 'online' || !sync.queue.some(mine)) return;
+    const uploads = sync.queue.filter((c) => c.type === 'upload' && mine(c)).length;
     const canTransfer = uploads ? await transfersAllowed() : true;
     const blocked = new Set();
     let uploadNo = 0;
@@ -627,6 +682,7 @@ function flush() {
     try {
       for (const c of sync.queue.slice()) {
         if (status.state !== 'online') break;
+        if (!mine(c)) continue;
         if (c.type === 'upload') {
           if (!canTransfer) {
             blocked.add(c.songId);
@@ -647,7 +703,7 @@ function flush() {
       status.note = blocked.size
         ? `${blocked.size} ${blocked.size === 1 ? 'song waits' : 'songs wait'} to be uploaded until the connection is not metered.`
         : '';
-      if (!sync.queue.length) status.lastSync = Date.now();
+      if (!sync.queue.some(mine)) status.lastSync = Date.now();
       await refresh();
       afterServerChange();
     } catch (err) {
@@ -692,10 +748,14 @@ async function uploadOne(cmd, number, total) {
     sourcePlaylistUrl: local.sourcePlaylistUrl,
     addedAt: local.addedAt,
     loudness: local.loudness,
-    favouriteAt: local.favouriteAt,
-    stats: local.stats,
-    playlistIds: (cmd.playlistIds || []).filter((pid) => model.playlistById(getView(), pid)),
   };
+  if ((cmd.profile || '') === currentProfile()) {
+    Object.assign(meta, {
+      favouriteAt: local.favouriteAt,
+      stats: local.stats,
+      playlistIds: (cmd.playlistIds || []).filter((pid) => model.playlistById(getView(), pid)),
+    });
+  }
   const r = await request(conn.base, `/api/songs/${encodeURIComponent(cmd.songId)}?meta=${encodeURIComponent(JSON.stringify(meta))}`, {
     method: 'PUT',
     file: local.file,
@@ -792,7 +852,7 @@ function queueLocalChanges({ onlyNew = false, playlistsFor = {} } = {}) {
   const snap = sync.snapshot || { songs: {}, lists: {} };
   const v = getView();
   const at = Date.now();
-  const q = (type, args) => sync.queue.push({ cid: newCid(), at, type, ...args });
+  const q = (type, args) => sync.queue.push(newCommand(type, { at, ...args }));
   const localIds = new Set(local.songs.map((s) => s.id));
   let count = 0;
 
@@ -897,13 +957,40 @@ function queueLocalChanges({ onlyNew = false, playlistsFor = {} } = {}) {
   return { count, firstTime };
 }
 
+/**
+ * The songs of a playlist marked for download: as the library has them when
+ * it is the signed-in profile's, else as last seen (another profile's).
+ */
+function markedSongs(pid, v) {
+  const p = model.playlistById(v, pid);
+  if (p) return p.entries.map((e) => e.songId);
+  const keep = sync.offlineKeep[pid];
+  return keep && keep.profile !== currentProfile() ? keep.songs : [];
+}
+
 /** Server playlists marked for download that hold a song. */
 function neededOffline(sid) {
   const v = getView();
-  return sync.offline.some((pid) => {
+  return sync.offline.some((pid) => markedSongs(pid, v).includes(sid));
+}
+
+/**
+ * Remembers the songs of the signed-in profile's marked playlists, for when
+ * another profile is signed in; a marked playlist of this profile that is no
+ * longer there (deleted) is no longer marked.
+ */
+function rememberMarked(v) {
+  if (!cache.library || cache.profile !== currentProfile()) return;
+  for (const pid of sync.offline.slice()) {
     const p = model.playlistById(v, pid);
-    return p && p.entries.some((e) => e.songId === sid);
-  });
+    const keep = sync.offlineKeep[pid];
+    if (p) sync.offlineKeep[pid] = { profile: currentProfile(), songs: p.entries.map((e) => e.songId) };
+    else if (!keep || keep.profile === currentProfile()) {
+      sync.offline = sync.offline.filter((x) => x !== pid);
+      delete sync.offlineKeep[pid];
+    }
+  }
+  saveSync();
 }
 
 /**
@@ -924,6 +1011,7 @@ function followServer() {
     const v = buildView();
     const local = library.get();
     const snap = sync.snapshot;
+    rememberMarked(v);
 
     // Names, favourites and loudness changed on the server, for copies not
     // changed here since (those go up at the next synchronization instead).
@@ -952,7 +1040,7 @@ function followServer() {
       if (there && !(there.duration > 0) && s.duration > 0 && !lengthsTold.has(sid)) {
         // Once per session: a server too old to take it would be asked forever.
         lengthsTold.add(sid);
-        sync.queue.push({ cid: newCid(), at: Date.now(), type: 'setDuration', songId: sid, duration: s.duration });
+        sync.queue.push(newCommand('setDuration', { songId: sid, duration: s.duration }));
         told += 1;
       }
     }
@@ -1173,10 +1261,8 @@ function reconfigure(patch) {
   const keys = Object.keys(patch || {});
   if (!keys.some((k) => k.startsWith('server'))) return;
   const needsReconnect = keys.some((k) => ['serverOn', 'serverHome', 'serverRemote', 'serverAuth', 'serverSecret'].includes(k));
-  if (keys.includes('serverSecret') || keys.includes('serverAuth')) {
-    sync.token = '';
-    saveSync();
-  }
+  // A new PIN does not throw the token away: it may still be good (and says
+  // which profile this is). Refused, the PIN signs in afresh.
   if (keys.includes('serverAutoSync') && settings.get('serverAutoSync') && status.state === 'online') queueLocalChanges();
   if (keys.includes('serverMetered')) flushSoon();
   if (!needsReconnect) {
@@ -1209,6 +1295,8 @@ function setSecret(text) {
 async function setOffline(pid, on) {
   if (on && !sync.offline.includes(pid)) sync.offline.push(pid);
   if (!on) sync.offline = sync.offline.filter((x) => x !== pid);
+  if (on) sync.offlineKeep[pid] = { profile: currentProfile(), songs: markedSongs(pid, getView()) };
+  else delete sync.offlineKeep[pid];
   saveSync();
   emitStatus();
   if (on) afterServerChange();
@@ -1231,7 +1319,7 @@ function pushImport({ localPlaylistId, mergeInto, existingIds }) {
   const target = localPlaylistId && sync.listMap[localPlaylistId];
   const known = (existingIds || []).filter((id) => model.songById(getView(), id));
   if (target && known.length) {
-    sync.queue.push({ cid: newCid(), at: Date.now(), type: 'addSongsToPlaylist', playlistId: target, songIds: known });
+    sync.queue.push(newCommand('addSongsToPlaylist', { playlistId: target, songIds: known }));
     saveSync();
     refreshView();
     flushSoon();
@@ -1266,6 +1354,127 @@ function localFileOf(songId) {
   return copy && fs.existsSync(copy.file) ? copy.file : null;
 }
 
+// ---- profiles: signing in and out ----
+
+/** The server's profiles, fresh. Forgets what was waiting for profiles gone. */
+async function loadProfiles() {
+  if (status.state !== 'online' || !conn.profiles) {
+    status.profiles = null;
+    emitStatus();
+    return null;
+  }
+  const r = await call('/api/profiles');
+  const list = (Array.isArray(r.profiles) ? r.profiles : []).map(cleanProfile).filter(Boolean);
+  status.profiles = list;
+  const known = new Set(list.map((p) => p.id));
+  const gone = (id) => id && !known.has(id);
+  const before = sync.queue.length;
+  sync.queue = sync.queue.filter((c) => SHARED_TYPES.has(c.type) || !gone(c.profile));
+  let changed = sync.queue.length !== before;
+  for (const pid of sync.offline.slice()) {
+    const keep = sync.offlineKeep[pid];
+    if (keep && gone(keep.profile)) {
+      sync.offline = sync.offline.filter((x) => x !== pid);
+      delete sync.offlineKeep[pid];
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveSync();
+    afterServerChange();
+  }
+  emitStatus();
+  return list;
+}
+
+function requireProfiles() {
+  if (!active()) throw new Error('Tick "Streaming, Download and Synchronization" first.');
+  if (status.state !== 'online') throw new Error('The server cannot be reached right now. Profiles can only be changed while it can.');
+  if (!conn.profiles) throw new Error('This Flow Server is too old for profiles. Update it first.');
+}
+
+/**
+ * What is waiting for the signed-in profile goes before signing in to
+ * another: sent afterwards, it would land in the wrong one. A flush already
+ * under way may have started before the latest change, hence a second try.
+ */
+async function sendWaiting() {
+  for (let i = 0; i < 2 && status.state === 'online' && sync.queue.some(mine); i += 1) {
+    await flush().catch(() => {});
+  }
+}
+
+/**
+ * Signed in to another profile (null: none): the library is fetched afresh
+ * and the local copies follow. Call sendWaiting() before the server switches.
+ */
+async function switchProfile(token, profile) {
+  if (token !== undefined) {
+    conn.token = token;
+    sync.token = encrypt(token);
+  }
+  sync.profile = cleanProfile(profile);
+  sync.sent = [];
+  // rev -1: the next fetch brings the whole library, whatever the revision.
+  cache = { ...cache, rev: -1, profile: currentProfile() };
+  saveSync();
+  saveCache();
+  await refresh();
+  await loadProfiles().catch(() => {});
+  afterServerChange();
+  emitStatus();
+  return sync.profile;
+}
+
+async function loginProfile(profileId, pin) {
+  requireProfiles();
+  await sendWaiting();
+  const r = await call('/api/profiles/login', { method: 'POST', json: { profileId, pin: String(pin || ''), device: os.hostname() }, timeout: 20000 });
+  return switchProfile(r.token, r.profile);
+}
+
+async function createProfile(name, pin) {
+  requireProfiles();
+  // Also so the first profile takes over everything made before it.
+  await sendWaiting();
+  const r = await call('/api/profiles', { method: 'POST', json: { name, pin: String(pin || ''), device: os.hostname() }, timeout: 20000 });
+  return switchProfile(r.token, r.profile);
+}
+
+async function logoutProfile() {
+  requireProfiles();
+  await sendWaiting();
+  await call('/api/profiles/logout', { method: 'POST', json: {} });
+  return switchProfile(undefined, null);
+}
+
+async function renameProfile(name) {
+  requireProfiles();
+  const r = await call('/api/profiles/rename', { method: 'POST', json: { name } });
+  sync.profile = cleanProfile(r.profile);
+  saveSync();
+  await loadProfiles().catch(() => {});
+  emitStatus();
+  return sync.profile;
+}
+
+/** Deletes the signed-in profile: its playlists, favourites and stats. */
+async function deleteProfile() {
+  requireProfiles();
+  const gone = currentProfile();
+  if (!gone) throw new Error('Log in to a profile first.');
+  // A song renamed or deleted in it still counts.
+  await sendWaiting();
+  await call('/api/profiles/delete', { method: 'POST', json: {} });
+  sync.queue = sync.queue.filter((c) => SHARED_TYPES.has(c.type) || c.profile !== gone);
+  for (const [pid, keep] of Object.entries(sync.offlineKeep)) {
+    if (keep.profile !== gone) continue;
+    sync.offline = sync.offline.filter((x) => x !== pid);
+    delete sync.offlineKeep[pid];
+  }
+  return switchProfile(undefined, null);
+}
+
 function stop() {
   generation += 1;
   clearTimeout(pollTimer);
@@ -1277,4 +1486,5 @@ function stop() {
 module.exports = {
   init, active, reconfigure, setSecret, stop,
   status: publicStatus, view: getView, command, syncNow, setOffline, pushNew, pushImport, deleteSong, localFileOf,
+  loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, deleteProfile,
 };

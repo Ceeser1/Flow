@@ -16,7 +16,7 @@ Usage:
   flow-server set-password [PIN]        require a PIN or password (asked for when left out);
                                         every signed-in device has to enter it again
   flow-server clear-password            let anyone on the network in again
-  flow-server devices                   the devices signed in with the password
+  flow-server devices                   the devices signed in, and to which profile
 
 Options:
   --port <n>      port to listen on (default ${configMod.DEFAULT_PORT}; remembered)
@@ -110,10 +110,11 @@ async function main() {
     return;
   }
   if (args.command === 'devices') {
-    const { tokens } = config.get();
+    const { tokens, profiles } = config.get();
     if (!tokens.length) console.log('No devices signed in.');
     for (const t of tokens) {
-      console.log(`${t.device}  (signed in ${new Date(t.createdAt).toLocaleString()}, last seen ${t.lastSeenAt ? new Date(t.lastSeenAt).toLocaleString() : 'never'})`);
+      const p = profiles.find((x) => x.id === t.profileId);
+      console.log(`${t.device}${p ? ` as ${p.name}` : ''}  (signed in ${new Date(t.createdAt).toLocaleString()}, last seen ${t.lastSeenAt ? new Date(t.lastSeenAt).toLocaleString() : 'never'})`);
     }
     return;
   }

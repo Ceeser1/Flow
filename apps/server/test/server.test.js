@@ -226,3 +226,85 @@ test('profiles share the songs and keep their own playlists, also after a restar
     fs.rmSync(dirs.root, { recursive: true, force: true });
   }
 });
+
+async function post(base, route, body, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const r = await fetch(`${base}${route}`, { method: 'POST', headers, body: JSON.stringify(body || {}) });
+  return { status: r.status, json: await r.json() };
+}
+
+async function get(base, route, token) {
+  const r = await fetch(`${base}${route}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  return { status: r.status, json: r.status === 204 ? null : await r.json() };
+}
+
+test('profiles over the network: make, sign in with a PIN, rename, sign out, delete', async () => {
+  await withServer(async ({ base }) => {
+    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles']);
+    await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
+    await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
+    assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null });
+
+    const anna = await post(base, '/api/profiles', { name: '  Anna ', pin: '1234', device: 'pc' });
+    assert.equal(anna.status, 200);
+    assert.equal(anna.json.profile.name, 'Anna');
+    assert.equal(anna.json.profile.pin, true);
+    const tAnna = anna.json.token;
+    let lib = await get(base, '/api/library', tAnna);
+    assert.equal(lib.json.profile.name, 'Anna');
+    assert.deepEqual(lib.json.library.playlists.map((p) => p.name), ['Evening'], 'she took over');
+    const rev = lib.json.rev;
+    assert.equal((await get(base, `/api/library?since=${rev}&as=${anna.json.profile.id}`, tAnna)).status, 204);
+    // Asking as someone else (the app just switched) gets the whole library.
+    assert.equal((await get(base, `/api/library?since=${rev}&as=`, tAnna)).status, 200);
+    assert.deepEqual((await get(base, '/api/library')).json.library.playlists, [], 'without a profile: None');
+
+    assert.equal((await post(base, '/api/profiles', { name: 'anna', device: 'phone' })).status, 409);
+    assert.equal((await post(base, '/api/profiles', { name: 'None', device: 'phone' })).status, 400);
+    const ben = await post(base, '/api/profiles', { name: 'Ben', device: 'phone' });
+    const tBen = ben.json.token;
+    assert.equal(ben.json.profile.pin, false);
+    await command(base, [{ cid: 'c2', at: Date.now(), type: 'createPlaylist', playlistId: 'p2', name: 'Evening' }], { Authorization: `Bearer ${tBen}` });
+    assert.deepEqual((await get(base, '/api/library', tBen)).json.library.playlists.map((p) => p.id), ['p2']);
+    assert.deepEqual((await get(base, '/api/library', tAnna)).json.library.playlists.map((p) => p.id), ['p1']);
+
+    const list = (await get(base, '/api/profiles', tBen)).json;
+    assert.deepEqual(list.profiles.map((p) => p.name), ['Anna', 'Ben']);
+    assert.equal(list.current, ben.json.profile.id);
+
+    // Signing in: the PIN is checked; Ben's has none.
+    assert.equal((await post(base, '/api/profiles/login', { profileId: anna.json.profile.id, pin: '9999', device: 'tablet' })).status, 403);
+    await new Promise((r) => setTimeout(r, 1100)); // the wait after a wrong try
+    const again = await post(base, '/api/profiles/login', { profileId: anna.json.profile.id, pin: '1234', device: 'tablet' });
+    assert.equal(again.status, 200);
+    assert.equal((await post(base, '/api/profiles/login', { profileId: ben.json.profile.id, device: 'laptop' })).status, 200);
+
+    assert.equal((await post(base, '/api/profiles/rename', { name: 'Benjamin' }, tBen)).json.profile.name, 'Benjamin');
+    assert.equal((await post(base, '/api/profiles/rename', { name: 'Anna' }, tBen)).status, 409);
+    assert.equal((await post(base, '/api/profiles/rename', { name: 'X' })).status, 409, 'no profile to rename');
+
+    await post(base, '/api/profiles/logout', {}, tAnna);
+    assert.equal((await get(base, '/api/library', tAnna)).json.profile, null);
+
+    // Deleting Ben takes his playlists; the song stays, and his devices are signed out of him.
+    assert.equal((await post(base, '/api/profiles/delete', {}, tBen)).status, 200);
+    lib = await get(base, '/api/library', tBen);
+    assert.equal(lib.json.profile, null);
+    assert.equal(lib.json.library.songs.length, 1);
+    assert.deepEqual((await get(base, '/api/profiles')).json.profiles.map((p) => p.name), ['Anna']);
+  });
+});
+
+test('with a server password, profiles are behind it', async () => {
+  await withServer(async ({ base }) => {
+    assert.equal((await get(base, '/api/profiles')).status, 401);
+    assert.equal((await post(base, '/api/profiles', { name: 'Anna' })).status, 401);
+    const { token } = (await post(base, '/api/login', { password: 'secret', device: 'pc' })).json;
+    const anna = await post(base, '/api/profiles', { name: 'Anna', device: 'pc' }, token);
+    assert.equal(anna.status, 200);
+    // The new token lets in as well; the old one was replaced.
+    assert.equal((await get(base, '/api/library', anna.json.token)).json.profile.name, 'Anna');
+    assert.equal((await get(base, '/api/library', token)).status, 401);
+  }, { password: 'secret' });
+});

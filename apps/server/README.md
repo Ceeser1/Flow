@@ -50,6 +50,22 @@ home network. Each app enters the PIN once and gets a token back. Setting a new
 PIN signs every device out. Wrong tries wait longer each time (1 s, 2 s, 4 s ...),
 so guessing a PIN takes years.
 
+## Profiles
+
+People sharing the server can each have a profile: the songs (All Songs, and
+when each was added) are everyone's, but each profile has its own playlists,
+favourites and listen stats. A profile is made, signed in to, renamed and
+deleted from an app's Settings; each can have a PIN of its own.
+
+- No profile at all ("None"): everything is shared, as before profiles.
+- The first profile made takes over the playlists, favourites and stats that
+  were there. Later ones start empty. What is made while no profile is signed
+  in stays with None.
+- Renaming or deleting a song does it for everyone. Deleting a profile takes
+  its playlists, favourites and stats; the songs stay.
+- With a server PIN or password, a device signs in to the server first, then
+  to a profile. The profiles' names are only shown to devices past the first.
+
 ## Where things are
 
 | | Linux | Windows |
@@ -74,11 +90,17 @@ report changes.
 |---|---|
 | `GET /api/hello` | name, protocol, whether a password is needed (open to anyone) |
 | `POST /api/login` | `{ password, device }` → `{ token }` |
-| `GET /api/library?since=<rev>` | `{ rev, library }`, or 204 when nothing changed |
+| `GET /api/library?since=<rev>&as=<profile>` | `{ rev, library, profile }`, or 204 when nothing changed for that profile |
 | `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`) |
 | `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file |
 | `GET /api/songs/<id>/audio` | the song's file, with Range for seeking |
 | `POST /api/rescan` | look through the music folder now |
+| `GET /api/profiles` | `{ profiles: [{ id, name, pin }], current }` |
+| `POST /api/profiles` | `{ name, pin, device }`: a new profile, signed in → `{ token, profile }` |
+| `POST /api/profiles/login` | `{ profileId, pin, device }` → `{ token, profile }` |
+| `POST /api/profiles/logout`, `/rename` `{ name }`, `/delete` | the signed-in profile |
 
 With a password, requests carry `Authorization: Bearer <token>`, or `?t=<token>`
-for audio (an `<audio>` element can't send headers).
+for audio (an `<audio>` element can't send headers). The token from signing
+in to a profile says which profile a request is for; commands and uploads
+act on it, and the library comes as it sees it.

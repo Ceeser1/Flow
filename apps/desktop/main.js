@@ -274,6 +274,12 @@ handle('server:status', () => remote.status());
 handle('server:setSecret', (text) => remote.setSecret(text));
 handle('server:syncNow', () => remote.syncNow());
 handle('server:setOffline', ({ playlistId, on }) => remote.setOffline(playlistId, !!on));
+handle('server:profiles', () => remote.loadProfiles());
+handle('server:profileLogin', ({ profileId, pin }) => remote.loginProfile(profileId, pin));
+handle('server:profileCreate', ({ name, pin }) => remote.createProfile(name, pin));
+handle('server:profileLogout', () => remote.logoutProfile());
+handle('server:profileRename', (name) => remote.renameProfile(name));
+handle('server:profileDelete', () => remote.deleteProfile());
 
 handle('shell:showSong', (songId) => {
   const file = remote.active() ? remote.localFileOf(songId) : (model.songById(library.get(), songId) || {}).file;

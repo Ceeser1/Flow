@@ -5,15 +5,26 @@
 //
 //   GET  /api/hello                    who this is; open to anyone
 //   POST /api/login   { password, device } -> { token }
-//   GET  /api/library [?since=rev]     { rev, library }, or 204 when nothing changed
+//   GET  /api/library [?since=rev&as=profileId]
+//                                      { rev, library, profile }, or 204 when
+//                                      nothing changed for that profile
 //   POST /api/commands { commands }    { rev, results }  (see @flow/core/commands)
 //   PUT  /api/songs/:id?meta=...       upload a song; the body is the file
 //   GET  /api/songs/:id/audio          the song's file
 //   POST /api/rescan                   look through the music folder again
 //
+//   GET  /api/profiles                 { profiles: [{ id, name, pin }], current }
+//   POST /api/profiles { name, pin, device }        a new profile, signed in: { token, profile }
+//   POST /api/profiles/login { profileId, pin, device }                  { token, profile }
+//   POST /api/profiles/logout                       back to no profile
+//   POST /api/profiles/rename { name }              the signed-in profile
+//   POST /api/profiles/delete                       the signed-in profile, with its playlists
+//
 // With a password set, every other route needs the token from /api/login:
 // "Authorization: Bearer <token>", or ?t=<token> on the audio (an <audio>
-// element cannot send headers). Answers carry CORS headers, since the apps'
+// element cannot send headers). Signing in to a profile gives a new token
+// that says which profile it is; without a password that token is only needed
+// for the profile. Profiles are behind the password, names included. Answers carry CORS headers, since the apps'
 // windows are pages of their own and the equalizer can only read audio that
 // says it may be read.
 
@@ -23,9 +34,12 @@ const http = require('http');
 const path = require('path');
 const { URL } = require('url');
 const { AUDIO_EXTS } = require('@flow/core/formats');
-const { checkPassword, hashToken } = require('./config');
+const { checkPassword, hashPassword, hashToken } = require('./config');
 
 const PROTOCOL = 1;
+// What this server can do beyond protocol 1, for apps that know to ask.
+const FEATURES = ['profiles'];
+const MAX_PROFILE_NAME = 40;
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 
@@ -164,18 +178,112 @@ function createHttpServer({ config, library, version, log = () => {} }) {
     return m ? m[1] : url.searchParams.get('t') || '';
   }
 
-  /** Throws 401 unless the request may in; without a password everyone may. */
+  /**
+   * The request's token entry (null: none). Throws 401 unless the request may
+   * in; without a password everyone may.
+   */
   function requireAuth(req, url) {
     const cfg = config.get();
-    if (!cfg.password) return;
     const token = tokenOf(req, url);
     const hash = token ? hashToken(token) : '';
-    const entry = hash && cfg.tokens.find((t) => t.hash === hash);
-    if (!entry) throw new HttpError(401, 'This server needs its PIN or password.');
+    const entry = (hash && cfg.tokens.find((t) => t.hash === hash)) || null;
+    if (cfg.password && !entry) throw new HttpError(401, 'This server needs its PIN or password.');
     // Remembered once an hour at most: no write to disk for every request.
-    if (Date.now() - entry.lastSeenAt > 3600000) {
+    if (entry && Date.now() - entry.lastSeenAt > 3600000) {
       config.set({ tokens: cfg.tokens.map((t) => (t.hash === hash ? { ...t, lastSeenAt: Date.now() } : t)) });
     }
+    return entry;
+  }
+
+  /** The profile a request is signed in to, or null. */
+  function profileOf(entry) {
+    if (!entry || !entry.profileId) return null;
+    const p = config.get().profiles.find((x) => x.id === entry.profileId);
+    return p && library.profileIds().includes(p.id) ? p : null;
+  }
+
+  const publicProfile = (p) => (p ? { id: p.id, name: p.name, pin: !!p.pin } : null);
+
+  /** A new token for `device`, replacing its old one. */
+  function issueToken(device, profileId) {
+    const token = crypto.randomBytes(24).toString('base64url');
+    const tokens = config.get().tokens.filter((t) => t.device !== device);
+    tokens.push({ hash: hashToken(token), device, createdAt: Date.now(), lastSeenAt: Date.now(), profileId });
+    config.set({ tokens: tokens.slice(-50) });
+    return token;
+  }
+
+  function checkProfileName(name, exceptId = null) {
+    const clean = String(name || '').replace(/\s+/g, ' ').trim();
+    if (!clean) throw new HttpError(400, 'Please enter a name for the profile.');
+    if (clean.length > MAX_PROFILE_NAME) throw new HttpError(400, `Profile names can be at most ${MAX_PROFILE_NAME} characters.`);
+    if (['none', '+ new'].includes(clean.toLowerCase())) throw new HttpError(400, `"${clean}" cannot be a profile's name.`);
+    const clash = config.get().profiles.find((p) => p.id !== exceptId && p.name.toLowerCase() === clean.toLowerCase());
+    if (clash) throw new HttpError(409, `A profile called "${clash.name}" already exists.`);
+    return clean;
+  }
+
+  function setToken(entry, patch) {
+    const cfg = config.get();
+    config.set({ tokens: cfg.tokens.map((t) => (t.hash === entry.hash ? { ...t, ...patch } : t)) });
+  }
+
+  async function profiles(req, res, entry, action) {
+    const ip = req.socket.remoteAddress || '';
+    const body = req.method === 'POST' ? await readJsonBody(req) : {};
+    const device = String(body.device || (entry && entry.device) || ip).slice(0, 80);
+    const current = profileOf(entry);
+    if (action === 'list') {
+      return sendJson(res, 200, {
+        profiles: config.get().profiles.filter((p) => library.profileIds().includes(p.id)).map(publicProfile),
+        current: current ? current.id : null,
+      });
+    }
+    if (action === 'create') {
+      const name = checkProfileName(body.name);
+      const pin = String(body.pin || '');
+      const id = crypto.randomBytes(6).toString('hex');
+      const profile = { id, name, createdAt: Date.now(), pin: pin ? hashPassword(pin) : null };
+      config.set({ profiles: [...config.get().profiles, profile] });
+      library.createProfile(id);
+      log(`Profile made: ${name} (${device})`);
+      return sendJson(res, 200, { token: issueToken(device, id), profile: publicProfile(profile) });
+    }
+    if (action === 'login') {
+      throttle.check(ip);
+      const profile = config.get().profiles.find((p) => p.id === String(body.profileId || ''));
+      if (!profile || !library.profileIds().includes(profile.id)) throw new HttpError(404, 'That profile no longer exists.');
+      if (profile.pin && !checkPassword(profile.pin, String(body.pin || ''))) {
+        throttle.fail(ip);
+        log(`Wrong PIN for profile ${profile.name} from ${ip}`);
+        throw new HttpError(403, 'Wrong PIN or password for this profile.');
+      }
+      throttle.ok(ip);
+      log(`Signed in: ${device} as ${profile.name}`);
+      return sendJson(res, 200, { token: issueToken(device, profile.id), profile: publicProfile(profile) });
+    }
+    if (action === 'logout') {
+      if (entry) setToken(entry, { profileId: null });
+      return sendJson(res, 200, {});
+    }
+    if (!current) throw new HttpError(409, 'Log in to a profile first.');
+    if (action === 'rename') {
+      const name = checkProfileName(body.name, current.id);
+      config.set({ profiles: config.get().profiles.map((p) => (p.id === current.id ? { ...p, name } : p)) });
+      log(`Profile renamed: ${current.name} -> ${name}`);
+      return sendJson(res, 200, { profile: publicProfile({ ...current, name }) });
+    }
+    if (action === 'delete') {
+      library.deleteProfile(current.id);
+      const cfg = config.get();
+      config.set({
+        profiles: cfg.profiles.filter((p) => p.id !== current.id),
+        tokens: cfg.tokens.map((t) => (t.profileId === current.id ? { ...t, profileId: null } : t)),
+      });
+      log(`Profile deleted: ${current.name}`);
+      return sendJson(res, 200, {});
+    }
+    throw new HttpError(404, 'Nothing here.');
   }
 
   async function login(req, res) {
@@ -189,12 +297,9 @@ function createHttpServer({ config, library, version, log = () => {} }) {
       throw new HttpError(401, 'Wrong PIN or password.');
     }
     throttle.ok(ip);
-    const token = crypto.randomBytes(24).toString('base64url');
     const device = String(body.device || ip).slice(0, 80);
     // A device signing in again replaces its old token rather than piling up.
-    const tokens = cfg.tokens.filter((t) => t.device !== device);
-    tokens.push({ hash: hashToken(token), device, createdAt: Date.now(), lastSeenAt: Date.now() });
-    config.set({ tokens: tokens.slice(-50) });
+    const token = issueToken(device, null);
     log(`Signed in: ${device}`);
     sendJson(res, 200, { token });
   }
@@ -236,7 +341,7 @@ function createHttpServer({ config, library, version, log = () => {} }) {
     });
   }
 
-  async function upload(req, res, url, id) {
+  async function upload(req, res, url, id, profileId) {
     let meta;
     try {
       meta = JSON.parse(url.searchParams.get('meta') || '{}');
@@ -260,7 +365,7 @@ function createHttpServer({ config, library, version, log = () => {} }) {
       sendJson(res, 200, { existing: true, id: again.id, rev: library.rev });
       return;
     }
-    const song = library.addUploaded(tmp, id, meta, meta.playlistIds);
+    const song = library.addUploaded(tmp, id, meta, meta.playlistIds, profileId);
     log(`Uploaded: ${[song.artist, song.title].filter(Boolean).join(' - ')}`);
     sendJson(res, 200, { existing: false, id: song.id, rev: library.rev });
   }
@@ -278,25 +383,37 @@ function createHttpServer({ config, library, version, log = () => {} }) {
 
     if (is('GET', /^\/api\/hello$/)) {
       const cfg = config.get();
-      return sendJson(res, 200, { app: 'flow-server', protocol: PROTOCOL, version, id: cfg.id, name: cfg.name, password: !!cfg.password });
+      return sendJson(res, 200, {
+        app: 'flow-server', protocol: PROTOCOL, features: FEATURES, version, id: cfg.id, name: cfg.name, password: !!cfg.password,
+      });
     }
     if (is('POST', /^\/api\/login$/)) return login(req, res);
 
     if (!p.startsWith('/api/')) throw new HttpError(404, 'Nothing here. This is a Flow Server; open it in the Flow app.');
-    requireAuth(req, url);
+    const entry = requireAuth(req, url);
+    const profile = profileOf(entry);
+    const profileId = profile ? profile.id : null;
 
     if (is('GET', /^\/api\/library$/)) {
       const since = url.searchParams.get('since');
-      if (since !== null && Number(since) === library.rev) {
+      // An app asking about another profile than it is signed in to (it
+      // switched, or its profile was deleted) gets the whole library, even
+      // at the same revision.
+      const as = url.searchParams.get('as') || '';
+      if (since !== null && Number(since) === library.rev && as === (profileId || '')) {
         res.writeHead(204);
         res.end();
         return;
       }
-      return sendJson(res, 200, { rev: library.rev, library: library.snapshot() });
+      return sendJson(res, 200, { rev: library.rev, library: library.snapshot(profileId), profile: publicProfile(profile) });
     }
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
-      return sendJson(res, 200, library.runCommands(body.commands));
+      return sendJson(res, 200, library.runCommands(body.commands, profileId));
+    }
+    const pm = /^\/api\/profiles(?:\/(login|logout|rename|delete))?$/.exec(p);
+    if (pm && (req.method === 'POST' || (req.method === 'GET' && !pm[1]))) {
+      return profiles(req, res, entry, pm[1] || (req.method === 'GET' ? 'list' : 'create'));
     }
     if (is('POST', /^\/api\/rescan$/)) {
       const result = await library.scan();
@@ -309,7 +426,7 @@ function createHttpServer({ config, library, version, log = () => {} }) {
       return sendFile(req, res, file);
     }
     m = /^\/api\/songs\/([\w-]{1,64})$/.exec(p);
-    if (m && req.method === 'PUT') return upload(req, res, url, m[1]);
+    if (m && req.method === 'PUT') return upload(req, res, url, m[1], profileId);
     throw new HttpError(404, 'Nothing here.');
   }
 

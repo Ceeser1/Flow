@@ -1,7 +1,8 @@
 'use strict';
 
 // Where the server keeps its things, and server.json: the port, the name the
-// apps show, the music folder, the password and the devices signed in with it.
+// apps show, the music folder, the password, the profiles (their names and
+// PINs; what is in them is in library.json) and the devices signed in.
 //
 //   home   FLOW_SERVER_HOME, else ~/.local/share/flow-server on Linux
 //          (XDG_DATA_HOME when set) and %LOCALAPPDATA%\Flow\server on Windows.
@@ -27,7 +28,15 @@ function defaultHome() {
 function clean(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   const port = Math.round(Number(r.port));
-  const pw = r.password && typeof r.password === 'object' && r.password.salt && r.password.hash ? r.password : null;
+  const secret = (v) => (v && typeof v === 'object' && v.salt && v.hash ? { salt: String(v.salt), hash: String(v.hash) } : null);
+  const pw = secret(r.password);
+  const profiles = [];
+  for (const p of Array.isArray(r.profiles) ? r.profiles : []) {
+    if (!p || !/^[\w-]{1,64}$/.test(String(p.id || '')) || !String(p.name || '').trim()) continue;
+    if (profiles.some((x) => x.id === p.id)) continue;
+    profiles.push({ id: String(p.id), name: String(p.name).trim().slice(0, 40), createdAt: Number(p.createdAt) || Date.now(), pin: secret(p.pin) });
+  }
+  const profileIds = new Set(profiles.map((p) => p.id));
   return {
     // Tells the apps it is still the same server when its address changes,
     // and a different one when the same address now leads elsewhere.
@@ -35,7 +44,8 @@ function clean(raw) {
     port: port > 0 && port < 65536 ? port : DEFAULT_PORT,
     name: String(r.name || os.hostname() || 'Flow Server').slice(0, 60),
     musicDir: typeof r.musicDir === 'string' ? r.musicDir : '',
-    password: pw ? { salt: String(pw.salt), hash: String(pw.hash) } : null,
+    password: pw,
+    profiles,
     tokens: (Array.isArray(r.tokens) ? r.tokens : [])
       .filter((t) => t && t.hash)
       .map((t) => ({
@@ -43,6 +53,8 @@ function clean(raw) {
         device: String(t.device || '').slice(0, 80),
         createdAt: Number(t.createdAt) || Date.now(),
         lastSeenAt: Number(t.lastSeenAt) || 0,
+        // The profile this device is signed in to; null: none.
+        profileId: profileIds.has(t.profileId) ? String(t.profileId) : null,
       })),
   };
 }
