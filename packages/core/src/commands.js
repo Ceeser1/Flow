@@ -15,6 +15,9 @@
 //
 // `touched` is where the server keeps those last-change times, key -> ms. The
 // app leaves it out: what it shows is only a preview of the server's answer.
+// With profiles (profiles.js), `scope` is the profile a command is for: its
+// playlists and favourites are its own, so their keys are kept per profile.
+// A song's names are shared (`shared` below).
 
 const model = require('./libraryModel');
 
@@ -101,6 +104,7 @@ const TYPES = {
     },
   },
   editSong: {
+    shared: true,
     keys: (c) => [`s:${c.songId}:meta`],
     run(d, c) {
       if (!model.songById(d, str(c.songId))) return { skipped: 'gone' };
@@ -169,7 +173,7 @@ const COMMAND_TYPES = Object.keys(TYPES);
  * ('gone', 'exists' or 'stale'); throws an Error fit to show the user when the
  * command itself is wrong (an empty title, a taken playlist name).
  */
-function applyCommand(data, cmd, touched = null) {
+function applyCommand(data, cmd, touched = null, scope = null) {
   const c = cmd || {};
   const type = TYPES[c.type];
   if (!type) throw new Error(`Unknown command "${str(c.type)}".`);
@@ -178,12 +182,13 @@ function applyCommand(data, cmd, touched = null) {
   // A change older than the last one to the same thing is skipped. For a
   // command touching several things (a song into several playlists), each
   // is checked on its own through fresh().
-  const fresh = (key) => !touched || !(touched[key] > at);
+  const scoped = (key) => (scope && !type.shared ? `${scope}/${key}` : key);
+  const fresh = (key) => !touched || !(touched[scoped(key)] > at);
   const keys = type.keys(cc);
   if (keys.length === 1 && !fresh(keys[0])) return { skipped: 'stale' };
   const result = type.run(data, cc, fresh);
   if (touched && !result.skipped) {
-    for (const key of keys) if (fresh(key)) touched[key] = at;
+    for (const key of keys) if (fresh(key)) touched[scoped(key)] = at;
   }
   return result;
 }

@@ -293,7 +293,8 @@ apps/android/    the Android app, planned
 ```
 
 `packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,
-`libraryModel.js`, `commands.js`, `address.js`, `tags.js`, `spotify.js`,
+`libraryModel.js`, `commands.js`, `profiles.js`, `address.js`, `tags.js`,
+`spotify.js`,
 `relocate.js` and `jsonFile.js`, each required as `@flow/core/<name>`. Everything below is under `apps/desktop/`.
 
 - `main.js` holds the window and every IPC route; `preload.js` exposes

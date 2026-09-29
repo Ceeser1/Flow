@@ -1,7 +1,8 @@
 'use strict';
 
-// The server's library: library.json (the same as an app's), the music folder
-// it describes, and state.json beside it:
+// The server's library: library.json (the same as an app's, plus each
+// profile's playlists, favourites and stats: @flow/core/profiles), the music
+// folder it describes, and state.json beside it:
 //
 //   rev      goes up by one with every change, so an app can ask "anything
 //            new since 41?" instead of fetching the whole library each time.
@@ -16,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const model = require('@flow/core/libraryModel');
 const { applyCommand } = require('@flow/core/commands');
+const prof = require('@flow/core/profiles');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { parseTitle } = require('@flow/core/titleParser');
 const { sourceKeyFromUrl, songFileStem } = require('@flow/core/text');
@@ -60,7 +62,9 @@ function listAudioFiles(dir, depth = 0) {
 function createLibrary(config, log = () => {}) {
   const musicDir = config.musicDir;
   const trashDir = path.join(musicDir, '.flow-trash');
-  let data = model.sanitize(readJson(config.libraryFile));
+  const raw = readJson(config.libraryFile);
+  let data = model.sanitize(raw);
+  const profiles = prof.sanitizeProfiles(data, raw && raw.profiles);
   const rawState = readJson(config.stateFile) || {};
   const state = {
     rev: Math.max(0, Math.floor(Number(rawState.rev) || 0)),
@@ -71,7 +75,7 @@ function createLibrary(config, log = () => {}) {
   const listeners = [];
 
   function save() {
-    writeJsonAtomic(config.libraryFile, data);
+    writeJsonAtomic(config.libraryFile, { ...data, profiles });
     const cutoff = Date.now() - TOUCHED_KEEP_MS;
     for (const [k, at] of Object.entries(state.touched)) if (!(at > cutoff)) delete state.touched[k];
     state.seen = state.seen.slice(-SEEN_KEEP);
@@ -83,6 +87,7 @@ function createLibrary(config, log = () => {}) {
   /** One change: applied, saved, and the revision moved on. */
   function mutate(fn) {
     const result = fn(data);
+    prof.prune(data, profiles);
     state.rev += 1;
     save();
     for (const l of listeners) l(state.rev);
@@ -138,13 +143,39 @@ function createLibrary(config, log = () => {}) {
 
   // ---- what the apps see ----
 
-  /** The library as sent to an app: paths inside the music folder, not the server's own. */
-  function snapshot() {
+  /**
+   * The library as sent to an app signed in to `profileId` (null: none):
+   * paths inside the music folder, not the server's own.
+   */
+  function snapshot(profileId = null) {
+    const v = prof.view(data, profiles, profileId);
     return {
-      ...data,
-      songs: data.songs.map((s) => ({ ...s, file: relative(s.file) })),
+      ...v,
+      songs: v.songs.map((s) => ({ ...s, file: relative(s.file) })),
       ignoredFiles: [],
     };
+  }
+
+  // ---- profiles ----
+
+  function checkProfile(profileId) {
+    if (profileId && !profiles[profileId]) throw new Error('That profile no longer exists.');
+  }
+
+  /** An empty profile; the first one takes over None's playlists, favourites and stats. */
+  function createProfile(profileId) {
+    if (profiles[profileId]) return;
+    mutate((d) => {
+      if (prof.addProfile(d, profiles, profileId)) prof.moveTouched(state.touched, profileId);
+    });
+  }
+
+  function deleteProfile(profileId) {
+    if (!profiles[profileId]) return;
+    mutate(() => {
+      prof.removeProfile(profiles, profileId);
+      for (const key of Object.keys(state.touched)) if (key.startsWith(`${profileId}/`)) delete state.touched[key];
+    });
   }
 
   function songFile(id) {
@@ -159,7 +190,8 @@ function createLibrary(config, log = () => {}) {
    * { cid, ok, skipped?, value?, error? }. A song renamed gets its file renamed
    * to match; a deleted one's file goes to the trash.
    */
-  function runCommands(commands) {
+  function runCommands(commands, profileId = null) {
+    checkProfile(profileId);
     const results = [];
     const trash = [];
     const retags = [];
@@ -175,7 +207,7 @@ function createLibrary(config, log = () => {}) {
         }
         try {
           if (!c || !ALLOWED.has(c.type)) throw new Error(`Unknown command "${String(c && c.type)}".`);
-          const r = applyCommand(d, c, state.touched);
+          const r = applyCommand(d, c, state.touched, profileId);
           if (!r.skipped && c.type === 'deleteSong') trash.push(r.value.file);
           if (!r.skipped && c.type === 'editSong') {
             const song = r.value;
@@ -206,10 +238,11 @@ function createLibrary(config, log = () => {}) {
         }
       }
     };
-    apply(data);
+    const v = prof.view(data, profiles, profileId);
+    apply(v);
     // Only a change moves the revision on: commands that were all skipped or
     // refused must not make every app fetch the library again for nothing.
-    if (applied) mutate(() => {});
+    if (applied) mutate((d) => prof.absorb(d, profiles, profileId, v));
     else if (remembered) save();
     for (const f of trash) toTrash(f);
     for (const id of retags) queueRetag(id);
@@ -239,9 +272,11 @@ function createLibrary(config, log = () => {}) {
   /**
    * Takes in an uploaded file (already written to `tmp` inside the music
    * folder) as a song. The id is the app's own when it is free, so the app's
-   * playlists keep pointing at it.
+   * playlists keep pointing at it. Its favourite and stats are those of the
+   * profile it came from, and so are the playlists it goes into.
    */
-  function addUploaded(tmp, requestedId, meta, playlistIds) {
+  function addUploaded(tmp, requestedId, meta, playlistIds, profileId = null) {
+    checkProfile(profileId);
     const ext = String(meta.format || path.extname(tmp).slice(1)).toLowerCase();
     const title = String(meta.title || '').trim() || 'Untitled';
     const artist = String(meta.artist || '').trim();
@@ -266,9 +301,11 @@ function createLibrary(config, log = () => {}) {
       stats: meta.stats,
     };
     mutate((d) => {
-      model.addSong(d, song);
-      const lists = (Array.isArray(playlistIds) ? playlistIds : []).map(String).filter((pid) => model.playlistById(d, pid));
-      model.addSongToPlaylists(d, id, lists, song.addedAt);
+      const v = prof.view(d, profiles, profileId);
+      model.addSong(v, song);
+      const lists = (Array.isArray(playlistIds) ? playlistIds : []).map(String).filter((pid) => model.playlistById(v, pid));
+      model.addSongToPlaylists(v, id, lists, song.addedAt);
+      prof.absorb(d, profiles, profileId, v);
     });
     if (song.loudness === null) queueLoudness();
     return model.songById(data, id);
@@ -380,6 +417,9 @@ function createLibrary(config, log = () => {}) {
     },
     snapshot,
     songFile,
+    profileIds: () => Object.keys(profiles),
+    createProfile,
+    deleteProfile,
     runCommands,
     existingFor,
     addUploaded,

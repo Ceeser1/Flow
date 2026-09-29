@@ -174,3 +174,55 @@ test('songs dropped into the folder by hand are found, and dropped when deleted'
     assert.equal(gone.removed, 1);
   });
 });
+
+test('profiles share the songs and keep their own playlists, also after a restart', async () => {
+  const dirs = tempDirs();
+  const open = () => startServer({ home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1' });
+  let server = await open();
+  try {
+    const base = `http://127.0.0.1:${server.port}`;
+    await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330, favouriteAt: 9 });
+    await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
+
+    let lib = server.library;
+    lib.createProfile('anna');
+    lib.createProfile('ben');
+    assert.deepEqual(lib.snapshot('anna').playlists.map((p) => p.name), ['Evening'], 'the first profile takes over');
+    assert.equal(lib.snapshot('anna').songs[0].favouriteAt, 9);
+    assert.deepEqual(lib.snapshot().playlists, [], 'None starts afresh');
+
+    // An upload brings its favourite and playlists into the profile it came from.
+    const tmp = path.join(dirs.music, '.flow-upload-test.mp3');
+    fs.writeFileSync(tmp, FAKE_MP3);
+    lib.runCommands([{ cid: 'c2', at: Date.now(), type: 'createPlaylist', playlistId: 'p2', name: 'Evening' }], 'ben');
+    lib.addUploaded(tmp, 's2', { title: 'Roads', artist: 'Portishead', format: 'mp3', favouriteAt: 4 }, ['p2', 'p1'], 'ben');
+    const ben = lib.snapshot('ben');
+    assert.equal(ben.songs.length, 2);
+    assert.equal(ben.songs.find((s) => s.id === 's2').favouriteAt, 4);
+    assert.deepEqual(ben.playlists[0].entries.map((e) => e.songId), ['s2'], "Anna's p1 is not his to fill");
+    assert.equal(lib.snapshot('anna').songs.find((s) => s.id === 's2').favouriteAt, null);
+    assert.equal(lib.snapshot().songs.find((s) => s.id === 's2').favouriteAt, null);
+    assert.throws(() => lib.runCommands([], 'nobody'), /no longer exists/);
+
+    // All of it survives a restart.
+    await server.close();
+    server = await open();
+    lib = server.library;
+    assert.deepEqual(lib.profileIds().sort(), ['anna', 'ben']);
+    assert.deepEqual(lib.snapshot('anna').playlists.map((p) => p.id), ['p1']);
+    assert.deepEqual(lib.snapshot('ben').playlists.map((p) => p.id), ['p2']);
+    assert.equal(lib.snapshot('ben').songs.find((s) => s.id === 's2').favouriteAt, 4);
+    assert.equal(fs.readFileSync(path.join(dirs.home, 'library.json'), 'utf8').includes('"profiles"'), true);
+
+    // Deleting a song reaches every profile; deleting a profile keeps the songs.
+    const base2 = `http://127.0.0.1:${server.port}`;
+    await command(base2, [{ cid: 'c3', at: Date.now(), type: 'deleteSong', songId: 's1' }]);
+    assert.deepEqual(lib.snapshot('anna').playlists[0].entries, []);
+    lib.deleteProfile('anna');
+    assert.deepEqual(lib.profileIds(), ['ben']);
+    assert.deepEqual(lib.snapshot().songs.map((s) => s.id), ['s2']);
+  } finally {
+    await server.close();
+    fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
