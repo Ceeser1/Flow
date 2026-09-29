@@ -1764,7 +1764,8 @@ progress {
 @keyframes drawer-out { from { transform: none; } to { transform: translateX(100%); } }
 @keyframes backdrop-in { from { background: rgba(0, 0, 0, 0); } }
 @keyframes backdrop-out { to { background: rgba(0, 0, 0, 0); } }
-.modal--settings { width: 760px; height: min(760px, 100%); }
+/* Settings: the app's own background, at 90% (--bg is #1e1e22). */
+.modal--settings { width: 760px; height: min(760px, 100%); background: rgba(30, 30, 34, 0.9); }
 
 /* ===== Settings: every row is the setting on the left, its value on the right ===== */
 
