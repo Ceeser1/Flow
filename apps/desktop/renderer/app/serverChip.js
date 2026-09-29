@@ -20,7 +20,8 @@ const ServerChip = {
     const waiting = st.queued ? ` · ${Util.plural(st.queued, 'change')} waiting` : '';
     if (st.state === 'online') {
       const where = st.via === 'remote' ? 'remote' : 'home';
-      return { text: `Connected to ${name} (${where})${waiting}`, kind: 'online' };
+      const as = st.profile ? ` as ${st.profile.name}` : '';
+      return { text: `Connected to ${name}${as} (${where})${waiting}`, kind: 'online' };
     }
     if (st.state === 'connecting') return { text: `Connecting...${waiting}`, kind: 'busy' };
     if (st.state === 'password') return { text: st.message || 'The server needs its PIN or password.', kind: 'error' };
@@ -36,7 +37,7 @@ const ServerChip = {
       return;
     }
     const { text, kind } = this.describe(st);
-    const short = kind === 'online' ? `Connected to: ${st.name || 'Server'}`
+    const short = kind === 'online' ? `Connected to: ${st.name || 'Server'}${st.profile ? ` as ${st.profile.name}` : ''}`
       : kind === 'busy' ? 'Connecting...'
         : kind === 'error' ? 'Server: needs attention' : 'Server offline';
     const extra = st.transfer ? (st.transfer.startsWith('Up') ? 'uploading' : 'downloading')

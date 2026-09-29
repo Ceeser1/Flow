@@ -155,6 +155,8 @@ const SettingsPanel = {
     this._drawStats();
     this._drawMeasured();
     this._drawServer();
+    // Profiles made or renamed on other devices since.
+    if (Store.server.on && Store.server.state === 'online') window.flow.profiles().catch(() => {});
   },
 
   _refreshAll() {
@@ -299,6 +301,7 @@ const SettingsPanel = {
     return [
       h('h3.settings__section', 'Flow Server'),
       main,
+      this._profileRow(),
       this._row({
         label: 'Home Server in WiFi/LAN',
         desc: 'Tried first. The address the server shows when it starts.',
@@ -407,6 +410,189 @@ const SettingsPanel = {
       this._syncBtn.disabled = !st.on || !!st.syncing;
       this._syncBtn.textContent = st.syncing ? 'Synchronizing...' : 'Synchronize now';
     }
+    this._drawProfile();
+  },
+
+  // ---- Profiles ----
+
+  /**
+   * "Profile": signed in to one of the server's profiles, or to none. Not
+   * signed in: the server's profiles and "+ New" (which turns into a box for
+   * the new one's name), a PIN, and Login or Create. Signed in: who, with
+   * Rename (the name turns into a box with a tick), Delete and Logout.
+   */
+  _profileRow() {
+    this._prof = { mode: 'pick', picked: '', busy: false, key: '' };
+    this._profileNode = h('div.settings__control.profile-control');
+    return this._row({
+      label: 'Profile',
+      desc: 'Everyone shares the songs; each profile has its own playlists, favourites and listening stats.',
+      sub: true,
+      when: () => Store.settings.serverOn,
+      right: this._profileNode,
+    });
+  },
+
+  /** Drawn afresh only when something it shows changed: typing is not lost to a status update. */
+  _drawProfile(force = false) {
+    const node = this._profileNode;
+    if (!node) return;
+    const st = Store.server;
+    const p = this._prof;
+    const ready = !!(st.on && st.state === 'online' && st.profilesSupported && Array.isArray(st.profiles));
+    const key = JSON.stringify([ready, st.on, st.state, st.profilesSupported, st.profile, st.profiles, p.mode, p.picked, p.busy]);
+    if (!force && key === p.key) return;
+    p.key = key;
+    clear(node);
+    if (!ready) {
+      let text = '';
+      if (st.profile) text = `Logged in as ${st.profile.name}`;
+      else if (st.on && st.state === 'online' && !st.profilesSupported) text = 'Update the Flow Server to use profiles.';
+      else if (st.on) text = 'Available while connected to the server.';
+      node.append(h('span.settings__note', text));
+      return;
+    }
+    if (st.profile) this._drawSignedIn(node, st.profile);
+    else this._drawSignIn(node, st.profiles);
+  },
+
+  _drawSignedIn(node, profile) {
+    const p = this._prof;
+    if (p.mode === 'rename') {
+      const input = h('input.input.settings__input.settings__input--short', {
+        type: 'text', value: profile.name, maxLength: 40, spellcheck: false, autocomplete: 'off', disabled: p.busy,
+      });
+      const save = () => this._profileDo(async () => {
+        const renamed = await window.flow.profileRename(input.value);
+        p.mode = 'pick';
+        toast(`Profile renamed to "${renamed.name}"`, 'success');
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') save();
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          p.mode = 'pick';
+          this._drawProfile(true);
+        }
+      });
+      node.append(
+        h('span.settings__caption', 'Logged in as'),
+        input,
+        h('button.btn.btn--small.profile-tick', { type: 'button', title: 'Save the name', disabled: p.busy, onclick: save }, '✓'),
+      );
+      requestAnimationFrame(() => {
+        input.focus();
+        input.select();
+      });
+      return;
+    }
+    const btn = (label, onclick, extra = '') => h(`button.btn.btn--small${extra}`, { type: 'button', disabled: p.busy, onclick }, label);
+    node.append(
+      h('span.profile-who', 'Logged in as ', h('strong', profile.name)),
+      btn('Rename', () => {
+        p.mode = 'rename';
+        this._drawProfile(true);
+      }),
+      btn('Delete', () => this._deleteProfile(profile)),
+      btn('Logout', () => this._profileDo(async () => {
+        await window.flow.profileLogout();
+        toast(`Logged out of "${profile.name}"`, 'info');
+      })),
+    );
+  },
+
+  _drawSignIn(node, profiles) {
+    const p = this._prof;
+    if (p.picked && !profiles.some((x) => x.id === p.picked)) p.picked = '';
+    const picked = profiles.find((x) => x.id === p.picked) || null;
+    const creating = p.mode === 'new';
+    let nameInput = null;
+    if (creating) {
+      nameInput = h('input.input.settings__input.settings__input--short', {
+        type: 'text', placeholder: 'New profile name', maxLength: 40, spellcheck: false, autocomplete: 'off', disabled: p.busy,
+      });
+      nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') go();
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          p.mode = 'pick';
+          this._drawProfile(true);
+        }
+      });
+      requestAnimationFrame(() => nameInput.focus());
+    } else {
+      nameInput = h('select.select.profile-select', { disabled: p.busy },
+        h('option', { value: '' }, 'None'),
+        ...profiles.map((x) => h('option', { value: x.id }, x.name)),
+        h('option', { value: '+new' }, '+ New'));
+      nameInput.value = p.picked;
+      nameInput.addEventListener('change', () => {
+        if (nameInput.value === '+new') {
+          p.mode = 'new';
+          p.picked = '';
+        } else {
+          p.picked = nameInput.value;
+        }
+        this._drawProfile(true);
+      });
+    }
+    const needsPin = creating || (picked && picked.pin);
+    const pin = h('input.input.settings__input.profile-pin', {
+      type: 'password',
+      placeholder: creating ? 'PIN (optional)' : picked && !picked.pin ? 'No PIN' : 'PIN',
+      autocomplete: 'new-password',
+      spellcheck: false,
+      disabled: p.busy || !needsPin,
+    });
+    const go = () => {
+      if (creating) {
+        return this._profileDo(async () => {
+          const made = await window.flow.profileCreate(nameInput.value, pin.value);
+          p.mode = 'pick';
+          toast(`Profile "${made.name}" made. Logged in as ${made.name}.`, 'success');
+        });
+      }
+      if (!picked) return undefined;
+      return this._profileDo(async () => {
+        const now = await window.flow.profileLogin(picked.id, pin.value);
+        toast(`Logged in as ${now.name}`, 'success');
+      });
+    };
+    pin.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') go();
+    });
+    node.append(nameInput, pin,
+      h('button.btn.btn--small', { type: 'button', disabled: p.busy || (!creating && !picked), onclick: go }, creating ? 'Create' : 'Login'));
+    if (picked && picked.pin && !creating) requestAnimationFrame(() => pin.focus());
+  },
+
+  /** One profile action: the row waits for it, and says what went wrong. */
+  async _profileDo(fn) {
+    const p = this._prof;
+    if (p.busy) return;
+    p.busy = true;
+    this._drawProfile(true);
+    try {
+      await attempt(fn);
+    } finally {
+      p.busy = false;
+      this._drawProfile(true);
+    }
+  },
+
+  async _deleteProfile(profile) {
+    const answer = await confirmDialog({
+      title: 'Delete profile',
+      message: `Delete the profile "${profile.name}"? All its playlists, favourites and listening stats will be gone, `
+        + 'on every device. The songs stay for everyone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!answer) return;
+    await this._profileDo(async () => {
+      await window.flow.profileDelete();
+      toast(`Profile "${profile.name}" deleted`, 'info');
+    });
   },
 
   _syncNow() {

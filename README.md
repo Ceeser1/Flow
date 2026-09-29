@@ -112,6 +112,10 @@ The cog at the bottom left of the menu. Every change counts at once.
     well under a second a song) and the result kept in the library.
 - **Flow Server**: **Streaming, Download and Synchronization** (off). See
   [A Flow Server](#a-flow-server) below.
+  - **Profile**: which of the server's profiles this is. Not logged in, pick
+    one (or **+ New** to make one, with a PIN if wanted) and **Login** or
+    **Create**; logged in, **Rename**, **Delete** (its playlists, favourites
+    and stats, on every device) and **Logout**. Only while connected.
   - **Home Server in WiFi/LAN** and **Remote Server**: addresses, tried in
     that order (`192.168.0.63:7878`, a domain, or a full `https://` link).
   - **Pin or Password if the Server requires one**: entered once, kept
@@ -226,6 +230,12 @@ control with a cache:
   then uploaded. Turning the server on the first time uploads all of Local
   Files; songs the server already has (same source, or same artist, title,
   mix and length) are not sent twice.
+- Profiles: everyone shares the songs, and each profile has its own
+  playlists, favourites and listening stats. The first profile made takes
+  over what was there; without one ("None") everything is shared. The name
+  under "Flow" says who is logged in ("Connected to: Pi as Anna"). A change
+  waits for the profile it was made in, and a playlist marked for download
+  keeps its songs while another profile is logged in.
 - Last seen library and waiting changes: `server-library.json` and
   `server-sync.json` in `%LOCALAPPDATA%\Flow`. A different server at the same
   address starts both afresh.
