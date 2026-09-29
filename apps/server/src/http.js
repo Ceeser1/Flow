@@ -278,7 +278,7 @@ function createHttpServer({ config, library, version, log = () => {} }) {
 
     if (is('GET', /^\/api\/hello$/)) {
       const cfg = config.get();
-      return sendJson(res, 200, { app: 'flow-server', protocol: PROTOCOL, version, name: cfg.name, password: !!cfg.password });
+      return sendJson(res, 200, { app: 'flow-server', protocol: PROTOCOL, version, id: cfg.id, name: cfg.name, password: !!cfg.password });
     }
     if (is('POST', /^\/api\/login$/)) return login(req, res);
 

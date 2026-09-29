@@ -12,8 +12,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
-
-const DEFAULT_PORT = 7878;
+const { DEFAULT_PORT } = require('@flow/core/address');
 
 function defaultHome() {
   if (process.env.FLOW_SERVER_HOME) return process.env.FLOW_SERVER_HOME;
@@ -30,6 +29,9 @@ function clean(raw) {
   const port = Math.round(Number(r.port));
   const pw = r.password && typeof r.password === 'object' && r.password.salt && r.password.hash ? r.password : null;
   return {
+    // Tells the apps it is still the same server when its address changes,
+    // and a different one when the same address now leads elsewhere.
+    id: /^[0-9a-f]{16,64}$/.test(String(r.id || '')) ? String(r.id) : crypto.randomBytes(12).toString('hex'),
     port: port > 0 && port < 65536 ? port : DEFAULT_PORT,
     name: String(r.name || os.hostname() || 'Flow Server').slice(0, 60),
     musicDir: typeof r.musicDir === 'string' ? r.musicDir : '',
@@ -56,7 +58,7 @@ function open(opts = {}) {
   fs.mkdirSync(musicDir, { recursive: true });
 
   const save = () => writeJsonAtomic(file, config);
-  if (!fs.existsSync(file)) save();
+  save();
 
   return {
     home,

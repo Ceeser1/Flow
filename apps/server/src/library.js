@@ -31,7 +31,7 @@ const SETTLE_MS = 2000;
 // upload; the upload itself adds the song here.
 const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource',
   'addSongToPlaylists', 'addSongsToPlaylist', 'removeFromPlaylist', 'deleteSong', 'editSong',
-  'setFavourite', 'setLoudness', 'recordListen']);
+  'setFavourite', 'setLoudness', 'setDuration', 'recordListen']);
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');
@@ -164,7 +164,8 @@ function createLibrary(config, log = () => {}) {
     const trash = [];
     const retags = [];
     const list = (Array.isArray(commands) ? commands : []).slice(0, 5000);
-    const changed = list.some((c) => c && !seen.has(String(c.cid)));
+    let applied = 0;
+    let remembered = 0;
     const apply = (d) => {
       for (const c of list) {
         const cid = String((c && c.cid) || '');
@@ -191,6 +192,7 @@ function createLibrary(config, log = () => {}) {
             retags.push(song.id);
           }
           const out = { cid, ok: true };
+          if (!r.skipped) applied += 1;
           if (r.skipped) out.skipped = r.skipped;
           else if (typeof r.value === 'string' || typeof r.value === 'number') out.value = r.value;
           results.push(out);
@@ -200,11 +202,15 @@ function createLibrary(config, log = () => {}) {
         if (cid) {
           seen.add(cid);
           state.seen.push(cid);
+          remembered += 1;
         }
       }
     };
-    if (changed) mutate(apply);
-    else apply(data);
+    apply(data);
+    // Only a change moves the revision on: commands that were all skipped or
+    // refused must not make every app fetch the library again for nothing.
+    if (applied) mutate(() => {});
+    else if (remembered) save();
     for (const f of trash) toTrash(f);
     for (const id of retags) queueRetag(id);
     return { rev: state.rev, results };
@@ -212,11 +218,21 @@ function createLibrary(config, log = () => {}) {
 
   // ---- uploads ----
 
-  /** An upload of a song that is here already (same id or same source), or null. */
+  /**
+   * An upload of a song that is here already, or null: the same id (sent
+   * twice), the same source, or the same artist, title and mix at the same
+   * length (a copy of a song the server found in its folder).
+   */
   function existingFor(id, meta) {
     const same = model.songById(data, id);
     if (same) return same;
-    if (meta.sourceKey || meta.sourceUrl) return model.findBySource(data, { key: meta.sourceKey, url: meta.sourceUrl });
+    if (meta.sourceKey || meta.sourceUrl) {
+      const hit = model.findBySource(data, { key: meta.sourceKey, url: meta.sourceUrl });
+      if (hit) return hit;
+    }
+    const byName = model.findByMeta(data, { artist: meta.artist, title: meta.title, mix: meta.mix });
+    const d = Number(meta.duration) || 0;
+    if (byName && (!d || !byName.duration || Math.abs(byName.duration - d) < 2)) return byName;
     return null;
   }
 

@@ -125,10 +125,25 @@ const TYPES = {
       return {};
     },
   },
+  // A song's length, from an app that knows it (a copy of its own, or the
+  // song played) when the server does not (found in its folder without ffprobe).
+  setDuration: {
+    keys: () => [],
+    run(d, c) {
+      const s = model.songById(d, str(c.songId));
+      if (!s) return { skipped: 'gone' };
+      const len = Number(c.duration) || 0;
+      if (!(len > 0) || s.duration > 0) return { skipped: 'known' };
+      model.updateSong(d, s.id, { duration: len });
+      return {};
+    },
+  },
   recordListen: {
     keys: () => [],
     run(d, c) {
-      if (!model.songById(d, str(c.songId))) return { skipped: 'gone' };
+      const s = model.songById(d, str(c.songId));
+      if (!s) return { skipped: 'gone' };
+      if (!(s.duration > 0) && Number(c.duration) > 0) model.updateSong(d, s.id, { duration: Number(c.duration) });
       return { value: model.recordListen(d, str(c.songId), { listened: c.listened, duration: c.duration, at: c.at }) };
     },
   },

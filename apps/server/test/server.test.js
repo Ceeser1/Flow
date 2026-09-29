@@ -56,6 +56,7 @@ test('hello, an upload, and the library it ends up in', async () => {
     const hello = await (await fetch(`${base}/api/hello`)).json();
     assert.equal(hello.app, 'flow-server');
     assert.equal(hello.password, false);
+    assert.match(hello.id, /^[0-9a-f]{24}$/);
 
     const up = await upload(base, 'abc123', {
       title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330, sourceUrl: 'https://youtu.be/u7K72X4eo_s',
@@ -71,7 +72,12 @@ test('hello, an upload, and the library it ends up in', async () => {
     // The same source again is not stored twice.
     const again = await upload(base, 'zzz999', { title: 'Teardrop', format: 'mp3', sourceUrl: 'https://www.youtube.com/watch?v=u7K72X4eo_s' });
     assert.deepEqual(again.json, { existing: true, id: 'abc123', rev: 1 });
-    assert.equal(fs.readdirSync(dirs.music).filter((f) => !f.startsWith('.')).length, 1);
+    // So is the same artist and title at the same length.
+    const copy = await upload(base, 'yyy888', { title: 'Teardrop', artist: 'massive attack', format: 'mp3', duration: 331 });
+    assert.equal(copy.json.id, 'abc123');
+    const other = await upload(base, 'xxx777', { title: 'Teardrop', artist: 'Massive Attack', mix: 'Live', format: 'mp3', duration: 331 });
+    assert.equal(other.json.id, 'xxx777');
+    assert.equal(fs.readdirSync(dirs.music).filter((f) => !f.startsWith('.')).length, 2);
   });
 });
 
@@ -117,6 +123,11 @@ test('commands: edits rename the file, deletes go to the trash, repeats count on
     // An edit made earlier (an app that was offline) loses to the one above.
     const stale = await command(base, [{ cid: 'c5', at: t - 50, type: 'editSong', songId: 's1', title: 'Old name' }]);
     assert.equal(stale.results[0].skipped, 'stale');
+    // Nothing changed, so the revision stays.
+    assert.equal(stale.rev, r1.rev);
+    const refused = await command(base, [{ cid: 'c5b', at: t + 60, type: 'launch' }]);
+    assert.equal(refused.results[0].ok, false);
+    assert.equal(refused.rev, r1.rev);
 
     await command(base, [{ cid: 'c6', at: t + 100, type: 'deleteSong', songId: 's1' }]);
     assert.ok(!fs.existsSync(path.join(dirs.music, 'Aphex Twin - Xtal.mp3')));

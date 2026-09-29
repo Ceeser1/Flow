@@ -74,6 +74,17 @@ test('favourites, loudness and listens', () => {
   assert.equal(m.songById(d, 's2').stats.plays, 1);
 });
 
+test('a length the server did not know is filled in, a known one kept', () => {
+  const d = lib();
+  m.updateSong(d, 's1', { duration: 0 });
+  assert.deepEqual(applyCommand(d, { type: 'setDuration', songId: 's1', duration: 421.5 }), {});
+  assert.equal(m.songById(d, 's1').duration, 421.5);
+  assert.deepEqual(applyCommand(d, { type: 'setDuration', songId: 's1', duration: 10 }), { skipped: 'known' });
+  m.updateSong(d, 's2', { duration: 0 });
+  applyCommand(d, { type: 'recordListen', songId: 's2', listened: 20, duration: 360 });
+  assert.equal(m.songById(d, 's2').duration, 360);
+});
+
 test('an upload on its way shows as a song in its playlists', () => {
   const d = lib();
   applyCommand(d, {
