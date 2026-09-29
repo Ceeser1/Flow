@@ -11,6 +11,7 @@ const { planFor } = require('@flow/core/formats');
 const PlayQueue = require('../renderer/app/queue');
 const { checkTarget, planMoves } = require('@flow/core/relocate');
 const { parseLoudness } = require('../src/loudness');
+const { parseCost } = require('../src/network');
 const settings = require('../src/settings');
 const m = require('@flow/core/libraryModel');
 
@@ -139,4 +140,26 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.eqColors, 'rainbow');
   assert.equal(settings.clean({ visualizer: 'waveform' }).visualizer, 'waveform');
   assert.equal(settings.clean({ visualizer: 'flow' }).visualizer, 'flow');
+});
+
+test('a metered connection is told apart from a free one', () => {
+  assert.equal(parseCost('Unrestricted|False|False\r\n'), false);
+  assert.equal(parseCost('Fixed|False|False'), true);
+  assert.equal(parseCost('Variable|False|False'), true);
+  assert.equal(parseCost('Unrestricted|True|False'), true);
+  assert.equal(parseCost('Unrestricted|False|True'), true);
+  assert.equal(parseCost('none'), false);
+  assert.equal(parseCost(''), false);
+});
+
+test('the server settings are kept tidy', () => {
+  const s = settings.clean({ serverOn: 'yes', serverHome: '  192.168.0.63:7878 ', serverKeepFiles: 0, serverSecret: 5 });
+  assert.equal(s.serverOn, false);
+  assert.equal(s.serverHome, '192.168.0.63:7878');
+  assert.equal(s.serverRemote, '');
+  assert.equal(s.serverKeepFiles, true);
+  assert.equal(s.serverAutoSync, true);
+  assert.equal(s.serverMetered, false);
+  assert.equal(s.serverSecret, '');
+  assert.equal(settings.clean({ serverKeepFiles: false }).serverKeepFiles, false);
 });

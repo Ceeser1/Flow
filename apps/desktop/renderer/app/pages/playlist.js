@@ -29,6 +29,13 @@ const PlaylistPage = {
     });
     $('plShuffle').onclick = () => Player.setShuffle(!Player.queue.shuffle);
     $('plPlay').onclick = () => Player.togglePlaylist(this.id);
+    $('plOffline').onclick = () => {
+      const on = !Store.isOffline(this.id);
+      attempt(() => window.flow.setOffline(this.id, on));
+    };
+    Store.onServer(() => {
+      if (Nav.page === 'playlist') this._drawOffline();
+    });
     $('plPickDone').onclick = () => {
       const target = this.pickFor;
       this.pickFor = null;
@@ -108,7 +115,31 @@ const PlaylistPage = {
     $('plPickBanner').hidden = !target;
     if (target) $('plPickName').textContent = target.name;
 
+    this._drawOffline();
     this.renderTable();
+  },
+
+  /**
+   * With a Flow Server: Download keeps a playlist's songs on this computer
+   * too, and says how many have arrived. Only for playlists of your own.
+   */
+  _drawOffline() {
+    const p = Store.playlist(this.id);
+    const btn = $('plOffline');
+    const note = $('plOfflineNote');
+    const can = !!p && Store.server.on && !p.isAll && !p.isFavourites && !p.isSmart;
+    btn.hidden = !can;
+    note.hidden = !can;
+    if (!can) return;
+    const on = Store.isOffline(this.id);
+    btn.classList.toggle('toggle--on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.download}<span>Download</span>`;
+    const rows = Store.rowsOf(this.id);
+    const here = rows.filter((r) => r.song.file).length;
+    note.textContent = !rows.length ? ''
+      : here === rows.length ? (on ? 'All downloaded' : `All ${rows.length} on this computer`)
+        : on ? `${here} of ${rows.length} downloaded` : here ? `${here} of ${rows.length} on this computer` : '';
   },
 
   renderTable() {
@@ -274,17 +305,23 @@ const PlaylistPage = {
   },
 
   async deleteSong(song) {
+    const onServer = Store.server.on;
     const answer = await confirmDialog({
       title: 'Delete song',
-      message: `Delete "${Util.songLine(song)}" from your library and every playlist?`,
+      message: onServer
+        ? `Delete "${Util.songLine(song)}" from the server's library and every playlist? Its file stays in the server's trash for 30 days.`
+        : `Delete "${Util.songLine(song)}" from your library and every playlist?`,
       confirmLabel: 'Delete',
       danger: true,
-      checkbox: { label: 'Also delete the file from the save folder', checked: true },
+      checkbox: onServer && !song.file ? null : {
+        label: onServer ? 'Also delete its file from Local Files on this computer' : 'Also delete the file from Local Files',
+        checked: true,
+      },
     });
     if (!answer) return;
     const token = Player.release(song.id);
     const ok = await attempt(async () => {
-      await window.flow.deleteSong(song.id, answer.checked);
+      await window.flow.deleteSong(song.id, !!answer.checked);
       return true;
     });
     if (ok) toast(`Deleted "${song.title}"`, 'success');

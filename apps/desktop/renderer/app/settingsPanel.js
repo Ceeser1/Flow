@@ -40,6 +40,9 @@ const SettingsPanel = {
     Store.onLibrary(() => {
       if (this.modal) this._drawMeasured();
     });
+    Store.onServer(() => {
+      if (this.modal) this._drawServer();
+    });
   },
 
   open() {
@@ -60,6 +63,8 @@ const SettingsPanel = {
         desc: 'Play all songs at an equal volume. It reduces loud spikes and makes quiet songs louder.',
         right: this._measuredNode = h('span.settings__note'),
       }),
+
+      ...this._serverRows(),
 
       h('h3.settings__section', 'Downloads'),
       this._row({
@@ -149,6 +154,7 @@ const SettingsPanel = {
     this._refreshAll();
     this._drawStats();
     this._drawMeasured();
+    this._drawServer();
   },
 
   _refreshAll() {
@@ -273,7 +279,144 @@ const SettingsPanel = {
     return h('div.settings__control', h('span.settings__caption', 'At quality'), select, h('span', 'kbit/s'), estimate);
   },
 
-  // ---- Saved Songs ----
+  // ---- Streaming, Download and Synchronization ----
+
+  /**
+   * The Flow Server rows: on/off with its state, the two addresses (home
+   * first, then remote), the PIN, and what goes up and down when.
+   */
+  _serverRows() {
+    const on = () => Store.settings.serverOn;
+    this._serverNode = h('div.settings__desc.server-state');
+    const main = this._row({
+      key: 'serverOn',
+      label: 'Streaming, Download and Synchronization',
+      desc: 'Use the library on a Flow Server (a Raspberry Pi, another PC). Songs play straight from it, and '
+        + 'changes made here go to it. Turned on, your Local Files are uploaded to the server.',
+    });
+    main.querySelector('.settings__left').appendChild(this._serverNode);
+    this._syncBtn = h('button.btn.btn--small', { type: 'button', onclick: () => this._syncNow() }, 'Synchronize now');
+    return [
+      h('h3.settings__section', 'Flow Server'),
+      main,
+      this._row({
+        label: 'Home Server in WiFi/LAN',
+        desc: 'Tried first. The address the server shows when it starts.',
+        sub: true,
+        when: on,
+        right: this._textField({ key: 'serverHome', placeholder: '192.168.0.63:7878', when: on }),
+      }),
+      this._row({
+        label: 'Remote Server',
+        desc: 'Tried when the home one does not answer: its public IP or domain, for when you are away.',
+        sub: true,
+        when: on,
+        right: this._textField({ key: 'serverRemote', placeholder: '203.0.113.7:7878 or flow.example.com', when: on }),
+      }),
+      this._row({
+        key: 'serverAuth',
+        label: 'Pin or Password if the Server requires one',
+        desc: 'Entered once; Flow keeps it encrypted for your Windows account.',
+        sub: true,
+        when: on,
+        right: this._secretField(() => on() && Store.settings.serverAuth),
+      }),
+      this._row({
+        key: 'serverMetered',
+        label: 'Always Download & Synchronize on mobile internet/metered connections',
+        desc: 'Otherwise songs only go up and come down on connections that are not metered. Streaming works either way.',
+        sub: true,
+        when: on,
+      }),
+      this._row({
+        key: 'serverKeepFiles',
+        label: 'Keep downloaded files after sync with the server',
+        desc: 'Songs downloaded here stay in Local Files once they are on the server, to play them without it. '
+          + 'Unticked, each is removed here once uploaded (unless a playlist marked for download holds it).',
+        sub: true,
+        when: on,
+      }),
+      this._row({
+        key: 'serverAutoSync',
+        label: 'Synchronize local changes',
+        desc: 'Songs added to or removed from Local Files by hand go to the server by themselves. '
+          + 'Unticked, only with Synchronize now. Songs downloaded in Flow always go up.',
+        sub: true,
+        when: on,
+        right: this._syncBtn,
+      }),
+    ];
+  },
+
+  /** A text box saved when left (or on Enter). */
+  _textField({ key, placeholder, when }) {
+    const input = h('input.input.settings__input', {
+      type: 'text', value: Store.settings[key] || '', placeholder, spellcheck: false, autocomplete: 'off',
+    });
+    input.addEventListener('change', () => {
+      const v = input.value.trim();
+      input.value = v;
+      if (v !== (Store.settings[key] || '')) Store.saveSettings({ [key]: v });
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+    });
+    if (when) this._refresh.push(() => { input.disabled = !when(); });
+    return input;
+  },
+
+  /** The PIN: never shown, only replaced. Saved (encrypted) when left. */
+  _secretField(when) {
+    const input = h('input.input.settings__input.settings__input--short', {
+      type: 'password', placeholder: 'Pin/PW', autocomplete: 'new-password', spellcheck: false,
+    });
+    const draw = () => {
+      input.placeholder = Store.server.hasSecret ? '••••••' : 'Pin/PW';
+    };
+    input.addEventListener('change', () => attempt(async () => {
+      if (!input.value) return;
+      await window.flow.setServerSecret(input.value);
+      input.value = '';
+      input.placeholder = '••••••';
+    }));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+    });
+    draw();
+    this._refresh.push(() => {
+      input.disabled = !when();
+      draw();
+    });
+    return input;
+  },
+
+  _drawServer() {
+    if (!this._serverNode) return;
+    const st = Store.server;
+    const s = Store.settings;
+    let text;
+    let kind = 'off';
+    if (!s.serverOn) text = '';
+    else if (!s.serverHome && !s.serverRemote) text = 'Enter the home or remote address below.';
+    else ({ text, kind } = ServerChip.describe(st));
+    const lines = [text, st.on ? st.transfer : '', st.on ? st.note : ''].filter(Boolean);
+    clear(this._serverNode);
+    this._serverNode.className = `settings__desc server-state server-state--${kind}`;
+    for (const line of lines) this._serverNode.appendChild(h('div', line));
+    if (this._syncBtn) {
+      this._syncBtn.disabled = !st.on || !!st.syncing;
+      this._syncBtn.textContent = st.syncing ? 'Synchronizing...' : 'Synchronize now';
+    }
+  },
+
+  _syncNow() {
+    return attempt(async () => {
+      const r = await window.flow.syncNow();
+      toast(r.sent ? `Synchronized: ${Util.plural(r.sent, 'change')} from Local Files sent` : 'Synchronized', 'success');
+    });
+  },
+
+  // ---- Local Files ----
 
   _savedSongsRow() {
     this._statsNode = h('span.settings__note', '...');
@@ -281,7 +424,7 @@ const SettingsPanel = {
     const open = h('button.btn.btn--small', { type: 'button', onclick: () => this._openFolder() }, 'Open');
     const change = h('button.btn.btn--small', { type: 'button', onclick: () => this._changeFolder(change) }, 'Change');
     const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', 'Saved Songs'),
+      h('div.settings__label.settings__label--plain', 'Local Files'),
       this._pathNode);
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._statsNode, open, change)));
   },
@@ -306,7 +449,8 @@ const SettingsPanel = {
     const done = songs.filter((s) => s.loudness !== null && s.loudness !== undefined).length;
     this._measuredNode.textContent = !songs.length ? ''
       : done >= songs.length ? `All ${songs.length} songs measured`
-        : `${done} of ${songs.length} songs measured${Store.settings.normalize ? '...' : ''}`;
+        // With a server, songs only streamed are measured by the server (with ffmpeg).
+        : `${done} of ${songs.length} songs measured${Store.settings.normalize && !Store.server.on ? '...' : ''}`;
   },
 
   _openFolder() {

@@ -60,6 +60,25 @@ const DEFAULTS = {
 
   // The fullscreen Music Visualizer the player bar's button opens (VISUALIZERS).
   visualizer: 'bars',
+
+  // ---- Streaming, Download and Synchronization: a Flow Server ----
+  // The library lives on the server; see remote.js.
+  serverOn: false,
+  // Addresses, tried in this order: the one at home first, then the one from
+  // outside. "192.168.0.63:7878", "flow.example.com" or a full https:// link.
+  serverHome: '',
+  serverRemote: '',
+  // "Pin or Password if the Server requires one", and the PIN itself,
+  // encrypted with Windows' key for this user (Electron safeStorage).
+  serverAuth: false,
+  serverSecret: '',
+  // Downloads and uploads on a metered connection too (a phone's hotspot).
+  serverMetered: false,
+  // Songs downloaded here stay here after going up to the server.
+  serverKeepFiles: true,
+  // Songs added to or removed from the Local Files folder by hand go to the
+  // server by themselves; otherwise only with "Synchronize now".
+  serverAutoSync: true,
 };
 
 const EQ_COLORS = ['spectrum', 'rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
@@ -95,8 +114,11 @@ function clean(raw) {
   s.sleepTimer = Number.isFinite(endsAt) ? { endsAt, shutdownAt, ended: st.ended === true } : null;
 
   s.musicDir = typeof s.musicDir === 'string' ? s.musicDir : '';
-  s.flashOn = s.flashOn === true;
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine']) {
+  for (const key of ['serverHome', 'serverRemote']) s[key] = typeof s[key] === 'string' ? s[key].trim().slice(0, 300) : '';
+  s.serverSecret = typeof s.serverSecret === 'string' ? s.serverSecret : '';
+  for (const key of ['flashOn', 'serverOn', 'serverAuth', 'serverMetered']) s[key] = s[key] === true;
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+    'serverKeepFiles', 'serverAutoSync']) {
     s[key] = s[key] !== false;
   }
   const fade = Math.round(Number(s.crossfadeSeconds) * 10) / 10;

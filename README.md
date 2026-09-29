@@ -97,7 +97,7 @@ and mix, asks before downloading or saving it again.
 The cog at the bottom left of the menu. Every change counts at once.
 
 - **General**
-  - **Saved Songs**: how many songs and how much room they take. Open shows
+  - **Local Files**: how many songs and how much room they take. Open shows
     the folder in Explorer. Change picks another folder and moves every song
     file there, subfolders and all (a name already taken there gets a number);
     playlists and statistics stay. Not while a download or import runs.
@@ -110,6 +110,23 @@ The cog at the bottom left of the menu. Every change counts at once.
     (-14 LUFS, turned up by at most 8 dB), with a limiter catching the peaks
     of songs turned up. Each song is measured once in the background (EBU R128,
     well under a second a song) and the result kept in the library.
+- **Flow Server**: **Streaming, Download and Synchronization** (off). See
+  [A Flow Server](#a-flow-server) below.
+  - **Home Server in WiFi/LAN** and **Remote Server**: addresses, tried in
+    that order (`192.168.0.63:7878`, a domain, or a full `https://` link).
+  - **Pin or Password if the Server requires one**: entered once, kept
+    encrypted for the Windows account.
+  - **Always Download & Synchronize on mobile internet/metered connections**
+    (off): otherwise songs only go up and come down on connections Windows
+    does not call metered. Streaming and changes go either way.
+  - **Keep downloaded files after sync with the server** (on): songs
+    downloaded here stay in Local Files once uploaded. Unticked, each is
+    removed here after its upload (unless a playlist marked for download
+    holds it); songs uploaded before are left alone.
+  - **Synchronize local changes** (on) and **Synchronize now**: songs added
+    to or removed from Local Files by hand, and changes made while the
+    server was off, go to the server by themselves; unticked, only with
+    Synchronize now. Songs downloaded in Flow always go up.
 - **Downloads**
   - **Always convert all downloads into MP3** (off) at 64 to 320 kbit/s
     (192), and under it **Ignore files that are already in .mp3 format** (on):
@@ -189,6 +206,30 @@ No song is converted from one lossy format to another unless you ask:
 MP3 itself to MP3 at the chosen 64 to 320 kbit/s, default 192; with "Ignore
 files that are already in .mp3 format" unticked, MP3s as well.
 
+### A Flow Server
+
+With **Streaming, Download and Synchronization** on, the library lives on a
+Flow Server (`apps/server`, e.g. on a Raspberry Pi) and Flow is its remote
+control with a cache:
+
+- Songs play straight from the server, seeking included. The name under
+  "Flow" in the menu says which server, whether it can be reached, and what
+  is going up or down.
+- Every change (renaming, deleting, playlists, favourites, listens) goes to
+  the server as a command. Without the server the changes wait and go once it
+  is back, even after Flow was closed. When two devices change the same thing,
+  the later change wins; a delete always wins. A deleted song's file stays in
+  the server's trash for 30 days.
+- **Download** on a playlist's page keeps its songs in Local Files, to play
+  without the server; unticked, those copies go again.
+- Songs downloaded or imported in Flow are saved into Local Files as always,
+  then uploaded. Turning the server on the first time uploads all of Local
+  Files; songs the server already has (same source, or same artist, title,
+  mix and length) are not sent twice.
+- Last seen library and waiting changes: `server-library.json` and
+  `server-sync.json` in `%LOCALAPPDATA%\Flow`. A different server at the same
+  address starts both afresh.
+
 ### Where things are
 
 - Songs: `Music\FlowPlayer`, or the folder chosen in Settings. The app
@@ -252,8 +293,8 @@ apps/android/    the Android app, planned
 ```
 
 `packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,
-`libraryModel.js`, `commands.js`, `tags.js`, `spotify.js`, `relocate.js` and
-`jsonFile.js`, each required as `@flow/core/<name>`. Everything below is under `apps/desktop/`.
+`libraryModel.js`, `commands.js`, `address.js`, `tags.js`, `spotify.js`,
+`relocate.js` and `jsonFile.js`, each required as `@flow/core/<name>`. Everything below is under `apps/desktop/`.
 
 - `main.js` holds the window and every IPC route; `preload.js` exposes
   `window.flow`. The window runs sandboxed with no Node.
@@ -267,6 +308,10 @@ apps/android/    the Android app, planned
   - `libraryModel.js`: songs, playlists and their rules; `library.js` saves it,
     scans the music folder and moves it (`relocate.js` plans where each file goes)
   - `loudness.js`: measures each song's loudness for Equalize volume
+  - `remote.js`: a Flow Server as the library: connecting, the waiting
+    changes, uploads, downloads for offline and Local Files synchronization
+    (`commands.js` is what each change does); `network.js` asks Windows
+    whether the connection is metered
   - `settings.js`: what the app remembers, Settings' choices included
   - `waveform.js`: the peaks the trim editor draws
 - `renderer/app/` is the window, one plain script per part, loaded in the order

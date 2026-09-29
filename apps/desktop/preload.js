@@ -59,5 +59,13 @@ contextBridge.exposeInMainWorld('flow', {
   discardDownload: (file) => call('download:discard', file),
   onDownloadProgress: (fn) => ipcRenderer.on('download:progress', (_e, p) => fn(p)),
   peaks: (file, duration) => call('audio:peaks', { file, duration }),
+
+  // A Flow Server (Settings: Streaming, Download and Synchronization).
+  serverStatus: () => call('server:status'),
+  setServerSecret: (text) => call('server:setSecret', text),
+  syncNow: () => call('server:syncNow'),
+  setOffline: (playlistId, on) => call('server:setOffline', { playlistId, on }),
+  onServerStatus: (fn) => ipcRenderer.on('server:status', (_e, st) => fn(st)),
+  onServerNotice: (fn) => ipcRenderer.on('server:notice', (_e, n) => fn(n)),
   finishSong: (job) => call('song:finish', job),
 });

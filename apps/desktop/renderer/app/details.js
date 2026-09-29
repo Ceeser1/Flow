@@ -107,7 +107,7 @@ const SongDetails = {
     return h('section.details__section',
       h('h4.details__heading', 'Downloaded from'),
       h('div.details__grid',
-        ...row('Direct Url', song.sourceUrl ? link(song.sourceUrl) : h('span.muted-text', 'Not known (the file was added to the save folder by hand)')),
+        ...row('Direct Url', song.sourceUrl ? link(song.sourceUrl) : h('span.muted-text', 'Not known (the file was added to Local Files by hand)')),
         ...(song.sourcePlaylistUrl ? row('Playlist Url', link(song.sourcePlaylistUrl)) : [])));
   },
 

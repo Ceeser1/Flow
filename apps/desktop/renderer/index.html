@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src file:" />
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src file: http: https:" />
   <title>Flow</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -16,6 +16,8 @@
       <span class="brand__name">Flow</span>
       <button id="menuSettings" class="settings-btn" type="button" title="Settings" aria-label="Settings"></button>
     </div>
+    <!-- The Flow Server in use: connected, offline, songs going up or down. -->
+    <button id="serverChip" class="server-chip" type="button" hidden></button>
     <button id="menuSearch" class="menu__search" type="button"></button>
     <button id="menuAdd" class="menu__item" type="button"></button>
     <button id="menuPlaylists" class="menu__item" type="button"></button>
@@ -205,6 +207,9 @@
             <span id="plMeta" class="pl-meta"></span>
             <button id="plShuffle" class="toggle" type="button" aria-pressed="false" title="Play in random order"></button>
             <button id="plPlay" class="btn btn--play" type="button"></button>
+            <button id="plOffline" class="toggle" type="button" aria-pressed="false" hidden
+                    title="Keep this playlist's songs on this computer, to play without the server"></button>
+            <span id="plOfflineNote" class="pl-meta" hidden></span>
           </div>
         </div>
         <div id="plPickBanner" class="pick-banner" hidden>
@@ -316,6 +321,7 @@
 <script src="app/pages/playlist.js"></script>
 <script src="app/details.js"></script>
 <script src="app/settingsPanel.js"></script>
+<script src="app/serverChip.js"></script>
 <script src="app/keys.js"></script>
 <script src="app/main.js"></script>
 </body>

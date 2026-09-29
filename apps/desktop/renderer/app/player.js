@@ -132,7 +132,8 @@ const Player = {
         }
         if (!this.currentId || !this.audio.getAttribute('src')) return;
         const song = Store.song(this.currentId);
-        toast(`Could not play "${song ? song.title : 'this song'}". The file may have been moved or deleted.`, 'error');
+        const why = song && !song.file ? 'The server could not send it.' : 'The file may have been moved or deleted.';
+        toast(`Could not play "${song ? song.title : 'this song'}". ${why}`, 'error');
         this._emit();
       });
     }
@@ -213,10 +214,12 @@ const Player = {
     this.contextId = context;
     this.currentId = songId;
     this._pendingSeek = position > 0 ? position : null;
-    this.audio.src = Util.fileUrl(song.file);
+    const playable = this._setSource(this.audio, song);
     this._setNorm(this.audio, songId);
     this._setFade(this.audio, 1);
-    if (autoplay) this._play();
+    if (!playable && autoplay) {
+      toast(`"${song.title}" is on the server, which cannot be reached right now, and is not downloaded.`, 'error');
+    } else if (autoplay) this._play();
     this._updateMediaSession();
     this._savePosition();
     this._emit();
@@ -476,10 +479,30 @@ const Player = {
     this._startFade(id, song, left);
   },
 
+  /**
+   * Points an audio element at a song: its file, or its stream from the
+   * server. A stream is asked for with CORS, or the Web Audio graph behind
+   * the equalizer would only hear silence. False when there is nothing to
+   * play it from.
+   */
+  _setSource(el, song) {
+    const src = Store.audioSrc(song);
+    if (/^https?:/i.test(src)) el.crossOrigin = 'anonymous';
+    else el.removeAttribute('crossorigin');
+    if (src) {
+      el.src = src;
+      return true;
+    }
+    el.removeAttribute('src');
+    el.load();
+    return false;
+  },
+
   _startFade(id, song, seconds) {
+    if (!Store.audioSrc(song)) return;
     const incoming = this.spare;
     this.fade = { id };
-    incoming.src = Util.fileUrl(song.file);
+    this._setSource(incoming, song);
     this._setNorm(incoming, id);
     // Equal power: the two together stay as loud as one all the way across.
     const n = 64;
@@ -603,6 +626,9 @@ const Player = {
       if (step > 0 && step < 1.5) s.listened += step;
     }
     s.lastT = t;
+    // The length as played, for a song whose length is not known yet (one a
+    // Flow Server found in its folder without ffprobe).
+    if (Number.isFinite(this.audio.duration)) s.duration = this.audio.duration;
   },
 
   /** Counts the listen in progress (the song is changing) and forgets it. */
@@ -611,7 +637,7 @@ const Player = {
     this.session = null;
     if (!s || s.listened < 1) return;
     const song = Store.song(s.songId);
-    const duration = (song && song.duration) || 0;
+    const duration = (song && song.duration) || s.duration || 0;
     window.flow.recordListen(s.songId, s.listened, duration).catch(() => {});
   },
 

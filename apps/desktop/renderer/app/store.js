@@ -15,6 +15,8 @@ const Store = {
   musicDir: '',
   iconDataUrl: '',
   mp3Qualities: [],
+  // The Flow Server's state (remote.js publicStatus); `on` false without one.
+  server: { on: false, state: 'off', offline: [] },
   songsById: new Map(),
   smart: {}, // the Listen behaviour lists: id -> song ids, best match first
   _listeners: [],
@@ -28,6 +30,34 @@ const Store = {
 
   onLibrary(fn) {
     this._listeners.push(fn);
+  },
+
+  setServer(st) {
+    this.server = st || { on: false, state: 'off', offline: [] };
+    for (const fn of this._serverListeners || []) fn(this.server);
+  },
+
+  onServer(fn) {
+    this._serverListeners = this._serverListeners || [];
+    this._serverListeners.push(fn);
+  },
+
+  /**
+   * Where a song plays from: its file here (Local Files, or a copy of a
+   * server song), else streamed from the server. '' when neither can be had
+   * (a server song not downloaded, with the server out of reach).
+   */
+  audioSrc(song) {
+    if (!song) return '';
+    if (song.file) return Util.fileUrl(song.file);
+    const st = this.server;
+    if (!st.on || !st.base) return '';
+    return `${st.base}/api/songs/${encodeURIComponent(song.id)}/audio${st.token ? `?t=${encodeURIComponent(st.token)}` : ''}`;
+  },
+
+  /** Whether a playlist's songs are kept on this computer (server playlists marked for download). */
+  isOffline(playlistId) {
+    return !!this.server.on && (this.server.offline || []).includes(playlistId);
   },
 
   song(id) {

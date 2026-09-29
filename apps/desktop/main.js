@@ -20,6 +20,7 @@ const importer = require('./src/importer');
 const exporter = require('./src/exporter');
 const waveform = require('./src/waveform');
 const loudness = require('./src/loudness');
+const remote = require('./src/remote');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('./src/processRunner');
 
@@ -142,7 +143,16 @@ function handle(channel, fn) {
   });
 }
 
-library.onChange((data) => sendToWindow('library:changed', data));
+// With a Flow Server the window shows the server's library (remote.js), and
+// Local Files changes reach it through that.
+library.onChange((data) => {
+  if (!remote.active()) sendToWindow('library:changed', data);
+});
+
+/** The library the window works with: the server's, or Local Files. */
+function currentLibrary() {
+  return remote.active() ? remote.view() : library.get();
+}
 
 function iconDataUrl() {
   try {
@@ -154,7 +164,8 @@ function iconDataUrl() {
 }
 
 handle('app:init', () => ({
-  library: library.get(),
+  library: currentLibrary(),
+  server: remote.status(),
   settings: settings.all(),
   musicDir: paths.musicDir(),
   tools: tools.status(),
@@ -165,8 +176,14 @@ handle('app:init', () => ({
 }));
 
 handle('settings:set', (patch) => {
-  const next = settings.set(patch);
-  if (patch && patch.normalize === true) loudnessFiller.run();
+  // The PIN only ever arrives through server:setSecret, to be encrypted.
+  const clean = { ...(patch || {}) };
+  delete clean.serverSecret;
+  const wasRemote = remote.active();
+  const next = settings.set(clean);
+  if (clean.normalize === true) loudnessFiller.run();
+  remote.reconfigure(clean);
+  if (remote.active() !== wasRemote) sendToWindow('library:changed', currentLibrary());
   return next;
 });
 ipcMain.on('settings:setSync', (event, patch) => {
@@ -174,65 +191,93 @@ ipcMain.on('settings:setSync', (event, patch) => {
   event.returnValue = true;
 });
 
-handle('library:createPlaylist', (name) =>
-  library.mutate((d) => model.createPlaylist(d, name, library.newId())));
+// Each change goes to the Local Files library, or with a server to the
+// server as a command (remote.js).
+function change(localFn, type, args) {
+  if (remote.active()) return remote.command(type, args);
+  return library.mutate(localFn);
+}
+
+handle('library:createPlaylist', (name) => {
+  if (!remote.active()) return library.mutate((d) => model.createPlaylist(d, name, library.newId()));
+  const clean = model.checkPlaylistName(remote.view(), name);
+  const id = library.newId();
+  remote.command('createPlaylist', { playlistId: id, name: clean });
+  return model.playlistById(remote.view(), id);
+});
 handle('library:renamePlaylist', ({ id, name }) =>
-  library.mutate((d) => model.renamePlaylist(d, id, name)));
-handle('library:deletePlaylist', (id) =>
-  library.mutate((d) => model.deletePlaylist(d, id)));
+  change((d) => model.renamePlaylist(d, id, name), 'renamePlaylist', { playlistId: id, name }));
+handle('library:deletePlaylist', (id) => {
+  if (remote.active()) remote.setOffline(id, false).catch(() => {});
+  return change((d) => model.deletePlaylist(d, id), 'deletePlaylist', { playlistId: id });
+});
 handle('library:addSongToPlaylists', ({ songId, playlistIds }) =>
-  library.mutate((d) => model.addSongToPlaylists(d, songId, playlistIds)));
+  change((d) => model.addSongToPlaylists(d, songId, playlistIds), 'addSongToPlaylists', { songId, playlistIds }));
 handle('library:addSongsToPlaylist', ({ playlistId, songIds }) =>
-  library.mutate((d) => model.addSongsToPlaylist(d, playlistId, songIds)));
+  change((d) => model.addSongsToPlaylist(d, playlistId, songIds), 'addSongsToPlaylist', { playlistId, songIds }));
 handle('library:removeFromPlaylist', ({ playlistId, songId }) =>
-  library.mutate((d) => model.removeFromPlaylist(d, playlistId, songId)));
+  change((d) => model.removeFromPlaylist(d, playlistId, songId), 'removeFromPlaylist', { playlistId, songId }));
 
-handle('library:deleteSong', ({ songId, deleteFile }) => library.quietly(() => {
-  const song = model.songById(library.get(), songId);
-  if (!song) throw new Error('That song no longer exists.');
-  if (deleteFile && fs.existsSync(song.file)) {
-    try {
-      fs.rmSync(song.file);
-    } catch {
-      throw new Error('The file could not be deleted. It may be open in another program.');
+handle('library:deleteSong', ({ songId, deleteFile }) => {
+  if (remote.active()) return remote.deleteSong(songId, !!deleteFile);
+  return library.quietly(() => {
+    const song = model.songById(library.get(), songId);
+    if (!song) throw new Error('That song no longer exists.');
+    if (deleteFile && fs.existsSync(song.file)) {
+      try {
+        fs.rmSync(song.file);
+      } catch {
+        throw new Error('The file could not be deleted. It may be open in another program.');
+      }
     }
-  }
-  return library.mutate((d) => model.removeSong(d, songId, !deleteFile));
-}));
+    return library.mutate((d) => model.removeSong(d, songId, !deleteFile));
+  });
+});
 
-handle('library:editSong', ({ songId, artist, title, mix }) => library.quietly(async () => {
-  const song = model.songById(library.get(), songId);
-  if (!song) throw new Error('That song no longer exists.');
+handle('library:editSong', ({ songId, artist, title, mix }) => {
   const meta = { artist: String(artist || '').trim(), title: String(title || '').trim(), mix: String(mix || '').trim() };
   if (!meta.title) throw new Error('Please enter a title.');
-  let file = song.file;
-  if (fs.existsSync(song.file)) {
-    try {
-      file = await exporter.retagSong(song, meta);
-    } catch {
-      throw new Error('The file could not be renamed. It may be open in another program.');
+  // The server renames its own file; a copy here follows at the next look.
+  if (remote.active()) return remote.command('editSong', { songId, ...meta });
+  return library.quietly(async () => {
+    const song = model.songById(library.get(), songId);
+    if (!song) throw new Error('That song no longer exists.');
+    let file = song.file;
+    if (fs.existsSync(song.file)) {
+      try {
+        file = await exporter.retagSong(song, meta);
+      } catch {
+        throw new Error('The file could not be renamed. It may be open in another program.');
+      }
     }
-  }
-  return library.mutate((d) => model.updateSong(d, songId, { ...meta, file }));
-}));
+    return library.mutate((d) => model.updateSong(d, songId, { ...meta, file }));
+  });
+});
 
-handle('library:setFavourite', ({ songId, on }) => library.mutate((d) => {
-  model.setFavourite(d, songId, !!on);
-}));
+handle('library:setFavourite', ({ songId, on }) => {
+  change((d) => model.setFavourite(d, songId, !!on), 'setFavourite', { songId, on: !!on });
+});
 
 handle('library:recordListen', ({ songId, listened, duration }) => {
   // The song may have been deleted while it played; nothing to count then.
-  if (!model.songById(library.get(), songId)) return null;
-  return library.mutate((d) => model.recordListen(d, songId, { listened, duration }));
+  if (!model.songById(currentLibrary(), songId)) return null;
+  return change((d) => model.recordListen(d, songId, { listened, duration }), 'recordListen', { songId, listened, duration });
 });
 
-handle('library:findBySource', ({ url, key }) => model.findBySource(library.get(), { url, key }));
-handle('library:findByMeta', (meta) => model.findByMeta(library.get(), meta));
+handle('library:findBySource', ({ url, key }) => model.findBySource(currentLibrary(), { url, key }));
+handle('library:findByMeta', (meta) => model.findByMeta(currentLibrary(), meta));
 handle('library:rescan', () => library.scan());
 
+// ---- the Flow Server (Settings: Streaming, Download and Synchronization) ----
+
+handle('server:status', () => remote.status());
+handle('server:setSecret', (text) => remote.setSecret(text));
+handle('server:syncNow', () => remote.syncNow());
+handle('server:setOffline', ({ playlistId, on }) => remote.setOffline(playlistId, !!on));
+
 handle('shell:showSong', (songId) => {
-  const song = model.songById(library.get(), songId);
-  if (song && fs.existsSync(song.file)) shell.showItemInFolder(song.file);
+  const file = remote.active() ? remote.localFileOf(songId) : (model.songById(library.get(), songId) || {}).file;
+  if (file && fs.existsSync(file)) shell.showItemInFolder(file);
   else shell.openPath(paths.musicDir());
 });
 handle('shell:openMusicFolder', () => shell.openPath(paths.musicDir()));
@@ -308,7 +353,7 @@ handle('folder:move', async (dir) => {
 // ---- downloading and saving ----
 
 function knownArtists() {
-  return [...new Set(library.get().songs.map((s) => s.artist).filter(Boolean))];
+  return [...new Set(currentLibrary().songs.map((s) => s.artist).filter(Boolean))];
 }
 
 function refuseDuringImport() {
@@ -366,7 +411,16 @@ handle('import:finish', async (job) => {
   refuseDuringImport();
   importRunning = true;
   try {
-    return await importer.finish(job, (p) => sendToWindow('import:progress', p));
+    if (!remote.active()) return await importer.finish(job, (p) => sendToWindow('import:progress', p));
+    // With a server the songs are saved into Local Files first, as always,
+    // then go up. The playlist to add to and the songs already in the
+    // library are the server's, which Local Files does not have.
+    const existingIds = job.entries.filter((e) => e.existingId).map((e) => e.existingId);
+    const localJob = { ...job, mergeInto: null, entries: job.entries.filter((e) => !e.existingId) };
+    const summary = await importer.finish(localJob, (p) => sendToWindow('import:progress', p));
+    remote.pushImport({ localPlaylistId: summary.playlistId, mergeInto: job.mergeInto || null, existingIds });
+    summary.fromLibrary = existingIds.length;
+    return summary;
   } finally {
     importRunning = false;
     loudnessFiller.run();
@@ -473,6 +527,8 @@ handle('song:finish', (job) => library.quietly(async () => {
     const lists = (job.playlistIds || []).filter((id) => model.playlistById(d, id));
     model.addSongToPlaylists(d, song.id, lists, song.addedAt);
   });
+  // With a server it goes up now, into the server playlists picked for it.
+  if (remote.active()) remote.pushNew({ [song.id]: job.playlistIds || [] });
   fs.rmSync(job.cachePath, { force: true });
   loudnessFiller.run();
   return song;
@@ -489,6 +545,11 @@ app.whenReady().then(() => {
   if (settings.get('musicDir')) paths.setMusicDir(settings.get('musicDir'));
   library.load();
   downloader.clearCache();
+  remote.init({
+    onView: (view) => sendToWindow('library:changed', view),
+    onStatus: (st) => sendToWindow('server:status', st),
+    onNotice: (text, kind) => sendToWindow('server:notice', { text, kind }),
+  });
   createWindow();
   // Both in the background, once the window is up. The scan tells the window
   // itself when it changed anything, and from then on the folder is watched.
@@ -504,6 +565,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  remote.stop();
   library.unwatch();
   loudnessFiller.stop();
   if (importToken) importToken.cancel();
