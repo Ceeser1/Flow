@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const m = require('../src/libraryModel');
+const m = require('@flow/core/libraryModel');
 const SmartLists = require('../renderer/app/smartLists');
 const Util = require('../renderer/app/util');
 

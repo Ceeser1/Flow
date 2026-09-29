@@ -7,12 +7,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
-const { planFor } = require('../src/formats');
+const { planFor } = require('@flow/core/formats');
 const PlayQueue = require('../renderer/app/queue');
-const { checkTarget, planMoves } = require('../src/relocate');
+const { checkTarget, planMoves } = require('@flow/core/relocate');
 const { parseLoudness } = require('../src/loudness');
 const settings = require('../src/settings');
-const m = require('../src/libraryModel');
+const m = require('@flow/core/libraryModel');
 
 test('an MP3 is only encoded again when "Ignore files already in .mp3" is unticked', () => {
   const mp3 = { codec: 'mp3', formatName: 'mp3', bitRate: 320000 };

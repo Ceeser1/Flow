@@ -11,7 +11,7 @@ const path = require('path');
 const paths = require('./paths');
 const tools = require('./tools');
 const { runFfmpeg } = require('./ffmpeg');
-const { songFileStem } = require('./text');
+const { songFileStem } = require('@flow/core/text');
 
 // Trims closer than this to either end are treated as no trim at all.
 const EDGE = 0.02;

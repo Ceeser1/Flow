@@ -2,8 +2,8 @@
 
 const fs = require('fs');
 const paths = require('./paths');
-const { writeJsonAtomic } = require('./jsonFile');
-const { DEFAULT_MP3_QUALITY, clampQuality } = require('./formats');
+const { writeJsonAtomic } = require('@flow/core/jsonFile');
+const { DEFAULT_MP3_QUALITY, clampQuality } = require('@flow/core/formats');
 
 // What the app remembers between sessions. Small and flat, read once at start
 // and written whenever the window changes something.

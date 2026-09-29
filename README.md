@@ -187,11 +187,11 @@ enough to break an old copy.
 
 ## Development
 
-`tools/` is not in the repository (`ffmpeg.exe` and `ffprobe.exe` are over
-GitHub's 100MB file limit). Put the Windows builds of all three there:
+`apps/desktop/tools/` is not in the repository (`ffmpeg.exe` and `ffprobe.exe`
+are over GitHub's 100MB file limit). Put the Windows builds of all three there:
 
 ```
-tools/
+apps/desktop/tools/
   ffmpeg.exe
   ffprobe.exe
   yt-dlp.exe
@@ -200,12 +200,17 @@ tools/
 LWClipper's `tools/` folder has the same three.
 
 ```
-npm install
-npm start       # run it
-npm test        # tests: no network, no ffmpeg
+npm install     # once, in the Flow folder: installs every app and package
+npm start       # run the desktop app
+npm test        # every package's tests: no network, no ffmpeg
 npm run icon    # build/icon.ico and renderer/assets/icon.png from build/flow.png
-npm run dist    # build the installer into dist/
+npm run dist    # build the installer into apps/desktop/dist/
 ```
+
+The root folder is an npm workspace, so the commands work from there. The
+desktop app pins an exact Electron version (electron-builder cannot find a
+hoisted Electron otherwise) and sets `npmRebuild` to false (Flow has no native
+modules, and the rebuild would prune the shared `node_modules`).
 
 If `npm run dist` fails with "Cannot create symbolic link : A required
 privilege is not held by the client", electron-builder could not unpack its
@@ -224,9 +229,20 @@ sets it, and with it set Electron starts as plain Node.
 
 ## Layout
 
+```
+packages/core/   shared by every Flow app: plain Node, no Electron
+apps/desktop/    the Electron app (Windows now, Linux from the same code)
+apps/server/     Flow Server, planned
+apps/android/    the Android app, planned
+```
+
+`packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,
+`libraryModel.js`, `spotify.js`, `relocate.js` and `jsonFile.js`, each required
+as `@flow/core/<name>`. Everything below is under `apps/desktop/`.
+
 - `main.js` holds the window and every IPC route; `preload.js` exposes
   `window.yplayer`. The window runs sandboxed with no Node.
-- `src/` is the work, none of it touching the DOM:
+- `src/` (plus `@flow/core`) is the work, none of it touching the DOM:
   - `downloader.js`: yt-dlp probe and download, then keep / lift out / convert
   - `importer.js`: whole playlists, listed as a checklist, then imported;
     `spotify.js` reads Spotify lists and picks the YouTube upload per song

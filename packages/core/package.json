@@ -1,0 +1,13 @@
+{
+  "name": "@flow/core",
+  "version": "1.0.0",
+  "description": "Flow's library model, title parsing and formats: plain Node, shared by every Flow app",
+  "private": true,
+  "exports": {
+    "./*": "./src/*.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}

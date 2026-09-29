@@ -19,11 +19,11 @@ const paths = require('./paths');
 const downloader = require('./downloader');
 const exporter = require('./exporter');
 const library = require('./library');
-const model = require('./libraryModel');
-const spotify = require('./spotify');
-const { parseTitle, cleanUploader } = require('./titleParser');
-const { normalizeListUrl, sourceKey } = require('./text');
-const { LOCAL_EXTS } = require('./formats');
+const model = require('@flow/core/libraryModel');
+const spotify = require('@flow/core/spotify');
+const { parseTitle, cleanUploader } = require('@flow/core/titleParser');
+const { normalizeListUrl, sourceKey } = require('@flow/core/text');
+const { LOCAL_EXTS } = require('@flow/core/formats');
 
 const SEARCH_RESULTS = 5;
 const SEARCH_PARALLEL = 4;

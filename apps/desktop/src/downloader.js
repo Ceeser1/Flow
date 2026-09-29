@@ -13,9 +13,9 @@ const paths = require('./paths');
 const tools = require('./tools');
 const { runProcess, ProcessCancelledError } = require('./processRunner');
 const { runFfmpeg } = require('./ffmpeg');
-const { normalizeUrl, sourceKey, safeFilename } = require('./text');
-const { guessFromInfo } = require('./titleParser');
-const { planFor, ffmpegArgsFor } = require('./formats');
+const { normalizeUrl, sourceKey, safeFilename } = require('@flow/core/text');
+const { guessFromInfo } = require('@flow/core/titleParser');
+const { planFor, ffmpegArgsFor } = require('@flow/core/formats');
 
 // Best audio, but not YouTube's "-drc" copies: those have their dynamic range
 // squashed for loudness normalisation and sound flatter than the original.

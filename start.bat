@@ -1,5 +1,5 @@
 @echo off
-rem Starts Flow from the source files (no installer needed).
+rem Starts the Flow desktop app from the source files (no installer needed).
 cd /d "%~dp0"
 
 rem VS Code sets this, and with it Electron starts as plain Node.

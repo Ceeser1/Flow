@@ -13,14 +13,14 @@ app.setPath('userData', paths.userDataDir());
 
 const settings = require('./src/settings');
 const library = require('./src/library');
-const model = require('./src/libraryModel');
+const model = require('@flow/core/libraryModel');
 const tools = require('./src/tools');
 const downloader = require('./src/downloader');
 const importer = require('./src/importer');
 const exporter = require('./src/exporter');
 const waveform = require('./src/waveform');
 const loudness = require('./src/loudness');
-const { MP3_QUALITIES, LOCAL_EXTS } = require('./src/formats');
+const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('./src/processRunner');
 
 let mainWindow = null;
