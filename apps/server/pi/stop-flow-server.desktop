@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Stop Flow Server
+Exec=/home/Ceeser/Flow/apps/server/pi/stop-flow-server.sh
+Terminal=true
