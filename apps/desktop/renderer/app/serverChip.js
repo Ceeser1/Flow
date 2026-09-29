@@ -36,7 +36,7 @@ const ServerChip = {
       return;
     }
     const { text, kind } = this.describe(st);
-    const short = kind === 'online' ? (st.name || 'Server')
+    const short = kind === 'online' ? `Connected to: ${st.name || 'Server'}`
       : kind === 'busy' ? 'Connecting...'
         : kind === 'error' ? 'Server: needs attention' : 'Server offline';
     const extra = st.transfer ? (st.transfer.startsWith('Up') ? 'uploading' : 'downloading')
