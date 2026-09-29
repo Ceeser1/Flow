@@ -1,0 +1,9 @@
+# Restored with npm install.
+node_modules/
+
+# Installer output, about 200MB per build.
+dist/
+
+# ffmpeg.exe and ffprobe.exe are over GitHub's 100MB per-file limit. See the
+# README for where they come from.
+tools/

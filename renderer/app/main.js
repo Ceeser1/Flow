@@ -1,0 +1,52 @@
+'use strict';
+
+// Startup: fetch the library and settings, wire every part, then put the
+// window back where the last session left it.
+
+(async () => {
+  let init;
+  try {
+    init = await window.yplayer.init();
+  } catch (err) {
+    document.body.textContent = 'Flow could not start: ' + err.message;
+    return;
+  }
+  Store.settings = init.settings;
+  Store.musicDir = init.musicDir;
+  Store.iconDataUrl = init.iconDataUrl;
+  Store.mp3Qualities = init.mp3Qualities;
+  Store.setLibrary(init.library);
+
+  Player.init();
+  Ambient.init();
+  ScreenFlash.init();
+  Nav.init();
+  SearchPage.init();
+  AddPage.init();
+  ImportPanel.init();
+  PlaylistsPage.init();
+  PlaylistPage.init();
+  SettingsPanel.init();
+  SongActions.init();
+  SleepTimer.init();
+  Keys.init();
+
+  window.yplayer.onLibraryChanged((lib) => Store.setLibrary(lib));
+  // Songs added, deleted or renamed in the save folder from outside.
+  window.yplayer.onFolderScanned(({ added, removed, moved }) => {
+    const parts = [];
+    if (added) parts.push(`${Util.plural(added, 'song')} added`);
+    if (removed) parts.push(`${Util.plural(removed, 'song')} removed`);
+    if (moved) parts.push(`${Util.plural(moved, 'song')} renamed or moved`);
+    if (parts.length) toast(`Music folder: ${parts.join(', ')}`, 'success');
+  });
+
+  const missing = Object.entries(init.tools).filter(([, ok]) => !ok).map(([name]) => name);
+  if (missing.length) {
+    toast(`Missing tools: ${missing.join(', ')}. Downloading will not work until Flow is reinstalled.`, 'error');
+  }
+
+  Player.restore();
+  Nav.openPlaylist(init.settings.lastPlaylistId || 'all');
+  document.body.classList.add('ready');
+})();

@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src file:" />
+  <title>Flow</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== Menu ===== -->
+  <aside class="menu">
+    <div class="brand">
+      <span class="brand__name">Flow</span>
+      <button id="menuSettings" class="settings-btn" type="button" title="Settings" aria-label="Settings"></button>
+    </div>
+    <button id="menuSearch" class="menu__search" type="button"></button>
+    <button id="menuAdd" class="menu__item" type="button"></button>
+    <button id="menuPlaylists" class="menu__item" type="button"></button>
+    <nav id="menuPlaylistList" class="menu__subs" aria-label="Playlists"></nav>
+  </aside>
+
+  <!-- ===== Content ===== -->
+  <main class="content">
+    <!-- The drifting colour clouds, and over them the equalizer, behind the
+         pages and the player bar. -->
+    <canvas id="ambientCanvas" class="ambient-canvas" aria-hidden="true"></canvas>
+    <canvas id="eqCanvas" class="eq-canvas" aria-hidden="true"></canvas>
+    <div id="pages" class="pages">
+
+      <!-- Search -->
+      <section id="page-search" class="page page--search" hidden>
+        <div class="search-box search-box--big">
+          <span id="searchIcon" class="search-box__icon"></span>
+          <input id="searchInput" class="search-box__input" type="search"
+                 placeholder="Search playlists, songs and artists" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="results">
+          <div class="results__col">
+            <h2 class="results__head">Playlists <span id="searchPlaylistsCount" class="count"></span></h2>
+            <div id="searchPlaylists" class="results__list"></div>
+          </div>
+          <div class="results__col">
+            <h2 class="results__head">Songs <span id="searchSongsCount" class="count"></span></h2>
+            <div id="searchSongs" class="results__list"></div>
+          </div>
+          <div class="results__col">
+            <h2 class="results__head">Artists <span id="searchArtistsCount" class="count"></span></h2>
+            <div id="searchArtists" class="results__list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Add Songs -->
+      <section id="page-add" class="page page--add" hidden>
+        <h1 class="page__title">Add Songs</h1>
+
+        <div class="panel">
+          <div class="link-row">
+            <input id="linkInput" class="input input--big" type="text" autocomplete="off" spellcheck="false"
+                   placeholder="Paste a link from YouTube, SoundCloud, Vimeo, Bandcamp..." />
+            <button id="downloadBtn" class="btn btn--primary btn--big" type="button">Download</button>
+          </div>
+          <!-- Songs from the computer instead: hidden once something is open. -->
+          <div id="localPick" class="local-pick">
+            <div class="local-pick__or">or</div>
+            <div class="local-pick__buttons">
+              <button id="openFilesBtn" class="btn btn--big" type="button">Open local File(s)</button>
+              <button id="openFolderBtn" class="btn btn--big" type="button">Open local Folder</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- The progress frame, as in LWClipper: title, bar + Cancel, status. -->
+        <div id="progressPanel" class="panel progress-panel" hidden>
+          <div id="progTitle" class="prog-title"></div>
+          <div class="progress-row">
+            <progress id="progBar" max="1"></progress>
+            <button id="progCancel" class="btn" type="button">Cancel</button>
+          </div>
+          <div id="progStatus" class="status-label"></div>
+          <div id="progError" class="error-hint" hidden></div>
+        </div>
+
+        <!-- A whole playlist: the checklist, then its progress. -->
+        <div id="importPanel" class="panel import" hidden>
+          <div class="import__head">
+            <div id="importSource" class="import__source"></div>
+            <label class="form-row import__name"><span class="form-label">Playlist name</span>
+              <input id="importName" class="input" type="text" maxlength="75" spellcheck="false" /></label>
+          </div>
+          <div id="importWarnings" class="import__warnings" hidden></div>
+          <div id="importToolbar" class="import__toolbar">
+            <button id="importSelectAll" class="link-btn" type="button">Select all</button>
+            <span class="muted-text">·</span>
+            <button id="importSelectNone" class="link-btn" type="button">Select none</button>
+            <span id="importCount" class="import__count"></span>
+          </div>
+          <div id="importList" class="import__list"></div>
+          <div id="importButtons" class="import__buttons">
+            <button id="importCancel" class="btn btn--light-red" type="button">Cancel</button>
+            <button id="importSelected" class="btn btn--light-green" type="button">Download Selected</button>
+            <button id="importEverything" class="btn btn--light-grey" type="button">Download All</button>
+          </div>        </div>
+
+        <div id="editor" class="panel editor" hidden>
+          <div class="meta-grid">
+            <label class="form-row"><span class="form-label">Artist
+                <span id="edArtistHint" class="field-hint" hidden>from the channel name, please check</span></span>
+              <input id="edArtist" class="input" type="text" spellcheck="false" maxlength="150" /></label>
+            <label class="form-row"><span class="form-label">Title</span>
+              <input id="edTitle" class="input" type="text" spellcheck="false" maxlength="150" /></label>
+            <label class="form-row"><span class="form-label">Mix</span>
+              <input id="edMix" class="input" type="text" spellcheck="false" maxlength="150"
+                     placeholder="e.g. Extended Mix, Live" /></label>
+          </div>
+          <div id="edError" class="form-error"></div>
+
+          <div class="trim-head">
+            <div class="section-title">Trim</div>
+            <div id="trimHint" class="hint-label">Hold Shift while dragging for 10x finer control, Ctrl for 100x</div>
+            <button id="resetTrimBtn" class="btn btn--small" type="button">Reset</button>
+          </div>
+          <div class="audio-canvas-wrap">
+            <canvas id="waveCanvas" class="audio-canvas"></canvas>
+            <div id="wavePlayhead" class="playhead playhead--audio"></div>
+            <div id="waveStatus" class="audio-status" hidden></div>
+          </div>
+          <div id="trimSlider" class="trim-slider">
+            <div class="trim-slider__track">
+              <div id="trimFill" class="trim-slider__fill"></div>
+            </div>
+            <div id="trimPlayhead" class="playhead playhead--trim"></div>
+            <div id="startHandle" class="trim-slider__handle trim-slider__handle--start" title="Start"></div>
+            <div id="endHandle" class="trim-slider__handle trim-slider__handle--end" title="End"></div>
+          </div>
+          <div class="trim-row">
+            <div class="time-group">
+              <span class="time-caption time-caption--start">Start</span>
+              <input id="startField" class="time-field" type="text" value="00:00:00.000" spellcheck="false" />
+            </div>
+            <div class="preview-transport">
+              <button id="previewPlay" class="round-btn round-btn--main" type="button" title="Play (Space)"></button>
+              <span id="previewTime" class="time-readout">0:00 / 0:00</span>
+            </div>
+            <div id="spanLabel" class="span-label"></div>
+            <div class="time-group time-group--end">
+              <span class="time-caption time-caption--end">End</span>
+              <input id="endField" class="time-field" type="text" value="00:00:00.000" spellcheck="false" />
+            </div>
+          </div>
+        </div>
+
+        <div id="addFooter" class="add-footer" hidden>
+          <div class="add-footer__left">
+            <button id="addToPlaylistBtn" class="btn btn--green" type="button"></button>
+            <span id="addPlaylistNames" class="muted-text"></span>
+            <!-- A playlist import in its trimming step. -->
+            <button id="importCancelAll" class="btn btn--light-red" type="button" hidden>Cancel import</button>
+            <span id="importFooterText" class="muted-text" hidden></span>
+          </div>
+          <div class="add-footer__center">
+            <!-- Local files: copy them into the save folder, or move them there. -->
+            <div id="copyMove" class="copy-move" hidden>
+              <button id="copyMoveCopy" class="copy-move__label" type="button">Copy Files</button>
+              <span class="copy-move__switch-wrap">
+                <button id="copyMoveSwitch" class="switch" type="button" role="switch" aria-checked="false"
+                        aria-label="Move the original files instead of copying them"></button>
+                <span id="copyMoveTip" class="copy-move__tip" role="tooltip"></span>
+              </span>
+              <button id="copyMoveMove" class="copy-move__label" type="button">Move Originals</button>
+            </div>
+          </div>
+          <button id="finishBtn" class="btn btn--primary btn--big" type="button">Finish</button>
+        </div>
+      </section>
+
+      <!-- Playlists -->
+      <section id="page-playlists" class="page page--playlists" hidden>
+        <h1 class="page__title">Playlists</h1>
+        <div class="panel">
+          <div class="link-row">
+            <input id="newPlaylistName" class="input input--big" type="text" maxlength="80"
+                   placeholder="Name" autocomplete="off" />
+            <button id="newPlaylistBtn" class="btn btn--primary btn--big" type="button">Add new playlist</button>
+          </div>
+          <div id="newPlaylistError" class="form-error"></div>
+        </div>
+        <div class="section-head">
+          <h2 class="section-head__title">Your Playlists</h2>
+          <span id="playlistsCount" class="muted-text"></span>
+        </div>
+        <table id="playlistsTable" class="table table--playlists"></table>
+      </section>
+
+      <!-- One playlist -->
+      <section id="page-playlist" class="page page--playlist" hidden>
+        <!-- One panel from the title down, continued by the column headers. -->
+        <div class="pl-top">
+        <div class="pl-head">
+          <h1 id="plTitle" class="page__title"></h1>
+          <div class="pl-head__row">
+            <span id="plMeta" class="pl-meta"></span>
+            <button id="plShuffle" class="toggle" type="button" aria-pressed="false" title="Play in random order"></button>
+            <button id="plPlay" class="btn btn--play" type="button"></button>
+          </div>
+        </div>
+        <div id="plPickBanner" class="pick-banner" hidden>
+          <span>Adding songs to <strong id="plPickName"></strong>: click <strong>+</strong> on a song to add it.</span>
+          <button id="plPickDone" class="btn btn--primary" type="button">Done</button>
+        </div>
+        <div class="pl-search-row">
+          <div class="search-box">
+            <span id="plSearchIcon" class="search-box__icon"></span>
+            <input id="plSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false" />
+          </div>
+          <span id="plFiltered" class="muted-text"></span>
+        </div>
+        </div>
+        <div id="plEmpty" class="empty" hidden>
+          <p id="plEmptyText"></p>
+          <button id="plEmptyAction" class="btn btn--primary" type="button"></button>
+        </div>
+        <div id="plTableWrap">
+          <table id="plTable" class="table table--songs"></table>
+          <div id="plNoMatch" class="empty empty--small" hidden>No songs match the search.</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ===== Player bar (every page) ===== -->
+    <footer id="player" class="player player--empty">
+      <div class="player__line">
+        <div id="playerTitle" class="player__title">Nothing playing</div>
+        <!-- The sleep timer, while one runs (sleepTimer.js). -->
+        <div id="sleepLeft" class="player__sleep-left" hidden></div>
+        <div class="player__line-end">
+          <button id="playerFrom" class="player__from" type="button" hidden title="Open this playlist">
+            from <span id="playerFromName"></span>
+          </button>
+          <button id="btnQueue" class="queue-btn" type="button" title="Queue">
+            <img class="queue-btn__img" src="../images/queue.png" alt="" /><span>Queue</span></button>
+        </div>
+      </div>
+      <div id="playerTrack" class="timeline player__timeline">
+        <div class="timeline__rail"><div id="playerFill" class="timeline__fill"></div></div>
+        <div id="playerKnob" class="timeline__knob"></div>
+      </div>
+      <div class="player__controls">
+        <div class="player__side player__left">
+          <span id="playerTime" class="time-readout">0:00 / 0:00</span>
+          <div class="player__extras">
+            <button id="btnShuffle" class="sq-btn" type="button" aria-pressed="false" title="Shuffle">
+              <img class="sq-btn__img" src="../images/shuffle.png" alt="" /></button>
+            <button id="btnRepeat" class="sq-btn" type="button" aria-pressed="false" title="Repeat this song">
+              <img class="sq-btn__img" src="../images/repeat.png" alt="" /></button>
+            <button id="btnVisualizer" class="sq-btn" type="button" title="Visualizer">
+              <img class="sq-btn__img" src="../images/visualizer.png" alt="" /></button>          </div>
+        </div>
+        <div class="player__buttons">
+          <button id="btnPrev" class="round-btn" type="button" title="Previous song"></button>
+          <button id="btnBack10" class="round-btn" type="button" title="Back 10 seconds (Left)"></button>
+          <button id="btnPlay" class="round-btn round-btn--main" type="button" title="Play (Space)"></button>
+          <button id="btnFwd10" class="round-btn" type="button" title="Forward 10 seconds (Right)"></button>
+          <button id="btnNext" class="round-btn" type="button" title="Next song"></button>
+        </div>
+        <div class="player__side player__right">
+          <div class="player__sleep-slot">
+            <button id="btnSleep" class="sleep-btn" type="button"></button>
+          </div>
+          <div id="volWrap" class="player__volume">
+            <button id="volBtn" class="icon-btn" type="button" title="Mute"></button>
+            <input id="volSlider" class="volume-slider" type="range" min="0" max="100" step="1" value="80"
+                   aria-label="Volume" />
+            <span id="volValue" class="vol-value">80%</span>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<!-- Screen Flash: white from the window's edges on bass hits (flash.js). -->
+<canvas id="flashCanvas" class="flash-canvas" aria-hidden="true"></canvas>
+<div id="modalRoot"></div>
+<div id="toasts" class="toasts"></div>
+<audio id="mainAudio" preload="auto"></audio>
+<!-- The next song, while a song transition fades it in (player.js). -->
+<audio id="fadeAudio" preload="auto"></audio>
+<audio id="previewAudio" preload="auto"></audio>
+
+<script src="app/util.js"></script>
+<script src="app/queue.js"></script>
+<script src="app/smartLists.js"></script>
+<script src="app/icons.js"></script>
+<script src="app/dom.js"></script>
+<script src="app/store.js"></script>
+<script src="app/ui.js"></script>
+<script src="app/trim.js"></script>
+<script src="app/spectrum.js"></script>
+<script src="app/equalizer.js"></script>
+<script src="app/ambient.js"></script>
+<script src="app/flash.js"></script>
+<script src="app/player.js"></script>
+<script src="app/queueView.js"></script>
+<script src="app/visualizer.js"></script>
+<script src="app/sleepTimer.js"></script>
+<script src="app/songActions.js"></script>
+<script src="app/nav.js"></script>
+<script src="app/pages/search.js"></script>
+<script src="app/pages/add.js"></script>
+<script src="app/pages/import.js"></script>
+<script src="app/pages/playlists.js"></script>
+<script src="app/pages/playlist.js"></script>
+<script src="app/details.js"></script>
+<script src="app/settingsPanel.js"></script>
+<script src="app/keys.js"></script>
+<script src="app/main.js"></script>
+</body>
+</html>
