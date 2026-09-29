@@ -2289,7 +2289,7 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 
 .settings__input { width: 260px; height: 30px; }
 .settings__input--short { width: 140px; }
-.server-state { margin-top: 6px; }
+.server-state { margin-top: 6px; padding-left: 23px; }
 .server-state:empty { display: none; }
 .server-state--online { color: var(--green); }
 .server-state--error { color: var(--red); }
