@@ -141,17 +141,37 @@ The cog at the bottom left of the menu. Every change counts at once.
 
 ### How Artist, Title and Mix are guessed
 
-In this order: the artist and track fields yt-dlp reads from the site; the
-"Title · Artist" line of YouTube's auto-generated descriptions; the title
-itself; the channel name. The title rules cover "Artist - Title (Mix)",
-quoted titles (`BLACKPINK - ‘Shut Down’ M/V`, `NewJeans 'Ditto' Official MV`),
-pipes (`“Golden” Official Lyric Video | KPop Demon Hunters | Sony Animation`
-gives Golden by KPop Demon Hunters, the part naming the channel is skipped),
-"Title by Artist", and "Title - Artist" when the right side is an artist
-already in the library or the channel. Clutter such as Official Video, M/V,
-(1 Hour), (prod. X) and [4K Remaster] is dropped, mixes in brackets keep their
-text without the brackets. When only the channel name was left for the artist,
-the Add Songs page says so next to the Artist box.
+Flow looks in four places and uses the first one that has an answer:
+
+1. **The site's own song info.** Some sites, YouTube Music among them, state
+   the artist and song name directly.
+2. **YouTube's auto-generated description.** Songs uploaded by labels often
+   have a "Title · Artist" line in the description.
+3. **The video title.** See the examples below.
+4. **The channel name**, as a last resort for the artist.
+
+Titles Flow understands:
+
+| Video title | Artist | Title | Mix |
+|---|---|---|---|
+| `Daft Punk - One More Time (Official Video)` | Daft Punk | One More Time | |
+| `Avicii "Wake Me Up" Official Video` | Avicii | Wake Me Up | |
+| `“Numb” Official Music Video \| Linkin Park \| Warner Records` | Linkin Park | Numb | |
+| `Strobe by deadmau5` | deadmau5 | Strobe | |
+| `Wonderwall - Oasis` | Oasis | Wonderwall | |
+| `Avicii - Levels (Skrillex Remix) (1 Hour)` | Avicii | Levels | Skrillex Remix |
+
+- **Clutter is dropped**: Official Video, M/V, (1 Hour), (prod. X),
+  [4K Remaster] and similar.
+- **Mixes and versions** in brackets go into Mix, without the brackets.
+- **Titles split by `|`**: the part that names the uploading channel (here
+  Warner Records) is skipped.
+- **"Title - Artist"** (the reverse order) is only recognised when the right
+  side is an artist already in your library or the channel's name. Otherwise
+  Flow can't tell which side is which.
+
+If only the channel name was left to use as the artist, the Add Songs page
+says so next to the Artist box, so you know to check it.
 
 ### Which format a song is saved in
 
@@ -196,8 +216,6 @@ apps/desktop/tools/
   ffprobe.exe
   yt-dlp.exe
 ```
-
-LWClipper's `tools/` folder has the same three.
 
 ```
 npm install     # once, in the Flow folder: installs every app and package

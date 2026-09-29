@@ -7,3 +7,6 @@ dist/
 # ffmpeg.exe and ffprobe.exe are over GitHub's 100MB per-file limit. See the
 # README for where they come from.
 tools/
+
+# Personal launcher, kept only on this PC.
+start.bat
