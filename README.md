@@ -247,13 +247,13 @@ sets it, and with it set Electron starts as plain Node.
 ```
 packages/core/   shared by every Flow app: plain Node, no Electron
 apps/desktop/    the Electron app (Windows now, Linux from the same code)
-apps/server/     Flow Server, planned
+apps/server/     Flow Server: hosts a library for the apps (see its README)
 apps/android/    the Android app, planned
 ```
 
 `packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,
-`libraryModel.js`, `spotify.js`, `relocate.js` and `jsonFile.js`, each required
-as `@flow/core/<name>`. Everything below is under `apps/desktop/`.
+`libraryModel.js`, `commands.js`, `tags.js`, `spotify.js`, `relocate.js` and
+`jsonFile.js`, each required as `@flow/core/<name>`. Everything below is under `apps/desktop/`.
 
 - `main.js` holds the window and every IPC route; `preload.js` exposes
   `window.flow`. The window runs sandboxed with no Node.

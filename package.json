@@ -7,6 +7,7 @@
   ],
   "scripts": {
     "start": "npm start -w apps/desktop",
+    "server": "npm start -w apps/server --",
     "test": "npm test --workspaces --if-present",
     "icon": "npm run icon -w apps/desktop",
     "dist": "npm run dist -w apps/desktop"

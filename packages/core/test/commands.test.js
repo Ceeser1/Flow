@@ -1,0 +1,91 @@
+'use strict';
+
+// Commands sent to a Flow Server: what each does, and last change wins.
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const m = require('../src/libraryModel');
+const { applyCommand } = require('../src/commands');
+
+function lib() {
+  const d = m.emptyLibrary();
+  m.addSong(d, { id: 's1', file: '/music/a.mp3', title: 'Around the World', artist: 'Daft Punk', mix: '', duration: 420, addedAt: 1 });
+  m.addSong(d, { id: 's2', file: '/music/b.mp3', title: 'Windowlicker', artist: 'Aphex Twin', mix: '', duration: 360, addedAt: 2 });
+  m.createPlaylist(d, 'Chill', 'p1', 1);
+  return d;
+}
+
+test('playlist commands create, rename, fill and delete', () => {
+  const d = lib();
+  assert.deepEqual(applyCommand(d, { type: 'createPlaylist', playlistId: 'p2', name: 'Night', at: 5 }), { value: 'p2' });
+  applyCommand(d, { type: 'addSongsToPlaylist', playlistId: 'p2', songIds: ['s1', 's2', 'nope'], at: 6 });
+  assert.deepEqual(m.playlistById(d, 'p2').entries.map((e) => e.songId), ['s1', 's2']);
+  applyCommand(d, { type: 'removeFromPlaylist', playlistId: 'p2', songId: 's1', at: 7 });
+  applyCommand(d, { type: 'renamePlaylist', playlistId: 'p2', name: 'Late Night', at: 8 });
+  assert.equal(m.playlistById(d, 'p2').name, 'Late Night');
+  applyCommand(d, { type: 'deletePlaylist', playlistId: 'p2', at: 9 });
+  assert.equal(m.playlistById(d, 'p2'), null);
+});
+
+test('two apps making the same playlist name while apart both keep theirs', () => {
+  const d = lib();
+  applyCommand(d, { type: 'createPlaylist', playlistId: 'p9', name: 'chill', at: 5 });
+  assert.equal(m.playlistById(d, 'p9').name, 'chill (2)');
+  // Sent twice: the second is a no-op.
+  assert.deepEqual(applyCommand(d, { type: 'createPlaylist', playlistId: 'p9', name: 'chill', at: 5 }), { skipped: 'exists' });
+});
+
+test('last change wins: an older edit is skipped', () => {
+  const d = lib();
+  const touched = {};
+  applyCommand(d, { type: 'editSong', songId: 's1', artist: 'Daft Punk', title: 'One More Time', at: 200 }, touched);
+  const r = applyCommand(d, { type: 'editSong', songId: 's1', artist: 'Daft Punk', title: 'Da Funk', at: 100 }, touched);
+  assert.deepEqual(r, { skipped: 'stale' });
+  assert.equal(m.songById(d, 's1').title, 'One More Time');
+  applyCommand(d, { type: 'editSong', songId: 's1', artist: 'Daft Punk', title: 'Digital Love', at: 300 }, touched);
+  assert.equal(m.songById(d, 's1').title, 'Digital Love');
+});
+
+test('a delete wins over an edit, made before or after it', () => {
+  const d = lib();
+  const touched = {};
+  applyCommand(d, { type: 'editSong', songId: 's1', title: 'Later', at: 500 }, touched);
+  applyCommand(d, { type: 'deleteSong', songId: 's1', at: 100 }, touched);
+  assert.equal(m.songById(d, 's1'), null);
+  assert.deepEqual(applyCommand(d, { type: 'editSong', songId: 's1', title: 'Even later', at: 900 }, touched), { skipped: 'gone' });
+  assert.equal(m.playlistById(d, 'p1').entries.length, 0);
+});
+
+test('adding to a playlist and taking out again: the later one counts', () => {
+  const d = lib();
+  const touched = {};
+  applyCommand(d, { type: 'addSongToPlaylists', songId: 's2', playlistIds: ['p1'], at: 300 }, touched);
+  applyCommand(d, { type: 'removeFromPlaylist', playlistId: 'p1', songId: 's2', at: 200 }, touched);
+  assert.deepEqual(m.playlistById(d, 'p1').entries.map((e) => e.songId), ['s2']);
+});
+
+test('favourites, loudness and listens', () => {
+  const d = lib();
+  applyCommand(d, { type: 'setFavourite', songId: 's2', on: true, at: 50 });
+  assert.equal(m.songById(d, 's2').favouriteAt, 50);
+  applyCommand(d, { type: 'setLoudness', songId: 's2', loudness: -9.5 });
+  assert.equal(m.songById(d, 's2').loudness, -9.5);
+  assert.deepEqual(applyCommand(d, { type: 'recordListen', songId: 's2', listened: 350, duration: 360, at: 60 }), { value: 'play' });
+  assert.equal(m.songById(d, 's2').stats.plays, 1);
+});
+
+test('an upload on its way shows as a song in its playlists', () => {
+  const d = lib();
+  applyCommand(d, {
+    type: 'addSong', playlistIds: ['p1', 'gone'],
+    song: { id: 's3', file: 'C:\\Music\\c.mp3', title: 'Teardrop', artist: 'Massive Attack', addedAt: 70 },
+  });
+  assert.equal(m.songById(d, 's3').title, 'Teardrop');
+  assert.deepEqual(m.playlistById(d, 'p1').entries.map((e) => e.songId), ['s3']);
+});
+
+test('wrong commands say why', () => {
+  const d = lib();
+  assert.throws(() => applyCommand(d, { type: 'explode' }), /Unknown command/);
+  assert.throws(() => applyCommand(d, { type: 'editSong', songId: 's1', title: ' ' }), /Please enter a title/);
+});

@@ -12,23 +12,10 @@ const paths = require('./paths');
 const tools = require('./tools');
 const { runFfmpeg } = require('./ffmpeg');
 const { songFileStem } = require('@flow/core/text');
+const { tagArgs } = require('@flow/core/tags');
 
 // Trims closer than this to either end are treated as no trim at all.
 const EDGE = 0.02;
-
-/** Tag arguments for ffmpeg. WAV keeps title and artist only (RIFF INFO). */
-function tagArgs(meta, ext) {
-  const args = ['-map_metadata', '-1',
-    '-metadata', `title=${meta.title || ''}`,
-    '-metadata', `artist=${meta.artist || ''}`];
-  if (ext !== 'wav') {
-    if (meta.mix) args.push('-metadata', `mix=${meta.mix}`);
-    if (meta.sourceUrl) args.push('-metadata', `comment=${meta.sourceUrl}`);
-  }
-  if (ext === 'mp3') args.push('-id3v2_version', '3', '-write_id3v1', '0');
-  if (ext === 'm4a') args.push('-movflags', '+faststart+use_metadata_tags');
-  return args;
-}
 
 function samePath(a, b) {
   return !!a && !!b && path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
