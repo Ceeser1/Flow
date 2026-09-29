@@ -486,14 +486,20 @@ const SettingsPanel = {
       });
       return;
     }
-    const btn = (label, onclick, extra = '') => h(`button.btn.btn--small${extra}`, { type: 'button', disabled: p.busy, onclick }, label);
+    const btn = (label, onclick) => h('button.btn.btn--small', { type: 'button', disabled: p.busy, onclick }, label);
+    // Square, as in a song's More menu.
+    const icon = (cls, glyph, title, onclick) => {
+      const b = iconButton(cls, glyph, title, onclick);
+      b.disabled = p.busy;
+      return b;
+    };
     node.append(
       h('span.profile-who', 'Logged in as ', h('strong', profile.name)),
-      btn('Rename', () => {
+      icon('act.act--grey', Icons.pencil, 'Rename', () => {
         p.mode = 'rename';
         this._drawProfile(true);
       }),
-      btn('Delete', () => this._deleteProfile(profile)),
+      icon('act.act--red', Icons.x, 'Delete', () => this._deleteProfile(profile)),
       btn('Logout', () => this._profileDo(async () => {
         await window.flow.profileLogout();
         toast(`Logged out of "${profile.name}"`, 'info');
