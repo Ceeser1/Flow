@@ -30,6 +30,7 @@ const SettingsPanel = {
   modal: null,
   _refresh: [],       // re-greys rows after a tick box changes
   _onProgress: null,  // the save folder move, while it runs
+  _collapsed: new Set(), // titles of the categories folded shut; kept while the app runs
 
   init() {
     $('menuSettings').innerHTML = '<img class="settings-btn__icon" src="../images/settings.png" alt="" />';
@@ -48,7 +49,7 @@ const SettingsPanel = {
   open() {
     if (this.modal) return;
     this._refresh = [];
-    const body = h('div.settings',
+    const body = h('div.settings', ...this._sections([
       h('h3.settings__section', 'General'),
       this._savedSongsRow(),
       this._row({
@@ -66,7 +67,7 @@ const SettingsPanel = {
 
       ...this._serverRows(),
 
-      h('h3.settings__section', 'Downloads'),
+      h('h3.settings__section', 'Website Downloads'),
       this._row({
         key: 'alwaysMp3',
         label: 'Always convert downloads into MP3',
@@ -139,7 +140,8 @@ const SettingsPanel = {
       }),
 
       h('h3.settings__section', 'Music Visualizer'),
-      this._visualizerRow());
+      this._visualizerRow(),
+    ]));
 
     this.modal = Modal.open({
       title: 'Settings',
@@ -169,6 +171,50 @@ const SettingsPanel = {
    * One setting. `key`: its tick box (none for a row that is only a value).
    * `sub`: indented under the row above. `when`: greyed out unless true.
    */
+  /**
+   * Groups the flat list (a heading, then its rows) into categories. A heading
+   * folds its rows away with a click: an up arrow while they show, a down
+   * arrow while they are hidden.
+   */
+  _sections(nodes) {
+    const groups = [];
+    let rows = null;
+    for (const node of nodes) {
+      if (!node.classList.contains('settings__section')) {
+        rows.appendChild(node);
+        continue;
+      }
+      const title = node.textContent;
+      const chevron = h('span.settings__chevron', { html: Icons.chevron });
+      node.prepend(chevron);
+      Object.assign(node, { tabIndex: 0, title: 'Show or hide this category' });
+      node.setAttribute('role', 'button');
+      const own = h('div.settings__group-rows');
+      rows = own;
+      const draw = () => {
+        const shut = this._collapsed.has(title);
+        own.hidden = shut;
+        chevron.classList.toggle('settings__chevron--down', shut);
+        node.setAttribute('aria-expanded', String(!shut));
+      };
+      const toggle = () => {
+        if (this._collapsed.has(title)) this._collapsed.delete(title);
+        else this._collapsed.add(title);
+        draw();
+      };
+      node.addEventListener('click', toggle);
+      node.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggle();
+        }
+      });
+      draw();
+      groups.push(h('div.settings__group', node, own));
+    }
+    return groups;
+  },
+
   _row({ key, label, desc, right = null, sub = false, when = null }) {
     const left = h('div.settings__left');
     let box = null;

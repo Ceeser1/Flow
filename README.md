@@ -131,7 +131,7 @@ The cog at the bottom left of the menu. Every change counts at once.
     to or removed from Local Files by hand, and changes made while the
     server was off, go to the server by themselves; unticked, only with
     Synchronize now. Songs downloaded in Flow always go up.
-- **Downloads**
+- **Website Downloads**
   - **Always convert all downloads into MP3** (off) at 64 to 320 kbit/s
     (192), and under it **Ignore files that are already in .mp3 format** (on):
     unticked, MP3s are encoded again at the chosen quality too.

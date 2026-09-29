@@ -1772,8 +1772,12 @@ progress {
 .settings { display: flex; flex-direction: column; }
 
 .settings__section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 14px 0 2px;
   padding-bottom: 6px;
+  cursor: pointer;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -1781,7 +1785,13 @@ progress {
   color: var(--text-dim);
   border-bottom: 1px solid var(--line);
 }
-.settings__section:first-child { margin-top: 2px; }
+.settings__group:first-child > .settings__section { margin-top: 2px; }
+.settings__section:hover { color: var(--text); }
+.settings__chevron { display: inline-flex; transform: rotate(-90deg); transition: transform 0.15s; }
+.settings__chevron .icon { width: 14px; height: 14px; }
+.settings__chevron--down { transform: rotate(90deg); }
+.settings__group-rows { display: flex; flex-direction: column; }
+.settings__group-rows[hidden] { display: none; }
 
 .settings__row {
   display: grid;
@@ -1811,6 +1821,13 @@ progress {
   border-bottom: 1px solid #5a5a64;
 }
 .settings__row:has(+ .settings__row--sub)::after { top: 30px; bottom: -1px; }
+/* Where the connecting line runs down past a row's divider, the divider starts
+   right of the line (at the sub-settings' own indent) instead of crossing it. */
+.settings__row:has(+ .settings__row--sub),
+.settings__row--sub:has(+ .settings__row--sub) {
+  border-bottom-color: transparent;
+  background: linear-gradient(#34343c, #34343c) right bottom / calc(100% - 26px) 1px no-repeat border-box;
+}
 .settings__row--sub:has(+ .settings__row--sub)::after { top: 19px; }
 
 .settings__row--off .settings__left,
