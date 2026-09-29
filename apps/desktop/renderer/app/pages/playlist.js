@@ -219,7 +219,7 @@ const PlaylistPage = {
       first.disabled = true;
     } else if (pickTarget) {
       first = iconButton('act.act--green', Icons.plus, `Add to ${pickTarget.name}`, () => attempt(async () => {
-        await window.yplayer.addSongsToPlaylist(pickTarget.id, [song.id]);
+        await window.flow.addSongsToPlaylist(pickTarget.id, [song.id]);
         toast(`Added to ${pickTarget.name}`, 'success');
       }));
     }
@@ -231,7 +231,7 @@ const PlaylistPage = {
     const on = !!song.favouriteAt;
     return iconButton(on ? 'act.act--fav.act--fav-on' : 'act.act--fav',
       on ? Icons.starFilled : Icons.star, on ? 'Unfavourite' : 'Favourite',
-      () => attempt(() => window.yplayer.setFavourite(song.id, !on)));
+      () => attempt(() => window.flow.setFavourite(song.id, !on)));
   },
 
   _drawPlayState() {
@@ -259,7 +259,7 @@ const PlaylistPage = {
   async removeFromList(song) {
     const p = Store.playlist(this.id);
     await attempt(async () => {
-      await window.yplayer.removeFromPlaylist(this.id, song.id);
+      await window.flow.removeFromPlaylist(this.id, song.id);
       toast(`Removed "${song.title}" from ${p ? p.name : 'the playlist'}`, 'success');
     });
   },
@@ -269,7 +269,7 @@ const PlaylistPage = {
     if (!meta) return;
     if (meta.artist === song.artist && meta.title === song.title && meta.mix === song.mix) return;
     const token = Player.release(song.id);
-    await attempt(() => window.yplayer.editSong(song.id, meta));
+    await attempt(() => window.flow.editSong(song.id, meta));
     Player.resume(token);
   },
 
@@ -284,7 +284,7 @@ const PlaylistPage = {
     if (!answer) return;
     const token = Player.release(song.id);
     const ok = await attempt(async () => {
-      await window.yplayer.deleteSong(song.id, answer.checked);
+      await window.flow.deleteSong(song.id, answer.checked);
       return true;
     });
     if (ok) toast(`Deleted "${song.title}"`, 'success');

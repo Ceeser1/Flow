@@ -73,7 +73,7 @@ const SleepTimer = {
     let shutdownAt = null;
     if (shutdown) {
       try {
-        await window.yplayer.scheduleShutdown(minutes * 60 + this.SHUTDOWN_DELAY_MS / 1000);
+        await window.flow.scheduleShutdown(minutes * 60 + this.SHUTDOWN_DELAY_MS / 1000);
       } catch (err) {
         toast(`The sleep timer was not started. ${err.message}`, 'error');
         return;
@@ -101,7 +101,7 @@ const SleepTimer = {
     if (!s) return;
     if (s.shutdownAt) {
       try {
-        await window.yplayer.cancelShutdown();
+        await window.flow.cancelShutdown();
       } catch (err) {
         toast(`The shutdown could not be cancelled: ${err.message}. Run "shutdown /a" to stop it.`, 'error');
         return;
@@ -165,7 +165,7 @@ const SleepTimer = {
   },
 
   _notify(text) {
-    window.yplayer.notify(text).catch(() => {});
+    window.flow.notify(text).catch(() => {});
   },
 
   _save(state) {

@@ -21,7 +21,7 @@ const { planFor, ffmpegArgsFor } = require('@flow/core/formats');
 // squashed for loudness normalisation and sound flatter than the original.
 const FORMAT_SELECTOR = 'bestaudio[format_id!*=-drc]/bestaudio/best';
 
-const PROGRESS_RE = /^YPLAYER_DL\t([\d.]+|NA)\t([\d.]+|NA)\t([\d.]+|NA)\t([\d.]+|NA)$/;
+const PROGRESS_RE = /^FLOW_DL\t([\d.]+|NA)\t([\d.]+|NA)\t([\d.]+|NA)\t([\d.]+|NA)$/;
 
 function parseNum(s) {
   if (!s || s === 'NA') return null;
@@ -158,7 +158,7 @@ async function fetchAndPrepare(probed, opts, report, cancelToken, { ytdlp, ffmpe
     '-o', path.join(dir, `${stem}.src.%(ext)s`),
     '--newline',
     '--progress-template',
-    'download:YPLAYER_DL\t%(progress.downloaded_bytes)s\t%(progress.total_bytes_estimate)s\t%(progress.speed)s\t%(progress.eta)s',
+    'download:FLOW_DL\t%(progress.downloaded_bytes)s\t%(progress.total_bytes_estimate)s\t%(progress.speed)s\t%(progress.eta)s',
     '--retries', '5', '--fragment-retries', '5', '--concurrent-fragments', '4',
     '--force-overwrites',
     probed.url,

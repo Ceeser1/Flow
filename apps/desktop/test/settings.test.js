@@ -60,14 +60,14 @@ test('peek names the song next() will give, without moving on', () => {
 });
 
 test('the save folder can move anywhere but into or around itself', () => {
-  const old = path.resolve('C:/Music/YPlayer');
+  const old = path.resolve('C:/Music/FlowPlayer');
   assert.doesNotThrow(() => checkTarget(old, path.resolve('D:/Songs')));
-  assert.throws(() => checkTarget(old, path.resolve('C:/music/yplayer')), /already/);
-  assert.throws(() => checkTarget(old, path.resolve('C:/Music/YPlayer/Sub')), /inside/);
+  assert.throws(() => checkTarget(old, path.resolve('C:/music/flowplayer')), /already/);
+  assert.throws(() => checkTarget(old, path.resolve('C:/Music/FlowPlayer/Sub')), /inside/);
   assert.throws(() => checkTarget(old, path.resolve('C:/Music')), /contain/);
   assert.throws(() => checkTarget(old, ''), /choose/);
   // A sibling whose name starts the same is not inside.
-  assert.doesNotThrow(() => checkTarget(old, path.resolve('C:/Music/YPlayer2')));
+  assert.doesNotThrow(() => checkTarget(old, path.resolve('C:/Music/FlowPlayer2')));
 });
 
 test('moved files keep their subfolders, and a name taken gets a number', () => {

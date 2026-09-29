@@ -59,7 +59,7 @@ const ImportPanel = {
   },
 
   init() {
-    window.yplayer.onImportProgress((p) => this._onProgress(p));
+    window.flow.onImportProgress((p) => this._onProgress(p));
     $('importCancel').onclick = () => this.close();
     $('importSelected').onclick = () => this.start(false);
     $('importEverything').onclick = () => this.start(true);
@@ -84,7 +84,7 @@ const ImportPanel = {
     AddPage._progress({ title: 'Reading playlist...', frac: null, status: url });
     let listing;
     try {
-      listing = await window.yplayer.listImport(url);
+      listing = await window.flow.listImport(url);
     } catch (err) {
       this._setState('idle');
       AddPage._failed(err);
@@ -112,7 +112,7 @@ const ImportPanel = {
     if (this.state !== 'idle') return;
     let listing;
     try {
-      listing = await window.yplayer.listLocal(picked);
+      listing = await window.flow.listLocal(picked);
     } catch (err) {
       AddPage._showError(err.message);
       return;
@@ -130,7 +130,7 @@ const ImportPanel = {
 
   /** Cancel in the progress frame: stops reading or downloading. */
   cancel() {
-    window.yplayer.cancelImport().catch(() => {});
+    window.flow.cancelImport().catch(() => {});
   },
 
   /** Leaves the import (the checklist, or the frames) and empties the panel. */
@@ -232,7 +232,7 @@ const ImportPanel = {
   },
 
   _setPending() {
-    window.yplayer.setImportPending(this.state === 'idle' ? 0 : this._ready().length).catch(() => {});
+    window.flow.setImportPending(this.state === 'idle' ? 0 : this._ready().length).catch(() => {});
   },
 
   // ---- the checklist ----
@@ -386,7 +386,7 @@ const ImportPanel = {
       onclick: (e) => {
         e.preventDefault();
         e.stopPropagation();
-        window.yplayer.openUrl(`https://www.youtube.com/watch?v=${m.id}`);
+        window.flow.openUrl(`https://www.youtube.com/watch?v=${m.id}`);
       },
     }, m.title || 'YouTube');
     const parts = [h('span', 'YouTube: '), link,
@@ -561,8 +561,8 @@ const ImportPanel = {
       });
       const items = toFetch.map((it) => ({ index: it.index, title: it.title, url: it.url, path: it.path, meta: it.meta }));
       try {
-        if (job.local) await window.yplayer.prepareLocal(items, AddPage.downloadOptions());
-        else await window.yplayer.downloadImport(items, AddPage.downloadOptions());
+        if (job.local) await window.flow.prepareLocal(items, AddPage.downloadOptions());
+        else await window.flow.downloadImport(items, AddPage.downloadOptions());
       } catch (err) {
         toast(err.message, 'error');
       }
@@ -613,7 +613,7 @@ const ImportPanel = {
       frac: 0, status: '', cancel: false });
     let summary;
     try {
-      summary = await window.yplayer.finishImport({ ...this.job, move, entries });
+      summary = await window.flow.finishImport({ ...this.job, move, entries });
     } catch (err) {
       summary = { playlistId: null, name: local ? '' : this.job.name, saved: 0, fromLibrary: 0, failed: [{ title: '', reason: err.message }], kept: [] };
     }
@@ -661,7 +661,7 @@ const ImportPanel = {
       if (!ok) return;
     }
     if (this.state === 'downloading') {
-      window.yplayer.cancelImport().catch(() => {});
+      window.flow.cancelImport().catch(() => {});
       // start() carries on to 'trimming' once the download stops.
       await new Promise((resolve) => {
         const wait = () => (this.state === 'downloading' ? setTimeout(wait, 100) : resolve());
@@ -670,7 +670,7 @@ const ImportPanel = {
     }
     this._closeEditor(false);
     for (const it of this.included) {
-      if (it.state === 'ready' && it.media) window.yplayer.discardDownload(it.media.path).catch(() => {});
+      if (it.state === 'ready' && it.media) window.flow.discardDownload(it.media.path).catch(() => {});
     }
     this._reset();
     toast(local ? 'Import of local files cancelled' : 'Playlist import cancelled', 'info');

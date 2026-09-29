@@ -254,7 +254,7 @@ function pickPlaylists({ title = 'Add to Playlist', subtitle = '', lockedIds = [
     const create = async () => {
       error.textContent = '';
       try {
-        const p = await window.yplayer.createPlaylist(nameBox.value);
+        const p = await window.flow.createPlaylist(nameBox.value);
         selected.add(p.id);
         nameBox.value = '';
         // The library event redraws Store before this runs on; draw again to

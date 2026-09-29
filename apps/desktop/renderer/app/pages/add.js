@@ -37,8 +37,8 @@ const AddPage = {
     });
     $('openFilesBtn').onclick = () => this.openLocal(false);
     $('openFolderBtn').onclick = () => this.openLocal(true);
-    $('progCancel').onclick = () => (ImportPanel.busy ? ImportPanel.cancel() : window.yplayer.cancelDownload());
-    window.yplayer.onDownloadProgress((p) => this._onProgress(p));
+    $('progCancel').onclick = () => (ImportPanel.busy ? ImportPanel.cancel() : window.flow.cancelDownload());
+    window.flow.onDownloadProgress((p) => this._onProgress(p));
 
     // The checklist's size estimate follows the MP3 settings.
     Store.onSettings((patch) => {
@@ -113,7 +113,7 @@ const AddPage = {
     } else {
       // A link that is plainly the same (the same YouTube video, the same page).
       try {
-        const dup = await window.yplayer.findBySource(url, null);
+        const dup = await window.flow.findBySource(url, null);
         if (dup) {
           if (!await this._confirmDuplicateSource(dup)) return;
           warned = true;
@@ -124,7 +124,7 @@ const AddPage = {
       this._setPhase('probing');
       this._progress({ title: 'Reading link...', frac: null, status: url });
       try {
-        probed = await window.yplayer.probe(url);
+        probed = await window.flow.probe(url);
       } catch (err) {
         this._failed(err);
         return;
@@ -134,7 +134,7 @@ const AddPage = {
     // The same song under a different link (youtu.be vs youtube.com/shorts).
     if (!warned && probed.key) {
       try {
-        const dup = await window.yplayer.findBySource(null, probed.key);
+        const dup = await window.flow.findBySource(null, probed.key);
         if (dup && !await this._confirmDuplicateSource(dup)) {
           this._setPhase('idle');
           $('progressPanel').hidden = true;
@@ -150,7 +150,7 @@ const AddPage = {
     this._progress({ title: probed.title, frac: null, status: 'Starting download...' });
     let media;
     try {
-      media = await window.yplayer.download(probed, this.downloadOptions());
+      media = await window.flow.download(probed, this.downloadOptions());
     } catch (err) {
       this._failed(err);
       return;
@@ -167,7 +167,7 @@ const AddPage = {
     if (this.phase !== 'idle' || ImportPanel.state !== 'idle') return;
     let picked;
     try {
-      picked = folder ? await window.yplayer.pickLocalFolder() : await window.yplayer.pickLocalFiles();
+      picked = folder ? await window.flow.pickLocalFolder() : await window.flow.pickLocalFiles();
     } catch (err) {
       this._showError(err.message);
       return;
@@ -306,7 +306,7 @@ const AddPage = {
   _discard() {
     if (this.embedded) this.closeEmbedded();
     this._stopPreview(true);
-    if (this.media) window.yplayer.discardDownload(this.media.path).catch(() => {});
+    if (this.media) window.flow.discardDownload(this.media.path).catch(() => {});
     this.media = null;
     this.probed = null;
     this.peaks = null;
@@ -475,7 +475,7 @@ const AddPage = {
     $('waveStatus').textContent = 'Drawing waveform...';
     requestAnimationFrame(() => this._redraw());
     try {
-      const peaks = await window.yplayer.peaks(m.path, m.duration);
+      const peaks = await window.flow.peaks(m.path, m.duration);
       if (this.media !== m) return;
       this.peaks = peaks;
       $('waveStatus').hidden = true;
@@ -610,7 +610,7 @@ const AddPage = {
     }
     $('edError').textContent = '';
     try {
-      const dup = await window.yplayer.findByMeta(meta);
+      const dup = await window.flow.findByMeta(meta);
       if (dup) {
         const ok = await confirmDialog({
           title: 'Already in your library',
@@ -639,7 +639,7 @@ const AddPage = {
     this._stopPreview(true);
     this._setPhase('saving');
     try {
-      const song = await window.yplayer.finishSong(job);
+      const song = await window.flow.finishSong(job);
       toast(`Saved "${Util.songLine(song)}"`, 'success');
       this.media = null;
       this._discard();

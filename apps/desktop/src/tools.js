@@ -54,7 +54,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * YouTube changes often enough that a yt-dlp more than a few weeks old stops
  * working. The installed copy cannot update itself inside Program Files, so
- * the first run copies it to %LOCALAPPDATA%\YPlayer\tools, and from then on
+ * the first run copies it to %LOCALAPPDATA%\Flow\tools, and from then on
  * that copy runs `yt-dlp -U` at most once a day, in the background. A newer
  * bundled copy (after installing a new Flow) replaces an older local one.
  * Never throws: a failed update just leaves the working copy in place.

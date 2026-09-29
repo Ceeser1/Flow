@@ -30,7 +30,7 @@ const DEFAULTS = {
   sleepTimer: null,
 
   // ---- the Settings window ----
-  // Where songs are saved; '' is Music\YPlayer.
+  // Where songs are saved; '' is Music\FlowPlayer.
   musicDir: '',
   // With alwaysMp3: leave MP3s as they are instead of encoding them again.
   keepMp3: true,

@@ -6,7 +6,7 @@ const m = require('../src/libraryModel');
 
 function song(id, extra = {}) {
   return {
-    id, file: `C:\\Music\\YPlayer\\${id}.mp3`, title: 'T' + id, artist: 'A', mix: '',
+    id, file: `C:\\Music\\FlowPlayer\\${id}.mp3`, title: 'T' + id, artist: 'A', mix: '',
     duration: 100, format: 'mp3', sourceUrl: '', sourceKey: '', addedAt: 1, ...extra,
   };
 }
@@ -60,7 +60,7 @@ test('removing a song removes it from every playlist', () => {
 test('removing a song but keeping its file ignores that file', () => {
   const data = lib();
   m.removeSong(data, 's2', true);
-  assert.deepEqual(data.ignoredFiles, ['c:\\music\\yplayer\\s2.mp3']);
+  assert.deepEqual(data.ignoredFiles, ['c:\\music\\flowplayer\\s2.mp3']);
   m.addSong(data, song('s2'));
   assert.deepEqual(data.ignoredFiles, []);
 });

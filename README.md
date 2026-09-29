@@ -17,7 +17,7 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
     for 10x finer, Ctrl for 100x), or type the times. Click the waveform to move
     the playhead. Play stops at the red handle so you hear the cut as it will
     be saved.
-  - **Add to Playlist** picks playlists, **Finish** saves to `Music\YPlayer` as
+  - **Add to Playlist** picks playlists, **Finish** saves to `Music\FlowPlayer` as
     `Artist - Title (Mix).ext`, with the names written into the file's tags.
 - **Whole playlists**: paste a YouTube playlist, a SoundCloud set, a Bandcamp
   album, or a Spotify playlist or album into Add Songs. The songs are listed
@@ -191,16 +191,13 @@ files that are already in .mp3 format" unticked, MP3s as well.
 
 ### Where things are
 
-- Songs: `Music\YPlayer`, or the folder chosen in Settings. The app
+- Songs: `Music\FlowPlayer`, or the folder chosen in Settings. The app
   watches the folder: files copied in by hand, subfolders included, appear a
   few seconds after the copy finishes, deleted files leave the library, and a
   file renamed or moved in Explorer stays the same song, playlists included.
 - Library, settings, the download cache and an updatable yt-dlp:
-  `%LOCALAPPDATA%\YPlayer`. The library is `library.json`, with the previous
+  `%LOCALAPPDATA%\Flow`. The library is `library.json`, with the previous
   version kept as `library.json.bak`.
-
-Both folders keep the app's old name, YPlayer, so a library from before the
-rename is found where it always was.
 
 yt-dlp updates itself once a day in the background, since YouTube changes often
 enough to break an old copy.
@@ -239,8 +236,8 @@ one of the numbered folders it left behind to `winCodeSign-2.6.0`. Without that
 step the build still works if `signAndEditExecutable` is set to false, but
 `Flow.exe` then shows Electron's icon instead of Flow's.
 
-To try it out without touching the real library, set `YPLAYER_HOME` (instead of
-`%LOCALAPPDATA%\YPlayer`) and `YPLAYER_MUSIC` (instead of `Music\YPlayer`).
+To try it out without touching the real library, set `FLOW_HOME` (instead of
+`%LOCALAPPDATA%\Flow`) and `FLOW_MUSIC` (instead of `Music\FlowPlayer`).
 
 When running from a VS Code terminal, clear `ELECTRON_RUN_AS_NODE` first: VS Code
 sets it, and with it set Electron starts as plain Node.
@@ -259,13 +256,13 @@ apps/android/    the Android app, planned
 as `@flow/core/<name>`. Everything below is under `apps/desktop/`.
 
 - `main.js` holds the window and every IPC route; `preload.js` exposes
-  `window.yplayer`. The window runs sandboxed with no Node.
+  `window.flow`. The window runs sandboxed with no Node.
 - `src/` (plus `@flow/core`) is the work, none of it touching the DOM:
   - `downloader.js`: yt-dlp probe and download, then keep / lift out / convert
   - `importer.js`: whole playlists, listed as a checklist, then imported;
     `spotify.js` reads Spotify lists and picks the YouTube upload per song
   - `formats.js`: which format a download is kept in
-  - `exporter.js`: the trim cut and the tags, into `Music\YPlayer`
+  - `exporter.js`: the trim cut and the tags, into `Music\FlowPlayer`
   - `titleParser.js`: Artist / Title / Mix from yt-dlp's info
   - `libraryModel.js`: songs, playlists and their rules; `library.js` saves it,
     scans the music folder and moves it (`relocate.js` plans where each file goes)

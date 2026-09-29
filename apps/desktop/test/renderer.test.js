@@ -16,7 +16,7 @@ test('clock and date formats', () => {
 });
 
 test('file URLs match Node\'s own', () => {
-  for (const p of ['C:\\Users\\A B\\Music\\YPlayer\\x #1 (Remix) 100%.mp3',
+  for (const p of ['C:\\Users\\A B\\Music\\FlowPlayer\\x #1 (Remix) 100%.mp3',
     'D:\\Müsik\\Björk - Jóga.opus', 'C:\\a\\it\'s [live]!.flac']) {
     assert.equal(Util.fileUrl(p), pathToFileURL(p).href);
   }

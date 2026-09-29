@@ -34,7 +34,7 @@ const SettingsPanel = {
   init() {
     $('menuSettings').innerHTML = '<img class="settings-btn__icon" src="../images/settings.png" alt="" />';
     $('menuSettings').onclick = () => this.open();
-    window.yplayer.onFolderProgress((p) => {
+    window.flow.onFolderProgress((p) => {
       if (this._onProgress) this._onProgress(p);
     });
     Store.onLibrary(() => {
@@ -290,7 +290,7 @@ const SettingsPanel = {
     this._pathNode.textContent = Store.musicDir;
     this._pathNode.title = Store.musicDir;
     try {
-      const st = await window.yplayer.folderStats();
+      const st = await window.flow.folderStats();
       Store.musicDir = st.dir;
       this._pathNode.textContent = st.dir;
       this._pathNode.title = st.dir;
@@ -312,7 +312,7 @@ const SettingsPanel = {
   _openFolder() {
     return attempt(async () => {
       // Resolves to an error message, or '' once Explorer has it.
-      const problem = await window.yplayer.openMusicFolder();
+      const problem = await window.flow.openMusicFolder();
       if (problem) toast(`Could not open ${Store.musicDir}: ${problem}`, 'error');
     });
   },
@@ -324,7 +324,7 @@ const SettingsPanel = {
   async _changeFolder(button) {
     let dir;
     try {
-      dir = await window.yplayer.chooseFolder();
+      dir = await window.flow.chooseFolder();
     } catch (err) {
       toast(err.message, 'error');
       return;
@@ -345,7 +345,7 @@ const SettingsPanel = {
       if (this._statsNode) this._statsNode.textContent = total ? `Moving ${done} of ${total}...` : 'Moving...';
     };
     try {
-      const result = await window.yplayer.moveMusicFolder(dir);
+      const result = await window.flow.moveMusicFolder(dir);
       Store.musicDir = result.dir;
       Store.settings.musicDir = result.dir;
       if (result.failed.length) {

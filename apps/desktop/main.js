@@ -484,7 +484,7 @@ app.whenReady().then(() => {
   if (!isFirstInstance) return;
   // Windows shows notifications under the id of the Start menu shortcut,
   // which the installer gives the build's appId.
-  if (app.isPackaged) app.setAppUserModelId('com.ceeser.yplayer');
+  if (app.isPackaged) app.setAppUserModelId('com.ceeser.flow');
   settings.load();
   if (settings.get('musicDir')) paths.setMusicDir(settings.get('musicDir'));
   library.load();

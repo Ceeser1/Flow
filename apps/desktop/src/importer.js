@@ -379,7 +379,7 @@ const LOCAL_DEPTH = 4;
 const localListed = new Set();
 
 function isLocalFile(name) {
-  return !name.startsWith('.yplayer-') && LOCAL_EXTS.includes(path.extname(name).slice(1).toLowerCase());
+  return !name.startsWith('.flow-') && LOCAL_EXTS.includes(path.extname(name).slice(1).toLowerCase());
 }
 
 /** True for Flow's own music folder and anything inside it: those songs are the library's already. */

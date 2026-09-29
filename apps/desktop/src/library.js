@@ -1,7 +1,7 @@
 'use strict';
 
 // The library on disk: library.json, saved after every change, and the scan
-// that keeps it in step with the Music\YPlayer folder. The rules themselves
+// that keeps it in step with the Music\FlowPlayer folder. The rules themselves
 // live in libraryModel.js.
 
 const crypto = require('crypto');
@@ -73,7 +73,7 @@ function listAudioFiles(dir, depth = 0) {
   }
   const out = [];
   for (const e of entries) {
-    if (e.name.startsWith('.yplayer-')) continue;
+    if (e.name.startsWith('.flow-')) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
       if (depth < 4) out.push(...listAudioFiles(full, depth + 1));
@@ -144,7 +144,7 @@ function findMoved(fresh, gone) {
 }
 
 /**
- * Adds files that were put into Music\YPlayer by hand, drops songs whose file
+ * Adds files that were put into Music\FlowPlayer by hand, drops songs whose file
  * is gone, and follows songs that were renamed or moved in Explorer (they keep
  * their playlists and their Added date). Resolves { added, removed, moved,
  * unsettled }.
@@ -284,7 +284,7 @@ function watch() {
   try {
     watcher = fs.watch(paths.musicDir(), { recursive: true }, (_event, name) => {
       const file = String(name || '');
-      if (path.basename(file).startsWith('.yplayer-')) return;
+      if (path.basename(file).startsWith('.flow-')) return;
       // Anything without an extension may be a folder being moved in or out.
       const ext = path.extname(file).toLowerCase();
       if (ext && !AUDIO_EXTS.includes(ext)) return;

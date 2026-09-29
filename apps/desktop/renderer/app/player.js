@@ -162,7 +162,7 @@ const Player = {
     }, 5000);
     window.addEventListener('beforeunload', () => {
       try {
-        window.yplayer.setSettingsNow({
+        window.flow.setSettingsNow({
           lastSongId: this.currentId,
           lastContextId: this.contextId,
           lastPosition: this.position,
@@ -612,7 +612,7 @@ const Player = {
     if (!s || s.listened < 1) return;
     const song = Store.song(s.songId);
     const duration = (song && song.duration) || 0;
-    window.yplayer.recordListen(s.songId, s.listened, duration).catch(() => {});
+    window.flow.recordListen(s.songId, s.listened, duration).catch(() => {});
   },
 
   _sessionToKeep() {

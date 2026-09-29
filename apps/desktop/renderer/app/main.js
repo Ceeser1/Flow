@@ -6,7 +6,7 @@
 (async () => {
   let init;
   try {
-    init = await window.yplayer.init();
+    init = await window.flow.init();
   } catch (err) {
     document.body.textContent = 'Flow could not start: ' + err.message;
     return;
@@ -31,9 +31,9 @@
   SleepTimer.init();
   Keys.init();
 
-  window.yplayer.onLibraryChanged((lib) => Store.setLibrary(lib));
+  window.flow.onLibraryChanged((lib) => Store.setLibrary(lib));
   // Songs added, deleted or renamed in the save folder from outside.
-  window.yplayer.onFolderScanned(({ added, removed, moved }) => {
+  window.flow.onFolderScanned(({ added, removed, moved }) => {
     const parts = [];
     if (added) parts.push(`${Util.plural(added, 'song')} added`);
     if (removed) parts.push(`${Util.plural(removed, 'song')} removed`);

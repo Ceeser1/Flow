@@ -31,7 +31,7 @@ const PlaylistsPage = {
   async create() {
     const box = $('newPlaylistName');
     try {
-      const p = await window.yplayer.createPlaylist(box.value);
+      const p = await window.flow.createPlaylist(box.value);
       box.value = '';
       $('newPlaylistError').textContent = '';
       toast(`Playlist "${p.name}" created`, 'success');
@@ -100,7 +100,7 @@ const PlaylistsPage = {
         this.renaming = null;
         if (save && name.trim() !== p.name) {
           try {
-            await window.yplayer.renamePlaylist(p.id, name);
+            await window.flow.renamePlaylist(p.id, name);
           } catch (err) {
             toast(err.message, 'error');
             this.renaming = p.id;
@@ -145,7 +145,7 @@ const PlaylistsPage = {
     });
     if (!ok) return;
     await attempt(async () => {
-      await window.yplayer.deletePlaylist(p.id);
+      await window.flow.deletePlaylist(p.id);
       toast(`Playlist "${p.name}" deleted`, 'success');
     });
   },

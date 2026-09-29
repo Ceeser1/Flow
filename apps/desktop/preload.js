@@ -11,7 +11,7 @@ async function call(channel, arg) {
   throw err;
 }
 
-contextBridge.exposeInMainWorld('yplayer', {
+contextBridge.exposeInMainWorld('flow', {
   init: () => call('app:init'),
   setSettings: (patch) => call('settings:set', patch),
   // For the window closing, where an async call may not get out in time.

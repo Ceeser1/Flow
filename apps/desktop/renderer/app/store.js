@@ -1,7 +1,7 @@
 'use strict';
 
 // The window's copy of the library and settings. The main process owns both;
-// every change goes through window.yplayer and comes back here as a fresh
+// every change goes through window.flow and comes back here as a fresh
 // library, which is when the pages redraw.
 
 const ALL_SONGS_ID = 'all';
@@ -125,7 +125,7 @@ const Store = {
 
   saveSettings(patch) {
     this.previewSettings(patch);
-    return window.yplayer.setSettings(patch).catch(() => {});
+    return window.flow.setSettings(patch).catch(() => {});
   },
 
   /** A change the window follows at once but that is not saved yet (a slider being dragged). */

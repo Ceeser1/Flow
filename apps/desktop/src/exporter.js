@@ -1,6 +1,6 @@
 'use strict';
 
-// Saving into Music\YPlayer: the trim cut out of the cached download and the
+// Saving into Music\FlowPlayer: the trim cut out of the cached download and the
 // artist, title and mix written into the file's own tags, so other players
 // show them too. Both the cut and the re-tagging copy the audio stream rather
 // than encoding it, so saving never costs quality. (A cut FLAC is the one
@@ -81,7 +81,7 @@ async function saveSong({ cachePath, start, end, duration, artist, title, mix, s
 async function retagSong(song, meta) {
   const ext = path.extname(song.file).slice(1).toLowerCase();
   const dest = uniquePath(songFileStem(meta.artist, meta.title, meta.mix), ext, song.file);
-  const tmp = path.join(path.dirname(dest), `.yplayer-retag-${Date.now()}.${ext}`);
+  const tmp = path.join(path.dirname(dest), `.flow-retag-${Date.now()}.${ext}`);
   try {
     await runFfmpeg(['-i', song.file, '-map', '0:a:0', '-c', 'copy',
       ...tagArgs({ ...meta, sourceUrl: song.sourceUrl }, ext), tmp], song.duration);

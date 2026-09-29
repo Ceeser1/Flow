@@ -4,16 +4,15 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 
-// Everything Flow keeps for itself lives under %LOCALAPPDATA%\YPlayer (the
-// app's old name, kept so an existing library is found where it always was).
+// Everything Flow keeps for itself lives under %LOCALAPPDATA%\Flow.
 // Local rather than Roaming (Electron's default), because Chromium's own cache
 // lands in userData too and a domain profile would try to sync all of it.
-// YPLAYER_HOME and YPLAYER_MUSIC point both somewhere else, for trying the
+// FLOW_HOME and FLOW_MUSIC point both somewhere else, for trying the
 // app out without touching the real library.
 function rootDir() {
-  if (process.env.YPLAYER_HOME) return process.env.YPLAYER_HOME;
+  if (process.env.FLOW_HOME) return process.env.FLOW_HOME;
   const local = process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local');
-  return path.join(local, 'YPlayer');
+  return path.join(local, 'Flow');
 }
 
 function ensure(dir) {
@@ -41,19 +40,19 @@ function setMusicDir(dir) {
   chosenMusicDir = dir ? path.resolve(String(dir)) : '';
 }
 
-// Music\YPlayer (the old name, as above), or the folder chosen in Settings.
+// Music\FlowPlayer, or the folder chosen in Settings.
 // app.getPath follows the Music folder wherever the user has moved it,
 // OneDrive included.
 function musicDir() {
   if (chosenMusicDir) return ensure(chosenMusicDir);
-  if (process.env.YPLAYER_MUSIC) return ensure(process.env.YPLAYER_MUSIC);
+  if (process.env.FLOW_MUSIC) return ensure(process.env.FLOW_MUSIC);
   let base;
   try {
     base = app.getPath('music');
   } catch {
     base = path.join(app.getPath('home'), 'Music');
   }
-  return ensure(path.join(base, 'YPlayer'));
+  return ensure(path.join(base, 'FlowPlayer'));
 }
 
 // Bundled tools: under resources\tools in an installed build, tools\ beside

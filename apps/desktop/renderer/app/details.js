@@ -69,10 +69,10 @@ const SongDetails = {
         html: `<span class="chip__box">${on ? Icons.check : ''}</span>`,
         onclick: () => attempt(async () => {
           if (on) {
-            await window.yplayer.removeFromPlaylist(p.id, song.id);
+            await window.flow.removeFromPlaylist(p.id, song.id);
             toast(`Removed from ${p.name}`, 'success');
           } else {
-            await window.yplayer.addSongToPlaylists(song.id, [p.id]);
+            await window.flow.addSongToPlaylists(song.id, [p.id]);
             toast(`Added to ${p.name}`, 'success');
           }
         }),
@@ -86,7 +86,7 @@ const SongDetails = {
         const chosen = await pickPlaylists({ subtitle: Util.songLine(song), lockedIds: [...inList] });
         if (!chosen || !chosen.length) return;
         await attempt(async () => {
-          const n = await window.yplayer.addSongToPlaylists(song.id, chosen);
+          const n = await window.flow.addSongToPlaylists(song.id, chosen);
           toast(`Added to ${Util.plural(n, 'playlist')}`, 'success');
         });
       },
@@ -101,7 +101,7 @@ const SongDetails = {
   /** The page the song was downloaded from, and the playlist it came in with if any. */
   _source(song) {
     const link = (url) => h('button.link-btn.details__url', {
-      type: 'button', title: 'Open in the browser', onclick: () => window.yplayer.openUrl(url),
+      type: 'button', title: 'Open in the browser', onclick: () => window.flow.openUrl(url),
     }, url);
     const row = (label, value) => [h('div.details__label', label), h('div.details__value', value)];
     return h('section.details__section',
