@@ -22,6 +22,8 @@ const FollowedPage = {
     if (key === 'name') return p.name;
     if (key === 'songs') return p.entries.length;
     if (key === 'duration') return Store.totalDuration(p.id);
+    if (key === 'owner') return p.ownerName || '';
+    if (key === 'listened') return Store.listenedTo(p.id);
     return '';
   },
 
@@ -49,11 +51,13 @@ const FollowedPage = {
           cls: 'col-name',
           render: (p) => h('button.link-cell', { type: 'button', onclick: () => Nav.openPlaylist(p.id) },
             h('span.link-cell__icon', { html: listIcon(p) }),
-            h('span.link-cell__name', p.name),
-            p.ownerName ? h('span.link-cell__by', `by ${p.ownerName}`) : null),
+            h('span.link-cell__name', p.name)),
         },
+        { key: 'owner', label: 'Owner', cls: 'col-owner', render: (p) => p.ownerName || '' },
         { key: 'songs', label: 'Songs', cls: 'col-num', render: (p) => String(p.entries.length) },
         { key: 'duration', label: 'Duration', cls: 'col-num', render: (p) => Util.fmtClock(Store.totalDuration(p.id)) },
+        // Your own time listening to it, as the list playing; gone when you unfollow.
+        { key: 'listened', label: 'Listen Duration', cls: 'col-listened', render: (p) => Util.fmtClock(Store.listenedTo(p.id)) },
         {
           key: 'actions',
           label: 'Actions',

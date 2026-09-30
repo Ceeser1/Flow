@@ -1240,13 +1240,14 @@ progress {
 .col-actions .th-plain { justify-content: flex-end; }
 .col-actions .actions { justify-content: flex-end; }
 
-/* The Playlists page: every column a share of the width, so a wide window
-   spreads them out like a narrow one instead of leaving Name all the room. */
-.table--playlists .col-name { width: 29%; }
-.table--playlists .col-num { width: 10%; }
-.table--playlists .col-listened { width: 19%; }
-.table--playlists .col-date { width: 16%; }
-.table--playlists .col-actions { width: 16%; }
+/* The Playlists and Followed Playlists pages: Name is a share of the width,
+   Actions is fixed, and the columns between have no width, so the table
+   (fixed layout) splits what is left evenly, windowed or maximized. */
+.table--playlists .col-name { width: 30%; }
+.table--playlists .col-num,
+.table--playlists .col-listened,
+.table--playlists .col-date,
+.table--playlists .col-owner { width: auto; }
 
 /* A song list: Duration, Added and Actions are fixed (84 + 130 + 116), and
    what is left is split Title 45%, Artist 35%, Mix 20%. Chromium drops a
@@ -1285,7 +1286,7 @@ progress {
 .link-cell__chevron { display: inline-flex; color: var(--text-dim); transition: transform 0.15s; }
 .link-cell__chevron .icon { width: 14px; height: 14px; }
 .link-cell__chevron--open { transform: rotate(90deg); }
-.link-cell--nested { margin-left: 24px; }
+.link-cell--nested { margin-left: 24px; color: var(--grey); }
 
 .rename-input { width: 100%; height: 28px; }
 

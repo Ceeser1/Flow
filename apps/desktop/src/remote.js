@@ -281,9 +281,18 @@ function newCommand(type, args) {
 let hooks = { onView: () => {}, onStatus: () => {}, onNotice: () => {}, onSettings: () => {} };
 let view = null;
 
+/** The addresses to try: an empty one, or one switched off in Settings, is none. */
+function addresses(s = settings.all()) {
+  return {
+    home: s.serverHomeOn !== false ? s.serverHome : '',
+    remote: s.serverRemoteOn !== false ? s.serverRemote : '',
+  };
+}
+
 function active() {
   const s = settings.all();
-  return !!(s.serverOn && (s.serverHome || s.serverRemote));
+  const a = addresses(s);
+  return !!(s.serverOn && (a.home || a.remote));
 }
 
 function publicStatus() {
@@ -432,7 +441,8 @@ function connect() {
   connectingGen = gen;
   connecting = (async () => {
     const s = settings.all();
-    const candidates = [['home', s.serverHome], ['remote', s.serverRemote]].filter(([, a]) => a);
+    const own = addresses(s);
+    const candidates = [['home', own.home], ['remote', own.remote]].filter(([, a]) => a);
     if (status.state !== 'online') setState('connecting');
     let problem = null;
     for (const [via, address] of candidates) {
@@ -504,7 +514,7 @@ function connect() {
     conn.base = '';
     conn.token = '';
     let [state, message] = problem || ['offline', 'The server cannot be reached.'];
-    if (state === 'offline' && isTailscaleAddress(s.serverRemote)) {
+    if (state === 'offline' && isTailscaleAddress(own.remote)) {
       message = 'The server cannot be reached. Away from home, Tailscale has to be on at this PC.';
     }
     setState(state, message);
@@ -543,7 +553,7 @@ function fillRemote(hello) {
  * silent (away from home, or the server is off).
  */
 async function discoverHome() {
-  if (status.searching || !settings.get('serverOn') || settings.get('serverHome') || sync.homeFilled) return;
+  if (status.searching || !settings.get('serverOn') || settings.get('serverHomeOn') === false || settings.get('serverHome') || sync.homeFilled) return;
   status.searching = true;
   emitStatus();
   let found = [];
@@ -594,7 +604,7 @@ async function poll() {
   // On the remote address: back home once it answers again (faster, and it
   // spares the internet connection).
   const s = settings.all();
-  if (conn.via === 'remote' && s.serverHome && Date.now() - lastHomeTry > HOME_RETRY_MS) {
+  if (conn.via === 'remote' && addresses(s).home && Date.now() - lastHomeTry > HOME_RETRY_MS) {
     lastHomeTry = Date.now();
     try {
       const r = await request(baseUrl(s.serverHome), '/api/hello', { timeout: 2500 });
@@ -1356,7 +1366,7 @@ function init(h) {
 function reconfigure(patch) {
   const keys = Object.keys(patch || {});
   if (!keys.some((k) => k.startsWith('server'))) return;
-  const needsReconnect = keys.some((k) => ['serverOn', 'serverHome', 'serverRemote', 'serverAuth', 'serverSecret'].includes(k));
+  const needsReconnect = keys.some((k) => ['serverOn', 'serverHome', 'serverRemote', 'serverHomeOn', 'serverRemoteOn', 'serverAuth', 'serverSecret'].includes(k));
   // A new PIN does not throw the token away: it may still be good (and says
   // which profile this is). Refused, the PIN signs in afresh.
   if (keys.includes('serverAutoSync') && settings.get('serverAutoSync') && status.state === 'online') queueLocalChanges();
@@ -1379,7 +1389,7 @@ function reconfigure(patch) {
     status.state = 'off';
   }
   emitStatus();
-  if (keys.includes('serverOn') || keys.includes('serverHome')) discoverHome();
+  if (keys.includes('serverOn') || keys.includes('serverHome') || keys.includes('serverHomeOn')) discoverHome();
 }
 
 /** The PIN typed in Settings; kept encrypted. */

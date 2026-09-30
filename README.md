@@ -59,7 +59,10 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   playlist you follow has a **Following** box in the same spot to unfollow.
   Once you follow one, **Followed Playlists** appears in the menu below
   Playlists as a main entry of its own (with the followed lists under it, and
-  a page where each can be unfollowed); it goes again when you follow none.
+  a page where each can be unfollowed, with its **Owner**, songs, duration and
+  your **Listen Duration**); it goes again when you follow none. On both that
+  page and Playlists, Name is a share of the width and Actions is fixed, and
+  the columns between share the rest evenly, windowed or maximized.
   The arrow before the name of Playlists and of Followed Playlists in the menu
   hides or shows the lists under it (remembered). You never
   see your own playlists among the shared ones. Unshared, a follow waits and
@@ -157,6 +160,9 @@ The cog at the bottom left of the menu. Every change counts at once.
     and stats, on every device) and **Logout**. Only while connected.
   - **Home Server in WiFi/LAN** and **Remote Server**: addresses, tried in
     that order (`192.168.0.63:7878`, a domain, or a full `https://` link).
+    Each has a tick box before it (on by default): untick Home to connect
+    through Remote only, or Remote to connect at home only (an unticked address
+    is kept but not used, and with both unticked Flow does not connect).
     With Home empty, Flow asks the local network for a Flow Server (if the
     server has discovery turned on) and fills Home in when exactly one answers (once, and only into an empty box).
     When the server is on [Tailscale](https://tailscale.com), connecting at

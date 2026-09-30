@@ -162,4 +162,10 @@ test('the server settings are kept tidy', () => {
   assert.equal(s.serverMetered, false);
   assert.equal(s.serverSecret, '');
   assert.equal(settings.clean({ serverKeepFiles: false }).serverKeepFiles, false);
+  // Both addresses are used unless switched off.
+  assert.equal(s.serverHomeOn, true);
+  assert.equal(s.serverRemoteOn, true);
+  const off = settings.clean({ serverHomeOn: false, serverRemoteOn: false });
+  assert.equal(off.serverHomeOn, false);
+  assert.equal(off.serverRemoteOn, false);
 });

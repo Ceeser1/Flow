@@ -355,16 +355,18 @@ const SettingsPanel = {
       main,
       this._profileRow(),
       this._row({
+        key: 'serverHomeOn',
         label: 'Home Server in WiFi/LAN',
-        desc: 'Tried first. Left empty, Flow looks for a server on this network and fills it in when it finds one.',
+        desc: 'Tried first if enabled. Flow looks out for local Flow Servers in your network. If unticked or it cannot find one, '
+          + 'it falls back to the remote server. Enter an ip:port yourself, if UDP discovery is not enabled.',
         sub: true,
         when: on,
         right: this._textField({ key: 'serverHome', placeholder: '192.168.0.63:7878', when: on }),
       }),
       this._row({
+        key: 'serverRemoteOn',
         label: 'Remote Server',
-        desc: 'Tried when the home one does not answer, for when you are away: the Tailscale address of the server '
-          + '(filled in by itself when the server is on one), or its public IP or domain.',
+        desc: 'When you are not at home and have a link to your server using Tailscale or a hosted connection.',
         sub: true,
         when: on,
         right: this._textField({ key: 'serverRemote', placeholder: '100.101.102.103:7878 or flow.example.com', when: on }),
@@ -384,7 +386,7 @@ const SettingsPanel = {
           + 'Streaming works either way, and at home nothing is held back.',
         sub: true,
         when: on,
-        show: () => !!Store.settings.serverRemote,
+        show: () => !!Store.settings.serverRemote && Store.settings.serverRemoteOn !== false,
       }),
       this._row({
         key: 'serverKeepFiles',
@@ -459,8 +461,9 @@ const SettingsPanel = {
     let text;
     let kind = 'off';
     if (!s.serverOn) text = '';
-    else if (st.searching && !s.serverHome) text = 'Looking for a Flow Server on this network...';
-    else if (!s.serverHome && !s.serverRemote) text = 'No Flow Server found on this network. Enter the home or remote address below.';
+    else if (s.serverHomeOn === false && s.serverRemoteOn === false) text = 'Both the Home and the Remote Server are unticked. Tick one to connect.';
+    else if (st.searching && !s.serverHome && s.serverHomeOn !== false) text = 'Looking for a Flow Server on this network...';
+    else if (!(s.serverHomeOn !== false && s.serverHome) && !(s.serverRemoteOn !== false && s.serverRemote)) text = 'No Flow Server found on this network. Enter the home or remote address below.';
     else ({ text, kind } = ServerChip.describe(st));
     const lines = [text, st.on ? st.transfer : '', st.on ? st.note : ''].filter(Boolean);
     clear(this._serverNode);
