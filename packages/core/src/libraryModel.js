@@ -19,6 +19,10 @@
 // With profiles (profiles.js) a library also carries what the other profiles
 // share with this one:
 //   follows          ids of the shared playlists this profile follows
+//   playlistListened seconds this profile has listened to each list while it
+//                    was the one playing: { [playlistId | 'all' | 'favourites' | 'smart:...']: seconds }.
+//                    Per profile, also for a shared list (the owner's is not shared);
+//                    unfollowing a shared list deletes it.
 //   sharedPlaylists  the other profiles' shared playlists, for reading:
 //                    { id, name, createdAt, entries, ownerId, ownerName }
 //
@@ -33,13 +37,15 @@ const ALL_SONGS_ID = 'all';
 const ALL_SONGS_NAME = 'All Songs';
 const MAX_NAME = 80;
 
-// How one listen of a song is counted, by how much of it was heard before the
-// song changed: at least 75% is a play, less than 30 seconds an early skip,
-// anything between a stop. Under a second is not a listen at all (a song that
-// was only clicked past, or loaded and never started).
-const PLAYED_SHARE = 0.75;
+// How one listen of a song is counted, by how much of it was heard (played,
+// not skipped over) before the song changed. Under 5 seconds is not counted at
+// all (a song that was only clicked past, or loaded and never started). From
+// 5 seconds it is a time played (`sessions`), and also: at least 80% of the
+// song a full listen (`plays`), less than 30 seconds an early skip, anything
+// between a stop.
+const PLAYED_SHARE = 0.8;
 const EARLY_SKIP_SECONDS = 30;
-const MIN_LISTEN_SECONDS = 1;
+const MIN_LISTEN_SECONDS = 5;
 
 function emptyStats() {
   return { plays: 0, stops: 0, skips: 0, sessions: 0, listened: 0, lastPlayedAt: null };
@@ -59,7 +65,18 @@ function cleanStats(raw) {
 }
 
 function emptyLibrary() {
-  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [] };
+  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {} };
+}
+
+/** { listId: seconds }: only sensible ids and positive numbers stay. */
+function cleanListened(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [id, secs] of Object.entries(raw)) {
+    const n = Number(secs);
+    if (/^[\w:-]{1,64}$/.test(id) && Number.isFinite(n) && n > 0) out[id] = n;
+  }
+  return out;
 }
 
 /** Repairs anything a hand edit or an older version could have left behind. */
@@ -120,6 +137,7 @@ function sanitize(raw) {
     });
   }
   data.follows = cleanIds(raw.follows);
+  data.playlistListened = cleanListened(raw.playlistListened);
   const seenShared = new Set();
   for (const p of Array.isArray(raw.sharedPlaylists) ? raw.sharedPlaylists : []) {
     if (!p || !p.id || seenShared.has(p.id) || seenLists.has(p.id)) continue;
@@ -231,11 +249,14 @@ function followPlaylist(data, id) {
 
 function unfollowPlaylist(data, id) {
   data.follows = (data.follows || []).filter((x) => x !== id);
+  // What was listened to it goes with the follow.
+  if (data.playlistListened) delete data.playlistListened[id];
 }
 
 function deletePlaylist(data, id) {
   requirePlaylist(data, id);
   data.playlists = data.playlists.filter((p) => p.id !== id);
+  if (data.playlistListened) delete data.playlistListened[id];
 }
 
 function addSong(data, song) {
@@ -283,18 +304,34 @@ function removeSong(data, id, keepFile) {
 }
 
 /**
+ * Adds `seconds` to the time listened to a list, when that list was the one
+ * playing and the song is in it. A song that only came through the queue
+ * from elsewhere passes no list.
+ */
+function addListenedTo(data, listId, songId, seconds) {
+  if (!listId || typeof listId !== 'string' || !(seconds > 0)) return;
+  const builtIn = listId === ALL_SONGS_ID || listId === 'favourites' || listId.startsWith('smart:');
+  const list = builtIn ? null : (playlistById(data, listId) || sharedPlaylistById(data, listId));
+  if (!builtIn && (!list || !list.entries.some((e) => e.songId === songId))) return;
+  // Another profile's list only counts while it is followed.
+  if (list && !playlistById(data, listId) && !(data.follows || []).includes(listId)) return;
+  if (!data.playlistListened || typeof data.playlistListened !== 'object') data.playlistListened = {};
+  data.playlistListened[listId] = (data.playlistListened[listId] || 0) + seconds;
+}
+
+/**
  * Counts one listen of a song: `listened` seconds heard before it changed,
  * out of `duration`. Returns what it was counted as ('play', 'stop', 'skip'),
  * or null when it was too short to count.
  */
-function recordListen(data, songId, { listened, duration, at = Date.now() }) {
+function recordListen(data, songId, { listened, duration, at = Date.now(), contextId = null }) {
   const s = requireSong(data, songId);
   const total = Number(duration) || s.duration || 0;
   const heard = Math.min(Math.max(0, Number(listened) || 0), total || Infinity);
   if (heard < MIN_LISTEN_SECONDS) return null;
   const st = cleanStats(s.stats);
   let kind;
-  if (total && heard >= total * PLAYED_SHARE) kind = 'play';
+  if (total && heard / total >= PLAYED_SHARE) kind = 'play';
   else if (heard < EARLY_SKIP_SECONDS) kind = 'skip';
   else kind = 'stop';
   if (kind === 'play') st.plays += 1;
@@ -304,6 +341,7 @@ function recordListen(data, songId, { listened, duration, at = Date.now() }) {
   st.listened += heard;
   st.lastPlayedAt = at;
   s.stats = st;
+  addListenedTo(data, contextId, songId, heard);
   return kind;
 }
 

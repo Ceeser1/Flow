@@ -174,7 +174,7 @@ const TYPES = {
       const s = model.songById(d, str(c.songId));
       if (!s) return { skipped: 'gone' };
       if (!(s.duration > 0) && Number(c.duration) > 0) model.updateSong(d, s.id, { duration: Number(c.duration) });
-      return { value: model.recordListen(d, str(c.songId), { listened: c.listened, duration: c.duration, at: c.at }) };
+      return { value: model.recordListen(d, str(c.songId), { listened: c.listened, duration: c.duration, at: c.at, contextId: c.contextId ? str(c.contextId) : null }) };
     },
   },
   // A song on its way up (an upload): only ever applied by the app, to show

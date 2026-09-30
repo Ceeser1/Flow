@@ -9,7 +9,7 @@
 //             no profile, called "Default / Shared": its playlists,
 //             favourites and stats are what an app sees while no profile is
 //             signed in.
-//   profiles  { [profileId]: { playlists: [...], songs: { [songId]: { stats, favouriteAt } }, follows: [playlistId] } }
+//   profiles  { [profileId]: { playlists: [...], songs: { [songId]: { stats, favouriteAt } }, follows: [playlistId], playlistListened: {...} } }
 //
 // Playlists can be shared (playlist.shared): the other profiles, and the
 // Default, then see them read-only in their view (sharedPlaylists) and can
@@ -41,7 +41,9 @@ function cleanProfile(data, raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   // sanitize() already knows how playlists must look and drops entries for
   // songs that are not there.
-  const { playlists, follows } = model.sanitize({ songs: data.songs, playlists: r.playlists, follows: r.follows });
+  const { playlists, follows, playlistListened } = model.sanitize({
+    songs: data.songs, playlists: r.playlists, follows: r.follows, playlistListened: r.playlistListened,
+  });
   const known = new Set(data.songs.map((s) => s.id));
   const songs = {};
   const own = r.songs && typeof r.songs === 'object' ? r.songs : {};
@@ -51,7 +53,7 @@ function cleanProfile(data, raw) {
     const kept = { stats: clean.stats, favouriteAt: clean.favouriteAt };
     if (hasOwn(kept)) songs[id] = kept;
   }
-  return { playlists, songs, follows };
+  return { playlists, songs, follows, playlistListened };
 }
 
 /** Every profile's part, repaired. `data` must be sanitized already. */
@@ -100,7 +102,7 @@ function sharedFor(data, profiles, names, viewerId) {
 function view(data, profiles, profileId, names = {}) {
   const sharedPlaylists = sharedFor(data, profiles, names, profileId || null);
   if (!profileId) return { ...data, follows: (data.follows || []).slice(), sharedPlaylists };
-  const p = profiles[profileId] || { playlists: [], songs: {}, follows: [] };
+  const p = profiles[profileId] || { playlists: [], songs: {}, follows: [], playlistListened: {} };
   return {
     ...data,
     songs: data.songs.map((s) => {
@@ -109,6 +111,7 @@ function view(data, profiles, profileId, names = {}) {
     }),
     playlists: p.playlists,
     follows: (p.follows || []).slice(),
+    playlistListened: { ...(p.playlistListened || {}) },
     sharedPlaylists,
   };
 }
@@ -125,6 +128,7 @@ function absorb(data, profiles, profileId, v) {
     data.playlists = v.playlists;
     data.ignoredFiles = v.ignoredFiles;
     data.follows = v.follows;
+    data.playlistListened = v.playlistListened || {};
     prune(data, profiles);
     return;
   }
@@ -145,7 +149,7 @@ function absorb(data, profiles, profileId, v) {
   }
   data.songs = songs;
   data.ignoredFiles = v.ignoredFiles;
-  profiles[profileId] = { playlists: v.playlists, songs: own, follows: v.follows };
+  profiles[profileId] = { playlists: v.playlists, songs: own, follows: v.follows, playlistListened: v.playlistListened || {} };
   prune(data, profiles);
 }
 
@@ -166,6 +170,19 @@ function prune(data, profiles) {
   for (const p of Object.values(profiles)) for (const l of p.playlists) lists.add(l.id);
   data.follows = (data.follows || []).filter((id) => lists.has(id));
   for (const p of Object.values(profiles)) p.follows = (p.follows || []).filter((id) => lists.has(id));
+  // Time listened to a list goes when the list is gone, or is another
+  // profile's and no longer followed (All Songs, Favourites and the Listen
+  // behaviour lists are always there).
+  for (const owner of [data, ...Object.values(profiles)]) {
+    const mine = new Set((owner.playlists || []).map((p) => p.id));
+    const followed = new Set(owner.follows || []);
+    const kept = {};
+    for (const [id, secs] of Object.entries(owner.playlistListened || {})) {
+      const builtIn = id === model.ALL_SONGS_ID || id === 'favourites' || id.startsWith('smart:');
+      if (builtIn || mine.has(id) || (followed.has(id) && lists.has(id))) kept[id] = secs;
+    }
+    owner.playlistListened = kept;
+  }
 }
 
 /**
@@ -182,7 +199,7 @@ function addProfile(data, profiles, profileId, newId = randomId) {
     source: p.source ? { ...p.source } : null,
     shared: false,
   }));
-  profiles[profileId] = { playlists, songs: {}, follows: [] };
+  profiles[profileId] = { playlists, songs: {}, follows: [], playlistListened: {} };
 }
 
 /** Deletes a profile's playlists, favourites and stats. The songs stay. */

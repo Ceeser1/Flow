@@ -63,6 +63,25 @@ test('a new profile gets a copy of the default playlists; favourites and stats s
   assert.equal(ben.songs[0].addedAt, 100, 'when a song was added is shared');
 });
 
+test('time listened to a list is per profile, also for a shared one, and goes when unfollowed', () => {
+  const lib = withAnna();
+  prof.addProfile(lib.data, lib.profiles, 'ben');
+  run(lib, 'anna', { type: 'setPlaylistShared', playlistId: 'p1', shared: true });
+  run(lib, 'anna', { type: 'recordListen', songId: 's1', listened: 100, duration: 250, contextId: 'p1' });
+  // Ben cannot count for it before following it.
+  run(lib, 'ben', { type: 'recordListen', songId: 's1', listened: 40, duration: 250, contextId: 'p1' });
+  assert.equal(prof.view(lib.data, lib.profiles, 'ben').playlistListened.p1, undefined);
+  run(lib, 'ben', { type: 'followPlaylist', playlistId: 'p1' });
+  run(lib, 'ben', { type: 'recordListen', songId: 's1', listened: 40, duration: 250, contextId: 'p1' });
+  assert.equal(prof.view(lib.data, lib.profiles, 'ben').playlistListened.p1, 40);
+  assert.equal(prof.view(lib.data, lib.profiles, 'anna').playlistListened.p1, 100, "Anna's own time is hers");
+  // Nothing of it travels with the shared list itself.
+  assert.equal(prof.view(lib.data, lib.profiles, 'ben').sharedPlaylists[0].playlistListened, undefined);
+  run(lib, 'ben', { type: 'unfollowPlaylist', playlistId: 'p1' });
+  assert.equal(prof.view(lib.data, lib.profiles, 'ben').playlistListened.p1, undefined);
+  assert.equal(prof.view(lib.data, lib.profiles, 'anna').playlistListened.p1, 100);
+});
+
 test('playlists, favourites and listens stay with their profile; names are shared', () => {
   const lib = withAnna();
   prof.addProfile(lib.data, lib.profiles, 'ben');

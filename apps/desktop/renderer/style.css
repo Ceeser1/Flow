@@ -1234,6 +1234,7 @@ progress {
 
 .col-num { width: 100px; font-variant-numeric: tabular-nums; }
 .col-date { width: 130px; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.col-listened { width: 190px; font-variant-numeric: tabular-nums; }
 /* Room for four buttons (28px each, 6px apart) and the cell padding. */
 .col-actions { width: 150px; }
 .col-actions .th-plain { justify-content: flex-end; }

@@ -1,6 +1,7 @@
 'use strict';
 
-// Playlists: create one at the top; "Shared Playlists" (All Songs, and the
+// Playlists: create one at the top; both tables also show when each was created
+// and how long you have listened to it; "Shared Playlists" (All Songs, and the
 // playlists other profiles share, which can be followed or not; the section
 // can be closed, All Songs stays); "Your Playlists" below. Favourites and the
 // Listen behaviour lists are always the first rows of those, whatever
@@ -54,6 +55,8 @@ const PlaylistsPage = {
     if (key === 'name') return p.name;
     if (key === 'songs') return p.entries.length;
     if (key === 'duration') return Store.totalDuration(p.id);
+    if (key === 'created') return p.createdAt || 0;
+    if (key === 'listened') return Store.listenedTo(p.id);
     return '';
   },
 
@@ -111,6 +114,10 @@ const PlaylistsPage = {
         { key: 'name', label: 'Name', cls: 'col-name', render: (p) => this._nameCell(p) },
         { key: 'songs', label: 'Songs', cls: 'col-num', render: (p) => (p.isListenGroup ? '' : String(p.entries.length)) },
         { key: 'duration', label: 'Duration', cls: 'col-num', render: (p) => (p.isListenGroup ? '' : Util.fmtClock(Store.totalDuration(p.id))) },
+        // Created: the lists the app keeps itself have no date. Total listen
+        // duration: your own time listening to it, as the list playing.
+        { key: 'created', label: 'Created', cls: 'col-date', render: (p) => (p.createdAt ? Util.fmtDate(p.createdAt) : '') },
+        { key: 'listened', label: 'Total listen duration', cls: 'col-listened', render: (p) => (p.isListenGroup ? '' : Util.fmtClock(Store.listenedTo(p.id))) },
         { key: 'actions', label: 'Actions', sortable: false, cls: 'col-actions', render: actions },
       ],
     });

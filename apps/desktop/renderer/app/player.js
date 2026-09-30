@@ -635,10 +635,15 @@ const Player = {
   _endSession() {
     const s = this.session;
     this.session = null;
-    if (!s || s.listened < 1) return;
+    // Under 5 seconds counts as nothing (the same limit as MIN_LISTEN_SECONDS in libraryModel.js).
+    if (!s || s.listened < 5) return;
     const song = Store.song(s.songId);
     const duration = (song && song.duration) || s.duration || 0;
-    window.flow.recordListen(s.songId, s.listened, duration).catch(() => {});
+    // The time also counts for the list that was playing, if the song is in it
+    // (one queued from elsewhere is not).
+    const list = this.contextId ? Store.playlist(this.contextId) : null;
+    const inList = !!list && list.entries.some((e) => e.songId === s.songId);
+    window.flow.recordListen(s.songId, s.listened, duration, inList ? this.contextId : null).catch(() => {});
   },
 
   _sessionToKeep() {

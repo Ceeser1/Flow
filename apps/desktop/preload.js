@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('flow', {
   deleteSong: (songId, deleteFile) => call('library:deleteSong', { songId, deleteFile }),
   editSong: (songId, meta) => call('library:editSong', { songId, ...meta }),
   setFavourite: (songId, on) => call('library:setFavourite', { songId, on }),
-  recordListen: (songId, listened, duration) => call('library:recordListen', { songId, listened, duration }),
+  recordListen: (songId, listened, duration, contextId) => call('library:recordListen', { songId, listened, duration, contextId }),
   findBySource: (url, key) => call('library:findBySource', { url, key }),
   findByMeta: (meta) => call('library:findByMeta', meta),
   rescan: () => call('library:rescan'),

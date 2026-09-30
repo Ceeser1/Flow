@@ -128,9 +128,10 @@ const SongDetails = {
       h('div.details__grid',
         ...row('Added', Util.fmtDate(song.addedAt)),
         ...row('Last listened', last ? `${Util.fmtDate(last)}  (${Util.fmtAgo(last)})` : 'Never'),
-        ...row('Times listened', String(plays), '75% or more heard'),
+        ...row('Times played', String(sessions), 'more than 5 s heard, skipped or not'),
+        ...row('Times fully listened', String(plays), '80% or more heard'),
         ...row('Average listen duration', sessions ? Util.fmtClock(avg) + share : '-'),
-        ...row('Times stopped listening', String(st.stops || 0), 'changed song between 30 s and 75%'),
-        ...row('Times skipped early', String(st.skips || 0), 'changed song within 30 s')));
+        ...row('Times stopped listening', String(st.stops || 0), 'changed song between 30 s and 80%'),
+        ...row('Times skipped early', String(st.skips || 0), 'changed song between 5 and 30 s')));
   },
 };

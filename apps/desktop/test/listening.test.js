@@ -20,15 +20,15 @@ function lib(count = 1) {
   return data;
 }
 
-test('a listen is a play from 75%, an early skip under 30 s, a stop between', () => {
+test('a full listen is 80%, an early skip 5 to 30 s, a stop between', () => {
   const data = lib();
-  assert.equal(m.recordListen(data, 's1', { listened: 150, duration: 200, at: 5 }), 'play');
-  assert.equal(m.recordListen(data, 's1', { listened: 149, duration: 200, at: 6 }), 'stop');
+  assert.equal(m.recordListen(data, 's1', { listened: 160, duration: 200, at: 5 }), 'play');
+  assert.equal(m.recordListen(data, 's1', { listened: 159, duration: 200, at: 6 }), 'stop');
   assert.equal(m.recordListen(data, 's1', { listened: 30, duration: 200, at: 7 }), 'stop');
   assert.equal(m.recordListen(data, 's1', { listened: 29.9, duration: 200, at: 8 }), 'skip');
   const st = m.songById(data, 's1').stats;
   assert.deepEqual({ ...st, listened: Math.round(st.listened) },
-    { plays: 1, stops: 2, skips: 1, sessions: 4, listened: 359, lastPlayedAt: 8 });
+    { plays: 1, stops: 2, skips: 1, sessions: 4, listened: 379, lastPlayedAt: 8 });
 });
 
 test('a short song heard to the end is a play, not an early skip', () => {
@@ -36,9 +36,16 @@ test('a short song heard to the end is a play, not an early skip', () => {
   assert.equal(m.recordListen(data, 's1', { listened: 20, duration: 25 }), 'play');
 });
 
-test('under a second is not a listen, and what is heard is capped at the length', () => {
+test('under 5 seconds counts as nothing, and what is heard is capped at the length', () => {
   const data = lib();
   assert.equal(m.recordListen(data, 's1', { listened: 0.5, duration: 200 }), null);
+  assert.equal(m.recordListen(data, 's1', { listened: 4.9, duration: 200 }), null);
+  assert.deepEqual(m.songById(data, 's1').stats, m.emptyStats());
+  // From 5 s it is a time played and, below 30 s, an early skip as well.
+  assert.equal(m.recordListen(data, 's1', { listened: 5, duration: 200 }), 'skip');
+  assert.equal(m.songById(data, 's1').stats.sessions, 1);
+  assert.equal(m.songById(data, 's1').stats.skips, 1);
+  data.songs[0].stats = m.emptyStats();
   assert.equal(m.songById(data, 's1').stats.sessions, 0);
   m.recordListen(data, 's1', { listened: 900, duration: 200 });
   assert.equal(m.songById(data, 's1').stats.listened, 200);
@@ -132,6 +139,52 @@ test('most and least skipped count early skips among songs heard', () => {
   const calm = lib(10);
   withStats(calm, 's1', { plays: 1, sessions: 1 });
   assert.deepEqual(SmartLists.compute(calm.songs, mine(calm))['smart:skipped-most'], []);
+});
+
+function withLists(data) {
+  const now = Date.now();
+  m.createPlaylist(data, 'Mine', 'p1', now);
+  m.addSongToPlaylists(data, 's1', ['p1']);
+  data.sharedPlaylists.push({ id: 'ps', name: 'Theirs', createdAt: now, entries: [{ songId: 's2', addedAt: now }], ownerId: 'o', ownerName: 'Anna' });
+  return data;
+}
+
+test('time listened counts for the list that was playing, if the song is in it', () => {
+  const data = withLists(lib(3));
+  const listen = (songId, listened, contextId) => m.recordListen(data, songId, { listened, duration: 200, contextId });
+  listen('s1', 60, 'p1');
+  listen('s1', 40, 'p1');
+  assert.equal(data.playlistListened.p1, 100);
+  // Queued from elsewhere: s2 is not in Mine, so Mine gets nothing.
+  listen('s2', 50, 'p1');
+  assert.equal(data.playlistListened.p1, 100);
+  // Under 5 s counts as nothing; All Songs and the built-in lists count as such.
+  listen('s1', 4, 'p1');
+  listen('s1', 30, 'all');
+  listen('s1', 20, 'smart:most');
+  assert.deepEqual(data.playlistListened, { p1: 100, all: 30, 'smart:most': 20 });
+  // A made-up list is nothing.
+  listen('s1', 30, 'nope');
+  assert.equal(data.playlistListened.nope, undefined);
+});
+
+test("another profile's list counts only while it is followed, and unfollowing deletes it", () => {
+  const data = withLists(lib(3));
+  const listen = (songId, listened, contextId) => m.recordListen(data, songId, { listened, duration: 200, contextId });
+  listen('s2', 60, 'ps');
+  assert.equal(data.playlistListened.ps, undefined, 'not followed');
+  m.followPlaylist(data, 'ps');
+  listen('s2', 60, 'ps');
+  assert.equal(data.playlistListened.ps, 60);
+  m.unfollowPlaylist(data, 'ps');
+  assert.equal(data.playlistListened.ps, undefined);
+});
+
+test('deleting a playlist deletes what was listened to it', () => {
+  const data = withLists(lib(3));
+  m.recordListen(data, 's1', { listened: 60, duration: 200, contextId: 'p1' });
+  m.deletePlaylist(data, 'p1');
+  assert.equal(data.playlistListened.p1, undefined);
 });
 
 test('how long ago, in the largest unit that fits', () => {

@@ -46,7 +46,12 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   Server, the playlists the server's other profiles share, each with a
   **Follow** / **Unfollow** button in Actions. **Your Playlists** are yours,
   with Favourites and **Listen behaviour** first (a row that opens to its
-  lists, closed until you open it).
+  lists, closed until you open it). Both tables also show when each playlist
+  was **Created** and your **Total listen duration**: the time you have
+  listened to it as the list playing (after its Play button, or a song picked
+  in it). A song queued from another list does not count for it. It is yours
+  alone, also for a shared playlist (the owner's is not shared), and unfollowing
+  a shared playlist deletes it.
 - **Sharing** (with a Flow Server that has profiles): the **Share with others**
   box, top right of a playlist of your own, lets the other profiles see it
   and follow it. Only its owner can change it; followers can play it, and a
@@ -74,7 +79,8 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
 - **Details** (the magnifier on an All Songs row): the song's names and length,
   the playlists it is in as buttons (click one to take it out, click again to
   put it back), "Add to Playlists", and its statistics: added, last listened,
-  times listened, average listen duration, times stopped, times skipped early.
+  times played, times fully listened, average listen duration, times stopped,
+  times skipped early.
   Under "Downloaded from": the Direct Url of the song's page, and for a song
   that came with a playlist import also that playlist's Url. Both open in the
   browser.
@@ -83,7 +89,7 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
 - **Listen behaviour** (under Favourites in the menu, opens and closes): Most
   listened, Least skipped, Long time no see, Most skipped and Least listened,
   each a fifth of the songs in your own playlists (All Songs does not count),
-  made from the statistics. Skipped means an early skip, under 30 seconds;
+  made from the statistics. Skipped means an early skip, 5 to 30 seconds;
   Least skipped and Most skipped only look at songs you have heard and
   skipped. The lists cannot be edited, but a **From Playlist** column after Mix
   says which of your playlists each song is in, and More has the same buttons
@@ -91,10 +97,13 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   takes the song out of every playlist of yours that holds it (asking first
   when that is more than one) and leaves it in All Songs.
 
-How a listen is counted: only time actually played counts (not seeking or
-pausing), and it is counted when the song changes. At least 75% heard is a
-listen, under 30 seconds an early skip, anything between a stop. A song
-unfinished when the app closes carries on at the next start. Long time no see
+How a listen is counted: only time actually played counts, and it is counted
+when the song changes. Skipping ahead adds nothing (jump 10 seconds forward
+and those 10 are not counted), going back and playing on adds the time played
+again (a minute, back 10 seconds and 10 more played is 70 seconds). Under 5
+seconds counts as nothing at all. From 5 seconds it is a **time played**, and
+also: 80% or more of the song heard a **full listen**, under 30 seconds an
+**early skip**, anything between a stop. A song unfinished when the app closes carries on at the next start. Long time no see
 counts a song that was never played from when it was downloaded.
 
 The player bar stays at the bottom on every page. Space plays and pauses, Left

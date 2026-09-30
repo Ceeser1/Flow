@@ -104,6 +104,11 @@ const Store = {
     return this.sharedPlaylists().filter((p) => this.isFollowing(p.id));
   },
 
+  /** Seconds this profile has listened to a list (as the one playing), 0 for none. */
+  listenedTo(id) {
+    return Number((this.library.playlistListened || {})[id]) || 0;
+  },
+
   /**
    * A Listen behaviour list, shaped like a playlist. Read-only; its entries
    * are in rank order and carry the download date as when they were added.

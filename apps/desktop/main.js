@@ -269,10 +269,10 @@ handle('library:setFavourite', ({ songId, on }) => {
   change((d) => model.setFavourite(d, songId, !!on), 'setFavourite', { songId, on: !!on });
 });
 
-handle('library:recordListen', ({ songId, listened, duration }) => {
+handle('library:recordListen', ({ songId, listened, duration, contextId }) => {
   // The song may have been deleted while it played; nothing to count then.
   if (!model.songById(currentLibrary(), songId)) return null;
-  return change((d) => model.recordListen(d, songId, { listened, duration }), 'recordListen', { songId, listened, duration });
+  return change((d) => model.recordListen(d, songId, { listened, duration, contextId }), 'recordListen', { songId, listened, duration, contextId });
 });
 
 handle('library:findBySource', ({ url, key }) => model.findBySource(currentLibrary(), { url, key }));
