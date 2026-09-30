@@ -557,7 +557,7 @@ async function discoverHome() {
     return;
   }
   if (found.length === 1) {
-    const address = `${found[0].ip}:${found[0].port}`;
+    const address = discovery.addressOf(found[0], os.networkInterfaces());
     settings.set({ serverHome: address });
     sync.homeFilled = true;
     saveSync();

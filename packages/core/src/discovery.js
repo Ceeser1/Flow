@@ -80,6 +80,16 @@ function broadcastAddresses(interfaces) {
 }
 
 /**
+ * The address to save for a server that answered: "ip:port", or
+ * "localhost:port" when the server runs on this very machine (it answers with
+ * one of our own adapters' addresses, which can change).
+ */
+function addressOf(server, interfaces) {
+  const own = Object.values(interfaces || {}).some((list) => (list || []).some((a) => a.address === server.ip));
+  return `${own ? 'localhost' : server.ip}:${server.port}`;
+}
+
+/**
  * Asks the local network who is a Flow Server. Sends the question a few times
  * (a datagram can get lost) and collects the answers for `timeoutMs`.
  * Resolves the servers found, one per server id: [{ ip, port, name, id, protocol }].
@@ -124,4 +134,4 @@ function find({ port = DISCOVERY_PORT, targets = null, timeoutMs = 2500, sends =
   });
 }
 
-module.exports = { DISCOVERY_PORT, REQUEST, isRequest, makeReply, parseReply, broadcastAddresses, find };
+module.exports = { DISCOVERY_PORT, REQUEST, isRequest, makeReply, parseReply, broadcastAddresses, addressOf, find };

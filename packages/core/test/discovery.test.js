@@ -30,3 +30,9 @@ test('each network gets its own broadcast address, and one-host networks none', 
   });
   assert.deepEqual(list.sort(), ['10.1.191.255', '192.168.0.255', '255.255.255.255']);
 });
+
+test('a server on this very machine is saved as localhost', () => {
+  const interfaces = { eth0: [{ family: 'IPv4', address: '192.168.0.129' }], vEthernet: [{ family: 'IPv4', address: '172.18.192.1' }] };
+  assert.equal(d.addressOf({ ip: '172.18.192.1', port: 7899 }, interfaces), 'localhost:7899');
+  assert.equal(d.addressOf({ ip: '192.168.0.61', port: 7878 }, interfaces), '192.168.0.61:7878');
+});
