@@ -26,6 +26,7 @@
   AddPage.init();
   ImportPanel.init();
   PlaylistsPage.init();
+  FollowedPage.init();
   PlaylistPage.init();
   SettingsPanel.init();
   SongActions.init();

@@ -116,7 +116,7 @@ deleted from an app's Settings; each can have a PIN of its own.
 - A profile can share a playlist (the box at the top right of the playlist).
   The other profiles, and the Default, then see it read-only under Shared
   Playlists, with the owner's name, and can follow it (their own list, shown
-  in the menu). Only the owner changes it. `setPlaylistShared`,
+  under Followed Playlists in the menu). Only the owner changes it. `setPlaylistShared`,
   `followPlaylist` and `unfollowPlaylist` are commands like the rest.
 - Renaming or deleting a song does it for everyone. Deleting a profile takes
   its playlists, favourites and stats; the songs stay.

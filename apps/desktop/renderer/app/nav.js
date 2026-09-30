@@ -11,9 +11,11 @@ const Nav = {
     $('menuAdd').innerHTML = Icons.add + '<span>Add Songs</span>'
       + '<span id="menuAddBadge" class="menu__badge" hidden title="Playlist import running"></span>';
     $('menuPlaylists').innerHTML = Icons.playlists + '<span>Playlists</span>';
+    $('menuFollowed').innerHTML = Icons.playlists + '<span>Followed Playlists</span>';
     $('menuSearch').onclick = () => this.show('search');
     $('menuAdd').onclick = () => this.show('add');
     $('menuPlaylists').onclick = () => this.show('playlists');
+    $('menuFollowed').onclick = () => this.show('followed');
     Store.onLibrary(() => this.drawMenu());
     Store.onServer(() => this.drawMenu());
     Player.onChange(() => this.drawMenu());
@@ -36,6 +38,7 @@ const Nav = {
     if (page === 'search') SearchPage.show(opts);
     else if (page === 'add') AddPage.show(opts);
     else if (page === 'playlists') PlaylistsPage.show(opts);
+    else if (page === 'followed') FollowedPage.show(opts);
     else if (page === 'playlist') PlaylistPage.show(this.playlistId, opts);
     this.drawMenu();
   },
@@ -50,6 +53,7 @@ const Nav = {
     $('menuSearch').classList.toggle('menu__item--active', this.page === 'search');
     $('menuAdd').classList.toggle('menu__item--active', this.page === 'add');
     $('menuPlaylists').classList.toggle('menu__item--active', this.page === 'playlists');
+    $('menuFollowed').classList.toggle('menu__item--active', this.page === 'followed');
 
     const list = clear($('menuPlaylistList'));
     const item = (p, extra = '') => {
@@ -89,29 +93,13 @@ const Nav = {
       for (const p of Store.smartPlaylists()) list.appendChild(item(p, '.menu__sub--nested'));
     }
 
-    // Followed Playlists: what other profiles share and this one follows.
-    if (Store.canShare()) {
-      const followed = Store.followedPlaylists();
-      const openF = Store.settings.followedGroupOpen !== false;
-      const followedPlaying = followed.some((p) => Player.contextId === p.id) && Player.isPlaying;
-      list.appendChild(h('button.menu__group' + (openF ? '.menu__group--open' : ''), {
-        type: 'button',
-        title: openF ? 'Hide these lists' : 'Show these lists',
-        'aria-expanded': String(openF),
-        onclick: () => {
-          Store.saveSettings({ followedGroupOpen: !openF });
-          this.drawMenu();
-        },
-      },
-      h('span.menu__chevron', { html: Icons.chevron }),
-      h('span.menu__sub-name', 'Followed Playlists'),
-      !openF && followedPlaying ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null));
-      if (openF) {
-        for (const p of followed) list.appendChild(item(p, '.menu__sub--nested'));
-        if (!followed.length) list.appendChild(h('div.menu__empty', 'Nothing followed yet. Follow the playlists other profiles share on the Playlists page.'));
-      }
-    }
-
     for (const p of Store.sortedPlaylists()) list.appendChild(item(p));
+
+    // Followed Playlists: a main entry of its own, only while one is followed.
+    const followed = Store.followedPlaylists();
+    $('menuFollowed').hidden = !followed.length;
+    $('menuFollowedList').hidden = !followed.length;
+    const followedList = clear($('menuFollowedList'));
+    for (const p of followed) followedList.appendChild(item(p));
   },
 };

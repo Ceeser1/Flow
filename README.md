@@ -48,8 +48,10 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   with Favourites and Listen behaviour first.
 - **Sharing** (with a Flow Server that has profiles): the **Share with others**
   box, top right of a playlist of your own, lets the other profiles see it
-  and follow it. Only its owner can change it; followers can play it. A
-  followed playlist is in the menu under **Followed Playlists**. You never
+  and follow it. Only its owner can change it; followers can play it. Once
+  you follow one, **Followed Playlists** appears in the menu as a main entry
+  of its own (like Playlists, with the followed lists under it, and a page
+  where each can be unfollowed); it goes again when you follow none. You never
   see your own playlists among the shared ones. Unshared, a follow waits and
   comes back when it is shared again; deleted, the follow is gone.
 - **A playlist**: Shuffle, Play, a search box, and the songs. Clicking a

@@ -20,6 +20,9 @@
     <button id="serverChip" class="server-chip" type="button" hidden></button>
     <button id="menuSearch" class="menu__search" type="button"></button>
     <button id="menuAdd" class="menu__item" type="button"></button>
+    <!-- Only while at least one shared playlist is followed. -->
+    <button id="menuFollowed" class="menu__item" type="button" hidden></button>
+    <nav id="menuFollowedList" class="menu__subs" aria-label="Followed Playlists" hidden></nav>
     <button id="menuPlaylists" class="menu__item" type="button"></button>
     <nav id="menuPlaylistList" class="menu__subs" aria-label="Playlists"></nav>
   </aside>
@@ -202,6 +205,17 @@
         <table id="playlistsTable" class="table table--playlists"></table>
       </section>
 
+      <!-- Followed Playlists -->
+      <section id="page-followed" class="page page--playlists" hidden>
+        <h1 class="page__title">Followed Playlists</h1>
+        <div class="section-head">
+          <h2 class="section-head__title">Playlists you follow</h2>
+          <span id="followedCount" class="muted-text"></span>
+        </div>
+        <p class="muted-text">Shared by the other profiles. Only their owner can change them.</p>
+        <table id="followedTable" class="table table--playlists"></table>
+      </section>
+
       <!-- One playlist -->
       <section id="page-playlist" class="page page--playlist" hidden>
         <!-- One panel from the title down, continued by the column headers. -->
@@ -326,6 +340,7 @@
 <script src="app/pages/add.js"></script>
 <script src="app/pages/import.js"></script>
 <script src="app/pages/playlists.js"></script>
+<script src="app/pages/followed.js"></script>
 <script src="app/pages/playlist.js"></script>
 <script src="app/details.js"></script>
 <script src="app/settingsPanel.js"></script>
