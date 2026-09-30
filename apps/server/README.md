@@ -97,8 +97,35 @@ node apps/server/src/main.js devices             # who has signed in
 
 Without one, anyone who can reach the server can use it, which is fine on a
 home network. Each app enters the PIN once and gets a token back. Setting a new
-PIN signs every device out. Wrong tries wait longer each time (1 s, 2 s, 4 s ...),
-so guessing a PIN takes years.
+PIN signs every device out. Wrong tries from one address wait longer each time
+(1 s, 2 s, 4 s ...), so guessing a PIN takes years; after 30 wrong tries within
+10 minutes from anywhere, everyone waits, so many addresses at once don't help
+either. Devices already signed in carry on.
+
+What the password has to be depends on the server's level (`--level`, set by
+`install.sh`):
+
+| Level | Reachable from | Password |
+|---|---|---|
+| 1 | the home network | optional; at least 4 characters (a PIN) |
+| 2 | and Tailscale | optional; at least 4 characters |
+| 3 | and the internet, through Caddy | required: at least 8 characters with a lower-case letter, an upper-case letter and a number |
+| 4 | and the internet, through your own proxy or tunnel | the same as 3 |
+
+At level 3 or 4 `clear-password` is refused, and without a strong password the
+server lets nobody past `/api/hello`. Going up sets both at once:
+`flow-server set-password --level 3`. Profile PINs have no rules; they only
+pick a profile once a device is past the server password.
+
+The server also guards against a proxy set up by hand, at any level:
+
+- Plain http straight from a public address (the port forwarded on the router)
+  gets no answer: the password would cross the internet unencrypted.
+- A request a proxy passes on from outside needs the strong password too, and
+  one the proxy says came over plain http gets no answer.
+- The caller's address is taken from `X-Forwarded-For` only when the proxy is
+  on the same machine, or listed with `--trusted-proxy`; the wrong-password
+  waits go by it.
 
 ## Profiles
 
@@ -145,7 +172,7 @@ report changes.
 
 | | |
 |---|---|
-| `GET /api/hello` | name, protocol, whether a password is needed (open to anyone); `tailscale: { ip, dns, port }` when the server is on a tailnet, to private callers only |
+| `GET /api/hello` | name, protocol, whether a password is needed (open to anyone); `tailscale: { ip, dns, port }` when the server is on a tailnet, to private callers only; `publicUrl` at level 3 or 4 |
 | `POST /api/login` | `{ password, device }` → `{ token }` |
 | `GET /api/library?since=<rev>&as=<profile>` | `{ rev, library, profile }`, or 204 when nothing changed for that profile; the library has the profile's `follows` and the others' `sharedPlaylists` |
 | `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`) |

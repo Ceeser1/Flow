@@ -21,11 +21,12 @@ function tempDirs() {
   return { root, home: path.join(root, 'home'), music: path.join(root, 'music') };
 }
 
-async function withServer(fn, { password, tailscale = null } = {}) {
+async function withServer(fn, { password, tailscale = null, settings = null } = {}) {
   const dirs = tempDirs();
-  if (password) {
+  if (password || settings) {
     const c = configMod.open({ home: dirs.home, music: dirs.music });
-    c.set({ password: configMod.hashPassword(password) });
+    if (password) c.set({ password: configMod.passwordEntry(password) });
+    if (settings) c.set(settings);
   }
   // Never the real machine's Tailscale.
   const server = await startServer({
@@ -334,6 +335,138 @@ test('hello tells where the server is on the tailnet, to private askers only', a
   await withServer(async ({ base }) => {
     assert.equal((await (await fetch(`${base}/api/hello`)).json()).tailscale, undefined);
   });
+});
+
+const via = (forwardedFor, more = {}) => ({ 'X-Forwarded-For': forwardedFor, ...more });
+
+test('through a proxy from outside, nobody gets in without a strong password', async () => {
+  // Levels 1 and 2: the home network is let in as before, also through a
+  // proxy on this machine; someone from the internet it passes on is not.
+  await withServer(async ({ base }) => {
+    assert.equal((await fetch(`${base}/api/library`)).status, 200);
+    assert.equal((await fetch(`${base}/api/library`, { headers: via('192.168.0.5') })).status, 200);
+    const outside = await fetch(`${base}/api/library`, { headers: via('203.0.113.7') });
+    assert.equal(outside.status, 403);
+    assert.match((await outside.json()).error, /has no password/);
+    assert.equal((await fetch(`${base}/api/hello`, { headers: via('203.0.113.7') })).status, 200, 'hello stays open');
+    // Plain http through the proxy from outside: not even hello.
+    assert.equal((await fetch(`${base}/api/hello`, { headers: via('203.0.113.7', { 'X-Forwarded-Proto': 'http' }) })).status, 403);
+    assert.equal((await fetch(`${base}/api/hello`, { headers: via('192.168.0.5', { 'X-Forwarded-Proto': 'http' }) })).status, 200);
+  });
+
+  // Level 3 with a PIN: too weak, for everyone, from anywhere.
+  await withServer(async ({ base }) => {
+    const r = await fetch(`${base}/api/login`, { method: 'POST', body: JSON.stringify({ password: '4711' }) });
+    assert.equal(r.status, 403);
+    assert.match((await r.json()).error, /too weak/);
+    const hello = await (await fetch(`${base}/api/hello`)).json();
+    assert.equal(hello.publicUrl, 'https://music.example.com');
+  }, { password: '4711', settings: { level: 3, publicUrl: 'https://music.example.com/' } });
+
+  // Level 3 with a strong password: in, through the proxy too.
+  await withServer(async ({ base }) => {
+    assert.equal((await fetch(`${base}/api/library`, { headers: via('203.0.113.7') })).status, 401);
+    const r = await fetch(`${base}/api/login`, {
+      method: 'POST', headers: via('203.0.113.7', { 'X-Forwarded-Proto': 'https' }), body: JSON.stringify({ password: 'Portis8head', device: 'phone' }),
+    });
+    assert.equal(r.status, 200);
+    const { token } = await r.json();
+    assert.equal((await fetch(`${base}/api/library`, { headers: via('203.0.113.7', { Authorization: `Bearer ${token}` }) })).status, 200);
+  }, { password: 'Portis8head', settings: { level: 3 } });
+
+  // No public address below level 3.
+  await withServer(async ({ base }) => {
+    assert.equal((await (await fetch(`${base}/api/hello`)).json()).publicUrl, undefined);
+  }, { settings: { level: 2, publicUrl: 'https://music.example.com' } });
+});
+
+test('plain http straight from a public address gets no answer, unless it is a trusted proxy', async () => {
+  const { createHttpServer } = require('../src/http');
+  const dirs = tempDirs();
+  const config = configMod.open({ home: dirs.home, music: dirs.music });
+  const server = createHttpServer({ config, library: {}, version: 'test' });
+  // A request as from the router's forwarded port: no real socket needed.
+  const ask = (remoteAddress, headers = {}) => new Promise((resolve) => {
+    const req = { method: 'GET', url: '/api/hello', headers, socket: { remoteAddress, localPort: 7878 }, complete: true };
+    const res = {
+      headersSent: false,
+      setHeader() {},
+      writeHead(status) { this.status = status; },
+      end(body) { resolve({ status: this.status, body: JSON.parse(String(body)) }); },
+    };
+    server.emit('request', req, res);
+  });
+  try {
+    const direct = await ask('203.0.113.7');
+    assert.equal(direct.status, 403);
+    assert.match(direct.body.error, /plain http/);
+    assert.equal((await ask('::ffff:192.168.0.5')).status, 200);
+    // A proxy on a machine of its own, once trusted, is answered, and names its caller.
+    assert.equal((await ask('198.51.100.20', via('203.0.113.7'))).status, 403);
+    config.set({ trustedProxies: ['198.51.100.20'] });
+    assert.equal((await ask('::ffff:198.51.100.20', via('203.0.113.7'))).status, 200);
+  } finally {
+    fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test('wrong passwords wait by the caller a trusted proxy names, and all together when there are many', async () => {
+  await withServer(async ({ base }) => {
+    const tryLogin = (headers, password = 'nope') => fetch(`${base}/api/login`, { method: 'POST', headers, body: JSON.stringify({ password }) });
+    assert.equal((await tryLogin(via('203.0.113.7'))).status, 401);
+    assert.equal((await tryLogin(via('203.0.113.7'))).status, 429);
+    // Another caller behind the same proxy is not held back by that one.
+    assert.equal((await tryLogin(via('203.0.113.8'))).status, 401);
+    // What the caller wrote in front of the proxy's own entry is not believed.
+    assert.equal((await tryLogin(via('198.51.100.1, 203.0.113.7'))).status, 429);
+
+    // Thirty wrong tries from thirty addresses: the next one waits, from anywhere.
+    for (let i = 10; i < 38; i += 1) assert.equal((await tryLogin(via(`198.51.100.${i}`))).status, 401);
+    const held = await tryLogin(via('198.51.100.99'), 'Portis8head');
+    assert.equal(held.status, 429);
+    assert.match((await held.json()).error, /on this server lately/);
+  }, { password: 'Portis8head' });
+});
+
+test('the command line keeps a strong password from level 3 on', () => {
+  const { spawnSync } = require('child_process');
+  const dirs = tempDirs();
+  const main = path.join(__dirname, '..', 'src', 'main.js');
+  const run = (...args) => {
+    const r = spawnSync(process.execPath, [main, '--home', dirs.home, '--music', dirs.music, ...args], { encoding: 'utf8', timeout: 20000 });
+    return { code: r.status, out: `${r.stdout}${r.stderr}` };
+  };
+  const saved = () => JSON.parse(fs.readFileSync(path.join(dirs.home, 'server.json'), 'utf8'));
+  try {
+    assert.equal(run('set-password', '471').code, 1, 'a PIN has 4 or more');
+    assert.equal(run('set-password', '4711').code, 0);
+    assert.equal(saved().password.strong, false);
+
+    let r = run('--level', '3', 'devices');
+    assert.equal(r.code, 1);
+    assert.match(r.out, /needs a strong password first/);
+    assert.equal(saved().level, 1, 'nothing changed');
+
+    r = run('set-password', '--level', '3', 'portishead');
+    assert.equal(r.code, 1);
+    assert.match(r.out, /an upper-case letter and a number/);
+    assert.equal(run('set-password', '--level', '3', '--public-url', 'https://music.example.com', 'Portis8head').code, 0);
+    assert.equal(saved().level, 3);
+    assert.equal(saved().password.strong, true);
+    assert.equal(saved().publicUrl, 'https://music.example.com');
+
+    r = run('clear-password');
+    assert.equal(r.code, 1);
+    assert.match(r.out, /keeps a password/);
+    assert.match(run('set-password', '4711').out, /needs a password with/);
+    assert.equal(run('--public-url', 'http://music.example.com', 'devices').code, 1, 'https only');
+
+    // Down to level 2: a PIN is fine again.
+    assert.equal(run('--level', '2', 'set-password', '4711').code, 0);
+    assert.equal(run('clear-password').code, 0);
+  } finally {
+    fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
 });
 
 test('the address on the tailnet is read from tailscale status', () => {

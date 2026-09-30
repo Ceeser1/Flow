@@ -8,6 +8,7 @@ const readline = require('readline');
 const configMod = require('./config');
 const { startServer } = require('./server');
 const tools = require('./tools');
+const { LEVEL_NAMES, PUBLIC_LEVEL, parseLevel, passwordProblem } = require('@flow/core/password');
 
 const HELP = `Flow Server: hosts a Flow library and streams it to the Flow apps.
 
@@ -15,7 +16,7 @@ Usage:
   flow-server [options]                 start the server
   flow-server set-password [PIN]        require a PIN or password (asked for when left out);
                                         every signed-in device has to enter it again
-  flow-server clear-password            let anyone on the network in again
+  flow-server clear-password            let anyone on the network in again (levels 1 and 2 only)
   flow-server devices                   the devices signed in, and to which profile
 
 Options:
@@ -25,6 +26,15 @@ Options:
   --discovery     answer the apps' search on the local network (UDP ${configMod.DEFAULT_PORT}), so they
                   fill in the address by themselves (remembered)
   --no-discovery  stop answering it (the default)
+  --level <n>     how far the server can be reached (remembered; install.sh sets it):
+                    1 ${LEVEL_NAMES[1]}, 2 ${LEVEL_NAMES[2]},
+                    3 ${LEVEL_NAMES[3]}, 4 ${LEVEL_NAMES[4]}
+                  From 3 on a password is required: at least 8 characters with a
+                  lower-case letter, an upper-case letter and a number.
+  --public-url <https://...>   the address the apps use from the internet (levels 3 and 4;
+                  remembered); the apps are told it and fill it in
+  --trusted-proxy <ip,...>     proxies on other machines whose X-Forwarded-For is believed
+                  (remembered; "" for none). One on this machine always is.
   --home <dir>    where the server keeps its library and settings
                   (default ${configMod.defaultHome()})
 `;
@@ -45,6 +55,13 @@ function parseArgs(argv) {
     else if (a === '--name') out.name = value();
     else if (a === '--discovery') out.discovery = true;
     else if (a === '--no-discovery') out.discovery = false;
+    else if (a === '--level') {
+      out.level = parseLevel(value());
+      if (!out.level) throw new Error('--level is 1, 2, 3 or 4.');
+    } else if (a === '--public-url') {
+      out.publicUrl = String(value()).trim().replace(/\/+$/, '');
+      if (out.publicUrl && !/^https:\/\/[^\s/?#]+[^\s?#]*$/i.test(out.publicUrl)) throw new Error('--public-url is an https:// address, like https://music.example.com');
+    } else if (a === '--trusted-proxy') out.trustedProxies = String(value()).split(',').map((s) => s.trim()).filter(Boolean);
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}. See flow-server --help.`);
     else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices'].includes(a)) out.command = a;
     else out.rest.push(a);
@@ -96,21 +113,39 @@ async function main() {
   if (args.music) patch.musicDir = config.musicDir;
   if (args.name) patch.name = args.name;
   if (args.discovery !== undefined) patch.discovery = args.discovery;
-  if (Object.keys(patch).length) config.set(patch);
+  if (args.level) patch.level = args.level;
+  if (args.publicUrl !== undefined) patch.publicUrl = args.publicUrl;
+  if (args.trustedProxies) patch.trustedProxies = args.trustedProxies;
+  const level = args.level || config.get().level;
 
   if (args.command === 'set-password') {
     let pw = args.rest[0];
     if (!pw) {
-      pw = await askHidden('New PIN or password: ');
+      if (level >= PUBLIC_LEVEL) console.log('At least 8 characters, with a lower-case letter, an upper-case letter and a number.');
+      pw = await askHidden(level >= PUBLIC_LEVEL ? 'New password: ' : 'New PIN or password: ');
       const again = await askHidden('Once more: ');
       if (pw !== again) throw new Error('The two did not match. Nothing was changed.');
     }
-    if (!String(pw).trim()) throw new Error('The PIN or password cannot be empty.');
-    config.set({ password: configMod.hashPassword(pw), tokens: [] });
+    const problem = passwordProblem(pw, level);
+    if (problem) throw new Error(`${problem} Nothing was changed.`);
+    config.set({ ...patch, password: configMod.passwordEntry(pw), tokens: [] });
     console.log('PIN / password set. Every device has to enter it once.');
     return;
   }
+  // The internet: not without a strong password, which set-password (above)
+  // can set along with the level.
+  if (level >= PUBLIC_LEVEL && args.level && !(config.get().password && config.get().password.strong)) {
+    throw new Error(`Level ${level} makes the server reachable from the internet, so it needs a strong password first `
+      + '(at least 8 characters with a lower-case letter, an upper-case letter and a number): '
+      + `flow-server set-password --level ${level}`);
+  }
+  if (Object.keys(patch).length) config.set(patch);
+
   if (args.command === 'clear-password') {
+    if (level >= PUBLIC_LEVEL) {
+      throw new Error(`This server is at level ${level}, reachable from the internet, so it keeps a password. `
+        + 'Set a new one with flow-server set-password, or lower the level first (sh apps/server/install.sh).');
+    }
     config.set({ password: null, tokens: [] });
     console.log('No PIN or password any more: anyone who can reach the server can use it.');
     return;
@@ -131,7 +166,11 @@ async function main() {
   console.log(`Flow Server "${cfg.name}" is running.`);
   console.log(`  Music:    ${server.library.musicDir} (${server.library.data.songs.length} songs)`);
   console.log(`  Library:  ${server.config.home}`);
+  console.log(`  Level:    ${cfg.level}, ${LEVEL_NAMES[cfg.level]}${cfg.level >= PUBLIC_LEVEL && cfg.publicUrl ? ` at ${cfg.publicUrl}` : ''}`);
   console.log(`  Password: ${cfg.password ? 'yes' : 'none (flow-server set-password to add one)'}`);
+  if (cfg.level >= PUBLIC_LEVEL && !(cfg.password && cfg.password.strong)) {
+    console.log(`  WARNING:  reachable from the internet without a strong password, so it lets no one in. Set one: flow-server set-password`);
+  }
   console.log(`  ffmpeg:   ${tools.ffmpeg() ? 'found' : 'not found (optional: song lengths, tags and loudness for songs added by hand)'}`);
   const addrs = lanAddresses();
   console.log(`  Enter in Flow's settings: ${(addrs.length ? addrs : ['localhost']).map((a) => `${a}:${server.port}`).join('  or  ')}`);

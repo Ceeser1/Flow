@@ -527,23 +527,41 @@ function connect() {
   return connecting;
 }
 
+/** The https address a server says it has on the internet, or ''. */
+function publicUrlOf(hello) {
+  const url = hello && typeof hello.publicUrl === 'string' ? hello.publicUrl : '';
+  if (!/^https:\/\//i.test(url)) return '';
+  try {
+    return baseUrl(url);
+  } catch {
+    return '';
+  }
+}
+
 /**
- * Connected at home to a server on a tailnet: its Tailscale address becomes
- * the Remote address, once, and only into an empty field (a typed one stays,
- * and so does one cleared since). The IP, not the .ts.net name, which needs
- * MagicDNS.
+ * Connected at home to a server reachable from away: its address becomes the
+ * Remote address, once, and only into an empty field (a typed one stays, and
+ * so does one cleared since). Its https address on the internet when it has
+ * one, which needs nothing on this PC; else its Tailscale IP (not the .ts.net
+ * name, which needs MagicDNS).
  */
 function fillRemote(hello) {
-  const ts = hello && hello.tailscale;
-  if (!ts || sync.remoteFilled || settings.get('serverRemote')) return;
-  const port = Math.round(Number(ts.port));
-  if (typeof ts.ip !== 'string' || !isTailscaleAddress(ts.ip) || !(port > 0 && port < 65536)) return;
-  const address = `${ts.ip}:${port}`;
+  if (!hello || sync.remoteFilled || settings.get('serverRemote')) return;
+  let address = publicUrlOf(hello);
+  let notice = `Remote Server set to ${address}, the server's address on the internet, for when you are away from home.`;
+  const ts = hello.tailscale;
+  if (!address && ts) {
+    const port = Math.round(Number(ts.port));
+    if (typeof ts.ip !== 'string' || !isTailscaleAddress(ts.ip) || !(port > 0 && port < 65536)) return;
+    address = `${ts.ip}:${port}`;
+    notice = `Remote Server set to ${address}, the server's Tailscale address, for when you are away from home. Tailscale has to be on at this PC then too.`;
+  }
+  if (!address) return;
   settings.set({ serverRemote: address });
   sync.remoteFilled = true;
   saveSync();
   hooks.onSettings({ serverRemote: address });
-  hooks.onNotice(`Remote Server set to ${address}, the server's Tailscale address, for when you are away from home. Tailscale has to be on at this PC then too.`, 'info');
+  hooks.onNotice(notice, 'info');
 }
 
 /**

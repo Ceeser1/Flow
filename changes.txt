@@ -1,62 +1,23 @@
-New features:
-1. At Add Songs below the URL Bar place an "or" text centered, below that a new button "Open local File / Folder"
-Clicking the button opens the explorer showing folders and all supported file extension types. The bottom right button should be called "Select".
-When either a file or folder is selected, hide the "or" and the button and list the file(s), again trimable.
-If a file is in a unsupported to play format, start converting it to the best option like downloads. Also all to mp3 if thats selected.
+About Step 1, 2 and 3 I have questions first.
 
-If its local files, in the the "Apply" buttons row create a slider centered:
-"Copy Files (slider) Move Originals". Copy files is the default.
-When the slider gets hovered, show a pop-up above it: "Warning! Moving original files will remove them from their source folder and move them into '[SAVE_PATH]'!"
+I want the client to have full control.
+You can mark playlists to download, these then get downloaded from the server (The PI in my example)
+If you play songs without download they get streamed from the server.
 
-2. On the bottom player add new buttons:
-2.1 Left centered add 1:1 ratio buttons Shuffle, Repeat (Loop), Visualizer and Queue.
-The Shuffle button toggles the same shuffle as the top at the playlist.
-The Repeat button should have a loop symbol. When clicked, the current song repeats until deactivated or another song gets started manually.
-The Visualizer opens an Audio Visualizer like Winamp. Not too many details / plans about that yet, will come in the future.
-The Queue opens a modal with a list of the current queued songs.
+If you delete or edit a song these changes should be sent to the server so it gets removed/edited there, no DIRECT remote control, its per update/command.
+If you download new songs and server mode is enabled, after downloading them locally move them to the server.
 
-For each button i've added a png in Flow/images. Settings cogwheel is now also in there.
+The Settings also need to change. Under General rename "Saved Songs" to "Local Files".
+Then add a new "[ ] Streaming, Download and Synchronization"
+=> "Home Server in WiFi/Lan (slider) Using Remote Server" - "URL/IP [Editbox]" with public ip placeholder at remote, home server shows 192.168.0.63:port_example placeholder
+=> [ ] Pin or Password if the Server requires one - "Pin/PW [Editbox]" shown as "*" symbols.
+=> [ ] Always Download & Synchronize on mobile internet/metered connections (this becomes important for laptops or android, its only visible when "Remote Server" is selected)
 
-2.2 On the right centered create a "Sleep Timer" button. Clicking it opens a pop-up with title "Sleep Timer".
-Below that a checkbox "Shut down my PC after the timer runs out (+5 min delay)". When enabled, the PC will shut down after the timer + 5 minutes.
-Then a row of buttons to select: "15, 30, 45, 60" Min and "Custom: [editbox]" "Apply". Clicking any predefined time or apply closes the pop-up.
-
-When a timer is active instead of "Sleep Timer" show "Cancel Timer". Clicking it cancels the timer + the planned shutdown.
-Make sure there is a windows notification when the shutdown timer starts or stops.
-Draw the "Time Left: [mm:ss]" at the top center above the timeline.
-
-3. The song queue:
-When a playlist gets started using the play button (shuffle off), queue every song in the playlist top to bottom, max automated 20 entries, queue song no. 21 when song 1 finished or got skipped.
-If shuffle is enabled, queue songs of the playlist randomly but let the app remember which songs if the playlist already got queued and only start queueing them again once every song was queued once.
-If a song inside the current playlist is clicked to play directly, skip current song and start playing it, but do not delete the rest of the queue.
-If a new playlist is being started to play, scrap the old queue and build a new one.
-
-3.1 Adding songs to the queue:
-Add a new [+] button "Add to Queue" to all songs everywhere at "Actions".
-
-3.2 Reworking "Actions":
-Since actions now are many buttons, leave only "add to queue" and "play" always visible, as a thirs button make a "..." (3 centered dots) "More" button.
-When clicking More, it expands towards the left showing the other "Favourite", "Details", "Edit", "Delete / Remove" buttons.
+Is this fine and detailed enough settings for Level 2 & 3 as well?
 
 
-Settings Changes:
-Song transition description: "Smoothly transition between songs for the set time."
-Equalize Volume description: "Play all songs at an equal volume. It recudes loud spikes and makes quiet songs louder.
-
-Always convert all downloads to MP3 remove "all" here and change description: "Otherwise songs are kept in the format they come in."
-
-Rename "Visuals" title to "Visual Effects"
-Clouds - React to Bass, name the Slider "Strength"
-Enable Equializer description: "The music's frequencies glowing up from the player bar."
-Visibility description: "How strongly the equalizer is visible.", name the visibility Slider "Alpha"
-Equalizer Color Scheme description: "Spectrum colors bars by its height. Rainbow runs colors across the bars.".
-
-Defaults: Everything in visuals to 50%, except screen flash at 33% and its range at 10%. Set default equalizer color scheme to Rainbow.
-
-Add a new Setting title: Music Visualizer
-"Select your Music Visualizer" - [Preview selected] button at the right opens the selected visualizer.
-Random, Bars (the one you have already made), Waveform, Lightning, ... Prepare them as small 16:9 previews. Images will follow later once visualizers actually exist.
-The Random button/panel can have the shuffle icon again.
-The Waveform visualizer can also already be built since its like the main window equalizer, just placed in the center.
-
-Generally visualizers will be opened at full screen on the screen flow is at. Each equalizer will have a big "X" showing in the top right thats visible when the mouse gets moved while its fullscreen + 3 seconds.
+The installer should ask the user what type of installation they want:
+Level 1: Local Network only (no internet exposure, very low risk)
+Level 2: Using Tailscale: Accessable from anywhere (requires Tailscale and ports access, low risk)
+Level 3: Using Caddy: Exposed to the internet, accessible with anything (low-mid risk)
+Level 4: Nginx: Exposed to the internet, customized setup required (high risk on failure to provide security)

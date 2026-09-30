@@ -3,7 +3,8 @@
 // Where the server keeps its things, and server.json: the port, the name the
 // apps show, the music folder, the password, the profiles (their names and
 // PINs; what is in them is in library.json), whether the apps may find it on
-// the network by themselves, and the devices signed in.
+// the network by themselves, how far it can be reached (its level, public
+// address and trusted proxies), and the devices signed in.
 //
 //   home   FLOW_SERVER_HOME, else ~/.local/share/flow-server on Linux
 //          (XDG_DATA_HOME when set) and %LOCALAPPDATA%\Flow\server on Windows.
@@ -15,6 +16,7 @@ const os = require('os');
 const path = require('path');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { DEFAULT_PORT } = require('@flow/core/address');
+const { parseLevel, isStrongPassword } = require('@flow/core/password');
 
 function defaultHome() {
   if (process.env.FLOW_SERVER_HOME) return process.env.FLOW_SERVER_HOME;
@@ -30,7 +32,10 @@ function clean(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   const port = Math.round(Number(r.port));
   const secret = (v) => (v && typeof v === 'object' && v.salt && v.hash ? { salt: String(v.salt), hash: String(v.hash) } : null);
-  const pw = secret(r.password);
+  // The hash can't say how good the password was, so that is kept with it:
+  // from level 3 on only a strong one lets anyone in.
+  const pw = secret(r.password) && { ...secret(r.password), strong: r.password.strong === true };
+  const publicUrl = /^https:\/\/[^\s/?#]+[^\s?#]*$/i.test(String(r.publicUrl || '')) ? String(r.publicUrl).replace(/\/+$/, '') : '';
   const profiles = [];
   for (const p of Array.isArray(r.profiles) ? r.profiles : []) {
     if (!p || !/^[\w-]{1,64}$/.test(String(p.id || '')) || !String(p.name || '').trim()) continue;
@@ -48,6 +53,18 @@ function clean(raw) {
     // Answering the apps' search on the local network (discovery.js): off
     // until asked for.
     discovery: r.discovery === true,
+    // How far the server can be reached (@flow/core/password): the installer
+    // says, from 1 (home network) to 4 (the internet through your own proxy).
+    level: parseLevel(r.level) || 1,
+    // Levels 3 and 4: the https address the apps use from outside, which
+    // they are told so they can fill it in.
+    publicUrl,
+    // Proxies on other machines whose X-Forwarded-For is believed; one on
+    // this machine always is.
+    trustedProxies: (Array.isArray(r.trustedProxies) ? r.trustedProxies : [])
+      .map((a) => String(a || '').trim().toLowerCase().replace(/^::ffff:/, ''))
+      .filter((a) => /^[0-9a-f.:]{2,45}$/.test(a))
+      .slice(0, 16),
     password: pw,
     profiles,
     tokens: (Array.isArray(r.tokens) ? r.tokens : [])
@@ -101,6 +118,11 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   return { salt, hash };
 }
 
+/** The server password as server.json keeps it: its hash, and whether it was strong. */
+function passwordEntry(password) {
+  return { ...hashPassword(password), strong: isStrongPassword(password) };
+}
+
 function checkPassword(stored, password) {
   if (!stored) return true;
   const { hash } = hashPassword(password, stored.salt);
@@ -113,4 +135,4 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
-module.exports = { open, defaultHome, hashPassword, checkPassword, hashToken, DEFAULT_PORT };
+module.exports = { open, defaultHome, hashPassword, passwordEntry, checkPassword, hashToken, DEFAULT_PORT };

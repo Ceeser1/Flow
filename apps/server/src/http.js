@@ -28,6 +28,17 @@
 // for the profile. Profiles are behind the password, names included. Answers carry CORS headers, since the apps'
 // windows are pages of their own and the equalizer can only read audio that
 // says it may be read.
+//
+// From the internet (level 3 or 4, see @flow/core/password) the server is
+// behind a proxy that does the https. Then:
+//   - A proxy on this machine, or one in trustedProxies, says who the caller
+//     is (X-Forwarded-For); the wrong-password waits go by that address, not
+//     the proxy's. Anyone else's X-Forwarded-For is not believed.
+//   - Plain http straight from a public address (this port forwarded on the
+//     router) gets no answer at all: the password would cross the internet
+//     unencrypted. Nor does plain http through the proxy from outside.
+//   - Without a strong password nobody gets past /api/hello: at level 3 or
+//     4, and whenever a request came through a proxy from outside.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -36,6 +47,7 @@ const path = require('path');
 const { URL } = require('url');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const { isPrivateIp } = require('@flow/core/address');
+const { PUBLIC_LEVEL } = require('@flow/core/password');
 const { checkPassword, hashPassword, hashToken } = require('./config');
 
 const PROTOCOL = 1;
@@ -149,21 +161,39 @@ function sendFile(req, res, file) {
 
 // Wrong passwords: each one from the same address waits twice as long as the
 // one before (1 s, 2 s, 4 s... up to 5 minutes), which makes guessing a PIN
-// hopeless without ever locking out the right one for long.
+// hopeless without ever locking out the right one for long. Many addresses
+// at once (from the internet, a botnet) are held back together: after
+// GLOBAL_TRIES wrong ones within GLOBAL_WINDOW, nobody may try until the
+// oldest is out of it. Devices already signed in are not held back.
+const GLOBAL_TRIES = 30;
+const GLOBAL_WINDOW = 10 * 60 * 1000;
+
 function createThrottle() {
   const failures = new Map(); // ip -> { count, until }
+  let recent = []; // when the last wrong tries were, from anywhere
   return {
     check(ip) {
+      const now = Date.now();
       const f = failures.get(ip);
-      if (f && f.until > Date.now()) {
-        throw new HttpError(429, `Too many wrong tries. Wait ${Math.ceil((f.until - Date.now()) / 1000)} seconds.`);
+      if (f && f.until > now) {
+        throw new HttpError(429, `Too many wrong tries. Wait ${Math.ceil((f.until - now) / 1000)} seconds.`);
+      }
+      recent = recent.filter((t) => t > now - GLOBAL_WINDOW);
+      if (recent.length >= GLOBAL_TRIES) {
+        throw new HttpError(429, `Too many wrong tries on this server lately. Wait ${Math.ceil((recent[0] + GLOBAL_WINDOW - now) / 60000)} minutes.`);
       }
     },
     fail(ip) {
+      const now = Date.now();
       const f = failures.get(ip) || { count: 0, until: 0 };
       f.count += 1;
-      f.until = Date.now() + Math.min(300000, 1000 * 2 ** (f.count - 1));
+      f.until = now + Math.min(300000, 1000 * 2 ** (f.count - 1));
       failures.set(ip, f);
+      recent.push(now);
+      // Many addresses: the ones quiet for an hour are forgotten.
+      if (failures.size > 10000) {
+        for (const [key, v] of failures) if (v.until < now - 3600000) failures.delete(key);
+      }
     },
     ok(ip) {
       failures.delete(ip);
@@ -171,8 +201,66 @@ function createThrottle() {
   };
 }
 
+// Headers a proxy adds. Any of them on a request means a proxy passed it on,
+// whether or not what they say is believed.
+const PROXY_HEADERS = ['x-forwarded-for', 'x-real-ip', 'forwarded'];
+
+/** An address without the IPv4-in-IPv6 prefix, brackets or (IPv4) port. */
+function bareIp(value) {
+  const a = String(value || '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/^::ffff:/, '');
+  return /^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(a) ? a.replace(/:\d+$/, '') : a;
+}
+
+const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
+
 function createHttpServer({ config, library, version, log = () => {}, tailscale = () => null }) {
   const throttle = createThrottle();
+
+  const trustedProxy = (ip) => isLoopback(ip) || config.get().trustedProxies.includes(ip);
+
+  /**
+   * Who a request is from. socket: the machine that connected. ip: the
+   * caller, as a trusted proxy says (the last address in X-Forwarded-For it
+   * did not add itself), else the socket. proxied: a proxy passed it on.
+   * outside: it came through a proxy from outside the home network and the
+   * tailnet, or from a proxy that is not trusted (so from who knows where).
+   * https: false when the proxy says the caller used plain http.
+   */
+  function clientOf(req) {
+    const socket = bareIp(req.socket.remoteAddress);
+    const proxied = PROXY_HEADERS.some((h) => req.headers[h] !== undefined);
+    const trusted = proxied && trustedProxy(socket);
+    let ip = socket;
+    if (trusted) {
+      const hops = String(req.headers['x-forwarded-for'] || '').split(',').map(bareIp).filter(Boolean);
+      while (hops.length > 1 && trustedProxy(hops[hops.length - 1])) hops.pop();
+      ip = hops.pop() || bareIp(req.headers['x-real-ip']) || socket;
+    }
+    const proto = String(req.headers['x-forwarded-proto'] || (/proto=([a-z]+)/i.exec(String(req.headers.forwarded || '')) || [])[1] || '')
+      .split(',')[0].trim().toLowerCase();
+    return {
+      socket, ip, proxied, outside: proxied && (!trusted || !isPrivateIp(ip)), https: proto !== 'http',
+    };
+  }
+
+  /**
+   * Throws when a request may not be answered at all (see the top), or may
+   * only have /api/hello because the server is open to the internet without
+   * a strong password.
+   */
+  function checkExposure(client, isHello) {
+    const cfg = config.get();
+    if (!isPrivateIp(client.socket) && !cfg.trustedProxies.includes(client.socket)) {
+      throw new HttpError(403, 'This Flow Server does not answer the internet over plain http. Use its https address, or Tailscale.');
+    }
+    if (client.outside && !client.https) {
+      throw new HttpError(403, 'This Flow Server is not used over plain http from the internet. Use its https address.');
+    }
+    if (isHello || (cfg.level < PUBLIC_LEVEL && !client.outside) || (cfg.password && cfg.password.strong)) return;
+    throw new HttpError(403, cfg.password
+      ? 'This Flow Server can be reached from the internet, and its password is too weak for that, so it lets no one in. On the server, set a stronger one: flow-server set-password'
+      : 'This Flow Server can be reached from the internet but has no password, so it lets no one in. On the server, set one: flow-server set-password');
+  }
 
   function tokenOf(req, url) {
     const auth = String(req.headers.authorization || '');
@@ -230,8 +318,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     config.set({ tokens: cfg.tokens.map((t) => (t.hash === entry.hash ? { ...t, ...patch } : t)) });
   }
 
-  async function profiles(req, res, entry, action) {
-    const ip = req.socket.remoteAddress || '';
+  async function profiles(req, res, entry, action, { ip }) {
     const body = req.method === 'POST' ? await readJsonBody(req) : {};
     const device = String(body.device || (entry && entry.device) || ip).slice(0, 80);
     const current = profileOf(entry);
@@ -290,8 +377,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     throw new HttpError(404, 'Nothing here.');
   }
 
-  async function login(req, res) {
-    const ip = req.socket.remoteAddress || '';
+  async function login(req, res, { ip }) {
     throttle.check(ip);
     const body = await readJsonBody(req);
     const cfg = config.get();
@@ -384,20 +470,25 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     const url = new URL(req.url, 'http://flow');
     const p = url.pathname.replace(/\/+$/, '');
     const is = (method, pattern) => (method === req.method || (method === 'GET' && req.method === 'HEAD')) && pattern.test(p);
+    const client = clientOf(req);
 
     if (is('GET', /^\/api\/hello$/)) {
+      checkExposure(client, true);
       const cfg = config.get();
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features: FEATURES, version, id: cfg.id, name: cfg.name, password: !!cfg.password,
       };
       // Where the server is on the tailnet, for the apps' Remote address. Only
-      // to askers on our own networks: not to whoever a proxy on this machine
-      // passes through (it adds X-Forwarded-For).
+      // to askers on our own networks: not to whoever a proxy passes through.
       const ts = tailscale();
-      if (ts && !req.headers['x-forwarded-for'] && isPrivateIp(req.socket.remoteAddress)) answer.tailscale = { ip: ts.ip, dns: ts.dns, port: req.socket.localPort };
+      if (ts && !client.proxied && isPrivateIp(client.socket)) answer.tailscale = { ip: ts.ip, dns: ts.dns, port: req.socket.localPort };
+      // Its https address on the internet, for the same: no secret, anyone
+      // who got here through it knows it already.
+      if (cfg.level >= PUBLIC_LEVEL && cfg.publicUrl) answer.publicUrl = cfg.publicUrl;
       return sendJson(res, 200, answer);
     }
-    if (is('POST', /^\/api\/login$/)) return login(req, res);
+    checkExposure(client, false);
+    if (is('POST', /^\/api\/login$/)) return login(req, res, client);
 
     if (!p.startsWith('/api/')) throw new HttpError(404, 'Nothing here. This is a Flow Server; open it in the Flow app.');
     const entry = requireAuth(req, url);
@@ -423,7 +514,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     }
     const pm = /^\/api\/profiles(?:\/(login|logout|rename|delete))?$/.exec(p);
     if (pm && (req.method === 'POST' || (req.method === 'GET' && !pm[1]))) {
-      return profiles(req, res, entry, pm[1] || (req.method === 'GET' ? 'list' : 'create'));
+      return profiles(req, res, entry, pm[1] || (req.method === 'GET' ? 'list' : 'create'), client);
     }
     if (is('POST', /^\/api\/rescan$/)) {
       const result = await library.scan();
