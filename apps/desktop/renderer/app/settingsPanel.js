@@ -356,7 +356,7 @@ const SettingsPanel = {
       this._profileRow(),
       this._row({
         label: 'Home Server in WiFi/LAN',
-        desc: 'Tried first. The address the server shows when it starts.',
+        desc: 'Tried first. Left empty, Flow looks for a server on this network and fills it in when it finds one.',
         sub: true,
         when: on,
         right: this._textField({ key: 'serverHome', placeholder: '192.168.0.63:7878', when: on }),
@@ -459,7 +459,8 @@ const SettingsPanel = {
     let text;
     let kind = 'off';
     if (!s.serverOn) text = '';
-    else if (!s.serverHome && !s.serverRemote) text = 'Enter the home or remote address below.';
+    else if (st.searching && !s.serverHome) text = 'Looking for a Flow Server on this network...';
+    else if (!s.serverHome && !s.serverRemote) text = 'No Flow Server found on this network. Enter the home or remote address below.';
     else ({ text, kind } = ServerChip.describe(st));
     const lines = [text, st.on ? st.transfer : '', st.on ? st.note : ''].filter(Boolean);
     clear(this._serverNode);

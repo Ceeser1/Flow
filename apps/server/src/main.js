@@ -129,6 +129,7 @@ async function main() {
   console.log(`  ffmpeg:   ${tools.ffmpeg() ? 'found' : 'not found (optional: song lengths, tags and loudness for songs added by hand)'}`);
   const addrs = lanAddresses();
   console.log(`  Enter in Flow's settings: ${(addrs.length ? addrs : ['localhost']).map((a) => `${a}:${server.port}`).join('  or  ')}`);
+  console.log(`  Discovery: ${server.discovery() ? `apps on this network find the server by themselves (UDP ${server.discovery().port})` : 'off (UDP port taken); the address has to be typed in'}`);
   const ts = server.tailscale();
   if (ts) {
     console.log(`  Away from home (Tailscale): ${ts.ip}:${server.port}${ts.dns ? ` (${ts.dns})` : ''}, which Flow fills into its Remote field by itself`);

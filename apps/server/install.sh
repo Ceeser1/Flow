@@ -187,13 +187,16 @@ if have ufw && $SUDO ufw status 2>/dev/null | grep -q "Status: active"; then
   SUBNETS=$(ip -4 route 2>/dev/null | awk '$1 ~ /\// && /scope link/ && $0 !~ /tailscale|docker|br-|veth/ { print $1 }')
   for subnet in $SUBNETS; do
     $SUDO ufw allow from "$subnet" to any port "$PORT_NOW" proto tcp >/dev/null && say "ufw: port $PORT_NOW open to $subnet"
+    # The apps find the server by a UDP question on Flow's default port, from the home network only.
+    $SUDO ufw allow from "$subnet" to any port 7878 proto udp >/dev/null && say "ufw: UDP 7878 (finding the server) open to $subnet"
   done
   $SUDO ufw allow in on tailscale0 to any port "$PORT_NOW" proto tcp >/dev/null && say "ufw: port $PORT_NOW open to Tailscale"
 elif have firewall-cmd && $SUDO firewall-cmd --state >/dev/null 2>&1; then
   $SUDO firewall-cmd --permanent --add-port="$PORT_NOW/tcp" >/dev/null
+  $SUDO firewall-cmd --permanent --add-port=7878/udp >/dev/null
   $SUDO firewall-cmd --permanent --zone=trusted --add-interface=tailscale0 >/dev/null 2>&1 || true
   $SUDO firewall-cmd --reload >/dev/null
-  say "firewalld: port $PORT_NOW open (to every network the zone covers), and Tailscale trusted"
+  say "firewalld: port $PORT_NOW and UDP 7878 open (to every network the zone covers, not only your LAN), and Tailscale trusted"
 else
   say "No active firewall found (ufw, firewalld): nothing to open."
 fi

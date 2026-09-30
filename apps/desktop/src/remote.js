@@ -25,6 +25,7 @@
 //             rest came from here); only those go when no longer needed
 //   remoteFilled  the Remote address was filled in from the server's Tailscale
 //             address once; a field cleared since stays empty
+//   homeFilled    the same for the Home address, found on the network
 //
 // Songs the window plays come from a local copy when there is one, else
 // straight from the server (renderer: Store.audioSrc).
@@ -54,6 +55,7 @@ const { applyCommand } = require('@flow/core/commands');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { songFileStem } = require('@flow/core/text');
 const { serverBaseUrl: baseUrl, isTailscaleAddress } = require('@flow/core/address');
+const discovery = require('@flow/core/discovery');
 
 const PROTOCOL = 1;
 const POLL_MS = 10000;
@@ -69,7 +71,7 @@ const syncFile = () => path.join(paths.ensure(paths.rootDir()), 'server-sync.jso
 
 function emptySync(serverId = '') {
   return {
-    serverId, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, offline: [], offlineKeep: {}, fetched: {}, remoteFilled: false,
+    serverId, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, offline: [], offlineKeep: {}, fetched: {}, remoteFilled: false, homeFilled: false,
   };
 }
 
@@ -245,6 +247,7 @@ const status = {
   transfer: '', // "Uploading 3 of 12: ..." while songs go up or down
   note: '', // why songs wait (a metered connection), or '' 
   syncing: false,
+  searching: false, // looking for a server on the network
   lastSync: 0,
   profiles: null, // the server's profiles [{ id, name, pin }]; null: it has none to offer
 };
@@ -289,6 +292,7 @@ function publicStatus() {
     transfer: status.transfer,
     note: status.note,
     syncing: status.syncing,
+    searching: status.searching,
     lastSync: status.lastSync,
     via: conn.via,
     name: conn.name,
@@ -395,7 +399,8 @@ let generation = 0; // bumped on every reconfigure: late answers of an old conne
 function adoptServer(id) {
   if (sync.serverId === id) return;
   const hadOther = !!sync.serverId;
-  sync = emptySync(id);
+  // The Home address was found (or not) before there was a server to belong to.
+  sync = { ...emptySync(id), homeFilled: sync.homeFilled };
   cache = { serverId: id, rev: -1, library: null, profile: '' };
   saveSync();
   saveCache();
@@ -526,6 +531,45 @@ function fillRemote(hello) {
   saveSync();
   hooks.onSettings({ serverRemote: address });
   hooks.onNotice(`Remote Server set to ${address}, the server's Tailscale address, for when you are away from home. Tailscale has to be on at this PC then too.`, 'info');
+}
+
+/**
+ * Turned on with no Home address: ask the local network for a Flow Server
+ * (@flow/core/discovery). Exactly one answering becomes the Home address, once
+ * (the box cleared since stays empty); several are told about, none is
+ * silent (away from home, or the server is off).
+ */
+async function discoverHome() {
+  if (status.searching || !settings.get('serverOn') || settings.get('serverHome') || sync.homeFilled) return;
+  status.searching = true;
+  emitStatus();
+  let found = [];
+  try {
+    found = await discovery.find();
+  } catch {
+    found = [];
+  } finally {
+    status.searching = false;
+  }
+  // Typed by hand, or turned off, while it looked.
+  if (!settings.get('serverOn') || settings.get('serverHome')) {
+    emitStatus();
+    return;
+  }
+  if (found.length === 1) {
+    const address = `${found[0].ip}:${found[0].port}`;
+    settings.set({ serverHome: address });
+    sync.homeFilled = true;
+    saveSync();
+    hooks.onSettings({ serverHome: address });
+    hooks.onNotice(`Found the Flow Server "${found[0].name}" on this network. Home Server set to ${address}.`, 'info');
+    reconfigure({ serverHome: address });
+    return;
+  }
+  if (found.length > 1) {
+    hooks.onNotice(`Found ${found.length} Flow Servers on this network (${found.map((f) => `"${f.name}" at ${f.ip}:${f.port}`).join(', ')}). Enter the one you want as the Home Server.`, 'info');
+  }
+  emitStatus();
 }
 
 function scheduleRetry() {
@@ -1284,6 +1328,7 @@ function init(h) {
     buildView();
     connect();
   }
+  discoverHome();
 }
 
 /** A setting of the server section changed: connect again, or let go. */
@@ -1313,6 +1358,7 @@ function reconfigure(patch) {
     status.state = 'off';
   }
   emitStatus();
+  if (keys.includes('serverOn') || keys.includes('serverHome')) discoverHome();
 }
 
 /** The PIN typed in Settings; kept encrypted. */

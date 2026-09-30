@@ -11,6 +11,7 @@ const path = require('path');
 const { startServer } = require('../src/server');
 const configMod = require('../src/config');
 const tailscaleMod = require('../src/tailscale');
+const discoveryMod = require('@flow/core/discovery');
 
 // The fake songs below are no real audio: ffprobe would call them broken.
 process.env.FLOW_SERVER_FFMPEG = 'off';
@@ -28,7 +29,7 @@ async function withServer(fn, { password, tailscale = null } = {}) {
   }
   // Never the real machine's Tailscale.
   const server = await startServer({
-    home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1', detectTailscale: async () => tailscale,
+    home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1', detectTailscale: async () => tailscale, discoveryPort: null,
   });
   const base = `http://127.0.0.1:${server.port}`;
   try {
@@ -338,4 +339,24 @@ test('the address on the tailnet is read from tailscale status', () => {
     { ip: '100.90.1.2', dns: '' },
   );
   assert.equal(tailscaleMod.fromInterfaces({ lo: [{ family: 'IPv4', address: '127.0.0.1', internal: true }] }), null);
+});
+
+test('an app looking for servers on the network finds this one, with its real port', async () => {
+  const dirs = tempDirs();
+  const server = await startServer({
+    home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1', detectTailscale: async () => null, discoveryPort: 0,
+  });
+  try {
+    const port = server.discovery().port;
+    const found = await discoveryMod.find({ port, targets: ['127.0.0.1'], timeoutMs: 800, sends: 1 });
+    assert.equal(found.length, 1);
+    assert.equal(found[0].ip, '127.0.0.1');
+    assert.equal(found[0].port, server.port);
+    assert.equal(found[0].id, server.config.get().id);
+    // Nobody there: nothing found, and no error.
+    assert.deepEqual(await discoveryMod.find({ port: port + 1 > 65535 ? 9 : port + 1, targets: ['127.0.0.1'], timeoutMs: 300, sends: 1 }), []);
+  } finally {
+    await server.close();
+    fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
 });

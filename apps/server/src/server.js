@@ -6,16 +6,19 @@
 
 const configMod = require('./config');
 const { createLibrary } = require('./library');
-const { createHttpServer } = require('./http');
+const { createHttpServer, PROTOCOL } = require('./http');
 const tailscaleMod = require('./tailscale');
+const { startDiscovery } = require('./discovery');
+const { DISCOVERY_PORT } = require('@flow/core/discovery');
 const { version } = require('../package.json');
 
 const RESCAN_MS = 5 * 60 * 1000;
 const TRASH_MS = 24 * 60 * 60 * 1000;
 
 /**
- * opts: { home, music, port, host, log, detectTailscale }. Resolves
- * { port, config, library, tailscale, close }.
+ * opts: { home, music, port, host, log, detectTailscale, discoveryPort }.
+ * Resolves { port, config, library, tailscale, close }. discoveryPort: the UDP
+ * port the apps' search is answered on (null: not at all; the tests).
  * Port 0 picks a free one.
  */
 async function startServer(opts = {}) {
@@ -41,6 +44,13 @@ async function startServer(opts = {}) {
     server.listen(port, opts.host || '0.0.0.0', resolve);
   });
 
+  // The apps' "who is here?" on the network is answered on its own UDP port.
+  const discovery = opts.discoveryPort === null ? null : await startDiscovery({
+    port: opts.discoveryPort === undefined ? DISCOVERY_PORT : opts.discoveryPort,
+    info: () => ({ id: config.get().id, name: config.get().name, port: server.address().port, protocol: PROTOCOL }),
+    log,
+  });
+
   // Songs dropped into the folder by hand turn up within a few minutes (or at
   // once through an app's "Synchronize now").
   await lookForTailscale();
@@ -57,7 +67,9 @@ async function startServer(opts = {}) {
     config,
     library,
     tailscale: () => tailscale,
+    discovery: () => discovery,
     close() {
+      if (discovery) discovery.close();
       for (const t of timers) clearInterval(t);
       library.stop();
       return new Promise((resolve) => {

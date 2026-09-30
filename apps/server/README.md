@@ -51,6 +51,19 @@ renamed song's tags, and measures each song's loudness for "Equalize volume".
 Without it, those songs show no length until an app plays them. Songs uploaded
 from an app bring all of that with them either way.
 
+## Finding the server on the network
+
+An app with no Home address broadcasts a small UDP question on the local
+network; the server answers the asker with its name and port, and the app
+fills its Home address in. It needs UDP port 7878 (Flow's default port, fixed
+because the apps can't know a custom one) reachable from the home network:
+`install.sh` opens it in ufw or firewalld, and a rule like
+`sudo ufw allow from 192.168.0.0/24 to any port 7878` (no protocol) covers
+TCP and UDP. Only askers on a private address are answered, and the answer
+holds what `/api/hello` tells anyone. It doesn't cross routers or guest WiFi
+with client isolation, and if the port is taken the server says so on start
+and the address has to be typed in.
+
 ## Away from home: Tailscale
 
 [Tailscale](https://tailscale.com) (free for personal use) puts your devices

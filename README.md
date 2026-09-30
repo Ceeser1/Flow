@@ -118,9 +118,10 @@ The cog at the bottom left of the menu. Every change counts at once.
     and stats, on every device) and **Logout**. Only while connected.
   - **Home Server in WiFi/LAN** and **Remote Server**: addresses, tried in
     that order (`192.168.0.63:7878`, a domain, or a full `https://` link).
+    With Home empty, Flow asks the local network for a Flow Server and fills
+    Home in when exactly one answers (once, and only into an empty box).
     When the server is on [Tailscale](https://tailscale.com), connecting at
-    home fills the Remote box with its Tailscale address by itself (once,
-    and only into an empty box).
+    home fills the Remote box with its Tailscale address the same way.
   - **Pin or Password if the Server requires one**: entered once, kept
     encrypted for the Windows account.
   - **Always Download & Synchronize on mobile internet/metered connections**
