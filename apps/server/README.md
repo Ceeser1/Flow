@@ -29,6 +29,20 @@ an app asks it to synchronize.
 A song deleted from an app is not gone at once. Its file moves to
 `.flow-trash` in the music folder and is removed after 30 days.
 
+### Installing it as a service (Linux)
+
+```sh
+git clone <the repo> ~/Flow && cd ~/Flow
+sh apps/server/install.sh           # --music DIR, --port N, --yes, --no-tailscale, --uninstall
+```
+
+Works on any Linux with systemd and Node 18 or newer (a Raspberry Pi, a home
+server, a VPS). It links `@flow/core` (there is no npm needed), offers ffmpeg,
+writes and starts the `flow-server` service (also at boot), opens the port in
+ufw or firewalld for the home network and for Tailscale, and offers to
+install Tailscale. Run it again any time; it only updates. Later:
+`git pull && sudo systemctl restart flow-server`.
+
 ### ffmpeg (recommended)
 
 With ffmpeg installed (`sudo apt install ffmpeg`), the server reads the length
@@ -36,6 +50,26 @@ and tags of songs dropped into the folder by hand, writes new names into a
 renamed song's tags, and measures each song's loudness for "Equalize volume".
 Without it, those songs show no length until an app plays them. Songs uploaded
 from an app bring all of that with them either way.
+
+## Away from home: Tailscale
+
+[Tailscale](https://tailscale.com) (free for personal use) puts your devices
+on one private network, encrypted end to end. The server is then reachable
+from anywhere at its `100.x.y.z` address with no port opened on the router,
+and plain http is fine inside it.
+
+1. On the server: `install.sh` offers to install it and prints a link to add
+   the machine to your account (or `curl -fsSL https://tailscale.com/install.sh | sh`,
+   then `sudo tailscale up`).
+2. On the PC (and phone): install Tailscale, sign in to the same account.
+3. In Flow, connect once at home. The server tells the app its Tailscale
+   address and Flow fills it into **Remote Server** (only if that box is
+   empty, and only once: clear it and it stays empty).
+
+The server prints the address when it starts, and looks again every five
+minutes, so Tailscale may come up after it. A PIN is still worth setting: it
+keeps other devices on your tailnet out. The address is only told to callers
+on a private network, never to one that came through a proxy.
 
 ## PIN or password
 
@@ -88,7 +122,7 @@ report changes.
 
 | | |
 |---|---|
-| `GET /api/hello` | name, protocol, whether a password is needed (open to anyone) |
+| `GET /api/hello` | name, protocol, whether a password is needed (open to anyone); `tailscale: { ip, dns, port }` when the server is on a tailnet, to private callers only |
 | `POST /api/login` | `{ password, device }` → `{ token }` |
 | `GET /api/library?since=<rev>&as=<profile>` | `{ rev, library, profile }`, or 204 when nothing changed for that profile |
 | `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`) |

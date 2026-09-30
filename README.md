@@ -118,11 +118,15 @@ The cog at the bottom left of the menu. Every change counts at once.
     and stats, on every device) and **Logout**. Only while connected.
   - **Home Server in WiFi/LAN** and **Remote Server**: addresses, tried in
     that order (`192.168.0.63:7878`, a domain, or a full `https://` link).
+    When the server is on [Tailscale](https://tailscale.com), connecting at
+    home fills the Remote box with its Tailscale address by itself (once,
+    and only into an empty box).
   - **Pin or Password if the Server requires one**: entered once, kept
     encrypted for the Windows account.
   - **Always Download & Synchronize on mobile internet/metered connections**
-    (off): otherwise songs only go up and come down on connections Windows
-    does not call metered. Streaming and changes go either way.
+    (off; only shown with a Remote address): away from home, songs only go
+    up and come down on connections Windows does not call metered, unless
+    ticked. Streaming and changes go either way, and at home nothing waits.
   - **Keep downloaded files after sync with the server** (on): songs
     downloaded here stay in Local Files once uploaded. Unticked, each is
     removed here after its upload (unless a playlist marked for download
@@ -230,6 +234,12 @@ control with a cache:
   then uploaded. Turning the server on the first time uploads all of Local
   Files; songs the server already has (same source, or same artist, title,
   mix and length) are not sent twice.
+- Away from home the apps reach the server through Tailscale: install it on
+  the server and on the PC (same account), and the server's `100.x.y.z`
+  address becomes the Remote address. No port is opened on the router. The
+  name under "Flow" then says "(Tailscale)". `apps/server/install.sh` sets
+  the server up as a service on any Linux with systemd, Tailscale included
+  (see the server's README).
 - Profiles: everyone shares the songs, and each profile has its own
   playlists, favourites and listening stats. The first profile made takes
   over what was there; without one ("None") everything is shared. The name

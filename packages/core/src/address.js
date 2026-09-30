@@ -22,4 +22,43 @@ function serverBaseUrl(address) {
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`;
 }
 
-module.exports = { DEFAULT_PORT, serverBaseUrl };
+function ipv4(text) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
+  if (!m) return null;
+  const parts = m.slice(1).map(Number);
+  return parts.every((n) => n <= 255) ? parts : null;
+}
+
+/** The host of an address as typed: no port, no brackets, lower case; '' for nonsense. */
+function hostOf(address) {
+  try {
+    let a = String(address || '').trim();
+    if (!/^https?:\/\//i.test(a)) a = `http://${a}`;
+    return new URL(a).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/** A Tailscale address: 100.64.0.0/10 or a *.ts.net name. Takes "host", "host:port" or a link. */
+function isTailscaleAddress(address) {
+  const host = hostOf(address);
+  if (host.endsWith('.ts.net')) return true;
+  const ip = ipv4(host);
+  return !!ip && ip[0] === 100 && ip[1] >= 64 && ip[1] <= 127;
+}
+
+/** A machine on the local network, the loopback or the tailnet: not the open internet. */
+function isPrivateIp(ip) {
+  let a = String(ip || '').trim().toLowerCase();
+  if (a.startsWith('::ffff:')) a = a.slice(7);
+  const v4 = ipv4(a);
+  if (v4) {
+    const [p, q] = v4;
+    return p === 127 || p === 10 || (p === 192 && q === 168) || (p === 172 && q >= 16 && q <= 31)
+      || (p === 100 && q >= 64 && q <= 127);
+  }
+  return a === '::1' || /^f[cd][0-9a-f]{2}:/.test(a) || /^fe[89ab][0-9a-f]:/.test(a);
+}
+
+module.exports = { DEFAULT_PORT, serverBaseUrl, isTailscaleAddress, isPrivateIp };

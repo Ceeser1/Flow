@@ -99,4 +99,4 @@ async function retag(file, meta) {
   return true;
 }
 
-module.exports = { ffmpeg, ffprobe, probe, measureLoudness, retag };
+module.exports = { ffmpeg, ffprobe, probe, measureLoudness, retag, onPath };

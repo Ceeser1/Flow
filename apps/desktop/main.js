@@ -555,6 +555,7 @@ app.whenReady().then(() => {
     onView: (view) => sendToWindow('library:changed', view),
     onStatus: (st) => sendToWindow('server:status', st),
     onNotice: (text, kind) => sendToWindow('server:notice', { text, kind }),
+    onSettings: (patch) => sendToWindow('settings:changed', patch),
   });
   createWindow();
   // Both in the background, once the window is up. The scan tells the window

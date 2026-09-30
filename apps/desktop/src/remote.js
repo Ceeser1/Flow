@@ -23,6 +23,8 @@
 //   offline   the server playlists marked for download
 //   fetched   local songs that are copies downloaded from the server (the
 //             rest came from here); only those go when no longer needed
+//   remoteFilled  the Remote address was filled in from the server's Tailscale
+//             address once; a field cleared since stays empty
 //
 // Songs the window plays come from a local copy when there is one, else
 // straight from the server (renderer: Store.audioSrc).
@@ -51,7 +53,7 @@ const model = require('@flow/core/libraryModel');
 const { applyCommand } = require('@flow/core/commands');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { songFileStem } = require('@flow/core/text');
-const { serverBaseUrl: baseUrl } = require('@flow/core/address');
+const { serverBaseUrl: baseUrl, isTailscaleAddress } = require('@flow/core/address');
 
 const PROTOCOL = 1;
 const POLL_MS = 10000;
@@ -67,7 +69,7 @@ const syncFile = () => path.join(paths.ensure(paths.rootDir()), 'server-sync.jso
 
 function emptySync(serverId = '') {
   return {
-    serverId, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, offline: [], offlineKeep: {}, fetched: {},
+    serverId, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, offline: [], offlineKeep: {}, fetched: {}, remoteFilled: false,
   };
 }
 
@@ -270,7 +272,7 @@ function newCommand(type, args) {
   return { cid: newCid(), at: Date.now(), type, ...args, profile: currentProfile() };
 }
 
-let hooks = { onView: () => {}, onStatus: () => {}, onNotice: () => {} };
+let hooks = { onView: () => {}, onStatus: () => {}, onNotice: () => {}, onSettings: () => {} };
 let view = null;
 
 function active() {
@@ -299,6 +301,8 @@ function publicStatus() {
     profile: sync.profile,
     profiles: status.profiles,
     profilesSupported: conn.profiles,
+    // Connected through the Tailscale address (away from home).
+    tailscale: conn.via === 'remote' && isTailscaleAddress(conn.address),
   };
 }
 
@@ -474,6 +478,7 @@ function connect() {
       const profiles = Array.isArray(hello.features) && hello.features.includes('profiles');
       Object.assign(conn, { base, token, via, name: String(hello.name || 'Flow Server'), address, profiles });
       if (via === 'remote') lastHomeTry = Date.now();
+      if (via === 'home') fillRemote(hello);
       retryStep = 0;
       setState('online');
       try {
@@ -490,7 +495,10 @@ function connect() {
     if (gen !== generation) return false;
     conn.base = '';
     conn.token = '';
-    const [state, message] = problem || ['offline', 'The server cannot be reached.'];
+    let [state, message] = problem || ['offline', 'The server cannot be reached.'];
+    if (state === 'offline' && isTailscaleAddress(s.serverRemote)) {
+      message = 'The server cannot be reached. Away from home, Tailscale has to be on at this PC.';
+    }
     setState(state, message);
     // A wrong PIN is not tried over and over; a changed setting tries again.
     if (state !== 'password') scheduleRetry();
@@ -499,6 +507,25 @@ function connect() {
     connecting = null;
   });
   return connecting;
+}
+
+/**
+ * Connected at home to a server on a tailnet: its Tailscale address becomes
+ * the Remote address, once, and only into an empty field (a typed one stays,
+ * and so does one cleared since). The IP, not the .ts.net name, which needs
+ * MagicDNS.
+ */
+function fillRemote(hello) {
+  const ts = hello && hello.tailscale;
+  if (!ts || sync.remoteFilled || settings.get('serverRemote')) return;
+  const port = Math.round(Number(ts.port));
+  if (typeof ts.ip !== 'string' || !isTailscaleAddress(ts.ip) || !(port > 0 && port < 65536)) return;
+  const address = `${ts.ip}:${port}`;
+  settings.set({ serverRemote: address });
+  sync.remoteFilled = true;
+  saveSync();
+  hooks.onSettings({ serverRemote: address });
+  hooks.onNotice(`Remote Server set to ${address}, the server's Tailscale address, for when you are away from home. Tailscale has to be on at this PC then too.`, 'info');
 }
 
 function scheduleRetry() {
@@ -642,9 +669,12 @@ function flushSoon(delay = 50) {
   }, delay);
 }
 
-/** Songs may go up and come down now: not on a metered connection unless allowed. */
+/**
+ * Songs may go up and come down now: at home always, away not on a metered
+ * connection unless allowed.
+ */
 async function transfersAllowed() {
-  if (settings.get('serverMetered')) return true;
+  if (conn.via !== 'remote' || settings.get('serverMetered')) return true;
   return !(await network.isMetered());
 }
 

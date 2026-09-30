@@ -34,6 +34,8 @@
 
   window.flow.onLibraryChanged((lib) => Store.setLibrary(lib));
   window.flow.onServerStatus((st) => Store.setServer(st));
+  // A setting Flow changed by itself (the Remote address filled in).
+  window.flow.onSettingsChanged((patch) => Store.previewSettings(patch));
   // The same word from the server twice within half a minute is shown once.
   const noticed = new Map();
   window.flow.onServerNotice(({ text, kind }) => {

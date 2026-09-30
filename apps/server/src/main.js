@@ -129,6 +129,12 @@ async function main() {
   console.log(`  ffmpeg:   ${tools.ffmpeg() ? 'found' : 'not found (optional: song lengths, tags and loudness for songs added by hand)'}`);
   const addrs = lanAddresses();
   console.log(`  Enter in Flow's settings: ${(addrs.length ? addrs : ['localhost']).map((a) => `${a}:${server.port}`).join('  or  ')}`);
+  const ts = server.tailscale();
+  if (ts) {
+    console.log(`  Away from home (Tailscale): ${ts.ip}:${server.port}${ts.dns ? ` (${ts.dns})` : ''}, which Flow fills into its Remote field by itself`);
+  } else {
+    console.log('  Tailscale: not running (to reach the server away from home; see the README)');
+  }
 
   const stop = async () => {
     log('Stopping.');

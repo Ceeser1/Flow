@@ -19,7 +19,7 @@ const ServerChip = {
     const name = st.name ? `"${st.name}"` : 'the server';
     const waiting = st.queued ? ` · ${Util.plural(st.queued, 'change')} waiting` : '';
     if (st.state === 'online') {
-      const where = st.via === 'remote' ? 'remote' : 'home';
+      const where = st.via === 'remote' ? (st.tailscale ? 'Tailscale' : 'remote') : 'home';
       const as = st.profile ? ` as ${st.profile.name}` : '';
       return { text: `Connected to ${name}${as} (${where})${waiting}`, kind: 'online' };
     }

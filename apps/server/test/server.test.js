@@ -10,6 +10,7 @@ const os = require('os');
 const path = require('path');
 const { startServer } = require('../src/server');
 const configMod = require('../src/config');
+const tailscaleMod = require('../src/tailscale');
 
 // The fake songs below are no real audio: ffprobe would call them broken.
 process.env.FLOW_SERVER_FFMPEG = 'off';
@@ -19,13 +20,16 @@ function tempDirs() {
   return { root, home: path.join(root, 'home'), music: path.join(root, 'music') };
 }
 
-async function withServer(fn, { password } = {}) {
+async function withServer(fn, { password, tailscale = null } = {}) {
   const dirs = tempDirs();
   if (password) {
     const c = configMod.open({ home: dirs.home, music: dirs.music });
     c.set({ password: configMod.hashPassword(password) });
   }
-  const server = await startServer({ home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1' });
+  // Never the real machine's Tailscale.
+  const server = await startServer({
+    home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1', detectTailscale: async () => tailscale,
+  });
   const base = `http://127.0.0.1:${server.port}`;
   try {
     await fn({ server, base, dirs });
@@ -307,4 +311,31 @@ test('with a server password, profiles are behind it', async () => {
     assert.equal((await get(base, '/api/library', anna.json.token)).json.profile.name, 'Anna');
     assert.equal((await get(base, '/api/library', token)).status, 401);
   }, { password: 'secret' });
+});
+
+test('hello tells where the server is on the tailnet, to private askers only', async () => {
+  await withServer(async ({ base, server }) => {
+    const hello = await (await fetch(`${base}/api/hello`)).json();
+    assert.deepEqual(hello.tailscale, { ip: '100.101.102.103', dns: 'pi.tail1234.ts.net', port: server.port });
+    // A proxy on this machine passes the asker's address along: not for them.
+    const proxied = await (await fetch(`${base}/api/hello`, { headers: { 'X-Forwarded-For': '203.0.113.7' } })).json();
+    assert.equal(proxied.tailscale, undefined);
+  }, { tailscale: { ip: '100.101.102.103', dns: 'pi.tail1234.ts.net' } });
+
+  await withServer(async ({ base }) => {
+    assert.equal((await (await fetch(`${base}/api/hello`)).json()).tailscale, undefined);
+  });
+});
+
+test('the address on the tailnet is read from tailscale status', () => {
+  const up = { BackendState: 'Running', Self: { TailscaleIPs: ['100.101.102.103', 'fd7a:115c:a1e0::1'], DNSName: 'pi.tail1234.ts.net.' } };
+  assert.deepEqual(tailscaleMod.fromStatus(up), { ip: '100.101.102.103', dns: 'pi.tail1234.ts.net' });
+  assert.equal(tailscaleMod.fromStatus({ ...up, BackendState: 'Stopped' }), null);
+  assert.equal(tailscaleMod.fromStatus({ BackendState: 'Running', Self: { TailscaleIPs: ['192.168.0.4'] } }), null);
+  assert.equal(tailscaleMod.fromStatus(null), null);
+  assert.deepEqual(
+    tailscaleMod.fromInterfaces({ eth0: [{ family: 'IPv4', address: '192.168.0.61', internal: false }], tailscale0: [{ family: 'IPv4', address: '100.90.1.2', internal: false }] }),
+    { ip: '100.90.1.2', dns: '' },
+  );
+  assert.equal(tailscaleMod.fromInterfaces({ lo: [{ family: 'IPv4', address: '127.0.0.1', internal: true }] }), null);
 });

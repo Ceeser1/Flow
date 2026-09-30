@@ -3,7 +3,8 @@
 // The server's HTTP side. Everything is JSON under /api except a song's audio,
 // which is sent as it is, in pieces when asked (Range), so the apps can seek.
 //
-//   GET  /api/hello                    who this is; open to anyone
+//   GET  /api/hello                    who this is; open to anyone (and, to askers on
+//                                      a private network, its Tailscale address)
 //   POST /api/login   { password, device } -> { token }
 //   GET  /api/library [?since=rev&as=profileId]
 //                                      { rev, library, profile }, or 204 when
@@ -34,6 +35,7 @@ const http = require('http');
 const path = require('path');
 const { URL } = require('url');
 const { AUDIO_EXTS } = require('@flow/core/formats');
+const { isPrivateIp } = require('@flow/core/address');
 const { checkPassword, hashPassword, hashToken } = require('./config');
 
 const PROTOCOL = 1;
@@ -169,7 +171,7 @@ function createThrottle() {
   };
 }
 
-function createHttpServer({ config, library, version, log = () => {} }) {
+function createHttpServer({ config, library, version, log = () => {}, tailscale = () => null }) {
   const throttle = createThrottle();
 
   function tokenOf(req, url) {
@@ -383,9 +385,15 @@ function createHttpServer({ config, library, version, log = () => {} }) {
 
     if (is('GET', /^\/api\/hello$/)) {
       const cfg = config.get();
-      return sendJson(res, 200, {
+      const answer = {
         app: 'flow-server', protocol: PROTOCOL, features: FEATURES, version, id: cfg.id, name: cfg.name, password: !!cfg.password,
-      });
+      };
+      // Where the server is on the tailnet, for the apps' Remote address. Only
+      // to askers on our own networks: not to whoever a proxy on this machine
+      // passes through (it adds X-Forwarded-For).
+      const ts = tailscale();
+      if (ts && !req.headers['x-forwarded-for'] && isPrivateIp(req.socket.remoteAddress)) answer.tailscale = { ip: ts.ip, dns: ts.dns, port: req.socket.localPort };
+      return sendJson(res, 200, answer);
     }
     if (is('POST', /^\/api\/login$/)) return login(req, res);
 

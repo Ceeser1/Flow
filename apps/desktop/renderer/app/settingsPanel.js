@@ -38,6 +38,10 @@ const SettingsPanel = {
     window.flow.onFolderProgress((p) => {
       if (this._onProgress) this._onProgress(p);
     });
+    // A setting Flow changed by itself (the Remote address filled in) while this is open.
+    Store.onSettings(() => {
+      if (this.modal) this._refreshAll();
+    });
     Store.onLibrary(() => {
       if (this.modal) this._drawMeasured();
     });
@@ -170,6 +174,7 @@ const SettingsPanel = {
   /**
    * One setting. `key`: its tick box (none for a row that is only a value).
    * `sub`: indented under the row above. `when`: greyed out unless true.
+   * `show`: the row is not there unless true.
    */
   /**
    * Groups the flat list (a heading, then its rows) into categories. A heading
@@ -215,7 +220,7 @@ const SettingsPanel = {
     return groups;
   },
 
-  _row({ key, label, desc, right = null, sub = false, when = null }) {
+  _row({ key, label, desc, right = null, sub = false, when = null, show = null }) {
     const left = h('div.settings__left');
     let box = null;
     if (key) {
@@ -232,6 +237,7 @@ const SettingsPanel = {
     const row = h('div.settings__row' + (sub ? '.settings__row--sub' : ''), left, h('div.settings__right', right));
     this._refresh.push(() => {
       const on = when ? !!when() : true;
+      if (show) row.hidden = !show();
       row.classList.toggle('settings__row--off', !on);
       if (box) box.disabled = !on;
       // Its own box unticked: the value beside it does nothing either.
@@ -357,10 +363,11 @@ const SettingsPanel = {
       }),
       this._row({
         label: 'Remote Server',
-        desc: 'Tried when the home one does not answer: its public IP or domain, for when you are away.',
+        desc: 'Tried when the home one does not answer, for when you are away: the Tailscale address of the server '
+          + '(filled in by itself when the server is on one), or its public IP or domain.',
         sub: true,
         when: on,
-        right: this._textField({ key: 'serverRemote', placeholder: '203.0.113.7:7878 or flow.example.com', when: on }),
+        right: this._textField({ key: 'serverRemote', placeholder: '100.101.102.103:7878 or flow.example.com', when: on }),
       }),
       this._row({
         key: 'serverAuth',
@@ -373,9 +380,11 @@ const SettingsPanel = {
       this._row({
         key: 'serverMetered',
         label: 'Always Download & Synchronize on mobile internet/metered connections',
-        desc: 'Otherwise songs only go up and come down on connections that are not metered. Streaming works either way.',
+        desc: 'Away from home, songs only go up and come down on connections that are not metered, unless ticked. '
+          + 'Streaming works either way, and at home nothing is held back.',
         sub: true,
         when: on,
+        show: () => !!Store.settings.serverRemote,
       }),
       this._row({
         key: 'serverKeepFiles',
@@ -410,7 +419,11 @@ const SettingsPanel = {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') input.blur();
     });
-    if (when) this._refresh.push(() => { input.disabled = !when(); });
+    this._refresh.push(() => {
+      if (when) input.disabled = !when();
+      // Filled in by Flow itself (the Remote address).
+      if (document.activeElement !== input) input.value = Store.settings[key] || '';
+    });
     return input;
   },
 
