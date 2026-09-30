@@ -28,12 +28,12 @@ const BIG_UPLOAD = 1900 * 1024 * 1024;
  * the other side makes of a large upload before any of it arrives.
  */
 function request(url, {
-  method = 'GET', headers = {}, body, holdBody = false, timeout = TIMEOUT, ca, maxBytes = 65536,
+  method = 'GET', headers = {}, body, holdBody = false, timeout = TIMEOUT, ca, maxBytes = 65536, lookup,
 } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const lib = u.protocol === 'https:' ? https : http;
-    const req = lib.request(u, { method, headers, timeout, ca, agent: false }, (res) => {
+    const req = lib.request(u, { method, headers, timeout, ca, lookup, agent: false }, (res) => {
       const chunks = [];
       let size = 0;
       res.on('data', (c) => {
@@ -83,9 +83,9 @@ function why(err) {
 }
 
 /** The certificate the server shows: { authorized, error, validTo, daysLeft, issuer }. */
-function certificateOf(host, port, ca) {
+function certificateOf(host, port, ca, lookup) {
   return new Promise((resolve, reject) => {
-    const socket = tls.connect({ host, port, servername: net.isIP(host) ? undefined : host, ca, timeout: TIMEOUT }, () => {
+    const socket = tls.connect({ host, port, servername: net.isIP(host) ? undefined : host, ca, lookup, timeout: TIMEOUT }, () => {
       const cert = socket.getPeerCertificate();
       const validTo = cert && cert.valid_to ? new Date(cert.valid_to) : null;
       resolve({
@@ -102,14 +102,28 @@ function certificateOf(host, port, ca) {
   });
 }
 
+/** A dns.lookup that always answers `ip`: the name kept, the machine chosen. */
+function lookupAs(ip) {
+  const family = net.isIP(ip);
+  return (host, options, cb) => {
+    const done = typeof options === 'function' ? options : cb;
+    if (options && options.all) done(null, [{ address: ip, family }]);
+    else done(null, ip, family);
+  };
+}
+
 /**
  * Checks the server at `address`. opts: { password, directPort (the Flow
- * port that should be closed; null: not tried), ca, report, timeout, and for
- * the tests plainPort (where plain http is tried; 80) }. report(result) is
- * called as each check ends; resolves
+ * port that should be closed; null: not tried), connectTo (an IP to connect
+ * to instead of what the name says, keeping the name for the certificate:
+ * install.sh checks the machine it runs on, past a router that can't reach
+ * its own public address), ca, report, timeout, and for the tests plainPort
+ * (where plain http is tried; 80) }. report(result) is called as each check
+ * ends; resolves
  * { results, ok } with each result { status: 'ok'|'warn'|'fail'|'skip', text }.
  */
 async function runDoctor(address, opts = {}) {
+  const lookup = opts.connectTo ? lookupAs(opts.connectTo) : undefined;
   const results = [];
   const add = (status, text) => {
     const r = { status, text };
@@ -118,7 +132,7 @@ async function runDoctor(address, opts = {}) {
     return r;
   };
   const done = () => ({ results, ok: !results.some((r) => r.status === 'fail') });
-  const ask = (url, more = {}) => request(url, { ca: opts.ca, timeout: opts.timeout, ...more });
+  const ask = (url, more = {}) => request(url, { ca: opts.ca, timeout: opts.timeout, lookup, ...more });
 
   let base;
   try {
@@ -145,8 +159,8 @@ async function runDoctor(address, opts = {}) {
     ips = (await dns.promises.lookup(host, { all: true })).map((a) => a.address);
     add('ok', `${host} is ${ips.join(', ')}.`);
   } catch (err) {
-    add('fail', `${host} can't be found: ${why(err)}. Check the name, and that its DNS record points at your public address.`);
-    return done();
+    add(opts.connectTo ? 'warn' : 'fail', `${host} can't be found: ${why(err)}. Check the name, and that its DNS record points at your public address.`);
+    if (!opts.connectTo) return done();
   }
   if (ips.length && ips.every((ip) => isPrivateIp(ip)) && !isTailscaleAddress(host)) {
     add('warn', `${host} points at a home-network address, so it works at home only. For the internet, its DNS record needs your public address.`);
@@ -155,7 +169,7 @@ async function runDoctor(address, opts = {}) {
   // ---- the certificate ----
   if (isHttps) {
     try {
-      const cert = await certificateOf(host, port, opts.ca);
+      const cert = await certificateOf(host, port, opts.ca, lookup);
       if (!cert.authorized) {
         add('fail', `The certificate is not accepted: ${why({ code: cert.error })}. Caddy gets a valid one by itself once ports 80 and 443 reach it from the internet; with another proxy, get one from Let's Encrypt (certbot).`);
       } else if (cert.daysLeft !== null && cert.daysLeft < 7) {
@@ -230,7 +244,8 @@ async function runDoctor(address, opts = {}) {
     }
   }
   const directPort = opts.directPort === undefined ? DEFAULT_PORT : opts.directPort;
-  if (directPort && directPort !== port && !isPrivateIp(host)) {
+  // Not from the machine itself (connectTo), where the port is open to the home network anyway.
+  if (directPort && directPort !== port && !isPrivateIp(host) && !opts.connectTo) {
     try {
       const res = await ask(`http://${host}:${directPort}/api/hello`, { timeout: 5000 });
       add('warn', `Port ${directPort} answers from here (${res.status}). The Flow Server won't serve the internet on it, but it shouldn't be open: if this machine is outside your home network, remove that port forwarding from the router.`);

@@ -99,6 +99,19 @@ test('a proxy set up right: all good', async () => {
   });
 });
 
+test('connecting to this machine instead of where the name leads (install.sh, past the router)', async () => {
+  await withProxied(async ({ url, plainPort }) => {
+    // A name no DNS knows, for which the certificate is made out.
+    const named = url.replace('127.0.0.1', 'music.flow-test.invalid');
+    const { results, ok } = await runDoctor(named, { ca: CERT, password: PASSWORD, plainPort, connectTo: '127.0.0.1' });
+    assert.deepEqual(texts(results, 'fail'), []);
+    assert.equal(ok, true);
+    assert.match(texts(results, 'warn').join('\n'), /can't be found/);
+    assert.match(texts(results, 'ok').join('\n'), /seeking in them works/);
+    assert.doesNotMatch(results.map((r) => r.text).join('\n'), /Port 7878/, 'the Flow port is not tried from the machine itself');
+  });
+});
+
 test('the usual proxy mistakes are each named', async () => {
   await withProxied(async ({ url, plainPort }) => {
     const { results, ok } = await runDoctor(url, { ca: CERT, password: PASSWORD, plainPort, directPort: null });

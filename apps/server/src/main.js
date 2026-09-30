@@ -24,6 +24,8 @@ Usage:
                                         its proxy: https, certificate, uploads, seeking...
                                         Run it from outside your home network too. Asks for
                                         the password (Enter skips; FLOW_SERVER_PASSWORD gives it).
+                                        --connect-to <ip> connects there instead, keeping the name
+                                        (install.sh: 127.0.0.1, past the router)
 
 Options:
   --port <n>      port to listen on (default ${configMod.DEFAULT_PORT}; remembered)
@@ -68,6 +70,7 @@ function parseArgs(argv) {
       out.publicUrl = String(value()).trim().replace(/\/+$/, '');
       if (out.publicUrl && !/^https:\/\/[^\s/?#]+[^\s?#]*$/i.test(out.publicUrl)) throw new Error('--public-url is an https:// address, like https://music.example.com');
     } else if (a === '--trusted-proxy') out.trustedProxies = String(value()).split(',').map((s) => s.trim()).filter(Boolean);
+    else if (a === '--connect-to') out.connectTo = value();
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}. See flow-server --help.`);
     else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'doctor', 'info'].includes(a)) out.command = a;
     else out.rest.push(a);
@@ -103,13 +106,15 @@ function lanAddresses() {
   return out;
 }
 
-async function doctor(address) {
+async function doctor(address, connectTo) {
   if (!address) throw new Error('Which server? flow-server doctor https://music.example.com');
+  if (connectTo && !require('net').isIP(connectTo)) throw new Error('--connect-to takes an IP address, like 127.0.0.1');
   let password = process.env.FLOW_SERVER_PASSWORD || '';
   if (!password && process.stdin.isTTY) password = await askHidden('The server\'s password (Enter skips the signed-in checks): ');
   const marks = { ok: '  ok    ', warn: '  WARN  ', fail: '  FAIL  ', skip: '  --    ' };
   console.log(`Checking ${address}\n`);
-  const { results, ok } = await runDoctor(address, { password, report: (r) => console.log(`${marks[r.status]}${r.text}`) });
+  if (connectTo) console.log(`(connecting to ${connectTo} rather than where the name leads)`);
+  const { results, ok } = await runDoctor(address, { password, connectTo, report: (r) => console.log(`${marks[r.status]}${r.text}`) });
   const fails = results.filter((r) => r.status === 'fail').length;
   const warns = results.filter((r) => r.status === 'warn').length;
   console.log('');
@@ -130,7 +135,7 @@ async function main() {
   }
   // Before the config: the doctor may run on a machine that is no server.
   if (args.command === 'doctor') {
-    await doctor(args.rest[0]);
+    await doctor(args.rest[0], args.connectTo);
     return;
   }
   const config = configMod.open({ home: args.home, music: args.music });

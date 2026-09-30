@@ -33,7 +33,7 @@ A song deleted from an app is not gone at once. Its file moves to
 
 ```sh
 git clone <the repo> ~/Flow && cd ~/Flow
-sh apps/server/install.sh           # --level N, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --uninstall
+sh apps/server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --uninstall
 ```
 
 Works on any Linux with systemd and Node 18 or newer (a Raspberry Pi, a home
@@ -47,8 +47,8 @@ level includes the ones above it:
 | 3 | and the internet, with Caddy | get a domain name (a free DuckDNS one works) and forward ports 80 and 443 on the router | low to medium |
 | 4 | and the internet, through your own web server or tunnel (nginx, Apache, Cloudflare Tunnel...) | set up the web server, its certificate and the router; `doctor` checks it | high if not set up properly |
 
-Levels 3 and 4 need a strong password (see below) and are not in the
-installer yet; they come next.
+Levels 3 and 4 need a strong password (see below). Level 4 is not in the
+installer yet; it comes next.
 
 Then it links `@flow/core` (there is no npm needed), offers ffmpeg, asks
 whether the apps may find the server on the network by themselves (see
@@ -57,6 +57,44 @@ below), offers a PIN, installs Tailscale at level 2, writes and starts the
 for the home network, and at level 2 for Tailscale. Run it again any time; it
 only updates, and Enter keeps the level chosen before. A lower level closes
 what a higher one opened. Later: `git pull && sudo systemctl restart flow-server`.
+
+### Level 3: the internet, with Caddy
+
+[Caddy](https://caddyserver.com) is a web server that gets its https
+certificate from Let's Encrypt by itself and renews it. The installer sets
+it up in front of the Flow Server:
+
+1. It checks that ports 80 and 443 are free (with nginx or another web server
+   on them, it says to use level 4) and asks for the strong password.
+2. It asks for the name: one you own (its DNS A record at your public
+   address), or a free `something.duckdns.org`. For a DuckDNS name it asks for
+   the token and keeps the name at your address, every five minutes
+   (`flow-duckdns.timer`; the token is in `/etc/flow-server`, readable by root
+   only).
+3. It checks that the name leads to this connection's public address (asked
+   of api.ipify.org).
+4. It tells you what to forward on the router, TCP 80 and 443 to this
+   machine, and waits. This is the one step it can't do.
+5. It installs Caddy and puts a marked Flow block into `/etc/caddy/Caddyfile`:
+   the example file the package comes with is replaced, one of your own keeps
+   the rest (the old one is kept as `Caddyfile.before-flow`), and a Caddyfile
+   that would not be valid is not used.
+6. It opens 80 and 443 in the firewall and starts the server with
+   `--level 3 --public-url https://<name>`.
+7. It waits until Caddy has its certificate, which proves the internet
+   reaches the machine, then runs `doctor` on this machine, and says whether
+   the name also works through the router from inside (many routers can't).
+
+If no certificate comes, it names the likely reasons: the ports aren't
+forwarded, the name doesn't point here, or the provider gives no public IPv4
+of your own (CGNAT or DS-Lite, common with cable and fibre), where only
+level 2 works. Flow fills in the Remote address by itself once it has
+connected at home. Going down from level 3 takes the block out (and stops
+Caddy when it served nothing else), stops the DuckDNS updates and closes
+80 and 443.
+
+Without a terminal: `--domain`, and `FLOW_SERVER_PASSWORD` and
+`DUCKDNS_TOKEN` in the environment.
 
 ### ffmpeg (recommended)
 
@@ -161,7 +199,9 @@ It asks for the password (Enter skips the signed-in checks;
 `FLOW_SERVER_PASSWORD` gives it without asking) and signs in as the device
 "flow-server doctor". Run it on the server first, then from a machine outside
 the home network (a laptop on a phone's hotspot) for the real view: many
-routers can't reach their own public address from inside.
+routers can't reach their own public address from inside. `--connect-to
+127.0.0.1` checks the machine it runs on under the same name, past the
+router (the installer does that).
 
 ## Profiles
 

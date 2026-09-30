@@ -13,10 +13,15 @@
 #   --level N        the level (default: the one chosen before; asked when there is a terminal)
 #   --music DIR      the music folder (default: what the server remembers, else ~/flow-music)
 #   --port N         the port (default: what the server remembers, else 7878)
+#   --domain NAME    level 3: the server's name on the internet, like music.example.com
+#                    or mymusic.duckdns.org (asked when left out)
 #   --yes            no questions: the defaults, and install what the level needs
 #   --no-tailscale   leave Tailscale alone (don't install it)
 #   --no-discovery   do not let the apps find the server on the network by themselves
 #   --uninstall      remove the service (the library and the music stay)
+#
+# Without a terminal, FLOW_SERVER_PASSWORD gives the password level 3 needs and
+# DUCKDNS_TOKEN the token for a DuckDNS name.
 #
 # Safe to run again: it updates the service and leaves the rest as it is. Run
 # it with a lower level to close what a higher one opened.
@@ -28,6 +33,7 @@ UNIT="/etc/systemd/system/$SERVICE.service"
 MUSIC=""
 PORT=""
 LEVEL=""
+DOMAIN=""
 YES=0
 TAILSCALE=1
 DISCOVERY=ask
@@ -42,11 +48,12 @@ while [ $# -gt 0 ]; do
     --level) [ $# -ge 2 ] || die "--level needs 1, 2, 3 or 4."; LEVEL="$2"; shift ;;
     --music) [ $# -ge 2 ] || die "--music needs a folder."; MUSIC="$2"; shift ;;
     --port) [ $# -ge 2 ] || die "--port needs a number."; PORT="$2"; shift ;;
+    --domain) [ $# -ge 2 ] || die "--domain needs a name."; DOMAIN="$2"; shift ;;
     --yes|-y) YES=1 ;;
     --no-tailscale) TAILSCALE=0 ;;
     --no-discovery) DISCOVERY=0 ;;
     --uninstall) UNINSTALL=1 ;;
-    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option $1. See --help." ;;
   esac
   shift
@@ -164,6 +171,18 @@ flow() {
   fi
 }
 info_get() { printf '%s\n' "$INFO" | sed -n "s/^$1=//p"; }
+
+# For level 3.
+CADDYFILE=/etc/caddy/Caddyfile
+SETUP="$REPO/apps/server/src/setup.js"
+DUCK_DIR=/etc/flow-server
+DUCK_UNIT=/etc/systemd/system/flow-duckdns
+lan_ip() { ip -4 route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit } }'; }
+public_ip() { curl -4 -fsS --max-time 10 https://api.ipify.org 2>/dev/null || curl -4 -fsS --max-time 10 https://ifconfig.me 2>/dev/null || true; }
+name_ip() { getent ahostsv4 "$1" 2>/dev/null | awk '{ print $1; exit }'; }
+# The program listening on a TCP port, or nothing.
+port_owner() { $SUDO ss -ltnpH "sport = :$1" 2>/dev/null | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | head -n 1; }
+is_private() { printf '%s' "$1" | grep -Eq '^(10\.|127\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.)'; }
 INFO=$(flow info) || die "The server's settings could not be read (see above)."
 CUR_LEVEL=$(info_get level)
 CUR_PASSWORD=$(info_get password)
@@ -205,8 +224,18 @@ if [ -z "$LEVEL" ]; then
   fi
 fi
 say "Level $LEVEL.${CUR_LEVEL:+ (It was $CUR_LEVEL.)}"
-if [ "$LEVEL" -ge 3 ]; then
-  die "Level $LEVEL is not in this installer yet; it comes with the next update. Level 1 or 2 works now."
+if [ "$LEVEL" = 4 ]; then
+  die "Level 4 is not in this installer yet; it comes with the next update. Levels 1 to 3 work now."
+fi
+if [ "$LEVEL" = 3 ]; then
+  # First, so a machine with a web server of its own hears about level 4 before any questions.
+  for p in 80 443; do
+    OWNER=$(port_owner "$p")
+    if [ -n "$OWNER" ] && [ "$OWNER" != caddy ]; then
+      die "Port $p is in use by $OWNER. Caddy needs 80 and 443 for itself. With a web server of your own, that is level 4: sh $REPO/apps/server/install.sh --level 4"
+    fi
+  done
+  say "Ports 80 and 443 are free for Caddy."
 fi
 
 step "ffmpeg (optional)"
@@ -232,29 +261,52 @@ if [ "$DISCOVERY" = ask ]; then
 fi
 if [ "$DISCOVERY" = 1 ]; then say "On."; else say "Off. The address is typed into Flow (--discovery on the server turns it on later)."; fi
 
-step "PIN or password (optional at level $LEVEL)"
-if [ "$CUR_PASSWORD" != none ]; then
-  say "Set already. Change it later with: node $REPO/apps/server/src/main.js set-password"
-else
-  if [ "$LEVEL" = 2 ]; then
-    say "Without one, anyone on your home network or your tailnet can use the server."
+if [ "$LEVEL" -ge 3 ]; then
+  step "Password (required at level $LEVEL)"
+  if [ "$CUR_PASSWORD" = strong ]; then
+    say "Set, and strong enough. Change it later with: node $REPO/apps/server/src/main.js set-password"
   else
-    say "Without one, anyone on your home network can use the server, which is often fine."
+    say "The server will be reachable from the internet, so it needs a strong password: at least"
+    say "8 characters, with a lower-case letter, an upper-case letter and a number."
+    [ "$CUR_PASSWORD" = pin ] && say "The PIN it has now is not enough. Every signed-in device enters the new one once."
+    if [ -n "${FLOW_SERVER_PASSWORD:-}" ]; then
+      flow set-password --level "$LEVEL" "$FLOW_SERVER_PASSWORD" || die "FLOW_SERVER_PASSWORD is not strong enough (see above)."
+    elif [ -t 0 ]; then
+      TRIES=1
+      until flow set-password --level "$LEVEL"; do
+        [ "$TRIES" -ge 3 ] && die "No password set, so level $LEVEL can't be set up. Run this again when you have one."
+        TRIES=$((TRIES + 1))
+        say "Try again:"
+      done
+    else
+      die "Level $LEVEL needs a password: run this in a terminal, or give it as FLOW_SERVER_PASSWORD."
+    fi
   fi
-  if ask_no "Set a PIN or password now (4 or more characters)?"; then
-    TRIES=1
-    until flow set-password --level "$LEVEL"; do
-      if [ "$TRIES" -ge 3 ]; then say "Not set; later: node $REPO/apps/server/src/main.js set-password"; break; fi
-      TRIES=$((TRIES + 1))
-      say "Try again:"
-    done
+else
+  step "PIN or password (optional at level $LEVEL)"
+  if [ "$CUR_PASSWORD" != none ]; then
+    say "Set already. Change it later with: node $REPO/apps/server/src/main.js set-password"
   else
-    say "None. Later: node $REPO/apps/server/src/main.js set-password"
+    if [ "$LEVEL" = 2 ]; then
+      say "Without one, anyone on your home network or your tailnet can use the server."
+    else
+      say "Without one, anyone on your home network can use the server, which is often fine."
+    fi
+    if ask_no "Set a PIN or password now (4 or more characters)?"; then
+      TRIES=1
+      until flow set-password --level "$LEVEL"; do
+        if [ "$TRIES" -ge 3 ]; then say "Not set; later: node $REPO/apps/server/src/main.js set-password"; break; fi
+        TRIES=$((TRIES + 1))
+        say "Try again:"
+      done
+    else
+      say "None. Later: node $REPO/apps/server/src/main.js set-password"
+    fi
   fi
 fi
 
 TS_IP=""
-if [ "$LEVEL" -ge 2 ]; then
+if [ "$LEVEL" = 2 ]; then
   step "Tailscale (reach the server away from home)"
   if ! have tailscale; then
     say "Not installed. Tailscale makes a private network between your devices, so the apps"
@@ -277,8 +329,194 @@ if [ "$LEVEL" -ge 2 ]; then
   fi
 fi
 
+# ---- level 3: the internet, through Caddy ----
+LAN_IP=$(lan_ip)
+PUBLIC_IP=""
+if [ "$LEVEL" = 3 ]; then
+  have curl || { [ -n "$PM" ] && install_packages curl >/dev/null; } || die "curl is needed: $(install_hint curl)"
+
+  step "The server's name on the internet"
+  say "The apps reach the server at https://<name>. Use a name you own (like music.example.com,"
+  say "with a DNS A record pointing at your public address), or a free one from www.duckdns.org"
+  say "(sign in, add a subdomain like mymusic.duckdns.org, and keep the token it shows at hand)."
+  CUR_URL=$(info_get public_url)
+  [ -z "$DOMAIN" ] && [ -n "$CUR_URL" ] && DOMAIN=${CUR_URL#https://}
+  while :; do
+    if [ -t 0 ] && [ "$YES" != 1 ]; then
+      printf 'Name%s: ' "${DOMAIN:+ [$DOMAIN]}"
+      read -r answer || answer=""
+      [ -n "$answer" ] && DOMAIN=$answer
+    fi
+    DOMAIN=$(printf '%s' "$DOMAIN" | tr 'A-Z' 'a-z' | sed 's#^https*://##; s#[/:].*$##')
+    printf '%s' "$DOMAIN" | grep -Eq '^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]*[a-z0-9]$' && break
+    [ -t 0 ] && [ "$YES" != 1 ] || die "Level 3 needs the server's name: --domain music.example.com"
+    say "\"$DOMAIN\" is not a name like music.example.com."
+    DOMAIN=""
+  done
+
+  DUCK_UPDATED=0
+  case "$DOMAIN" in
+    *.duckdns.org)
+      step "DuckDNS (keeps $DOMAIN at your connection's address)"
+      DUCK_SUB=${DOMAIN%.duckdns.org}
+      DUCK_SUB=${DUCK_SUB##*.}
+      DUCK_TOKEN=${DUCKDNS_TOKEN:-}
+      if [ -z "$DUCK_TOKEN" ] && [ -f "$DUCK_DIR/duckdns.env" ]; then
+        DUCK_TOKEN=$($SUDO sed -n "s/^DUCKDNS_TOKEN=//p" "$DUCK_DIR/duckdns.env")
+      fi
+      if [ -z "$DUCK_TOKEN" ]; then
+        [ -t 0 ] || die "The DuckDNS token is needed: give it as DUCKDNS_TOKEN."
+        say "The token is at the top of duckdns.org once you are signed in."
+        printf 'DuckDNS token: '
+        read -r DUCK_TOKEN || DUCK_TOKEN=""
+      fi
+      printf '%s' "$DUCK_TOKEN" | grep -Eq '^[A-Za-z0-9-]{8,64}$' || die "That doesn't look like a DuckDNS token."
+      # The token goes to curl on its input, not its command line, where other users could see it.
+      TMP=$(mktemp)
+      printf 'DUCKDNS_DOMAIN=%s\nDUCKDNS_TOKEN=%s\n' "$DUCK_SUB" "$DUCK_TOKEN" > "$TMP"
+      $SUDO mkdir -p "$DUCK_DIR"
+      $SUDO install -m 600 "$TMP" "$DUCK_DIR/duckdns.env"
+      cat > "$TMP" <<'EOF'
+#!/bin/sh
+# Written by Flow's install.sh: tells DuckDNS this connection's address.
+. /etc/flow-server/duckdns.env
+printf 'url = "https://www.duckdns.org/update?domains=%s&token=%s&ip="\n' "$DUCKDNS_DOMAIN" "$DUCKDNS_TOKEN" \
+  | curl -fsS --max-time 30 -K - | grep -qx OK
+EOF
+      $SUDO install -m 700 "$TMP" "$DUCK_DIR/duckdns-update.sh"
+      cat > "$TMP" <<'EOF'
+[Unit]
+Description=Flow Server: keeps the DuckDNS name at this connection's address
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /etc/flow-server/duckdns-update.sh
+EOF
+      $SUDO install -m 644 "$TMP" "$DUCK_UNIT.service"
+      cat > "$TMP" <<'EOF'
+[Unit]
+Description=Flow Server: DuckDNS update every five minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+EOF
+      $SUDO install -m 644 "$TMP" "$DUCK_UNIT.timer"
+      rm -f "$TMP"
+      $SUDO systemctl daemon-reload
+      $SUDO sh "$DUCK_DIR/duckdns-update.sh" || die "DuckDNS did not take it: check the name ($DUCK_SUB) and the token."
+      $SUDO systemctl enable --now flow-duckdns.timer >/dev/null 2>&1
+      DUCK_UPDATED=1
+      say "DuckDNS points $DOMAIN at this connection, and is told again every five minutes."
+      ;;
+  esac
+
+  step "Checking the name"
+  PUBLIC_IP=$(public_ip)
+  if [ -n "$PUBLIC_IP" ]; then say "This connection's public address: $PUBLIC_IP (asked api.ipify.org)"; else say "Could not find out this connection's public address; carrying on without comparing."; fi
+  # A name just changed at DuckDNS can take a minute to show.
+  TRIES=0
+  while :; do
+    NAME_IP=$(name_ip "$DOMAIN")
+    if [ -n "$NAME_IP" ] && { [ -z "$PUBLIC_IP" ] || [ "$NAME_IP" = "$PUBLIC_IP" ]; }; then break; fi
+    TRIES=$((TRIES + 1))
+    [ "$DUCK_UPDATED" = 1 ] && [ "$TRIES" -lt 12 ] || break
+    sleep 5
+  done
+  [ -n "$NAME_IP" ] || die "$DOMAIN is not known to DNS yet. Give its A record your public address${PUBLIC_IP:+ ($PUBLIC_IP)}, wait a few minutes, and run this again."
+  is_private "$NAME_IP" && die "$DOMAIN points at $NAME_IP, a home-network address. For the internet it needs your public address${PUBLIC_IP:+ ($PUBLIC_IP)}."
+  if [ -n "$PUBLIC_IP" ] && [ "$NAME_IP" != "$PUBLIC_IP" ]; then
+    say "$DOMAIN points at $NAME_IP, but this connection is $PUBLIC_IP. Give its A record $PUBLIC_IP."
+    ask_no "Carry on anyway (the certificate will likely fail)?" || die "Stopped. Run this again once the name points here."
+  else
+    say "$DOMAIN points at $NAME_IP: here."
+  fi
+  [ -n "$(getent ahostsv6 "$DOMAIN" 2>/dev/null | awk '$1 !~ /^::ffff:/ { print $1; exit }')" ] \
+    && say "Note: $DOMAIN also has an IPv6 address (AAAA record). If that one isn't this machine, remove it: Let's Encrypt tries IPv6 first."
+
+  step "Your router"
+  say "Forward these ports on your router to this machine (${LAN_IP:-its home-network address}):"
+  say "  TCP 80    Caddy gets its certificate through it, and sends http on to https"
+  say "  TCP 443   https: what the apps use"
+  say "It is usually under Port forwarding, Port sharing or NAT in the router's settings. Don't forward"
+  say "port $PORT_NOW: everything goes through Caddy."
+  if [ -t 0 ] && [ "$YES" != 1 ]; then
+    printf 'Press Enter once that is done... '
+    read -r answer || true
+  fi
+
+  step "Caddy (https, and its certificate)"
+  if have caddy; then
+    say "Found: $(caddy version 2>/dev/null | cut -d' ' -f1)"
+  else
+    say "Installing Caddy."
+    [ "$PM" = apt-get ] && $SUDO apt-get update -qq >/dev/null 2>&1 || true
+    if ! install_packages caddy >/dev/null 2>&1; then
+      [ "$PM" = apt-get ] || die "Could not install Caddy. See https://caddyserver.com/docs/install, then run this again."
+      say "Not in this system's packages; adding Caddy's own (https://caddyserver.com/docs/install)."
+      $SUDO apt-get install -y debian-keyring debian-archive-keyring apt-transport-https gnupg >/dev/null
+      curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key | $SUDO gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+      curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt | $SUDO tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+      $SUDO apt-get update -qq >/dev/null
+      $SUDO apt-get install -y caddy >/dev/null || die "Could not install Caddy."
+    fi
+    have caddy || die "Caddy was installed but is not on the PATH."
+    say "Installed: $(caddy version 2>/dev/null | cut -d' ' -f1)"
+  fi
+  $SUDO mkdir -p /etc/caddy
+  [ -f "$CADDYFILE" ] && $SUDO cp -p "$CADDYFILE" "$CADDYFILE.flow-tmp"
+  HOW=$($SUDO "$NODE" "$SETUP" caddyfile-set "$CADDYFILE" "$DOMAIN" "$PORT_NOW")
+  if ! CHECK=$($SUDO caddy validate --config "$CADDYFILE" --adapter caddyfile 2>&1); then
+    if [ -f "$CADDYFILE.flow-tmp" ]; then $SUDO mv "$CADDYFILE.flow-tmp" "$CADDYFILE"; fi
+    printf '%s\n' "$CHECK" | tail -n 5
+    die "The Caddyfile would not be valid with Flow's block, so it was left as it was ($CADDYFILE)."
+  fi
+  $SUDO rm -f "$CADDYFILE.flow-tmp"
+  case "$HOW" in
+    created) say "Wrote $CADDYFILE." ;;
+    replaced-stock) say "Replaced the example Caddyfile the package comes with (kept as Caddyfile.before-flow)." ;;
+    added) say "Added Flow's block to your Caddyfile; the rest is as it was (before: Caddyfile.before-flow)." ;;
+    updated) say "Updated Flow's block in the Caddyfile." ;;
+  esac
+  CADDY_START=$(date '+%Y-%m-%d %H:%M:%S')
+  $SUDO systemctl enable caddy >/dev/null 2>&1 || true
+  $SUDO systemctl reload-or-restart caddy
+  say "Caddy is serving https://$DOMAIN and passes it on to the Flow Server."
+fi
+
+# ---- down from level 3: close what it opened ----
+CADDY_OFF=0
+if [ "${CUR_LEVEL:-0}" = 3 ] && [ "$LEVEL" != 3 ]; then
+  step "Closing level 3"
+  if [ -f "$CADDYFILE" ] && have caddy; then
+    LEFT=$($SUDO "$NODE" "$SETUP" caddyfile-remove "$CADDYFILE")
+    if [ "$LEFT" = empty ]; then
+      $SUDO systemctl disable --now caddy >/dev/null 2>&1 || true
+      CADDY_OFF=1
+      say "Caddy served only Flow: stopped and turned off (still installed)."
+    else
+      $SUDO systemctl reload-or-restart caddy || true
+      say "Flow's block is out of the Caddyfile; Caddy keeps serving the rest."
+    fi
+  fi
+  if [ -f "$DUCK_UNIT.timer" ]; then
+    $SUDO systemctl disable --now flow-duckdns.timer >/dev/null 2>&1 || true
+    $SUDO rm -f "$DUCK_UNIT.timer" "$DUCK_UNIT.service" "$DUCK_DIR/duckdns-update.sh" "$DUCK_DIR/duckdns.env"
+    $SUDO systemctl daemon-reload
+    say "DuckDNS updates stopped (the name is still yours at duckdns.org)."
+  fi
+  flow --public-url "" info >/dev/null
+  say "The server no longer tells the apps an internet address."
+fi
+
 step "The service"
 ARGS=" --level $LEVEL"
+[ "$LEVEL" = 3 ] && ARGS="$ARGS --public-url https://$DOMAIN"
 if [ "$DISCOVERY" = 1 ]; then ARGS="$ARGS --discovery"; else ARGS="$ARGS --no-discovery"; fi
 [ -n "$MUSIC" ] && ARGS="$ARGS --music $MUSIC"
 [ -n "$PORT" ] && ARGS="$ARGS --port $PORT"
@@ -314,6 +552,9 @@ else
 fi
 
 step "Firewall"
+# Tailscale reaches the server at level 2, and above it when it is here anyway.
+TS_FIREWALL=0
+if [ "$LEVEL" = 2 ] || { [ "$LEVEL" -ge 3 ] && have tailscale; }; then TS_FIREWALL=1; fi
 if have ufw && $SUDO ufw status 2>/dev/null | grep -q "Status: active"; then
   # The home network(s): the directly attached IPv4 subnets, not Tailscale's or Docker's.
   SUBNETS=$(ip -4 route 2>/dev/null | awk '$1 ~ /\// && /scope link/ && $0 !~ /tailscale|docker|br-|veth/ { print $1 }')
@@ -324,16 +565,26 @@ if have ufw && $SUDO ufw status 2>/dev/null | grep -q "Status: active"; then
       $SUDO ufw allow from "$subnet" to any port 7878 proto udp >/dev/null && say "ufw: UDP 7878 (finding the server) open to $subnet"
     fi
   done
-  if [ "$LEVEL" -ge 2 ]; then
+  if [ "$TS_FIREWALL" = 1 ]; then
     $SUDO ufw allow in on tailscale0 to any port "$PORT_NOW" proto tcp >/dev/null && say "ufw: port $PORT_NOW open to Tailscale"
   elif $SUDO ufw status 2>/dev/null | grep -q "^$PORT_NOW/tcp on tailscale0 "; then
     # Down from level 2: Tailscale no longer reaches the server.
     $SUDO ufw delete allow in on tailscale0 to any port "$PORT_NOW" proto tcp >/dev/null && say "ufw: port $PORT_NOW closed to Tailscale (level 1)"
   fi
+  if [ "$LEVEL" = 3 ]; then
+    $SUDO ufw allow 80,443/tcp >/dev/null && say "ufw: ports 80 and 443 open (Caddy, from anywhere)"
+  elif [ "$CADDY_OFF" = 1 ]; then
+    $SUDO ufw delete allow 80,443/tcp >/dev/null 2>&1 && say "ufw: ports 80 and 443 closed again"
+  fi
 elif have firewall-cmd && $SUDO firewall-cmd --state >/dev/null 2>&1; then
   $SUDO firewall-cmd --permanent --add-port="$PORT_NOW/tcp" >/dev/null
   [ "$DISCOVERY" = 1 ] && $SUDO firewall-cmd --permanent --add-port=7878/udp >/dev/null
-  if [ "$LEVEL" -ge 2 ]; then
+  if [ "$LEVEL" = 3 ]; then
+    $SUDO firewall-cmd --permanent --add-service=http --add-service=https >/dev/null && say "firewalld: http and https open (Caddy)"
+  elif [ "$CADDY_OFF" = 1 ]; then
+    $SUDO firewall-cmd --permanent --remove-service=http --remove-service=https >/dev/null 2>&1 && say "firewalld: http and https closed again"
+  fi
+  if [ "$TS_FIREWALL" = 1 ]; then
     $SUDO firewall-cmd --permanent --zone=trusted --add-interface=tailscale0 >/dev/null 2>&1 || true
   elif $SUDO firewall-cmd --permanent --zone=trusted --query-interface=tailscale0 >/dev/null 2>&1; then
     say "Tailscale is in firewalld's trusted zone (level 2 put it there). Other things you use over"
@@ -344,11 +595,58 @@ elif have firewall-cmd && $SUDO firewall-cmd --state >/dev/null 2>&1; then
     fi
   fi
   $SUDO firewall-cmd --reload >/dev/null
-  say "firewalld: port $PORT_NOW$([ "$DISCOVERY" = 1 ] && printf ' and UDP 7878') open (to every network the zone covers, not only your LAN)$([ "$LEVEL" -ge 2 ] && printf ', and Tailscale trusted')"
+  say "firewalld: port $PORT_NOW$([ "$DISCOVERY" = 1 ] && printf ' and UDP 7878') open (to every network the zone covers, not only your LAN)$([ "$TS_FIREWALL" = 1 ] && printf ', and Tailscale trusted')"
 else
   say "No active firewall found (ufw, firewalld): nothing to open."
   [ "$LEVEL" = 1 ] && [ -n "$(have tailscale && $SUDO tailscale ip -4 2>/dev/null | head -n 1 || true)" ] \
     && say "Without one, Tailscale still reaches the server; the apps are just not told its Tailscale address."
+fi
+
+CERT_OK=0
+if [ "$LEVEL" = 3 ]; then
+  step "The certificate"
+  say "Caddy asks Let's Encrypt for a certificate for $DOMAIN. Let's Encrypt checks it by reaching"
+  say "this machine from the internet on port 80, so a certificate proves the router lets it in."
+  WAITED=0
+  while :; do
+    if "$NODE" "$SETUP" cert-ok "$DOMAIN"; then CERT_OK=1; break; fi
+    [ "$WAITED" -ge 120 ] && break
+    [ "$WAITED" = 0 ] && printf 'Waiting for it (up to 2 minutes)'
+    printf '.'
+    sleep 5
+    WAITED=$((WAITED + 5))
+  done
+  [ "$WAITED" -gt 0 ] && say ""
+  if [ "$CERT_OK" = 1 ]; then
+    say "Caddy has a valid certificate for $DOMAIN: the internet reaches this machine."
+  else
+    say "No certificate yet. What Caddy said last:"
+    journalctl -u caddy --since "$CADDY_START" -o cat --no-pager 2>/dev/null | grep -i '"error"' | tail -n 3 | cut -c 1-400 || true
+    say ""
+    say "Usually one of these:"
+    say "- Ports 80 and 443 are not forwarded on the router to ${LAN_IP:-this machine}."
+    say "- Your provider gives you no public IPv4 of your own (CGNAT or DS-Lite, common with cable and"
+    say "  fibre): if the internet address your router shows is not ${PUBLIC_IP:-the one above}, incoming"
+    say "  connections can't reach you. Ask the provider for a public IPv4, or use level 2 (Tailscale)."
+    say "- $DOMAIN doesn't point here (see \"Checking the name\")."
+    say "Caddy keeps trying by itself. Fix it and run this again, or check with:"
+    say "  node $REPO/apps/server/src/main.js doctor https://$DOMAIN"
+  fi
+  if [ "$CERT_OK" = 1 ]; then
+    step "Checking it the way the apps will"
+    # On this machine, past the router: whether Caddy and the server work together.
+    flow doctor --connect-to 127.0.0.1 "https://$DOMAIN" || say "Fix what failed above, then run this again."
+    say ""
+    if "$NODE" "$SETUP" reach "$DOMAIN"; then
+      say "https://$DOMAIN is reachable through your router too."
+    else
+      say "From here, https://$DOMAIN can't be reached through your router. Many routers can't reach"
+      say "their own public address from inside, so this may be fine."
+    fi
+    say "For the outside view (port 443 on the router, above all), run this from a machine outside"
+    say "your home network, like a laptop on a phone's hotspot:"
+    say "  node apps/server/src/main.js doctor https://$DOMAIN"
+  fi
 fi
 
 step "Done"
@@ -357,11 +655,19 @@ MAIN_PID=$(systemctl show -p MainPID --value "$SERVICE" 2>/dev/null || true)
 journalctl -u "$SERVICE" _PID="${MAIN_PID:-0}" -o cat -n 14 --no-pager 2>/dev/null || true
 say ""
 say "In Flow: Settings, Streaming, Download and Synchronization, then the Home address above."
+if [ "$LEVEL" = 3 ]; then
+  say "Remote Server: https://$DOMAIN (Flow fills it in by itself once it has connected at home;"
+  say "away from home it needs nothing else on the device). The password is the one set above."
+  [ "$CERT_OK" = 1 ] || say "It works once Caddy has its certificate (see above)."
+fi
 if [ "$LEVEL" = 2 ] && [ -n "$TS_IP" ]; then
   say "Flow fills in the Remote address ($TS_IP:$PORT_NOW) by itself once it has connected at home."
   say "Install Tailscale on the PC and phone too (same account), or the Remote address does not work."
 fi
-if [ "$LEVEL" = 1 ] && [ "${CUR_LEVEL:-1}" != 1 ]; then
+if [ "$LEVEL" -lt 3 ] && [ "${CUR_LEVEL:-1}" = 3 ]; then
+  say "The server is no longer reachable from the internet. If Flow's Remote address is its https"
+  say "address, clear it$([ "$LEVEL" = 2 ] && printf ' (the Tailscale one works instead)')."
+elif [ "$LEVEL" = 1 ] && [ "${CUR_LEVEL:-1}" != 1 ]; then
   say "Away from home the server is no longer reachable; clear Flow's Remote address."
   have tailscale && say "Tailscale itself is still installed (sudo tailscale down takes this machine off the tailnet)."
 fi
