@@ -22,8 +22,11 @@ const DEFAULTS = {
   // The listen in progress when the app closed, carried on at the next start
   // if the same song is still loaded: { songId, listened }.
   listenSession: null,
-  // Whether the menu's "Listen behaviour" group is open.
+  // Whether the menu's "Listen behaviour" group is open, and the lists under
+  // its Playlists and Followed Playlists entries.
   listenGroupOpen: true,
+  playlistsMenuOpen: true,
+  followedMenuOpen: true,
   // Whether the Shared Playlists section of the Playlists page is open, and
   // the Listen behaviour row there (closed until opened).
   sharedGroupOpen: true,
@@ -112,6 +115,8 @@ function clean(raw) {
     ? { songId: String(ls.songId), listened: Math.max(0, Number(ls.listened) || 0) }
     : null;
   s.listenGroupOpen = s.listenGroupOpen !== false;
+  s.playlistsMenuOpen = s.playlistsMenuOpen !== false;
+  s.followedMenuOpen = s.followedMenuOpen !== false;
   s.sharedGroupOpen = s.sharedGroupOpen !== false;
   s.listenPageOpen = s.listenPageOpen === true;
   const st = s.sleepTimer;

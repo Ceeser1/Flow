@@ -10,7 +10,7 @@
 const SongActions = {
   tray: null,
   anchor: null,
-  picker: null, // the "Add to playlists" popup beside the tray
+  picker: null, // the "Add to Playlists" popup beside the tray
 
   init() {
     const outside = (e) => {
@@ -66,11 +66,11 @@ const SongActions = {
   },
 
   /**
-   * The tray's "Add to playlists" button (the leftmost): opens a popup to its
+   * The tray's "Add to Playlists" button (the leftmost): opens a popup to its
    * left instead of closing the tray. See pickPlaylists.
    */
   playlistButton(song) {
-    const btn = iconButton('act.act--green', Icons.playlists, 'Add to playlists', () => this.pickPlaylists(btn, song));
+    const btn = iconButton('act.act--green', Icons.playlists, 'Add to Playlists', () => this.pickPlaylists(btn, song));
     btn.dataset.keepOpen = '1';
     return btn;
   },
@@ -100,14 +100,16 @@ const SongActions = {
       disabled: !lists.length,
       onclick: () => this._applyPlaylists(song, had, boxes),
     }, 'Apply');
-    const picker = h('div.pl-picker', { role: 'dialog', 'aria-label': 'Add to playlists' },
+    const picker = h('div.pl-picker', { role: 'dialog', 'aria-label': 'Add to Playlists' },
+      h('div.pl-picker__title', 'Add to Playlists'),
       h('div.pl-picker__list', ...(rows.length ? rows : [h('div.pl-picker__empty', 'No playlists yet.')])),
       apply);
     document.body.appendChild(picker);
-    const r = anchor.getBoundingClientRect();
-    picker.style.right = `${Math.round(window.innerWidth - r.left + 6)}px`;
+    // Left of the tray, its top level with the tray's.
+    const t = this.tray ? this.tray.getBoundingClientRect() : anchor.getBoundingClientRect();
+    picker.style.right = `${Math.round(window.innerWidth - t.left + 6)}px`;
     const height = picker.getBoundingClientRect().height;
-    picker.style.top = `${Math.max(8, Math.min(Math.round(r.top), window.innerHeight - height - 8))}px`;
+    picker.style.top = `${Math.max(8, Math.min(Math.round(t.top), window.innerHeight - height - 8))}px`;
     this.picker = picker;
   },
 

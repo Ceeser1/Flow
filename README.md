@@ -46,14 +46,16 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   Server, the playlists the server's other profiles share, each with a
   **Follow** / **Unfollow** button in Actions. **Your Playlists** are yours,
   with Favourites and **Listen behaviour** first (a row that opens to its
-  three lists, closed until you open it).
+  lists, closed until you open it).
 - **Sharing** (with a Flow Server that has profiles): the **Share with others**
   box, top right of a playlist of your own, lets the other profiles see it
   and follow it. Only its owner can change it; followers can play it, and a
   playlist you follow has a **Following** box in the same spot to unfollow.
   Once you follow one, **Followed Playlists** appears in the menu below
   Playlists as a main entry of its own (with the followed lists under it, and
-  a page where each can be unfollowed); it goes again when you follow none. You never
+  a page where each can be unfollowed); it goes again when you follow none.
+  The arrow before the name of Playlists and of Followed Playlists in the menu
+  hides or shows the lists under it (remembered). You never
   see your own playlists among the shared ones. Unshared, a follow waits and
   comes back when it is shared again; deleted, the follow is gone.
 - **A playlist**: Shuffle, Play, a search box, and the songs. Clicking a
@@ -62,7 +64,8 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   "Added" is when the song was downloaded (All Songs) or put in that playlist.
   The star on every song's row makes it a favourite (filled gold) or no longer
   one (an empty green star), from whichever list it is in. In All Songs, the
-  leftmost button under a song's **More** (three dots) opens your playlists
+  leftmost button under a song's **More** (three dots), also in the Listen
+  behaviour lists, opens **Add to Playlists**: your playlists
   with a box each (ticked: the song is in it); **Apply** puts the song into the
   newly ticked ones and takes it out of the newly unticked ones, and closes
   the popup and More (so does a click anywhere else). Ten playlists show, more
@@ -78,8 +81,15 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
 - **Favourites** (under All Songs in the menu): every starred song, newest
   star first; "Added" is when it was starred. Read-only apart from the stars.
 - **Listen behaviour** (under Favourites in the menu, opens and closes): Most
-  listened, Least listened and Long time no see, each a fifth of the library,
-  made from the statistics and read-only.
+  listened, Least skipped, Long time no see, Most skipped and Least listened,
+  each a fifth of the songs in your own playlists (All Songs does not count),
+  made from the statistics. Skipped means an early skip, under 30 seconds;
+  Least skipped and Most skipped only look at songs you have heard and
+  skipped. The lists cannot be edited, but a **From Playlist** column after Mix
+  says which of your playlists each song is in, and More has the same buttons
+  as in All Songs, except the red cross is **Remove from Playlist(s)**: it
+  takes the song out of every playlist of yours that holds it (asking first
+  when that is more than one) and leaves it in All Songs.
 
 How a listen is counted: only time actually played counts (not seeking or
 pausing), and it is counted when the song changes. At least 75% heard is a

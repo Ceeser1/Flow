@@ -100,6 +100,7 @@ const PlaylistPage = {
     if (key === 'title') return s.title;
     if (key === 'artist') return s.artist;
     if (key === 'mix') return s.mix;
+    if (key === 'from') return this._from(s);
     if (key === 'duration') return s.duration || 0;
     if (key === 'added') return row.addedAt;
     return '';
@@ -115,6 +116,11 @@ const PlaylistPage = {
       .filter((r) => Util.matches(view.filter, r.song.title, r.song.artist, r.song.mix));
     if (!SmartLists.isSmart(id)) rows = rows.sort((a, b) => b.addedAt - a.addedAt);
     return Util.sortRows(rows, view.sort, (r, k) => this._sortValue(r, k));
+  },
+
+  /** The names of your own playlists holding a song, as one text (a Listen behaviour list's From Playlist column). */
+  _from(song) {
+    return Store.playlistsHolding(song.id).map((p) => p.name).join(', ');
   },
 
   orderedIds(id) {
@@ -203,7 +209,7 @@ const PlaylistPage = {
       const favourites = this.id === FAVOURITES_ID;
       if (this.id === 'all') $('plEmptyText').textContent = 'No songs yet. Download your first one on the Add Songs page.';
       else if (favourites) $('plEmptyText').textContent = 'No favourites yet. Click the star on any song to add it here.';
-      else if (smart) $('plEmptyText').textContent = 'Nothing here yet. This list fills itself as you listen to your songs.';
+      else if (smart) $('plEmptyText').textContent = 'Nothing here yet. This list fills itself as you listen to the songs in your playlists.';
       else $('plEmptyText').textContent = 'This playlist is empty.';
       $('plEmptyAction').hidden = smart || favourites || !!p.isShared;
       $('plEmptyAction').textContent = this.id === 'all' ? 'Add Songs' : 'Add songs from All Songs';
@@ -214,6 +220,9 @@ const PlaylistPage = {
     const pickTarget = this.pickFor ? Store.playlist(this.pickFor) : null;
     const pickSet = pickTarget ? new Set(pickTarget.entries.map((e) => e.songId)) : null;
 
+    // A Listen behaviour list also says which of your playlists each song is from.
+    const smartList = !!p.isSmart;
+    $('plTable').classList.toggle('table--from', smartList);
     renderTable($('plTable'), {
       rows,
       sort: view.sort,
@@ -227,6 +236,12 @@ const PlaylistPage = {
         { key: 'title', label: 'Title', cls: 'col-title', render: (r) => this._title(r.song), onClick: (r) => this._playFromTitle(r.song) },
         { key: 'artist', label: 'Artist', cls: 'col-artist', render: (r) => h('span', { title: r.song.artist }, r.song.artist) },
         { key: 'mix', label: 'Mix', cls: 'col-mix', render: (r) => h('span.muted-text', { title: r.song.mix }, r.song.mix) },
+        ...(smartList ? [{
+          key: 'from',
+          label: 'From Playlist',
+          cls: 'col-from',
+          render: (r) => h('span.muted-text', { title: this._from(r.song) }, this._from(r.song)),
+        }] : []),
         { key: 'duration', label: 'Duration', cls: 'col-num', render: (r) => Util.fmtClock(r.song.duration) },
         { key: 'added', label: 'Added', cls: 'col-date', render: (r) => Util.fmtDate(r.addedAt) },
         { key: 'actions', label: 'Actions', sortable: false, cls: 'col-actions', render: (r) => this._actions(r, pickTarget, pickSet) },
@@ -266,7 +281,10 @@ const PlaylistPage = {
 
   /**
    * Add to Queue and Play, and More with Favourite, Details, Edit and Delete
-   * (All Songs) or Remove (a playlist of one's own). While adding songs to a
+   * (All Songs), Remove (a playlist of one's own) or Remove from Playlist(s)
+   * (a Listen behaviour list: out of every own playlist holding it, the song
+   * itself stays in All Songs). All Songs and the Listen behaviour lists also
+   * have Add to Playlists, leftmost. While adding songs to a
    * playlist, its + takes Add to Queue's place, which moves into More.
    */
   _actions(row, pickTarget, pickSet) {
@@ -285,12 +303,14 @@ const PlaylistPage = {
       ];
       if (listId === 'all') {
         buttons.push(iconButton('act.act--red', Icons.x, 'Delete Song', () => this.deleteSong(song)));
-      } else if (!SmartLists.isSmart(listId) && listId !== FAVOURITES_ID && !readOnly) {
+      } else if (SmartLists.isSmart(listId)) {
+        buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist(s)', () => this.removeFromLists(song)));
+      } else if (listId !== FAVOURITES_ID && !readOnly) {
         buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist', () => this.removeFromList(song)));
       }
       if (pickTarget) buttons.unshift(queue());
-      // All Songs: put the song into playlists from here, the leftmost button.
-      if (listId === 'all') buttons.unshift(SongActions.playlistButton(song));
+      // All Songs and Listen behaviour: put the song into playlists from here, the leftmost button.
+      if (listId === 'all' || SmartLists.isSmart(listId)) buttons.unshift(SongActions.playlistButton(song));
       return buttons;
     };
     let first = queue();
@@ -341,6 +361,26 @@ const PlaylistPage = {
     await attempt(async () => {
       await window.flow.removeFromPlaylist(this.id, song.id);
       toast(`Removed "${song.title}" from ${p ? p.name : 'the playlist'}`, 'success');
+    });
+  },
+
+  /** From a Listen behaviour list: takes the song out of every playlist of yours that holds it. */
+  async removeFromLists(song) {
+    const lists = Store.playlistsHolding(song.id);
+    if (!lists.length) return;
+    // More than one list is more than a click should undo unasked.
+    if (lists.length > 1) {
+      const ok = await confirmDialog({
+        title: 'Remove from playlists',
+        message: `Remove "${Util.songLine(song)}" from ${lists.map((p) => p.name).join(', ')}? It stays in All Songs.`,
+        confirmLabel: 'Remove',
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    await attempt(async () => {
+      for (const p of lists) await window.flow.removeFromPlaylist(p.id, song.id);
+      toast(`Removed "${song.title}" from ${lists.length === 1 ? lists[0].name : `${lists.length} playlists`}`, 'success');
     });
   },
 

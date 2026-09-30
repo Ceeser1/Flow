@@ -3,7 +3,7 @@
 // Playlists: create one at the top; "Shared Playlists" (All Songs, and the
 // playlists other profiles share, which can be followed or not; the section
 // can be closed, All Songs stays); "Your Playlists" below. Favourites and the
-// three Listen behaviour lists are always the first rows of those, whatever
+// Listen behaviour lists are always the first rows of those, whatever
 // the sort, and have no actions.
 
 const PlaylistsPage = {
@@ -148,7 +148,7 @@ const PlaylistsPage = {
       return input;
     }
     if (p.isListenGroup) {
-      // Opens and closes; its three lists share its icon.
+      // Opens and closes; its lists share its icon.
       const open = Store.settings.listenPageOpen === true;
       return h('button.link-cell', {
         type: 'button',

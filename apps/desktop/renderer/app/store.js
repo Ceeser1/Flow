@@ -19,12 +19,20 @@ const Store = {
   server: { on: false, state: 'off', offline: [] },
   songsById: new Map(),
   smart: {}, // the Listen behaviour lists: id -> song ids, best match first
+  holding: new Map(), // song id -> your own playlists ({ id, name }) that hold it, A to Z
   _listeners: [],
 
   setLibrary(lib) {
     this.library = lib;
     this.songsById = new Map(lib.songs.map((s) => [s.id, s]));
-    this.smart = SmartLists.compute(lib.songs);
+    this.smart = SmartLists.compute(lib.songs, lib.playlists);
+    this.holding = new Map();
+    for (const p of this.sortedPlaylists()) {
+      for (const e of p.entries) {
+        if (!this.holding.has(e.songId)) this.holding.set(e.songId, []);
+        this.holding.get(e.songId).push({ id: p.id, name: p.name });
+      }
+    }
     for (const fn of this._listeners) fn(lib);
   },
 
@@ -108,6 +116,11 @@ const Store = {
       .filter(Boolean)
       .map((s) => ({ songId: s.id, addedAt: s.addedAt }));
     return { id, name: def.name, entries, isSmart: true };
+  },
+
+  /** Your own playlists that hold a song ({ id, name }), A to Z. */
+  playlistsHolding(songId) {
+    return this.holding.get(songId) || [];
   },
 
   smartPlaylists() {

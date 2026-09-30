@@ -10,8 +10,8 @@ const Nav = {
     $('menuSearch').innerHTML = Icons.search + '<span>Search</span>';
     $('menuAdd').innerHTML = Icons.add + '<span>Add Songs</span>'
       + '<span id="menuAddBadge" class="menu__badge" hidden title="Playlist import running"></span>';
-    $('menuPlaylists').innerHTML = Icons.playlists + '<span>Playlists</span>';
-    $('menuFollowed').innerHTML = Icons.playlists + '<span>Followed Playlists</span>';
+    this._entry('menuPlaylists', 'Playlists', 'playlistsMenuOpen');
+    this._entry('menuFollowed', 'Followed Playlists', 'followedMenuOpen');
     $('menuSearch').onclick = () => this.show('search');
     $('menuAdd').onclick = () => this.show('add');
     $('menuPlaylists').onclick = () => this.show('playlists');
@@ -19,6 +19,33 @@ const Nav = {
     Store.onLibrary(() => this.drawMenu());
     Store.onServer(() => this.drawMenu());
     Player.onChange(() => this.drawMenu());
+  },
+
+  /**
+   * A main entry with the icon, then an arrow that opens and closes the lists
+   * under it (remembered in `key`), then the name. The rest of the button
+   * still opens the page.
+   */
+  _entry(id, label, key) {
+    const arrow = h('span.menu__chevron.menu__chevron--toggle', {
+      role: 'button',
+      html: Icons.chevron,
+      onclick: (e) => {
+        e.stopPropagation();
+        Store.saveSettings({ [key]: Store.settings[key] === false });
+        this.drawMenu();
+      },
+    });
+    $(id).innerHTML = Icons.playlists;
+    $(id).append(arrow, h('span', label));
+    (this._arrows = this._arrows || {})[key] = arrow;
+  },
+
+  _drawArrow(key, open, what) {
+    const arrow = this._arrows[key];
+    arrow.classList.toggle('menu__chevron--open', open);
+    arrow.title = open ? `Hide ${what}` : `Show ${what}`;
+    arrow.setAttribute('aria-expanded', String(open));
   },
 
   currentPlaylistId() {
@@ -54,6 +81,11 @@ const Nav = {
     $('menuAdd').classList.toggle('menu__item--active', this.page === 'add');
     $('menuPlaylists').classList.toggle('menu__item--active', this.page === 'playlists');
     $('menuFollowed').classList.toggle('menu__item--active', this.page === 'followed');
+    const playlistsOpen = Store.settings.playlistsMenuOpen !== false;
+    const followedOpen = Store.settings.followedMenuOpen !== false;
+    this._drawArrow('playlistsMenuOpen', playlistsOpen, 'the playlists');
+    this._drawArrow('followedMenuOpen', followedOpen, 'the followed playlists');
+    $('menuPlaylistList').hidden = !playlistsOpen;
 
     const list = clear($('menuPlaylistList'));
     const item = (p, extra = '') => {
@@ -98,7 +130,7 @@ const Nav = {
     // Followed Playlists: a main entry of its own, only while one is followed.
     const followed = Store.followedPlaylists();
     $('menuFollowed').hidden = !followed.length;
-    $('menuFollowedList').hidden = !followed.length;
+    $('menuFollowedList').hidden = !followed.length || !followedOpen;
     const followedList = clear($('menuFollowedList'));
     for (const p of followed) followedList.appendChild(item(p));
   },

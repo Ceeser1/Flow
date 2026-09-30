@@ -304,7 +304,11 @@ button, input, select { font: inherit; color: inherit; }
 .menu__group:hover { color: var(--text-bright); background: #1f1f24; }
 .menu__chevron { display: inline-flex; color: var(--text-dim); transition: transform 0.15s; }
 .menu__chevron .icon { width: 14px; height: 14px; }
-.menu__group--open .menu__chevron { transform: rotate(90deg); }
+.menu__group--open .menu__chevron,
+.menu__chevron--open { transform: rotate(90deg); }
+/* The arrow of Playlists and Followed Playlists: its own click target, between the icon and the name. */
+.menu__chevron--toggle { margin: 0 -6px 0 -4px; padding: 6px 4px; border-radius: 4px; cursor: pointer; }
+.menu__chevron--toggle:hover { background: rgba(255, 255, 255, 0.1); color: var(--text-bright); }
 
 .menu__sub--nested { padding-left: 28px; height: 30px; }
 .menu__sub--nested.menu__sub--active { padding-left: 27px; }
@@ -1246,6 +1250,10 @@ progress {
 .table--songs .col-actions { width: 116px; }
 .table--songs .col-artist { width: calc(var(--rest, 600px) * 0.35); }
 .table--songs .col-mix { width: calc(var(--rest, 600px) * 0.2); }
+/* A Listen behaviour list has From Playlist too: Artist 25%, Mix 15%, From 22%, Title the rest. */
+.table--from .col-artist { width: calc(var(--rest, 600px) * 0.25); }
+.table--from .col-mix { width: calc(var(--rest, 600px) * 0.15); }
+.table--from .col-from { width: calc(var(--rest, 600px) * 0.22); }
 
 .link-cell {
   display: inline-flex;
@@ -1339,6 +1347,7 @@ progress {
   gap: 8px;
 }
 
+.pl-picker__title { padding: 2px 6px 0; font-weight: 600; color: var(--text-bright); }
 .pl-picker__list { max-height: 340px; overflow-y: auto; }
 
 .pl-picker__row {
@@ -1352,7 +1361,7 @@ progress {
 .pl-picker__row:hover { background: rgba(255, 255, 255, 0.07); }
 .pl-picker__row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-picker__empty { padding: 8px 6px; color: var(--text-dim); }
-.pl-picker .btn { align-self: flex-end; }
+.pl-picker .btn { align-self: center; }
 
 /* ===== one playlist ===== */
 
