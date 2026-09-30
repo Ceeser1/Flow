@@ -289,7 +289,7 @@ control with a cache:
   playlists, favourites and listening stats. A new profile starts
   with a copy of the Default / Shared playlists (what is used while no profile
   is logged in). The name
-  under "Flow" says who is logged in ("Connected to: Pi as Anna"). A change
+  under "Flow" says who is logged in ("Server: Pi as Anna (Home)", or Tailscale or Remote away from home). A change
   waits for the profile it was made in, and a playlist marked for download
   keeps its songs while another profile is logged in.
 - Last seen library and waiting changes: `server-library.json` and

@@ -13,6 +13,11 @@ const ServerChip = {
     this.draw(Store.server);
   },
 
+  /** How the server is reached, as a word: Home, Tailscale or Remote. */
+  via(st) {
+    return st.via === 'remote' ? (st.tailscale ? 'Tailscale' : 'Remote') : 'Home';
+  },
+
   /** One line for a server state, also used by Settings. */
   describe(st) {
     if (!st || !st.on) return { text: '', kind: 'off' };
@@ -37,7 +42,8 @@ const ServerChip = {
       return;
     }
     const { text, kind } = this.describe(st);
-    const short = kind === 'online' ? `Connected to: ${st.name || 'Server'}${st.profile ? ` as ${st.profile.name}` : ''}`
+    // Online: "Server: Pi as Ceeser (Home)", with Tailscale or Remote away from home.
+    const short = kind === 'online' ? `Server: ${st.name || 'Server'}${st.profile ? ` as ${st.profile.name}` : ''} (${this.via(st)})`
       : kind === 'busy' ? 'Connecting...'
         : kind === 'error' ? 'Server: needs attention' : 'Server offline';
     const extra = st.transfer ? (st.transfer.startsWith('Up') ? 'uploading' : 'downloading')

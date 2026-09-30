@@ -309,8 +309,8 @@ button, input, select { font: inherit; color: inherit; }
 .menu__chevron--toggle { margin: 0 -6px 0 -4px; padding: 6px 4px; border-radius: 4px; cursor: pointer; }
 .menu__chevron--toggle:hover { background: rgba(255, 255, 255, 0.1); color: var(--text-bright); }
 
-.menu__sub--nested { padding-left: 28px; height: 30px; }
-.menu__sub--nested.menu__sub--active { padding-left: 27px; }
+.menu__sub--nested { padding-left: 28px; height: 30px; color: var(--grey); }
+.menu__sub--nested.menu__sub--active { padding-left: 27px; color: var(--text-bright); }
 
 .menu__sub-name {
   flex: 1;
