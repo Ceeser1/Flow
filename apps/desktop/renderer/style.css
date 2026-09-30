@@ -268,14 +268,14 @@ button, input, select { font: inherit; color: inherit; }
   background: none;
   border: none;
   border-left: 1px solid #2c2c33;
-  color: var(--text-dim);
+  color: var(--text-bright);
   cursor: pointer;
   text-align: left;
 }
 
-.menu__sub:hover { color: var(--text-bright); background: #1f1f24; }
+.menu__sub:hover { background: #1f1f24; }
 
-.menu__sub--all { font-weight: 600; color: var(--grey); }
+.menu__sub--all { font-weight: 600; }
 
 .menu__sub--active,
 .menu__sub--active:hover {
@@ -295,13 +295,12 @@ button, input, select { font: inherit; color: inherit; }
   background: none;
   border: none;
   border-left: 1px solid #2c2c33;
-  color: var(--grey);
-  font-weight: 600;
+  color: var(--text-bright);
   cursor: pointer;
   text-align: left;
 }
 
-.menu__group:hover { color: var(--text-bright); background: #1f1f24; }
+.menu__group:hover { background: #1f1f24; }
 .menu__chevron { display: inline-flex; color: var(--text-dim); transition: transform 0.15s; }
 .menu__chevron .icon { width: 14px; height: 14px; }
 .menu__group--open .menu__chevron,
