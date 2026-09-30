@@ -127,6 +127,27 @@ The server also guards against a proxy set up by hand, at any level:
   on the same machine, or listed with `--trusted-proxy`; the wrong-password
   waits go by it.
 
+## Checking a server from outside: doctor
+
+```sh
+node apps/server/src/main.js doctor https://music.example.com
+```
+
+Checks the server the way the apps reach it, through whatever is in front of
+it (Caddy, nginx, a tunnel): the address is https and its name is known, the
+certificate is accepted and not about to run out, the Flow Server answers and
+has a password, the proxy passes on who is calling and that it was https,
+plain http is sent on to https or closed, port 7878 isn't open to the
+internet, large uploads get through without being held back, and, with the
+password, signing in, the library and seeking in a song. Each line says ok,
+WARN or FAIL, with what to do; it ends with 1 when something fails.
+
+It asks for the password (Enter skips the signed-in checks;
+`FLOW_SERVER_PASSWORD` gives it without asking) and signs in as the device
+"flow-server doctor". Run it on the server first, then from a machine outside
+the home network (a laptop on a phone's hotspot) for the real view: many
+routers can't reach their own public address from inside.
+
 ## Profiles
 
 People sharing the server can each have a profile: the songs (All Songs, and
@@ -173,6 +194,7 @@ report changes.
 | | |
 |---|---|
 | `GET /api/hello` | name, protocol, whether a password is needed (open to anyone); `tailscale: { ip, dns, port }` when the server is on a tailnet, to private callers only; `publicUrl` at level 3 or 4 |
+| `GET /api/check` | what the server made of this request: `{ proxied, trusted, ip, proto, level, locked }` (open to anyone; for `doctor`) |
 | `POST /api/login` | `{ password, device }` → `{ token }` |
 | `GET /api/library?since=<rev>&as=<profile>` | `{ rev, library, profile }`, or 204 when nothing changed for that profile; the library has the profile's `follows` and the others' `sharedPlaylists` |
 | `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`) |

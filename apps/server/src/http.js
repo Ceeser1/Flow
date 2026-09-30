@@ -5,6 +5,8 @@
 //
 //   GET  /api/hello                    who this is; open to anyone (and, to askers on
 //                                      a private network, its Tailscale address)
+//   GET  /api/check                    what the server saw of this request (through
+//                                      a proxy?), for flow-server doctor; open to anyone
 //   POST /api/login   { password, device } -> { token }
 //   GET  /api/library [?since=rev&as=profileId]
 //                                      { rev, library, profile }, or 204 when
@@ -238,28 +240,41 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     }
     const proto = String(req.headers['x-forwarded-proto'] || (/proto=([a-z]+)/i.exec(String(req.headers.forwarded || '')) || [])[1] || '')
       .split(',')[0].trim().toLowerCase();
+    // A proxy that is not trusted is told about once, in the log: its callers
+    // all look like it, so the wrong-password waits are shared by them.
+    if (proxied && !trusted && !untrustedSeen.has(socket) && untrustedSeen.size < 100) {
+      untrustedSeen.add(socket);
+      log(`Requests come through a proxy at ${socket} that is not trusted. If it is yours: flow-server --trusted-proxy ${socket}`);
+    }
     return {
-      socket, ip, proxied, outside: proxied && (!trusted || !isPrivateIp(ip)), https: proto !== 'http',
+      socket, ip, proxied, trusted, outside: proxied && (!trusted || !isPrivateIp(ip)), proto, https: proto !== 'http',
     };
   }
+  const untrustedSeen = new Set();
 
-  /**
-   * Throws when a request may not be answered at all (see the top), or may
-   * only have /api/hello because the server is open to the internet without
-   * a strong password.
-   */
-  function checkExposure(client, isHello) {
+  /** Why a request gets no answer at all (see the top), or ''. */
+  function refusal(client) {
+    if (!isPrivateIp(client.socket) && !config.get().trustedProxies.includes(client.socket)) {
+      return 'This Flow Server does not answer the internet over plain http. Use its https address, or Tailscale.';
+    }
+    if (client.outside && !client.https) return 'This Flow Server is not used over plain http from the internet. Use its https address.';
+    return '';
+  }
+
+  /** Why a request only gets /api/hello (the server is open to the internet without a strong password), or ''. */
+  function lockReason(client) {
     const cfg = config.get();
-    if (!isPrivateIp(client.socket) && !cfg.trustedProxies.includes(client.socket)) {
-      throw new HttpError(403, 'This Flow Server does not answer the internet over plain http. Use its https address, or Tailscale.');
-    }
-    if (client.outside && !client.https) {
-      throw new HttpError(403, 'This Flow Server is not used over plain http from the internet. Use its https address.');
-    }
-    if (isHello || (cfg.level < PUBLIC_LEVEL && !client.outside) || (cfg.password && cfg.password.strong)) return;
-    throw new HttpError(403, cfg.password
+    if ((cfg.level < PUBLIC_LEVEL && !client.outside) || (cfg.password && cfg.password.strong)) return '';
+    return cfg.password
       ? 'This Flow Server can be reached from the internet, and its password is too weak for that, so it lets no one in. On the server, set a stronger one: flow-server set-password'
-      : 'This Flow Server can be reached from the internet but has no password, so it lets no one in. On the server, set one: flow-server set-password');
+      : 'This Flow Server can be reached from the internet but has no password, so it lets no one in. On the server, set one: flow-server set-password';
+  }
+
+  function checkExposure(client, isHello) {
+    const refused = refusal(client);
+    if (refused) throw new HttpError(403, refused);
+    const locked = isHello ? '' : lockReason(client);
+    if (locked) throw new HttpError(403, locked);
   }
 
   function tokenOf(req, url) {
@@ -486,6 +501,16 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       // who got here through it knows it already.
       if (cfg.level >= PUBLIC_LEVEL && cfg.publicUrl) answer.publicUrl = cfg.publicUrl;
       return sendJson(res, 200, answer);
+    }
+    if (is('GET', /^\/api\/check$/)) {
+      // What the server made of this request, for flow-server doctor: whether
+      // a proxy in front passes on who is calling and how. Nothing the
+      // caller doesn't know already, except whether the server lets anyone in.
+      checkExposure(client, true);
+      const locked = lockReason(client);
+      return sendJson(res, 200, {
+        proxied: client.proxied, trusted: client.trusted, ip: client.ip, proto: client.proto || null, level: config.get().level, locked: locked || null,
+      });
     }
     checkExposure(client, false);
     if (is('POST', /^\/api\/login$/)) return login(req, res, client);

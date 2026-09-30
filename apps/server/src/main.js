@@ -7,6 +7,7 @@ const os = require('os');
 const readline = require('readline');
 const configMod = require('./config');
 const { startServer } = require('./server');
+const { runDoctor } = require('./doctor');
 const tools = require('./tools');
 const { LEVEL_NAMES, PUBLIC_LEVEL, parseLevel, passwordProblem } = require('@flow/core/password');
 
@@ -18,6 +19,10 @@ Usage:
                                         every signed-in device has to enter it again
   flow-server clear-password            let anyone on the network in again (levels 1 and 2 only)
   flow-server devices                   the devices signed in, and to which profile
+  flow-server doctor <address>          check a server from where the apps use it, through
+                                        its proxy: https, certificate, uploads, seeking...
+                                        Run it from outside your home network too. Asks for
+                                        the password (Enter skips; FLOW_SERVER_PASSWORD gives it).
 
 Options:
   --port <n>      port to listen on (default ${configMod.DEFAULT_PORT}; remembered)
@@ -63,7 +68,7 @@ function parseArgs(argv) {
       if (out.publicUrl && !/^https:\/\/[^\s/?#]+[^\s?#]*$/i.test(out.publicUrl)) throw new Error('--public-url is an https:// address, like https://music.example.com');
     } else if (a === '--trusted-proxy') out.trustedProxies = String(value()).split(',').map((s) => s.trim()).filter(Boolean);
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}. See flow-server --help.`);
-    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices'].includes(a)) out.command = a;
+    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'doctor'].includes(a)) out.command = a;
     else out.rest.push(a);
   }
   return out;
@@ -97,6 +102,21 @@ function lanAddresses() {
   return out;
 }
 
+async function doctor(address) {
+  if (!address) throw new Error('Which server? flow-server doctor https://music.example.com');
+  let password = process.env.FLOW_SERVER_PASSWORD || '';
+  if (!password && process.stdin.isTTY) password = await askHidden('The server\'s password (Enter skips the signed-in checks): ');
+  const marks = { ok: '  ok    ', warn: '  WARN  ', fail: '  FAIL  ', skip: '  --    ' };
+  console.log(`Checking ${address}\n`);
+  const { results, ok } = await runDoctor(address, { password, report: (r) => console.log(`${marks[r.status]}${r.text}`) });
+  const fails = results.filter((r) => r.status === 'fail').length;
+  const warns = results.filter((r) => r.status === 'warn').length;
+  console.log('');
+  if (ok) console.log(warns ? `Works, with ${warns} ${warns === 1 ? 'thing' : 'things'} to look at.` : 'All good: the apps can use this address.');
+  else console.log(`${fails} ${fails === 1 ? 'problem' : 'problems'} to fix before the apps can use this address safely.`);
+  process.exitCode = ok ? 0 : 1;
+}
+
 function stamp() {
   return new Date().toTimeString().slice(0, 8);
 }
@@ -105,6 +125,11 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.command === 'help') {
     process.stdout.write(HELP);
+    return;
+  }
+  // Before the config: the doctor may run on a machine that is no server.
+  if (args.command === 'doctor') {
+    await doctor(args.rest[0]);
     return;
   }
   const config = configMod.open({ home: args.home, music: args.music });
