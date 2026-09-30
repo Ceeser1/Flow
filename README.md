@@ -41,7 +41,17 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
     off are marked "check"; each links to YouTube. Artist, title and mix come
     from Spotify. Spotify's page shows at most 100 songs of a longer list.
 - **Playlists**: create, rename, delete. `+` opens All Songs in "adding songs
-  to" mode, where one click on a song's `+` adds it.
+  to" mode, where one click on a song's `+` adds it. **Shared Playlists**
+  (it opens and closes; All Songs stays) lists All Songs and, with a Flow
+  Server, the playlists the server's other profiles share, each with a
+  **Follow** / **Unfollow** button in Actions. **Your Playlists** are yours,
+  with Favourites and Listen behaviour first.
+- **Sharing** (with a Flow Server that has profiles): the **Share with others**
+  box, top right of a playlist of your own, lets the other profiles see it
+  and follow it. Only its owner can change it; followers can play it. A
+  followed playlist is in the menu under **Followed Playlists**. You never
+  see your own playlists among the shared ones. Unshared, a follow waits and
+  comes back when it is shared again; deleted, the follow is gone.
 - **A playlist**: Shuffle, Play, a search box, and the songs. Clicking a
   song's title plays it (the song already playing keeps playing). Every column
   header sorts: ascending, descending, and a third click back to newest first.

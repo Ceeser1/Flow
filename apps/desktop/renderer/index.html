@@ -191,6 +191,11 @@
           <div id="newPlaylistError" class="form-error"></div>
         </div>
         <div class="section-head">
+          <button id="sharedHead" class="section-head__btn" type="button"></button>
+          <span id="sharedCount" class="muted-text"></span>
+        </div>
+        <table id="sharedTable" class="table table--playlists"></table>
+        <div class="section-head">
           <h2 class="section-head__title">Your Playlists</h2>
           <span id="playlistsCount" class="muted-text"></span>
         </div>
@@ -202,7 +207,10 @@
         <!-- One panel from the title down, continued by the column headers. -->
         <div class="pl-top">
         <div class="pl-head">
-          <h1 id="plTitle" class="page__title"></h1>
+          <div class="pl-head__titlerow">
+            <h1 id="plTitle" class="page__title"></h1>
+            <button id="plShare" class="toggle" type="button" aria-pressed="false" hidden></button>
+          </div>
           <div class="pl-head__row">
             <span id="plMeta" class="pl-meta"></span>
             <button id="plShuffle" class="toggle" type="button" aria-pressed="false" title="Play in random order"></button>

@@ -33,8 +33,17 @@ const PlaylistPage = {
       const on = !Store.isOffline(this.id);
       attempt(() => window.flow.setOffline(this.id, on));
     };
+    $('plShare').onclick = () => {
+      const p = Store.playlist(this.id);
+      if (!p) return;
+      if (p.isShared) attempt(() => window.flow.setFollowing(p.id, !Store.isFollowing(p.id)));
+      else attempt(() => window.flow.setPlaylistShared(p.id, !p.shared));
+    };
     Store.onServer(() => {
-      if (Nav.page === 'playlist') this._drawOffline();
+      if (Nav.page === 'playlist') {
+        this._drawOffline();
+        this._drawShare();
+      }
     });
     $('plPickDone').onclick = () => {
       const target = this.pickFor;
@@ -108,7 +117,8 @@ const PlaylistPage = {
     $('plTitle').textContent = p.name;
     const all = Store.rowsOf(this.id);
     const total = all.reduce((sum, r) => sum + (r.song.duration || 0), 0);
-    $('plMeta').textContent = `${Util.plural(all.length, 'song')} · ${Util.fmtClock(total)}`;
+    const by = p.isShared && p.ownerName ? `Shared by ${p.ownerName} · ` : '';
+    $('plMeta').textContent = `${by}${Util.plural(all.length, 'song')} · ${Util.fmtClock(total)}`;
     $('plSearch').placeholder = `Search in ${p.name}`;
 
     const target = this.pickFor ? Store.playlist(this.pickFor) : null;
@@ -116,7 +126,29 @@ const PlaylistPage = {
     if (target) $('plPickName').textContent = target.name;
 
     this._drawOffline();
+    this._drawShare();
     this.renderTable();
+  },
+
+  /**
+   * Top right of the title: your own playlist gets "Share with others" (the
+   * other profiles on the server can see and follow it); one another profile
+   * shares gets "Follow". Both need a server with profiles.
+   */
+  _drawShare() {
+    const p = Store.playlist(this.id);
+    const btn = $('plShare');
+    const mine = !!p && !p.isAll && !p.isFavourites && !p.isSmart && !p.isShared;
+    const can = !!p && Store.canShare() && (mine || p.isShared);
+    btn.hidden = !can;
+    if (!can) return;
+    const on = mine ? !!p.shared : Store.isFollowing(p.id);
+    btn.classList.toggle('toggle--on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.title = mine
+      ? 'Let the other profiles on this server see this playlist and follow it'
+      : `Follow this playlist: it shows in the menu under Followed Playlists`;
+    btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span><span>${mine ? 'Share with others' : 'Follow'}</span>`;
   },
 
   /**
@@ -127,7 +159,7 @@ const PlaylistPage = {
     const p = Store.playlist(this.id);
     const btn = $('plOffline');
     const note = $('plOfflineNote');
-    const can = !!p && Store.server.on && !p.isAll && !p.isFavourites && !p.isSmart;
+    const can = !!p && Store.server.on && !p.isAll && !p.isFavourites && !p.isSmart && !p.isShared;
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;
@@ -160,7 +192,7 @@ const PlaylistPage = {
       else if (favourites) $('plEmptyText').textContent = 'No favourites yet. Click the star on any song to add it here.';
       else if (smart) $('plEmptyText').textContent = 'Nothing here yet. This list fills itself as you listen to your songs.';
       else $('plEmptyText').textContent = 'This playlist is empty.';
-      $('plEmptyAction').hidden = smart || favourites;
+      $('plEmptyAction').hidden = smart || favourites || !!p.isShared;
       $('plEmptyAction').textContent = this.id === 'all' ? 'Add Songs' : 'Add songs from All Songs';
     }
     $('plFiltered').textContent = view.filter && !empty ? `Showing ${rows.length} of ${count}` : '';
@@ -230,6 +262,8 @@ const PlaylistPage = {
     this._playButtons.set(song.id, play);
     const queue = () => iconButton('act.act--green', Icons.plus, 'Add to Queue', () => Player.addToQueue(song.id));
     const listId = this.id;
+    // A playlist another profile shares can only be changed by its owner.
+    const readOnly = !!(Store.playlist(listId) || {}).isShared;
     const more = () => {
       const buttons = [
         this._favButton(song),
@@ -238,7 +272,7 @@ const PlaylistPage = {
       ];
       if (listId === 'all') {
         buttons.push(iconButton('act.act--red', Icons.x, 'Delete Song', () => this.deleteSong(song)));
-      } else if (!SmartLists.isSmart(listId) && listId !== FAVOURITES_ID) {
+      } else if (!SmartLists.isSmart(listId) && listId !== FAVOURITES_ID && !readOnly) {
         buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist', () => this.removeFromList(song)));
       }
       if (pickTarget) buttons.unshift(queue());

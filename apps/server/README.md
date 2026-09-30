@@ -113,6 +113,11 @@ deleted from an app's Settings; each can have a PIN of its own.
   songs, its own to change). Favourites and stats start empty and stay with
   the Default. What is made while no profile is signed in stays with the
   Default.
+- A profile can share a playlist (the box at the top right of the playlist).
+  The other profiles, and the Default, then see it read-only under Shared
+  Playlists, with the owner's name, and can follow it (their own list, shown
+  in the menu). Only the owner changes it. `setPlaylistShared`,
+  `followPlaylist` and `unfollowPlaylist` are commands like the rest.
 - Renaming or deleting a song does it for everyone. Deleting a profile takes
   its playlists, favourites and stats; the songs stay.
 - With a server PIN or password, a device signs in to the server first, then
@@ -142,7 +147,7 @@ report changes.
 |---|---|
 | `GET /api/hello` | name, protocol, whether a password is needed (open to anyone); `tailscale: { ip, dns, port }` when the server is on a tailnet, to private callers only |
 | `POST /api/login` | `{ password, device }` → `{ token }` |
-| `GET /api/library?since=<rev>&as=<profile>` | `{ rev, library, profile }`, or 204 when nothing changed for that profile |
+| `GET /api/library?since=<rev>&as=<profile>` | `{ rev, library, profile }`, or 204 when nothing changed for that profile; the library has the profile's `follows` and the others' `sharedPlaylists` |
 | `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`) |
 | `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file |
 | `GET /api/songs/<id>/audio` | the song's file, with Range for seeking |

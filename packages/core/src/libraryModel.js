@@ -10,9 +10,17 @@
 //   sourceUrl is the page the song was downloaded from, sourcePlaylistUrl the
 //   playlist it came in with when it was part of a playlist import (else '').
 //   stats     { plays, stops, skips, sessions, listened, lastPlayedAt }
-//   playlist  { id, name, createdAt, entries: [{ songId, addedAt }], source }
+//   playlist  { id, name, createdAt, entries: [{ songId, addedAt }], source, shared }
 //   source    { url, kind } for a playlist imported from a link, else null.
 //             Kept for a later "update from source".
+//   shared    true: the other profiles on a Flow Server can see the playlist
+//             and follow it. Only its owner can change it.
+//
+// With profiles (profiles.js) a library also carries what the other profiles
+// share with this one:
+//   follows          ids of the shared playlists this profile follows
+//   sharedPlaylists  the other profiles' shared playlists, for reading:
+//                    { id, name, createdAt, entries, ownerId, ownerName }
 //
 // "All Songs" is not stored: it is every song, and a song's addedAt is when it
 // was downloaded. Neither is "Favourites": the songs with a favouriteAt, which
@@ -51,7 +59,7 @@ function cleanStats(raw) {
 }
 
 function emptyLibrary() {
-  return { version: 1, songs: [], playlists: [], ignoredFiles: [] };
+  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [] };
 }
 
 /** Repairs anything a hand edit or an older version could have left behind. */
@@ -59,6 +67,11 @@ function cleanLoudness(v) {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+/** A list of ids: strings, no empties, no repeats. */
+function cleanIds(list) {
+  return [...new Set((Array.isArray(list) ? list : []).map((x) => String(x || '')).filter(Boolean))];
 }
 
 function sanitize(raw) {
@@ -103,6 +116,28 @@ function sanitize(raw) {
       createdAt: Number(p.createdAt) || Date.now(),
       entries,
       source: p.source && p.source.url ? { url: String(p.source.url), kind: String(p.source.kind || '') } : null,
+      shared: p.shared === true,
+    });
+  }
+  data.follows = cleanIds(raw.follows);
+  const seenShared = new Set();
+  for (const p of Array.isArray(raw.sharedPlaylists) ? raw.sharedPlaylists : []) {
+    if (!p || !p.id || seenShared.has(p.id) || seenLists.has(p.id)) continue;
+    seenShared.add(p.id);
+    const inList = new Set();
+    const entries = [];
+    for (const e of Array.isArray(p.entries) ? p.entries : []) {
+      if (!e || !seenSongs.has(e.songId) || inList.has(e.songId)) continue;
+      inList.add(e.songId);
+      entries.push({ songId: String(e.songId), addedAt: Number(e.addedAt) || Date.now() });
+    }
+    data.sharedPlaylists.push({
+      id: String(p.id),
+      name: String(p.name || 'Playlist'),
+      createdAt: Number(p.createdAt) || Date.now(),
+      entries,
+      ownerId: String(p.ownerId || ''),
+      ownerName: String(p.ownerName || ''),
     });
   }
   if (Array.isArray(raw.ignoredFiles)) {
@@ -146,7 +181,7 @@ function checkPlaylistName(data, name, exceptId = null) {
 
 function createPlaylist(data, name, id, now = Date.now()) {
   const clean = checkPlaylistName(data, name);
-  const playlist = { id, name: clean, createdAt: now, entries: [], source: null };
+  const playlist = { id, name: clean, createdAt: now, entries: [], source: null, shared: false };
   data.playlists.push(playlist);
   return playlist;
 }
@@ -173,6 +208,29 @@ function renamePlaylist(data, id, name) {
   const p = requirePlaylist(data, id);
   p.name = checkPlaylistName(data, name, id);
   return p;
+}
+
+/** Shares a playlist with the other profiles, or no longer. */
+function setPlaylistShared(data, id, shared) {
+  const p = requirePlaylist(data, id);
+  p.shared = !!shared;
+  return p;
+}
+
+/** A shared playlist of another profile, or null. */
+function sharedPlaylistById(data, id) {
+  return (data.sharedPlaylists || []).find((p) => p.id === id) || null;
+}
+
+/** Follows a playlist another profile shares. Your own cannot be followed. */
+function followPlaylist(data, id) {
+  if (playlistById(data, id)) throw new Error('Your own playlists are always yours; there is nothing to follow.');
+  if (!sharedPlaylistById(data, id)) throw new Error('That playlist is no longer shared.');
+  data.follows = cleanIds([...(data.follows || []), id]);
+}
+
+function unfollowPlaylist(data, id) {
+  data.follows = (data.follows || []).filter((x) => x !== id);
 }
 
 function deletePlaylist(data, id) {
@@ -311,6 +369,7 @@ module.exports = {
   ALL_SONGS_ID, ALL_SONGS_NAME, MAX_NAME, PLAYED_SHARE, EARLY_SKIP_SECONDS,
   emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource,
+  setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
   addSong, updateSong, setFavourite, removeSong,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta,

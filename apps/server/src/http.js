@@ -273,6 +273,8 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       const name = checkProfileName(body.name, current.id);
       config.set({ profiles: config.get().profiles.map((p) => (p.id === current.id ? { ...p, name } : p)) });
       log(`Profile renamed: ${current.name} -> ${name}`);
+      // Others see the name under the playlists it shares.
+      library.touch();
       return sendJson(res, 200, { profile: publicProfile({ ...current, name }) });
     }
     if (action === 'delete') {

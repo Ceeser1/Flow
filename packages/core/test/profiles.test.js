@@ -132,3 +132,70 @@ test('profiles read back from a file are repaired', () => {
   assert.equal(profiles.anna.songs.s1.stats.plays, 2);
   assert.deepEqual(prof.sanitizeProfiles(data, null), {});
 });
+
+test('a shared playlist shows up read-only for the others, and can be followed', () => {
+  const lib = withAnna();
+  prof.addProfile(lib.data, lib.profiles, 'ben');
+  const names = { anna: 'Anna', ben: 'Ben' };
+  const seen = (id) => prof.view(lib.data, lib.profiles, id, names);
+
+  assert.deepEqual(seen('ben').sharedPlaylists, [], 'nothing is shared yet');
+  run(lib, 'anna', { type: 'setPlaylistShared', playlistId: 'p1', shared: true });
+  assert.equal(seen('anna').playlists[0].shared, true);
+  assert.deepEqual(seen('anna').sharedPlaylists, [], 'you never see your own among the shared ones');
+  const shared = seen('ben').sharedPlaylists;
+  assert.deepEqual(shared.map((p) => [p.id, p.name, p.ownerId, p.ownerName]), [['p1', 'Evening', 'anna', 'Anna']]);
+  assert.deepEqual(shared[0].entries.map((e) => e.songId), ['s1', 's2']);
+  assert.deepEqual(seen(null).sharedPlaylists.map((p) => p.id), ['p1'], 'the Default sees it too');
+
+  // Only the owner can change it: for Ben it is not among his playlists.
+  assert.deepEqual(run(lib, 'ben', { type: 'renamePlaylist', playlistId: 'p1', name: 'Mine' }), { skipped: 'gone' });
+  assert.deepEqual(run(lib, 'ben', { type: 'addSongsToPlaylist', playlistId: 'p1', songIds: ['s1'] }), { skipped: 'gone' });
+
+  // Following is the follower's own list, and the owner cannot follow.
+  const follow = (who) => {
+    const v = prof.view(lib.data, lib.profiles, who, names);
+    const r = applyCommand(v, { at: Date.now(), type: 'followPlaylist', playlistId: 'p1' }, null, who);
+    prof.absorb(lib.data, lib.profiles, who, v);
+    return r;
+  };
+  assert.throws(() => follow('anna'), /own playlists/);
+  assert.deepEqual(follow('ben'), {});
+  assert.deepEqual(seen('ben').follows, ['p1']);
+  assert.deepEqual(seen('anna').follows, []);
+  assert.deepEqual(seen(null).follows, []);
+
+  // Unshared: the follow waits (nothing is shown), and comes back when shared again.
+  run(lib, 'anna', { type: 'setPlaylistShared', playlistId: 'p1', shared: false });
+  assert.deepEqual(seen('ben').sharedPlaylists, []);
+  assert.deepEqual(seen('ben').follows, ['p1']);
+  run(lib, 'anna', { type: 'setPlaylistShared', playlistId: 'p1', shared: true });
+  assert.deepEqual(seen('ben').sharedPlaylists.map((p) => p.id), ['p1']);
+
+  // A song removed from the library leaves the shared list; a deleted playlist takes the follows.
+  run(lib, 'ben', { type: 'deleteSong', songId: 's1' });
+  assert.deepEqual(seen('ben').sharedPlaylists[0].entries.map((e) => e.songId), ['s2']);
+  run(lib, 'anna', { type: 'deletePlaylist', playlistId: 'p1' });
+  assert.deepEqual(seen('ben').follows, []);
+
+  run(lib, 'ben', { type: 'unfollowPlaylist', playlistId: 'nothing' });
+});
+
+test('the Default shares and follows as well, and its changes go back into the library', () => {
+  const lib = library();
+  prof.addProfile(lib.data, lib.profiles, 'anna');
+  run(lib, null, { type: 'setPlaylistShared', playlistId: 'p1', shared: true });
+  assert.equal(lib.data.playlists[0].shared, true);
+  const anna = prof.view(lib.data, lib.profiles, 'anna', { anna: 'Anna' });
+  assert.deepEqual(anna.sharedPlaylists.map((p) => [p.id, p.ownerId, p.ownerName]), [['p1', 'default', 'Default / Shared']]);
+  // Her copy is her own and is not shared.
+  assert.equal(anna.playlists[0].shared, false);
+
+  run(lib, 'anna', { type: 'setPlaylistShared', playlistId: anna.playlists[0].id, shared: true });
+  const v = prof.view(lib.data, lib.profiles, null, { anna: 'Anna' });
+  assert.equal(v.sharedPlaylists.length, 1);
+  applyCommand(v, { at: Date.now(), type: 'followPlaylist', playlistId: v.sharedPlaylists[0].id });
+  prof.absorb(lib.data, lib.profiles, null, v);
+  assert.deepEqual(lib.data.follows, [v.sharedPlaylists[0].id]);
+  assert.equal(lib.data.sharedPlaylists.length, 0, 'what is shared with the Default is not stored in it');
+});

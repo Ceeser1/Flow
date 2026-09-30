@@ -1,8 +1,10 @@
 'use strict';
 
-// Playlists: create one at the top, "Your Playlists" below. All Songs and the
-// three Listen behaviour lists are always the first rows, whatever the sort,
-// and have no actions.
+// Playlists: create one at the top; "Shared Playlists" (All Songs, and the
+// playlists other profiles share, which can be followed or not; the section
+// can be closed, All Songs stays); "Your Playlists" below. Favourites and the
+// three Listen behaviour lists are always the first rows of those, whatever
+// the sort, and have no actions.
 
 const PlaylistsPage = {
   sort: { key: null, dir: null },
@@ -18,7 +20,14 @@ const PlaylistsPage = {
     box.addEventListener('input', () => {
       $('newPlaylistError').textContent = '';
     });
+    $('sharedHead').onclick = () => {
+      Store.saveSettings({ sharedGroupOpen: Store.settings.sharedGroupOpen === false });
+      this.render();
+    };
     Store.onLibrary(() => {
+      if (Nav.page === 'playlists') this.render();
+    });
+    Store.onServer(() => {
       if (Nav.page === 'playlists') this.render();
     });
   },
@@ -50,14 +59,25 @@ const PlaylistsPage = {
 
   render() {
     const lists = Util.sortRows(Store.sortedPlaylists(), this.sort, (p, k) => this._value(p, k));
-    const rows = [...Store.builtInPlaylists(), ...lists];
-    $('playlistsCount').textContent = `${Util.plural(Store.library.playlists.length + 1, 'playlist')}`;
+    const rows = [Store.favouritesPlaylist(), ...Store.smartPlaylists(), ...lists];
+    $('playlistsCount').textContent = Util.plural(Store.library.playlists.length, 'playlist');
+
+    // Shared Playlists: All Songs always, the shared ones only while open.
+    const open = Store.settings.sharedGroupOpen !== false;
+    const shared = Util.sortRows(Store.sharedPlaylists(), this.sort, (p, k) => this._value(p, k));
+    const sharedRows = [Store.allSongsPlaylist(), ...(open ? shared : [])];
+    $('sharedHead').className = `section-head__btn${open ? ' section-head__btn--open' : ''}`;
+    $('sharedHead').setAttribute('aria-expanded', String(open));
+    $('sharedHead').title = open ? 'Hide the shared playlists' : 'Show the shared playlists';
+    clear($('sharedHead')).append(h('span.menu__chevron', { html: Icons.chevron }), h('span', 'Shared Playlists'));
+    $('sharedCount').textContent = Store.canShare() ? Util.plural(shared.length, 'shared playlist') : '';
 
     // Clearing the table takes the rename box out, which blurs it, and a blur
     // must not start another redraw in the middle of this one.
     this._drawing = true;
     try {
-      this._drawTable(rows);
+      this._drawTable($('sharedTable'), sharedRows, (p) => this._sharedActions(p));
+      this._drawTable($('playlistsTable'), rows, (p) => this._actions(p));
     } finally {
       this._drawing = false;
     }
@@ -69,8 +89,8 @@ const PlaylistsPage = {
     }
   },
 
-  _drawTable(rows) {
-    renderTable($('playlistsTable'), {
+  _drawTable(table, rows, actions) {
+    renderTable(table, {
       rows,
       sort: this.sort,
       rowKey: (p) => p.id,
@@ -84,7 +104,7 @@ const PlaylistsPage = {
         { key: 'name', label: 'Name', cls: 'col-name', render: (p) => this._nameCell(p) },
         { key: 'songs', label: 'Songs', cls: 'col-num', render: (p) => String(p.entries.length) },
         { key: 'duration', label: 'Duration', cls: 'col-num', render: (p) => Util.fmtClock(Store.totalDuration(p.id)) },
-        { key: 'actions', label: 'Actions', sortable: false, cls: 'col-actions', render: (p) => this._actions(p) },
+        { key: 'actions', label: 'Actions', sortable: false, cls: 'col-actions', render: actions },
       ],
     });
   },
@@ -122,11 +142,26 @@ const PlaylistsPage = {
     }
     return h('button.link-cell', { type: 'button', onclick: () => Nav.openPlaylist(p.id) },
       h('span.link-cell__icon', { html: listIcon(p) }),
-      h('span', p.name));
+      h('span', p.name),
+      p.ownerName ? h('span.link-cell__by', `by ${p.ownerName}`) : null);
+  },
+
+  /**
+   * A shared playlist can only be changed by whoever shared it, so its Actions
+   * are Follow and Unfollow. All Songs has none.
+   */
+  _sharedActions(p) {
+    if (p.isAll) return h('span.muted', '');
+    const on = Store.isFollowing(p.id);
+    return h('div.actions', h('button.btn.btn--small' + (on ? '' : '.btn--primary'), {
+      type: 'button',
+      title: on ? `Stop following "${p.name}"` : `Follow "${p.name}": it shows in the menu`,
+      onclick: () => attempt(() => window.flow.setFollowing(p.id, !on)),
+    }, on ? 'Unfollow' : 'Follow'));
   },
 
   _actions(p) {
-    if (p.isAll || p.isFavourites || p.isSmart) return h('span.muted', '');
+    if (p.isFavourites || p.isSmart) return h('span.muted', '');
     return h('div.actions',
       iconButton('act.act--green', Icons.plus, 'Add Songs', () => Nav.openPlaylist('all', { pickFor: p.id })),
       iconButton('act.act--grey', Icons.pencil, 'Rename', () => {

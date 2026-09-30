@@ -394,3 +394,44 @@ test('an asker gets only so many answers a minute', async () => {
     await d.close();
   }
 });
+
+test('playlists shared by a profile reach the others, with the owner\'s name, and follows are kept', async () => {
+  await withServer(async ({ base, server }) => {
+    await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
+    const anna = (await post(base, '/api/profiles', { name: 'Anna', device: 'pc' })).json;
+    const ben = (await post(base, '/api/profiles', { name: 'Ben', device: 'phone' })).json;
+    const as = (t) => ({ Authorization: `Bearer ${t}` });
+    await command(base, [
+      { cid: 'a1', at: Date.now(), type: 'createPlaylist', playlistId: 'pa', name: 'Evening' },
+      { cid: 'a2', at: Date.now(), type: 'addSongsToPlaylist', playlistId: 'pa', songIds: ['s1'] },
+      { cid: 'a3', at: Date.now(), type: 'setPlaylistShared', playlistId: 'pa', shared: true },
+    ], as(anna.token));
+
+    let lib = (await get(base, '/api/library', ben.token)).json.library;
+    assert.deepEqual(lib.sharedPlaylists.map((p) => [p.id, p.ownerName]), [['pa', 'Anna']]);
+    assert.deepEqual(lib.sharedPlaylists[0].entries.map((e) => e.songId), ['s1']);
+    assert.equal((await get(base, '/api/library', anna.token)).json.library.sharedPlaylists.length, 0, 'not her own');
+
+    const r = await command(base, [
+      { cid: 'b1', at: Date.now(), type: 'followPlaylist', playlistId: 'pa' },
+    ], as(ben.token));
+    assert.equal(r.results[0].ok, true);
+    assert.deepEqual((await get(base, '/api/library', ben.token)).json.library.follows, ['pa']);
+    const own = await command(base, [{ cid: 'a4', at: Date.now(), type: 'followPlaylist', playlistId: 'pa' }], as(anna.token));
+    assert.equal(own.results[0].ok, false, 'not your own');
+    const stranger = await command(base, [{ cid: 'b2', at: Date.now(), type: 'renamePlaylist', playlistId: 'pa', name: 'Mine' }], as(ben.token));
+    assert.equal(stranger.results[0].skipped, 'gone', 'only the owner changes it');
+
+    // A rename reaches the others: the revision moves on.
+    const rev = server.library.rev;
+    await post(base, '/api/profiles/rename', { name: 'Anna B' }, anna.token);
+    assert.ok(server.library.rev > rev);
+    lib = (await get(base, '/api/library', ben.token)).json.library;
+    assert.equal(lib.sharedPlaylists[0].ownerName, 'Anna B');
+
+    // All of it is kept over a restart of the library file.
+    const saved = JSON.parse(fs.readFileSync(server.library.file || path.join(server.config.home, 'library.json'), 'utf8'));
+    assert.deepEqual(saved.profiles[ben.profile.id].follows, ['pa']);
+    assert.equal(saved.profiles[anna.profile.id].playlists[0].shared, true);
+  });
+});

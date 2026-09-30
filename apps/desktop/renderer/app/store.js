@@ -68,7 +68,32 @@ const Store = {
     if (id === ALL_SONGS_ID) return this.allSongsPlaylist();
     if (id === FAVOURITES_ID) return this.favouritesPlaylist();
     if (SmartLists.isSmart(id)) return this.smartPlaylist(id);
-    return this.library.playlists.find((p) => p.id === id) || null;
+    const own = this.library.playlists.find((p) => p.id === id);
+    if (own) return own;
+    // A playlist another profile shares: to read, not to change.
+    const shared = (this.library.sharedPlaylists || []).find((p) => p.id === id);
+    return shared ? { ...shared, isShared: true } : null;
+  },
+
+  /** With a Flow Server that has profiles: playlists can be shared with the others and followed. */
+  canShare() {
+    return !!this.server.on && !!this.server.profilesSupported;
+  },
+
+  /** The playlists other profiles share, A to Z. */
+  sharedPlaylists() {
+    return (this.library.sharedPlaylists || [])
+      .map((p) => ({ ...p, isShared: true }))
+      .sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
+  isFollowing(id) {
+    return (this.library.follows || []).includes(id);
+  },
+
+  /** The shared playlists this profile follows, A to Z. */
+  followedPlaylists() {
+    return this.sharedPlaylists().filter((p) => this.isFollowing(p.id));
   },
 
   /**

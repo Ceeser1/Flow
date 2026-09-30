@@ -55,6 +55,32 @@ const TYPES = {
       return {};
     },
   },
+  setPlaylistShared: {
+    keys: (c) => [`p:${c.playlistId}:shared`],
+    run(d, c) {
+      if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
+      model.setPlaylistShared(d, str(c.playlistId), !!c.shared);
+      return {};
+    },
+  },
+  // Following a playlist another profile shares: a list of the profile's own.
+  followPlaylist: {
+    keys: (c) => [`f:${c.playlistId}`],
+    run(d, c) {
+      const id = str(c.playlistId);
+      // Unshared or deleted since: the follow waits for nothing.
+      if (!model.sharedPlaylistById(d, id) && !model.playlistById(d, id)) return { skipped: 'gone' };
+      model.followPlaylist(d, id);
+      return {};
+    },
+  },
+  unfollowPlaylist: {
+    keys: (c) => [`f:${c.playlistId}`],
+    run(d, c) {
+      model.unfollowPlaylist(d, str(c.playlistId));
+      return {};
+    },
+  },
   deletePlaylist: {
     keys: () => [],
     run(d, c) {

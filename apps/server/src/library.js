@@ -33,7 +33,7 @@ const SETTLE_MS = 2000;
 // upload; the upload itself adds the song here.
 const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource',
   'addSongToPlaylists', 'addSongsToPlaylist', 'removeFromPlaylist', 'deleteSong', 'editSong',
-  'setFavourite', 'setLoudness', 'setDuration', 'recordListen']);
+  'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist']);
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');
@@ -143,12 +143,17 @@ function createLibrary(config, log = () => {}) {
 
   // ---- what the apps see ----
 
+  /** Profile id -> name, for the owners of the playlists others share. */
+  function profileNames() {
+    return Object.fromEntries(config.get().profiles.map((p) => [p.id, p.name]));
+  }
+
   /**
    * The library as sent to an app signed in to `profileId` (null: none):
    * paths inside the music folder, not the server's own.
    */
   function snapshot(profileId = null) {
-    const v = prof.view(data, profiles, profileId);
+    const v = prof.view(data, profiles, profileId, profileNames());
     return {
       ...v,
       songs: v.songs.map((s) => ({ ...s, file: relative(s.file) })),
@@ -236,7 +241,7 @@ function createLibrary(config, log = () => {}) {
         }
       }
     };
-    const v = prof.view(data, profiles, profileId);
+    const v = prof.view(data, profiles, profileId, profileNames());
     apply(v);
     // Only a change moves the revision on: commands that were all skipped or
     // refused must not make every app fetch the library again for nothing.
@@ -299,7 +304,7 @@ function createLibrary(config, log = () => {}) {
       stats: meta.stats,
     };
     mutate((d) => {
-      const v = prof.view(d, profiles, profileId);
+      const v = prof.view(d, profiles, profileId, profileNames());
       model.addSong(v, song);
       const lists = (Array.isArray(playlistIds) ? playlistIds : []).map(String).filter((pid) => model.playlistById(v, pid));
       model.addSongToPlaylists(v, id, lists, song.addedAt);
@@ -416,6 +421,8 @@ function createLibrary(config, log = () => {}) {
     snapshot,
     songFile,
     profileIds: () => Object.keys(profiles),
+    // Something the apps show changed without the library doing so (a profile renamed).
+    touch: () => mutate(() => {}),
     createProfile,
     deleteProfile,
     runCommands,

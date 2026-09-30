@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('flow', {
   createPlaylist: (name) => call('library:createPlaylist', name),
   renamePlaylist: (id, name) => call('library:renamePlaylist', { id, name }),
   deletePlaylist: (id) => call('library:deletePlaylist', id),
+  setPlaylistShared: (id, shared) => call('library:setPlaylistShared', { id, shared }),
+  setFollowing: (id, on) => call('library:setFollowing', { id, on }),
   addSongToPlaylists: (songId, playlistIds) => call('library:addSongToPlaylists', { songId, playlistIds }),
   addSongsToPlaylist: (playlistId, songIds) => call('library:addSongsToPlaylist', { playlistId, songIds }),
   removeFromPlaylist: (playlistId, songId) => call('library:removeFromPlaylist', { playlistId, songId }),

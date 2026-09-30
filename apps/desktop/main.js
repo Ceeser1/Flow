@@ -211,6 +211,13 @@ handle('library:deletePlaylist', (id) => {
   if (remote.active()) remote.setOffline(id, false).catch(() => {});
   return change((d) => model.deletePlaylist(d, id), 'deletePlaylist', { playlistId: id });
 });
+// Sharing a playlist with the server's other profiles, and following one they share.
+handle('library:setPlaylistShared', ({ id, shared }) =>
+  change((d) => model.setPlaylistShared(d, id, !!shared), 'setPlaylistShared', { playlistId: id, shared: !!shared }));
+handle('library:setFollowing', ({ id, on }) => {
+  if (!remote.active()) throw new Error('Following playlists needs a Flow Server.');
+  return remote.command(on ? 'followPlaylist' : 'unfollowPlaylist', { playlistId: id });
+});
 handle('library:addSongToPlaylists', ({ songId, playlistIds }) =>
   change((d) => model.addSongToPlaylists(d, songId, playlistIds), 'addSongToPlaylists', { songId, playlistIds }));
 handle('library:addSongsToPlaylist', ({ playlistId, songIds }) =>

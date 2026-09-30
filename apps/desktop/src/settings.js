@@ -24,6 +24,9 @@ const DEFAULTS = {
   listenSession: null,
   // Whether the menu's "Listen behaviour" group is open.
   listenGroupOpen: true,
+  // The Shared Playlists section of the Playlists page, and the menu's Followed Playlists group.
+  sharedGroupOpen: true,
+  followedGroupOpen: true,
   // The sleep timer running, kept so a restart still shows (and can cancel)
   // the shutdown Windows has been told about: { endsAt, shutdownAt, ended },
   // times in ms, shutdownAt null without a shutdown.
@@ -108,6 +111,8 @@ function clean(raw) {
     ? { songId: String(ls.songId), listened: Math.max(0, Number(ls.listened) || 0) }
     : null;
   s.listenGroupOpen = s.listenGroupOpen !== false;
+  s.sharedGroupOpen = s.sharedGroupOpen !== false;
+  s.followedGroupOpen = s.followedGroupOpen !== false;
   const st = s.sleepTimer;
   const endsAt = st && typeof st === 'object' ? Number(st.endsAt) : NaN;
   const shutdownAt = st && Number.isFinite(Number(st.shutdownAt)) && st.shutdownAt !== null ? Number(st.shutdownAt) : null;
