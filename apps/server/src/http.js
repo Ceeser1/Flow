@@ -258,6 +258,13 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       return 'This Flow Server does not answer the internet over plain http. Use its https address, or Tailscale.';
     }
     if (client.outside && !client.https) return 'This Flow Server is not used over plain http from the internet. Use its https address.';
+    // Chosen to be reached from the home network (and Tailscale) only: a
+    // proxy still passing the internet on to it (left over from level 3 or
+    // 4, or set up by hand) gets nothing.
+    const { level } = config.get();
+    if (client.outside && level && level < PUBLIC_LEVEL) {
+      return `This Flow Server is set to level ${level}, not reachable from the internet. On the server, choose level 3 or 4 (sh apps/server/install.sh) to use it from outside.`;
+    }
     return '';
   }
 

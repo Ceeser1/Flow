@@ -178,7 +178,10 @@ async function runDoctor(address, opts = {}) {
         add('ok', `The certificate is valid${cert.issuer ? ` (${cert.issuer})` : ''}, until ${cert.validTo ? cert.validTo.toDateString() : '?'}.`);
       }
     } catch (err) {
-      add('fail', `No https connection to ${host}:${port}: ${why(err)}.${port === 443 ? ' Is port 443 forwarded on the router to the server?' : ''}`);
+      const hint = opts.connectTo
+        ? ` Does the web server on ${opts.connectTo} serve https for ${host} on port ${port}?`
+        : port === 443 ? ' Is port 443 forwarded on the router to the server?' : '';
+      add('fail', `No https connection to ${host}:${port}${opts.connectTo ? ` at ${opts.connectTo}` : ''}: ${why(err)}.${hint}`);
       return done();
     }
   }

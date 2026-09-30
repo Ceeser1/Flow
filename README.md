@@ -165,8 +165,9 @@ The cog at the bottom left of the menu. Every change counts at once.
     is kept but not used, and with both unticked Flow does not connect).
     With Home empty, Flow asks the local network for a Flow Server (if the
     server has discovery turned on) and fills Home in when exactly one answers (once, and only into an empty box).
-    When the server is on [Tailscale](https://tailscale.com), connecting at
-    home fills the Remote box with its Tailscale address the same way.
+    When the server is on [Tailscale](https://tailscale.com), or on the
+    internet (level 3 or 4), connecting at home fills the Remote box with its
+    Tailscale or `https://` address the same way.
   - **Pin or Password if the Server requires one**: entered once, kept
     encrypted for the Windows account.
   - **Always Download & Synchronize on mobile internet/metered connections**
@@ -285,12 +286,22 @@ control with a cache:
   then uploaded. Turning the server on the first time uploads all of Local
   Files; songs the server already has (same source, or same artist, title,
   mix and length) are not sent twice.
-- Away from home the apps reach the server through Tailscale: install it on
-  the server and on the PC (same account), and the server's `100.x.y.z`
-  address becomes the Remote address. No port is opened on the router. The
-  name under "Flow" then says "(Tailscale)". `apps/server/install.sh` sets
-  the server up as a service on any Linux with systemd, Tailscale included
-  (see the server's README).
+- `apps/server/install.sh` sets the server up as a service on any Linux
+  with systemd, and asks how far it should be reachable (see the server's
+  README):
+  1. the home network only;
+  2. and away from home through Tailscale: installed on the server and on
+     the PC (same account), the server's `100.x.y.z` address becomes the
+     Remote address, with no port opened on the router, and the name under
+     "Flow" says "(Tailscale)";
+  3. and the internet, with Caddy set up by the installer: a domain name (a
+     free DuckDNS one works) and ports 80 and 443 forwarded on the router;
+  4. and the internet, through a web server or tunnel of your own (nginx,
+     Apache, Cloudflare Tunnel): the installer says what to add and checks it.
+
+  Levels 3 and 4 need a strong password, and connecting at home fills the
+  Remote box with the server's `https://` address. `flow-server doctor
+  <address>` checks a server the way the apps reach it.
 - Profiles: everyone shares the songs, and each profile has its own
   playlists, favourites and listening stats. A new profile starts
   with a copy of the Default / Shared playlists (what is used while no profile

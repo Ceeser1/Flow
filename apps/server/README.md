@@ -47,8 +47,7 @@ level includes the ones above it:
 | 3 | and the internet, with Caddy | get a domain name (a free DuckDNS one works) and forward ports 80 and 443 on the router | low to medium |
 | 4 | and the internet, through your own web server or tunnel (nginx, Apache, Cloudflare Tunnel...) | set up the web server, its certificate and the router; `doctor` checks it | high if not set up properly |
 
-Levels 3 and 4 need a strong password (see below). Level 4 is not in the
-installer yet; it comes next.
+Levels 3 and 4 need a strong password (see below).
 
 Then it links `@flow/core` (there is no npm needed), offers ffmpeg, asks
 whether the apps may find the server on the network by themselves (see
@@ -95,6 +94,51 @@ Caddy when it served nothing else), stops the DuckDNS updates and closes
 
 Without a terminal: `--domain`, and `FLOW_SERVER_PASSWORD` and
 `DUCKDNS_TOKEN` in the environment.
+
+### Level 4: your own web server or tunnel
+
+For a machine that already runs a web server (nginx, Apache, your own Caddy)
+or a tunnel (Cloudflare Tunnel): the installer never changes its setup. It
+asks which one it is, whether it runs on this machine (else its address,
+which the server then trusts to say who is calling), and the https address
+the apps will use, which may have a path (`https://example.com/flow`). It
+prints what to add to it, with the settings audio needs that a stock setup
+gets wrong:
+
+- the caller's address and https passed on (`X-Forwarded-For`,
+  `X-Forwarded-Proto`), so wrong-password waits go by the caller and plain
+  http is refused;
+- no buffering, both ways: songs stream as they are read, uploads go straight
+  through;
+- uploads up to 2 GB (nginx allows 1 MB unless told), Range passed on for
+  seeking, requests of up to an hour;
+- audio links (they carry the sign-in token) kept out of the access log.
+
+For nginx, in the `server` block that has the certificate:
+
+```nginx
+location /flow/ {                       # or location / { proxy_pass http://127.0.0.1:7878; ...
+    proxy_pass http://127.0.0.1:7878/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    client_max_body_size 2g;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+    access_log off;
+}
+```
+
+Then it starts the server with `--level 4 --public-url <address>` and runs
+`doctor` (a web server on this machine is checked past the router). Going
+down from level 4 forgets the address and the trusted proxy; take Flow out of
+the web server yourself.
+
+Cloudflare Tunnel needs no open port at all, but its free plan takes uploads
+of at most 100 MB, and its terms limit serving mostly audio or video through
+it: read them before relying on it.
 
 ### ffmpeg (recommended)
 
@@ -174,8 +218,10 @@ The server also guards against a proxy set up by hand, at any level:
 
 - Plain http straight from a public address (the port forwarded on the router)
   gets no answer: the password would cross the internet unencrypted.
-- A request a proxy passes on from outside needs the strong password too, and
-  one the proxy says came over plain http gets no answer.
+- A request a proxy passes on from outside gets no answer at level 1 or 2 (a
+  proxy left over, or set up by hand), and needs the strong password on a
+  server whose level was never chosen. One the proxy says came over plain
+  http gets no answer.
 - The caller's address is taken from `X-Forwarded-For` only when the proxy is
   on the same machine, or listed with `--trusted-proxy`; the wrong-password
   waits go by it.

@@ -379,10 +379,16 @@ test('through a proxy from outside, nobody gets in without a strong password', a
     assert.equal((await fetch(`${base}/api/library`, { headers: via('203.0.113.7', { Authorization: `Bearer ${token}` }) })).status, 200);
   }, { password: 'Portis8head', settings: { level: 3 } });
 
-  // No public address below level 3.
+  // No public address below level 3, and nothing from outside at all once
+  // level 1 or 2 is chosen, strong password or not; the home network through
+  // the same proxy is fine.
   await withServer(async ({ base }) => {
     assert.equal((await (await fetch(`${base}/api/hello`)).json()).publicUrl, undefined);
-  }, { settings: { level: 2, publicUrl: 'https://music.example.com' } });
+    const outside = await fetch(`${base}/api/hello`, { headers: via('203.0.113.7') });
+    assert.equal(outside.status, 403);
+    assert.match((await outside.json()).error, /set to level 2/);
+    assert.equal((await fetch(`${base}/api/hello`, { headers: via('192.168.0.5') })).status, 200);
+  }, { password: 'Portis8head', settings: { level: 2, publicUrl: 'https://music.example.com' } });
 });
 
 test('plain http straight from a public address gets no answer, unless it is a trusted proxy', async () => {

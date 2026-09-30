@@ -15,6 +15,10 @@
 #   --port N         the port (default: what the server remembers, else 7878)
 #   --domain NAME    level 3: the server's name on the internet, like music.example.com
 #                    or mymusic.duckdns.org (asked when left out)
+#   --url URL        level 4: the https address the apps use, like https://music.example.com
+#                    or https://example.com/flow (asked when left out)
+#   --proxy NAME     level 4: nginx, apache, caddy, cloudflared or other (asked when left out)
+#   --proxy-at IP    level 4: where the web server or tunnel runs, when not on this machine
 #   --yes            no questions: the defaults, and install what the level needs
 #   --no-tailscale   leave Tailscale alone (don't install it)
 #   --no-discovery   do not let the apps find the server on the network by themselves
@@ -34,6 +38,9 @@ MUSIC=""
 PORT=""
 LEVEL=""
 DOMAIN=""
+URL=""
+PROXY=""
+PROXY_AT=""
 YES=0
 TAILSCALE=1
 DISCOVERY=ask
@@ -53,7 +60,10 @@ while [ $# -gt 0 ]; do
     --no-tailscale) TAILSCALE=0 ;;
     --no-discovery) DISCOVERY=0 ;;
     --uninstall) UNINSTALL=1 ;;
-    -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --url) [ $# -ge 2 ] || die "--url needs an https:// address."; URL="$2"; shift ;;
+    --proxy) [ $# -ge 2 ] || die "--proxy needs nginx, apache, caddy, cloudflared or other."; PROXY="$2"; shift ;;
+    --proxy-at) [ $# -ge 2 ] || die "--proxy-at needs an IP address."; PROXY_AT="$2"; shift ;;
+    -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option $1. See --help." ;;
   esac
   shift
@@ -224,9 +234,6 @@ if [ -z "$LEVEL" ]; then
   fi
 fi
 say "Level $LEVEL.${CUR_LEVEL:+ (It was $CUR_LEVEL.)}"
-if [ "$LEVEL" = 4 ]; then
-  die "Level 4 is not in this installer yet; it comes with the next update. Levels 1 to 3 work now."
-fi
 if [ "$LEVEL" = 3 ]; then
   # First, so a machine with a web server of its own hears about level 4 before any questions.
   for p in 80 443; do
@@ -489,8 +496,152 @@ EOF
   say "Caddy is serving https://$DOMAIN and passes it on to the Flow Server."
 fi
 
-# ---- down from level 3: close what it opened ----
+# ---- level 4: the internet, through your own web server or tunnel ----
+# What to add to it: the settings audio and uploads need, which a stock setup
+# gets wrong (buffering, the upload size, Range, who is calling).
+print_snippet() {
+  UP="http://${PROXY_UPSTREAM}:$PORT_NOW"
+  case "$PROXY" in
+    nginx)
+      say "In the server { } block for $URL_HOST that has your certificate (listen 443 ssl):"
+      say ""
+      if [ -n "$URL_PATH" ]; then say "    location $URL_PATH/ {"; say "        proxy_pass $UP/;"; else say "    location / {"; say "        proxy_pass $UP;"; fi
+      say '        proxy_set_header Host $host;'
+      say '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'
+      say '        proxy_set_header X-Forwarded-Proto $scheme;'
+      say '        proxy_buffering off;              # songs stream as they are read'
+      say '        proxy_request_buffering off;      # uploads go straight through'
+      say '        client_max_body_size 2g;          # long songs'
+      say '        proxy_read_timeout 1h;'
+      say '        proxy_send_timeout 1h;'
+      say '        access_log off;                   # audio links carry the sign-in token'
+      say "    }"
+      say ""
+      say "and http sent on to https (in the listen 80 block: return 301 https://\$host\$request_uri;)."
+      say "Then: sudo nginx -t && sudo systemctl reload nginx"
+      ;;
+    apache)
+      say "In the <VirtualHost *:443> for $URL_HOST that has your certificate"
+      say "(first: sudo a2enmod proxy proxy_http headers):"
+      say ""
+      say "    ProxyPreserveHost On"
+      say "    ProxyPass        ${URL_PATH:-}/ $UP/ flushpackets=on timeout=3600"
+      say "    ProxyPassReverse ${URL_PATH:-}/ $UP/"
+      say '    RequestHeader set X-Forwarded-Proto "https"'
+      say "    LimitRequestBody 0"
+      say ""
+      say "Apache adds X-Forwarded-For by itself. Leave audio out of its access log if you keep one:"
+      say "the links carry the sign-in token. Then: sudo apachectl configtest && sudo systemctl reload apache2"
+      ;;
+    caddy)
+      say "In your Caddyfile:"
+      say ""
+      say "    $URL_HOST {"
+      if [ -n "$URL_PATH" ]; then say "        handle_path $URL_PATH/* {"; say "            reverse_proxy ${PROXY_UPSTREAM}:$PORT_NOW"; say "        }"; else say "        reverse_proxy ${PROXY_UPSTREAM}:$PORT_NOW"; fi
+      say "    }"
+      say ""
+      say "Caddy passes on who is calling and streams by itself. Then: sudo systemctl reload caddy"
+      ;;
+    cloudflared)
+      say "In the tunnel's config.yml, before the catch-all rule:"
+      say ""
+      say "    ingress:"
+      say "      - hostname: $URL_HOST"
+      say "        service: $UP"
+      say "      - service: http_status:404"
+      say ""
+      say "Then: sudo systemctl restart cloudflared. Cloudflare passes on who is calling and that it"
+      say "was https. Two things to know: its free plan takes uploads of at most 100 MB (larger songs"
+      say "can't be moved to the server), and its terms limit serving mostly audio or video through it;"
+      say "read them before you rely on it."
+      ;;
+    *)
+      say "What the web server or tunnel in front has to do:"
+      say "- https at $URL, with a certificate the apps accept, and plain http sent on to https"
+      say "- pass ${URL_PATH:-everything}${URL_PATH:+/} on to $UP${URL_PATH:+ (without $URL_PATH)}"
+      say "- add X-Forwarded-For (the caller's address) and X-Forwarded-Proto: https"
+      say "- stream, not buffer: answers (songs) and request bodies (uploads)"
+      say "- allow uploads of 2 GB, pass the Range header on, and allow requests of an hour"
+      say "- keep audio links out of its access log: they carry the sign-in token"
+      ;;
+  esac
+}
+
+if [ "$LEVEL" = 4 ]; then
+  step "Your web server or tunnel"
+  say "Level 4 puts the Flow Server behind a web server or tunnel you run yourself. This script"
+  say "doesn't change its setup; it tells you what to add, then checks the result."
+  if [ -z "$PROXY" ] && [ -t 0 ] && [ "$YES" != 1 ]; then
+    say "  1  nginx"
+    say "  2  Apache"
+    say "  3  Caddy (your own)"
+    say "  4  Cloudflare Tunnel (cloudflared)"
+    say "  5  something else"
+    printf 'Which one [1]: '
+    read -r answer || answer=""
+    case "$answer" in 2) PROXY=apache ;; 3) PROXY=caddy ;; 4) PROXY=cloudflared ;; 5) PROXY=other ;; *) PROXY=nginx ;; esac
+  fi
+  PROXY=${PROXY:-other}
+  case "$PROXY" in
+    nginx) PROXY_NAME=nginx ;;
+    apache) PROXY_NAME=Apache ;;
+    caddy) PROXY_NAME=Caddy ;;
+    cloudflared) PROXY_NAME="Cloudflare Tunnel" ;;
+    other) PROXY_NAME="your web server or tunnel" ;;
+    *) die "--proxy is nginx, apache, caddy, cloudflared or other." ;;
+  esac
+
+  if [ -z "$PROXY_AT" ] && [ -t 0 ] && [ "$YES" != 1 ] && ! ask "Does it run on this machine?"; then
+    printf 'Its IP address (as this machine sees it): '
+    read -r PROXY_AT || PROXY_AT=""
+  fi
+  if [ -n "$PROXY_AT" ]; then
+    printf '%s' "$PROXY_AT" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || die "\"$PROXY_AT\" is not an IPv4 address."
+    PROXY_UPSTREAM=${LAN_IP:-this-machine}
+    say "It reaches the Flow Server at $PROXY_UPSTREAM:$PORT_NOW, and the server believes what it says about who is calling."
+  else
+    PROXY_UPSTREAM=127.0.0.1
+  fi
+
+  CUR_URL=$(info_get public_url)
+  URL=${URL:-$CUR_URL}
+  while :; do
+    if [ -t 0 ] && [ "$YES" != 1 ]; then
+      say "The https address the apps will use, like https://music.example.com or https://example.com/flow"
+      printf 'Address%s: ' "${URL:+ [$URL]}"
+      read -r answer || answer=""
+      [ -n "$answer" ] && URL=$answer
+    fi
+    URL=$(printf '%s' "$URL" | sed 's#/*$##')
+    printf '%s' "$URL" | grep -Eq '^https://([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z][a-zA-Z0-9-]*(:[0-9]+)?(/[A-Za-z0-9._~-]+)*$' && break
+    [ -t 0 ] && [ "$YES" != 1 ] || die "Level 4 needs the https address the apps use: --url https://music.example.com"
+    say "\"$URL\" is not an https:// address like https://music.example.com."
+    URL=""
+  done
+  URL_HOST=$(printf '%s' "$URL" | sed 's#^https://##; s#/.*$##')
+  URL_PATH=$(printf '%s' "$URL" | sed 's#^https://[^/]*##')
+
+  step "What to add to $PROXY_NAME"
+  print_snippet
+  say ""
+  say "Don't forward port $PORT_NOW on the router: everything goes through $PROXY_NAME."
+  if [ -t 0 ] && [ "$YES" != 1 ]; then
+    printf 'Press Enter once it is set up (the check comes after the service)... '
+    read -r answer || true
+  fi
+fi
+
+# ---- down from level 3 or 4: close what it opened ----
 CADDY_OFF=0
+if [ "${CUR_LEVEL:-0}" = 4 ] && [ "$LEVEL" != 4 ]; then
+  step "Closing level 4"
+  say "Take Flow out of your web server's or tunnel's setup: this script never changed it."
+  flow --trusted-proxy "" info >/dev/null
+  if [ "$LEVEL" -lt 3 ]; then
+    flow --public-url "" info >/dev/null
+    say "The server no longer tells the apps an internet address."
+  fi
+fi
 if [ "${CUR_LEVEL:-0}" = 3 ] && [ "$LEVEL" != 3 ]; then
   step "Closing level 3"
   if [ -f "$CADDYFILE" ] && have caddy; then
@@ -510,13 +661,19 @@ if [ "${CUR_LEVEL:-0}" = 3 ] && [ "$LEVEL" != 3 ]; then
     $SUDO systemctl daemon-reload
     say "DuckDNS updates stopped (the name is still yours at duckdns.org)."
   fi
-  flow --public-url "" info >/dev/null
-  say "The server no longer tells the apps an internet address."
+  if [ "$LEVEL" -lt 3 ]; then
+    flow --public-url "" info >/dev/null
+    say "The server no longer tells the apps an internet address."
+  fi
 fi
+# A proxy on another machine is trusted at level 4 only.
+[ "$LEVEL" = 4 ] && [ -n "$PROXY_AT" ] || [ -z "$(info_get trusted_proxies)" ] || flow --trusted-proxy "" info >/dev/null
 
 step "The service"
 ARGS=" --level $LEVEL"
 [ "$LEVEL" = 3 ] && ARGS="$ARGS --public-url https://$DOMAIN"
+[ "$LEVEL" = 4 ] && ARGS="$ARGS --public-url $URL"
+[ "$LEVEL" = 4 ] && [ -n "$PROXY_AT" ] && ARGS="$ARGS --trusted-proxy $PROXY_AT"
 if [ "$DISCOVERY" = 1 ]; then ARGS="$ARGS --discovery"; else ARGS="$ARGS --no-discovery"; fi
 [ -n "$MUSIC" ] && ARGS="$ARGS --music $MUSIC"
 [ -n "$PORT" ] && ARGS="$ARGS --port $PORT"
@@ -570,6 +727,10 @@ if have ufw && $SUDO ufw status 2>/dev/null | grep -q "Status: active"; then
   elif $SUDO ufw status 2>/dev/null | grep -q "^$PORT_NOW/tcp on tailscale0 "; then
     # Down from level 2: Tailscale no longer reaches the server.
     $SUDO ufw delete allow in on tailscale0 to any port "$PORT_NOW" proto tcp >/dev/null && say "ufw: port $PORT_NOW closed to Tailscale (level 1)"
+  fi
+  if [ "$LEVEL" = 4 ] && [ -n "$PROXY_AT" ] && ! is_private "$PROXY_AT"; then
+    # A proxy on a machine of its own on the internet (a VPS): only it gets in.
+    $SUDO ufw allow from "$PROXY_AT" to any port "$PORT_NOW" proto tcp >/dev/null && say "ufw: port $PORT_NOW open to $PROXY_AT (your proxy)"
   fi
   if [ "$LEVEL" = 3 ]; then
     $SUDO ufw allow 80,443/tcp >/dev/null && say "ufw: ports 80 and 443 open (Caddy, from anywhere)"
@@ -649,6 +810,29 @@ if [ "$LEVEL" = 3 ]; then
   fi
 fi
 
+if [ "$LEVEL" = 4 ]; then
+  step "Checking it the way the apps will"
+  # A web server on this machine is checked past the router; a tunnel or one
+  # elsewhere where the name leads.
+  if [ -z "$PROXY_AT" ] && [ "$PROXY" != cloudflared ]; then
+    DOCTOR_VIA="--connect-to 127.0.0.1"
+  else
+    DOCTOR_VIA=""
+  fi
+  # shellcheck disable=SC2086
+  if flow doctor $DOCTOR_VIA "$URL"; then
+    say ""
+    say "Your setup works from here."
+  else
+    say ""
+    say "Fix what failed with the snippet above (\"What to add to $PROXY_NAME\"), then check again:"
+    say "  node $REPO/apps/server/src/main.js doctor $DOCTOR_VIA $URL"
+  fi
+  say "For the outside view (the router above all), run this from a machine outside your home"
+  say "network, like a laptop on a phone's hotspot:"
+  say "  node apps/server/src/main.js doctor $URL"
+fi
+
 step "Done"
 # What the server said on starting, this run only.
 MAIN_PID=$(systemctl show -p MainPID --value "$SERVICE" 2>/dev/null || true)
@@ -660,11 +844,15 @@ if [ "$LEVEL" = 3 ]; then
   say "away from home it needs nothing else on the device). The password is the one set above."
   [ "$CERT_OK" = 1 ] || say "It works once Caddy has its certificate (see above)."
 fi
+if [ "$LEVEL" = 4 ]; then
+  say "Remote Server: $URL (Flow fills it in by itself once it has connected at home)."
+  say "The password is the one set above."
+fi
 if [ "$LEVEL" = 2 ] && [ -n "$TS_IP" ]; then
   say "Flow fills in the Remote address ($TS_IP:$PORT_NOW) by itself once it has connected at home."
   say "Install Tailscale on the PC and phone too (same account), or the Remote address does not work."
 fi
-if [ "$LEVEL" -lt 3 ] && [ "${CUR_LEVEL:-1}" = 3 ]; then
+if [ "$LEVEL" -lt 3 ] && [ "${CUR_LEVEL:-1}" -ge 3 ]; then
   say "The server is no longer reachable from the internet. If Flow's Remote address is its https"
   say "address, clear it$([ "$LEVEL" = 2 ] && printf ' (the Tailscale one works instead)')."
 elif [ "$LEVEL" = 1 ] && [ "${CUR_LEVEL:-1}" != 1 ]; then
