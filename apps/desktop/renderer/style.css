@@ -1240,6 +1240,14 @@ progress {
 .col-actions .th-plain { justify-content: flex-end; }
 .col-actions .actions { justify-content: flex-end; }
 
+/* The Playlists page: every column a share of the width, so a wide window
+   spreads them out like a narrow one instead of leaving Name all the room. */
+.table--playlists .col-name { width: 29%; }
+.table--playlists .col-num { width: 10%; }
+.table--playlists .col-listened { width: 19%; }
+.table--playlists .col-date { width: 16%; }
+.table--playlists .col-actions { width: 16%; }
+
 /* A song list: Duration, Added and Actions are fixed (84 + 130 + 116), and
    what is left is split Title 45%, Artist 35%, Mix 20%. Chromium drops a
    calc() that mixes % and px on a table column, so playlist.js measures the

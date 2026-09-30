@@ -114,10 +114,10 @@ const PlaylistsPage = {
         { key: 'name', label: 'Name', cls: 'col-name', render: (p) => this._nameCell(p) },
         { key: 'songs', label: 'Songs', cls: 'col-num', render: (p) => (p.isListenGroup ? '' : String(p.entries.length)) },
         { key: 'duration', label: 'Duration', cls: 'col-num', render: (p) => (p.isListenGroup ? '' : Util.fmtClock(Store.totalDuration(p.id))) },
-        // Created: the lists the app keeps itself have no date. Total listen
-        // duration: your own time listening to it, as the list playing.
+        // Listen Duration: your own time listening to it, as the list playing.
+        // Created: the lists the app keeps itself have no date.
+        { key: 'listened', label: 'Listen Duration', cls: 'col-listened', render: (p) => (p.isListenGroup ? '' : Util.fmtClock(Store.listenedTo(p.id))) },
         { key: 'created', label: 'Created', cls: 'col-date', render: (p) => (p.createdAt ? Util.fmtDate(p.createdAt) : '') },
-        { key: 'listened', label: 'Total listen duration', cls: 'col-listened', render: (p) => (p.isListenGroup ? '' : Util.fmtClock(Store.listenedTo(p.id))) },
         { key: 'actions', label: 'Actions', sortable: false, cls: 'col-actions', render: actions },
       ],
     });

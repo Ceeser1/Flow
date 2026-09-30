@@ -46,10 +46,11 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   Server, the playlists the server's other profiles share, each with a
   **Follow** / **Unfollow** button in Actions. **Your Playlists** are yours,
   with Favourites and **Listen behaviour** first (a row that opens to its
-  lists, closed until you open it). Both tables also show when each playlist
-  was **Created** and your **Total listen duration**: the time you have
-  listened to it as the list playing (after its Play button, or a song picked
-  in it). A song queued from another list does not count for it. It is yours
+  lists, closed until you open it). Both tables also show your **Listen
+  Duration**, the time you have listened to it as the list playing (after its
+  Play button, or a song picked in it), and when each playlist was **Created**.
+  Their columns are shares of the width, so a full-screen window spreads them
+  like a small one. A song queued from another list does not count for it. It is yours
   alone, also for a shared playlist (the owner's is not shared), and unfollowing
   a shared playlist deletes it.
 - **Sharing** (with a Flow Server that has profiles): the **Share with others**
