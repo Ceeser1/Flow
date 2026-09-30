@@ -163,14 +163,16 @@ const PlaylistPage = {
 
   /**
    * With a Flow Server: Download keeps a playlist's songs on this computer
-   * too, and says how many have arrived. For All Songs and playlists of your
-   * own; All Songs then follows the server (new songs come, deleted ones go).
+   * too, and says how many have arrived. For All Songs, playlists of your own
+   * and ones you follow; each then follows the server (new songs come, deleted
+   * ones go).
    */
   _drawOffline() {
     const p = Store.playlist(this.id);
     const btn = $('plOffline');
     const note = $('plOfflineNote');
-    const can = !!p && Store.server.on && !p.isFavourites && !p.isSmart && !p.isShared;
+    // A playlist another profile shares can be downloaded once it is followed.
+    const can = !!p && Store.server.on && !p.isFavourites && !p.isSmart && (!p.isShared || Store.isFollowing(p.id));
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;

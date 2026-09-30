@@ -245,7 +245,9 @@ control with a cache:
   without the server; unticked, those copies go again. **All Songs** has it
   too, after a "Are you sure you want to download all N songs?" question, and
   then follows the server: songs added there come down by themselves, songs
-  deleted there go from here.
+  deleted there go from here. A playlist another profile shares has it too
+  once you follow it; unfollowing removes its downloaded songs, except those
+  another downloaded playlist or All Songs still holds.
 - Songs downloaded or imported in Flow are saved into Local Files as always,
   then uploaded. Turning the server on the first time uploads all of Local
   Files; songs the server already has (same source, or same artist, title,

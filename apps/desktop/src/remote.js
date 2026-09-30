@@ -20,8 +20,9 @@
 //   snapshot  the Local Files library as it was at the last synchronization,
 //             so the next one knows what changed there since: songs added or
 //             removed by hand, a playlist made while the server was off.
-//   offline   the server playlists marked for download; 'all' stands for All
-//             Songs: every song of the server, kept in step with it
+//   offline   the playlists marked for download (one's own, or followed ones
+//             another profile shares); 'all' stands for All Songs: every song
+//             of the server, kept in step with it
 //   fetched   local songs that are copies downloaded from the server (the
 //             rest came from here); only those go when no longer needed
 //   remoteFilled  the Remote address was filled in from the server's Tailscale
@@ -1034,15 +1035,26 @@ function queueLocalChanges({ onlyNew = false, playlistsFor = {} } = {}) {
 }
 
 /**
+ * A playlist that can be marked for download, as the signed-in profile sees
+ * it: one of its own, or one another profile shares that it follows.
+ */
+function markedList(v, pid) {
+  return model.playlistById(v, pid)
+    || ((v.follows || []).includes(pid) ? model.sharedPlaylistById(v, pid) : null);
+}
+
+/**
  * The songs of a playlist marked for download: as the library has them when
- * it is the signed-in profile's, else as last seen (another profile's).
+ * it is the signed-in profile's (or one it follows), else as last seen
+ * (another profile's, or a followed one that is not shared for the moment).
  */
 function markedSongs(pid, v) {
   // All Songs is everyone's, whichever profile is signed in.
   if (pid === ALL) return v.songs.map((s) => s.id);
-  const p = model.playlistById(v, pid);
+  const p = markedList(v, pid);
   if (p) return p.entries.map((e) => e.songId);
   const keep = sync.offlineKeep[pid];
+  if (keep && (v.follows || []).includes(pid)) return keep.songs;
   return keep && keep.profile !== currentProfile() ? keep.songs : [];
 }
 
@@ -1061,10 +1073,12 @@ function rememberMarked(v) {
   if (!cache.library || cache.profile !== currentProfile()) return;
   for (const pid of sync.offline.slice()) {
     if (pid === ALL) continue;
-    const p = model.playlistById(v, pid);
+    const p = markedList(v, pid);
     const keep = sync.offlineKeep[pid];
     if (p) sync.offlineKeep[pid] = { profile: currentProfile(), songs: p.entries.map((e) => e.songId) };
-    else if (!keep || keep.profile === currentProfile()) {
+    // Gone (deleted, or no longer followed): no longer marked. A followed one
+    // that is only not shared for the moment stays as it was.
+    else if ((!keep || keep.profile === currentProfile()) && !(v.follows || []).includes(pid)) {
       sync.offline = sync.offline.filter((x) => x !== pid);
       delete sync.offlineKeep[pid];
     }
@@ -1172,7 +1186,7 @@ async function downloadOffline() {
   const want = [];
   const seen = new Set();
   for (const pid of sync.offline) {
-    const p = model.playlistById(v, pid);
+    const p = markedList(v, pid);
     if (!p && pid !== ALL) continue;
     // All Songs: every song, new ones as they turn up on the server.
     const songIds = pid === ALL ? v.songs.map((x) => x.id) : p.entries.map((e) => e.songId);
@@ -1376,6 +1390,7 @@ function setSecret(text) {
 
 /** Marks a server playlist for download, or no longer. */
 async function setOffline(pid, on) {
+  if (on && pid !== ALL && !markedList(getView(), pid)) throw new Error('Only All Songs, your own playlists and the ones you follow can be downloaded.');
   if (on && !sync.offline.includes(pid)) sync.offline.push(pid);
   if (!on) sync.offline = sync.offline.filter((x) => x !== pid);
   if (on && pid !== ALL) sync.offlineKeep[pid] = { profile: currentProfile(), songs: markedSongs(pid, getView()) };

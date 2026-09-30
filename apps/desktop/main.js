@@ -216,7 +216,11 @@ handle('library:setPlaylistShared', ({ id, shared }) =>
   change((d) => model.setPlaylistShared(d, id, !!shared), 'setPlaylistShared', { playlistId: id, shared: !!shared }));
 handle('library:setFollowing', ({ id, on }) => {
   if (!remote.active()) throw new Error('Following playlists needs a Flow Server.');
-  return remote.command(on ? 'followPlaylist' : 'unfollowPlaylist', { playlistId: id });
+  const result = remote.command(on ? 'followPlaylist' : 'unfollowPlaylist', { playlistId: id });
+  // Unfollowed: its downloaded songs go too, unless another downloaded
+  // playlist (or All Songs) still holds them.
+  if (!on) remote.setOffline(id, false).catch(() => {});
+  return result;
 });
 handle('library:addSongToPlaylists', ({ songId, playlistIds }) =>
   change((d) => model.addSongToPlaylists(d, songId, playlistIds), 'addSongToPlaylists', { songId, playlistIds }));
