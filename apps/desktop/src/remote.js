@@ -1511,7 +1511,7 @@ async function loginProfile(profileId, pin) {
 
 async function createProfile(name, pin) {
   requireProfiles();
-  // Also so the first profile takes over everything made before it.
+  // So the new profile's copy of the Default / Shared playlists has everything made before it.
   await sendWaiting();
   const r = await call('/api/profiles', { method: 'POST', json: { name, pin: String(pin || ''), device: os.hostname() }, timeout: 20000 });
   return switchProfile(r.token, r.profile);

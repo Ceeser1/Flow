@@ -588,7 +588,7 @@ const SettingsPanel = {
       requestAnimationFrame(() => nameInput.focus());
     } else {
       nameInput = h('select.select.profile-select', { disabled: p.busy },
-        h('option', { value: '' }, 'None'),
+        h('option', { value: '' }, 'Default / Shared'),
         ...profiles.map((x) => h('option', { value: x.id }, x.name)),
         h('option', { value: '+new' }, '+ New'));
       nameInput.value = p.picked;

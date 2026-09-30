@@ -19,6 +19,16 @@ function library() {
   return { data, profiles: {} };
 }
 
+/** Anna's profile with her own Evening (p1) holding both songs; the default has no playlists. */
+function withAnna() {
+  const lib = library();
+  lib.data.playlists = [];
+  prof.addProfile(lib.data, lib.profiles, 'anna');
+  run(lib, 'anna', { type: 'createPlaylist', playlistId: 'p1', name: 'Evening' });
+  run(lib, 'anna', { type: 'addSongsToPlaylist', playlistId: 'p1', songIds: ['s1', 's2'] });
+  return lib;
+}
+
 function run(lib, profileId, cmd, touched = null) {
   const v = prof.view(lib.data, lib.profiles, profileId);
   const r = applyCommand(v, { at: Date.now(), ...cmd }, touched, profileId);
@@ -26,30 +36,35 @@ function run(lib, profileId, cmd, touched = null) {
   return r;
 }
 
-test('the first profile takes over the playlists, favourites and stats; the next starts empty', () => {
+test('a new profile gets a copy of the default playlists; favourites and stats stay with the default', () => {
   const lib = library();
-  assert.equal(prof.addProfile(lib.data, lib.profiles, 'anna'), true);
-  assert.equal(lib.data.playlists.length, 0);
-  assert.equal(lib.data.songs[0].favouriteAt, null);
-  assert.equal(lib.data.songs[0].stats.plays, 0);
+  let n = 0;
+  const newId = () => `n${++n}`;
+  prof.addProfile(lib.data, lib.profiles, 'anna', newId);
+  assert.equal(lib.data.playlists.length, 1, 'the default keeps its playlists');
+  assert.equal(lib.data.songs[0].favouriteAt, 5);
+  assert.equal(lib.data.songs[0].stats.plays, 3);
 
   const anna = prof.view(lib.data, lib.profiles, 'anna');
-  assert.deepEqual(anna.playlists.map((p) => p.name), ['Evening']);
-  assert.equal(anna.songs[0].favouriteAt, 5);
-  assert.equal(anna.songs[0].stats.plays, 3);
-  assert.equal(anna.songs.length, 2, 'All Songs is everyone\'s');
+  assert.deepEqual(anna.playlists.map((p) => [p.id, p.name]), [['n1', 'Evening']], 'a copy under a new id');
+  assert.deepEqual(anna.playlists[0].entries.map((e) => e.songId), ['s1', 's2']);
+  assert.equal(anna.songs[0].favouriteAt, null);
+  assert.equal(anna.songs[0].stats.plays, 0);
+  assert.equal(anna.songs.length, 2, "All Songs is everyone's");
 
-  assert.equal(prof.addProfile(lib.data, lib.profiles, 'ben'), false);
+  // Later profiles copy the default too, and the copies are their own.
+  run(lib, 'anna', { type: 'removeFromPlaylist', playlistId: 'n1', songId: 's1' });
+  prof.addProfile(lib.data, lib.profiles, 'ben', newId);
   const ben = prof.view(lib.data, lib.profiles, 'ben');
-  assert.equal(ben.playlists.length, 0);
+  assert.deepEqual(ben.playlists.map((p) => [p.id, p.entries.length]), [['n2', 2]]);
+  assert.equal(prof.view(lib.data, lib.profiles, 'anna').playlists[0].entries.length, 1);
+  assert.equal(lib.data.playlists[0].entries.length, 2);
   assert.equal(ben.songs[0].favouriteAt, null);
-  assert.equal(ben.songs[0].stats.plays, 0);
   assert.equal(ben.songs[0].addedAt, 100, 'when a song was added is shared');
 });
 
 test('playlists, favourites and listens stay with their profile; names are shared', () => {
-  const lib = library();
-  prof.addProfile(lib.data, lib.profiles, 'anna');
+  const lib = withAnna();
   prof.addProfile(lib.data, lib.profiles, 'ben');
 
   run(lib, 'ben', { type: 'createPlaylist', playlistId: 'p2', name: 'Evening' });
@@ -67,15 +82,14 @@ test('playlists, favourites and listens stay with their profile; names are share
   assert.equal(m.songById(anna, 's2').stats.plays, 0);
   assert.equal(m.songById(ben, 's2').stats.plays, 1);
   assert.equal(m.songById(anna, 's2').mix, 'Live');
-  assert.equal(m.songById(lib.data, 's2').stats.plays, 0, 'None heard nothing');
+  assert.equal(m.songById(lib.data, 's2').stats.plays, 0, 'the default heard nothing');
 
   // Another profile's playlist cannot be reached.
   assert.deepEqual(run(lib, 'anna', { type: 'renamePlaylist', playlistId: 'p2', name: 'Mine' }), { skipped: 'gone' });
 });
 
 test('a deleted song is gone for every profile and every playlist', () => {
-  const lib = library();
-  prof.addProfile(lib.data, lib.profiles, 'anna');
+  const lib = withAnna();
   prof.addProfile(lib.data, lib.profiles, 'ben');
   run(lib, 'ben', { type: 'createPlaylist', playlistId: 'p2', name: 'Mine' });
   run(lib, 'ben', { type: 'addSongsToPlaylist', playlistId: 'p2', songIds: ['s1'] });
@@ -88,8 +102,7 @@ test('a deleted song is gone for every profile and every playlist', () => {
 });
 
 test('last change wins per profile: two profiles favouriting one song do not clash', () => {
-  const lib = library();
-  prof.addProfile(lib.data, lib.profiles, 'anna');
+  const lib = withAnna();
   prof.addProfile(lib.data, lib.profiles, 'ben');
   const touched = {};
   const t = Date.now();
@@ -102,12 +115,6 @@ test('last change wins per profile: two profiles favouriting one song do not cla
   run(lib, 'anna', { type: 'editSong', songId: 's2', title: 'Roads', artist: 'Portishead', at: t }, touched);
   assert.deepEqual(run(lib, 'ben', { type: 'editSong', songId: 's2', title: 'Sour Times', artist: 'Portishead', at: t - 1000 }, touched), { skipped: 'stale' });
   assert.deepEqual(Object.keys(touched).sort(), ['anna/s:s2:fav', 'ben/s:s2:fav', 's:s2:meta']);
-});
-
-test('None keeps its keys until the first profile takes them over', () => {
-  const touched = { 'p:p1:name': 1, 's:s1:fav': 2, 's:s1:meta': 3, 'ben/p:p2:name': 4 };
-  prof.moveTouched(touched, 'anna');
-  assert.deepEqual(touched, { 'anna/p:p1:name': 1, 'anna/s:s1:fav': 2, 's:s1:meta': 3, 'ben/p:p2:name': 4 });
 });
 
 test('profiles read back from a file are repaired', () => {

@@ -192,19 +192,24 @@ test('profiles share the songs and keep their own playlists, also after a restar
     let lib = server.library;
     lib.createProfile('anna');
     lib.createProfile('ben');
-    assert.deepEqual(lib.snapshot('anna').playlists.map((p) => p.name), ['Evening'], 'the first profile takes over');
-    assert.equal(lib.snapshot('anna').songs[0].favouriteAt, 9);
-    assert.deepEqual(lib.snapshot().playlists, [], 'None starts afresh');
+    const annaEvening = lib.snapshot('anna').playlists;
+    assert.deepEqual(annaEvening.map((p) => p.name), ['Evening'], 'a new profile gets a copy of the default playlists');
+    assert.notEqual(annaEvening[0].id, 'p1');
+    assert.deepEqual(lib.snapshot('ben').playlists.map((p) => p.name), ['Evening']);
+    assert.equal(lib.snapshot('anna').songs[0].favouriteAt, null, 'favourites stay with the default');
+    assert.equal(lib.snapshot().songs[0].favouriteAt, 9);
+    assert.deepEqual(lib.snapshot().playlists.map((p) => p.id), ['p1'], 'the default keeps its playlists');
 
     // An upload brings its favourite and playlists into the profile it came from.
     const tmp = path.join(dirs.music, '.flow-upload-test.mp3');
     fs.writeFileSync(tmp, FAKE_MP3);
-    lib.runCommands([{ cid: 'c2', at: Date.now(), type: 'createPlaylist', playlistId: 'p2', name: 'Evening' }], 'ben');
-    lib.addUploaded(tmp, 's2', { title: 'Roads', artist: 'Portishead', format: 'mp3', favouriteAt: 4 }, ['p2', 'p1'], 'ben');
+    lib.runCommands([{ cid: 'c2', at: Date.now(), type: 'createPlaylist', playlistId: 'p2', name: 'Lunch' }], 'ben');
+    lib.addUploaded(tmp, 's2', { title: 'Roads', artist: 'Portishead', format: 'mp3', favouriteAt: 4 }, ['p2', annaEvening[0].id], 'ben');
     const ben = lib.snapshot('ben');
     assert.equal(ben.songs.length, 2);
     assert.equal(ben.songs.find((s) => s.id === 's2').favouriteAt, 4);
-    assert.deepEqual(ben.playlists[0].entries.map((e) => e.songId), ['s2'], "Anna's p1 is not his to fill");
+    assert.deepEqual(ben.playlists.find((p) => p.id === 'p2').entries.map((e) => e.songId), ['s2'], "Anna's playlist is not his to fill");
+    assert.deepEqual(lib.snapshot('anna').playlists[0].entries.map((e) => e.songId), [], "nor is the default's copy");
     assert.equal(lib.snapshot('anna').songs.find((s) => s.id === 's2').favouriteAt, null);
     assert.equal(lib.snapshot().songs.find((s) => s.id === 's2').favouriteAt, null);
     assert.throws(() => lib.runCommands([], 'nobody'), /no longer exists/);
@@ -214,8 +219,8 @@ test('profiles share the songs and keep their own playlists, also after a restar
     server = await open();
     lib = server.library;
     assert.deepEqual(lib.profileIds().sort(), ['anna', 'ben']);
-    assert.deepEqual(lib.snapshot('anna').playlists.map((p) => p.id), ['p1']);
-    assert.deepEqual(lib.snapshot('ben').playlists.map((p) => p.id), ['p2']);
+    assert.deepEqual(lib.snapshot('anna').playlists.map((p) => p.id), [annaEvening[0].id]);
+    assert.deepEqual(lib.snapshot('ben').playlists.map((p) => p.name).sort(), ['Evening', 'Lunch']);
     assert.equal(lib.snapshot('ben').songs.find((s) => s.id === 's2').favouriteAt, 4);
     assert.equal(fs.readFileSync(path.join(dirs.home, 'library.json'), 'utf8').includes('"profiles"'), true);
 
@@ -258,21 +263,24 @@ test('profiles over the network: make, sign in with a PIN, rename, sign out, del
     const tAnna = anna.json.token;
     let lib = await get(base, '/api/library', tAnna);
     assert.equal(lib.json.profile.name, 'Anna');
-    assert.deepEqual(lib.json.library.playlists.map((p) => p.name), ['Evening'], 'she took over');
+    assert.deepEqual(lib.json.library.playlists.map((p) => p.name), ['Evening'], 'she got a copy of the default playlists');
+    const annaCopy = lib.json.library.playlists[0].id;
+    assert.notEqual(annaCopy, 'p1');
     const rev = lib.json.rev;
     assert.equal((await get(base, `/api/library?since=${rev}&as=${anna.json.profile.id}`, tAnna)).status, 204);
     // Asking as someone else (the app just switched) gets the whole library.
     assert.equal((await get(base, `/api/library?since=${rev}&as=`, tAnna)).status, 200);
-    assert.deepEqual((await get(base, '/api/library')).json.library.playlists, [], 'without a profile: None');
+    assert.deepEqual((await get(base, '/api/library')).json.library.playlists.map((p) => p.id), ['p1'], 'without a profile: the default keeps its playlists');
 
     assert.equal((await post(base, '/api/profiles', { name: 'anna', device: 'phone' })).status, 409);
     assert.equal((await post(base, '/api/profiles', { name: 'None', device: 'phone' })).status, 400);
+    assert.equal((await post(base, '/api/profiles', { name: 'Default / Shared', device: 'phone' })).status, 400);
     const ben = await post(base, '/api/profiles', { name: 'Ben', device: 'phone' });
     const tBen = ben.json.token;
     assert.equal(ben.json.profile.pin, false);
-    await command(base, [{ cid: 'c2', at: Date.now(), type: 'createPlaylist', playlistId: 'p2', name: 'Evening' }], { Authorization: `Bearer ${tBen}` });
-    assert.deepEqual((await get(base, '/api/library', tBen)).json.library.playlists.map((p) => p.id), ['p2']);
-    assert.deepEqual((await get(base, '/api/library', tAnna)).json.library.playlists.map((p) => p.id), ['p1']);
+    await command(base, [{ cid: 'c2', at: Date.now(), type: 'createPlaylist', playlistId: 'p2', name: 'Lunch' }], { Authorization: `Bearer ${tBen}` });
+    assert.deepEqual((await get(base, '/api/library', tBen)).json.library.playlists.map((p) => p.name).sort(), ['Evening', 'Lunch']);
+    assert.deepEqual((await get(base, '/api/library', tAnna)).json.library.playlists.map((p) => p.id), [annaCopy]);
 
     const list = (await get(base, '/api/profiles', tBen)).json;
     assert.deepEqual(list.profiles.map((p) => p.name), ['Anna', 'Ben']);

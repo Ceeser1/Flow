@@ -6,8 +6,9 @@
 // Pure, like libraryModel.js.
 //
 //   data      a library as libraryModel.js knows it. It is also the part of
-//             no profile ("None"): its playlists, favourites and stats are
-//             what an app sees while no profile is signed in.
+//             no profile, called "Default / Shared": its playlists,
+//             favourites and stats are what an app sees while no profile is
+//             signed in.
 //   profiles  { [profileId]: { playlists: [...], songs: { [songId]: { stats, favouriteAt } } } }
 //
 // A command for a profile runs on view(): an ordinary library made of the
@@ -15,10 +16,13 @@
 // absorb() then puts each part back where it belongs. A song gone from a view
 // (deleted) is gone for everyone.
 //
-// The first profile ever made takes over the playlists, favourites and stats
-// of None, so nothing made before profiles existed is lost.
+// A new profile starts with a copy of the Default / Shared playlists (each with
+// an id of its own). Favourites and stats stay with the Default.
 
+const crypto = require('crypto');
 const model = require('./libraryModel');
+
+const randomId = () => crypto.randomBytes(6).toString('hex');
 
 // What a song has once per profile; everything else about it is shared.
 const OWN = ['stats', 'favouriteAt'];
@@ -87,7 +91,7 @@ function absorb(data, profiles, profileId, v) {
     const shared = { ...(byId.get(vs.id) || {}) };
     for (const [key, value] of Object.entries(vs)) if (!OWN.includes(key)) shared[key] = value;
     if (!byId.has(vs.id)) {
-      // New to the library through this profile: None has not heard it yet.
+      // New to the library through this profile: the Default has not heard it yet.
       shared.stats = model.emptyStats();
       shared.favouriteAt = null;
     }
@@ -115,26 +119,20 @@ function prune(data, profiles) {
 }
 
 /**
- * Makes an empty profile. The first one takes over None's playlists,
- * favourites and stats (and None starts afresh). Answers whether it did.
+ * Makes a profile with a copy of the Default / Shared playlists: the same
+ * songs in the same order, under new ids, not shared. Favourites and stats
+ * start empty. `newId()` makes the ids.
  */
-function addProfile(data, profiles, profileId) {
-  if (profiles[profileId]) return false;
-  const first = Object.keys(profiles).length === 0;
-  if (!first) {
-    profiles[profileId] = { playlists: [], songs: {} };
-    return false;
-  }
-  const songs = {};
-  for (const s of data.songs) {
-    const mine = { stats: s.stats, favouriteAt: s.favouriteAt };
-    if (hasOwn(mine)) songs[s.id] = mine;
-    s.stats = model.emptyStats();
-    s.favouriteAt = null;
-  }
-  profiles[profileId] = { playlists: data.playlists, songs };
-  data.playlists = [];
-  return true;
+function addProfile(data, profiles, profileId, newId = randomId) {
+  if (profiles[profileId]) return;
+  const playlists = data.playlists.map((p) => ({
+    ...p,
+    id: newId(),
+    entries: p.entries.map((e) => ({ ...e })),
+    source: p.source ? { ...p.source } : null,
+    shared: false,
+  }));
+  profiles[profileId] = { playlists, songs: {} };
 }
 
 /** Deletes a profile's playlists, favourites and stats. The songs stay. */
@@ -142,18 +140,4 @@ function removeProfile(profiles, profileId) {
   delete profiles[profileId];
 }
 
-/**
- * The last-change-wins keys (commands.js) that belonged to None and are the
- * first profile's now, renamed to match. Mutates `touched`.
- */
-function moveTouched(touched, profileId) {
-  for (const key of Object.keys(touched)) {
-    if (key.includes('/')) continue;
-    if (key.startsWith('p:') || key.endsWith(':fav')) {
-      touched[`${profileId}/${key}`] = touched[key];
-      delete touched[key];
-    }
-  }
-}
-
-module.exports = { sanitizeProfiles, view, absorb, prune, addProfile, removeProfile, moveTouched };
+module.exports = { sanitizeProfiles, view, absorb, prune, addProfile, removeProfile };

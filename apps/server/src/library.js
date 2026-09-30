@@ -162,12 +162,10 @@ function createLibrary(config, log = () => {}) {
     if (profileId && !profiles[profileId]) throw new Error('That profile no longer exists.');
   }
 
-  /** An empty profile; the first one takes over None's playlists, favourites and stats. */
+  /** A profile with a copy of the Default / Shared playlists. */
   function createProfile(profileId) {
     if (profiles[profileId]) return;
-    mutate((d) => {
-      if (prof.addProfile(d, profiles, profileId)) prof.moveTouched(state.touched, profileId);
-    });
+    mutate((d) => prof.addProfile(d, profiles, profileId, newId));
   }
 
   function deleteProfile(profileId) {

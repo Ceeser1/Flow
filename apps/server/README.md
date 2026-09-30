@@ -107,10 +107,12 @@ when each was added) are everyone's, but each profile has its own playlists,
 favourites and listen stats. A profile is made, signed in to, renamed and
 deleted from an app's Settings; each can have a PIN of its own.
 
-- No profile at all ("None"): everything is shared, as before profiles.
-- The first profile made takes over the playlists, favourites and stats that
-  were there. Later ones start empty. What is made while no profile is signed
-  in stays with None.
+- No profile signed in ("Default / Shared"): the playlists, favourites and
+  stats made there, as before profiles existed.
+- A new profile starts with a copy of the Default / Shared playlists (the same
+  songs, its own to change). Favourites and stats start empty and stay with
+  the Default. What is made while no profile is signed in stays with the
+  Default.
 - Renaming or deleting a song does it for everyone. Deleting a profile takes
   its playlists, favourites and stats; the songs stay.
 - With a server PIN or password, a device signs in to the server first, then

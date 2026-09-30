@@ -219,7 +219,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     const clean = String(name || '').replace(/\s+/g, ' ').trim();
     if (!clean) throw new HttpError(400, 'Please enter a name for the profile.');
     if (clean.length > MAX_PROFILE_NAME) throw new HttpError(400, `Profile names can be at most ${MAX_PROFILE_NAME} characters.`);
-    if (['none', '+ new'].includes(clean.toLowerCase())) throw new HttpError(400, `"${clean}" cannot be a profile's name.`);
+    if (['none', 'default', 'default / shared', '+ new'].includes(clean.toLowerCase())) throw new HttpError(400, `"${clean}" cannot be a profile's name.`);
     const clash = config.get().profiles.find((p) => p.id !== exceptId && p.name.toLowerCase() === clean.toLowerCase());
     if (clash) throw new HttpError(409, `A profile called "${clash.name}" already exists.`);
     return clean;

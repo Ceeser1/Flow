@@ -242,8 +242,9 @@ control with a cache:
   the server up as a service on any Linux with systemd, Tailscale included
   (see the server's README).
 - Profiles: everyone shares the songs, and each profile has its own
-  playlists, favourites and listening stats. The first profile made takes
-  over what was there; without one ("None") everything is shared. The name
+  playlists, favourites and listening stats. A new profile starts
+  with a copy of the Default / Shared playlists (what is used while no profile
+  is logged in). The name
   under "Flow" says who is logged in ("Connected to: Pi as Anna"). A change
   waits for the profile it was made in, and a playlist marked for download
   keeps its songs while another profile is logged in.
