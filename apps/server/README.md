@@ -33,14 +33,15 @@ A song deleted from an app is not gone at once. Its file moves to
 
 ```sh
 git clone <the repo> ~/Flow && cd ~/Flow
-sh apps/server/install.sh           # --music DIR, --port N, --yes, --no-tailscale, --uninstall
+sh apps/server/install.sh           # --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --uninstall
 ```
 
 Works on any Linux with systemd and Node 18 or newer (a Raspberry Pi, a home
 server, a VPS). It links `@flow/core` (there is no npm needed), offers ffmpeg,
 writes and starts the `flow-server` service (also at boot), opens the port in
 ufw or firewalld for the home network and for Tailscale, and offers to
-install Tailscale. Run it again any time; it only updates. Later:
+install Tailscale. It asks whether the apps may find the server on the network
+by themselves (see below). Run it again any time; it only updates. Later:
 `git pull && sudo systemctl restart flow-server`.
 
 ### ffmpeg (recommended)
@@ -51,16 +52,18 @@ renamed song's tags, and measures each song's loudness for "Equalize volume".
 Without it, those songs show no length until an app plays them. Songs uploaded
 from an app bring all of that with them either way.
 
-## Finding the server on the network
+## Finding the server on the network (optional, off by default)
 
-An app with no Home address broadcasts a small UDP question on the local
+Turned on with `flow-server --discovery` (remembered; `--no-discovery` turns it
+off) or by saying yes in `install.sh`. An app with no Home address broadcasts a small UDP question on the local
 network; the server answers the asker with its name and port, and the app
 fills its Home address in. It needs UDP port 7878 (Flow's default port, fixed
 because the apps can't know a custom one) reachable from the home network:
-`install.sh` opens it in ufw or firewalld, and a rule like
+`install.sh` opens it in ufw or firewalld when you say yes, and a rule like
 `sudo ufw allow from 192.168.0.0/24 to any port 7878` (no protocol) covers
 TCP and UDP. Only askers on a private address are answered, and the answer
-holds what `/api/hello` tells anyone. It doesn't cross routers or guest WiFi
+holds what `/api/hello` tells anyone. Each asker gets at most 30 answers a
+minute, so the port can't be used to bounce traffic at someone else. It doesn't cross routers or guest WiFi
 with client isolation, and if the port is taken the server says so on start
 and the address has to be typed in.
 

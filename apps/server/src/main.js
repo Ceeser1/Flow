@@ -22,6 +22,9 @@ Options:
   --port <n>      port to listen on (default ${configMod.DEFAULT_PORT}; remembered)
   --music <dir>   the music folder (default ~/flow-music; remembered)
   --name <text>   the name the apps show for this server (remembered)
+  --discovery     answer the apps' search on the local network (UDP ${configMod.DEFAULT_PORT}), so they
+                  fill in the address by themselves (remembered)
+  --no-discovery  stop answering it (the default)
   --home <dir>    where the server keeps its library and settings
                   (default ${configMod.defaultHome()})
 `;
@@ -40,6 +43,8 @@ function parseArgs(argv) {
     else if (a === '--music') out.music = value();
     else if (a === '--home') out.home = value();
     else if (a === '--name') out.name = value();
+    else if (a === '--discovery') out.discovery = true;
+    else if (a === '--no-discovery') out.discovery = false;
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}. See flow-server --help.`);
     else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices'].includes(a)) out.command = a;
     else out.rest.push(a);
@@ -90,6 +95,7 @@ async function main() {
   if (args.port) patch.port = args.port;
   if (args.music) patch.musicDir = config.musicDir;
   if (args.name) patch.name = args.name;
+  if (args.discovery !== undefined) patch.discovery = args.discovery;
   if (Object.keys(patch).length) config.set(patch);
 
   if (args.command === 'set-password') {
@@ -129,7 +135,8 @@ async function main() {
   console.log(`  ffmpeg:   ${tools.ffmpeg() ? 'found' : 'not found (optional: song lengths, tags and loudness for songs added by hand)'}`);
   const addrs = lanAddresses();
   console.log(`  Enter in Flow's settings: ${(addrs.length ? addrs : ['localhost']).map((a) => `${a}:${server.port}`).join('  or  ')}`);
-  console.log(`  Discovery: ${server.discovery() ? `apps on this network find the server by themselves (UDP ${server.discovery().port})` : 'off (UDP port taken); the address has to be typed in'}`);
+  if (server.discovery()) console.log(`  Discovery: on, apps on this network find the server by themselves (UDP ${server.discovery().port})`);
+  else console.log(`  Discovery: off${cfg.discovery ? ' (the UDP port is taken)' : ' (flow-server --discovery lets apps on the network find it)'}; the address is typed into Flow`);
   const ts = server.tailscale();
   if (ts) {
     console.log(`  Away from home (Tailscale): ${ts.ip}:${server.port}${ts.dns ? ` (${ts.dns})` : ''}, which Flow fills into its Remote field by itself`);

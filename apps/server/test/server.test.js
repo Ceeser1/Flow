@@ -360,3 +360,29 @@ test('an app looking for servers on the network finds this one, with its real po
     fs.rmSync(dirs.root, { recursive: true, force: true });
   }
 });
+
+test('discovery is off unless the server is told to answer', async () => {
+  const dirs = tempDirs();
+  const server = await startServer({ home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1', detectTailscale: async () => null });
+  try {
+    assert.equal(server.discovery(), null);
+    assert.equal(server.config.get().discovery, false);
+  } finally {
+    await server.close();
+    fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test('an asker gets only so many answers a minute', async () => {
+  const { startDiscovery } = require('../src/discovery');
+  const d = await startDiscovery({ port: 0, info: () => ({ id: 'a', name: 'n', port: 1, protocol: 1 }), maxPerMinute: 2 });
+  try {
+    const found = [];
+    for (let i = 0; i < 4; i += 1) {
+      found.push(await discoveryMod.find({ port: d.port, targets: ['127.0.0.1'], timeoutMs: 250, sends: 1 }));
+    }
+    assert.deepEqual(found.map((f) => f.length), [1, 1, 0, 0]);
+  } finally {
+    await d.close();
+  }
+});

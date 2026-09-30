@@ -18,7 +18,8 @@ const TRASH_MS = 24 * 60 * 60 * 1000;
 /**
  * opts: { home, music, port, host, log, detectTailscale, discoveryPort }.
  * Resolves { port, config, library, tailscale, close }. discoveryPort: the UDP
- * port the apps' search is answered on (null: not at all; the tests).
+ * port the apps' search is answered on (null: not at all; left out: the
+ * default port if the server's settings say so).
  * Port 0 picks a free one.
  */
 async function startServer(opts = {}) {
@@ -45,8 +46,9 @@ async function startServer(opts = {}) {
   });
 
   // The apps' "who is here?" on the network is answered on its own UDP port.
-  const discovery = opts.discoveryPort === null ? null : await startDiscovery({
-    port: opts.discoveryPort === undefined ? DISCOVERY_PORT : opts.discoveryPort,
+  const wantedDiscoveryPort = opts.discoveryPort !== undefined ? opts.discoveryPort : (config.get().discovery ? DISCOVERY_PORT : null);
+  const discovery = wantedDiscoveryPort === null ? null : await startDiscovery({
+    port: wantedDiscoveryPort,
     info: () => ({ id: config.get().id, name: config.get().name, port: server.address().port, protocol: PROTOCOL }),
     log,
   });

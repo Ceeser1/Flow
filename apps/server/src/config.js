@@ -2,7 +2,8 @@
 
 // Where the server keeps its things, and server.json: the port, the name the
 // apps show, the music folder, the password, the profiles (their names and
-// PINs; what is in them is in library.json) and the devices signed in.
+// PINs; what is in them is in library.json), whether the apps may find it on
+// the network by themselves, and the devices signed in.
 //
 //   home   FLOW_SERVER_HOME, else ~/.local/share/flow-server on Linux
 //          (XDG_DATA_HOME when set) and %LOCALAPPDATA%\Flow\server on Windows.
@@ -44,6 +45,9 @@ function clean(raw) {
     port: port > 0 && port < 65536 ? port : DEFAULT_PORT,
     name: String(r.name || os.hostname() || 'Flow Server').slice(0, 60),
     musicDir: typeof r.musicDir === 'string' ? r.musicDir : '',
+    // Answering the apps' search on the local network (discovery.js): off
+    // until asked for.
+    discovery: r.discovery === true,
     password: pw,
     profiles,
     tokens: (Array.isArray(r.tokens) ? r.tokens : [])

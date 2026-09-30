@@ -9,6 +9,7 @@
 #   --port N         the port (default: what the server remembers, else 7878)
 #   --yes            no questions: install ffmpeg and Tailscale too
 #   --no-tailscale   leave Tailscale alone
+#   --no-discovery   do not let the apps find the server on the network by themselves
 #   --uninstall      remove the service (the library and the music stay)
 #
 # Safe to run again: it updates the service and leaves the rest as it is.
@@ -21,6 +22,7 @@ MUSIC=""
 PORT=""
 YES=0
 TAILSCALE=1
+DISCOVERY=ask
 UNINSTALL=0
 
 say() { printf '%s\n' "$*"; }
@@ -33,8 +35,9 @@ while [ $# -gt 0 ]; do
     --port) [ $# -ge 2 ] || die "--port needs a number."; PORT="$2"; shift ;;
     --yes|-y) YES=1 ;;
     --no-tailscale) TAILSCALE=0 ;;
+    --no-discovery) DISCOVERY=0 ;;
     --uninstall) UNINSTALL=1 ;;
-    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option $1. See --help." ;;
   esac
   shift
@@ -142,8 +145,19 @@ else
   fi
 fi
 
+step "Finding the server on the network (optional)"
+say "With this on, the Flow apps find the server by themselves on your home network: an app with"
+say "no Home address sends a small UDP question and the server answers with its name and port."
+say "It tells them what /api/hello already tells anyone on the network, never the PIN or the library,"
+say "and only devices on private addresses get an answer. It opens UDP 7878 for your home network."
+if [ "$DISCOVERY" = ask ]; then
+  if ask "Turn it on?"; then DISCOVERY=1; else DISCOVERY=0; fi
+fi
+if [ "$DISCOVERY" = 1 ]; then say "On."; else say "Off. The address is typed into Flow (--discovery on the server turns it on later)."; fi
+
 step "The service"
 ARGS=""
+if [ "$DISCOVERY" = 1 ]; then ARGS="$ARGS --discovery"; else ARGS="$ARGS --no-discovery"; fi
 [ -n "$MUSIC" ] && ARGS="$ARGS --music $MUSIC"
 [ -n "$PORT" ] && ARGS="$ARGS --port $PORT"
 TMP=$(mktemp)
@@ -187,16 +201,18 @@ if have ufw && $SUDO ufw status 2>/dev/null | grep -q "Status: active"; then
   SUBNETS=$(ip -4 route 2>/dev/null | awk '$1 ~ /\// && /scope link/ && $0 !~ /tailscale|docker|br-|veth/ { print $1 }')
   for subnet in $SUBNETS; do
     $SUDO ufw allow from "$subnet" to any port "$PORT_NOW" proto tcp >/dev/null && say "ufw: port $PORT_NOW open to $subnet"
-    # The apps find the server by a UDP question on Flow's default port, from the home network only.
-    $SUDO ufw allow from "$subnet" to any port 7878 proto udp >/dev/null && say "ufw: UDP 7878 (finding the server) open to $subnet"
+    if [ "$DISCOVERY" = 1 ]; then
+      # The apps find the server by a UDP question on Flow's default port, from the home network only.
+      $SUDO ufw allow from "$subnet" to any port 7878 proto udp >/dev/null && say "ufw: UDP 7878 (finding the server) open to $subnet"
+    fi
   done
   $SUDO ufw allow in on tailscale0 to any port "$PORT_NOW" proto tcp >/dev/null && say "ufw: port $PORT_NOW open to Tailscale"
 elif have firewall-cmd && $SUDO firewall-cmd --state >/dev/null 2>&1; then
   $SUDO firewall-cmd --permanent --add-port="$PORT_NOW/tcp" >/dev/null
-  $SUDO firewall-cmd --permanent --add-port=7878/udp >/dev/null
+  [ "$DISCOVERY" = 1 ] && $SUDO firewall-cmd --permanent --add-port=7878/udp >/dev/null
   $SUDO firewall-cmd --permanent --zone=trusted --add-interface=tailscale0 >/dev/null 2>&1 || true
   $SUDO firewall-cmd --reload >/dev/null
-  say "firewalld: port $PORT_NOW and UDP 7878 open (to every network the zone covers, not only your LAN), and Tailscale trusted"
+  say "firewalld: port $PORT_NOW$([ "$DISCOVERY" = 1 ] && printf ' and UDP 7878') open (to every network the zone covers, not only your LAN), and Tailscale trusted"
 else
   say "No active firewall found (ufw, firewalld): nothing to open."
 fi
