@@ -20,7 +20,8 @@
 //   snapshot  the Local Files library as it was at the last synchronization,
 //             so the next one knows what changed there since: songs added or
 //             removed by hand, a playlist made while the server was off.
-//   offline   the server playlists marked for download
+//   offline   the server playlists marked for download; 'all' stands for All
+//             Songs: every song of the server, kept in step with it
 //   fetched   local songs that are copies downloaded from the server (the
 //             rest came from here); only those go when no longer needed
 //   remoteFilled  the Remote address was filled in from the server's Tailscale
@@ -57,6 +58,7 @@ const { songFileStem } = require('@flow/core/text');
 const { serverBaseUrl: baseUrl, isTailscaleAddress } = require('@flow/core/address');
 const discovery = require('@flow/core/discovery');
 
+const ALL = model.ALL_SONGS_ID;
 const PROTOCOL = 1;
 const POLL_MS = 10000;
 // While on the remote address, how often home is tried again.
@@ -1036,6 +1038,8 @@ function queueLocalChanges({ onlyNew = false, playlistsFor = {} } = {}) {
  * it is the signed-in profile's, else as last seen (another profile's).
  */
 function markedSongs(pid, v) {
+  // All Songs is everyone's, whichever profile is signed in.
+  if (pid === ALL) return v.songs.map((s) => s.id);
   const p = model.playlistById(v, pid);
   if (p) return p.entries.map((e) => e.songId);
   const keep = sync.offlineKeep[pid];
@@ -1056,6 +1060,7 @@ function neededOffline(sid) {
 function rememberMarked(v) {
   if (!cache.library || cache.profile !== currentProfile()) return;
   for (const pid of sync.offline.slice()) {
+    if (pid === ALL) continue;
     const p = model.playlistById(v, pid);
     const keep = sync.offlineKeep[pid];
     if (p) sync.offlineKeep[pid] = { profile: currentProfile(), songs: p.entries.map((e) => e.songId) };
@@ -1168,11 +1173,13 @@ async function downloadOffline() {
   const seen = new Set();
   for (const pid of sync.offline) {
     const p = model.playlistById(v, pid);
-    if (!p) continue;
-    for (const e of p.entries) {
-      if (seen.has(e.songId) || copies.has(e.songId)) continue;
-      seen.add(e.songId);
-      const s = model.songById(v, e.songId);
+    if (!p && pid !== ALL) continue;
+    // All Songs: every song, new ones as they turn up on the server.
+    const songIds = pid === ALL ? v.songs.map((x) => x.id) : p.entries.map((e) => e.songId);
+    for (const songId of songIds) {
+      if (seen.has(songId) || copies.has(songId)) continue;
+      seen.add(songId);
+      const s = model.songById(v, songId);
       if (s && !sync.queue.some((c) => c.type === 'upload' && c.songId === s.id)) want.push(s);
     }
   }
@@ -1371,7 +1378,7 @@ function setSecret(text) {
 async function setOffline(pid, on) {
   if (on && !sync.offline.includes(pid)) sync.offline.push(pid);
   if (!on) sync.offline = sync.offline.filter((x) => x !== pid);
-  if (on) sync.offlineKeep[pid] = { profile: currentProfile(), songs: markedSongs(pid, getView()) };
+  if (on && pid !== ALL) sync.offlineKeep[pid] = { profile: currentProfile(), songs: markedSongs(pid, getView()) };
   else delete sync.offlineKeep[pid];
   saveSync();
   emitStatus();

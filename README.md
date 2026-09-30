@@ -242,7 +242,10 @@ control with a cache:
   the later change wins; a delete always wins. A deleted song's file stays in
   the server's trash for 30 days.
 - **Download** on a playlist's page keeps its songs in Local Files, to play
-  without the server; unticked, those copies go again.
+  without the server; unticked, those copies go again. **All Songs** has it
+  too, after a "Are you sure you want to download all N songs?" question, and
+  then follows the server: songs added there come down by themselves, songs
+  deleted there go from here.
 - Songs downloaded or imported in Flow are saved into Local Files as always,
   then uploaded. Turning the server on the first time uploads all of Local
   Files; songs the server already has (same source, or same artist, title,

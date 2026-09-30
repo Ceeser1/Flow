@@ -29,8 +29,18 @@ const PlaylistPage = {
     });
     $('plShuffle').onclick = () => Player.setShuffle(!Player.queue.shuffle);
     $('plPlay').onclick = () => Player.togglePlaylist(this.id);
-    $('plOffline').onclick = () => {
+    $('plOffline').onclick = async () => {
       const on = !Store.isOffline(this.id);
+      // All Songs is the whole library: ask before it starts coming down.
+      if (on && this.id === 'all') {
+        const total = Store.library.songs.length;
+        const ok = await confirmDialog({
+          title: 'Download all songs',
+          message: `Are you sure you want to download all ${total} ${total === 1 ? 'song' : 'songs'}?`,
+          confirmLabel: 'Yes',
+        });
+        if (!ok) return;
+      }
       attempt(() => window.flow.setOffline(this.id, on));
     };
     $('plShare').onclick = () => {
@@ -153,13 +163,14 @@ const PlaylistPage = {
 
   /**
    * With a Flow Server: Download keeps a playlist's songs on this computer
-   * too, and says how many have arrived. Only for playlists of your own.
+   * too, and says how many have arrived. For All Songs and playlists of your
+   * own; All Songs then follows the server (new songs come, deleted ones go).
    */
   _drawOffline() {
     const p = Store.playlist(this.id);
     const btn = $('plOffline');
     const note = $('plOfflineNote');
-    const can = !!p && Store.server.on && !p.isAll && !p.isFavourites && !p.isSmart && !p.isShared;
+    const can = !!p && Store.server.on && !p.isFavourites && !p.isSmart && !p.isShared;
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;
