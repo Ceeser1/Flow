@@ -495,7 +495,8 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       };
       // Where the server is on the tailnet, for the apps' Remote address. Only
       // to askers on our own networks: not to whoever a proxy passes through.
-      const ts = tailscale();
+      // Not at level 1, the home network only.
+      const ts = cfg.level === 1 ? null : tailscale();
       if (ts && !client.proxied && isPrivateIp(client.socket)) answer.tailscale = { ip: ts.ip, dns: ts.dns, port: req.socket.localPort };
       // Its https address on the internet, for the same: no secret, anyone
       // who got here through it knows it already.

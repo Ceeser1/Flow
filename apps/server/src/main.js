@@ -19,6 +19,7 @@ Usage:
                                         every signed-in device has to enter it again
   flow-server clear-password            let anyone on the network in again (levels 1 and 2 only)
   flow-server devices                   the devices signed in, and to which profile
+  flow-server info                      the server's settings, one key=value a line (for install.sh)
   flow-server doctor <address>          check a server from where the apps use it, through
                                         its proxy: https, certificate, uploads, seeking...
                                         Run it from outside your home network too. Asks for
@@ -68,7 +69,7 @@ function parseArgs(argv) {
       if (out.publicUrl && !/^https:\/\/[^\s/?#]+[^\s?#]*$/i.test(out.publicUrl)) throw new Error('--public-url is an https:// address, like https://music.example.com');
     } else if (a === '--trusted-proxy') out.trustedProxies = String(value()).split(',').map((s) => s.trim()).filter(Boolean);
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}. See flow-server --help.`);
-    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'doctor'].includes(a)) out.command = a;
+    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'doctor', 'info'].includes(a)) out.command = a;
     else out.rest.push(a);
   }
   return out;
@@ -175,6 +176,14 @@ async function main() {
     console.log('No PIN or password any more: anyone who can reach the server can use it.');
     return;
   }
+  if (args.command === 'info') {
+    // For install.sh: one key=value a line.
+    const cfg = config.get();
+    const password = !cfg.password ? 'none' : cfg.password.strong ? 'strong' : 'pin';
+    console.log([`level=${cfg.level || ''}`, `password=${password}`, `port=${cfg.port}`, `public_url=${cfg.publicUrl}`,
+      `trusted_proxies=${cfg.trustedProxies.join(',')}`, `discovery=${cfg.discovery ? 1 : 0}`, `music=${config.musicDir}`, `home=${config.home}`].join('\n'));
+    return;
+  }
   if (args.command === 'devices') {
     const { tokens, profiles } = config.get();
     if (!tokens.length) console.log('No devices signed in.');
@@ -191,7 +200,9 @@ async function main() {
   console.log(`Flow Server "${cfg.name}" is running.`);
   console.log(`  Music:    ${server.library.musicDir} (${server.library.data.songs.length} songs)`);
   console.log(`  Library:  ${server.config.home}`);
-  console.log(`  Level:    ${cfg.level}, ${LEVEL_NAMES[cfg.level]}${cfg.level >= PUBLIC_LEVEL && cfg.publicUrl ? ` at ${cfg.publicUrl}` : ''}`);
+  console.log(cfg.level
+    ? `  Level:    ${cfg.level}, ${LEVEL_NAMES[cfg.level]}${cfg.level >= PUBLIC_LEVEL && cfg.publicUrl ? ` at ${cfg.publicUrl}` : ''}`
+    : '  Level:    not chosen (install.sh asks, or --level)');
   console.log(`  Password: ${cfg.password ? 'yes' : 'none (flow-server set-password to add one)'}`);
   if (cfg.level >= PUBLIC_LEVEL && !(cfg.password && cfg.password.strong)) {
     console.log(`  WARNING:  reachable from the internet without a strong password, so it lets no one in. Set one: flow-server set-password`);

@@ -55,7 +55,9 @@ function clean(raw) {
     discovery: r.discovery === true,
     // How far the server can be reached (@flow/core/password): the installer
     // says, from 1 (home network) to 4 (the internet through your own proxy).
-    level: parseLevel(r.level) || 1,
+    // null: never said (a server from before levels), which counts as 1 for
+    // the password and still tells the apps its Tailscale address.
+    level: parseLevel(r.level),
     // Levels 3 and 4: the https address the apps use from outside, which
     // they are told so they can fill it in.
     publicUrl,

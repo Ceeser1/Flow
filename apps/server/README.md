@@ -33,16 +33,30 @@ A song deleted from an app is not gone at once. Its file moves to
 
 ```sh
 git clone <the repo> ~/Flow && cd ~/Flow
-sh apps/server/install.sh           # --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --uninstall
+sh apps/server/install.sh           # --level N, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --uninstall
 ```
 
 Works on any Linux with systemd and Node 18 or newer (a Raspberry Pi, a home
-server, a VPS). It links `@flow/core` (there is no npm needed), offers ffmpeg,
-writes and starts the `flow-server` service (also at boot), opens the port in
-ufw or firewalld for the home network and for Tailscale, and offers to
-install Tailscale. It asks whether the apps may find the server on the network
-by themselves (see below). Run it again any time; it only updates. Later:
-`git pull && sudo systemctl restart flow-server`.
+server, a VPS). It first asks how far the server should be reachable; each
+level includes the ones above it:
+
+| Level | Reachable from | You do | Risk |
+|---|---|---|---|
+| 1 | the home network | nothing | very low |
+| 2 | and anywhere, through Tailscale | sign in to Tailscale once (a link it prints), and install Tailscale on each device | low |
+| 3 | and the internet, with Caddy | get a domain name (a free DuckDNS one works) and forward ports 80 and 443 on the router | low to medium |
+| 4 | and the internet, through your own web server or tunnel (nginx, Apache, Cloudflare Tunnel...) | set up the web server, its certificate and the router; `doctor` checks it | high if not set up properly |
+
+Levels 3 and 4 need a strong password (see below) and are not in the
+installer yet; they come next.
+
+Then it links `@flow/core` (there is no npm needed), offers ffmpeg, asks
+whether the apps may find the server on the network by themselves (see
+below), offers a PIN, installs Tailscale at level 2, writes and starts the
+`flow-server` service (also at boot), and opens the port in ufw or firewalld
+for the home network, and at level 2 for Tailscale. Run it again any time; it
+only updates, and Enter keeps the level chosen before. A lower level closes
+what a higher one opened. Later: `git pull && sudo systemctl restart flow-server`.
 
 ### ffmpeg (recommended)
 
@@ -83,7 +97,8 @@ and plain http is fine inside it.
    empty, and only once: clear it and it stays empty).
 
 The server prints the address when it starts, and looks again every five
-minutes, so Tailscale may come up after it. A PIN is still worth setting: it
+minutes, so Tailscale may come up after it. At level 1 it doesn't tell the
+apps its Tailscale address. A PIN is still worth setting: it
 keeps other devices on your tailnet out. The address is only told to callers
 on a private network, never to one that came through a proxy.
 

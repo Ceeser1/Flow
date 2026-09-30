@@ -335,6 +335,11 @@ test('hello tells where the server is on the tailnet, to private askers only', a
   await withServer(async ({ base }) => {
     assert.equal((await (await fetch(`${base}/api/hello`)).json()).tailscale, undefined);
   });
+
+  // Level 1 is the home network only: the tailnet isn't offered.
+  await withServer(async ({ base }) => {
+    assert.equal((await (await fetch(`${base}/api/hello`)).json()).tailscale, undefined);
+  }, { tailscale: { ip: '100.101.102.103', dns: '' }, settings: { level: 1 } });
 });
 
 const via = (forwardedFor, more = {}) => ({ 'X-Forwarded-For': forwardedFor, ...more });
@@ -445,7 +450,7 @@ test('the command line keeps a strong password from level 3 on', () => {
     let r = run('--level', '3', 'devices');
     assert.equal(r.code, 1);
     assert.match(r.out, /needs a strong password first/);
-    assert.equal(saved().level, 1, 'nothing changed');
+    assert.equal(saved().level, null, 'nothing changed');
 
     r = run('set-password', '--level', '3', 'portishead');
     assert.equal(r.code, 1);
@@ -464,6 +469,10 @@ test('the command line keeps a strong password from level 3 on', () => {
     // Down to level 2: a PIN is fine again.
     assert.equal(run('--level', '2', 'set-password', '4711').code, 0);
     assert.equal(run('clear-password').code, 0);
+    r = run('info');
+    assert.match(r.out, /^level=2$/m);
+    assert.match(r.out, /^password=none$/m);
+    assert.match(r.out, /^public_url=https:\/\/music\.example\.com$/m);
   } finally {
     fs.rmSync(dirs.root, { recursive: true, force: true });
   }

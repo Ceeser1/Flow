@@ -20,4 +20,4 @@ The installer should ask the user what type of installation they want:
 Level 1: Local Network only (no internet exposure, very low risk)
 Level 2: Using Tailscale: Accessable from anywhere (requires Tailscale and ports access, low risk)
 Level 3: Using Caddy: Exposed to the internet, accessible with anything (low-mid risk)
-Level 4: Nginx: Exposed to the internet, customized setup required (high risk on failure to provide security)
+Level 4: Nginx: Exposed to the internet, customized setup required (high risk if not set up properly)
