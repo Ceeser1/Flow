@@ -49,7 +49,7 @@ const FollowedPage = {
           cls: 'col-name',
           render: (p) => h('button.link-cell', { type: 'button', onclick: () => Nav.openPlaylist(p.id) },
             h('span.link-cell__icon', { html: listIcon(p) }),
-            h('span', p.name),
+            h('span.link-cell__name', p.name),
             p.ownerName ? h('span.link-cell__by', `by ${p.ownerName}`) : null),
         },
         { key: 'songs', label: 'Songs', cls: 'col-num', render: (p) => String(p.entries.length) },

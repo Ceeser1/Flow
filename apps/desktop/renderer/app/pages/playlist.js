@@ -158,7 +158,7 @@ const PlaylistPage = {
     btn.title = mine
       ? 'Let the other profiles on this server see this playlist and follow it'
       : `Follow this playlist: it shows in the menu under Followed Playlists`;
-    btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span><span>${mine ? 'Share with others' : 'Follow'}</span>`;
+    btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span><span>${mine ? 'Share with others' : 'Following'}</span>`;
   },
 
   /**
@@ -289,6 +289,8 @@ const PlaylistPage = {
         buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist', () => this.removeFromList(song)));
       }
       if (pickTarget) buttons.unshift(queue());
+      // All Songs: put the song into playlists from here, the leftmost button.
+      if (listId === 'all') buttons.unshift(SongActions.playlistButton(song));
       return buttons;
     };
     let first = queue();

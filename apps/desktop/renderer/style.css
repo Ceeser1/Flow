@@ -249,16 +249,14 @@ button, input, select { font: inherit; color: inherit; }
 .settings-btn__icon { width: 100%; height: 100%; opacity: 0.7; transition: opacity 0.15s; }
 .settings-btn:hover .settings-btn__icon { opacity: 1; }
 
+/* Each list is as tall as its entries; when the menu is too short they shrink and scroll. */
 .menu__subs {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
   margin: 2px 0 0;
   padding: 2px 0 2px 22px;
 }
-
-/* The followed lists take what they need (and scroll past a third of the menu); Playlists gets the rest. */
-#menuFollowedList { flex: 0 1 auto; max-height: 32%; }
 
 .menu__sub {
   display: flex;
@@ -1262,9 +1260,16 @@ progress {
   font-weight: 600;
 }
 
-.link-cell span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.link-cell:hover span:last-child { text-decoration: underline; }
+.link-cell span:last-child:not(.link-cell__by),
+.link-cell__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-cell:hover span:last-child:not(.link-cell__by),
+.link-cell:hover .link-cell__name { text-decoration: underline; }
 .link-cell__icon { color: var(--text-dim); }
+/* The Listen behaviour row of the Playlists page, and the lists under it. */
+.link-cell__chevron { display: inline-flex; color: var(--text-dim); transition: transform 0.15s; }
+.link-cell__chevron .icon { width: 14px; height: 14px; }
+.link-cell__chevron--open { transform: rotate(90deg); }
+.link-cell--nested { margin-left: 24px; }
 
 .rename-input { width: 100%; height: 28px; }
 
@@ -1317,6 +1322,37 @@ progress {
 }
 
 .act-tray--in { transform: none; opacity: 1; }
+
+/* "Add to playlists" beside the tray: your playlists with a box each, and Apply.
+   Ten rows show; more scroll. */
+.pl-picker {
+  position: fixed;
+  z-index: 41;
+  width: 240px;
+  padding: 8px;
+  background: #34343c;
+  border: 1px solid #4a4a54;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pl-picker__list { max-height: 340px; overflow-y: auto; }
+
+.pl-picker__row {
+  display: flex;
+  height: 34px;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: var(--text-bright);
+}
+
+.pl-picker__row:hover { background: rgba(255, 255, 255, 0.07); }
+.pl-picker__row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-picker__empty { padding: 8px 6px; color: var(--text-dim); }
+.pl-picker .btn { align-self: flex-end; }
 
 /* ===== one playlist ===== */
 

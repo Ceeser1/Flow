@@ -45,13 +45,15 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   (it opens and closes; All Songs stays) lists All Songs and, with a Flow
   Server, the playlists the server's other profiles share, each with a
   **Follow** / **Unfollow** button in Actions. **Your Playlists** are yours,
-  with Favourites and Listen behaviour first.
+  with Favourites and **Listen behaviour** first (a row that opens to its
+  three lists, closed until you open it).
 - **Sharing** (with a Flow Server that has profiles): the **Share with others**
   box, top right of a playlist of your own, lets the other profiles see it
-  and follow it. Only its owner can change it; followers can play it. Once
-  you follow one, **Followed Playlists** appears in the menu as a main entry
-  of its own (like Playlists, with the followed lists under it, and a page
-  where each can be unfollowed); it goes again when you follow none. You never
+  and follow it. Only its owner can change it; followers can play it, and a
+  playlist you follow has a **Following** box in the same spot to unfollow.
+  Once you follow one, **Followed Playlists** appears in the menu below
+  Playlists as a main entry of its own (with the followed lists under it, and
+  a page where each can be unfollowed); it goes again when you follow none. You never
   see your own playlists among the shared ones. Unshared, a follow waits and
   comes back when it is shared again; deleted, the follow is gone.
 - **A playlist**: Shuffle, Play, a search box, and the songs. Clicking a
@@ -59,7 +61,12 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   header sorts: ascending, descending, and a third click back to newest first.
   "Added" is when the song was downloaded (All Songs) or put in that playlist.
   The star on every song's row makes it a favourite (filled gold) or no longer
-  one (an empty green star), from whichever list it is in.
+  one (an empty green star), from whichever list it is in. In All Songs, the
+  leftmost button under a song's **More** (three dots) opens your playlists
+  with a box each (ticked: the song is in it); **Apply** puts the song into the
+  newly ticked ones and takes it out of the newly unticked ones, and closes
+  the popup and More (so does a click anywhere else). Ten playlists show, more
+  scroll.
 
 - **Details** (the magnifier on an All Songs row): the song's names and length,
   the playlists it is in as buttons (click one to take it out, click again to

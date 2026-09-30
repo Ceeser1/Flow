@@ -10,15 +10,21 @@
 const SongActions = {
   tray: null,
   anchor: null,
+  picker: null, // the "Add to playlists" popup beside the tray
 
   init() {
     const outside = (e) => {
       if (!this.tray) return;
       if (this.tray.contains(e.target) || (this.anchor && this.anchor.contains(e.target))) return;
+      if (this.picker && this.picker.contains(e.target)) return;
       this.close();
     };
     document.addEventListener('pointerdown', outside, true);
-    document.addEventListener('scroll', () => this.close(), true);
+    // Scrolling the picker's own list is no reason to close it.
+    document.addEventListener('scroll', (e) => {
+      if (this.picker && this.picker.contains(e.target)) return;
+      this.close();
+    }, true);
     window.addEventListener('resize', () => this.close());
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.tray && !Modal.top()) {
@@ -44,7 +50,8 @@ const SongActions = {
     const tray = h('div.act-tray', { role: 'menu' }, ...buttons);
     // Any of its buttons does its thing and closes it.
     tray.addEventListener('click', (e) => {
-      if (e.target.closest('button')) setTimeout(() => this.close(), 0);
+      const button = e.target.closest('button');
+      if (button && !button.dataset.keepOpen) setTimeout(() => this.close(), 0);
     });
     document.body.appendChild(tray);
     const r = anchor.getBoundingClientRect();
@@ -58,7 +65,71 @@ const SongActions = {
     requestAnimationFrame(() => tray.classList.add('act-tray--in'));
   },
 
+  /**
+   * The tray's "Add to playlists" button (the leftmost): opens a popup to its
+   * left instead of closing the tray. See pickPlaylists.
+   */
+  playlistButton(song) {
+    const btn = iconButton('act.act--green', Icons.playlists, 'Add to playlists', () => this.pickPlaylists(btn, song));
+    btn.dataset.keepOpen = '1';
+    return btn;
+  },
+
+  /**
+   * Your playlists as a list with a box each (ticked: the song is in it) and
+   * Apply below, ten rows high before it scrolls. Apply puts the song into
+   * the newly ticked playlists and takes it out of the newly unticked ones,
+   * then closes the popup and the tray; so does a click anywhere else.
+   */
+  pickPlaylists(anchor, song) {
+    if (this.picker) {
+      this.picker.remove();
+      this.picker = null;
+      return;
+    }
+    const lists = Store.sortedPlaylists();
+    const had = new Set(lists.filter((p) => p.entries.some((e) => e.songId === song.id)).map((p) => p.id));
+    const boxes = new Map();
+    const rows = lists.map((p) => {
+      const box = h('input', { type: 'checkbox', checked: had.has(p.id) });
+      boxes.set(p.id, box);
+      return h('label.check.pl-picker__row', { title: p.name }, box, h('span', p.name));
+    });
+    const apply = h('button.btn.btn--primary.btn--small', {
+      type: 'button',
+      disabled: !lists.length,
+      onclick: () => this._applyPlaylists(song, had, boxes),
+    }, 'Apply');
+    const picker = h('div.pl-picker', { role: 'dialog', 'aria-label': 'Add to playlists' },
+      h('div.pl-picker__list', ...(rows.length ? rows : [h('div.pl-picker__empty', 'No playlists yet.')])),
+      apply);
+    document.body.appendChild(picker);
+    const r = anchor.getBoundingClientRect();
+    picker.style.right = `${Math.round(window.innerWidth - r.left + 6)}px`;
+    const height = picker.getBoundingClientRect().height;
+    picker.style.top = `${Math.max(8, Math.min(Math.round(r.top), window.innerHeight - height - 8))}px`;
+    this.picker = picker;
+  },
+
+  async _applyPlaylists(song, had, boxes) {
+    const add = [];
+    const remove = [];
+    for (const [id, box] of boxes) {
+      if (box.checked && !had.has(id)) add.push(id);
+      if (!box.checked && had.has(id)) remove.push(id);
+    }
+    this.close();
+    if (!add.length && !remove.length) return;
+    await attempt(async () => {
+      if (add.length) await window.flow.addSongToPlaylists(song.id, add);
+      for (const id of remove) await window.flow.removeFromPlaylist(id, song.id);
+      toast('Playlists updated', 'success');
+    });
+  },
+
   close() {
+    if (this.picker) this.picker.remove();
+    this.picker = null;
     if (this.tray) this.tray.remove();
     if (this.anchor) {
       this.anchor.classList.remove('act--open');
