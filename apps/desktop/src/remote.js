@@ -25,8 +25,11 @@
 //             of the server, kept in step with it
 //   fetched   local songs that are copies downloaded from the server (the
 //             rest came from here); only those go when no longer needed
+//   kept      server songs downloaded by hand (a song's Download button): needed,
+//             like the songs of a playlist marked for download, until
+//             the button is clicked again
 //   remoteFilled  the Remote address was filled in from the server's Tailscale
-//             address once; a field cleared since stays empty
+//             address once; emptying the field by hand lets it be filled again
 //   homeFilled    the same for the Home address, found on the network
 //
 // Songs the window plays come from a local copy when there is one, else
@@ -35,7 +38,10 @@
 // Profiles: people sharing the server's songs, each with their own
 // playlists, favourites and stats (@flow/core/profiles). Signing in to one
 // gives a token that says which; the server answers with that profile's
-// library. Each waiting command remembers the profile it was made in and only
+// library. The profile (and its PIN, kept encrypted like the server's) is
+// signed in to again at every start whenever the token does not say it
+// (restoreProfile), which a server reachable from the internet makes the rule
+// (its tokens are sessions that end). Each waiting command remembers the profile it was made in and only
 // goes (and shows) while signed in to it; the shared ones (a song's names, its
 // deletion) go whoever is signed in. A playlist marked for download keeps its
 // songs here while another profile is signed in (offlineKeep).
@@ -74,7 +80,7 @@ const syncFile = () => path.join(paths.ensure(paths.rootDir()), 'server-sync.jso
 
 function emptySync(serverId = '') {
   return {
-    serverId, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, offline: [], offlineKeep: {}, fetched: {}, remoteFilled: false, homeFilled: false,
+    serverId, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, offline: [], offlineKeep: {}, fetched: {}, kept: {}, profilePin: '', remoteFilled: false, homeFilled: false,
   };
 }
 
@@ -86,7 +92,7 @@ function loadSync() {
   const raw = readJson(syncFile());
   const s = { ...emptySync(), ...(raw && typeof raw === 'object' ? raw : {}) };
   for (const key of ['queue', 'sent', 'offline']) if (!Array.isArray(s[key])) s[key] = [];
-  for (const key of ['songMap', 'listMap', 'fetched', 'offlineKeep']) if (!s[key] || typeof s[key] !== 'object') s[key] = {};
+  for (const key of ['songMap', 'listMap', 'fetched', 'kept', 'offlineKeep']) if (!s[key] || typeof s[key] !== 'object') s[key] = {};
   s.profile = cleanProfile(s.profile);
   if (s.snapshot && (typeof s.snapshot !== 'object' || !s.snapshot.songs || !s.snapshot.lists)) s.snapshot = null;
   return s;
@@ -429,21 +435,43 @@ async function login(base) {
   const r = await request(base, '/api/login', { method: 'POST', json: { password: pw, device: os.hostname() }, timeout: 20000 });
   if (r.status === 401) throw new AuthError('Wrong PIN or password.');
   if (r.status !== 200 || !r.json || !r.json.token) throw new Error((r.json && r.json.error) || 'The server did not let Flow sign in.');
-  let token = r.json.token;
-  // The password gives a token with no profile: back into the one this device
-  // was signed in to, unless it has a PIN (that is not kept here; it is asked again).
-  const was = sync.profile;
-  if (was && !was.pin) {
-    try {
-      const p = await request(base, '/api/profiles/login', { method: 'POST', json: { profileId: was.id, pin: '', device: os.hostname() }, token, timeout: 20000 });
-      if (p.status === 200 && p.json && p.json.token) token = p.json.token;
-    } catch {
-      // Signed in without it; the profile can be picked again.
-    }
-  }
-  sync.token = encrypt(token);
-  runToken = token;
+  sync.token = encrypt(r.json.token);
+  runToken = r.json.token;
   saveSync();
+  return r.json.token;
+}
+
+/**
+ * The profile this device was signed in to, signed in to again when the token
+ * in use is not (the password gave a new token, the server forgot the old one,
+ * or it is a server that keeps no tokens). With its PIN, as kept encrypted
+ * from the last time it was typed. A PIN the server refuses is forgotten, not
+ * tried at every connection. Resolves the token to use.
+ */
+async function restoreProfile(base, token) {
+  const was = sync.profile;
+  if (!was) return token;
+  try {
+    const list = await request(base, '/api/profiles', { token, timeout: 15000 });
+    if (list.status !== 200 || !list.json || list.json.current === was.id) return token;
+    const pin = was.pin ? decrypt(sync.profilePin) : '';
+    if (was.pin && !pin) return token;
+    const r = await request(base, '/api/profiles/login', {
+      method: 'POST', json: { profileId: was.id, pin, device: os.hostname() }, token, timeout: 20000,
+    });
+    if (r.status === 200 && r.json && r.json.token) {
+      sync.token = encrypt(r.json.token);
+      runToken = r.json.token;
+      saveSync();
+      return r.json.token;
+    }
+    if (r.status === 403 && was.pin) {
+      sync.profilePin = '';
+      saveSync();
+    }
+  } catch {
+    // Connected without it; the profile can be picked again.
+  }
   return token;
 }
 
@@ -513,6 +541,8 @@ function connect() {
       }
       if (gen !== generation) return false;
       const profiles = Array.isArray(hello.features) && hello.features.includes('profiles');
+      if (profiles) token = await restoreProfile(base, token);
+      if (gen !== generation) return false;
       Object.assign(conn, { base, token, via, name: String(hello.name || 'Flow Server'), address, profiles });
       if (via === 'remote') lastHomeTry = Date.now();
       if (via === 'home') fillRemote(hello);
@@ -559,8 +589,8 @@ function publicUrlOf(hello) {
 
 /**
  * Connected at home to a server reachable from away: its address becomes the
- * Remote address, once, and only into an empty field (a typed one stays, and
- * so does one cleared since). Its https address on the internet when it has
+ * Remote address, once, and only into an empty field (a typed one stays; one
+ * emptied by hand is filled again at the next connection). Its https address on the internet when it has
  * one, which needs nothing on this PC; else its Tailscale IP (not the .ts.net
  * name, which needs MagicDNS).
  */
@@ -586,7 +616,7 @@ function fillRemote(hello) {
 /**
  * Turned on with no Home address: ask the local network for a Flow Server
  * (@flow/core/discovery). Exactly one answering becomes the Home address, once
- * (the box cleared since stays empty); several are told about, none is
+ * (a box emptied by hand is searched for again); several are told about, none is
  * silent (away from home, or the server is off).
  */
 async function discoverHome() {
@@ -1106,8 +1136,9 @@ function markedSongs(pid, v) {
   return keep && keep.profile !== currentProfile() ? keep.songs : [];
 }
 
-/** Server playlists marked for download that hold a song. */
+/** A song downloaded by hand, or in a server playlist marked for download. */
 function neededOffline(sid) {
+  if (sync.kept[sid]) return true;
   const v = getView();
   return sync.offline.some((pid) => markedSongs(pid, v).includes(sid));
 }
@@ -1405,6 +1436,15 @@ function reconfigure(patch) {
   const keys = Object.keys(patch || {});
   if (!keys.some((k) => k.startsWith('server'))) return;
   const needsReconnect = keys.some((k) => ['serverOn', 'serverHome', 'serverRemote', 'serverHomeOn', 'serverRemoteOn', 'serverAuth', 'serverSecret'].includes(k));
+  // An address emptied by hand is up for filling in again: the next search
+  // (Home) or the next connection to the server (Remote) puts one there.
+  const emptied = (key, flag) => {
+    if (!keys.includes(key) || String(settings.get(key) || '').trim() || !sync[flag]) return;
+    sync[flag] = false;
+    saveSync();
+  };
+  emptied('serverHome', 'homeFilled');
+  emptied('serverRemote', 'remoteFilled');
   // A new PIN does not throw the token away: it may still be good (and says
   // which profile this is). Refused, the PIN signs in afresh.
   if (keys.includes('serverAutoSync') && settings.get('serverAutoSync') && status.state === 'online') queueLocalChanges();
@@ -1494,6 +1534,75 @@ async function deleteSong(songId, deleteFile) {
   return command('deleteSong', { songId });
 }
 
+/**
+ * A song's Download button: one server song into Local Files, kept there
+ * until the button is clicked again (a copy nothing asks for is otherwise
+ * dropped, see dropUnneededCopies).
+ */
+async function downloadSong(songId) {
+  if (!active()) throw new Error('Tick "Streaming, Download and Synchronization" first.');
+  if (status.state !== 'online') throw new Error('The server cannot be reached right now. A song can only be downloaded while it can.');
+  const song = model.songById(getView(), songId);
+  if (!song) throw new Error('That song is not on the server.');
+  if (localCopies().has(songId)) {
+    sync.kept[songId] = true;
+    saveSync();
+    return;
+  }
+  const label = [song.artist, song.title].filter(Boolean).join(' - ');
+  // Marked before the copy exists: a synchronization in between must not drop it as unneeded.
+  sync.kept[songId] = true;
+  saveSync();
+  status.transfer = `Downloading: ${label}`;
+  emitStatus();
+  try {
+    await fetchSong(song, (f) => {
+      status.transfer = `Downloading (${Math.round(f * 100)}%): ${label}`;
+      emitStatus();
+    });
+  } catch (err) {
+    delete sync.kept[songId];
+    saveSync();
+    if (err instanceof OfflineError || err instanceof AuthError) wentWrong(err);
+    throw new Error(`"${label}" could not be downloaded: ${err.message}`);
+  } finally {
+    status.transfer = '';
+    emitStatus();
+  }
+  refreshView();
+}
+
+/**
+ * The Download button clicked again: the local copy is deleted (the song stays
+ * on the server). Not while it would be undone at once (a playlist marked for
+ * download holds the song), or lost for good (it has not gone up yet).
+ */
+async function removeDownload(songId) {
+  if (!active()) throw new Error('Tick "Streaming, Download and Synchronization" first.');
+  const lids = Object.entries(sync.songMap).filter(([, sid]) => sid === songId).map(([lid]) => lid);
+  if (!lids.length) {
+    delete sync.kept[songId];
+    saveSync();
+    return;
+  }
+  if (sync.queue.some((c) => c.type === 'upload' && c.songId === songId)) {
+    throw new Error('This song has not been uploaded to the server yet. Its file here is the only copy.');
+  }
+  if (sync.offline.some((pid) => markedSongs(pid, getView()).includes(songId))) {
+    throw new Error('This song is in a playlist marked for download (or All Songs is), so it would come straight back. Unmark that in Settings first.');
+  }
+  delete sync.kept[songId];
+  saveSync();
+  for (const lid of lids) {
+    if (!(await forgetLocal(lid, { deleteFile: true }))) {
+      sync.kept[songId] = true;
+      saveSync();
+      throw new Error('The song\'s file is in use (playing?). Try again once it has stopped.');
+    }
+  }
+  refreshView();
+}
+
 /** The local copy of a server song, if there is one. */
 function localFileOf(songId) {
   const copy = localCopies().get(songId);
@@ -1554,13 +1663,15 @@ async function sendWaiting() {
  * Signed in to another profile (null: none): the library is fetched afresh
  * and the local copies follow. Call sendWaiting() before the server switches.
  */
-async function switchProfile(token, profile) {
+async function switchProfile(token, profile, pin = '') {
   if (token !== undefined) {
     conn.token = token;
     sync.token = encrypt(token);
     runToken = token;
   }
   sync.profile = cleanProfile(profile);
+  // Kept encrypted, so the next start can sign in to it again (restoreProfile).
+  sync.profilePin = sync.profile && sync.profile.pin ? encrypt(pin) : '';
   sync.sent = [];
   // rev -1: the next fetch brings the whole library, whatever the revision.
   cache = { ...cache, rev: -1, profile: currentProfile() };
@@ -1577,7 +1688,7 @@ async function loginProfile(profileId, pin) {
   requireProfiles();
   await sendWaiting();
   const r = await call('/api/profiles/login', { method: 'POST', json: { profileId, pin: String(pin || ''), device: os.hostname() }, timeout: 20000 });
-  return switchProfile(r.token, r.profile);
+  return switchProfile(r.token, r.profile, String(pin || ''));
 }
 
 async function createProfile(name, pin) {
@@ -1585,7 +1696,7 @@ async function createProfile(name, pin) {
   // So the new profile's copy of the Default / Shared playlists has everything made before it.
   await sendWaiting();
   const r = await call('/api/profiles', { method: 'POST', json: { name, pin: String(pin || ''), device: os.hostname() }, timeout: 20000 });
-  return switchProfile(r.token, r.profile);
+  return switchProfile(r.token, r.profile, String(pin || ''));
 }
 
 async function logoutProfile() {
@@ -1632,6 +1743,6 @@ function stop() {
 
 module.exports = {
   init, active, reconfigure, setSecret, stop,
-  status: publicStatus, view: getView, command, syncNow, setOffline, pushNew, pushImport, deleteSong, localFileOf,
+  status: publicStatus, view: getView, command, syncNow, setOffline, downloadSong, removeDownload, pushNew, pushImport, deleteSong, localFileOf,
   loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, deleteProfile,
 };

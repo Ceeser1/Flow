@@ -35,7 +35,7 @@ const SongDetails = {
     Store.onLibrary(redraw);
     draw();
     modal = Modal.open({
-      title: 'Details',
+      title: 'Song Details',
       className: 'modal--details',
       body,
       buttons: [{ label: 'Close', kind: 'primary' }],
@@ -129,8 +129,8 @@ const SongDetails = {
         ...row('Added', Util.fmtDate(song.addedAt)),
         ...row('Last listened', last ? `${Util.fmtDate(last)}  (${Util.fmtAgo(last)})` : 'Never'),
         ...row('Times played', String(sessions), 'more than 5 s heard, skipped or not'),
-        ...row('Times fully listened', String(plays), '80% or more heard'),
         ...row('Average listen duration', sessions ? Util.fmtClock(avg) + share : '-'),
+        ...row('Times fully listened', String(plays), '80% or more heard'),
         ...row('Times stopped listening', String(st.stops || 0), 'changed song between 30 s and 80%'),
         ...row('Times skipped early', String(st.skips || 0), 'changed song between 5 and 30 s')));
   },

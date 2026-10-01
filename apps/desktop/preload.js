@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld('flow', {
   setServerSecret: (text) => call('server:setSecret', text),
   syncNow: () => call('server:syncNow'),
   setOffline: (playlistId, on) => call('server:setOffline', { playlistId, on }),
+  downloadServerSong: (songId) => call('server:downloadSong', songId),
+  removeServerDownload: (songId) => call('server:removeDownload', songId),
   profiles: () => call('server:profiles'),
   profileLogin: (profileId, pin) => call('server:profileLogin', { profileId, pin }),
   profileCreate: (name, pin) => call('server:profileCreate', { name, pin }),

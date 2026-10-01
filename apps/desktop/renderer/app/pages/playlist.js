@@ -280,7 +280,8 @@ const PlaylistPage = {
   },
 
   /**
-   * Add to Queue and Play, and More with Favourite, Details, Edit and Delete
+   * Add to Queue and Play, and More with Download (with a Flow Server),
+   * between Favourite and Song Details, Edit and Delete
    * (All Songs), Remove (a playlist of one's own) or Remove from Playlist(s)
    * (a Listen behaviour list: out of every own playlist holding it, the song
    * itself stays in All Songs). All Songs and the Listen behaviour lists also
@@ -298,7 +299,9 @@ const PlaylistPage = {
     const more = () => {
       const buttons = [
         this._favButton(song),
-        iconButton('act.act--green', Icons.search, 'Details', () => SongDetails.open(song.id)),
+        // With a Flow Server the songs are streamed, and one can be kept here too.
+        ...(Store.server.on ? [this._downloadButton(song)] : []),
+        iconButton('act.act--grey', Icons.search, 'Song Details', () => SongDetails.open(song.id)),
         iconButton('act.act--grey', Icons.pencil, 'Edit', () => this.edit(song)),
       ];
       if (listId === 'all') {
@@ -324,6 +327,26 @@ const PlaylistPage = {
       }));
     }
     return SongActions.cell([first, play], more);
+  },
+
+  /**
+   * With a Flow Server: light grey while the song is only on the server, golden once
+   * there is a copy here (Local Files). A click downloads it, or, golden,
+   * deletes the copy here (the song stays on the server).
+   */
+  _downloadButton(song) {
+    const on = !!song.file;
+    return iconButton(on ? 'act.act--dl.act--dl-on' : 'act.act--dl', Icons.download,
+      on ? 'Downloaded: click to delete it from this PC' : 'Download',
+      () => attempt(async () => {
+        if (on) {
+          await window.flow.removeServerDownload(song.id);
+          toast(`Deleted "${song.title}" from this PC`, 'success');
+        } else {
+          await window.flow.downloadServerSong(song.id);
+          toast(`Downloaded "${song.title}"`, 'success');
+        }
+      }));
   },
 
   /** An empty green star, or a filled golden one for a favourite; a click turns it over. */

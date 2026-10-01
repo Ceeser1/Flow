@@ -1,8 +1,8 @@
 'use strict';
 
 // A song row's Actions: two buttons always there (Add to Queue and Play) and
-// "More" (three dots), which slides the rest out to its left (Favourite,
-// Details, Edit, Delete / Remove). The tray floats over the page rather than
+// "More" (three dots), which slides the rest out to its left (Download,
+// Favourite, Song Details, Edit, Delete / Remove). The tray floats over the page rather than
 // sitting in the cell, which cuts off anything wider than itself. One tray is
 // open at a time; a click anywhere else, a scroll, Escape or any of its
 // buttons closes it.

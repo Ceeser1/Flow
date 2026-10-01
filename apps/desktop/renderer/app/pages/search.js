@@ -49,16 +49,32 @@ const SearchPage = {
     const songs = Store.library.songs.slice()
       .sort((a, b) => b.addedAt - a.addedAt)
       .filter((s) => Util.matches(q, s.title, s.artist, s.mix));
-    this._fill('searchSongs', 'searchSongsCount', songs, (s) => h('button.result.result--song', {
-      type: 'button',
-      title: 'Play',
-      dataset: { id: s.id },
-      onclick: () => Player.toggleSong(s.id, 'all'),
-    },
-    h('span.result__icon.result__play', { html: Icons.play }),
-    h('span.result__text',
-      h('span.result__title', s.title + (s.mix ? ` (${s.mix})` : '')),
-      h('span.result__meta', [s.artist, Util.fmtClock(s.duration)].filter(Boolean).join(' · ')))));
+    // A song plays on a click anywhere on it (Play included); [+] before Play
+    // adds it to the queue instead. A div rather than a button, as it holds one.
+    this._fill('searchSongs', 'searchSongsCount', songs, (s) => {
+      const play = () => Player.toggleSong(s.id, 'all');
+      const row = h('div.result.result--song', {
+        role: 'button',
+        tabIndex: 0,
+        title: 'Play',
+        dataset: { id: s.id },
+        onclick: play,
+        onkeydown: (e) => {
+          if (e.target !== row || (e.key !== 'Enter' && e.key !== ' ')) return;
+          e.preventDefault();
+          play();
+        },
+      },
+      iconButton('act.act--green', Icons.plus, 'Add to Queue', (e) => {
+        e.stopPropagation();
+        Player.addToQueue(s.id);
+      }),
+      h('span.result__icon.result__play', { html: Icons.play }),
+      h('span.result__text',
+        h('span.result__title', s.title + (s.mix ? ` (${s.mix})` : '')),
+        h('span.result__meta', [s.artist, Util.fmtClock(s.duration)].filter(Boolean).join(' · '))));
+      return row;
+    });
     this._markPlaying();
 
     // Artists: every artist name once, with how many songs they have

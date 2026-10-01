@@ -597,6 +597,9 @@ button, input, select { font: inherit; color: inherit; }
 
 .result__icon .icon { width: 16px; height: 16px; }
 .result__play { color: var(--green); background: rgba(120, 200, 140, 0.14); }
+/* A song's Add to Queue, before its Play: the same size. */
+.result--song .act { width: 32px; height: 32px; }
+.result--song .act .icon { width: 16px; height: 16px; }
 .result__avatar { border-radius: 50%; font-weight: 700; color: var(--text-bright); background: #44506a; }
 
 .result__text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
@@ -1314,11 +1317,15 @@ progress {
 .act--grey { background: rgba(184, 184, 192, 0.12); color: var(--grey); }
 .act--grey:hover { background: rgba(184, 184, 192, 0.24); border-color: rgba(184, 184, 192, 0.35); }
 .act--done { background: rgba(120, 200, 140, 0.06); color: rgba(120, 200, 140, 0.55); cursor: default; }
-/* Favourite: an empty green star, filled gold once it is one. */
+/* Favourite: an empty green star, filled gold once it is one. Download: light
+   grey (like Song Details) while the song is only on the server, gold once it
+   is here too. */
 .act--fav { background: rgba(120, 200, 140, 0.14); color: var(--green); }
 .act--fav:hover { background: rgba(120, 200, 140, 0.28); border-color: rgba(120, 200, 140, 0.4); }
-.act--fav-on { background: rgba(245, 190, 60, 0.16); color: #f5be3c; }
-.act--fav-on:hover { background: rgba(245, 190, 60, 0.3); border-color: rgba(245, 190, 60, 0.45); }
+.act--dl { background: rgba(184, 184, 192, 0.12); color: var(--grey); }
+.act--dl:hover { background: rgba(184, 184, 192, 0.24); border-color: rgba(184, 184, 192, 0.35); }
+.act--fav-on, .act--dl-on { background: rgba(245, 190, 60, 0.16); color: #f5be3c; }
+.act--fav-on:hover, .act--dl-on:hover { background: rgba(245, 190, 60, 0.3); border-color: rgba(245, 190, 60, 0.45); }
 .act--open { background: rgba(184, 184, 192, 0.3); border-color: rgba(184, 184, 192, 0.45); color: var(--text-bright); }
 
 /* More's tray: slides out to the left of the button, over the row. */
@@ -1341,36 +1348,38 @@ progress {
 .act-tray--in { transform: none; opacity: 1; }
 
 /* "Add to playlists" beside the tray: your playlists with a box each, and Apply.
-   Ten rows show; more scroll. */
+   Ten rows show; more scroll. Looks like Settings (the app's own background at
+   93%, the same title, rows divided by thin lines), as does the dialog of the
+   same name in Song Details (.modal--picker, below). */
 .pl-picker {
   position: fixed;
   z-index: 41;
-  width: 240px;
-  padding: 8px;
-  background: #34343c;
-  border: 1px solid #4a4a54;
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  width: 280px;
+  padding: 14px 16px 16px;
+  background: rgba(30, 30, 34, 0.93);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.pl-picker__title { padding: 2px 6px 0; font-weight: 600; color: var(--text-bright); }
+.pl-picker__title { margin: 0; font-size: 17px; font-weight: 600; color: var(--text-bright); }
 .pl-picker__list { max-height: 340px; overflow-y: auto; }
 
 .pl-picker__row {
   display: flex;
-  height: 34px;
-  padding: 0 6px;
-  border-radius: 6px;
+  height: 38px;
+  padding: 0 2px;
+  border-bottom: 1px solid #34343c;
   color: var(--text-bright);
 }
 
-.pl-picker__row:hover { background: rgba(255, 255, 255, 0.07); }
+.pl-picker__row:hover { background: rgba(255, 255, 255, 0.04); }
 .pl-picker__row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pl-picker__empty { padding: 8px 6px; color: var(--text-dim); }
-.pl-picker .btn { align-self: center; }
+.pl-picker__empty { padding: 8px 2px; color: var(--text-dim); }
+.pl-picker .btn { align-self: flex-end; margin-top: 4px; }
 
 /* ===== one playlist ===== */
 
@@ -1925,7 +1934,14 @@ progress {
 .settings__note { color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
 .settings__slider { width: 160px; }
 .settings__slider:disabled { cursor: default; }
-.modal--picker { width: 440px; height: min(560px, 100%); }
+/* The Add to Playlists dialog: like Settings, the app's own background at 93%
+   and rows divided by thin lines instead of a box of their own. */
+.modal--picker { width: 440px; height: min(560px, 100%); background: rgba(30, 30, 34, 0.93); }
+.modal--picker .picker__list { background: none; border: none; border-radius: 0; padding: 0; }
+.modal--picker .picker__row { border-radius: 0; padding: 10px 2px; border-bottom: 1px solid #34343c; }
+.modal--picker .picker__row:hover { background: rgba(255, 255, 255, 0.04); }
+.modal--picker .picker__row--locked,
+.modal--picker .picker__row--locked:hover { background: rgba(120, 200, 140, 0.07); }
 
 .modal__head {
   display: flex;
@@ -2016,7 +2032,7 @@ progress {
 
 /* ===== song details ===== */
 
-.modal--details { width: 540px; }
+.modal--details { width: 540px; background: rgba(30, 30, 34, 0.93); }
 
 /* ---- the Queue popup (queueView.js) ---- */
 
@@ -2224,13 +2240,10 @@ progress {
 .sleep__custom-label { display: inline-flex; align-items: center; gap: 8px; color: var(--text-dim); }
 .sleep__custom { width: 76px; }
 
-.details__section {
-  padding: 4px 0 16px;
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.details__section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 4px; }
+/* Song Details is laid out like Settings: a small heading with a line under it
+   per section, then rows with the name on the left, its value on the right. */
+.details__section { padding: 0 0 6px; }
+.details__section:first-child { padding-bottom: 12px; }
 
 .details__title {
   margin: 0 0 4px;
@@ -2245,15 +2258,19 @@ progress {
 .details__meta { color: var(--grey); user-select: text; }
 
 .details__heading {
-  margin: 0 0 10px;
-  font-size: 11px;
+  margin: 14px 0 2px;
+  padding-bottom: 6px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-dim);
+  border-bottom: 1px solid var(--line);
 }
 
-.details__chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.details__section:nth-child(2) .details__heading { margin-top: 2px; }
+
+.details__chips { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; }
 .details__row { margin-top: 12px; }
 
 .chip {
@@ -2298,15 +2315,26 @@ progress {
 
 .details__grid {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 9px 20px;
-  align-items: baseline;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
-.details__label { color: var(--text-dim); }
-.details__hint { display: block; font-size: 11px; color: #6c6c76; }
-.details__value { color: var(--text-bright); font-variant-numeric: tabular-nums; user-select: text; }
-.details__url { text-align: left; overflow-wrap: anywhere; user-select: text; }
+/* Each row has a thin line under it, as in Settings: both of its cells carry it. */
+.details__label,
+.details__value { padding: 10px 0; border-bottom: 1px solid #34343c; }
+.details__label { font-weight: 600; color: var(--text-bright); }
+.details__hint { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; line-height: 1.45; color: var(--text-dim); }
+.details__label { display: flex; flex-direction: column; justify-content: center; }
+.details__value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-left: 20px;
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+.details__url { text-align: right; overflow-wrap: anywhere; user-select: text; }
 
 /* ===== toasts ===== */
 
