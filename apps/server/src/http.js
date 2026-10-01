@@ -41,6 +41,11 @@
 //     unencrypted. Nor does plain http through the proxy from outside.
 //   - Without a strong password nobody gets past /api/hello: at level 3 or
 //     4, and whenever a request came through a proxy from outside.
+//   - A token there is a session, not a key to keep: it ends after
+//     SESSION_IDLE without a request, or SESSION_MAX in all, and then only
+//     the password (POST /api/login) opens a new one. A token from before
+//     (kept by an app, or from a lower level) does not let anyone in. Signing
+//     in to a profile does not renew a session; only the password does.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -58,6 +63,10 @@ const FEATURES = ['profiles'];
 const MAX_PROFILE_NAME = 40;
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
+// Level 3 and 4 sessions: an app polls every few seconds while it is open, so
+// the idle time only ends the session of an app that was closed or asleep.
+const SESSION_IDLE = 30 * 60 * 1000;
+const SESSION_MAX = 24 * 60 * 60 * 1000;
 
 const MIME = {
   '.mp3': 'audio/mpeg',
@@ -290,6 +299,12 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     return m ? m[1] : url.searchParams.get('t') || '';
   }
 
+  /** Whether a token's session is over (levels 3 and 4 only; below, a token lasts). */
+  function sessionEnded(entry, cfg, now = Date.now()) {
+    if (!(cfg.level >= PUBLIC_LEVEL)) return false;
+    return now - Math.max(entry.lastSeenAt, entry.createdAt) > SESSION_IDLE || now - entry.createdAt > SESSION_MAX;
+  }
+
   /**
    * The request's token entry (null: none). Throws 401 unless the request may
    * in; without a password everyone may.
@@ -300,8 +315,13 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     const hash = token ? hashToken(token) : '';
     const entry = (hash && cfg.tokens.find((t) => t.hash === hash)) || null;
     if (cfg.password && !entry) throw new HttpError(401, 'This server needs its PIN or password.');
-    // Remembered once an hour at most: no write to disk for every request.
-    if (entry && Date.now() - entry.lastSeenAt > 3600000) {
+    if (entry && cfg.password && sessionEnded(entry, cfg)) {
+      throw new HttpError(401, 'This session has ended. This server needs its password again.');
+    }
+    // Remembered once an hour at most (a session, once a minute, for its idle
+    // time): no write to disk for every request.
+    const every = cfg.level >= PUBLIC_LEVEL ? 60000 : 3600000;
+    if (entry && Date.now() - entry.lastSeenAt > every) {
       config.set({ tokens: cfg.tokens.map((t) => (t.hash === hash ? { ...t, lastSeenAt: Date.now() } : t)) });
     }
     return entry;
@@ -316,11 +336,18 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
 
   const publicProfile = (p) => (p ? { id: p.id, name: p.name, pin: !!p.pin } : null);
 
-  /** A new token for `device`, replacing its old one. */
-  function issueToken(device, profileId) {
+  /**
+   * A new token for `device`, replacing its old one. `session`: the token entry
+   * it carries on from (a profile signed in to), which keeps the session's
+   * start: only the password makes a session a new one.
+   */
+  function issueToken(device, profileId, session = null) {
+    const cfg = config.get();
+    const now = Date.now();
     const token = crypto.randomBytes(24).toString('base64url');
-    const tokens = config.get().tokens.filter((t) => t.device !== device);
-    tokens.push({ hash: hashToken(token), device, createdAt: Date.now(), lastSeenAt: Date.now(), profileId });
+    // Ended sessions are of no use any more.
+    const tokens = cfg.tokens.filter((t) => t.device !== device && !sessionEnded(t, cfg, now));
+    tokens.push({ hash: hashToken(token), device, createdAt: session ? session.createdAt : now, lastSeenAt: now, profileId });
     config.set({ tokens: tokens.slice(-50) });
     return token;
   }
@@ -358,7 +385,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       config.set({ profiles: [...config.get().profiles, profile] });
       library.createProfile(id);
       log(`Profile made: ${name} (${device})`);
-      return sendJson(res, 200, { token: issueToken(device, id), profile: publicProfile(profile) });
+      return sendJson(res, 200, { token: issueToken(device, id, entry), profile: publicProfile(profile) });
     }
     if (action === 'login') {
       throttle.check(ip);
@@ -371,7 +398,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       }
       throttle.ok(ip);
       log(`Signed in: ${device} as ${profile.name}`);
-      return sendJson(res, 200, { token: issueToken(device, profile.id), profile: publicProfile(profile) });
+      return sendJson(res, 200, { token: issueToken(device, profile.id, entry), profile: publicProfile(profile) });
     }
     if (action === 'logout') {
       if (entry) setToken(entry, { profileId: null });
@@ -403,6 +430,11 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     throttle.check(ip);
     const body = await readJsonBody(req);
     const cfg = config.get();
+    // An app that sends no password (it relied on an old token) is turned
+    // away at once; that is no guess, so it costs no wait.
+    if (cfg.password && !(typeof body.password === 'string' && body.password)) {
+      throw new HttpError(401, 'This server needs its PIN or password.');
+    }
     if (!checkPassword(cfg.password, String(body.password || ''))) {
       throttle.fail(ip);
       log(`Wrong password from ${ip}`);

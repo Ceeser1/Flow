@@ -197,7 +197,8 @@ home network. Each app enters the PIN once and gets a token back. Setting a new
 PIN signs every device out. Wrong tries from one address wait longer each time
 (1 s, 2 s, 4 s ...), so guessing a PIN takes years; after 30 wrong tries within
 10 minutes from anywhere, everyone waits, so many addresses at once don't help
-either. Devices already signed in carry on.
+either. Devices already signed in carry on (at level 3 and 4 not for ever, see
+below).
 
 What the password has to be depends on the server's level (`--level`, set by
 `install.sh`):
@@ -311,3 +312,13 @@ With a password, requests carry `Authorization: Bearer <token>`, or `?t=<token>`
 for audio (an `<audio>` element can't send headers). The token from signing
 in to a profile says which profile a request is for; commands and uploads
 act on it, and the library comes as it sees it.
+
+At level 3 and 4 a token is a session: it ends after 30 minutes without a
+request, or 24 hours in all, however busy. After that every request gets 401
+until the app sends the password to `POST /api/login` again; a token an app
+kept from before (or from a lower level) gets nowhere, and a login without a
+password is refused (401, and no wrong try counted). Signing in to a profile
+carries the session on but doesn't renew it. An app that is open polls every
+few seconds, so only one that was closed or asleep notices; Flow signs in again
+by itself with the password it has saved, and says "needs a PIN or password"
+when it has none. Levels 1 and 2 keep their tokens.

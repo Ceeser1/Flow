@@ -391,6 +391,95 @@ test('through a proxy from outside, nobody gets in without a strong password', a
   }, { password: 'Portis8head', settings: { level: 2, publicUrl: 'https://music.example.com' } });
 });
 
+test('at level 3 and 4 a session ends, and only the password starts a new one', async () => {
+  const { mock } = require('node:test');
+  const realNow = Date.now.bind(Date);
+  let skew = 0;
+  const later = (ms) => { skew += ms; };
+  const MIN = 60 * 1000;
+  const HOUR = 60 * MIN;
+  const json = { 'Content-Type': 'application/json' };
+  const signIn = async (base, body = { password: 'Portis8head', device: 'pc' }) => fetch(`${base}/api/login`, { method: 'POST', headers: json, body: JSON.stringify(body) });
+  const library = (base, token) => fetch(`${base}/api/library`, { headers: { Authorization: `Bearer ${token}` } });
+  // Used every 20 minutes for `total`, like an app left open.
+  const stay = async (base, token, total) => {
+    for (let t = 20 * MIN; t <= total; t += 20 * MIN) {
+      later(20 * MIN);
+      assert.equal((await library(base, token)).status, 200, `after ${t / MIN} minutes`);
+    }
+  };
+  mock.method(Date, 'now', () => realNow() + skew);
+  try {
+    for (const level of [3, 4]) {
+      skew = 0;
+      await withServer(async ({ base, server }) => {
+        // No password sent: turned away, and it is no wrong try that makes anyone wait.
+        for (const body of [{ device: 'pc' }, { password: '', device: 'pc' }, { password: 4711, device: 'pc' }]) {
+          const none = await signIn(base, body);
+          assert.equal(none.status, 401);
+          assert.match((await none.json()).error, /needs its PIN or password/);
+        }
+        const { token } = await (await signIn(base)).json();
+        assert.equal((await library(base, token)).status, 200);
+
+        // Used now and then, a session carries on, past the idle time in all.
+        await stay(base, token, 80 * MIN);
+        // Left alone for longer than the idle time: over.
+        later(31 * MIN);
+        const ended = await library(base, token);
+        assert.equal(ended.status, 401);
+        assert.match((await ended.json()).error, /session has ended/);
+        assert.equal((await fetch(`${base}/api/songs/x/audio?t=${token}`)).status, 401, 'audio links too');
+        // The password gives a new one.
+        const again = await (await signIn(base)).json();
+        assert.notEqual(again.token, token);
+        assert.equal((await library(base, again.token)).status, 200);
+        assert.equal(server.config.get().tokens.length, 1, 'the ended one is gone');
+
+        // However busy, a day is the most.
+        await stay(base, again.token, 23 * HOUR + 40 * MIN);
+        later(25 * MIN);
+        assert.equal((await library(base, again.token)).status, 401, 'over 24 hours, though not idle');
+      }, { password: 'Portis8head', settings: { level } });
+    }
+
+    // Signing in to a profile does not renew the session; the password does.
+    skew = 0;
+    await withServer(async ({ base }) => {
+      const { token } = await (await signIn(base)).json();
+      await stay(base, token, 23 * HOUR + 40 * MIN);
+      const made = await fetch(`${base}/api/profiles`, {
+        method: 'POST', headers: { ...json, Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: 'Anna', device: 'pc' }),
+      });
+      assert.equal(made.status, 200);
+      const profileToken = (await made.json()).token;
+      assert.equal((await library(base, profileToken)).status, 200);
+      later(25 * MIN);
+      assert.equal((await library(base, profileToken)).status, 401, 'the profile did not start a new session');
+    }, { password: 'Portis8head', settings: { level: 3 } });
+
+    // Level 2 and below: a token still lasts.
+    skew = 0;
+    await withServer(async ({ base }) => {
+      const { token } = await (await signIn(base, { password: '4711', device: 'pc' })).json();
+      later(30 * 24 * HOUR);
+      assert.equal((await library(base, token)).status, 200);
+    }, { password: '4711', settings: { level: 2 } });
+
+    // A token from before the server went public is no key either.
+    skew = 0;
+    await withServer(async ({ base, server }) => {
+      const { token } = await (await signIn(base, { password: 'Portis8head', device: 'pc' })).json();
+      assert.equal((await library(base, token)).status, 200);
+      later(2 * HOUR);
+      server.config.set({ level: 3 });
+      assert.equal((await library(base, token)).status, 401);
+    }, { password: 'Portis8head', settings: { level: 2 } });
+  } finally {
+    mock.restoreAll();
+  }
+});
+
 test('plain http straight from a public address gets no answer, unless it is a trusted proxy', async () => {
   const { createHttpServer } = require('../src/http');
   const dirs = tempDirs();
