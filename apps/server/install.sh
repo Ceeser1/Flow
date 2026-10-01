@@ -714,7 +714,7 @@ TS_FIREWALL=0
 if [ "$LEVEL" = 2 ] || { [ "$LEVEL" -ge 3 ] && have tailscale; }; then TS_FIREWALL=1; fi
 if have ufw && $SUDO ufw status 2>/dev/null | grep -q "Status: active"; then
   # The home network(s): the directly attached IPv4 subnets, not Tailscale's or Docker's.
-  SUBNETS=$(ip -4 route 2>/dev/null | awk '$1 ~ /\// && /scope link/ && $0 !~ /tailscale|docker|br-|veth/ { print $1 }')
+  SUBNETS=$(ip -4 route 2>/dev/null | awk '$1 ~ /\// && /scope link/ && $0 !~ /tailscale|docker|br-|veth/ { print $1 }' | sort -u)
   for subnet in $SUBNETS; do
     $SUDO ufw allow from "$subnet" to any port "$PORT_NOW" proto tcp >/dev/null && say "ufw: port $PORT_NOW open to $subnet"
     if [ "$DISCOVERY" = 1 ]; then
