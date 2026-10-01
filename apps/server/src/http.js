@@ -40,7 +40,9 @@
 //     router) gets no answer at all: the password would cross the internet
 //     unencrypted. Nor does plain http through the proxy from outside.
 //   - Without a strong password nobody gets past /api/hello: at level 3 or
-//     4, and whenever a request came through a proxy from outside.
+//     4, and whenever a request came through a proxy from outside. Except
+//     the home network (atHome below): it needs no password at any level,
+//     as long as the server can tell the caller is on it.
 //   - A token there is a session, not a key to keep: it ends after
 //     SESSION_IDLE without a request, or SESSION_MAX in all, or when the
 //     server is restarted, and then only the password (POST /api/login)
@@ -56,7 +58,7 @@ const http = require('http');
 const path = require('path');
 const { URL } = require('url');
 const { AUDIO_EXTS } = require('@flow/core/formats');
-const { isPrivateIp } = require('@flow/core/address');
+const { isPrivateIp, isTailscaleAddress } = require('@flow/core/address');
 const { PUBLIC_LEVEL } = require('@flow/core/password');
 const { checkPassword, hashPassword, hashToken } = require('./config');
 
@@ -282,10 +284,26 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     return '';
   }
 
+  /**
+   * A caller on the home network, as far as can be told: a private address
+   * (not Tailscale's, which is away from home), arrived directly or through a
+   * proxy that names the caller. Not trusted when it cannot be known: a proxy
+   * (on this machine, or one that is trusted) that passed on nothing about
+   * who called looks like a caller from home but may be anyone, and so does
+   * the loopback.
+   */
+  function atHome(client) {
+    if (client.outside || !isPrivateIp(client.ip) || isLoopback(client.ip) || isTailscaleAddress(client.ip)) return false;
+    return client.proxied || !trustedProxy(client.socket);
+  }
+
+  /** At level 3 and 4 the home network is let in without the password the internet needs. */
+  const openAtHome = (client) => config.get().level >= PUBLIC_LEVEL && atHome(client);
+
   /** Why a request only gets /api/hello (the server is open to the internet without a strong password), or ''. */
   function lockReason(client) {
     const cfg = config.get();
-    if ((cfg.level < PUBLIC_LEVEL && !client.outside) || (cfg.password && cfg.password.strong)) return '';
+    if ((cfg.level < PUBLIC_LEVEL && !client.outside) || (cfg.password && cfg.password.strong) || atHome(client)) return '';
     return cfg.password
       ? 'This Flow Server can be reached from the internet, and its password is too weak for that, so it lets no one in. On the server, set a stronger one: flow-server set-password'
       : 'This Flow Server can be reached from the internet but has no password, so it lets no one in. On the server, set one: flow-server set-password';
@@ -313,16 +331,20 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
 
   /**
    * The request's token entry (null: none). Throws 401 unless the request may
-   * in; without a password everyone may.
+   * in; without a password everyone may, and so may the home network at
+   * level 3 and 4 (there a token only says which profile this is, whatever
+   * its age; a session that ended counts for nothing away from home).
    */
-  function requireAuth(req, url) {
+  function requireAuth(req, url, client) {
     const cfg = config.get();
     const token = tokenOf(req, url);
     const hash = token ? hashToken(token) : '';
-    const entry = (hash && cfg.tokens.find((t) => t.hash === hash)) || null;
-    if (cfg.password && !entry) throw new HttpError(401, 'This server needs its PIN or password.');
-    if (entry && cfg.password && sessionEnded(entry, cfg)) {
-      throw new HttpError(401, 'This session has ended. This server needs its password again.');
+    const found = (hash && cfg.tokens.find((t) => t.hash === hash)) || null;
+    const open = !cfg.password || openAtHome(client);
+    const ended = !!found && !open && sessionEnded(found, cfg);
+    const entry = ended || (!found && !open) ? null : found;
+    if (!entry && !open) {
+      throw new HttpError(401, ended ? 'This session has ended. This server needs its password again.' : 'This server needs its PIN or password.');
     }
     // Remembered once an hour at most (a session, once a minute, for its idle
     // time): no write to disk for every request.
@@ -351,8 +373,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     const cfg = config.get();
     const now = Date.now();
     const token = crypto.randomBytes(24).toString('base64url');
-    // Ended sessions are of no use any more.
-    const tokens = cfg.tokens.filter((t) => t.device !== device && !sessionEnded(t, cfg, now));
+    const tokens = cfg.tokens.filter((t) => t.device !== device);
     tokens.push({ hash: hashToken(token), device, createdAt: session ? session.createdAt : now, lastSeenAt: now, profileId });
     config.set({ tokens: tokens.slice(-50) });
     return token;
@@ -535,8 +556,10 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     if (is('GET', /^\/api\/hello$/)) {
       checkExposure(client, true);
       const cfg = config.get();
+      // From home at level 3 and 4 no password is asked for, so none is announced.
+      const home = openAtHome(client);
       const answer = {
-        app: 'flow-server', protocol: PROTOCOL, features: FEATURES, version, id: cfg.id, name: cfg.name, password: !!cfg.password,
+        app: 'flow-server', protocol: PROTOCOL, features: FEATURES, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
       };
       // Where the server is on the tailnet, for the apps' Remote address. Only
       // to askers on our own networks: not to whoever a proxy passes through.
@@ -547,7 +570,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       // who got here through it knows it already.
       if (cfg.level >= PUBLIC_LEVEL && cfg.publicUrl) answer.publicUrl = cfg.publicUrl;
       // Tokens are sessions here: apps sign in with the password each time they start.
-      if (cfg.level >= PUBLIC_LEVEL) answer.session = true;
+      if (cfg.level >= PUBLIC_LEVEL && !home) answer.session = true;
       return sendJson(res, 200, answer);
     }
     if (is('GET', /^\/api\/check$/)) {
@@ -564,7 +587,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     if (is('POST', /^\/api\/login$/)) return login(req, res, client);
 
     if (!p.startsWith('/api/')) throw new HttpError(404, 'Nothing here. This is a Flow Server; open it in the Flow app.');
-    const entry = requireAuth(req, url);
+    const entry = requireAuth(req, url, client);
     const profile = profileOf(entry);
     const profileId = profile ? profile.id : null;
 

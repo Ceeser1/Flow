@@ -92,7 +92,34 @@ function open(opts = {}) {
     || path.join(os.homedir(), 'flow-music'));
   fs.mkdirSync(musicDir, { recursive: true });
 
-  const save = () => writeJsonAtomic(file, config);
+  // server.json is also written by the command line (set-password, --level)
+  // while the service runs. What the service holds in memory must not be
+  // written back over that, so it is read again whenever the file changed
+  // (looked at once a second at most, and before every write).
+  const stampOf = () => {
+    try {
+      const st = fs.statSync(file);
+      return `${st.mtimeMs}:${st.size}`;
+    } catch {
+      return '';
+    }
+  };
+  let stamp = '';
+  let checkedAt = 0;
+  const save = () => {
+    writeJsonAtomic(file, config);
+    stamp = stampOf();
+  };
+  const reload = (force) => {
+    const now = Date.now();
+    if (!force && Math.abs(now - checkedAt) < 1000) return;
+    checkedAt = now;
+    const seen = stampOf();
+    if (seen && seen !== stamp) {
+      config = clean(readJson(file));
+      stamp = seen;
+    }
+  };
   save();
 
   return {
@@ -100,8 +127,12 @@ function open(opts = {}) {
     musicDir,
     libraryFile: path.join(home, 'library.json'),
     stateFile: path.join(home, 'state.json'),
-    get: () => config,
+    get() {
+      reload(false);
+      return config;
+    },
     set(patch) {
+      reload(true);
       config = clean({ ...config, ...patch });
       save();
       return config;

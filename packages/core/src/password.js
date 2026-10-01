@@ -11,7 +11,8 @@
 //
 // Up to level 2 a password is optional; one that is set has at least 4
 // characters (a 4-digit PIN). From level 3 on, anyone on the internet can try
-// it, so it is required and has at least 8 characters with a lower-case
+// it, so it is required (of the internet; the home network is let in without
+// it) and has at least 8 characters with a lower-case
 // letter, an upper-case letter and a digit. Profile PINs are not this: they
 // only pick a profile on a server already signed in to.
 

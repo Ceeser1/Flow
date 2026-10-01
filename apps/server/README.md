@@ -176,7 +176,7 @@ and plain http is fine inside it.
 2. On the PC (and phone): install Tailscale, sign in to the same account.
 3. In Flow, connect once at home. The server tells the app its Tailscale
    address and Flow fills it into **Remote Server** (only if that box is
-   empty, and only once: clear it and it stays empty).
+   empty; empty it by hand and it is filled in again).
 
 The server prints the address when it starts, and looks again every five
 minutes, so Tailscale may come up after it. At level 1 it doesn't tell the
@@ -211,9 +211,22 @@ What the password has to be depends on the server's level (`--level`, set by
 | 4 | and the internet, through your own proxy or tunnel | the same as 3 |
 
 At level 3 or 4 `clear-password` is refused, and without a strong password the
-server lets nobody past `/api/hello`. Going up sets both at once:
+server lets nobody from outside past `/api/hello`. Going up sets both at once:
 `flow-server set-password --level 3`. Profile PINs have no rules; they only
 pick a profile once a device is past the server password.
+
+**The home network needs no password at level 3 and 4**, only the internet
+does. The server counts a caller as home when it has a private address
+(`192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`) and either connected directly, or
+came through a proxy that names the caller (`X-Forwarded-For`). It does not
+when it cannot know: Tailscale addresses (away from home), the loopback (the
+server's own machine), and a proxy that passed on nothing about who called
+(a hand-made one that forgets `X-Forwarded-For` would otherwise make the whole
+internet look like home; `doctor` checks for it). At home `hello` says
+`password: false`, so the app doesn't sign in; away it says `session: true`.
+Levels 1 and 2 are unchanged: a password that is set is asked of home too.
+Changing the password with `set-password` takes effect at once on a running
+server and signs every device out; no restart needed.
 
 The server also guards against a proxy set up by hand, at any level:
 

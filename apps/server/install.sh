@@ -270,8 +270,12 @@ if [ "$DISCOVERY" = 1 ]; then say "On."; else say "Off. The address is typed int
 
 if [ "$LEVEL" -ge 3 ]; then
   step "Password (required at level $LEVEL)"
-  if [ "$CUR_PASSWORD" = strong ]; then
-    say "Set, and strong enough. Change it later with: node $REPO/apps/server/src/main.js set-password"
+  # A password that is strong enough is kept, unless a new one is wanted (asked,
+  # or given as FLOW_SERVER_PASSWORD).
+  NEW_PASSWORD=1
+  if [ "$CUR_PASSWORD" = strong ] && [ -z "${FLOW_SERVER_PASSWORD:-}" ] && ! ask_no "A strong password is set already. Choose a new one?"; then NEW_PASSWORD=0; fi
+  if [ "$NEW_PASSWORD" = 0 ]; then
+    say "Kept. Change it later with: node $REPO/apps/server/src/main.js set-password"
   else
     say "The server will be reachable from the internet, so it needs a strong password: at least"
     say "8 characters, with a lower-case letter, an upper-case letter and a number."

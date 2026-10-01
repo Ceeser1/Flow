@@ -509,6 +509,100 @@ test('at level 3 and 4 a session ends, and only the password starts a new one', 
   }
 });
 
+test('at level 3 and 4 the home network needs no password, anyone else does', async () => {
+  const get = (base, headers = {}, p = '/api/library') => fetch(`${base}${p}`, { headers });
+  for (const settings of [{ level: 3 }, { level: 4, publicUrl: 'https://music.example.com' }]) {
+    await withServer(async ({ base }) => {
+      // A proxy on this machine names the caller: from the home network, in with no token.
+      assert.equal((await get(base, via('192.168.0.5'))).status, 200);
+      const hello = await (await get(base, via('192.168.0.5'), '/api/hello')).json();
+      assert.equal(hello.password, false, 'no password asked of home');
+      assert.equal(hello.session, undefined);
+      // Everyone else is asked, and told so.
+      for (const who of ['203.0.113.7', '100.64.0.9', '127.0.0.1', '100.101.102.103']) {
+        assert.equal((await get(base, via(who))).status, 401, who);
+        const away = await (await get(base, via(who), '/api/hello')).json();
+        assert.equal(away.password, true, who);
+        assert.equal(away.session, true, who);
+      }
+      // Straight at this machine's own address: nobody can say it is home.
+      assert.equal((await get(base)).status, 401, 'the loopback, no proxy');
+      // Home can still sign in, and a token (a profile) still works there, however old.
+      const { token } = await (await fetch(`${base}/api/login`, {
+        method: 'POST', headers: via('192.168.0.5'), body: JSON.stringify({ password: 'Portis8head', device: 'pc' }),
+      })).json();
+      assert.equal((await get(base, via('192.168.0.5', { Authorization: `Bearer ${token}` }))).status, 200);
+      // A token wrong or ended is no reason to turn home away.
+      assert.equal((await get(base, via('192.168.0.5', { Authorization: 'Bearer nonsense' }))).status, 200);
+    }, { password: 'Portis8head', settings });
+  }
+
+  // No password at all: home is in, the internet is locked out until there is one.
+  await withServer(async ({ base }) => {
+    assert.equal((await get(base, via('192.168.0.5'))).status, 200);
+    const outside = await get(base, via('203.0.113.7'));
+    assert.equal(outside.status, 403);
+    assert.match((await outside.json()).error, /has no password/);
+  }, { settings: { level: 3 } });
+
+  // Below level 3 nothing changes: a password set is asked of home too.
+  await withServer(async ({ base }) => {
+    assert.equal((await get(base, via('192.168.0.5'))).status, 401);
+    assert.equal((await (await get(base, via('192.168.0.5'), '/api/hello')).json()).password, true);
+  }, { password: '4711', settings: { level: 2 } });
+
+  // Without a proxy: a private address is home, unless it is a proxy of ours
+  // that says nothing of who called.
+  const { createHttpServer } = require('../src/http');
+  const dirs = tempDirs();
+  const config = configMod.open({ home: dirs.home, music: dirs.music });
+  config.set({ level: 3, password: configMod.passwordEntry('Portis8head') });
+  const server = createHttpServer({ config, library: { profileIds: () => [], rev: 1, snapshot: () => ({}) }, version: 'test' });
+  const ask = (remoteAddress, headers = {}) => new Promise((resolve) => {
+    const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+    const req = { method: 'GET', url: '/api/library', headers: lower, socket: { remoteAddress, localPort: 7878 }, complete: true };
+    const res = {
+      headersSent: false, setHeader() {}, writeHead(status) { this.status = status; }, end() { resolve(this.status); },
+    };
+    server.emit('request', req, res);
+  });
+  try {
+    assert.equal(await ask('::ffff:192.168.0.5'), 200, 'a caller on the home network');
+    assert.equal(await ask('::ffff:100.100.1.1'), 401, 'Tailscale is away from home');
+    assert.equal(await ask('198.51.100.20'), 403, 'plain http from a public address');
+    config.set({ trustedProxies: ['192.168.0.9'] });
+    assert.equal(await ask('192.168.0.9'), 401, 'a trusted proxy that named no caller');
+    assert.equal(await ask('192.168.0.9', via('192.168.0.5')), 200, 'a trusted proxy that named a caller from home');
+  } finally {
+    fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test('a password set from the command line while the server runs takes effect, and is not written back over', async () => {
+  const { spawnSync } = require('child_process');
+  await withServer(async ({ base, server, dirs }) => {
+    const login = (password) => fetch(`${base}/api/login`, { method: 'POST', body: JSON.stringify({ password, device: 'pc' }) });
+    const { token } = await (await login('Portis8head')).json();
+    assert.equal((await fetch(`${base}/api/library`, { headers: { Authorization: `Bearer ${token}` } })).status, 200);
+
+    const run = spawnSync(process.execPath, [path.join(__dirname, '../src/main.js'), 'set-password', 'Teardrop9ml'], {
+      env: { ...process.env, FLOW_SERVER_HOME: dirs.home, FLOW_SERVER_MUSIC: dirs.music }, encoding: 'utf8',
+    });
+    assert.equal(run.status, 0, run.stderr);
+    // The running server notices within a moment: the new one in, the old one out, every device out.
+    await new Promise((r) => setTimeout(r, 1100));
+    assert.equal((await fetch(`${base}/api/library`, { headers: { Authorization: `Bearer ${token}` } })).status, 401);
+    // Its own writes (a new token) do not bring the old password back.
+    const fresh = await login('Teardrop9ml');
+    assert.equal(fresh.status, 200);
+    assert.equal((await login('Portis8head')).status, 401);
+    const saved = JSON.parse(fs.readFileSync(path.join(dirs.home, 'server.json'), 'utf8'));
+    assert.ok(configMod.checkPassword(saved.password, 'Teardrop9ml'));
+    assert.equal(configMod.checkPassword(saved.password, 'Portis8head'), false);
+    assert.ok(configMod.checkPassword(server.config.get().password, 'Teardrop9ml'));
+  }, { password: 'Portis8head' });
+});
+
 test('plain http straight from a public address gets no answer, unless it is a trusted proxy', async () => {
   const { createHttpServer } = require('../src/http');
   const dirs = tempDirs();
