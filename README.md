@@ -181,7 +181,7 @@ The cog at the bottom left of the menu. Every change counts at once.
   - **Synchronize local changes** (on) and **Synchronize now**: songs added
     to or removed from Local Files by hand, and changes made while the
     server was off, go to the server by themselves; unticked, only with
-    Synchronize now. Songs downloaded in Flow always go up.
+    Synchronize now. Songs downloaded in Flow always go up (once the first upload to that server was agreed to or declined).
 - **Website Downloads**
   - **Always convert all downloads into MP3** (off) at 64 to 320 kbit/s
     (192), and under it **Ignore files that are already in .mp3 format** (on):
@@ -283,8 +283,11 @@ control with a cache:
   once you follow it; unfollowing removes its downloaded songs, except those
   another downloaded playlist or All Songs still holds.
 - Songs downloaded or imported in Flow are saved into Local Files as always,
-  then uploaded. Turning the server on the first time uploads all of Local
-  Files; songs the server already has (same source, or same artist, title,
+  then uploaded. The first time Flow connects to a server, it asks before
+  uploading the Local Files already on this computer ("Upload" or "Not
+  now"): a server you do not know gets nothing. Not now keeps them here, and
+  Synchronize now asks again; songs added or downloaded afterwards go up as
+  usual. Songs the server already has (same source, or same artist, title,
   mix and length) are not sent twice.
 - `apps/server/install.sh` sets the server up as a service on any Linux
   with systemd, and asks how far it should be reachable (see the server's

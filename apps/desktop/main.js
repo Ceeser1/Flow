@@ -569,6 +569,18 @@ app.whenReady().then(() => {
     onStatus: (st) => sendToWindow('server:status', st),
     onNotice: (text, kind) => sendToWindow('server:notice', { text, kind }),
     onSettings: (patch) => sendToWindow('settings:changed', patch),
+    confirmUpload: async ({ count, name }) => {
+      const { response } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+        type: 'question',
+        title: 'Flow',
+        message: `Upload your ${count} Local Files ${count === 1 ? 'song' : 'songs'} to "${name}"?`,
+        detail: 'This is a Flow Server you have not used before. If you are not sure it is yours, choose Not now: your songs stay on this computer, and Synchronize now in Settings uploads them later.',
+        buttons: ['Upload', 'Not now'],
+        defaultId: 1,
+        cancelId: 1,
+      });
+      return response === 0;
+    },
   });
   createWindow();
   // Both in the background, once the window is up. The scan tells the window

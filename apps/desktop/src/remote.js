@@ -80,7 +80,7 @@ const syncFile = () => path.join(paths.ensure(paths.rootDir()), 'server-sync.jso
 
 function emptySync(serverId = '') {
   return {
-    serverId, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, offline: [], offlineKeep: {}, fetched: {}, kept: {}, profilePin: '', remoteFilled: false, homeFilled: false,
+    serverId, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, held: null, offline: [], offlineKeep: {}, fetched: {}, kept: {}, profilePin: '', remoteFilled: false, homeFilled: false,
   };
 }
 
@@ -94,6 +94,7 @@ function loadSync() {
   for (const key of ['queue', 'sent', 'offline']) if (!Array.isArray(s[key])) s[key] = [];
   for (const key of ['songMap', 'listMap', 'fetched', 'kept', 'offlineKeep']) if (!s[key] || typeof s[key] !== 'object') s[key] = {};
   s.profile = cleanProfile(s.profile);
+  s.held = Array.isArray(s.held) ? s.held.map(String) : null;
   if (s.snapshot && (typeof s.snapshot !== 'object' || !s.snapshot.songs || !s.snapshot.lists)) s.snapshot = null;
   return s;
 }
@@ -287,7 +288,7 @@ function newCommand(type, args) {
   return { cid: newCid(), at: Date.now(), type, ...args, profile: currentProfile() };
 }
 
-let hooks = { onView: () => {}, onStatus: () => {}, onNotice: () => {}, onSettings: () => {} };
+let hooks = { onView: () => {}, onStatus: () => {}, onNotice: () => {}, onSettings: () => {}, confirmUpload: async () => true };
 let view = null;
 
 /** The addresses to try: an empty one, or one switched off in Settings, is none. */
@@ -1000,7 +1001,7 @@ async function forgetLocal(lid, { deleteFile }) {
  * up even while "Synchronize local changes" is off). `playlistsFor`: server
  * playlists a new song goes into (the ones picked when downloading it).
  */
-function queueLocalChanges({ onlyNew = false, playlistsFor = {} } = {}) {
+function queueLocalChanges({ onlyNew = false, playlistsFor = {}, lists = null } = {}) {
   const local = library.get();
   const firstTime = !sync.snapshot;
   const snap = sync.snapshot || { songs: {}, lists: {} };
@@ -1008,9 +1009,13 @@ function queueLocalChanges({ onlyNew = false, playlistsFor = {} } = {}) {
   const at = Date.now();
   const q = (type, args) => sync.queue.push(newCommand(type, { at, ...args }));
   const localIds = new Set(local.songs.map((s) => s.id));
+  // Songs that were here before this server and have not been OK'd to go up (askHeld).
+  if (sync.held) sync.held = sync.held.filter((id) => localIds.has(id));
+  const held = new Set(sync.held || []);
   let count = 0;
 
   for (const s of local.songs) {
+    if (held.has(s.id)) continue;
     const was = snap.songs[s.id];
     if (!was) {
       if (!sync.songMap[s.id]) {
@@ -1061,6 +1066,8 @@ function queueLocalChanges({ onlyNew = false, playlistsFor = {} } = {}) {
   const mapSongs = (lids) => lids.map((lid) => sync.songMap[lid]).filter(Boolean);
   const localLists = new Set(local.playlists.map((p) => p.id));
   for (const p of local.playlists) {
+    // While songs are held back, no playlist is made on the server, except the ones asked for (an import).
+    if (held.size && !(lists && lists.includes(p.id))) continue;
     const was = snap.lists[p.id];
     let target = sync.listMap[p.id];
     if (!was) {
@@ -1363,19 +1370,49 @@ async function dropUnneededCopies() {
 
 // ---- synchronizing ----
 
+let asking = null;
+/**
+ * The songs in Local Files from before this server are only sent with the
+ * user's OK. Declined, they stay here (only "Synchronize now" asks again);
+ * songs added or downloaded afterwards go up as usual.
+ */
+function askHeld() {
+  if (asking) return asking;
+  asking = (async () => {
+    queueLocalChanges(); // drops the held songs that are gone
+    const count = (sync.held || []).length;
+    if (!count) return;
+    let yes = false;
+    try {
+      yes = !!(await hooks.confirmUpload({ count, name: conn.name }));
+    } catch {
+      yes = false;
+    }
+    if (yes) {
+      sync.held = [];
+      saveSync();
+      queueLocalChanges();
+    } else {
+      hooks.onNotice(`Your ${count} Local Files songs stay on this computer. Synchronize now in Settings uploads them to "${conn.name}".`, 'info');
+    }
+  })().finally(() => { asking = null; });
+  return asking;
+}
+
 /** After connecting: what changed here goes up, then the server's changes come down. */
 function afterConnect() {
   const s = settings.all();
-  if (s.serverAutoSync || !sync.snapshot) {
-    // The first time with a server, Local Files always go up: that is what
-    // turning the server on is for.
-    if (!sync.snapshot && library.get().songs.length) {
-      hooks.onNotice(`Uploading your ${library.get().songs.length} Local Files songs to "${conn.name}"...`, 'info');
-    }
-    queueLocalChanges();
+  // The first time with a server (none of the songs here has been through it),
+  // they are held back until the user says they may go up.
+  const first = !sync.snapshot && sync.held === null && library.get().songs.length > 0;
+  if (first) {
+    sync.held = library.get().songs.map((x) => x.id);
+    saveSync();
   }
+  if (s.serverAutoSync || !sync.snapshot) queueLocalChanges();
   flushSoon();
   afterServerChange();
+  if (first) askHeld();
 }
 
 let autoSyncTimer = null;
@@ -1404,6 +1441,7 @@ async function syncNow() {
   emitStatus();
   try {
     await library.scan().catch(() => {});
+    if (sync.held && sync.held.length) await askHeld();
     const { count } = queueLocalChanges();
     await flush();
     await call('/api/rescan', { method: 'POST', timeout: 120000 }).catch(() => {});
@@ -1500,7 +1538,7 @@ function pushNew(playlistsFor = {}) {
 /** An imported playlist: goes up, into an existing server playlist when that was picked. */
 function pushImport({ localPlaylistId, mergeInto, existingIds }) {
   if (localPlaylistId && mergeInto) sync.listMap[localPlaylistId] = mergeInto;
-  queueLocalChanges({ onlyNew: true });
+  queueLocalChanges({ onlyNew: true, lists: localPlaylistId ? [localPlaylistId] : null });
   const target = localPlaylistId && sync.listMap[localPlaylistId];
   const known = (existingIds || []).filter((id) => model.songById(getView(), id));
   if (target && known.length) {
