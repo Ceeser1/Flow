@@ -261,7 +261,7 @@ fi
 step "Finding the server on the network (optional)"
 say "With this on, the Flow apps find the server by themselves on your home network: an app with"
 say "no Home address sends a small UDP question and the server answers with its name and port."
-say "It tells them what /api/hello already tells anyone on the network, never the PIN or the library,"
+say "It tells them what /api/hello already tells anyone on the network, never the password or the library,"
 say "and only devices on private addresses get an answer. It opens UDP 7878 for your home network."
 if [ "$DISCOVERY" = ask ]; then
   if ask "Turn it on?"; then DISCOVERY=1; else DISCOVERY=0; fi
@@ -279,7 +279,7 @@ if [ "$LEVEL" -ge 3 ]; then
   else
     say "The server will be reachable from the internet, so it needs a strong password: at least"
     say "8 characters, with a lower-case letter, an upper-case letter and a number."
-    [ "$CUR_PASSWORD" = pin ] && say "The PIN it has now is not enough. Every signed-in device enters the new one once."
+    [ "$CUR_PASSWORD" = pin ] && say "The password it has now is not enough. Every signed-in device enters the new one once."
     if [ -n "${FLOW_SERVER_PASSWORD:-}" ]; then
       flow set-password --level "$LEVEL" "$FLOW_SERVER_PASSWORD" || die "FLOW_SERVER_PASSWORD is not strong enough (see above)."
     elif [ -t 0 ]; then
@@ -294,7 +294,7 @@ if [ "$LEVEL" -ge 3 ]; then
     fi
   fi
 else
-  step "PIN or password (optional at level $LEVEL)"
+  step "Password (optional at level $LEVEL)"
   if [ "$CUR_PASSWORD" != none ]; then
     say "Set already. Change it later with: node $REPO/apps/server/src/main.js set-password"
   else
@@ -303,7 +303,7 @@ else
     else
       say "Without one, anyone on your home network can use the server, which is often fine."
     fi
-    if ask_no "Set a PIN or password now (4 or more characters)?"; then
+    if ask_no "Set a password now (4 or more characters)?"; then
       TRIES=1
       until flow set-password --level "$LEVEL"; do
         if [ "$TRIES" -ge 3 ]; then say "Not set; later: node $REPO/apps/server/src/main.js set-password"; break; fi
@@ -865,5 +865,5 @@ elif [ "$LEVEL" = 1 ] && [ "${CUR_LEVEL:-1}" != 1 ]; then
 fi
 say ""
 say "Update later:  cd $REPO && git pull && sudo systemctl restart $SERVICE"
-say "PIN:           node $REPO/apps/server/src/main.js set-password"
+say "Password:      node $REPO/apps/server/src/main.js set-password"
 say "Other level:   sh $REPO/apps/server/install.sh --level N"

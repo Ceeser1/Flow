@@ -29,7 +29,7 @@ const ServerChip = {
       return { text: `Connected to ${name}${as} (${where})${waiting}`, kind: 'online' };
     }
     if (st.state === 'connecting') return { text: `Connecting...${waiting}`, kind: 'busy' };
-    if (st.state === 'password') return { text: st.message || 'The server needs its PIN or password.', kind: 'error' };
+    if (st.state === 'password') return { text: st.message || 'The server needs its password.', kind: 'error' };
     if (st.state === 'error') return { text: st.message || 'Something is wrong with the server.', kind: 'error' };
     return { text: `Offline: the server cannot be reached${waiting}`, kind: 'offline' };
   },

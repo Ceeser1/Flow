@@ -176,7 +176,7 @@ handle('app:init', () => ({
 }));
 
 handle('settings:set', (patch) => {
-  // The PIN only ever arrives through server:setSecret, to be encrypted.
+  // The password only ever arrives through server:setSecret, to be encrypted.
   const clean = { ...(patch || {}) };
   delete clean.serverSecret;
   const wasRemote = remote.active();

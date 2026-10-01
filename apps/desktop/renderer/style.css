@@ -1917,7 +1917,7 @@ progress {
 
 .settings__row--off .settings__left,
 .settings__row--off .settings__right,
-.settings__row--unset .settings__right { opacity: 0.45; }
+.settings__row--unset:not(.settings__row--keep) .settings__right { opacity: 0.45; }
 
 .settings__left { min-width: 0; }
 .settings__label { font-weight: 600; color: var(--text-bright); }
@@ -2409,7 +2409,7 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 .server-chip--error .server-chip__dot { background: var(--red); }
 .server-chip--offline .server-chip__dot { background: #6a6a74; }
 
-.settings__input { width: 260px; height: 30px; }
+.settings__input { width: 220px; height: 30px; }
 .settings__input--short { width: 140px; }
 .profile-control { flex-wrap: wrap; justify-content: flex-end; }
 .profile-select { width: 140px; }

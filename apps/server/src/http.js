@@ -176,7 +176,7 @@ function sendFile(req, res, file) {
 }
 
 // Wrong passwords: each one from the same address waits twice as long as the
-// one before (1 s, 2 s, 4 s... up to 5 minutes), which makes guessing a PIN
+// one before (1 s, 2 s, 4 s... up to 5 minutes), which makes guessing a password
 // hopeless without ever locking out the right one for long. Many addresses
 // at once (from the internet, a botnet) are held back together: after
 // GLOBAL_TRIES wrong ones within GLOBAL_WINDOW, nobody may try until the
@@ -344,7 +344,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     const ended = !!found && !open && sessionEnded(found, cfg);
     const entry = ended || (!found && !open) ? null : found;
     if (!entry && !open) {
-      throw new HttpError(401, ended ? 'This session has ended. This server needs its password again.' : 'This server needs its PIN or password.');
+      throw new HttpError(401, ended ? 'This session has ended. This server needs its password again.' : 'This server needs its password.');
     }
     // Remembered once an hour at most (a session, once a minute, for its idle
     // time): no write to disk for every request.
@@ -421,7 +421,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       if (profile.pin && !checkPassword(profile.pin, String(body.pin || ''))) {
         throttle.fail(ip);
         log(`Wrong PIN for profile ${profile.name} from ${ip}`);
-        throw new HttpError(403, 'Wrong PIN or password for this profile.');
+        throw new HttpError(403, 'Wrong PIN for this profile.');
       }
       throttle.ok(ip);
       log(`Signed in: ${device} as ${profile.name}`);
@@ -460,12 +460,12 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     // An app that sends no password (it relied on an old token) is turned
     // away at once; that is no guess, so it costs no wait.
     if (cfg.password && !(typeof body.password === 'string' && body.password)) {
-      throw new HttpError(401, 'This server needs its PIN or password.');
+      throw new HttpError(401, 'This server needs its password.');
     }
     if (!checkPassword(cfg.password, String(body.password || ''))) {
       throttle.fail(ip);
       log(`Wrong password from ${ip}`);
-      throw new HttpError(401, 'Wrong PIN or password.');
+      throw new HttpError(401, 'Wrong password.');
     }
     throttle.ok(ip);
     const device = String(body.device || ip).slice(0, 80);

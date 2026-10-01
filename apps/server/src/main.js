@@ -15,7 +15,7 @@ const HELP = `Flow Server: hosts a Flow library and streams it to the Flow apps.
 
 Usage:
   flow-server [options]                 start the server
-  flow-server set-password [PIN]        require a PIN or password (asked for when left out);
+  flow-server set-password [PASSWORD]      require a password (asked for when left out);
                                         every signed-in device has to enter it again
   flow-server clear-password            let anyone on the network in again (levels 1 and 2 only)
   flow-server devices                   the devices signed in, and to which profile
@@ -153,14 +153,14 @@ async function main() {
     let pw = args.rest[0];
     if (!pw) {
       if (level >= PUBLIC_LEVEL) console.log('At least 8 characters, with a lower-case letter, an upper-case letter and a number.');
-      pw = await askHidden(level >= PUBLIC_LEVEL ? 'New password: ' : 'New PIN or password: ');
+      pw = await askHidden(level >= PUBLIC_LEVEL ? 'New password: ' : 'New password: ');
       const again = await askHidden('Once more: ');
       if (pw !== again) throw new Error('The two did not match. Nothing was changed.');
     }
     const problem = passwordProblem(pw, level);
     if (problem) throw new Error(`${problem} Nothing was changed.`);
     config.set({ ...patch, password: configMod.passwordEntry(pw), tokens: [] });
-    console.log('PIN / password set. Every device has to enter it once.');
+    console.log('Password set. Every device has to enter it once.');
     return;
   }
   // The internet: not without a strong password, which set-password (above)
@@ -178,7 +178,7 @@ async function main() {
         + 'Set a new one with flow-server set-password, or lower the level first (sh apps/server/install.sh).');
     }
     config.set({ password: null, tokens: [] });
-    console.log('No PIN or password any more: anyone who can reach the server can use it.');
+    console.log('No password any more: anyone who can reach the server can use it.');
     return;
   }
   if (args.command === 'info') {

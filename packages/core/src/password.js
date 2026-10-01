@@ -10,7 +10,7 @@
 //   4  and from the internet, through a proxy or tunnel set up by hand
 //
 // Up to level 2 a password is optional; one that is set has at least 4
-// characters (a 4-digit PIN). From level 3 on, anyone on the internet can try
+// characters (4 digits will do). From level 3 on, anyone on the internet can try
 // it, so it is required (of the internet; the home network is let in without
 // it) and has at least 8 characters with a lower-case
 // letter, an upper-case letter and a digit. Profile PINs are not this: they
@@ -43,9 +43,9 @@ function isStrongPassword(password) {
 /** Why `password` can't be the server's password at `level`, or '' when it can. */
 function passwordProblem(password, level = 1) {
   const p = String(password || '');
-  if (!p.trim()) return 'The PIN or password cannot be empty.';
+  if (!p.trim()) return 'The password cannot be empty.';
   if ((parseLevel(level) || 1) < PUBLIC_LEVEL) {
-    return p.length >= MIN_PIN ? '' : `A PIN or password needs at least ${MIN_PIN} characters.`;
+    return p.length >= MIN_PIN ? '' : `A password needs at least ${MIN_PIN} characters.`;
   }
   const missing = [];
   if (p.length < MIN_PUBLIC) missing.push(`at least ${MIN_PUBLIC} characters`);

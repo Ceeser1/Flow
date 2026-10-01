@@ -168,8 +168,8 @@ The cog at the bottom left of the menu. Every change counts at once.
     When the server is on [Tailscale](https://tailscale.com), or on the
     internet (level 3 or 4), connecting at home fills the Remote box with its
     Tailscale or `https://` address the same way.
-  - **Pin or Password if the Server requires one**: entered once, kept
-    encrypted for the Windows account.
+  - **Server Password (if the server is password protected)**: entered once, kept
+    encrypted for the Windows account; empty the box to forget it.
   - **Always Download & Synchronize on mobile internet/metered connections**
     (off; only shown with a Remote address): away from home, songs only go
     up and come down on connections Windows does not call metered, unless

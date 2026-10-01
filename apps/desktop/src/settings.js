@@ -79,9 +79,8 @@ const DEFAULTS = {
   // remote only). Both on: home first, then remote.
   serverHomeOn: true,
   serverRemoteOn: true,
-  // "Pin or Password if the Server requires one", and the PIN itself,
-  // encrypted with Windows' key for this user (Electron safeStorage).
-  serverAuth: false,
+  // The server's password, encrypted with Windows' key for this user
+  // (Electron safeStorage).
   serverSecret: '',
   // Downloads and uploads on a metered connection too (a phone's hotspot).
   serverMetered: false,
@@ -131,7 +130,7 @@ function clean(raw) {
   s.musicDir = typeof s.musicDir === 'string' ? s.musicDir : '';
   for (const key of ['serverHome', 'serverRemote']) s[key] = typeof s[key] === 'string' ? s[key].trim().slice(0, 300) : '';
   s.serverSecret = typeof s.serverSecret === 'string' ? s.serverSecret : '';
-  for (const key of ['flashOn', 'serverOn', 'serverAuth', 'serverMetered']) s[key] = s[key] === true;
+  for (const key of ['flashOn', 'serverOn', 'serverMetered']) s[key] = s[key] === true;
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn']) {
     s[key] = s[key] !== false;

@@ -337,7 +337,7 @@ const SettingsPanel = {
 
   /**
    * The Flow Server rows: on/off with its state, the two addresses (home
-   * first, then remote), the PIN, and what goes up and down when.
+   * first, then remote), the password, and what goes up and down when.
    */
   _serverRows() {
     const on = () => Store.settings.serverOn;
@@ -350,7 +350,7 @@ const SettingsPanel = {
     });
     main.querySelector('.settings__left').appendChild(this._serverNode);
     this._syncBtn = h('button.btn.btn--small', { type: 'button', onclick: () => this._syncNow() }, 'Synchronize now');
-    return [
+    const rows = [
       h('h3.settings__section', 'Flow Server'),
       main,
       this._profileRow(),
@@ -372,12 +372,11 @@ const SettingsPanel = {
         right: this._textField({ key: 'serverRemote', placeholder: '100.101.102.103:7878 or flow.example.com', when: on }),
       }),
       this._row({
-        key: 'serverAuth',
-        label: 'Pin or Password if the Server requires one',
-        desc: 'Entered once; Flow keeps it encrypted for your Windows account.',
+        label: 'Server Password (if the server is password protected)',
+        desc: 'Entered once; Flow keeps it encrypted for your Windows account. Empty the box to forget it.',
         sub: true,
         when: on,
-        right: this._secretField(() => on() && Store.settings.serverAuth),
+        right: this._secretField(on),
       }),
       this._row({
         key: 'serverMetered',
@@ -406,6 +405,9 @@ const SettingsPanel = {
         right: this._syncBtn,
       }),
     ];
+    // The button beside the box works whether or not the box is ticked.
+    rows[rows.length - 1].classList.add('settings__row--keep');
+    return rows;
   },
 
   /** A text box saved when left (or on Enter). */
@@ -429,27 +431,41 @@ const SettingsPanel = {
     return input;
   },
 
-  /** The PIN: never shown, only replaced. Saved (encrypted) when left. */
+  /**
+   * The password: never shown. A saved one is shown as dots, to be replaced or
+   * emptied (emptied and left, it is forgotten). Saved (encrypted) when left.
+   */
   _secretField(when) {
-    const input = h('input.input.settings__input.settings__input--short', {
-      type: 'password', placeholder: 'Pin/PW', autocomplete: 'new-password', spellcheck: false,
+    const MASK = '••••••';
+    const input = h('input.input.settings__input', {
+      type: 'password', placeholder: 'Password', autocomplete: 'new-password', spellcheck: false,
     });
+    let stored = !!Store.server.hasSecret;
     const draw = () => {
-      input.placeholder = Store.server.hasSecret ? '••••••' : 'Pin/PW';
+      if (document.activeElement !== input) input.value = stored ? MASK : '';
     };
+    input.addEventListener('focus', () => {
+      if (input.value === MASK) input.select();
+    });
     input.addEventListener('change', () => attempt(async () => {
-      if (!input.value) return;
+      if (input.value === MASK) return;
       await window.flow.setServerSecret(input.value);
-      input.value = '';
-      input.placeholder = '••••••';
+      stored = !!input.value;
+      draw();
     }));
+    input.addEventListener('blur', draw);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') input.blur();
     });
     draw();
+    const sync = () => {
+      stored = !!Store.server.hasSecret;
+      draw();
+    };
+    this._syncSecret = sync;
     this._refresh.push(() => {
       input.disabled = !when();
-      draw();
+      sync();
     });
     return input;
   },
@@ -470,9 +486,10 @@ const SettingsPanel = {
     this._serverNode.className = `settings__desc server-state server-state--${kind}`;
     for (const line of lines) this._serverNode.appendChild(h('div', line));
     if (this._syncBtn) {
-      this._syncBtn.disabled = !st.on || !!st.syncing;
+      this._syncBtn.disabled = st.state !== 'online' || !!st.syncing;
       this._syncBtn.textContent = st.syncing ? 'Synchronizing...' : 'Synchronize now';
     }
+    if (this._syncSecret) this._syncSecret();
     this._drawProfile();
   },
 

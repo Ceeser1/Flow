@@ -51,7 +51,7 @@ Levels 3 and 4 need a strong password (see below).
 
 Then it links `@flow/core` (there is no npm needed), offers ffmpeg, asks
 whether the apps may find the server on the network by themselves (see
-below), offers a PIN, installs Tailscale at level 2, writes and starts the
+below), offers a password, installs Tailscale at level 2, writes and starts the
 `flow-server` service (also at boot), and opens the port in ufw or firewalld
 for the home network, and at level 2 for Tailscale. Run it again any time; it
 only updates, and Enter keeps the level chosen before. A lower level closes
@@ -180,11 +180,11 @@ and plain http is fine inside it.
 
 The server prints the address when it starts, and looks again every five
 minutes, so Tailscale may come up after it. At level 1 it doesn't tell the
-apps its Tailscale address. A PIN is still worth setting: it
+apps its Tailscale address. A password is still worth setting: it
 keeps other devices on your tailnet out. The address is only told to callers
 on a private network, never to one that came through a proxy.
 
-## PIN or password
+## Password
 
 ```sh
 node apps/server/src/main.js set-password        # asks for it
@@ -193,9 +193,9 @@ node apps/server/src/main.js devices             # who has signed in
 ```
 
 Without one, anyone who can reach the server can use it, which is fine on a
-home network. Each app enters the PIN once and gets a token back. Setting a new
-PIN signs every device out. Wrong tries from one address wait longer each time
-(1 s, 2 s, 4 s ...), so guessing a PIN takes years; after 30 wrong tries within
+home network. Each app enters the password once and gets a token back. Setting a new
+password signs every device out. Wrong tries from one address wait longer each time
+(1 s, 2 s, 4 s ...), so guessing a password takes years; after 30 wrong tries within
 10 minutes from anywhere, everyone waits, so many addresses at once don't help
 either. Devices already signed in carry on (at level 3 and 4 not for ever, see
 below).
@@ -205,7 +205,7 @@ What the password has to be depends on the server's level (`--level`, set by
 
 | Level | Reachable from | Password |
 |---|---|---|
-| 1 | the home network | optional; at least 4 characters (a PIN) |
+| 1 | the home network | optional; at least 4 characters |
 | 2 | and Tailscale | optional; at least 4 characters |
 | 3 | and the internet, through Caddy | required: at least 8 characters with a lower-case letter, an upper-case letter and a number |
 | 4 | and the internet, through your own proxy or tunnel | the same as 3 |
@@ -283,7 +283,7 @@ deleted from an app's Settings; each can have a PIN of its own.
   `followPlaylist` and `unfollowPlaylist` are commands like the rest.
 - Renaming or deleting a song does it for everyone. Deleting a profile takes
   its playlists, favourites and stats; the songs stay.
-- With a server PIN or password, a device signs in to the server first, then
+- With a server password, a device signs in to the server first, then
   to a profile. The profiles' names are only shown to devices past the first.
 
 ## Where things are
@@ -335,5 +335,5 @@ kept from before (or from a lower level) gets nowhere, and a login without a
 password is refused (401, and no wrong try counted). Signing in to a profile
 carries the session on but doesn't renew it. An app that is open polls every
 few seconds, so only one that was closed or asleep notices; Flow signs in again
-by itself with the password it has saved, and says "needs a PIN or password"
+by itself with the password it has saved, and says "needs its password"
 when it has none. Levels 1 and 2 keep their tokens.

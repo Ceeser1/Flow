@@ -417,7 +417,7 @@ test('at level 3 and 4 a session ends, and only the password starts a new one', 
         for (const body of [{ device: 'pc' }, { password: '', device: 'pc' }, { password: 4711, device: 'pc' }]) {
           const none = await signIn(base, body);
           assert.equal(none.status, 401);
-          assert.match((await none.json()).error, /needs its PIN or password/);
+          assert.match((await none.json()).error, /needs its password/);
         }
         const { token } = await (await signIn(base)).json();
         assert.equal((await library(base, token)).status, 200);

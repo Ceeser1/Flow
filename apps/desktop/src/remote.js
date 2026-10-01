@@ -131,7 +131,7 @@ function saveCache() {
   }
 }
 
-// ---- the PIN, kept encrypted ----
+// ---- the passwords and PINs, kept encrypted ----
 
 function encrypt(text) {
   if (!text) return '';
@@ -243,7 +243,7 @@ function request(base, pathname, { method = 'GET', json, file, saveTo, token, ti
 /** A JSON route that must answer 2xx: its body, or an Error saying why not. */
 async function call(pathname, opts = {}) {
   const r = await request(conn.base, pathname, { token: conn.token, ...opts });
-  if (r.status === 401) throw new AuthError((r.json && r.json.error) || 'This server needs its PIN or password.');
+  if (r.status === 401) throw new AuthError((r.json && r.json.error) || 'This server needs its password.');
   if (r.status < 200 || r.status >= 300) throw new Error((r.json && r.json.error) || `The server answered ${r.status}.`);
   return r.json;
 }
@@ -430,10 +430,10 @@ function adoptServer(id) {
 
 async function login(base) {
   const s = settings.all();
-  const pw = s.serverAuth ? decrypt(s.serverSecret) : '';
-  if (!pw) throw new AuthError('This server needs a PIN or password. Tick "Pin or Password" and enter it.');
+  const pw = decrypt(s.serverSecret);
+  if (!pw) throw new AuthError('This server needs its password. Enter it under "Server Password".');
   const r = await request(base, '/api/login', { method: 'POST', json: { password: pw, device: os.hostname() }, timeout: 20000 });
-  if (r.status === 401) throw new AuthError('Wrong PIN or password.');
+  if (r.status === 401) throw new AuthError('Wrong password.');
   if (r.status !== 200 || !r.json || !r.json.token) throw new Error((r.json && r.json.error) || 'The server did not let Flow sign in.');
   sync.token = encrypt(r.json.token);
   runToken = r.json.token;
@@ -518,11 +518,10 @@ function connect() {
         continue;
       }
       adoptServer(String(hello.id || base));
-      // Without a password the token only says which profile this is. A server
-      // reachable from the internet (hello.session) wants the password each
-      // time Flow starts: only a token got in this run counts, not the one
-      // kept from the last.
-      let token = hello.session ? runToken : decrypt(sync.token);
+      // Without a password the token only says which profile this is. Where
+      // there is one, Flow signs in with it at every start: only a token got
+      // in this run counts, never the one kept from the last.
+      let token = hello.password ? runToken : decrypt(sync.token);
       try {
         if (hello.password) {
           if (token) {
@@ -567,7 +566,7 @@ function connect() {
       message = 'The server cannot be reached. Away from home, Tailscale has to be on at this PC.';
     }
     setState(state, message);
-    // A wrong PIN is not tried over and over; a changed setting tries again.
+    // A wrong password is not tried over and over; a changed setting tries again.
     if (state !== 'password') scheduleRetry();
     return false;
   })().finally(() => {
@@ -1435,7 +1434,7 @@ function init(h) {
 function reconfigure(patch) {
   const keys = Object.keys(patch || {});
   if (!keys.some((k) => k.startsWith('server'))) return;
-  const needsReconnect = keys.some((k) => ['serverOn', 'serverHome', 'serverRemote', 'serverHomeOn', 'serverRemoteOn', 'serverAuth', 'serverSecret'].includes(k));
+  const needsReconnect = keys.some((k) => ['serverOn', 'serverHome', 'serverRemote', 'serverHomeOn', 'serverRemoteOn', 'serverSecret'].includes(k));
   // An address emptied by hand is up for filling in again: the next search
   // (Home) or the next connection to the server (Remote) puts one there.
   const emptied = (key, flag) => {
@@ -1445,8 +1444,8 @@ function reconfigure(patch) {
   };
   emptied('serverHome', 'homeFilled');
   emptied('serverRemote', 'remoteFilled');
-  // A new PIN does not throw the token away: it may still be good (and says
-  // which profile this is). Refused, the PIN signs in afresh.
+  // A changed or removed password ends the sign-in made with the old one.
+  if (keys.includes('serverSecret')) runToken = '';
   if (keys.includes('serverAutoSync') && settings.get('serverAutoSync') && status.state === 'online') queueLocalChanges();
   if (keys.includes('serverMetered')) flushSoon();
   if (!needsReconnect) {
@@ -1470,7 +1469,7 @@ function reconfigure(patch) {
   if (keys.includes('serverOn') || keys.includes('serverHome') || keys.includes('serverHomeOn')) discoverHome();
 }
 
-/** The PIN typed in Settings; kept encrypted. */
+/** The server password typed in Settings; kept encrypted. */
 function setSecret(text) {
   settings.set({ serverSecret: encrypt(String(text || '')) });
   reconfigure({ serverSecret: true });
