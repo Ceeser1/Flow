@@ -42,10 +42,13 @@
 //   - Without a strong password nobody gets past /api/hello: at level 3 or
 //     4, and whenever a request came through a proxy from outside.
 //   - A token there is a session, not a key to keep: it ends after
-//     SESSION_IDLE without a request, or SESSION_MAX in all, and then only
-//     the password (POST /api/login) opens a new one. A token from before
-//     (kept by an app, or from a lower level) does not let anyone in. Signing
-//     in to a profile does not renew a session; only the password does.
+//     SESSION_IDLE without a request, or SESSION_MAX in all, or when the
+//     server is restarted, and then only the password (POST /api/login)
+//     opens a new one. A token from before (kept by an app, or from a lower
+//     level) does not let anyone in. Signing in to a profile does not renew a
+//     session; only the password does. /api/hello says "session: true" there,
+//     so an app signs in with its password each time it starts, not with the
+//     token it kept.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -226,6 +229,8 @@ const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
 
 function createHttpServer({ config, library, version, log = () => {}, tailscale = () => null }) {
   const throttle = createThrottle();
+  // Sessions of levels 3 and 4 do not outlive the server's run.
+  const startedAt = Date.now();
 
   const trustedProxy = (ip) => isLoopback(ip) || config.get().trustedProxies.includes(ip);
 
@@ -302,7 +307,8 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
   /** Whether a token's session is over (levels 3 and 4 only; below, a token lasts). */
   function sessionEnded(entry, cfg, now = Date.now()) {
     if (!(cfg.level >= PUBLIC_LEVEL)) return false;
-    return now - Math.max(entry.lastSeenAt, entry.createdAt) > SESSION_IDLE || now - entry.createdAt > SESSION_MAX;
+    return entry.createdAt < startedAt
+      || now - Math.max(entry.lastSeenAt, entry.createdAt) > SESSION_IDLE || now - entry.createdAt > SESSION_MAX;
   }
 
   /**
@@ -540,6 +546,8 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       // Its https address on the internet, for the same: no secret, anyone
       // who got here through it knows it already.
       if (cfg.level >= PUBLIC_LEVEL && cfg.publicUrl) answer.publicUrl = cfg.publicUrl;
+      // Tokens are sessions here: apps sign in with the password each time they start.
+      if (cfg.level >= PUBLIC_LEVEL) answer.session = true;
       return sendJson(res, 200, answer);
     }
     if (is('GET', /^\/api\/check$/)) {

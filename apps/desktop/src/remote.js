@@ -150,6 +150,9 @@ function decrypt(stored) {
 
 // ---- talking to the server ----
 
+// The token this run of Flow signed in with (never read back from disk).
+let runToken = '';
+
 class OfflineError extends Error {}
 class AuthError extends Error {}
 
@@ -426,9 +429,22 @@ async function login(base) {
   const r = await request(base, '/api/login', { method: 'POST', json: { password: pw, device: os.hostname() }, timeout: 20000 });
   if (r.status === 401) throw new AuthError('Wrong PIN or password.');
   if (r.status !== 200 || !r.json || !r.json.token) throw new Error((r.json && r.json.error) || 'The server did not let Flow sign in.');
-  sync.token = encrypt(r.json.token);
+  let token = r.json.token;
+  // The password gives a token with no profile: back into the one this device
+  // was signed in to, unless it has a PIN (that is not kept here; it is asked again).
+  const was = sync.profile;
+  if (was && !was.pin) {
+    try {
+      const p = await request(base, '/api/profiles/login', { method: 'POST', json: { profileId: was.id, pin: '', device: os.hostname() }, token, timeout: 20000 });
+      if (p.status === 200 && p.json && p.json.token) token = p.json.token;
+    } catch {
+      // Signed in without it; the profile can be picked again.
+    }
+  }
+  sync.token = encrypt(token);
+  runToken = token;
   saveSync();
-  return r.json.token;
+  return token;
 }
 
 /** Tries home, then remote. Resolves true once online. */
@@ -474,8 +490,11 @@ function connect() {
         continue;
       }
       adoptServer(String(hello.id || base));
-      // Without a password the token only says which profile this is.
-      let token = decrypt(sync.token);
+      // Without a password the token only says which profile this is. A server
+      // reachable from the internet (hello.session) wants the password each
+      // time Flow starts: only a token got in this run counts, not the one
+      // kept from the last.
+      let token = hello.session ? runToken : decrypt(sync.token);
       try {
         if (hello.password) {
           if (token) {
@@ -650,6 +669,7 @@ async function poll() {
 function wentWrong(err) {
   if (err instanceof AuthError) {
     sync.token = '';
+    runToken = '';
     saveSync();
     conn.token = '';
     setState('connecting');
@@ -1538,6 +1558,7 @@ async function switchProfile(token, profile) {
   if (token !== undefined) {
     conn.token = token;
     sync.token = encrypt(token);
+    runToken = token;
   }
   sync.profile = cleanProfile(profile);
   sync.sent = [];

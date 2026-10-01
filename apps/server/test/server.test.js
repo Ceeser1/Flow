@@ -458,6 +458,35 @@ test('at level 3 and 4 a session ends, and only the password starts a new one', 
       assert.equal((await library(base, profileToken)).status, 401, 'the profile did not start a new session');
     }, { password: 'Portis8head', settings: { level: 3 } });
 
+    // A restart of the server ends every session, however fresh; below level
+    // 3 a restart changes nothing.
+    for (const level of [2, 4]) {
+      skew = 0;
+      const dirs = tempDirs();
+      const c = configMod.open({ home: dirs.home, music: dirs.music });
+      c.set({ password: configMod.passwordEntry('Portis8head'), level });
+      const run = () => startServer({
+        home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1', detectTailscale: async () => null, discoveryPort: null,
+      });
+      try {
+        let server = await run();
+        let base = `http://127.0.0.1:${server.port}`;
+        assert.equal((await (await fetch(`${base}/api/hello`)).json()).session, level >= 4 ? true : undefined);
+        const { token } = await (await signIn(base)).json();
+        assert.equal((await library(base, token)).status, 200);
+        await server.close();
+        later(5);
+        server = await run();
+        base = `http://127.0.0.1:${server.port}`;
+        const after = await library(base, token);
+        assert.equal(after.status, level >= 4 ? 401 : 200, `level ${level} after a restart`);
+        if (level >= 4) assert.match((await after.json()).error, /session has ended/);
+        await server.close();
+      } finally {
+        fs.rmSync(dirs.root, { recursive: true, force: true });
+      }
+    }
+
     // Level 2 and below: a token still lasts.
     skew = 0;
     await withServer(async ({ base }) => {

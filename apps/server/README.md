@@ -314,7 +314,9 @@ in to a profile says which profile a request is for; commands and uploads
 act on it, and the library comes as it sees it.
 
 At level 3 and 4 a token is a session: it ends after 30 minutes without a
-request, or 24 hours in all, however busy. After that every request gets 401
+request, or 24 hours in all, however busy, or when the server restarts (and
+`hello` says `session: true`, so an app signs in with its password each time
+it starts instead of using the token it kept). After that every request gets 401
 until the app sends the password to `POST /api/login` again; a token an app
 kept from before (or from a lower level) gets nowhere, and a login without a
 password is refused (401, and no wrong try counted). Signing in to a profile
