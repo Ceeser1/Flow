@@ -41,6 +41,11 @@
 // "Finish all" save them there, Cancel import throws the batch away there. It
 // outlives the app, so closing asks nothing.
 //
+// A song that failed to download has "Try again" in its frame; "Retry failed"
+// in the footer tries every failed one again, one after another, and the
+// footer says how far that is and how many failed again. Here that waits
+// until the list is through; on the server it can be asked any time.
+//
 // "Cancel import" ends the whole task at once, whatever step it is in. Every
 // task has a number (`run`) that its progress messages carry; a cancelled
 // task's number is retired, so whatever it still says is ignored.
@@ -72,6 +77,7 @@ const ImportPanel = {
   _flushQueued: false,
   _chain: null,           // the "Finish this song" saves, one after another
   server: null,           // a download on the server: { id, single } of its batch
+  retry: null,            // failed songs tried again: { indexes, sending, done, failedAgain }
 
   /** A list is being read or imported: single-link downloads wait. */
   get busy() {
@@ -108,6 +114,7 @@ const ImportPanel = {
     $('copyMoveSwitch').onclick = () => this._setMove(!this.moveOriginals);
     $('copyMoveCopy').onclick = () => this._setMove(false);
     $('copyMoveMove').onclick = () => this._setMove(true);
+    $('importRetryFailed').onclick = () => this.retryFailed(this.included.filter((it) => it.state === 'failed').map((it) => it.index));
     Store.onLibrary(() => {
       if (this.state !== 'idle' && this.state !== 'listing') this._drawWarnings();
     });
@@ -232,6 +239,7 @@ const ImportPanel = {
     this.included = [];
     this.job = null;
     this.server = null;
+    this.retry = null;
     this.moveOriginals = false;
     this._resetName('');
     this._setState('idle');
@@ -310,6 +318,9 @@ const ImportPanel = {
     this._drawCopyMove(mine && this.local);
     AddPage._drawPlaylistButton();
     if (!mine) {
+      $('importRetryFailed').hidden = true;
+      $('importRetryText').hidden = true;
+      $('addFooter').classList.remove('add-footer--retry');
       // Back to the single song's footer, shown with its editor.
       const saving = AddPage.phase === 'saving';
       $('finishBtn').textContent = saving ? 'Saving...' : 'Finish';
@@ -323,21 +334,130 @@ const ImportPanel = {
     $('addFooter').hidden = false;
     const ready = this._ready().length;
     const trimmed = this.included.filter((it) => it.trim && it.state === 'ready').length;
-    const waiting = this.included.filter((it) => !it.existingId && (!it.state || it.state === 'current')).length;
+    // Local files that failed are summed up above the frames instead.
+    const failed = this.local ? 0 : this.included.filter((it) => it.state === 'failed').length;
+    const r = this.retry && !this.retry.done ? this.retry : null;
+    const waiting = this.included.filter((it) => !it.existingId && (!it.state || it.state === 'current')
+      && !(r && r.indexes.includes(it.index))).length;
     const saved = this.job ? this.job.totals.saved : 0;
     const parts = [`${Util.plural(ready, 'song')} ready`];
+    if (failed) parts.push(`${failed} failed`);
     if (trimmed) parts.push(`${trimmed} trimmed`);
     if (saved) parts.push(`${saved} saved`);
     if (waiting && this.state === 'downloading') {
       parts.push(`${waiting} still ${this.local ? 'preparing' : (this.server ? 'downloading on the server' : 'downloading')}`);
     }
     $('importFooterText').textContent = parts.join(' · ');
+    this._drawRetry(failed);
     $('finishBtn').textContent = this.state === 'saving' ? 'Saving...' : 'Finish all';
     const anything = ready || this._existingEntries().length;
     $('finishBtn').disabled = this.state !== 'trimming' || !anything;
     $('finishBtn').title = this.state === 'downloading'
       ? `Available once every song is ${this.local ? 'prepared' : 'downloaded'}` : '';
     $('importCancelAll').disabled = this.state === 'saving';
+  },
+
+  /**
+   * "Retry failed" while songs failed, or instead of it the turning circle
+   * with how far the retry is; after one, how many failed again.
+   */
+  _drawRetry(failed) {
+    this._settleRetry();
+    const r = this.retry;
+    const busy = !!(r && !r.done);
+    const btn = $('importRetryFailed');
+    btn.hidden = busy || !failed || !this._canRetry();
+    btn.disabled = this.state === 'saving';
+    let line = '';
+    if (busy) {
+      const mine = this.included.filter((it) => r.indexes.includes(it.index));
+      const started = mine.filter((it) => it.existingId || it.state).length;
+      line = `Reattempting to download song ${Math.min(Math.max(started, 1), mine.length)} of ${mine.length}`;
+    } else if (r && failed && r.failedAgain) {
+      line = `Reattempt: ${r.failedAgain} failed again`;
+    }
+    const text = $('importRetryText');
+    text.textContent = line;
+    text.hidden = !line;
+    text.classList.toggle('import-retry--busy', busy);
+    $('addFooter').classList.toggle('add-footer--retry', !btn.hidden || !!line);
+  },
+
+  /** A retry is over once none of its songs is waiting or downloading. */
+  _settleRetry() {
+    const r = this.retry;
+    if (!r || r.done || r.sending) return;
+    const mine = this.included.filter((it) => r.indexes.includes(it.index));
+    if (mine.some((it) => !it.existingId && (!it.state || it.state === 'current'))) return;
+    r.done = true;
+    r.failedAgain = mine.filter((it) => it.state === 'failed').length;
+  },
+
+  /**
+   * Failed songs can be downloaded again: on the server any time it is not
+   * saving, here once the list is through (one download task at a time).
+   */
+  _canRetry() {
+    if (this.local) return false;
+    if (this.server) return this.state !== 'saving';
+    return this.state === 'trimming';
+  },
+
+  /**
+   * "Try again" on one song, "Retry failed" on all: the songs that failed are
+   * downloaded once more, one after another.
+   */
+  async retryFailed(indexes) {
+    if (!this._canRetry()) return;
+    const items = this.included.filter((it) => indexes.includes(it.index) && it.state === 'failed');
+    if (!items.length) return;
+    // Asked while one runs (only on the server): it takes these as well.
+    let r = this.retry;
+    if (r && !r.done) r.indexes.push(...items.map((it) => it.index));
+    else r = this.retry = { indexes: items.map((it) => it.index), sending: 0, done: false, failedAgain: 0 };
+    r.sending += 1;
+    for (const it of items) {
+      it.state = null;
+      it.reason = '';
+      this._redrawFrame(it, false);
+    }
+    this._drawFooter();
+    if (this.server) {
+      const batch = await ServerImport.retry(items.map((it) => it.index));
+      if (this.retry !== r) return;
+      r.sending -= 1;
+      if (batch) this.syncServer(batch);
+      else ServerImport.poll();
+      this._drawFooter();
+      ServerImport.schedule();
+      return;
+    }
+    const run = this._newRun();
+    this.progress = { number: 0, total: items.length };
+    this._setState('downloading');
+    AddPage._progress({ title: `Downloading ${Util.plural(items.length, 'song')} again`, frac: null, status: 'Starting...' });
+    try {
+      const list = items.map((it) => ({ index: it.index, title: it.title, url: it.url, path: '', meta: it.meta }));
+      await window.flow.downloadImport(list, AddPage.downloadOptions(), run);
+    } catch (err) {
+      if (run === this.run) toast(err.message, 'error');
+    }
+    // Cancelled with "Cancel import": that has already emptied the panel.
+    if (run !== this.run) return;
+    await this._lateStates(items, run);
+    if (run !== this.run) return;
+    this._flush();
+    $('progressPanel').hidden = true;
+    // Stopped with Cancel: what was not reached can be tried again.
+    for (const it of items) {
+      if (!it.existingId && (!it.state || it.state === 'current' || it.state === 'cancelled')) {
+        it.state = 'failed';
+        it.reason = it.reason || 'cancelled';
+      }
+    }
+    r.sending -= 1;
+    this._setState('trimming');
+    this._setPending();
   },
 
   /** Copy Files / Move Originals, in the middle of the footer for local files. */
@@ -737,8 +857,11 @@ const ImportPanel = {
       ? Util.fmtClock(it.trim ? it.trim.end - it.trim.start : it.media.duration)
       : (it.duration ? Util.fmtClock(it.duration) : '');
     const clickable = st === 'ready' && this.state !== 'saving';
+    // A failed download has "Try again" in its row, in front of the length
+    // (a row with a button in it is no button itself).
+    const retry = st === 'failed' && this._canRetry();
 
-    const head = h('button.import__frame-head', {
+    const head = h(retry ? 'div.import__frame-head' : 'button.import__frame-head', retry ? {} : {
       type: 'button',
       disabled: !clickable,
       title: clickable ? (open ? 'Close (keeps the changes)' : 'Trim or rename this song') : '',
@@ -750,6 +873,7 @@ const ImportPanel = {
       h('span.import__title', { title: name }, name),
       sub ? h('span.import__sub' + (subBad ? '.import__sub--bad' : ''), sub) : null),
     it.trim ? h('span.import__flag.import__flag--trim', 'trimmed') : null,
+    retry ? h('button.btn.btn--small.btn--light-green', { type: 'button', onclick: () => this.retryFailed([it.index]) }, 'Try again') : null,
     h('span.import__dur', length),
     clickable ? h('span.import__chevron', { html: Icons.chevron }) : null);
 
@@ -757,11 +881,6 @@ const ImportPanel = {
       { dataset: { index: String(it.index) } }, head);
     // Summed up in one line instead (_drawFailSummary); a saved song is done.
     if ((st === 'failed' && this.local) || st === 'saved' || st === 'discarded') frame.hidden = true;
-    // The server tries a song that failed again when asked.
-    if (st === 'failed' && this.server) {
-      head.after(h('div.import__frame-foot.import__frame-foot--retry',
-        h('button.btn.btn--small', { type: 'button', onclick: () => ServerImport.retry(it.index) }, 'Try again')));
-    }
     if (open) {
       frame.appendChild(h('div.import__frame-body',
         h('div.import__frame-foot',
@@ -882,6 +1001,8 @@ const ImportPanel = {
     }
     // Cancelled with "Cancel import": that has already emptied the panel.
     if (run !== this.run) return;
+    await this._lateStates(toFetch, run);
+    if (run !== this.run) return;
     this._flush();
     $('progressPanel').hidden = true;
     // Anything not reached (cancelled) stays out.
@@ -896,6 +1017,18 @@ const ImportPanel = {
     const failed = this.included.filter((it) => it.state === 'failed').length;
     toast(`${Util.plural(ready, 'song')} ${job.local ? 'ready' : 'downloaded'}${failed ? `, ${failed} failed` : ''}. `
       + 'Trim any you like, then "Finish all".', ready ? 'success' : 'error');
+  },
+
+  /**
+   * The last song's state can come in just after the download task's answer
+   * (they travel separately): a moment's wait for it, so a song that got
+   * there is not counted as cancelled.
+   */
+  async _lateStates(items, run) {
+    const open = () => items.some((it) => !it.existingId && (!it.state || it.state === 'current'));
+    for (let n = 0; n < 10 && run === this.run && open(); n += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
   },
 
   /** True once a song of this import has been saved. */

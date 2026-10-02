@@ -132,14 +132,23 @@ const ServerImport = {
     this.schedule();
   },
 
-  /** "Try again" on a song that failed. */
-  async retry(index) {
-    this.touch();
-    try {
-      ImportPanel.syncServer(await window.flow.serverDownloads('retry', { index }));
-    } catch (err) {
-      toast(err.message, 'error');
+  /**
+   * "Try again" and "Retry failed" (ImportPanel.retryFailed): the server
+   * downloads these failed songs once more. Resolves the batch as the last
+   * one asked left it, or null when none could be asked.
+   */
+  async retry(indexes) {
+    let batch = null;
+    for (const index of indexes) {
+      // A fetch that left before this would bring the song back as failed.
+      this.touch();
+      try {
+        batch = await window.flow.serverDownloads('retry', { index });
+      } catch (err) {
+        toast(err.message, 'error');
+      }
     }
-    this.schedule();
+    this.touch();
+    return batch;
   },
 };

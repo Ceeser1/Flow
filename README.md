@@ -33,6 +33,9 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   pencil renames it until the first song is saved; or the existing one, if
   ticked), and **Add to Playlist** puts them into other playlists too.
   Whatever order they are finished in, the playlist keeps the source's order.
+  A song that failed to download has **Try again** in its frame, and the
+  bottom line ("47 songs ready · 3 failed") has **Retry failed**, which tries
+  them all again and says how far it is and how many failed again.
   **Cancel import** keeps the songs already finished; closing Flow with songs
   not finished asks first. A link to
   a video inside a playlist asks whether you mean the song or the playlist; a

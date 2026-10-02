@@ -171,6 +171,9 @@
             <!-- One song, or a whole import (then with how far it is). -->
             <button id="importCancelAll" class="btn btn--light-red" type="button">Cancel import</button>
             <span id="importFooterText" class="muted-text" hidden></span>
+            <!-- Songs that failed to download: tried again, and how that went. -->
+            <button id="importRetryFailed" class="btn btn--small btn--light-green" type="button" hidden>Retry failed</button>
+            <span id="importRetryText" class="muted-text" hidden></span>
           </div>
           <div class="add-footer__center">
             <!-- Local files: copy them into the save folder, or move them there. -->
