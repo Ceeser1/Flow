@@ -104,6 +104,12 @@ const Session = {
         this.list = [];
         this._emit();
       }
+      // Another profile signed in to, or this one renamed: the session's name follows.
+      const name = this.name();
+      if (name !== this._lastName) {
+        this._lastName = name;
+        this._changed();
+      }
     });
     Store.onSettings((patch) => {
       if ('sessionAllowVolume' in patch) this._changed(true);
@@ -115,10 +121,14 @@ const Session = {
     });
   },
 
-  /** "[Profile] - [Output device]": what the others see this app as. */
+  /**
+   * "[Profile] - [Output device]": what the others see this app as. Without
+   * an output name, '' lets the server name it after the PC ("Ceeser - DESKTOP-1").
+   */
   name() {
+    if (!this.outputLabel) return '';
     const profile = (Store.server.profile && Store.server.profile.name) || 'Default';
-    return `${profile} - ${this.outputLabel || 'Flow'}`;
+    return `${profile} - ${this.outputLabel}`;
   },
 
   // ---- joining, leaving, answering ----
