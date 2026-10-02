@@ -7,6 +7,8 @@
 const configMod = require('./config');
 const { createLibrary } = require('./library');
 const { createHttpServer, PROTOCOL } = require('./http');
+const { createDownloads } = require('./downloads');
+const tools = require('./tools');
 const tailscaleMod = require('./tailscale');
 const { startDiscovery } = require('./discovery');
 const { DISCOVERY_PORT } = require('@flow/core/discovery');
@@ -37,7 +39,9 @@ async function startServer(opts = {}) {
       tailscale = null;
     }
   };
-  const server = createHttpServer({ config, library, version, log, tailscale: () => tailscale });
+  // Downloads by the server itself; batches left from before a restart carry on.
+  const downloads = createDownloads({ config, library, tools, log });
+  const server = createHttpServer({ config, library, version, log, tailscale: () => tailscale, downloads });
 
   const port = opts.port !== undefined ? opts.port : config.get().port;
   await new Promise((resolve, reject) => {
@@ -61,6 +65,7 @@ async function startServer(opts = {}) {
   const timers = [
     setInterval(() => library.scan().catch(() => {}), RESCAN_MS),
     setInterval(() => library.emptyTrash(), TRASH_MS),
+    setInterval(() => downloads.expire(), TRASH_MS),
     setInterval(lookForTailscale, RESCAN_MS),
   ];
 
@@ -68,11 +73,13 @@ async function startServer(opts = {}) {
     port: server.address().port,
     config,
     library,
+    downloads,
     tailscale: () => tailscale,
     discovery: () => discovery,
     close() {
       if (discovery) discovery.close();
       for (const t of timers) clearInterval(t);
+      downloads.stop();
       library.stop();
       return new Promise((resolve) => {
         server.close(() => resolve());

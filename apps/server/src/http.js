@@ -16,6 +16,18 @@
 //   GET  /api/songs/:id/audio          the song's file
 //   POST /api/rescan                   look through the music folder again
 //
+// Downloads by the server (downloads.js; only when /api/hello lists the
+// "download" feature), one batch per profile:
+//   GET    /api/downloads              { batch } (null: none)
+//   POST   /api/downloads { url, kind, options }   a new batch: { batch }, 409 with one already
+//   DELETE /api/downloads              cancel the whole batch
+//   GET    /api/downloads/items/:i/peaks           the song's waveform
+//   GET    /api/downloads/items/:i/audio           the prepared song (Range, ?t=)
+//   POST   /api/downloads/items/:i/finish { meta, start, end, playlistIds, playlist, existing }
+//                                      saved into the library: { song, batch }
+//   POST   /api/downloads/items/:i/retry           a song that failed, again
+//   DELETE /api/downloads/items/:i     one song thrown away
+//
 //   GET  /api/profiles                 { profiles: [{ id, name, pin }], current }
 //   POST /api/profiles { name, pin, device }        a new profile, signed in: { token, profile }
 //   POST /api/profiles/login { profileId, pin, device }                  { token, profile }
@@ -61,6 +73,7 @@ const { AUDIO_EXTS } = require('@flow/core/formats');
 const { isPrivateIp, isTailscaleAddress } = require('@flow/core/address');
 const { PUBLIC_LEVEL } = require('@flow/core/password');
 const { checkPassword, hashPassword, hashToken } = require('./config');
+const { DownloadError } = require('./downloads');
 
 const PROTOCOL = 1;
 // What this server can do beyond protocol 1, for apps that know to ask.
@@ -93,7 +106,7 @@ class HttpError extends Error {
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Range');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
 }
@@ -229,7 +242,7 @@ function bareIp(value) {
 
 const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
 
-function createHttpServer({ config, library, version, log = () => {}, tailscale = () => null }) {
+function createHttpServer({ config, library, version, log = () => {}, tailscale = () => null, downloads = null }) {
   const throttle = createThrottle();
   // Sessions of levels 3 and 4 do not outlive the server's run.
   const startedAt = Date.now();
@@ -441,6 +454,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       return sendJson(res, 200, { profile: publicProfile({ ...current, name }) });
     }
     if (action === 'delete') {
+      if (downloads) downloads.dropProfile(current.id);
       library.deleteProfile(current.id);
       const cfg = config.get();
       config.set({
@@ -558,8 +572,10 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       const cfg = config.get();
       // From home at level 3 and 4 no password is asked for, so none is announced.
       const home = openAtHome(client);
+      // Downloading only with yt-dlp and ffmpeg on the machine.
+      const features = downloads && downloads.available() ? [...FEATURES, 'download'] : FEATURES;
       const answer = {
-        app: 'flow-server', protocol: PROTOCOL, features: FEATURES, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
+        app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
       };
       // Where the server is on the tailnet, for the apps' Remote address. Only
       // to askers on our own networks: not to whoever a proxy passes through.
@@ -624,12 +640,41 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     }
     m = /^\/api\/songs\/([\w-]{1,64})$/.exec(p);
     if (m && req.method === 'PUT') return upload(req, res, url, m[1], profileId);
+    if (p.startsWith('/api/downloads')) return downloadRoute(req, res, p, profileId);
+    throw new HttpError(404, 'Nothing here.');
+  }
+
+  /** The server's own downloads, those of the profile signed in to (see the top). */
+  async function downloadRoute(req, res, p, profileId) {
+    if (!downloads) throw new HttpError(404, 'This server does not download songs.');
+    const is = (method, pattern) => (method === req.method || (method === 'GET' && req.method === 'HEAD')) && pattern.test(p);
+    if (is('GET', /^\/api\/downloads$/)) return sendJson(res, 200, { batch: downloads.get(profileId) });
+    if (is('POST', /^\/api\/downloads$/)) {
+      const body = await readJsonBody(req);
+      return sendJson(res, 200, { batch: downloads.create(profileId, body) });
+    }
+    if (is('DELETE', /^\/api\/downloads$/)) {
+      downloads.cancel(profileId);
+      return sendJson(res, 200, { batch: null });
+    }
+    const m = /^\/api\/downloads\/items\/(\d{1,4})(?:\/(peaks|audio|finish|retry))?$/.exec(p);
+    if (!m) throw new HttpError(404, 'Nothing here.');
+    const [, index, what] = m;
+    if (what === 'peaks' && is('GET', /./)) return sendJson(res, 200, { peaks: downloads.peaks(profileId, index) });
+    if (what === 'audio' && is('GET', /./)) return sendFile(req, res, downloads.audioFile(profileId, index));
+    if (what === 'finish' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const result = await downloads.finish(profileId, index, body);
+      return sendJson(res, 200, { ...result, rev: library.rev });
+    }
+    if (what === 'retry' && req.method === 'POST') return sendJson(res, 200, { batch: downloads.retry(profileId, index) });
+    if (!what && req.method === 'DELETE') return sendJson(res, 200, { batch: downloads.discard(profileId, index) });
     throw new HttpError(404, 'Nothing here.');
   }
 
   const server = http.createServer((req, res) => {
     route(req, res).catch((err) => {
-      const status = err instanceof HttpError ? err.status : 500;
+      const status = err instanceof HttpError || err instanceof DownloadError ? err.status : 500;
       if (status === 500) log(`Error on ${req.method} ${req.url.split('?')[0]}: ${err.stack || err}`);
       if (res.headersSent) {
         res.destroy();

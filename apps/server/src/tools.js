@@ -4,6 +4,9 @@
 // server works without: songs found in the folder by hand then get their
 // names from the file name and no length until an app plays them, renamed
 // songs keep their old tags, and loudness is left to the apps.
+//
+// yt-dlp, when the machine has it, lets the server download songs itself
+// (downloads.js); that needs ffmpeg too.
 
 const fs = require('fs');
 const os = require('os');
@@ -21,16 +24,35 @@ function onPath(name) {
   return null;
 }
 
-// FLOW_SERVER_FFMPEG=off runs without them even when they are there (the tests).
+// FLOW_SERVER_FFMPEG=off runs without them even when they are there (the
+// tests); a folder there is where they are looked for instead of the PATH.
 const found = {};
 function find(name) {
-  if (process.env.FLOW_SERVER_FFMPEG === 'off') return null;
-  if (!(name in found)) found[name] = onPath(name);
+  const env = process.env.FLOW_SERVER_FFMPEG;
+  if (env === 'off') return null;
+  if (!(name in found)) {
+    const exe = process.platform === 'win32' ? `${name}.exe` : name;
+    found[name] = env && fs.existsSync(path.join(env, exe)) ? path.join(env, exe) : onPath(name);
+  }
   return found[name];
 }
 
 const ffmpeg = () => find('ffmpeg');
 const ffprobe = () => find('ffprobe');
+
+/**
+ * yt-dlp, or null. FLOW_SERVER_YTDLP=off: none even when it is there; a path:
+ * that program instead (the tests' fake, a .js file run with Node).
+ */
+function ytdlp() {
+  const env = process.env.FLOW_SERVER_YTDLP;
+  if (env === 'off') return null;
+  if (env) return fs.existsSync(env) ? env : null;
+  return find('yt-dlp');
+}
+
+/** Whether the server can download songs itself: yt-dlp and ffmpeg (with ffprobe). */
+const canDownload = () => !!(ytdlp() && ffmpeg() && ffprobe());
 
 /** { duration, codec, tags } of an audio file; { duration: 0, tags: {} } without ffprobe. */
 function probe(file) {
@@ -99,4 +121,4 @@ async function retag(file, meta) {
   return true;
 }
 
-module.exports = { ffmpeg, ffprobe, probe, measureLoudness, retag, onPath };
+module.exports = { ffmpeg, ffprobe, ytdlp, canDownload, probe, measureLoudness, retag, onPath };

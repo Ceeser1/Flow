@@ -128,6 +128,11 @@ const NO_AUDIO = { duration: 0, codec: '', formatName: '', bitRate: 0, tags: {} 
 function createMedia({ ffmpeg, ffprobe, ytdlp, cacheDir, missing = (name) => `${name} was not found.`, lowPriority = false }) {
   const runOpts = { lowPriority };
 
+  // A tool that is a .js file (the server tests' fake yt-dlp) runs with this Node.
+  const runTool = (exe, args, onLine, cancelToken) => (/\.js$/i.test(exe)
+    ? runProcess(process.execPath, [exe, ...args], onLine, cancelToken, null, runOpts)
+    : runProcess(exe, args, onLine, cancelToken, null, runOpts));
+
   function need(find, name) {
     const exe = find && find();
     if (!exe) throw new Error(missing(name));
@@ -211,9 +216,9 @@ function createMedia({ ffmpeg, ffprobe, ytdlp, cacheDir, missing = (name) => `${
     const exe = need(ytdlp, 'yt-dlp');
     need(ffmpeg, 'ffmpeg');
     let out = '';
-    const result = await runProcess(exe, ['--no-warnings', ...args], (line) => {
+    const result = await runTool(exe, ['--no-warnings', ...args], (line) => {
       if (!out && line.trim().startsWith('{')) out = line.trim();
-    }, cancelToken, null, runOpts);
+    }, cancelToken);
     if (result.exitCode !== 0 && !out) throw new Error(ytDlpError(result.stderrTail));
     try {
       return JSON.parse(out);
@@ -278,7 +283,7 @@ function createMedia({ ffmpeg, ffprobe, ytdlp, cacheDir, missing = (name) => `${
 
   async function fetchAndPrepare(probed, opts, report, cancelToken, { exe, dir, stem }) {
     report('download', null, 'Starting download...');
-    const result = await runProcess(exe, [
+    const result = await runTool(exe, [
       '--no-warnings', '--no-playlist', '-I', '1',
       '-f', FORMAT_SELECTOR,
       '--ffmpeg-location', path.dirname(need(ffmpeg, 'ffmpeg')),
@@ -291,7 +296,7 @@ function createMedia({ ffmpeg, ffprobe, ytdlp, cacheDir, missing = (name) => `${
     ], (line) => {
       const p = parseProgress(line);
       if (p) report('download', p.frac, p.text);
-    }, cancelToken, null, runOpts);
+    }, cancelToken);
     if (result.exitCode !== 0) throw new Error(ytDlpError(result.stderrTail));
 
     const downloaded = filesStartingWith(dir, `${stem}.src.`)

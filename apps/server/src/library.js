@@ -276,9 +276,10 @@ function createLibrary(config, log = () => {}) {
    * Takes in an uploaded file (already written to `tmp` inside the music
    * folder) as a song. The id is the app's own when it is free, so the app's
    * playlists keep pointing at it. Its favourite and stats are those of the
-   * profile it came from, and so are the playlists it goes into.
+   * profile it came from, and so are the playlists it goes into, at
+   * `playlistAt` (else the time it was added).
    */
-  function addUploaded(tmp, requestedId, meta, playlistIds, profileId = null) {
+  function addUploaded(tmp, requestedId, meta, playlistIds, profileId = null, { playlistAt } = {}) {
     checkProfile(profileId);
     const ext = String(meta.format || path.extname(tmp).slice(1)).toLowerCase();
     const title = String(meta.title || '').trim() || 'Untitled';
@@ -307,11 +308,43 @@ function createLibrary(config, log = () => {}) {
       const v = prof.view(d, profiles, profileId, profileNames());
       model.addSong(v, song);
       const lists = (Array.isArray(playlistIds) ? playlistIds : []).map(String).filter((pid) => model.playlistById(v, pid));
-      model.addSongToPlaylists(v, id, lists, song.addedAt);
+      model.addSongToPlaylists(v, id, lists, Number(playlistAt) || song.addedAt);
       prof.absorb(d, profiles, profileId, v);
     });
-    if (song.loudness === null) queueLoudness();
+    if (song.loudness === null || song.loudness === undefined) queueLoudness();
     return model.songById(data, id);
+  }
+
+  /**
+   * The playlist a download is saved into, in the profile's own lists: the
+   * one `mergeInto` names, else a new one called `name` (with a number when
+   * taken). Made at once, in one change, so two devices finishing songs of
+   * the same batch cannot make it twice. Returns its id.
+   */
+  function importPlaylist(profileId, { name, mergeInto = null, source = null }) {
+    checkProfile(profileId);
+    let id = null;
+    mutate((d) => {
+      const v = prof.view(d, profiles, profileId, profileNames());
+      let p = mergeInto ? model.playlistById(v, mergeInto) : null;
+      if (!p) p = model.createPlaylist(v, model.freePlaylistName(v, name), newId());
+      if (source && source.url) model.setPlaylistSource(v, p.id, source);
+      id = p.id;
+      prof.absorb(d, profiles, profileId, v);
+    });
+    return id;
+  }
+
+  /** A song into the profile's playlists, at the time `at` (where they sort it). */
+  function addToPlaylists(profileId, songId, playlistIds, at) {
+    checkProfile(profileId);
+    mutate((d) => {
+      const v = prof.view(d, profiles, profileId, profileNames());
+      if (!model.songById(v, songId)) return;
+      const lists = (playlistIds || []).map(String).filter((pid) => model.playlistById(v, pid));
+      model.addSongToPlaylists(v, songId, lists, at);
+      prof.absorb(d, profiles, profileId, v);
+    });
   }
 
   // ---- the folder scan ----
@@ -428,6 +461,8 @@ function createLibrary(config, log = () => {}) {
     runCommands,
     existingFor,
     addUploaded,
+    importPlaylist,
+    addToPlaylists,
     scan,
     queueLoudness,
     emptyTrash,
