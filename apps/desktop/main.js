@@ -656,6 +656,8 @@ app.whenReady().then(() => {
     onStatus: (st) => sendToWindow('server:status', st),
     onNotice: (text, kind) => sendToWindow('server:notice', { text, kind }),
     onSettings: (patch) => sendToWindow('settings:changed', patch),
+    // The live channel's events (Active Sessions).
+    onLive: (ev) => sendToWindow('server:live', ev),
     confirmUpload: async ({ count, name }) => {
       const { response } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
         type: 'question',

@@ -8,6 +8,7 @@ const configMod = require('./config');
 const { createLibrary } = require('./library');
 const { createHttpServer, PROTOCOL } = require('./http');
 const { createDownloads } = require('./downloads');
+const { createLive } = require('./live');
 const tools = require('./tools');
 const tailscaleMod = require('./tailscale');
 const { startDiscovery } = require('./discovery');
@@ -18,7 +19,7 @@ const RESCAN_MS = 5 * 60 * 1000;
 const TRASH_MS = 24 * 60 * 60 * 1000;
 
 /**
- * opts: { home, music, port, host, log, detectTailscale, discoveryPort }.
+ * opts: { home, music, port, host, log, detectTailscale, discoveryPort, livePingMs }.
  * Resolves { port, config, library, tailscale, close }. discoveryPort: the UDP
  * port the apps' search is answered on (null: not at all; left out: the
  * default port if the server's settings say so).
@@ -41,7 +42,11 @@ async function startServer(opts = {}) {
   };
   // Downloads by the server itself; batches left from before a restart carry on.
   const downloads = createDownloads({ config, library, tools, log });
-  const server = createHttpServer({ config, library, version, log, tailscale: () => tailscale, downloads });
+  // The apps' live channels (the Active Sessions); nothing about them outlives a restart.
+  const live = createLive({ log, pingMs: opts.livePingMs });
+  const server = createHttpServer({
+    config, library, version, log, tailscale: () => tailscale, downloads, live,
+  });
 
   const port = opts.port !== undefined ? opts.port : config.get().port;
   await new Promise((resolve, reject) => {
@@ -74,12 +79,14 @@ async function startServer(opts = {}) {
     config,
     library,
     downloads,
+    live,
     tailscale: () => tailscale,
     discovery: () => discovery,
     close() {
       if (discovery) discovery.close();
       for (const t of timers) clearInterval(t);
       downloads.stop();
+      live.close();
       library.stop();
       return new Promise((resolve) => {
         server.close(() => resolve());

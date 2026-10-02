@@ -15,6 +15,9 @@
 //   PUT  /api/songs/:id?meta=...       upload a song; the body is the file
 //   GET  /api/songs/:id/audio          the song's file
 //   POST /api/rescan                   look through the music folder again
+//   GET  /api/live?client=<id>&device=<name>
+//                                      the app's live channel: events as they
+//                                      happen (live.js), while the app is connected
 //
 // Downloads by the server (downloads.js; only when /api/hello lists the
 // "download" feature), one batch per profile:
@@ -242,7 +245,9 @@ function bareIp(value) {
 
 const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
 
-function createHttpServer({ config, library, version, log = () => {}, tailscale = () => null, downloads = null }) {
+function createHttpServer({
+  config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null,
+}) {
   const throttle = createThrottle();
   // Sessions of levels 3 and 4 do not outlive the server's run.
   const startedAt = Date.now();
@@ -349,8 +354,12 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
    * its age; a session that ended counts for nothing away from home).
    */
   function requireAuth(req, url, client) {
+    return authorize(tokenOf(req, url), client);
+  }
+
+  /** requireAuth for a token in hand (an open live stream checks its own again and again). */
+  function authorize(token, client) {
     const cfg = config.get();
-    const token = tokenOf(req, url);
     const hash = token ? hashToken(token) : '';
     const found = (hash && cfg.tokens.find((t) => t.hash === hash)) || null;
     const open = !cfg.password || openAtHome(client);
@@ -582,7 +591,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       // From home at level 3 and 4 no password is asked for, so none is announced.
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
-      const features = downloads && downloads.available() ? [...FEATURES, 'download'] : FEATURES;
+      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download'] : []), ...(live ? ['sessions'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
       };
@@ -629,6 +638,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       }
       return sendJson(res, 200, { rev: library.rev, library: library.snapshot(profileId), profile: publicProfile(profile) });
     }
+    if (is('GET', /^\/api\/live$/)) return openLive(req, res, url, client, entry);
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
       return sendJson(res, 200, library.runCommands(body.commands, profileId));
@@ -651,6 +661,28 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     if (m && req.method === 'PUT') return upload(req, res, url, m[1], profileId);
     if (p.startsWith('/api/downloads')) return downloadRoute(req, res, p, profileId);
     throw new HttpError(404, 'Nothing here.');
+  }
+
+  /**
+   * The live channel (live.js) of the app whose install id is ?client=. With
+   * a token that names an app, only that app may open it. ?device= is the
+   * name the app goes by; ?probe=1 is flow-server doctor's test.
+   */
+  function openLive(req, res, url, client, entry) {
+    if (!live) throw new HttpError(404, 'Nothing here.');
+    const id = String(url.searchParams.get('client') || '');
+    if (!CLIENT_ID.test(id)) throw new HttpError(400, 'The live channel needs the app\'s id.');
+    if (entry && entry.client && entry.client !== id) throw new HttpError(403, 'That is another app\'s live channel.');
+    if (!live.hasRoom(id)) throw new HttpError(503, 'Too many apps are connected to this server right now.');
+    const token = tokenOf(req, url);
+    const device = String(url.searchParams.get('device') || (entry && entry.device) || client.ip).replace(/\s+/g, ' ').trim().slice(0, 80);
+    const describe = (e) => {
+      const p = profileOf(e);
+      return { profileId: p ? p.id : null, profileName: p ? p.name : '', device, ip: client.ip };
+    };
+    live.open(req, res, {
+      client: id, ...describe(entry), probe: url.searchParams.get('probe') === '1', check: () => describe(authorize(token, client)),
+    });
   }
 
   /** The server's own downloads, those of the profile signed in to (see the top). */

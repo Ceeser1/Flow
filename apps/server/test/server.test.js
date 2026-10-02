@@ -279,7 +279,7 @@ async function get(base, route, token) {
 
 test('profiles over the network: make, sign in with a PIN, rename, sign out, delete', async () => {
   await withServer(async ({ base }) => {
-    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles']);
+    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'sessions']);
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
     await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
     assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null });

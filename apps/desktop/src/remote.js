@@ -262,8 +262,9 @@ async function call(pathname, opts = {}) {
 // ---- state for the window ----
 
 // The connection in use: base address, token, which address it is, whether
-// the server knows profiles and whether it downloads songs itself.
-const conn = { base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false };
+// the server knows profiles, whether it downloads songs itself and whether it
+// has Active Sessions (a live channel).
+const conn = { base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, sessions: false };
 const status = {
   state: 'off', // off | connecting | online | offline | password | error
   message: '',
@@ -273,6 +274,7 @@ const status = {
   searching: false, // looking for a server on the network
   lastSync: 0,
   profiles: null, // the server's profiles [{ id, name, pin }]; null: it has none to offer
+  live: false, // the live channel is open
 };
 
 // ---- profiles ----
@@ -298,7 +300,9 @@ function newCommand(type, args) {
   return { cid: newCid(), at: Date.now(), type, ...args, profile: currentProfile() };
 }
 
-let hooks = { onView: () => {}, onStatus: () => {}, onNotice: () => {}, onSettings: () => {}, confirmUpload: async () => true };
+let hooks = {
+  onView: () => {}, onStatus: () => {}, onNotice: () => {}, onSettings: () => {}, onLive: () => {}, confirmUpload: async () => true,
+};
 let view = null;
 
 /** The addresses to try: an empty one, or one switched off in Settings, is none. */
@@ -341,6 +345,10 @@ function publicStatus() {
     downloads: status.state === 'online' && conn.downloads,
     // Connected through the Tailscale address (away from home).
     tailscale: conn.via === 'remote' && isTailscaleAddress(conn.address),
+    // Active Sessions: the server has them, and the live channel is open.
+    sessions: status.state === 'online' && conn.sessions,
+    live: status.state === 'online' && status.live,
+    clientId: clientId(),
   };
 }
 
@@ -554,9 +562,12 @@ function connect() {
       if (gen !== generation) return false;
       const profiles = Array.isArray(hello.features) && hello.features.includes('profiles');
       const downloads = Array.isArray(hello.features) && hello.features.includes('download');
+      const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
       if (profiles) token = await restoreProfile(base, token);
       if (gen !== generation) return false;
-      Object.assign(conn, { base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads });
+      Object.assign(conn, {
+        base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, sessions,
+      });
       if (via === 'remote') lastHomeTry = Date.now();
       if (via === 'home') fillRemote(hello);
       retryStep = 0;
@@ -569,6 +580,7 @@ function connect() {
       }
       loadProfiles().catch(() => {});
       schedulePoll();
+      startLive();
       afterConnect();
       return true;
     }
@@ -710,6 +722,7 @@ async function poll() {
 
 /** A request failed: offline (try again soon), or signed out. */
 function wentWrong(err) {
+  if (err instanceof AuthError || err instanceof OfflineError) stopLive();
   if (err instanceof AuthError) {
     sync.token = '';
     runToken = '';
@@ -1499,6 +1512,160 @@ async function syncNow() {
   }
 }
 
+// ---- the live channel ----
+//
+// While connected to a server that has Active Sessions, one stream stays open
+// (GET /api/live, Server-Sent Events) on which the server tells this app
+// what happens at once: a session paused, a join asked for. Every event goes
+// to the window (hooks.onLive). A dropped stream is opened again after a
+// moment; one silent for longer than three pings is taken for dead.
+
+const LIVE_RETRY_MS = [1000, 2000, 5000, 10000, 20000];
+const live = {
+  req: null,
+  step: 0,
+  retryTimer: null,
+  watchdog: null,
+  pingMs: 10000,
+  // Server time minus this machine's, from the stream's greeting (rough; the
+  // window measures it properly where it matters).
+  offset: 0,
+};
+
+function liveWanted() {
+  return active() && status.state === 'online' && conn.sessions && !!conn.base;
+}
+
+function stopLive() {
+  clearTimeout(live.retryTimer);
+  clearTimeout(live.watchdog);
+  live.retryTimer = null;
+  const req = live.req;
+  live.req = null;
+  if (req) req.destroy();
+  if (status.live) {
+    status.live = false;
+    emitStatus();
+    hooks.onLive({ type: 'down', data: {} });
+  }
+}
+
+function retryLive() {
+  clearTimeout(live.retryTimer);
+  if (!liveWanted()) return;
+  const wait = LIVE_RETRY_MS[Math.min(live.step, LIVE_RETRY_MS.length - 1)];
+  live.step += 1;
+  live.retryTimer = setTimeout(startLive, wait);
+}
+
+/** Opens the stream (again), closing one already open. */
+function startLive() {
+  stopLive();
+  if (!liveWanted()) return;
+  let url;
+  try {
+    url = new URL(`${conn.base}/api/live?client=${encodeURIComponent(clientId())}&device=${encodeURIComponent(os.hostname())}`);
+  } catch {
+    return;
+  }
+  const lib = url.protocol === 'https:' ? https : http;
+  const headers = { Accept: 'text/event-stream' };
+  if (conn.token) headers.Authorization = `Bearer ${conn.token}`;
+  const req = lib.request(url, { headers });
+  live.req = req;
+  live.token = conn.token;
+  const mineNow = () => live.req === req;
+  const alive = () => {
+    clearTimeout(live.watchdog);
+    live.watchdog = setTimeout(() => {
+      if (mineNow()) req.destroy(new Error('silent'));
+    }, live.pingMs * 3 + 5000);
+  };
+  const lost = () => {
+    if (!mineNow()) return;
+    live.req = null;
+    clearTimeout(live.watchdog);
+    if (status.live) {
+      status.live = false;
+      emitStatus();
+      hooks.onLive({ type: 'down', data: {} });
+    }
+    retryLive();
+  };
+  req.on('response', (res) => {
+    if (!mineNow()) {
+      res.destroy();
+      return;
+    }
+    if (res.statusCode === 401) {
+      res.resume();
+      live.req = null;
+      wentWrong(new AuthError('Signed out.'));
+      return;
+    }
+    if (res.statusCode !== 200) {
+      // Refused (too many apps, an id the token does not allow): not tried
+      // over and over; the next connection tries again.
+      res.resume();
+      live.req = null;
+      return;
+    }
+    res.setEncoding('utf8');
+    let buffer = '';
+    alive();
+    res.on('data', (chunk) => {
+      if (!mineNow()) return;
+      alive();
+      buffer += chunk;
+      let cut;
+      while ((cut = buffer.indexOf('\n\n')) >= 0) {
+        const block = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const type = (/^event: (.+)$/m.exec(block) || [])[1];
+        if (!type) continue;
+        let data = {};
+        try {
+          data = JSON.parse((/^data: (.*)$/m.exec(block) || [])[1] || '{}');
+        } catch {
+          continue;
+        }
+        liveEvent(type, data);
+      }
+    });
+    res.on('end', lost);
+    res.on('aborted', lost);
+    res.on('error', lost);
+  });
+  req.on('error', lost);
+  req.end();
+}
+
+function liveEvent(type, data) {
+  if (type === 'hello') {
+    live.step = 0;
+    live.pingMs = Math.max(1000, Number(data.pingMs) || 10000);
+    if (Number.isFinite(Number(data.serverTime))) live.offset = Number(data.serverTime) - Date.now();
+    status.live = true;
+    emitStatus();
+  }
+  if (type === 'end') {
+    // The sign-in no longer holds: connecting again signs in afresh. Unless
+    // this app has a new token already (a profile signed in to): then only
+    // the stream opens again with it.
+    if (data.reason === 'auth' && live.token !== conn.token) {
+      startLive();
+      return;
+    }
+    if (data.reason === 'auth') {
+      stopLive();
+      wentWrong(new AuthError('Signed out.'));
+      return;
+    }
+    if (data.reason === 'replaced') return;
+  }
+  hooks.onLive({ type, data });
+}
+
 // ---- for main.js ----
 
 function init(h) {
@@ -1538,7 +1705,10 @@ function reconfigure(patch) {
   clearTimeout(pollTimer);
   clearTimeout(retryTimer);
   retryStep = 0;
-  Object.assign(conn, { base: '', token: '', via: '', name: '', address: '' });
+  stopLive();
+  Object.assign(conn, {
+    base: '', token: '', via: '', name: '', address: '', sessions: false,
+  });
   status.message = '';
   if (active()) {
     status.state = 'connecting';
@@ -1811,6 +1981,8 @@ async function switchProfile(token, profile, pin = '') {
     conn.token = token;
     sync.token = encrypt(token);
     runToken = token;
+    // The old token is gone on the server: the live channel opens with the new one.
+    startLive();
   }
   sync.profile = cleanProfile(profile);
   // Kept encrypted, so the next start can sign in to it again (restoreProfile).
@@ -1878,6 +2050,7 @@ async function deleteProfile() {
 
 function stop() {
   generation += 1;
+  stopLive();
   clearTimeout(pollTimer);
   clearTimeout(retryTimer);
   clearTimeout(flushTimer);

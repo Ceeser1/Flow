@@ -28,7 +28,10 @@ function ffmpegDir() {
 
 const tools = ffmpegDir();
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-dl-test-'));
-test.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+// Windows: a fake yt-dlp just killed may still hold a file in it for a moment.
+test.after(() => fs.rmSync(scratch, {
+  recursive: true, force: true, maxRetries: 10, retryDelay: 200,
+}));
 
 process.env.FLOW_SERVER_YTDLP = FAKE;
 process.env.FLOW_SERVER_FFMPEG = tools || 'off';

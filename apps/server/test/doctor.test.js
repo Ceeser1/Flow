@@ -27,10 +27,13 @@ const listen = (server) => new Promise((resolve) => server.listen(0, '127.0.0.1'
  * A Flow Server at level 3 with one song, behind an https proxy. The proxy
  * can make the usual mistakes: noForwarding (no X-Forwarded-For or -Proto),
  * noRange (drops Range), bodyLimit (refuses larger uploads, like nginx's
- * default). plain: 'redirect' (http sent on to https) or 'open' (the Flow
+ * default), buffered (holds every answer back until it is complete, like
+ * nginx without proxy_buffering off). plain: 'redirect' (http sent on to https) or 'open' (the Flow
  * Server itself answers plain http).
  */
-async function withProxied(fn, { noForwarding = false, noRange = false, bodyLimit = 0, plain = 'redirect' } = {}) {
+async function withProxied(fn, {
+  noForwarding = false, noRange = false, bodyLimit = 0, plain = 'redirect', buffered = false,
+} = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-doctor-test-'));
   const dirs = { home: path.join(root, 'home'), music: path.join(root, 'music') };
   configMod.open(dirs).set({ password: configMod.passwordEntry(PASSWORD), level: 3 });
@@ -55,6 +58,15 @@ async function withProxied(fn, { noForwarding = false, noRange = false, bodyLimi
     }
     if (noRange) delete headers.range;
     const up = http.request({ host: '127.0.0.1', port: flow.port, path: req.url, method: req.method, headers }, (r) => {
+      if (buffered) {
+        const chunks = [];
+        r.on('data', (c) => chunks.push(c));
+        r.on('end', () => {
+          res.writeHead(r.statusCode, r.headers);
+          res.end(Buffer.concat(chunks));
+        });
+        return;
+      }
       res.writeHead(r.statusCode, r.headers);
       r.pipe(res);
     });
@@ -91,7 +103,7 @@ test('a proxy set up right: all good', async () => {
     assert.equal(ok, true);
     const good = texts(results, 'ok').join('\n');
     for (const want of [/certificate is valid/, /Flow Server ".*" answers/, /passes on who is calling/, /caller used https/,
-      /sent on to https/, /Large uploads get through/, /Signing in works/, /\(1 song\)/, /seeking in them works/]) {
+      /sent on to https/, /Large uploads get through/, /Signing in works/, /live channel passes events on/, /\(1 song\)/, /seeking in them works/]) {
       assert.match(good, want);
     }
     // 127.0.0.1 is no address on the internet, which it says, but that's all.
@@ -122,6 +134,13 @@ test('the usual proxy mistakes are each named', async () => {
     assert.match(fails, /refuses large uploads/);
     assert.match(fails, /drops the Range header/);
   }, { noForwarding: true, noRange: true, bodyLimit: 1024 * 1024, plain: 'open' });
+});
+
+test('a proxy that holds answers back: the live channel is named', async () => {
+  await withProxied(async ({ url, plainPort }) => {
+    const { results } = await runDoctor(url, { ca: CERT, password: PASSWORD, plainPort, directPort: null });
+    assert.match(texts(results, 'warn').join('\n'), /holds back the live channel/);
+  }, { buffered: true });
 });
 
 test('a certificate the apps would not accept, and no password given', async () => {

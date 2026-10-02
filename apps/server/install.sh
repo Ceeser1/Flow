@@ -689,7 +689,7 @@ print_snippet() {
       say "- https at $URL, with a certificate the apps accept, and plain http sent on to https"
       say "- pass ${URL_PATH:-everything}${URL_PATH:+/} on to $UP${URL_PATH:+ (without $URL_PATH)}"
       say "- add X-Forwarded-For (the caller's address) and X-Forwarded-Proto: https"
-      say "- stream, not buffer: answers (songs) and request bodies (uploads)"
+      say "- stream, not buffer: answers (songs, the live channel's events) and request bodies (uploads)"
       say "- allow uploads of 2 GB, pass the Range header on, and allow requests of an hour"
       say "- keep audio links out of its access log: they carry the sign-in token"
       ;;

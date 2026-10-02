@@ -53,6 +53,60 @@ function request(url, {
   });
 }
 
+/**
+ * Opens a live channel (Server-Sent Events) and notes when each event
+ * arrives, until `until` of them came, the server ends it, or `timeout`.
+ * Resolves { status, events: [{ type, at }] } with `at` in ms from the start.
+ */
+function readEvents(url, { headers = {}, timeout = 8000, until = 2, ca, lookup } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const lib = u.protocol === 'https:' ? https : http;
+    const started = Date.now();
+    const events = [];
+    let status = 0;
+    let buffer = '';
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      req.destroy();
+      resolve({ status, events });
+    };
+    const req = lib.request(u, { headers: { Accept: 'text/event-stream', ...headers }, ca, lookup, agent: false }, (res) => {
+      status = res.statusCode;
+      if (status !== 200) {
+        res.resume();
+        res.on('end', finish);
+        return;
+      }
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        buffer += chunk;
+        let cut;
+        while ((cut = buffer.indexOf('\n\n')) >= 0) {
+          const block = buffer.slice(0, cut);
+          buffer = buffer.slice(cut + 2);
+          const type = (/^event: (.+)$/m.exec(block) || [])[1];
+          if (type) events.push({ type, at: Date.now() - started });
+          if (events.length >= until) finish();
+        }
+      });
+      res.on('end', finish);
+      res.on('error', finish);
+    });
+    const timer = setTimeout(finish, timeout);
+    req.on('error', (err) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+    req.end();
+  });
+}
+
 function json(res) {
   try {
     return JSON.parse(res.text);
@@ -296,6 +350,26 @@ async function runDoctor(address, opts = {}) {
     add('fail', `Signing in did not work: ${why(err)}.`);
     return done();
   }
+  // ---- the live channel: events passed on as they come ----
+  if ((hello.features || []).includes('sessions')) {
+    try {
+      const live = await readEvents(`${base}/api/live?client=flow-server-doctor&probe=1`, {
+        headers: { Authorization: `Bearer ${token}` }, ca: opts.ca, lookup, timeout: opts.timeout || 8000,
+      });
+      const first = live.events.find((e) => e.type === 'hello');
+      const probe = live.events.find((e) => e.type === 'probe');
+      // The server sends the second a second after the first: held back
+      // until the stream ends, both arrive at once.
+      if (live.status !== 200) add('warn', `The live channel (Active Sessions) did not open (${live.status}).`);
+      else if (first && probe && probe.at - first.at > 500) add('ok', 'The live channel passes events on as they happen (Active Sessions: pause and skip reach the other devices at once).');
+      else {
+        add('warn', 'The proxy holds back the live channel\'s events instead of passing them on as they come, so Active Sessions won\'t work through this address. nginx: proxy_buffering off; and proxy_read_timeout 1h; in the location for Flow. Others: turn off response buffering for Flow\'s address.');
+      }
+    } catch (err) {
+      add('warn', `The live channel (Active Sessions) could not be tried: ${why(err)}.`);
+    }
+  }
+
   let song;
   try {
     const res = await ask(`${base}/api/library`, { headers: { Authorization: `Bearer ${token}` }, timeout: 60000, maxBytes: 256 * 1024 * 1024 });
