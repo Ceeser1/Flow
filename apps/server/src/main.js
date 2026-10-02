@@ -34,6 +34,9 @@ Options:
   --discovery     answer the apps' search on the local network (UDP ${configMod.DEFAULT_PORT}), so they
                   fill in the address by themselves (remembered)
   --no-discovery  stop answering it (the default)
+  --downloads     let the apps have the server download songs (needs yt-dlp and ffmpeg;
+                  remembered; install.sh asks)
+  --no-downloads  never download songs, even with yt-dlp on the machine
   --level <n>     how far the server can be reached (remembered; install.sh sets it):
                     1 ${LEVEL_NAMES[1]}, 2 ${LEVEL_NAMES[2]},
                     3 ${LEVEL_NAMES[3]}, 4 ${LEVEL_NAMES[4]}
@@ -63,6 +66,8 @@ function parseArgs(argv) {
     else if (a === '--name') out.name = value();
     else if (a === '--discovery') out.discovery = true;
     else if (a === '--no-discovery') out.discovery = false;
+    else if (a === '--downloads') out.downloads = true;
+    else if (a === '--no-downloads') out.downloads = false;
     else if (a === '--level') {
       out.level = parseLevel(value());
       if (!out.level) throw new Error('--level is 1, 2, 3 or 4.');
@@ -144,6 +149,7 @@ async function main() {
   if (args.music) patch.musicDir = config.musicDir;
   if (args.name) patch.name = args.name;
   if (args.discovery !== undefined) patch.discovery = args.discovery;
+  if (args.downloads !== undefined) patch.downloads = args.downloads;
   if (args.level) patch.level = args.level;
   if (args.publicUrl !== undefined) patch.publicUrl = args.publicUrl;
   if (args.trustedProxies) patch.trustedProxies = args.trustedProxies;
@@ -186,7 +192,8 @@ async function main() {
     const cfg = config.get();
     const password = !cfg.password ? 'none' : cfg.password.strong ? 'strong' : 'pin';
     console.log([`level=${cfg.level || ''}`, `password=${password}`, `port=${cfg.port}`, `public_url=${cfg.publicUrl}`,
-      `trusted_proxies=${cfg.trustedProxies.join(',')}`, `discovery=${cfg.discovery ? 1 : 0}`, `music=${config.musicDir}`, `home=${config.home}`].join('\n'));
+      `trusted_proxies=${cfg.trustedProxies.join(',')}`, `discovery=${cfg.discovery ? 1 : 0}`, `music=${config.musicDir}`, `home=${config.home}`,
+      `downloads=${cfg.downloads === null ? '' : (cfg.downloads ? 1 : 0)}`, `ytdlp=${tools.ytdlp() || ''}`].join('\n'));
     return;
   }
   if (args.command === 'devices') {
@@ -212,7 +219,16 @@ async function main() {
   if (cfg.level >= PUBLIC_LEVEL && !(cfg.password && cfg.password.strong)) {
     console.log(`  WARNING:  reachable from the internet without a strong password, so it lets no one in. Set one: flow-server set-password`);
   }
-  console.log(`  ffmpeg:   ${tools.ffmpeg() ? 'found' : 'not found (optional: song lengths, tags and loudness for songs added by hand)'}`);
+  console.log(`  ffmpeg:   ${tools.ffmpeg() ? 'found' : 'not found (optional: song lengths, tags and loudness for songs added by hand; needed for downloads)'}`);
+  if (cfg.downloads === false) console.log('  Downloads: off (flow-server --downloads, or install.sh, turns them on)');
+  else if (!tools.ytdlp()) console.log('  yt-dlp:   not found (optional: the server downloads songs itself; install.sh offers it)');
+  else if (!tools.canDownload()) console.log('  yt-dlp:   found, but downloads also need ffmpeg');
+  else {
+    console.log('  yt-dlp:   found, the apps can let the server download songs (Download (Server))');
+    if (!tools.jsRuntime()) {
+      console.log(`  WARNING:  YouTube downloads need Deno, or Node.js 22 or newer (this is ${process.version}). install.sh offers Deno.`);
+    }
+  }
   const addrs = lanAddresses();
   console.log(`  Enter in Flow's settings: ${(addrs.length ? addrs : ['localhost']).map((a) => `${a}:${server.port}`).join('  or  ')}`);
   if (server.discovery()) console.log(`  Discovery: on, apps on this network find the server by themselves (UDP ${server.discovery().port})`);

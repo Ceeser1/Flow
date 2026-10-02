@@ -54,6 +54,16 @@ function ytdlp() {
 /** Whether the server can download songs itself: yt-dlp and ffmpeg (with ffprobe). */
 const canDownload = () => !!(ytdlp() && ffmpeg() && ffprobe());
 
+/**
+ * What yt-dlp can solve YouTube's JavaScript with: Deno (which it uses by
+ * itself), else this Node.js from version 22 (which it uses when told to, in
+ * /etc/yt-dlp.conf: install.sh writes that), else null: YouTube then fails.
+ */
+function jsRuntime() {
+  if (find('deno')) return 'deno';
+  return Number(process.versions.node.split('.')[0]) >= 22 ? 'node' : null;
+}
+
 /** { duration, codec, tags } of an audio file; { duration: 0, tags: {} } without ffprobe. */
 function probe(file) {
   return new Promise((resolve) => {
@@ -121,4 +131,4 @@ async function retag(file, meta) {
   return true;
 }
 
-module.exports = { ffmpeg, ffprobe, ytdlp, canDownload, probe, measureLoudness, retag, onPath };
+module.exports = { ffmpeg, ffprobe, ytdlp, canDownload, jsRuntime, probe, measureLoudness, retag, onPath };

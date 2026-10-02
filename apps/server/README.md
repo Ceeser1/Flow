@@ -33,7 +33,7 @@ A song deleted from an app is not gone at once. Its file moves to
 
 ```sh
 git clone <the repo> ~/Flow && cd ~/Flow
-sh apps/server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --uninstall
+sh apps/server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --downloads, --no-downloads, --uninstall
 ```
 
 Works on any Linux with systemd and Node 18 or newer (a Raspberry Pi, a home
@@ -49,9 +49,11 @@ level includes the ones above it:
 
 Levels 3 and 4 need a strong password (see below).
 
-Then it links `@flow/core` (there is no npm needed), offers ffmpeg, asks
-whether the apps may find the server on the network by themselves (see
-below), offers a password, installs Tailscale at level 2, writes and starts the
+Then it links `@flow/core` (there is no npm needed), asks whether the server
+should download songs itself (and if so installs ffmpeg, yt-dlp and Deno for
+it; see [Downloads by the server](#downloads-by-the-server-optional)), offers
+ffmpeg otherwise, asks whether the apps may find the server on the network by
+themselves (see below), offers a password, installs Tailscale at level 2, writes and starts the
 `flow-server` service (also at boot), and opens the port in ufw or firewalld
 for the home network, and at level 2 for Tailscale. Run it again any time; it
 only updates, and Enter keeps the level chosen before. A lower level closes
@@ -146,7 +148,56 @@ With ffmpeg installed (`sudo apt install ffmpeg`), the server reads the length
 and tags of songs dropped into the folder by hand, writes new names into a
 renamed song's tags, and measures each song's loudness for "Equalize volume".
 Without it, those songs show no length until an app plays them. Songs uploaded
-from an app bring all of that with them either way.
+from an app bring all of that with them either way. The server also needs it
+to download songs itself (below).
+
+## Downloads by the server (optional)
+
+The server can download songs itself: connected to it, Flow's Add Songs page
+has **Download (Server)** next to its own Download. The server reads the
+link (a song, a playlist, a SoundCloud set, a Spotify list by way of YouTube),
+downloads the songs one after another in the background, at low priority so
+streaming does not suffer, and keeps them aside until an app has trimmed,
+named and finished them. A phone or a browser then needs no downloader of its
+own, and a long playlist keeps downloading when the app is closed.
+
+- **What it needs:** yt-dlp and ffmpeg on the server, and for YouTube a
+  JavaScript runtime for yt-dlp: Deno, or Node.js 22 or newer with
+  `--js-runtimes node` in `/etc/yt-dlp.conf`. `install.sh` asks early on
+  whether the server should download songs; with yes it installs ffmpeg, the
+  standalone yt-dlp from github.com/yt-dlp into `/usr/local/bin` (a timer
+  updates it once a day, since YouTube changes often enough that a yt-dlp a
+  few weeks old stops working), and Deno when Node.js is older than 22 (there
+  is no Deno for 32-bit ARM: there, YouTube fails and other sites work).
+  `flow-server --downloads` / `--no-downloads` turns it on or off later; never
+  set, it is on whenever the tools are there. The server's start says what it
+  found, `/api/hello` lists `download` in `features` only when it can, and
+  `doctor` says whether it does.
+- **One batch per profile** (without profiles, one for everybody), in
+  `staging/` in the server's own folder, not the music folder, so nothing
+  shows in the library until a song is finished. While one is open the apps
+  start no other download; it is shown on Add Songs on every device of that
+  profile, until each song is finished or thrown away, or the whole batch is
+  cancelled. A batch nobody opens or finishes anything of for 30 days is
+  thrown away (`downloadKeepDays` in `server.json`), and so is a deleted
+  profile's. A restart carries on where it was.
+- **Finishing a song** cuts the trim out with ffmpeg straight into the music
+  folder, with the names in its tags, and adds it like an upload: into the
+  playlist (made by the first song finished) at its place in the source,
+  whatever order the songs are finished in, and into the playlists picked.
+  Two devices finishing songs of the same batch at once make the playlist
+  only once.
+- **Limits:** only links to pages on the internet are downloaded (http or
+  https, or `spotify:`), never addresses of this machine or the home network
+  (localhost, 192.168..., names ending in `.local` and the like): yt-dlp reads
+  whatever page it is given, so a link to the router would have the server
+  fetch it. A name on the internet that leads home is not caught. At most 500
+  songs a batch, one download at a time (`downloadJobs` in `server.json`, up
+  to 3), 20 minutes a song, and none when the disk has less than 500 MB free.
+  Age-restricted videos need a signed-in account, which the server does not
+  have: they fail with that reason. At level 3 and 4 the home network needs
+  no password, so anyone on it can start downloads; so can anyone with the
+  password from outside.
 
 ## Finding the server on the network (optional, off by default)
 
@@ -291,6 +342,7 @@ deleted from an app's Settings; each can have a PIN of its own.
 | | Linux | Windows |
 |---|---|---|
 | library, settings | `~/.local/share/flow-server` | `%LOCALAPPDATA%\Flow\server` |
+| downloads not finished yet | `staging/` in there, a folder per profile | the same |
 | music | `~/flow-music` | `~/flow-music` |
 
 `FLOW_SERVER_HOME` and `FLOW_SERVER_MUSIC` point them elsewhere.
@@ -320,6 +372,20 @@ report changes.
 | `POST /api/profiles` | `{ name, pin, device }`: a new profile, signed in → `{ token, profile }` |
 | `POST /api/profiles/login` | `{ profileId, pin, device }` → `{ token, profile }` |
 | `POST /api/profiles/logout`, `/rename` `{ name }`, `/delete` | the signed-in profile |
+| `GET /api/downloads` | the profile's download batch: `{ batch }`, `null` when there is none |
+| `POST /api/downloads` | `{ url, kind: 'song' or 'list', options: { alwaysMp3, quality, keepMp3 } }`: a new batch, read in the background (`state: 'listing'`, then `'ready'` or `'failed'` with `error`); 409 with one open already |
+| `DELETE /api/downloads` | cancel the whole batch: downloads stopped, files gone |
+| `GET /api/downloads/items/<i>/peaks` | `{ peaks }`: the song's waveform, for the trim editor |
+| `GET /api/downloads/items/<i>/audio` | the prepared song, with Range (and `?t=`), to preview the trim |
+| `POST /api/downloads/items/<i>/finish` | `{ meta: { artist, title, mix }, start, end, playlistIds, playlist: { name, mergeInto } or null, existing: [i] }`: saved into the library → `{ song, batch, rev }`; `batch` is `null` once every song is dealt with |
+| `POST /api/downloads/items/<i>/retry` | a song that failed, again |
+| `DELETE /api/downloads/items/<i>` | one song thrown away |
+
+A batch's songs (`items`) are `queued`, `downloading`, `converting`, `ready`
+(with `meta`, the names guessed, and `summary`, what was done to the file),
+`failed` (with `error`), `library` (the library has it: not downloaded;
+`existing` says which), `saving`, `saved`, `added` (a library song put into the
+playlist) or `discarded`. One that is downloading has `progress: { frac, text }`.
 
 With a password, requests carry `Authorization: Bearer <token>`, or `?t=<token>`
 for audio (an `<audio>` element can't send headers). The token from signing

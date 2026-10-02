@@ -286,3 +286,27 @@ test('a batch nobody looks at expires, and each profile sees only its own', need
     assert.deepEqual(fs.readdirSync(path.join(server.config.home, 'staging')), []);
   });
 });
+
+test('only links to the internet are downloaded, never this machine or the home network', () => {
+  const { checkLink } = require('../src/downloads');
+  for (const bad of ['http://127.0.0.1/x', 'http://localhost:7878/api/library', 'http://192.168.0.1/', 'http://10.0.0.5/a',
+    'http://[::1]/', 'http://169.254.169.254/latest/meta-data', 'http://2130706433/', 'http://router.local/', 'http://nas/',
+    'file:///etc/passwd', 'ftp://example.com/a.mp3', 'https://user:pass@example.com/x', 'http://100.101.102.103/']) {
+    assert.throws(() => checkLink(bad), (err) => err.status === 400, bad);
+  }
+  assert.equal(checkLink('youtube.com/watch?v=abc'), 'https://youtube.com/watch?v=abc');
+  assert.equal(checkLink('https://soundcloud.com/a/b'), 'https://soundcloud.com/a/b');
+  assert.equal(checkLink('spotify:playlist:37i9dQZF1DXcBWIGoYBM5M'), 'spotify:playlist:37i9dQZF1DXcBWIGoYBM5M');
+});
+
+test('downloads turned off stay off, with yt-dlp and ffmpeg there', needsFfmpeg, async () => {
+  await withServer(async ({ base, server }) => {
+    server.config.set({ downloads: false });
+    assert.ok(!(await api(base, 'GET', '/api/hello')).json.features.includes('download'));
+    const r = await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/a', kind: 'song' });
+    assert.equal(r.status, 501);
+    assert.match(r.json.error, /turned off/);
+    server.config.set({ downloads: true });
+    assert.ok((await api(base, 'GET', '/api/hello')).json.features.includes('download'));
+  });
+});

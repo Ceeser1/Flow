@@ -68,8 +68,11 @@ function clean(raw) {
       .filter((a) => /^[0-9a-f.:]{2,45}$/.test(a))
       .slice(0, 16),
     password: pw,
-    // Downloads (downloads.js): how many run at once, and how many days a
-    // batch nobody looks at is kept before it is thrown away.
+    // Downloads (downloads.js): whether the server offers them (null: never
+    // said, which means yes when yt-dlp and ffmpeg are there; install.sh
+    // asks), how many run at once, and how many days a batch nobody looks at
+    // is kept before it is thrown away.
+    downloads: typeof r.downloads === 'boolean' ? r.downloads : null,
     downloadJobs: Math.min(3, Math.max(1, Math.round(Number(r.downloadJobs)) || 1)),
     downloadKeepDays: Math.min(365, Math.max(1, Math.round(Number(r.downloadKeepDays)) || 30)),
     profiles,

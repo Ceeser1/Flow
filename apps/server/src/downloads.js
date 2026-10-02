@@ -27,11 +27,13 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const net = require('net');
 const path = require('path');
 const { createMedia, ProcessCancelledError } = require('@flow/core/media');
 const { createLister, groupToken, existingInfo } = require('@flow/core/listing');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { MP3_QUALITIES } = require('@flow/core/formats');
+const { isPrivateIp } = require('@flow/core/address');
 
 const MAX_ITEMS = 500;
 const ITEM_TIMEOUT = 20 * 60 * 1000;
@@ -48,6 +50,36 @@ class DownloadError extends Error {
 }
 
 const keyOf = (profileId) => profileId || '_shared';
+
+/**
+ * A link the server may hand to yt-dlp: a web page (http or https) on the
+ * internet, or a Spotify link. Never this machine or the home network: yt-dlp
+ * reads any page it is given, so a link to the router or another device at
+ * home would have the server fetch it for whoever sent it. (A name on the
+ * internet that leads home is not caught; only addresses and home names are.)
+ * The link is passed on as the one argument it is, after fixed options.
+ */
+function checkLink(text) {
+  const raw = String(text || '').trim();
+  if (!raw || raw.length > 2000) throw new DownloadError(400, 'Paste a link first.');
+  if (/^spotify:[a-z]+:[A-Za-z0-9]+$/i.test(raw)) return raw;
+  let u;
+  try {
+    u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
+  } catch {
+    throw new DownloadError(400, 'That does not look like a link.');
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new DownloadError(400, 'Only web links (http or https) can be downloaded.');
+  if (u.username || u.password) throw new DownloadError(400, 'Links with a user name or password in them are not downloaded.');
+  const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const local = /^(localhost|.*\.localhost|.*\.local|.*\.lan|.*\.home\.arpa|.*\.internal)$/.test(host) || !host.includes('.') && !net.isIP(host);
+  const v4 = net.isIPv4(host) ? host.split('.').map(Number) : null;
+  const special = v4 ? (v4[0] === 0 || (v4[0] === 169 && v4[1] === 254) || v4[0] >= 224) : (net.isIPv6(host) && (host === '::' || /^fe[89ab]/.test(host)));
+  if (local || (net.isIP(host) && (isPrivateIp(host) || special))) {
+    throw new DownloadError(400, 'The server does not download from itself or the home network. Paste a link to a page on the internet.');
+  }
+  return u.href;
+}
 
 /** The conversion choice an app sends, as formats.planFor takes it. */
 function cleanOptions(o) {
@@ -110,7 +142,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     writeJsonAtomic(path.join(dirOf(batch.key), 'batch.json'), batch);
   }
 
-  function drop(key) {
+  function drop(key, why = 'thrown away') {
     const batch = batches.get(key);
     batches.delete(key);
     const group = listing.get(key);
@@ -120,7 +152,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       if (k.startsWith(`${key}/`)) token.cancel ? token.cancel() : (token.cancelled = true);
     }
     removeQuietly(dirOf(key));
-    if (batch) log(`Download batch ${batch.source.name ? `"${batch.source.name}" ` : ''}thrown away`);
+    if (batch) log(`Download batch ${batch.source.name ? `"${batch.source.name}" ` : ''}${why}`);
   }
 
   /** Whatever a download that was cut off left behind: partial files of items not ready. */
@@ -409,11 +441,11 @@ function createDownloads({ config, library, tools, log = () => {} }) {
    * 'song' reads only the one song even from a link into a playlist.
    */
   function create(profileId, { url, kind, options } = {}) {
+    if (config.get().downloads === false) throw new DownloadError(501, 'Downloads are turned off on this server (flow-server --downloads turns them on).');
     if (!tools.canDownload()) throw new DownloadError(501, 'This server cannot download songs: it needs yt-dlp and ffmpeg.');
     const key = keyOf(profileId);
     if (batches.has(key)) throw new DownloadError(409, 'There is a download on the server already. Finish or cancel it first.');
-    const link = String(url || '').trim();
-    if (!link || link.length > 2000) throw new DownloadError(400, 'Paste a link first.');
+    const link = checkLink(url);
     const now = Date.now();
     const batch = {
       id: crypto.randomBytes(6).toString('hex'),
@@ -475,7 +507,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   /** The batch is over once no song is left to deal with. */
   function endIfDone(batch) {
     if (batch.state !== 'ready' || batch.items.some((it) => OPEN.has(it.state))) return false;
-    drop(batch.key);
+    drop(batch.key, 'done');
     return true;
   }
 
@@ -589,7 +621,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   function expire(now = Date.now()) {
     const keep = config.get().downloadKeepDays * DAY;
     for (const [key, batch] of [...batches]) {
-      if (now - batch.lastActivity > keep) drop(key);
+      if (now - batch.lastActivity > keep) drop(key, 'expired');
     }
   }
 
@@ -603,7 +635,8 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   pump();
 
   return {
-    available: () => tools.canDownload(),
+    // Turned on (or never turned off) and the tools are there.
+    available: () => config.get().downloads !== false && tools.canDownload(),
     get,
     create,
     cancel,
@@ -622,4 +655,4 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   };
 }
 
-module.exports = { createDownloads, DownloadError };
+module.exports = { createDownloads, DownloadError, checkLink };

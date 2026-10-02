@@ -344,7 +344,8 @@ apps/desktop/tools/
 ```
 npm install     # once, in the Flow folder: installs every app and package
 npm start       # run the desktop app
-npm test        # every package's tests: no network, no ffmpeg
+npm test        # every package's tests: no network; the parts that need ffmpeg run
+                # with apps/desktop/tools/ (or ffmpeg on the PATH), else are skipped
 npm run icon    # build/icon.ico and renderer/assets/icon.png from build/flow.png
 npm run dist    # build the installer into apps/desktop/dist/
 ```
@@ -380,15 +381,22 @@ apps/android/    the Android app, planned
 
 `packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,
 `libraryModel.js`, `commands.js`, `profiles.js`, `address.js`, `tags.js`,
-`spotify.js`,
-`relocate.js` and `jsonFile.js`, each required as `@flow/core/<name>`. Everything below is under `apps/desktop/`.
+`spotify.js`, `relocate.js` and `jsonFile.js`, each required as
+`@flow/core/<name>`, and the download work the app and the server share:
+`media.js` (yt-dlp and ffmpeg: probe, download, keep / lift out / convert,
+the trim cut with tags, the waveform's peaks; each app makes one with its own
+tools and folder), `listing.js` (whole playlists and Spotify lists read, songs
+fetched one after another) and `processRunner.js`. Everything below is under `apps/desktop/`.
 
 - `main.js` holds the window and every IPC route; `preload.js` exposes
   `window.flow`. The window runs sandboxed with no Node.
 - `src/` (plus `@flow/core`) is the work, none of it touching the DOM:
-  - `downloader.js`: yt-dlp probe and download, then keep / lift out / convert
-  - `importer.js`: whole playlists, listed as a checklist, then imported;
-    `spotify.js` reads Spotify lists and picks the YouTube upload per song
+  - `media.js`: `@flow/core/media` with the bundled tools and the cache;
+    `downloader.js` and `waveform.js` are the app's handles on it
+  - `importer.js`: whole playlists (`@flow/core/listing`) and local files
+    (`localScan.js` looks through a folder), each song trimmed in its frame,
+    then saved; `spotify.js` reads Spotify lists and picks the YouTube upload
+    per song
   - `formats.js`: which format a download is kept in
   - `exporter.js`: the trim cut and the tags, into `Music\FlowPlayer`
   - `titleParser.js`: Artist / Title / Mix from yt-dlp's info
@@ -400,7 +408,6 @@ apps/android/    the Android app, planned
     (`commands.js` is what each change does); `network.js` asks Windows
     whether the connection is metered
   - `settings.js`: what the app remembers, Settings' choices included
-  - `waveform.js`: the peaks the trim editor draws
 - `renderer/app/` is the window, one plain script per part, loaded in the order
   `index.html` lists them. `util.js`, `queue.js` and `spectrum.js` are also
   required by the tests. `trim.js` is LWClipper's trim slider and waveform
