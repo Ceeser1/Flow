@@ -150,7 +150,14 @@
               <button id="previewPlay" class="round-btn round-btn--main" type="button" title="Play (Space)"></button>
               <span id="previewTime" class="time-readout">0:00 / 0:00</span>
             </div>
-            <div id="spanLabel" class="span-label"></div>
+            <div class="span-cell">
+              <div id="spanLabel" class="span-label"></div>
+              <div id="prevVolWrap" class="span-volume">
+                <button id="prevVolBtn" class="icon-btn span-volume__btn" type="button" title="Mute"></button>
+                <input id="prevVolSlider" class="volume-slider" type="range" min="0" max="100" step="1" value="80"
+                       aria-label="Volume" title="Volume (the same as the player's)" />
+              </div>
+            </div>
             <div class="time-group time-group--end">
               <span class="time-caption time-caption--end">End</span>
               <input id="endField" class="time-field" type="text" value="00:00:00.000" spellcheck="false" />

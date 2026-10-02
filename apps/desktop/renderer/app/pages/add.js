@@ -405,6 +405,20 @@ const AddPage = {
       $('edArtistHint').hidden = true;
     });
 
+    // The volume under the selection's length is the player's own: moving
+    // either moves both, and the preview plays as loud as the music would.
+    // Kept by reference, like the editor (see init).
+    this.volSlider = $('prevVolSlider');
+    this.volBtn = $('prevVolBtn');
+    this.volSlider.addEventListener('input', () => Player.setVolume(Number(this.volSlider.value) / 100));
+    this.volBtn.onclick = () => Player.toggleMute();
+    $('prevVolWrap').addEventListener('wheel', (e) => {
+      e.preventDefault();
+      Player.setVolume(Player.volume + (e.deltaY < 0 ? 0.05 : -0.05));
+    }, { passive: false });
+    Player.onVolume((v) => this._drawVolume(v));
+    this._drawVolume(Player.volume);
+
     $('previewPlay').onclick = () => this.togglePreview();
     this.audio.addEventListener('play', () => {
       AudioFocus.claim('preview');
@@ -468,6 +482,7 @@ const AddPage = {
     this._syncFields();
     this.audio.src = Util.fileUrl(m.path);
     this.audio.currentTime = 0;
+    this._drawVolume(Player.volume);
     this._drawPreviewButton();
     this._setPhase('ready');
     this.peaks = null;
@@ -510,6 +525,14 @@ const AddPage = {
     $('wavePlayhead').style.left = waveX + 'px';
     $('trimPlayhead').style.left = this.slider.valueToX(t) + 'px';
     $('previewTime').textContent = `${Util.fmtClock(t)} / ${Util.fmtClock(this.media.duration)}`;
+  },
+
+  _drawVolume(v) {
+    this.audio.volume = v;
+    this.volSlider.value = String(Math.round(v * 100));
+    this.volSlider.style.setProperty('--fill', (v * 100) + '%');
+    this.volBtn.innerHTML = v === 0 ? Icons.mute : (v < 0.5 ? Icons.volumeLow : Icons.volume);
+    this.volBtn.title = v === 0 ? 'Unmute' : 'Mute';
   },
 
   _drawPreviewButton() {

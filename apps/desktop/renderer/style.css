@@ -798,6 +798,24 @@ progress {
   font-variant-numeric: tabular-nums;
 }
 
+/* The selection's length with the volume right under it, in the height of
+   the play button, so the row does not grow. */
+.span-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 40px;
+  min-width: 0;
+}
+
+.span-cell .span-label { line-height: 16px; margin-top: -4px; }
+.span-volume { display: flex; align-items: center; gap: 6px; height: 18px; }
+.span-volume .volume-slider { width: 140px; }
+.span-volume__btn { padding: 0; }
+.span-volume__btn .icon { width: 16px; height: 16px; }
+
 .time-readout {
   font-variant-numeric: tabular-nums;
   color: var(--grey);

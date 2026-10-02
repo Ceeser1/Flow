@@ -388,6 +388,18 @@ const Player = {
     this.seek(this.position + delta);
   },
 
+  // Others showing the same volume (the trim editor's slider), told on every change.
+  _volumeListeners: [],
+
+  onVolume(fn) {
+    this._volumeListeners.push(fn);
+  },
+
+  /** Mute, or back to the volume before it. */
+  toggleMute() {
+    this.setVolume(this.volume > 0 ? 0 : (this._muteRestore || 0.8));
+  },
+
   setVolume(v) {
     const vol = Math.max(0, Math.min(1, v));
     this.volume = vol;
@@ -682,7 +694,7 @@ const Player = {
 
     const vol = $('volSlider');
     vol.addEventListener('input', () => this.setVolume(Number(vol.value) / 100));
-    $('volBtn').onclick = () => this.setVolume(this.volume > 0 ? 0 : (this._muteRestore || 0.8));
+    $('volBtn').onclick = () => this.toggleMute();
     // Scrolling over the volume nudges it, as in most players.
     $('volWrap').addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -767,6 +779,7 @@ const Player = {
     $('volValue').textContent = Math.round(v * 100) + '%';
     $('volBtn').innerHTML = v === 0 ? Icons.mute : (v < 0.5 ? Icons.volumeLow : Icons.volume);
     $('volBtn').title = v === 0 ? 'Unmute' : 'Mute';
+    for (const fn of this._volumeListeners) fn(v);
   },
 
   // ---- media keys and the Windows media overlay ----
