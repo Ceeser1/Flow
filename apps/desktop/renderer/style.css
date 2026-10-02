@@ -1160,7 +1160,7 @@ progress {
   border-radius: 0;
 }
 
-.import__frame-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+.import__frame-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
 .import__frame-foot .btn { min-width: 110px; }
 
 /* Cancel, Download Selected, Download All: spread evenly. */

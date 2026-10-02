@@ -376,7 +376,7 @@ function knownArtists() {
 }
 
 function refuseDuringImport() {
-  if (importRunning) throw new Error('A playlist import is running. Wait for it to finish, or cancel it.');
+  if (importRunning || importSaves) throw new Error('A playlist import is running. Wait for it to finish, or cancel it.');
 }
 
 handle('download:probe', async (url) => {
@@ -448,30 +448,49 @@ handle('import:download', async ({ items, opts, local, run }) => {
   }
 });
 
-handle('import:finish', async ({ job, run }) => {
-  const { token, onProgress } = beginImport(run);
-  try {
-    if (!remote.active()) return await importer.finish(job, onProgress);
-    // With a server the songs are saved into Local Files first, as always,
-    // then go up. The playlist to add to and the songs already in the
-    // library are the server's, which Local Files does not have.
-    const existingIds = job.entries.filter((e) => e.existingId).map((e) => e.existingId);
-    const localJob = { ...job, mergeInto: null, playlistIds: [], entries: job.entries.filter((e) => !e.existingId) };
-    const summary = await importer.finish(localJob, onProgress);
-    remote.pushImport({
-      localPlaylistId: summary.playlistId,
-      mergeInto: job.mergeInto || null,
-      existingIds,
-      playlistIds: job.playlistIds || [],
-      songIds: summary.songIds,
-    });
-    summary.fromLibrary = existingIds.length;
-    return summary;
-  } finally {
-    endImport(token);
+// Saving is not part of the import task: "Finish this song" saves one song
+// while the others are still downloading. Saves run one after another.
+let importSaving = Promise.resolve();
+let importSaves = 0;
+
+handle('import:finish', ({ job, run }) => {
+  importSaves += 1;
+  const onProgress = (p) => sendToWindow('import:progress', { ...p, run });
+  const saving = importSaving.then(() => finishImport(job, onProgress));
+  importSaving = saving.catch(() => {});
+  return saving.finally(() => {
+    importSaves -= 1;
     loudnessFiller.run();
-  }
+  });
 });
+
+async function finishImport(job, onProgress) {
+  if (!remote.active()) return importer.finish(job, onProgress);
+  // With a server the songs are saved into Local Files first, as always,
+  // then go up. The playlist to add to and the songs already in the
+  // library are the server's, which Local Files does not have; only the
+  // playlist an earlier "Finish this song" made in Local Files is merged
+  // into here.
+  const existingIds = job.entries.filter((e) => e.existingId).map((e) => e.existingId);
+  const ownList = job.mergeInto && model.playlistById(library.get(), job.mergeInto) ? job.mergeInto : null;
+  const localJob = { ...job, mergeInto: ownList, playlistIds: [], entries: job.entries.filter((e) => !e.existingId) };
+  const summary = await importer.finish(localJob, onProgress);
+  // The times the library songs get, as the saved ones did (see importer.finish).
+  const base = Number(job.base) || Date.now();
+  job.entries.forEach((e, i) => {
+    if (e.existingId) summary.times[e.existingId] = base - (Number.isInteger(e.position) ? e.position : i) * 1000;
+  });
+  remote.pushImport({
+    localPlaylistId: summary.playlistId,
+    mergeInto: ownList ? null : (job.mergeInto || null),
+    existingIds,
+    playlistIds: job.playlistIds || [],
+    songIds: summary.songIds,
+    times: summary.times,
+  });
+  summary.fromLibrary = existingIds.length;
+  return summary;
+}
 
 handle('import:pending', (count) => {
   importPending = Math.max(0, Number(count) || 0);

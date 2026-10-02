@@ -1064,6 +1064,26 @@ function queueLocalChanges({ onlyNew = false, playlistsFor = {}, lists = null } 
   }
 
   const mapSongs = (lids) => lids.map((lid) => sync.songMap[lid]).filter(Boolean);
+  // Songs go into a playlist with the time they were added here, so the
+  // server lists them in the same order (an import's songs are a second
+  // apart in the source's order, whatever order they were saved in).
+  const addTimed = (target, entries) => {
+    let group = null;
+    const send = () => {
+      if (group && group.songIds.length) q('addSongsToPlaylist', { playlistId: target, songIds: group.songIds, at: group.at });
+    };
+    for (const e of entries) {
+      const sid = sync.songMap[e.songId];
+      if (!sid) continue;
+      const time = Number(e.addedAt) || at;
+      if (!group || group.at !== time) {
+        send();
+        group = { at: time, songIds: [] };
+      }
+      group.songIds.push(sid);
+    }
+    send();
+  };
   const localLists = new Set(local.playlists.map((p) => p.id));
   for (const p of local.playlists) {
     // While songs are held back, no playlist is made on the server, except the ones asked for (an import).
@@ -1078,13 +1098,14 @@ function queueLocalChanges({ onlyNew = false, playlistsFor = {}, lists = null } 
         if (!same) q('createPlaylist', { playlistId: p.id, name: p.name, source: p.source });
         sync.listMap[p.id] = target;
       }
-      const songs = mapSongs(p.entries.map((e) => e.songId));
-      if (songs.length) q('addSongsToPlaylist', { playlistId: target, songIds: songs });
+      addTimed(target, p.entries);
       snap.lists[p.id] = snapOfList(p);
       count += 1;
       continue;
     }
-    if (onlyNew || !target) continue;
+    // Only new songs go up, except into the lists asked for (an import's,
+    // which gets its songs a few at a time).
+    if ((onlyNew && !(lists && lists.includes(p.id))) || !target) continue;
     const now = snapOfList(p);
     if (now.name !== was.name) {
       q('renamePlaylist', { playlistId: target, name: p.name });
@@ -1092,8 +1113,9 @@ function queueLocalChanges({ onlyNew = false, playlistsFor = {}, lists = null } 
     }
     const before = new Set(was.entries);
     const after = new Set(now.entries);
-    const added = mapSongs(now.entries.filter((id) => !before.has(id)));
-    if (added.length) q('addSongsToPlaylist', { playlistId: target, songIds: added });
+    const addedEntries = p.entries.filter((e) => !before.has(e.songId));
+    const added = mapSongs(addedEntries.map((e) => e.songId));
+    addTimed(target, addedEntries);
     for (const sid of mapSongs(was.entries.filter((id) => !after.has(id)))) q('removeFromPlaylist', { playlistId: target, songId: sid });
     if (added.length || was.entries.some((id) => !after.has(id))) count += 1;
     snap.lists[p.id] = now;
@@ -1541,16 +1563,20 @@ function pushNew(playlistsFor = {}) {
  * playlists picked with "Add to Playlist" (playlistIds). The songs it took
  * from the library (existingIds) join the same playlists.
  */
-function pushImport({ localPlaylistId, mergeInto, existingIds, playlistIds = [], songIds = [] }) {
-  if (localPlaylistId && mergeInto) sync.listMap[localPlaylistId] = mergeInto;
+function pushImport({ localPlaylistId, mergeInto, existingIds, playlistIds = [], songIds = [], times = {} }) {
+  if (localPlaylistId && mergeInto && !sync.listMap[localPlaylistId]) sync.listMap[localPlaylistId] = mergeInto;
   const extra = playlistIds.filter((id) => model.playlistById(getView(), id));
-  const playlistsFor = Object.fromEntries(songIds.map((id) => [id, extra]));
-  queueLocalChanges({ onlyNew: true, lists: localPlaylistId ? [localPlaylistId] : null, playlistsFor });
+  queueLocalChanges({ onlyNew: true, lists: localPlaylistId ? [localPlaylistId] : null });
   const target = localPlaylistId && sync.listMap[localPlaylistId];
   const known = (existingIds || []).filter((id) => model.songById(getView(), id));
   const into = [...new Set([target, ...extra].filter(Boolean))];
-  if (into.length && known.length) {
-    for (const playlistId of into) sync.queue.push(newCommand('addSongsToPlaylist', { playlistId, songIds: known }));
+  // Each song at its own time, so the playlists read as the source.
+  const add = (songId, playlistIds, at) => sync.queue.push(newCommand('addSongToPlaylists', {
+    songId, playlistIds, at: Number(at) || Date.now(),
+  }));
+  if (extra.length) for (const lid of songIds) add(sync.songMap[lid] || lid, extra, times[lid]);
+  if (into.length) for (const id of known) add(id, into, times[id]);
+  if ((extra.length && songIds.length) || (into.length && known.length)) {
     saveSync();
     refreshView();
     flushSoon();

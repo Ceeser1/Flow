@@ -525,10 +525,18 @@ function removeOriginal(file) {
 /**
  * Saves the downloaded songs, each with its own cut and names, and puts them
  * and the library songs chosen into the playlist, in the source's order.
- * job: { name, playlist, mergeInto, playlistIds, source: { url, kind },
+ * job: { name, playlist, mergeInto, playlistIds, base, source: { url, kind },
  * entries } where an entry is { existingId } or { cachePath, start, end,
- * duration, meta, sourceUrl, sourceKey }, top first. Resolves { playlistId,
- * name, saved, songIds, fromLibrary, failed: [{ title, reason }] }.
+ * duration, meta, sourceUrl, sourceKey }, each with its `position` in the
+ * whole list (else its place in entries). Resolves { playlistId, name, saved,
+ * songIds, times, fromLibrary, failed: [{ title, reason }] }, where times
+ * holds the time each song was put into the playlists.
+ *
+ * The songs of one import may be saved a few at a time ("Finish this song"):
+ * the job then keeps its `base` time, and the playlist the first call made
+ * comes back as mergeInto. Playlists list the newest first, and every song
+ * gets base - position seconds, so the playlist reads as the source whatever
+ * order the songs were saved in.
  *
  * A playlist named job.name is made (or job.mergeInto taken) unless
  * job.playlist is false, which it is for local files (job.local) unless
@@ -553,20 +561,22 @@ async function finish(job, onProgress) {
 
   // The list shows newest first, so the first song gets the latest "Added"
   // time, one second apart, and the playlist reads top to bottom as the source.
-  const base = Date.now();
+  const base = Number(job.base) || Date.now();
   const addedAt = (position) => base - position * 1000;
-  const summary = { playlistId, name: playlistName, saved: 0, songIds: [], fromLibrary: 0, failed: [], kept: [] };
+  const summary = { playlistId, name: playlistName, saved: 0, songIds: [], times: {}, fromLibrary: 0, failed: [], kept: [] };
   const toSave = job.entries.filter((e) => !e.existingId).length;
   const listsOf = (d) => [...new Set([playlistId, ...(job.playlistIds || [])])]
     .filter((id) => id && model.playlistById(d, id));
   let number = 0;
 
-  for (let position = 0; position < job.entries.length; position += 1) {
-    const e = job.entries[position];
+  for (let i = 0; i < job.entries.length; i += 1) {
+    const e = job.entries[i];
+    const position = Number.isInteger(e.position) ? e.position : i;
     if (e.existingId) {
       library.mutate((d) => {
         if (!model.songById(d, e.existingId)) return;
         model.addSongToPlaylists(d, e.existingId, listsOf(d), addedAt(position));
+        summary.times[e.existingId] = addedAt(position);
         summary.fromLibrary += 1;
       });
       continue;
@@ -599,6 +609,7 @@ async function finish(job, onProgress) {
           model.addSongToPlaylists(d, song.id, listsOf(d), addedAt(position));
         });
         summary.songIds.push(song.id);
+        summary.times[song.id] = addedAt(position);
       });
       removeQuietly(e.cachePath);
       summary.saved += 1;

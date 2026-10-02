@@ -75,3 +75,23 @@ test('a playlist import goes into its own playlist and the ones picked; a taken 
   assert.deepEqual(titlesOf(summary.playlistId), ['Harder', 'Digital Love']);
   assert.deepEqual(titlesOf(extra.id), ['Harder', 'Digital Love']);
 });
+
+test('songs finished one by one, in any order, read as the source; the first save makes the playlist', async () => {
+  const known = library.mutate((d) => {
+    const song = { id: library.newId(), file: path.join(paths.musicDir(), 'known.mp3'), artist: 'Daft Punk', title: 'Known', mix: '', duration: 100, format: 'mp3', addedAt: 1 };
+    model.addSong(d, song);
+    return song;
+  });
+  const base = Date.now();
+  const job = { name: 'Homework', source: { url: 'https://example.com/hw', kind: 'youtube' }, base, playlistIds: [] };
+  // Song 7 first; the library song (place 4) goes along with the first save.
+  const first = await importer.finish({ ...job, entries: [{ ...entry('Seven'), position: 7 }, { existingId: known.id, position: 4 }] }, () => {});
+  assert.ok(first.playlistId);
+  const second = await importer.finish({ ...job, mergeInto: first.playlistId, entries: [{ ...entry('Two'), position: 2 }] }, () => {});
+  const third = await importer.finish({ ...job, mergeInto: first.playlistId, entries: [{ ...entry('Five'), position: 5 }] }, () => {});
+  assert.equal(second.playlistId, first.playlistId);
+  assert.equal(third.playlistId, first.playlistId);
+  assert.equal(library.get().playlists.filter((p) => p.name.startsWith('Homework')).length, 1);
+  assert.deepEqual(titlesOf(first.playlistId), ['Two', 'Known', 'Five', 'Seven']);
+  assert.equal(third.times[third.songIds[0]], base - 5000);
+});

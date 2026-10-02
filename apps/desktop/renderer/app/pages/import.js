@@ -12,14 +12,20 @@
 // downloading  one song after another into the cache. Every song is a frame;
 //              a downloaded one can be opened right away.
 // trimming     clicking a frame opens the trim editor in it (waveform, cut,
-//              preview, names) with Apply; one frame at a time. "Finish all"
-//              at the bottom right saves every song with its cut.
+//              preview, names) with Cancel Edits, Apply Edits and "Finish this
+//              song"; one frame at a time. "Finish all" at the bottom right
+//              saves every song left with its cut.
 // saving       the songs go into the music folder, All Songs and the playlist.
 //              Then the import is over: the panel empties and a toast sums it
 //              up (with Open playlist), so nothing is left to click away.
 //
-// Nothing reaches the library before "Finish all". Closing the app before it
-// asks first (main.js), since the downloads are only in the cache.
+// "Finish this song" saves one song at once, even while others still
+// download; it leaves the list, and the first one saved makes the playlist.
+// Every song goes into the playlist at its place in the source (job.base,
+// see importer.finish), whatever order they are saved in. Once the last song
+// is saved the import ends by itself. Nothing else reaches the library before
+// it is finished; closing the app before that asks first (main.js), since the
+// downloads are only in the cache.
 //
 // Local files ("Open local File(s) / Folder") skip the review: a folder is
 // looked through in the listing step (with Cancel), then the files are
@@ -58,6 +64,7 @@ const ImportPanel = {
   _dirty: new Set(),      // frames to redraw at the next animation frame
   _lastProgress: null,    // the latest progress line, drawn with them
   _flushQueued: false,
+  _chain: null,           // the "Finish this song" saves, one after another
 
   /** A list is being read or imported: single-link downloads wait. */
   get busy() {
@@ -289,14 +296,16 @@ const ImportPanel = {
     $('addToPlaylistBtn').disabled = this.state === 'saving';
     $('addFooter').hidden = false;
     const ready = this._ready().length;
-    const trimmed = this.included.filter((it) => it.trim).length;
+    const trimmed = this.included.filter((it) => it.trim && it.state === 'ready').length;
     const waiting = this.included.filter((it) => !it.existingId && (!it.state || it.state === 'current')).length;
+    const saved = this.job ? this.job.totals.saved : 0;
     const parts = [`${Util.plural(ready, 'song')} ready`];
     if (trimmed) parts.push(`${trimmed} trimmed`);
+    if (saved) parts.push(`${saved} saved`);
     if (waiting && this.state === 'downloading') parts.push(`${waiting} still ${this.local ? 'preparing' : 'downloading'}`);
     $('importFooterText').textContent = parts.join(' · ');
     $('finishBtn').textContent = this.state === 'saving' ? 'Saving...' : 'Finish all';
-    const anything = ready || this.included.some((it) => it.existingId);
+    const anything = ready || this._existingEntries().length;
     $('finishBtn').disabled = this.state !== 'trimming' || !anything;
     $('finishBtn').title = this.state === 'downloading'
       ? `Available once every song is ${this.local ? 'prepared' : 'downloaded'}` : '';
@@ -372,7 +381,8 @@ const ImportPanel = {
     const box = $('importNameBox');
     if (!box) return;
     clear(box);
-    const fixed = this.state === 'saving';
+    // Once a song is saved the playlist exists: it is renamed on its own page.
+    const fixed = this.state === 'saving' || this._saved();
     if (this.local) {
       const tick = h('input', { type: 'checkbox', checked: this.createList, disabled: fixed });
       tick.addEventListener('change', () => {
@@ -504,7 +514,7 @@ const ImportPanel = {
   _drawWarnings() {
     const box = clear($('importWarnings'));
     const rows = [];
-    const taken = this.state === 'saving' ? null : this._takenPlaylist();
+    const taken = this.state === 'saving' || this._saved() ? null : this._takenPlaylist();
     if (taken) {
       const tick = h('input', { type: 'checkbox', checked: this.merge });
       tick.addEventListener('change', () => {
@@ -687,6 +697,7 @@ const ImportPanel = {
     else if (st === 'failed') { sub = it.reason || 'failed'; subBad = true; }
     else if (st === 'cancelled') { sub = 'cancelled'; subBad = true; }
     else if (st === 'current') sub = this.local ? 'preparing...' : 'downloading...';
+    else if (st === 'saving') sub = 'saving...';
     else if (st === 'waiting') sub = 'waiting';
     else if (it.trim) {
       sub = `trimmed ${Util.fmtClock(it.trim.start)} - ${Util.fmtClock(it.trim.end)}, `
@@ -715,12 +726,14 @@ const ImportPanel = {
 
     const frame = h('div.import__frame.import__frame--' + st + (open ? '.import__frame--open' : ''),
       { dataset: { index: String(it.index) } }, head);
-    // Summed up in one line instead (_drawFailSummary).
-    if (st === 'failed' && this.local) frame.hidden = true;
+    // Summed up in one line instead (_drawFailSummary); a saved song is done.
+    if ((st === 'failed' && this.local) || st === 'saved') frame.hidden = true;
     if (open) {
       frame.appendChild(h('div.import__frame-body',
         h('div.import__frame-foot',
-          h('button.btn.btn--primary', { type: 'button', onclick: () => this.apply() }, 'Apply'))));
+          h('button.btn.btn--light-grey', { type: 'button', title: 'Back to the cut and names it had when opened', onclick: () => this.cancelEdits() }, 'Cancel Edits'),
+          h('button.btn.btn--light-green', { type: 'button', onclick: () => this.apply() }, 'Apply Edits'),
+          h('button.btn.btn--primary', { type: 'button', title: 'Save this song now', onclick: () => this.finishOne(it.index) }, 'Finish this song'))));
     }
     return frame;
   },
@@ -747,9 +760,16 @@ const ImportPanel = {
     body.closest('.import__frame').scrollIntoView({ block: 'nearest' });
   },
 
-  /** Apply: keeps the open frame's cut and names, and closes it. */
+  /** Apply Edits: keeps the open frame's cut and names, and closes it. */
   apply() {
     this._closeEditor(true);
+    this._drawList();
+    this._drawFooter();
+  },
+
+  /** Cancel Edits: the cut and names go back to what they were when the frame was opened. */
+  cancelEdits() {
+    this._closeEditor(false);
     this._drawList();
     this._drawFooter();
   },
@@ -790,7 +810,15 @@ const ImportPanel = {
    */
   async _run(chosen, job) {
     const run = this._newRun();
-    this.job = job;
+    // base: the playlist time, fixed at the first save; playlistId: the
+    // playlist that save made; totals: what every save did, for the toast.
+    this.job = {
+      ...job,
+      base: 0,
+      playlistId: null,
+      saves: 0,
+      totals: { playlistId: null, name: '', saved: 0, fromLibrary: 0, failed: [], kept: [] },
+    };
     this.included = chosen.map((it) => ({
       index: it.index,
       title: it.title,
@@ -828,10 +856,139 @@ const ImportPanel = {
     }
     this._setState('trimming');
     this._setPending();
+    // Every song was finished one by one while the rest downloaded.
+    if (this._endIfDone()) return;
     const ready = this._ready().length;
     const failed = this.included.filter((it) => it.state === 'failed').length;
     toast(`${Util.plural(ready, 'song')} ${job.local ? 'ready' : 'downloaded'}${failed ? `, ${failed} failed` : ''}. `
       + 'Trim any you like, then "Finish all".', ready ? 'success' : 'error');
+  },
+
+  /** True once a song of this import has been saved. */
+  _saved() {
+    return !!(this.job && this.job.saves);
+  },
+
+  /** One song as importer.finish takes it, with its place in the source. */
+  _entryOf(it) {
+    const meta = it.meta && it.meta.title ? it.meta : { artist: '', title: it.song.title, mix: '' };
+    return {
+      position: it.index,
+      cachePath: it.media.path,
+      start: it.trim ? it.trim.start : 0,
+      end: it.trim ? it.trim.end : it.media.duration,
+      duration: it.media.duration,
+      meta,
+      sourceUrl: it.song.url,
+      sourceKey: it.song.key,
+      originalPath: it.song.originalPath || '',
+    };
+  },
+
+  /**
+   * The library songs ticked to go along, not added yet. They need no
+   * saving: they go into the playlist with the first song that is saved
+   * (or with "Finish all"), at their own places.
+   */
+  _existingEntries() {
+    return this.included.filter((it) => it.existingId && !it.added)
+      .map((it) => ({ existingId: it.existingId, position: it.index }));
+  },
+
+  /** The job for one save. The first fixes the time and the playlist; later ones add to them. */
+  _jobFor(entries) {
+    const job = this.job;
+    if (!job.base) job.base = Date.now();
+    const taken = job.playlistId ? null : this._takenPlaylist();
+    return {
+      source: job.source,
+      local: !!job.local,
+      name: job.totals.name || this._finalName(),
+      playlist: job.playlistId ? true : (job.saves ? false : this._makesPlaylist()),
+      mergeInto: job.playlistId || (taken && this.merge ? taken.id : null),
+      playlistIds: this.playlistIds.filter((id) => Store.playlist(id)),
+      base: job.base,
+      move: !!job.local && this.moveOriginals,
+      entries,
+    };
+  },
+
+  /** Adds one save's summary to the job's totals. */
+  _record(summary, entries) {
+    const job = this.job;
+    const t = job.totals;
+    job.saves += 1;
+    this.editingName = false;
+    if (summary.playlistId) job.playlistId = summary.playlistId;
+    t.playlistId = job.playlistId;
+    if (summary.name) t.name = summary.name;
+    t.saved += summary.saved;
+    t.fromLibrary += summary.fromLibrary;
+    t.failed.push(...summary.failed);
+    t.kept.push(...(summary.kept || []));
+    for (const e of entries) {
+      if (!e.existingId) continue;
+      const it = this.included.find((x) => x.existingId === e.existingId);
+      if (it) it.added = true;
+    }
+  },
+
+  /**
+   * "Finish this song": keeps the open frame's edits and saves just that
+   * song, into the playlist (made now if this is the first). Saves wait for
+   * each other, so the first one's playlist is there for the next.
+   */
+  finishOne(index) {
+    const it = this.included.find((x) => x.index === index);
+    if (!it || it.state !== 'ready' || this.state === 'saving') return Promise.resolve();
+    if (this.openIndex === index) this._closeEditor(true);
+    it.state = 'saving';
+    this._redrawFrame(it, false);
+    this._drawFooter();
+    this._chain = (this._chain || Promise.resolve()).then(() => this._finishOneNow(it));
+    return this._chain;
+  },
+
+  async _finishOneNow(it) {
+    const job = this.job;
+    if (!job) return;
+    const entries = [this._entryOf(it), ...this._existingEntries()];
+    const title = Util.songLine(entries[0].meta);
+    let summary;
+    try {
+      summary = await window.flow.finishImport(this._jobFor(entries), this.run);
+    } catch (err) {
+      summary = null;
+      toast(`"${title}" could not be saved: ${err.message}`, 'error');
+    }
+    // Cancelled meanwhile: what was saved stays saved.
+    if (this.job !== job) return;
+    if (summary) this._record(summary, entries);
+    const ok = summary && summary.saved;
+    it.state = ok ? 'saved' : 'ready';
+    // A saved song just leaves the list (the footer counts it); only trouble gets a toast.
+    if (summary && !ok) toast(`"${title}" could not be saved: ${(summary.failed[0] || {}).reason || 'failed'}`, 'error');
+    this._setPending();
+    this._drawName();
+    this._drawWarnings();
+    this._redrawFrame(it, false);
+    this._drawFooter();
+    this._drawBadge();
+    this._endIfDone();
+  },
+
+  /**
+   * Ends the import once every song is saved (or failed): no song is ready,
+   * downloading or being saved, and something was saved. True when it did.
+   */
+  _endIfDone() {
+    if (this.state !== 'trimming' || !this._saved()) return false;
+    if (this.included.some((it) => it.state === 'ready' || it.state === 'saving')) return false;
+    if (this._existingEntries().length) return false;
+    this._toastSummary(this.job.totals, !!this.job.local, !!this.job.local && this.moveOriginals);
+    $('progressPanel').hidden = true;
+    this._reset();
+    return true;
   },
 
   /**
@@ -841,39 +998,23 @@ const ImportPanel = {
   async finishAll() {
     if (this.state !== 'trimming') return;
     this._closeEditor(true);
+    // A song still being saved by "Finish this song" first.
+    await this._chain;
+    if (this.state !== 'trimming') return;
     const entries = [];
     for (const it of this.included) {
-      if (it.existingId) {
-        entries.push({ existingId: it.existingId });
-      } else if (it.state === 'ready') {
-        const meta = it.meta && it.meta.title ? it.meta : { artist: '', title: it.song.title, mix: '' };
-        entries.push({
-          cachePath: it.media.path,
-          start: it.trim ? it.trim.start : 0,
-          end: it.trim ? it.trim.end : it.media.duration,
-          duration: it.media.duration,
-          meta,
-          sourceUrl: it.song.url,
-          sourceKey: it.song.key,
-          originalPath: it.song.originalPath || '',
-        });
-      }
+      if (it.existingId && !it.added) entries.push({ existingId: it.existingId, position: it.index });
+      else if (it.state === 'ready') entries.push(this._entryOf(it));
     }
-    if (!entries.length) return;
+    if (!entries.length) {
+      this._endIfDone();
+      return;
+    }
     const local = !!this.job.local;
     const move = local && this.moveOriginals;
     // A name being typed and not applied stays as it was.
     this.editingName = false;
-    const taken = this._takenPlaylist();
-    const job = {
-      ...this.job,
-      name: this._finalName(),
-      playlist: this._makesPlaylist(),
-      mergeInto: taken && this.merge ? taken.id : null,
-      playlistIds: this.playlistIds.filter((id) => Store.playlist(id)),
-      move,
-      entries,
-    };
+    const job = this._jobFor(entries);
     this._setState('saving');
     AddPage._progress({ title: local ? (move ? 'Moving the files' : 'Copying the files') : `Saving "${job.name}"`,
       frac: 0, status: '', cancel: false });
@@ -884,7 +1025,8 @@ const ImportPanel = {
       summary = { playlistId: null, name: job.playlist ? job.name : '', saved: 0, fromLibrary: 0, failed: [{ title: '', reason: err.message }], kept: [] };
     }
     try {
-      this._toastSummary(summary, local, move);
+      this._record(summary, entries);
+      this._toastSummary(this.job.totals, local, move);
     } finally {
       $('progressPanel').hidden = true;
       this._reset();
@@ -919,13 +1061,17 @@ const ImportPanel = {
   async cancelAll() {
     const ready = this._ready().length;
     const local = this.local;
+    const saved = this.job ? this.job.totals.saved : 0;
     if (ready || this.state === 'downloading') {
       const originals = local ? ' The original files stay where they are.' : '';
+      const kept = saved
+        ? ` The ${Util.plural(saved, 'song')} already finished ${saved === 1 ? 'stays' : 'stay'} saved.`
+        : ' Nothing of this import is saved.';
       const ok = await confirmDialog({
         title: 'Cancel import?',
         message: (ready
-          ? `Throw away the ${Util.plural(ready, 'song')} ${local ? 'prepared' : 'downloaded'} so far? Nothing of this import is saved.`
-          : 'Stop the import? Nothing of it is saved.') + originals,
+          ? `Throw away the ${saved ? 'remaining ' : ''}${Util.plural(ready, 'song')} ${local ? 'prepared' : 'downloaded'} so far?`
+          : 'Stop the import?') + kept + originals,
         confirmLabel: 'Cancel import',
         danger: true,
       });
@@ -940,7 +1086,8 @@ const ImportPanel = {
       if (it.state === 'ready' && it.media) window.flow.discardDownload(it.media.path).catch(() => {});
     }
     this._reset();
-    toast(local ? 'Import of local files cancelled' : 'Playlist import cancelled', 'info');
+    const keptText = saved ? ` (${Util.plural(saved, 'song')} finished before ${saved === 1 ? 'stays' : 'stay'} saved)` : '';
+    toast((local ? 'Import of local files cancelled' : 'Playlist import cancelled') + keptText, 'info');
   },
 
   _onProgress(p) {
