@@ -253,10 +253,12 @@ const AddPage = {
     this._progress({ title: this.probed ? this.probed.title : '', frac, status: text, stage });
   },
 
-  _progress({ title, frac, status, cancel = true }) {
+  /** busy: a spinner after the title, for a wait that reports nothing back. */
+  _progress({ title, frac, status, cancel = true, busy = false }) {
     $('progressPanel').hidden = false;
     $('progError').hidden = true;
     $('progTitle').textContent = title || '';
+    $('progTitle').classList.toggle('prog-title--busy', busy);
     const bar = $('progBar');
     bar.hidden = false;
     if (frac === null || frac === undefined) bar.removeAttribute('value');
@@ -281,6 +283,7 @@ const AddPage = {
 
   _showError(message) {
     $('progressPanel').hidden = false;
+    $('progTitle').classList.remove('prog-title--busy');
     if (this.phase === 'idle' && !$('progTitle').textContent) {
       $('progBar').hidden = true;
       $('progCancel').hidden = true;

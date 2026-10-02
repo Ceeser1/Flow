@@ -1271,6 +1271,7 @@ const ImportPanel = {
         title: 'Reading the link on the server...',
         frac: batch.progress ? batch.progress.frac : null,
         status: batch.progress && batch.progress.text ? batch.progress.text : batch.source.url,
+        busy: true,
       });
       return false;
     }
