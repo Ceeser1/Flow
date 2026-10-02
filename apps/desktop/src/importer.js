@@ -525,19 +525,23 @@ function removeOriginal(file) {
 /**
  * Saves the downloaded songs, each with its own cut and names, and puts them
  * and the library songs chosen into the playlist, in the source's order.
- * job: { name, mergeInto, source: { url, kind }, entries } where an entry is
- * { existingId } or { cachePath, start, end, duration, meta, sourceUrl,
- * sourceKey }, top first. Resolves { playlistId, name, saved, fromLibrary,
- * failed: [{ title, reason }] }.
+ * job: { name, playlist, mergeInto, playlistIds, source: { url, kind },
+ * entries } where an entry is { existingId } or { cachePath, start, end,
+ * duration, meta, sourceUrl, sourceKey }, top first. Resolves { playlistId,
+ * name, saved, songIds, fromLibrary, failed: [{ title, reason }] }.
  *
- * Local files (job.local) go into All Songs only, with no playlist. Their
- * entries carry originalPath, and with job.move each original is deleted once
- * its song is saved; summary.kept lists those that could not be.
+ * A playlist named job.name is made (or job.mergeInto taken) unless
+ * job.playlist is false, which it is for local files (job.local) unless
+ * "Create new Playlist" was ticked. Every song also joins the existing
+ * playlists in job.playlistIds ("Add to Playlist"), in the same order.
+ * Local entries carry originalPath, and with job.move each original is
+ * deleted once its song is saved; summary.kept lists those that could not be.
  */
 async function finish(job, onProgress) {
   let playlistId = null;
   let playlistName = '';
-  if (!job.local) {
+  const makeList = job.playlist === undefined ? !job.local : !!job.playlist;
+  if (makeList) {
     library.mutate((d) => {
       let p = job.mergeInto ? model.playlistById(d, job.mergeInto) : null;
       if (!p) p = model.createPlaylist(d, model.freePlaylistName(d, job.name), library.newId());
@@ -551,20 +555,18 @@ async function finish(job, onProgress) {
   // time, one second apart, and the playlist reads top to bottom as the source.
   const base = Date.now();
   const addedAt = (position) => base - position * 1000;
-  const summary = { playlistId, name: playlistName, saved: 0, fromLibrary: 0, failed: [], kept: [] };
+  const summary = { playlistId, name: playlistName, saved: 0, songIds: [], fromLibrary: 0, failed: [], kept: [] };
   const toSave = job.entries.filter((e) => !e.existingId).length;
+  const listsOf = (d) => [...new Set([playlistId, ...(job.playlistIds || [])])]
+    .filter((id) => id && model.playlistById(d, id));
   let number = 0;
 
   for (let position = 0; position < job.entries.length; position += 1) {
     const e = job.entries[position];
-    if (e.existingId && !playlistId) {
-      summary.fromLibrary += 1;
-      continue;
-    }
     if (e.existingId) {
       library.mutate((d) => {
         if (!model.songById(d, e.existingId)) return;
-        model.addSongToPlaylists(d, e.existingId, [playlistId], addedAt(position));
+        model.addSongToPlaylists(d, e.existingId, listsOf(d), addedAt(position));
         summary.fromLibrary += 1;
       });
       continue;
@@ -594,10 +596,9 @@ async function finish(job, onProgress) {
         };
         library.mutate((d) => {
           model.addSong(d, song);
-          if (playlistId && model.playlistById(d, playlistId)) {
-            model.addSongToPlaylists(d, song.id, [playlistId], addedAt(position));
-          }
+          model.addSongToPlaylists(d, song.id, listsOf(d), addedAt(position));
         });
+        summary.songIds.push(song.id);
       });
       removeQuietly(e.cachePath);
       summary.saved += 1;

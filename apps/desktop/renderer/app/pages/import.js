@@ -43,7 +43,13 @@ const ImportPanel = {
   checked: new Set(),     // indexes of new songs ticked
   keepKnown: new Set(),   // indexes of library songs ticked (added to the list)
   merge: true,            // add to the playlist of the same name, if there is one
-  job: null,              // name, mergeInto, source: fixed when downloading starts
+  job: null,              // source, local: fixed when downloading starts
+  name: '',               // the playlist's name, editable until the songs are saved
+  createList: false,      // local files: make a playlist of them ("Create new Playlist")
+  playlistIds: [],        // existing playlists every song joins ("Add to Playlist")
+  editingName: false,
+  _nameDraft: '',
+  _nameHint: '',
   included: [],           // the chosen songs, in order, each with its own state
   openIndex: null,        // the frame whose editor is open
   progress: { number: 0, total: 0 },
@@ -75,13 +81,13 @@ const ImportPanel = {
     $('importEverything').onclick = () => this.start(true);
     $('importSelectAll').onclick = () => this._selectAll(true);
     $('importSelectNone').onclick = () => this._selectAll(false);
-    $('importName').addEventListener('input', () => this._drawWarnings());
-    $('importCancelAll').onclick = () => this.cancelAll();
+    // Shared with the single song's footer.
+    $('importCancelAll').onclick = () => (this.ownsFooter ? this.cancelAll() : AddPage.cancelSingle());
     $('copyMoveSwitch').onclick = () => this._setMove(!this.moveOriginals);
     $('copyMoveCopy').onclick = () => this._setMove(false);
     $('copyMoveMove').onclick = () => this._setMove(true);
     Store.onLibrary(() => {
-      if (this.state === 'review') this._drawWarnings();
+      if (this.state !== 'idle' && this.state !== 'listing') this._drawWarnings();
     });
   },
 
@@ -110,8 +116,7 @@ const ImportPanel = {
     this.listing = listing;
     this.checked = new Set(listing.items.filter((it) => !it.existing && it.status === 'ok').map((it) => it.index));
     this.keepKnown = new Set(listing.items.filter((it) => it.existing).map((it) => it.index));
-    this.merge = true;
-    $('importName').value = listing.name;
+    this._resetName(listing.name);
     $('progressPanel').hidden = true;
     this._setState('review');
     return null;
@@ -155,7 +160,8 @@ const ImportPanel = {
     $('progressPanel').hidden = true;
     this.listing = listing;
     this.moveOriginals = false;
-    await this._run(listing.items, { name: listing.name, local: true });
+    this._resetName(listing.name);
+    await this._run(listing.items, { local: true });
   },
 
   _setMove(on) {
@@ -195,6 +201,7 @@ const ImportPanel = {
     this.included = [];
     this.job = null;
     this.moveOriginals = false;
+    this._resetName('');
     this._setState('idle');
     this._setPending();
     $('progressPanel').hidden = true;
@@ -207,8 +214,6 @@ const ImportPanel = {
     $('importPanel').hidden = state === 'idle' || state === 'listing';
     $('importButtons').hidden = !reviewing;
     $('importToolbar').hidden = !reviewing;
-    $('importName').disabled = !reviewing;
-    $('importName').closest('.import__name').hidden = !reviewing;
     $('downloadBtn').disabled = this.busy;
     $('linkInput').disabled = this.busy;
     AddPage.drawLocalPick();
@@ -268,18 +273,20 @@ const ImportPanel = {
   /** The page's sticky footer: Cancel import and "Finish all" while importing. */
   _drawFooter() {
     const mine = this.ownsFooter;
-    $('importCancelAll').hidden = !mine;
     $('importFooterText').hidden = !mine;
-    $('addToPlaylistBtn').hidden = mine;
-    $('addPlaylistNames').hidden = mine;
     this._drawCopyMove(mine && this.local);
+    AddPage._drawPlaylistButton();
     if (!mine) {
       // Back to the single song's footer, shown with its editor.
-      $('finishBtn').textContent = 'Finish';
-      $('finishBtn').disabled = false;
-      $('addFooter').hidden = !(AddPage.phase === 'ready' || AddPage.phase === 'saving');
+      const saving = AddPage.phase === 'saving';
+      $('finishBtn').textContent = saving ? 'Saving...' : 'Finish';
+      $('finishBtn').disabled = saving;
+      $('importCancelAll').disabled = saving;
+      $('addToPlaylistBtn').disabled = saving;
+      $('addFooter').hidden = !(AddPage.phase === 'ready' || saving);
       return;
     }
+    $('addToPlaylistBtn').disabled = this.state === 'saving';
     $('addFooter').hidden = false;
     const ready = this._ready().length;
     const trimmed = this.included.filter((it) => it.trim).length;
@@ -330,9 +337,140 @@ const ImportPanel = {
     return this.listing ? this.listing.items.filter((it) => it.existing) : [];
   },
 
+  /** A playlist of the same name, which the songs would be added to (see merge). */
   _takenPlaylist() {
-    const name = $('importName').value.trim().toLowerCase();
-    return name ? Store.library.playlists.find((p) => p.name.toLowerCase() === name) || null : null;
+    if (!this._makesPlaylist()) return null;
+    const name = this._finalName().toLowerCase();
+    return Store.library.playlists.find((p) => p.name.toLowerCase() === name) || null;
+  },
+
+  /** Local files only make a playlist when "Create new Playlist" is ticked. */
+  _makesPlaylist() {
+    return !this.local || this.createList;
+  },
+
+  _finalName() {
+    return this.name.replace(/\s+/g, ' ').trim() || (this.listing ? this.listing.name : '') || 'Imported playlist';
+  },
+
+  _resetName(name) {
+    this.name = name || '';
+    this.editingName = false;
+    this.createList = false;
+    this.playlistIds = [];
+    this.merge = true;
+  },
+
+  /**
+   * The name at the top, changeable until the songs are saved. A playlist's
+   * is text with a pencil, which turns it into a box with Apply and Cancel
+   * (Enter and Escape do the same). Local files have "Create new Playlist"
+   * in front: unticked the name is only the list's label, ticked it is a box
+   * with the name the playlist gets.
+   */
+  _drawName() {
+    const box = $('importNameBox');
+    if (!box) return;
+    clear(box);
+    const fixed = this.state === 'saving';
+    if (this.local) {
+      const tick = h('input', { type: 'checkbox', checked: this.createList, disabled: fixed });
+      tick.addEventListener('change', () => {
+        this.createList = tick.checked;
+        this._drawName();
+        this._drawWarnings();
+        const input = box.querySelector('input[type="text"]');
+        if (input) {
+          input.focus();
+          input.select();
+        }
+      });
+      box.appendChild(h('label.check.import__create', tick, h('span', 'Create new Playlist')));
+      if (this.createList) {
+        const input = h('input.input.import__name-box', {
+          type: 'text', maxLength: 75, spellcheck: false, value: this.name, disabled: fixed, 'aria-label': 'Playlist name',
+        });
+        input.addEventListener('input', () => {
+          this.name = input.value;
+          this._drawWarnings();
+        });
+        box.appendChild(input);
+      } else {
+        box.appendChild(h('span.import__heading', this.name));
+      }
+      return;
+    }
+    if (this.editingName && !fixed) {
+      const hint = h('span.import__name-hint', { hidden: !this._nameHint }, this._nameHint);
+      const input = h('input.input.import__name-box', {
+        type: 'text', maxLength: 75, spellcheck: false, value: this._nameDraft, 'aria-label': 'Playlist name',
+      });
+      input.addEventListener('input', () => {
+        this._nameDraft = input.value;
+        this._nameHint = '';
+        hint.hidden = true;
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this._applyName();
+        } else if (e.key === 'Escape') {
+          // Only ends the editing; nothing else on the page reacts to it.
+          e.preventDefault();
+          e.stopPropagation();
+          this._cancelName();
+        }
+      });
+      box.append(input,
+        h('button.btn.btn--small.btn--light-green', { type: 'button', onclick: () => this._applyName() }, 'Apply'),
+        h('button.btn.btn--small', { type: 'button', onclick: () => this._cancelName() }, 'Cancel'),
+        hint);
+      requestAnimationFrame(() => input.focus());
+      return;
+    }
+    box.append(h('span.import__heading', this.name),
+      fixed ? null : iconButton('icon-btn.import__rename', Icons.pencil, 'Rename the playlist', () => this._editName()));
+  },
+
+  _editName() {
+    this.editingName = true;
+    this._nameDraft = this.name;
+    this._nameHint = '';
+    this._drawName();
+    requestAnimationFrame(() => {
+      const input = $('importNameBox') && $('importNameBox').querySelector('input');
+      if (input) input.select();
+    });
+  },
+
+  _applyName() {
+    const name = this._nameDraft.replace(/\s+/g, ' ').trim();
+    if (!name) {
+      this._nameHint = 'A playlist needs a name.';
+      this._drawName();
+      return;
+    }
+    this.name = name;
+    this.editingName = false;
+    this._drawName();
+    this._drawWarnings();
+  },
+
+  _cancelName() {
+    this.editingName = false;
+    this._nameHint = '';
+    this._drawName();
+  },
+
+  /** Add to Playlist for a whole import: existing playlists every song joins. */
+  async choosePlaylists() {
+    const chosen = await pickPlaylists({
+      subtitle: `Every song of ${this._makesPlaylist() ? `"${this._finalName()}"` : 'this import'}`,
+      selectedIds: this.playlistIds,
+    });
+    if (chosen === null) return;
+    this.playlistIds = chosen;
+    AddPage._drawPlaylistButton();
   },
 
   render() {
@@ -342,10 +480,10 @@ const ImportPanel = {
     const source = SOURCE_NAMES[kind] || l.source || 'Playlist';
     const head = clear($('importSource'));
     head.appendChild(h('span.import__badge', source));
+    head.appendChild(h('span.import__name', { id: 'importNameBox' }));
+    this._drawName();
     if (this.state === 'review') {
       head.appendChild(h('span', `${Util.plural(l.items.length, 'song')} in this list`));
-    } else {
-      head.appendChild(h('span.import__heading', this.job ? this.job.name : l.name));
     }
     if (l.truncated === 'files') {
       head.appendChild(h('span.import__warn-text', `The folder holds more files: only the first ${l.items.length} are listed.`));
@@ -365,12 +503,8 @@ const ImportPanel = {
 
   _drawWarnings() {
     const box = clear($('importWarnings'));
-    if (this.state !== 'review') {
-      box.hidden = true;
-      return;
-    }
     const rows = [];
-    const taken = this._takenPlaylist();
+    const taken = this.state === 'saving' ? null : this._takenPlaylist();
     if (taken) {
       const tick = h('input', { type: 'checkbox', checked: this.merge });
       tick.addEventListener('change', () => {
@@ -383,7 +517,7 @@ const ImportPanel = {
           h('label.check', tick,
             h('span', `Add the songs to it (unticked: a new playlist "${taken.name} (2)")`)))));
     }
-    const known = this._knownItems();
+    const known = this.state === 'review' ? this._knownItems() : [];
     if (known.length) {
       const list = h('div.import__known');
       for (const it of known) {
@@ -645,10 +779,7 @@ const ImportPanel = {
       return it.status === 'ok' && (everything || this.checked.has(it.index));
     });
     if (!chosen.length) return;
-    const taken = this._takenPlaylist();
     await this._run(chosen, {
-      name: $('importName').value.trim() || l.name,
-      mergeInto: taken && this.merge ? taken.id : null,
       source: { url: l.sourceUrl, kind: String(l.source || '').toLowerCase() },
     });
   },
@@ -675,7 +806,7 @@ const ImportPanel = {
     this._setState('downloading');
     if (toFetch.length) {
       AddPage._progress({
-        title: job.local ? `Opening ${Util.plural(toFetch.length, 'file')}` : `Importing "${job.name}"`,
+        title: job.local ? `Opening ${Util.plural(toFetch.length, 'file')}` : `Importing "${this._finalName()}"`,
         frac: null,
         status: 'Starting...',
       });
@@ -731,14 +862,26 @@ const ImportPanel = {
     if (!entries.length) return;
     const local = !!this.job.local;
     const move = local && this.moveOriginals;
+    // A name being typed and not applied stays as it was.
+    this.editingName = false;
+    const taken = this._takenPlaylist();
+    const job = {
+      ...this.job,
+      name: this._finalName(),
+      playlist: this._makesPlaylist(),
+      mergeInto: taken && this.merge ? taken.id : null,
+      playlistIds: this.playlistIds.filter((id) => Store.playlist(id)),
+      move,
+      entries,
+    };
     this._setState('saving');
-    AddPage._progress({ title: local ? (move ? 'Moving the files' : 'Copying the files') : `Saving "${this.job.name}"`,
+    AddPage._progress({ title: local ? (move ? 'Moving the files' : 'Copying the files') : `Saving "${job.name}"`,
       frac: 0, status: '', cancel: false });
     let summary;
     try {
-      summary = await window.flow.finishImport({ ...this.job, move, entries }, this._newRun());
+      summary = await window.flow.finishImport(job, this._newRun());
     } catch (err) {
-      summary = { playlistId: null, name: local ? '' : this.job.name, saved: 0, fromLibrary: 0, failed: [{ title: '', reason: err.message }], kept: [] };
+      summary = { playlistId: null, name: job.playlist ? job.name : '', saved: 0, fromLibrary: 0, failed: [{ title: '', reason: err.message }], kept: [] };
     }
     try {
       this._toastSummary(summary, local, move);
@@ -758,12 +901,13 @@ const ImportPanel = {
     const kept = (summary.kept || []).length;
     if (kept) parts.push(`${kept} original${kept === 1 ? '' : 's'} could not be removed (in use?)`);
     const kind = summary.saved || summary.fromLibrary ? 'success' : 'error';
-    if (local) {
+    if (local && !summary.playlistId) {
       toast(`Local files added to All Songs: ${parts.join(', ') || 'nothing added'}`, kind);
       return;
     }
     const id = summary.playlistId;
-    toast(`Playlist "${summary.name}" imported: ${parts.join(', ') || 'nothing imported'}`, kind,
+    const head = local ? `Local files added to playlist "${summary.name}"` : `Playlist "${summary.name}" imported`;
+    toast(`${head}: ${parts.join(', ') || 'nothing imported'}`, kind,
       id ? { label: 'Open playlist', onClick: () => Store.playlist(id) && Nav.openPlaylist(id) } : null);
   },
 

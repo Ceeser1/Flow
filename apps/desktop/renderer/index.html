@@ -92,9 +92,8 @@
         <!-- A whole playlist: the checklist, then its progress. -->
         <div id="importPanel" class="panel import" hidden>
           <div class="import__head">
+            <!-- Where it is from, the playlist's name (editable), notes. -->
             <div id="importSource" class="import__source"></div>
-            <label class="form-row import__name"><span class="form-label">Playlist name</span>
-              <input id="importName" class="input" type="text" maxlength="75" spellcheck="false" /></label>
           </div>
           <div id="importWarnings" class="import__warnings" hidden></div>
           <div id="importToolbar" class="import__toolbar">
@@ -167,10 +166,8 @@
 
         <div id="addFooter" class="add-footer" hidden>
           <div class="add-footer__left">
-            <button id="addToPlaylistBtn" class="btn btn--green" type="button"></button>
-            <span id="addPlaylistNames" class="muted-text"></span>
-            <!-- A playlist import in its trimming step. -->
-            <button id="importCancelAll" class="btn btn--light-red" type="button" hidden>Cancel import</button>
+            <!-- One song, or a whole import (then with how far it is). -->
+            <button id="importCancelAll" class="btn btn--light-red" type="button">Cancel import</button>
             <span id="importFooterText" class="muted-text" hidden></span>
           </div>
           <div class="add-footer__center">
@@ -185,7 +182,11 @@
               <button id="copyMoveMove" class="copy-move__label" type="button">Move Originals</button>
             </div>
           </div>
-          <button id="finishBtn" class="btn btn--primary btn--big" type="button">Finish</button>
+          <div class="add-footer__right">
+            <span id="addPlaylistNames" class="muted-text"></span>
+            <button id="addToPlaylistBtn" class="btn btn--green" type="button"></button>
+            <button id="finishBtn" class="btn btn--primary btn--big" type="button">Finish</button>
+          </div>
         </div>
       </section>
 

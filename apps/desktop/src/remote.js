@@ -1535,14 +1535,22 @@ function pushNew(playlistsFor = {}) {
   queueLocalChanges({ onlyNew: true, playlistsFor });
 }
 
-/** An imported playlist: goes up, into an existing server playlist when that was picked. */
-function pushImport({ localPlaylistId, mergeInto, existingIds }) {
+/**
+ * An import: its songs (songIds, in Local Files) go up, into the imported
+ * playlist (an existing server playlist when that was picked) and the server
+ * playlists picked with "Add to Playlist" (playlistIds). The songs it took
+ * from the library (existingIds) join the same playlists.
+ */
+function pushImport({ localPlaylistId, mergeInto, existingIds, playlistIds = [], songIds = [] }) {
   if (localPlaylistId && mergeInto) sync.listMap[localPlaylistId] = mergeInto;
-  queueLocalChanges({ onlyNew: true, lists: localPlaylistId ? [localPlaylistId] : null });
+  const extra = playlistIds.filter((id) => model.playlistById(getView(), id));
+  const playlistsFor = Object.fromEntries(songIds.map((id) => [id, extra]));
+  queueLocalChanges({ onlyNew: true, lists: localPlaylistId ? [localPlaylistId] : null, playlistsFor });
   const target = localPlaylistId && sync.listMap[localPlaylistId];
   const known = (existingIds || []).filter((id) => model.songById(getView(), id));
-  if (target && known.length) {
-    sync.queue.push(newCommand('addSongsToPlaylist', { playlistId: target, songIds: known }));
+  const into = [...new Set([target, ...extra].filter(Boolean))];
+  if (into.length && known.length) {
+    for (const playlistId of into) sync.queue.push(newCommand('addSongsToPlaylist', { playlistId, songIds: known }));
     saveSync();
     refreshView();
     flushSoon();

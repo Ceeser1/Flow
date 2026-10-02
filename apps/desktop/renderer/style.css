@@ -851,7 +851,21 @@ progress {
   white-space: nowrap;
 }
 
-.add-footer > #finishBtn { justify-self: end; }
+.add-footer__right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.add-footer__right .muted-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-footer__right .btn { flex: none; }
 
 /* Copy Files [switch] Move Originals, with a warning above on hover. */
 .copy-move {
@@ -966,7 +980,13 @@ progress {
 }
 
 .import__warn-text { color: var(--amber); }
-.import__name { margin: 0; width: min(360px, 100%); }
+/* The playlist's name: text with a pencil, or a box with Apply and Cancel. */
+.import__name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.import__name-box { width: min(320px, 50vw); height: 30px; }
+.import__rename { padding: 2px; }
+.import__rename .icon { width: 15px; height: 15px; }
+.import__name-hint { color: var(--amber); font-size: 12px; }
+.import__create { color: var(--grey); }
 
 .import__warnings {
   display: flex;

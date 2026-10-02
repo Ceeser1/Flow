@@ -456,9 +456,15 @@ handle('import:finish', async ({ job, run }) => {
     // then go up. The playlist to add to and the songs already in the
     // library are the server's, which Local Files does not have.
     const existingIds = job.entries.filter((e) => e.existingId).map((e) => e.existingId);
-    const localJob = { ...job, mergeInto: null, entries: job.entries.filter((e) => !e.existingId) };
+    const localJob = { ...job, mergeInto: null, playlistIds: [], entries: job.entries.filter((e) => !e.existingId) };
     const summary = await importer.finish(localJob, onProgress);
-    remote.pushImport({ localPlaylistId: summary.playlistId, mergeInto: job.mergeInto || null, existingIds });
+    remote.pushImport({
+      localPlaylistId: summary.playlistId,
+      mergeInto: job.mergeInto || null,
+      existingIds,
+      playlistIds: job.playlistIds || [],
+      songIds: summary.songIds,
+    });
     summary.fromLibrary = existingIds.length;
     return summary;
   } finally {

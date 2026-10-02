@@ -47,7 +47,9 @@ const AddPage = {
 
     this._initEditor();
 
-    $('addToPlaylistBtn').onclick = () => this.choosePlaylists();
+    // Shared with a whole import, which then picks playlists for every song.
+    $('addToPlaylistBtn').onclick = () => (ImportPanel.ownsFooter ? ImportPanel.choosePlaylists() : this.choosePlaylists());
+    this._drawPlaylistButton();
     $('finishBtn').onclick = () => (ImportPanel.ownsFooter ? ImportPanel.finishAll() : this.finish());
   },
 
@@ -299,6 +301,7 @@ const AddPage = {
     $('addFooter').hidden = !ready;
     $('finishBtn').disabled = phase === 'saving';
     $('addToPlaylistBtn').disabled = phase === 'saving';
+    $('importCancelAll').disabled = phase === 'saving';
     $('finishBtn').textContent = phase === 'saving' ? 'Saving...' : 'Finish';
   },
 
@@ -611,12 +614,32 @@ const AddPage = {
     this._drawPlaylistButton();
   },
 
+  /** The footer's Add to Playlist, for this song or for the whole import that has the footer. */
   _drawPlaylistButton() {
-    const names = this.playlistIds.map((id) => Store.playlist(id)).filter(Boolean).map((p) => p.name);
-    this.playlistIds = this.playlistIds.filter((id) => Store.playlist(id));
+    const forImport = typeof ImportPanel !== 'undefined' && ImportPanel.ownsFooter;
+    const owner = forImport ? ImportPanel : this;
+    owner.playlistIds = owner.playlistIds.filter((id) => Store.playlist(id));
+    const names = owner.playlistIds.map((id) => Store.playlist(id).name);
     $('addToPlaylistBtn').innerHTML = Icons.plus + `<span>Add to Playlist${names.length ? ` (${names.length})` : ''}</span>`;
-    $('addToPlaylistBtn').title = names.length ? names.join(', ') : 'Choose playlists for this song';
+    $('addToPlaylistBtn').title = names.length ? names.join(', ')
+      : (forImport ? 'Choose playlists for every song of this import' : 'Choose playlists for this song');
     $('addPlaylistNames').textContent = names.length ? names.join(', ') : '';
+  },
+
+  /** Cancel import for one downloaded song: throws it away. */
+  async cancelSingle() {
+    if (!this.editorReady || this.embedded) return;
+    const ok = await confirmDialog({
+      title: 'Cancel import?',
+      message: 'Throw away the downloaded song? Nothing of it is saved.',
+      confirmLabel: 'Cancel import',
+      danger: true,
+    });
+    if (!ok || !this.editorReady || this.embedded) return;
+    this._discard();
+    $('progressPanel').hidden = true;
+    $('linkInput').focus();
+    toast('Download thrown away', 'info');
   },
 
   async finish() {
