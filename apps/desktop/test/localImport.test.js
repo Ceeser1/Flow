@@ -16,7 +16,7 @@ process.env.FLOW_MUSIC = path.join(scratch, 'music');
 const { scanFolder } = require('../src/localScan');
 const importer = require('../src/importer');
 const library = require('../src/library');
-const { runProcess } = require('../src/processRunner');
+const { runProcess } = require('@flow/core/processRunner');
 
 library.load();
 test.after(() => fs.rmSync(scratch, { recursive: true, force: true }));

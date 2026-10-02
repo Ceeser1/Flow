@@ -22,7 +22,7 @@ const waveform = require('./src/waveform');
 const loudness = require('./src/loudness');
 const remote = require('./src/remote');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
-const { ProcessCancelledError } = require('./src/processRunner');
+const { ProcessCancelledError } = require('@flow/core/processRunner');
 
 let mainWindow = null;
 let downloadToken = null;

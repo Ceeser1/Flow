@@ -35,23 +35,11 @@ function findYtDlp() {
   return bundled('yt-dlp.exe');
 }
 
-/**
- * Runs a short tool call. With a cancel token (see processRunner.js), cancel()
- * on it kills the call too, so an import that is cancelled starts nothing new
- * and leaves nothing running.
- */
-function run(exe, args, timeout = 60000, cancelToken = null) {
+function run(exe, args, timeout = 60000) {
   return new Promise((resolve) => {
-    const child = execFile(exe, args, { windowsHide: true, timeout }, (err, stdout, stderr) => {
+    execFile(exe, args, { windowsHide: true, timeout }, (err, stdout, stderr) => {
       resolve({ ok: !err, stdout: String(stdout || ''), stderr: String(stderr || '') });
     });
-    if (cancelToken) {
-      cancelToken.cancel = () => {
-        cancelToken.cancelled = true;
-        child.kill();
-      };
-      if (cancelToken.cancelled) child.kill();
-    }
   });
 }
 
@@ -91,44 +79,6 @@ async function refreshYtDlp() {
   }
 }
 
-const NO_AUDIO = { duration: 0, codec: '', formatName: '', bitRate: 0, tags: {} };
-
-/**
- * Duration, audio codec, container, bit rate and tags of a file, from one
- * ffprobe call. Tag names come back lower-cased, with stream tags (where Ogg
- * and Opus keep theirs) merged under the container's.
- */
-async function probeAudio(filePath, cancelToken = null) {
-  const ffprobe = findFfprobe();
-  if (!ffprobe) throw new Error('ffprobe.exe was not found. Please reinstall Flow.');
-  const r = await run(ffprobe, [
-    '-v', 'error', '-select_streams', 'a:0',
-    '-show_entries', 'format=duration,bit_rate,format_name:format_tags:stream=codec_name,bit_rate:stream_tags',
-    '-of', 'json', filePath,
-  ], 30000, cancelToken);
-  if (!r.ok) return { ...NO_AUDIO };
-  let info;
-  try {
-    info = JSON.parse(r.stdout);
-  } catch {
-    return { ...NO_AUDIO };
-  }
-  const format = info.format || {};
-  const stream = (info.streams || [])[0] || {};
-  const tags = {};
-  for (const source of [stream.tags, format.tags]) {
-    for (const [k, v] of Object.entries(source || {})) tags[k.toLowerCase()] = String(v);
-  }
-  const duration = parseFloat(format.duration);
-  return {
-    duration: Number.isFinite(duration) ? duration : 0,
-    codec: String(stream.codec_name || ''),
-    formatName: String(format.format_name || ''),
-    bitRate: Math.round(Number(stream.bit_rate) || Number(format.bit_rate) || 0),
-    tags,
-  };
-}
-
 function status() {
   return {
     ffmpeg: !!findFfmpeg(),
@@ -137,4 +87,4 @@ function status() {
   };
 }
 
-module.exports = { findFfmpeg, findFfprobe, findYtDlp, refreshYtDlp, probeAudio, status };
+module.exports = { findFfmpeg, findFfprobe, findYtDlp, refreshYtDlp, status };

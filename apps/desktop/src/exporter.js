@@ -9,13 +9,9 @@
 const fs = require('fs');
 const path = require('path');
 const paths = require('./paths');
-const tools = require('./tools');
-const { runFfmpeg } = require('./ffmpeg');
+const media = require('./media');
 const { songFileStem } = require('@flow/core/text');
 const { tagArgs } = require('@flow/core/tags');
-
-// Trims closer than this to either end are treated as no trim at all.
-const EDGE = 0.02;
 
 function samePath(a, b) {
   return !!a && !!b && path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
@@ -40,24 +36,9 @@ function uniquePath(stem, ext, current = null) {
  * Cuts [start, end] out of the cached download into the music folder, with
  * tags. Resolves { file, duration, format }.
  */
-async function saveSong({ cachePath, start, end, duration, artist, title, mix, sourceUrl }) {
-  const ext = path.extname(cachePath).slice(1).toLowerCase();
-  const dest = uniquePath(songFileStem(artist, title, mix), ext);
-  const cut = [];
-  if (start > EDGE) cut.push('-ss', start.toFixed(3));
-  if (duration && end < duration - EDGE) cut.push('-to', end.toFixed(3));
-  // A cut FLAC is encoded again (still lossless): a copied stream keeps the
-  // whole file's length in its header, so players would show the uncut length.
-  const codec = cut.length && ext === 'flac' ? ['-c:a', 'flac', '-compression_level', '5'] : ['-c', 'copy'];
-  try {
-    await runFfmpeg([...cut, '-i', cachePath, '-map', '0:a:0', ...codec,
-      ...tagArgs({ artist, title, mix, sourceUrl }, ext), dest], end - start);
-  } catch (err) {
-    fs.rmSync(dest, { force: true });
-    throw err;
-  }
-  const info = await tools.probeAudio(dest);
-  return { file: dest, duration: info.duration || (end - start), format: ext };
+function saveSong(job) {
+  const ext = path.extname(job.cachePath).slice(1).toLowerCase();
+  return media.cutSong(job, uniquePath(songFileStem(job.artist, job.title, job.mix), ext));
 }
 
 /**
@@ -70,7 +51,7 @@ async function retagSong(song, meta) {
   const dest = uniquePath(songFileStem(meta.artist, meta.title, meta.mix), ext, song.file);
   const tmp = path.join(path.dirname(dest), `.flow-retag-${Date.now()}.${ext}`);
   try {
-    await runFfmpeg(['-i', song.file, '-map', '0:a:0', '-c', 'copy',
+    await media.runFfmpeg(['-i', song.file, '-map', '0:a:0', '-c', 'copy',
       ...tagArgs({ ...meta, sourceUrl: song.sourceUrl }, ext), tmp], song.duration);
     fs.rmSync(song.file, { force: true });
     fs.renameSync(tmp, dest);

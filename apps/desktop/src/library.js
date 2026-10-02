@@ -103,7 +103,7 @@ function metaFromFile(file, tags = {}) {
 
 /** A library entry for a file found in the folder, from its tags or its name. */
 async function songFromFile(file) {
-  const info = await tools.probeAudio(file);
+  const info = await require('./media').probeAudio(file);
   if (!info.codec) return null;
   const meta = metaFromFile(file, info.tags);
   let addedAt = Date.now();
