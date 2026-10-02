@@ -72,7 +72,7 @@ const { URL } = require('url');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const { isPrivateIp, isTailscaleAddress } = require('@flow/core/address');
 const { PUBLIC_LEVEL } = require('@flow/core/password');
-const { checkPassword, hashPassword, hashToken } = require('./config');
+const { checkPassword, hashPassword, hashToken, CLIENT_ID } = require('./config');
 const { DownloadError } = require('./downloads');
 
 const PROTOCOL = 1;
@@ -377,17 +377,26 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
 
   const publicProfile = (p) => (p ? { id: p.id, name: p.name, pin: !!p.pin } : null);
 
+  /** The app's install id from a request body (or the token it carries on from), or ''. */
+  function clientIdOf(body, entry) {
+    const id = String((body && body.client) || (entry && entry.client) || '');
+    return CLIENT_ID.test(id) ? id : '';
+  }
+
   /**
-   * A new token for `device`, replacing its old one. `session`: the token entry
-   * it carries on from (a profile signed in to), which keeps the session's
-   * start: only the password makes a session a new one.
+   * A new token for `device`, replacing its old one. `client`: the app's
+   * install id; with one, only that app's old token is replaced (two PCs of
+   * the same name are two devices), along with one its machine had from
+   * before apps sent it. `session`: the token entry it carries on from (a
+   * profile signed in to), which keeps the session's start: only the
+   * password makes a session a new one.
    */
-  function issueToken(device, profileId, session = null) {
+  function issueToken(device, profileId, session = null, client = '') {
     const cfg = config.get();
     const now = Date.now();
     const token = crypto.randomBytes(24).toString('base64url');
-    const tokens = cfg.tokens.filter((t) => t.device !== device);
-    tokens.push({ hash: hashToken(token), device, createdAt: session ? session.createdAt : now, lastSeenAt: now, profileId });
+    const tokens = cfg.tokens.filter((t) => (client ? t.client !== client && !(t.device === device && !t.client) : t.device !== device));
+    tokens.push({ hash: hashToken(token), device, client, createdAt: session ? session.createdAt : now, lastSeenAt: now, profileId });
     config.set({ tokens: tokens.slice(-50) });
     return token;
   }
@@ -425,7 +434,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       config.set({ profiles: [...config.get().profiles, profile] });
       library.createProfile(id);
       log(`Profile made: ${name} (${device})`);
-      return sendJson(res, 200, { token: issueToken(device, id, entry), profile: publicProfile(profile) });
+      return sendJson(res, 200, { token: issueToken(device, id, entry, clientIdOf(body, entry)), profile: publicProfile(profile) });
     }
     if (action === 'login') {
       throttle.check(ip);
@@ -438,7 +447,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
       }
       throttle.ok(ip);
       log(`Signed in: ${device} as ${profile.name}`);
-      return sendJson(res, 200, { token: issueToken(device, profile.id, entry), profile: publicProfile(profile) });
+      return sendJson(res, 200, { token: issueToken(device, profile.id, entry, clientIdOf(body, entry)), profile: publicProfile(profile) });
     }
     if (action === 'logout') {
       if (entry) setToken(entry, { profileId: null });
@@ -484,7 +493,7 @@ function createHttpServer({ config, library, version, log = () => {}, tailscale 
     throttle.ok(ip);
     const device = String(body.device || ip).slice(0, 80);
     // A device signing in again replaces its old token rather than piling up.
-    const token = issueToken(device, null);
+    const token = issueToken(device, null, null, clientIdOf(body));
     log(`Signed in: ${device}`);
     sendJson(res, 200, { token });
   }

@@ -164,6 +164,33 @@ test('with a password only a signed-in device gets in', async () => {
   }, { password: '4711' });
 });
 
+test('two apps on machines of the same name keep their own tokens', async () => {
+  await withServer(async ({ base, server }) => {
+    const signIn = async (body) => (await (await fetch(`${base}/api/login`, { method: 'POST', body: JSON.stringify({ password: '4711', ...body }) })).json()).token;
+    const ok = async (token) => (await fetch(`${base}/api/library`, { headers: { Authorization: `Bearer ${token}` } })).status === 200;
+    // An app from before 2.8 (no install id) is replaced by the first new one of its machine.
+    const old = await signIn({ device: 'PC' });
+    const a = await signIn({ device: 'PC', client: 'client-aaaaaaaa' });
+    assert.equal(await ok(old), false);
+    const b = await signIn({ device: 'PC', client: 'client-bbbbbbbb' });
+    assert.ok(await ok(a));
+    assert.ok(await ok(b));
+    // The same app signing in again replaces only its own.
+    const a2 = await signIn({ device: 'PC', client: 'client-aaaaaaaa' });
+    assert.equal(await ok(a), false);
+    assert.ok(await ok(a2));
+    assert.ok(await ok(b));
+    // A profile signed in to keeps the app's id.
+    const r = await (await fetch(`${base}/api/profiles`, { method: 'POST', headers: { Authorization: `Bearer ${b}` }, body: JSON.stringify({ name: 'Anna', device: 'PC' }) })).json();
+    assert.ok(await ok(r.token));
+    assert.ok(await ok(a2));
+    assert.deepEqual(server.config.get().tokens.map((t) => t.client).sort(), ['client-aaaaaaaa', 'client-bbbbbbbb']);
+    // Nonsense is no id.
+    await signIn({ device: 'Other', client: 'x y' });
+    assert.equal(server.config.get().tokens.find((t) => t.device === 'Other').client, '');
+  }, { password: '4711' });
+});
+
 test('songs dropped into the folder by hand are found, and dropped when deleted', async () => {
   await withServer(async ({ server, base, dirs }) => {
     const file = path.join(dirs.music, 'Portishead - Glory Box.mp3');

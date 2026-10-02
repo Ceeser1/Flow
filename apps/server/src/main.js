@@ -201,7 +201,9 @@ async function main() {
     if (!tokens.length) console.log('No devices signed in.');
     for (const t of tokens) {
       const p = profiles.find((x) => x.id === t.profileId);
-      console.log(`${t.device}${p ? ` as ${p.name}` : ''}  (signed in ${new Date(t.createdAt).toLocaleString()}, last seen ${t.lastSeenAt ? new Date(t.lastSeenAt).toLocaleString() : 'never'})`);
+      // Two apps on machines of the same name: told apart by their install id.
+      const twin = t.client && tokens.some((o) => o !== t && o.device === t.device);
+      console.log(`${t.device}${twin ? ` #${t.client.slice(0, 6)}` : ''}${p ? ` as ${p.name}` : ''}  (signed in ${new Date(t.createdAt).toLocaleString()}, last seen ${t.lastSeenAt ? new Date(t.lastSeenAt).toLocaleString() : 'never'})`);
     }
     return;
   }

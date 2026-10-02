@@ -18,6 +18,9 @@ const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { DEFAULT_PORT } = require('@flow/core/address');
 const { parseLevel, isStrongPassword } = require('@flow/core/password');
 
+// An app's install id, as it sends it.
+const CLIENT_ID = /^[\w-]{8,64}$/;
+
 function defaultHome() {
   if (process.env.FLOW_SERVER_HOME) return process.env.FLOW_SERVER_HOME;
   if (process.platform === 'win32') {
@@ -81,6 +84,9 @@ function clean(raw) {
       .map((t) => ({
         hash: String(t.hash),
         device: String(t.device || '').slice(0, 80),
+        // The app's own install id (apps since 2.8): two apps on machines of
+        // the same name are two devices. '' from older apps.
+        client: CLIENT_ID.test(String(t.client || '')) ? String(t.client) : '',
         createdAt: Number(t.createdAt) || Date.now(),
         lastSeenAt: Number(t.lastSeenAt) || 0,
         // The profile this device is signed in to; null: none.
@@ -175,4 +181,4 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
-module.exports = { open, defaultHome, hashPassword, passwordEntry, checkPassword, hashToken, DEFAULT_PORT };
+module.exports = { open, defaultHome, hashPassword, passwordEntry, checkPassword, hashToken, DEFAULT_PORT, CLIENT_ID };

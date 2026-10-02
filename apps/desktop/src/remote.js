@@ -160,6 +160,16 @@ function decrypt(stored) {
 // The token this run of Flow signed in with (never read back from disk).
 let runToken = '';
 
+/** This install's id, made once: the server tells devices apart by it. */
+function clientId() {
+  let id = settings.get('clientId');
+  if (!id) {
+    id = crypto.randomBytes(12).toString('base64url');
+    settings.set({ clientId: id });
+  }
+  return id;
+}
+
 class OfflineError extends Error {}
 class AuthError extends Error {}
 
@@ -435,7 +445,7 @@ async function login(base) {
   const s = settings.all();
   const pw = decrypt(s.serverSecret);
   if (!pw) throw new AuthError('This server needs its password. Enter it under "Server Password".');
-  const r = await request(base, '/api/login', { method: 'POST', json: { password: pw, device: os.hostname() }, timeout: 20000 });
+  const r = await request(base, '/api/login', { method: 'POST', json: { password: pw, device: os.hostname(), client: clientId() }, timeout: 20000 });
   if (r.status === 401) throw new AuthError('Wrong password.');
   if (r.status !== 200 || !r.json || !r.json.token) throw new Error((r.json && r.json.error) || 'The server did not let Flow sign in.');
   sync.token = encrypt(r.json.token);
@@ -460,7 +470,7 @@ async function restoreProfile(base, token) {
     const pin = was.pin ? decrypt(sync.profilePin) : '';
     if (was.pin && !pin) return token;
     const r = await request(base, '/api/profiles/login', {
-      method: 'POST', json: { profileId: was.id, pin, device: os.hostname() }, token, timeout: 20000,
+      method: 'POST', json: { profileId: was.id, pin, device: os.hostname(), client: clientId() }, token, timeout: 20000,
     });
     if (r.status === 200 && r.json && r.json.token) {
       sync.token = encrypt(r.json.token);
@@ -1820,7 +1830,7 @@ async function switchProfile(token, profile, pin = '') {
 async function loginProfile(profileId, pin) {
   requireProfiles();
   await sendWaiting();
-  const r = await call('/api/profiles/login', { method: 'POST', json: { profileId, pin: String(pin || ''), device: os.hostname() }, timeout: 20000 });
+  const r = await call('/api/profiles/login', { method: 'POST', json: { profileId, pin: String(pin || ''), device: os.hostname(), client: clientId() }, timeout: 20000 });
   return switchProfile(r.token, r.profile, String(pin || ''));
 }
 
@@ -1828,7 +1838,7 @@ async function createProfile(name, pin) {
   requireProfiles();
   // So the new profile's copy of the Default / Shared playlists has everything made before it.
   await sendWaiting();
-  const r = await call('/api/profiles', { method: 'POST', json: { name, pin: String(pin || ''), device: os.hostname() }, timeout: 20000 });
+  const r = await call('/api/profiles', { method: 'POST', json: { name, pin: String(pin || ''), device: os.hostname(), client: clientId() }, timeout: 20000 });
   return switchProfile(r.token, r.profile, String(pin || ''));
 }
 
