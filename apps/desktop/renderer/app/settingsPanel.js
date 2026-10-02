@@ -48,6 +48,9 @@ const SettingsPanel = {
     Store.onServer(() => {
       if (this.modal) this._drawServer();
     });
+    Output.onChange(() => {
+      if (this.modal && this._outputFill) this._outputFill();
+    });
   },
 
   open() {
@@ -56,6 +59,12 @@ const SettingsPanel = {
     const body = h('div.settings', ...this._sections([
       h('h3.settings__section', 'General'),
       this._savedSongsRow(),
+      this._row({
+        label: 'Output device',
+        desc: 'Where the music plays: Windows\' default, or a device of its own (headphones, a Bluetooth speaker). '
+          + 'Also in the player bar. If it is switched off, Flow plays on the default until it is back.',
+        right: this._outputSelect(),
+      }),
       this._row({
         key: 'crossfade',
         label: 'Song Transition',
@@ -333,6 +342,25 @@ const SettingsPanel = {
   },
 
   /** The browser the cookies come from: those found on this computer first. */
+  /** The outputs Windows offers (output.js). */
+  _outputSelect() {
+    const select = h('select.select');
+    const fill = () => {
+      clear(select);
+      select.appendChild(h('option', { value: '' }, `Windows default${Output.defaultLabel ? ` (${Output.defaultLabel})` : ''}`));
+      for (const d of Output.devices) select.appendChild(h('option', { value: d.deviceId }, d.label));
+      const s = Store.settings;
+      const chosen = s.outputDevice ? Output._chosen() : null;
+      if (s.outputDevice && !chosen) select.appendChild(h('option', { value: s.outputDevice }, `${s.outputDeviceLabel || 'Chosen device'} (not there)`));
+      select.value = chosen ? chosen.deviceId : s.outputDevice;
+    };
+    select.addEventListener('change', () => Output.choose(select.value));
+    // Redrawn while Settings is open (one listener, set up in init).
+    this._outputFill = fill;
+    fill();
+    return select;
+  },
+
   _cookieBrowser() {
     const select = h('select.select');
     const fill = (list) => {

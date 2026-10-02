@@ -100,6 +100,10 @@ const DEFAULTS = {
   clientId: '',
   // Active Sessions: the devices that joined may change this one's volume.
   sessionAllowVolume: false,
+  // The output the music plays on ('' for Windows' default), and its name to
+  // find it again should its id change (output.js).
+  outputDevice: '',
+  outputDeviceLabel: '',
 };
 
 const EQ_COLORS = ['spectrum', 'rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
@@ -142,6 +146,7 @@ function clean(raw) {
   for (const key of ['serverHome', 'serverRemote']) s[key] = typeof s[key] === 'string' ? s[key].trim().slice(0, 300) : '';
   s.serverSecret = typeof s.serverSecret === 'string' ? s.serverSecret : '';
   s.clientId = /^[\w-]{8,64}$/.test(String(s.clientId || '')) ? String(s.clientId) : '';
+  for (const key of ['outputDevice', 'outputDeviceLabel']) s[key] = typeof s[key] === 'string' ? s[key].slice(0, 300) : '';
   for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAllowVolume']) s[key] = s[key] === true;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',

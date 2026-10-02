@@ -39,8 +39,10 @@ const Session = {
   _listeners: [],
   // The host's open join prompts: request id -> { modal, timer }.
   _prompts: new Map(),
-  // The output device's name, for the session's name ("Ceeser - Sony GTK").
-  outputLabel: '',
+  /** The output device's name, for the session's name ("Ceeser - Sony GTK"). */
+  get outputLabel() {
+    return Output.label();
+  },
 
   /** The server has Active Sessions and the live channel is open. */
   get available() {
@@ -105,26 +107,8 @@ const Session = {
     Store.onSettings((patch) => {
       if ('sessionAllowVolume' in patch) this._changed(true);
     });
-    this._readOutput();
-    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
-      navigator.mediaDevices.addEventListener('devicechange', () => this._readOutput());
-    }
-  },
-
-  /** The default output's name, as Windows calls it ("Default - Speakers (...)" without "Default - "). */
-  async _readOutput() {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const out = devices.find((d) => d.kind === 'audiooutput' && d.deviceId === 'default')
-        || devices.find((d) => d.kind === 'audiooutput');
-      const label = out ? out.label.replace(/^Default\s*-\s*/i, '').trim() : '';
-      if (label !== this.outputLabel) {
-        this.outputLabel = label;
-        this._changed();
-      }
-    } catch {
-      // No name: the session goes by the profile and the PC's name.
-    }
+    // Another output (chosen, or Windows' default changed): the session's name changes with it.
+    Output.onChange(() => this._changed());
   },
 
   /** "[Profile] - [Output device]": what the others see this app as. */

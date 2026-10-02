@@ -19,6 +19,7 @@
   Store.setLibrary(init.library);
 
   Player.init();
+  Output.init();
   Session.init();
   Ambient.init();
   ScreenFlash.init();
