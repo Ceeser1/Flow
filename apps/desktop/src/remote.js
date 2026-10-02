@@ -1719,6 +1719,20 @@ async function sessions(body) {
   }
 }
 
+/**
+ * Out of any Active Session, for quitting: a host hands over at once instead
+ * of after the server's grace for a dropped connection. Waits at most
+ * `timeout` ms, and never fails.
+ */
+async function leaveSession(timeout = 1500) {
+  if (!active() || status.state !== 'online' || !conn.sessions || !status.live) return;
+  try {
+    await call('/api/sessions', { method: 'POST', json: { type: 'leave', client: clientId() }, timeout });
+  } catch {
+    // Quitting anyway; the server notices the dropped channel.
+  }
+}
+
 // ---- for main.js ----
 
 function init(h) {
@@ -2112,6 +2126,6 @@ function stop() {
 
 module.exports = {
   init, active, reconfigure, setSecret, stop,
-  status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, pushNew, pushImport, deleteSong, localFileOf, sessions,
+  status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, pushNew, pushImport, deleteSong, localFileOf, sessions, leaveSession,
   loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, deleteProfile,
 };

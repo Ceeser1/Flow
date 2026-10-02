@@ -727,13 +727,19 @@ const Player = {
     if (this.remote.state.duration) s.duration = this.remote.state.duration;
   },
 
-  _leaveRemote() {
+  /** Out of remote mode; `keepAudio`: the song playing along goes on as it is (its listen too). */
+  _leaveRemote({ keepAudio = false } = {}) {
     if (!this.remote) return null;
     const state = { ...this.remote.state, position: this._remotePosition() };
-    this._stopHere();
+    if (keepAudio) {
+      this.remote.hereSong = null;
+      this.audio.playbackRate = 1;
+    } else this._stopHere();
     clearInterval(this.remote.ticker);
     this.remote = null;
-    this._endSession();
+    if (keepAudio) {
+      if (this.session) this.session.lastT = null;
+    } else this._endSession();
     return state;
   },
 
@@ -841,12 +847,33 @@ const Player = {
       : 1;
   },
 
-  /** Out of the session: the host's song stays, paused at its place, with its list and queue. */
-  endRemote() {
-    const state = this._leaveRemote();
+  /**
+   * Out of the session: the host's song stays, paused at its place, with its
+   * list and queue (`keepPlaying`: playing on, for one that played along).
+   */
+  endRemote({ keepPlaying = false } = {}) {
+    const r = this.remote;
+    // Playing along already: that goes on without loading it again (the server may be gone).
+    const along = keepPlaying && !!r && r.here && r.hereSong === r.state.songId && !this.audio.paused;
+    const state = this._leaveRemote({ keepAudio: along });
     if (!state) return;
-    if (!this.takeOver(state, { autoplay: false })) this.stop();
+    if (along) this._adopt(state);
+    else if (!this.takeOver(state, { autoplay: keepPlaying })) this.stop();
     this._emit();
+  },
+
+  /** The song playing along becomes this player's own: the host's list and queue around it. */
+  _adopt(state) {
+    const context = this.addList(state.ids || [], state.contextName);
+    if (state.queue) this.queue.restore({ ...state.queue, contextId: context, currentId: state.songId });
+    else this.queue.start(context, this.idsOf(context), state.songId);
+    this.queue.shuffle = !!state.shuffle;
+    this.contextId = context;
+    this.currentId = state.songId;
+    this.repeat = !!state.repeat;
+    if (!this.session || this.session.songId !== state.songId) this._startSession(state.songId);
+    this._updateMediaSession();
+    this._savePosition();
   },
 
   // ---- song transition ----

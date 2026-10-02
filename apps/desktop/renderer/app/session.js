@@ -19,6 +19,8 @@
 
 const Session = {
   HEARTBEAT_MS: 5000,
+  // The live channel gone this long: out of the session (the server's grace is 15 s).
+  LOST_MS: 20000,
   // The server's list of sessions (everyone's, this app's own included).
   list: [],
   // This app's session: { session (members), host: true/false } or null.
@@ -98,13 +100,22 @@ const Session = {
     Player.onChange(() => this._drawBar());
     Player.onChange(() => this._changed());
     Player.onSeek(() => this._changed(true));
+    // The profile signed in to, as long as connected (Flow may be connected before the window opens).
+    if (this.available) this._profileId = Store.server.profile ? Store.server.profile.id : null;
     Store.onServer(() => {
       if (!this.available && (this.mine || this.list.length || this.request)) {
         // Reconnecting: what the server knows comes again with the stream.
         this.list = [];
         this._emit();
       }
-      // Another profile signed in to, or this one renamed: the session's name follows.
+      // Another profile signed in to (someone else at this device now): out of the
+      // session, as when logging out. (A rename only renames it.)
+      if (this.available) {
+        const pid = Store.server.profile ? Store.server.profile.id : null;
+        if (this._profileId !== undefined && pid !== this._profileId && this.mine) attempt(() => this.leave());
+        this._profileId = pid;
+      }
+      // This profile renamed (or another one): the session's name follows.
       const name = this.name();
       if (name !== this._lastName) {
         this._lastName = name;
@@ -114,6 +125,7 @@ const Session = {
     Store.onSettings((patch) => {
       if ('sessionAllowVolume' in patch) this._changed(true);
     });
+    Store.onLibrary(() => this._songArrived());
     // Another output (chosen, or Windows' default changed): the session's name changes with it.
     Output.onChange(() => {
       this._changed();
@@ -310,6 +322,9 @@ const Session = {
       }
     } else if (this.mine) {
       if (wasMember) toast(`You are no longer in ${wasMember.name}: the connection to the server was lost.`, 'info');
+      else if (this.mine.session.members.length > 1) {
+        toast('Your session went on without this device (the server restarted or lost the connection).', 'info');
+      }
       if (Player.remote) Player.endRemote();
       this.mine = null;
       this.sessionId = null;
@@ -328,6 +343,7 @@ const Session = {
   _onLive({ type, data }) {
     switch (type) {
       case 'hello':
+        clearTimeout(this._downTimer);
         // A new stream (a reconnect, or a restarted server): everything again.
         this._sentIds = '';
         this._sentQueue = '';
@@ -335,6 +351,11 @@ const Session = {
         this._closePrompts();
         this._refresh();
         if (this._published || Player.isPlaying) this._changed(true);
+        return;
+      case 'down':
+        // Back within the server's grace (15 s), nothing changes; after that, out.
+        clearTimeout(this._downTimer);
+        if (this.mine) this._downTimer = setTimeout(() => this._lost(), this.LOST_MS);
         return;
       case 'sessions':
         this.list = Array.isArray(data.sessions) ? data.sessions : [];
@@ -366,15 +387,19 @@ const Session = {
       case 'control':
         this._execute(data);
         return;
-      case 'hostChanged':
+      case 'hostChanged': {
         this.mine = { session: data.session, host: true };
         this.sessionId = data.sessionId;
         this._published = true;
-        Player.takeOver(this._stateAtNow(data.state));
+        const state = this._stateAtNow(data.state);
+        // A song newer than this library: played once the library has it.
+        this._pendingSong = null;
+        if (!Player.takeOver(state) && state && state.songId) this._pendingSong = { state, since: Date.now() };
         this._changed(true);
         this._newHost(data.previous, data.reason);
         this._emit();
         return;
+      }
       default:
     }
   },
@@ -426,6 +451,42 @@ const Session = {
     else if (reason === 'ended') toast(`${wasMember.name} has ended.`, 'info');
   },
 
+  /** The library now has the song a handover left this app to play (for a minute). */
+  _songArrived() {
+    const p = this._pendingSong;
+    if (!p) return;
+    const waited = (Date.now() - p.since) / 1000;
+    if (!this.isHost || waited > 60) {
+      this._pendingSong = null;
+      return;
+    }
+    if (!Store.song(p.state.songId)) return;
+    this._pendingSong = null;
+    Player.takeOver({ ...p.state, position: (p.state.position || 0) + (p.state.playing ? waited : 0) });
+    this._changed(true);
+  },
+
+  /**
+   * The live channel has been gone too long: the server has let this app go
+   * by now. A member plays on by itself if it played along, else stops; a
+   * host plays on, and the others went on without it.
+   */
+  _lost() {
+    if (!this.mine) return;
+    if (this.isMember) {
+      const name = this.mine.session.name;
+      const keep = !!Player.remote && Player.remote.here && Player.remote.state.playing;
+      if (Player.remote) Player.endRemote({ keepPlaying: keep });
+      toast(`The connection to the server was lost, and with it ${name}.${keep ? ' The music plays on here.' : ''}`, 'info');
+    } else if (this.mine.session.members.length > 1) {
+      toast('The connection to the server was lost. The others in your session go on without this device.', 'info');
+    }
+    this.mine = null;
+    this.sessionId = null;
+    this._closePrompts();
+    this._emit();
+  },
+
   /** A state from the server, its position moved on to now (it was read at sampledAt, server time). */
   _stateAtNow(state) {
     if (!state) return null;
@@ -441,6 +502,9 @@ const Session = {
     if (!this.available) return;
     // In someone else's session: that host tells the server what plays.
     if (this.isMember) return;
+    // Taken over a song this library does not have yet: the server keeps the
+    // last state meanwhile (nothing loaded would end a session of one).
+    if (this._pendingSong) return;
     // Nothing told yet and nothing playing: no session to start.
     if (!this._published && !Player.isPlaying) return;
     clearTimeout(this._publishTimer);

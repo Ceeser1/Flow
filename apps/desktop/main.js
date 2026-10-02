@@ -704,7 +704,9 @@ app.whenReady().then(() => {
   }, 1500);
 });
 
-app.on('window-all-closed', () => {
+app.on('window-all-closed', async () => {
+  // Out of an Active Session first: a host hands it on at once.
+  await remote.leaveSession(1500);
   remote.stop();
   library.unwatch();
   loudnessFiller.stop();
