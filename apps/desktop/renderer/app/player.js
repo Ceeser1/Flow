@@ -23,6 +23,12 @@
 // started there, or the queue of the host before this one): its songs are
 // given as they are (lists), under an id of its own ("session:..."), since
 // that device's playlists are not this one's.
+//
+// In another device's session (remote mode, `remote`), this player plays
+// nothing itself: its song, place, list, queue, Repeat and Shuffle mirror the
+// host's (mirror()), and every button (the bar's, a row's Play, the Queue
+// popup, the keys) goes to the host instead (_remoteDo). Leaving keeps the
+// host's song here, paused at its place, to carry on with.
 
 const AudioFocus = {
   owners: {},
@@ -66,13 +72,27 @@ const Player = {
   // The listen in progress: which song, and how many seconds of it have been
   // heard. Counted into the song's statistics when the song changes.
   session: null,
+  // Remote mode: { state (the host's, as the server sent it), sampledAt (server
+  // time of its position), listKey, ticker } or null.
+  remote: null,
 
   get isPlaying() {
+    if (this.remote) return !!this.remote.state.playing && !!this.currentId;
     return !!this.audio && !this.audio.paused && !!this.currentId;
   },
 
   get position() {
+    if (this.remote) return this._remotePosition();
+    // Still loading a song that starts further in: where it is going to be.
+    if (this._pendingSeek !== null) return this._pendingSeek;
     return this.audio ? this.audio.currentTime || 0 : 0;
+  },
+
+  /** The current song's length: as the element knows it, or the library (or the host) says. */
+  get duration() {
+    if (!this.currentId) return 0;
+    if (this.remote) return this.remote.state.duration || (Store.song(this.currentId) || {}).duration || 0;
+    return this.audio.duration || (Store.song(this.currentId) || {}).duration || 0;
   },
 
   onChange(fn) {
@@ -129,6 +149,7 @@ const Player = {
    * song at its place, its list and queue, Repeat and Shuffle as they were.
    */
   takeOver(state, { autoplay = true } = {}) {
+    this._leaveRemote();
     if (!state || !state.songId || !Store.song(state.songId)) return false;
     const context = this.addList(state.ids || [], state.contextName);
     if (state.queue) {
@@ -212,7 +233,7 @@ const Player = {
         this._emit();
       });
     }
-    AudioFocus.register('player', () => this.pause());
+    AudioFocus.register('player', () => this.pauseHere());
 
     this._bindBar();
     this._bindMediaSession();
@@ -222,7 +243,9 @@ const Player = {
     Store.onLibrary(() => {
       this.queue.prune((id) => !!Store.song(id));
       if (this.fade && !Store.song(this.fade.id)) this._cancelFade();
-      if (this.currentId && !Store.song(this.currentId)) this.stop();
+      if (this.remote) {
+        // The host's song may be newer than this library: it shows from the host's state.
+      } else if (this.currentId && !Store.song(this.currentId)) this.stop();
       else if (this.contextId && !Store.playlist(this.contextId) && !this.lists.has(this.contextId)) this.contextId = 'all';
       if (this.currentId) this._setNorm(this.audio, this.currentId, true);
       this._drawBar();
@@ -272,6 +295,10 @@ const Player = {
    * list's queue from there.
    */
   load(songId, contextId, { autoplay = true, position = 0, listened = 0, keepSession = false, fromQueue = false } = {}) {
+    if (this.remote) {
+      this._remotePlaySong(songId, contextId);
+      return;
+    }
     const song = Store.song(songId);
     if (!song) return;
     this._cancelFade();
@@ -315,6 +342,11 @@ const Player = {
    * song. Resuming it from another list carries on in that list.
    */
   toggleSong(songId, contextId) {
+    if (this.remote) {
+      if (songId === this.currentId) this._remoteDo('toggle');
+      else this._remotePlaySong(songId, contextId);
+      return;
+    }
     if (songId !== this.currentId) {
       this.load(songId, contextId);
       return;
@@ -333,6 +365,12 @@ const Player = {
 
   /** A playlist's own Play button: a new queue from its top (or a random song). */
   togglePlaylist(contextId) {
+    if (this.remote) {
+      // A new queue from its top, or a random song with the host's shuffle.
+      const order = this.idsOf(contextId);
+      if (order.length) this._remotePlaySong(this.queue.shuffle ? order[Math.floor(Math.random() * order.length)] : order[0], contextId);
+      return;
+    }
     if (this.contextId === contextId && this.currentId) {
       this.toggle();
       return;
@@ -345,6 +383,7 @@ const Player = {
   },
 
   toggle() {
+    if (this._remoteDo('toggle')) return;
     if (!this.currentId) {
       const context = this.contextId || Nav.currentPlaylistId() || 'all';
       this.togglePlaylist(context);
@@ -355,12 +394,19 @@ const Player = {
   },
 
   pause() {
+    if (this._remoteDo('pause')) return;
+    this.pauseHere();
+  },
+
+  /** Pauses this device's own playback only (another player starting, the sleep timer). */
+  pauseHere() {
     this._cancelFade();
     if (this.audio && !this.audio.paused) this.audio.pause();
   },
 
   /** Next, pressed: another song started by hand, so Repeat goes off. */
   next() {
+    if (this._remoteDo('next')) return;
     this.repeat = false;
     this._advance();
   },
@@ -395,6 +441,7 @@ const Player = {
   },
 
   prev() {
+    if (this._remoteDo('prev')) return;
     if (!this.contextId) return;
     this.repeat = false;
     this._cancelFade();
@@ -412,6 +459,11 @@ const Player = {
   },
 
   toggleRepeat() {
+    if (this._remoteDo('repeat', { on: !this.repeat })) {
+      this.repeat = !this.repeat;
+      this._emit();
+      return;
+    }
     this.repeat = !this.repeat;
     // A transition already under way would leave the song being repeated.
     if (this.repeat) this._cancelFade();
@@ -422,6 +474,10 @@ const Player = {
   addToQueue(songId) {
     const song = Store.song(songId);
     if (!song) return;
+    if (this._remoteDo('queueAdd', { songId })) {
+      toast(`Added "${song.title}" to the queue of ${Session.sessionName(Session.mine.session.id)}`, 'success');
+      return;
+    }
     this.queue.add(songId);
     toast(`Added "${song.title}" to the queue`, 'success');
     this._emit();
@@ -429,6 +485,7 @@ const Player = {
 
   /** An entry of the Queue popup clicked: it plays now. */
   playFromQueue(part, index) {
+    if (this._remoteDo('queuePlay', { part, index })) return;
     const id = this.queue.playAt(part, index, this.idsOf(this.contextId));
     if (!id || !Store.song(id)) return;
     this.repeat = false;
@@ -437,22 +494,40 @@ const Player = {
 
   /** An entry of the Queue popup dragged to another place in its part. */
   moveInQueue(part, from, to) {
+    // In remote mode it moves here at once too; the host's next state confirms it.
+    this._remoteDo('queueMove', { part, from, to });
     this.queue.move(part, from, to);
     this._emit();
   },
 
   removeFromQueue(part, index) {
+    if (this._remoteDo('queueRemove', { part, index })) {
+      this.queue[part].splice(index, 1);
+      this._emit();
+      return;
+    }
     this.queue.removeAt(part, index, this.idsOf(this.contextId));
     this._emit();
   },
 
   clearQueue() {
+    this._remoteDo('queueClear');
     this.queue.clearManual();
     this._emit();
   },
 
   seek(seconds) {
     if (!this.currentId) return;
+    if (this.remote) {
+      const d = this.duration;
+      const to = Math.max(0, Math.min(d ? d - 0.05 : seconds, seconds));
+      this._remoteDo('seek', { position: to });
+      // Shown there at once; the host's next state confirms it.
+      this.remote.state = { ...this.remote.state, position: to };
+      this.remote.sampledAt = this._serverNow();
+      this._drawTime();
+      return;
+    }
     this._cancelFade();
     const d = this.audio.duration || 0;
     this.audio.currentTime = Math.max(0, Math.min(d ? d - 0.05 : seconds, seconds));
@@ -511,6 +586,11 @@ const Player = {
   },
 
   setShuffle(on) {
+    if (this._remoteDo('shuffle', { on: !!on })) {
+      this.queue.shuffle = !!on;
+      this._emit();
+      return;
+    }
     this._cancelFade();
     this.queue.setShuffle(on, this.contextId ? this.idsOf(this.contextId) : []);
     Store.saveSettings({ shuffle: !!on });
@@ -535,6 +615,8 @@ const Player = {
    * for resume(), or null when the song was not loaded.
    */
   release(songId) {
+    // Nothing of this device's is loaded in remote mode.
+    if (this.remote) return null;
     if (this.fade && (songId === this.fade.id || songId === this.currentId)) this._cancelFade();
     if (songId !== this.currentId) return null;
     const token = { songId, contextId: this.contextId, position: this.position, playing: this.isPlaying };
@@ -548,6 +630,103 @@ const Player = {
     if (!token || !Store.song(token.songId)) return;
     this.load(token.songId, token.contextId,
       { autoplay: token.playing, position: token.position, keepSession: true, fromQueue: true });
+  },
+
+  // ---- remote mode (in another device's session) ----
+
+  _serverNow() {
+    return Date.now() + (Store.server.timeOffset || 0);
+  },
+
+  _remotePosition() {
+    const { state, sampledAt } = this.remote;
+    let t = state.position || 0;
+    if (state.playing && sampledAt) t += Math.max(0, (this._serverNow() - sampledAt) / 1000);
+    return state.duration ? Math.min(t, state.duration) : t;
+  },
+
+  /** In remote mode: the button goes to the host. True when it was sent. */
+  _remoteDo(action, args = {}) {
+    if (!this.remote) return false;
+    Session.control(action, args);
+    return true;
+  },
+
+  /** A song started here in remote mode: it plays there, from this device's list. */
+  _remotePlaySong(songId, contextId) {
+    if (!Store.song(songId)) return;
+    const context = contextId || 'all';
+    this._remoteDo('playSong', { songId, ids: this.idsOf(context), contextName: this.listName(context) || 'All Songs', contextId: context });
+  },
+
+  /**
+   * The host's playback, from the server (on joining, then with every change
+   * and heartbeat): shown here as if played here. The first one stops this
+   * device's own playback.
+   */
+  mirror(state) {
+    if (!state) return;
+    if (!this.remote) {
+      this._cancelFade();
+      this._endSession();
+      this.audio.pause();
+      this.audio.removeAttribute('src');
+      this.audio.load();
+      this._pendingSeek = null;
+      this.remote = { state, sampledAt: 0, listKey: null, ticker: setInterval(() => this._remoteTick(), 250) };
+    }
+    const r = this.remote;
+    if (state.songId !== this.currentId) {
+      this._endSession();
+      if (state.songId) this._startSession(state.songId);
+    }
+    r.state = state;
+    r.sampledAt = state.sampledAt || this._serverNow();
+    // A new list only when the host's list changed.
+    const listKey = `${state.contextName || ''}|${(state.ids || []).join(',')}`;
+    if (listKey !== r.listKey) {
+      r.listKey = listKey;
+      this.contextId = this.addList(state.ids || [], state.contextName);
+    }
+    this.currentId = state.songId || null;
+    if (state.queue) this.queue.restore({ ...state.queue, contextId: this.contextId, currentId: this.currentId });
+    this.queue.shuffle = !!state.shuffle;
+    this.repeat = !!state.repeat;
+    if (this.session) this.session.lastT = null;
+    this._updateMediaSession();
+    this._emit();
+  },
+
+  /** Four times a second in remote mode: the time moves on, and listening is counted. */
+  _remoteTick() {
+    if (!this.remote) return;
+    this._drawTime();
+    const s = this.session;
+    if (!s || s.songId !== this.currentId) return;
+    const t = this.position;
+    if (this.isPlaying && s.lastT !== null) {
+      const step = t - s.lastT;
+      if (step > 0 && step < 1.5) s.listened += step;
+    }
+    s.lastT = t;
+    if (this.remote.state.duration) s.duration = this.remote.state.duration;
+  },
+
+  _leaveRemote() {
+    if (!this.remote) return null;
+    const state = { ...this.remote.state, position: this._remotePosition() };
+    clearInterval(this.remote.ticker);
+    this.remote = null;
+    this._endSession();
+    return state;
+  },
+
+  /** Out of the session: the host's song stays, paused at its place, with its list and queue. */
+  endRemote() {
+    const state = this._leaveRemote();
+    if (!state) return;
+    if (!this.takeOver(state, { autoplay: false })) this.stop();
+    this._emit();
   },
 
   // ---- song transition ----
@@ -776,22 +955,25 @@ const Player = {
     };
 
     const vol = $('volSlider');
-    vol.addEventListener('input', () => this.setVolume(Number(vol.value) / 100));
-    $('volBtn').onclick = () => this.toggleMute();
+    vol.addEventListener('input', () => this._barVolume(Number(vol.value) / 100));
+    $('volBtn').onclick = () => {
+      if (!this.remote) this.toggleMute();
+      else this._barVolume(this._shownVolume() > 0 ? 0 : (this._muteRestore || 0.8));
+    };
     // Scrolling over the volume nudges it, as in most players.
     $('volWrap').addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.setVolume(this.volume + (e.deltaY < 0 ? 0.05 : -0.05));
+      this._barVolume(this._shownVolume() + (e.deltaY < 0 ? 0.05 : -0.05));
     }, { passive: false });
 
     const track = $('playerTrack');
     const timeAt = (clientX) => {
       const r = track.getBoundingClientRect();
       const frac = Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width)));
-      return frac * (this.audio.duration || 0);
+      return frac * this.duration;
     };
     track.addEventListener('pointerdown', (e) => {
-      if (!this.currentId || !this.audio.duration) return;
+      if (!this.currentId || !this.duration) return;
       track.setPointerCapture(e.pointerId);
       this._dragging = true;
       track.classList.add('timeline--dragging');
@@ -811,10 +993,37 @@ const Player = {
     });
   },
 
+  /** The bar's volume: this device's, or in remote mode the host's (when it allows that). */
+  _barVolume(v) {
+    if (!this.remote) {
+      this.setVolume(v);
+      return;
+    }
+    if (!this.remote.state.allowVolume) return;
+    const vol = Math.max(0, Math.min(1, v));
+    if (vol > 0) this._muteRestore = vol;
+    this.remote.state = { ...this.remote.state, volume: vol };
+    this._drawVolume();
+    // At most a few a second while dragged; the last one always goes.
+    clearTimeout(this._remoteVolTimer);
+    const wait = Math.max(0, (this._remoteVolAt || 0) + 200 - Date.now());
+    this._remoteVolTimer = setTimeout(() => {
+      this._remoteVolAt = Date.now();
+      this._remoteDo('volume', { value: vol });
+    }, wait);
+  },
+
+  _shownVolume() {
+    return this.remote ? Number(this.remote.state.volume) || 0 : this.volume;
+  },
+
   _drawBar() {
-    const song = this.currentId ? Store.song(this.currentId) : null;
+    const known = this.currentId ? Store.song(this.currentId) : null;
+    // In remote mode, a song newer than this library shows as the host names it.
+    const song = known || (this.remote && this.currentId ? { ...this.remote.state, id: this.currentId } : null);
     const bar = $('player');
     bar.classList.toggle('player--empty', !song);
+    bar.classList.toggle('player--remote', !!this.remote);
     $('playerTitle').textContent = song ? Util.songLine(song) : 'Nothing playing';
     $('playerTitle').title = song ? Util.songLine(song) : '';
     const from = song ? this.listName() : '';
@@ -837,9 +1046,9 @@ const Player = {
   },
 
   _drawTime(dragTime) {
-    const d = this.currentId ? (this.audio.duration || (Store.song(this.currentId) || {}).duration || 0) : 0;
-    let t = this.currentId ? this.audio.currentTime || 0 : 0;
-    if (this._pendingSeek !== null) t = this._pendingSeek;
+    const d = this.duration;
+    let t = this.currentId ? this.position : 0;
+    if (this._pendingSeek !== null && !this.remote) t = this._pendingSeek;
     if (this._dragging && dragTime !== undefined) t = dragTime;
     else if (this._dragging) return;
     const frac = d ? Math.min(1, t / d) : 0;
@@ -856,13 +1065,16 @@ const Player = {
   },
 
   _drawVolume() {
-    const v = this.volume;
+    // In remote mode the slider is the host's volume, and only there when the host allows it.
+    $('volWrap').hidden = !!this.remote && !this.remote.state.allowVolume;
+    $('volWrap').title = this.remote ? 'The host\'s volume' : '';
+    const v = this._shownVolume();
     $('volSlider').value = String(Math.round(v * 100));
     $('volSlider').style.setProperty('--fill', (v * 100) + '%');
     $('volValue').textContent = Math.round(v * 100) + '%';
     $('volBtn').innerHTML = v === 0 ? Icons.mute : (v < 0.5 ? Icons.volumeLow : Icons.volume);
     $('volBtn').title = v === 0 ? 'Unmute' : 'Mute';
-    for (const fn of this._volumeListeners) fn(v);
+    if (!this.remote) for (const fn of this._volumeListeners) fn(v);
   },
 
   // ---- media keys and the Windows media overlay ----

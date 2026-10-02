@@ -380,7 +380,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
       case 'queueAdd':
         if (!songOk(a.songId)) throw new SessionError(404, 'That song is not on the server.');
         return { songId: a.songId };
-      case 'queueRemove':
+      case 'queueRemove': case 'queuePlay':
         return { part: a.part === 'auto' ? 'auto' : 'manual', index: Math.max(0, Math.floor(num(a.index, 0, 1e6))) };
       case 'queueMove':
         return {

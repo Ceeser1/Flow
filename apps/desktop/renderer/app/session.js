@@ -11,7 +11,9 @@
 // not from a playlist of this one.
 //
 // Joining another app's session asks its host (a prompt there, Accept or
-// Decline); a declined app waits a minute before asking that one again. When
+// Decline); a declined app waits a minute before asking that one again. Once
+// in, this app's player mirrors the host's and its buttons go there
+// (Player.mirror, remote mode); leaving keeps the host's song here, paused. When
 // the host before this one leaves, this app carries on: the song at its
 // place, with its list and queue (Player.takeOver), and says so.
 
@@ -87,6 +89,10 @@ const Session = {
 
   init() {
     window.flow.onServerLive((ev) => this._onLive(ev));
+    $('playerSession').onclick = () => Nav.show('sessions');
+    $('playerLeave').onclick = () => attempt(() => this.leave());
+    this.onChange(() => this._drawBar());
+    Player.onChange(() => this._drawBar());
     Player.onChange(() => this._changed());
     Player.onSeek(() => this._changed(true));
     Store.onServer(() => {
@@ -146,6 +152,11 @@ const Session = {
     this._emit();
   },
 
+  /** A button pressed here in remote mode, for the host to carry out. */
+  control(action, args = {}) {
+    window.flow.sessions({ type: 'control', action, ...args }).catch((err) => toast(err.message, 'error'));
+  },
+
   async cancelJoin() {
     this.request = null;
     this._emit();
@@ -161,6 +172,7 @@ const Session = {
   },
 
   _out() {
+    if (Player.remote) Player.endRemote();
     this.mine = null;
     this.sessionId = null;
     this._published = false;
@@ -171,14 +183,15 @@ const Session = {
   },
 
   /** Joined: this app's own session (if any) is handed on by the server; its playback stops here. */
-  _becomeMember(session) {
+  _becomeMember(session, state) {
     this.mine = { session, host: false };
     this.sessionId = null;
     this._published = false;
     clearTimeout(this._heartbeat);
     clearTimeout(this._publishTimer);
     this._closePrompts();
-    if (Player.isPlaying) Player.pause();
+    if (state) Player.mirror(state);
+    else Player.pauseHere();
   },
 
   _who(from) {
@@ -245,6 +258,22 @@ const Session = {
     this._notify(text);
   },
 
+  /** The player bar: "In [name]" with Leave in someone's session, "Your session: 2 listening" as a host with company. */
+  _drawBar() {
+    const m = this.available ? this.mine : null;
+    const company = m ? m.session.members.length - 1 : 0;
+    const pill = $('playerSession');
+    pill.hidden = !m || (m.host && !company);
+    $('playerLeave').hidden = !m || m.host;
+    if (pill.hidden) return;
+    const text = m.host ? `Your session: ${company} listening` : `In ${m.session.name}`;
+    pill.innerHTML = Icons.sessions;
+    pill.append(h('span', text));
+    pill.title = m.host
+      ? m.session.members.slice(1).map((x) => this._who(x)).join('\n')
+      : 'What plays here plays on that device. Open Active Sessions';
+  },
+
   /** Asks the server where this app stands (after a new stream). */
   async _refresh() {
     let view;
@@ -258,8 +287,10 @@ const Session = {
     if (view.mine) {
       this.mine = { session: view.mine.session, host: !!view.mine.host };
       if (view.mine.host) this.sessionId = view.mine.session.id;
+      else if (view.mine.state) Player.mirror(view.mine.state);
     } else if (this.mine) {
       if (wasMember) toast(`You are no longer in ${wasMember.name}: the connection to the server was lost.`, 'info');
+      if (Player.remote) Player.endRemote();
       this.mine = null;
       this.sessionId = null;
     }
@@ -294,6 +325,9 @@ const Session = {
         return;
       case 'joinRequest':
         this._prompt(data);
+        return;
+      case 'state':
+        if (this.isMember && data.sessionId === this.mine.session.id) Player.mirror(data.state);
         return;
       case 'joinCancelled': {
         const p = this._prompts.get(data.requestId);
@@ -347,7 +381,7 @@ const Session = {
       || this.sessionName(data.sessionId);
     if (!this.request || this.request.requestId === data.requestId) this.request = null;
     if (data.ok) {
-      this._becomeMember(data.session);
+      this._becomeMember(data.session, data.state);
       toast(`You joined ${data.session.name}.`, 'success');
     } else if (data.reason === 'declined') {
       const wait = data.retryIn || 60;
@@ -475,6 +509,7 @@ const Session = {
       case 'queueRemove': Player.removeFromQueue(args.part, args.index); break;
       case 'queueMove': Player.moveInQueue(args.part, args.from, args.to); break;
       case 'queueClear': Player.clearQueue(); break;
+      case 'queuePlay': Player.playFromQueue(args.part, args.index); break;
       case 'playSong':
         if (!Store.song(args.songId)) return;
         Player.playList(args.ids, args.contextName, args.songId);

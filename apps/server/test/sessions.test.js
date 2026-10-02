@@ -256,6 +256,8 @@ test('controls: members only, a whitelist, songs checked, carried to the host', 
   assert.deepEqual(t.live.take('host-aaaaaaaa', 'control').args, {
     ids: ['s3', 's1', 'gone'], contextName: 'Evening', contextId: 'p1', songId: null,
   });
+  t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'queuePlay', part: 'auto', index: 2.7 });
+  assert.deepEqual(t.live.take('host-aaaaaaaa', 'control').args, { part: 'auto', index: 2 });
   assert.throws(() => t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'queueAdd', songId: 'zzz' }), /not on the server/);
   assert.throws(() => t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'shutdown' }), /not something a session can do/);
   assert.throws(() => t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'volume', value: 0.2 }), /does not let others/);

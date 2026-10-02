@@ -1644,6 +1644,39 @@ div.import__frame-head { cursor: default; }
 }
 
 .player__from span { color: var(--grey); }
+
+/* "In Anna - Sony GTK" / "Your session: 2 listening" (session.js), and Leave. */
+.player__session {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px 0 8px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(90, 140, 220, 0.16);
+  color: var(--accent-hi);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.player__session span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player__session .icon { flex: none; width: 15px; height: 15px; }
+.player__session:hover { background: rgba(90, 140, 220, 0.26); }
+.player__leave {
+  flex: none;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: none;
+  color: var(--grey);
+  font-size: 12px;
+  cursor: pointer;
+}
+.player__leave:hover { color: var(--text-bright); border-color: #4c4c56; }
 .player__from:hover span { color: var(--accent); text-decoration: underline; }
 
 .queue-btn {

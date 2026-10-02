@@ -150,7 +150,8 @@ const SleepTimer = {
   /** The time is up: the music stops; with a shutdown, its 5 minutes start. */
   _runOut() {
     const s = this.state;
-    Player.pause();
+    // This device's music; in someone else's session that host plays on.
+    Player.pauseHere();
     Player.setSleepFade(1);
     if (!s.shutdownAt) {
       this._stop();

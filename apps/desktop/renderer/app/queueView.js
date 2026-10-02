@@ -45,7 +45,8 @@ const QueueView = {
       return;
     }
     // Topped up first, so the list is the one Next will follow.
-    if (Player.contextId) Player.queue.fill(Player.idsOf(Player.contextId));
+    // (In another device's session the host's queue is shown as it is.)
+    if (Player.contextId && !Player.remote) Player.queue.fill(Player.idsOf(Player.contextId));
     clear(box);
     const q = Player.queue;
 
