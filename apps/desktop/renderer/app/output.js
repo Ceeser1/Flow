@@ -46,6 +46,26 @@ const Output = {
     return d ? d.label : this.defaultLabel;
   },
 
+  /**
+   * How late this output sounds (ms): set by ear per output, for playing in
+   * step with other devices (Bluetooth speakers lag 100-300 ms).
+   */
+  delay() {
+    const d = (Store.settings.outputDelays || {})[this.label()];
+    return Number.isFinite(d) ? d : 0;
+  },
+
+  setDelay(ms) {
+    const label = this.label();
+    if (!label) return;
+    const all = { ...(Store.settings.outputDelays || {}) };
+    const v = Math.round(Math.max(0, Math.min(1000, Number(ms) || 0)));
+    if (v) all[label] = v;
+    else delete all[label];
+    Store.saveSettings({ outputDelays: all });
+    this._emit();
+  },
+
   /** The chosen device, if it is there: found by id, else by name. */
   _chosen() {
     const s = Store.settings;
@@ -152,6 +172,7 @@ const Output = {
       if (Store.settings.outputDevice && !chosen) {
         menu.appendChild(h('div.output-menu__gone', `${Store.settings.outputDeviceLabel || 'The chosen device'} is not there: playing on the default meanwhile.`));
       }
+      menu.appendChild(this._delayRow());
     };
     draw();
     document.body.appendChild(menu);
@@ -175,6 +196,27 @@ const Output = {
         this._listeners = this._listeners.filter((fn) => fn !== draw);
       },
     };
+  },
+
+  /** "Delay" for the output playing: set by ear so devices in a session sound together. */
+  _delayRow() {
+    const value = h('span.output-menu__delay-value', `${this.delay()} ms`);
+    const slider = h('input.volume-slider.output-menu__slider', {
+      type: 'range', min: 0, max: 500, step: 10, value: String(this.delay()), 'aria-label': 'Delay of this output',
+    });
+    const fill = () => slider.style.setProperty('--fill', `${(Number(slider.value) / 500) * 100}%`);
+    fill();
+    slider.addEventListener('input', () => {
+      value.textContent = `${slider.value} ms`;
+      fill();
+    });
+    // Saved when let go (the menu is drawn again then).
+    slider.addEventListener('change', () => this.setDelay(Number(slider.value)));
+    return h('div.output-menu__delay',
+      h('div.output-menu__delay-head', h('span', 'Delay of this output'), value),
+      slider,
+      h('div.output-menu__delay-note', 'For Active Sessions: how late this output sounds. Bluetooth speakers lag about 100-300 ms; '
+        + 'raise it until the music here sounds together with the other devices.'));
   },
 
   _closeMenu() {

@@ -93,6 +93,7 @@ const Session = {
     window.flow.onServerLive((ev) => this._onLive(ev));
     $('playerSession').onclick = () => Nav.show('sessions');
     $('playerLeave').onclick = () => attempt(() => this.leave());
+    $('playerHere').onclick = () => this.setHere(!Store.settings.sessionPlayHere);
     this.onChange(() => this._drawBar());
     Player.onChange(() => this._drawBar());
     Player.onChange(() => this._changed());
@@ -108,7 +109,10 @@ const Session = {
       if ('sessionAllowVolume' in patch) this._changed(true);
     });
     // Another output (chosen, or Windows' default changed): the session's name changes with it.
-    Output.onChange(() => this._changed());
+    Output.onChange(() => {
+      this._changed();
+      this._drawBar();
+    });
   },
 
   /** "[Profile] - [Output device]": what the others see this app as. */
@@ -122,7 +126,7 @@ const Session = {
   /** Asks the host of `sessionId` to let this app join. */
   async join(sessionId) {
     try {
-      const r = await window.flow.sessions({ type: 'join', sessionId, mode: 'remote' });
+      const r = await window.flow.sessions({ type: 'join', sessionId, mode: Store.settings.sessionPlayHere ? 'here' : 'remote' });
       this.request = {
         requestId: r.requestId, sessionId, name: this.sessionName(sessionId), expiresAt: Date.now() + (r.expiresIn || 60000),
       };
@@ -133,6 +137,14 @@ const Session = {
       this._emit();
       throw err;
     }
+    this._emit();
+  },
+
+  /** Play the host's music on this device too (remembered for the next session). */
+  setHere(on) {
+    Store.saveSettings({ sessionPlayHere: !!on });
+    Player.setHere(!!on);
+    if (this.isMember) window.flow.sessions({ type: 'mode', mode: on ? 'here' : 'remote' }).catch(() => {});
     this._emit();
   },
 
@@ -174,8 +186,10 @@ const Session = {
     clearTimeout(this._heartbeat);
     clearTimeout(this._publishTimer);
     this._closePrompts();
-    if (state) Player.mirror(state);
-    else Player.pauseHere();
+    if (state) {
+      Player.mirror(state);
+      Player.setHere(!!Store.settings.sessionPlayHere);
+    } else Player.pauseHere();
   },
 
   _who(from) {
@@ -249,6 +263,15 @@ const Session = {
     const pill = $('playerSession');
     pill.hidden = !m || (m.host && !company);
     $('playerLeave').hidden = !m || m.host;
+    const here = !!Player.remote && !!Player.remote.here;
+    $('playerHere').hidden = !m || m.host;
+    $('playerHere').classList.toggle('player__here--on', here);
+    $('playerHere').setAttribute('aria-pressed', String(here));
+    const drift = here && Player.remote.drift !== null && Player.remote.drift !== undefined
+      ? ` (now ${Math.round(Math.abs(Player.remote.drift) * 1000)} ms apart)` : '';
+    $('playerHere').title = here
+      ? `Playing here too, in step with the host${drift}. Click for remote control only`
+      : 'Remote control only. Click to play the music on this device too, in step with the host';
     if (pill.hidden) return;
     const text = m.host ? `Your session: ${company} listening` : `In ${m.session.name}`;
     pill.innerHTML = Icons.sessions;
@@ -271,7 +294,10 @@ const Session = {
     if (view.mine) {
       this.mine = { session: view.mine.session, host: !!view.mine.host };
       if (view.mine.host) this.sessionId = view.mine.session.id;
-      else if (view.mine.state) Player.mirror(view.mine.state);
+      else if (view.mine.state) {
+        Player.mirror(view.mine.state);
+        Player.setHere(!!Store.settings.sessionPlayHere);
+      }
     } else if (this.mine) {
       if (wasMember) toast(`You are no longer in ${wasMember.name}: the connection to the server was lost.`, 'info');
       if (Player.remote) Player.endRemote();
@@ -433,6 +459,7 @@ const Session = {
       allowVolume: !!Store.settings.sessionAllowVolume,
       volume: Player.volume,
       crossfade: Store.settings.crossfade ? Store.settings.crossfadeSeconds : 0,
+      outputDelay: Output.delay(),
     };
     // The long parts only when they changed.
     const idsKey = ids.join(',');

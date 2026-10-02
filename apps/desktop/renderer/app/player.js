@@ -29,6 +29,12 @@
 // host's (mirror()), and every button (the bar's, a row's Play, the Queue
 // popup, the keys) goes to the host instead (_remoteDo). Leaving keeps the
 // host's song here, paused at its place, to carry on with.
+//
+// "Play here" (remote.here) plays the host's song on this device too, in step
+// with the host (_hereSync): the place the host is at, by the server's clock,
+// and the difference between the two outputs' delays (set by ear, output.js).
+// Small differences are eased away by playing a little faster or slower,
+// bigger ones jumped over.
 
 const AudioFocus = {
   owners: {},
@@ -197,6 +203,8 @@ const Player = {
         this._emit();
       }));
       el.addEventListener('ended', mine(() => {
+        // Playing along with a host: its next song comes with its state.
+        if (this.remote) return;
         if (this.fade) this._promote();
         else if (this.repeat) this._restart();
         else this._advance();
@@ -213,7 +221,11 @@ const Player = {
       el.addEventListener('durationchange', mine(() => this._drawTime()));
       el.addEventListener('loadedmetadata', mine(() => {
         const a = this.audio;
-        if (this._pendingSeek !== null) {
+        if (this.remote && this.remote.here) {
+          // Where the host is by now, not where it was when the song was asked for.
+          a.currentTime = Math.min(this._hereTarget(), Math.max(0, (a.duration || 0) - 0.5));
+          this._pendingSeek = null;
+        } else if (this._pendingSeek !== null) {
           a.currentTime = Math.min(this._pendingSeek, Math.max(0, (a.duration || 0) - 0.5));
           this._pendingSeek = null;
         }
@@ -693,6 +705,8 @@ const Player = {
     this.queue.shuffle = !!state.shuffle;
     this.repeat = !!state.repeat;
     if (this.session) this.session.lastT = null;
+    // Playing along: a pause, a jump or the next song there, here at once.
+    this._hereSync();
     this._updateMediaSession();
     this._emit();
   },
@@ -700,6 +714,7 @@ const Player = {
   /** Four times a second in remote mode: the time moves on, and listening is counted. */
   _remoteTick() {
     if (!this.remote) return;
+    this._hereSync();
     this._drawTime();
     const s = this.session;
     if (!s || s.songId !== this.currentId) return;
@@ -715,10 +730,115 @@ const Player = {
   _leaveRemote() {
     if (!this.remote) return null;
     const state = { ...this.remote.state, position: this._remotePosition() };
+    this._stopHere();
     clearInterval(this.remote.ticker);
     this.remote = null;
     this._endSession();
     return state;
+  },
+
+  // ---- Play here: the host's song on this device too, in step ----
+
+  /** Plays along with the host here, or stops doing so. */
+  setHere(on) {
+    if (!this.remote) return;
+    if (!!this.remote.here === !!on) return;
+    this.remote.here = !!on;
+    if (!on) this._stopHere();
+    this._hereSync();
+    this._emit();
+  },
+
+  /** Where this device's song should be now: the host's place, its output's delay against this one's. */
+  _hereTarget() {
+    const st = this.remote.state;
+    let t = this._remotePosition();
+    if (st.playing) t += (Output.delay() - (Number(st.outputDelay) || 0)) / 1000;
+    return Math.max(0, t);
+  },
+
+  _stopHere() {
+    const r = this.remote;
+    if (!r || !r.hereSong) return;
+    r.hereSong = null;
+    r.drift = null;
+    this.audio.pause();
+    this.audio.playbackRate = 1;
+    this.audio.removeAttribute('src');
+    this.audio.load();
+  },
+
+  /**
+   * Four times a second while playing along: the host's song loaded, playing
+   * or paused as there, and at the host's place: under SYNC_OK it is left
+   * alone, up to SYNC_JUMP it is eased in (up to SYNC_RATE faster or slower),
+   * beyond that jumped to; a jump learns how long playing takes to pick up
+   * again (seekLead) and lands that much ahead.
+   */
+  SYNC_OK: 0.03,
+  SYNC_JUMP: 0.3,
+  SYNC_RATE: 0.03,
+
+  _hereSync() {
+    const r = this.remote;
+    if (!r || !r.here) return;
+    const st = r.state;
+    const a = this.audio;
+    const song = st.songId ? Store.song(st.songId) : null;
+    if (!song) {
+      // Nothing there, or a song this library does not know yet.
+      this._stopHere();
+      return;
+    }
+    const now = performance.now();
+    if (r.hereSong !== song.id) {
+      r.hereSong = song.id;
+      r.settleUntil = now + 800;
+      r.correcting = false;
+      a.playbackRate = 1;
+      this._setSource(a, song);
+      this._setNorm(a, song.id);
+      this._setFade(a, 1);
+      if (st.playing) this._play();
+      return;
+    }
+    if (!st.playing) {
+      if (!a.paused) a.pause();
+      a.playbackRate = 1;
+      r.drift = null;
+      if (a.readyState >= 1 && Math.abs(a.currentTime - st.position) > 0.25) a.currentTime = st.position;
+      return;
+    }
+    if (a.readyState < 2) return;
+    if (a.paused) {
+      a.currentTime = this._hereTarget() + (r.seekLead || 0);
+      r.settleUntil = now + 800;
+      r.jumped = true;
+      this._play();
+      return;
+    }
+    if (now < r.settleUntil) return;
+    const drift = a.currentTime - this._hereTarget();
+    r.drift = drift;
+    if (r.jumped) {
+      // How far behind the last jump landed: the next one goes that much further.
+      r.jumped = false;
+      r.seekLead = Math.max(0, Math.min(0.5, (r.seekLead || 0) - drift));
+    }
+    if (Math.abs(drift) > this.SYNC_JUMP) {
+      a.playbackRate = 1;
+      r.correcting = false;
+      a.currentTime = this._hereTarget() + (r.seekLead || 0);
+      r.settleUntil = now + 800;
+      r.jumped = true;
+      return;
+    }
+    // Eased in from SYNC_OK on, until within a third of it.
+    if (Math.abs(drift) > this.SYNC_OK) r.correcting = true;
+    else if (Math.abs(drift) < this.SYNC_OK / 3) r.correcting = false;
+    a.playbackRate = r.correcting
+      ? Math.max(1 - this.SYNC_RATE, Math.min(1 + this.SYNC_RATE, 1 - drift))
+      : 1;
   },
 
   /** Out of the session: the host's song stays, paused at its place, with its list and queue. */
@@ -738,7 +858,7 @@ const Player = {
    */
   _maybeFade() {
     const s = Store.settings;
-    if (this.fade || this.repeat || !s.crossfade || !Equalizer.active || !this.currentId || this.audio.paused) return;
+    if (this.remote || this.fade || this.repeat || !s.crossfade || !Equalizer.active || !this.currentId || this.audio.paused) return;
     const d = this.audio.duration;
     if (!d || !Number.isFinite(d)) return;
     const left = d - this.audio.currentTime;
@@ -891,6 +1011,8 @@ const Player = {
 
   /** Adds the time played since the last update, while actually playing. */
   _countListening() {
+    // In a session, counted by the host's place (_remoteTick).
+    if (this.remote) return;
     const s = this.session;
     if (!s || s.songId !== this.currentId) return;
     const t = this.audio.currentTime || 0;
@@ -957,7 +1079,7 @@ const Player = {
     const vol = $('volSlider');
     vol.addEventListener('input', () => this._barVolume(Number(vol.value) / 100));
     $('volBtn').onclick = () => {
-      if (!this.remote) this.toggleMute();
+      if (!this.remote || this.remote.here) this.toggleMute();
       else this._barVolume(this._shownVolume() > 0 ? 0 : (this._muteRestore || 0.8));
     };
     // Scrolling over the volume nudges it, as in most players.
@@ -995,7 +1117,7 @@ const Player = {
 
   /** The bar's volume: this device's, or in remote mode the host's (when it allows that). */
   _barVolume(v) {
-    if (!this.remote) {
+    if (!this.remote || this.remote.here) {
       this.setVolume(v);
       return;
     }
@@ -1014,7 +1136,7 @@ const Player = {
   },
 
   _shownVolume() {
-    return this.remote ? Number(this.remote.state.volume) || 0 : this.volume;
+    return this.remote && !this.remote.here ? Number(this.remote.state.volume) || 0 : this.volume;
   },
 
   _drawBar() {
@@ -1066,15 +1188,16 @@ const Player = {
 
   _drawVolume() {
     // In remote mode the slider is the host's volume, and only there when the host allows it.
-    $('volWrap').hidden = !!this.remote && !this.remote.state.allowVolume;
-    $('volWrap').title = this.remote ? 'The host\'s volume' : '';
+    const hosts = !!this.remote && !this.remote.here;
+    $('volWrap').hidden = hosts && !this.remote.state.allowVolume;
+    $('volWrap').title = hosts ? 'The host\'s volume' : '';
     const v = this._shownVolume();
     $('volSlider').value = String(Math.round(v * 100));
     $('volSlider').style.setProperty('--fill', (v * 100) + '%');
     $('volValue').textContent = Math.round(v * 100) + '%';
     $('volBtn').innerHTML = v === 0 ? Icons.mute : (v < 0.5 ? Icons.volumeLow : Icons.volume);
     $('volBtn').title = v === 0 ? 'Unmute' : 'Mute';
-    if (!this.remote) for (const fn of this._volumeListeners) fn(v);
+    if (!hosts) for (const fn of this._volumeListeners) fn(v);
   },
 
   // ---- media keys and the Windows media overlay ----

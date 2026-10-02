@@ -1529,10 +1529,37 @@ const live = {
   retryTimer: null,
   watchdog: null,
   pingMs: 10000,
-  // Server time minus this machine's, from the stream's greeting (rough; the
-  // window measures it properly where it matters).
+  // Server time minus this machine's: from the stream's greeting at first,
+  // then measured (syncClock) once a minute, for devices playing in step.
   offset: 0,
+  clockTimer: null,
 };
+
+const CLOCK_SAMPLES = 5;
+const CLOCK_EVERY_MS = 60 * 1000;
+
+/**
+ * Server time minus this machine's: a few asks for the server's time, and
+ * the quickest answer counts (its time was read about halfway).
+ */
+async function syncClock() {
+  let best = null;
+  for (let i = 0; i < CLOCK_SAMPLES; i += 1) {
+    const t0 = Date.now();
+    let r;
+    try {
+      r = await call('/api/time', { timeout: 3000 });
+    } catch {
+      break;
+    }
+    const t1 = Date.now();
+    if (!r || !Number.isFinite(Number(r.time))) break;
+    if (!best || t1 - t0 < best.rtt) best = { rtt: t1 - t0, offset: Number(r.time) - (t0 + t1) / 2 };
+  }
+  if (!best || !status.live) return;
+  live.offset = best.offset;
+  emitStatus();
+}
 
 function liveWanted() {
   return active() && status.state === 'online' && conn.sessions && !!conn.base;
@@ -1541,6 +1568,8 @@ function liveWanted() {
 function stopLive() {
   clearTimeout(live.retryTimer);
   clearTimeout(live.watchdog);
+  clearInterval(live.clockTimer);
+  live.clockTimer = null;
   live.retryTimer = null;
   const req = live.req;
   live.req = null;
@@ -1649,6 +1678,9 @@ function liveEvent(type, data) {
     if (Number.isFinite(Number(data.serverTime))) live.offset = Number(data.serverTime) - Date.now();
     status.live = true;
     emitStatus();
+    syncClock();
+    clearInterval(live.clockTimer);
+    live.clockTimer = setInterval(syncClock, CLOCK_EVERY_MS);
   }
   if (type === 'end') {
     // The sign-in no longer holds: connecting again signs in afresh. Unless

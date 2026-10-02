@@ -118,6 +118,8 @@ function cleanState(s) {
     volume: num(s.volume, 0, 1, 1),
     // The song transition: the next song starting this long before the end (0: off).
     crossfade: num(s.crossfade, 0, 20),
+    // How late the host's speakers sound (ms, set by ear), for devices playing along.
+    outputDelay: num(s.outputDelay, -1000, 3000),
   };
 }
 

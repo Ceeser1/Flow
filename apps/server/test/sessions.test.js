@@ -420,7 +420,12 @@ test('over HTTP: two apps, one plays, the other joins and pauses it', async () =
     await host.next('hello');
     await joiner.next('hello');
 
-    const st = await post(base, { client: 'host-aaaaaaaa', type: 'state', state: { songId: 's1', title: 'Roads', playing: true, position: 3 } });
+    // The server's clock, for devices playing in step.
+    const t0 = Date.now();
+    const time = await (await fetch(`${base}/api/time`)).json();
+    assert.ok(time.time >= t0 && time.time <= Date.now());
+
+    const st = await post(base, { client: 'host-aaaaaaaa', type: 'state', state: { songId: 's1', title: 'Roads', playing: true, position: 3, outputDelay: 180 } });
     assert.equal(st.status, 200);
     const { sessionId } = st.json;
     let list;
@@ -435,6 +440,7 @@ test('over HTTP: two apps, one plays, the other joins and pauses it', async () =
     await post(base, { client: 'host-aaaaaaaa', type: 'answer', requestId: request.requestId, accept: true });
     const result = await joiner.next('joinResult');
     assert.equal(result.ok, true);
+    assert.equal(result.state.outputDelay, 180, 'the host\'s output delay, for playing along');
 
     assert.equal((await post(base, { client: 'join-bbbbbbbb', type: 'control', action: 'pause' })).status, 200);
     assert.equal((await host.next('control')).action, 'pause');

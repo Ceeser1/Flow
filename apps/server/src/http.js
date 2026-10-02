@@ -18,6 +18,7 @@
 //   GET  /api/live?client=<id>&device=<name>
 //                                      the app's live channel: events as they
 //                                      happen (live.js), while the app is connected
+//   GET  /api/time                     { time }: the server's clock, for playing in step
 //   GET  /api/sessions                 { sessions, mine, request }: Active Sessions
 //   POST /api/sessions { type, ... }   taking part in them (sessions.js)
 //
@@ -642,6 +643,7 @@ function createHttpServer({
       return sendJson(res, 200, { rev: library.rev, library: library.snapshot(profileId), profile: publicProfile(profile) });
     }
     if (is('GET', /^\/api\/live$/)) return openLive(req, res, url, client, entry);
+    if (is('GET', /^\/api\/time$/)) return sendJson(res, 200, { time: Date.now() });
     if (p === '/api/sessions' && (req.method === 'GET' || req.method === 'POST')) return sessionRoute(req, res, url, entry);
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
