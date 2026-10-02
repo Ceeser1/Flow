@@ -1320,6 +1320,36 @@ div.import__frame-head { cursor: default; }
 .table--playlists .col-date,
 .table--playlists .col-owner { width: auto; }
 
+/* Active Sessions (pages/sessions.js): the song takes what Name leaves; the
+   actions need room for "Ask again in 60 s" or "Joined" and Leave. */
+.table--sessions .col-song { width: 40%; }
+.table--sessions .col-actions { width: 190px; }
+.session-name,
+.session-song {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.session-name { gap: 10px; color: var(--text-bright); font-weight: 600; }
+.session-song .cell-title { overflow: hidden; text-overflow: ellipsis; }
+.session-tag {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: rgba(90, 140, 220, 0.2);
+  color: var(--accent-hi);
+  font-size: 11px;
+}
+.session-joined { display: inline-flex; align-items: center; gap: 4px; color: var(--green); font-weight: 600; }
+.session-joined .icon { width: 15px; height: 15px; }
+.sessions-mine { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.sessions-mine__icon { display: inline-flex; color: var(--accent); }
+.sessions-mine__text { flex: 1; min-width: 200px; color: var(--text-bright); }
+.sessions-mine__volume { flex-basis: 100%; }
+
 /* A song list: Duration, Added and Actions are fixed (84 + 130 + 116), and
    what is left is split Title 45%, Artist 35%, Mix 20%. Chromium drops a
    calc() that mixes % and px on a table column, so playlist.js measures the

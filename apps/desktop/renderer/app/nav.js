@@ -12,13 +12,17 @@ const Nav = {
       + '<span id="menuAddBadge" class="menu__badge" hidden title="Playlist import running"></span>';
     this._entry('menuPlaylists', 'Playlists', 'playlistsMenuOpen');
     this._entry('menuFollowed', 'Followed Playlists', 'followedMenuOpen');
+    $('menuSessions').innerHTML = Icons.sessions + '<span>Active Sessions</span>'
+      + '<span id="menuSessionsBadge" class="menu__badge" hidden></span>';
     $('menuSearch').onclick = () => this.show('search');
     $('menuAdd').onclick = () => this.show('add');
     $('menuPlaylists').onclick = () => this.show('playlists');
     $('menuFollowed').onclick = () => this.show('followed');
+    $('menuSessions').onclick = () => this.show('sessions');
     Store.onLibrary(() => this.drawMenu());
     Store.onServer(() => this.drawMenu());
     Player.onChange(() => this.drawMenu());
+    Session.onChange(() => this.drawMenu());
   },
 
   /**
@@ -66,6 +70,7 @@ const Nav = {
     else if (page === 'add') AddPage.show(opts);
     else if (page === 'playlists') PlaylistsPage.show(opts);
     else if (page === 'followed') FollowedPage.show(opts);
+    else if (page === 'sessions') SessionsPage.show(opts);
     else if (page === 'playlist') PlaylistPage.show(this.playlistId, opts);
     this.drawMenu();
   },
@@ -81,6 +86,7 @@ const Nav = {
     $('menuAdd').classList.toggle('menu__item--active', this.page === 'add');
     $('menuPlaylists').classList.toggle('menu__item--active', this.page === 'playlists');
     $('menuFollowed').classList.toggle('menu__item--active', this.page === 'followed');
+    $('menuSessions').classList.toggle('menu__item--active', this.page === 'sessions');
     const playlistsOpen = Store.settings.playlistsMenuOpen !== false;
     const followedOpen = Store.settings.followedMenuOpen !== false;
     this._drawArrow('playlistsMenuOpen', playlistsOpen, 'the playlists');
@@ -133,5 +139,12 @@ const Nav = {
     $('menuFollowedList').hidden = !followed.length || !followedOpen;
     const followedList = clear($('menuFollowedList'));
     for (const p of followed) followedList.appendChild(item(p));
+
+    // Active Sessions: only while another device plays on the server, or this one has company.
+    $('menuSessions').hidden = !Session.visible;
+    const others = Session.others().length;
+    $('menuSessionsBadge').hidden = !others;
+    $('menuSessionsBadge').textContent = String(others);
+    $('menuSessionsBadge').title = `${Util.plural(others, 'other device')} playing`;
   },
 };

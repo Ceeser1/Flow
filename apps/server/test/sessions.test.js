@@ -137,6 +137,7 @@ test('a device that plays is a listed session; paused alone it drops after two m
   t.clock.advance(2000);
   assert.equal(t.sessions.list().length, 0);
   assert.equal(t.sessions.view('host-aaaaaaaa').mine, null, 'dropped');
+  assert.equal(t.live.take('host-aaaaaaaa', 'left').reason, 'idle', 'and told');
   // Playing again is a new session.
   assert.ok(t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing() }).sessionId);
   // Stopped (nothing loaded) alone: gone at once.

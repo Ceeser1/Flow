@@ -29,6 +29,7 @@
   ServerImport.init();
   PlaylistsPage.init();
   FollowedPage.init();
+  SessionsPage.init();
   PlaylistPage.init();
   SettingsPanel.init();
   SongActions.init();

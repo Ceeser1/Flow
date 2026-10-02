@@ -113,6 +113,8 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+  // A join request flashed the taskbar button (session:notify): looked at now.
+  mainWindow.on('focus', () => mainWindow.flashFrame(false));
 
   // Links never open inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -577,6 +579,21 @@ handle('sleep:cancelShutdown', async () => {
 handle('sleep:notify', (body) => {
   if (!Notification.isSupported()) return false;
   new Notification({ title: 'Flow: Sleep Timer', body: String(body || ''), icon: paths.appIconPath() || undefined }).show();
+  return true;
+});
+
+// Active Sessions: someone asks to join, or this app became the host. A click brings Flow to the front.
+handle('session:notify', (body) => {
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFocused()) mainWindow.flashFrame(true);
+  if (!Notification.isSupported()) return false;
+  const n = new Notification({ title: 'Flow: Active Sessions', body: String(body || ''), icon: paths.appIconPath() || undefined });
+  n.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+  n.show();
   return true;
 });
 

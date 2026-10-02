@@ -10,8 +10,10 @@
 // on another device plays from that device's list of songs (Player.playList),
 // not from a playlist of this one.
 //
-// When the host before this one leaves, this app carries on: the song at its
-// place, with its list and queue (Player.takeOver).
+// Joining another app's session asks its host (a prompt there, Accept or
+// Decline); a declined app waits a minute before asking that one again. When
+// the host before this one leaves, this app carries on: the song at its
+// place, with its list and queue (Player.takeOver), and says so.
 
 const Session = {
   HEARTBEAT_MS: 5000,
@@ -21,6 +23,10 @@ const Session = {
   mine: null,
   // The id of the session this app hosts (alone or with others), or null.
   sessionId: null,
+  // The request to join this app waits on: { requestId, sessionId, name, expiresAt } or null.
+  request: null,
+  // Sessions whose host declined: session id -> when this app may ask again (Date.now()).
+  cooldowns: new Map(),
   // Whether this app has told the server about its playback (a session
   // exists, or did until it stopped).
   _published: false,
@@ -29,6 +35,8 @@ const Session = {
   _sentIds: '',
   _sentQueue: '',
   _listeners: [],
+  // The host's open join prompts: request id -> { modal, timer }.
+  _prompts: new Map(),
   // The output device's name, for the session's name ("Ceeser - Sony GTK").
   outputLabel: '',
 
@@ -39,6 +47,34 @@ const Session = {
 
   get isHost() {
     return !!this.mine && this.mine.host;
+  },
+
+  /** In another app's session (not its host). */
+  get isMember() {
+    return !!this.mine && !this.mine.host;
+  },
+
+  /** The listed sessions of other apps. */
+  others() {
+    return this.list.filter((s) => s.host.client !== Store.server.clientId);
+  },
+
+  /** The menu shows Active Sessions while another app plays, or this one has company. */
+  get visible() {
+    return this.available && (this.others().length > 0 || (!!this.mine && this.mine.session.members.length > 1));
+  },
+
+  /** Seconds until this app may ask the host of `sessionId` again (0: now). */
+  cooldownLeft(sessionId) {
+    const until = this.cooldowns.get(sessionId) || 0;
+    const left = Math.ceil((until - Date.now()) / 1000);
+    if (left <= 0) this.cooldowns.delete(sessionId);
+    return Math.max(0, left);
+  },
+
+  sessionName(id) {
+    const s = this.list.find((x) => x.id === id) || (this.mine && this.mine.session.id === id ? this.mine.session : null);
+    return s ? s.name : 'the session';
   },
 
   onChange(fn) {
@@ -54,11 +90,14 @@ const Session = {
     Player.onChange(() => this._changed());
     Player.onSeek(() => this._changed(true));
     Store.onServer(() => {
-      if (!this.available && (this.mine || this.list.length)) {
+      if (!this.available && (this.mine || this.list.length || this.request)) {
         // Reconnecting: what the server knows comes again with the stream.
         this.list = [];
         this._emit();
       }
+    });
+    Store.onSettings((patch) => {
+      if ('sessionAllowVolume' in patch) this._changed(true);
     });
     this._readOutput();
     if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
@@ -88,51 +127,249 @@ const Session = {
     return `${profile} - ${this.outputLabel || 'Flow'}`;
   },
 
+  // ---- joining, leaving, answering ----
+
+  /** Asks the host of `sessionId` to let this app join. */
+  async join(sessionId) {
+    try {
+      const r = await window.flow.sessions({ type: 'join', sessionId, mode: 'remote' });
+      this.request = {
+        requestId: r.requestId, sessionId, name: this.sessionName(sessionId), expiresAt: Date.now() + (r.expiresIn || 60000),
+      };
+    } catch (err) {
+      // Declined a moment ago: the server says how long to wait.
+      const wait = /again in (\d+) seconds/.exec(err.message);
+      if (wait) this.cooldowns.set(sessionId, Date.now() + Number(wait[1]) * 1000);
+      this._emit();
+      throw err;
+    }
+    this._emit();
+  },
+
+  async cancelJoin() {
+    this.request = null;
+    this._emit();
+    await window.flow.sessions({ type: 'cancelJoin' });
+  },
+
+  /** Out of this app's session. A host hands it over to the next in line and stops playing. */
+  async leave() {
+    const wasHost = this.isHost;
+    await window.flow.sessions({ type: 'leave' });
+    this._out();
+    if (wasHost) Player.pause();
+  },
+
+  _out() {
+    this.mine = null;
+    this.sessionId = null;
+    this._published = false;
+    clearTimeout(this._heartbeat);
+    clearTimeout(this._publishTimer);
+    this._closePrompts();
+    this._emit();
+  },
+
+  /** Joined: this app's own session (if any) is handed on by the server; its playback stops here. */
+  _becomeMember(session) {
+    this.mine = { session, host: false };
+    this.sessionId = null;
+    this._published = false;
+    clearTimeout(this._heartbeat);
+    clearTimeout(this._publishTimer);
+    this._closePrompts();
+    if (Player.isPlaying) Player.pause();
+  },
+
+  _who(from) {
+    return `${(from && from.profileName) || 'Default'} - ${(from && (from.device || from.ip)) || 'another device'}`;
+  },
+
+  /** A Windows notification (and the taskbar button flashing) while the window is not in front. */
+  _notify(text) {
+    if (document.hasFocus()) return;
+    window.flow.notifySession(text).catch(() => {});
+  },
+
+  /** The host's prompt: someone asks to join. */
+  _prompt(r) {
+    if (this._prompts.has(r.requestId)) return;
+    const who = this._who(r);
+    const answer = async (accept) => {
+      try {
+        await window.flow.sessions({ type: 'answer', requestId: r.requestId, accept });
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    };
+    const modal = Modal.open({
+      title: 'Join request',
+      className: 'modal--small',
+      body: [
+        h('p.modal__text', `${who} wants to join your session.`),
+        h('p.muted-text', 'Once in, they can pause, skip and queue songs that play here.'
+          + (r.ip && r.device ? ` Connecting from ${r.ip}.` : '')),
+      ],
+      buttons: [
+        { label: 'Decline', onClick: () => answer(false) },
+        { label: 'Accept', kind: 'primary', onClick: () => answer(true) },
+      ],
+      onClose: () => {
+        const p = this._prompts.get(r.requestId);
+        if (p) clearTimeout(p.timer);
+        this._prompts.delete(r.requestId);
+      },
+    });
+    // The server says when it runs out (joinCancelled); this is in case that is missed.
+    const timer = setTimeout(() => modal.close(), (r.expiresIn || 60000) + 2000);
+    this._prompts.set(r.requestId, { modal, timer, who });
+    this._notify(`${who} wants to join your session.`);
+  },
+
+  _closePrompts() {
+    for (const p of [...this._prompts.values()]) p.modal.close();
+  },
+
+  /** "[Profile] - [Device] left, you are the new host", until dismissed. */
+  _newHost(previous, reason) {
+    const who = this._who(previous);
+    const text = reason === 'dropped'
+      ? `${who} lost its connection, you are the new host.`
+      : `${who} left, you are the new host.`;
+    Modal.open({
+      title: 'You are the new host',
+      className: 'modal--small',
+      body: [h('p.modal__text', text), h('p.muted-text', 'The music plays on here, on this device.')],
+      buttons: [{ label: 'Dismiss', kind: 'primary' }],
+    });
+    this._notify(text);
+  },
+
+  /** Asks the server where this app stands (after a new stream). */
+  async _refresh() {
+    let view;
+    try {
+      view = await window.flow.sessions(null);
+    } catch {
+      return;
+    }
+    const wasMember = this.isMember ? this.mine.session : null;
+    this.list = Array.isArray(view.sessions) ? view.sessions : [];
+    if (view.mine) {
+      this.mine = { session: view.mine.session, host: !!view.mine.host };
+      if (view.mine.host) this.sessionId = view.mine.session.id;
+    } else if (this.mine) {
+      if (wasMember) toast(`You are no longer in ${wasMember.name}: the connection to the server was lost.`, 'info');
+      this.mine = null;
+      this.sessionId = null;
+    }
+    this.request = view.request ? {
+      requestId: view.request.requestId,
+      sessionId: view.request.sessionId,
+      name: this.sessionName(view.request.sessionId),
+      expiresAt: Date.now() + view.request.expiresIn,
+    } : null;
+    this._emit();
+  },
+
   // ---- the live channel ----
 
   _onLive({ type, data }) {
-    if (type === 'hello') {
-      // A new stream (a reconnect, or a restarted server): everything again.
-      this._sentIds = '';
-      this._sentQueue = '';
-      if (this._published || Player.isPlaying) this._changed(true);
-      return;
-    }
-    if (type === 'down') return;
-    if (type === 'sessions') {
-      this.list = Array.isArray(data.sessions) ? data.sessions : [];
-      this._emit();
-      return;
-    }
-    if (type === 'session') {
-      const host = data.session && data.session.hostClient === Store.server.clientId;
-      this.mine = data.session ? { session: data.session, host } : null;
-      this._emit();
-      return;
-    }
-    if (type === 'joinResult') {
-      if (data.ok) {
-        this.mine = { session: data.session, host: false };
+    switch (type) {
+      case 'hello':
+        // A new stream (a reconnect, or a restarted server): everything again.
+        this._sentIds = '';
+        this._sentQueue = '';
+        // Requests still open come again from the server.
+        this._closePrompts();
+        this._refresh();
+        if (this._published || Player.isPlaying) this._changed(true);
+        return;
+      case 'sessions':
+        this.list = Array.isArray(data.sessions) ? data.sessions : [];
         this._emit();
+        return;
+      case 'session':
+        this._onSession(data);
+        return;
+      case 'joinRequest':
+        this._prompt(data);
+        return;
+      case 'joinCancelled': {
+        const p = this._prompts.get(data.requestId);
+        if (p) {
+          p.modal.close();
+          toast(`${p.who} no longer asks to join.`, 'info');
+        }
+        return;
       }
-      return;
+      case 'joinResult':
+        this._onJoinResult(data);
+        return;
+      case 'left':
+        this._onLeft(data);
+        return;
+      case 'control':
+        this._execute(data);
+        return;
+      case 'hostChanged':
+        this.mine = { session: data.session, host: true };
+        this.sessionId = data.sessionId;
+        this._published = true;
+        Player.takeOver(this._stateAtNow(data.state));
+        this._changed(true);
+        this._newHost(data.previous, data.reason);
+        this._emit();
+        return;
+      default:
     }
-    if (type === 'left') {
-      this.mine = null;
-      this._emit();
-      return;
+  },
+
+  _onSession(data) {
+    if (!data.session) return;
+    const me = Store.server.clientId;
+    const host = data.session.hostClient === me;
+    this.mine = { session: data.session, host };
+    if (host) this.sessionId = data.session.id;
+    if (data.joined && data.joined.client !== me) {
+      toast(`${this._who(data.joined)} joined ${host ? 'your session' : 'the session'}.`, 'info');
+    } else if (data.left && data.left.client !== me) {
+      toast(`${this._who(data.left)} left ${host ? 'your session' : 'the session'}.`, 'info');
+    } else if (data.hostChanged && !host) {
+      const hostNow = data.session.members[0];
+      toast(`${this._who(data.hostChanged.previous)} left. ${this._who(hostNow)} hosts the session now.`, 'info');
     }
-    if (type === 'control') {
-      this._execute(data);
-      return;
+    this._emit();
+  },
+
+  _onJoinResult(data) {
+    const name = (this.request && this.request.sessionId === data.sessionId && this.request.name)
+      || this.sessionName(data.sessionId);
+    if (!this.request || this.request.requestId === data.requestId) this.request = null;
+    if (data.ok) {
+      this._becomeMember(data.session);
+      toast(`You joined ${data.session.name}.`, 'success');
+    } else if (data.reason === 'declined') {
+      const wait = data.retryIn || 60;
+      this.cooldowns.set(data.sessionId, Date.now() + wait * 1000);
+      toast(`${name} declined. You can ask again in ${wait} seconds.`, 'info');
+    } else if (data.reason === 'expired') {
+      toast(`${name} did not answer in time. Ask again if you like.`, 'info');
+    } else if (data.reason === 'full') {
+      toast(`${name} is full.`, 'info');
+    } else {
+      toast('That session has ended.', 'info');
     }
-    if (type === 'hostChanged') {
-      this.mine = { session: data.session, host: true };
-      this.sessionId = data.sessionId;
-      Player.takeOver(this._stateAtNow(data.state));
-      this._changed(true);
-      this._emit();
-    }
+    this._emit();
+  },
+
+  _onLeft({ reason, sessionId }) {
+    const wasMember = this.isMember && this.mine.session.id === sessionId ? this.mine.session : null;
+    if (this.mine && this.mine.session.id !== sessionId) return;
+    this._out();
+    if (!wasMember) return;
+    if (reason === 'dropped') toast(`You are no longer in ${wasMember.name}: the connection to the server was lost.`, 'info');
+    else if (reason === 'ended') toast(`${wasMember.name} has ended.`, 'info');
   },
 
   /** A state from the server, its position moved on to now (it was read at sampledAt, server time). */
@@ -148,6 +385,8 @@ const Session = {
   /** Player changed: tell the server soon (several changes go as one). */
   _changed(now = false) {
     if (!this.available) return;
+    // In someone else's session: that host tells the server what plays.
+    if (this.isMember) return;
     // Nothing told yet and nothing playing: no session to start.
     if (!this._published && !Player.isPlaying) return;
     clearTimeout(this._publishTimer);
@@ -193,7 +432,7 @@ const Session = {
 
   async _publish() {
     clearTimeout(this._heartbeat);
-    if (!this.available) return;
+    if (!this.available || this.isMember) return;
     const state = this._state();
     try {
       const r = await window.flow.sessions({ type: 'state', state });
@@ -212,10 +451,6 @@ const Session = {
   },
 
   // ---- buttons pressed on other devices ----
-
-  _who(from) {
-    return `${(from && from.profileName) || 'Default'} - ${(from && from.device) || 'another device'}`;
-  },
 
   _execute({ action, args = {}, from }) {
     const songTitle = (id) => {

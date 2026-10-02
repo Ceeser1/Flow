@@ -467,7 +467,9 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
     clock.clearTimeout(s.idleTimer);
     for (const m of s.members) {
       memberOf.delete(m.client);
-      if (reason !== 'stopped' && reason !== 'idle') send(m.client, 'left', { sessionId: s.id, reason: 'ended' });
+      // Stopped by the host itself: it knows. Paused too long alone: it is told, to start afresh.
+      if (reason === 'idle') send(m.client, 'left', { sessionId: s.id, reason: 'idle' });
+      else if (reason !== 'stopped') send(m.client, 'left', { sessionId: s.id, reason: 'ended' });
     }
     for (const r of [...requests.values()]) if (r.sessionId === s.id) cancelRequest(r.id, { toJoiner: { reason: 'ended' }, toHost: false });
     for (const key of [...cooldowns.keys()]) if (key.startsWith(`${s.id}|`)) cooldowns.delete(key);

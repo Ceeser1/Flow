@@ -25,6 +25,8 @@
     <!-- Below the playlists; only while at least one shared playlist is followed. -->
     <button id="menuFollowed" class="menu__item" type="button" hidden></button>
     <nav id="menuFollowedList" class="menu__subs" aria-label="Followed Playlists" hidden></nav>
+    <!-- Only while another device plays on the Flow Server (session.js). -->
+    <button id="menuSessions" class="menu__item" type="button" hidden></button>
   </aside>
 
   <!-- ===== Content ===== -->
@@ -229,6 +231,20 @@
         <table id="followedTable" class="table table--playlists"></table>
       </section>
 
+      <!-- Active Sessions -->
+      <section id="page-sessions" class="page page--playlists" hidden>
+        <h1 class="page__title">Active Sessions</h1>
+        <div id="sessionsMine" class="panel sessions-mine" hidden></div>
+        <div class="section-head">
+          <h2 class="section-head__title">Playing right now</h2>
+          <span id="sessionsCount" class="muted-text"></span>
+        </div>
+        <p class="muted-text">The devices playing on this Flow Server. Join one to control it from here: pause, skip,
+          start and queue songs. Its host is asked first.</p>
+        <table id="sessionsTable" class="table table--playlists table--sessions"></table>
+        <div id="sessionsEmpty" class="empty empty--small" hidden></div>
+      </section>
+
       <!-- One playlist -->
       <section id="page-playlist" class="page page--playlist" hidden>
         <!-- One panel from the title down, continued by the column headers. -->
@@ -356,6 +372,7 @@
 <script src="app/pages/serverImport.js"></script>
 <script src="app/pages/playlists.js"></script>
 <script src="app/pages/followed.js"></script>
+<script src="app/pages/sessions.js"></script>
 <script src="app/pages/playlist.js"></script>
 <script src="app/details.js"></script>
 <script src="app/settingsPanel.js"></script>

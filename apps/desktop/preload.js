@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('flow', {
   scheduleShutdown: (seconds) => call('sleep:scheduleShutdown', seconds),
   cancelShutdown: () => call('sleep:cancelShutdown'),
   notify: (body) => call('sleep:notify', body),
+  notifySession: (body) => call('session:notify', body),
   download: (probed, opts) => call('download:start', { probed, opts }),
   cancelDownload: () => call('download:cancel'),
   discardDownload: (file) => call('download:discard', file),

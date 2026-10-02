@@ -443,9 +443,17 @@ const SettingsPanel = {
         when: on,
         right: this._syncBtn,
       }),
+      this._row({
+        key: 'sessionAllowVolume',
+        label: 'Devices in my Active Session may change my volume',
+        desc: 'Devices that joined what you play can pause, skip, start and queue songs. Ticked, they can also turn '
+          + 'your volume up and down.',
+        sub: true,
+        when: on,
+      }),
     ];
     // The button beside the box works whether or not the box is ticked.
-    rows[rows.length - 1].classList.add('settings__row--keep');
+    rows[rows.length - 2].classList.add('settings__row--keep');
     return rows;
   },
 
