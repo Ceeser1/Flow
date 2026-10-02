@@ -31,10 +31,12 @@ const MIX_LIMIT = 50;
  * cancel() stops every one of them. `sub()` hands out the token each process
  * is run with.
  */
-function groupToken() {
+function groupToken(ytdlpArgs = null) {
   const subs = new Set();
   const group = {
     cancelled: false,
+    // What every yt-dlp run of the group gets on top (one server download's cookies).
+    ytdlpArgs,
     cancel() {
       group.cancelled = true;
       for (const t of subs) {
@@ -43,7 +45,7 @@ function groupToken() {
       }
     },
     sub() {
-      const t = { cancelled: group.cancelled };
+      const t = { cancelled: group.cancelled, ytdlpArgs: group.ytdlpArgs };
       subs.add(t);
       return t;
     },

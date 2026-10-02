@@ -204,16 +204,24 @@ const PlaylistsPage = {
   },
 
   async remove(p) {
-    const ok = await confirmDialog({
+    const answer = await confirmDialog({
       title: 'Delete playlist',
-      message: `Delete the playlist "${p.name}"? The songs stay in All Songs.`,
+      message: `Do you really want to delete the playlist "${p.name}"?`,
       confirmLabel: 'Delete',
       danger: true,
+      checkbox: { label: 'Also delete all songs that exist only in this playlist', checked: false },
     });
-    if (!ok) return;
+    if (!answer) return;
+    const withSongs = !!answer.checked;
     await attempt(async () => {
-      await window.flow.deletePlaylist(p.id);
-      toast(`Playlist "${p.name}" deleted`, 'success');
+      const r = await window.flow.deletePlaylist(p.id, withSongs);
+      let text = `Playlist "${p.name}" deleted`;
+      if (withSongs && !r) text += '. Its songs in no other playlist are deleted on the server.';
+      else if (withSongs) {
+        text += r.deleted ? `, and ${Util.plural(r.deleted, 'song')} only in it` : '. It had no songs only in it';
+        if (r.kept) text += `. ${Util.plural(r.kept, 'song')} could not be deleted (in use) and stayed`;
+      }
+      toast(text, 'success');
     });
   },
 };

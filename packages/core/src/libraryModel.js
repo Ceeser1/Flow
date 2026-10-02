@@ -259,6 +259,26 @@ function deletePlaylist(data, id) {
   if (data.playlistListened) delete data.playlistListened[id];
 }
 
+/**
+ * The songs of a playlist that are in no other one: not in another playlist,
+ * a playlist followed, or the favourites, and not in `keep` (song ids the
+ * caller knows are wanted elsewhere: another profile's on a server).
+ */
+function songsOnlyIn(data, id, keep = null) {
+  const p = playlistById(data, id);
+  if (!p) return [];
+  const elsewhere = new Set(keep || []);
+  for (const q of data.playlists) if (q.id !== id) for (const e of q.entries) elsewhere.add(e.songId);
+  for (const q of data.sharedPlaylists || []) for (const e of q.entries || []) elsewhere.add(e.songId);
+  const lone = new Set();
+  for (const e of p.entries) {
+    if (elsewhere.has(e.songId)) continue;
+    const s = songById(data, e.songId);
+    if (s && !s.favouriteAt) lone.add(s.id);
+  }
+  return [...lone];
+}
+
 function addSong(data, song) {
   song.stats = cleanStats(song.stats);
   song.favouriteAt = Number(song.favouriteAt) || null;
@@ -408,7 +428,7 @@ module.exports = {
   emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
-  addSong, updateSong, setFavourite, removeSong,
+  addSong, updateSong, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta,
 };

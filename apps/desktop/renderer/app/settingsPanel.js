@@ -73,6 +73,23 @@ const SettingsPanel = {
 
       h('h3.settings__section', 'Website Downloads'),
       this._row({
+        key: 'useCookies',
+        label: 'Download using browser cookies from',
+        desc: 'Downloads may be blocked by age restrictions, or by sites that only give their content to '
+          + 'signed-in visitors. Pick your browser to download these too, if you are signed in to these sites '
+          + 'there. Firefox works best: Chrome, Edge and Brave lock their cookies on Windows.',
+        right: this._cookieBrowser(),
+      }),
+      this._row({
+        key: 'shareCookies',
+        label: 'Share session cookies with the server for downloads',
+        desc: 'Download (Server) gets the cookies of the link\'s site only (all of YouTube for a YouTube link), '
+          + 'for that one download, and deletes them with it. Over a plain http address at home they travel unencrypted.',
+        sub: true,
+        when: () => Store.settings.useCookies,
+        show: () => Store.settings.serverOn,
+      }),
+      this._row({
         key: 'alwaysMp3',
         label: 'Always convert downloads into MP3',
         desc: 'Otherwise songs are kept in the format they come in.',
@@ -313,6 +330,28 @@ const SettingsPanel = {
     return h('div.settings__viz',
       h('div.settings__row.settings__row--flat', left, h('div.settings__right', preview)),
       tiles);
+  },
+
+  /** The browser the cookies come from: those found on this computer first. */
+  _cookieBrowser() {
+    const select = h('select.select');
+    const fill = (list) => {
+      clear(select);
+      const found = list.filter((b) => b.found);
+      const shown = found.length ? found : list;
+      const chosen = Store.settings.cookiesBrowser;
+      if (chosen && !shown.some((b) => b.id === chosen)) {
+        const b = list.find((x) => x.id === chosen);
+        if (b) shown.push({ ...b, name: `${b.name} (not found)` });
+      }
+      for (const b of shown) select.appendChild(h('option', { value: b.id }, b.name));
+      if (chosen) select.value = chosen;
+      else if (shown.length) Store.saveSettings({ cookiesBrowser: shown[0].id });
+    };
+    select.addEventListener('change', () => Store.saveSettings({ cookiesBrowser: select.value }));
+    window.flow.cookieBrowsers().then(fill, () => {});
+    this._refresh.push(() => { select.disabled = !Store.settings.useCookies; });
+    return h('div.settings__control', select);
   },
 
   _mp3Quality() {

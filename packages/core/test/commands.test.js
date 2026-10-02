@@ -100,3 +100,26 @@ test('wrong commands say why', () => {
   assert.throws(() => applyCommand(d, { type: 'explode' }), /Unknown command/);
   assert.throws(() => applyCommand(d, { type: 'editSong', songId: 's1', title: ' ' }), /Please enter a title/);
 });
+
+test('a playlist deleted with its songs takes only those in no other playlist, and only on the server', () => {
+  const d = lib();
+  m.addSong(d, { id: 's3', file: '/music/c.mp3', title: 'Teardrop', artist: 'Massive Attack', mix: '', duration: 330, addedAt: 3 });
+  m.addSong(d, { id: 's4', file: '/music/d.mp3', title: 'Roads', artist: 'Portishead', mix: '', duration: 300, addedAt: 4 });
+  m.addSongsToPlaylist(d, 'p1', ['s1', 's2', 's3', 's4'], 5);
+  m.createPlaylist(d, 'Night', 'p2', 6);
+  m.addSongsToPlaylist(d, 'p2', ['s2'], 7);
+  m.setFavourite(d, 's3', true, 8);
+  assert.deepEqual(m.songsOnlyIn(d, 'p1'), ['s1', 's4']);
+  assert.deepEqual(m.songsOnlyIn(d, 'p1', new Set(['s4'])), ['s1']);
+
+  // An app's preview: the playlist only, the songs wait for the server.
+  const preview = JSON.parse(JSON.stringify(d));
+  assert.deepEqual(applyCommand(preview, { type: 'deletePlaylist', playlistId: 'p1', deleteSongs: true, at: 9 }), { value: [] });
+  assert.equal(preview.songs.length, 4);
+
+  // The server: another profile still has s4.
+  const r = applyCommand(d, { type: 'deletePlaylist', playlistId: 'p1', deleteSongs: true, at: 9 }, {}, null, { keepSongs: () => new Set(['s4']) });
+  assert.deepEqual(r.value.map((s) => s.id), ['s1']);
+  assert.deepEqual(d.songs.map((s) => s.id), ['s2', 's3', 's4']);
+  assert.equal(m.playlistById(d, 'p1'), null);
+});

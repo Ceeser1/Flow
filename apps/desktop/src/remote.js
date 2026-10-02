@@ -820,6 +820,8 @@ function flush() {
     const blocked = new Set();
     let uploadNo = 0;
     let batch = [];
+    // Songs the server deleted with a playlist: their copies here go too.
+    const deleted = [];
     const sendBatch = async () => {
       if (!batch.length) return;
       const sending = batch;
@@ -832,7 +834,8 @@ function flush() {
         if (!r) continue;
         done.add(c.cid);
         if (r.ok) sync.sent.push({ cmd: c, rev: res.rev });
-        else problems.push(`The server did not take a change: ${r.error}`);
+        if (r.ok && Array.isArray(r.deletedSongs)) deleted.push(...r.deletedSongs.map(String));
+        if (!r.ok) problems.push(`The server did not take a change: ${r.error}`);
       }
       sync.queue = sync.queue.filter((c) => !done.has(c.cid));
       saveSync();
@@ -857,6 +860,12 @@ function flush() {
         if (batch.length >= 200) await sendBatch();
       }
       await sendBatch();
+      if (deleted.length) {
+        const ids = new Set(deleted);
+        for (const [lid, sid] of Object.entries(sync.songMap)) {
+          if (ids.has(sid)) await forgetLocal(lid, { deleteFile: true });
+        }
+      }
       status.transfer = '';
       status.note = blocked.size
         ? `${blocked.size} ${blocked.size === 1 ? 'song waits' : 'songs wait'} to be uploaded until the connection is not metered.`
@@ -1706,9 +1715,10 @@ async function serverDownloads(action, args = {}) {
   const item = `/api/downloads/items/${Math.max(0, Math.floor(Number(args.index) || 0))}`;
   try {
     if (action === 'get') return (await call('/api/downloads')).batch;
+    // create: cookies, the link's site's browser cookies (or none).
     if (action === 'create') {
-      const { url, kind, options } = args;
-      return (await call('/api/downloads', { method: 'POST', json: { url, kind, options } })).batch;
+      const { url, kind, options, cookies } = args;
+      return (await call('/api/downloads', { method: 'POST', json: { url, kind, options, cookies: cookies || undefined } })).batch;
     }
     if (action === 'cancel') return (await call('/api/downloads', { method: 'DELETE' })).batch;
     if (action === 'peaks') return (await call(`${item}/peaks`, { timeout: 30000 })).peaks;

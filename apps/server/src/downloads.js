@@ -31,6 +31,7 @@ const net = require('net');
 const path = require('path');
 const { createMedia, ProcessCancelledError } = require('@flow/core/media');
 const { createLister, groupToken, existingInfo } = require('@flow/core/listing');
+const { MAX_COOKIES, cookieSite, cookiesFor } = require('@flow/core/cookies');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const { isPrivateIp } = require('@flow/core/address');
@@ -135,6 +136,10 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   const dirOf = (key) => path.join(root, key);
   const fileOf = (batch, item) => (item.file ? path.join(dirOf(batch.key), item.file) : null);
   const peaksOf = (batch, item) => path.join(dirOf(batch.key), `i${item.index}.peaks.json`);
+  // The browser cookies an app sent with the batch (only the link's site's):
+  // its yt-dlp runs read them, and they go with the batch's folder.
+  const cookiesOf = (batch) => path.join(dirOf(batch.key), 'cookies.txt');
+  const ytdlpArgs = (batch) => (batch.cookies ? ['--cookies', cookiesOf(batch)] : null);
 
   function save(batch) {
     if (batches.get(batch.key) !== batch) return;
@@ -224,7 +229,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   }
 
   async function startListing(batch) {
-    const group = groupToken();
+    const group = groupToken(ytdlpArgs(batch));
     listing.set(batch.key, group);
     const knownArtists = [...new Set(library.data.songs.map((s) => s.artist).filter(Boolean))];
     const onProgress = (p) => {
@@ -312,7 +317,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
 
   async function runItem(batch, item) {
     const id = `${batch.key}/${item.index}`;
-    const token = { cancelled: false };
+    const token = { cancelled: false, ytdlpArgs: ytdlpArgs(batch) };
     running.set(id, token);
     progress.set(id, { frac: null, text: 'Reading...' });
     const timer = setTimeout(() => {
@@ -393,6 +398,8 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       single: !!batch.single,
       truncated: batch.truncated || false,
       options: batch.options,
+      // Downloaded with browser cookies from the app that started it.
+      cookies: !!batch.cookies,
       playlistId: batch.playlistId || null,
       createdAt: batch.createdAt,
       expiresAt: batch.lastActivity + config.get().downloadKeepDays * DAY,
@@ -437,15 +444,21 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   }
 
   /**
-   * A new batch for `url`: { url, kind: 'song' | 'list', options }. kind
-   * 'song' reads only the one song even from a link into a playlist.
+   * A new batch for `url`: { url, kind: 'song' | 'list', options, cookies }.
+   * kind 'song' reads only the one song even from a link into a playlist.
+   * cookies: a Netscape cookie file's text from the app's browser, of which
+   * only the link's site's cookies are kept.
    */
-  function create(profileId, { url, kind, options } = {}) {
+  function create(profileId, { url, kind, options, cookies } = {}) {
     if (config.get().downloads === false) throw new DownloadError(501, 'Downloads are turned off on this server (flow-server --downloads turns them on).');
     if (!tools.canDownload()) throw new DownloadError(501, 'This server cannot download songs: it needs yt-dlp and ffmpeg.');
     const key = keyOf(profileId);
     if (batches.has(key)) throw new DownloadError(409, 'There is a download on the server already. Finish or cancel it first.');
     const link = checkLink(url);
+    if (cookies !== undefined && cookies !== null && (typeof cookies !== 'string' || cookies.length > MAX_COOKIES)) {
+      throw new DownloadError(400, 'The browser cookies sent along are not usable.');
+    }
+    const siteCookies = cookies ? cookiesFor(cookies, cookieSite(link)) : '';
     const now = Date.now();
     const batch = {
       id: crypto.randomBytes(6).toString('hex'),
@@ -462,9 +475,11 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       createdAt: now,
       lastActivity: now,
       items: [],
+      cookies: !!siteCookies,
     };
     batches.set(key, batch);
     save(batch);
+    if (siteCookies) fs.writeFileSync(cookiesOf(batch), siteCookies, { mode: 0o600 });
     startListing(batch);
     return publicBatch(batch);
   }

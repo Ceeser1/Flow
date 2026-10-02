@@ -18,6 +18,11 @@
 // With profiles (profiles.js), `scope` is the profile a command is for: its
 // playlists and favourites are its own, so their keys are kept per profile.
 // A song's names are shared (`shared` below).
+//
+// `ctx` is what only the server knows. keepSongs(): the song ids another
+// profile still has in a playlist or its favourites, so "delete the playlist
+// and its songs" keeps those. An app's preview has no ctx: it takes the
+// playlist away and leaves the songs to the server's answer.
 
 const model = require('./libraryModel');
 
@@ -83,10 +88,13 @@ const TYPES = {
   },
   deletePlaylist: {
     keys: () => [],
-    run(d, c) {
-      if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
-      model.deletePlaylist(d, str(c.playlistId));
-      return {};
+    run(d, c, fresh, ctx) {
+      const id = str(c.playlistId);
+      if (!model.playlistById(d, id)) return { skipped: 'gone' };
+      // deleteSongs: the songs in no other playlist (of anyone) go too.
+      const lone = c.deleteSongs && ctx.keepSongs ? model.songsOnlyIn(d, id, ctx.keepSongs()) : [];
+      model.deletePlaylist(d, id);
+      return { value: lone.map((sid) => model.removeSong(d, sid, false)) };
     },
   },
   setPlaylistSource: {
@@ -199,7 +207,7 @@ const COMMAND_TYPES = Object.keys(TYPES);
  * ('gone', 'exists' or 'stale'); throws an Error fit to show the user when the
  * command itself is wrong (an empty title, a taken playlist name).
  */
-function applyCommand(data, cmd, touched = null, scope = null) {
+function applyCommand(data, cmd, touched = null, scope = null, ctx = null) {
   const c = cmd || {};
   const type = TYPES[c.type];
   if (!type) throw new Error(`Unknown command "${str(c.type)}".`);
@@ -212,7 +220,7 @@ function applyCommand(data, cmd, touched = null, scope = null) {
   const fresh = (key) => !touched || !(touched[scoped(key)] > at);
   const keys = type.keys(cc);
   if (keys.length === 1 && !fresh(keys[0])) return { skipped: 'stale' };
-  const result = type.run(data, cc, fresh);
+  const result = type.run(data, cc, fresh, ctx || {});
   if (touched && !result.skipped) {
     for (const key of keys) if (fresh(key)) touched[scoped(key)] = at;
   }

@@ -4,6 +4,7 @@ const fs = require('fs');
 const paths = require('./paths');
 const { writeJsonAtomic } = require('@flow/core/jsonFile');
 const { DEFAULT_MP3_QUALITY, clampQuality } = require('@flow/core/formats');
+const { BROWSERS } = require('@flow/core/cookies');
 
 // What the app remembers between sessions. Small and flat, read once at start
 // and written whenever the window changes something.
@@ -41,6 +42,11 @@ const DEFAULTS = {
   musicDir: '',
   // With alwaysMp3: leave MP3s as they are instead of encoding them again.
   keepMp3: true,
+  // yt-dlp reads this browser's cookies (signed-in sites, age restrictions);
+  // with shareCookies a Flow Server's download gets the link's site's ones.
+  useCookies: false,
+  cookiesBrowser: '',
+  shareCookies: false,
   // The next song starts this long before the current one ends, faded over.
   crossfade: true,
   crossfadeSeconds: 3,
@@ -130,7 +136,8 @@ function clean(raw) {
   s.musicDir = typeof s.musicDir === 'string' ? s.musicDir : '';
   for (const key of ['serverHome', 'serverRemote']) s[key] = typeof s[key] === 'string' ? s[key].trim().slice(0, 300) : '';
   s.serverSecret = typeof s.serverSecret === 'string' ? s.serverSecret : '';
-  for (const key of ['flashOn', 'serverOn', 'serverMetered']) s[key] = s[key] === true;
+  for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies']) s[key] = s[key] === true;
+  s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn']) {
     s[key] = s[key] !== false;

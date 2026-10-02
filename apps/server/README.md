@@ -194,8 +194,12 @@ own, and a long playlist keeps downloading when the app is closed.
   fetch it. A name on the internet that leads home is not caught. At most 500
   songs a batch, one download at a time (`downloadJobs` in `server.json`, up
   to 3), 20 minutes a song, and none when the disk has less than 500 MB free.
-  Age-restricted videos need a signed-in account, which the server does not
-  have: they fail with that reason. At level 3 and 4 the home network needs
+  Age-restricted videos and sites that want a signed-in visitor need cookies:
+  with "Share session cookies with the server for downloads" in Flow's
+  settings the app sends the cookies of the link's site (only those) with the
+  download; they are kept in its folder in `staging/`, readable only by the
+  server, used for that download alone and deleted with it. Without them
+  such songs fail with that reason. At level 3 and 4 the home network needs
   no password, so anyone on it can start downloads; so can anyone with the
   password from outside.
 
@@ -364,7 +368,7 @@ report changes.
 | `GET /api/check` | what the server made of this request: `{ proxied, trusted, ip, proto, level, locked }` (open to anyone; for `doctor`) |
 | `POST /api/login` | `{ password, device }` → `{ token }` |
 | `GET /api/library?since=<rev>&as=<profile>` | `{ rev, library, profile }`, or 204 when nothing changed for that profile; the library has the profile's `follows` and the others' `sharedPlaylists` |
-| `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`) |
+| `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`); `deletePlaylist` with `deleteSongs: true` also deletes the songs no playlist or favourite of any profile has, listed in its result's `deletedSongs` |
 | `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file |
 | `GET /api/songs/<id>/audio` | the song's file, with Range for seeking |
 | `POST /api/rescan` | look through the music folder now |
@@ -373,7 +377,7 @@ report changes.
 | `POST /api/profiles/login` | `{ profileId, pin, device }` → `{ token, profile }` |
 | `POST /api/profiles/logout`, `/rename` `{ name }`, `/delete` | the signed-in profile |
 | `GET /api/downloads` | the profile's download batch: `{ batch }`, `null` when there is none |
-| `POST /api/downloads` | `{ url, kind: 'song' or 'list', options: { alwaysMp3, quality, keepMp3 } }`: a new batch, read in the background (`state: 'listing'`, then `'ready'` or `'failed'` with `error`); 409 with one open already |
+| `POST /api/downloads` | `{ url, kind: 'song' or 'list', options: { alwaysMp3, quality, keepMp3 }, cookies }` (`cookies`: a Netscape cookie file's text, optional; only the link's site's lines are kept, and the batch says `cookies: true`): a new batch, read in the background (`state: 'listing'`, then `'ready'` or `'failed'` with `error`); 409 with one open already |
 | `DELETE /api/downloads` | cancel the whole batch: downloads stopped, files gone |
 | `GET /api/downloads/items/<i>/peaks` | `{ peaks }`: the song's waveform, for the trim editor |
 | `GET /api/downloads/items/<i>/audio` | the prepared song, with Range (and `?t=`), to preview the trim |

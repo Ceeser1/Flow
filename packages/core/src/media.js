@@ -78,7 +78,22 @@ function ytDlpError(stderrTail) {
   if (/HTTP Error 429/i.test(text)) return 'The site is limiting requests right now (error 429). Try again later.';
   if (/Private video|This video is private/i.test(text)) return 'This video is private.';
   if (/Video unavailable|not available/i.test(text)) return 'This video is not available.';
-  if (/Sign in to confirm your age/i.test(text)) return 'This video is age restricted and needs a signed-in account.';
+  if (/Sign in to confirm your age/i.test(text)) {
+    return 'This video is age restricted and needs a signed-in account (Settings, Website Downloads: browser cookies).';
+  }
+  if (/Sign in to confirm you.re not a bot/i.test(text)) {
+    return 'YouTube wants a signed-in visitor right now ("confirm you\'re not a bot"). Settings, Website Downloads: browser cookies.';
+  }
+  // Browser cookies (--cookies-from-browser, or a server's cookie file).
+  const noDb = /could not find (\w+) cookies database/i.exec(text);
+  if (noDb) return `No ${noDb[1][0].toUpperCase()}${noDb[1].slice(1)} cookies were found on this computer. Pick another browser in Settings, or turn browser cookies off.`;
+  if (/Could not copy .* cookie database/i.test(text)) {
+    return 'The browser\'s cookies cannot be read while it is open. Close the browser and try again, or pick Firefox in Settings.';
+  }
+  if (/Failed to decrypt with DPAPI|app.?bound/i.test(text)) {
+    return 'This browser keeps its cookies locked so yt-dlp cannot read them (Chrome, Edge and Brave on Windows). Firefox works: pick it in Settings, or turn browser cookies off.';
+  }
+  if (/invalid Netscape format cookies file|cookies file.*(not|invalid)/i.test(text)) return 'The browser cookies sent along could not be read.';
   if (/getaddrinfo|Failed to resolve|Unable to download webpage.*(timed out|Errno)/i.test(text)) {
     return 'Could not reach the site. Please check the internet connection.';
   }
@@ -123,10 +138,16 @@ const NO_AUDIO = { duration: 0, codec: '', formatName: '', bitRate: 0, tags: {} 
  * The tools of one app. Each of ffmpeg, ffprobe and ytdlp is a function
  * giving the tool's path, or null when there is none; cacheDir gives the
  * folder downloads are prepared in. missing(name) is the message when a tool
- * is needed and not there. lowPriority runs every tool niced.
+ * is needed and not there. lowPriority runs every tool niced. ytdlpArgs()
+ * gives what every yt-dlp run gets on top (the app's browser cookies); a
+ * cancel token's own `ytdlpArgs` go along with the runs made with it (one
+ * server download's cookies).
  */
-function createMedia({ ffmpeg, ffprobe, ytdlp, cacheDir, missing = (name) => `${name} was not found.`, lowPriority = false }) {
+function createMedia({
+  ffmpeg, ffprobe, ytdlp, cacheDir, missing = (name) => `${name} was not found.`, lowPriority = false, ytdlpArgs = () => [],
+}) {
   const runOpts = { lowPriority };
+  const extraArgs = (cancelToken) => [...(ytdlpArgs() || []), ...((cancelToken && cancelToken.ytdlpArgs) || [])];
 
   // A tool that is a .js file (the server tests' fake yt-dlp) runs with this Node.
   const runTool = (exe, args, onLine, cancelToken) => (/\.js$/i.test(exe)
@@ -216,7 +237,7 @@ function createMedia({ ffmpeg, ffprobe, ytdlp, cacheDir, missing = (name) => `${
     const exe = need(ytdlp, 'yt-dlp');
     need(ffmpeg, 'ffmpeg');
     let out = '';
-    const result = await runTool(exe, ['--no-warnings', ...args], (line) => {
+    const result = await runTool(exe, ['--no-warnings', ...extraArgs(cancelToken), ...args], (line) => {
       if (!out && line.trim().startsWith('{')) out = line.trim();
     }, cancelToken);
     if (result.exitCode !== 0 && !out) throw new Error(ytDlpError(result.stderrTail));
@@ -284,7 +305,7 @@ function createMedia({ ffmpeg, ffprobe, ytdlp, cacheDir, missing = (name) => `${
   async function fetchAndPrepare(probed, opts, report, cancelToken, { exe, dir, stem }) {
     report('download', null, 'Starting download...');
     const result = await runTool(exe, [
-      '--no-warnings', '--no-playlist', '-I', '1',
+      '--no-warnings', ...extraArgs(cancelToken), '--no-playlist', '-I', '1',
       '-f', FORMAT_SELECTOR,
       '--ffmpeg-location', path.dirname(need(ffmpeg, 'ffmpeg')),
       '-o', path.join(dir, `${stem}.src.%(ext)s`),

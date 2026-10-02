@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('flow', {
 
   createPlaylist: (name) => call('library:createPlaylist', name),
   renamePlaylist: (id, name) => call('library:renamePlaylist', { id, name }),
-  deletePlaylist: (id) => call('library:deletePlaylist', id),
+  deletePlaylist: (id, deleteSongs = false) => call('library:deletePlaylist', { id, deleteSongs }),
   setPlaylistShared: (id, shared) => call('library:setPlaylistShared', { id, shared }),
   setFollowing: (id, on) => call('library:setFollowing', { id, on }),
   addSongToPlaylists: (songId, playlistIds) => call('library:addSongToPlaylists', { songId, playlistIds }),
@@ -79,6 +79,7 @@ contextBridge.exposeInMainWorld('flow', {
   onServerStatus: (fn) => ipcRenderer.on('server:status', (_e, st) => fn(st)),
   // Downloads by the server ("Download (Server)"): see remote.serverDownloads.
   serverDownloads: (action, args = {}) => call('server:downloads', { action, ...args }),
+  cookieBrowsers: () => call('cookies:browsers'),
   onServerNotice: (fn) => ipcRenderer.on('server:notice', (_e, n) => fn(n)),
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),
   finishSong: (job) => call('song:finish', job),

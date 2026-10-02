@@ -12,11 +12,17 @@
 //
 // A download copies FAKE_YTDLP_AUDIO (a real WAV) to where -o says. Every
 // download writes its process id to FAKE_YTDLP_PIDS, one per line, so a test
-// can check it was stopped.
+// can check it was stopped. With FAKE_YTDLP_ARGS every run adds a line there:
+// { args, cookies } (the text of the --cookies file it was given).
 
 const fs = require('fs');
 
 const args = process.argv.slice(2);
+if (process.env.FAKE_YTDLP_ARGS) {
+  const i = args.indexOf('--cookies');
+  const cookies = i >= 0 && fs.existsSync(args[i + 1]) ? fs.readFileSync(args[i + 1], 'utf8') : null;
+  fs.appendFileSync(process.env.FAKE_YTDLP_ARGS, `${JSON.stringify({ args, cookies })}\n`);
+}
 const url = new URL(args[args.length - 1]);
 const parts = url.pathname.split('/').filter(Boolean);
 

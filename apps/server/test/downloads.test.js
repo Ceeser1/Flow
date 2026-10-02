@@ -310,3 +310,51 @@ test('downloads turned off stay off, with yt-dlp and ffmpeg there', needsFfmpeg,
     assert.ok((await api(base, 'GET', '/api/hello')).json.features.includes('download'));
   });
 });
+
+test('browser cookies sent along reach every yt-dlp run of that download, only the site\'s, and go with it', needsFfmpeg, async () => {
+  await withServer(async ({ base, server }) => {
+    const log = path.join(scratch, 'args.txt');
+    fs.writeFileSync(log, '');
+    process.env.FAKE_YTDLP_ARGS = log;
+    const runs = () => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    try {
+      const jar = [
+        '# Netscape HTTP Cookie File',
+        '.fake.test\tTRUE\t/\tTRUE\t0\tSID\tsecret',
+        '#HttpOnly_www.fake.test\tFALSE\t/\tTRUE\t0\tHID\thidden',
+        '.example.org\tTRUE\t/\tTRUE\t0\tother\tnot-for-this-site',
+      ].join('\n');
+      const r = await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/list/2', kind: 'list', cookies: jar });
+      assert.equal(r.status, 200);
+      assert.equal(r.json.batch.cookies, true);
+      await allSettled(base);
+      // The listing, and a probe and a download per song.
+      assert.ok(runs().length >= 5, `${runs().length} runs`);
+      for (const run of runs()) {
+        assert.ok(run.args.includes('--cookies'));
+        assert.match(run.cookies, /SID\tsecret/);
+        assert.match(run.cookies, /HID\thidden/);
+        assert.doesNotMatch(run.cookies, /example\.org/);
+      }
+      const file = path.join(server.config.home, 'staging', '_shared', 'cookies.txt');
+      assert.ok(fs.existsSync(file));
+      if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+      assert.equal((await api(base, 'DELETE', '/api/downloads')).status, 200);
+      assert.ok(!fs.existsSync(file), 'gone with the batch');
+
+      // None sent, none used; none of the site's: none kept.
+      fs.writeFileSync(log, '');
+      await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/plain', kind: 'song' });
+      await allSettled(base);
+      assert.ok(runs().every((run) => !run.args.includes('--cookies')));
+      await api(base, 'DELETE', '/api/downloads');
+      const other = await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/other', kind: 'song', cookies: '.example.org\tTRUE\t/\tTRUE\t0\ta\tb' });
+      assert.equal(other.json.batch.cookies, false);
+      await api(base, 'DELETE', '/api/downloads');
+      assert.equal((await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/x', kind: 'song', cookies: 12 })).status, 400);
+      assert.equal((await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/x', kind: 'song', cookies: 'x'.repeat(300 * 1024) })).status, 400);
+    } finally {
+      delete process.env.FAKE_YTDLP_ARGS;
+    }
+  });
+});

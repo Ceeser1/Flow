@@ -201,6 +201,8 @@ function createLibrary(config, log = () => {}) {
     const list = (Array.isArray(commands) ? commands : []).slice(0, 5000);
     let applied = 0;
     let remembered = 0;
+    let others = null;
+    const ctx = { keepSongs: () => others || (others = prof.songsOfOthers(data, profiles, profileId)) };
     const apply = (d) => {
       for (const c of list) {
         const cid = String((c && c.cid) || '');
@@ -210,8 +212,10 @@ function createLibrary(config, log = () => {}) {
         }
         try {
           if (!c || !ALLOWED.has(c.type)) throw new Error(`Unknown command "${String(c && c.type)}".`);
-          const r = applyCommand(d, c, state.touched, profileId);
+          const r = applyCommand(d, c, state.touched, profileId, ctx);
           if (!r.skipped && c.type === 'deleteSong') trash.push(r.value.file);
+          const gone = !r.skipped && c.type === 'deletePlaylist' ? r.value : [];
+          for (const s of gone) trash.push(s.file);
           if (!r.skipped && c.type === 'editSong') {
             const song = r.value;
             const ext = path.extname(song.file).slice(1).toLowerCase();
@@ -230,6 +234,8 @@ function createLibrary(config, log = () => {}) {
           if (!r.skipped) applied += 1;
           if (r.skipped) out.skipped = r.skipped;
           else if (typeof r.value === 'string' || typeof r.value === 'number') out.value = r.value;
+          // The app takes its copies of these away at once.
+          if (gone.length) out.deletedSongs = gone.map((s) => s.id);
           results.push(out);
         } catch (err) {
           results.push({ cid, ok: false, error: (err && err.message) || String(err) });

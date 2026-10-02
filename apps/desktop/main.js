@@ -12,6 +12,7 @@ const paths = require('./src/paths');
 app.setPath('userData', paths.userDataDir());
 
 const settings = require('./src/settings');
+const cookieJar = require('./src/cookieJar');
 const library = require('./src/library');
 const model = require('@flow/core/libraryModel');
 const tools = require('./src/tools');
@@ -207,9 +208,34 @@ handle('library:createPlaylist', (name) => {
 });
 handle('library:renamePlaylist', ({ id, name }) =>
   change((d) => model.renamePlaylist(d, id, name), 'renamePlaylist', { playlistId: id, name }));
-handle('library:deletePlaylist', (id) => {
-  if (remote.active()) remote.setOffline(id, false).catch(() => {});
-  return change((d) => model.deletePlaylist(d, id), 'deletePlaylist', { playlistId: id });
+// deleteSongs: the songs in no other playlist go too. With a server it decides
+// which (another profile may have them); here a file that cannot be deleted
+// (playing, open elsewhere) keeps its song. Resolves { deleted, kept }, null
+// for a server.
+handle('library:deletePlaylist', ({ id, deleteSongs }) => {
+  if (remote.active()) {
+    remote.setOffline(id, false).catch(() => {});
+    remote.command('deletePlaylist', { playlistId: id, deleteSongs: !!deleteSongs });
+    return null;
+  }
+  return library.quietly(() => {
+    const gone = [];
+    let kept = 0;
+    for (const sid of deleteSongs ? model.songsOnlyIn(library.get(), id) : []) {
+      const song = model.songById(library.get(), sid);
+      try {
+        if (song.file && fs.existsSync(song.file)) fs.rmSync(song.file);
+        gone.push(sid);
+      } catch {
+        kept += 1;
+      }
+    }
+    library.mutate((d) => {
+      model.deletePlaylist(d, id);
+      for (const sid of gone) if (model.songById(d, sid)) model.removeSong(d, sid, false);
+    });
+    return { deleted: gone.length, kept };
+  });
 });
 // Sharing a playlist with the server's other profiles, and following one they share.
 handle('library:setPlaylistShared', ({ id, shared }) =>
@@ -294,7 +320,15 @@ handle('server:profileLogout', () => remote.logoutProfile());
 handle('server:profileRename', (name) => remote.renameProfile(name));
 handle('server:profileDelete', () => remote.deleteProfile());
 // Downloads by the server: they stay there, so closing the app asks nothing.
-handle('server:downloads', ({ action, ...args }) => remote.serverDownloads(action, args));
+// With "Share session cookies with the server", a new download takes the
+// link's site's cookies from the browser chosen along.
+handle('server:downloads', async ({ action, ...args }) => {
+  const browser = settings.get('useCookies') && settings.get('shareCookies') ? settings.get('cookiesBrowser') : '';
+  if (action === 'create' && browser) args.cookies = await cookieJar.siteCookies(args.url, browser);
+  return remote.serverDownloads(action, args);
+});
+// The browsers the cookies can come from (Settings, Website Downloads).
+handle('cookies:browsers', () => cookieJar.browsers());
 
 handle('shell:showSong', (songId) => {
   const file = remote.active() ? remote.localFileOf(songId) : (model.songById(library.get(), songId) || {}).file;

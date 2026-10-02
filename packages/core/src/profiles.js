@@ -207,4 +207,26 @@ function removeProfile(profiles, profileId) {
   delete profiles[profileId];
 }
 
-module.exports = { sanitizeProfiles, view, absorb, prune, addProfile, removeProfile, sharedFor, DEFAULT_OWNER, DEFAULT_NAME };
+/**
+ * The songs every owner but `profileId` (null: the Default / Shared) has in a
+ * playlist or among the favourites: what deleting one profile's playlist with
+ * its songs must keep.
+ */
+function songsOfOthers(data, profiles, profileId) {
+  const ids = new Set();
+  const add = (playlists) => {
+    for (const p of playlists || []) for (const e of p.entries) ids.add(e.songId);
+  };
+  if (profileId) {
+    add(data.playlists);
+    for (const s of data.songs) if (s.favouriteAt) ids.add(s.id);
+  }
+  for (const [id, p] of Object.entries(profiles)) {
+    if (id === profileId) continue;
+    add(p.playlists);
+    for (const [sid, own] of Object.entries(p.songs || {})) if (own && own.favouriteAt) ids.add(sid);
+  }
+  return ids;
+}
+
+module.exports = { songsOfOthers, sanitizeProfiles, view, absorb, prune, addProfile, removeProfile, sharedFor, DEFAULT_OWNER, DEFAULT_NAME };

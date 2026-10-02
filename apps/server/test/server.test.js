@@ -795,3 +795,40 @@ test('playlists shared by a profile reach the others, with the owner\'s name, an
     assert.equal(saved.profiles[anna.profile.id].playlists[0].shared, true);
   });
 });
+
+test('a playlist deleted with its songs keeps those another playlist or profile still has', async () => {
+  await withServer(async ({ base, dirs }) => {
+    const names = ['Teardrop', 'Roads', 'Glory Box', 'Angel', 'Unfinished Sympathy'];
+    for (let i = 0; i < names.length; i += 1) await upload(base, `s${i + 1}`, { title: names[i], artist: 'Massive Attack', format: 'mp3' });
+    const anna = (await post(base, '/api/profiles', { name: 'Anna', device: 'pc' })).json;
+    const ben = (await post(base, '/api/profiles', { name: 'Ben', device: 'phone' })).json;
+    const as = (t) => ({ Authorization: `Bearer ${t}` });
+    const t = Date.now();
+    await command(base, [
+      { cid: 'a1', at: t, type: 'createPlaylist', playlistId: 'pa', name: 'Evening' },
+      { cid: 'a2', at: t, type: 'addSongsToPlaylist', playlistId: 'pa', songIds: ['s1', 's2', 's3', 's4'] },
+      { cid: 'a3', at: t, type: 'createPlaylist', playlistId: 'pb', name: 'Morning' },
+      { cid: 'a4', at: t, type: 'addSongsToPlaylist', playlistId: 'pb', songIds: ['s2'] },
+    ], as(anna.token));
+    await command(base, [
+      { cid: 'b1', at: t, type: 'createPlaylist', playlistId: 'pc', name: 'Mine' },
+      { cid: 'b2', at: t, type: 'addSongsToPlaylist', playlistId: 'pc', songIds: ['s3'] },
+      { cid: 'b3', at: t, type: 'setFavourite', songId: 's4', on: true },
+    ], as(ben.token));
+
+    // Without the box ticked the songs stay.
+    const keep = await command(base, [{ cid: 'a5', at: t + 1, type: 'deletePlaylist', playlistId: 'pb' }], as(anna.token));
+    assert.equal(keep.results[0].deletedSongs, undefined);
+    // s2 was only in Anna's two lists now: still kept, as pb went without its songs.
+    await command(base, [{ cid: 'a6', at: t + 1, type: 'addSongsToPlaylist', playlistId: 'pa', songIds: ['s5'] }], as(anna.token));
+    await command(base, [{ cid: 'd1', at: t + 1, type: 'createPlaylist', playlistId: 'pd', name: 'Shared' },
+      { cid: 'd2', at: t + 1, type: 'addSongsToPlaylist', playlistId: 'pd', songIds: ['s5'] }]);
+
+    const r = await command(base, [{ cid: 'a7', at: t + 2, type: 'deletePlaylist', playlistId: 'pa', deleteSongs: true }], as(anna.token));
+    // s3 is in Ben's playlist, s4 one of his favourites, s5 in the Default / Shared one.
+    assert.deepEqual(r.results[0].deletedSongs.sort(), ['s1', 's2']);
+    const lib = (await get(base, '/api/library', ben.token)).json.library;
+    assert.deepEqual(lib.songs.map((s) => s.id).sort(), ['s3', 's4', 's5']);
+    assert.equal(fs.readdirSync(path.join(dirs.music, '.flow-trash')).length, 2);
+  });
+});

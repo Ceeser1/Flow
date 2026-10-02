@@ -45,7 +45,12 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
     uploads scored by length, channel and title. Matches more than 5 seconds
     off are marked "check"; each links to YouTube. Artist, title and mix come
     from Spotify. Spotify's page shows at most 100 songs of a longer list.
-- **Playlists**: create, rename, delete. `+` opens All Songs in "adding songs
+- **Playlists**: create, rename, delete. Deleting asks first, with **Also
+  delete all songs that exist only in this playlist** (off): ticked, the
+  songs in no other playlist and not among the favourites go too, files
+  included. With a Flow Server the server decides, counting every profile's
+  playlists and favourites, and its deleted files wait in its trash for 30
+  days; a file here that is in use stays, with its song. `+` opens All Songs in "adding songs
   to" mode, where one click on a song's `+` adds it. **Shared Playlists**
   (it opens and closes; All Songs stays) lists All Songs and, with a Flow
   Server, the playlists the server's other profiles share, each with a
@@ -188,6 +193,16 @@ The cog at the bottom left of the menu. Every change counts at once.
     server was off, go to the server by themselves; unticked, only with
     Synchronize now. Songs downloaded in Flow always go up (once the first upload to that server was agreed to or declined).
 - **Website Downloads**
+  - **Download using browser cookies from** (off) and a browser (those found
+    on this computer): yt-dlp reads that browser's cookies, so age-restricted
+    videos and sites that want a signed-in visitor download too, as far as
+    you are signed in there. Firefox works best; Chrome, Edge and Brave lock
+    their cookies on Windows, and an error says so. Under it, with a Flow
+    Server, **Share session cookies with the server for downloads** (off):
+    Download (Server) then gets the cookies of the link's site only (all of
+    YouTube for a YouTube or Spotify link), for that one download, kept
+    readable only by the server and deleted with the download. On a plain
+    http Home address they cross the home network unencrypted.
   - **Always convert all downloads into MP3** (off) at 64 to 320 kbit/s
     (192), and under it **Ignore files that are already in .mp3 format** (on):
     unticked, MP3s are encoded again at the chosen quality too.
@@ -396,7 +411,7 @@ apps/android/    the Android app, planned
 
 `packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,
 `libraryModel.js`, `commands.js`, `profiles.js`, `address.js`, `tags.js`,
-`spotify.js`, `relocate.js` and `jsonFile.js`, each required as
+`spotify.js`, `relocate.js`, `cookies.js` and `jsonFile.js`, each required as
 `@flow/core/<name>`, and the download work the app and the server share:
 `media.js` (yt-dlp and ffmpeg: probe, download, keep / lift out / convert,
 the trim cut with tags, the waveform's peaks; each app makes one with its own
