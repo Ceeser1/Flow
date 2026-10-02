@@ -111,7 +111,8 @@ gets wrong:
   `X-Forwarded-Proto`), so wrong-password waits go by the caller and plain
   http is refused;
 - no buffering, both ways: songs stream as they are read, uploads go straight
-  through;
+  through, and the live channel's events (Active Sessions) arrive as they
+  happen (the server also says `X-Accel-Buffering: no`, which nginx follows);
 - uploads up to 2 GB (nginx allows 1 MB unless told), Range passed on for
   seeking, requests of up to an hour;
 - audio links (they carry the sign-in token) kept out of the access log.
@@ -244,7 +245,7 @@ on a private network, never to one that came through a proxy.
 ```sh
 node apps/server/src/main.js set-password        # asks for it
 node apps/server/src/main.js clear-password
-node apps/server/src/main.js devices             # who has signed in
+node apps/server/src/main.js devices             # who has signed in (two of one name: their app's id too)
 ```
 
 Without one, anyone who can reach the server can use it, which is fine on a
@@ -307,7 +308,9 @@ certificate is accepted and not about to run out, the Flow Server answers and
 has a password, the proxy passes on who is calling and that it was https,
 plain http is sent on to https or closed, port 7878 isn't open to the
 internet, large uploads get through without being held back, and, with the
-password, signing in, the library and seeking in a song. Each line says ok,
+password, signing in, the library, seeking in a song and whether the live
+channel's events come through as they happen (a proxy holding them back
+breaks Active Sessions). Each line says ok,
 WARN or FAIL, with what to do; it ends with 1 when something fails.
 
 It asks for the password (Enter skips the signed-in checks;
@@ -341,6 +344,30 @@ deleted from an app's Settings; each can have a PIN of its own.
 - With a server password, a device signs in to the server first, then
   to a profile. The profiles' names are only shown to devices past the first.
 
+## Active Sessions
+
+Devices connected to the server can listen together (see Flow's README).
+The server keeps the sessions in memory only, so a restart ends them:
+
+- Every app that is connected keeps a live channel open (`GET /api/live`,
+  Server-Sent Events, one per app, told apart by the id each Flow install
+  makes for itself): the server pushes what happens there, with a ping every
+  10 seconds. An app that plays something tells the server what it plays,
+  and is then a session that others can ask to join.
+- The host answers each request; a declined app waits a minute before asking
+  again, and a request runs out after a minute. At most 8 apps per session.
+- The others' buttons are checked against a fixed list (play, pause, next,
+  previous, seek, shuffle, repeat, the queue, a song or a playlist of the
+  library) and sent to the host, at most 30 per 10 seconds per app. Volume
+  only when the host allows it.
+- A host that leaves hands over to the next app in joining order at once; a
+  live channel that drops hands over after 15 seconds (back in time, nothing
+  changes). The last app out ends the session.
+
+A web server or tunnel in front has to pass the live channel on unbuffered
+(level 4 above); `doctor` checks it. Without that, Flow still works, but
+pauses and skips from other devices arrive late or not at all.
+
 ## Where things are
 
 | | Linux | Windows |
@@ -366,12 +393,16 @@ report changes.
 |---|---|
 | `GET /api/hello` | name, protocol, whether a password is needed (open to anyone); `tailscale: { ip, dns, port }` when the server is on a tailnet, to private callers only; `publicUrl` at level 3 or 4 |
 | `GET /api/check` | what the server made of this request: `{ proxied, trusted, ip, proto, level, locked }` (open to anyone; for `doctor`) |
-| `POST /api/login` | `{ password, device }` → `{ token }` |
+| `POST /api/login` | `{ password, device, client }` → `{ token }` (`client`: the app's install id; one token per app, so two PCs of the same name don't sign each other out) |
 | `GET /api/library?since=<rev>&as=<profile>` | `{ rev, library, profile }`, or 204 when nothing changed for that profile; the library has the profile's `follows` and the others' `sharedPlaylists` |
 | `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`); `deletePlaylist` with `deleteSongs: true` also deletes the songs no playlist or favourite of any profile has, listed in its result's `deletedSongs` |
 | `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file |
 | `GET /api/songs/<id>/audio` | the song's file, with Range for seeking |
 | `POST /api/rescan` | look through the music folder now |
+| `GET /api/live?client=<id>&device=<name>` | the app's live channel (Server-Sent Events): `hello { client, serverTime, pingMs }` first, then the Active Sessions events below; a second channel of the same app replaces the first; ends with `end { reason }` (`replaced`, `auth`, `shutdown`) |
+| `GET /api/time` | `{ time }`: the server's clock, for playing in step |
+| `GET /api/sessions?client=<id>` | `{ sessions, mine, request }`: the sessions listed, this app's own place, its open request to join |
+| `POST /api/sessions` | `{ client, type, ... }` with `type`: `state { state }` (the host's playback), `join { sessionId, mode: 'remote' or 'here' }`, `cancelJoin`, `answer { requestId, accept }`, `control { action, ... }`, `mode { mode }`, `leave` |
 | `GET /api/profiles` | `{ profiles: [{ id, name, pin }], current }` |
 | `POST /api/profiles` | `{ name, pin, device }`: a new profile, signed in → `{ token, profile }` |
 | `POST /api/profiles/login` | `{ profileId, pin, device }` → `{ token, profile }` |
@@ -384,6 +415,18 @@ report changes.
 | `POST /api/downloads/items/<i>/finish` | `{ meta: { artist, title, mix }, start, end, playlistIds, playlist: { name, mergeInto } or null, existing: [i] }`: saved into the library → `{ song, batch, playlistId, rev }`; `batch` is `null` once every song is dealt with |
 | `POST /api/downloads/items/<i>/retry` | a song that failed, again |
 | `DELETE /api/downloads/items/<i>` | one song thrown away |
+
+Active Sessions events on the live channel: `sessions` (the list, to every
+app, when it changes), `joinRequest` and `joinCancelled` (to the host),
+`joinResult` (to who asked: `ok`, or `reason` `declined` with `retryIn`,
+`expired`, `full`, `ended`), `session` (the members, to each of them),
+`state` (the host's playback, to the others), `control` (to the host),
+`hostChanged` (to a new host) and `left` (to an app that is out). A
+`control`'s `action` is one of `toggle`, `play`, `pause`, `next`, `prev`,
+`seek { position }`, `shuffle { on }`, `repeat { on }`, `queueAdd { songId }`,
+`queueRemove` / `queuePlay { part, index }`, `queueMove { part, from, to }`,
+`queueClear`, `playSong { songId, ids, contextName }`, `playPlaylist
+{ playlistId or name }` (worked out from the library) and `volume { value }`.
 
 A batch's songs (`items`) are `queued`, `downloading`, `converting`, `ready`
 (with `meta`, the names guessed, and `summary`, what was done to the file),

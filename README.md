@@ -126,7 +126,10 @@ counts a song that was never played from when it was downloaded.
 The player bar stays at the bottom on every page. Space plays and pauses, Left
 and Right skip 10 seconds (not while typing in a box), and the keyboard's
 media keys and the Windows media overlay work too. The last playlist, song,
-position, shuffle and volume come back on the next start, paused.
+position, shuffle and volume come back on the next start, paused. The button
+beside the volume picks where the music plays ("Play on": Windows' default
+or any output Windows offers, such as headphones or a Bluetooth speaker); a
+chosen device that is switched off plays on the default until it is back.
 
 While a song plays, an equalizer glows behind the pages: 20 Hz to 4 kHz on a
 log scale, mirrored about the top of the player bar, coloured from blue for
@@ -156,6 +159,7 @@ The cog at the bottom left of the menu. Every change counts at once.
     the folder in Explorer. Change picks another folder and moves every song
     file there, subfolders and all (a name already taken there gets a number);
     playlists and statistics stay. Not while a download or import runs.
+  - **Output device**: the same choice as the player bar's output button.
   - **Song Transition** (on, 3 s; 0.1 to 10 s): the next song starts that long
     before the current one ends and the two fade over each other. The bar
     moves on only when the current song has really ended. A transition is at
@@ -195,6 +199,8 @@ The cog at the bottom left of the menu. Every change counts at once.
     to or removed from Local Files by hand, and changes made while the
     server was off, go to the server by themselves; unticked, only with
     Synchronize now. Songs downloaded in Flow always go up (once the first upload to that server was agreed to or declined).
+  - **Devices in my Active Session may change my volume** (off): see
+    [Active Sessions](#active-sessions).
 - **Website Downloads**
   - **Download using browser cookies from** (off) and a browser (those found
     on this computer): yt-dlp reads that browser's cookies, so age-restricted
@@ -349,6 +355,48 @@ control with a cache:
   `server-sync.json` in `%LOCALAPPDATA%\Flow`. A different server at the same
   address starts both afresh.
 
+### Active Sessions
+
+Devices connected to the same Flow Server can listen together. Every device
+that plays something is a session, named after its profile and the output it
+plays on ("Anna - Sony GTK"; the PC's name when the output has none). While
+another device plays, **Active Sessions** shows in the menu under Followed
+Playlists, with how many. Its page lists every session: the song, how many
+listen (who, on hover), and **Join**.
+
+- **Joining** asks the device playing (the host): it gets "Anna - Laptop wants
+  to join your session" with **Accept** or **Decline**, and a Windows
+  notification when Flow is not in front. After a Decline that device can
+  ask again after a minute; a request nobody answers runs out after a minute.
+  At most 8 devices take part in a session.
+- **Once in**, this device is a remote control: the player bar, the song
+  lists and the Queue show what the host plays, and every button (Play,
+  Pause, Next, Previous, seeking, Shuffle, Repeat, a song's Play, a playlist's
+  Play, Add to Queue, the Queue's entries) is carried out on the host. A song
+  or playlist started here plays there from this device's list. The bar says
+  "In Anna - Sony GTK", with **Play here** and **Leave**. Listening counts for
+  each device's own profile.
+- **Play here** plays the music on this device too, on its own output and at
+  its own volume, in step with the host (by the server's clock; small
+  differences are evened out by playing up to 3% faster or slower, bigger ones
+  jumped over). Bluetooth speakers sound late: in the output button's menu,
+  **Delay of this output** (0 to 500 ms, kept per output) is set by ear until
+  the music sounds together. The host's delay counts too. Without Play here a
+  device in a session plays nothing itself.
+- **The host's volume** stays the host's, unless **Devices in my Active
+  Session may change my volume** is ticked (Settings, or the Active Sessions
+  page while hosting): then the volume slider of the others is the host's.
+- **Leaving** keeps the host's song here, paused at its place, with its list
+  and queue. A host that leaves (Leave, quitting Flow, another profile logged
+  in to) hands the session to the next device in the order they joined, which
+  plays on from the same place and says "Anna - Sony GTK left, you are the new
+  host". A device whose connection drops is let go after 15 seconds; one that
+  played along keeps playing on its own.
+- Sessions live in the server's memory only: restarting the server ends them,
+  and each device says so. The server needs to pass its live channel on
+  unbuffered when a web server or proxy sits in front of it (see the server's
+  README; `flow-server doctor` checks it).
+
 ### Where things are
 
 - Songs: `Music\FlowPlayer`, or the folder chosen in Settings. The app
@@ -438,8 +486,9 @@ fetched one after another) and `processRunner.js`. Everything below is under `ap
   - `loudness.js`: measures each song's loudness for Equalize volume
   - `remote.js`: a Flow Server as the library: connecting, the waiting
     changes, uploads, downloads for offline and Local Files synchronization
-    (`commands.js` is what each change does); `network.js` asks Windows
-    whether the connection is metered
+    (`commands.js` is what each change does), and the server's live channel
+    and clock for Active Sessions; `network.js` asks Windows whether the
+    connection is metered
   - `settings.js`: what the app remembers, Settings' choices included
 - `renderer/app/` is the window, one plain script per part, loaded in the order
   `index.html` lists them. `util.js`, `queue.js` and `spectrum.js` are also
@@ -447,4 +496,7 @@ fetched one after another) and `processRunner.js`. Everything below is under `ap
   drawing. `equalizer.js` draws the equalizer and owns the player's Web Audio
   route (two elements, each with a loudness and a fade gain, then limiter,
   analyser, volume, speakers). `ambient.js` draws the clouds, and
-  `settingsPanel.js` is the Settings window.
+  `settingsPanel.js` is the Settings window. `output.js` chooses the output
+  device (and keeps each output's delay); `session.js` is Active Sessions
+  (hosting, joining, the prompts), with its page in `pages/sessions.js`;
+  `player.js` mirrors a host in a session and plays along in step.
