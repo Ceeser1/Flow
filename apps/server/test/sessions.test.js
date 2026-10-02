@@ -179,6 +179,25 @@ test('joining: the host is asked, accepts; the joiner gets the session and the s
   assert.equal(t.sessions.list().length, 1);
 });
 
+test('the list and the queue are only sent when they change; the host\'s own time is taken', () => {
+  const t = setup();
+  const sessionId = joined(t);
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ queue: { manual: ['s4'], auto: ['s2'] } }) });
+  t.live.clear('join-bbbbbbbb');
+  const heartbeat = playing({ position: 30, at: t.clock.now() - 2000 });
+  delete heartbeat.ids;
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: heartbeat });
+  const { state } = t.live.take('join-bbbbbbbb', 'state');
+  assert.deepEqual(state.ids, ['s1', 's2', 's3']);
+  assert.deepEqual(state.queue.manual, ['s4']);
+  assert.equal(Math.round(state.position), 32, 'read 2 s ago');
+  assert.equal(state.at, undefined);
+  // A clock far out is not believed.
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ position: 40, at: t.clock.now() + 60000 }) });
+  assert.equal(t.live.take('join-bbbbbbbb', 'state').state.position, 40);
+  assert.equal(t.sessions.view('join-bbbbbbbb').mine.session.id, sessionId);
+});
+
 test('declined: told, and no new request for a minute; unanswered: expires', () => {
   const t = setup();
   const { sessionId } = t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing() });

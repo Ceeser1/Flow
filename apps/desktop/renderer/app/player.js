@@ -18,6 +18,11 @@
 // What comes next is the queue (queue.js). Repeat plays the current song over
 // and over until it is turned off or another song is started by hand (a song
 // clicked, Next, Previous).
+//
+// A list can also come from another device in an Active Session (a song
+// started there, or the queue of the host before this one): its songs are
+// given as they are (lists), under an id of its own ("session:..."), since
+// that device's playlists are not this one's.
 
 const AudioFocus = {
   owners: {},
@@ -49,6 +54,9 @@ const Player = {
   // How a playlist's songs are ordered right now (sort and search as shown).
   // Set by the playlist page; the fallback is the list's own order.
   orderOf: (contextId) => Store.rowsOf(contextId).map((r) => r.song.id),
+  // Lists from another device (see the top): context id -> { name, ids }.
+  lists: new Map(),
+  _listCount: 0,
   _listeners: [],
   _dragging: false,
   _saveTimer: null,
@@ -69,6 +77,73 @@ const Player = {
 
   onChange(fn) {
     this._listeners.push(fn);
+  },
+
+  /** The songs of a context in the order they play: a playlist as shown, or a list from another device. */
+  idsOf(contextId) {
+    const list = this.lists.get(contextId);
+    if (list) return list.ids.filter((id) => !!Store.song(id));
+    return this.orderOf(contextId);
+  },
+
+  /** What the list playing is called ('' for none). */
+  listName(contextId = this.contextId) {
+    if (!contextId) return '';
+    const list = this.lists.get(contextId);
+    if (list) return list.name || 'Session';
+    const p = Store.playlist(contextId);
+    return p ? p.name : '';
+  },
+
+  /** A list from another device, kept under a new context id; the few newest are kept. */
+  addList(ids, name) {
+    this._listCount += 1;
+    const id = `session:${this._listCount}`;
+    this.lists.set(id, { name: String(name || ''), ids: (ids || []).slice() });
+    for (const key of [...this.lists.keys()]) {
+      if (this.lists.size <= 4) break;
+      if (key !== this.contextId && key !== id) this.lists.delete(key);
+    }
+    return id;
+  },
+
+  /**
+   * Plays a list from another device: from songId, or from its start (a
+   * random song with shuffle) without one.
+   */
+  playList(ids, name, songId = null) {
+    const context = this.addList(ids, name);
+    const order = this.idsOf(context);
+    if (songId && Store.song(songId)) {
+      this.load(songId, context);
+      return;
+    }
+    if (!order.length) return;
+    const first = this.queue.start(context, order);
+    this.repeat = false;
+    this.load(first, context, { fromQueue: true });
+  },
+
+  /**
+   * Carries on where another device left off (it was a session's host): its
+   * song at its place, its list and queue, Repeat and Shuffle as they were.
+   */
+  takeOver(state, { autoplay = true } = {}) {
+    if (!state || !state.songId || !Store.song(state.songId)) return false;
+    const context = this.addList(state.ids || [], state.contextName);
+    if (state.queue) {
+      this.queue.restore({ ...state.queue, contextId: context, currentId: state.songId });
+    } else {
+      this.queue.start(context, this.idsOf(context), state.songId);
+    }
+    this.queue.shuffle = !!state.shuffle;
+    Store.saveSettings({ shuffle: !!state.shuffle });
+    this.load(state.songId, context, {
+      fromQueue: true, autoplay: autoplay && !!state.playing, position: state.position || 0,
+    });
+    this.repeat = !!state.repeat;
+    this._emit();
+    return true;
   },
 
   _emit() {
@@ -148,7 +223,7 @@ const Player = {
       this.queue.prune((id) => !!Store.song(id));
       if (this.fade && !Store.song(this.fade.id)) this._cancelFade();
       if (this.currentId && !Store.song(this.currentId)) this.stop();
-      else if (this.contextId && !Store.playlist(this.contextId)) this.contextId = 'all';
+      else if (this.contextId && !Store.playlist(this.contextId) && !this.lists.has(this.contextId)) this.contextId = 'all';
       if (this.currentId) this._setNorm(this.audio, this.currentId, true);
       this._drawBar();
     });
@@ -207,7 +282,7 @@ const Player = {
     const context = contextId || 'all';
     if (!fromQueue) {
       if (songId !== this.currentId) this.repeat = false;
-      const ids = this.orderOf(context);
+      const ids = this.idsOf(context);
       if (this.queue.contextId !== context) this.queue.start(context, ids, songId);
       else this.queue.jump(songId, ids);
     }
@@ -250,7 +325,7 @@ const Player = {
     }
     if (this.contextId !== contextId) {
       this.contextId = contextId;
-      this.queue.start(contextId, this.orderOf(contextId), songId);
+      this.queue.start(contextId, this.idsOf(contextId), songId);
       this._updateMediaSession();
     }
     this._play();
@@ -262,7 +337,7 @@ const Player = {
       this.toggle();
       return;
     }
-    const ids = this.orderOf(contextId);
+    const ids = this.idsOf(contextId);
     if (!ids.length) return;
     const first = this.queue.start(contextId, ids);
     this.repeat = false;
@@ -298,7 +373,7 @@ const Player = {
       this._promote();
       return;
     }
-    const id = this.queue.next(this.orderOf(this.contextId));
+    const id = this.queue.next(this.idsOf(this.contextId));
     if (!id) {
       this.stop();
       return;
@@ -323,7 +398,7 @@ const Player = {
     if (!this.contextId) return;
     this.repeat = false;
     this._cancelFade();
-    const ids = this.orderOf(this.contextId);
+    const ids = this.idsOf(this.contextId);
     const id = this.queue.prev(ids);
     if (!id) return;
     if (id === this.currentId) {
@@ -354,7 +429,7 @@ const Player = {
 
   /** An entry of the Queue popup clicked: it plays now. */
   playFromQueue(part, index) {
-    const id = this.queue.playAt(part, index, this.orderOf(this.contextId));
+    const id = this.queue.playAt(part, index, this.idsOf(this.contextId));
     if (!id || !Store.song(id)) return;
     this.repeat = false;
     this.load(id, this.contextId || 'all', { fromQueue: true });
@@ -367,7 +442,7 @@ const Player = {
   },
 
   removeFromQueue(part, index) {
-    this.queue.removeAt(part, index, this.orderOf(this.contextId));
+    this.queue.removeAt(part, index, this.idsOf(this.contextId));
     this._emit();
   },
 
@@ -382,6 +457,14 @@ const Player = {
     const d = this.audio.duration || 0;
     this.audio.currentTime = Math.max(0, Math.min(d ? d - 0.05 : seconds, seconds));
     this._drawTime();
+    for (const fn of this._seekListeners) fn();
+  },
+
+  // Told after every jump (the session's host tells the others).
+  _seekListeners: [],
+
+  onSeek(fn) {
+    this._seekListeners.push(fn);
   },
 
   skip(delta) {
@@ -429,7 +512,7 @@ const Player = {
 
   setShuffle(on) {
     this._cancelFade();
-    this.queue.setShuffle(on, this.contextId ? this.orderOf(this.contextId) : []);
+    this.queue.setShuffle(on, this.contextId ? this.idsOf(this.contextId) : []);
     Store.saveSettings({ shuffle: !!on });
     this._emit();
   },
@@ -482,7 +565,7 @@ const Player = {
     const left = d - this.audio.currentTime;
     let length = Math.min(s.crossfadeSeconds, d / 3);
     if (left > length || left < 0.2) return;
-    const id = this.queue.peek(this.orderOf(this.contextId));
+    const id = this.queue.peek(this.idsOf(this.contextId));
     if (!id || id === this.currentId) return;
     const song = Store.song(id);
     if (!song) return;
@@ -557,7 +640,7 @@ const Player = {
     old.load();
     this._holdFade(incoming, 1, 0.05);
     this._setFade(old, 1);
-    this.queue.take(f.id, this.orderOf(this.contextId));
+    this.queue.take(f.id, this.idsOf(this.contextId));
     this.currentId = f.id;
     // What played of it during the transition counts as listened.
     const heard = incoming.currentTime || 0;
@@ -689,7 +772,7 @@ const Player = {
     $('btnVisualizer').onclick = () => Visualizer.toggle();
     $('btnQueue').onclick = () => QueueView.open();
     $('playerFrom').onclick = () => {
-      if (this.contextId) Nav.openPlaylist(this.contextId);
+      if (this.contextId && Store.playlist(this.contextId)) Nav.openPlaylist(this.contextId);
     };
 
     const vol = $('volSlider');
@@ -734,9 +817,9 @@ const Player = {
     bar.classList.toggle('player--empty', !song);
     $('playerTitle').textContent = song ? Util.songLine(song) : 'Nothing playing';
     $('playerTitle').title = song ? Util.songLine(song) : '';
-    const from = song && this.contextId ? Store.playlist(this.contextId) : null;
+    const from = song ? this.listName() : '';
     $('playerFrom').hidden = !from;
-    $('playerFromName').textContent = from ? from.name : '';
+    $('playerFromName').textContent = from;
     const playing = this.isPlaying;
     $('btnPlay').innerHTML = playing ? Icons.pause : Icons.play;
     $('btnPlay').title = playing ? 'Pause (Space)' : 'Play (Space)';
@@ -811,11 +894,10 @@ const Player = {
       navigator.mediaSession.metadata = null;
       return;
     }
-    const list = Store.playlist(this.contextId);
     navigator.mediaSession.metadata = new MediaMetadata({
       title: song.mix ? `${song.title} (${song.mix})` : song.title,
       artist: song.artist || '',
-      album: list ? list.name : 'Flow',
+      album: this.listName() || 'Flow',
       artwork: Store.iconDataUrl ? [{ src: Store.iconDataUrl, sizes: '256x256', type: 'image/png' }] : [],
     });
   },

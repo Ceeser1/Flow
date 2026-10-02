@@ -16,7 +16,8 @@
 // their live channel (live.js):
 //
 //   state   { state }                 the host's playback, on every change and
-//                                     every few seconds while playing
+//                                     every few seconds while playing; without
+//                                     ids or queue, the ones sent before stay
 //   join    { sessionId, mode }        ask the host; mode 'remote' (silent) or
 //                                     'here' (plays along on this device)
 //   cancelJoin                        take the request back
@@ -105,8 +106,11 @@ function cleanState(s) {
     shuffle: bool(s.shuffle),
     contextId: idOrNull(s.contextId),
     contextName: text(s.contextName, 200),
-    ids: idList(s.ids),
-    queue: cleanQueue(s.queue),
+    // Left out: unchanged since the last state (they can be long).
+    ids: s.ids === undefined ? undefined : idList(s.ids),
+    queue: s.queue === undefined ? undefined : cleanQueue(s.queue),
+    // When the position was read, in the server's time as the host reckons it.
+    at: Number.isFinite(Number(s.at)) ? Number(s.at) : null,
     // "Profile - Output device", as the host calls itself.
     name: text(s.name, 160),
     // The host lets the others (and controllers) change its volume.
@@ -245,8 +249,12 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
     }
     Object.assign(hostOf(s), { profileId: me.profileId, profileName: me.profileName, device: me.device });
     const was = s.state;
+    if (st.ids === undefined) st.ids = was ? was.ids : [];
+    if (st.queue === undefined) st.queue = was ? was.queue : null;
+    // The host's own time of reading, unless its clock is far out.
+    s.sampledAt = st.at !== null && Math.abs(st.at - now()) < 5000 ? st.at : now();
+    delete st.at;
     s.state = st;
-    s.sampledAt = now();
     if (st.playing) s.pausedAt = 0;
     else if (!was || was.playing || !s.pausedAt) s.pausedAt = now();
     if (s.members.length === 1 && !st.songId) {

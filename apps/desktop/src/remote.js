@@ -348,6 +348,8 @@ function publicStatus() {
     // Active Sessions: the server has them, and the live channel is open.
     sessions: status.state === 'online' && conn.sessions,
     live: status.state === 'online' && status.live,
+    // Server time minus this machine's, roughly (from the live channel's greeting).
+    timeOffset: live.offset,
     clientId: clientId(),
   };
 }
@@ -1666,6 +1668,25 @@ function liveEvent(type, data) {
   hooks.onLive({ type, data });
 }
 
+// ---- Active Sessions ----
+
+/**
+ * One request about Active Sessions: a body for POST /api/sessions ({ type,
+ * ... }), or null for the list and this app's place in it (GET). Refused
+ * with the server's reason.
+ */
+async function sessions(body) {
+  if (!active() || status.state !== 'online') throw new Error('The server cannot be reached right now.');
+  if (!conn.sessions) throw new Error('This Flow Server is too old for Active Sessions. Update it first.');
+  try {
+    if (!body) return await call(`/api/sessions?client=${encodeURIComponent(clientId())}`, { timeout: 10000 });
+    return await call('/api/sessions', { method: 'POST', json: { ...body, client: clientId() }, timeout: 10000 });
+  } catch (err) {
+    if (err instanceof OfflineError || err instanceof AuthError) wentWrong(err);
+    throw err;
+  }
+}
+
 // ---- for main.js ----
 
 function init(h) {
@@ -2059,6 +2080,6 @@ function stop() {
 
 module.exports = {
   init, active, reconfigure, setSecret, stop,
-  status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, pushNew, pushImport, deleteSong, localFileOf,
+  status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, pushNew, pushImport, deleteSong, localFileOf, sessions,
   loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, deleteProfile,
 };

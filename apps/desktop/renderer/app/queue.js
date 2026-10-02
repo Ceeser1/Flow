@@ -205,6 +205,34 @@
       if (ids.length) this.fill(ids);
     }
 
+    /** Everything the queue is, as plain data (a session's host sends it along). */
+    snapshot() {
+      return {
+        contextId: this.contextId,
+        currentId: this.currentId,
+        shuffle: this.shuffle,
+        manual: this.manual.slice(),
+        auto: this.auto.slice(),
+        used: [...this.used],
+        cursor: this.cursor,
+        history: this.history.slice(),
+      };
+    }
+
+    /** Takes over a snapshot() (a new host carries on with the old one's queue). */
+    restore(snap) {
+      const s = snap && typeof snap === 'object' ? snap : {};
+      const ids = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+      this.contextId = typeof s.contextId === 'string' ? s.contextId : null;
+      this.currentId = typeof s.currentId === 'string' ? s.currentId : null;
+      this.shuffle = !!s.shuffle;
+      this.manual = ids(s.manual);
+      this.auto = ids(s.auto).slice(0, this.limit);
+      this.used = new Set(ids(s.used));
+      this.cursor = typeof s.cursor === 'string' ? s.cursor : null;
+      this.history = ids(s.history).slice(-500);
+    }
+
     /** Forgets songs that no longer exist. */
     prune(exists) {
       this.manual = this.manual.filter(exists);

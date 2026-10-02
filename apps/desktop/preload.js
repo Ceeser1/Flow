@@ -81,6 +81,9 @@ contextBridge.exposeInMainWorld('flow', {
   serverDownloads: (action, args = {}) => call('server:downloads', { action, ...args }),
   cookieBrowsers: () => call('cookies:browsers'),
   onServerNotice: (fn) => ipcRenderer.on('server:notice', (_e, n) => fn(n)),
+  // Active Sessions: sessions({ type, ... }) takes part, sessions() is the list
+  // and this app's place in it.
+  sessions: (body) => call('server:sessions', body),
   // The live channel's events: { type, data } (Active Sessions).
   onServerLive: (fn) => ipcRenderer.on('server:live', (_e, ev) => fn(ev)),
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),

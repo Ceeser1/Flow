@@ -45,7 +45,7 @@ const QueueView = {
       return;
     }
     // Topped up first, so the list is the one Next will follow.
-    if (Player.contextId) Player.queue.fill(Player.orderOf(Player.contextId));
+    if (Player.contextId) Player.queue.fill(Player.idsOf(Player.contextId));
     clear(box);
     const q = Player.queue;
 
@@ -65,11 +65,11 @@ const QueueView = {
       });
     }
 
-    const list = Player.contextId ? Store.playlist(Player.contextId) : null;
+    const listName = Player.listName();
     const auto = q.auto.map((id) => Store.song(id));
-    if (list && auto.some(Boolean)) {
+    if (listName && auto.some(Boolean)) {
       box.appendChild(h('div.queue__head',
-        h('span', `Next from ${list.name}`),
+        h('span', `Next from ${listName}`),
         q.shuffle ? h('span.queue__note', 'shuffled') : null));
       auto.forEach((song, i) => {
         if (song) box.appendChild(this._row(song, { part: 'auto', index: i }));

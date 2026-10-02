@@ -98,6 +98,8 @@ const DEFAULTS = {
   // This install of Flow, as the server tells devices apart (made at the
   // first connection; remote.js). Two PCs of the same name are two devices.
   clientId: '',
+  // Active Sessions: the devices that joined may change this one's volume.
+  sessionAllowVolume: false,
 };
 
 const EQ_COLORS = ['spectrum', 'rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
@@ -140,7 +142,7 @@ function clean(raw) {
   for (const key of ['serverHome', 'serverRemote']) s[key] = typeof s[key] === 'string' ? s[key].trim().slice(0, 300) : '';
   s.serverSecret = typeof s.serverSecret === 'string' ? s.serverSecret : '';
   s.clientId = /^[\w-]{8,64}$/.test(String(s.clientId || '')) ? String(s.clientId) : '';
-  for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies']) s[key] = s[key] === true;
+  for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAllowVolume']) s[key] = s[key] === true;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn']) {

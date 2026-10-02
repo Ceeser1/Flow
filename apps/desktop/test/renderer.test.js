@@ -161,3 +161,27 @@ test('removing, pruning and a search that hides songs', () => {
   q.fill(['s1', 's5']);
   assert.deepEqual(q.auto, ['s5', 's1']);
 });
+
+test('a queue taken over from a snapshot goes on exactly as the original would', () => {
+  const a = new PlayQueue(seeded());
+  const ids = numbered(30);
+  a.setShuffle(true);
+  a.start('p', ids);
+  a.next(ids);
+  a.add('s7');
+  const snap = JSON.parse(JSON.stringify(a.snapshot()));
+  const b = new PlayQueue(seeded());
+  b.restore(snap);
+  assert.deepEqual(b.snapshot(), a.snapshot());
+  // Without shuffle the two go the same way from here.
+  a.setShuffle(false, ids);
+  b.setShuffle(false, ids);
+  for (let i = 0; i < 5; i += 1) assert.equal(b.next(ids), a.next(ids));
+  assert.equal(b.prev(ids), a.prev(ids));
+  // Nonsense is an empty queue, not a broken one.
+  const c = new PlayQueue();
+  c.restore({ manual: 'x', auto: [1, 's1'], used: null });
+  assert.deepEqual(c.manual, []);
+  assert.deepEqual(c.auto, ['s1']);
+  assert.equal(c.contextId, null);
+});

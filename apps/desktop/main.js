@@ -319,6 +319,8 @@ handle('server:profileCreate', ({ name, pin }) => remote.createProfile(name, pin
 handle('server:profileLogout', () => remote.logoutProfile());
 handle('server:profileRename', (name) => remote.renameProfile(name));
 handle('server:profileDelete', () => remote.deleteProfile());
+// Active Sessions: a POST body, or nothing for the list.
+handle('server:sessions', (body) => remote.sessions(body || null));
 // Downloads by the server: they stay there, so closing the app asks nothing.
 // With "Share session cookies with the server", a new download takes the
 // link's site's cookies from the browser chosen along.
