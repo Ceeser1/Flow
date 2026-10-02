@@ -98,7 +98,11 @@ const DEFAULTS = {
   // This install of Flow, as the server tells devices apart (made at the
   // first connection; remote.js). Two PCs of the same name are two devices.
   clientId: '',
-  // Active Sessions: the devices that joined may change this one's volume.
+  // Active Sessions: this one's session is listed for the others on the server
+  // to ask to join; requests are accepted without asking; the devices that
+  // joined may change this one's volume.
+  sessionShare: true,
+  sessionAutoAccept: false,
   sessionAllowVolume: false,
   // The output the music plays on ('' for Windows' default), and its name to
   // find it again should its id change (output.js).
@@ -156,10 +160,10 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 300 && Number.isFinite(Number(v)))
     .slice(0, 50)
     .map(([k, v]) => [k, Math.round(Math.max(0, Math.min(1000, Number(v))))]));
-  for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAllowVolume', 'sessionPlayHere']) s[key] = s[key] === true;
+  for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere']) s[key] = s[key] === true;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
-    'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn']) {
+    'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare']) {
     s[key] = s[key] !== false;
   }
   const fade = Math.round(Number(s.crossfadeSeconds) * 10) / 10;

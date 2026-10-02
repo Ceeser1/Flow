@@ -113,6 +113,8 @@ function cleanState(s) {
     at: Number.isFinite(Number(s.at)) ? Number(s.at) : null,
     // "Profile - Output device", as the host calls itself.
     name: text(s.name, 160),
+    // Listed for the others to see and ask to join (left out by apps before 2.8.1: yes).
+    shared: s.shared !== false,
     // The host lets the others (and controllers) change its volume.
     allowVolume: bool(s.allowVolume),
     volume: num(s.volume, 0, 1, 1),
@@ -171,8 +173,10 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
   }
 
   function listed(s) {
-    if (s.members.length > 1) return true;
     const st = s.state;
+    // Not shared: its members know it, nobody else sees it.
+    if (st && !st.shared) return false;
+    if (s.members.length > 1) return true;
     return !!(st && st.songId && (st.playing || now() - s.pausedAt < PAUSED_LISTED_MS));
   }
 
@@ -257,6 +261,10 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
     s.sampledAt = st.at !== null && Math.abs(st.at - now()) < 5000 ? st.at : now();
     delete st.at;
     s.state = st;
+    // No longer shared: open requests are turned away (the host closed its prompts itself).
+    if (!st.shared) {
+      for (const r of [...requests.values()]) if (r.sessionId === s.id) cancelRequest(r.id, { toJoiner: { reason: 'unshared' }, toHost: false });
+    }
     if (st.playing) s.pausedAt = 0;
     else if (!was || was.playing || !s.pausedAt) s.pausedAt = now();
     if (s.members.length === 1 && !st.songId) {
@@ -292,6 +300,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
   function join(client, { sessionId, mode }) {
     const me = who(client);
     const s = sessions.get(String(sessionId || ''));
+    if (s && s.state && !s.state.shared) throw new SessionError(403, 'That session is no longer shared.');
     if (!s || !listed(s)) throw new SessionError(404, 'That session has ended.');
     if (memberOf.get(client) === s.id) throw new SessionError(409, 'You are in this session already.');
     const until = cooldowns.get(`${s.id}|${client}`) || 0;

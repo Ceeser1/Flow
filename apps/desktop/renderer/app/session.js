@@ -123,7 +123,9 @@ const Session = {
       }
     });
     Store.onSettings((patch) => {
-      if ('sessionAllowVolume' in patch) this._changed(true);
+      // No longer shared: the server turns open requests away.
+      if (patch.sessionShare === false) this._closePrompts();
+      if ('sessionAllowVolume' in patch || 'sessionShare' in patch) this._changed(true);
     });
     Store.onLibrary(() => this._songArrived());
     // Another output (chosen, or Windows' default changed): the session's name changes with it.
@@ -235,6 +237,11 @@ const Session = {
         toast(err.message, 'error');
       }
     };
+    // Accepted without asking ("joined your session" follows from the server).
+    if (Store.settings.sessionAutoAccept) {
+      answer(true);
+      return;
+    }
     const modal = Modal.open({
       title: 'Join request',
       className: 'modal--small',
@@ -436,6 +443,8 @@ const Session = {
       toast(`${name} did not answer in time. Ask again if you like.`, 'info');
     } else if (data.reason === 'full') {
       toast(`${name} is full.`, 'info');
+    } else if (data.reason === 'unshared') {
+      toast(`${name} is no longer shared.`, 'info');
     } else {
       toast('That session has ended.', 'info');
     }
@@ -530,6 +539,7 @@ const Session = {
       contextId: Player.contextId,
       contextName: Player.listName(),
       name: this.name(),
+      shared: Store.settings.sessionShare !== false,
       allowVolume: !!Store.settings.sessionAllowVolume,
       volume: Player.volume,
       crossfade: Store.settings.crossfade ? Store.settings.crossfadeSeconds : 0,

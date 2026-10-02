@@ -353,7 +353,9 @@ The server keeps the sessions in memory only, so a restart ends them:
   Server-Sent Events, one per app, told apart by the id each Flow install
   makes for itself): the server pushes what happens there, with a ping every
   10 seconds. An app that plays something tells the server what it plays,
-  and is then a session that others can ask to join.
+  and is then a session that others can ask to join, unless it does not
+  share it (`shared: false` in its state): then only its members know it,
+  and requests still open are turned away.
 - The host answers each request; a declined app waits a minute before asking
   again, and a request runs out after a minute. At most 8 apps per session.
 - The others' buttons are checked against a fixed list (play, pause, next,
@@ -419,7 +421,7 @@ report changes.
 Active Sessions events on the live channel: `sessions` (the list, to every
 app, when it changes), `joinRequest` and `joinCancelled` (to the host),
 `joinResult` (to who asked: `ok`, or `reason` `declined` with `retryIn`,
-`expired`, `full`, `ended`), `session` (the members, to each of them),
+`expired`, `full`, `ended`, `unshared`), `session` (the members, to each of them),
 `state` (the host's playback, to the others), `control` (to the host),
 `hostChanged` (to a new host) and `left` (to an app that is out). A
 `control`'s `action` is one of `toggle`, `play`, `pause`, `next`, `prev`,

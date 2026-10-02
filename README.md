@@ -155,11 +155,7 @@ and mix, asks before downloading or saving it again.
 The cog at the bottom left of the menu. Every change counts at once.
 
 - **General**
-  - **Local Files**: how many songs and how much room they take. Open shows
-    the folder in Explorer. Change picks another folder and moves every song
-    file there, subfolders and all (a name already taken there gets a number);
-    playlists and statistics stay. Not while a download or import runs.
-  - **Output device**: the same choice as the player bar's output button.
+  - **Output device**: where the music plays from; the same choice as the player bar's output button.
   - **Song Transition** (on, 3 s; 0.1 to 10 s): the next song starts that long
     before the current one ends and the two fade over each other. The bar
     moves on only when the current song has really ended. A transition is at
@@ -169,6 +165,17 @@ The cog at the bottom left of the menu. Every change counts at once.
     (-14 LUFS, turned up by at most 8 dB), with a limiter catching the peaks
     of songs turned up. Each song is measured once in the background (EBU R128,
     well under a second a song) and the result kept in the library.
+  - **Local Files**: how many songs and how much room they take. Open shows
+    the folder in Explorer. Change picks another folder and moves every song
+    file there, subfolders and all (a name already taken there gets a number);
+    playlists and statistics stay. Not while a download or import runs.
+- **Jam session** (only with a Flow Server). See [Active Sessions](#active-sessions).
+  - **Share your jam session on the server** (on): other devices on the same
+    server see what plays here and can ask to join. Unticked, it is not listed
+    and nobody can ask; devices already in it stay.
+  - **Accept jam join requests automatically** (off): no prompt, whoever asks
+    is in at once.
+  - **Devices in my Active Session may change my volume** (off).
 - **Flow Server**: **Streaming, Download and Synchronization** (off). See
   [A Flow Server](#a-flow-server) below.
   - **Profile**: which of the server's profiles this is. Not logged in, pick
@@ -199,8 +206,6 @@ The cog at the bottom left of the menu. Every change counts at once.
     to or removed from Local Files by hand, and changes made while the
     server was off, go to the server by themselves; unticked, only with
     Synchronize now. Songs downloaded in Flow always go up (once the first upload to that server was agreed to or declined).
-  - **Devices in my Active Session may change my volume** (off): see
-    [Active Sessions](#active-sessions).
 - **Website Downloads**
   - **Download using browser cookies from** (off) and a browser (those found
     on this computer): yt-dlp reads that browser's cookies, so age-restricted
@@ -366,9 +371,12 @@ listen (who, on hover), and **Join**.
 
 - **Joining** asks the device playing (the host): it gets "Anna - Laptop wants
   to join your session" with **Accept** or **Decline**, and a Windows
-  notification when Flow is not in front. After a Decline that device can
+  notification when Flow is not in front (with **Accept jam join requests
+  automatically** ticked, nobody is asked: they are in at once). After a Decline that device can
   ask again after a minute; a request nobody answers runs out after a minute.
-  At most 8 devices take part in a session.
+  At most 8 devices take part in a session. With **Share your jam session on
+  the server** unticked, a device's session is not listed and takes no
+  requests (those open are turned away); who is in already stays.
 - **Once in**, this device is a remote control: the player bar, the song
   lists and the Queue show what the host plays, and every button (Play,
   Pause, Next, Previous, seeking, Shuffle, Repeat, a song's Play, a playlist's
@@ -384,7 +392,7 @@ listen (who, on hover), and **Join**.
   the music sounds together. The host's delay counts too. Without Play here a
   device in a session plays nothing itself.
 - **The host's volume** stays the host's, unless **Devices in my Active
-  Session may change my volume** is ticked (Settings, or the Active Sessions
+  Session may change my volume** is ticked (Settings > Jam session, or the Active Sessions
   page while hosting): then the volume slider of the others is the host's.
 - **Leaving** keeps the host's song here, paused at its place, with its list
   and queue. A host that leaves (Leave, quitting Flow, another profile logged

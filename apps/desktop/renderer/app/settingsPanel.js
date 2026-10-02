@@ -58,11 +58,9 @@ const SettingsPanel = {
     this._refresh = [];
     const body = h('div.settings', ...this._sections([
       h('h3.settings__section', 'General'),
-      this._savedSongsRow(),
       this._row({
         label: 'Output device',
-        desc: 'Where the music plays: Windows\' default, or a device of its own (headphones, a Bluetooth speaker). '
-          + 'Also in the player bar. If it is switched off, Flow plays on the default until it is back.',
+        desc: 'Where the music plays from.',
         right: this._outputSelect(),
       }),
       this._row({
@@ -77,6 +75,9 @@ const SettingsPanel = {
         desc: 'Play all songs at an equal volume. It reduces loud spikes and makes quiet songs louder.',
         right: this._measuredNode = h('span.settings__note'),
       }),
+      this._savedSongsRow(),
+
+      ...this._jamRows(),
 
       ...this._serverRows(),
 
@@ -471,18 +472,40 @@ const SettingsPanel = {
         when: on,
         right: this._syncBtn,
       }),
+    ];
+    // The button beside the box works whether or not the box is ticked.
+    rows[rows.length - 1].classList.add('settings__row--keep');
+    return rows;
+  },
+
+  // ---- Jam session ----
+
+  /** Active Sessions through the Flow Server: who may see and join what plays here. */
+  _jamRows() {
+    const on = () => Store.settings.serverOn;
+    return [
+      h('h3.settings__section', 'Jam session'),
+      this._row({
+        key: 'sessionShare',
+        label: 'Share your jam session on the server',
+        desc: 'Let other devices connected to the same server see your session and they can request to join your jam.',
+        when: on,
+      }),
+      this._row({
+        key: 'sessionAutoAccept',
+        label: 'Accept jam join requests automatically',
+        desc: 'If enabled, you do not get requests from users who want to join your jam, they can just join.',
+        sub: true,
+        when: () => on() && Store.settings.sessionShare,
+      }),
       this._row({
         key: 'sessionAllowVolume',
         label: 'Devices in my Active Session may change my volume',
         desc: 'Devices that joined what you play can pause, skip, start and queue songs. Ticked, they can also turn '
           + 'your volume up and down.',
-        sub: true,
         when: on,
       }),
     ];
-    // The button beside the box works whether or not the box is ticked.
-    rows[rows.length - 2].classList.add('settings__row--keep');
-    return rows;
   },
 
   /** A text box saved when left (or on Enter). */

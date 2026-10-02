@@ -234,6 +234,27 @@ test('one request at a time; taking it back tells the host', () => {
   assert.throws(() => t.sessions.handle('host-aaaaaaaa', { type: 'answer', requestId: second.requestId, accept: true }), /no longer open/);
 });
 
+test('a session not shared is not listed and takes no requests; its members stay', () => {
+  const t = setup();
+  const sessionId = joined(t);
+  const { requestId } = t.sessions.handle('join-cccccccc', { type: 'join', sessionId });
+  t.live.clear('host-aaaaaaaa');
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ shared: false }) });
+  assert.equal(t.live.take('join-cccccccc', 'joinResult').reason, 'unshared', 'the open request is turned away');
+  assert.equal(t.live.take('host-aaaaaaaa', 'joinCancelled'), null, 'the host closed its prompt itself');
+  assert.throws(() => t.sessions.handle('host-aaaaaaaa', { type: 'answer', requestId, accept: true }), /no longer open/);
+  t.clock.advance(200);
+  assert.equal(t.sessions.list().length, 0);
+  assert.deepEqual(t.live.all('join-cccccccc', 'sessions').pop().sessions, []);
+  assert.throws(() => t.sessions.handle('join-cccccccc', { type: 'join', sessionId }), (err) => err.status === 403 && /no longer shared/.test(err.message));
+  assert.equal(t.sessions.view('join-bbbbbbbb').mine.session.id, sessionId, 'who is in stays in');
+  assert.equal(t.live.take('join-bbbbbbbb', 'state').state.shared, false);
+  // Shared again (and apps before 2.8.1, which do not say): listed.
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing() });
+  assert.equal(t.sessions.list().length, 1);
+  assert.ok(t.sessions.handle('join-cccccccc', { type: 'join', sessionId }).requestId);
+});
+
 test('controls: members only, a whitelist, songs checked, carried to the host', () => {
   const t = setup();
   joined(t);
