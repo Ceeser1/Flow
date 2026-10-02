@@ -535,8 +535,8 @@ function createDownloads({ config, library, tools, log = () => {} }) {
    * playlistIds, playlist: { name, mergeInto } | null, existing: [index] }.
    * `playlist` asks for the batch's own playlist (made by the first song
    * finished, then reused); `existing` adds library songs of the list to the
-   * same playlists at their places. Resolves { song, batch }; batch is null
-   * once the batch is over.
+   * same playlists at their places. Resolves { song, batch, playlistId };
+   * batch is null once the batch is over.
    */
   async function finish(profileId, index, body = {}) {
     const batch = requireBatch(profileId);
@@ -606,7 +606,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       other.state = 'added';
     }
     log(`Downloaded and saved: ${[song.artist, song.title].filter(Boolean).join(' - ')}`);
-    if (batches.get(batch.key) !== batch) return { song: { id: song.id }, batch: null };
+    if (batches.get(batch.key) !== batch) return { song: { id: song.id }, batch: null, playlistId: batch.playlistId || null };
     item.state = 'saved';
     removeQuietly(src);
     removeQuietly(peaksOf(batch, item));
@@ -614,7 +614,11 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     batch.lastActivity = Date.now();
     save(batch);
     const over = endIfDone(batch);
-    return { song: { id: song.id, artist: song.artist, title: song.title, mix: song.mix }, batch: over ? null : publicBatch(batch) };
+    return {
+      song: { id: song.id, artist: song.artist, title: song.title, mix: song.mix },
+      batch: over ? null : publicBatch(batch),
+      playlistId: batch.playlistId || null,
+    };
   }
 
   /** Batches nobody has looked at for downloadKeepDays, gone. */

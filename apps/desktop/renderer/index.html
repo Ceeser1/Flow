@@ -67,6 +67,8 @@
             <input id="linkInput" class="input input--big" type="text" autocomplete="off" spellcheck="false"
                    placeholder="Paste a link from YouTube, SoundCloud, Vimeo, Bandcamp..." />
             <button id="downloadBtn" class="btn btn--primary btn--big" type="button">Download</button>
+            <!-- With a Flow Server that downloads songs itself (serverImport.js). -->
+            <button id="serverDownloadBtn" class="btn btn--big" type="button" hidden>Download (Server)</button>
           </div>
           <!-- Songs from the computer instead: hidden once something is open. -->
           <div id="localPick" class="local-pick">
@@ -347,6 +349,7 @@
 <script src="app/pages/search.js"></script>
 <script src="app/pages/add.js"></script>
 <script src="app/pages/import.js"></script>
+<script src="app/pages/serverImport.js"></script>
 <script src="app/pages/playlists.js"></script>
 <script src="app/pages/followed.js"></script>
 <script src="app/pages/playlist.js"></script>

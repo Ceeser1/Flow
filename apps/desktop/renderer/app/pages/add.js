@@ -57,6 +57,8 @@ const AddPage = {
     if (this.phase === 'idle') {
       setTimeout(() => $('linkInput').focus(), 0);
     }
+    // A download on the server may have moved on (or been started elsewhere).
+    if (ServerImport.available) ServerImport.poll();
     // The canvas had no size while the page was hidden.
     requestAnimationFrame(() => this._redraw());
   },
@@ -296,6 +298,7 @@ const AddPage = {
     const ready = phase === 'ready' || phase === 'saving';
     this.editorEl.hidden = !ready;
     this.drawLocalPick();
+    if (typeof ServerImport !== 'undefined') ServerImport.drawButtons();
     // A playlist import has the footer to itself ("Finish all").
     if (importing || (typeof ImportPanel !== 'undefined' && ImportPanel.ownsFooter)) return;
     $('addFooter').hidden = !ready;
@@ -483,7 +486,8 @@ const AddPage = {
     $('edError').textContent = '';
     this.slider.setRange(m.duration, start || 0, end === null || end === undefined ? m.duration : end);
     this._syncFields();
-    this.audio.src = Util.fileUrl(m.path);
+    // A song downloaded by the server is streamed from there (m.src).
+    this.audio.src = m.src ? m.src() : Util.fileUrl(m.path);
     this.audio.currentTime = 0;
     this._drawVolume(Player.volume);
     this._drawPreviewButton();
@@ -493,7 +497,7 @@ const AddPage = {
     $('waveStatus').textContent = 'Drawing waveform...';
     requestAnimationFrame(() => this._redraw());
     try {
-      const peaks = await window.flow.peaks(m.path, m.duration);
+      const peaks = m.peaks ? await m.peaks() : await window.flow.peaks(m.path, m.duration);
       if (this.media !== m) return;
       this.peaks = peaks;
       $('waveStatus').hidden = true;

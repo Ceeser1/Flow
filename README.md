@@ -26,10 +26,15 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   that is taken are listed as warnings on top, each with a box to untick. The
   songs are then downloaded one at a time, each shown as a frame; the menu
   shows "Add Songs 7/38" meanwhile. Click a downloaded song's frame to open its
-  waveform, cut and names, and Apply (one frame at a time). **Finish all** at
-  the bottom right saves every song with its cut into All Songs and a playlist
-  named after the source (or the existing one, if ticked), in the source's
-  order. Until then nothing is saved, and closing Flow asks first. A link to
+  waveform, cut and names (one frame at a time): **Cancel Edits**, **Apply
+  Edits**, or **Finish this song**, which saves it at once, also while the rest
+  still downloads. **Finish all** at the bottom right saves every song left
+  with its cut into All Songs and a playlist named after the source (the
+  pencil renames it until the first song is saved; or the existing one, if
+  ticked), and **Add to Playlist** puts them into other playlists too.
+  Whatever order they are finished in, the playlist keeps the source's order.
+  **Cancel import** keeps the songs already finished; closing Flow with songs
+  not finished asks first. A link to
   a video inside a playlist asks whether you mean the song or the playlist; a
   YouTube Mix lists its first 50 songs. Pasting the same list again picks up
   only what is missing.
@@ -282,6 +287,16 @@ control with a cache:
   deleted there go from here. A playlist another profile shares has it too
   once you follow it; unfollowing removes its downloaded songs, except those
   another downloaded playlist or All Songs still holds.
+- **Download (Server)**: when the server downloads songs itself (`install.sh`
+  asks; it needs yt-dlp and ffmpeg there), Add Songs has it next to
+  **Download (Client)**. The server reads the link and downloads the songs in
+  the background, also while Flow is closed; their frames fill in as they
+  arrive, and trimming, naming and finishing work as above, played from the
+  server. A finished song goes straight into the server's library, not
+  through Local Files. The download is kept on the server for the profile
+  until each song is finished or thrown away (or Cancel import), and shows on
+  every device of that profile, also after a restart, so closing Flow asks
+  nothing. Links to the home network are refused.
 - Songs downloaded or imported in Flow are saved into Local Files as always,
   then uploaded. The first time Flow connects to a server, it asks before
   uploading the Local Files already on this computer ("Upload" or "Not

@@ -293,6 +293,8 @@ handle('server:profileCreate', ({ name, pin }) => remote.createProfile(name, pin
 handle('server:profileLogout', () => remote.logoutProfile());
 handle('server:profileRename', (name) => remote.renameProfile(name));
 handle('server:profileDelete', () => remote.deleteProfile());
+// Downloads by the server: they stay there, so closing the app asks nothing.
+handle('server:downloads', ({ action, ...args }) => remote.serverDownloads(action, args));
 
 handle('shell:showSong', (songId) => {
   const file = remote.active() ? remote.localFileOf(songId) : (model.songById(library.get(), songId) || {}).file;

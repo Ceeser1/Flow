@@ -77,6 +77,8 @@ contextBridge.exposeInMainWorld('flow', {
   profileRename: (name) => call('server:profileRename', name),
   profileDelete: () => call('server:profileDelete'),
   onServerStatus: (fn) => ipcRenderer.on('server:status', (_e, st) => fn(st)),
+  // Downloads by the server ("Download (Server)"): see remote.serverDownloads.
+  serverDownloads: (action, args = {}) => call('server:downloads', { action, ...args }),
   onServerNotice: (fn) => ipcRenderer.on('server:notice', (_e, n) => fn(n)),
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),
   finishSong: (job) => call('song:finish', job),

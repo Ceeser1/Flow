@@ -377,7 +377,7 @@ report changes.
 | `DELETE /api/downloads` | cancel the whole batch: downloads stopped, files gone |
 | `GET /api/downloads/items/<i>/peaks` | `{ peaks }`: the song's waveform, for the trim editor |
 | `GET /api/downloads/items/<i>/audio` | the prepared song, with Range (and `?t=`), to preview the trim |
-| `POST /api/downloads/items/<i>/finish` | `{ meta: { artist, title, mix }, start, end, playlistIds, playlist: { name, mergeInto } or null, existing: [i] }`: saved into the library → `{ song, batch, rev }`; `batch` is `null` once every song is dealt with |
+| `POST /api/downloads/items/<i>/finish` | `{ meta: { artist, title, mix }, start, end, playlistIds, playlist: { name, mergeInto } or null, existing: [i] }`: saved into the library → `{ song, batch, playlistId, rev }`; `batch` is `null` once every song is dealt with |
 | `POST /api/downloads/items/<i>/retry` | a song that failed, again |
 | `DELETE /api/downloads/items/<i>` | one song thrown away |
 

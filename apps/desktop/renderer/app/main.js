@@ -25,6 +25,7 @@
   SearchPage.init();
   AddPage.init();
   ImportPanel.init();
+  ServerImport.init();
   PlaylistsPage.init();
   FollowedPage.init();
   PlaylistPage.init();

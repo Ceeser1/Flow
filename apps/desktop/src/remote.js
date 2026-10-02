@@ -252,8 +252,8 @@ async function call(pathname, opts = {}) {
 // ---- state for the window ----
 
 // The connection in use: base address, token, which address it is, whether
-// the server knows profiles.
-const conn = { base: '', token: '', via: '', name: '', address: '', profiles: false };
+// the server knows profiles and whether it downloads songs itself.
+const conn = { base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false };
 const status = {
   state: 'off', // off | connecting | online | offline | password | error
   message: '',
@@ -327,6 +327,8 @@ function publicStatus() {
     profile: sync.profile,
     profiles: status.profiles,
     profilesSupported: conn.profiles,
+    // The server downloads songs itself ("Download (Server)" on Add Songs).
+    downloads: status.state === 'online' && conn.downloads,
     // Connected through the Tailscale address (away from home).
     tailscale: conn.via === 'remote' && isTailscaleAddress(conn.address),
   };
@@ -541,9 +543,10 @@ function connect() {
       }
       if (gen !== generation) return false;
       const profiles = Array.isArray(hello.features) && hello.features.includes('profiles');
+      const downloads = Array.isArray(hello.features) && hello.features.includes('download');
       if (profiles) token = await restoreProfile(base, token);
       if (gen !== generation) return false;
-      Object.assign(conn, { base, token, via, name: String(hello.name || 'Flow Server'), address, profiles });
+      Object.assign(conn, { base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads });
       if (via === 'remote') lastHomeTry = Date.now();
       if (via === 'home') fillRemote(hello);
       retryStep = 0;
@@ -1680,6 +1683,55 @@ function localFileOf(songId) {
   return copy && fs.existsSync(copy.file) ? copy.file : null;
 }
 
+// ---- downloads by the server ("Download (Server)" on Add Songs) ----
+//
+// The server keeps one batch per profile (apps/server/src/downloads.js) and
+// the window polls it while Add Songs is open. None of it goes through Local
+// Files: a song finished there is the server's at once, like any other.
+
+function requireDownloads() {
+  if (!active() || status.state !== 'online') throw new Error('The server cannot be reached right now.');
+  if (!conn.downloads) throw new Error('This Flow Server does not download songs.');
+}
+
+/**
+ * One request about the server's download batch. action: get, create
+ * ({ url, kind, options }), cancel, peaks ({ index }), finish ({ index, body }),
+ * retry ({ index }), discard ({ index }). Resolves the batch (null: none), or
+ * for peaks the peaks, for finish { song, batch }.
+ */
+async function serverDownloads(action, args = {}) {
+  if (action === 'get' && (!active() || status.state !== 'online' || !conn.downloads)) return null;
+  requireDownloads();
+  const item = `/api/downloads/items/${Math.max(0, Math.floor(Number(args.index) || 0))}`;
+  try {
+    if (action === 'get') return (await call('/api/downloads')).batch;
+    if (action === 'create') {
+      const { url, kind, options } = args;
+      return (await call('/api/downloads', { method: 'POST', json: { url, kind, options } })).batch;
+    }
+    if (action === 'cancel') return (await call('/api/downloads', { method: 'DELETE' })).batch;
+    if (action === 'peaks') return (await call(`${item}/peaks`, { timeout: 30000 })).peaks;
+    if (action === 'retry') return (await call(`${item}/retry`, { method: 'POST' })).batch;
+    if (action === 'discard') return (await call(item, { method: 'DELETE' })).batch;
+    if (action === 'finish') {
+      const r = await call(`${item}/finish`, { method: 'POST', json: args.body || {}, timeout: 5 * 60 * 1000 });
+      // The song (and its playlist) is in the server's library now: fetched
+      // at once, so the window has it before it says "Open playlist".
+      try {
+        if (await refresh()) afterServerChange();
+      } catch {
+        // The next poll brings it.
+      }
+      return { song: r.song, batch: r.batch, playlistId: r.playlistId || null };
+    }
+  } catch (err) {
+    if (err instanceof OfflineError || err instanceof AuthError) wentWrong(err);
+    throw err;
+  }
+  throw new Error(`Unknown download action ${action}.`);
+}
+
 // ---- profiles: signing in and out ----
 
 /** The server's profiles, fresh. Forgets what was waiting for profiles gone. */
@@ -1814,6 +1866,6 @@ function stop() {
 
 module.exports = {
   init, active, reconfigure, setSecret, stop,
-  status: publicStatus, view: getView, command, syncNow, setOffline, downloadSong, removeDownload, pushNew, pushImport, deleteSong, localFileOf,
+  status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, pushNew, pushImport, deleteSong, localFileOf,
   loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, deleteProfile,
 };
