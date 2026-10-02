@@ -21,11 +21,17 @@
 // Nothing reaches the library before "Finish all". Closing the app before it
 // asks first (main.js), since the downloads are only in the cache.
 //
-// Local files ("Open local File(s) / Folder") skip listing and review: they
-// are prepared into the cache (converted where needed) as the downloading
-// step, and "Finish all" saves them into All Songs, with no playlist. The
-// footer then has "Copy Files / Move Originals"; moving deletes each original
-// once its song is saved.
+// Local files ("Open local File(s) / Folder") skip the review: a folder is
+// looked through in the listing step (with Cancel), then the files are
+// prepared into the cache (converted where needed) as the downloading step,
+// and "Finish all" saves them into All Songs, with no playlist. The footer
+// then has "Copy Files / Move Originals"; moving deletes each original once
+// its song is saved. Files that turn out to have no audio are summed up in
+// one line rather than a frame each.
+//
+// "Cancel import" ends the whole task at once, whatever step it is in. Every
+// task has a number (`run`) that its progress messages carry; a cancelled
+// task's number is retired, so whatever it still says is ignored.
 
 const SOURCE_NAMES = {
   youtube: 'YouTube', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', spotify: 'Spotify', vimeo: 'Vimeo', local: 'Local files',
@@ -42,6 +48,10 @@ const ImportPanel = {
   openIndex: null,        // the frame whose editor is open
   progress: { number: 0, total: 0 },
   moveOriginals: false,   // local files: move rather than copy them
+  run: 0,                 // the number of the task now running (see above)
+  _dirty: new Set(),      // frames to redraw at the next animation frame
+  _lastProgress: null,    // the latest progress line, drawn with them
+  _flushQueued: false,
 
   /** A list is being read or imported: single-link downloads wait. */
   get busy() {
@@ -80,16 +90,19 @@ const ImportPanel = {
    * when the link turned out to be one song, else null.
    */
   async open(url) {
+    const run = this._newRun();
     this._setState('listing');
     AddPage._progress({ title: 'Reading playlist...', frac: null, status: url });
     let listing;
     try {
-      listing = await window.flow.listImport(url);
+      listing = await window.flow.listImport(url, run);
     } catch (err) {
+      if (run !== this.run) return null;
       this._setState('idle');
       AddPage._failed(err);
       return null;
     }
+    if (run !== this.run) return null;
     if (listing.single) {
       this._setState('idle');
       return listing.probed;
@@ -110,13 +123,36 @@ const ImportPanel = {
    */
   async openLocal(picked) {
     if (this.state !== 'idle') return;
+    const drive = picked.length === 1 && /^([A-Za-z]:[\\/]?|\/)$/.test(picked[0]) ? picked[0] : '';
+    if (drive) {
+      const ok = await confirmDialog({
+        title: 'Look through the whole drive?',
+        message: `Looking through all of ${drive} takes a while. Program and system folders are left out, `
+          + 'and at most 2000 files are listed. Opening the folder your music is in is quicker.',
+        confirmLabel: 'Look through it',
+      });
+      if (!ok || this.state !== 'idle') return;
+    }
+    const run = this._newRun();
+    this._setState('listing');
+    AddPage._progress({ title: 'Looking through the folder...', frac: null, status: 'Starting...' });
     let listing;
     try {
-      listing = await window.flow.listLocal(picked);
+      listing = await window.flow.listLocal(picked, run);
     } catch (err) {
-      AddPage._showError(err.message);
+      if (run !== this.run) return;
+      this._setState('idle');
+      if (err.cancelled) {
+        AddPage._failed(err);
+      } else {
+        $('progressPanel').hidden = true;
+        $('progTitle').textContent = '';
+        AddPage._showError(err.message);
+      }
       return;
     }
+    if (run !== this.run) return;
+    $('progressPanel').hidden = true;
     this.listing = listing;
     this.moveOriginals = false;
     await this._run(listing.items, { name: listing.name, local: true });
@@ -128,9 +164,22 @@ const ImportPanel = {
     this._drawFooter();
   },
 
-  /** Cancel in the progress frame: stops reading or downloading. */
+  _newRun() {
+    this.run += 1;
+    return this.run;
+  },
+
+  /**
+   * Cancel in the progress frame. While a list or folder is read, that ends
+   * the import at once. While downloading it stops there: what is ready so
+   * far stays for trimming.
+   */
   cancel() {
     window.flow.cancelImport().catch(() => {});
+    if (this.state !== 'listing') return;
+    this._newRun();
+    this._setState('idle');
+    AddPage._failed({ cancelled: true, message: 'Cancelled.' });
   },
 
   /** Leaves the import (the checklist, or the frames) and empties the panel. */
@@ -166,6 +215,42 @@ const ImportPanel = {
     this._drawBadge();
     this._drawFooter();
     if (state !== 'idle' && state !== 'listing') this.render();
+  },
+
+  /**
+   * Progress messages can come by the hundred a second (a folder of files
+   * without audio fails as fast as ffprobe starts): the frames, the footer
+   * and the progress line are drawn once per animation frame, so the window,
+   * and Cancel import with it, stays responsive.
+   */
+  _scheduleDraw() {
+    if (this._flushQueued) return;
+    this._flushQueued = true;
+    requestAnimationFrame(() => this._flush());
+  },
+
+  _flush() {
+    this._flushQueued = false;
+    if (this.state !== 'downloading') {
+      this._dirty.clear();
+      this._lastProgress = null;
+      return;
+    }
+    let current = null;
+    for (const it of this._dirty) {
+      if (it.state === 'current') current = it;
+      this._redrawFrame(it, false);
+    }
+    this._dirty.clear();
+    if (current && this.openIndex === null) {
+      const node = $('importList').querySelector(`[data-index="${current.index}"]`);
+      if (node) node.scrollIntoView({ block: 'nearest' });
+    }
+    this._drawFailSummary();
+    this._drawFooter();
+    this._drawBadge();
+    if (this._lastProgress) AddPage._progress(this._lastProgress);
+    this._lastProgress = null;
   },
 
   _drawBadge() {
@@ -262,7 +347,9 @@ const ImportPanel = {
     } else {
       head.appendChild(h('span.import__heading', this.job ? this.job.name : l.name));
     }
-    if (l.truncated === 'spotify') {
+    if (l.truncated === 'files') {
+      head.appendChild(h('span.import__warn-text', `The folder holds more files: only the first ${l.items.length} are listed.`));
+    } else if (l.truncated === 'spotify') {
       head.appendChild(h('span.import__warn-text', 'Spotify only showed the first 100 songs; the rest of the list is missing.'));
     } else if (l.truncated === 'mix') {
       head.appendChild(h('span.import__warn-text', 'A Mix never ends: its first 50 songs are listed.'));
@@ -339,8 +426,10 @@ const ImportPanel = {
     // Clearing the list took the editor out of the document with the old
     // frame, so it is put back by reference.
     const frag = document.createDocumentFragment();
+    frag.appendChild(h('div.import__summary', { id: 'importFailSummary', hidden: true }));
     for (const it of this.included) frag.appendChild(this._frame(it));
     list.appendChild(frag);
+    this._drawFailSummary();
     if (this.openIndex !== null && AddPage.embedded) {
       const body = list.querySelector(`[data-index="${this.openIndex}"] .import__frame-body`);
       if (body) {
@@ -350,6 +439,34 @@ const ImportPanel = {
         // The frame is gone: keep what was set and close the editor.
         this._closeEditor(true);
       }
+    }
+  },
+
+  /**
+   * Local files that could not be opened, as one line per reason instead of
+   * a frame each: a folder can hold hundreds of files that only look like
+   * audio by their name.
+   */
+  _drawFailSummary() {
+    const box = $('importFailSummary');
+    if (!box) return;
+    const failed = this.local ? this.included.filter((it) => it.state === 'failed') : [];
+    clear(box);
+    box.hidden = !failed.length;
+    if (!failed.length) return;
+    const byReason = new Map();
+    for (const it of failed) {
+      const r = it.reason || 'failed';
+      if (!byReason.has(r)) byReason.set(r, []);
+      byReason.get(r).push(it.title);
+    }
+    for (const [reason, titles] of byReason) {
+      const n = titles.length;
+      const text = /no audio/i.test(reason)
+        ? `${Util.plural(n, 'file')} had no audio in ${n === 1 ? 'it' : 'them'} and ${n === 1 ? 'was' : 'were'} left out.`
+        : `${Util.plural(n, 'file')} could not be opened: ${reason}`;
+      const more = n > 20 ? `\n... and ${n - 20} more` : '';
+      box.appendChild(h('div.import__sub.import__sub--bad', { title: titles.slice(0, 20).join('\n') + more }, text));
     }
   },
 
@@ -464,6 +581,8 @@ const ImportPanel = {
 
     const frame = h('div.import__frame.import__frame--' + st + (open ? '.import__frame--open' : ''),
       { dataset: { index: String(it.index) } }, head);
+    // Summed up in one line instead (_drawFailSummary).
+    if (st === 'failed' && this.local) frame.hidden = true;
     if (open) {
       frame.appendChild(h('div.import__frame-body',
         h('div.import__frame-foot',
@@ -539,6 +658,7 @@ const ImportPanel = {
    * prepares them), each a frame, then leaves them for trimming.
    */
   async _run(chosen, job) {
+    const run = this._newRun();
     this.job = job;
     this.included = chosen.map((it) => ({
       index: it.index,
@@ -561,12 +681,15 @@ const ImportPanel = {
       });
       const items = toFetch.map((it) => ({ index: it.index, title: it.title, url: it.url, path: it.path, meta: it.meta }));
       try {
-        if (job.local) await window.flow.prepareLocal(items, AddPage.downloadOptions());
-        else await window.flow.downloadImport(items, AddPage.downloadOptions());
+        if (job.local) await window.flow.prepareLocal(items, AddPage.downloadOptions(), run);
+        else await window.flow.downloadImport(items, AddPage.downloadOptions(), run);
       } catch (err) {
-        toast(err.message, 'error');
+        if (run === this.run) toast(err.message, 'error');
       }
     }
+    // Cancelled with "Cancel import": that has already emptied the panel.
+    if (run !== this.run) return;
+    this._flush();
     $('progressPanel').hidden = true;
     // Anything not reached (cancelled) stays out.
     for (const it of this.included) {
@@ -613,7 +736,7 @@ const ImportPanel = {
       frac: 0, status: '', cancel: false });
     let summary;
     try {
-      summary = await window.flow.finishImport({ ...this.job, move, entries });
+      summary = await window.flow.finishImport({ ...this.job, move, entries }, this._newRun());
     } catch (err) {
       summary = { playlistId: null, name: local ? '' : this.job.name, saved: 0, fromLibrary: 0, failed: [{ title: '', reason: err.message }], kept: [] };
     }
@@ -644,7 +767,11 @@ const ImportPanel = {
       id ? { label: 'Open playlist', onClick: () => Store.playlist(id) && Nav.openPlaylist(id) } : null);
   },
 
-  /** Cancel import: stops downloading and throws the downloads away. */
+  /**
+   * Cancel import: ends the whole task at once. Whatever runs is stopped (in
+   * the background; the panel does not wait for it), nothing queued starts,
+   * and what is in the cache is thrown away.
+   */
   async cancelAll() {
     const ready = this._ready().length;
     const local = this.local;
@@ -660,14 +787,10 @@ const ImportPanel = {
       });
       if (!ok) return;
     }
-    if (this.state === 'downloading') {
-      window.flow.cancelImport().catch(() => {});
-      // start() carries on to 'trimming' once the download stops.
-      await new Promise((resolve) => {
-        const wait = () => (this.state === 'downloading' ? setTimeout(wait, 100) : resolve());
-        wait();
-      });
-    }
+    if (this.state === 'idle' || this.state === 'saving') return;
+    // The task's number is retired first: anything it still says is ignored.
+    this._newRun();
+    window.flow.cancelImport().catch(() => {});
     this._closeEditor(false);
     for (const it of this.included) {
       if (it.state === 'ready' && it.media) window.flow.discardDownload(it.media.path).catch(() => {});
@@ -677,7 +800,14 @@ const ImportPanel = {
   },
 
   _onProgress(p) {
-    if (p.phase === 'listing' && this.state === 'listing') {
+    if (p.run !== this.run) return;
+    if (p.phase === 'scanning' && this.state === 'listing') {
+      AddPage._progress({
+        title: 'Looking through the folder...',
+        frac: null,
+        status: `${Util.plural(p.found, 'file')} found   ${p.dir || ''}`,
+      });
+    } else if (p.phase === 'listing' && this.state === 'listing') {
       AddPage._progress({ title: 'Reading playlist...', frac: null, status: p.text });
     } else if (p.phase === 'matching' && this.state === 'listing') {
       AddPage._progress({
@@ -701,17 +831,16 @@ const ImportPanel = {
         it.existingId = p.existingId;
         it.state = null;
       }
-      this._redrawFrame(it, p.status === 'current');
-      this._drawFooter();
-      this._drawBadge();
+      this._dirty.add(it);
+      this._scheduleDraw();
     } else if (p.phase === 'download' && this.state === 'downloading') {
       this.progress = { number: p.number, total: p.total };
-      this._drawBadge();
-      AddPage._progress({
+      this._lastProgress = {
         title: `${this.local ? 'Preparing file' : 'Downloading song'} ${p.number} of ${p.total}: ${p.title}`,
         frac: p.frac,
         status: p.text,
-      });
+      };
+      this._scheduleDraw();
     } else if (p.phase === 'saving' && this.state === 'saving') {
       AddPage._progress({
         title: `Saving song ${p.number} of ${p.total}`,

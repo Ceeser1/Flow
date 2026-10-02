@@ -1020,6 +1020,8 @@ progress {
 .import__title { color: var(--text-bright); }
 .import__sub { color: var(--text-dim); font-size: 12px; margin-top: 1px; }
 .import__sub--bad { color: var(--red); }
+.import__summary { padding: 8px 12px 4px; }
+.import__summary .import__sub { font-size: 13px; cursor: default; }
 .import__link { font-size: 12px; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .import__dur { flex: none; color: var(--grey); font-variant-numeric: tabular-nums; }
 

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { planFor, ffmpegArgsFor, describeSource, estimateMb, clampQuality } = require('../src/formats');
+const { planFor, ffmpegArgsFor, describeSource, estimateMb, clampQuality, LOCAL_EXTS, SCAN_EXTS } = require('../src/formats');
 
 const plan = (codec, formatName, opts) => planFor({ codec, formatName, bitRate: 160000 }, opts);
 
@@ -56,4 +56,12 @@ test('source descriptions', () => {
 
 test('size estimate: 192 kbit/s for 3:30 is about 5 MB', () => {
   assert.equal(estimateMb(192, 210).toFixed(1), '5.0');
+});
+
+test('a folder is looked through for sound and video, not TypeScript', () => {
+  assert.ok(!SCAN_EXTS.includes('ts'), '.ts and .d.ts are code far more often than MPEG streams');
+  assert.ok(!SCAN_EXTS.includes('dts'));
+  for (const e of ['mp3', 'flac', 'opus', 'wav', 'mp4', 'mkv', 'webm']) assert.ok(SCAN_EXTS.includes(e), e);
+  // A file picked by name may still be one.
+  assert.ok(LOCAL_EXTS.includes('ts'));
 });

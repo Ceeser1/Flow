@@ -23,7 +23,7 @@ const model = require('@flow/core/libraryModel');
 const spotify = require('@flow/core/spotify');
 const { parseTitle, cleanUploader } = require('@flow/core/titleParser');
 const { normalizeListUrl, sourceKey } = require('@flow/core/text');
-const { LOCAL_EXTS } = require('@flow/core/formats');
+const { scanFolder, MAX_FILES } = require('./localScan');
 
 const SEARCH_RESULTS = 5;
 const SEARCH_PARALLEL = 4;
@@ -66,11 +66,21 @@ function cancelled() {
 }
 
 async function withSub(group, fn) {
+  // Nothing new is started once the import is cancelled.
+  if (group.cancelled) throw cancelled();
   const t = group.sub();
   try {
     return await fn(t);
   } finally {
     group.done(t);
+  }
+}
+
+function removeQuietly(file) {
+  try {
+    fs.rmSync(file, { force: true });
+  } catch {
+    // Still open somewhere; the startup sweep of the cache gets it.
   }
 }
 
@@ -316,6 +326,13 @@ async function eachItem(items, group, onProgress, fetchOne) {
     report(null, 'Reading...');
     try {
       const got = await fetchOne(it, report);
+      if (group.cancelled) {
+        // Ready just as the import was cancelled: the window has let go of
+        // it already, so its file goes now.
+        if (got.media) removeQuietly(got.media.path);
+        summary.cancelled = true;
+        break;
+      }
       if (got.existingId) {
         summary.fromLibrary += 1;
         onProgress({ phase: 'item', index: it.index, status: 'library', existingId: got.existingId });
@@ -372,15 +389,9 @@ function download(items, opts, group, onProgress, { knownArtists = [] } = {}) {
 // be trimmed and renamed there, and "Finish all" saves them into All Songs.
 // The originals are only touched then, and only with "Move Originals".
 
-const LOCAL_DEPTH = 4;
-
 // Every file listLocal() handed out this session, lower-cased: "Move
 // Originals" deletes nothing else, whatever the window asks for.
 const localListed = new Set();
-
-function isLocalFile(name) {
-  return !name.startsWith('.flow-') && LOCAL_EXTS.includes(path.extname(name).slice(1).toLowerCase());
-}
 
 /** True for Flow's own music folder and anything inside it: those songs are the library's already. */
 function inMusicDir(p) {
@@ -390,41 +401,25 @@ function inMusicDir(p) {
 }
 
 /**
- * The openable files in `dir`: its own first, by name, then each subfolder's.
- * Flow's music folder is left out when it is one of the subfolders.
- */
-function findLocalFiles(dir, depth = 0) {
-  let entries;
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-  const files = entries.filter((e) => e.isFile() && isLocalFile(e.name)).map((e) => path.join(dir, e.name));
-  if (depth < LOCAL_DEPTH) {
-    for (const e of entries) {
-      const sub = path.join(dir, e.name);
-      if (e.isDirectory() && !inMusicDir(sub)) files.push(...findLocalFiles(sub, depth + 1));
-    }
-  }
-  return files;
-}
-
-/**
  * The files picked (and those in the folders picked) as a listing shaped like
  * a playlist's: { local: true, source, sourceUrl, name, truncated, items }.
- * A file that is already a library song is marked `existing`.
+ * A file picked by name is tried whatever its extension; a folder is looked
+ * through for audio and video files only (localScan.js), with
+ * { phase: 'scanning', found, dir } now and then. A file that is already a
+ * library song is marked `existing`. truncated is 'files' when the folder
+ * held more than MAX_FILES.
  */
-function listLocal(picked) {
+async function listLocal(picked, group, onProgress) {
   const files = [];
   let folder = '';
   let fromMusicDir = 0;
+  let truncated = false;
   for (const p of picked || []) {
+    if (group.cancelled) throw cancelled();
     const full = path.resolve(String(p || ''));
     let st;
     try {
-      st = fs.statSync(full);
+      st = await fs.promises.stat(full);
     } catch {
       continue;
     }
@@ -439,11 +434,21 @@ function listLocal(picked) {
     }
     if (st.isDirectory()) {
       folder = full;
-      files.push(...findLocalFiles(full));
+      const before = files.length;
+      onProgress({ phase: 'scanning', found: before, dir: full });
+      const found = await scanFolder(full, {
+        token: group,
+        skip: inMusicDir,
+        limit: MAX_FILES - before,
+        onProgress: (n, dir) => onProgress({ phase: 'scanning', found: before + n, dir }),
+      });
+      files.push(...found.files);
+      if (found.truncated) truncated = 'files';
     } else if (st.isFile()) {
       files.push(full);
     }
   }
+  if (group.cancelled) throw cancelled();
   const seen = new Set();
   const unique = files.filter((f) => !seen.has(f.toLowerCase()) && seen.add(f.toLowerCase()));
   if (!unique.length) {
@@ -471,7 +476,7 @@ function listLocal(picked) {
   let name = `${unique.length} files`;
   if (folder) name = path.basename(folder) || folder;
   else if (unique.length === 1) name = path.basename(unique[0]);
-  return { local: true, source: 'Local', sourceUrl: '', name, truncated: false, items };
+  return { local: true, source: 'Local', sourceUrl: '', name, truncated, items };
 }
 
 /**
@@ -594,11 +599,7 @@ async function finish(job, onProgress) {
           }
         });
       });
-      try {
-        fs.rmSync(e.cachePath, { force: true });
-      } catch {
-        // The startup sweep of the cache gets it.
-      }
+      removeQuietly(e.cachePath);
       summary.saved += 1;
       if (job.local && job.move && e.originalPath && !removeOriginal(e.originalPath)) {
         summary.kept.push(e.originalPath);
@@ -610,4 +611,4 @@ async function finish(job, onProgress) {
   return summary;
 }
 
-module.exports = { list, download, listLocal, prepareLocal, finish, groupToken };
+module.exports = { list, download, listLocal, prepareLocal, finish, groupToken, eachItem };

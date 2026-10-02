@@ -136,7 +136,7 @@ function handle(channel, fn) {
     } catch (err) {
       return {
         ok: false,
-        cancelled: err instanceof ProcessCancelledError,
+        cancelled: err instanceof ProcessCancelledError || !!(err && err.cancelled),
         error: (err && err.message) || String(err),
       };
     }
@@ -390,58 +390,79 @@ handle('download:probe', async (url) => {
 });
 
 // ---- whole playlists ----
+//
+// One import task at a time: reading a list or a folder, fetching its songs,
+// saving them. The window numbers its tasks (`run`) and every progress
+// message carries the number, so one that arrives late from a cancelled task
+// is never taken for the next one's. Cancel stops the whole task at once:
+// no message gets out of it afterwards, and a new one may start right away.
 
 let importToken = null;
 let importRunning = false;
 
-handle('import:list', async (url) => {
+function beginImport(run) {
   refuseDuringImport();
-  importToken = importer.groupToken();
+  const token = importer.groupToken();
+  importToken = token;
+  importRunning = true;
+  const onProgress = (p) => {
+    if (!token.cancelled) sendToWindow('import:progress', { ...p, run });
+  };
+  return { token, onProgress };
+}
+
+function endImport(token) {
+  if (importToken !== token) return;
+  importToken = null;
+  importRunning = false;
+}
+
+handle('import:list', async ({ url, run }) => {
+  const { token, onProgress } = beginImport(run);
   try {
-    return await importer.list(url, importToken, (p) => sendToWindow('import:progress', p),
-      { knownArtists: knownArtists() });
+    return await importer.list(url, token, onProgress, { knownArtists: knownArtists() });
   } finally {
-    importToken = null;
+    endImport(token);
   }
 });
 
-// Local files take the playlist's steps: listed, prepared into the cache
-// (import:download with `local`), then saved by import:finish.
-handle('import:listLocal', (picked) => {
-  refuseDuringImport();
-  return importer.listLocal(picked);
-});
-
-handle('import:download', async ({ items, opts, local }) => {
-  refuseDuringImport();
-  importRunning = true;
-  importToken = importer.groupToken();
-  const onProgress = (p) => sendToWindow('import:progress', p);
+// Local files take the playlist's steps: listed (a folder looked through),
+// prepared into the cache (import:download with `local`), then saved by
+// import:finish.
+handle('import:listLocal', async ({ picked, run }) => {
+  const { token, onProgress } = beginImport(run);
   try {
-    if (local) return await importer.prepareLocal(items, opts, importToken, onProgress);
-    return await importer.download(items, opts, importToken, onProgress, { knownArtists: knownArtists() });
+    return await importer.listLocal(picked, token, onProgress);
   } finally {
-    importRunning = false;
-    importToken = null;
+    endImport(token);
   }
 });
 
-handle('import:finish', async (job) => {
-  refuseDuringImport();
-  importRunning = true;
+handle('import:download', async ({ items, opts, local, run }) => {
+  const { token, onProgress } = beginImport(run);
   try {
-    if (!remote.active()) return await importer.finish(job, (p) => sendToWindow('import:progress', p));
+    if (local) return await importer.prepareLocal(items, opts, token, onProgress);
+    return await importer.download(items, opts, token, onProgress, { knownArtists: knownArtists() });
+  } finally {
+    endImport(token);
+  }
+});
+
+handle('import:finish', async ({ job, run }) => {
+  const { token, onProgress } = beginImport(run);
+  try {
+    if (!remote.active()) return await importer.finish(job, onProgress);
     // With a server the songs are saved into Local Files first, as always,
     // then go up. The playlist to add to and the songs already in the
     // library are the server's, which Local Files does not have.
     const existingIds = job.entries.filter((e) => e.existingId).map((e) => e.existingId);
     const localJob = { ...job, mergeInto: null, entries: job.entries.filter((e) => !e.existingId) };
-    const summary = await importer.finish(localJob, (p) => sendToWindow('import:progress', p));
+    const summary = await importer.finish(localJob, onProgress);
     remote.pushImport({ localPlaylistId: summary.playlistId, mergeInto: job.mergeInto || null, existingIds });
     summary.fromLibrary = existingIds.length;
     return summary;
   } finally {
-    importRunning = false;
+    endImport(token);
     loudnessFiller.run();
   }
 });
@@ -451,7 +472,12 @@ handle('import:pending', (count) => {
 });
 
 handle('import:cancel', () => {
-  if (importToken) importToken.cancel();
+  if (!importToken) return;
+  // The task's processes are killed; what it leaves behind in the cache it
+  // removes itself (importer.eachItem, downloader). The window has moved on.
+  importToken.cancel();
+  importToken = null;
+  importRunning = false;
 });
 
 // ---- the sleep timer's shutdown ----

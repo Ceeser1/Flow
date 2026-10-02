@@ -191,7 +191,12 @@ async function fetchAndPrepare(probed, opts, report, cancelToken, { ytdlp, ffmpe
  * ffprobe said about `src`.
  */
 async function prepare(src, outStem, opts, report, cancelToken, { duration: guess = 0, lead = '', noAudio }) {
-  const info = await tools.probeAudio(src);
+  const stopIfCancelled = () => {
+    if (cancelToken && cancelToken.cancelled) throw new ProcessCancelledError();
+  };
+  stopIfCancelled();
+  const info = await tools.probeAudio(src, cancelToken);
+  stopIfCancelled();
   if (!info.codec) throw new Error(noAudio);
   const plan = planFor(info, opts);
   const duration = info.duration || guess || 0;
@@ -204,7 +209,9 @@ async function prepare(src, outStem, opts, report, cancelToken, { duration: gues
   await runFfmpeg(['-i', src, ...ffmpegArgsFor(plan), out], duration,
     (frac) => report('prepare', plan.action === 'copy' ? null : frac, startText), cancelToken);
 
-  const final = await tools.probeAudio(out);
+  stopIfCancelled();
+  const final = await tools.probeAudio(out, cancelToken);
+  stopIfCancelled();
   const summary = plan.action === 'copy'
     ? `Ready: ${plan.source}, kept as .${plan.ext}`
     : `Ready: converted ${plan.source} to ${plan.target}`;

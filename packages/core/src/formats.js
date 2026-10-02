@@ -39,6 +39,11 @@ const LOCAL_EXTS = [
   'wmv', 'mpg', 'mpeg', 'ts',
 ];
 
+// What a folder is looked through for. Not .ts, which is far more often a
+// TypeScript file than an MPEG stream (a folder of code would list thousands),
+// nor .dts (device tree sources). A file picked by name is still tried.
+const SCAN_EXTS = LOCAL_EXTS.filter((e) => e !== 'ts' && e !== 'dts');
+
 function isPcm(codec) {
   return /^pcm_/.test(codec);
 }
@@ -121,6 +126,6 @@ function estimateMb(kbps, seconds) {
 }
 
 module.exports = {
-  MP3_QUALITIES, DEFAULT_MP3_QUALITY, AUDIO_EXTS, LOCAL_EXTS,
+  MP3_QUALITIES, DEFAULT_MP3_QUALITY, AUDIO_EXTS, LOCAL_EXTS, SCAN_EXTS,
   planFor, ffmpegArgsFor, describeSource, estimateMb, clampQuality,
 };
