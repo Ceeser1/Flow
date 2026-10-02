@@ -55,10 +55,10 @@ function request(url, {
 
 /**
  * Opens a live channel (Server-Sent Events) and notes when each event
- * arrives, until `until` of them came, the server ends it, or `timeout`.
+ * arrives, until one of type `until` came, the server ends it, or `timeout`.
  * Resolves { status, events: [{ type, at }] } with `at` in ms from the start.
  */
-function readEvents(url, { headers = {}, timeout = 8000, until = 2, ca, lookup } = {}) {
+function readEvents(url, { headers = {}, timeout = 8000, until = 'probe', ca, lookup } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const lib = u.protocol === 'https:' ? https : http;
@@ -90,7 +90,7 @@ function readEvents(url, { headers = {}, timeout = 8000, until = 2, ca, lookup }
           buffer = buffer.slice(cut + 2);
           const type = (/^event: (.+)$/m.exec(block) || [])[1];
           if (type) events.push({ type, at: Date.now() - started });
-          if (events.length >= until) finish();
+          if (type === until) finish();
         }
       });
       res.on('end', finish);

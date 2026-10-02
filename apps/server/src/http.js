@@ -18,6 +18,8 @@
 //   GET  /api/live?client=<id>&device=<name>
 //                                      the app's live channel: events as they
 //                                      happen (live.js), while the app is connected
+//   GET  /api/sessions                 { sessions, mine, request }: Active Sessions
+//   POST /api/sessions { type, ... }   taking part in them (sessions.js)
 //
 // Downloads by the server (downloads.js; only when /api/hello lists the
 // "download" feature), one batch per profile:
@@ -77,6 +79,7 @@ const { isPrivateIp, isTailscaleAddress } = require('@flow/core/address');
 const { PUBLIC_LEVEL } = require('@flow/core/password');
 const { checkPassword, hashPassword, hashToken, CLIENT_ID } = require('./config');
 const { DownloadError } = require('./downloads');
+const { SessionError } = require('./sessions');
 
 const PROTOCOL = 1;
 // What this server can do beyond protocol 1, for apps that know to ask.
@@ -246,7 +249,7 @@ function bareIp(value) {
 const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
 
 function createHttpServer({
-  config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null,
+  config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null,
 }) {
   const throttle = createThrottle();
   // Sessions of levels 3 and 4 do not outlive the server's run.
@@ -639,6 +642,7 @@ function createHttpServer({
       return sendJson(res, 200, { rev: library.rev, library: library.snapshot(profileId), profile: publicProfile(profile) });
     }
     if (is('GET', /^\/api\/live$/)) return openLive(req, res, url, client, entry);
+    if (p === '/api/sessions' && (req.method === 'GET' || req.method === 'POST')) return sessionRoute(req, res, url, entry);
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
       return sendJson(res, 200, library.runCommands(body.commands, profileId));
@@ -685,6 +689,20 @@ function createHttpServer({
     });
   }
 
+  /**
+   * Active Sessions (sessions.js): GET the list and this app's place in it,
+   * POST { type, ... } to take part. The app is the one its token names, or
+   * (no token naming one) ?client= / the body's client.
+   */
+  async function sessionRoute(req, res, url, entry) {
+    if (!sessions) throw new HttpError(404, 'Nothing here.');
+    const body = req.method === 'POST' ? await readJsonBody(req) : {};
+    const id = (entry && entry.client) || String(body.client || url.searchParams.get('client') || '');
+    if (!CLIENT_ID.test(id)) throw new HttpError(400, 'Sessions need the app\'s id.');
+    if (req.method === 'GET') return sendJson(res, 200, sessions.view(id));
+    return sendJson(res, 200, { ok: true, ...sessions.handle(id, body) });
+  }
+
   /** The server's own downloads, those of the profile signed in to (see the top). */
   async function downloadRoute(req, res, p, profileId) {
     if (!downloads) throw new HttpError(404, 'This server does not download songs.');
@@ -715,7 +733,7 @@ function createHttpServer({
 
   const server = http.createServer((req, res) => {
     route(req, res).catch((err) => {
-      const status = err instanceof HttpError || err instanceof DownloadError ? err.status : 500;
+      const status = err instanceof HttpError || err instanceof DownloadError || err instanceof SessionError ? err.status : 500;
       if (status === 500) log(`Error on ${req.method} ${req.url.split('?')[0]}: ${err.stack || err}`);
       if (res.headersSent) {
         res.destroy();
@@ -724,7 +742,7 @@ function createHttpServer({
       // An upload refused before its body was read: let the rest arrive and
       // be thrown away, or the app sees a broken connection, not the reason.
       if (!req.complete) req.resume();
-      sendJson(res, status, { error: err.message || 'Something went wrong on the server.' });
+      sendJson(res, status, { error: err.message || 'Something went wrong on the server.', ...(err.extra || {}) });
     });
   });
   // Uploads over a slow connection can take a while.
