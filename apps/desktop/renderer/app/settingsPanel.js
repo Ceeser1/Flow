@@ -52,6 +52,7 @@ const SettingsPanel = {
     });
     Output.onChange(() => {
       if (this.modal && this._outputFill) this._outputFill();
+      if (this.modal && this._delayFill) this._delayFill();
     });
   },
 
@@ -509,7 +510,27 @@ const SettingsPanel = {
           + 'your volume up and down.',
         when: on,
       }),
+      this._outputDelayRow(),
     ];
+  },
+
+  /** Output delay, as in the player's output menu: for the output playing now. */
+  _outputDelayRow() {
+    const c = Output.delayControl('settings__slider', 'settings__value');
+    const which = h('span');
+    // Redrawn when the output or its delay changes (one listener, set up in init).
+    this._delayFill = () => {
+      c.sync();
+      which.textContent = Output.label() ? ` Kept for each output; this is ${Output.label()}.` : '';
+    };
+    this._delayFill();
+    this._refresh.push(() => { c.slider.disabled = !Store.settings.outputDelayOn; });
+    return this._row({
+      key: 'outputDelayOn',
+      label: 'Output delay (Sync speakers at Jams)',
+      desc: h('span', Output.DELAY_NOTE, which),
+      right: h('div.settings__control', c.slider, c.value),
+    });
   },
 
   /** A text box saved when left (or on Enter). */

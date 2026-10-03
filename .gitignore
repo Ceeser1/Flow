@@ -10,3 +10,6 @@ tools/
 
 # Personal launcher, kept only on this PC.
 start.bat
+
+# Personal list of server commands, kept only on this PC.
+commands.txt

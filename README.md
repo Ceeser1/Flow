@@ -427,7 +427,7 @@ listen (who, on hover), and **Join**.
   its own volume, in step with the host (by the server's clock; small
   differences, from 15 ms on, are evened out by playing up to 3% faster or slower, bigger ones
   jumped over). Bluetooth speakers sound late: in the output button's menu
-  on the devices with the faster speakers, tick **Output delay (Sync
+  (or Settings > Jam session) on the devices with the faster speakers, tick **Output delay (Sync
   speakers at Jams)** and hold their sound back by ear (0 to 500 ms in 1 ms
   steps, heard while the slider moves, kept per output; Shift while dragging
   moves it ten times finer) until the music sounds together. The delay holds

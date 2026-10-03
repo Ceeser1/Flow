@@ -34,6 +34,10 @@ const Output = {
       $('btnOutput').title = `Play on: ${this.label() || 'the default output'}`;
       $('btnOutput').classList.toggle('player__output--on', !!chosen);
     });
+    // "Output delay" ticked or unticked, here or in Settings.
+    Store.onSettings((patch) => {
+      if ('outputDelayOn' in patch) this._emit();
+    });
     this.refresh();
     if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
       navigator.mediaDevices.addEventListener('devicechange', () => this.refresh());
@@ -53,9 +57,7 @@ const Output = {
    * "Output delay" is unticked.
    */
   delay() {
-    if (!Store.settings.outputDelayOn) return 0;
-    const d = (Store.settings.outputDelays || {})[this.label()];
-    return Number.isFinite(d) ? d : 0;
+    return Store.settings.outputDelayOn ? this.savedDelay() : 0;
   },
 
   setDelay(ms) {
@@ -202,6 +204,10 @@ const Output = {
     };
   },
 
+  /** The note under "Output delay", in the menu and in Settings. */
+  DELAY_NOTE: 'At jam sessions, different speakers may have delays. Bluetooth lags 50 to 300ms. '
+    + 'Adjust the slider of the faster speakers until the sounds are in sync. Hold shift for 10x finer control.',
+
   /**
    * "Output delay" for the output playing: set by ear so devices in a jam
    * sound together. Its slider, value and note only while ticked.
@@ -209,38 +215,54 @@ const Output = {
   _delayRow() {
     const on = !!Store.settings.outputDelayOn;
     const box = h('input', { type: 'checkbox', checked: on });
-    box.addEventListener('change', () => {
-      Store.saveSettings({ outputDelayOn: box.checked });
-      this._emit();
-    });
+    // The menu is drawn again (Store.onSettings in init).
+    box.addEventListener('change', () => Store.saveSettings({ outputDelayOn: box.checked }));
     const label = h('label.check.output-menu__delay-label', box, h('span', 'Output delay (Sync speakers at Jams)'));
     if (!on) return h('div.output-menu__delay', h('div.output-menu__delay-head', label));
+    const c = this.delayControl('output-menu__slider', 'output-menu__delay-value');
+    return h('div.output-menu__delay',
+      h('div.output-menu__delay-head', label, c.value),
+      c.slider,
+      h('div.output-menu__delay-note', this.DELAY_NOTE));
+  },
 
+  /** The delay set for the output playing, ticked or not (ms). */
+  savedDelay() {
+    const d = (Store.settings.outputDelays || {})[this.label()];
+    return Number.isFinite(d) ? d : 0;
+  },
+
+  /**
+   * The delay's slider (0-500 ms at 1 ms) and its value, for the menu and
+   * Settings: { slider, value, sync() } (sync: shows the saved value again).
+   * Heard while it moves, saved when let go.
+   */
+  delayControl(sliderClass, valueClass) {
     const MAX = 500;
     const THUMB = 12;
-    const value = h('span.output-menu__delay-value', `${this.delay()} ms`);
-    const slider = h('input.volume-slider.output-menu__slider', {
-      type: 'range', min: 0, max: MAX, step: 1, value: String(this.delay()), 'aria-label': 'Output delay',
+    const value = h(`span.${valueClass}`);
+    const slider = h(`input.volume-slider.${sliderClass}`, {
+      type: 'range', min: 0, max: MAX, step: 1, 'aria-label': 'Output delay',
     });
     const show = (v) => {
       slider.value = String(Math.round(Math.max(0, Math.min(MAX, v))));
       value.textContent = `${slider.value} ms`;
       slider.style.setProperty('--fill', `${(Number(slider.value) / MAX) * 100}%`);
-      // Heard at once while it moves; saved when let go.
+    };
+    const move = (v) => {
+      show(v);
       Equalizer.setDelay(Number(slider.value));
     };
-    show(this.delay());
     // The arrow keys move it by 1 ms.
-    slider.addEventListener('input', () => show(Number(slider.value)));
+    slider.addEventListener('input', () => move(Number(slider.value)));
     slider.addEventListener('change', () => this.setDelay(Number(slider.value)));
 
     // Dragged by hand: the thumb follows the pointer, ten times slower while
-    // Shift is held (so every single ms can be reached). Saved when let go
-    // (the menu is drawn again then).
+    // Shift is held (so every single ms can be reached).
     const perPx = () => MAX / Math.max(1, slider.getBoundingClientRect().width - THUMB);
     let drag = null;
     slider.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || slider.disabled) return;
       e.preventDefault();
       slider.focus();
       slider.setPointerCapture(e.pointerId);
@@ -248,7 +270,7 @@ const Output = {
       const r = slider.getBoundingClientRect();
       const v = e.shiftKey ? Number(slider.value) : (e.clientX - r.left - THUMB / 2) * perPx();
       drag = { x: e.clientX, v, shift: e.shiftKey, at: v };
-      show(v);
+      move(v);
     });
     slider.addEventListener('pointermove', (e) => {
       if (!drag) return;
@@ -256,7 +278,7 @@ const Output = {
       if (e.shiftKey !== drag.shift) drag = { x: e.clientX, v: drag.at, shift: e.shiftKey, at: drag.at };
       const v = drag.v + ((e.clientX - drag.x) * perPx()) / (drag.shift ? 10 : 1);
       drag.at = Math.max(0, Math.min(MAX, v));
-      show(drag.at);
+      move(drag.at);
     });
     const end = () => {
       if (!drag) return;
@@ -266,11 +288,11 @@ const Output = {
     slider.addEventListener('pointerup', end);
     slider.addEventListener('lostpointercapture', end);
 
-    return h('div.output-menu__delay',
-      h('div.output-menu__delay-head', label, value),
-      slider,
-      h('div.output-menu__delay-note', 'At jam sessions, different speakers may have delays. Bluetooth lags 50 to 300ms. '
-        + 'Adjust the slider of the faster speakers until the sounds are in sync. Hold shift for 10x finer control.'));
+    const sync = () => {
+      if (!drag) show(this.savedDelay());
+    };
+    sync();
+    return { slider, value, sync };
   },
 
   _closeMenu() {
