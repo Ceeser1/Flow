@@ -8,7 +8,8 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
 
 - **Search**: one box, three columns: Playlists (All Songs included), Songs and
   Artists whose name contains what you type. Clicking a song plays it, an artist
-  opens All Songs filtered to them. Ctrl+F jumps here from anywhere.
+  opens All Songs filtered to them; each song shows its cover, and Add to
+  Queue and Play on the right. Ctrl+F jumps here from anywhere.
 - **Add Songs**: paste a link and press Enter or Download. The frame under the
   box shows reading, downloading and converting. Once it is done:
   - Artist, Title and Mix are filled in from the video's title and can be
@@ -93,7 +94,19 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   the popup and More (so does a click anywhere else). Ten playlists show, more
   scroll.
 
-- **Details** (the magnifier on an All Songs row): the song's names and length,
+- **Covers**: every song has its album cover in front of its name, in every
+  list, the queue and Active Sessions; the player bar shows the one playing,
+  Details a big one. Flow finds them by itself, in the background, one song
+  at a time at low priority: the song's YouTube thumbnail when it is an album
+  cover (YouTube Music and "Topic" uploads show the cover between plain side
+  bars), else the picture in the song's file, else YouTube Music's song
+  search for artist and title (only a hit as long as the song, within 3
+  seconds), else the middle of the video's thumbnail. A song none of that
+  finds a picture for keeps a note symbol and is not looked at again; songs
+  that could not be looked at (no internet) are tried again at the next start.
+  A local file imported keeps the picture it carries. Covers belong to the
+  song, not its name: renaming or moving a song keeps its cover.
+- **Details** (the magnifier on an All Songs row): the song's cover, its names and length,
   the playlists it is in as buttons (click one to take it out, click again to
   put it back), "Add to Playlists", and its statistics: added, last listened,
   times played, times fully listened, average listen duration, times stopped,
@@ -123,7 +136,8 @@ also: 80% or more of the song heard a **full listen**, under 30 seconds an
 **early skip**, anything between a stop. A song unfinished when the app closes carries on at the next start. Long time no see
 counts a song that was never played from when it was downloaded.
 
-The player bar stays at the bottom on every page. Space plays and pauses, Left
+The player bar stays at the bottom on every page, the playing song's cover at
+its left, as tall as the title and the timeline. Space plays and pauses, Left
 and Right skip 10 seconds (not while typing in a box), and the keyboard's
 media keys and the Windows media overlay work too. The last playlist, song,
 position, shuffle and volume come back on the next start, paused. The button
@@ -169,6 +183,10 @@ The cog at the bottom left of the menu. Every change counts at once.
     the folder in Explorer. Change picks another folder and moves every song
     file there, subfolders and all (a name already taken there gets a number);
     playlists and statistics stay. Not while a download or import runs.
+  - **Covers**: how many songs have a cover, and how many are still being
+    looked for. With a Flow Server also the server's covers kept on this
+    computer (how many, how much room) and **Clear cover cache**, which
+    deletes them; those of the server connected come down again.
 - **Jam session** (only with a Flow Server). See [Active Sessions](#active-sessions).
   - **Share your jam session on the server** (on): other devices on the same
     server see what plays here and can ask to join. Unticked, it is not listed
@@ -356,6 +374,14 @@ control with a cache:
   under "Flow" says who is logged in ("Server: Pi as Anna (Home)", or Tailscale or Remote away from home). A change
   waits for the profile it was made in, and a playlist marked for download
   keeps its songs while another profile is logged in.
+- Covers: the server finds them itself (see its README), and every one comes
+  down to this computer in the background, three at a time, those of the
+  rows on screen first (away from home on a metered connection only those,
+  unless downloads are allowed there). They stay across restarts and when
+  switching servers, so a server that is off leaves its songs their covers;
+  one goes only when its song is gone from that server. A song uploaded
+  takes its cover along, and a song downloaded from the server takes the
+  server's.
 - Last seen library and waiting changes: `server-library.json` and
   `server-sync.json` in `%LOCALAPPDATA%\Flow`. A different server at the same
   address starts both afresh.
@@ -411,6 +437,9 @@ listen (who, on hover), and **Join**.
   watches the folder: files copied in by hand, subfolders included, appear a
   few seconds after the copy finishes, deleted files leave the library, and a
   file renamed or moved in Explorer stays the same song, playlists included.
+- Covers: `Covers` in that folder (moved along when it changes): `local`
+  for the songs in Local Files, and a folder per Flow Server, each cover
+  named after its song's id. Files dropped into `Covers` are not songs.
 - Library, settings, the download cache and an updatable yt-dlp:
   `%LOCALAPPDATA%\Flow`. The library is `library.json`, with the previous
   version kept as `library.json.bak`.

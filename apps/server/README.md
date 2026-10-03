@@ -147,8 +147,9 @@ it: read them before relying on it.
 
 With ffmpeg installed (`sudo apt install ffmpeg`), the server reads the length
 and tags of songs dropped into the folder by hand, writes new names into a
-renamed song's tags, and measures each song's loudness for "Equalize volume".
-Without it, those songs show no length until an app plays them. Songs uploaded
+renamed song's tags, measures each song's loudness for "Equalize volume", and
+makes the songs' covers (below). Without it, those songs show no length until
+an app plays them, and only covers sent by an app are there. Songs uploaded
 from an app bring all of that with them either way. The server also needs it
 to download songs itself (below).
 
@@ -203,6 +204,28 @@ own, and a long playlist keeps downloading when the app is closed.
   such songs fail with that reason. At level 3 and 4 the home network needs
   no password, so anyone on it can start downloads; so can anyone with the
   password from outside.
+
+## Covers
+
+Every song gets an album cover, a 512 x 512 JPEG in `covers/` of the
+server's home, named after the song's id: a rename or a move never loses it,
+and it goes with its song. Songs without one (those already there when the
+server first starts with covers, songs dropped into the folder, uploads that
+came without one) are looked at in the background, one song at a time with a
+pause between, at low priority:
+
+1. the song's YouTube thumbnail, when it is an album cover (YouTube Music and
+   "Topic" uploads show it in the middle between plain side bars);
+2. the picture in the song's file;
+3. YouTube Music's song search for artist and title, taken only when the hit
+   is as long as the song (within 3 seconds);
+4. the middle of the video's thumbnail.
+
+A song for which none of that gives a picture is not looked at again; one
+that could not be looked at (no internet) is tried again at the next start.
+Steps 1, 3 and 4 need yt-dlp and the internet, all of them ffmpeg. A song the
+server downloads itself gets its cover with the download. The apps keep a
+copy of every cover, so a server that is off still leaves them with theirs.
 
 ## Finding the server on the network (optional, off by default)
 
@@ -376,6 +399,7 @@ pauses and skips from other devices arrive late or not at all.
 |---|---|---|
 | library, settings | `~/.local/share/flow-server` | `%LOCALAPPDATA%\Flow\server` |
 | downloads not finished yet | `staging/` in there, a folder per profile | the same |
+| covers | `covers/` in there, `<song id>.jpg` | the same |
 | music | `~/flow-music` | `~/flow-music` |
 
 `FLOW_SERVER_HOME` and `FLOW_SERVER_MUSIC` point them elsewhere.
@@ -400,6 +424,8 @@ report changes.
 | `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`); `deletePlaylist` with `deleteSongs: true` also deletes the songs no playlist or favourite of any profile has, listed in its result's `deletedSongs` |
 | `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file |
 | `GET /api/songs/<id>/audio` | the song's file, with Range for seeking |
+| `GET /api/songs/<id>/cover?v=<version>` | the song's cover (JPEG), 404 when it has none; `song.cover` in the library is its version (`-`: none found, `null`: not looked at yet), and with the current one in `?v=` it may be cached for good; `ETag` / `If-None-Match` too |
+| `PUT /api/songs/<id>/cover` | an app's cover for a song (a JPEG body, at most 4 MB; made 512 x 512 when it is not) → `{ cover }`; kept only when the song has none yet |
 | `POST /api/rescan` | look through the music folder now |
 | `GET /api/live?client=<id>&device=<name>` | the app's live channel (Server-Sent Events): `hello { client, serverTime, pingMs }` first, then the Active Sessions events below; a second channel of the same app replaces the first; ends with `end { reason }` (`replaced`, `auth`, `shutdown`) |
 | `GET /api/time` | `{ time }`: the server's clock, for playing in step |

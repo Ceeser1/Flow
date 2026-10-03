@@ -1955,16 +1955,6 @@ div.import__frame-head { cursor: default; }
   flex: none;
 }
 
-/* A narrow window: the main buttons closer together and a shorter volume
-   slider without its number, so both sides keep their buttons. */
-@media (max-width: 1180px) {
-  .player__buttons { gap: 8px; }
-  .volume-slider { width: 72px; }
-  .vol-value { display: none; }
-  .sq-btn { width: 28px; height: 28px; }
-  .player__extras { gap: 4px; }
-}
-
 .icon-btn {
   background: none;
   border: none;
@@ -2003,6 +1993,22 @@ div.import__frame-head { cursor: default; }
   color: var(--text-dim);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+/* A narrow window: the main buttons closer together and a shorter volume
+   slider without its number, so both sides keep their buttons
+   (after the rules they change). Narrower still: Sleep Timer is its moon. */
+@media (max-width: 1180px) {
+  .player__buttons { gap: 8px; }
+  .volume-slider { width: 72px; }
+  .vol-value { display: none; }
+  .sq-btn { width: 28px; height: 28px; }
+  .player__extras { gap: 4px; }
+}
+
+@media (max-width: 1080px) {
+  .sleep-btn { padding: 0 7px; }
+  .sleep-btn span { display: none; }
 }
 
 /* ===== popups ===== */
