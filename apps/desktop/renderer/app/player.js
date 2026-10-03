@@ -777,9 +777,11 @@ const Player = {
    * or paused as there, and at the host's place: under SYNC_OK it is left
    * alone, up to SYNC_JUMP it is eased in (up to SYNC_RATE faster or slower),
    * beyond that jumped to; a jump learns how long playing takes to pick up
-   * again (seekLead) and lands that much ahead.
+   * again (seekLead) and lands that much ahead. SYNC_OK keeps devices well
+   * clear of an audible echo while staying above the jitter of the place the
+   * element reports; the check itself costs the same at any window.
    */
-  SYNC_OK: 0.03,
+  SYNC_OK: 0.015,
   SYNC_JUMP: 0.3,
   SYNC_RATE: 0.03,
 

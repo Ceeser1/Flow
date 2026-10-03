@@ -425,7 +425,7 @@ listen (who, on hover), and **Join**.
   each device's own profile.
 - **Play here** plays the music on this device too, on its own output and at
   its own volume, in step with the host (by the server's clock; small
-  differences are evened out by playing up to 3% faster or slower, bigger ones
+  differences, from 15 ms on, are evened out by playing up to 3% faster or slower, bigger ones
   jumped over). Bluetooth speakers sound late: in the output button's menu
   on the devices with the faster speakers, tick **Output delay (Sync
   speakers at Jams)** and hold their sound back by ear (0 to 500 ms in 1 ms
