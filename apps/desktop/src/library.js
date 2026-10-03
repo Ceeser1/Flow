@@ -4,64 +4,26 @@
 // that keeps it in step with the Music\FlowPlayer folder. The rules themselves
 // live in libraryModel.js.
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const paths = require('./paths');
 const tools = require('./tools');
 const model = require('@flow/core/libraryModel');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
-const { parseTitle } = require('@flow/core/titleParser');
-const { sourceKeyFromUrl } = require('@flow/core/text');
+const { createLocalLibrary } = require('@flow/core/client/localLibrary');
+const { metaFromFile, findMoved } = require('@flow/core/fileMeta');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const { checkTarget, planMoves } = require('@flow/core/relocate');
 const { parseFlowId } = require('@flow/core/tags');
 
-let data = null;
-const listeners = [];
-
-function newId() {
-  return crypto.randomBytes(6).toString('hex');
-}
-
-function load() {
-  data = model.sanitize(readJson(paths.libraryFile()));
-  return data;
-}
-
-function get() {
-  return data || load();
-}
-
-function save() {
-  writeJsonAtomic(paths.libraryFile(), get());
-}
-
-function onChange(fn) {
-  listeners.push(fn);
-}
-
-function notify() {
-  for (const fn of listeners) {
-    try {
-      fn(get());
-    } catch {
-      // A closed window must not stop the save that follows.
-    }
-  }
-}
-
-/**
- * Runs one change against the library, then saves and tells the window.
- * Whatever `fn` returns is handed back; whatever it throws is thrown on, with
- * nothing saved.
- */
-function mutate(fn) {
-  const result = fn(get());
-  save();
-  notify();
-  return result;
-}
+// The library itself, shared with the Android app; saved to library.json here.
+const local = createLocalLibrary({
+  read: () => readJson(paths.libraryFile()),
+  write: (data) => writeJsonAtomic(paths.libraryFile(), data),
+});
+const {
+  load, get, save, onChange, mutate, newId,
+} = local;
 
 // ---- the folder scan ----
 
@@ -85,23 +47,6 @@ function listAudioFiles(dir, depth = 0) {
     }
   }
   return out;
-}
-
-/**
- * Artist, title, mix and source link of a file, from its tags or else its
- * name. The source link is the one Flow writes into the comment tag.
- */
-function metaFromFile(file, tags = {}) {
-  const fromName = parseTitle(path.basename(file, path.extname(file)));
-  const comment = tags.comment || tags.purl || '';
-  const sourceUrl = /^https?:\/\//i.test(comment) ? comment : '';
-  return {
-    title: tags.title || fromName.title,
-    artist: tags.artist || tags.album_artist || fromName.artist,
-    mix: tags.mix || (tags.title ? '' : fromName.mix),
-    sourceUrl,
-    sourceKey: sourceKeyFromUrl(sourceUrl) || '',
-  };
 }
 
 /** A library entry for a file found in the folder, from its tags or its name. */
@@ -135,26 +80,6 @@ async function songFromFile(file) {
 // A file younger than this may still be being copied in; it waits for the next
 // scan rather than being read half-written.
 const SETTLE_MS = 2000;
-
-/**
- * A song whose file is gone and a new file that is the same recording: the
- * song its flowid names (this app's own: `ownId`), else the one of the same
- * format and length to a twentieth of a second; with several such songs the
- * one with the same title and artist, without that none. A flowid naming a
- * song whose file is still there (`has`) makes the file a copy: no song's.
- */
-function findMoved(fresh, gone, ownId = null, has = () => false) {
-  const fid = fresh.flowId;
-  if (fid && ownId && fid.library === ownId) {
-    const named = gone.find((g) => g.id === fid.songId);
-    if (named) return named;
-    if (has(fid.songId)) return null;
-  }
-  const same = gone.filter((g) => g.format === fresh.format && Math.abs((g.duration || 0) - fresh.duration) < 0.05);
-  if (same.length === 1) return same[0];
-  const fold = (t) => String(t || '').toLowerCase();
-  return same.find((g) => fold(g.title) === fold(fresh.title) && fold(g.artist) === fold(fresh.artist)) || null;
-}
 
 /**
  * Adds files that were put into Music\FlowPlayer by hand, drops songs whose file

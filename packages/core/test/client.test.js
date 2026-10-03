@@ -33,10 +33,43 @@ function graph(entry) {
 }
 
 test('the shared client loads no Node module, nor anything outside @flow/core', () => {
-  const { files, outside } = graph(path.join(SRC, 'client', 'remote.js'));
-  assert.deepEqual(outside, []);
-  assert.ok(files.includes(path.join('client', 'common.js')));
+  for (const entry of ['client/remote.js', 'client/localLibrary.js', 'fileMeta.js']) {
+    const { files, outside } = graph(path.join(SRC, entry));
+    assert.deepEqual(outside, [], entry);
+    assert.ok(files.length >= 1);
+  }
+  assert.ok(graph(path.join(SRC, 'client', 'remote.js')).files.includes(path.join('client', 'common.js')));
+  // The check itself sees Node's modules.
+  assert.ok(graph(path.join(SRC, 'jsonFile.js')).outside.some((x) => x.endsWith(': fs')));
   assert.ok(builtinModules.includes('fs'));
+});
+
+test('the Local Files library: changes saved and told, a throw saves nothing', () => {
+  const { createLocalLibrary } = require('../src/client/localLibrary');
+  const saved = [];
+  const lib = createLocalLibrary({ read: () => null, write: (d) => saved.push(JSON.parse(JSON.stringify(d))) });
+  const told = [];
+  lib.onChange((d) => told.push(d.playlists.length));
+  const model = require('../src/libraryModel');
+  const p = lib.mutate((d) => model.createPlaylist(d, 'Evening', lib.newId()));
+  assert.match(p.id, /^[0-9a-f]{12}$/);
+  assert.deepEqual(told, [1]);
+  assert.equal(saved.length, 1);
+  assert.throws(() => lib.mutate(() => {
+    throw new Error('no');
+  }));
+  assert.equal(saved.length, 1);
+});
+
+test('a file name without folder and extension, on any system', () => {
+  const { fileStem, metaFromFile } = require('../src/fileMeta');
+  assert.equal(fileStem('C:\\Music\\Air - Playground Love.mp3'), 'Air - Playground Love');
+  assert.equal(fileStem('/storage/emulated/0/Music/Moby - Porcelain.opus'), 'Moby - Porcelain');
+  assert.equal(fileStem('a.b.flac'), 'a.b');
+  assert.equal(fileStem('.hidden'), '.hidden');
+  const meta = metaFromFile('/x/Moby - Porcelain.opus');
+  assert.equal(meta.artist, 'Moby');
+  assert.equal(meta.title, 'Porcelain');
 });
 
 test('random ids are hex of the length asked for', () => {
