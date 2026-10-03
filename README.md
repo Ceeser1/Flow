@@ -109,6 +109,12 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   it when finished; the same for Download (Server). A local file imported
   keeps the picture it carries. Covers belong to the
   song, not its name: renaming or moving a song keeps its cover.
+  New songs also carry their cover in their file (MP3, FLAC, Opus, Ogg; not
+  M4A, whose tags hold the Mix instead, nor WAV), so other players show it,
+  with a `flowid` tag naming the song, written in the background once the
+  cover is settled. Renaming a song in Flow writes both into its file, and
+  keeps the file's other tags (album, year, its own picture until there is
+  a cover). Songs from before are left as they are.
 - **Details** (the magnifier on an All Songs row): the song's cover, its names and length,
   the playlists it is in as buttons (click one to take it out, click again to
   put it back), "Add to Playlists", and its statistics: added, last listened,

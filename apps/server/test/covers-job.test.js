@@ -98,6 +98,75 @@ test('songs without a cover get one: their thumbnail, the picture in the file, e
     assert.equal(jpeg[0], 0xff);
     assert.equal(jpeg[1], 0xd8);
     assert.deepEqual(server.library.coverCounts(), { total: 4, have: 2, todo: 1 });
+    // Songs that were there before are not written by themselves (flow-server tag-songs does that).
+    assert.equal(songs.Teardrop.tagged, null);
+    const full = (id) => server.library.data.songs.find((s) => s.id === id).file;
+    assert.equal(tagsOf(full(songs.Teardrop.id)).flowid, undefined);
+  } finally {
+    await server.close();
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
+
+/** A file's tags (lower-case keys) and whether it carries a picture. */
+function tagsOf(file) {
+  const info = JSON.parse(execFileSync(path.join(tools, `ffprobe${EXE}`), ['-v', 'error',
+    '-show_entries', 'format_tags:stream=codec_type:stream_disposition=attached_pic', '-of', 'json', file]));
+  const out = {};
+  for (const [k, v] of Object.entries((info.format || {}).tags || {})) out[k.toLowerCase()] = v;
+  out.picture = (info.streams || []).some((s) => s.disposition && s.disposition.attached_pic);
+  return out;
+}
+
+test('a new song\'s file gets the server\'s flowid and its cover once found; a rename keeps both', needs, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-tags-job-'));
+  const topic = path.join(root, 'topic.jpg');
+  run(['-f', 'lavfi', '-i', 'color=c=0x3c3526:s=1280x720[bg];testsrc=s=720x720[fg];[bg][fg]overlay=280:0', '-frames:v', '1', topic]);
+  const song = path.join(root, 'song.mp3');
+  run(['-f', 'lavfi', '-i', 'sine=d=2', '-metadata', 'title=Glory Box', '-metadata', 'album=Dummy', song]);
+  const coverDeps = {
+    fetchImage: async () => fs.readFileSync(topic),
+    readInfo: async () => { throw new Error('not available'); },
+    searchMusic: async (track) => [{ id: 'CCCCCCCCCCC', title: track.title, duration: track.duration }],
+    pauseMs: 0,
+  };
+  const server = await startServer({
+    home: path.join(root, 'home'), music: path.join(root, 'music'), port: 0, host: '127.0.0.1', detectTailscale: async () => null, discoveryPort: null, coverDeps,
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  // The library as the server holds it (the apps get the files' names only).
+  const songOf = async (id) => server.library.data.songs.find((s) => s.id === id);
+  try {
+    const meta = { title: 'Glory Box', artist: 'Portishead', format: 'mp3', duration: 2 };
+    const put = await fetch(`${base}/api/songs/g1?meta=${encodeURIComponent(JSON.stringify(meta))}`, { method: 'PUT', body: fs.readFileSync(song) });
+    assert.equal(put.status, 200);
+    // The search waits a moment for an app's own cover (5 s), then finds one; then the file is written.
+    const done = await waitFor(async () => {
+      const s = await songOf('g1');
+      return s && s.cover && s.tagged === s.cover && s;
+    }, 'the tags', 30000);
+    const id = server.config.get().id;
+    let t = tagsOf(done.file);
+    assert.equal(t.flowid, `${id}:g1`);
+    assert.equal(t.title, 'Glory Box');
+    assert.equal(t.artist, 'Portishead');
+    assert.equal(t.album, 'Dummy');
+    assert.equal(t.picture, true);
+
+    const r = await fetch(`${base}/api/commands`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commands: [{ cid: 'e1', at: Date.now(), type: 'editSong', songId: 'g1', artist: 'Portishead', title: 'Roads', mix: 'Live' }] }),
+    });
+    assert.equal(r.status, 200);
+    const renamed = await waitFor(async () => {
+      const s = await songOf('g1');
+      return s && /Roads/.test(s.file) && fs.existsSync(s.file) && tagsOf(s.file).title === 'Roads' && s;
+    }, 'the rename');
+    t = tagsOf(renamed.file);
+    assert.equal(t.mix, 'Live');
+    assert.equal(t.flowid, `${id}:g1`);
+    assert.equal(t.album, 'Dummy');
+    assert.equal(t.picture, true);
   } finally {
     await server.close();
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

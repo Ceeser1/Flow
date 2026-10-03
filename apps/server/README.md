@@ -226,7 +226,15 @@ that could not be looked at (no internet) is tried again at the next start.
 Steps 1, 3 and 4 need yt-dlp and the internet, all of them ffmpeg. A song the
 server downloads itself has its cover looked for right after its download
 (it is ready without waiting for it), shown in the apps while it waits to be
-finished, and the song's once it is. The apps keep a
+finished, and the song's once it is.
+
+New songs (downloaded by the server, or uploaded by an app) also carry their
+cover in their file, and a `flowid` tag (`<server id>:<song id>`), written in
+the background once the cover is settled: MP3, FLAC, Opus and Ogg get the
+picture, M4A only the tag (its tags hold the Mix instead), WAV neither. A
+song renamed in an app gets both written into its file, its other tags
+(album, year) kept. Songs that were there before are not rewritten by
+themselves. The apps keep a
 copy of every cover, so a server that is off still leaves them with theirs.
 
 ## Finding the server on the network (optional, off by default)

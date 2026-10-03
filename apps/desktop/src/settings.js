@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const paths = require('./paths');
 const { writeJsonAtomic } = require('@flow/core/jsonFile');
@@ -204,4 +205,17 @@ function set(patch) {
   return next;
 }
 
-module.exports = { load, all, get, set, clean, DEFAULTS, EQ_COLORS, VISUALIZERS };
+/**
+ * This install's id, made once: a Flow Server tells devices apart by it, and
+ * Local Files songs carry it in their flowid (tags.js).
+ */
+function clientId() {
+  let id = get('clientId');
+  if (!id) {
+    id = crypto.randomBytes(12).toString('base64url');
+    set({ clientId: id });
+  }
+  return id;
+}
+
+module.exports = { load, all, get, set, clean, clientId, DEFAULTS, EQ_COLORS, VISUALIZERS };

@@ -28,6 +28,7 @@ const { sourceKeyFromUrl, songFileStem } = require('@flow/core/text');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const cover = require('@flow/core/cover');
 const { createMedia } = require('@flow/core/media');
+const { flowIdText } = require('@flow/core/tags');
 const tools = require('./tools');
 
 const SEEN_KEEP = 5000;
@@ -296,6 +297,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     const version = covers.write(id, jpeg);
     if (model.songById(data, id)) mutate((d) => model.setCover(d, id, version));
     else covers.remove(id);
+    // Into its file too (new songs, songs written before).
+    queueLoudness();
     return version;
   }
 
@@ -361,6 +364,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
       loudness: meta.loudness,
       favouriteAt: meta.favouriteAt,
       stats: meta.stats,
+      // Its file gets this server's flowid and its cover once that is settled.
+      tagged: '',
     };
     mutate((d) => {
       const v = prof.view(d, profiles, profileId, profileNames());
@@ -466,6 +471,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
 
   let working = false;
   const retagQueue = new Set();
+  const tagFailed = new Set(); // songs whose tags could not be written: tried again at the next start
   const noLoudness = new Set();
   let stopped = false;
 
@@ -473,10 +479,14 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
   // which must not hold up the loudness (or the other way round).
   let coverWorking = false;
   let coverAgain = false;
+  // The loops running: stop() waits for them (an ffmpeg still writing holds its files).
+  let coverRun = Promise.resolve();
+  let workRun = Promise.resolve();
   const coverLater = new Set(); // could not be reached: tried again at the next start
-  const lookups = coverDeps || cover.lookupsFor(createMedia({
+  const media = createMedia({
     ffmpeg: tools.ffmpeg, ffprobe: tools.ffprobe, ytdlp: tools.ytdlp, cacheDir: () => config.home, lowPriority: true,
-  }));
+  });
+  const lookups = coverDeps || cover.lookupsFor(media);
 
   function queueCovers() {
     if (!tools.ffmpeg() || stopped) return;
@@ -484,7 +494,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
       coverAgain = true;
       return;
     }
-    coverWork().catch((err) => log(`Covers: ${err.message}`));
+    coverRun = coverWork().catch((err) => log(`Covers: ${err.message}`));
   }
 
   /**
@@ -519,7 +529,11 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     if (now.cover) return; // one arrived meanwhile (an upload)
     if (r.jpeg) setCover(s.id, r.jpeg);
     else if (r.retry) coverLater.add(s.id);
-    else mutate((d) => model.setCover(d, s.id, cover.NO_COVER));
+    else {
+      mutate((d) => model.setCover(d, s.id, cover.NO_COVER));
+      // A new song's flowid goes into its file now.
+      queueLoudness();
+    }
   }
 
   async function coverWork() {
@@ -558,11 +572,53 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
   function queueRetag(id) {
     if (!tools.ffmpeg()) return;
     retagQueue.add(id);
-    work();
+    queueLoudness();
   }
 
+  // The background work with ffmpeg: renamed songs' tags, new songs' tags
+  // and covers into their files, loudness.
   function queueLoudness() {
-    if (tools.ffmpeg()) work();
+    // A loop running looks at the songs again after each one.
+    if (tools.ffmpeg() && !working && !stopped) workRun = work().catch((err) => log(`Background work: ${err.message}`));
+  }
+
+  /**
+   * The song's file written anew (media.rewriteTags): its names, this
+   * server's flowid and its cover (none here: the file keeps its own), into
+   * a copy beside it put in its place. A song renamed gets this at once; a
+   * new one once its cover is settled. Not again this run when it fails.
+   */
+  async function tagFile(s) {
+    const file = s.file;
+    const coverNow = s.cover;
+    const out = path.join(path.dirname(file), `.flow-retag-${crypto.randomBytes(6).toString('hex')}${path.extname(file)}`);
+    let ok = false;
+    try {
+      const picture = coverNow && coverNow !== cover.NO_COVER ? covers.read(s.id) : null;
+      ok = await media.rewriteTags(file, out, {
+        meta: { title: s.title, artist: s.artist, mix: s.mix, sourceUrl: s.sourceUrl },
+        flowId: flowIdText(config.get().id, s.id),
+        picture,
+      });
+      // Renamed or gone meanwhile: written again later, or not at all.
+      const now = model.songById(data, s.id);
+      ok = ok && !stopped && !!now && now.file === file;
+      if (ok) fs.renameSync(out, file);
+    } catch (err) {
+      ok = false;
+      log(`Could not write the tags of ${file}: ${err.message}`);
+    } finally {
+      fs.rmSync(out, { force: true });
+    }
+    if (stopped) return;
+    if (!ok) {
+      tagFailed.add(s.id);
+      return;
+    }
+    // A cover still being looked for: written again once it is known.
+    mutate((d) => {
+      if (model.songById(d, s.id)) model.setTagged(d, s.id, coverNow === null ? '' : coverNow);
+    });
   }
 
   async function work() {
@@ -574,7 +630,12 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
         if (retagId) {
           retagQueue.delete(retagId);
           const s = model.songById(data, retagId);
-          if (s && fs.existsSync(s.file)) await tools.retag(s.file, s);
+          if (s && fs.existsSync(s.file)) await tagFile(s);
+          continue;
+        }
+        const toTag = data.songs.find((s) => model.needsTags(s) && !tagFailed.has(s.id) && fs.existsSync(s.file));
+        if (toTag) {
+          await tagFile(toTag);
           continue;
         }
         const next = data.songs.find((s) => s.loudness === null && !noLoudness.has(s.id) && fs.existsSync(s.file));
@@ -623,8 +684,10 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     covers,
     emptyTrash,
     onChange: (fn) => listeners.push(fn),
+    /** Stops the background work: resolves once what was running has ended. */
     stop() {
       stopped = true;
+      return Promise.all([workRun, coverRun]).then(() => {});
     },
   };
 }

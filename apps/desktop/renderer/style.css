@@ -2082,14 +2082,15 @@ div.import__frame-head { cursor: default; }
   padding-bottom: 6px;
   cursor: pointer;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-dim);
+  /* A light shade of the accent blue, so the categories stand out. */
+  color: #8db2ea;
   border-bottom: 1px solid var(--line);
 }
 .settings__group:first-child > .settings__section { margin-top: 2px; }
-.settings__section:hover { color: var(--text); }
+.settings__section:hover { color: #b3cdf4; }
 .settings__chevron { display: inline-flex; transform: rotate(-90deg); transition: transform 0.15s; }
 .settings__chevron .icon { width: 14px; height: 14px; }
 .settings__chevron--down { transform: rotate(90deg); }

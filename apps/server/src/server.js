@@ -93,11 +93,13 @@ async function startServer(opts = {}) {
       downloads.stop();
       sessions.stop();
       live.close();
-      library.stop();
-      return new Promise((resolve) => {
+      // Its ffmpeg runs still going end first: they hold files in the music folder.
+      const working = library.stop();
+      const closed = new Promise((resolve) => {
         server.close(() => resolve());
         server.closeAllConnections();
       });
+      return Promise.all([working, closed]).then(() => {});
     },
   };
 }

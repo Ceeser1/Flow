@@ -126,3 +126,26 @@ test('a song\'s cover: a version, "-" for none found, null to look for; kept thr
   assert.equal(m.sanitize({ songs: [{ id: 'x', file: 'f', cover: '../../etc' }] }).songs[0].cover, null);
   assert.throws(() => m.setCover(data, 'nope', 'abcd'), /no longer exists/);
 });
+
+test('what a song\'s file carries: null untouched, "" to write, else the cover written; written once the cover is settled', () => {
+  const data = lib();
+  const s1 = m.songById(data, 's1');
+  assert.equal(s1.tagged, null);
+  assert.equal(m.needsTags(s1), false);
+  m.setTagged(data, 's1', '');
+  // Its cover still being looked for: not yet.
+  assert.equal(m.needsTags(s1), false);
+  m.setCover(data, 's1', 'a1b2c3d4e5');
+  assert.equal(m.needsTags(s1), true);
+  m.setTagged(data, 's1', 'a1b2c3d4e5');
+  assert.equal(m.needsTags(s1), false);
+  // A new cover: written again.
+  m.setCover(data, 's1', 'ffffffff');
+  assert.equal(m.needsTags(s1), true);
+  const again = m.sanitize(JSON.parse(JSON.stringify(data)));
+  assert.equal(m.songById(again, 's1').tagged, 'a1b2c3d4e5');
+  assert.equal(m.sanitize({ songs: [{ id: 'x', file: 'f', tagged: '' }] }).songs[0].tagged, '');
+  assert.equal(m.sanitize({ songs: [{ id: 'x', file: 'f', tagged: 'nope!' }] }).songs[0].tagged, null);
+  m.updateSong(data, 's1', { tagged: null });
+  assert.equal(m.songById(data, 's1').tagged, 'a1b2c3d4e5');
+});

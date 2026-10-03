@@ -22,6 +22,7 @@ const exporter = require('./src/exporter');
 const waveform = require('./src/waveform');
 const loudness = require('./src/loudness');
 const covers = require('./src/covers');
+const { createTagger } = require('./src/tagger');
 const remote = require('./src/remote');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
@@ -35,6 +36,8 @@ const loudnessFiller = loudness.createFiller(library, model, () => settings.get(
 // Finds covers for Local Files songs in the background; copies of a server's
 // songs get the server's.
 const coverFiller = covers.createFiller({ skip: (id) => remote.active() && remote.isServerCopy(id) });
+// New songs' files get their flowid and cover (tagger.js).
+const tagger = createTagger({ skip: (id) => remote.active() && remote.isServerCopy(id) });
 
 // A second start just brings the running window forward.
 const isFirstInstance = app.requestSingleInstanceLock();
@@ -311,14 +314,19 @@ handle('library:editSong', ({ songId, artist, title, mix }) => {
     const song = model.songById(library.get(), songId);
     if (!song) throw new Error('That song no longer exists.');
     let file = song.file;
+    let written = false;
     if (fs.existsSync(song.file)) {
       try {
-        file = await exporter.retagSong(song, meta);
+        ({ file, written } = await exporter.retagSong(song, meta));
       } catch {
         throw new Error('The file could not be renamed. It may be open in another program.');
       }
     }
-    return library.mutate((d) => model.updateSong(d, songId, { ...meta, file }));
+    return library.mutate((d) => {
+      model.updateSong(d, songId, { ...meta, file });
+      // Its file carries its flowid and cover now (a cover still being looked for: written again then).
+      if (written) model.setTagged(d, songId, song.cover === null ? '' : song.cover);
+    });
   });
 });
 
@@ -706,6 +714,8 @@ handle('song:finish', (job) => library.quietly(async () => {
     sourceUrl: String(job.sourceUrl || ''),
     sourceKey: String(job.sourceKey || ''),
     addedAt: Date.now(),
+    // Its file gets its flowid and cover once the cover is settled (tagger.js).
+    tagged: '',
   };
   library.mutate((d) => {
     model.addSong(d, song);
@@ -764,6 +774,8 @@ app.whenReady().then(() => {
     }
   });
   covers.watchLocal();
+  library.onChange(() => tagger.run());
+  tagger.run();
   setTimeout(() => {
     library.scan().catch(() => {}).then(() => {
       loudnessFiller.run();
@@ -781,6 +793,7 @@ app.on('window-all-closed', async () => {
   library.unwatch();
   loudnessFiller.stop();
   coverFiller.stop();
+  tagger.stop();
   if (importToken) importToken.cancel();
   waveform.abort();
   if (downloadToken && downloadToken.cancel) downloadToken.cancel();

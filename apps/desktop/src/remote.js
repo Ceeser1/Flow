@@ -166,15 +166,8 @@ function decrypt(stored) {
 // The token this run of Flow signed in with (never read back from disk).
 let runToken = '';
 
-/** This install's id, made once: the server tells devices apart by it. */
-function clientId() {
-  let id = settings.get('clientId');
-  if (!id) {
-    id = crypto.randomBytes(12).toString('base64url');
-    settings.set({ clientId: id });
-  }
-  return id;
-}
+/** This install's id (settings.clientId): the server tells devices apart by it. */
+const clientId = () => settings.clientId();
 
 class OfflineError extends Error {}
 class AuthError extends Error {}

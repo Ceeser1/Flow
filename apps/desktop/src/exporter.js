@@ -11,7 +11,9 @@ const path = require('path');
 const paths = require('./paths');
 const media = require('./media');
 const { songFileStem } = require('@flow/core/text');
-const { tagArgs } = require('@flow/core/tags');
+const settings = require('./settings');
+const covers = require('./covers');
+const { tagArgs, flowIdText } = require('@flow/core/tags');
 
 function samePath(a, b) {
   return !!a && !!b && path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
@@ -43,24 +45,33 @@ function saveSong(job) {
 
 /**
  * New artist / title / mix for a saved song: the file is renamed to match and
- * its tags rewritten. Resolves the new path. If ffmpeg cannot rewrite the tags
- * the file is still renamed, since the library holds the names anyway.
+ * its tags written anew (media.rewriteTags: the other tags stay, the song's
+ * flowid and cover go in). Resolves { file, written }: the new path, and
+ * whether the tags were written. If ffmpeg cannot write them the file is
+ * still renamed, since the library holds the names anyway.
  */
 async function retagSong(song, meta) {
   const ext = path.extname(song.file).slice(1).toLowerCase();
   const dest = uniquePath(songFileStem(meta.artist, meta.title, meta.mix), ext, song.file);
   const tmp = path.join(path.dirname(dest), `.flow-retag-${Date.now()}.${ext}`);
   try {
-    await media.runFfmpeg(['-i', song.file, '-map', '0:a:0', '-c', 'copy',
-      ...tagArgs({ ...meta, sourceUrl: song.sourceUrl }, ext), tmp], song.duration);
-    fs.rmSync(song.file, { force: true });
-    fs.renameSync(tmp, dest);
-    return dest;
+    const picture = song.cover && song.cover !== '-' ? covers.localStore().read(song.id) : null;
+    const ok = await media.rewriteTags(song.file, tmp, {
+      meta: { ...meta, sourceUrl: song.sourceUrl },
+      flowId: flowIdText(settings.clientId(), song.id),
+      picture,
+    });
+    if (ok) {
+      fs.rmSync(song.file, { force: true });
+      fs.renameSync(tmp, dest);
+      return { file: dest, written: true };
+    }
   } catch {
-    fs.rmSync(tmp, { force: true });
+    // Renamed all the same, below.
   }
+  fs.rmSync(tmp, { force: true });
   if (!samePath(song.file, dest)) fs.renameSync(song.file, dest);
-  return dest;
+  return { file: dest, written: false };
 }
 
 module.exports = { saveSong, retagSong, tagArgs, uniquePath };

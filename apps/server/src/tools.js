@@ -12,7 +12,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile, spawn } = require('child_process');
-const { parseLoudness, tagArgs } = require('@flow/core/tags');
+const { parseLoudness } = require('@flow/core/tags');
 
 function onPath(name) {
   const exe = process.platform === 'win32' ? `${name}.exe` : name;
@@ -117,18 +117,4 @@ async function measureLoudness(file) {
   return parseLoudness(r.stderr);
 }
 
-/** Writes new tags into a file (through a copy beside it). Resolves true when done. */
-async function retag(file, meta) {
-  if (!ffmpeg()) return false;
-  const ext = path.extname(file).slice(1).toLowerCase();
-  const tmp = path.join(path.dirname(file), `.flow-retag-${Date.now()}.${ext}`);
-  const r = await run(['-i', file, '-map', '0:a:0', '-c', 'copy', ...tagArgs(meta, ext), tmp]);
-  if (!r.ok) {
-    fs.rmSync(tmp, { force: true });
-    return false;
-  }
-  fs.renameSync(tmp, file);
-  return true;
-}
-
-module.exports = { ffmpeg, ffprobe, ytdlp, canDownload, jsRuntime, probe, measureLoudness, retag, onPath };
+module.exports = { ffmpeg, ffprobe, ytdlp, canDownload, jsRuntime, probe, measureLoudness, onPath };

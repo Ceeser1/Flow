@@ -20,8 +20,10 @@ const { runProcess, ProcessCancelledError } = require('./processRunner');
 const { normalizeUrl, sourceKey, safeFilename } = require('./text');
 const { guessFromInfo } = require('./titleParser');
 const { planFor, ffmpegArgsFor } = require('./formats');
-const { tagArgs } = require('./tags');
-const { coverUrlsFromInfo } = require('./cover');
+const tags = require('./tags');
+const { coverUrlsFromInfo, ffmpegRun, imageSize } = require('./cover');
+
+const { tagArgs } = tags;
 
 // Best audio, but not YouTube's "-drc" copies: those have their dynamic range
 // squashed for loudness normalisation and sound flatter than the original.
@@ -497,8 +499,51 @@ function createMedia({
     });
   }
 
+  /**
+   * A saved song's tags written anew (see tags.js): into `out`, a file
+   * beside it that the caller then puts in its place. The audio is copied
+   * untouched and the file keeps the tags it has (album, year ...), with
+   * meta's names ({ title, artist, mix, sourceUrl }) and flowId over them.
+   * picture: the cover to put in (a JPEG); null keeps the file's own.
+   * Runs at low priority. Resolves true when written.
+   */
+  async function rewriteTags(file, out, { meta, flowId = '', picture = null }) {
+    const exe = need(ffmpeg, 'ffmpeg');
+    const ext = path.extname(file).slice(1).toLowerCase();
+    const slow = { timeout: 5 * 60 * 1000 };
+    if (!tags.ID_EXTS.has(ext)) {
+      // WAV and the like: title and artist only, as when it was saved.
+      const r = await ffmpegRun(exe, ['-i', file, '-map', '0:a:0', '-c', 'copy', ...tagArgs(meta, ext), out], slow);
+      if (!r.ok) removeQuietly(out);
+      return r.ok;
+    }
+    const info = await probeAudio(file);
+    let image = tags.PICTURE_EXTS.has(ext) ? picture : null;
+    if (!image && tags.PICTURE_EXTS.has(ext)) {
+      // The picture the file has already, as it is.
+      const r = await ffmpegRun(exe, ['-i', file, '-an', '-map', '0:v:0?', '-c:v', 'copy', '-frames:v', '1', '-f', 'image2pipe', '-']);
+      image = r.ok && imageSize(r.stdout) ? r.stdout : null;
+    }
+    const ogg = tags.OGG_EXTS.has(ext);
+    const png = !!image && image.readUInt32BE(0) === 0x89504e47;
+    const metaFile = `${out}.ffmeta`;
+    const pictureFile = image && !ogg ? `${out}.picture.${png ? 'png' : 'jpg'}` : null;
+    try {
+      const block = image && ogg ? tags.oggPictureBlock(image, imageSize(image) || {}) : '';
+      fs.writeFileSync(metaFile, tags.ffmetadata(tags.mergedTags(info.tags, { ...meta, flowId }), block));
+      if (pictureFile) fs.writeFileSync(pictureFile, image);
+      const r = await ffmpegRun(exe, tags.retagArgs({ file, out, ext, metaFile, pictureFile }), slow);
+      if (!r.ok) removeQuietly(out);
+      return r.ok;
+    } finally {
+      removeQuietly(metaFile);
+      if (pictureFile) removeQuietly(pictureFile);
+    }
+  }
+
   return {
     run, probeAudio, runFfmpeg, readJson, probe, probedFrom, prepare, download, prepareLocal, clearCache, cutSong, peaksFor,
+    rewriteTags,
   };
 }
 

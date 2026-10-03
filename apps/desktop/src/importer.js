@@ -256,6 +256,8 @@ async function finish(job, onProgress) {
           sourceKey: e.sourceKey || '',
           sourcePlaylistUrl: (job.source && job.source.url) || '',
           addedAt: Date.now(),
+          // Its file gets its flowid and cover once the cover is settled (tagger.js).
+          tagged: '',
         };
         library.mutate((d) => {
           model.addSong(d, song);

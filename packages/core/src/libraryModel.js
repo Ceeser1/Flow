@@ -95,6 +95,16 @@ function cleanCover(v) {
   return /^(?:[0-9a-f]{4,40}|-)$/.test(t) ? t : null;
 }
 
+/**
+ * What the song's file carries (tags.js): null, nothing of Flow's (an older
+ * song, a file put in by hand); '' a new song whose tags are still to be
+ * written; else the cover version written into it with its flowid ('-': none).
+ */
+function cleanTagged(v) {
+  if (v === '') return '';
+  return cleanCover(v);
+}
+
 /** A list of ids: strings, no empties, no repeats. */
 function cleanIds(list) {
   return [...new Set((Array.isArray(list) ? list : []).map((x) => String(x || '')).filter(Boolean))];
@@ -123,6 +133,7 @@ function sanitize(raw) {
       // LUFS, for "Equalize volume"; null until measured (loudness.js).
       loudness: cleanLoudness(s.loudness),
       cover: cleanCover(s.cover),
+      tagged: cleanTagged(s.tagged),
       favouriteAt: Number(s.favouriteAt) || null,
     });
   }
@@ -295,6 +306,7 @@ function addSong(data, song) {
   song.sourcePlaylistUrl = String(song.sourcePlaylistUrl || '');
   song.loudness = cleanLoudness(song.loudness);
   song.cover = cleanCover(song.cover);
+  song.tagged = cleanTagged(song.tagged);
   data.songs.push(song);
   const lower = String(song.file).toLowerCase();
   data.ignoredFiles = data.ignoredFiles.filter((f) => f !== lower);
@@ -318,6 +330,18 @@ function setCover(data, id, version) {
   const s = requireSong(data, id);
   s.cover = cleanCover(version);
   return s;
+}
+
+/** What the song's file carries now (see cleanTagged); only whoever writes the files calls it. */
+function setTagged(data, id, value) {
+  const s = requireSong(data, id);
+  s.tagged = cleanTagged(value);
+  return s;
+}
+
+/** A song whose file wants its tags written: new, cover settled, not written with this cover yet. */
+function needsTags(s) {
+  return !!s && s.tagged !== null && s.tagged !== undefined && s.cover !== null && s.cover !== undefined && s.tagged !== s.cover;
 }
 
 /** Makes a song a favourite or no longer one. Already so: left as it was. */
@@ -449,7 +473,7 @@ module.exports = {
   emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
-  addSong, updateSong, setCover, cleanCover, setFavourite, removeSong, songsOnlyIn,
+  addSong, updateSong, setCover, cleanCover, setTagged, cleanTagged, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta,
 };
