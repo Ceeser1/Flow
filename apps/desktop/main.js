@@ -762,6 +762,21 @@ app.whenReady().then(() => {
       });
       return response === 0;
     },
+    // An upload the server has already, under other names.
+    askExisting: async ({ local, server, name }) => {
+      const label = (n) => `${[n.artist, n.title].filter(Boolean).join(' - ')}${n.mix ? ` (${n.mix})` : ''}`;
+      const { response, checkboxChecked } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+        type: 'question',
+        title: 'Flow',
+        message: `"${label(local)}" is on "${name}" already, as "${label(server)}".`,
+        detail: 'It is the same song under other names. Use the names from here on the server, keep the server\'s, or upload it as a song of its own?',
+        buttons: ['Use these names', 'Keep the server\'s', 'Upload as a new song'],
+        defaultId: 1,
+        cancelId: 1,
+        checkboxLabel: 'Do the same for the other songs of this upload',
+      });
+      return { choice: ['apply', 'keep', 'new'][response] || 'keep', all: checkboxChecked };
+    },
   });
   createWindow();
   // Both in the background, once the window is up. The scan tells the window

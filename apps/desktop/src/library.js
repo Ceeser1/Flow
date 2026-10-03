@@ -15,6 +15,7 @@ const { parseTitle } = require('@flow/core/titleParser');
 const { sourceKeyFromUrl } = require('@flow/core/text');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const { checkTarget, planMoves } = require('@flow/core/relocate');
+const { parseFlowId } = require('@flow/core/tags');
 
 let data = null;
 const listeners = [];
@@ -126,6 +127,8 @@ async function songFromFile(file) {
     sourceUrl: meta.sourceUrl,
     sourceKey: meta.sourceKey,
     addedAt,
+    // Not kept: which song the file says it is (scanOnce).
+    flowId: parseFlowId(info.tags),
   };
 }
 
@@ -134,11 +137,19 @@ async function songFromFile(file) {
 const SETTLE_MS = 2000;
 
 /**
- * A song whose file is gone and a new file that is the same recording: same
- * format, same length to a twentieth of a second. With several such songs the
- * one with the same title and artist wins; without that, none does.
+ * A song whose file is gone and a new file that is the same recording: the
+ * song its flowid names (this app's own: `ownId`), else the one of the same
+ * format and length to a twentieth of a second; with several such songs the
+ * one with the same title and artist, without that none. A flowid naming a
+ * song whose file is still there (`has`) makes the file a copy: no song's.
  */
-function findMoved(fresh, gone) {
+function findMoved(fresh, gone, ownId = null, has = () => false) {
+  const fid = fresh.flowId;
+  if (fid && ownId && fid.library === ownId) {
+    const named = gone.find((g) => g.id === fid.songId);
+    if (named) return named;
+    if (has(fid.songId)) return null;
+  }
   const same = gone.filter((g) => g.format === fresh.format && Math.abs((g.duration || 0) - fresh.duration) < 0.05);
   if (same.length === 1) return same[0];
   const fold = (t) => String(t || '').toLowerCase();
@@ -184,13 +195,17 @@ async function scanOnce() {
     && (inRoot(s.file) ? rootThere : fs.existsSync(path.dirname(s.file))));
   const moves = [];
   const left = [...gone];
+  const ownId = require('./settings').clientId();
   for (const song of [...fresh]) {
-    const from = findMoved(song, left);
+    const from = findMoved(song, left, ownId, (id) => !!model.songById(lib, id));
     if (!from) continue;
     moves.push({ id: from.id, file: song.file });
     left.splice(left.indexOf(from), 1);
     fresh.splice(fresh.indexOf(song), 1);
   }
+  // A file still being copied in may be one of these songs, moved: they
+  // wait for the next scan, which looks once it has settled.
+  if (unsettled) left.length = 0;
 
   // Forget ignored files that no longer exist, so the list cannot grow forever.
   const stillIgnored = lib.ignoredFiles.filter((f) => fs.existsSync(f));
@@ -208,8 +223,11 @@ async function scanOnce() {
         model.updateSong(d, m.id, { file: m.file });
       }
     }
-    for (const song of fresh) {
-      if (!nowKnown.has(song.file.toLowerCase())) model.addSong(d, song);
+    for (const { flowId, ...song } of fresh) {
+      if (nowKnown.has(song.file.toLowerCase())) continue;
+      // A copy of one of this app's songs: its file gets its own flowid.
+      if (flowId && flowId.library === ownId) song.tagged = '';
+      model.addSong(d, song);
     }
     for (const s of left) {
       if (model.songById(d, s.id) && !fs.existsSync(s.file)) model.removeSong(d, s.id, false);

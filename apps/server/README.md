@@ -24,7 +24,10 @@ for the next start. `flow-server --help` lists everything.
 
 Songs can be dropped into the music folder by hand (a network share, a USB
 stick): the server looks through the folder every five minutes, and at once when
-an app asks it to synchronize.
+an app asks it to synchronize. A song renamed or moved there by hand stays the
+same song (its playlists, cover and statistics): found by the `flowid` tag in
+its file (see Covers), else by its format and length. A copy of a song is a
+song of its own.
 
 A song deleted from an app is not gone at once. Its file moves to
 `.flow-trash` in the music folder and is removed after 30 days.
@@ -234,7 +237,16 @@ the background once the cover is settled: MP3, FLAC, Opus and Ogg get the
 picture, M4A only the tag (its tags hold the Mix instead), WAV neither. A
 song renamed in an app gets both written into its file, its other tags
 (album, year) kept. Songs that were there before are not rewritten by
-themselves. The apps keep a
+themselves; `flow-server tag-songs` does it:
+
+```sh
+flow-server tag-songs --dry-run   # lists the files it would write, changes nothing
+flow-server tag-songs             # the running server writes them, one at a time
+```
+
+The running server takes it within a few seconds (a stopped one when it
+starts) and writes the files in the background, its log saying when it is
+done; a restart carries on where it was. The apps keep a
 copy of every cover, so a server that is off still leaves them with theirs.
 
 ## Finding the server on the network (optional, off by default)
@@ -432,7 +444,7 @@ report changes.
 | `POST /api/login` | `{ password, device, client }` → `{ token }` (`client`: the app's install id; one token per app, so two PCs of the same name don't sign each other out) |
 | `GET /api/library?since=<rev>&as=<profile>` | `{ rev, library, profile }`, or 204 when nothing changed for that profile; the library has the profile's `follows` and the others' `sharedPlaylists` |
 | `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`); `deletePlaylist` with `deleteSongs: true` also deletes the songs no playlist or favourite of any profile has, listed in its result's `deletedSongs` |
-| `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file |
+| `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file → `{ existing, id, rev }`. A song the server has already (same source, or same names and length) is not taken: `existing` with its `names` (`{ artist, title, mix }`), and the app asks when they differ from its own; `meta.onExisting: "new"` takes it as a song of its own |
 | `GET /api/songs/<id>/audio` | the song's file, with Range for seeking |
 | `GET /api/songs/<id>/cover?v=<version>` | the song's cover (JPEG), 404 when it has none; `song.cover` in the library is its version (`-`: none found, `null`: not looked at yet), and with the current one in `?v=` it may be cached for good; `ETag` / `If-None-Match` too |
 | `PUT /api/songs/<id>/cover` | an app's cover for a song (a JPEG body, at most 4 MB; made 512 x 512 when it is not) → `{ cover }`; kept only when the song has none yet |

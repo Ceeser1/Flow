@@ -78,6 +78,9 @@ function clean(raw) {
     downloads: typeof r.downloads === 'boolean' ? r.downloads : null,
     downloadJobs: Math.min(3, Math.max(1, Math.round(Number(r.downloadJobs)) || 1)),
     downloadKeepDays: Math.min(365, Math.max(1, Math.round(Number(r.downloadKeepDays)) || 30)),
+    // flow-server tag-songs asked for the songs from before to be written
+    // (library.js checkTagRequest), until the running server takes it.
+    tagSongs: r.tagSongs === true,
     profiles,
     tokens: (Array.isArray(r.tokens) ? r.tokens : [])
       .filter((t) => t && t.hash)

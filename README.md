@@ -114,7 +114,8 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   with a `flowid` tag naming the song, written in the background once the
   cover is settled. Renaming a song in Flow writes both into its file, and
   keeps the file's other tags (album, year, its own picture until there is
-  a cover). Songs from before are left as they are.
+  a cover). Songs from before are left as they are (on a Flow Server,
+  `flow-server tag-songs` writes them).
 - **Details** (the magnifier on an All Songs row): the song's cover, its names and length,
   the playlists it is in as buttons (click one to take it out, click again to
   put it back), "Add to Playlists", and its statistics: added, last listened,
@@ -359,7 +360,10 @@ control with a cache:
   now"): a server you do not know gets nothing. Not now keeps them here, and
   Synchronize now asks again; songs added or downloaded afterwards go up as
   usual. Songs the server already has (same source, or same artist, title,
-  mix and length) are not sent twice.
+  mix and length) are not sent twice. When the server has one under other
+  names, Flow asks: **Use these names** (the server's song is renamed),
+  **Keep the server's**, or **Upload as a new song**; "Do the same for the
+  other songs of this upload" answers for the rest.
 - `apps/server/install.sh` sets the server up as a service on any Linux
   with systemd, and asks how far it should be reachable (see the server's
   README):
@@ -445,7 +449,9 @@ listen (who, on hover), and **Join**.
 - Songs: `Music\FlowPlayer`, or the folder chosen in Settings. The app
   watches the folder: files copied in by hand, subfolders included, appear a
   few seconds after the copy finishes, deleted files leave the library, and a
-  file renamed or moved in Explorer stays the same song, playlists included.
+  file renamed or moved in Explorer stays the same song, playlists included
+  (found by the `flowid` tag in the file, else by its format and length; a
+  copy is a song of its own).
 - Covers: `Covers` in that folder (moved along when it changes): `local`
   for the songs in Local Files, and a folder per Flow Server, each cover
   named after its song's id. Files dropped into `Covers` are not songs.

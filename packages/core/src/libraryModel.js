@@ -468,6 +468,12 @@ function findByMeta(data, { artist, title, mix }, exceptId = null) {
     && norm(s.artist) === a && norm(s.title) === t && norm(s.mix) === m) || null;
 }
 
+/** Whether two songs (or { artist, title, mix }) have the same names, ignoring case and spaces. */
+function sameNames(a, b) {
+  return norm(a && a.artist) === norm(b && b.artist) && norm(a && a.title) === norm(b && b.title)
+    && norm(a && a.mix) === norm(b && b.mix);
+}
+
 module.exports = {
   ALL_SONGS_ID, ALL_SONGS_NAME, MAX_NAME, PLAYED_SHARE, EARLY_SKIP_SECONDS,
   emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
@@ -475,5 +481,5 @@ module.exports = {
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
   addSong, updateSong, setCover, cleanCover, setTagged, cleanTagged, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
-  findBySource, findByMeta,
+  findBySource, findByMeta, sameNames,
 };

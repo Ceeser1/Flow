@@ -301,6 +301,7 @@ function newCommand(type, args) {
 
 let hooks = {
   onView: () => {}, onStatus: () => {}, onNotice: () => {}, onSettings: () => {}, onLive: () => {}, confirmUpload: async () => true,
+  askExisting: async () => ({ choice: 'keep', all: false }),
 };
 let view = null;
 
@@ -839,6 +840,7 @@ function flush() {
   if (flushing) return flushing;
   flushing = (async () => {
     if (status.state !== 'online' || !sync.queue.some(mine)) return;
+    existingChoice = null;
     const uploads = sync.queue.filter((c) => c.type === 'upload' && mine(c)).length;
     const canTransfer = uploads ? await transfersAllowed() : true;
     const blocked = new Set();
@@ -865,7 +867,10 @@ function flush() {
       saveSync();
     };
     try {
-      for (const c of sync.queue.slice()) {
+      const pass = sync.queue.slice();
+      const inPass = new Set(pass.map((c) => c.cid));
+      for (let i = 0; i < pass.length; i += 1) {
+        const c = pass[i];
         if (status.state !== 'online') break;
         if (!mine(c)) continue;
         if (c.type === 'upload') {
@@ -876,6 +881,13 @@ function flush() {
           await sendBatch();
           uploadNo += 1;
           await uploadOne(c, uploadNo, uploads);
+          // An upload may queue a change of its own (the names from here, askExisting): sent in this pass too.
+          for (const x of sync.queue) {
+            if (!inPass.has(x.cid)) {
+              inPass.add(x.cid);
+              pass.push(x);
+            }
+          }
           continue;
         }
         const refs = [c.songId, ...(Array.isArray(c.songIds) ? c.songIds : [])];
@@ -912,6 +924,29 @@ function flush() {
 
 // ---- uploads ----
 
+// The answer for all songs of this upload that the server has under other
+// names ("Do the same for the others"), until the next flush.
+let existingChoice = null;
+
+/**
+ * A song the server has already (the same source), under other names:
+ * 'apply' (the names from here go to the server), 'keep' (the server's
+ * stay) or 'new' (uploaded as a song of its own). Asked, unless answered for
+ * all songs of this upload.
+ */
+async function askExisting(local, names) {
+  if (existingChoice) return existingChoice;
+  let answer = { choice: 'keep', all: false };
+  try {
+    answer = (await hooks.askExisting({ local: { artist: local.artist, title: local.title, mix: local.mix }, server: names, name: conn.name })) || answer;
+  } catch {
+    // Keep the server's.
+  }
+  const choice = ['apply', 'keep', 'new'].includes(answer.choice) ? answer.choice : 'keep';
+  if (answer.all) existingChoice = choice;
+  return choice;
+}
+
 /** One song up to the server. Its local file stays or goes by "Keep downloaded files". */
 async function uploadOne(cmd, number, total) {
   const local = model.songById(library.get(), cmd.localId);
@@ -939,6 +974,7 @@ async function uploadOne(cmd, number, total) {
     sourcePlaylistUrl: local.sourcePlaylistUrl,
     addedAt: local.addedAt,
     loudness: local.loudness,
+    onExisting: cmd.onExisting || undefined,
   };
   if ((cmd.profile || '') === currentProfile()) {
     Object.assign(meta, {
@@ -967,6 +1003,19 @@ async function uploadOne(cmd, number, total) {
     return;
   }
   const serverId = String(r.json.id);
+  // The same song is there under other names (renamed here or there): asked
+  // what to do. An older server says no names: it keeps its own.
+  let apply = false;
+  if (r.json.existing && serverId !== cmd.songId && r.json.names && !cmd.onExisting && !model.sameNames(r.json.names, local)) {
+    const choice = await askExisting(local, r.json.names);
+    if (choice === 'new') {
+      cmd.onExisting = 'new';
+      saveSync();
+      await uploadOne(cmd, number, total);
+      return;
+    }
+    apply = choice === 'apply';
+  }
   if (serverId !== cmd.songId) renameSongId(cmd.songId, serverId);
   sync.songMap[cmd.localId] = serverId;
   drop();
@@ -974,6 +1023,7 @@ async function uploadOne(cmd, number, total) {
   // An upload shows as addSong until the library catches up; one the server
   // already had (existing) shows as that song straight away.
   if (r.json.existing) sync.sent.pop();
+  if (apply) sync.queue.push(newCommand('editSong', { songId: serverId, title: local.title, artist: local.artist, mix: local.mix }));
   saveSync();
   if (!r.json.existing) await uploadCover(local, serverId);
   if (!settings.get('serverKeepFiles') && !neededOffline(serverId)) {

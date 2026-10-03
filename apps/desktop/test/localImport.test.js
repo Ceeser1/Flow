@@ -153,3 +153,18 @@ test('the tool itself is killed on cancel', async () => {
   await new Promise((r) => setTimeout(r, 300));
   assert.equal(alive(pid), false);
 });
+
+test('a file renamed or moved by hand is its song again: by its flowid first, else by its length', () => {
+  const gone = [
+    { id: 's1', format: 'mp3', duration: 200, title: 'Hyperballad', artist: 'Bjork' },
+    { id: 's2', format: 'mp3', duration: 180, title: 'Joga', artist: 'Bjork' },
+  ];
+  const has = (id) => ['s1', 's2', 's3'].includes(id);
+  // Its flowid names the song, though the length changed.
+  assert.equal(library.findMoved({ format: 'mp3', duration: 90, flowId: { library: 'me', songId: 's2' } }, gone, 'me', has).id, 's2');
+  // Another library's flowid counts for nothing: the length decides.
+  assert.equal(library.findMoved({ format: 'mp3', duration: 200, flowId: { library: 'other', songId: 's2' } }, gone, 'me', has).id, 's1');
+  // A copy of a song whose file is still there is no song's.
+  assert.equal(library.findMoved({ format: 'mp3', duration: 200, flowId: { library: 'me', songId: 's3' } }, gone, 'me', has), null);
+  assert.equal(library.findMoved({ format: 'mp3', duration: 180.02 }, gone).id, 's2');
+});

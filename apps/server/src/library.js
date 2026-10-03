@@ -28,7 +28,7 @@ const { sourceKeyFromUrl, songFileStem } = require('@flow/core/text');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const cover = require('@flow/core/cover');
 const { createMedia } = require('@flow/core/media');
-const { flowIdText } = require('@flow/core/tags');
+const { flowIdText, parseFlowId, ID_EXTS } = require('@flow/core/tags');
 const tools = require('./tools');
 
 const SEEN_KEEP = 5000;
@@ -65,6 +65,15 @@ function listAudioFiles(dir, depth = 0) {
     }
   }
   return out;
+}
+
+/**
+ * The songs from before (never written: tagged null) whose files can carry
+ * a flowid, for flow-server tag-songs. WAV cannot.
+ */
+function songsToTag(data) {
+  return data.songs.filter((s) => s.tagged === null && ID_EXTS.has(String(s.format || path.extname(s.file).slice(1)).toLowerCase())
+    && fs.existsSync(s.file));
 }
 
 /**
@@ -415,20 +424,47 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
   // ---- the folder scan ----
 
   /**
+   * The song a new file is, when its own file is gone (renamed or moved by
+   * hand): the one its flowid names (this server's only), else the one of
+   * the same format and length (with several, the one of the same names).
+   * A flowid naming a song whose file is still there makes the file a copy:
+   * a song of its own.
+   */
+  function movedFrom(fresh, gone) {
+    const fid = fresh.flowId;
+    if (fid && fid.library === config.get().id) {
+      const named = gone.find((g) => g.id === fid.songId);
+      if (named) return named;
+      if (model.songById(data, fid.songId)) return null;
+    }
+    // Without ffprobe nothing has a length to go by.
+    if (!(fresh.duration > 0)) return null;
+    const same = gone.filter((g) => g.format === fresh.format && Math.abs((g.duration || 0) - fresh.duration) < 0.05);
+    if (same.length === 1) return same[0];
+    const fold = (t) => String(t || '').toLowerCase();
+    return same.find((g) => fold(g.title) === fold(fresh.title) && fold(g.artist) === fold(fresh.artist)) || null;
+  }
+
+  /**
    * Songs put into the music folder by hand (over the network, a USB stick)
-   * are added, songs whose file is gone are dropped. The folder itself
-   * missing (an unplugged drive) drops nothing.
+   * are added, songs whose file is gone are dropped, and songs renamed or
+   * moved there keep their id (their playlists, cover and stats). The
+   * folder itself missing (an unplugged drive) drops nothing.
    */
   async function scan() {
-    if (!fs.existsSync(musicDir)) return { added: 0, removed: 0 };
+    if (!fs.existsSync(musicDir)) return { added: 0, removed: 0, moved: 0 };
     const known = new Set(data.songs.map((s) => s.file));
     const ignored = new Set(data.ignoredFiles);
     const fresh = [];
+    let unsettled = 0;
     for (const file of listAudioFiles(musicDir)) {
       if (known.has(file) || ignored.has(file.toLowerCase())) continue;
       try {
         const st = fs.statSync(file);
-        if (Date.now() - st.mtimeMs < SETTLE_MS) continue;
+        if (Date.now() - st.mtimeMs < SETTLE_MS) {
+          unsettled += 1;
+          continue;
+        }
         const info = await tools.probe(file);
         if (info.probed && !info.codec) continue;
         const fromName = parseTitle(path.basename(file, path.extname(file)));
@@ -446,25 +482,51 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
           sourceUrl,
           sourceKey: sourceKeyFromUrl(sourceUrl) || '',
           addedAt: Math.round(st.birthtimeMs || st.mtimeMs) || Date.now(),
+          flowId: parseFlowId(t),
         });
       } catch {
         // Unreadable; left for the next scan.
       }
     }
-    const gone = data.songs.filter((s) => !fs.existsSync(s.file) && fs.existsSync(path.dirname(s.file)));
-    if (!fresh.length && !gone.length) return { added: 0, removed: 0 };
+    // Gone: its file missing while the music folder is there (a song in a
+    // subfolder deleted by hand too).
+    const gone = data.songs.filter((s) => !fs.existsSync(s.file));
+    const moves = [];
+    const left = [...gone];
+    for (const s of [...fresh]) {
+      const from = movedFrom(s, left);
+      if (!from) continue;
+      moves.push({ id: from.id, file: s.file });
+      left.splice(left.indexOf(from), 1);
+      fresh.splice(fresh.indexOf(s), 1);
+    }
+    // A file still being copied in may be one of these songs, moved: they
+    // wait for the next scan.
+    if (unsettled) left.length = 0;
+    if (!fresh.length && !left.length && !moves.length) return { added: 0, removed: 0, moved: 0 };
     mutate((d) => {
       const nowKnown = new Set(d.songs.map((s) => s.file));
-      for (const s of fresh) if (!nowKnown.has(s.file)) model.addSong(d, s);
-      for (const s of gone) if (model.songById(d, s.id) && !fs.existsSync(s.file)) model.removeSong(d, s.id, false);
+      for (const m of moves) {
+        const s = model.songById(d, m.id);
+        if (s && !fs.existsSync(s.file) && !nowKnown.has(m.file)) model.updateSong(d, m.id, { file: m.file });
+      }
+      for (const s of fresh) {
+        if (nowKnown.has(s.file)) continue;
+        const { flowId, ...song } = s;
+        // A copy of one of this server's songs: its file gets its own flowid.
+        if (flowId && flowId.library === config.get().id) song.tagged = '';
+        model.addSong(d, song);
+      }
+      for (const s of left) if (model.songById(d, s.id) && !fs.existsSync(s.file)) model.removeSong(d, s.id, false);
     });
     if (fresh.length) {
       log(`Music folder: ${fresh.length} added`);
       queueLoudness();
       queueCovers();
     }
-    if (gone.length) log(`Music folder: ${gone.length} removed`);
-    return { added: fresh.length, removed: gone.length };
+    if (moves.length) log(`Music folder: ${moves.length} renamed or moved`);
+    if (left.length) log(`Music folder: ${left.length} removed`);
+    return { added: fresh.length, removed: left.length, moved: moves.length };
   }
 
   // ---- background work with ffmpeg: loudness and tags ----
@@ -638,6 +700,11 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
           await tagFile(toTag);
           continue;
         }
+        // Done but for songs whose cover is still being looked for, or whose file could not be written.
+        if (tagPass && !data.songs.some((s) => s.tagged === '' && s.cover !== null && !tagFailed.has(s.id) && fs.existsSync(s.file))) {
+          log(`tag-songs: done (${tagPass} ${tagPass === 1 ? 'song' : 'songs'})`);
+          tagPass = 0;
+        }
         const next = data.songs.find((s) => s.loudness === null && !noLoudness.has(s.id) && fs.existsSync(s.file));
         if (!next) break;
         const lufs = await tools.measureLoudness(next.file);
@@ -649,6 +716,32 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     } finally {
       working = false;
     }
+  }
+
+  // ---- flow-server tag-songs ----
+
+  let tagPass = 0; // songs a tag-songs pass marked, until they are all written
+
+  /**
+   * flow-server tag-songs asked (server.json's tagSongs): the songs from
+   * before are marked to be written like new ones, their flowid and cover
+   * into their files, one at a time in the background. The marks are in the
+   * library, so a restart carries on.
+   */
+  function checkTagRequest() {
+    if (stopped || !config.get().tagSongs) return;
+    config.set({ tagSongs: false });
+    const ids = songsToTag(data).map((s) => s.id);
+    if (!ids.length) {
+      log('tag-songs: every song\'s file is written already');
+      return;
+    }
+    mutate((d) => {
+      for (const id of ids) if (model.songById(d, id)) model.setTagged(d, id, '');
+    });
+    tagPass = ids.length;
+    log(`tag-songs: writing the tags of ${ids.length} ${ids.length === 1 ? 'song' : 'songs'} into their files`);
+    queueLoudness();
   }
 
   emptyTrash();
@@ -677,6 +770,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     scan,
     queueLoudness,
     queueCovers,
+    checkTagRequest,
     lookForCover,
     coverOf,
     setCover,
@@ -692,4 +786,4 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
   };
 }
 
-module.exports = { createLibrary, listAudioFiles };
+module.exports = { createLibrary, listAudioFiles, songsToTag };

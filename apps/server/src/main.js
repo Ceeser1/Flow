@@ -4,11 +4,15 @@
 // flow-server from the command line. See ../README.md.
 
 const os = require('os');
+const path = require('path');
 const readline = require('readline');
 const configMod = require('./config');
 const { startServer } = require('./server');
 const { runDoctor } = require('./doctor');
 const tools = require('./tools');
+const { songsToTag } = require('./library');
+const model = require('@flow/core/libraryModel');
+const { readJson } = require('@flow/core/jsonFile');
 const { LEVEL_NAMES, PUBLIC_LEVEL, parseLevel, passwordProblem } = require('@flow/core/password');
 
 const HELP = `Flow Server: hosts a Flow library and streams it to the Flow apps.
@@ -20,6 +24,10 @@ Usage:
   flow-server clear-password            let anyone on the network in again (levels 1 and 2 only)
   flow-server devices                   the devices signed in, and to which profile
   flow-server info                      the server's settings, one key=value a line (for install.sh)
+  flow-server tag-songs [--dry-run]     write the songs' flowid and cover into their files, for the
+                                        songs from before 2.9.1 (new ones get them by themselves):
+                                        the running server does it, one file at a time, carrying on
+                                        after a restart. --dry-run lists the files and changes nothing.
   flow-server doctor <address>          check a server from where the apps use it, through
                                         its proxy: https, certificate, uploads, seeking...
                                         Run it from outside your home network too. Asks for
@@ -76,8 +84,9 @@ function parseArgs(argv) {
       if (out.publicUrl && !/^https:\/\/[^\s/?#]+[^\s?#]*$/i.test(out.publicUrl)) throw new Error('--public-url is an https:// address, like https://music.example.com');
     } else if (a === '--trusted-proxy') out.trustedProxies = String(value()).split(',').map((s) => s.trim()).filter(Boolean);
     else if (a === '--connect-to') out.connectTo = value();
+    else if (a === '--dry-run') out.dryRun = true;
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}. See flow-server --help.`);
-    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'doctor', 'info'].includes(a)) out.command = a;
+    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'doctor', 'info', 'tag-songs'].includes(a)) out.command = a;
     else out.rest.push(a);
   }
   return out;
@@ -126,6 +135,31 @@ async function doctor(address, connectTo) {
   if (ok) console.log(warns ? `Works, with ${warns} ${warns === 1 ? 'thing' : 'things'} to look at.` : 'All good: the apps can use this address.');
   else console.log(`${fails} ${fails === 1 ? 'problem' : 'problems'} to fix before the apps can use this address safely.`);
   process.exitCode = ok ? 0 : 1;
+}
+
+/**
+ * The songs from before get their flowid and cover written into their
+ * files. The library belongs to the running server, so this only asks it
+ * (server.json's tagSongs); a server not running does it at its next start.
+ */
+function tagSongs(config, dryRun) {
+  const todo = songsToTag(model.sanitize(readJson(config.libraryFile)));
+  const rel = (file) => path.relative(config.musicDir, file) || file;
+  if (!todo.length) {
+    console.log('Nothing to write: every song\'s file has its flowid already (WAV files cannot carry one).');
+    return;
+  }
+  if (dryRun) {
+    for (const s of todo) console.log(`  ${rel(s.file)}`);
+    console.log('');
+    console.log(`${todo.length} ${todo.length === 1 ? 'file' : 'files'} would get the song's flowid and cover `
+      + '(a song whose cover is still being looked for: once it is found). Nothing was changed.');
+    return;
+  }
+  if (!tools.ffmpeg()) throw new Error('Writing tags needs ffmpeg, which this machine does not have (install.sh offers it). Nothing was changed.');
+  config.set({ tagSongs: true });
+  console.log(`${todo.length} ${todo.length === 1 ? 'file gets' : 'files get'} the song's flowid and cover, written by the server one at a time in the background `
+    + '(its log says when it is done). A running server starts within a few seconds; a stopped one when it starts again.');
 }
 
 function stamp() {
@@ -194,6 +228,10 @@ async function main() {
     console.log([`level=${cfg.level || ''}`, `password=${password}`, `port=${cfg.port}`, `public_url=${cfg.publicUrl}`,
       `trusted_proxies=${cfg.trustedProxies.join(',')}`, `discovery=${cfg.discovery ? 1 : 0}`, `music=${config.musicDir}`, `home=${config.home}`,
       `downloads=${cfg.downloads === null ? '' : (cfg.downloads ? 1 : 0)}`, `ytdlp=${tools.ytdlp() || ''}`].join('\n'));
+    return;
+  }
+  if (args.command === 'tag-songs') {
+    tagSongs(config, args.dryRun);
     return;
   }
   if (args.command === 'devices') {

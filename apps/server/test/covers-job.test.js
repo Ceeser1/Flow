@@ -172,3 +172,75 @@ test('a new song\'s file gets the server\'s flowid and its cover once found; a r
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
+
+test('tag-songs writes the songs from before; a file moved by hand keeps its song by its flowid, a copy is a song of its own', needs, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-relink-'));
+  const home = path.join(root, 'home');
+  const music = path.join(root, 'music');
+  fs.mkdirSync(music, { recursive: true });
+  run(['-f', 'lavfi', '-i', 'sine=d=2', '-metadata', 'title=Unfinished Sympathy', '-metadata', 'artist=Massive Attack', path.join(music, 'a.mp3')]);
+  run(['-f', 'lavfi', '-i', 'sine=d=2', '-metadata', 'title=Safe From Harm', '-metadata', 'artist=Massive Attack', path.join(music, 'b.mp3')]);
+  const settle = (file) => {
+    const old = new Date(Date.now() - 60000);
+    fs.utimesSync(file, old, old);
+  };
+  for (const f of fs.readdirSync(music)) settle(path.join(music, f));
+  const coverDeps = {
+    fetchImage: async () => { throw new Error('HTTP 404'); },
+    readInfo: async () => { throw new Error('not available'); },
+    searchMusic: async () => [],
+    pauseMs: 0,
+  };
+  const cli = (...args) => execFileSync(process.execPath, [path.join(__dirname, '..', 'src', 'main.js'), ...args, '--home', home, '--music', music], { encoding: 'utf8' });
+  const server = await startServer({ home, music, port: 0, host: '127.0.0.1', detectTailscale: async () => null, discoveryPort: null, coverDeps });
+  const base = `http://127.0.0.1:${server.port}`;
+  const byTitle = () => Object.fromEntries(server.library.data.songs.map((s) => [s.title, s]));
+  try {
+    await waitFor(() => server.library.data.songs.length === 2 && server.library.data.songs.every((s) => s.cover), 'the covers looked for');
+    assert.ok(server.library.data.songs.every((s) => s.tagged === null));
+
+    const dry = cli('tag-songs', '--dry-run');
+    assert.match(dry, /a\.mp3/);
+    assert.match(dry, /2 files would get/);
+    assert.equal(server.library.data.songs.every((s) => s.tagged === null), true, 'a dry run changes nothing');
+    assert.match(cli('tag-songs'), /2 files get/);
+    // The running server takes it within a few seconds.
+    await waitFor(() => server.library.data.songs.every((s) => s.tagged === '-'), 'the songs written', 30000);
+    const id = server.config.get().id;
+    const { 'Unfinished Sympathy': one, 'Safe From Harm': two } = byTitle();
+    assert.equal(tagsOf(one.file).flowid, `${id}:${one.id}`);
+    assert.equal(tagsOf(two.file).flowid, `${id}:${two.id}`);
+    assert.equal(server.config.get().tagSongs, false);
+    assert.match(cli('tag-songs'), /Nothing to write/);
+
+    // Moved into a folder and shortened: no longer the same length, found by its flowid only.
+    fs.mkdirSync(path.join(music, 'Bristol'));
+    const moved = path.join(music, 'Bristol', 'Moved.mp3');
+    run(['-i', one.file, '-t', '1', '-c', 'copy', moved]);
+    fs.rmSync(one.file);
+    // A copy beside its song, and a file from another library.
+    const copy = path.join(music, 'b copy.mp3');
+    fs.copyFileSync(two.file, copy);
+    const foreign = path.join(music, 'c.mp3');
+    run(['-f', 'lavfi', '-i', 'sine=d=3', '-metadata', 'title=Teardrop', '-metadata', `flowid=ffffffffffffffffffffffff:${one.id}`, foreign]);
+    for (const f of [moved, copy, foreign]) settle(f);
+
+    const r = await (await fetch(`${base}/api/rescan`, { method: 'POST' })).json();
+    assert.deepEqual([r.added, r.removed, r.moved], [2, 0, 1]);
+    const now = byTitle();
+    assert.equal(now['Unfinished Sympathy'].id, one.id);
+    assert.equal(now['Unfinished Sympathy'].file, moved);
+    const copies = server.library.data.songs.filter((s) => s.title === 'Safe From Harm');
+    assert.equal(copies.length, 2);
+    const theCopy = copies.find((s) => s.file === copy);
+    assert.notEqual(theCopy.id, two.id);
+    assert.equal(theCopy.tagged, '', 'the copy gets a flowid of its own');
+    assert.equal(now.Teardrop.tagged, null, 'another library\'s file is left as it is');
+    await waitFor(() => server.library.data.songs.find((s) => s.id === theCopy.id).tagged === '-', 'the copy written', 30000);
+    assert.equal(tagsOf(copy).flowid, `${id}:${theCopy.id}`);
+    assert.equal(tagsOf(two.file).flowid, `${id}:${two.id}`);
+  } finally {
+    await server.close();
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});

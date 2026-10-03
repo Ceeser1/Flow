@@ -77,13 +77,18 @@ test('hello, an upload, and the library it ends up in', async () => {
 
     // The same source again is not stored twice.
     const again = await upload(base, 'zzz999', { title: 'Teardrop', format: 'mp3', sourceUrl: 'https://www.youtube.com/watch?v=u7K72X4eo_s' });
-    assert.deepEqual(again.json, { existing: true, id: 'abc123', rev: 1 });
+    // Its names come back, for the app to ask when they differ from its own.
+    assert.deepEqual(again.json, { existing: true, id: 'abc123', rev: 1, names: { artist: 'Massive Attack', title: 'Teardrop', mix: '' } });
     // So is the same artist and title at the same length.
     const copy = await upload(base, 'yyy888', { title: 'Teardrop', artist: 'massive attack', format: 'mp3', duration: 331 });
     assert.equal(copy.json.id, 'abc123');
     const other = await upload(base, 'xxx777', { title: 'Teardrop', artist: 'Massive Attack', mix: 'Live', format: 'mp3', duration: 331 });
     assert.equal(other.json.id, 'xxx777');
     assert.equal(fs.readdirSync(dirs.music).filter((f) => !f.startsWith('.')).length, 2);
+    // Asked for as a song of its own (the user's choice): taken all the same.
+    const own = await upload(base, 'www666', { title: 'Teardrop (Mad Professor)', artist: 'Massive Attack', format: 'mp3', sourceUrl: 'https://youtu.be/u7K72X4eo_s', onExisting: 'new' });
+    assert.deepEqual(own.json, { existing: false, id: 'www666', rev: 3 });
+    assert.equal(fs.readdirSync(dirs.music).filter((f) => !f.startsWith('.')).length, 3);
   });
 });
 

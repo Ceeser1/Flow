@@ -12,7 +12,12 @@
 //                                      { rev, library, profile }, or 204 when
 //                                      nothing changed for that profile
 //   POST /api/commands { commands }    { rev, results }  (see @flow/core/commands)
-//   PUT  /api/songs/:id?meta=...       upload a song; the body is the file
+//   PUT  /api/songs/:id?meta=...       upload a song; the body is the file:
+//                                      { existing, id, rev, names? }. One the
+//                                      server has already is not taken: its
+//                                      names come back (an app asks when they
+//                                      differ); meta.onExisting "new" takes it
+//                                      as a song of its own all the same
 //   GET  /api/songs/:id/audio          the song's file
 //   GET  /api/songs/:id/cover[?v=]     the song's cover (JPEG); with ?v= its
 //                                      current version, cached for good
@@ -619,19 +624,22 @@ function createHttpServer({
     }
     const ext = '.' + String(meta.format || '').toLowerCase();
     if (!AUDIO_EXTS.includes(ext)) throw new HttpError(415, `${ext} is not a format Flow plays.`);
-    const existing = library.existingFor(id, meta);
+    // The app was told the song is here under other names and wants it as a new one.
+    const asNew = meta.onExisting === 'new';
+    const known = (s) => ({ existing: true, id: s.id, rev: library.rev, names: { artist: s.artist, title: s.title, mix: s.mix } });
+    const existing = asNew ? null : library.existingFor(id, meta);
     if (existing) {
       // Already here (sent twice, or the same source uploaded by another
       // app): the file is not needed.
       req.resume();
-      req.on('end', () => sendJson(res, 200, { existing: true, id: existing.id, rev: library.rev }));
+      req.on('end', () => sendJson(res, 200, known(existing)));
       return;
     }
     const tmp = await receiveFile(req, ext);
-    const again = library.existingFor(id, meta);
+    const again = asNew ? null : library.existingFor(id, meta);
     if (again) {
       fs.rmSync(tmp, { force: true });
-      sendJson(res, 200, { existing: true, id: again.id, rev: library.rev });
+      sendJson(res, 200, known(again));
       return;
     }
     const song = library.addUploaded(tmp, id, meta, meta.playlistIds, profileId);

@@ -78,6 +78,8 @@ test('duplicates by artist, title and mix ignoring case', () => {
   assert.equal(m.findByMeta(data, { artist: 'a', title: 'ts1', mix: '' }).id, 's1');
   assert.equal(m.findByMeta(data, { artist: 'a', title: 'ts1', mix: 'Remix' }), null);
   assert.equal(m.findByMeta(data, { artist: 'a', title: 'ts1', mix: '' }, 's1'), null);
+  assert.equal(m.sameNames({ artist: 'Air ', title: 'La Femme d’Argent' }, { artist: 'air', title: 'la femme d’argent', mix: '' }), true);
+  assert.equal(m.sameNames({ artist: 'Air', title: 'Playground Love' }, { artist: 'Air', title: 'Playground Love', mix: 'Live' }), false);
 });
 
 test('sanitize drops broken entries and duplicate songs in a list', () => {

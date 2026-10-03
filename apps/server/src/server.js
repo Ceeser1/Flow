@@ -18,6 +18,7 @@ const { DISCOVERY_PORT } = require('@flow/core/discovery');
 const { version } = require('../package.json');
 
 const RESCAN_MS = 5 * 60 * 1000;
+const TAG_CHECK_MS = 5000;
 const TRASH_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -71,11 +72,14 @@ async function startServer(opts = {}) {
   await library.scan().catch((err) => log(`Scan failed: ${err.message}`));
   library.queueLoudness();
   library.queueCovers();
+  library.checkTagRequest();
   const timers = [
     setInterval(() => library.scan().catch(() => {}), RESCAN_MS),
     setInterval(() => library.emptyTrash(), TRASH_MS),
     setInterval(() => downloads.expire(), TRASH_MS),
     setInterval(lookForTailscale, RESCAN_MS),
+    // flow-server tag-songs, run beside it, asks through server.json.
+    setInterval(() => library.checkTagRequest(), TAG_CHECK_MS),
   ];
 
   return {
