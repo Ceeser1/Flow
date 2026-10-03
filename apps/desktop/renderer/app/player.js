@@ -31,8 +31,9 @@
 // host's song here, paused at its place, to carry on with.
 //
 // "Play here" (remote.here) plays the host's song on this device too, in step
-// with the host (_hereSync): the place the host is at, by the server's clock,
-// and the difference between the two outputs' delays (set by ear, output.js).
+// with the host (_hereSync): the place the host is at, by the server's clock.
+// Speakers that sound late are evened out by holding back the faster ones'
+// sound (Output delay, output.js).
 // Small differences are eased away by playing a little faster or slower,
 // bigger ones jumped over.
 
@@ -755,12 +756,9 @@ const Player = {
     this._emit();
   },
 
-  /** Where this device's song should be now: the host's place, its output's delay against this one's. */
+  /** Where this device's song should be now: the host's place. */
   _hereTarget() {
-    const st = this.remote.state;
-    let t = this._remotePosition();
-    if (st.playing) t += (Output.delay() - (Number(st.outputDelay) || 0)) / 1000;
-    return Math.max(0, t);
+    return Math.max(0, this._remotePosition());
   },
 
   _stopHere() {

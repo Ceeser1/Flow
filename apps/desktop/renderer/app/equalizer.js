@@ -107,6 +107,11 @@ const Equalizer = {
       limiter.attack.value = 0.002;
       limiter.release.value = 0.15;
       const gain = ctx.createGain();
+      // The output delay (output.js): the sound itself held back, to the
+      // sample, before the analyser so the bars stay with what is heard.
+      const delay = ctx.createDelay(1);
+      delay.delayTime.value = Output.delay() / 1000;
+      delay.connect(analyser);
       this.channels = new Map();
       for (const el of elements) {
         const norm = ctx.createGain();
@@ -122,6 +127,7 @@ const Equalizer = {
       this.analyser = analyser;
       this.mix = mix;
       this.limiter = limiter;
+      this.delay = delay;
       this.gain = gain;
       this.samples = new Float32Array(analyser.fftSize);
       this.setLimiter(Store.settings.normalize);
@@ -167,10 +173,18 @@ const Equalizer = {
     this.limiter.disconnect();
     if (on) {
       this.mix.connect(this.limiter);
-      this.limiter.connect(this.analyser);
+      this.limiter.connect(this.delay);
     } else {
-      this.mix.connect(this.analyser);
+      this.mix.connect(this.delay);
     }
+  },
+
+  /** Holds the sound back `ms` (output.js), gliding there: a jump would click. */
+  setDelay(ms) {
+    if (!this.delay) return;
+    const v = Math.max(0, Math.min(1000, Number(ms) || 0)) / 1000;
+    if (Math.abs(this.delay.delayTime.value - v) < 0.00005) return;
+    this.delay.delayTime.setTargetAtTime(v, this.ctx.currentTime, 0.03);
   },
 
   setVolume(v) {

@@ -426,11 +426,13 @@ listen (who, on hover), and **Join**.
 - **Play here** plays the music on this device too, on its own output and at
   its own volume, in step with the host (by the server's clock; small
   differences are evened out by playing up to 3% faster or slower, bigger ones
-  jumped over). Bluetooth speakers sound late: in the output button's menu,
-  tick **Output delay (Sync speakers at Jams)** and set the delay by ear
-  (0 to 500 ms in 1 ms steps, kept per output; Shift while dragging moves it
-  ten times finer) until the music sounds together. Unticked, no delay
-  applies (the values are kept). The host's delay counts too. Without Play here a
+  jumped over). Bluetooth speakers sound late: in the output button's menu
+  on the devices with the faster speakers, tick **Output delay (Sync
+  speakers at Jams)** and hold their sound back by ear (0 to 500 ms in 1 ms
+  steps, heard while the slider moves, kept per output; Shift while dragging
+  moves it ten times finer) until the music sounds together. The delay holds
+  back the sound itself, to the sample, whatever is played. Unticked, no
+  delay applies (the values are kept). Without Play here a
   device in a session plays nothing itself.
 - **The host's volume** stays the host's, unless **Devices in my Active
   Session may change my volume** is ticked (Settings > Jam session, or the Active Sessions

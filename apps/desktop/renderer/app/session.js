@@ -543,7 +543,6 @@ const Session = {
       allowVolume: !!Store.settings.sessionAllowVolume,
       volume: Player.volume,
       crossfade: Store.settings.crossfade ? Store.settings.crossfadeSeconds : 0,
-      outputDelay: Output.delay(),
     };
     // The long parts only when they changed.
     const idsKey = ids.join(',');

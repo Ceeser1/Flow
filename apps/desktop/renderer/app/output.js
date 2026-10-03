@@ -47,8 +47,9 @@ const Output = {
   },
 
   /**
-   * How late this output sounds (ms): set by ear per output, for playing in
-   * step with other devices (Bluetooth speakers lag 50-300 ms). None while
+   * How long this output's sound is held back (ms, Equalizer.setDelay): set
+   * by ear per output, so the faster speakers wait for the slower ones when
+   * devices play together (Bluetooth speakers lag 50-300 ms). None while
    * "Output delay" is unticked.
    */
   delay() {
@@ -144,6 +145,7 @@ const Output = {
   },
 
   _emit() {
+    Equalizer.setDelay(this.delay());
     for (const fn of this._listeners) fn();
   },
 
@@ -224,6 +226,8 @@ const Output = {
       slider.value = String(Math.round(Math.max(0, Math.min(MAX, v))));
       value.textContent = `${slider.value} ms`;
       slider.style.setProperty('--fill', `${(Number(slider.value) / MAX) * 100}%`);
+      // Heard at once while it moves; saved when let go.
+      Equalizer.setDelay(Number(slider.value));
     };
     show(this.delay());
     // The arrow keys move it by 1 ms.
@@ -266,7 +270,7 @@ const Output = {
       h('div.output-menu__delay-head', label, value),
       slider,
       h('div.output-menu__delay-note', 'At jam sessions, different speakers may have delays. Bluetooth lags 50 to 300ms. '
-        + 'Adjust the slider until the sounds are in sync. Hold shift for 10x finer control.'));
+        + 'Adjust the slider of the faster speakers until the sounds are in sync. Hold shift for 10x finer control.'));
   },
 
   _closeMenu() {
