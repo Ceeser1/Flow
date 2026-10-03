@@ -472,6 +472,9 @@ function adoptServer(id) {
   } catch {
     // Only the parked trims.
   }
+  // A look at Local Files asked for while with the old server would treat
+  // every song here as new to this one, and send them all without asking.
+  clearTimeout(autoSyncTimer);
   // The Home address was found (or not) before there was a server to belong to.
   sync = { ...emptySync(id), homeFilled: sync.homeFilled };
   sync.queue.push(...back);
@@ -1912,7 +1915,7 @@ function localChanged() {
   if (!settings.get('serverAutoSync') || !sync.snapshot) return;
   clearTimeout(autoSyncTimer);
   autoSyncTimer = setTimeout(() => {
-    if (active() && settings.get('serverAutoSync')) queueLocalChanges();
+    if (active() && settings.get('serverAutoSync') && sync.snapshot) queueLocalChanges();
   }, AUTO_SYNC_DELAY);
 }
 
