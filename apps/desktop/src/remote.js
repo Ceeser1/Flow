@@ -92,6 +92,13 @@ const cacheFile = () => path.join(paths.ensure(paths.rootDir()), 'server-library
 const syncFile = () => path.join(paths.ensure(paths.rootDir()), 'server-sync.json');
 const parkedFile = () => path.join(paths.ensure(paths.rootDir()), 'server-trims.json');
 
+// The shape of the library copy kept in server-library.json. A copy saved by
+// an older Flow may lack what this one reads (2.7 dropped song.cover), and
+// the server answers "nothing new" while its revision is the same: a copy of
+// another format is shown at start but fetched whole again. Raise it whenever
+// the songs or playlists gain a field the server sends.
+const CACHE_FORMAT = 2;
+
 function emptySync(serverId = '') {
   return {
     serverId, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, held: null, offline: [], offlineKeep: {}, fetched: {}, kept: {}, profilePin: '', remoteFilled: false, homeFilled: false,
@@ -116,7 +123,8 @@ function loadSync() {
 function loadCache() {
   const raw = readJson(cacheFile());
   if (!raw || typeof raw !== 'object' || !raw.library) return { serverId: '', rev: -1, library: null, profile: '' };
-  return { serverId: String(raw.serverId || ''), rev: Number(raw.rev), library: model.sanitize(raw.library), profile: String(raw.profile || '') };
+  const rev = raw.format === CACHE_FORMAT ? Number(raw.rev) : -1;
+  return { serverId: String(raw.serverId || ''), rev, library: model.sanitize(raw.library), profile: String(raw.profile || '') };
 }
 
 let cache = { serverId: '', rev: -1, library: null, profile: '' };
@@ -140,7 +148,7 @@ function saveSync() {
 
 function saveCache() {
   try {
-    writeJsonAtomic(cacheFile(), cache);
+    writeJsonAtomic(cacheFile(), { ...cache, format: CACHE_FORMAT });
   } catch {
     // Only the copy for starting offline; the server still has it all.
   }
