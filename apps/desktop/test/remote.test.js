@@ -148,6 +148,15 @@ test('a Flow Server as the library, step by step', async (t) => {
     const list = await remote.sessions(null);
     assert.ok(list && typeof list === 'object');
     await remote.leaveSession(1500);
+
+    // An event reaches the window; a stream the server ends opens again.
+    const client = remote.status().clientId;
+    assert.ok(one.server.live.send(client, 'test', { n: 1 }));
+    await until(() => live.includes('test'), 'the event');
+    const hellos = live.filter((x) => x === 'hello').length;
+    one.server.live.kick(client, 'bye', {});
+    await until(() => live.includes('down'), 'the channel down');
+    await until(() => live.filter((x) => x === 'hello').length > hellos && remote.status().live, 'the channel open again');
   });
 
   await t.test('without ffmpeg the server cannot trim; Download (Server) has no batch', async () => {
