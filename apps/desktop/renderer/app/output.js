@@ -48,9 +48,11 @@ const Output = {
 
   /**
    * How late this output sounds (ms): set by ear per output, for playing in
-   * step with other devices (Bluetooth speakers lag 100-300 ms).
+   * step with other devices (Bluetooth speakers lag 50-300 ms). None while
+   * "Output delay" is unticked.
    */
   delay() {
+    if (!Store.settings.outputDelayOn) return 0;
     const d = (Store.settings.outputDelays || {})[this.label()];
     return Number.isFinite(d) ? d : 0;
   },
@@ -198,25 +200,73 @@ const Output = {
     };
   },
 
-  /** "Delay" for the output playing: set by ear so devices in a session sound together. */
+  /**
+   * "Output delay" for the output playing: set by ear so devices in a jam
+   * sound together. Its slider, value and note only while ticked.
+   */
   _delayRow() {
+    const on = !!Store.settings.outputDelayOn;
+    const box = h('input', { type: 'checkbox', checked: on });
+    box.addEventListener('change', () => {
+      Store.saveSettings({ outputDelayOn: box.checked });
+      this._emit();
+    });
+    const label = h('label.check.output-menu__delay-label', box, h('span', 'Output delay (Sync speakers at Jams)'));
+    if (!on) return h('div.output-menu__delay', h('div.output-menu__delay-head', label));
+
+    const MAX = 500;
+    const THUMB = 12;
     const value = h('span.output-menu__delay-value', `${this.delay()} ms`);
     const slider = h('input.volume-slider.output-menu__slider', {
-      type: 'range', min: 0, max: 500, step: 10, value: String(this.delay()), 'aria-label': 'Delay of this output',
+      type: 'range', min: 0, max: MAX, step: 1, value: String(this.delay()), 'aria-label': 'Output delay',
     });
-    const fill = () => slider.style.setProperty('--fill', `${(Number(slider.value) / 500) * 100}%`);
-    fill();
-    slider.addEventListener('input', () => {
+    const show = (v) => {
+      slider.value = String(Math.round(Math.max(0, Math.min(MAX, v))));
       value.textContent = `${slider.value} ms`;
-      fill();
-    });
-    // Saved when let go (the menu is drawn again then).
+      slider.style.setProperty('--fill', `${(Number(slider.value) / MAX) * 100}%`);
+    };
+    show(this.delay());
+    // The arrow keys move it by 1 ms.
+    slider.addEventListener('input', () => show(Number(slider.value)));
     slider.addEventListener('change', () => this.setDelay(Number(slider.value)));
+
+    // Dragged by hand: the thumb follows the pointer, ten times slower while
+    // Shift is held (so every single ms can be reached). Saved when let go
+    // (the menu is drawn again then).
+    const perPx = () => MAX / Math.max(1, slider.getBoundingClientRect().width - THUMB);
+    let drag = null;
+    slider.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      slider.focus();
+      slider.setPointerCapture(e.pointerId);
+      // A click on the track puts the thumb there; with Shift it stays where it is.
+      const r = slider.getBoundingClientRect();
+      const v = e.shiftKey ? Number(slider.value) : (e.clientX - r.left - THUMB / 2) * perPx();
+      drag = { x: e.clientX, v, shift: e.shiftKey, at: v };
+      show(v);
+    });
+    slider.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      // Shift pressed or let go mid-drag: carries on from where the thumb is.
+      if (e.shiftKey !== drag.shift) drag = { x: e.clientX, v: drag.at, shift: e.shiftKey, at: drag.at };
+      const v = drag.v + ((e.clientX - drag.x) * perPx()) / (drag.shift ? 10 : 1);
+      drag.at = Math.max(0, Math.min(MAX, v));
+      show(drag.at);
+    });
+    const end = () => {
+      if (!drag) return;
+      drag = null;
+      this.setDelay(Number(slider.value));
+    };
+    slider.addEventListener('pointerup', end);
+    slider.addEventListener('lostpointercapture', end);
+
     return h('div.output-menu__delay',
-      h('div.output-menu__delay-head', h('span', 'Delay of this output'), value),
+      h('div.output-menu__delay-head', label, value),
       slider,
-      h('div.output-menu__delay-note', 'For Active Sessions: how late this output sounds. Bluetooth speakers lag about 100-300 ms; '
-        + 'raise it until the music here sounds together with the other devices.'));
+      h('div.output-menu__delay-note', 'At jam sessions, different speakers may have delays. Bluetooth lags 50 to 300ms. '
+        + 'Adjust the slider until the sounds are in sync. Hold shift for 10x finer control.'));
   },
 
   _closeMenu() {

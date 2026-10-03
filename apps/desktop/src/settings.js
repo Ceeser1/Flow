@@ -111,6 +111,9 @@ const DEFAULTS = {
   outputDeviceLabel: '',
   // How late each output sounds, by its name (ms, set by ear; output.js).
   outputDelays: {},
+  // Whether those delays apply ("Output delay" in the output menu). Never
+  // set: on when one was set before there was the box.
+  outputDelayOn: null,
   // Active Sessions: play the host's music on this device too (else remote only).
   sessionPlayHere: false,
 };
@@ -161,6 +164,7 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 300 && Number.isFinite(Number(v)))
     .slice(0, 50)
     .map(([k, v]) => [k, Math.round(Math.max(0, Math.min(1000, Number(v))))]));
+  s.outputDelayOn = typeof s.outputDelayOn === 'boolean' ? s.outputDelayOn : Object.keys(s.outputDelays).length > 0;
   for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere']) s[key] = s[key] === true;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
