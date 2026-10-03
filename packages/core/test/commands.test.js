@@ -123,3 +123,11 @@ test('a playlist deleted with its songs takes only those in no other playlist, a
   assert.deepEqual(d.songs.map((s) => s.id), ['s2', 's3', 's4']);
   assert.equal(m.playlistById(d, 'p1'), null);
 });
+
+test('no command sets a song\'s cover: an edit keeps it', () => {
+  const d = lib();
+  m.setCover(d, 's1', 'abcdef1234');
+  applyCommand(d, { type: 'editSong', songId: 's1', title: 'Da Funk', artist: 'Daft Punk', mix: '', cover: '0000000000', at: 5 });
+  assert.equal(m.songById(d, 's1').title, 'Da Funk');
+  assert.equal(m.songById(d, 's1').cover, 'abcdef1234');
+});

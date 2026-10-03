@@ -21,6 +21,7 @@ const { normalizeUrl, sourceKey, safeFilename } = require('./text');
 const { guessFromInfo } = require('./titleParser');
 const { planFor, ffmpegArgsFor } = require('./formats');
 const { tagArgs } = require('./tags');
+const { coverUrlsFromInfo } = require('./cover');
 
 // Best audio, but not YouTube's "-drc" copies: those have their dynamic range
 // squashed for loudness normalisation and sound flatter than the original.
@@ -113,6 +114,8 @@ function probedFrom(info, url, rawUrl, knownArtists = []) {
     duration: Number(info.duration) || 0,
     site: String(info.extractor_key || info.extractor || ''),
     guess: guessFromInfo(info, { knownArtists }),
+    // Where its cover may be (cover.js), best first.
+    thumbnails: coverUrlsFromInfo(info),
   };
 }
 

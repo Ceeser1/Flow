@@ -11,6 +11,10 @@
 //
 // A deleted song's file is not gone at once: it goes to .flow-trash in the
 // music folder for 30 days, in case an app deleted it by mistake.
+//
+// Covers (@flow/core/cover) live in <home>/covers/<song id>.jpg, outside the
+// music folder; song.cover is the file's version. A song's cover goes with
+// the song. Songs without one get one in the background, one at a time.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -22,6 +26,8 @@ const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { parseTitle } = require('@flow/core/titleParser');
 const { sourceKeyFromUrl, songFileStem } = require('@flow/core/text');
 const { AUDIO_EXTS } = require('@flow/core/formats');
+const cover = require('@flow/core/cover');
+const { createMedia } = require('@flow/core/media');
 const tools = require('./tools');
 
 const SEEN_KEEP = 5000;
@@ -29,6 +35,7 @@ const TOUCHED_KEEP_MS = 180 * 24 * 60 * 60 * 1000;
 const TRASH_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 // A file younger than this may still be being copied in.
 const SETTLE_MS = 2000;
+const COVER_PAUSE_MS = 1000;
 // Commands an app may send. addSong is only ever the app's own preview of an
 // upload; the upload itself adds the song here.
 const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource',
@@ -59,8 +66,14 @@ function listAudioFiles(dir, depth = 0) {
   return out;
 }
 
-function createLibrary(config, log = () => {}) {
+/**
+ * coverDeps: what finding covers uses instead of the internet and yt-dlp
+ * ({ fetchImage, readInfo, searchMusic }; the tests' fakes). Left out: the
+ * real ones.
+ */
+function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
   const musicDir = config.musicDir;
+  const covers = cover.createCoverStore(path.join(config.home, 'covers'));
   const trashDir = path.join(musicDir, '.flow-trash');
   const raw = readJson(config.libraryFile);
   let data = model.sanitize(raw);
@@ -84,12 +97,17 @@ function createLibrary(config, log = () => {}) {
     writeJsonAtomic(config.stateFile, state);
   }
 
-  /** One change: applied, saved, and the revision moved on. */
+  /** One change: applied, saved, and the revision moved on. A song gone takes its cover along. */
   function mutate(fn) {
+    const before = data.songs.filter((s) => s.cover && s.cover !== cover.NO_COVER).map((s) => s.id);
     const result = fn(data);
     prof.prune(data, profiles);
     state.rev += 1;
     save();
+    if (before.length) {
+      const now = new Set(data.songs.map((s) => s.id));
+      for (const id of before) if (!now.has(id)) covers.remove(id);
+    }
     for (const l of listeners) l(state.rev);
     return result;
   }
@@ -258,6 +276,40 @@ function createLibrary(config, log = () => {}) {
     return { rev: state.rev, results };
   }
 
+  // ---- covers ----
+
+  /** { file, version } of a song's cover, or null. */
+  function coverOf(id) {
+    const s = model.songById(data, id);
+    if (!s || !s.cover || s.cover === cover.NO_COVER || !covers.has(id)) return null;
+    return { file: covers.file(id), version: s.cover };
+  }
+
+  /**
+   * A JPEG as the song's cover (an app's upload, a download's). With
+   * `onlyIfNone`, a song that has one keeps it. Resolves the version, or null.
+   */
+  function setCover(id, jpeg, { onlyIfNone = false } = {}) {
+    const s = model.songById(data, id);
+    if (!s || !jpeg) return null;
+    if (onlyIfNone && s.cover && s.cover !== cover.NO_COVER && covers.has(id)) return s.cover;
+    const version = covers.write(id, jpeg);
+    if (model.songById(data, id)) mutate((d) => model.setCover(d, id, version));
+    else covers.remove(id);
+    return version;
+  }
+
+  /** How many songs have a cover, and how many are still to be looked at. */
+  function coverCounts() {
+    let have = 0;
+    let todo = 0;
+    for (const s of data.songs) {
+      if (s.cover && s.cover !== cover.NO_COVER) have += 1;
+      else if (!s.cover) todo += 1;
+    }
+    return { total: data.songs.length, have, todo };
+  }
+
   // ---- uploads ----
 
   /**
@@ -318,6 +370,8 @@ function createLibrary(config, log = () => {}) {
       prof.absorb(d, profiles, profileId, v);
     });
     if (song.loudness === null || song.loudness === undefined) queueLoudness();
+    // The app's cover comes right after (PUT .../cover); the search waits a moment for it.
+    setTimeout(queueCovers, 5000).unref();
     return model.songById(data, id);
   }
 
@@ -402,6 +456,7 @@ function createLibrary(config, log = () => {}) {
     if (fresh.length) {
       log(`Music folder: ${fresh.length} added`);
       queueLoudness();
+      queueCovers();
     }
     if (gone.length) log(`Music folder: ${gone.length} removed`);
     return { added: fresh.length, removed: gone.length };
@@ -413,6 +468,92 @@ function createLibrary(config, log = () => {}) {
   const retagQueue = new Set();
   const noLoudness = new Set();
   let stopped = false;
+
+  // Covers have a loop of their own: they mostly wait for the internet,
+  // which must not hold up the loudness (or the other way round).
+  let coverWorking = false;
+  let coverAgain = false;
+  const coverLater = new Set(); // could not be reached: tried again at the next start
+  const lookups = coverDeps || cover.lookupsFor(createMedia({
+    ffmpeg: tools.ffmpeg, ffprobe: tools.ffprobe, ytdlp: tools.ytdlp, cacheDir: () => config.home, lowPriority: true,
+  }));
+
+  function queueCovers() {
+    if (!tools.ffmpeg() || stopped) return;
+    if (coverWorking) {
+      coverAgain = true;
+      return;
+    }
+    coverWork().catch((err) => log(`Covers: ${err.message}`));
+  }
+
+  /**
+   * Looks for a cover (cover.resolveCover) without keeping it: for a song,
+   * or a download still waiting to be finished. s: { sourceKey, sourceUrl,
+   * sourcePlaylistUrl, artist, title, duration, thumbnails?, file? }.
+   */
+  async function lookForCover(s, cancelled = () => false) {
+    const ffmpeg = tools.ffmpeg();
+    return cover.resolveCover({
+      sourceKey: s.sourceKey,
+      sourceUrl: s.sourceUrl,
+      artist: s.artist,
+      title: s.title,
+      duration: s.duration,
+      thumbnails: s.thumbnails,
+      // A Spotify import's song is YouTube Music's own already: no search.
+      noSearch: /spotify\.com/i.test(s.sourcePlaylistUrl || ''),
+    }, {
+      ffmpeg,
+      ...lookups,
+      embedded: () => (s.file && fs.existsSync(s.file) ? cover.embeddedCover(ffmpeg, s.file) : null),
+      cancelled: () => stopped || cancelled(),
+    });
+  }
+
+  /** One song's cover, found and kept. */
+  async function findCover(s) {
+    const r = await lookForCover(s);
+    if (stopped || !model.songById(data, s.id)) return;
+    const now = model.songById(data, s.id);
+    if (now.cover) return; // one arrived meanwhile (an upload)
+    if (r.jpeg) setCover(s.id, r.jpeg);
+    else if (r.retry) coverLater.add(s.id);
+    else mutate((d) => model.setCover(d, s.id, cover.NO_COVER));
+  }
+
+  async function coverWork() {
+    coverWorking = true;
+    try {
+      do {
+        coverAgain = false;
+        while (!stopped && tools.ffmpeg()) {
+          const next = data.songs.find((s) => !s.cover && !coverLater.has(s.id));
+          if (!next) break;
+          try {
+            await findCover(next);
+          } catch (err) {
+            coverLater.add(next.id);
+            log(`No cover for ${next.title}: ${err.message}`);
+          }
+          // A moment between songs: hundreds of lookups in a row must not
+          // get the server's downloads rate-limited by YouTube.
+          await new Promise((resolve) => setTimeout(resolve, lookups.pauseMs ?? COVER_PAUSE_MS));
+        }
+      } while (coverAgain && !stopped);
+    } finally {
+      coverWorking = false;
+    }
+  }
+
+  /** At the start: covers of songs that are gone, away; songs whose cover file is missing, looked for again. */
+  function checkCovers() {
+    covers.sweep(new Set(data.songs.map((s) => s.id)));
+    const lost = data.songs.filter((s) => s.cover && s.cover !== cover.NO_COVER && !covers.has(s.id)).map((s) => s.id);
+    if (lost.length) mutate((d) => {
+      for (const id of lost) if (model.songById(d, id)) model.setCover(d, id, null);
+    });
+  }
 
   function queueRetag(id) {
     if (!tools.ffmpeg()) return;
@@ -448,6 +589,7 @@ function createLibrary(config, log = () => {}) {
   }
 
   emptyTrash();
+  checkCovers();
 
   return {
     musicDir,
@@ -471,6 +613,12 @@ function createLibrary(config, log = () => {}) {
     addToPlaylists,
     scan,
     queueLoudness,
+    queueCovers,
+    lookForCover,
+    coverOf,
+    setCover,
+    coverCounts,
+    covers,
     emptyTrash,
     onChange: (fn) => listeners.push(fn),
     stop() {

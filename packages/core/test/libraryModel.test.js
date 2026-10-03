@@ -112,3 +112,17 @@ test('a song keeps the playlist it was imported with; others have none', () => {
   assert.equal(m.songById(again, 's1').sourcePlaylistUrl, '');
   assert.equal(m.songById(again, 's3').sourcePlaylistUrl, 'https://www.youtube.com/playlist?list=PL1');
 });
+
+test('a song\'s cover: a version, "-" for none found, null to look for; kept through sanitize and edits', () => {
+  const data = lib();
+  assert.equal(m.songById(data, 's1').cover, null);
+  m.setCover(data, 's1', 'a1b2c3d4e5');
+  m.setCover(data, 's2', '-');
+  const again = m.sanitize(JSON.parse(JSON.stringify(data)));
+  assert.equal(m.songById(again, 's1').cover, 'a1b2c3d4e5');
+  assert.equal(m.songById(again, 's2').cover, '-');
+  m.updateSong(data, 's1', { title: 'Renamed', cover: 'ffffffff' });
+  assert.equal(m.songById(data, 's1').cover, 'a1b2c3d4e5');
+  assert.equal(m.sanitize({ songs: [{ id: 'x', file: 'f', cover: '../../etc' }] }).songs[0].cover, null);
+  assert.throws(() => m.setCover(data, 'nope', 'abcd'), /no longer exists/);
+});

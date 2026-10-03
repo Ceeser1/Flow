@@ -14,6 +14,10 @@
 //   POST /api/commands { commands }    { rev, results }  (see @flow/core/commands)
 //   PUT  /api/songs/:id?meta=...       upload a song; the body is the file
 //   GET  /api/songs/:id/audio          the song's file
+//   GET  /api/songs/:id/cover[?v=]     the song's cover (JPEG); with ?v= its
+//                                      current version, cached for good
+//   PUT  /api/songs/:id/cover          an app's cover for a song that has none;
+//                                      the body is the JPEG: { cover }
 //   POST /api/rescan                   look through the music folder again
 //   GET  /api/live?client=<id>&device=<name>
 //                                      the app's live channel: events as they
@@ -80,6 +84,8 @@ const { isPrivateIp, isTailscaleAddress } = require('@flow/core/address');
 const { PUBLIC_LEVEL } = require('@flow/core/password');
 const { checkPassword, hashPassword, hashToken, CLIENT_ID } = require('./config');
 const { DownloadError } = require('./downloads');
+const cover = require('@flow/core/cover');
+const tools = require('./tools');
 const { SessionError } = require('./sessions');
 
 const PROTOCOL = 1;
@@ -88,6 +94,7 @@ const FEATURES = ['profiles'];
 const MAX_PROFILE_NAME = 40;
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
+const MAX_COVER = 4 * 1024 * 1024;
 // Level 3 and 4 sessions: an app polls every few seconds while it is open, so
 // the idle time only ends the session of an app that was closed or asleep.
 const SESSION_IDLE = 30 * 60 * 1000;
@@ -193,6 +200,60 @@ function sendFile(req, res, file) {
   stream.on('error', () => res.destroy());
   res.on('close', () => stream.destroy());
   stream.pipe(res);
+}
+
+/**
+ * A song's cover. Its version is the ETag; asked for with ?v= of the current
+ * version, it never changes (a new cover is a new version, a new address).
+ */
+function sendCover(req, res, url, found) {
+  if (!found) throw new HttpError(404, 'This song has no cover.');
+  const etag = `"${found.version}"`;
+  const headers = {
+    'Content-Type': 'image/jpeg',
+    ETag: etag,
+    'Cache-Control': url.searchParams.get('v') === found.version ? 'public, max-age=31536000, immutable' : 'no-cache',
+  };
+  if (String(req.headers['if-none-match'] || '').split(/\s*,\s*/).includes(etag)) {
+    res.writeHead(304, headers);
+    res.end();
+    return;
+  }
+  let body;
+  try {
+    body = fs.readFileSync(found.file);
+  } catch {
+    throw new HttpError(404, 'This song has no cover.');
+  }
+  headers['Content-Length'] = body.length;
+  res.writeHead(200, headers);
+  res.end(req.method === 'HEAD' ? undefined : body);
+}
+
+/** A request's body, at most `max` bytes. */
+function readBody(req, max) {
+  return new Promise((resolve, reject) => {
+    // Too large by what it says: answered without reading it.
+    if (Number(req.headers['content-length']) > max) {
+      req.resume();
+      reject(new HttpError(413, 'That file is too large.'));
+      return;
+    }
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > max) {
+        reject(new HttpError(413, 'That file is too large.'));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('aborted', () => reject(new HttpError(400, 'The upload was interrupted.')));
+    req.on('error', reject);
+  });
 }
 
 // Wrong passwords: each one from the same address waits twice as long as the
@@ -577,6 +638,27 @@ function createHttpServer({
     sendJson(res, 200, { existing: false, id: song.id, rev: library.rev });
   }
 
+  /**
+   * An app's cover for one of the songs: taken when the song has none yet
+   * (the server's own search may have found one first). A JPEG; one that is
+   * not 512 x 512 is made so with ffmpeg, when there is one.
+   */
+  async function uploadCover(req, res, id) {
+    if (!library.data.songs.some((s) => s.id === id)) {
+      req.resume();
+      throw new HttpError(404, 'That song is not on the server.');
+    }
+    let jpeg = await readBody(req, MAX_COVER);
+    const size = cover.imageSize(jpeg);
+    if (!size || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new HttpError(415, 'A cover is a JPEG picture.');
+    if ((size.width !== cover.SIZE || size.height !== cover.SIZE) && tools.ffmpeg()) {
+      jpeg = await cover.makeSquare(tools.ffmpeg(), jpeg);
+      if (!jpeg) throw new HttpError(415, 'The picture could not be read.');
+    }
+    const version = library.setCover(id, jpeg, { onlyIfNone: true });
+    sendJson(res, 200, { cover: version, rev: library.rev });
+  }
+
   async function route(req, res) {
     cors(res);
     if (req.method === 'OPTIONS') {
@@ -663,6 +745,9 @@ function createHttpServer({
       if (!file) throw new HttpError(404, 'That song is not on the server.');
       return sendFile(req, res, file);
     }
+    m = /^\/api\/songs\/([\w-]{1,64})\/cover$/.exec(p);
+    if (m && (req.method === 'GET' || req.method === 'HEAD')) return sendCover(req, res, url, library.coverOf(m[1]));
+    if (m && req.method === 'PUT') return uploadCover(req, res, m[1]);
     m = /^\/api\/songs\/([\w-]{1,64})$/.exec(p);
     if (m && req.method === 'PUT') return upload(req, res, url, m[1], profileId);
     if (p.startsWith('/api/downloads')) return downloadRoute(req, res, p, profileId);

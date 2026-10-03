@@ -319,7 +319,9 @@ test('browser cookies sent along reach every yt-dlp run of that download, only t
     const log = path.join(scratch, 'args.txt');
     fs.writeFileSync(log, '');
     process.env.FAKE_YTDLP_ARGS = log;
-    const runs = () => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    // The cover's search on YouTube Music is another site's: not the download's.
+    const runs = () => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+      .filter((run) => !run.args.some((a) => a.includes('music.youtube.com')));
     try {
       const jar = [
         '# Netscape HTTP Cookie File',

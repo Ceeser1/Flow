@@ -6,7 +6,10 @@
 //
 //   song      { id, file, title, artist, mix, duration, format,
 //               sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, stats,
-//               favouriteAt }
+//               favouriteAt, loudness, cover }
+//   cover is the version of the song's cover file (cover.js), '-' when it
+//   was looked for and none found, null when not looked for yet. Only the
+//   app or server that keeps the covers sets it (setCover); no command can.
 //   sourceUrl is the page the song was downloaded from, sourcePlaylistUrl the
 //   playlist it came in with when it was part of a playlist import (else '').
 //   stats     { plays, stops, skips, sessions, listened, lastPlayedAt }
@@ -86,6 +89,12 @@ function cleanLoudness(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+/** A cover version (a short hash), '-' for none found, else null: not looked for. */
+function cleanCover(v) {
+  const t = String(v === null || v === undefined ? '' : v);
+  return /^(?:[0-9a-f]{4,40}|-)$/.test(t) ? t : null;
+}
+
 /** A list of ids: strings, no empties, no repeats. */
 function cleanIds(list) {
   return [...new Set((Array.isArray(list) ? list : []).map((x) => String(x || '')).filter(Boolean))];
@@ -113,6 +122,7 @@ function sanitize(raw) {
       stats: cleanStats(s.stats),
       // LUFS, for "Equalize volume"; null until measured (loudness.js).
       loudness: cleanLoudness(s.loudness),
+      cover: cleanCover(s.cover),
       favouriteAt: Number(s.favouriteAt) || null,
     });
   }
@@ -284,6 +294,7 @@ function addSong(data, song) {
   song.favouriteAt = Number(song.favouriteAt) || null;
   song.sourcePlaylistUrl = String(song.sourcePlaylistUrl || '');
   song.loudness = cleanLoudness(song.loudness);
+  song.cover = cleanCover(song.cover);
   data.songs.push(song);
   const lower = String(song.file).toLowerCase();
   data.ignoredFiles = data.ignoredFiles.filter((f) => f !== lower);
@@ -296,6 +307,16 @@ function updateSong(data, id, patch) {
     if (patch[key] !== undefined) s[key] = patch[key];
   }
   if (patch.loudness !== undefined) s.loudness = cleanLoudness(patch.loudness);
+  return s;
+}
+
+/**
+ * The song's cover version (or '-', or null to look again). Never through a
+ * command: only whoever keeps the cover files calls it.
+ */
+function setCover(data, id, version) {
+  const s = requireSong(data, id);
+  s.cover = cleanCover(version);
   return s;
 }
 
@@ -428,7 +449,7 @@ module.exports = {
   emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
-  addSong, updateSong, setFavourite, removeSong, songsOnlyIn,
+  addSong, updateSong, setCover, cleanCover, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta,
 };

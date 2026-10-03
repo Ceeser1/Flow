@@ -21,16 +21,16 @@ const RESCAN_MS = 5 * 60 * 1000;
 const TRASH_MS = 24 * 60 * 60 * 1000;
 
 /**
- * opts: { home, music, port, host, log, detectTailscale, discoveryPort, livePingMs }.
+ * opts: { home, music, port, host, log, detectTailscale, discoveryPort, livePingMs, coverDeps }.
  * Resolves { port, config, library, tailscale, close }. discoveryPort: the UDP
  * port the apps' search is answered on (null: not at all; left out: the
  * default port if the server's settings say so).
- * Port 0 picks a free one.
+ * Port 0 picks a free one. coverDeps: fakes for finding covers (library.js).
  */
 async function startServer(opts = {}) {
   const log = opts.log || (() => {});
   const config = configMod.open({ home: opts.home, music: opts.music });
-  const library = createLibrary(config, log);
+  const library = createLibrary(config, log, { coverDeps: opts.coverDeps || null });
   // The Tailscale address, looked for again now and then: Tailscale may come
   // up after the server does when the machine boots.
   const detectTailscale = opts.detectTailscale || tailscaleMod.detect;
@@ -70,6 +70,7 @@ async function startServer(opts = {}) {
   await lookForTailscale();
   await library.scan().catch((err) => log(`Scan failed: ${err.message}`));
   library.queueLoudness();
+  library.queueCovers();
   const timers = [
     setInterval(() => library.scan().catch(() => {}), RESCAN_MS),
     setInterval(() => library.emptyTrash(), TRASH_MS),

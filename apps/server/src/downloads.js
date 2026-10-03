@@ -136,6 +136,8 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   const dirOf = (key) => path.join(root, key);
   const fileOf = (batch, item) => (item.file ? path.join(dirOf(batch.key), item.file) : null);
   const peaksOf = (batch, item) => path.join(dirOf(batch.key), `i${item.index}.peaks.json`);
+  // The song's cover, found while it waits; it becomes the song's when finished.
+  const coverOf = (batch, item) => path.join(dirOf(batch.key), `i${item.index}.cover.jpg`);
   // The browser cookies an app sent with the batch (only the link's site's):
   // its yt-dlp runs read them, and they go with the batch's folder.
   const cookiesOf = (batch) => path.join(dirOf(batch.key), 'cookies.txt');
@@ -367,6 +369,21 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         // The song can be trimmed without it.
       }
       if (!alive()) return;
+      try {
+        const found = await library.lookForCover({
+          sourceKey: probed.key,
+          sourceUrl: probed.url,
+          sourcePlaylistUrl: batch.single ? '' : batch.source.url,
+          artist: item.meta.artist,
+          title: item.meta.title,
+          duration: item.duration,
+          thumbnails: probed.thumbnails,
+        }, () => !alive());
+        if (found.jpeg && alive()) fs.writeFileSync(coverOf(batch, item), found.jpeg);
+      } catch {
+        // The library looks for one later.
+      }
+      if (!alive()) return;
       item.state = 'ready';
       item.error = '';
     } catch (err) {
@@ -536,6 +553,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     if (token) token.cancel ? token.cancel() : (token.cancelled = true);
     if (item.file) removeQuietly(fileOf(batch, item));
     removeQuietly(peaksOf(batch, item));
+    removeQuietly(coverOf(batch, item));
     item.file = '';
     batch.lastActivity = Date.now();
     save(batch);
@@ -614,6 +632,11 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       throw new DownloadError(500, `The song could not be saved: ${(err && err.message) || err}`);
     }
     library.queueLoudness();
+    try {
+      if (fs.existsSync(coverOf(batch, item))) library.setCover(song.id, fs.readFileSync(coverOf(batch, item)), { onlyIfNone: true });
+    } catch {
+      // The library looks for one itself.
+    }
     for (const i of Array.isArray(body.existing) ? body.existing : []) {
       const other = batch.items.find((it) => it.index === Number(i));
       if (!other || other.state !== 'library' || !other.existing) continue;
@@ -625,6 +648,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     item.state = 'saved';
     removeQuietly(src);
     removeQuietly(peaksOf(batch, item));
+    removeQuietly(coverOf(batch, item));
     item.file = '';
     batch.lastActivity = Date.now();
     save(batch);
