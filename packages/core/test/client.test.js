@@ -33,7 +33,7 @@ function graph(entry) {
 }
 
 test('the shared client loads no Node module, nor anything outside @flow/core', () => {
-  for (const entry of ['client/remote.js', 'client/localLibrary.js', 'fileMeta.js']) {
+  for (const entry of ['client/remote.js', 'client/localLibrary.js', 'client/settings.js', 'fileMeta.js']) {
     const { files, outside } = graph(path.join(SRC, entry));
     assert.deepEqual(outside, [], entry);
     assert.ok(files.length >= 1);
@@ -76,4 +76,28 @@ test('random ids are hex of the length asked for', () => {
   const { randomHex } = require('../src/client/common');
   assert.match(randomHex(8), /^[0-9a-f]{16}$/);
   assert.notEqual(randomHex(8), randomHex(8));
+});
+
+test('base64url as Node writes it, at every length', () => {
+  const { base64Url, randomBase64Url } = require('../src/client/common');
+  for (let len = 0; len < 40; len += 1) {
+    const bytes = require('crypto').randomBytes(len);
+    assert.equal(base64Url(bytes), bytes.toString('base64url'));
+  }
+  assert.match(randomBase64Url(12), /^[\w-]{16}$/);
+});
+
+test('settings: cleaned, saved whole, and one id made once', () => {
+  const { createSettings, DEFAULTS } = require('../src/client/settings');
+  const saved = [];
+  const s = createSettings({ read: () => ({ volume: 3, crossfadeSeconds: 'x' }), write: (v) => saved.push(v) });
+  assert.equal(s.get('volume'), 1);
+  assert.equal(s.get('crossfadeSeconds'), DEFAULTS.crossfadeSeconds);
+  const id = s.clientId();
+  assert.match(id, /^[\w-]{16}$/);
+  assert.equal(s.clientId(), id);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].clientId, id);
+  const broken = createSettings({ read: () => null, write: () => { throw new Error('read-only'); } });
+  assert.equal(broken.set({ volume: 0.5 }).volume, 0.5);
 });
