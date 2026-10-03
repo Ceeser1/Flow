@@ -6,14 +6,16 @@
   "scripts": {
     "web": "node scripts/build-web.js",
     "sync": "node scripts/build-web.js && cap sync android",
-    "open": "cap open android"
+    "open": "cap open android",
+    "test": "node --test"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",
     "@capacitor/core": "8.5.2"
   },
   "devDependencies": {
-    "@capacitor/cli": "8.5.2"
+    "@capacitor/cli": "8.5.2",
+    "esbuild": "0.28.2"
   },
   "author": "Ceeser",
   "license": "MIT"
