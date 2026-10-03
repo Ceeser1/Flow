@@ -288,6 +288,10 @@
 
     <!-- ===== Player bar (every page) ===== -->
     <footer id="player" class="player player--empty">
+      <!-- The cover, as tall as the title line and the timeline beside it (covers.js). -->
+      <div class="player__top">
+      <span id="playerCover" class="cover cover--bar" aria-hidden="true"></span>
+      <div class="player__main">
       <div class="player__line">
         <div id="playerTitle" class="player__title">Nothing playing</div>
         <!-- The sleep timer, while one runs (sleepTimer.js). -->
@@ -307,6 +311,8 @@
       <div id="playerTrack" class="timeline player__timeline">
         <div class="timeline__rail"><div id="playerFill" class="timeline__fill"></div></div>
         <div id="playerKnob" class="timeline__knob"></div>
+      </div>
+      </div>
       </div>
       <div class="player__controls">
         <div class="player__side player__left">
@@ -359,6 +365,7 @@
 <script src="app/icons.js"></script>
 <script src="app/dom.js"></script>
 <script src="app/store.js"></script>
+<script src="app/covers.js"></script>
 <script src="app/ui.js"></script>
 <script src="app/trim.js"></script>
 <script src="app/spectrum.js"></script>

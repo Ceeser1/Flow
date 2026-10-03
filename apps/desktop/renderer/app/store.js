@@ -63,6 +63,11 @@ const Store = {
     return `${st.base}/api/songs/${encodeURIComponent(song.id)}/audio${st.token ? `?t=${encodeURIComponent(st.token)}` : ''}`;
   },
 
+  /** A song's cover file as an address, '' without one (covers.js: Covers.el shows it). */
+  coverSrc(song) {
+    return Covers.src(song);
+  },
+
   /** Whether a playlist's songs are kept on this computer (server playlists marked for download). */
   isOffline(playlistId) {
     return !!this.server.on && (this.server.offline || []).includes(playlistId);

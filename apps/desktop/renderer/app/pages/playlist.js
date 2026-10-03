@@ -265,9 +265,9 @@ const PlaylistPage = {
     table.style.setProperty('--rest', Math.max(0, width - fixed) + 'px');
   },
 
-  /** The title, in a cell that plays the song on a click (_playFromTitle). */
+  /** The cover and title, in a cell that plays the song on a click (_playFromTitle). */
   _title(song) {
-    return h('span.cell-title', { title: `Play "${song.title}"` }, song.title);
+    return h('span.title-cell', Covers.el(song), h('span.cell-title', { title: `Play "${song.title}"` }, song.title));
   },
 
   /**

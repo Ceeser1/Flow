@@ -17,6 +17,7 @@
   Store.mp3Qualities = init.mp3Qualities;
   Store.setServer(init.server);
   Store.setLibrary(init.library);
+  Covers.init(init.covers);
 
   Player.init();
   Output.init();

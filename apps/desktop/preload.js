@@ -89,4 +89,9 @@ contextBridge.exposeInMainWorld('flow', {
   onServerLive: (fn) => ipcRenderer.on('server:live', (_e, ev) => fn(ev)),
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),
   finishSong: (job) => call('song:finish', job),
+  // Covers: files in Music\FlowPlayer\Covers (Store.coverSrc).
+  wantCovers: (ids) => call('covers:want', ids),
+  coverStats: () => call('covers:stats'),
+  clearCoverCache: () => call('covers:clear'),
+  onCoversUpdated: (fn) => ipcRenderer.on('covers:updated', (_e, info) => fn(info)),
 });

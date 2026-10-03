@@ -88,6 +88,7 @@ const QueueView = {
       return h('div.queue__row.queue__row--now',
         h('span.queue__grab'),
         h('span.queue__icon', { html: Player.isPlaying ? Icons.pulse : Icons.pause }),
+        Covers.el(song),
         text,
         h('span.queue__dur', Util.fmtClock(song.duration)));
     }
@@ -101,6 +102,7 @@ const QueueView = {
     },
     h('span.queue__grab', h('img', { src: '../images/grab.png', alt: '' })),
     h('span.queue__num', String(index + 1)),
+    Covers.el(song),
     text,
     h('span.queue__dur', Util.fmtClock(song.duration)),
     iconButton('act.act--red.queue__remove', Icons.x, 'Remove from the queue', () => Player.removeFromQueue(part, index)));

@@ -72,6 +72,7 @@ const SessionsPage = {
           render: (s) => (s.song
             ? h('span.session-song',
               s.playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : h('span.muted-text', 'Paused: '),
+              Covers.el(Store.song(s.song.id) || s.song),
               h('span.cell-title', s.song.title),
               s.song.artist ? h('span.muted-text', ` - ${s.song.artist}`) : null)
             : h('span.muted-text', 'Nothing loaded')),

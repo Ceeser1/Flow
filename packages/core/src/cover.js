@@ -21,6 +21,7 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const spotify = require('./spotify');
@@ -81,8 +82,9 @@ function imageSize(buf) {
 }
 
 /**
- * Runs ffmpeg with `input` (a Buffer) on stdin when given. Resolves
- * { ok, stdout: Buffer, stderr }. Killed after `timeout`.
+ * Runs ffmpeg with `input` (a Buffer) on stdin when given, at low priority
+ * (covers are background work: playing and downloading come first).
+ * Resolves { ok, stdout: Buffer, stderr }. Killed after `timeout`.
  */
 function ffmpegRun(ffmpeg, args, { input = null, timeout = 30000, maxOut = 16 * 1024 * 1024 } = {}) {
   return new Promise((resolve) => {
@@ -92,6 +94,11 @@ function ffmpegRun(ffmpeg, args, { input = null, timeout = 30000, maxOut = 16 * 
     } catch {
       resolve({ ok: false, stdout: Buffer.alloc(0), stderr: '' });
       return;
+    }
+    try {
+      if (proc.pid) os.setPriority(proc.pid, os.constants.priority.PRIORITY_LOW);
+    } catch {
+      // Normal priority then.
     }
     const out = [];
     let size = 0;

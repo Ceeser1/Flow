@@ -1175,6 +1175,12 @@ const Player = {
     bar.classList.toggle('player--remote', !!this.remote);
     $('playerTitle').textContent = song ? Util.songLine(song) : 'Nothing playing';
     $('playerTitle').title = song ? Util.songLine(song) : '';
+    // The cover only changes with the song (or its cover): drawn again, it would flicker.
+    const coverKey = song ? `${song.id}/${song.cover || ''}` : '';
+    if ($('playerCover').dataset.key !== coverKey || !$('playerCover').firstChild) {
+      $('playerCover').dataset.key = coverKey;
+      Covers.fill($('playerCover'), known);
+    }
     const from = song ? this.listName() : '';
     $('playerFrom').hidden = !from;
     $('playerFromName').textContent = from;

@@ -17,6 +17,7 @@ const paths = require('./paths');
 const media = require('./media');
 const exporter = require('./exporter');
 const library = require('./library');
+const covers = require('./covers');
 const model = require('@flow/core/libraryModel');
 const {
   createLister, groupToken, cancelled, withSub, eachItem, existingInfo, removeQuietly,
@@ -265,6 +266,9 @@ async function finish(job, onProgress) {
       });
       removeQuietly(e.cachePath);
       summary.saved += 1;
+      // The picture in a local file goes with it as its cover (the copy is
+      // saved without the original's tags).
+      if (job.local && e.originalPath) await covers.takeFromFile(summary.songIds[summary.songIds.length - 1], e.originalPath);
       if (job.local && job.move && e.originalPath && !removeOriginal(e.originalPath)) {
         summary.kept.push(e.originalPath);
       }

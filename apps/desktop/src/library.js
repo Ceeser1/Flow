@@ -74,6 +74,8 @@ function listAudioFiles(dir, depth = 0) {
   const out = [];
   for (const e of entries) {
     if (e.name.startsWith('.flow-')) continue;
+    // The covers (covers.js) are pictures only.
+    if (depth === 0 && e.isDirectory() && e.name === paths.COVERS) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
       if (depth < 4) out.push(...listAudioFiles(full, depth + 1));

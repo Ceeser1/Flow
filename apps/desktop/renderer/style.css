@@ -596,10 +596,11 @@ button, input, select { font: inherit; color: inherit; }
 }
 
 .result__icon .icon { width: 16px; height: 16px; }
-.result__play { color: var(--green); background: rgba(120, 200, 140, 0.14); }
-/* A song's Add to Queue, before its Play: the same size. */
+/* A song: its cover, its names, then Add to Queue and Play on the right, all
+   the same size. */
 .result--song .act { width: 32px; height: 32px; }
 .result--song .act .icon { width: 16px; height: 16px; }
+.result--song .result__text { flex: 1; }
 .result__avatar { border-radius: 50%; font-weight: 700; color: var(--text-bright); background: #44506a; }
 
 .result__text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
@@ -1232,6 +1233,32 @@ div.import__frame-head { cursor: default; }
 .pl-head__titlerow { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .pl-head__titlerow .page__title { min-width: 0; }
 
+/* ===== covers (covers.js) ===== */
+
+/* A song's cover, square, with a note while there is none. */
+.cover {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--glass-btn);
+  color: var(--text-dim);
+}
+.cover__img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cover__note { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; opacity: 0.7; }
+.cover__note .icon { width: 50%; height: 50%; }
+.cover--row { width: 30px; height: 30px; }
+.cover--result { width: 32px; height: 32px; border-radius: 6px; }
+
+/* A song list's Title: the cover, then the title. */
+.title-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.title-cell .cell-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue__row .cover--row { width: 32px; height: 32px; }
+.session-song .cover--row { width: 24px; height: 24px; }
+
 /* ===== tables ===== */
 
 .table {
@@ -1598,6 +1625,12 @@ div.import__frame-head { cursor: default; }
   border-top: 1px solid #2c2c33;
   padding: 10px 24px 12px;
 }
+
+/* The cover left, as tall as the title line and the timeline together; both
+   start to the right of it. */
+.player__top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.player__main { flex: 1; min-width: 0; }
+.cover--bar { width: 50px; height: 50px; border-radius: 5px; }
 
 .player__line {
   display: flex;
@@ -2431,6 +2464,12 @@ div.import__frame-head { cursor: default; }
 }
 
 .details__meta { color: var(--grey); user-select: text; }
+
+/* The cover centred above the title, a third of the popup wide; the names
+   under it centred with it. */
+.details__head { text-align: center; }
+.cover--big { display: flex; width: 33%; height: auto; margin: 2px auto 14px; border-radius: 8px; }
+.cover--big .cover__note .icon { width: 36%; height: 36%; }
 
 .details__heading {
   margin: 14px 0 2px;

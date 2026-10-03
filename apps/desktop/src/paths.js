@@ -55,6 +55,12 @@ function musicDir() {
   return ensure(path.join(base, 'FlowPlayer'));
 }
 
+// Covers (covers.js): Music\FlowPlayer\Covers, with Local Files' own in
+// Covers\local and each Flow Server's in Covers\<server id>. They move with
+// the music folder.
+const COVERS = 'Covers';
+const coversDir = () => path.join(musicDir(), COVERS);
+
 // Bundled tools: under resources\tools in an installed build, tools\ beside
 // the project in development.
 function bundledToolsDir() {
@@ -72,5 +78,5 @@ function appIconPath() {
 
 module.exports = {
   rootDir, userDataDir, libraryFile, settingsFile, cacheDir,
-  localToolsDir, musicDir, setMusicDir, bundledToolsDir, appIconPath, ensure,
+  localToolsDir, musicDir, setMusicDir, coversDir, COVERS, bundledToolsDir, appIconPath, ensure,
 };

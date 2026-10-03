@@ -21,6 +21,7 @@ const importer = require('./src/importer');
 const exporter = require('./src/exporter');
 const waveform = require('./src/waveform');
 const loudness = require('./src/loudness');
+const covers = require('./src/covers');
 const remote = require('./src/remote');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
@@ -31,6 +32,9 @@ let downloadToken = null;
 let importPending = 0;
 // Measures the songs' loudness in the background while "Equalize volume" is on.
 const loudnessFiller = loudness.createFiller(library, model, () => settings.get('normalize'));
+// Finds covers for Local Files songs in the background; copies of a server's
+// songs get the server's.
+const coverFiller = covers.createFiller({ skip: (id) => remote.active() && remote.isServerCopy(id) });
 
 // A second start just brings the running window forward.
 const isFirstInstance = app.requestSingleInstanceLock();
@@ -176,7 +180,26 @@ handle('app:init', () => ({
   version: app.getVersion(),
   // For the Windows media overlay, which only takes http(s) or data: artwork.
   iconDataUrl: iconDataUrl(),
+  covers: coverDirs(),
 }));
+
+/**
+ * Where the window finds covers (Store.coverSrc): Local Files' folder, and
+ * the server's when one is in use ('' otherwise).
+ */
+function coverDirs() {
+  return { local: covers.dirOf(covers.LOCAL), server: remote.coverDir() };
+}
+
+// A cover arrived: the window shows it in place of the note.
+covers.onUpdated((scope, ids) => sendToWindow('covers:updated', { scope, ids, dirs: coverDirs() }));
+// Rows on screen whose cover file is not here yet: a server's come down first.
+handle('covers:want', (ids) => {
+  if (remote.active()) remote.wantCovers(ids);
+});
+// Settings: how many songs have a cover, and the server covers kept here.
+handle('covers:stats', () => ({ local: covers.localStore().size(), server: remote.active() ? remote.coverStats() : null }));
+handle('covers:clear', () => remote.clearCoverCache());
 
 handle('settings:set', (patch) => {
   // The password only ever arrives through server:setSecret, to be encrypted.
@@ -186,7 +209,10 @@ handle('settings:set', (patch) => {
   const next = settings.set(clean);
   if (clean.normalize === true) loudnessFiller.run();
   remote.reconfigure(clean);
-  if (remote.active() !== wasRemote) sendToWindow('library:changed', currentLibrary());
+  if (remote.active() !== wasRemote) {
+    sendToWindow('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
+    sendToWindow('library:changed', currentLibrary());
+  }
   return next;
 });
 ipcMain.on('settings:setSync', (event, patch) => {
@@ -399,10 +425,13 @@ handle('folder:move', async (dir) => {
   if (moving) throw new Error('The songs are already being moved.');
   moving = true;
   try {
+    const oldDir = paths.musicDir();
     const result = await library.relocate(dir, (done, total, name) => {
       sendToWindow('folder:progress', { done, total, name });
     });
+    covers.moveFolder(oldDir, result.dir);
     settings.set({ musicDir: result.dir });
+    sendToWindow('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
     return result;
   } finally {
     moving = false;
@@ -501,6 +530,7 @@ handle('import:finish', ({ job, run }) => {
   return saving.finally(() => {
     importSaves -= 1;
     loudnessFiller.run();
+    coverFiller.run();
   });
 });
 
@@ -656,6 +686,7 @@ handle('song:finish', (job) => library.quietly(async () => {
   if (remote.active()) remote.pushNew({ [song.id]: job.playlistIds || [] });
   fs.rmSync(job.cachePath, { force: true });
   loudnessFiller.run();
+  coverFiller.run();
   return song;
 }));
 
@@ -695,10 +726,17 @@ app.whenReady().then(() => {
   // itself when it changed anything, and from then on the folder is watched.
   library.onScanned((result) => {
     sendToWindow('library:scanned', result);
-    if (result.added) loudnessFiller.run();
+    if (result.added) {
+      loudnessFiller.run();
+      coverFiller.run();
+    }
   });
+  covers.watchLocal();
   setTimeout(() => {
-    library.scan().catch(() => {}).then(() => loudnessFiller.run());
+    library.scan().catch(() => {}).then(() => {
+      loudnessFiller.run();
+      coverFiller.run();
+    });
     library.watch();
     tools.refreshYtDlp();
   }, 1500);
@@ -710,6 +748,7 @@ app.on('window-all-closed', async () => {
   remote.stop();
   library.unwatch();
   loudnessFiller.stop();
+  coverFiller.stop();
   if (importToken) importToken.cancel();
   waveform.abort();
   if (downloadToken && downloadToken.cancel) downloadToken.cancel();

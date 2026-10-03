@@ -43,7 +43,9 @@ const SettingsPanel = {
       if (this.modal) this._refreshAll();
     });
     Store.onLibrary(() => {
-      if (this.modal) this._drawMeasured();
+      if (!this.modal) return;
+      this._drawMeasured();
+      this._drawCovers();
     });
     Store.onServer(() => {
       if (this.modal) this._drawServer();
@@ -76,6 +78,7 @@ const SettingsPanel = {
         right: this._measuredNode = h('span.settings__note'),
       }),
       this._savedSongsRow(),
+      this._coversRow(),
 
       ...this._jamRows(),
 
@@ -187,6 +190,7 @@ const SettingsPanel = {
     this._refreshAll();
     this._drawStats();
     this._drawMeasured();
+    this._drawCovers();
     this._drawServer();
     // Profiles made or renamed on other devices since.
     if (Store.server.on && Store.server.state === 'online') window.flow.profiles().catch(() => {});
@@ -810,6 +814,49 @@ const SettingsPanel = {
       this._statsNode.textContent = `${Util.plural(st.count, 'song')} · ${fmtBytes(st.bytes)}`;
     } catch {
       this._statsNode.textContent = '';
+    }
+  },
+
+  /**
+   * Covers: how many songs have one (the rest are looked for in the
+   * background), and with a server the covers kept here, which can be cleared.
+   */
+  _coversRow() {
+    this._coversNode = h('span.settings__note');
+    this._coverCacheNode = h('div.settings__desc');
+    this._clearCovers = h('button.btn.btn--small', {
+      type: 'button',
+      title: 'Delete the covers downloaded from Flow Servers. Those of this server come down again.',
+      onclick: () => attempt(async () => {
+        await window.flow.clearCoverCache();
+        toast('Cover cache cleared: the covers come down again', 'success');
+        this._drawCovers();
+      }),
+    }, 'Clear cover cache');
+    const left = h('div.settings__left',
+      h('div.settings__label.settings__label--plain', 'Covers'),
+      h('div.settings__desc', 'Album covers are found by themselves and kept in the Covers folder of Local Files.'),
+      this._coverCacheNode);
+    return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._coversNode, this._clearCovers)));
+  },
+
+  async _drawCovers() {
+    if (!this._coversNode) return;
+    const songs = Store.library.songs;
+    const have = songs.filter((s) => s.cover && s.cover !== '-').length;
+    const looking = songs.filter((s) => !s.cover).length;
+    this._coversNode.textContent = !songs.length ? ''
+      : `${have} of ${songs.length} ${songs.length === 1 ? 'song has' : 'songs have'} a cover${looking ? ` (looking for ${looking} more...)` : ''}`;
+    this._clearCovers.hidden = !Store.server.on;
+    this._coverCacheNode.hidden = !Store.server.on;
+    if (!Store.server.on) return;
+    try {
+      const st = (await window.flow.coverStats()).server;
+      if (!st || !this._coverCacheNode) return;
+      this._coverCacheNode.textContent = `Server covers on this computer: ${Util.plural(st.count, 'cover')}, ${fmtBytes(st.bytes)}`
+        + (st.waiting ? `; ${st.waiting} still to come` : '');
+    } catch {
+      this._coverCacheNode.textContent = '';
     }
   },
 

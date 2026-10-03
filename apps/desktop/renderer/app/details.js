@@ -1,6 +1,6 @@
 'use strict';
 
-// A song's Details: its names, the playlists it is in, how it has been
+// A song's Details: its cover, its names, the playlists it is in, how it has been
 // listened to, and where it was downloaded from. Playlist membership changes straight away: a lit button is a
 // list the song is in, and clicking it takes the song out (clicking again puts
 // it back, until the popup is closed). "Add to Playlists" opens the usual
@@ -47,7 +47,8 @@ const SongDetails = {
 
   _head(song) {
     const meta = [song.artist, song.mix, Util.fmtClock(song.duration)].filter(Boolean).join('  ·  ');
-    return h('section.details__section',
+    return h('section.details__section.details__head',
+      Covers.el(song, 'big'),
       h('h3.details__title', { title: song.title }, song.title),
       h('div.details__meta', meta));
   },

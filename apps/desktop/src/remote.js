@@ -35,6 +35,10 @@
 // Songs the window plays come from a local copy when there is one, else
 // straight from the server (renderer: Store.audioSrc).
 //
+// Covers: every song's comes down in the background into Covers\<server id>
+// (covers.js), and stays there across restarts and server switches; one
+// goes when its song is gone from that server.
+//
 // Profiles: people sharing the server's songs, each with their own
 // playlists, favourites and stats (@flow/core/profiles). Signing in to one
 // gives a token that says which; the server answers with that profile's
@@ -58,6 +62,8 @@ const settings = require('./settings');
 const library = require('./library');
 const exporter = require('./exporter');
 const network = require('./network');
+const covers = require('./covers');
+const { coverVersion } = require('@flow/core/cover');
 const model = require('@flow/core/libraryModel');
 const { applyCommand } = require('@flow/core/commands');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
@@ -976,8 +982,22 @@ async function uploadOne(cmd, number, total) {
   // already had (existing) shows as that song straight away.
   if (r.json.existing) sync.sent.pop();
   saveSync();
+  if (!r.json.existing) await uploadCover(local, serverId);
   if (!settings.get('serverKeepFiles') && !neededOffline(serverId)) {
     await forgetLocal(cmd.localId, { deleteFile: true });
+  }
+}
+
+/** A Local Files song's cover after it, when it has one (the server keeps its own if it found one first). */
+async function uploadCover(local, serverId) {
+  if (!local.cover || local.cover === '-' || !covers.localStore().has(local.id)) return;
+  try {
+    const r = await request(conn.base, `/api/songs/${encodeURIComponent(serverId)}/cover`, {
+      method: 'PUT', file: covers.localStore().file(local.id), token: conn.token, timeout: 30000,
+    });
+    if (r.status === 200 && r.json && r.json.cover === local.cover) covers.copyToServer(local.id, sync.serverId, serverId);
+  } catch {
+    // The server looks for one itself.
   }
 }
 
@@ -1238,6 +1258,7 @@ function rememberMarked(v) {
 function afterServerChange() {
   if (status.state !== 'online' || !cache.library) return;
   followServer().catch(() => {});
+  coverSync().catch(() => {});
 }
 
 let following = null;
@@ -1404,6 +1425,8 @@ async function fetchSong(s, onProgress) {
         loudness: s.loudness,
         favouriteAt: s.favouriteAt,
         stats: s.stats,
+        // The server's cover, when it is here already.
+        cover: s.cover && s.cover !== '-' ? covers.copyToLocal(sync.serverId, s.id, lid) : s.cover,
       };
       sync.songMap[lid] = s.id;
       sync.fetched[lid] = true;
@@ -1425,6 +1448,172 @@ async function dropUnneededCopies() {
     if (!sid || !model.songById(v, sid)) continue;
     if (!neededOffline(sid)) await forgetLocal(lid, { deleteFile: true });
   }
+}
+
+// ---- covers ----
+//
+// Every cover comes down, COVER_JOBS at a time, those the window asks for
+// first (rows on screen whose cover is not here yet: wantCovers). Away from
+// home on a metered connection only those, unless transfers are allowed.
+
+const COVER_JOBS = 3;
+const coverHave = new Map(); // `${serverId}/${songId}` -> version of the file here
+const coverFailed = new Set(); // could not be had this run
+let coverTodo = [];
+let coverWanted = [];
+let coverBulk = false;
+let coverRunning = 0;
+let coverArrived = [];
+let coverTellTimer = null;
+
+/** Where the window finds this server's covers: '' without a server. */
+function coverDir() {
+  return active() && sync.serverId ? covers.dirOf(sync.serverId) : '';
+}
+
+/** The version of the cover file here, hashed once and then remembered. */
+function versionHere(store, id) {
+  const key = `${sync.serverId}/${id}`;
+  if (coverHave.has(key)) return coverHave.get(key);
+  const jpeg = store.read(id);
+  const v = jpeg ? coverVersion(jpeg) : '';
+  coverHave.set(key, v);
+  return v;
+}
+
+const wantsCover = (s) => !!(s && s.cover && s.cover !== '-');
+
+/** After every look at the server's library: which covers to fetch, which to drop. */
+async function coverSync() {
+  if (status.state !== 'online' || !cache.library || cache.serverId !== sync.serverId || !sync.serverId) return;
+  const store = covers.storeOf(sync.serverId);
+  const songs = cache.library.songs;
+  const known = new Set(songs.map((x) => x.id));
+  for (const id of store.ids()) {
+    if (known.has(id)) continue;
+    store.remove(id);
+    coverHave.delete(`${sync.serverId}/${id}`);
+  }
+  coverTodo = songs.filter((x) => wantsCover(x) && !coverFailed.has(x.id) && versionHere(store, x.id) !== x.cover).map((x) => x.id);
+  coverBulk = await transfersAllowed();
+  pumpCovers();
+}
+
+/** The window shows these songs and has no cover file for them yet. */
+function wantCovers(ids) {
+  const list = (Array.isArray(ids) ? ids : []).map(String).filter((id) => /^[\w-]{1,64}$/.test(id));
+  if (!list.length) return;
+  coverWanted = [...new Set([...list, ...coverWanted])].slice(0, 300);
+  pumpCovers();
+}
+
+function nextCover() {
+  const lib = cache.library;
+  if (!lib || !sync.serverId) return null;
+  const store = covers.storeOf(sync.serverId);
+  const ok = (id) => {
+    const song = model.songById(lib, id);
+    return wantsCover(song) && !coverFailed.has(id) && versionHere(store, id) !== song.cover ? song : null;
+  };
+  while (coverWanted.length) {
+    const song = ok(coverWanted.shift());
+    if (song) return song;
+  }
+  while (coverBulk && coverTodo.length) {
+    const song = ok(coverTodo.shift());
+    if (song) return song;
+  }
+  return null;
+}
+
+function pumpCovers() {
+  while (coverRunning < COVER_JOBS && status.state === 'online') {
+    const song = nextCover();
+    if (!song) return;
+    coverRunning += 1;
+    fetchCover(song).catch(() => {
+      coverFailed.add(song.id);
+    }).finally(() => {
+      coverRunning -= 1;
+      pumpCovers();
+    });
+  }
+}
+
+async function fetchCover(song) {
+  const serverId = sync.serverId;
+  const store = covers.storeOf(serverId);
+  fs.mkdirSync(store.dir, { recursive: true });
+  const tmp = path.join(store.dir, `.${song.id}.${crypto.randomBytes(4).toString('hex')}.tmp`);
+  try {
+    const r = await request(conn.base, `/api/songs/${encodeURIComponent(song.id)}/cover?v=${encodeURIComponent(song.cover)}`, {
+      token: conn.token, saveTo: tmp, timeout: 30000,
+    });
+    if (r.status !== 200 || serverId !== sync.serverId) {
+      coverFailed.add(song.id);
+      return;
+    }
+    const jpeg = fs.readFileSync(tmp);
+    if (jpeg.length < 4 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) {
+      coverFailed.add(song.id);
+      return;
+    }
+    const version = store.write(song.id, jpeg);
+    coverHave.set(`${serverId}/${song.id}`, version);
+    coverArrived.push(song.id);
+    if (!coverTellTimer) {
+      // Many at once reach the window as one message.
+      coverTellTimer = setTimeout(() => {
+        coverTellTimer = null;
+        const ids = coverArrived;
+        coverArrived = [];
+        covers.tell(sync.serverId, ids);
+      }, 250);
+    }
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+}
+
+/** How many of this server's covers are here, and the room all servers' take. */
+function coverStats() {
+  let count = 0;
+  let bytes = 0;
+  let names = [];
+  try {
+    names = fs.readdirSync(paths.coversDir(), { withFileTypes: true });
+  } catch {
+    names = [];
+  }
+  for (const e of names) {
+    if (!e.isDirectory() || e.name === covers.LOCAL) continue;
+    const size = covers.storeOf(e.name).size();
+    bytes += size.bytes;
+    if (e.name === sync.serverId) count = size.count;
+  }
+  return { count, bytes, waiting: coverTodo.length + coverWanted.length };
+}
+
+/** "Clear cover cache": every server's covers go; this server's come down again. */
+function clearCoverCache() {
+  let names = [];
+  try {
+    names = fs.readdirSync(paths.coversDir(), { withFileTypes: true });
+  } catch {
+    names = [];
+  }
+  for (const e of names) {
+    if (e.isDirectory() && e.name !== covers.LOCAL) fs.rmSync(path.join(paths.coversDir(), e.name), { recursive: true, force: true });
+  }
+  coverHave.clear();
+  coverFailed.clear();
+  coverSync().catch(() => {});
+  return coverStats();
+}
+
+/** A Local Files song that is a copy of one of the server's (its cover comes from there). */
+function isServerCopy(lid) {
+  return !!sync.fetched[lid];
 }
 
 // ---- synchronizing ----
@@ -2126,6 +2315,7 @@ function stop() {
 
 module.exports = {
   init, active, reconfigure, setSecret, stop,
+  coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
   status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, pushNew, pushImport, deleteSong, localFileOf, sessions, leaveSession,
   loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, deleteProfile,
 };

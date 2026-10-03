@@ -49,8 +49,9 @@ const SearchPage = {
     const songs = Store.library.songs.slice()
       .sort((a, b) => b.addedAt - a.addedAt)
       .filter((s) => Util.matches(q, s.title, s.artist, s.mix));
-    // A song plays on a click anywhere on it (Play included); [+] before Play
-    // adds it to the queue instead. A div rather than a button, as it holds one.
+    // A song plays on a click anywhere on it: its cover, its names, Play on
+    // the right; [+] before Play adds it to the queue instead. A div rather
+    // than a button, as it holds buttons.
     this._fill('searchSongs', 'searchSongsCount', songs, (s) => {
       const play = () => Player.toggleSong(s.id, 'all');
       const row = h('div.result.result--song', {
@@ -65,14 +66,18 @@ const SearchPage = {
           play();
         },
       },
+      Covers.el(s, 'result'),
+      h('span.result__text',
+        h('span.result__title', s.title + (s.mix ? ` (${s.mix})` : '')),
+        h('span.result__meta', [s.artist, Util.fmtClock(s.duration)].filter(Boolean).join(' · '))),
       iconButton('act.act--green', Icons.plus, 'Add to Queue', (e) => {
         e.stopPropagation();
         Player.addToQueue(s.id);
       }),
-      h('span.result__icon.result__play', { html: Icons.play }),
-      h('span.result__text',
-        h('span.result__title', s.title + (s.mix ? ` (${s.mix})` : '')),
-        h('span.result__meta', [s.artist, Util.fmtClock(s.duration)].filter(Boolean).join(' · '))));
+      iconButton('act.act--green.result__play', Icons.play, 'Play', (e) => {
+        e.stopPropagation();
+        play();
+      }));
       return row;
     });
     this._markPlaying();
@@ -122,7 +127,10 @@ const SearchPage = {
       const current = node.dataset.id === Player.currentId;
       const playing = current && Player.isPlaying;
       node.classList.toggle('result--current', current);
-      node.querySelector('.result__play').innerHTML = playing ? Icons.pause : Icons.play;
+      const btn = node.querySelector('.result__play');
+      btn.innerHTML = playing ? Icons.pause : Icons.play;
+      btn.title = playing ? 'Pause' : 'Play';
+      btn.setAttribute('aria-label', btn.title);
       node.title = playing ? 'Pause' : 'Play';
     }
   },
