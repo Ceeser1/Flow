@@ -29,6 +29,10 @@ const { tagArgs } = tags;
 // squashed for loudness normalisation and sound flatter than the original.
 const FORMAT_SELECTOR = 'bestaudio[format_id!*=-drc]/bestaudio/best';
 
+// What yt-dlp says when YouTube turns down the signed-in session the browser
+// cookies carry, though the song comes fine without them.
+const SESSION_REJECTED = /The page needs to be reloaded|Requested format is not available/i;
+
 const PROGRESS_TEMPLATE = 'download:FLOW_DL\t%(progress.downloaded_bytes)s\t%(progress.total_bytes_estimate)s\t%(progress.speed)s\t%(progress.eta)s';
 const PROGRESS_RE = /^FLOW_DL\t([\d.]+|NA)\t([\d.]+|NA)\t([\d.]+|NA)\t([\d.]+|NA)$/;
 
@@ -83,6 +87,9 @@ function ytDlpError(stderrTail) {
   if (/Video unavailable|not available/i.test(text)) return 'This video is not available.';
   if (/Sign in to confirm your age/i.test(text)) {
     return 'This video is age restricted and needs a signed-in account (Settings, Website Downloads: browser cookies).';
+  }
+  if (/The page needs to be reloaded/i.test(text)) {
+    return 'YouTube turned down the signed-in visit ("the page needs to be reloaded"). Open youtube.com in the browser once, or turn browser cookies off in Settings.';
   }
   if (/Sign in to confirm you.re not a bot/i.test(text)) {
     return 'YouTube wants a signed-in visitor right now ("confirm you\'re not a bot"). Settings, Website Downloads: browser cookies.';
@@ -158,6 +165,17 @@ function createMedia({
   const runTool = (exe, args, onLine, cancelToken) => (/\.js$/i.test(exe)
     ? runProcess(process.execPath, [exe, ...args], onLine, cancelToken, null, runOpts)
     : runProcess(exe, args, onLine, cancelToken, null, runOpts));
+
+  // yt-dlp with the cookies on top. When YouTube turns down the signed-in
+  // session those cookies carry (expired or rotated in the browser), every
+  // song fails though it would come without them, so that run is made once
+  // more without; age-restricted songs still need the cookies and still say so.
+  async function runYtDlp(exe, args, onLine, cancelToken) {
+    const extra = extraArgs(cancelToken);
+    const result = await runTool(exe, ['--no-warnings', ...extra, ...args], onLine, cancelToken);
+    if (result.exitCode === 0 || !extra.length || !SESSION_REJECTED.test(result.stderrTail.join('\n'))) return result;
+    return runTool(exe, ['--no-warnings', ...args], onLine, cancelToken);
+  }
 
   function need(find, name) {
     const exe = find && find();
@@ -242,7 +260,7 @@ function createMedia({
     const exe = need(ytdlp, 'yt-dlp');
     need(ffmpeg, 'ffmpeg');
     let out = '';
-    const result = await runTool(exe, ['--no-warnings', ...extraArgs(cancelToken), ...args], (line) => {
+    const result = await runYtDlp(exe, args, (line) => {
       if (!out && line.trim().startsWith('{')) out = line.trim();
     }, cancelToken);
     if (result.exitCode !== 0 && !out) throw new Error(ytDlpError(result.stderrTail));
@@ -309,8 +327,8 @@ function createMedia({
 
   async function fetchAndPrepare(probed, opts, report, cancelToken, { exe, dir, stem }) {
     report('download', null, 'Starting download...');
-    const result = await runTool(exe, [
-      '--no-warnings', ...extraArgs(cancelToken), '--no-playlist', '-I', '1',
+    const result = await runYtDlp(exe, [
+      '--no-playlist', '-I', '1',
       '-f', FORMAT_SELECTOR,
       '--ffmpeg-location', path.dirname(need(ffmpeg, 'ffmpeg')),
       '-o', path.join(dir, `${stem}.src.%(ext)s`),

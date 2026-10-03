@@ -70,3 +70,49 @@ test('prepare, cut with tags, and peaks, with real ffmpeg', { skip: !(ffmpeg && 
   // lavfi's sine is at 1/8 of full scale.
   assert.ok(Math.max(...peaks) > 0.1 && Math.max(...peaks) < 0.2, 'the tone is there, at its level');
 });
+
+// A yt-dlp that turns down browser cookies the way YouTube does when the
+// browser's signed-in session has gone stale, and logs each run's arguments.
+const STALE_YTDLP = String.raw`
+const fs = require('fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.FLOW_TEST_RUNS, JSON.stringify(args) + '\n');
+const url = args[args.length - 1];
+if (url.includes('gone')) { process.stderr.write('ERROR: [youtube] x: Video unavailable\n'); process.exit(1); }
+if (args.includes('--cookies-from-browser')) { process.stderr.write('ERROR: [youtube] x: The page needs to be reloaded.\n'); process.exit(1); }
+if (args.includes('-j')) {
+  process.stdout.write(JSON.stringify({ id: 'x', title: 'Daft Punk - One More Time', duration: 5, extractor_key: 'Youtube', webpage_url: url }) + '\n');
+} else {
+  fs.copyFileSync(process.env.FLOW_TEST_WAV, args[args.indexOf('-o') + 1].replace('%(ext)s', 'wav'));
+}
+`;
+
+test('a stale browser session: the run is made again without the cookies', { skip: !(ffmpeg && ffprobe) && 'no ffmpeg' }, async () => {
+  const fake = path.join(scratch, 'stale-yt-dlp.js');
+  fs.writeFileSync(fake, STALE_YTDLP);
+  process.env.FLOW_TEST_RUNS = path.join(scratch, 'runs.txt');
+  process.env.FLOW_TEST_WAV = path.join(scratch, 'stale.wav');
+  execFileSync(ffmpeg, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=5', process.env.FLOW_TEST_WAV]);
+  const runs = () => fs.readFileSync(process.env.FLOW_TEST_RUNS, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const withCookies = (args) => args.includes('--cookies-from-browser');
+  const media = createMedia({
+    ffmpeg: () => ffmpeg, ffprobe: () => ffprobe, ytdlp: () => fake, cacheDir: () => scratch,
+    ytdlpArgs: () => ['--cookies-from-browser', 'firefox'],
+  });
+  try {
+    fs.writeFileSync(process.env.FLOW_TEST_RUNS, '');
+    const probed = await media.probe('https://www.youtube.com/watch?v=x');
+    assert.equal(probed.title, 'Daft Punk - One More Time');
+    const got = await media.download(probed, {}, null);
+    assert.ok(fs.existsSync(got.path));
+    assert.deepEqual(runs().map(withCookies), [true, false, true, false], 'probe and download each tried with, then without');
+
+    // Any other failure is not tried again.
+    fs.writeFileSync(process.env.FLOW_TEST_RUNS, '');
+    await assert.rejects(media.probe('https://www.youtube.com/watch?v=gone'), /not available/);
+    assert.equal(runs().length, 1);
+  } finally {
+    delete process.env.FLOW_TEST_RUNS;
+    delete process.env.FLOW_TEST_WAV;
+  }
+});

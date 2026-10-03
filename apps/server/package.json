@@ -1,6 +1,6 @@
 {
   "name": "flow-server",
-  "version": "2.9.4",
+  "version": "2.9.5",
   "description": "Hosts a Flow library on another machine and streams it to the Flow apps",
   "main": "src/main.js",
   "private": true,
