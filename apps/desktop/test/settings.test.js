@@ -140,6 +140,17 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.eqColors, 'rainbow');
   assert.equal(settings.clean({ visualizer: 'waveform' }).visualizer, 'waveform');
   assert.equal(settings.clean({ visualizer: 'flow' }).visualizer, 'flow');
+  assert.equal(settings.clean({ eqColors: 'greyscale' }).eqColors, 'greyscale');
+  // The clouds: rainbow and half as many by default; amount in steps of 10, 0 allowed.
+  assert.equal(d.cloudsColors, 'rainbow');
+  assert.equal(d.cloudsAmount, 50);
+  assert.equal(d.trendMenuOpen, false);
+  assert.equal(settings.clean({ cloudsColors: 'blue' }).cloudsColors, 'blue');
+  assert.equal(settings.clean({ cloudsColors: 'greyscale' }).cloudsColors, 'rainbow');
+  assert.equal(settings.clean({ cloudsAmount: 0 }).cloudsAmount, 0);
+  assert.equal(settings.clean({ cloudsAmount: 74 }).cloudsAmount, 70);
+  assert.equal(settings.clean({ cloudsAmount: 400 }).cloudsAmount, 100);
+  assert.equal(settings.clean({ cloudsAmount: 'lots' }).cloudsAmount, 50);
 });
 
 test('a metered connection is told apart from a free one', () => {

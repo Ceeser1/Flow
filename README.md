@@ -60,8 +60,7 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   (it opens and closes; All Songs stays) lists All Songs and, with a Flow
   Server, the playlists the server's other profiles share, each with a
   **Follow** / **Unfollow** button in Actions. **Your Playlists** are yours,
-  with Favourites and **Listen behaviour** first (a row that opens to its
-  lists, closed until you open it). Both tables also show your **Listen
+  with Favourites first. Both tables also show your **Listen
   Duration**, the time you have listened to it as the list playing (after its
   Play button, or a song picked in it), and when each playlist was **Created**.
   Their columns are shares of the width, so a full-screen window spreads them
@@ -139,12 +138,27 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   The server needs ffmpeg for it.
 - **Favourites** (under All Songs in the menu): every starred song, newest
   star first; "Added" is when it was starred. Read-only apart from the stars.
-- **Listen behaviour** (under Favourites in the menu, opens and closes): Most
-  listened, Least skipped, Long time no see, Most skipped and Least listened,
-  each a fifth of the songs in your own playlists (All Songs does not count),
-  made from the statistics. Skipped means an early skip, 5 to 30 seconds;
-  Least skipped and Most skipped only look at songs you have heard and
-  skipped. The lists cannot be edited, but a **From Playlist** column after Mix
+- **Your listening trend** (its own entry in the menu, below Followed
+  Playlists and Active Sessions; its lists closed until opened, and its page
+  lists them with what each is made from). Made from the statistics of the
+  songs in your own playlists (All Songs does not count). A song's listen
+  score is times played * (average listen duration / song duration).
+  - **Most listened artists**: every song of the fifth of your artists with
+    the highest listen scores added up. A song by several artists counts for
+    each: the artist line is split at "A, B", "A ft B", "A feat. B" and "A x B".
+  - **Most listened songs**: the fifth with the highest listen score.
+  - **Least skipped songs**: heard to 80% or more most of the times played
+    (one play more is counted than there was, so one full listen does not
+    beat nine of ten).
+  - **Long time no see**: not heard for the longest (a song never played
+    counts from its download).
+  - **Most skipped songs**: the most early skips (5 to 30 seconds).
+  - **Least listened songs**: the shortest average listen as a share of the
+    song, among songs heard.
+  - **Least listened artists**: every song of the fifth of your artists with
+    the lowest listen scores, artists never heard included.
+
+  Each song list is a fifth of those songs. The lists cannot be edited, but a **From Playlist** column after Mix
   says which of your playlists each song is in, and More has the same buttons
   as in All Songs, except the red cross is **Remove from Playlist(s)**: it
   takes the song out of every playlist of yours that holds it (asking first
@@ -210,7 +224,7 @@ The cog at the bottom left of the menu. Every change counts at once.
     take (with a Flow Server: the servers' covers kept here). With a server
     also **Clear cover cache**, which deletes those; the covers of the server
     connected come down again.
-- **Flow Server**: **Streaming, Download and Synchronization** (off). See
+- **Flow Server**: **Use a Flow Server** (off). See
   [A Flow Server](#a-flow-server) below.
   - **Profile**: which of the server's profiles this is. Not logged in, pick
     one (or **+ New** to make one, with a PIN if wanted) and **Login** or
@@ -232,7 +246,8 @@ The cog at the bottom left of the menu. Every change counts at once.
     (off; only shown with a Remote address): away from home, songs only go
     up and come down on connections Windows does not call metered, unless
     ticked. Streaming and changes go either way, and at home nothing waits.
-  - **Keep downloaded files after sync with the server** (on): songs
+  - **Keep downloaded files after sync with the server** (on; not under Use
+    a Flow Server but greyed out without it, like the next one): songs
     downloaded here stay in Local Files once uploaded. Unticked, each is
     removed here after its upload (unless a playlist marked for download
     holds it); songs uploaded before are left alone.
@@ -275,13 +290,17 @@ The cog at the bottom left of the menu. Every change counts at once.
 - **Visuals**
   - **Background Clouds** (on), Intensity 1 to 100% (50), and **React to
     Bass** (on), Reaction 1 to 100% (33; 25 is the look as designed, 100
-    four times that).
+    four times that). **Clouds color scheme**: Rainbow (each cloud a random
+    colour every time it comes back) or White, Red, Green, Yellow, Blue,
+    Purple or Black. **Clouds amount** 0 to 100% in steps of 10 (50: six
+    clouds; 100 twelve, 0 none).
   - **Equalizer** (on), Height 1 to 100% (50: the loudest bars reach a third
     of the page), **Visibility** 1 to 100% (50: 100 is fully opaque; above 50
     the shine also starts brighter at the bars and fades out faster),
     **Outer Shine** (on), Spread 1 to 100% (50), and the colour scheme:
     Spectrum (by height), Rainbow (the whole colour wheel from blue to blue,
-    drifting to the right one screen width every 15 seconds), or White, Red,
+    drifting to the right one screen width every 15 seconds), Greyscale (dark
+    grey when low, whiter the taller the bar), or White, Red,
     Green, Yellow, Blue, Purple or Black.
   - **Screen Flash** (off): on each punch of the bass felt more than heard
     (20 to 80 Hz: a sudden jump of that level above the dip before it) the
@@ -349,7 +368,7 @@ files that are already in .mp3 format" unticked, MP3s as well.
 
 ### A Flow Server
 
-With **Streaming, Download and Synchronization** on, the library lives on a
+With **Use a Flow Server** on, the library lives on a
 Flow Server (`apps/server`, e.g. on a Raspberry Pi) and Flow is its remote
 control with a cache:
 

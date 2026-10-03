@@ -24,15 +24,13 @@ const DEFAULTS = {
   // The listen in progress when the app closed, carried on at the next start
   // if the same song is still loaded: { songId, listened }.
   listenSession: null,
-  // Whether the menu's "Listen behaviour" group is open, and the lists under
-  // its Playlists and Followed Playlists entries.
-  listenGroupOpen: true,
+  // Whether the lists under the menu's Playlists, Followed Playlists and Your
+  // listening trend entries show (the trend lists closed until opened).
   playlistsMenuOpen: true,
   followedMenuOpen: true,
-  // Whether the Shared Playlists section of the Playlists page is open, and
-  // the Listen behaviour row there (closed until opened).
+  trendMenuOpen: false,
+  // Whether the Shared Playlists section of the Playlists page is open.
   sharedGroupOpen: true,
-  listenPageOpen: false,
   // The sleep timer running, kept so a restart still shows (and can cancel)
   // the shutdown Windows has been told about: { endsAt, shutdownAt, ended },
   // times in ms, shutdownAt null without a shutdown.
@@ -63,6 +61,10 @@ const DEFAULTS = {
   cloudsIntensity: 50,
   cloudsBass: true,
   cloudsBassAmount: 50,
+  // Their colours: 'rainbow' (each cloud its own) or one of the solid ones
+  // (CLOUD_COLORS), and how many there are (percent, 0-100 in steps of 10).
+  cloudsColors: 'rainbow',
+  cloudsAmount: 50,
   // The equalizer: height and shine in percent, and its colours.
   eqOn: true,
   eqHeight: 50,
@@ -80,7 +82,7 @@ const DEFAULTS = {
   // The fullscreen Music Visualizer the player bar's button opens (VISUALIZERS).
   visualizer: 'bars',
 
-  // ---- Streaming, Download and Synchronization: a Flow Server ----
+  // ---- Use a Flow Server ----
   // The library lives on the server; see remote.js.
   serverOn: false,
   // Addresses, tried in this order: the one at home first, then the one from
@@ -123,7 +125,8 @@ const DEFAULTS = {
   sessionPlayHere: false,
 };
 
-const EQ_COLORS = ['spectrum', 'rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
+const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
+const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
 const VISUALIZERS = ['random', 'bars', 'waveform', 'flow'];
 
@@ -149,11 +152,10 @@ function clean(raw) {
   s.listenSession = ls && typeof ls === 'object' && ls.songId
     ? { songId: String(ls.songId), listened: Math.max(0, Number(ls.listened) || 0) }
     : null;
-  s.listenGroupOpen = s.listenGroupOpen !== false;
   s.playlistsMenuOpen = s.playlistsMenuOpen !== false;
   s.followedMenuOpen = s.followedMenuOpen !== false;
+  s.trendMenuOpen = s.trendMenuOpen === true;
   s.sharedGroupOpen = s.sharedGroupOpen !== false;
-  s.listenPageOpen = s.listenPageOpen === true;
   const st = s.sleepTimer;
   const endsAt = st && typeof st === 'object' ? Number(st.endsAt) : NaN;
   const shutdownAt = st && Number.isFinite(Number(st.shutdownAt)) && st.shutdownAt !== null ? Number(st.shutdownAt) : null;
@@ -182,6 +184,9 @@ function clean(raw) {
     s[key] = percent(s[key], DEFAULTS[key]);
   }
   if (!EQ_COLORS.includes(s.eqColors)) s.eqColors = DEFAULTS.eqColors;
+  if (!CLOUD_COLORS.includes(s.cloudsColors)) s.cloudsColors = DEFAULTS.cloudsColors;
+  const amount = Math.round(Number(s.cloudsAmount) / 10) * 10;
+  s.cloudsAmount = Number.isFinite(amount) ? Math.min(100, Math.max(0, amount)) : DEFAULTS.cloudsAmount;
   if (!VISUALIZERS.includes(s.visualizer)) s.visualizer = DEFAULTS.visualizer;
   return s;
 }
@@ -227,4 +232,4 @@ function clientId() {
   return id;
 }
 
-module.exports = { load, all, get, set, clean, clientId, DEFAULTS, EQ_COLORS, VISUALIZERS };
+module.exports = { load, all, get, set, clean, clientId, DEFAULTS, EQ_COLORS, CLOUD_COLORS, VISUALIZERS };

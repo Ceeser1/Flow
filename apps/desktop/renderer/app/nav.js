@@ -14,11 +14,19 @@ const Nav = {
     this._entry('menuFollowed', 'Followed Playlists', 'followedMenuOpen');
     $('menuSessions').innerHTML = Icons.sessions + '<span>Active Sessions</span>'
       + '<span id="menuSessionsBadge" class="menu__badge" hidden></span>';
+    this._entry('menuTrend', 'Your listening trend', 'trendMenuOpen', {
+      icon: '<img class="menu__img" src="../images/trend.png" alt="" />',
+      shut: true,
+    });
+    // The speaker while one of its lists plays and they are folded away.
+    this._trendPlaying = h('span.menu__playing', { html: Icons.speaker, title: 'Playing' });
+    $('menuTrend').appendChild(this._trendPlaying);
     $('menuSearch').onclick = () => this.show('search');
     $('menuAdd').onclick = () => this.show('add');
     $('menuPlaylists').onclick = () => this.show('playlists');
     $('menuFollowed').onclick = () => this.show('followed');
     $('menuSessions').onclick = () => this.show('sessions');
+    $('menuTrend').onclick = () => this.show('trend');
     Store.onLibrary(() => this.drawMenu());
     Store.onServer(() => this.drawMenu());
     Player.onChange(() => this.drawMenu());
@@ -27,22 +35,27 @@ const Nav = {
 
   /**
    * A main entry with the icon, then an arrow that opens and closes the lists
-   * under it (remembered in `key`), then the name. The rest of the button
-   * still opens the page.
+   * under it (remembered in `key`; open until closed, or with `shut` closed
+   * until opened), then the name. The rest of the button still opens the page.
    */
-  _entry(id, label, key) {
+  _entry(id, label, key, { icon = Icons.playlists, shut = false } = {}) {
+    (this._shut = this._shut || {})[key] = shut;
     const arrow = h('span.menu__chevron.menu__chevron--toggle', {
       role: 'button',
       html: Icons.chevron,
       onclick: (e) => {
         e.stopPropagation();
-        Store.saveSettings({ [key]: Store.settings[key] === false });
+        Store.saveSettings({ [key]: !this._open(key) });
         this.drawMenu();
       },
     });
-    $(id).innerHTML = Icons.playlists;
+    $(id).innerHTML = icon;
     $(id).append(arrow, h('span', label));
     (this._arrows = this._arrows || {})[key] = arrow;
+  },
+
+  _open(key) {
+    return this._shut[key] ? Store.settings[key] === true : Store.settings[key] !== false;
   },
 
   _drawArrow(key, open, what) {
@@ -71,6 +84,7 @@ const Nav = {
     else if (page === 'playlists') PlaylistsPage.show(opts);
     else if (page === 'followed') FollowedPage.show(opts);
     else if (page === 'sessions') SessionsPage.show(opts);
+    else if (page === 'trend') TrendPage.show(opts);
     else if (page === 'playlist') PlaylistPage.show(this.playlistId, opts);
     this.drawMenu();
   },
@@ -87,20 +101,24 @@ const Nav = {
     $('menuPlaylists').classList.toggle('menu__item--active', this.page === 'playlists');
     $('menuFollowed').classList.toggle('menu__item--active', this.page === 'followed');
     $('menuSessions').classList.toggle('menu__item--active', this.page === 'sessions');
-    const playlistsOpen = Store.settings.playlistsMenuOpen !== false;
-    const followedOpen = Store.settings.followedMenuOpen !== false;
+    $('menuTrend').classList.toggle('menu__item--active', this.page === 'trend');
+    const playlistsOpen = this._open('playlistsMenuOpen');
+    const followedOpen = this._open('followedMenuOpen');
+    const trendOpen = this._open('trendMenuOpen');
     this._drawArrow('playlistsMenuOpen', playlistsOpen, 'the playlists');
     this._drawArrow('followedMenuOpen', followedOpen, 'the followed playlists');
+    this._drawArrow('trendMenuOpen', trendOpen, 'the listening trend lists');
     $('menuPlaylistList').hidden = !playlistsOpen;
 
     const list = clear($('menuPlaylistList'));
-    const item = (p, extra = '') => {
+    // The list playing has the speaker, and its bar on the left stays green.
+    const item = (p) => {
       const active = this.page === 'playlist' && this.playlistId === p.id;
       const playing = Player.contextId === p.id && Player.isPlaying;
       return h('button.menu__sub'
         + (active ? '.menu__sub--active' : '')
-        + (p.isAll ? '.menu__sub--all' : '')
-        + extra, {
+        + (playing ? '.menu__sub--playing' : '')
+        + (p.isAll ? '.menu__sub--all' : ''), {
         type: 'button',
         title: p.name,
         onclick: () => this.openPlaylist(p.id),
@@ -111,26 +129,6 @@ const Nav = {
 
     list.appendChild(item(Store.allSongsPlaylist()));
     list.appendChild(item(Store.favouritesPlaylist()));
-
-    // Listen behaviour: a group that opens and closes, remembered.
-    const open = Store.settings.listenGroupOpen !== false;
-    const smartPlaying = SmartLists.isSmart(Player.contextId) && Player.isPlaying;
-    list.appendChild(h('button.menu__group' + (open ? '.menu__group--open' : ''), {
-      type: 'button',
-      title: open ? 'Hide these lists' : 'Show these lists',
-      'aria-expanded': String(open),
-      onclick: () => {
-        Store.saveSettings({ listenGroupOpen: !open });
-        this.drawMenu();
-      },
-    },
-    h('span.menu__chevron', { html: Icons.chevron }),
-    h('span.menu__sub-name', 'Listen behaviour'),
-    !open && smartPlaying ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null));
-    if (open) {
-      for (const p of Store.smartPlaylists()) list.appendChild(item(p, '.menu__sub--nested'));
-    }
-
     for (const p of Store.sortedPlaylists()) list.appendChild(item(p));
 
     // Followed Playlists: a main entry of its own, only while one is followed.
@@ -146,5 +144,11 @@ const Nav = {
     $('menuSessionsBadge').hidden = !others;
     $('menuSessionsBadge').textContent = String(others);
     $('menuSessionsBadge').title = `${Util.plural(others, 'other device')} playing`;
+
+    // Your listening trend: always there, its lists closed until opened.
+    $('menuTrendList').hidden = !trendOpen;
+    const trendList = clear($('menuTrendList'));
+    for (const p of Store.smartPlaylists()) trendList.appendChild(item(p));
+    this._trendPlaying.hidden = trendOpen || !(SmartLists.isSmart(Player.contextId) && Player.isPlaying);
   },
 };

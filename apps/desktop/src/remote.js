@@ -1,6 +1,6 @@
 'use strict';
 
-// "Streaming, Download and Synchronization": a Flow Server as the library.
+// "Use a Flow Server": a Flow Server as the library.
 //
 // The server holds the one true library. The app keeps the last copy it saw
 // (server-library.json) so it opens, and plays what it has, without the
@@ -1913,7 +1913,7 @@ function localChanged() {
  * server's music folder looked through, and the marked playlists downloaded.
  */
 async function syncNow() {
-  if (!active()) throw new Error('Tick "Streaming, Download and Synchronization" and enter an address first.');
+  if (!active()) throw new Error('Tick "Use a Flow Server" and enter an address first.');
   if (status.state !== 'online') {
     await connect();
     if (status.state !== 'online') throw new Error(status.message || 'The server cannot be reached.');
@@ -2292,7 +2292,7 @@ async function deleteSong(songId, deleteFile) {
  * dropped, see dropUnneededCopies).
  */
 async function downloadSong(songId) {
-  if (!active()) throw new Error('Tick "Streaming, Download and Synchronization" first.');
+  if (!active()) throw new Error('Tick "Use a Flow Server" first.');
   if (status.state !== 'online') throw new Error('The server cannot be reached right now. A song can only be downloaded while it can.');
   const song = model.songById(getView(), songId);
   if (!song) throw new Error('That song is not on the server.');
@@ -2330,7 +2330,7 @@ async function downloadSong(songId) {
  * download holds the song), or lost for good (it has not gone up yet).
  */
 async function removeDownload(songId) {
-  if (!active()) throw new Error('Tick "Streaming, Download and Synchronization" first.');
+  if (!active()) throw new Error('Tick "Use a Flow Server" first.');
   const lids = Object.entries(sync.songMap).filter(([, sid]) => sid === songId).map(([lid]) => lid);
   if (!lids.length) {
     delete sync.kept[songId];
@@ -2469,7 +2469,7 @@ async function loadProfiles() {
 }
 
 function requireProfiles() {
-  if (!active()) throw new Error('Tick "Streaming, Download and Synchronization" first.');
+  if (!active()) throw new Error('Tick "Use a Flow Server" first.');
   if (status.state !== 'online') throw new Error('The server cannot be reached right now. Profiles can only be changed while it can.');
   if (!conn.profiles) throw new Error('This Flow Server is too old for profiles. Update it first.');
 }

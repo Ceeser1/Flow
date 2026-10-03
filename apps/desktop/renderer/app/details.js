@@ -120,19 +120,16 @@ const SongDetails = {
     const avg = sessions ? (st.listened || 0) / sessions : 0;
     const share = avg && song.duration ? ` (${Math.round((avg / song.duration) * 100)}% of the song)` : '';
 
-    const row = (label, value, hint = '') => [
-      h('div.details__label', label, hint ? h('span.details__hint', hint) : null),
-      h('div.details__value', value),
-    ];
+    const row = (label, value) => [h('div.details__label', label), h('div.details__value', value)];
     return h('section.details__section',
       h('h4.details__heading', 'Statistics'),
       h('div.details__grid',
         ...row('Added', Util.fmtDate(song.addedAt)),
         ...row('Last listened', last ? `${Util.fmtDate(last)}  (${Util.fmtAgo(last)})` : 'Never'),
-        ...row('Times played', String(sessions), 'more than 5 s heard, skipped or not'),
+        ...row('Times played (>5 seconds)', String(sessions)),
         ...row('Average listen duration', sessions ? Util.fmtClock(avg) + share : '-'),
-        ...row('Times fully listened', String(plays), '80% or more heard'),
-        ...row('Times stopped listening', String(st.stops || 0), 'changed song between 30 s and 80%'),
-        ...row('Times skipped early', String(st.skips || 0), 'changed song between 5 and 30 s')));
+        ...row('Times fully listened (>80% duration)', String(plays)),
+        ...row('Times stopped listening (>30s but <80% duration)', String(st.stops || 0)),
+        ...row('Times skipped early (<30 seconds)', String(st.skips || 0))));
   },
 };

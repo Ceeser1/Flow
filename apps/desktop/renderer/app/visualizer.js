@@ -411,7 +411,7 @@ const Visualizer = {
     for (let i = 0; i < n; i += 1) {
       const v = levels[i];
       const half = Math.max(1, v * reach);
-      if (!solid) sc.fillStyle = scheme === 'rainbow' ? Palette.rainbow(i / n - this.shift) : Palette.at(v);
+      if (!solid) sc.fillStyle = scheme === 'rainbow' ? Palette.rainbow(i / n - this.shift) : Palette.by(scheme, v);
       sc.fillRect(offset + i * this.WAVE_PITCH, cy - half, this.WAVE_BAR, half * 2);
     }
 

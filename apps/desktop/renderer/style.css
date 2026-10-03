@@ -217,6 +217,11 @@ button, input, select { font: inherit; color: inherit; }
 }
 
 .menu__item--active .icon { color: var(--accent); }
+/* Your listening trend's white icon (images/trend.png): dimmed like the grey text, full on hover or when open. */
+.menu__img { width: 18px; height: 18px; flex: none; display: block; opacity: 0.7; }
+.menu__item:hover .menu__img,
+.menu__item--active .menu__img { opacity: 1; }
+.menu__item .menu__playing { margin-left: auto; display: inline-flex; }
 
 /* "7/38" beside Add Songs while a playlist is imported. */
 .menu__badge {
@@ -285,32 +290,19 @@ button, input, select { font: inherit; color: inherit; }
   background: #222228;
 }
 
-.menu__group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 30px;
-  padding: 0 10px 0 8px;
-  background: none;
-  border: none;
-  border-left: 1px solid #2c2c33;
-  color: var(--text-bright);
-  cursor: pointer;
-  text-align: left;
+/* The list playing: its bar on the left light green, open or not. */
+.menu__sub--playing,
+.menu__sub--playing:hover {
+  border-left: 2px solid var(--green);
+  padding-left: 13px;
 }
 
-.menu__group:hover { background: #1f1f24; }
 .menu__chevron { display: inline-flex; color: var(--text-dim); transition: transform 0.15s; }
 .menu__chevron .icon { width: 14px; height: 14px; }
-.menu__group--open .menu__chevron,
 .menu__chevron--open { transform: rotate(90deg); }
 /* The arrow of Playlists and Followed Playlists: its own click target, between the icon and the name. */
 .menu__chevron--toggle { margin: 0 -6px 0 -4px; padding: 6px 4px; border-radius: 4px; cursor: pointer; }
 .menu__chevron--toggle:hover { background: rgba(255, 255, 255, 0.1); color: var(--text-bright); }
-
-.menu__sub--nested { padding-left: 28px; height: 30px; color: var(--grey); }
-.menu__sub--nested.menu__sub--active { padding-left: 27px; color: var(--text-bright); }
 
 .menu__sub-name {
   flex: 1;
@@ -1350,6 +1342,9 @@ div.import__frame-head { cursor: default; }
 .table--playlists .col-listened,
 .table--playlists .col-date,
 .table--playlists .col-owner { width: auto; }
+/* Your listening trend: room for what each list is made from. */
+#trendTable .col-name { width: 22%; }
+#trendTable .col-owner { width: 40%; }
 
 /* Active Sessions (pages/sessions.js): the song takes what Name leaves; the
    actions need room for "Ask again in 60 s" or "Joined" and Leave. */
@@ -1391,7 +1386,7 @@ div.import__frame-head { cursor: default; }
 .table--songs .col-actions { width: 116px; }
 .table--songs .col-artist { width: calc(var(--rest, 600px) * 0.35); }
 .table--songs .col-mix { width: calc(var(--rest, 600px) * 0.2); }
-/* A Listen behaviour list has From Playlist too: Artist 25%, Mix 15%, From 22%, Title the rest. */
+/* A listening trend list has From Playlist too: Artist 25%, Mix 15%, From 22%, Title the rest. */
 .table--from .col-artist { width: calc(var(--rest, 600px) * 0.25); }
 .table--from .col-mix { width: calc(var(--rest, 600px) * 0.15); }
 .table--from .col-from { width: calc(var(--rest, 600px) * 0.22); }
@@ -1414,11 +1409,6 @@ div.import__frame-head { cursor: default; }
 .link-cell:hover span:last-child:not(.link-cell__by),
 .link-cell:hover .link-cell__name { text-decoration: underline; }
 .link-cell__icon { color: var(--text-dim); }
-/* The Listen behaviour row of the Playlists page, and the lists under it. */
-.link-cell__chevron { display: inline-flex; color: var(--text-dim); transition: transform 0.15s; }
-.link-cell__chevron .icon { width: 14px; height: 14px; }
-.link-cell__chevron--open { transform: rotate(90deg); }
-.link-cell--nested { margin-left: 24px; color: var(--grey); }
 
 .rename-input { width: 100%; height: 28px; }
 
@@ -2291,7 +2281,7 @@ div.import__frame-head { cursor: default; }
 
 /* ===== song details ===== */
 
-.modal--details { width: 540px; background: rgba(30, 30, 34, 0.93); }
+.modal--details { width: 580px; background: rgba(30, 30, 34, 0.93); }
 
 /* ---- the Queue popup (queueView.js) ---- */
 
@@ -2400,6 +2390,8 @@ div.import__frame-head { cursor: default; }
 .viz-flow .app { grid-template-columns: 1fr; }
 .viz-flow .menu { display: none; }
 .viz-flow .pages { visibility: hidden; }
+/* The see-through layer would show the dialogs under it (Settings, after Preview selected). */
+.viz-flow .modal-backdrop:not(.modal-backdrop--over) { visibility: hidden; }
 
 /* Only while the mouse moves, and 3 seconds after. */
 .viz-full__close {
@@ -2580,14 +2572,14 @@ div.import__frame-head { cursor: default; }
 
 .details__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* The labels say what each count is, so they get the wider side. */
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
 }
 
 /* Each row has a thin line under it, as in Settings: both of its cells carry it. */
 .details__label,
 .details__value { padding: 10px 0; border-bottom: 1px solid #34343c; }
 .details__label { font-weight: 600; color: var(--text-bright); }
-.details__hint { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; line-height: 1.45; color: var(--text-dim); }
 .details__label { display: flex; flex-direction: column; justify-content: center; }
 .details__value {
   display: flex;

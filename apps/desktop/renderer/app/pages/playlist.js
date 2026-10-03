@@ -108,7 +108,7 @@ const PlaylistPage = {
 
   /**
    * A list's rows as shown: newest first unless sorted, then the search. The
-   * Listen behaviour lists keep their own order, best match first.
+   * listening trend lists keep their own order, best match first.
    */
   rowsFor(id) {
     const view = this._view(id);
@@ -118,7 +118,7 @@ const PlaylistPage = {
     return Util.sortRows(rows, view.sort, (r, k) => this._sortValue(r, k));
   },
 
-  /** The names of your own playlists holding a song, as one text (a Listen behaviour list's From Playlist column). */
+  /** The names of your own playlists holding a song, as one text (a listening trend list's From Playlist column). */
   _from(song) {
     return Store.playlistsHolding(song.id).map((p) => p.name).join(', ');
   },
@@ -220,7 +220,7 @@ const PlaylistPage = {
     const pickTarget = this.pickFor ? Store.playlist(this.pickFor) : null;
     const pickSet = pickTarget ? new Set(pickTarget.entries.map((e) => e.songId)) : null;
 
-    // A Listen behaviour list also says which of your playlists each song is from.
+    // A listening trend list also says which of your playlists each song is from.
     const smartList = !!p.isSmart;
     $('plTable').classList.toggle('table--from', smartList);
     renderTable($('plTable'), {
@@ -283,8 +283,8 @@ const PlaylistPage = {
    * Add to Queue and Play, and More with Download (with a Flow Server),
    * between Favourite and Song Details, Edit and Delete
    * (All Songs), Remove (a playlist of one's own) or Remove from Playlist(s)
-   * (a Listen behaviour list: out of every own playlist holding it, the song
-   * itself stays in All Songs). All Songs and the Listen behaviour lists also
+   * (a listening trend list: out of every own playlist holding it, the song
+   * itself stays in All Songs). All Songs and the listening trend lists also
    * have Add to Playlists, leftmost. While adding songs to a
    * playlist, its + takes Add to Queue's place, which moves into More.
    */
@@ -312,7 +312,7 @@ const PlaylistPage = {
         buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist', () => this.removeFromList(song)));
       }
       if (pickTarget) buttons.unshift(queue());
-      // All Songs and Listen behaviour: put the song into playlists from here, the leftmost button.
+      // All Songs and the listening trend lists: put the song into playlists from here, the leftmost button.
       if (listId === 'all' || SmartLists.isSmart(listId)) buttons.unshift(SongActions.playlistButton(song));
       return buttons;
     };
@@ -387,7 +387,7 @@ const PlaylistPage = {
     });
   },
 
-  /** From a Listen behaviour list: takes the song out of every playlist of yours that holds it. */
+  /** From a listening trend list: takes the song out of every playlist of yours that holds it. */
   async removeFromLists(song) {
     const lists = Store.playlistsHolding(song.id);
     if (!lists.length) return;

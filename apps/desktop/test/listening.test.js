@@ -1,6 +1,6 @@
 'use strict';
 
-// Listening statistics (src/libraryModel.js), the Listen behaviour lists
+// Listening statistics (src/libraryModel.js), the Your listening trend lists
 // (renderer/app/smartLists.js) and the "3 days ago" wording (util.js).
 
 const test = require('node:test');
@@ -70,26 +70,40 @@ function withStats(data, id, stats) {
   m.songById(data, id).stats = { ...m.emptyStats(), ...stats };
 }
 
-test('each Listen behaviour list is a fifth of the library', () => {
+test('each trend list is a fifth of the library', () => {
   const data = lib(10);
   const lists = SmartLists.compute(data.songs, mine(data));
-  assert.equal(lists['smart:least'].length, 2);
   assert.equal(lists['smart:stale'].length, 2);
-  // Nothing played yet: nothing is "most listened".
+  // Nothing played yet: nothing is most or least listened.
   assert.equal(lists['smart:most'].length, 0);
-  assert.equal(SmartLists.compute(lib(1).songs, mine(lib(1)))['smart:least'].length, 1);
-  assert.equal(SmartLists.compute([], [])['smart:least'].length, 0);
+  assert.equal(lists['smart:least'].length, 0);
+  assert.equal(lists['smart:artists-most'].length, 0);
+  // The one artist is a fifth of one artist: all ten songs.
+  assert.equal(lists['smart:artists-least'].length, 10);
+  assert.equal(SmartLists.compute(lib(1).songs, mine(lib(1)))['smart:stale'].length, 1);
+  assert.equal(SmartLists.compute([], [])['smart:stale'].length, 0);
 });
 
-test('most and least listened go by plays, then by time heard', () => {
+test('most listened songs go by times played * share of the song heard', () => {
   const data = lib(10);
-  withStats(data, 's3', { plays: 5, listened: 1000 });
-  withStats(data, 's7', { plays: 5, listened: 2000 });
-  withStats(data, 's9', { plays: 1 });
-  for (const id of ['s1', 's2', 's4', 's5', 's6', 's8', 's10']) withStats(data, id, { plays: 2 });
+  // s3: 4 plays of the whole song = 4. s7: 10 plays of a quarter = 2.5. s9: 2 halves = 1.
+  withStats(data, 's3', { sessions: 4, plays: 4, listened: 800 });
+  withStats(data, 's7', { sessions: 10, skips: 10, listened: 500 });
+  withStats(data, 's9', { sessions: 2, stops: 2, listened: 200 });
   const lists = SmartLists.compute(data.songs, mine(data));
-  assert.deepEqual(lists['smart:most'], ['s7', 's3']);
-  assert.deepEqual(lists['smart:least'], ['s9', 's1']);
+  assert.deepEqual(lists['smart:most'], ['s3', 's7']);
+});
+
+test('least listened songs have the shortest average listen, as a share of the song', () => {
+  const data = lib(10);
+  withStats(data, 's2', { sessions: 1, plays: 1, listened: 200 });
+  withStats(data, 's4', { sessions: 3, skips: 3, listened: 30 }); // 10 s of 200
+  withStats(data, 's6', { sessions: 1, stops: 1, listened: 100 });
+  m.songById(data, 's8').duration = 20;
+  withStats(data, 's8', { sessions: 2, skips: 2, listened: 12 }); // 6 s, but of 20
+  const lists = SmartLists.compute(data.songs, mine(data));
+  // Never-heard songs have no average: they are Long time no see.
+  assert.deepEqual(lists['smart:least'], ['s4', 's8']);
 });
 
 test('long time no see counts a never-played song from its download', () => {
@@ -104,17 +118,19 @@ test('long time no see counts a never-played song from its download', () => {
 });
 
 test('the lists are in this order', () => {
-  assert.deepEqual(SmartLists.LISTS.map((l) => l.name),
-    ['Most listened', 'Least skipped', 'Long time no see', 'Most skipped', 'Least listened']);
+  assert.deepEqual(SmartLists.LISTS.map((l) => l.name), [
+    'Most listened artists', 'Most listened songs', 'Least skipped songs', 'Long time no see',
+    'Most skipped songs', 'Least listened songs', 'Least listened artists',
+  ]);
 });
 
 test('only songs in one of your own playlists count, All Songs does not', () => {
   const data = lib(10);
   // s9 and s10 are the most played but in no playlist.
-  withStats(data, 's9', { plays: 9, sessions: 9 });
-  withStats(data, 's10', { plays: 8, sessions: 8 });
-  withStats(data, 's1', { plays: 2, sessions: 2 });
-  withStats(data, 's2', { plays: 1, sessions: 1 });
+  withStats(data, 's9', { plays: 9, sessions: 9, listened: 1800 });
+  withStats(data, 's10', { plays: 8, sessions: 8, listened: 1600 });
+  withStats(data, 's1', { plays: 2, sessions: 2, listened: 400 });
+  withStats(data, 's2', { plays: 1, sessions: 1, listened: 200 });
   const own = mine(data, ['s1', 's2', 's3', 's4', 's5']);
   const lists = SmartLists.compute(data.songs, own);
   assert.deepEqual(lists['smart:most'], ['s1']);
@@ -139,6 +155,47 @@ test('most and least skipped count early skips among songs heard', () => {
   const calm = lib(10);
   withStats(calm, 's1', { plays: 1, sessions: 1 });
   assert.deepEqual(SmartLists.compute(calm.songs, mine(calm))['smart:skipped-most'], []);
+});
+
+test('least skipped songs are heard in full most of the times played', () => {
+  const data = lib(10);
+  withStats(data, 's1', { plays: 1, sessions: 1, listened: 200 }); // 1 of 1
+  withStats(data, 's2', { plays: 9, sessions: 10, skips: 1, listened: 1810 }); // 9 of 10
+  withStats(data, 's3', { plays: 2, sessions: 8, skips: 6, listened: 520 });
+  const lists = SmartLists.compute(data.songs, mine(data));
+  assert.deepEqual(lists['smart:skipped-least'], ['s2', 's1']);
+});
+
+test('an artist line splits at ",", "ft", "feat." and "x"', () => {
+  assert.deepEqual(SmartLists.artistsOf('Daft Punk, Pharrell Williams'), ['Daft Punk', 'Pharrell Williams']);
+  assert.deepEqual(SmartLists.artistsOf('Calvin Harris ft Rihanna'), ['Calvin Harris', 'Rihanna']);
+  assert.deepEqual(SmartLists.artistsOf('Calvin Harris ft. Rihanna'), ['Calvin Harris', 'Rihanna']);
+  assert.deepEqual(SmartLists.artistsOf('Avicii feat. Aloe Blacc'), ['Avicii', 'Aloe Blacc']);
+  assert.deepEqual(SmartLists.artistsOf('Martin Garrix x Dua Lipa'), ['Martin Garrix', 'Dua Lipa']);
+  assert.deepEqual(SmartLists.artistsOf('Kygo X Whitney Houston, Kygo'), ['Kygo', 'Whitney Houston']);
+  assert.deepEqual(SmartLists.artistsOf('Earth, Wind (feat. Fire)'), ['Earth', 'Wind', 'Fire']);
+  // Not a separator inside a name.
+  assert.deepEqual(SmartLists.artistsOf('Xavier Rudd'), ['Xavier Rudd']);
+  assert.deepEqual(SmartLists.artistsOf('Simon & Garfunkel'), ['Simon & Garfunkel']);
+  assert.deepEqual(SmartLists.artistsOf(''), []);
+});
+
+test('the artist lists hold every song of a fifth of the artists', () => {
+  const data = lib(10);
+  const artist = {
+    s1: 'Muse', s2: 'Muse', s3: 'Muse ft Queen', s4: 'Queen', s5: 'Adele',
+    s6: 'Adele', s7: 'Coldplay', s8: 'Coldplay x Rihanna', s9: 'Moby', s10: 'Moby',
+  };
+  for (const s of data.songs) s.artist = artist[s.id];
+  // Muse 3 + 1, Queen 1 + 1, Adele 1 (Coldplay, Rihanna, Moby never heard). Six artists: a fifth is one.
+  withStats(data, 's1', { sessions: 3, plays: 3, listened: 600 });
+  withStats(data, 's3', { sessions: 1, plays: 1, listened: 200 });
+  withStats(data, 's4', { sessions: 1, plays: 1, listened: 200 });
+  withStats(data, 's5', { sessions: 1, plays: 1, listened: 200 });
+  const lists = SmartLists.compute(data.songs, mine(data));
+  assert.deepEqual(lists['smart:artists-most'], ['s1', 's3', 's2']);
+  // Rihanna: one song, never heard.
+  assert.deepEqual(lists['smart:artists-least'], ['s8']);
 });
 
 function withLists(data) {

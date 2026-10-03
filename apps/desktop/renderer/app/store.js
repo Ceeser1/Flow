@@ -18,7 +18,7 @@ const Store = {
   // The Flow Server's state (remote.js publicStatus); `on` false without one.
   server: { on: false, state: 'off', offline: [] },
   songsById: new Map(),
-  smart: {}, // the Listen behaviour lists: id -> song ids, best match first
+  smart: {}, // the listening trend lists: id -> song ids, best match first
   holding: new Map(), // song id -> your own playlists ({ id, name }) that hold it, A to Z
   _listeners: [],
 
@@ -115,7 +115,7 @@ const Store = {
   },
 
   /**
-   * A Listen behaviour list, shaped like a playlist. Read-only; its entries
+   * A listening trend list, shaped like a playlist. Read-only; its entries
    * are in rank order and carry the download date as when they were added.
    */
   smartPlaylist(id) {
@@ -125,7 +125,7 @@ const Store = {
       .map((songId) => this.songsById.get(songId))
       .filter(Boolean)
       .map((s) => ({ songId: s.id, addedAt: s.addedAt }));
-    return { id, name: def.name, entries, isSmart: true };
+    return { id, name: def.name, desc: def.desc, entries, isSmart: true };
   },
 
   /** Your own playlists that hold a song ({ id, name }), A to Z. */
@@ -159,7 +159,7 @@ const Store = {
     };
   },
 
-  /** All Songs, Favourites and the Listen behaviour lists: the ones the app keeps itself. */
+  /** All Songs, Favourites and the listening trend lists: the ones the app keeps itself. */
   builtInPlaylists() {
     return [this.allSongsPlaylist(), this.favouritesPlaylist(), ...this.smartPlaylists()];
   },

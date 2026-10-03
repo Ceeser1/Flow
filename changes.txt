@@ -1,23 +1,37 @@
-About Step 1, 2 and 3 I have questions first.
+Changes for 2.9.3:
+1. Settings
+1.1 Rename "Streaming, Download and Synchronization" into "Use a Flow Server"
+1.2 Make "Keep downloaded files.." and "Synchronize local changes" not a sub-setting (no connection lines) of "Use a Flow Server", but still be deactivated if use server is disabled.
+1.3 Home Server note, change it to: "Flow connects to your home server or finds the server in your local network itself if UDP discovery is enabled"
+1.4 Remote server note, change to: "Fallback if no home server is found or you are away. Enter an IP:Port or a website connected to the server."
+1.5 Keep downloades files after sync with the server, change to: "If disabled, downloaded songs will be removed locally once they are uploaded to the server (except if they are marked to download)."
+1.6 Synchronize local changes, change to: "Songs added to or removed from local files go to the server by themselves. If disabled, only the button will sync local changes."
+1.7 Move "Use sponsorblock for Youtube" above "Always convert downloads into MP3"
+1.8 Download using browser cookies from, change description to: "Downloads may be blocked by age restrictions or sites may only serve content to signed-in users. Pick your browser to use session cookies (no login data) to bypass restrictions. Firefox works best. Chrome, Edge, Brave may lock cookies on Windows."
+1.9 Screen flash, change description to: "The window's edges glow white from kick and bass peaks."
 
-I want the client to have full control.
-You can mark playlists to download, these then get downloaded from the server (The PI in my example)
-If you play songs without download they get streamed from the server.
+2. Rename "Listen Behaviour" into "Your listening trend" and make its own main menu entry, listed below "Followed Playlists" and "Active sessions/jams". Collapsed by default. Use images/trend.png as icon
+2.1 It should feature this selective playlists:
+Most listened artists (shows all songs of the top 20% most listened artists, this requires a new filtering by songs per artist and string seperation to split which artists are involved in which songs. Split at "A, B", "A ft B", "A x B")
+Most listened songs (top 20% of listened songs by "total plays * (average_listen_duration / song_duration)")
+Least skipped songs (top 20% of songs that have been listened to > 80%)
+Long time no see (top 20% of songs that haven't been heard the longest)
+Most skipped songs (top 20% of songs that have been skipped early)
+Least listened songs (top 20% of songs with the lowest average listening duration)
+Least listened artists (the opposite of most listened artists)
 
-If you delete or edit a song these changes should be sent to the server so it gets removed/edited there, no DIRECT remote control, its per update/command.
-If you download new songs and server mode is enabled, after downloading them locally move them to the server.
+3. Change song details: There shouldnt be any hints/notes below, shorten the entries as stated here:
+Times played (>5 seconds)
+Times fully listened (>80% duration)
+Times stopped listening (>30s but <80% duration)
+Times skipped early (<30 seconds)
 
-The Settings also need to change. Under General rename "Saved Songs" to "Local Files".
-Then add a new "[ ] Streaming, Download and Synchronization"
-=> "Home Server in WiFi/Lan (slider) Using Remote Server" - "URL/IP [Editbox]" with public ip placeholder at remote, home server shows 192.168.0.63:port_example placeholder
-=> [ ] Pin or Password if the Server requires one - "Pin/PW [Editbox]" shown as "*" symbols.
-=> [ ] Always Download & Synchronize on mobile internet/metered connections (this becomes important for laptops or android, its only visible when "Remote Server" is selected)
+4. Music vusualizer is bugged: when picking "Flow (Settings)" and click preview, the settings window stays open instead of being hidden behind the visualizer preview
 
-Is this fine and detailed enough settings for Level 2 & 3 as well?
+5. Additional to show an icon next to the playlist being played in the menu, make its left-sided bar (which is selected) stay light green while its playing
 
+6. Visual Effects:
+6.1 Add a sub-setting "Clouds color scheme" setting after "React to Bass" with a dropdown on the rightcontaining Rainbow (clouds spawn at random colors) and solid colors like on the equalizer color scheme.
+6.2 Add another sub-settings slider "Clouds amount". Current refers to the 50% setting as default, adjustable in 10% steps from 0 to 100%.
 
-The installer should ask the user what type of installation they want:
-Level 1: Local Network only (no internet exposure, very low risk)
-Level 2: Using Tailscale: Accessable from anywhere (requires Tailscale and ports access, low risk)
-Level 3: Using Caddy: Exposed to the internet, accessible with anything (low-mid risk)
-Level 4: Nginx: Exposed to the internet, customized setup required (high risk if not set up properly)
+6.2 To equalizer color scheme add the option "Greyscale" after Rainbow where the amplitude/height determines how white the equalizer peaks are

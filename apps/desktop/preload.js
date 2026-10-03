@@ -67,7 +67,7 @@ contextBridge.exposeInMainWorld('flow', {
   peaks: (file, duration) => call('audio:peaks', { file, duration }),
   sponsorSegments: (key, url) => call('sponsor:segments', { key, url }),
 
-  // A Flow Server (Settings: Streaming, Download and Synchronization).
+  // A Flow Server (Settings: Use a Flow Server).
   serverStatus: () => call('server:status'),
   setServerSecret: (text) => call('server:setSecret', text),
   syncNow: () => call('server:syncNow'),

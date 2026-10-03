@@ -25,6 +25,10 @@
 // At full size: Chromium speckles colour fades by a step to hide banding,
 // invisible pixel by pixel, but a canvas drawn smaller and stretched turns the
 // speckles into a grid. The equalizer's canvas lies on top of this one.
+//
+// Settings: in Rainbow each cloud takes a random colour every time it comes
+// back; a solid scheme gives them all that one. The amount at 50% is the
+// first half of CLOUDS (the look as designed), 100% all of them, 0% none.
 
 const Ambient = {
   canvas: null,
@@ -56,18 +60,36 @@ const Ambient = {
   PULSE_GROW: 0.08, // and this much larger (both at Settings' 25% reaction)
   PUFFS: 9,         // per cloud
 
-  // Each cloud: colour, size (share of the larger side), the slow paths it
-  // drifts along (centre, reach and period in seconds, for x and for y), and
-  // how long one round of coming and going takes. It is away for about a
-  // third of that.
+  // Each cloud: saturation and lightness of its colour (the hue is Rainbow's
+  // pick), size (share of the larger side), the slow paths it drifts along
+  // (centre, reach and period in seconds, for x and for y), and how long one
+  // round of coming and going takes. It is away for about a third of that.
   CLOUDS: [
-    { hue: 218, sat: 90, light: 46, size: 0.24, x: [0.2, 0.2, 97], y: [0.3, 0.2, 131], hueSwing: 14, cycle: 71 },
-    { hue: 272, sat: 85, light: 48, size: 0.22, x: [0.78, 0.16, 113], y: [0.25, 0.18, 89], hueSwing: 18, cycle: 97 },
-    { hue: 172, sat: 90, light: 38, size: 0.22, x: [0.6, 0.28, 149], y: [0.7, 0.2, 103], hueSwing: 12, cycle: 83 },
-    { hue: 328, sat: 85, light: 46, size: 0.2, x: [0.3, 0.24, 167], y: [0.75, 0.18, 119], hueSwing: 16, cycle: 109 },
-    { hue: 245, sat: 80, light: 50, size: 0.22, x: [0.5, 0.32, 83], y: [0.45, 0.26, 157], hueSwing: 20, cycle: 61 },
-    { hue: 16, sat: 85, light: 44, size: 0.18, x: [0.85, 0.1, 139], y: [0.6, 0.26, 127], hueSwing: 14, cycle: 131 },
+    { sat: 90, light: 46, size: 0.24, x: [0.2, 0.2, 97], y: [0.3, 0.2, 131], hueSwing: 14, cycle: 71 },
+    { sat: 85, light: 48, size: 0.22, x: [0.78, 0.16, 113], y: [0.25, 0.18, 89], hueSwing: 18, cycle: 97 },
+    { sat: 90, light: 38, size: 0.22, x: [0.6, 0.28, 149], y: [0.7, 0.2, 103], hueSwing: 12, cycle: 83 },
+    { sat: 85, light: 46, size: 0.2, x: [0.3, 0.24, 167], y: [0.75, 0.18, 119], hueSwing: 16, cycle: 109 },
+    { sat: 80, light: 50, size: 0.22, x: [0.5, 0.32, 83], y: [0.45, 0.26, 157], hueSwing: 20, cycle: 61 },
+    { sat: 85, light: 44, size: 0.18, x: [0.85, 0.1, 139], y: [0.6, 0.26, 127], hueSwing: 14, cycle: 131 },
+    // Above 50%.
+    { sat: 85, light: 44, size: 0.2, x: [0.4, 0.3, 107], y: [0.2, 0.15, 137], hueSwing: 14, cycle: 79 },
+    { sat: 88, light: 42, size: 0.21, x: [0.7, 0.22, 127], y: [0.45, 0.3, 101], hueSwing: 16, cycle: 103 },
+    { sat: 80, light: 48, size: 0.19, x: [0.15, 0.12, 151], y: [0.6, 0.3, 109], hueSwing: 12, cycle: 89 },
+    { sat: 85, light: 45, size: 0.23, x: [0.55, 0.35, 173], y: [0.85, 0.12, 113], hueSwing: 18, cycle: 127 },
+    { sat: 90, light: 40, size: 0.18, x: [0.9, 0.08, 93], y: [0.15, 0.12, 143], hueSwing: 14, cycle: 67 },
+    { sat: 82, light: 47, size: 0.2, x: [0.35, 0.28, 131], y: [0.5, 0.35, 163], hueSwing: 16, cycle: 113 },
   ],
+
+  // The solid schemes: [hue, saturation, lightness], as the equalizer's.
+  SOLID: {
+    white: [0, 0, 78],
+    red: [0, 85, 46],
+    green: [130, 70, 40],
+    yellow: [52, 95, 48],
+    blue: [215, 90, 50],
+    purple: [275, 75, 52],
+    black: [0, 0, 0],
+  },
 
   init() {
     this.canvas = $('ambientCanvas');
@@ -86,7 +108,7 @@ const Ambient = {
     new ResizeObserver(() => this._layout()).observe(document.querySelector('.content'));
     this.raf = requestAnimationFrame((t) => this._frame(t));
     Store.onSettings((patch) => {
-      if ('cloudsOn' in patch || 'cloudsIntensity' in patch) this._draw();
+      if (['cloudsOn', 'cloudsIntensity', 'cloudsColors', 'cloudsAmount'].some((k) => k in patch)) this._draw();
     });
   },
 
@@ -194,18 +216,31 @@ const Ambient = {
     const brighter = 1 + this.PULSE_ALPHA * this.pulse * react;
     const intensity = (s.cloudsIntensity || 50) / 50;
     const at = ([centre, reach, period], phase) => centre + reach * Math.sin((tau * t) / period + phase);
+    const solid = this.SOLID[s.cloudsColors] || null;
+    const amount = Number.isFinite(s.cloudsAmount) ? s.cloudsAmount : 50;
+    const count = Math.round((this.CLOUDS.length * amount) / 100);
 
     this.CLOUDS.forEach((cl, i) => {
+      if (i >= count) return;
       // Away while the wave is well below zero, easing in and out around it.
       const wave = Math.min(1, Math.max(0, 0.5 + 0.8 * Math.sin((tau * t) / cl.cycle + i * 2.1)));
       const here = wave * wave * (3 - 2 * wave);
-      if (here < 0.005) return;
+      if (here < 0.005) {
+        cl.away = true;
+        return;
+      }
+      // Rainbow: a new colour each time it comes back.
+      if (cl.away || cl.hue == null) {
+        cl.hue = Math.random() * 360;
+        cl.away = false;
+      }
       const x = at(cl.x, i * 1.7) * w;
       const y = at(cl.y, i * 2.3 + 1) * h;
       // Growing as it comes, shrinking as it goes.
       const r = cl.size * side * swell * (0.7 + 0.3 * here);
-      const hue = cl.hue + cl.hueSwing * Math.sin((tau * t) / 211 + i);
-      const colour = `hsla(${hue.toFixed(1)}, ${cl.sat}%, ${cl.light}%, `;
+      const colour = solid
+        ? `hsla(${solid[0]}, ${solid[1]}%, ${solid[2]}%, `
+        : `hsla(${(cl.hue + cl.hueSwing * Math.sin((tau * t) / 211 + i)).toFixed(1)}, ${cl.sat}%, ${cl.light}%, `;
       const strength = Math.min(1, this.PUFF_ALPHA * intensity * here * brighter);
 
       for (const p of cl.puffs) {

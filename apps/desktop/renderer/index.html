@@ -27,6 +27,9 @@
     <nav id="menuFollowedList" class="menu__subs" aria-label="Followed Playlists" hidden></nav>
     <!-- Only while another device plays on the Flow Server (session.js). -->
     <button id="menuSessions" class="menu__item" type="button" hidden></button>
+    <!-- The lists made from how you listen (smartLists.js), closed until opened. -->
+    <button id="menuTrend" class="menu__item" type="button"></button>
+    <nav id="menuTrendList" class="menu__subs" aria-label="Your listening trend" hidden></nav>
   </aside>
 
   <!-- ===== Content ===== -->
@@ -233,6 +236,17 @@
         <table id="followedTable" class="table table--playlists"></table>
       </section>
 
+      <!-- Your listening trend -->
+      <section id="page-trend" class="page page--playlists" hidden>
+        <h1 class="page__title">Your listening trend</h1>
+        <div class="section-head">
+          <h2 class="section-head__title">Made from how you listen</h2>
+          <span id="trendCount" class="muted-text"></span>
+        </div>
+        <p class="muted-text">Each list fills itself from the songs in your playlists as you listen to them.</p>
+        <table id="trendTable" class="table table--playlists"></table>
+      </section>
+
       <!-- Active Sessions -->
       <section id="page-sessions" class="page page--playlists" hidden>
         <h1 class="page__title">Active Sessions</h1>
@@ -390,6 +404,7 @@
 <script src="app/pages/playlists.js"></script>
 <script src="app/pages/followed.js"></script>
 <script src="app/pages/sessions.js"></script>
+<script src="app/pages/trend.js"></script>
 <script src="app/pages/playlist.js"></script>
 <script src="app/details.js"></script>
 <script src="app/settingsPanel.js"></script>

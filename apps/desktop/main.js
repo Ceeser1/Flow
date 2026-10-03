@@ -370,7 +370,7 @@ handle('library:findBySource', ({ url, key }) => model.findBySource(currentLibra
 handle('library:findByMeta', (meta) => model.findByMeta(currentLibrary(), meta));
 handle('library:rescan', () => library.scan());
 
-// ---- the Flow Server (Settings: Streaming, Download and Synchronization) ----
+// ---- the Flow Server (Settings: Use a Flow Server) ----
 
 handle('server:status', () => remote.status());
 handle('server:setSecret', (text) => remote.setSecret(text));

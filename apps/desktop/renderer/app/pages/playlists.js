@@ -3,9 +3,9 @@
 // Playlists: create one at the top; both tables also show when each was created
 // and how long you have listened to it; "Shared Playlists" (All Songs, and the
 // playlists other profiles share, which can be followed or not; the section
-// can be closed, All Songs stays); "Your Playlists" below. Favourites and the
-// Listen behaviour lists are always the first rows of those, whatever
-// the sort, and have no actions.
+// can be closed, All Songs stays); "Your Playlists" below. Favourites is
+// always the first row of those, whatever the sort, and has no actions. The
+// listening trend lists have their own page (trend.js).
 
 const PlaylistsPage = {
   sort: { key: null, dir: null },
@@ -62,14 +62,7 @@ const PlaylistsPage = {
 
   render() {
     const lists = Util.sortRows(Store.sortedPlaylists(), this.sort, (p, k) => this._value(p, k));
-    // Favourites, then Listen behaviour (closed until opened) with its lists under it.
-    const listenOpen = Store.settings.listenPageOpen === true;
-    const rows = [
-      Store.favouritesPlaylist(),
-      { id: 'listen-group', name: 'Listen behaviour', entries: [], isListenGroup: true },
-      ...(listenOpen ? Store.smartPlaylists() : []),
-      ...lists,
-    ];
+    const rows = [Store.favouritesPlaylist(), ...lists];
     $('playlistsCount').textContent = Util.plural(Store.library.playlists.length, 'playlist');
 
     // Shared Playlists: All Songs always, the shared ones only while open.
@@ -104,19 +97,19 @@ const PlaylistsPage = {
       rows,
       sort: this.sort,
       rowKey: (p) => p.id,
-      rowClass: (p) => (p.isAll || p.isFavourites || p.isSmart || p.isListenGroup ? 'row--pinned' : ''),
+      rowClass: (p) => (p.isAll || p.isFavourites ? 'row--pinned' : ''),
       onSort: (key) => {
         this.sort = Util.cycleSort(this.sort, key);
         this.render();
       },
-      onRowDblClick: (p) => (p.isListenGroup ? this._toggleListen() : Nav.openPlaylist(p.id)),
+      onRowDblClick: (p) => Nav.openPlaylist(p.id),
       columns: [
         { key: 'name', label: 'Name', cls: 'col-name', render: (p) => this._nameCell(p) },
-        { key: 'songs', label: 'Songs', cls: 'col-num', render: (p) => (p.isListenGroup ? '' : String(p.entries.length)) },
-        { key: 'duration', label: 'Duration', cls: 'col-num', render: (p) => (p.isListenGroup ? '' : Util.fmtClock(Store.totalDuration(p.id))) },
+        { key: 'songs', label: 'Songs', cls: 'col-num', render: (p) => String(p.entries.length) },
+        { key: 'duration', label: 'Duration', cls: 'col-num', render: (p) => Util.fmtClock(Store.totalDuration(p.id)) },
         // Listen Duration: your own time listening to it, as the list playing.
         // Created: the lists the app keeps itself have no date.
-        { key: 'listened', label: 'Listen Duration', cls: 'col-listened', render: (p) => (p.isListenGroup ? '' : Util.fmtClock(Store.listenedTo(p.id))) },
+        { key: 'listened', label: 'Listen Duration', cls: 'col-listened', render: (p) => Util.fmtClock(Store.listenedTo(p.id)) },
         { key: 'created', label: 'Created', cls: 'col-date', render: (p) => (p.createdAt ? Util.fmtDate(p.createdAt) : '') },
         { key: 'actions', label: 'Actions', sortable: false, cls: 'col-actions', render: actions },
       ],
@@ -154,28 +147,10 @@ const PlaylistsPage = {
       });
       return input;
     }
-    if (p.isListenGroup) {
-      // Opens and closes; its lists share its icon.
-      const open = Store.settings.listenPageOpen === true;
-      return h('button.link-cell', {
-        type: 'button',
-        title: open ? 'Hide these lists' : 'Show these lists',
-        'aria-expanded': String(open),
-        onclick: () => this._toggleListen(),
-      },
-      h('span.link-cell__chevron' + (open ? '.link-cell__chevron--open' : ''), { html: Icons.chevron }),
-      h('span.link-cell__icon', { html: Icons.pulse }),
-      h('span', p.name));
-    }
-    return h('button.link-cell' + (p.isSmart ? '.link-cell--nested' : ''), { type: 'button', onclick: () => Nav.openPlaylist(p.id) },
+    return h('button.link-cell', { type: 'button', onclick: () => Nav.openPlaylist(p.id) },
       h('span.link-cell__icon', { html: listIcon(p) }),
       h('span.link-cell__name', p.name),
       p.ownerName ? h('span.link-cell__by', `by ${p.ownerName}`) : null);
-  },
-
-  _toggleListen() {
-    Store.saveSettings({ listenPageOpen: Store.settings.listenPageOpen !== true });
-    this.render();
   },
 
   /**
@@ -193,7 +168,7 @@ const PlaylistsPage = {
   },
 
   _actions(p) {
-    if (p.isFavourites || p.isSmart || p.isListenGroup) return h('span.muted', '');
+    if (p.isFavourites) return h('span.muted', '');
     return h('div.actions',
       iconButton('act.act--green', Icons.plus, 'Add Songs', () => Nav.openPlaylist('all', { pickFor: p.id })),
       iconButton('act.act--grey', Icons.pencil, 'Rename', () => {

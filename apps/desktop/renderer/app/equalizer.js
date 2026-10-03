@@ -348,7 +348,8 @@ const Equalizer = {
     if (!any) return;
 
     // 1. Sharp bars, coloured by the chosen scheme: by their own height
-    // (Spectrum), by where they stand (Rainbow), or all one colour.
+    // (Spectrum, and Greyscale: the taller the whiter), by where they stand
+    // (Rainbow), or all one colour.
     const sc = this.scratch.getContext('2d');
     sc.setTransform(s, 0, 0, s, 0, 0);
     sc.globalCompositeOperation = 'source-over';
@@ -361,7 +362,7 @@ const Equalizer = {
       const v = levels[i];
       if (v <= 0.004) continue;
       const h = v * g.reach;
-      if (!solid) sc.fillStyle = scheme === 'rainbow' ? Palette.rainbow(i / levels.length - this.rainbowShift) : Palette.at(v);
+      if (!solid) sc.fillStyle = scheme === 'rainbow' ? Palette.rainbow(i / levels.length - this.rainbowShift) : Palette.by(scheme, v);
       sc.fillRect(offset + i * this.PITCH, g.center - h, this.BAR, h * 2);
     }
 
@@ -452,6 +453,22 @@ const Palette = {
     }
     const i = Math.max(0, Math.min(this.steps - 1, Math.round(v * (this.steps - 1))));
     return this.cache[i];
+  },
+
+  // Greyscale: dark grey when low, up to white at full height.
+  greyCache: null,
+  grey(v) {
+    if (!this.greyCache) {
+      this.greyCache = [];
+      for (let i = 0; i < this.steps; i += 1) this.greyCache.push(`hsl(0, 0%, ${(22 + 74 * (i / (this.steps - 1))).toFixed(1)}%)`);
+    }
+    const i = Math.max(0, Math.min(this.steps - 1, Math.round(v * (this.steps - 1))));
+    return this.greyCache[i];
+  },
+
+  /** A bar of height `v` in a scheme coloured by height. */
+  by(scheme, v) {
+    return scheme === 'greyscale' ? this.grey(v) : this.at(v);
   },
 
   // Rainbow: by where the bar stands, once round the whole colour wheel from

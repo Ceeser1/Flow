@@ -11,6 +11,7 @@
 const EQ_SCHEMES = [
   ['spectrum', 'Spectrum'],
   ['rainbow', 'Rainbow'],
+  ['greyscale', 'Greyscale'],
   ['white', 'White'],
   ['red', 'Red'],
   ['green', 'Green'],
@@ -18,6 +19,12 @@ const EQ_SCHEMES = [
   ['blue', 'Blue'],
   ['purple', 'Purple'],
   ['black', 'Black'],
+];
+
+// The clouds: each its own colour, or all one (the equalizer's solid ones).
+const CLOUD_SCHEMES = [
+  ['rainbow', 'Rainbow'],
+  ...EQ_SCHEMES.filter(([v]) => !['spectrum', 'rainbow', 'greyscale'].includes(v)),
 ];
 
 function fmtBytes(bytes) {
@@ -90,9 +97,9 @@ const SettingsPanel = {
       this._row({
         key: 'useCookies',
         label: 'Download using browser cookies from',
-        desc: 'Downloads may be blocked by age restrictions, or by sites that only give their content to '
-          + 'signed-in visitors. Pick your browser to download these too, if you are signed in to these sites '
-          + 'there. Firefox works best: Chrome, Edge and Brave lock their cookies on Windows.',
+        desc: 'Downloads may be blocked by age restrictions or sites may only serve content to signed-in users. '
+          + 'Pick your browser to use session cookies (no login data) to bypass restrictions. Firefox works best. '
+          + 'Chrome, Edge, Brave may lock cookies on Windows.',
         right: this._cookieBrowser(),
       }),
       this._row({
@@ -103,6 +110,18 @@ const SettingsPanel = {
         sub: true,
         when: () => Store.settings.useCookies,
         show: () => Store.settings.serverOn,
+      }),
+      this._row({
+        key: 'sponsorBlock',
+        label: 'Use Sponsorblock for Youtube',
+        desc: 'Shows sponsored segments as yellow in the trim.',
+      }),
+      this._row({
+        key: 'sponsorBlockIntros',
+        label: 'Try to detect intros/outros, marked red in the trim',
+        desc: 'A music video\'s non-music parts (talk, skits, credits) count as these too.',
+        sub: true,
+        when: () => Store.settings.sponsorBlock,
       }),
       this._row({
         key: 'alwaysMp3',
@@ -116,18 +135,6 @@ const SettingsPanel = {
         desc: 'Leaves MP3s as they are instead of encoding them again at the quality above.',
         sub: true,
         when: () => Store.settings.alwaysMp3,
-      }),
-      this._row({
-        key: 'sponsorBlock',
-        label: 'Use Sponsorblock for Youtube',
-        desc: 'Shows sponsored segments as yellow in the trim.',
-      }),
-      this._row({
-        key: 'sponsorBlockIntros',
-        label: 'Try to detect intros/outros, marked red in the trim',
-        desc: 'A music video\'s non-music parts (talk, skits, credits) count as these too.',
-        sub: true,
-        when: () => Store.settings.sponsorBlock,
       }),
 
       h('h3.settings__section', 'Visual Effects'),
@@ -144,6 +151,20 @@ const SettingsPanel = {
         sub: true,
         when: () => Store.settings.cloudsOn,
         right: this._slider({ key: 'cloudsBassAmount', label: 'Strength', when: () => Store.settings.cloudsOn && Store.settings.cloudsBass }),
+      }),
+      this._row({
+        label: 'Clouds color scheme',
+        desc: 'Rainbow gives each cloud a random color as it comes.',
+        sub: true,
+        when: () => Store.settings.cloudsOn,
+        right: this._select({ key: 'cloudsColors', options: CLOUD_SCHEMES, when: () => Store.settings.cloudsOn }),
+      }),
+      this._row({
+        label: 'Clouds amount',
+        desc: 'How many clouds drift at once.',
+        sub: true,
+        when: () => Store.settings.cloudsOn,
+        right: this._slider({ key: 'cloudsAmount', label: 'Amount', min: 0, max: 100, step: 10, when: () => Store.settings.cloudsOn }),
       }),
       this._row({
         key: 'eqOn',
@@ -168,7 +189,7 @@ const SettingsPanel = {
       }),
       this._row({
         label: 'Equalizer color scheme',
-        desc: 'Spectrum colors bars by their height. Rainbow runs colors across the bars.',
+        desc: 'Spectrum colors bars by their height. Rainbow runs colors across the bars. Greyscale turns them whiter the taller they are.',
         sub: true,
         when: () => Store.settings.eqOn,
         right: this._select({ key: 'eqColors', options: EQ_SCHEMES, when: () => Store.settings.eqOn }),
@@ -176,7 +197,7 @@ const SettingsPanel = {
       this._row({
         key: 'flashOn',
         label: 'Screen Flash',
-        desc: 'The window\'s edges glow white from kick and bass peaks. A flash on each punch of the deep bass (up to 80 Hz). More triggers: smaller punches count and flashes may follow each other sooner.',
+        desc: 'The window\'s edges glow white from kick and bass peaks.',
         right: this._slider({ key: 'flashTriggers', label: 'Triggers', when: () => Store.settings.flashOn }),
       }),
       this._row({
@@ -419,7 +440,7 @@ const SettingsPanel = {
     return h('div.settings__control', h('span.settings__caption', 'At quality'), select, h('span', 'kbit/s'), estimate);
   },
 
-  // ---- Streaming, Download and Synchronization ----
+  // ---- Use a Flow Server ----
 
   /**
    * The Flow Server rows: on/off with its state, the two addresses (home
@@ -430,7 +451,7 @@ const SettingsPanel = {
     this._serverNode = h('div.settings__desc.server-state');
     const main = this._row({
       key: 'serverOn',
-      label: 'Streaming, Download and Synchronization',
+      label: 'Use a Flow Server',
       desc: 'Use the library on a Flow Server (a Raspberry Pi, another PC). Songs play straight from it, and '
         + 'changes made here go to it. Turned on, your Local Files are uploaded to the server.',
     });
@@ -443,8 +464,7 @@ const SettingsPanel = {
       this._row({
         key: 'serverHomeOn',
         label: 'Home Server in WiFi/LAN',
-        desc: 'Tried first if enabled. Flow looks out for local Flow Servers in your network. If unticked or it cannot find one, '
-          + 'it falls back to the remote server. Enter an ip:port yourself, if UDP discovery is not enabled.',
+        desc: 'Flow connects to your home server or finds the server in your local network itself if UDP discovery is enabled.',
         sub: true,
         when: on,
         right: this._textField({ key: 'serverHome', placeholder: '192.168.0.63:7878', when: on }),
@@ -452,7 +472,7 @@ const SettingsPanel = {
       this._row({
         key: 'serverRemoteOn',
         label: 'Remote Server',
-        desc: 'When you are not at home and have a link to your server using Tailscale or a hosted connection.',
+        desc: 'Fallback if no home server is found or you are away. Enter an IP:Port or a website connected to the server.',
         sub: true,
         when: on,
         right: this._textField({ key: 'serverRemote', placeholder: '100.101.102.103:7878 or flow.example.com', when: on }),
@@ -476,17 +496,15 @@ const SettingsPanel = {
       this._row({
         key: 'serverKeepFiles',
         label: 'Keep downloaded files after sync with the server',
-        desc: 'Songs downloaded here stay in Local Files once they are on the server, to play them without it. '
-          + 'Unticked, each is removed here once uploaded (unless a playlist marked for download holds it).',
-        sub: true,
+        desc: 'If disabled, downloaded songs will be removed locally once they are uploaded to the server '
+          + '(except if they are marked to download).',
         when: on,
       }),
       this._row({
         key: 'serverAutoSync',
         label: 'Synchronize local changes',
-        desc: 'Songs added to or removed from Local Files by hand go to the server by themselves. '
-          + 'Unticked, only with Synchronize now. Songs downloaded in Flow always go up.',
-        sub: true,
+        desc: 'Songs added to or removed from local files go to the server by themselves. '
+          + 'If disabled, only the button will sync local changes.',
         when: on,
         right: this._syncBtn,
       }),
