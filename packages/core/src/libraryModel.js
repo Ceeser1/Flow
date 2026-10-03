@@ -105,6 +105,15 @@ function cleanTagged(v) {
   return cleanCover(v);
 }
 
+/**
+ * The version of a song's audio: '' as it came, else the id of the trim that
+ * cut it last (a copy elsewhere with another one is out of date).
+ */
+function cleanCut(v) {
+  const t = String(v === null || v === undefined ? '' : v);
+  return /^[0-9a-f]{6,40}$/.test(t) ? t : '';
+}
+
 /** A list of ids: strings, no empties, no repeats. */
 function cleanIds(list) {
   return [...new Set((Array.isArray(list) ? list : []).map((x) => String(x || '')).filter(Boolean))];
@@ -134,6 +143,7 @@ function sanitize(raw) {
       loudness: cleanLoudness(s.loudness),
       cover: cleanCover(s.cover),
       tagged: cleanTagged(s.tagged),
+      cut: cleanCut(s.cut),
       favouriteAt: Number(s.favouriteAt) || null,
     });
   }
@@ -307,6 +317,7 @@ function addSong(data, song) {
   song.loudness = cleanLoudness(song.loudness);
   song.cover = cleanCover(song.cover);
   song.tagged = cleanTagged(song.tagged);
+  song.cut = cleanCut(song.cut);
   data.songs.push(song);
   const lower = String(song.file).toLowerCase();
   data.ignoredFiles = data.ignoredFiles.filter((f) => f !== lower);
@@ -319,6 +330,7 @@ function updateSong(data, id, patch) {
     if (patch[key] !== undefined) s[key] = patch[key];
   }
   if (patch.loudness !== undefined) s.loudness = cleanLoudness(patch.loudness);
+  if (patch.cut !== undefined) s.cut = cleanCut(patch.cut);
   return s;
 }
 
@@ -479,7 +491,7 @@ module.exports = {
   emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
-  addSong, updateSong, setCover, cleanCover, setTagged, cleanTagged, needsTags, setFavourite, removeSong, songsOnlyIn,
+  addSong, updateSong, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta, sameNames,
 };

@@ -185,6 +185,23 @@ const TYPES = {
       return { value: model.recordListen(d, str(c.songId), { listened: c.listened, duration: c.duration, at: c.at, contextId: c.contextId ? str(c.contextId) : null }) };
     },
   },
+  // A song trimmed: only ever applied by the app, to show it at its new
+  // length before the server has cut its file (the server cuts it through
+  // POST /api/songs/:id/trim). base: the cut it was trimmed from; cut: the
+  // new one.
+  trimSong: {
+    shared: true,
+    keys: () => [],
+    run(d, c) {
+      const s = model.songById(d, str(c.songId));
+      if (!s) return { skipped: 'gone' };
+      if (s.cut === model.cleanCut(c.cut)) return { skipped: 'repeat' };
+      const len = Number(c.end) - Number(c.start);
+      if (!(len > 0)) throw new Error('The trim is empty.');
+      model.updateSong(d, s.id, { duration: len, cut: c.cut, loudness: null });
+      return {};
+    },
+  },
   // A song on its way up (an upload): only ever applied by the app, to show
   // it before it has arrived. The server adds songs through the upload itself.
   addSong: {

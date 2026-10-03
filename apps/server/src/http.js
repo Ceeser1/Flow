@@ -19,6 +19,11 @@
 //                                      differ); meta.onExisting "new" takes it
 //                                      as a song of its own all the same
 //   GET  /api/songs/:id/audio          the song's file
+//   GET  /api/songs/:id/peaks          { peaks }: its waveform, for an app's trim
+//   POST /api/songs/:id/trim { start, end, base, cut }
+//                                      its file cut (only when /api/hello lists
+//                                      the "trim" feature): { song, rev } or
+//                                      { skipped: 'gone' | 'repeat' | 'changed', rev }
 //   GET  /api/songs/:id/cover[?v=]     the song's cover (JPEG); with ?v= its
 //                                      current version, cached for good
 //   PUT  /api/songs/:id/cover          an app's cover for a song that has none;
@@ -686,7 +691,8 @@ function createHttpServer({
       // From home at level 3 and 4 no password is asked for, so none is announced.
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
-      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download'] : []), ...(live ? ['sessions'] : [])];
+      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download'] : []), ...(live ? ['sessions'] : []),
+        ...(tools.ffmpeg() ? ['trim'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
       };
@@ -753,6 +759,18 @@ function createHttpServer({
       const file = library.songFile(m[1]);
       if (!file) throw new HttpError(404, 'That song is not on the server.');
       return sendFile(req, res, file);
+    }
+    m = /^\/api\/songs\/([\w-]{1,64})\/peaks$/.exec(p);
+    if (m && is('GET', /./)) {
+      const peaks = await library.songPeaks(m[1]);
+      if (!peaks) throw new HttpError(404, 'That song is not on the server.');
+      return sendJson(res, 200, { peaks });
+    }
+    m = /^\/api\/songs\/([\w-]{1,64})\/trim$/.exec(p);
+    if (m && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const r = await library.trimSong(m[1], body);
+      return sendJson(res, 200, { ...(r.song ? { song: { ...r.song, file: '' } } : {}), skipped: r.skipped, rev: library.rev });
     }
     m = /^\/api\/songs\/([\w-]{1,64})\/cover$/.exec(p);
     if (m && (req.method === 'GET' || req.method === 'HEAD')) return sendCover(req, res, url, library.coverOf(m[1]));

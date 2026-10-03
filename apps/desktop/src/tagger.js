@@ -39,6 +39,7 @@ function createTagger({ skip = () => false } = {}) {
   async function tagOne(s) {
     const file = s.file;
     const coverNow = s.cover;
+    const cutNow = s.cut;
     const out = path.join(path.dirname(file), `.flow-retag-${crypto.randomBytes(6).toString('hex')}${path.extname(file)}`);
     let ok = false;
     try {
@@ -50,9 +51,9 @@ function createTagger({ skip = () => false } = {}) {
           flowId: flowIdText(settings.clientId(), s.id),
           picture,
         });
-        // Renamed or gone meanwhile: written again later, or not at all.
+        // Renamed, trimmed or gone meanwhile: written again later, or not at all.
         const now = model.songById(library.get(), s.id);
-        ok = ok && !stopped && !!now && now.file === file;
+        ok = ok && !stopped && !!now && now.file === file && now.cut === cutNow;
         if (ok) fs.renameSync(out, file);
       });
     } catch {

@@ -74,7 +74,9 @@ function createFiller(library, model, enabled) {
       lastSave = Date.now();
       library.mutate((d) => {
         for (const r of batch) {
-          if (model.songById(d, r.id)) model.updateSong(d, r.id, { loudness: r.loudness });
+          // Trimmed meanwhile: measured again.
+          const s = model.songById(d, r.id);
+          if (s && s.cut === r.cut) model.updateSong(d, r.id, { loudness: r.loudness });
         }
       });
     };
@@ -83,7 +85,7 @@ function createFiller(library, model, enabled) {
         if (stopped || !enabled()) break;
         const loudness = await measure(song.file);
         if (loudness === null) failed.add(song.id);
-        else results.push({ id: song.id, loudness });
+        else results.push({ id: song.id, loudness, cut: song.cut });
         if (results.length >= BATCH || Date.now() - lastSave > BATCH_MS) flush();
       }
     } finally {

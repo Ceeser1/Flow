@@ -331,6 +331,31 @@ handle('library:editSong', ({ songId, artist, title, mix }) => {
   });
 });
 
+// Edit's trim: the song's file cut to [start, end]. With a Flow Server the
+// server cuts its file (remote.trimSong; a copy here is cut at once); else
+// the Local Files file is cut here, the uncut one to the Recycle Bin, and a
+// song that is one of a server's goes there too once it is connected.
+handle('library:trimSong', ({ songId, start, end }) => {
+  const span = { start: Math.max(0, Number(start) || 0), end: Number(end) || 0 };
+  if (!(span.end - span.start >= 0.5)) throw new Error('The trim is too short.');
+  if (remote.active()) return remote.trimSong(songId, span);
+  return library.quietly(async () => {
+    const song = model.songById(library.get(), songId);
+    if (!song) throw new Error('That song no longer exists.');
+    if (!fs.existsSync(song.file)) throw new Error('The song\'s file is missing.');
+    const base = song.cut;
+    const cut = remote.newCutId();
+    const { duration } = await exporter.trimSong(song, span.start, span.end, { keep: true });
+    library.mutate((d) => {
+      if (!model.songById(d, songId)) return;
+      model.updateSong(d, songId, { duration, cut, loudness: null });
+      // Its flowid and cover go into the cut file again (tagger.js).
+      if (model.songById(d, songId).tagged !== null) model.setTagged(d, songId, '');
+    });
+    remote.trimmedHere(songId, { ...span, base, cut });
+  });
+});
+
 handle('library:setFavourite', ({ songId, on }) => {
   change((d) => model.setFavourite(d, songId, !!on), 'setFavourite', { songId, on: !!on });
 });
@@ -352,6 +377,7 @@ handle('server:setSecret', (text) => remote.setSecret(text));
 handle('server:syncNow', () => remote.syncNow());
 handle('server:setOffline', ({ playlistId, on }) => remote.setOffline(playlistId, !!on));
 handle('server:downloadSong', (songId) => remote.downloadSong(songId));
+handle('server:songPeaks', (songId) => remote.songPeaks(songId));
 handle('server:removeDownload', (songId) => remote.removeDownload(songId));
 handle('server:profiles', () => remote.loadProfiles());
 handle('server:profileLogin', ({ profileId, pin }) => remote.loginProfile(profileId, pin));

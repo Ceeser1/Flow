@@ -35,6 +35,13 @@
 // Songs the window plays come from a local copy when there is one, else
 // straight from the server (renderer: Store.audioSrc).
 //
+// Trims (Edit): the server cuts its file (POST /api/songs/:id/trim, sent from
+// the queue like an upload); a copy here is cut at once, so it is the same
+// trim (song.cut). A copy whose cut is not the server's (trimmed on another
+// device, or a trim the server did not take) is replaced by the server's
+// file. A trim made for a server waits for that server: switching to another
+// one parks it (server-trims.json) until the first is back.
+//
 // Covers: every song's comes down in the background into Covers\<server id>
 // (covers.js), and stays there across restarts and server switches; one
 // goes when its song is gone from that server.
@@ -83,6 +90,7 @@ const AUTO_SYNC_DELAY = 2500;
 
 const cacheFile = () => path.join(paths.ensure(paths.rootDir()), 'server-library.json');
 const syncFile = () => path.join(paths.ensure(paths.rootDir()), 'server-sync.json');
+const parkedFile = () => path.join(paths.ensure(paths.rootDir()), 'server-trims.json');
 
 function emptySync(serverId = '') {
   return {
@@ -263,7 +271,7 @@ async function call(pathname, opts = {}) {
 // The connection in use: base address, token, which address it is, whether
 // the server knows profiles, whether it downloads songs itself and whether it
 // has Active Sessions (a live channel).
-const conn = { base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, sessions: false };
+const conn = { base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, sessions: false, trim: false };
 const status = {
   state: 'off', // off | connecting | online | offline | password | error
   message: '',
@@ -279,7 +287,7 @@ const status = {
 // ---- profiles ----
 
 // Commands that do the same whoever sends them: the songs are shared.
-const SHARED_TYPES = new Set(['editSong', 'deleteSong', 'setLoudness', 'setDuration']);
+const SHARED_TYPES = new Set(['editSong', 'deleteSong', 'setLoudness', 'setDuration', 'trimSong']);
 
 /** The profile signed in to ('' for none). */
 function currentProfile() {
@@ -343,6 +351,8 @@ function publicStatus() {
     profilesSupported: conn.profiles,
     // The server downloads songs itself ("Download (Server)" on Add Songs).
     downloads: status.state === 'online' && conn.downloads,
+    // The server cuts its songs' files (Edit's trim).
+    trim: status.state === 'online' && conn.trim,
     // Connected through the Tailscale address (away from home).
     tailscale: conn.via === 'remote' && isTailscaleAddress(conn.address),
     // Active Sessions: the server has them, and the live channel is open.
@@ -443,8 +453,20 @@ let generation = 0; // bumped on every reconfigure: late answers of an old conne
 function adoptServer(id) {
   if (sync.serverId === id) return;
   const hadOther = !!sync.serverId;
+  // Trims still waiting wait for their own server; this one's come back.
+  const parked = readJson(parkedFile()) || {};
+  const waitingTrims = sync.queue.filter((c) => c.type === 'trimSong');
+  if (sync.serverId && waitingTrims.length) parked[sync.serverId] = [...(parked[sync.serverId] || []), ...waitingTrims];
+  const back = Array.isArray(parked[id]) ? parked[id] : [];
+  delete parked[id];
+  try {
+    writeJsonAtomic(parkedFile(), parked);
+  } catch {
+    // Only the parked trims.
+  }
   // The Home address was found (or not) before there was a server to belong to.
   sync = { ...emptySync(id), homeFilled: sync.homeFilled };
+  sync.queue.push(...back);
   cache = { serverId: id, rev: -1, library: null, profile: '' };
   saveSync();
   saveCache();
@@ -565,10 +587,11 @@ function connect() {
       const profiles = Array.isArray(hello.features) && hello.features.includes('profiles');
       const downloads = Array.isArray(hello.features) && hello.features.includes('download');
       const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
+      const trim = Array.isArray(hello.features) && hello.features.includes('trim');
       if (profiles) token = await restoreProfile(base, token);
       if (gen !== generation) return false;
       Object.assign(conn, {
-        base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, sessions,
+        base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, sessions, trim,
       });
       if (via === 'remote') lastHomeTry = Date.now();
       if (via === 'home') fillRemote(hello);
@@ -845,6 +868,7 @@ function flush() {
     const canTransfer = uploads ? await transfersAllowed() : true;
     const blocked = new Set();
     let uploadNo = 0;
+    let trimsWaiting = 0;
     let batch = [];
     // Songs the server deleted with a playlist: their copies here go too.
     const deleted = [];
@@ -892,6 +916,16 @@ function flush() {
         }
         const refs = [c.songId, ...(Array.isArray(c.songIds) ? c.songIds : [])];
         if (refs.some((id) => blocked.has(id))) continue;
+        if (c.type === 'trimSong') {
+          // A server too old to trim (or without ffmpeg): the trim waits for it.
+          if (!conn.trim) {
+            trimsWaiting += 1;
+            continue;
+          }
+          await sendBatch();
+          await trimOne(c);
+          continue;
+        }
         batch.push(c);
         if (batch.length >= 200) await sendBatch();
       }
@@ -906,6 +940,9 @@ function flush() {
       status.note = blocked.size
         ? `${blocked.size} ${blocked.size === 1 ? 'song waits' : 'songs wait'} to be uploaded until the connection is not metered.`
         : '';
+      if (trimsWaiting) {
+        status.note = `${status.note ? `${status.note} ` : ''}${trimsWaiting} ${trimsWaiting === 1 ? 'trim waits' : 'trims wait'} for the server: update it (and give it ffmpeg) to trim songs.`;
+      }
       if (!sync.queue.some(mine)) status.lastSync = Date.now();
       await refresh();
       afterServerChange();
@@ -920,6 +957,149 @@ function flush() {
     flushing = null;
   });
   return flushing;
+}
+
+// ---- trims ----
+
+/** A new trim's id (song.cut). */
+function newCutId() {
+  return crypto.randomBytes(6).toString('hex');
+}
+
+/**
+ * One trim to the server: it cuts its file. Taken (or in already): sent.
+ * Not applied (trimmed on another device since, or the server could not):
+ * dropped and told; the copy here then follows the server's file.
+ */
+async function trimOne(cmd) {
+  const s = model.songById(getView(), cmd.songId);
+  const label = s ? [s.artist, s.title].filter(Boolean).join(' - ') : 'A song';
+  status.transfer = `Trimming on the server: ${label}`;
+  emitStatus();
+  const r = await request(conn.base, `/api/songs/${encodeURIComponent(cmd.songId)}/trim`, {
+    method: 'POST', json: { start: cmd.start, end: cmd.end, base: cmd.base || '', cut: cmd.cut }, token: conn.token, timeout: 5 * 60 * 1000,
+  });
+  if (r.status === 401) throw new AuthError('Signed out.');
+  sync.queue = sync.queue.filter((c) => c.cid !== cmd.cid);
+  if (r.status === 200 && r.json) {
+    if (!r.json.skipped) sync.sent.push({ cmd, rev: Number(r.json.rev) });
+    if (r.json.skipped === 'changed') problems.push(`"${label}" was trimmed on another device meanwhile, so this trim was not applied.`);
+  } else {
+    problems.push(`The server could not trim "${label}": ${(r.json && r.json.error) || `it answered ${r.status}`}`);
+  }
+  saveSync();
+}
+
+/** The Local Files copy of a server song, when there is one (its local id). */
+function copyOf(sid) {
+  const local = library.get();
+  return local.songs.find((x) => sync.songMap[x.id] === sid && x.file && fs.existsSync(x.file)) || null;
+}
+
+/**
+ * Edit's trim of a server song: a copy here is cut at once (the server keeps
+ * the uncut file in its trash), then the server is told, now or once it can
+ * be reached.
+ */
+async function trimSong(songId, { start, end }) {
+  const s = model.songById(getView(), songId);
+  if (!s) throw new Error('That song no longer exists.');
+  if (status.state === 'online' && !conn.trim) {
+    throw new Error('This Flow Server cannot trim songs. Update it, and install ffmpeg on it (sudo apt install ffmpeg).');
+  }
+  const base = s.cut || '';
+  const cut = newCutId();
+  const copy = copyOf(songId);
+  // Queued first: a copy that cannot be cut (playing elsewhere) is then
+  // simply replaced by the server's cut file later.
+  command('trimSong', { songId, start, end, base, cut });
+  if (!copy) return;
+  try {
+    await library.quietly(async () => {
+      const { duration } = await exporter.trimSong(copy, start, end, { keep: false });
+      library.mutate((d) => {
+        if (model.songById(d, copy.id)) model.updateSong(d, copy.id, { duration, cut, loudness: null });
+      });
+    });
+  } catch {
+    // Follows the server's file.
+  }
+}
+
+/**
+ * A Local Files song trimmed while the server is off: when it is one of a
+ * server's songs (a copy, or one uploaded), the trim waits for that server.
+ * One still waiting to go up goes up trimmed.
+ */
+function trimmedHere(lid, { start, end, base, cut }) {
+  ensureLoaded();
+  const sid = sync.songMap[lid];
+  if (!sid || !sync.serverId) return;
+  if (sync.queue.some((c) => c.type === 'upload' && c.localId === lid)) return;
+  sync.queue.push(newCommand('trimSong', { songId: sid, start, end, base: base || '', cut }));
+  saveSync();
+}
+
+/** A server song's waveform (the server draws it). */
+async function songPeaks(songId) {
+  if (!active() || status.state !== 'online') throw new Error('The server cannot be reached.');
+  return (await call(`/api/songs/${encodeURIComponent(songId)}/peaks`, { timeout: 120000 })).peaks;
+}
+
+/**
+ * Copies whose audio is not the server's (song.cut differs: trimmed on
+ * another device, or a trim here the server did not take): the server's
+ * file comes down in their place.
+ */
+async function replaceStaleCopies(v) {
+  const local = library.get();
+  const stale = [];
+  for (const s of local.songs) {
+    const sid = sync.songMap[s.id];
+    const there = sid && model.songById(v, sid);
+    if (there && (there.cut || '') !== (s.cut || '') && s.file && fs.existsSync(s.file)) stale.push({ lid: s.id, there });
+  }
+  if (!stale.length || !(await transfersAllowed())) return;
+  for (const { lid, there } of stale) {
+    if (status.state !== 'online' || !active()) break;
+    const label = [there.artist, there.title].filter(Boolean).join(' - ');
+    status.transfer = `Downloading the trimmed song: ${label}`;
+    emitStatus();
+    // Trimmed here since the look began: nothing to replace.
+    const now = model.songById(library.get(), lid);
+    const cur = model.songById(getView(), there.id);
+    if (!now || !cur || (cur.cut || '') === (now.cut || '')) continue;
+    const tmp = path.join(path.dirname(now.file), `.flow-download-${crypto.randomBytes(5).toString('hex')}${path.extname(now.file)}`);
+    try {
+      const r = await request(conn.base, `/api/songs/${encodeURIComponent(there.id)}/audio`, { token: conn.token, saveTo: tmp, timeout: 60000 });
+      if (r.status === 401) throw new AuthError('Signed out.');
+      if (r.status !== 200) throw new Error((r.json && r.json.error) || `the server answered ${r.status}`);
+      await library.quietly(async () => {
+        const s = model.songById(library.get(), lid);
+        if (!s) return;
+        try {
+          fs.rmSync(s.file);
+        } catch {
+          // Playing: replaced at the next look.
+          return;
+        }
+        fs.renameSync(tmp, s.file);
+        library.mutate((d) => {
+          if (model.songById(d, lid)) model.updateSong(d, lid, { duration: cur.duration, cut: cur.cut || '', loudness: cur.loudness });
+        });
+      });
+    } catch (err) {
+      if (err instanceof OfflineError || err instanceof AuthError) {
+        status.transfer = '';
+        throw err;
+      }
+      problems.push(`The trimmed "${label}" could not be downloaded: ${err.message}`);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+  }
+  status.transfer = '';
+  emitStatus();
 }
 
 // ---- uploads ----
@@ -974,6 +1154,7 @@ async function uploadOne(cmd, number, total) {
     sourcePlaylistUrl: local.sourcePlaylistUrl,
     addedAt: local.addedAt,
     loudness: local.loudness,
+    cut: local.cut || undefined,
     onExisting: cmd.onExisting || undefined,
   };
   if ((cmd.profile || '') === currentProfile()) {
@@ -1374,6 +1555,12 @@ function followServer() {
       emitStatus();
     }
 
+    try {
+      await replaceStaleCopies(v);
+    } catch (err) {
+      wentWrong(err);
+      return;
+    }
     await downloadOffline();
     await dropUnneededCopies();
     refreshView();
@@ -1468,6 +1655,7 @@ async function fetchSong(s, onProgress) {
         loudness: s.loudness,
         favouriteAt: s.favouriteAt,
         stats: s.stats,
+        cut: s.cut || '',
         // The server's cover, when it is here already.
         cover: s.cover && s.cover !== '-' ? covers.copyToLocal(sync.serverId, s.id, lid) : s.cover,
       };
@@ -2385,6 +2573,7 @@ function stop() {
 module.exports = {
   init, active, reconfigure, setSecret, stop,
   coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
+  trimSong, trimmedHere, songPeaks, newCutId,
   status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, pushNew, pushImport, deleteSong, localFileOf, sessions, leaveSession,
   loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, deleteProfile,
 };

@@ -415,6 +415,33 @@ function createMedia({
   }
 
   /**
+   * A saved song's file trimmed to [start, end] into `dest` (beside it; the
+   * caller puts it in its place). Its tags stay as they are; a cover picture
+   * in it is not carried over (written in again with its flowid). Copied as
+   * it is, FLAC encoded again (see cutSong). Resolves { duration }.
+   */
+  async function trimFile({ file, start, end, duration }, dest, cancelToken = null) {
+    const ext = path.extname(file).slice(1).toLowerCase();
+    const cut = [];
+    if (start > EDGE) cut.push('-ss', start.toFixed(3));
+    if (!duration || end < duration - EDGE) cut.push('-to', end.toFixed(3));
+    if (!cut.length) throw new Error('There is nothing to trim.');
+    const codec = ext === 'flac' ? ['-c:a', 'flac', '-compression_level', '5'] : ['-c', 'copy'];
+    try {
+      await runFfmpeg([...cut, '-i', file, '-map', '0:a:0', ...codec, '-map_metadata', '0', dest], end - start, null, cancelToken);
+    } catch (err) {
+      removeQuietly(dest);
+      throw err;
+    }
+    const info = await probeAudio(dest);
+    if (!info.codec) {
+      removeQuietly(dest);
+      throw new Error('The trimmed file has no audio in it.');
+    }
+    return { duration: info.duration || (end - start) };
+  }
+
+  /**
    * Flat [min0, max0, min1, max1, ...] for the file's waveform, values -1..1.
    * cancel() on the token stops it.
    */
@@ -542,7 +569,7 @@ function createMedia({
   }
 
   return {
-    run, probeAudio, runFfmpeg, readJson, probe, probedFrom, prepare, download, prepareLocal, clearCache, cutSong, peaksFor,
+    run, probeAudio, runFfmpeg, readJson, probe, probedFrom, prepare, download, prepareLocal, clearCache, cutSong, trimFile, peaksFor,
     rewriteTags,
   };
 }

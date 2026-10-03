@@ -12,6 +12,10 @@
 // A deleted song's file is not gone at once: it goes to .flow-trash in the
 // music folder for 30 days, in case an app deleted it by mistake.
 //
+// A song trimmed in an app (trimSong) has its file cut here; the uncut file
+// goes to the trash too. song.cut says which trim it is, so the apps' copies
+// of the uncut file are replaced.
+//
 // Covers (@flow/core/cover) live in <home>/covers/<song id>.jpg, outside the
 // music folder; song.cover is the file's version. A song's cover goes with
 // the song. Songs without one get one in the background, one at a time.
@@ -375,6 +379,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
       stats: meta.stats,
       // Its file gets this server's flowid and its cover once that is settled.
       tagged: '',
+      // Trimmed in the app before it came up: its copies there are this file.
+      cut: model.cleanCut(meta.cut),
     };
     mutate((d) => {
       const v = prof.view(d, profiles, profileId, profileNames());
@@ -536,6 +542,11 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
   const tagFailed = new Set(); // songs whose tags could not be written: tried again at the next start
   const noLoudness = new Set();
   let stopped = false;
+  // Song id -> how often its file was cut while running: background work on
+  // a file (tags, loudness) that was cut meanwhile is thrown away.
+  const fileGen = new Map();
+  const genOf = (id) => fileGen.get(id) || 0;
+  let trims = Promise.resolve();
 
   // Covers have a loop of their own: they mostly wait for the internet,
   // which must not hold up the loudness (or the other way round).
@@ -653,6 +664,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
   async function tagFile(s) {
     const file = s.file;
     const coverNow = s.cover;
+    const gen = genOf(s.id);
     const out = path.join(path.dirname(file), `.flow-retag-${crypto.randomBytes(6).toString('hex')}${path.extname(file)}`);
     let ok = false;
     try {
@@ -664,7 +676,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
       });
       // Renamed or gone meanwhile: written again later, or not at all.
       const now = model.songById(data, s.id);
-      ok = ok && !stopped && !!now && now.file === file;
+      ok = ok && !stopped && !!now && now.file === file && genOf(s.id) === gen;
       if (ok) fs.renameSync(out, file);
     } catch (err) {
       ok = false;
@@ -674,7 +686,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     }
     if (stopped) return;
     if (!ok) {
-      tagFailed.add(s.id);
+      // Cut meanwhile: written again from the cut file.
+      if (genOf(s.id) !== gen) queueRetag(s.id);
+      else tagFailed.add(s.id);
       return;
     }
     // A cover still being looked for: written again once it is known.
@@ -707,15 +721,90 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
         }
         const next = data.songs.find((s) => s.loudness === null && !noLoudness.has(s.id) && fs.existsSync(s.file));
         if (!next) break;
+        const gen = genOf(next.id);
         const lufs = await tools.measureLoudness(next.file);
         // Stopped meanwhile: the library is not written any more.
         if (stopped) break;
+        // Cut meanwhile: measured again.
+        if (genOf(next.id) !== gen) continue;
         if (lufs === null) noLoudness.add(next.id);
         else if (model.songById(data, next.id)) mutate((d) => model.updateSong(d, next.id, { loudness: lufs }));
       }
     } finally {
       working = false;
     }
+  }
+
+  // ---- trims ----
+
+  /**
+   * A song trimmed in an app: its file cut to [start, end] (seconds) and put
+   * in place of the uncut one, which goes to the trash. `base` is the cut the
+   * app trimmed from and `cut` the new one's id. One at a time. Resolves
+   * { song } or { skipped }: 'gone' (deleted), 'repeat' (this trim is in
+   * already), 'changed' (trimmed by another app since: this one is not
+   * applied, the apps' copies follow the server's).
+   */
+  function trimSong(id, { start, end, base = '', cut } = {}) {
+    const run = trims.then(() => trimNow(String(id), {
+      start: Number(start), end: Number(end), base: model.cleanCut(base), cut: model.cleanCut(cut),
+    }));
+    trims = run.catch(() => {});
+    return run;
+  }
+
+  async function trimNow(id, { start, end, base, cut }) {
+    const s = model.songById(data, id);
+    if (!s) return { skipped: 'gone' };
+    if (!cut) throw new Error('The trim has no id.');
+    if (s.cut === cut) return { skipped: 'repeat', song: s };
+    if (s.cut !== base) return { skipped: 'changed', song: s };
+    if (!tools.ffmpeg()) throw new Error('This server cannot trim songs: it needs ffmpeg (sudo apt install ffmpeg).');
+    if (!fs.existsSync(s.file)) throw new Error('The song file is missing on the server.');
+    const duration = s.duration > 0 ? s.duration : (await media.probeAudio(s.file)).duration || 0;
+    if (!(start >= 0) || !(end > start) || (duration && start >= duration)) throw new Error('That trim is outside the song.');
+    const file = s.file;
+    const out = path.join(path.dirname(file), `.flow-trim-${crypto.randomBytes(6).toString('hex')}${path.extname(file)}`);
+    let len;
+    try {
+      ({ duration: len } = await media.trimFile({ file, start, end: duration ? Math.min(end, duration) : end, duration }, out));
+      const now = model.songById(data, id);
+      if (!now || now.file !== file) return { skipped: 'gone' };
+      fileGen.set(id, genOf(id) + 1);
+      toTrash(file);
+      fs.renameSync(out, file);
+    } finally {
+      fs.rmSync(out, { force: true });
+    }
+    mutate((d) => {
+      if (!model.songById(d, id)) return;
+      model.updateSong(d, id, { duration: len, cut, loudness: null });
+      // Its flowid and cover go into the cut file again.
+      if (model.songById(d, id).tagged !== null) model.setTagged(d, id, '');
+    });
+    noLoudness.delete(id);
+    tagFailed.delete(id);
+    queueRetag(id);
+    log(`Trimmed: ${[s.artist, s.title].filter(Boolean).join(' - ')} (${start.toFixed(1)} s to ${end.toFixed(1)} s)`);
+    return { song: model.songById(data, id) };
+  }
+
+  /** A song's waveform (media.peaksFor), the last few kept by song and cut. */
+  const peakCache = new Map();
+  async function songPeaks(id) {
+    const s = model.songById(data, id);
+    if (!s || !fs.existsSync(s.file)) return null;
+    if (!tools.ffmpeg()) throw new Error('This server cannot draw waveforms: it needs ffmpeg (sudo apt install ffmpeg).');
+    const key = `${id}:${s.cut}:${genOf(id)}`;
+    if (!peakCache.has(key)) {
+      const duration = s.duration > 0 ? s.duration : (await media.probeAudio(s.file)).duration || 0;
+      if (!(duration > 0)) throw new Error('The song length is not known.');
+      const job = media.peaksFor(s.file, duration);
+      peakCache.set(key, job);
+      job.catch(() => peakCache.delete(key));
+      while (peakCache.size > 8) peakCache.delete(peakCache.keys().next().value);
+    }
+    return peakCache.get(key);
   }
 
   // ---- flow-server tag-songs ----
@@ -763,6 +852,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     createProfile,
     deleteProfile,
     runCommands,
+    trimSong,
+    songPeaks,
     existingFor,
     addUploaded,
     importPlaylist,

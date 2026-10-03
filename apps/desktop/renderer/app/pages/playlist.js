@@ -407,13 +407,9 @@ const PlaylistPage = {
     });
   },
 
-  async edit(song) {
-    const meta = await editSongDialog(song);
-    if (!meta) return;
-    if (meta.artist === song.artist && meta.title === song.title && meta.mix === song.mix) return;
-    const token = Player.release(song.id);
-    await attempt(() => window.flow.editSong(song.id, meta));
-    Player.resume(token);
+  /** Edit Song (songEdit.js): its names and its trim, saved by the dialog itself. */
+  edit(song) {
+    return editSongDialog(song);
   },
 
   async deleteSong(song) {

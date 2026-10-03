@@ -131,3 +131,19 @@ test('no command sets a song\'s cover: an edit keeps it', () => {
   assert.equal(m.songById(d, 's1').title, 'Da Funk');
   assert.equal(m.songById(d, 's1').cover, 'abcdef1234');
 });
+
+test('a trim shows at its new length and cut until the server has cut the file', () => {
+  const d = lib();
+  assert.deepEqual(applyCommand(d, { type: 'trimSong', songId: 's1', start: 20, end: 400, base: '', cut: 'abcdef123456' }), {});
+  const s = m.songById(d, 's1');
+  assert.equal(s.duration, 380);
+  assert.equal(s.cut, 'abcdef123456');
+  assert.equal(s.loudness, null);
+  // The same trim again (its answer came before the library did): nothing more.
+  assert.equal(applyCommand(d, { type: 'trimSong', songId: 's1', start: 20, end: 400, cut: 'abcdef123456' }).skipped, 'repeat');
+  assert.equal(m.songById(d, 's1').duration, 380);
+  assert.equal(applyCommand(d, { type: 'trimSong', songId: 'gone', start: 0, end: 1, cut: 'abcdef654321' }).skipped, 'gone');
+  assert.throws(() => applyCommand(d, { type: 'trimSong', songId: 's2', start: 5, end: 5, cut: 'abcdef999999' }), /empty/);
+  // An odd cut in a library file is no cut.
+  assert.equal(m.sanitize({ songs: [{ id: 'x', file: 'x.mp3', cut: '../../etc' }] }).songs[0].cut, '');
+});

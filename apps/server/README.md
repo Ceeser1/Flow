@@ -151,7 +151,7 @@ it: read them before relying on it.
 With ffmpeg installed (`sudo apt install ffmpeg`), the server reads the length
 and tags of songs dropped into the folder by hand, writes new names into a
 renamed song's tags, measures each song's loudness for "Equalize volume", and
-makes the songs' covers (below). Without it, those songs show no length until
+makes the songs' covers (below), and cuts songs trimmed in an app (Edit). Without it, those songs show no length until
 an app plays them, and only covers sent by an app are there. Songs uploaded
 from an app bring all of that with them either way. The server also needs it
 to download songs itself (below).
@@ -446,6 +446,8 @@ report changes.
 | `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`); `deletePlaylist` with `deleteSongs: true` also deletes the songs no playlist or favourite of any profile has, listed in its result's `deletedSongs` |
 | `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file → `{ existing, id, rev }`. A song the server has already (same source, or same names and length) is not taken: `existing` with its `names` (`{ artist, title, mix }`), and the app asks when they differ from its own; `meta.onExisting: "new"` takes it as a song of its own |
 | `GET /api/songs/<id>/audio` | the song's file, with Range for seeking |
+| `GET /api/songs/<id>/peaks` | `{ peaks }`: the song's waveform, for an app's Edit trim (needs ffmpeg) |
+| `POST /api/songs/<id>/trim` | `{ start, end, base, cut }` (only when `/api/hello` lists `trim`, i.e. with ffmpeg): the song's file cut to `start`..`end` seconds, the uncut file to the trash → `{ song, rev }`; `cut` is the trim's id (`song.cut`), `base` the cut it was made from. `{ skipped: 'repeat' }` when it is in already, `'changed'` when the song was trimmed by another app since (not applied), `'gone'` when deleted |
 | `GET /api/songs/<id>/cover?v=<version>` | the song's cover (JPEG), 404 when it has none; `song.cover` in the library is its version (`-`: none found, `null`: not looked at yet), and with the current one in `?v=` it may be cached for good; `ETag` / `If-None-Match` too |
 | `PUT /api/songs/<id>/cover` | an app's cover for a song (a JPEG body, at most 4 MB; made 512 x 512 when it is not) → `{ cover }`; kept only when the song has none yet |
 | `POST /api/rescan` | look through the music folder now |

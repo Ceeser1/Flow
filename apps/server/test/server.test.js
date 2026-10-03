@@ -149,6 +149,32 @@ test('commands: edits rename the file, deletes go to the trash, repeats count on
   });
 });
 
+test('trims: only through their own route, answered gone or changed, and none without ffmpeg', async () => {
+  await withServer(async ({ base }) => {
+    const hello = await (await fetch(`${base}/api/hello`)).json();
+    assert.ok(!hello.features.includes('trim'));
+    await upload(base, 's1', { title: 'Xtal', artist: 'Aphex Twin', format: 'mp3', cut: 'abcdef123456' });
+    const trim = async (id, body) => (await fetch(`${base}/api/songs/${id}/trim`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }));
+    // Trimmed in the app before it came up: the copies there are this file.
+    let lib = await (await fetch(`${base}/api/library`)).json();
+    assert.equal(lib.library.songs[0].cut, 'abcdef123456');
+    assert.equal((await (await trim('nope', { start: 1, end: 5, cut: 'aaaaaa111111' })).json()).skipped, 'gone');
+    assert.equal((await (await trim('s1', { start: 1, end: 5, cut: 'abcdef123456' })).json()).skipped, 'repeat');
+    // Trimmed by another app since this one's trim was made: not applied.
+    assert.equal((await (await trim('s1', { start: 1, end: 5, base: '', cut: 'aaaaaa111111' })).json()).skipped, 'changed');
+    const r = await trim('s1', { start: 1, end: 5, base: 'abcdef123456', cut: 'aaaaaa111111' });
+    assert.equal(r.status, 500);
+    assert.match((await r.json()).error, /ffmpeg/);
+    // Never as a command: an app only shows it with one.
+    const c = await command(base, [{ cid: 't1', at: Date.now(), type: 'trimSong', songId: 's1', start: 1, end: 5, cut: 'bbbbbb222222' }]);
+    assert.equal(c.results[0].ok, false);
+    lib = await (await fetch(`${base}/api/library`)).json();
+    assert.equal(lib.library.songs[0].cut, 'abcdef123456');
+  });
+});
+
 test('with a password only a signed-in device gets in', async () => {
   await withServer(async ({ base }) => {
     assert.equal((await (await fetch(`${base}/api/hello`)).json()).password, true);

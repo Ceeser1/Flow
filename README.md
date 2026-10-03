@@ -125,6 +125,18 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   Under "Downloaded from": the Direct Url of the song's page, and for a song
   that came with a playlist import also that playlist's Url. Both open in the
   browser.
+- **Edit** (the pencil on a row): Artist, Title and Mix, and the song's
+  **Trim**: the waveform (from the file here, else drawn by the Flow Server;
+  without either the song can still be trimmed by the handles and times),
+  the green and red handles, a preview that stops at the red one, and Reset.
+  Save cuts the song's file: without a server the uncut file goes to the
+  Recycle Bin; with one the server cuts its file and keeps the uncut one in
+  its trash for 30 days, and a copy here is cut at once. With the server out
+  of reach, or switched off in Settings, the trim waits and goes to that
+  server once it is connected (another server in between does not get it).
+  Copies on other devices are replaced by the trimmed file. A trim made
+  while another device had trimmed the same song already is not applied.
+  The server needs ffmpeg for it.
 - **Favourites** (under All Songs in the menu): every starred song, newest
   star first; "Added" is when it was starred. Read-only apart from the stars.
 - **Listen behaviour** (under Favourites in the menu, opens and closes): Most
@@ -344,7 +356,7 @@ control with a cache:
 - Songs play straight from the server, seeking included. The name under
   "Flow" in the menu says which server, whether it can be reached, and what
   is going up or down.
-- Every change (renaming, deleting, playlists, favourites, listens) goes to
+- Every change (renaming, trimming, deleting, playlists, favourites, listens) goes to
   the server as a command. Without the server the changes wait and go once it
   is back, even after Flow was closed. When two devices change the same thing,
   the later change wins; a delete always wins. A deleted song's file stays in

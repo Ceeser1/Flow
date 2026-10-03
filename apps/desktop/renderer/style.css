@@ -2083,6 +2083,27 @@ div.import__frame-head { cursor: default; }
 @keyframes backdrop-out { to { background: rgba(0, 0, 0, 0); } }
 /* Settings: the app's own background, at 93% (--bg is #1e1e22). */
 .modal--settings { width: 760px; height: min(760px, 100%); background: rgba(30, 30, 34, 0.93); }
+/* Edit Song: the Settings look, as tall as it needs. */
+.modal--song-edit { width: 820px; height: auto; }
+.song-edit__input { width: 420px; }
+.song-edit__trim-head { margin-bottom: 10px; }
+.song-edit__hint {
+  flex: 1;
+  margin-left: 6px;
+  overflow: hidden;
+  color: #777780;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.song-edit__hint.hint--active { color: var(--accent); }
+.song-edit__trim-head .btn { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.song-edit__note { margin-top: 10px; }
+/* A server that cannot trim: the editor shows the song but takes no cut. */
+.song-trim--off { opacity: 0.45; pointer-events: none; }
 
 /* ===== Settings: every row is the setting on the left, its value on the right ===== */
 
@@ -2105,6 +2126,9 @@ div.import__frame-head { cursor: default; }
 }
 .settings__group:first-child > .settings__section { margin-top: 2px; }
 .settings__section:hover { color: #b3cdf4; }
+/* A heading that folds nothing away (Edit Song). */
+.settings__section--static { cursor: default; }
+.settings__section--static:hover { color: #8db2ea; }
 .settings__section-note { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text-dim); }
 .settings__chevron { display: inline-flex; transform: rotate(-90deg); transition: transform 0.15s; }
 .settings__chevron .icon { width: 14px; height: 14px; }
