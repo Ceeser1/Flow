@@ -920,6 +920,8 @@ const ImportPanel = {
       start: it.trim ? it.trim.start : 0,
       end: it.trim ? it.trim.end : it.media.duration,
       artistFromChannel: it.artistFromChannel,
+      sourceKey: it.song ? it.song.key : '',
+      sourceUrl: it.song ? it.song.url : '',
     });
     body.closest('.import__frame').scrollIntoView({ block: 'nearest' });
   },

@@ -2105,6 +2105,7 @@ div.import__frame-head { cursor: default; }
 }
 .settings__group:first-child > .settings__section { margin-top: 2px; }
 .settings__section:hover { color: #b3cdf4; }
+.settings__section-note { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text-dim); }
 .settings__chevron { display: inline-flex; transform: rotate(-90deg); transition: transform 0.15s; }
 .settings__chevron .icon { width: 14px; height: 14px; }
 .settings__chevron--down { transform: rotate(90deg); }
@@ -2122,11 +2123,12 @@ div.import__frame-head { cursor: default; }
 
 /* A setting that belongs to the one above: indented, with a corner mark.
    Its line starts under the parent's tick box, or, past a sub-setting
-   before it, at that one's corner. */
-.settings__row:has(+ .settings__row--sub) { position: relative; }
+   before it, at that one's corner. A sub-setting that is not there (hidden)
+   draws nothing; one past it still connects. */
+.settings__row:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden])) { position: relative; }
 .settings__row--sub { padding-left: 26px; position: relative; }
 .settings__row--sub::before,
-.settings__row:has(+ .settings__row--sub)::after {
+.settings__row:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden]))::after {
   content: '';
   position: absolute;
   left: 8px;
@@ -2138,15 +2140,15 @@ div.import__frame-head { cursor: default; }
   height: 20px;
   border-bottom: 1px solid #5a5a64;
 }
-.settings__row:has(+ .settings__row--sub)::after { top: 30px; bottom: -1px; }
+.settings__row:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden]))::after { top: 30px; bottom: -1px; }
 /* Where the connecting line runs down past a row's divider, the divider starts
    right of the line (at the sub-settings' own indent) instead of crossing it. */
-.settings__row:has(+ .settings__row--sub),
-.settings__row--sub:has(+ .settings__row--sub) {
+.settings__row:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden])),
+.settings__row--sub:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden])) {
   border-bottom-color: transparent;
   background: linear-gradient(#34343c, #34343c) right bottom / calc(100% - 26px) 1px no-repeat border-box;
 }
-.settings__row--sub:has(+ .settings__row--sub)::after { top: 19px; }
+.settings__row--sub:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden]))::after { top: 19px; }
 
 .settings__row--off .settings__left,
 .settings__row--off .settings__right,

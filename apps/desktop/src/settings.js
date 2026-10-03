@@ -48,6 +48,11 @@ const DEFAULTS = {
   useCookies: false,
   cookiesBrowser: '',
   shareCookies: false,
+  // The trim editor colours what SponsorBlock's viewers marked in a YouTube
+  // video: sponsors yellow, and with sponsorBlockIntros intros, outros and a
+  // music video's non-music parts red.
+  sponsorBlock: false,
+  sponsorBlockIntros: false,
   // The next song starts this long before the current one ends, faded over.
   crossfade: true,
   crossfadeSeconds: 3,
@@ -164,7 +169,8 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 300 && Number.isFinite(Number(v)))
     .slice(0, 50)
     .map(([k, v]) => [k, Math.round(Math.max(0, Math.min(1000, Number(v))))]));
-  for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn']) s[key] = s[key] === true;
+  for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
+    'sponsorBlock', 'sponsorBlockIntros']) s[key] = s[key] === true;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare']) {

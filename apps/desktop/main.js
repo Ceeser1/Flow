@@ -24,6 +24,7 @@ const loudness = require('./src/loudness');
 const covers = require('./src/covers');
 const { createTagger } = require('./src/tagger');
 const remote = require('./src/remote');
+const sponsorblock = require('@flow/core/sponsorblock');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
 
@@ -660,6 +661,7 @@ handle('shell:openUrl', (url) => {
 
 handle('download:start', async ({ probed, opts }) => {
   downloadToken = { cancelled: false };
+  sponsorSegments(probed.key, probed.url);
   try {
     const media = await downloader.download(probed, opts, (stage, frac, text) => {
       sendToWindow('download:progress', { stage, frac, text });
@@ -693,6 +695,26 @@ handle('download:discard', (file) => {
 });
 
 handle('audio:peaks', ({ file, duration }) => waveform.peaksFor(file, duration));
+
+// SponsorBlock's marked parts of a YouTube song, for the trim editor (asked
+// for while it downloads, so they are usually there when the editor opens).
+// Kept while the app runs; a failed lookup is asked again next time.
+const sponsorCache = new Map();
+function sponsorSegments(key, url) {
+  if (!settings.get('sponsorBlock')) return Promise.resolve([]);
+  const id = sponsorblock.videoId(key, url);
+  if (!id) return Promise.resolve([]);
+  if (!sponsorCache.has(id)) {
+    if (sponsorCache.size >= 200) sponsorCache.delete(sponsorCache.keys().next().value);
+    const ask = sponsorblock.segmentsFor(id).then((list) => {
+      if (!list.length) sponsorCache.delete(id);
+      return list;
+    });
+    sponsorCache.set(id, ask);
+  }
+  return sponsorCache.get(id);
+}
+handle('sponsor:segments', ({ key, url }) => sponsorSegments(key, url));
 
 handle('song:finish', (job) => library.quietly(async () => {
   const meta = {

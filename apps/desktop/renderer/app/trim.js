@@ -12,6 +12,12 @@ const AUDIO_SELECTED = '#5a8cdc';
 const AUDIO_UNSELECTED = '#8a8a94';
 const AUDIO_WALL_START = '#78c88c';
 const AUDIO_WALL_END = '#dc7878';
+// SponsorBlock's marked parts (Settings, Website Downloads): the waveform in
+// them, bright inside the selection and dimmed outside, over a faint band.
+const SEGMENT_COLOURS = {
+  sponsor: { selected: '#e6c84a', unselected: '#8c8158', band: 'rgba(230, 200, 74, 0.13)' },
+  intro: { selected: '#e05a5a', unselected: '#8c5c5c', band: 'rgba(224, 90, 90, 0.13)' },
+};
 
 function modifierFactor(evt) {
   if (evt.ctrlKey) return FINE_CTRL;
@@ -151,9 +157,11 @@ class TrimSlider {
 /**
  * Draws `peaks` (flat min,max pairs) into `canvas`, blue inside [start, end]
  * and grey outside, with a green wall at the start and a red one at the end.
- * Without peaks yet, just the baseline and the walls.
+ * Without peaks yet, just the baseline and the walls. `segments`
+ * ([{ start, end, kind }], kind 'sponsor' or 'intro') are coloured from
+ * their start to their end; a later one wins where two overlap.
  */
-function drawWaveform(canvas, peaks, duration, start, end) {
+function drawWaveform(canvas, peaks, duration, start, end, segments = []) {
   const cssW = canvas.clientWidth;
   const cssH = canvas.clientHeight;
   if (!cssW || !cssH) return;
@@ -175,12 +183,37 @@ function drawWaveform(canvas, peaks, duration, start, end) {
   const selX0 = inset + (start / duration) * usable;
   const selX1 = inset + (end / duration) * usable;
 
+  const segs = (segments || []).filter((s) => SEGMENT_COLOURS[s.kind] && s.end > s.start && s.start < duration);
+  const segX = (t) => inset + (Math.min(Math.max(t, 0), duration) / duration) * usable;
+  for (const s of segs) {
+    ctx.fillStyle = SEGMENT_COLOURS[s.kind].band;
+    ctx.fillRect(segX(s.start), 2, Math.max(1, segX(s.end) - segX(s.start)), cssH - 4);
+  }
+  // The colour at second `t`: its segment's, if it is in one.
+  const colourAt = (t, selected) => {
+    for (let i = segs.length - 1; i >= 0; i -= 1) {
+      if (t >= segs[i].start && t <= segs[i].end) return SEGMENT_COLOURS[segs[i].kind][selected ? 'selected' : 'unselected'];
+    }
+    return selected ? AUDIO_SELECTED : AUDIO_UNSELECTED;
+  };
+
   // A flat line edge to edge first, so silence reads as silence, not a hole.
   const lineY = mid - 0.5;
   ctx.fillStyle = AUDIO_UNSELECTED;
   ctx.fillRect(0, lineY, cssW, 1);
   ctx.fillStyle = AUDIO_SELECTED;
   ctx.fillRect(selX0, lineY, Math.max(1, selX1 - selX0), 1);
+  for (const s of segs) {
+    const x0 = segX(s.start);
+    const x1 = segX(s.end);
+    // Inside and outside the selection, each in its own shade.
+    const parts = [[x0, Math.min(x1, selX0), false], [Math.max(x0, selX0), Math.min(x1, selX1), true], [Math.max(x0, selX1), x1, false]];
+    for (const [a, b, selected] of parts) {
+      if (b <= a) continue;
+      ctx.fillStyle = SEGMENT_COLOURS[s.kind][selected ? 'selected' : 'unselected'];
+      ctx.fillRect(a, lineY, b - a, 1);
+    }
+  }
 
   const wallAt = (x, colour) => {
     ctx.fillStyle = colour;
@@ -202,7 +235,7 @@ function drawWaveform(canvas, peaks, duration, start, end) {
       }
       lo = Math.max(-1, lo);
       hi = Math.min(1, hi);
-      ctx.fillStyle = (t >= start && t <= end) ? AUDIO_SELECTED : AUDIO_UNSELECTED;
+      ctx.fillStyle = colourAt(t, t >= start && t <= end);
       const top = mid - hi * half;
       ctx.fillRect(inset + px, top, 1, Math.max(1, (mid - lo * half) - top));
     }

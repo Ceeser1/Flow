@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('flow', {
   discardDownload: (file) => call('download:discard', file),
   onDownloadProgress: (fn) => ipcRenderer.on('download:progress', (_e, p) => fn(p)),
   peaks: (file, duration) => call('audio:peaks', { file, duration }),
+  sponsorSegments: (key, url) => call('sponsor:segments', { key, url }),
 
   // A Flow Server (Settings: Streaming, Download and Synchronization).
   serverStatus: () => call('server:status'),

@@ -34,9 +34,9 @@ const Output = {
       $('btnOutput').title = `Play on: ${this.label() || 'the default output'}`;
       $('btnOutput').classList.toggle('player__output--on', !!chosen);
     });
-    // "Output delay" ticked or unticked, here or in Settings.
+    // "Output delay" ticked or unticked, here or in Settings, or the Flow Server turned on or off.
     Store.onSettings((patch) => {
-      if ('outputDelayOn' in patch) this._emit();
+      if ('outputDelayOn' in patch || 'serverOn' in patch) this._emit();
     });
     this.refresh();
     if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
@@ -54,10 +54,10 @@ const Output = {
    * How long this output's sound is held back (ms, Equalizer.setDelay): set
    * by ear per output, so the faster speakers wait for the slower ones when
    * devices play together (Bluetooth speakers lag 50-300 ms). None while
-   * "Output delay" is unticked.
+   * "Output delay" is unticked, or without the Flow Server (no jams then).
    */
   delay() {
-    return Store.settings.outputDelayOn ? this.savedDelay() : 0;
+    return Store.settings.serverOn && Store.settings.outputDelayOn ? this.savedDelay() : 0;
   },
 
   setDelay(ms) {
@@ -178,7 +178,8 @@ const Output = {
       if (Store.settings.outputDevice && !chosen) {
         menu.appendChild(h('div.output-menu__gone', `${Store.settings.outputDeviceLabel || 'The chosen device'} is not there: playing on the default meanwhile.`));
       }
-      menu.appendChild(this._delayRow());
+      // Only for jams, which need the Flow Server.
+      if (Store.settings.serverOn) menu.appendChild(this._delayRow());
     };
     draw();
     document.body.appendChild(menu);

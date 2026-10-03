@@ -17,7 +17,8 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   - The waveform spans the page. Drag the green and red handles to cut (Shift
     for 10x finer, Ctrl for 100x), or type the times. Click the waveform to move
     the playhead. Play stops at the red handle so you hear the cut as it will
-    be saved.
+    be saved. With **Use Sponsorblock for Youtube** (Settings) a YouTube
+    video's sponsored parts show yellow, and its intros and outros red.
   - **Add to Playlist** picks playlists, **Finish** saves to `Music\FlowPlayer` as
     `Artist - Title (Mix).ext`, with the names written into the file's tags.
 - **Whole playlists**: paste a YouTube playlist, a SoundCloud set, a Bandcamp
@@ -197,13 +198,6 @@ The cog at the bottom left of the menu. Every change counts at once.
     take (with a Flow Server: the servers' covers kept here). With a server
     also **Clear cover cache**, which deletes those; the covers of the server
     connected come down again.
-- **Jam session** (only with a Flow Server). See [Active Sessions](#active-sessions).
-  - **Share your jam session on the server** (on): other devices on the same
-    server see what plays here and can ask to join. Unticked, it is not listed
-    and nobody can ask; devices already in it stay.
-  - **Accept jam join requests automatically** (off): no prompt, whoever asks
-    is in at once.
-  - **Devices in my Active Session may change my volume** (off).
 - **Flow Server**: **Streaming, Download and Synchronization** (off). See
   [A Flow Server](#a-flow-server) below.
   - **Profile**: which of the server's profiles this is. Not logged in, pick
@@ -234,6 +228,16 @@ The cog at the bottom left of the menu. Every change counts at once.
     to or removed from Local Files by hand, and changes made while the
     server was off, go to the server by themselves; unticked, only with
     Synchronize now. Songs downloaded in Flow always go up (once the first upload to that server was agreed to or declined).
+- **Jam session** (only with a Flow Server; the heading says "(requires a Flow server
+  connection)" while there is none). See [Active Sessions](#active-sessions).
+  - **Share your jam session on the server** (on): other devices on the same
+    server see what plays here and can ask to join. Unticked, it is not listed
+    and nobody can ask; devices already in it stay.
+  - **Accept jam join requests automatically** (off): no prompt, whoever asks
+    is in at once.
+  - **Devices in my Active Session may change my volume** (off).
+  - **Output delay (Sync speakers at Jams)** (off), as in the output button's
+    menu (see [Active Sessions](#active-sessions)).
 - **Website Downloads**
   - **Download using browser cookies from** (off) and a browser (those found
     on this computer): yt-dlp reads that browser's cookies, so age-restricted
@@ -248,6 +252,14 @@ The cog at the bottom left of the menu. Every change counts at once.
   - **Always convert all downloads into MP3** (off) at 64 to 320 kbit/s
     (192), and under it **Ignore files that are already in .mp3 format** (on):
     unticked, MP3s are encoded again at the chosen quality too.
+  - **Use Sponsorblock for Youtube** (off): the trim editor colours what
+    [SponsorBlock](https://sponsor.ajay.app)'s viewers marked in a YouTube
+    video, from start to end: sponsors, plugs of the channel's own things and
+    "like and subscribe" yellow. Under it **Try to detect intros/outros,
+    marked red in the trim** (off): intros, outros and a music video's
+    non-music parts (talk, skits, credits) red. Only colours, the cut stays
+    yours; a video nobody marked, or a SponsorBlock that cannot be reached
+    (6 s at most), just shows no colours.
 - **Visuals**
   - **Background Clouds** (on), Intensity 1 to 100% (50), and **React to
     Bass** (on), Reaction 1 to 100% (33; 25 is the look as designed, 100
@@ -427,7 +439,7 @@ listen (who, on hover), and **Join**.
   its own volume, in step with the host (by the server's clock; small
   differences, from 15 ms on, are evened out by playing up to 3% faster or slower, bigger ones
   jumped over). Bluetooth speakers sound late: in the output button's menu
-  (or Settings > Jam session) on the devices with the faster speakers, tick **Output delay (Sync
+  (or Settings > Jam session; both only with a Flow Server) on the devices with the faster speakers, tick **Output delay (Sync
   speakers at Jams)** and hold their sound back by ear (0 to 500 ms in 1 ms
   steps, heard while the slider moves, kept per output; Shift while dragging
   moves it ten times finer) until the music sounds together. The delay holds
@@ -518,7 +530,7 @@ apps/android/    the Android app, planned
 
 `packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,
 `libraryModel.js`, `commands.js`, `profiles.js`, `address.js`, `tags.js`,
-`spotify.js`, `relocate.js`, `cookies.js` and `jsonFile.js`, each required as
+`spotify.js`, `relocate.js`, `cookies.js`, `sponsorblock.js` and `jsonFile.js`, each required as
 `@flow/core/<name>`, and the download work the app and the server share:
 `media.js` (yt-dlp and ffmpeg: probe, download, keep / lift out / convert,
 the trim cut with tags, the waveform's peaks; each app makes one with its own

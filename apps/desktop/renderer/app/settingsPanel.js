@@ -49,6 +49,7 @@ const SettingsPanel = {
     });
     Store.onServer(() => {
       if (this.modal) this._drawServer();
+      if (this.modal && this._jamNote) this._jamNote();
     });
     Output.onChange(() => {
       if (this.modal && this._outputFill) this._outputFill();
@@ -81,9 +82,9 @@ const SettingsPanel = {
       this._savedSongsRow(),
       this._coversRow(),
 
-      ...this._jamRows(),
-
       ...this._serverRows(),
+
+      ...this._jamRows(),
 
       h('h3.settings__section', 'Website Downloads'),
       this._row({
@@ -115,6 +116,18 @@ const SettingsPanel = {
         desc: 'Leaves MP3s as they are instead of encoding them again at the quality above.',
         sub: true,
         when: () => Store.settings.alwaysMp3,
+      }),
+      this._row({
+        key: 'sponsorBlock',
+        label: 'Use Sponsorblock for Youtube',
+        desc: 'Shows sponsored segments as yellow in the trim.',
+      }),
+      this._row({
+        key: 'sponsorBlockIntros',
+        label: 'Try to detect intros/outros, marked red in the trim',
+        desc: 'A music video\'s non-music parts (talk, skits, credits) count as these too.',
+        sub: true,
+        when: () => Store.settings.sponsorBlock,
       }),
 
       h('h3.settings__section', 'Visual Effects'),
@@ -488,8 +501,15 @@ const SettingsPanel = {
   /** Active Sessions through the Flow Server: who may see and join what plays here. */
   _jamRows() {
     const on = () => Store.settings.serverOn;
+    // Filled in only while there is no server to jam through (empty when the
+    // categories are made, so folding it keeps working by its title).
+    const note = h('span.settings__section-note');
+    this._jamNote = () => {
+      note.textContent = on() && Store.server.state === 'online' ? '' : '(requires a Flow server connection)';
+    };
+    this._refresh.push(this._jamNote);
     return [
-      h('h3.settings__section', 'Jam session'),
+      h('h3.settings__section', 'Jam session', note),
       this._row({
         key: 'sessionShare',
         label: 'Share your jam session on the server',
@@ -510,12 +530,12 @@ const SettingsPanel = {
           + 'your volume up and down.',
         when: on,
       }),
-      this._outputDelayRow(),
+      this._outputDelayRow(on),
     ];
   },
 
-  /** Output delay, as in the player's output menu: for the output playing now. */
-  _outputDelayRow() {
+  /** Output delay, as in the player's output menu: for the output playing now (only with the Flow Server, for jams). */
+  _outputDelayRow(on) {
     const c = Output.delayControl('settings__slider', 'settings__value');
     const which = h('span');
     // Redrawn when the output or its delay changes (one listener, set up in init).
@@ -524,12 +544,13 @@ const SettingsPanel = {
       which.textContent = Output.label() ? ` Kept for each output; this is ${Output.label()}.` : '';
     };
     this._delayFill();
-    this._refresh.push(() => { c.slider.disabled = !Store.settings.outputDelayOn; });
+    this._refresh.push(() => { c.slider.disabled = !on() || !Store.settings.outputDelayOn; });
     return this._row({
       key: 'outputDelayOn',
       label: 'Output delay (Sync speakers at Jams)',
       desc: h('span', Output.DELAY_NOTE, which),
       right: h('div.settings__control', c.slider, c.value),
+      when: on,
     });
   },
 

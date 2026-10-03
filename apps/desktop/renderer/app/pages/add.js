@@ -18,6 +18,10 @@ const AddPage = {
   probed: null,      // what yt-dlp said about the link
   media: null,       // { path, duration, ext, summary } of the cached song
   peaks: null,
+  // SponsorBlock's marked parts of a YouTube song ([{ start, end, kind }]),
+  // coloured in the waveform while the settings ask for them.
+  segments: [],
+  _source: null,     // { key, url } of the song in the editor, for those
   slider: null,
   playlistIds: [],
   _stopAt: null,     // the preview stops here (the end handle), or null
@@ -43,6 +47,7 @@ const AddPage = {
     // The checklist's size estimate follows the MP3 settings.
     Store.onSettings((patch) => {
       if (('alwaysMp3' in patch || 'mp3Quality' in patch) && ImportPanel.state === 'review') ImportPanel._drawCount();
+      if ('sponsorBlock' in patch || 'sponsorBlockIntros' in patch) this._loadSegments();
     });
 
     this._initEditor();
@@ -319,6 +324,8 @@ const AddPage = {
     this.media = null;
     this.probed = null;
     this.peaks = null;
+    this.segments = [];
+    this._source = null;
     this.playlistIds = [];
     this._drawPlaylistButton();
     this._setPhase('idle');
@@ -450,12 +457,13 @@ const AddPage = {
    * file belongs to the import, which also keeps the cut and names: read them
    * back with closeEmbedded().
    */
-  openEmbedded(host, { media, meta, title, start, end, artistFromChannel }) {
+  openEmbedded(host, { media, meta, title, start, end, artistFromChannel, sourceKey = '', sourceUrl = '' }) {
     this._stopPreview(true);
     this.embedded = true;
     host.prepend(this.editorEl);
     this.media = media;
     this.probed = { title, guess: { ...meta, artistFromChannel } };
+    this._source = { key: sourceKey, url: sourceUrl };
     this._openEditor({ start, end });
   },
 
@@ -474,6 +482,8 @@ const AddPage = {
     this.media = null;
     this.probed = null;
     this.peaks = null;
+    this.segments = [];
+    this._source = null;
     this.embedded = false;
     this._setPhase('idle');
     return result;
@@ -499,6 +509,9 @@ const AddPage = {
     $('edCover').hidden = !withCover;
     this.slider.setRange(m.duration, start || 0, end === null || end === undefined ? m.duration : end);
     this._syncFields();
+    if (!this.embedded) this._source = this.probed ? { key: this.probed.key, url: this.probed.url } : null;
+    this.segments = [];
+    this._loadSegments();
     // A song downloaded by the server is streamed from there (m.src).
     this.audio.src = m.src ? m.src() : Util.fileUrl(m.path);
     this.audio.currentTime = 0;
@@ -521,6 +534,24 @@ const AddPage = {
     this._redraw();
   },
 
+  /** SponsorBlock's parts of the song in the editor, as the settings want them. */
+  async _loadSegments() {
+    const m = this.media;
+    const src = this._source;
+    const s = Store.settings;
+    let list = [];
+    if (m && src && s.sponsorBlock) {
+      try {
+        list = await window.flow.sponsorSegments(src.key || '', src.url || '');
+      } catch {
+        list = [];
+      }
+      if (this.media !== m) return;
+    }
+    this.segments = list.filter((x) => x.kind === 'sponsor' || (x.kind === 'intro' && Store.settings.sponsorBlockIntros));
+    this._redraw();
+  },
+
   _syncFields() {
     const s = this.slider;
     $('startField').value = Util.fmtPrecise(s.start);
@@ -531,7 +562,7 @@ const AddPage = {
 
   _redraw() {
     if (!this.media || this.editorEl.hidden) return;
-    drawWaveform($('waveCanvas'), this.peaks, this.media.duration, this.slider.start, this.slider.end);
+    drawWaveform($('waveCanvas'), this.peaks, this.media.duration, this.slider.start, this.slider.end, this.segments);
     this.slider._reposition();
     this._drawPlayhead();
   },
