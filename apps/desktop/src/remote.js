@@ -2158,6 +2158,7 @@ async function serverDownloads(action, args = {}) {
     }
     if (action === 'cancel') return (await call('/api/downloads', { method: 'DELETE' })).batch;
     if (action === 'peaks') return (await call(`${item}/peaks`, { timeout: 30000 })).peaks;
+    if (action === 'cover') return await stagedServerCover(item, args);
     if (action === 'retry') return (await call(`${item}/retry`, { method: 'POST' })).batch;
     if (action === 'discard') return (await call(item, { method: 'DELETE' })).batch;
     if (action === 'finish') {
@@ -2176,6 +2177,29 @@ async function serverDownloads(action, args = {}) {
     throw err;
   }
   throw new Error(`Unknown download action ${action}.`);
+}
+
+/**
+ * The cover the server found for a song of its download batch, fetched into
+ * the cache (emptied at every start): the file, or '' without one.
+ */
+async function stagedServerCover(item, { index, version }) {
+  const v = String(version || '');
+  if (!/^[0-9a-f]{4,40}$/.test(v)) return '';
+  const file = path.join(paths.cacheDir(), `server-cover-${Math.floor(Number(index) || 0)}-${v}.jpg`);
+  if (fs.existsSync(file)) return file;
+  fs.mkdirSync(paths.cacheDir(), { recursive: true });
+  const tmp = `${file}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    const r = await request(conn.base, `${item}/cover?v=${v}`, { token: conn.token, saveTo: tmp, timeout: 30000 });
+    if (r.status !== 200) return '';
+    const head = fs.readFileSync(tmp).subarray(0, 2);
+    if (head[0] !== 0xff || head[1] !== 0xd8) return '';
+    fs.renameSync(tmp, file);
+    return file;
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
 }
 
 // ---- profiles: signing in and out ----

@@ -264,11 +264,17 @@ async function finish(job, onProgress) {
         summary.songIds.push(song.id);
         summary.times[song.id] = addedAt(position);
       });
+      const songId = summary.songIds[summary.songIds.length - 1];
+      // The cover found while it was trimmed (or once it is found). A local
+      // file's original may go now: the picture in it is taken at once (the
+      // copy is saved without the original's tags) unless one was found.
+      if (job.local && e.originalPath) {
+        if (!(await covers.adoptStaged(e.cachePath, songId, { wait: false }))) await covers.takeFromFile(songId, e.originalPath);
+      } else {
+        covers.adoptStaged(e.cachePath, songId).catch(() => {});
+      }
       removeQuietly(e.cachePath);
       summary.saved += 1;
-      // The picture in a local file goes with it as its cover (the copy is
-      // saved without the original's tags).
-      if (job.local && e.originalPath) await covers.takeFromFile(summary.songIds[summary.songIds.length - 1], e.originalPath);
       if (job.local && job.move && e.originalPath && !removeOriginal(e.originalPath)) {
         summary.kept.push(e.originalPath);
       }

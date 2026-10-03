@@ -35,6 +35,7 @@ const { MAX_COOKIES, cookieSite, cookiesFor } = require('@flow/core/cookies');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const { isPrivateIp } = require('@flow/core/address');
+const { coverVersion } = require('@flow/core/cover');
 
 const MAX_ITEMS = 500;
 const ITEM_TIMEOUT = 20 * 60 * 1000;
@@ -136,8 +137,13 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   const dirOf = (key) => path.join(root, key);
   const fileOf = (batch, item) => (item.file ? path.join(dirOf(batch.key), item.file) : null);
   const peaksOf = (batch, item) => path.join(dirOf(batch.key), `i${item.index}.peaks.json`);
-  // The song's cover, found while it waits; it becomes the song's when finished.
+  // The song's cover, looked for as soon as it is downloaded (item.cover: its
+  // version), so the apps show it while the song is trimmed and named; it
+  // becomes the song's when finished.
   const coverOf = (batch, item) => path.join(dirOf(batch.key), `i${item.index}.cover.jpg`);
+  // One lookup at a time, apart from the downloads: a song is ready without
+  // waiting for its cover.
+  let coverChain = Promise.resolve();
   // The browser cookies an app sent with the batch (only the link's site's):
   // its yt-dlp runs read them, and they go with the batch's folder.
   const cookiesOf = (batch) => path.join(dirOf(batch.key), 'cookies.txt');
@@ -317,6 +323,29 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     }
   }
 
+  /**
+   * The cover of a song just downloaded, after the downloads' own work. Found
+   * while the song waits: kept beside it for the apps (item.cover). Found
+   * after it was finished: the song's, unless it has one by then.
+   */
+  function findCover(batch, item, song) {
+    const alive = () => batches.get(batch.key) === batch && item.state !== 'discarded' && !stopped;
+    coverChain = coverChain.then(async () => {
+      if (!alive()) return;
+      const found = await library.lookForCover(song, () => !alive());
+      if (!found.jpeg || !alive()) return;
+      if (item.state === 'saved') {
+        if (item.songId) library.setCover(item.songId, found.jpeg, { onlyIfNone: true });
+        return;
+      }
+      fs.writeFileSync(coverOf(batch, item), found.jpeg);
+      item.cover = coverVersion(found.jpeg);
+      save(batch);
+    }).catch(() => {
+      // The library looks for one itself once the song is finished.
+    });
+  }
+
   async function runItem(batch, item) {
     const id = `${batch.key}/${item.index}`;
     const token = { cancelled: false, ytdlpArgs: ytdlpArgs(batch) };
@@ -369,23 +398,17 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         // The song can be trimmed without it.
       }
       if (!alive()) return;
-      try {
-        const found = await library.lookForCover({
-          sourceKey: probed.key,
-          sourceUrl: probed.url,
-          sourcePlaylistUrl: batch.single ? '' : batch.source.url,
-          artist: item.meta.artist,
-          title: item.meta.title,
-          duration: item.duration,
-          thumbnails: probed.thumbnails,
-        }, () => !alive());
-        if (found.jpeg && alive()) fs.writeFileSync(coverOf(batch, item), found.jpeg);
-      } catch {
-        // The library looks for one later.
-      }
-      if (!alive()) return;
       item.state = 'ready';
       item.error = '';
+      findCover(batch, item, {
+        sourceKey: probed.key,
+        sourceUrl: probed.url,
+        sourcePlaylistUrl: batch.single ? '' : batch.source.url,
+        artist: item.meta.artist,
+        title: item.meta.title,
+        duration: item.duration,
+        thumbnails: probed.thumbnails,
+      });
     } catch (err) {
       // The server stopping: the song starts over at the next start.
       if (!alive() || stopped) return;
@@ -432,6 +455,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         artistFromChannel: !!it.artistFromChannel,
         existing: it.existing || null,
         summary: it.summary || '',
+        cover: it.cover || '',
         progress: progress.get(`${batch.key}/${it.index}`) || null,
       })),
     };
@@ -521,6 +545,14 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     const found = readJson(peaksOf(batch, item));
     if (!Array.isArray(found)) throw new DownloadError(404, 'The server could not draw this song\'s waveform.');
     return found;
+  }
+
+  /** The cover found for a song waiting in the batch: its file, or null. */
+  function coverFile(profileId, index) {
+    const batch = requireBatch(profileId);
+    const item = requireItem(batch, index);
+    const file = coverOf(batch, item);
+    return item.cover && item.state === 'ready' && fs.existsSync(file) ? { file, version: item.cover } : null;
   }
 
   function retry(profileId, index) {
@@ -646,6 +678,8 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     log(`Downloaded and saved: ${[song.artist, song.title].filter(Boolean).join(' - ')}`);
     if (batches.get(batch.key) !== batch) return { song: { id: song.id }, batch: null, playlistId: batch.playlistId || null };
     item.state = 'saved';
+    item.songId = song.id;
+    item.cover = '';
     removeQuietly(src);
     removeQuietly(peaksOf(batch, item));
     removeQuietly(coverOf(batch, item));
@@ -685,6 +719,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     cancel,
     audioFile,
     peaks,
+    coverFile,
     retry,
     discard,
     finish,

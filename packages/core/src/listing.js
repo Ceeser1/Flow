@@ -369,6 +369,10 @@ function createLister({ media, library }) {
           title: probed.title,
           meta: fromSource ? it.meta : { artist: probed.guess.artist, title: probed.guess.title, mix: probed.guess.mix },
           artistFromChannel: !fromSource && !!probed.guess.artistFromChannel,
+          // For its cover (@flow/core/cover): a Spotify song's upload was
+          // found by YouTube Music's search already.
+          thumbnails: probed.thumbnails,
+          noSearch: !!fromSource,
         },
       };
     });

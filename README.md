@@ -104,7 +104,10 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   seconds), else the middle of the video's thumbnail. A song none of that
   finds a picture for keeps a note symbol and is not looked at again; songs
   that could not be looked at (no internet) are tried again at the next start.
-  A local file imported keeps the picture it carries. Covers belong to the
+  A song downloaded on Add Songs gets its cover right after its download,
+  shown next to its names (and in its frame) while it is trimmed, and keeps
+  it when finished; the same for Download (Server). A local file imported
+  keeps the picture it carries. Covers belong to the
   song, not its name: renaming or moving a song keeps its cover.
 - **Details** (the magnifier on an All Songs row): the song's cover, its names and length,
   the playlists it is in as buttons (click one to take it out, click again to

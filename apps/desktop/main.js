@@ -200,6 +200,9 @@ handle('covers:want', (ids) => {
 // Settings: how many songs have a cover, and the server covers kept here.
 handle('covers:stats', () => ({ local: covers.localStore().size(), server: remote.active() ? remote.coverStats() : null }));
 handle('covers:clear', () => remote.clearCoverCache());
+// Add Songs: a song's cover as soon as it is downloaded, before it is saved.
+covers.onStaged((info) => sendToWindow('covers:staged', info));
+handle('covers:staged', (cachePath) => covers.stagedCover(String(cachePath || '')));
 
 handle('settings:set', (patch) => {
   // The password only ever arrives through server:setSecret, to be encrypted.
@@ -475,7 +478,22 @@ function beginImport(run) {
   importToken = token;
   importRunning = true;
   const onProgress = (p) => {
-    if (!token.cancelled) sendToWindow('import:progress', { ...p, run });
+    if (token.cancelled) return;
+    // A song downloaded: its cover is looked for now, while it is trimmed and named.
+    if (p.phase === 'item' && p.status === 'ready' && p.media && p.song) {
+      const meta = p.song.meta || {};
+      covers.stage(p.media.path, {
+        sourceKey: p.song.key,
+        sourceUrl: p.song.url,
+        artist: meta.artist,
+        title: meta.title || p.song.title,
+        duration: p.media.duration,
+        thumbnails: p.song.thumbnails,
+        noSearch: p.song.noSearch,
+        embeddedFrom: p.song.originalPath,
+      });
+    }
+    sendToWindow('import:progress', { ...p, run });
   };
   return { token, onProgress };
 }
@@ -635,9 +653,18 @@ handle('shell:openUrl', (url) => {
 handle('download:start', async ({ probed, opts }) => {
   downloadToken = { cancelled: false };
   try {
-    return await downloader.download(probed, opts, (stage, frac, text) => {
+    const media = await downloader.download(probed, opts, (stage, frac, text) => {
       sendToWindow('download:progress', { stage, frac, text });
     }, downloadToken);
+    covers.stage(media.path, {
+      sourceKey: probed.key,
+      sourceUrl: probed.url,
+      artist: probed.guess && probed.guess.artist,
+      title: (probed.guess && probed.guess.title) || probed.title,
+      duration: media.duration,
+      thumbnails: probed.thumbnails,
+    });
+    return media;
   } finally {
     downloadToken = null;
   }
@@ -651,7 +678,10 @@ handle('download:cancel', () => {
 handle('download:discard', (file) => {
   // Only ever something inside the cache folder.
   const cache = path.resolve(paths.cacheDir()).toLowerCase() + path.sep;
-  if (file && path.resolve(file).toLowerCase().startsWith(cache)) fs.rmSync(file, { force: true });
+  if (file && path.resolve(file).toLowerCase().startsWith(cache)) {
+    fs.rmSync(file, { force: true });
+    covers.dropStaged(file);
+  }
 });
 
 handle('audio:peaks', ({ file, duration }) => waveform.peaksFor(file, duration));
@@ -682,6 +712,8 @@ handle('song:finish', (job) => library.quietly(async () => {
     const lists = (job.playlistIds || []).filter((id) => model.playlistById(d, id));
     model.addSongToPlaylists(d, song.id, lists, song.addedAt);
   });
+  // Its cover, found while it was trimmed (or once it is found).
+  covers.adoptStaged(job.cachePath, song.id).catch(() => {});
   // With a server it goes up now, into the server playlists picked for it.
   if (remote.active()) remote.pushNew({ [song.id]: job.playlistIds || [] });
   fs.rmSync(job.cachePath, { force: true });

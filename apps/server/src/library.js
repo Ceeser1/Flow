@@ -580,6 +580,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
         const next = data.songs.find((s) => s.loudness === null && !noLoudness.has(s.id) && fs.existsSync(s.file));
         if (!next) break;
         const lufs = await tools.measureLoudness(next.file);
+        // Stopped meanwhile: the library is not written any more.
+        if (stopped) break;
         if (lufs === null) noLoudness.add(next.id);
         else if (model.songById(data, next.id)) mutate((d) => model.updateSong(d, next.id, { loudness: lufs }));
       }

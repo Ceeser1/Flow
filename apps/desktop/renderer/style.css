@@ -684,6 +684,9 @@ progress {
 }
 
 .meta-grid .form-row { margin-bottom: 0; }
+/* A song downloaded on its own: its cover first, as tall as a field with its label. */
+.meta-grid--cover { grid-template-columns: auto 1fr 1.3fr 1fr; }
+.cover--editor { width: 58px; height: 58px; align-self: end; border-radius: 6px; }
 
 .trim-head {
   display: flex;
@@ -1252,6 +1255,7 @@ div.import__frame-head { cursor: default; }
 .cover__note .icon { width: 50%; height: 50%; }
 .cover--row { width: 30px; height: 30px; }
 .cover--result { width: 32px; height: 32px; border-radius: 6px; }
+.cover--frame { width: 36px; height: 36px; border-radius: 5px; }
 
 /* A song list's Title: the cover, then the title. */
 .title-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }

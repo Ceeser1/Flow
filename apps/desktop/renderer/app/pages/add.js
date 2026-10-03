@@ -487,6 +487,16 @@ const AddPage = {
     $('edTitle').value = guess.title || (this.probed ? this.probed.title : '');
     $('edMix').value = guess.mix || '';
     $('edError').textContent = '';
+    // Its cover, found right after the download (the note until then). In a
+    // playlist's frame the frame shows it.
+    const withCover = !this.embedded && !!m.path;
+    $('edCover').closest('.meta-grid').classList.toggle('meta-grid--cover', withCover);
+    if (withCover) {
+      const box = Covers.pendingEl(m.path, 'editor');
+      box.id = 'edCover';
+      $('edCover').replaceWith(box);
+    }
+    $('edCover').hidden = !withCover;
     this.slider.setRange(m.duration, start || 0, end === null || end === undefined ? m.duration : end);
     this._syncFields();
     // A song downloaded by the server is streamed from there (m.src).

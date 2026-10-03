@@ -363,3 +363,46 @@ test('browser cookies sent along reach every yt-dlp run of that download, only t
     }
   });
 });
+
+test('a downloaded song\'s cover is looked for at once: shown while it waits, the song\'s when finished', needsFfmpeg, async () => {
+  const d = dirs();
+  const topic = path.join(scratch, 'topic.jpg');
+  execFileSync(path.join(tools, `ffmpeg${EXE}`), ['-v', 'error', '-y', '-f', 'lavfi',
+    '-i', 'color=c=0x3c3526:s=1280x720[bg];testsrc=s=720x720[fg];[bg][fg]overlay=280:0', '-frames:v', '1', topic]);
+  // YouTube Music's search finds the song; its thumbnail is the picture above.
+  const coverDeps = {
+    fetchImage: async () => fs.readFileSync(topic),
+    readInfo: async () => { throw new Error('not available'); },
+    searchMusic: async (track) => [{ id: 'CCCCCCCCCCC', title: track.title, duration: track.duration }],
+    pauseMs: 0,
+  };
+  const server = await startServer({
+    home: d.home, music: d.music, port: 0, host: '127.0.0.1', detectTailscale: async () => null, discoveryPort: null, coverDeps,
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  try {
+    await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/list/2', kind: 'list', options: {} });
+    await allSettled(base);
+    const batch = await waitFor(async () => {
+      const b = await batchOf(base);
+      return b.items.every((it) => it.cover) && b;
+    }, 'the covers');
+    assert.match(batch.items[0].cover, /^[0-9a-f]{10}$/);
+    const pic = await fetch(`${base}/api/downloads/items/0/cover?v=${batch.items[0].cover}`);
+    assert.equal(pic.status, 200);
+    assert.equal(pic.headers.get('content-type'), 'image/jpeg');
+    assert.equal(pic.headers.get('etag'), `"${batch.items[0].cover}"`);
+    assert.equal((await fetch(`${base}/api/downloads/items/5/cover`)).status, 404);
+
+    const done = await api(base, 'POST', '/api/downloads/items/0/finish', { meta: { title: 'One' }, start: 0, end: 3 });
+    assert.equal(done.status, 200);
+    const song = (await api(base, 'GET', '/api/library')).json.library.songs.find((s) => s.id === done.json.song.id);
+    assert.equal(song.cover, batch.items[0].cover);
+    const after = await batchOf(base);
+    assert.equal(after.items[0].state, 'saved');
+    assert.equal(after.items[0].cover, '');
+    assert.equal((await fetch(`${base}/api/downloads/items/0/cover`)).status, 404);
+  } finally {
+    await server.close();
+  }
+});

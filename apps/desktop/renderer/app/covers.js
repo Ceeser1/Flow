@@ -9,6 +9,10 @@
 // Covers.el(song) is the picture at the front of every song row; the rows
 // on screen without their file yet ask the main process for it (a server's
 // come down first), and get it in place when it arrives (onCoversUpdated).
+//
+// Covers.pendingEl(key) is the cover of a song on the Add Songs page that is
+// downloaded but not saved yet, found right after its download: key is its
+// cached file, or 'server:<index>' for a song of the server's download.
 
 const Covers = {
   dirs: { local: '', server: '' },
@@ -19,6 +23,9 @@ const Covers = {
   // song id -> how often its file arrived since: a new address each time, so
   // a load that failed before is not taken from Chromium's memory.
   _arrived: new Map(),
+  // Add Songs: key -> file:// address of a song's cover before it is saved.
+  _pending: new Map(),
+  _serverAsked: new Map(), // 'server:<index>' -> version asked for
 
   init(dirs) {
     this.dirs = dirs || this.dirs;
@@ -26,6 +33,64 @@ const Covers = {
       if (info.dirs) this.dirs = info.dirs;
       this.refresh(info.ids);
     });
+    window.flow.onCoverStaged((info) => {
+      this._setPending(info.cachePath, `${Util.fileUrl(info.file)}?v=${encodeURIComponent(info.version)}`);
+    });
+  },
+
+  _pendingKey(key) {
+    return String(key || '').toLowerCase();
+  },
+
+  /** The cover box of a song not saved yet (the note until its cover is found). */
+  pendingEl(key, size = 'row') {
+    const k = this._pendingKey(key);
+    const box = h(`span.cover.cover--${size}`, { dataset: { pendingKey: k }, 'aria-hidden': 'true' });
+    this._fillPending(box, k);
+    return box;
+  },
+
+  _fillPending(box, k) {
+    clear(box);
+    const src = this._pending.get(k);
+    if (!src) {
+      box.appendChild(this._placeholder());
+      return;
+    }
+    const img = h('img.cover__img', { alt: '', decoding: 'async', draggable: false });
+    img.addEventListener('error', () => {
+      img.remove();
+      if (!box.querySelector('.cover__note')) box.appendChild(this._placeholder());
+    });
+    img.src = src;
+    box.appendChild(img);
+  },
+
+  _setPending(key, src) {
+    const k = this._pendingKey(key);
+    if (this._pending.get(k) === src) return;
+    this._pending.set(k, src);
+    for (const box of document.querySelectorAll('.cover[data-pending-key]')) {
+      if (box.dataset.pendingKey === k) this._fillPending(box, k);
+    }
+  },
+
+  /** A song of the server's download whose cover the server found (version): fetched once. */
+  serverPending(index, version) {
+    const k = `server:${index}`;
+    if (!version || this._serverAsked.get(k) === version) return;
+    this._serverAsked.set(k, version);
+    window.flow.serverDownloads('cover', { index, version }).then((file) => {
+      if (file && this._serverAsked.get(k) === version) this._setPending(k, `${Util.fileUrl(file)}?v=${encodeURIComponent(version)}`);
+    }).catch(() => {
+      this._serverAsked.delete(k);
+    });
+  },
+
+  /** The server's download batch is gone or new: its songs' covers are forgotten. */
+  forgetServerPending() {
+    for (const k of [...this._pending.keys()]) if (k.startsWith('server:')) this._pending.delete(k);
+    this._serverAsked.clear();
   },
 
   /** The cover file of a song as a file:// address, or '' when it has none. */

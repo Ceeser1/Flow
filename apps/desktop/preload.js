@@ -94,4 +94,7 @@ contextBridge.exposeInMainWorld('flow', {
   coverStats: () => call('covers:stats'),
   clearCoverCache: () => call('covers:clear'),
   onCoversUpdated: (fn) => ipcRenderer.on('covers:updated', (_e, info) => fn(info)),
+  // Add Songs: the cover of a song downloaded but not saved yet ({ file, version } or null).
+  stagedCover: (cachePath) => call('covers:staged', cachePath),
+  onCoverStaged: (fn) => ipcRenderer.on('covers:staged', (_e, info) => fn(info)),
 });

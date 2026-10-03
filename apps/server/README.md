@@ -224,7 +224,9 @@ pause between, at low priority:
 A song for which none of that gives a picture is not looked at again; one
 that could not be looked at (no internet) is tried again at the next start.
 Steps 1, 3 and 4 need yt-dlp and the internet, all of them ffmpeg. A song the
-server downloads itself gets its cover with the download. The apps keep a
+server downloads itself has its cover looked for right after its download
+(it is ready without waiting for it), shown in the apps while it waits to be
+finished, and the song's once it is. The apps keep a
 copy of every cover, so a server that is off still leaves them with theirs.
 
 ## Finding the server on the network (optional, off by default)
@@ -440,6 +442,7 @@ report changes.
 | `DELETE /api/downloads` | cancel the whole batch: downloads stopped, files gone |
 | `GET /api/downloads/items/<i>/peaks` | `{ peaks }`: the song's waveform, for the trim editor |
 | `GET /api/downloads/items/<i>/audio` | the prepared song, with Range (and `?t=`), to preview the trim |
+| `GET /api/downloads/items/<i>/cover?v=<version>` | the cover found for a song that is `ready` (the item's `cover` is its version, `''` while there is none); 404 without one |
 | `POST /api/downloads/items/<i>/finish` | `{ meta: { artist, title, mix }, start, end, playlistIds, playlist: { name, mergeInto } or null, existing: [i] }`: saved into the library → `{ song, batch, playlistId, rev }`; `batch` is `null` once every song is dealt with |
 | `POST /api/downloads/items/<i>/retry` | a song that failed, again |
 | `DELETE /api/downloads/items/<i>` | one song thrown away |

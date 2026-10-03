@@ -14,6 +14,11 @@
 // song.cover is the version of the file (its hash), so a file here is
 // checked against the library by hashing it. The window shows covers as files
 // (Store.coverSrc); it hears of new ones through onUpdated.
+//
+// A song downloaded on the Add Songs page gets its cover looked for as soon
+// as it is downloaded (stage), kept beside its cached file while it is
+// trimmed and named (the window hears of it through onStaged), and handed to
+// the song when it is finished (adoptStaged).
 
 const fs = require('fs');
 const path = require('path');
@@ -40,6 +45,28 @@ const storeOf = (scope) => {
 const localStore = () => storeOf(LOCAL);
 
 let updated = () => {};
+
+// yt-dlp for the lookups, at low priority: the downloads started in the
+// window come first. The same browser cookies as theirs. Made once.
+let lookupsMade = null;
+function lookups() {
+  if (!lookupsMade) {
+    lookupsMade = cover.lookupsFor(createMedia({
+      ffmpeg: tools.findFfmpeg,
+      ffprobe: tools.findFfprobe,
+      ytdlp: tools.findYtDlp,
+      cacheDir: paths.cacheDir,
+      lowPriority: true,
+      ytdlpArgs: () => cookieJar.ytdlpArgs(settings.get('useCookies') ? settings.get('cookiesBrowser') : ''),
+    }));
+  }
+  return lookupsMade;
+}
+
+// Songs whose cover is still being looked for from when they were
+// downloaded (adoptStaged): the filler leaves them be meanwhile.
+const awaiting = new Set();
+let fillerRun = () => {};
 
 /** fn(scope, ids): covers that arrived or changed ('local' or a server id). */
 function onUpdated(fn) {
@@ -102,22 +129,12 @@ async function takeFromFile(songId, file) {
  * whose covers come from the server).
  */
 function createFiller({ skip = () => false } = {}) {
-  // Its own yt-dlp runs, at low priority: the downloads started in the
-  // window come first. The same browser cookies as theirs.
-  const lookups = cover.lookupsFor(createMedia({
-    ffmpeg: tools.findFfmpeg,
-    ffprobe: tools.findFfprobe,
-    ytdlp: tools.findYtDlp,
-    cacheDir: paths.cacheDir,
-    lowPriority: true,
-    ytdlpArgs: () => cookieJar.ytdlpArgs(settings.get('useCookies') ? settings.get('cookiesBrowser') : ''),
-  }));
   const later = new Set(); // could not be reached: tried again at the next start
   let running = false;
   let again = false;
   let stopped = false;
 
-  const nextSong = () => library.get().songs.find((s) => !s.cover && !later.has(s.id) && !skip(s.id));
+  const nextSong = () => library.get().songs.find((s) => !s.cover && !later.has(s.id) && !awaiting.has(s.id) && !skip(s.id));
 
   async function find(s) {
     const ffmpeg = tools.findFfmpeg();
@@ -130,7 +147,7 @@ function createFiller({ skip = () => false } = {}) {
       noSearch: /spotify\.com/i.test(s.sourcePlaylistUrl || ''),
     }, {
       ffmpeg,
-      ...lookups,
+      ...lookups(),
       embedded: () => (fs.existsSync(s.file) ? cover.embeddedCover(ffmpeg, s.file) : null),
       cancelled: () => stopped,
     });
@@ -180,14 +197,134 @@ function createFiller({ skip = () => false } = {}) {
     }
   }
 
-  return {
+  const filler = {
     run: () => {
       run().catch(() => {});
     },
     stop() {
       stopped = true;
+      stageStopped = true;
     },
   };
+  fillerRun = filler.run;
+  return filler;
+}
+
+// ---- songs not saved yet (Add Songs) ----
+
+const staged = new Map(); // cached file, lower-cased -> { promise, done, adopted, dropped }
+let stageChain = Promise.resolve();
+let stageStopped = false;
+let stagedHeard = () => {};
+
+/** fn({ cachePath, file, version }): a cover found for a song not saved yet. */
+function onStaged(fn) {
+  stagedHeard = fn;
+}
+
+const stagedFile = (cachePath) => `${cachePath}.cover.jpg`;
+const stageKey = (cachePath) => path.resolve(String(cachePath)).toLowerCase();
+
+/**
+ * Looks for the cover of a song just downloaded into the cache, one song at
+ * a time. song: { sourceKey, sourceUrl, artist, title, duration, thumbnails,
+ * noSearch, embeddedFrom (a file whose picture counts: a local file's
+ * original) }. Not for a song thrown away meanwhile.
+ */
+function stage(cachePath, song) {
+  if (!cachePath || staged.has(stageKey(cachePath))) return;
+  const entry = { done: false, adopted: false, dropped: false };
+  staged.set(stageKey(cachePath), entry);
+  const gone = () => stageStopped || entry.dropped || (!entry.adopted && !fs.existsSync(cachePath));
+  entry.promise = stageChain.then(async () => {
+    if (gone()) return null;
+    const ffmpeg = tools.findFfmpeg();
+    const picture = song.embeddedFrom || cachePath;
+    const r = await cover.resolveCover({
+      sourceKey: song.sourceKey || '',
+      sourceUrl: song.sourceUrl || '',
+      artist: song.artist || '',
+      title: song.title || '',
+      duration: Number(song.duration) || 0,
+      thumbnails: Array.isArray(song.thumbnails) ? song.thumbnails : undefined,
+      noSearch: !!song.noSearch,
+    }, {
+      ffmpeg,
+      ...lookups(),
+      embedded: () => (fs.existsSync(picture) ? cover.embeddedCover(ffmpeg, picture) : null),
+      cancelled: gone,
+    });
+    if (!r.jpeg || gone()) return null;
+    fs.writeFileSync(stagedFile(cachePath), r.jpeg);
+    const version = cover.coverVersion(r.jpeg);
+    if (!entry.adopted) {
+      try {
+        stagedHeard({ cachePath, file: stagedFile(cachePath), version });
+      } catch {
+        // The window may be gone.
+      }
+    }
+    return r.jpeg;
+  }).catch(() => null).finally(() => {
+    entry.done = true;
+  });
+  stageChain = entry.promise;
+}
+
+/** The cover a song not saved yet has so far: { file, version }, or null. */
+function stagedCover(cachePath) {
+  const file = stagedFile(cachePath);
+  try {
+    return { file, version: cover.coverVersion(fs.readFileSync(file)) };
+  } catch {
+    return null;
+  }
+}
+
+/** A song thrown away: its lookup stops, its cover goes. */
+function dropStaged(cachePath) {
+  const entry = staged.get(stageKey(cachePath));
+  if (entry) entry.dropped = true;
+  staged.delete(stageKey(cachePath));
+  fs.rmSync(stagedFile(cachePath), { force: true });
+}
+
+/**
+ * The song from cachePath is saved as songId: its cover, found or still
+ * being looked for, becomes the song's. wait: false takes only one found
+ * already and stops the lookup otherwise. Resolves true when the song got one.
+ */
+function adoptStaged(cachePath, songId, { wait = true } = {}) {
+  const key = stageKey(cachePath);
+  const entry = staged.get(key);
+  staged.delete(key);
+  const take = () => {
+    const file = stagedFile(cachePath);
+    let jpeg = null;
+    try {
+      jpeg = fs.readFileSync(file);
+    } catch {
+      return false;
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+    const song = model.songById(library.get(), songId);
+    if (!song || (song.cover && song.cover !== cover.NO_COVER)) return false;
+    keepLocal(songId, jpeg);
+    return true;
+  };
+  if (!entry || entry.done) return Promise.resolve(take());
+  if (!wait) {
+    entry.dropped = true;
+    return Promise.resolve(take());
+  }
+  entry.adopted = true;
+  awaiting.add(songId);
+  return entry.promise.then(take).finally(() => {
+    awaiting.delete(songId);
+    // None found: the filler tries the song itself.
+    fillerRun();
+  });
 }
 
 /**
@@ -262,5 +399,5 @@ function moveFolder(oldMusicDir, newMusicDir) {
 
 module.exports = {
   LOCAL, storeOf, localStore, dirOf, onUpdated, tell, keepLocal, takeFromFile, createFiller, watchLocal,
-  copyToLocal, copyToServer, moveFolder,
+  copyToLocal, copyToServer, moveFolder, stage, stagedCover, dropStaged, adoptStaged, onStaged,
 };

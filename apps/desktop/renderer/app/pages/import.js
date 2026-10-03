@@ -869,6 +869,7 @@ const ImportPanel = {
     },
     h('span.import__state', { html: { ready: Icons.check, library: Icons.check, failed: Icons.x, cancelled: Icons.x }[st] || '' }),
     h('span.import__num', String(it.index + 1)),
+    this._cover(it),
     h('span.import__text',
       h('span.import__title', { title: name }, name),
       sub ? h('span.import__sub' + (subBad ? '.import__sub--bad' : ''), sub) : null),
@@ -889,6 +890,16 @@ const ImportPanel = {
           h('button.btn.btn--primary', { type: 'button', title: 'Save this song now', onclick: () => this.finishOne(it.index) }, 'Finish this song'))));
     }
     return frame;
+  },
+
+  /**
+   * A frame's cover: the library song's for one the library has, else the
+   * one found right after the download (the note until then).
+   */
+  _cover(it) {
+    const song = it.existingId ? Store.song(it.existingId) : null;
+    if (song) return Covers.el(song, 'frame');
+    return Covers.pendingEl(it.coverKey || (it.media && it.media.path) || '', 'frame');
   },
 
   toggleFrame(index) {
@@ -1279,6 +1290,7 @@ const ImportPanel = {
   openServer(batch) {
     if (!batch || (this.state !== 'idle' && !this.server)) return;
     const saved = batch.items.some((x) => x.state === 'saved' || x.state === 'added');
+    Covers.forgetServerPending();
     this.server = { id: batch.id, single: !!batch.single };
     this.listing = {
       local: false, source: batch.source.kind || 'server', sourceUrl: batch.source.url, name: batch.source.name, truncated: batch.truncated, items: [],
@@ -1350,6 +1362,9 @@ const ImportPanel = {
     it.title = x.title;
     it.duration = x.duration || it.duration;
     it.reason = x.error || '';
+    // Its cover, once the server found one (the frame's box fills in by itself).
+    it.coverKey = `server:${x.index}`;
+    if (x.cover && x.state === 'ready') Covers.serverPending(x.index, x.cover);
     const doing = x.state === 'converting' ? 'converting' : 'downloading';
     it.note = `${doing} on the server${x.progress && x.progress.text ? `: ${x.progress.text}` : '...'}`;
     const states = {

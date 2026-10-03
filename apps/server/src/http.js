@@ -33,6 +33,7 @@
 //   DELETE /api/downloads              cancel the whole batch
 //   GET    /api/downloads/items/:i/peaks           the song's waveform
 //   GET    /api/downloads/items/:i/audio           the prepared song (Range, ?t=)
+//   GET    /api/downloads/items/:i/cover           the cover found for it (item.cover: its version)
 //   POST   /api/downloads/items/:i/finish { meta, start, end, playlistIds, playlist, existing }
 //                                      saved into the library: { song, batch }
 //   POST   /api/downloads/items/:i/retry           a song that failed, again
@@ -750,7 +751,7 @@ function createHttpServer({
     if (m && req.method === 'PUT') return uploadCover(req, res, m[1]);
     m = /^\/api\/songs\/([\w-]{1,64})$/.exec(p);
     if (m && req.method === 'PUT') return upload(req, res, url, m[1], profileId);
-    if (p.startsWith('/api/downloads')) return downloadRoute(req, res, p, profileId);
+    if (p.startsWith('/api/downloads')) return downloadRoute(req, res, p, profileId, url);
     throw new HttpError(404, 'Nothing here.');
   }
 
@@ -791,7 +792,7 @@ function createHttpServer({
   }
 
   /** The server's own downloads, those of the profile signed in to (see the top). */
-  async function downloadRoute(req, res, p, profileId) {
+  async function downloadRoute(req, res, p, profileId, url) {
     if (!downloads) throw new HttpError(404, 'This server does not download songs.');
     const is = (method, pattern) => (method === req.method || (method === 'GET' && req.method === 'HEAD')) && pattern.test(p);
     if (is('GET', /^\/api\/downloads$/)) return sendJson(res, 200, { batch: downloads.get(profileId) });
@@ -803,11 +804,12 @@ function createHttpServer({
       downloads.cancel(profileId);
       return sendJson(res, 200, { batch: null });
     }
-    const m = /^\/api\/downloads\/items\/(\d{1,4})(?:\/(peaks|audio|finish|retry))?$/.exec(p);
+    const m = /^\/api\/downloads\/items\/(\d{1,4})(?:\/(peaks|audio|cover|finish|retry))?$/.exec(p);
     if (!m) throw new HttpError(404, 'Nothing here.');
     const [, index, what] = m;
     if (what === 'peaks' && is('GET', /./)) return sendJson(res, 200, { peaks: downloads.peaks(profileId, index) });
     if (what === 'audio' && is('GET', /./)) return sendFile(req, res, downloads.audioFile(profileId, index));
+    if (what === 'cover' && is('GET', /./)) return sendCover(req, res, url, downloads.coverFile(profileId, index));
     if (what === 'finish' && req.method === 'POST') {
       const body = await readJsonBody(req);
       const result = await downloads.finish(profileId, index, body);
