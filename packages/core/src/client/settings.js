@@ -67,6 +67,10 @@ const DEFAULTS = {
   // (CLOUD_COLORS), and how many there are (percent, 0-100 in steps of 10).
   cloudsColors: 'rainbow',
   cloudsAmount: 50,
+  // The neon wireframe landscape between the clouds and the equalizer, and
+  // how solid it shows (percent).
+  landscapeOn: true,
+  landscapeVisibility: 50,
   // The equalizer: height and shine in percent, and its colours.
   eqOn: true,
   eqHeight: 50,
@@ -130,7 +134,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
@@ -174,13 +178,13 @@ function clean(raw) {
   for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
     'sponsorBlock', 'sponsorBlockIntros']) s[key] = s[key] === true;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'landscapeOn', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare']) {
     s[key] = s[key] !== false;
   }
   const fade = Math.round(Number(s.crossfadeSeconds) * 10) / 10;
   s.crossfadeSeconds = Number.isFinite(fade) ? Math.min(10, Math.max(0.1, fade)) : DEFAULTS.crossfadeSeconds;
-  for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'eqHeight', 'eqVisibility', 'eqShineSpread', 'flashTriggers', 'flashRange']) {
+  for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'landscapeVisibility', 'eqHeight', 'eqVisibility', 'eqShineSpread', 'flashTriggers', 'flashRange']) {
     s[key] = percent(s[key], DEFAULTS[key]);
   }
   if (!EQ_COLORS.includes(s.eqColors)) s.eqColors = DEFAULTS.eqColors;

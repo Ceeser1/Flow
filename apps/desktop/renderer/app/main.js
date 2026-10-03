@@ -23,6 +23,7 @@
   Output.init();
   Session.init();
   Ambient.init();
+  Landscape.init();
   ScreenFlash.init();
   Nav.init();
   SearchPage.init();

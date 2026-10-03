@@ -140,6 +140,12 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.eqColors, 'rainbow');
   assert.equal(settings.clean({ visualizer: 'waveform' }).visualizer, 'waveform');
   assert.equal(settings.clean({ visualizer: 'flow' }).visualizer, 'flow');
+  assert.equal(settings.clean({ visualizer: 'synthwave' }).visualizer, 'synthwave');
+  // The wireframe landscape: on, at half visibility, unless chosen otherwise.
+  assert.equal(d.landscapeOn, true);
+  assert.equal(d.landscapeVisibility, 50);
+  assert.equal(settings.clean({ landscapeOn: false }).landscapeOn, false);
+  assert.equal(settings.clean({ landscapeVisibility: 300 }).landscapeVisibility, 100);
   assert.equal(settings.clean({ eqColors: 'greyscale' }).eqColors, 'greyscale');
   // The clouds: rainbow and half as many by default; amount in steps of 10, 0 allowed.
   assert.equal(d.cloudsColors, 'rainbow');

@@ -20,6 +20,8 @@
 //             Settings, across the whole screen: the menu and the page are
 //             hidden (the body's class viz-flow), and the equalizer stands on
 //             the bottom edge of the screen, so it only goes up.
+//   Synthwave the wireframe landscape (landscape.js) flown over at full
+//             screen, under a purple sky and a sun, from a ship's nose.
 //   Random    one of the others, a different one than last time if it can.
 //
 // Both read the player's sound where the equalizer does, before the volume.
@@ -45,6 +47,15 @@ const VISUALIZERS = [
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.2 9.3 4.4 4.4 0 0 0 7 18z"/></svg>',
   },
   {
+    id: 'synthwave',
+    name: 'Synthwave',
+    ready: true,
+    desc: 'A flight through neon mountains made of the music; the kicks speed it up and make it glow',
+    glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
+      + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="4"/><path d="M2 20l6-8 3 4 2-2 4 6"/>'
+      + '<path d="M15 16l2-3 5 7"/></svg>',
+  },
+  {
     id: 'lightning',
     name: 'Lightning',
     ready: false,
@@ -56,7 +67,7 @@ const VISUALIZERS = [
 const Visualizer = {
   el: null,            // the full-screen layer while open
   canvas: null,
-  kind: null,          // 'bars' or 'waveform', the one showing
+  kind: null,          // 'bars', 'waveform' or 'synthwave', the one showing
   mode: 'bars',        // Bars: 'bars' or 'scope'
   samples: null,
   raf: null,
@@ -90,6 +101,16 @@ const Visualizer = {
   WAVE_ATTACK_MS: 30,
   WAVE_RELEASE_MS: 360,
   RAINBOW_MS: 15000,
+
+  // Synthwave. Distances in grid cells.
+  SYN_SPEED: 7,        // cells per second while a song plays
+  SYN_IDLE: 0.25,      // and this much of it while paused
+  SYN_KICK_SPEED: 1.4, // a full kick adds this much of SYN_SPEED
+  SYN_ROWS: 52,        // how far ahead it is drawn
+  SYN_COLS: 64,        // each side of the middle
+  SYN_FLOOR: 3.5,      // half the valley floor's width
+  SYN_CAM_H: 1.1,      // the eye above the floor
+  SYN_HORIZON: 0.5,    // of the screen's height
 
   AWAKE_MS: 3000,      // the X stays this long after the mouse stops
 
@@ -156,7 +177,8 @@ const Visualizer = {
     if (!Equalizer.active) return;
     this.samples = new Float32Array(Equalizer.analyser.fftSize);
     if (kind === 'bars') this._startBars();
-    else this._startWave();
+    else if (kind === 'waveform') this._startWave();
+    else if (kind === 'synthwave') this._startSynthwave();
     this._resize = new ResizeObserver(() => this._size());
     this._resize.observe(this.canvas);
     this._size();
@@ -184,6 +206,7 @@ const Visualizer = {
     this.canvas = null;
     this.scratch = null;
     this.glow = null;
+    this.terrain = null;
     this._closedAt = performance.now();
   },
 
@@ -240,7 +263,8 @@ const Visualizer = {
     const dt = Math.min(0.1, Math.max(0.001, (now - this.last) / 1000));
     this.last = now;
     Equalizer.analyser.getFloatTimeDomainData(this.samples);
-    if (this.kind === 'waveform') this._drawWave(dt);
+    if (this.kind === 'synthwave') this._drawSynthwave(dt, now);
+    else if (this.kind === 'waveform') this._drawWave(dt);
     else if (this.mode === 'bars') this._drawBars(dt, now);
     else this._drawScope();
     this.raf = requestAnimationFrame((t) => this._frame(t));
@@ -439,5 +463,138 @@ const Visualizer = {
     out.filter = `blur(${this.WAVE_CORE_BLUR}px)`;
     out.drawImage(this.scratch, 0, 0);
     out.filter = 'none';
+  },
+
+  // ---- Synthwave ----
+  //
+  // The wireframe landscape (landscape.js) at full screen, its mountains
+  // filled dark, under a purple sky with stars and a sun sitting in the
+  // valley's gap, seen from a ship whose nose shows at the bottom. The kicks
+  // push it on faster and make the grid and the sun glow.
+
+  _startSynthwave() {
+    this.terrain = new Terrain({
+      rows: this.SYN_ROWS, cols: this.SYN_COLS, floor: this.SYN_FLOOR, camH: this.SYN_CAM_H, seed: Math.floor(Math.random() * 1e9),
+    });
+    this.synKick = new Kick();
+    this.synSpeed = this.SYN_SPEED;
+    // Stars: where they are (shares of the screen), how big, and their twinkle.
+    this.stars = [];
+    for (let i = 0; i < 160; i += 1) {
+      this.stars.push({ x: Math.random(), y: Math.random() ** 1.6, r: 0.5 + Math.random() * 1.3, p: Math.random() * 6.3, s: 0.5 + Math.random() * 2 });
+    }
+  },
+
+  _drawSynthwave(dt, now) {
+    const c = this.canvas;
+    const ctx = c.getContext('2d');
+    const w = c.width;
+    const hgt = c.height;
+    const playing = Player.isPlaying;
+    const bass = playing ? Equalizer.bass || 0 : 0;
+    const kick = this.synKick.follow(bass, dt * 1000);
+    const target = this.SYN_SPEED * (playing ? 1 + this.SYN_KICK_SPEED * kick + 0.4 * bass : this.SYN_IDLE);
+    this.synSpeed += (target - this.synSpeed) * (1 - Math.exp(-dt / 0.6));
+    this.terrain.advance(this.synSpeed * dt, playing ? Equalizer.levels : null);
+    const hy = hgt * this.SYN_HORIZON;
+
+    // The sky, deep purple to magenta at the horizon.
+    const sky = ctx.createLinearGradient(0, 0, 0, hy);
+    sky.addColorStop(0, '#12002a');
+    sky.addColorStop(0.5, '#4a0a5e');
+    sky.addColorStop(1, '#b0157a');
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, hgt);
+
+    ctx.fillStyle = '#fff';
+    for (const s of this.stars) {
+      const y = s.y * hy * 0.85;
+      ctx.globalAlpha = (0.55 + 0.45 * Math.sin(now / 1000 * s.s + s.p)) * (1 - y / hy);
+      ctx.beginPath();
+      ctx.arc(s.x * w, y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // The sun, pink at the top to orange at the bottom, sitting on the
+    // horizon; its haze swells on the kicks.
+    const r = hgt * 0.22;
+    const sy = hy - r * 0.62;
+    const haze = ctx.createRadialGradient(w / 2, sy, r * 0.8, w / 2, sy, r * (2.2 + 0.6 * kick));
+    haze.addColorStop(0, `rgba(255, 60, 140, ${0.45 + 0.35 * kick})`);
+    haze.addColorStop(1, 'rgba(255, 60, 140, 0)');
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, w, hy);
+    const sun = ctx.createLinearGradient(0, sy - r, 0, sy + r);
+    sun.addColorStop(0, '#ff1f6e');
+    sun.addColorStop(0.55, '#ff3d8b');
+    sun.addColorStop(1, '#ffb347');
+    ctx.fillStyle = sun;
+    ctx.beginPath();
+    ctx.arc(w / 2, sy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    this.terrain.render(ctx, w, hgt, {
+      horizon: this.SYN_HORIZON,
+      fill: (d) => `hsl(236, 75%, ${(6 + 10 * d).toFixed(1)}%)`,
+      glow: 0.8,
+      kick,
+      focal: 0.5,
+    });
+
+    // Where the valley meets the sky, a band of light.
+    const band = ctx.createLinearGradient(0, hy - hgt * 0.04, 0, hy + hgt * 0.03);
+    band.addColorStop(0, 'rgba(255, 90, 170, 0)');
+    band.addColorStop(0.6, `rgba(255, 110, 190, ${0.25 + 0.25 * kick})`);
+    band.addColorStop(1, 'rgba(255, 90, 170, 0)');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = band;
+    ctx.fillRect(0, hy - hgt * 0.04, w, hgt * 0.07);
+    ctx.globalCompositeOperation = 'source-over';
+
+    this._drawShip(ctx, w, hgt);
+  },
+
+  /** The ship's nose at the bottom of the screen, and the rails off its sides. */
+  _drawShip(ctx, w, hgt) {
+    const cx = w / 2;
+    const top = hgt * 0.86;
+    const half = Math.min(w * 0.16, hgt * 0.3);
+    ctx.strokeStyle = 'rgba(220, 225, 255, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - half * 0.85, top + hgt * 0.06);
+    ctx.lineTo(cx - half * 2.6, hgt);
+    ctx.moveTo(cx + half * 0.85, top + hgt * 0.06);
+    ctx.lineTo(cx + half * 2.6, hgt);
+    ctx.stroke();
+
+    const hull = ctx.createLinearGradient(0, top, 0, hgt);
+    hull.addColorStop(0, '#f4f6ff');
+    hull.addColorStop(0.35, '#c9d0e6');
+    hull.addColorStop(1, '#6f7894');
+    ctx.fillStyle = hull;
+    ctx.beginPath();
+    ctx.moveTo(cx - half, top + hgt * 0.02);
+    ctx.quadraticCurveTo(cx, top - hgt * 0.012, cx + half, top + hgt * 0.02);
+    ctx.lineTo(cx + half * 1.25, hgt);
+    ctx.lineTo(cx - half * 1.25, hgt);
+    ctx.closePath();
+    ctx.fill();
+
+    // The canopy, light blue, on the ridge.
+    const canopy = ctx.createLinearGradient(0, top - hgt * 0.02, 0, top + hgt * 0.03);
+    canopy.addColorStop(0, '#bff0ff');
+    canopy.addColorStop(1, '#3fa9f5');
+    ctx.fillStyle = canopy;
+    ctx.beginPath();
+    ctx.moveTo(cx - half * 0.16, top + hgt * 0.025);
+    ctx.lineTo(cx - half * 0.1, top - hgt * 0.012);
+    ctx.lineTo(cx + half * 0.1, top - hgt * 0.012);
+    ctx.lineTo(cx + half * 0.16, top + hgt * 0.025);
+    ctx.closePath();
+    ctx.fill();
   },
 };
