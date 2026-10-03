@@ -182,14 +182,14 @@ The cog at the bottom left of the menu. Every change counts at once.
     (-14 LUFS, turned up by at most 8 dB), with a limiter catching the peaks
     of songs turned up. Each song is measured once in the background (EBU R128,
     well under a second a song) and the result kept in the library.
-  - **Local Files**: how many songs and how much room they take. Open shows
+  - **Local Files**: its Location, how many songs and how much room they take. Open shows
     the folder in Explorer. Change picks another folder and moves every song
     file there, subfolders and all (a name already taken there gets a number);
     playlists and statistics stay. Not while a download or import runs.
-  - **Covers**: how many songs have a cover, and how many are still being
-    looked for. With a Flow Server also the server's covers kept on this
-    computer (how many, how much room) and **Clear cover cache**, which
-    deletes them; those of the server connected come down again.
+  - **Covers**: how many covers this computer keeps and how much room they
+    take (with a Flow Server: the servers' covers kept here). With a server
+    also **Clear cover cache**, which deletes those; the covers of the server
+    connected come down again.
 - **Jam session** (only with a Flow Server). See [Active Sessions](#active-sessions).
   - **Share your jam session on the server** (on): other devices on the same
     server see what plays here and can ask to join. Unticked, it is not listed

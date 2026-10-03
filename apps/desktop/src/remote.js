@@ -1575,9 +1575,10 @@ async function fetchCover(song) {
   }
 }
 
-/** How many of this server's covers are here, and the room all servers' take. */
+/** The servers' covers kept here (count, bytes; current: this server's), and how many still come. */
 function coverStats() {
   let count = 0;
+  let current = 0;
   let bytes = 0;
   let names = [];
   try {
@@ -1589,9 +1590,10 @@ function coverStats() {
     if (!e.isDirectory() || e.name === covers.LOCAL) continue;
     const size = covers.storeOf(e.name).size();
     bytes += size.bytes;
-    if (e.name === sync.serverId) count = size.count;
+    count += size.count;
+    if (e.name === sync.serverId) current = size.count;
   }
-  return { count, bytes, waiting: coverTodo.length + coverWanted.length };
+  return { count, current, bytes, waiting: coverTodo.length + coverWanted.length };
 }
 
 /** "Clear cover cache": every server's covers go; this server's come down again. */

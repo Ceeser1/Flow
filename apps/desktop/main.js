@@ -197,7 +197,7 @@ covers.onUpdated((scope, ids) => sendToWindow('covers:updated', { scope, ids, di
 handle('covers:want', (ids) => {
   if (remote.active()) remote.wantCovers(ids);
 });
-// Settings: how many songs have a cover, and the server covers kept here.
+// Settings: the covers kept here (Local Files', and the servers').
 handle('covers:stats', () => ({ local: covers.localStore().size(), server: remote.active() ? remote.coverStats() : null }));
 handle('covers:clear', () => remote.clearCoverCache());
 // Add Songs: a song's cover as soon as it is downloaded, before it is saved.
