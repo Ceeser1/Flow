@@ -1,0 +1,20 @@
+{
+  "name": "flow-android",
+  "version": "2.9.4",
+  "description": "Flow for Android: the desktop renderer in a Capacitor shell",
+  "private": true,
+  "scripts": {
+    "web": "node scripts/build-web.js",
+    "sync": "node scripts/build-web.js && cap sync android",
+    "open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/core": "8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2"
+  },
+  "author": "Ceeser",
+  "license": "MIT"
+}

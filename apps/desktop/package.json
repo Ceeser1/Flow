@@ -11,7 +11,7 @@
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
-    "@flow/core": "2.8.0"
+    "@flow/core": "*"
   },
   "devDependencies": {
     "electron": "33.4.11",
