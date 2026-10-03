@@ -33,7 +33,7 @@ function graph(entry) {
 }
 
 test('the shared client loads no Node module, nor anything outside @flow/core', () => {
-  for (const entry of ['client/remote.js', 'client/localLibrary.js', 'client/settings.js', 'fileMeta.js']) {
+  for (const entry of ['client/remote.js', 'client/localLibrary.js', 'client/settings.js', 'client/actions.js', 'fileMeta.js']) {
     const { files, outside } = graph(path.join(SRC, entry));
     assert.deepEqual(outside, [], entry);
     assert.ok(files.length >= 1);

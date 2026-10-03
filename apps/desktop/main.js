@@ -24,6 +24,8 @@ const loudness = require('./src/loudness');
 const covers = require('./src/covers');
 const { createTagger } = require('./src/tagger');
 const remote = require('./src/remote');
+const env = require('./src/env');
+const { createActions } = require('@flow/core/client/actions');
 const sponsorblock = require('@flow/core/sponsorblock');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
@@ -39,6 +41,15 @@ const loudnessFiller = loudness.createFiller(library, model, () => settings.get(
 const coverFiller = covers.createFiller({ skip: (id) => remote.active() && remote.isServerCopy(id) });
 // New songs' files get their flowid and cover (tagger.js).
 const tagger = createTagger({ skip: (id) => remote.active() && remote.isServerCopy(id) });
+// What the window changes in the library; a Local Files song's file is
+// renamed and cut here (the uncut one to the Recycle Bin).
+const actions = createActions({
+  remote,
+  library,
+  files: env.files,
+  retag: (song, meta) => exporter.retagSong(song, meta),
+  trim: (song, start, end) => exporter.trimSong(song, start, end, { keep: true }),
+});
 
 // A second start just brings the running window forward.
 const isFirstInstance = app.requestSingleInstanceLock();
@@ -161,9 +172,7 @@ library.onChange((data) => {
 });
 
 /** The library the window works with: the server's, or Local Files. */
-function currentLibrary() {
-  return remote.active() ? remote.view() : library.get();
-}
+const currentLibrary = () => actions.currentLibrary();
 
 function iconDataUrl() {
   try {
@@ -228,146 +237,22 @@ ipcMain.on('settings:setSync', (event, patch) => {
 });
 
 // Each change goes to the Local Files library, or with a server to the
-// server as a command (remote.js).
-function change(localFn, type, args) {
-  if (remote.active()) return remote.command(type, args);
-  return library.mutate(localFn);
-}
-
-handle('library:createPlaylist', (name) => {
-  if (!remote.active()) return library.mutate((d) => model.createPlaylist(d, name, library.newId()));
-  const clean = model.checkPlaylistName(remote.view(), name);
-  const id = library.newId();
-  remote.command('createPlaylist', { playlistId: id, name: clean });
-  return model.playlistById(remote.view(), id);
-});
-handle('library:renamePlaylist', ({ id, name }) =>
-  change((d) => model.renamePlaylist(d, id, name), 'renamePlaylist', { playlistId: id, name }));
-// deleteSongs: the songs in no other playlist go too. With a server it decides
-// which (another profile may have them); here a file that cannot be deleted
-// (playing, open elsewhere) keeps its song. Resolves { deleted, kept }, null
-// for a server.
-handle('library:deletePlaylist', ({ id, deleteSongs }) => {
-  if (remote.active()) {
-    remote.setOffline(id, false).catch(() => {});
-    remote.command('deletePlaylist', { playlistId: id, deleteSongs: !!deleteSongs });
-    return null;
-  }
-  return library.quietly(() => {
-    const gone = [];
-    let kept = 0;
-    for (const sid of deleteSongs ? model.songsOnlyIn(library.get(), id) : []) {
-      const song = model.songById(library.get(), sid);
-      try {
-        if (song.file && fs.existsSync(song.file)) fs.rmSync(song.file);
-        gone.push(sid);
-      } catch {
-        kept += 1;
-      }
-    }
-    library.mutate((d) => {
-      model.deletePlaylist(d, id);
-      for (const sid of gone) if (model.songById(d, sid)) model.removeSong(d, sid, false);
-    });
-    return { deleted: gone.length, kept };
-  });
-});
-// Sharing a playlist with the server's other profiles, and following one they share.
-handle('library:setPlaylistShared', ({ id, shared }) =>
-  change((d) => model.setPlaylistShared(d, id, !!shared), 'setPlaylistShared', { playlistId: id, shared: !!shared }));
-handle('library:setFollowing', ({ id, on }) => {
-  if (!remote.active()) throw new Error('Following playlists needs a Flow Server.');
-  const result = remote.command(on ? 'followPlaylist' : 'unfollowPlaylist', { playlistId: id });
-  // Unfollowed: its downloaded songs go too, unless another downloaded
-  // playlist (or All Songs) still holds them.
-  if (!on) remote.setOffline(id, false).catch(() => {});
-  return result;
-});
-handle('library:addSongToPlaylists', ({ songId, playlistIds }) =>
-  change((d) => model.addSongToPlaylists(d, songId, playlistIds), 'addSongToPlaylists', { songId, playlistIds }));
-handle('library:addSongsToPlaylist', ({ playlistId, songIds }) =>
-  change((d) => model.addSongsToPlaylist(d, playlistId, songIds), 'addSongsToPlaylist', { playlistId, songIds }));
-handle('library:removeFromPlaylist', ({ playlistId, songId }) =>
-  change((d) => model.removeFromPlaylist(d, playlistId, songId), 'removeFromPlaylist', { playlistId, songId }));
-
-handle('library:deleteSong', ({ songId, deleteFile }) => {
-  if (remote.active()) return remote.deleteSong(songId, !!deleteFile);
-  return library.quietly(() => {
-    const song = model.songById(library.get(), songId);
-    if (!song) throw new Error('That song no longer exists.');
-    if (deleteFile && fs.existsSync(song.file)) {
-      try {
-        fs.rmSync(song.file);
-      } catch {
-        throw new Error('The file could not be deleted. It may be open in another program.');
-      }
-    }
-    return library.mutate((d) => model.removeSong(d, songId, !deleteFile));
-  });
-});
-
-handle('library:editSong', ({ songId, artist, title, mix }) => {
-  const meta = { artist: String(artist || '').trim(), title: String(title || '').trim(), mix: String(mix || '').trim() };
-  if (!meta.title) throw new Error('Please enter a title.');
-  // The server renames its own file; a copy here follows at the next look.
-  if (remote.active()) return remote.command('editSong', { songId, ...meta });
-  return library.quietly(async () => {
-    const song = model.songById(library.get(), songId);
-    if (!song) throw new Error('That song no longer exists.');
-    let file = song.file;
-    let written = false;
-    if (fs.existsSync(song.file)) {
-      try {
-        ({ file, written } = await exporter.retagSong(song, meta));
-      } catch {
-        throw new Error('The file could not be renamed. It may be open in another program.');
-      }
-    }
-    return library.mutate((d) => {
-      model.updateSong(d, songId, { ...meta, file });
-      // Its file carries its flowid and cover now (a cover still being looked for: written again then).
-      if (written) model.setTagged(d, songId, song.cover === null ? '' : song.cover);
-    });
-  });
-});
-
-// Edit's trim: the song's file cut to [start, end]. With a Flow Server the
-// server cuts its file (remote.trimSong; a copy here is cut at once); else
-// the Local Files file is cut here, the uncut one to the Recycle Bin, and a
-// song that is one of a server's goes there too once it is connected.
-handle('library:trimSong', ({ songId, start, end }) => {
-  const span = { start: Math.max(0, Number(start) || 0), end: Number(end) || 0 };
-  if (!(span.end - span.start >= 0.5)) throw new Error('The trim is too short.');
-  if (remote.active()) return remote.trimSong(songId, span);
-  return library.quietly(async () => {
-    const song = model.songById(library.get(), songId);
-    if (!song) throw new Error('That song no longer exists.');
-    if (!fs.existsSync(song.file)) throw new Error('The song\'s file is missing.');
-    const base = song.cut;
-    const cut = remote.newCutId();
-    const { duration } = await exporter.trimSong(song, span.start, span.end, { keep: true });
-    library.mutate((d) => {
-      if (!model.songById(d, songId)) return;
-      model.updateSong(d, songId, { duration, cut, loudness: null });
-      // Its flowid and cover go into the cut file again (tagger.js).
-      if (model.songById(d, songId).tagged !== null) model.setTagged(d, songId, '');
-    });
-    remote.trimmedHere(songId, { ...span, base, cut });
-  });
-});
-
-handle('library:setFavourite', ({ songId, on }) => {
-  change((d) => model.setFavourite(d, songId, !!on), 'setFavourite', { songId, on: !!on });
-});
-
-handle('library:recordListen', ({ songId, listened, duration, contextId }) => {
-  // The song may have been deleted while it played; nothing to count then.
-  if (!model.songById(currentLibrary(), songId)) return null;
-  return change((d) => model.recordListen(d, songId, { listened, duration, contextId }), 'recordListen', { songId, listened, duration, contextId });
-});
-
-handle('library:findBySource', ({ url, key }) => model.findBySource(currentLibrary(), { url, key }));
-handle('library:findByMeta', (meta) => model.findByMeta(currentLibrary(), meta));
+// server as a command (@flow/core/client/actions, shared with the Android app).
+handle('library:createPlaylist', (name) => actions.createPlaylist(name));
+handle('library:renamePlaylist', (arg) => actions.renamePlaylist(arg));
+handle('library:deletePlaylist', (arg) => actions.deletePlaylist(arg));
+handle('library:setPlaylistShared', (arg) => actions.setPlaylistShared(arg));
+handle('library:setFollowing', (arg) => actions.setFollowing(arg));
+handle('library:addSongToPlaylists', (arg) => actions.addSongToPlaylists(arg));
+handle('library:addSongsToPlaylist', (arg) => actions.addSongsToPlaylist(arg));
+handle('library:removeFromPlaylist', (arg) => actions.removeFromPlaylist(arg));
+handle('library:deleteSong', (arg) => actions.deleteSong(arg));
+handle('library:editSong', (arg) => actions.editSong(arg));
+handle('library:trimSong', (arg) => actions.trimSong(arg));
+handle('library:setFavourite', (arg) => actions.setFavourite(arg));
+handle('library:recordListen', (arg) => actions.recordListen(arg));
+handle('library:findBySource', (arg) => actions.findBySource(arg));
+handle('library:findByMeta', (meta) => actions.findByMeta(meta));
 handle('library:rescan', () => library.scan());
 
 // ---- the Flow Server (Settings: Use a Flow Server) ----
