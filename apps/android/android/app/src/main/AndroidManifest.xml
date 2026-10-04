@@ -35,6 +35,18 @@
             </intent-filter>
         </service>
 
+        <!-- The home screen widget: the song playing, Play/Pause and Next. -->
+        <receiver
+            android:name=".FlowWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/flow_widget_info" />
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

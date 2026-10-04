@@ -87,10 +87,22 @@ final class FlowPlayer {
         return instance;
     }
 
+    /** The player if this process has made one, else null (the widget does not start one). */
+    static FlowPlayer peek() {
+        return instance;
+    }
+
     final ExoPlayer exo;
+    private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final File heardFile;
+    private final File lastFile;
     private JSONArray heardWhileAway;
+    // When the widget's Play opened Flow with nothing loaded (elapsed ms; 0: not): a page
+    // starting soon after plays. Not one much later (Android may not have let Flow open).
+    private long playAskedAt;
+    private static final long PLAY_ASKED_MS = 20000;
+    private final Runnable widget = this::drawWidget;
     private Events events;
     private String id = "";      // the page's id of the song playing
     private String key = "";     // the song's own id
@@ -121,8 +133,10 @@ final class FlowPlayer {
     };
 
     private FlowPlayer(Context context) {
+        this.context = context;
         FlowLog.init(context);
         heardFile = new File(context.getFilesDir(), "audio-heard.json");
+        lastFile = new File(context.getFilesDir(), "audio-last.json");
         heardWhileAway = readHeard();
         AudioAttributes music = new AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -150,6 +164,11 @@ final class FlowPlayer {
                 if (ev.contains(Player.EVENT_IS_PLAYING_CHANGED)) {
                     main.removeCallbacks(tick);
                     if (player.isPlaying()) main.postDelayed(tick, TICK_MS);
+                }
+                if (ev.containsAny(Player.EVENT_PLAY_WHEN_READY_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION,
+                        Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_TIMELINE_CHANGED)) {
+                    main.removeCallbacks(widget);
+                    main.postDelayed(widget, 100);
                 }
             }
 
@@ -213,17 +232,98 @@ final class FlowPlayer {
     /**
      * A page starts: what is loaded (the state, the song's id and how long it
      * has been heard), and the listens kept while there was no page, which it
-     * now records (they are forgotten here).
+     * now records (they are forgotten here). With nothing loaded (the process
+     * started again), the song Flow was swiped away on: `last` { key, at, heard }.
+     * `play`: the widget's Play opened Flow, so the page plays.
      */
     JSObject attach() {
         JSObject a = new JSObject();
         a.put("state", state());
         a.put("heard", heardSoFar() / 1000.0);
         a.put("away", heardWhileAway);
-        FlowLog.i("page attached, " + (key.isEmpty() ? "nothing loaded" : id + " loaded") + ", " + heardWhileAway.length() + " listens kept");
+        if (key.isEmpty() && lastFile.isFile()) {
+            try {
+                a.put("last", new JSONObject(new String(Files.readAllBytes(lastFile.toPath()), StandardCharsets.UTF_8)));
+            } catch (JSONException | IOException e) {
+                FlowLog.i("the last song could not be read: " + e.getMessage());
+            }
+        }
+        boolean play = playAskedAt > 0 && SystemClock.elapsedRealtime() - playAskedAt < PLAY_ASKED_MS;
+        a.put("play", play);
+        FlowLog.i("page attached, " + (key.isEmpty() ? "nothing loaded" : id + " loaded") + ", " + heardWhileAway.length() + " listens kept"
+                + (play ? ", plays" : ""));
+        playAskedAt = 0;
         heardWhileAway = new JSONArray();
         heardFile.delete();
+        lastFile.delete();
         return a;
+    }
+
+    /** The widget's Play with nothing loaded opens Flow: the page that starts plays (one already there is not asked). */
+    void playOnAttach() {
+        if (events == null) playAskedAt = SystemClock.elapsedRealtime();
+    }
+
+    /**
+     * Flow swiped away from the recent apps: the music stops. The song stays
+     * loaded for a page that starts while this process lives; for one that
+     * starts later, its place and how long it was heard go into a file.
+     */
+    void letGo() {
+        sleepAt = 0;
+        main.removeCallbacks(sleepTick);
+        if (sleepFade != 1f) {
+            sleepFade = 1f;
+            applyVolume();
+        }
+        exo.pause();
+        if (key.isEmpty()) return;
+        try {
+            JSONObject last = new JSONObject();
+            last.put("key", key);
+            last.put("at", exo.getCurrentPosition() / 1000.0);
+            last.put("heard", heardSoFar() / 1000.0);
+            try (OutputStream out = new FileOutputStream(lastFile)) {
+                out.write(last.toString().getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (JSONException | IOException e) {
+            FlowLog.i("could not keep the last song: " + e.getMessage());
+        }
+    }
+
+    boolean hasSong() {
+        return exo.getMediaItemCount() > 0;
+    }
+
+    /** The widget's Play/Pause; playing needs the service (it keeps the music in the foreground). */
+    void widgetToggle(Context from) {
+        if (exo.getPlayWhenReady()) {
+            exo.pause();
+            return;
+        }
+        if (!PlaybackService.running) {
+            try {
+                androidx.core.content.ContextCompat.startForegroundService(from, new android.content.Intent(from, PlaybackService.class));
+            } catch (RuntimeException e) {
+                FlowLog.i("widget: service not started: " + e.getMessage());
+                return;
+            }
+        }
+        if (exo.getPlaybackState() == Player.STATE_ENDED) {
+            exo.seekTo(0);
+            endedTold = false;
+        }
+        if (exo.getPlaybackState() == Player.STATE_IDLE) exo.prepare();
+        exo.play();
+    }
+
+    private void drawWidget() {
+        FlowWidget.refresh(context);
+    }
+
+    /** The widget's Next: as Next in the notification. */
+    void widgetNext() {
+        if (exo.hasNextMediaItem()) exo.seekToNextMediaItem();
     }
 
     /**

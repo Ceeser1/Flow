@@ -16,8 +16,11 @@
 // queue) and moves on to them by itself, without a gap and whether the page
 // is awake or not: "advanced" (song id, seconds the one before was heard,
 // reason) tells the page. A page that starts while the player still plays
-// (Flow was swiped away and opened again) finds that song in `current`, and
-// the listens of the songs played meanwhile in `heardAway`.
+// (its window was gone while the music played) finds that song in `current`,
+// and the listens of the songs played meanwhile in `heardAway`. Flow swiped
+// away stops the music; a page that starts after the player was let go finds
+// the song it stopped on in `resume`. `startPlaying`: the widget's Play opened
+// Flow, so the page plays.
 //
 // No song transitions yet (canFade is false): the phone plays gaplessly.
 
@@ -71,6 +74,11 @@ function createAudioEngine({
   }
   const heardAway = (attached && Array.isArray(attached.away) ? attached.away : [])
     .filter((l) => l && typeof l.key === 'string' && l.heard > 0);
+  const last = attached && attached.last;
+  const resume = !current && last && typeof last.key === 'string' && last.key
+    ? { key: last.key, at: Number(last.at) || 0, heard: Number(last.heard) || 0 }
+    : null;
+  const startPlaying = !!(attached && attached.play);
 
   const metaOut = (meta) => (meta ? { ...meta, artwork: meta.artwork ? toPath(meta.artwork) : '' } : null);
 
@@ -206,6 +214,10 @@ function createAudioEngine({
     },
     /** Listens of the songs played while there was no page: [{ key, heard, at }]. */
     heardAway,
+    /** The song Flow was swiped away on, when the player no longer has it: { key, at, heard }, else null. */
+    resume,
+    /** Whether the page plays as it starts (the widget's Play opened Flow). */
+    startPlaying,
 
     load(source, gain, { at: start = 0, key = '' } = {}) {
       current = null;

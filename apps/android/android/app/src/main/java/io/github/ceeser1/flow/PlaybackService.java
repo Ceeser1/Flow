@@ -3,7 +3,6 @@ package io.github.ceeser1.flow;
 import android.app.PendingIntent;
 import android.content.Intent;
 
-import androidx.media3.common.Player;
 import androidx.media3.session.MediaSession;
 import androidx.media3.session.MediaSessionService;
 
@@ -14,11 +13,15 @@ import androidx.media3.session.MediaSessionService;
  * notification opens Flow.
  */
 public class PlaybackService extends MediaSessionService {
+    /** Whether the service runs (the widget starts it before playing, if not). */
+    static boolean running;
+
     private MediaSession session;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        running = true;
         FlowPlayer player = FlowPlayer.get(this);
         Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent tap = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
@@ -33,18 +36,18 @@ public class PlaybackService extends MediaSessionService {
         return session;
     }
 
-    /** Flow swiped away from the recent apps: the music plays on, a paused one is let go. */
+    /** Flow swiped away from the recent apps: closed, so the music stops (the widget can start it again). */
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        Player p = session.getPlayer();
-        boolean playing = p.getPlayWhenReady() && p.getMediaItemCount() > 0 && p.getPlaybackState() != Player.STATE_ENDED;
-        FlowLog.i("task removed, " + (playing ? "playing on" : "stopping"));
-        if (!playing) stopSelf();
+        FlowLog.i("task removed, stopping");
+        FlowPlayer.get(this).letGo();
+        stopSelf();
     }
 
     @Override
     public void onDestroy() {
         FlowLog.i("service stopped");
+        running = false;
         session.release();
         session = null;
         super.onDestroy();

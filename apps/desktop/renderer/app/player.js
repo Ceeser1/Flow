@@ -299,13 +299,15 @@ const Player = {
 
   /**
    * Puts the song from the last session back in place, paused. The phone's
-   * player may have played on while Flow's window was gone (swiped away): the
-   * songs it played then are counted, and the one it still has is taken over
-   * as it is, playing or not.
+   * player may have played on while Flow's window was gone: the songs it
+   * played then are counted, and the one it still has is taken over as it
+   * is, playing or not; one it let go of (Flow swiped away) is loaded where
+   * it stopped. Opened by the widget's Play, it plays.
    */
   restore() {
     const s = Store.settings;
     const context = Store.playlist(s.lastContextId) ? s.lastContextId : 'all';
+    const play = !!this.engine.startPlaying;
     for (const l of this.engine.heardAway || []) this._recordListen(l.key, l.heard, context);
     const live = this.engine.current;
     if (live && Store.song(live.key)) {
@@ -316,6 +318,12 @@ const Player = {
       this._updateMediaSession();
       this._savePosition();
       this._emit();
+      if (play && this.engine.paused) this._play();
+      return;
+    }
+    const resume = this.engine.resume;
+    if (resume && Store.song(resume.key)) {
+      this.load(resume.key, context, { autoplay: play, position: resume.at, listened: resume.heard });
       return;
     }
     if (!s.lastSongId || !Store.song(s.lastSongId)) {
@@ -323,7 +331,7 @@ const Player = {
       return;
     }
     const carried = s.listenSession && s.listenSession.songId === s.lastSongId ? s.listenSession.listened : 0;
-    this.load(s.lastSongId, context, { autoplay: false, position: s.lastPosition || 0, listened: carried });
+    this.load(s.lastSongId, context, { autoplay: play, position: s.lastPosition || 0, listened: carried });
   },
 
   /**

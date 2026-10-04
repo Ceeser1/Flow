@@ -246,6 +246,20 @@ test('a page that starts while the player plays takes its song as it is', () => 
   const idle = setup({ state: { id: '', key: '', pwr: false, st: 1, t: 0, d: -1 }, heard: 0, away: [] });
   assert.equal(idle.engine.current, null);
   assert.equal(idle.engine.loaded, false);
+  assert.equal(idle.engine.resume, null);
+  assert.equal(idle.engine.startPlaying, false);
+});
+
+test('a page that starts after Flow was swiped away finds the song it stopped on', () => {
+  const idle = { id: '', key: '', pwr: false, st: 1, t: 0, d: -1 };
+  const { engine } = setup({ state: idle, heard: 0, away: [], last: { key: 's5', at: 61.5, heard: 40 }, play: true });
+  assert.deepEqual(engine.resume, { key: 's5', at: 61.5, heard: 40 });
+  assert.equal(engine.startPlaying, true);
+  assert.equal(engine.current, null);
+  // A song the player still has is taken as it is instead.
+  const live = setup({ state: { id: 'n7', key: 's6', pwr: false, st: 3, t: 5, d: 200 }, heard: 2, away: [], last: { key: 's5', at: 61.5 } });
+  assert.equal(live.engine.resume, null);
+  assert.equal(live.engine.current.key, 's6');
 });
 
 test('the sleep timer goes to the player, which keeps it itself', async () => {
