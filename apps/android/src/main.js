@@ -225,6 +225,10 @@ function start() {
     onBack: (fn) => plugin.addListener('back', () => fn()),
     /** Back with nothing left to close: Flow goes to the background. */
     leave: call(() => plugin.leave()),
+    /** Where the music comes out now (a name), Android's chooser of it, and its changes. */
+    outputName: call(async () => (await plugin.output()).name),
+    chooseOutput: call(() => plugin.chooseOutput()),
+    onOutputChange: (fn) => plugin.addListener('outputChanged', () => fn()),
     /** What the player plays through: the phone's own player, for the background (engine.js). */
     createAudioEngine: () => createAudioEngine({
       plugin: audio,

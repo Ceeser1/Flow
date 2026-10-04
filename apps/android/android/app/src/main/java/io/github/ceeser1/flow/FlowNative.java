@@ -1,7 +1,18 @@
 package io.github.ceeser1.flow;
 
+import android.content.Context;
 import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
+import android.media.MediaRoute2Info;
+import android.media.MediaRouter2;
 import android.net.Uri;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
 
 import androidx.activity.OnBackPressedCallback;
 
@@ -30,6 +41,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -40,7 +52,8 @@ import java.util.concurrent.Executors;
  * Flow Servers looked for on the network, a link opened. It also puts
  * window.FlowSync (FlowSync.java) into the page before it loads, and hands the
  * Back button to the page ("back"), which closes what is open or, with nothing
- * left, calls leave().
+ * left, calls leave(). Where the sound comes out: output() names it,
+ * chooseOutput() opens Android's own chooser, "outputChanged" says it changed.
  */
 @CapacitorPlugin(name = "FlowNative")
 public class FlowNative extends Plugin {
@@ -61,6 +74,95 @@ public class FlowNative extends Plugin {
                 else getActivity().moveTaskToBack(true);
             }
         });
+        audioManager().registerAudioDeviceCallback(new AudioDeviceCallback() {
+            @Override
+            public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
+                notifyListeners("outputChanged", new JSObject());
+            }
+
+            @Override
+            public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
+                notifyListeners("outputChanged", new JSObject());
+            }
+        }, new Handler(Looper.getMainLooper()));
+    }
+
+    private AudioManager audioManager() {
+        return (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+    }
+
+    /** Where music comes out now: { name } (this phone, headphones, a Bluetooth device's own name). */
+    @PluginMethod
+    public void output(PluginCall call) {
+        String name = "";
+        if (Build.VERSION.SDK_INT >= 33) {
+            AudioAttributes media = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build();
+            List<AudioDeviceInfo> devices = audioManager().getAudioDevicesForAttributes(media);
+            if (!devices.isEmpty()) name = deviceName(devices.get(0));
+        }
+        if (name.isEmpty() && Build.VERSION.SDK_INT >= 30) {
+            try {
+                List<MediaRoute2Info> routes = MediaRouter2.getInstance(getContext()).getSystemController().getSelectedRoutes();
+                if (!routes.isEmpty()) name = String.valueOf(routes.get(0).getName());
+            } catch (RuntimeException ignored) {
+                // Named below.
+            }
+        }
+        JSObject r = new JSObject();
+        r.put("name", name.isEmpty() ? "This phone" : name);
+        call.resolve(r);
+    }
+
+    private static String deviceName(AudioDeviceInfo d) {
+        switch (d.getType()) {
+            case AudioDeviceInfo.TYPE_BUILTIN_SPEAKER:
+            case AudioDeviceInfo.TYPE_BUILTIN_EARPIECE:
+                return "This phone";
+            case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
+            case AudioDeviceInfo.TYPE_WIRED_HEADSET:
+                return "Headphones";
+            default: {
+                CharSequence product = d.getProductName();
+                return product == null ? "" : product.toString();
+            }
+        }
+    }
+
+    /**
+     * Android's own chooser of where the sound comes out (this phone,
+     * headphones, Bluetooth, a speaker on the network): the output switcher
+     * (Android 14 and later), else the media output panel, else the Bluetooth
+     * settings. Resolves { shown }.
+     */
+    @PluginMethod
+    public void chooseOutput(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            boolean shown = false;
+            if (Build.VERSION.SDK_INT >= 34) {
+                try {
+                    shown = MediaRouter2.getInstance(getContext()).showSystemOutputSwitcher();
+                } catch (RuntimeException ignored) {
+                    // The panel below.
+                }
+            }
+            if (!shown && Build.VERSION.SDK_INT >= 30) {
+                shown = start(new Intent("com.android.settings.panel.action.MEDIA_OUTPUT")
+                        .putExtra("com.android.settings.panel.extra.PACKAGE_NAME", getContext().getPackageName()));
+            }
+            if (!shown) shown = start(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
+            JSObject r = new JSObject();
+            r.put("shown", shown);
+            call.resolve(r);
+        });
+    }
+
+    private boolean start(Intent intent) {
+        try {
+            getActivity().startActivity(intent);
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /** Back with nothing left to close: Flow goes to the background, playing on. */

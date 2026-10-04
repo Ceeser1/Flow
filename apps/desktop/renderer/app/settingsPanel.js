@@ -74,6 +74,11 @@ const SettingsPanel = {
         desc: 'Where the music plays from.',
         right: this._outputSelect(),
       }) : null,
+      Store.can('systemOutput') ? this._row({
+        label: 'Output device',
+        desc: 'Where the music plays from: this phone, headphones or a Bluetooth speaker. The phone chooses it; Change opens its chooser.',
+        right: this._systemOutput(),
+      }) : null,
       Store.can('songTransition') ? this._row({
         key: 'crossfade',
         label: 'Song Transition',
@@ -475,6 +480,22 @@ const SettingsPanel = {
 
   /** The browser the cookies come from: those found on this computer first. */
   /** The outputs Windows offers (output.js). */
+  /** The phone's: where the music comes out now, and a button to its own chooser. */
+  _systemOutput() {
+    const name = h('span.settings__note');
+    const draw = () => window.flow.outputName().then((n) => {
+      name.textContent = n;
+    }).catch(() => {});
+    draw();
+    if (!this._outputWatched) {
+      this._outputWatched = true;
+      window.flow.onOutputChange(() => this._refreshAll());
+    }
+    this._refresh.push(draw);
+    return h('div.settings__output', name,
+      h('button.btn.btn--small', { type: 'button', onclick: () => window.flow.chooseOutput().catch(() => {}) }, 'Change'));
+  },
+
   _outputSelect() {
     const select = h('select.select');
     const fill = () => {

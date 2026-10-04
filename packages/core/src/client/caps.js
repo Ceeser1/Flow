@@ -6,8 +6,10 @@
 const DESKTOP = {
   // yt-dlp runs here: Add Songs' Download, the Website Downloads settings.
   downloadHere: true,
-  // A choice of where the music comes out.
+  // A choice of where the music comes out, in Flow.
   outputDevices: true,
+  // Where the music comes out is the phone's to choose (its own chooser, opened from Flow).
+  systemOutput: false,
   // The sleep timer can shut the computer down.
   shutdown: true,
   // Local Files is a folder the user sees: open it, move it, show a song in it.
@@ -33,6 +35,7 @@ const DESKTOP = {
 const ANDROID = {
   downloadHere: false,
   outputDevices: false,
+  systemOutput: true,
   shutdown: false,
   musicFolder: false,
   effects: false,

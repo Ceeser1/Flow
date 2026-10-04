@@ -5,7 +5,8 @@
 // at its bottom, and the player as a mini player at the bottom that opens to
 // a full-screen Now Playing. The desktop's own elements are moved into place,
 // so everything wired to them works as it does there. Swipes to the sides
-// bring out the menu and Settings and go to the list playing (_bindSwipes);
+// bring out the menu and Settings and go to the list playing, then Now
+// Playing, a panel to the right of it (_bindSwipes, _bindSwipeBack);
 // popups go away under a finger (swipeToClose). Does nothing on the
 // desktop's layout.
 
@@ -109,7 +110,7 @@ const Mobile = {
   _buildPlayer() {
     const bar = $('player');
     const take = (...ids) => ids.map((id) => $(id));
-    const collapse = iconButton('mp__collapse', Icons.chevronDown, 'Close', () => this.collapsePlayer());
+    const collapse = iconButton('mp__collapse', Icons.chevronLeft, 'Back to the list', () => this.collapsePlayer());
     collapse.id = 'playerCollapse';
     const parts = [
       collapse,
@@ -131,13 +132,22 @@ const Mobile = {
     bar.addEventListener('click', (e) => {
       if (!this.playerOpen && !e.target.closest('button, input')) this.expandPlayer();
     });
-    this._bindSwipeDown(bar);
+    this._bindSwipeBack(bar);
   },
 
-  expandPlayer() {
+  // Now Playing is a panel to the right of the page: it slides in from the
+  // right as the page moves aside to the left, and back out the same way.
+  SLIDE_MS: 250,
+
+  /** `pulled`: a finger brings it in (it is where the finger is, not sliding by itself). */
+  expandPlayer(pulled = false) {
     if (this.playerOpen) return;
     this.playerOpen = true;
-    $('player').classList.add('mp--open');
+    const bar = $('player');
+    clearTimeout(this._leaving);
+    bar.classList.remove('mp--leaving');
+    bar.classList.toggle('mp--pulled', pulled);
+    bar.classList.add('mp--open');
     document.body.classList.add('player-open');
   },
 
@@ -145,36 +155,43 @@ const Mobile = {
     if (!this.playerOpen) return;
     this.playerOpen = false;
     const bar = $('player');
-    bar.classList.remove('mp--open');
+    // Out to the right from where it is (a finger may have it halfway), then the mini player again.
+    bar.classList.remove('mp--dragging');
     bar.style.transform = '';
+    bar.classList.add('mp--leaving');
     document.body.classList.remove('player-open');
+    this._leaving = setTimeout(() => bar.classList.remove('mp--open', 'mp--leaving', 'mp--pulled'), this.SLIDE_MS);
   },
 
-  /** Now Playing follows a finger pulling it down, and closes past a third of the way. */
-  _bindSwipeDown(bar) {
-    let start = null;
-    bar.addEventListener('pointerdown', (e) => {
-      if (!this.playerOpen || e.target.closest('button, input, #playerTrack')) return;
-      start = { y: e.clientY, id: e.pointerId, moved: 0 };
-    });
-    bar.addEventListener('pointermove', (e) => {
-      if (!start || e.pointerId !== start.id) return;
-      start.moved = Math.max(0, e.clientY - start.y);
-      if (start.moved > 8) {
+  /** The page beside Now Playing, `d` px from its own place (a finger moving both). */
+  _placePages(d) {
+    for (const el of [$('pages'), $('mobileBar')]) {
+      el.style.transition = d === null ? '' : 'none';
+      el.style.transform = d === null ? '' : `translateX(${Math.min(0, d)}px)`;
+    }
+  },
+
+  /** Now Playing follows a finger pulling it to the right, the page coming back from the left with it. */
+  _bindSwipeBack(bar) {
+    const width = () => window.innerWidth || 1;
+    this.follow(bar, {
+      decide: (dx, dy, target) => {
+        if (!this.playerOpen || dx <= 0 || Math.abs(dx) <= Math.abs(dy) * 1.2 || target.closest(this.NO_SWIPE)) return false;
         bar.classList.add('mp--dragging');
-        bar.style.transform = `translateY(${start.moved}px)`;
-      }
+        return true;
+      },
+      move: (dx) => {
+        const d = Math.max(0, dx);
+        bar.style.transform = `translateX(${d}px)`;
+        this._placePages(-width() / 4 + d / 4);
+      },
+      end: (dx, dy, fast, cancelled) => {
+        this._placePages(null);
+        bar.classList.remove('mp--dragging');
+        if (!cancelled && dx > 0 && (fast || dx > width() / 3)) this.collapsePlayer();
+        else bar.style.transform = '';
+      },
     });
-    const end = (e) => {
-      if (!start || e.pointerId !== start.id) return;
-      const far = start.moved > window.innerHeight / 3;
-      start = null;
-      bar.classList.remove('mp--dragging');
-      if (far) this.collapsePlayer();
-      else bar.style.transform = '';
-    };
-    bar.addEventListener('pointerup', end);
-    bar.addEventListener('pointercancel', end);
   },
 
   // ---- swipes ----
@@ -189,41 +206,57 @@ const Mobile = {
    * flick, 48 px or more at 0.6 px/ms; `cancelled` when the phone took the
    * touch). Touch events, not pointer ones: a scroll the browser starts would
    * cancel a pointer, while a touch it can be kept from.
+   *
+   * The rest of a touch is heard on the element it started on, which gets
+   * all of it even once it is out of the page: lists drawn again while a
+   * song plays (the menu, the Queue) replace the rows under a finger, and
+   * from a row no longer in the page nothing reaches `el`.
    */
   follow(el, { decide, move, end }) {
     let s = null;
+    const finish = (was, e, cancelled) => {
+      was.node.removeEventListener('touchmove', was.onMove);
+      was.node.removeEventListener('touchend', was.onDone);
+      was.node.removeEventListener('touchcancel', was.onDone);
+      if (!was.on) return;
+      const along = Math.max(Math.abs(was.dx), Math.abs(was.dy));
+      const fast = !cancelled && along > 48 && along / Math.max(1, e.timeStamp - was.time) > 0.6;
+      end(was.dx, was.dy, fast, cancelled);
+    };
     el.addEventListener('touchstart', (e) => {
+      // One whose end never came (it should not happen) is let go first, as cancelled.
+      if (s) finish(s, e, true);
       s = null;
       if (e.touches.length !== 1) return;
       const t = e.touches[0];
-      s = { x: t.clientX, y: t.clientY, time: e.timeStamp, target: e.target, on: false, off: false, dx: 0, dy: 0 };
-    }, { passive: true });
-    el.addEventListener('touchmove', (e) => {
-      if (!s || s.off) return;
-      const t = e.touches[0];
-      s.dx = t.clientX - s.x;
-      s.dy = t.clientY - s.y;
-      if (!s.on) {
-        if (Math.abs(s.dx) < 10 && Math.abs(s.dy) < 10) return;
-        if (!decide(s.dx, s.dy, s.target)) {
-          s.off = true;
-          return;
+      const g = { x: t.clientX, y: t.clientY, time: e.timeStamp, target: e.target, node: e.target, on: false, off: false, dx: 0, dy: 0 };
+      g.onMove = (ev) => {
+        if (s !== g || g.off) return;
+        const p = ev.touches[0];
+        if (!p) return;
+        g.dx = p.clientX - g.x;
+        g.dy = p.clientY - g.y;
+        if (!g.on) {
+          if (Math.abs(g.dx) < 10 && Math.abs(g.dy) < 10) return;
+          if (!decide(g.dx, g.dy, g.target)) {
+            g.off = true;
+            return;
+          }
+          g.on = true;
         }
-        s.on = true;
-      }
-      if (e.cancelable) e.preventDefault();
-      move(s.dx, s.dy);
-    }, { passive: false });
-    const done = (e) => {
-      const was = s;
-      s = null;
-      if (!was || !was.on) return;
-      const along = Math.max(Math.abs(was.dx), Math.abs(was.dy));
-      const fast = along > 48 && along / Math.max(1, e.timeStamp - was.time) > 0.6;
-      end(was.dx, was.dy, fast && e.type === 'touchend', e.type === 'touchcancel');
-    };
-    el.addEventListener('touchend', done);
-    el.addEventListener('touchcancel', done);
+        if (ev.cancelable) ev.preventDefault();
+        move(g.dx, g.dy);
+      };
+      g.onDone = (ev) => {
+        if (s !== g || ev.touches.length) return;
+        s = null;
+        finish(g, ev, ev.type === 'touchcancel');
+      };
+      g.node.addEventListener('touchmove', g.onMove, { passive: false });
+      g.node.addEventListener('touchend', g.onDone);
+      g.node.addEventListener('touchcancel', g.onDone);
+      s = g;
+    }, { passive: true });
   },
 
   /** Whether `node` sits in something the finger scrolls sideways (a row of chips). */
@@ -308,6 +341,14 @@ const Mobile = {
           settings.el.classList.add('modal--pulled', 'modal--sliding');
           settings.el.style.transform = `translateX(${Math.min(0, dx - settings.el.offsetWidth)}px)`;
         }
+        if (mode === 'onward' && this._onPlayingList() && Player.currentId) {
+          // On the list playing: Now Playing comes in from the right under the finger.
+          mode = 'player';
+          const bar = $('player');
+          this.expandPlayer(true);
+          bar.classList.add('mp--dragging');
+          bar.style.transform = `translateX(${window.innerWidth + dx}px)`;
+        }
         if (mode === 'open' || mode === 'close') document.body.classList.add('drawer-dragging');
         return true;
       },
@@ -325,6 +366,10 @@ const Mobile = {
           settings.el.style.transform = `translateX(${Math.min(0, dx - w)}px)`;
         } else if (mode === 'onward') {
           $('pages').style.transform = `translateX(${Math.max(-48, dx / 4)}px)`;
+        } else if (mode === 'player') {
+          const w = window.innerWidth;
+          $('player').style.transform = `translateX(${Math.max(0, w + dx)}px)`;
+          this._placePages(Math.max(-w / 4, dx / 4));
         }
       },
       end: (dx, dy, fast, cancelled) => {
@@ -350,6 +395,12 @@ const Mobile = {
         } else if (mode === 'onward') {
           $('pages').style.transform = '';
           if (dx < 0 && !cancelled && (fast || -dx > 80)) this._onward();
+        } else if (mode === 'player') {
+          const bar = $('player');
+          this._placePages(null);
+          bar.classList.remove('mp--dragging');
+          if (dx < 0 && !cancelled && (fast || -dx > window.innerWidth / 3)) bar.style.transform = '';
+          else this.collapsePlayer();
         }
         mode = null;
       },
@@ -358,10 +409,19 @@ const Mobile = {
 
   /** A swipe to the left with nothing out: to the list playing (or last played), and from there to Now Playing. */
   _onward() {
-    const list = Player.contextId && Store.playlist(Player.contextId) ? Player.contextId : null;
-    const onIt = Nav.page === 'playlist' && Nav.playlistId === list;
-    if (list && !onIt) Nav.openPlaylist(list);
+    const list = this._playingList();
+    if (list && !this._onPlayingList()) Nav.openPlaylist(list);
     else if (Player.currentId) this.expandPlayer();
+  },
+
+  /** The list playing (or last played), when it is one Flow can show. */
+  _playingList() {
+    return Player.contextId && Store.playlist(Player.contextId) ? Player.contextId : null;
+  },
+
+  _onPlayingList() {
+    const list = this._playingList();
+    return !list || (Nav.page === 'playlist' && Nav.playlistId === list);
   },
 
   // ---- what the phone does not have ----

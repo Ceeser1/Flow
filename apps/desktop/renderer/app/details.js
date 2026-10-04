@@ -34,15 +34,18 @@ const SongDetails = {
     const redraw = () => draw();
     Store.onLibrary(redraw);
     draw();
+    // On the phone a full-screen panel from the right, like the Queue, swiped away to either side.
     modal = Modal.open({
       title: 'Song Details',
       className: 'modal--details',
+      drawer: Mobile.on,
       body,
-      buttons: [{ label: 'Close', kind: 'primary' }],
+      buttons: Mobile.on ? [] : [{ label: 'Close', kind: 'primary' }],
       onClose: () => {
         Store._listeners = Store._listeners.filter((fn) => fn !== redraw);
       },
     });
+    if (Mobile.on) Mobile.swipeToClose(modal, ['left', 'right']);
   },
 
   _head(song) {

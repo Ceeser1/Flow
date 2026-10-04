@@ -120,7 +120,6 @@ body.mobile #pages,
 body.mobile .menu,
 body.mobile .mbar,
 body.mobile .player.mp:not(.mp--open) { touch-action: pan-y; }
-body.mobile #pages { transition: transform 0.15s ease-out; }
 .drawer-scrim { display: none; }
 body.mobile .drawer-scrim { display: block; }
 
@@ -226,12 +225,21 @@ body.mobile .player.mp--open {
   row-gap: 8px;
   padding: calc(8px + var(--safe-top)) 20px calc(20px + var(--safe-bottom));
   background: linear-gradient(to bottom, #2a2a32, var(--bg) 60%);
-  animation: mp-up 0.22s ease-out;
+  animation: np-in 0.25s ease-out;
+  transition: transform 0.25s ease-out;
   touch-action: none;
 }
+/* Now Playing is a panel to the right of the page (Mobile.expandPlayer):
+   in from the right as the page moves aside to the left, out the same way;
+   pulled by a finger it is where the finger is. */
+body.mobile .player.mp--pulled { animation: none; }
 body.mobile .player.mp--dragging { transition: none; animation: none; }
-
-@keyframes mp-up { from { transform: translateY(40%); opacity: 0.4; } to { transform: none; opacity: 1; } }
+body.mobile .player.mp--open.mp--leaving { transform: translateX(100%); pointer-events: none; }
+@keyframes np-in { from { transform: translateX(100%); } to { transform: none; } }
+body.mobile #pages,
+body.mobile .mbar { transition: transform 0.25s ease-out; }
+body.mobile.player-open #pages,
+body.mobile.player-open .mbar { transform: translateX(-25%); }
 
 body.mobile .mp--open > * { display: flex; }
 body.mobile .mp--open > [hidden],
@@ -644,8 +652,9 @@ body.mobile .modal--drawer {
   padding-top: var(--safe-top);
   padding-bottom: var(--safe-bottom);
 }
-/* The Queue covers the page: nothing shows through it. */
-body.mobile .modal--queue { width: 100%; background: var(--bg); }
+/* The Queue and a song's Details cover the page: nothing shows through them. */
+body.mobile .modal--queue,
+body.mobile .modal--details { width: 100%; background: var(--bg); }
 body.mobile .modal-backdrop:has(> .modal--settings) { padding: 0; }
 body.mobile .modal--settings {
   width: 100%;
@@ -847,6 +856,9 @@ body.mobile .welcome__skip {
   color: var(--text-dim);
   font-size: 15px;
 }
+
+/* The phone's Output device: its name, then Change. */
+body.mobile .settings__output { display: flex; align-items: center; gap: 10px; }
 
 /* ===== the Queue's songs: dragged by the handle, or held still ===== */
 
