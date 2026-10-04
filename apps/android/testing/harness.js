@@ -9,13 +9,15 @@
 // --keep leaves Flow running as it is (its music, its player) and only opens
 // its window again; otherwise it is stopped and started afresh.
 //
-// steps.js exports [{ name, key, tap, shell, js, wait, shot, screen }]: `key` is
+// steps.js exports [{ name, key, tap, shell, run, js, wait, shot, screen }]: `key` is
 // pressed on the emulator (BACK, HOME, SLEEP), `tap` taps what shows that text
 // on the screen (Android's own screens too, such as its file picker; a
 // regular expression, matched against each element's text and description;
 // `long` holds it), `shell` is run there (adb shell,
 // e.g. dumpsys; its output is logged, only the lines matching the regular
-// expression `grep` when given), `js` is evaluated in the page (a promise is
+// expression `grep` when given), `run` is called here (an async function,
+// e.g. another device on the test server; what it returns is logged), `js` is
+// evaluated in the page (a promise is
 // awaited, the value logged), then after `wait` ms (400)
 // `shot` saves the page as <shot>.png and `screen` the whole device screen
 // (status bar, notifications) as <screen>.png. Errors and console warnings go
@@ -207,6 +209,14 @@ async function main() {
           log('shell error', step.name || '', err.message);
         }
       }
+      if (step.run) {
+        try {
+          const r = await step.run();
+          if (r !== undefined) log('run', step.name || '', r);
+        } catch (err) {
+          log('run error', step.name || '', err.message);
+        }
+      }
       if (step.js) {
         try {
           const r = await evaluate(cdp, step.js);
@@ -232,7 +242,8 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+// Done: what a `run` step left open (another device's stream) does not keep it going.
+main().then(() => process.exit(0), (err) => {
   console.error(err.message);
   process.exit(1);
 });

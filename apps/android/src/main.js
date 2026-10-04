@@ -272,6 +272,8 @@ function start() {
     leave: call(() => plugin.leave()),
     /** Where the music comes out now (a name), Android's chooser of it, and its changes. */
     outputName: call(async () => (await plugin.output()).name),
+    /** The same as { name, builtin } (builtin: the phone's own speaker). */
+    output: call(() => plugin.output()),
     chooseOutput: call(() => plugin.chooseOutput()),
     onOutputChange: (fn) => plugin.addListener('outputChanged', () => fn()),
     /** A link shared to Flow (Android's Share): fn({ url, text }), url '' when there was none. */

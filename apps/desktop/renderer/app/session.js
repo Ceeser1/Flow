@@ -43,7 +43,8 @@ const Session = {
   _prompts: new Map(),
   /** The output device's name, for the session's name ("Ceeser - Sony GTK"). */
   get outputLabel() {
-    return Output.label();
+    // A phone's own speaker is the phone: named after it by the server ("Ceeser - Galaxy A56").
+    return Output.builtin ? '' : Output.label();
   },
 
   /** The server has Active Sessions and the live channel is open. */
@@ -532,7 +533,8 @@ const Session = {
       mix: song.mix || '',
       duration: Player.engine.duration || song.duration || 0,
       playing: Player.isPlaying,
-      position: Player.position,
+      // Held back by its output delay where the player cannot hold its sound back (Output.shift).
+      position: Player.position + Output.shift(),
       at: Date.now() + (Store.server.timeOffset || 0),
       repeat: !!Player.repeat,
       shuffle: !!Player.queue.shuffle,

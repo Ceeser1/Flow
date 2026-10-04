@@ -90,6 +90,45 @@ test('the player\'s state: length, place, and a pause from the notification', as
   assert.equal(engine.time, 2.6);
 });
 
+test('a state\'s place moves on by the time it took to arrive (its read time, the wall clock)', async () => {
+  const plugin = fakePlugin();
+  let clock = 1000;
+  let wall = 50000;
+  const engine = createAudioEngine({ plugin, now: () => clock, wall: () => wall, prefix: '' });
+  engine.load('a', 1);
+  engine.play();
+  await settle();
+  // Read 120 ms ago over there.
+  plugin.fire('state', state({ pwr: true, t: 10, at: wall - 120 }));
+  assert.equal(engine.time, 10.12);
+  clock += 500;
+  wall += 500;
+  assert.equal(engine.time, 10.62);
+  // Without a read time, as it arrives.
+  plugin.fire('state', state({ pwr: true, t: 20 }));
+  assert.equal(engine.time, 20);
+});
+
+test('playing on, a small difference in the place is taken in part; a jump, or one after a seek, at once', async () => {
+  const { plugin, engine, tick } = setup();
+  engine.load('a', 1);
+  engine.play();
+  await settle();
+  plugin.fire('state', state({ pwr: true, t: 10 }));
+  assert.equal(engine.time, 10);
+  tick(1000);
+  // 11 here, 11.1 there: a fifth of it.
+  plugin.fire('state', state({ pwr: true, t: 11.1 }));
+  assert.equal(Math.round(engine.time * 1000), 11020);
+  // Far off: taken as it is.
+  plugin.fire('state', state({ pwr: true, t: 30 }));
+  assert.equal(engine.time, 30);
+  engine.seek(50);
+  await settle();
+  plugin.fire('state', state({ pwr: true, t: 50.1 }));
+  assert.equal(engine.time, 50.1);
+});
+
 test('states sent before a list of operations arrived are passed over', async () => {
   const { plugin, engine, events } = setup();
   engine.load('http://pi/a', 1, { key: 's1' });

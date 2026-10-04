@@ -18,6 +18,8 @@ const Output = {
   defaultLabel: '',
   // The device playing now ('' for the default).
   current: '',
+  // On the phone: the music comes out of its own speaker.
+  builtin: false,
   _listeners: [],
   // Set after the first look at the devices (no messages for how Flow starts).
   _ready: false,
@@ -39,7 +41,8 @@ const Output = {
       if ('outputDelayOn' in patch || 'serverOn' in patch) this._emit();
     });
     this.refresh();
-    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    if (Store.can('systemOutput')) window.flow.onOutputChange(() => this.refresh());
+    else if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
       navigator.mediaDevices.addEventListener('devicechange', () => this.refresh());
     }
   },
@@ -87,6 +90,19 @@ const Output = {
   },
 
   async _refresh() {
+    // The phone chooses for itself (its own chooser); Flow only names it.
+    if (Store.can('systemOutput')) {
+      try {
+        const out = await window.flow.output();
+        this.defaultLabel = out.name || '';
+        this.builtin = !!out.builtin;
+      } catch {
+        return;
+      }
+      this._ready = true;
+      this._emit();
+      return;
+    }
     let list = [];
     try {
       list = await navigator.mediaDevices.enumerateDevices();
@@ -202,8 +218,20 @@ const Output = {
   },
 
   /** The note under "Output delay", in the menu and in Settings. */
-  DELAY_NOTE: 'At jam sessions, different speakers may have delays. Bluetooth lags 50 to 300ms. '
-    + 'Adjust the slider of the faster speakers until the sounds are in sync. Hold shift for 10x finer control.',
+  get DELAY_NOTE() {
+    return 'At jam sessions, different speakers may have delays. Bluetooth lags 50 to 300ms. '
+      + 'Adjust the slider of the faster speakers until the sounds are in sync.'
+      + (Store.can('keyboard') ? ' Hold shift for 10x finer control.' : '');
+  },
+
+  /**
+   * The delay as a shift of the place played (s), for a player that cannot
+   * hold its sound back itself (the phone's): it plays that much behind the
+   * host, and as a host tells the others it is that much further on.
+   */
+  shift() {
+    return Player.engine && Player.engine.canDelay === false ? this.delay() / 1000 : 0;
+  },
 
   /**
    * "Output delay" for the output playing: set by ear so devices in a jam

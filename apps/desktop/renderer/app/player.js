@@ -762,6 +762,7 @@ const Player = {
       this.engine.setRate(1);
     } else this._stopHere();
     clearInterval(this.remote.ticker);
+    if (this.engine.follow) this.engine.follow(false);
     this.remote = null;
     if (keepAudio) {
       if (this.session) this.session.lastT = null;
@@ -776,6 +777,8 @@ const Player = {
     if (!this.remote) return;
     if (!!this.remote.here === !!on) return;
     this.remote.here = !!on;
+    // The phone's player tells its place more often meanwhile.
+    if (this.engine.follow) this.engine.follow(!!on);
     if (!on) this._stopHere();
     this._hereSync();
     this._emit();
@@ -783,7 +786,7 @@ const Player = {
 
   /** Where this device's song should be now: the host's place. */
   _hereTarget() {
-    return Math.max(0, this._remotePosition());
+    return Math.max(0, this._remotePosition() - Output.shift());
   },
 
   _stopHere() {
@@ -1274,7 +1277,8 @@ const Player = {
   _drawVolume() {
     // In remote mode the slider is the host's volume, and only there when the host allows it.
     const hosts = !!this.remote && !this.remote.here;
-    $('volWrap').hidden = hosts && !this.remote.state.allowVolume;
+    // Without a volume of its own (the phone's is its buttons), only the host's.
+    $('volWrap').hidden = hosts ? !this.remote.state.allowVolume : !Store.can('volume');
     $('volWrap').title = hosts ? 'The host\'s volume' : '';
     const v = this._shownVolume();
     $('volSlider').value = String(Math.round(v * 100));

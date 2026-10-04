@@ -133,7 +133,10 @@ public class FlowNative extends Plugin {
         return (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
     }
 
-    /** Where music comes out now: { name } (this phone, headphones, a Bluetooth device's own name). */
+    /**
+     * Where music comes out now: { name, builtin } (this phone, headphones, a
+     * Bluetooth device's own name; builtin: the phone's own speaker).
+     */
     @PluginMethod
     public void output(PluginCall call) {
         String name = "";
@@ -151,7 +154,9 @@ public class FlowNative extends Plugin {
             }
         }
         JSObject r = new JSObject();
-        r.put("name", name.isEmpty() ? "This phone" : name);
+        if (name.isEmpty()) name = "This phone";
+        r.put("name", name);
+        r.put("builtin", name.equals("This phone"));
         call.resolve(r);
     }
 

@@ -592,7 +592,11 @@ final class FlowPlayer {
         return total / 1000.0;
     }
 
-    /** { id, key, pwr: play when ready, st: 1 idle 2 buffering 3 ready 4 ended, t, d (-1 unknown), rate, vol (the player's volume), songs (this one and those after it) } */
+    /**
+     * { id, key, pwr: play when ready, st: 1 idle 2 buffering 3 ready 4 ended, t, at (when t was
+     * read, wall clock ms: the page moves it on by the time it took to arrive), d (-1 unknown),
+     * rate, vol (the player's volume), songs (this one and those after it) }
+     */
     JSObject state() {
         JSObject s = new JSObject();
         s.put("id", id);
@@ -600,6 +604,7 @@ final class FlowPlayer {
         s.put("pwr", exo.getPlayWhenReady());
         s.put("st", exo.getPlaybackState());
         s.put("t", exo.getCurrentPosition() / 1000.0);
+        s.put("at", (double) System.currentTimeMillis());
         long d = exo.getDuration();
         if (d != C.TIME_UNSET) durationMs = d;
         s.put("d", d == C.TIME_UNSET ? -1 : d / 1000.0);

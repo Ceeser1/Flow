@@ -671,7 +671,8 @@ const SettingsPanel = {
     // Redrawn when the output or its delay changes (one listener, set up in init).
     this._delayFill = () => {
       c.sync();
-      which.textContent = Output.label() ? ` Kept for each output; this is ${Output.label()}.` : '';
+      const label = Output.builtin ? 'this phone\'s speaker' : Output.label();
+      which.textContent = label ? ` Kept for each output; this is ${label}.` : '';
     };
     this._delayFill();
     this._refresh.push(() => { c.slider.disabled = !on() || !Store.settings.outputDelayOn; });

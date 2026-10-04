@@ -25,6 +25,12 @@
 // Song transitions are the player's own (setTransition; canFade is false, the
 // page does not fade): it moves on by itself, so it fades by itself too.
 
+// A state's place within this of where the page has it is taken this much (see onState).
+const SMOOTH_MAX = 0.25;
+const SMOOTH = 0.2;
+// How often follow() asks for the place (ms).
+const FOLLOW_MS = 500;
+
 // Player.STATE_* in Media3.
 const IDLE = 1;
 const BUFFERING = 2;
@@ -39,7 +45,7 @@ const ENDED = 4;
  * taken for one an earlier page gave (the player may still have it).
  */
 function createAudioEngine({
-  plugin, toPath = (src) => src, now = () => performance.now(), attached = null,
+  plugin, toPath = (src) => src, now = () => performance.now(), wall = () => Date.now(), attached = null,
   prefix = `${Math.random().toString(36).slice(2, 7)}-`,
 }) {
   const handlers = {};
@@ -56,6 +62,8 @@ function createAudioEngine({
   let dur = NaN;
   let rate = 1;
   let startAt = null;     // the place the load starts at, until something else moves it
+  let jumped = true;      // loaded, sought or moved on since the last state: its place is taken as it is
+  let following = null;   // the timer asking for the place while follow() is on
   let nexts = 0;
   const sent = { rate: 1, gain: null, volume: null, meta: '', next: '', sleep: 0 };
 
@@ -133,8 +141,17 @@ function createAudioEngine({
 
   function onState(s) {
     if (inflight || !s || s.id !== id) return;
-    t = s.t;
+    // The place was read a moment ago over there (s.at, the same wall clock): it has moved on since.
+    const lag = s.at > 0 ? Math.max(0, Math.min(1000, wall() - s.at)) / 1000 : 0;
+    const reported = s.t + (s.pwr && s.st === READY ? lag * (s.rate || 1) : 0);
+    // Playing on as it did: a small difference is taken in part (a player's place
+    // can come in steps; playing in step with others needs it smooth), a jump at once.
+    const was = time();
+    const steady = !jumped && !paused && st === READY && s.st === READY && s.pwr
+      && (s.rate || 1) === rate && Math.abs(reported - was) < SMOOTH_MAX;
+    t = steady ? was + (reported - was) * SMOOTH : reported;
     at = now();
+    jumped = false;
     rate = s.rate || 1;
     st = s.st;
     if (s.d > 0 && s.d !== dur) {
@@ -170,6 +187,7 @@ function createAudioEngine({
     id = e.id;
     t = 0;
     at = now();
+    jumped = true;
     st = BUFFERING;
     dur = NaN;
     startAt = null;
@@ -234,6 +252,7 @@ function createAudioEngine({
       dur = NaN;
       rate = 1;
       startAt = start > 0 ? start : null;
+      jumped = true;
       sent.rate = 1;
       sent.gain = gain;
       sent.next = '';
@@ -261,6 +280,7 @@ function createAudioEngine({
         st = BUFFERING;
       }
       at = now();
+      jumped = true;
       if (paused) {
         paused = false;
         later('play');
@@ -287,9 +307,28 @@ function createAudioEngine({
       startAt = null;
       t = seconds;
       at = now();
+      jumped = true;
       if (st === ENDED) st = BUFFERING;
       later('seeking');
       op({ op: 'seek', t: seconds });
+    },
+
+    /**
+     * While on, the place is asked for twice a second (playing in step with
+     * another device needs it close; the player only tells it on changes).
+     */
+    follow(on) {
+      clearInterval(following);
+      following = on ? setInterval(() => {
+        if (inflight || ops.length || !src || paused) return;
+        inflight += 1;
+        plugin.run({ ops: [] }).then((state) => {
+          inflight -= 1;
+          if (!inflight && state) onState(state);
+        }, () => {
+          inflight -= 1;
+        });
+      }, FOLLOW_MS) : null;
     },
 
     setRate(r) {
@@ -365,6 +404,8 @@ function createAudioEngine({
 
     // Output devices are the phone's own business.
     setSink: async () => {},
+    // An output delay cannot hold the sound back here: it shifts the place played (Output.shift).
+    canDelay: false,
 
     // The page's own transitions: none (setTransition).
     canFade: false,
