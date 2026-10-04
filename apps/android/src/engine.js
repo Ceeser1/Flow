@@ -174,7 +174,8 @@ function createAudioEngine({
     console.warn('Flow audio:', e.message);
     st = IDLE;
     paused = true;
-    emit('error');
+    // With the server's answer when it refused the song (401: its session ended).
+    emit('error', Number(e.status) || 0);
   });
 
   return {

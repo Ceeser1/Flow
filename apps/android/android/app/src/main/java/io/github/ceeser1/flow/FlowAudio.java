@@ -13,7 +13,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * The page's way to FlowPlayer, for its audio engine (apps/android/src/engine.js):
  * run({ ops }) applies a list of operations and answers the state after them,
  * state() answers where it is, attach() what the page starting finds (see
- * FlowPlayer.attach). Events: "state", "ended" { id }, "error" { id, message }
+ * FlowPlayer.attach). Events: "state", "ended" { id }, "error" { id, message, status }
  * and "advance" { from, id, key, heard, reason }.
  */
 @CapacitorPlugin(name = "FlowAudio")
@@ -75,10 +75,11 @@ public class FlowAudio extends Plugin implements FlowPlayer.Events {
     }
 
     @Override
-    public void onError(String id, String message) {
+    public void onError(String id, String message, int status) {
         JSObject e = new JSObject();
         e.put("id", id);
         e.put("message", message);
+        e.put("status", status);
         notifyListeners("error", e);
     }
 

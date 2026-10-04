@@ -164,9 +164,9 @@ test('an error: paused, and told', async () => {
   engine.load('http://pi/a', 1, { key: 's1' });
   engine.play();
   await settle();
-  plugin.fire('error', { id: '1', message: 'ERROR_CODE_IO_BAD_HTTP_STATUS' });
+  plugin.fire('error', { id: '1', message: 'ERROR_CODE_IO_BAD_HTTP_STATUS', status: 401 });
   assert.equal(engine.paused, true);
-  assert.ok(events.includes('error'));
+  assert.deepEqual(events.at(-1), ['error', 401]);
   assert.equal(engine.loaded, true);
   engine.unload();
   assert.equal(engine.loaded, false);

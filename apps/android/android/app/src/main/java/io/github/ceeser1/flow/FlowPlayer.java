@@ -12,6 +12,7 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 
 import com.getcapacitor.JSObject;
@@ -51,7 +52,8 @@ final class FlowPlayer {
     interface Events {
         void onState(JSObject state);
         void onEnded(String id);
-        void onError(String id, String message);
+        /** `status`: the server's answer when it refused the song (401: signed out), else 0. */
+        void onError(String id, String message, int status);
         /** On to the next song (`reason`: auto, next pressed, repeat); `heard`: seconds of the one before. */
         void onAdvance(String from, String id, String key, double heard, String reason);
     }
@@ -165,8 +167,15 @@ final class FlowPlayer {
             @Override
             public void onPlayerError(PlaybackException error) {
                 String text = error.getErrorCodeName() + ": " + error.getMessage();
-                FlowLog.i("error " + id + " " + text);
-                if (events != null) events.onError(id, text);
+                int status = 0;
+                for (Throwable c = error; c != null; c = c.getCause()) {
+                    if (c instanceof HttpDataSource.InvalidResponseCodeException) {
+                        status = ((HttpDataSource.InvalidResponseCodeException) c).responseCode;
+                        break;
+                    }
+                }
+                FlowLog.i("error " + id + " " + text + (status > 0 ? " (" + status + ")" : ""));
+                if (events != null) events.onError(id, text, status);
             }
         });
         FlowLog.i("player ready");

@@ -226,9 +226,10 @@ const Player = {
       }
       this._drawTime();
     });
-    e.on('error', () => {
+    e.on('error', (status) => {
       if (!this.currentId || !e.loaded) return;
       const song = Store.song(this.currentId);
+      if ((status === 401 || status === 403) && song && !song.file && this._signedOut(song)) return;
       const why = song && !song.file ? 'The server could not send it.' : 'The file may have been moved or deleted.';
       toast(`Could not play "${song ? song.title : 'this song'}". ${why}`, 'error');
       this._emit();
@@ -255,6 +256,21 @@ const Player = {
       if (this.currentId) this.engine.setGain(this._normGain(this.currentId), true);
       this._drawBar();
       this._syncUpcoming();
+    });
+    // Signed in again (the server's session had ended): the songs coming next
+    // are asked for with the new token, and one that stopped carries on.
+    let token = Store.server.token;
+    Store.onServer((st) => {
+      if (st.token === token) return;
+      token = st.token;
+      this._syncUpcoming();
+      const w = this._signIn;
+      if (w && w.waiting && st.token) {
+        w.waiting = false;
+        clearTimeout(w.timer);
+        w.tried = st.token;
+        this._carryOn();
+      }
     });
     Store.onSettings((patch) => {
       if (!('normalize' in patch)) return;
@@ -924,6 +940,43 @@ const Player = {
     if (!this.fade) return;
     this.fade = null;
     this.engine.cancelFade();
+  },
+
+  // ---- signed out by the server ----
+
+  // A song the server refused because its session had ended: { songId, position, tried (the token asked with), waiting }.
+  _signIn: null,
+
+  /**
+   * The server refused the song playing: its session ended (it lasts a day,
+   * or ends when the server restarts). Flow signs in again by itself
+   * (remote.js); the song is asked for again with the token there is now,
+   * or, when that one was refused too, once the next one comes. Gives up
+   * after a minute. False when it is not worth waiting.
+   */
+  _signedOut(song) {
+    const was = this._signIn && this._signIn.songId === song.id ? this._signIn : null;
+    if (was && was.tried === Store.server.token) {
+      if (was.waiting) return true;
+      was.waiting = true;
+      was.timer = setTimeout(() => {
+        if (this._signIn !== was || !was.waiting) return;
+        this._signIn = null;
+        toast(`Could not play "${song.title}". Flow could not sign in to the server again.`, 'error');
+      }, 60000);
+      this._emit();
+      return true;
+    }
+    this._signIn = { songId: song.id, position: was ? was.position : this.position, tried: Store.server.token, waiting: false, timer: null };
+    this._carryOn();
+    return true;
+  },
+
+  /** The song refused by the server, again from where it stopped. */
+  _carryOn() {
+    const w = this._signIn;
+    if (!w || w.songId !== this.currentId || this.remote) return;
+    this.load(w.songId, this.contextId, { position: w.position, keepSession: true, fromQueue: true });
   },
 
   // ---- what comes next, for an engine that moves on by itself ----

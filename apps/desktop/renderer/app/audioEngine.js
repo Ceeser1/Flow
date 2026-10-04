@@ -6,7 +6,8 @@
 // current song (promote) or is let go (cancelFade).
 //
 // The engine's events are the current song's only: play, pause, ended,
-// timeupdate, seeking, durationchange, loadedmetadata and error; fadefailed
+// timeupdate, seeking, durationchange, loadedmetadata and error (with the
+// server's answer when the engine knows it, 401: signed out); fadefailed
 // when the song coming in cannot be played. An engine that moves on to the
 // next song by itself (the phone's, apps/android/src/engine.js) also says
 // advanced, and may start with a song already playing (current).
