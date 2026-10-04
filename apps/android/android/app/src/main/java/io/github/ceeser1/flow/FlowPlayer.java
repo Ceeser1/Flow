@@ -65,6 +65,8 @@ final class FlowPlayer {
         void onError(String id, String message, int status);
         /** On to the next song (`reason`: auto, next pressed, repeat); `heard`: seconds of the one before. */
         void onAdvance(String from, String id, String key, double heard, String reason);
+        /** The widget's Previous: the page goes back (it knows the songs before). */
+        void onPrevious();
     }
 
     /** What the page knows a song in the playlist by: its id there, the song's id, its gain. */
@@ -340,6 +342,15 @@ final class FlowPlayer {
     private boolean screenOn() {
         PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         return power == null || power.isInteractive();
+    }
+
+    /** The widget's Previous: the page's, as its own Previous; with no page, the song from its start. */
+    void widgetPrevious() {
+        if (events != null) {
+            events.onPrevious();
+            return;
+        }
+        exo.seekTo(0);
     }
 
     /** The widget's Next: as Next in the notification. */

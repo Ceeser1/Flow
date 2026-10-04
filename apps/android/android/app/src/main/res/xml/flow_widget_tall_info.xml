@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Flow with timeline" (FlowWidgetTall): four cells wide, two high; FlowPlayer draws it, and moves its timeline on while playing. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_tall_description"
+    android:initialLayout="@layout/flow_widget_tall"
+    android:previewLayout="@layout/flow_widget_tall"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="220dp"
+    android:minResizeHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen|keyguard" />

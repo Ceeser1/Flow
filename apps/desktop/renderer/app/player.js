@@ -239,6 +239,8 @@ const Player = {
     e.on('fadefailed', () => this._cancelFade());
     // The engine moved on by itself (the phone's player, to the next song of the queue).
     e.on('advanced', (songId, heard, reason) => this._advanced(songId, heard, reason));
+    // Previous pressed outside the page (the phone's widget).
+    e.on('previous', () => this.prev());
     AudioFocus.register('player', () => this.pauseHere());
 
     this._bindBar();

@@ -15,10 +15,12 @@ import androidx.media3.common.MediaMetadata;
 
 /**
  * Flow on the home screen: the song playing (cover, title, artist), Play/Pause
- * and Next, and below them the timeline (where the song is, its length). While the player has a song, the buttons go to it (without
- * opening Flow); with none (Flow not opened since the process started) Play
- * opens Flow and the page plays its last song (FlowPlayer.attach: play), and
- * Next opens Flow. A tap anywhere else opens Flow. FlowPlayer draws it again
+ * and Next, one row high; FlowWidgetTall, two rows, has a bigger cover, the
+ * timeline (where the song is, its length) and Previous too. While the player has a song, the buttons go to it (without
+ * opening Flow; Previous through the page, which knows the songs before); with
+ * none (Flow not opened since the process started) Play opens Flow and the
+ * page plays its last song (FlowPlayer.attach: play), and Next and Previous
+ * open Flow. A tap anywhere else opens Flow. FlowPlayer draws it again
  * whenever its song or playing changes, and while playing moves the timeline
  * on every second (time()).
  *
@@ -29,20 +31,26 @@ import androidx.media3.common.MediaMetadata;
 public class FlowWidget extends AppWidgetProvider {
     static final String TOGGLE = "io.github.ceeser1.flow.widget.TOGGLE";
     static final String NEXT = "io.github.ceeser1.flow.widget.NEXT";
+    static final String PREVIOUS = "io.github.ceeser1.flow.widget.PREVIOUS";
 
     // The cover drawn last, so a pause does not read the file again.
     private static Uri coverUri;
     private static Bitmap coverBitmap;
 
+    /** Two rows high, with the timeline and Previous (FlowWidgetTall). */
+    boolean tall() {
+        return false;
+    }
+
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] ids) {
-        draw(context, manager, ids);
+        draw(context, manager, ids, tall());
     }
 
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
-        if (TOGGLE.equals(action) || NEXT.equals(action)) {
+        if (TOGGLE.equals(action) || NEXT.equals(action) || PREVIOUS.equals(action)) {
             FlowPlayer player = FlowPlayer.peek();
             if (player == null || !player.hasSong()) {
                 // Nothing loaded: Flow opens, and Play plays there (Android lets a widget's tap open it).
@@ -57,7 +65,8 @@ public class FlowWidget extends AppWidgetProvider {
                 return;
             }
             if (TOGGLE.equals(action)) player.widgetToggle(context);
-            else player.widgetNext();
+            else if (NEXT.equals(action)) player.widgetNext();
+            else player.widgetPrevious();
             return;
         }
         super.onReceive(context, intent);
@@ -67,22 +76,24 @@ public class FlowWidget extends AppWidgetProvider {
     static void refresh(Context context) {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         int[] ids = manager.getAppWidgetIds(new ComponentName(context, FlowWidget.class));
-        if (ids.length > 0) draw(context, manager, ids);
+        if (ids.length > 0) draw(context, manager, ids, false);
+        int[] tall = manager.getAppWidgetIds(new ComponentName(context, FlowWidgetTall.class));
+        if (tall.length > 0) draw(context, manager, tall, true);
     }
 
-    private static void draw(Context context, AppWidgetManager manager, int[] ids) {
+    private static void draw(Context context, AppWidgetManager manager, int[] ids, boolean tall) {
         FlowPlayer player = FlowPlayer.peek();
         boolean has = player != null && player.hasSong();
         MediaMetadata md = has ? player.exo.getMediaMetadata() : MediaMetadata.EMPTY;
         boolean playing = has && player.exo.getPlayWhenReady();
 
-        RemoteViews v = new RemoteViews(context.getPackageName(), R.layout.flow_widget);
+        RemoteViews v = new RemoteViews(context.getPackageName(), tall ? R.layout.flow_widget_tall : R.layout.flow_widget);
         v.setTextViewText(R.id.widget_title, has && md.title != null ? md.title : "Flow");
         v.setTextViewText(R.id.widget_artist, has ? (md.artist != null ? md.artist : "") : "Tap play to listen");
         Bitmap cover = has ? cover(md.artworkUri) : null;
         if (cover != null) v.setImageViewBitmap(R.id.widget_cover, cover);
         else v.setImageViewResource(R.id.widget_cover, R.drawable.widget_note);
-        timeline(v, has ? player.exo.getCurrentPosition() : 0, has ? player.length() : 0);
+        if (tall) timeline(v, has ? player.exo.getCurrentPosition() : 0, has ? player.length() : 0);
         v.setImageViewResource(R.id.widget_play, playing ? R.drawable.widget_pause : R.drawable.widget_play);
         v.setContentDescription(R.id.widget_play, playing ? "Pause" : "Play");
 
@@ -90,15 +101,16 @@ public class FlowWidget extends AppWidgetProvider {
         v.setOnClickPendingIntent(R.id.widget_root, open);
         v.setOnClickPendingIntent(R.id.widget_play, broadcast(context, TOGGLE, 1));
         v.setOnClickPendingIntent(R.id.widget_next, has ? broadcast(context, NEXT, 2) : open);
+        if (tall) v.setOnClickPendingIntent(R.id.widget_prev, has ? broadcast(context, PREVIOUS, 3) : open);
         manager.updateAppWidget(ids, v);
     }
 
     /** The timeline moved on (only it is drawn again): where the song is, its length (ms; 0: not known). */
     static void time(Context context, long at, long length) {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
-        int[] ids = manager.getAppWidgetIds(new ComponentName(context, FlowWidget.class));
+        int[] ids = manager.getAppWidgetIds(new ComponentName(context, FlowWidgetTall.class));
         if (ids.length == 0) return;
-        RemoteViews v = new RemoteViews(context.getPackageName(), R.layout.flow_widget);
+        RemoteViews v = new RemoteViews(context.getPackageName(), R.layout.flow_widget_tall);
         timeline(v, at, length);
         manager.partiallyUpdateAppWidget(ids, v);
     }
@@ -130,8 +142,14 @@ public class FlowWidget extends AppWidgetProvider {
         BitmapFactory.Options opts = new BitmapFactory.Options();
         opts.inSampleSize = 1;
         while (Math.max(size.outWidth, size.outHeight) / (opts.inSampleSize * 2) >= 192) opts.inSampleSize *= 2;
+        Bitmap b = BitmapFactory.decodeFile(uri.getPath(), opts);
+        // Cut square: the tall widget's cover takes the shape of its picture.
+        if (b != null && b.getWidth() != b.getHeight()) {
+            int side = Math.min(b.getWidth(), b.getHeight());
+            b = Bitmap.createBitmap(b, (b.getWidth() - side) / 2, (b.getHeight() - side) / 2, side, side);
+        }
         coverUri = uri;
-        coverBitmap = BitmapFactory.decodeFile(uri.getPath(), opts);
+        coverBitmap = b;
         return coverBitmap;
     }
 

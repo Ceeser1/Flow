@@ -4,5 +4,6 @@
     <string name="title_activity_main">Flow</string>
     <string name="package_name">io.github.ceeser1.flow</string>
     <string name="custom_url_scheme">io.github.ceeser1.flow</string>
-    <string name="widget_description">The song playing, with Play/Pause, Next and its timeline</string>
+    <string name="widget_tall_description">The song playing and its timeline, with Previous, Play/Pause and Next</string>
+    <string name="widget_description">The song playing, with Play/Pause and Next</string>
 </resources>

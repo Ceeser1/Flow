@@ -95,6 +95,11 @@ public class FlowAudio extends Plugin implements FlowPlayer.Events {
     }
 
     @Override
+    public void onPrevious() {
+        notifyListeners("previous", new JSObject());
+    }
+
+    @Override
     protected void handleOnDestroy() {
         // The page is gone; the player and its music stay.
         if (player.getEvents() == this) player.setEvents(null);

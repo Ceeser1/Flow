@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The home screen widget (FlowWidget): four cells wide, two high (the timeline below); FlowPlayer draws it, never a timer. -->
+<!-- The home screen widget (FlowWidget): four cells wide, one high; FlowPlayer draws it, never a timer. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_description"
     android:initialLayout="@layout/flow_widget"
     android:previewLayout="@layout/flow_widget"
     android:minWidth="250dp"
-    android:minHeight="110dp"
+    android:minHeight="40dp"
     android:minResizeWidth="180dp"
-    android:minResizeHeight="90dp"
+    android:minResizeHeight="40dp"
     android:targetCellWidth="4"
-    android:targetCellHeight="2"
+    android:targetCellHeight="1"
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="0"
     android:widgetCategory="home_screen|keyguard" />

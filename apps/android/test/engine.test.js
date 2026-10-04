@@ -31,7 +31,7 @@ function setup(attached = null) {
   let clock = 1000;
   const engine = createAudioEngine({ plugin, toPath: (a) => a.replace('page:', ''), now: () => clock, attached, prefix: '' });
   const events = [];
-  for (const type of ['play', 'pause', 'ended', 'timeupdate', 'seeking', 'durationchange', 'loadedmetadata', 'error', 'advanced']) {
+  for (const type of ['play', 'pause', 'ended', 'timeupdate', 'seeking', 'durationchange', 'loadedmetadata', 'error', 'advanced', 'previous']) {
     engine.on(type, (...args) => events.push(args.length ? [type, ...args] : type));
   }
   return { plugin, engine, events, tick: (ms) => { clock += ms; } };
@@ -225,6 +225,12 @@ test('moving on by itself: the next song is the current one, told with what was 
   engine.setNext([]);
   await settle();
   assert.equal(plugin.runs.length, before + 1);
+});
+
+test('the widget\'s Previous is passed on to the page', () => {
+  const { plugin, events } = setup();
+  plugin.fire('previous', {});
+  assert.deepEqual(events, ['previous']);
 });
 
 test('a page that starts while the player plays takes its song as it is', () => {

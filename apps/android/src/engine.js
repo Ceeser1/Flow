@@ -176,6 +176,8 @@ function createAudioEngine({
     sent.next = '';
     emit('advanced', e.key, Number(e.heard) || 0, e.reason);
   });
+  // The widget's Previous: the songs before are the queue's, not the player's.
+  plugin.addListener('previous', () => emit('previous'));
   plugin.addListener('error', (e) => {
     if (!e || e.id !== id) return;
     console.warn('Flow audio:', e.message);
