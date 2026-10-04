@@ -248,6 +248,16 @@ test('a page that starts while the player plays takes its song as it is', () => 
   assert.equal(idle.engine.loaded, false);
 });
 
+test('the sleep timer goes to the player, which keeps it itself', async () => {
+  const { plugin, engine } = setup();
+  assert.equal(engine.ownSleep, true);
+  engine.setSleep(1791120000000, 10000);
+  engine.setSleep(1791120000000, 10000);
+  engine.setSleep(null);
+  await settle();
+  assert.deepEqual(plugin.runs, [[{ op: 'sleep', at: 1791120000000, fade: 10000 }, { op: 'sleep', at: 0, fade: 10000 }]]);
+});
+
 test('each page names its songs differently from the pages before it', async () => {
   const ids = [];
   for (let i = 0; i < 2; i += 1) {

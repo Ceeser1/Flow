@@ -53,7 +53,7 @@ function createAudioEngine({
   let rate = 1;
   let startAt = null;     // the place the load starts at, until something else moves it
   let nexts = 0;
-  const sent = { rate: 1, gain: null, volume: null, meta: '', next: '' };
+  const sent = { rate: 1, gain: null, volume: null, meta: '', next: '', sleep: 0 };
 
   // Still playing from before this page (or loaded, paused): taken as it is.
   let current = null;
@@ -325,6 +325,19 @@ function createAudioEngine({
         }),
       });
     },
+
+    /**
+     * The sleep timer, kept by the player itself (the page's timers stop with
+     * the screen off): it fades the music out over the last `fadeMs` before
+     * `endsAt` (ms, wall clock), then pauses. null: no timer.
+     */
+    setSleep(endsAt, fadeMs = 10000) {
+      const at = endsAt || 0;
+      if (at === sent.sleep) return;
+      sent.sleep = at;
+      op({ op: 'sleep', at, fade: fadeMs });
+    },
+    ownSleep: true,
 
     // Output devices are the phone's own business.
     setSink: async () => {},

@@ -48,6 +48,9 @@ import java.util.List;
  * LoudnessEnhancer on its sound, which also keeps the peaks of a song turned
  * up from clipping (the desktop's limiter).
  *
+ * The sleep timer runs here too (the page's timers stop with the screen off):
+ * the music fades out over its last seconds, then pauses.
+ *
  * It takes audio focus (a call or another player pauses it), pauses when
  * headphones are pulled out, and keeps the CPU and Wi-Fi awake while it plays.
  * Everything here runs on the main thread, as ExoPlayer wants.
@@ -101,6 +104,11 @@ final class FlowPlayer {
     private LoudnessEnhancer enhancer;
     private int enhancerSession = C.AUDIO_SESSION_ID_UNSET;
     private int boostMb = -1;
+    // The sleep timer: when it runs out (wall clock, ms; 0: none), over how long it fades, how far it is.
+    private long sleepAt = 0;
+    private long sleepFadeMs = 10000;
+    private float sleepFade = 1f;
+    private final Runnable sleepTick = this::sleepCheck;
 
     // While playing, the place goes to the page four times a second.
     private final Runnable tick = new Runnable() {
@@ -253,6 +261,18 @@ final class FlowPlayer {
                 }
                 case "next":
                     setNext(op.optJSONArray("items"), op.optBoolean("repeat", false));
+                    break;
+                case "sleep":
+                    sleepAt = (long) op.optDouble("at", 0);
+                    sleepFadeMs = Math.max(1, (long) op.optDouble("fade", 10000));
+                    main.removeCallbacks(sleepTick);
+                    if (sleepAt > 0) {
+                        FlowLog.i("sleep timer: stops in " + Math.round((sleepAt - System.currentTimeMillis()) / 1000.0) + " s");
+                        sleepCheck();
+                    } else if (sleepFade != 1f) {
+                        sleepFade = 1f;
+                        applyVolume();
+                    }
                     break;
                 case "unload":
                     exo.stop();
@@ -417,9 +437,30 @@ final class FlowPlayer {
         if (events != null) events.onState(s);
     }
 
+    /** The sleep timer: fading over its last seconds, then the music pauses. */
+    private void sleepCheck() {
+        if (sleepAt <= 0) return;
+        long left = sleepAt - System.currentTimeMillis();
+        if (left <= 0) {
+            sleepAt = 0;
+            exo.pause();
+            sleepFade = 1f;
+            applyVolume();
+            FlowLog.i("sleep timer ran out: paused");
+            return;
+        }
+        float f = left < sleepFadeMs ? (float) left / sleepFadeMs : 1f;
+        if (f != sleepFade) {
+            sleepFade = f;
+            applyVolume();
+        }
+        // Rarely until the fade, then four times a second.
+        main.postDelayed(sleepTick, left > sleepFadeMs + 1000 ? Math.min(left - sleepFadeMs, 30000) : 250);
+    }
+
     /** The app's volume times the song's gain: down by the player's volume, up by the enhancer. */
     private void applyVolume() {
-        exo.setVolume(Math.max(0f, Math.min(1f, volume * Math.min(1f, gain))));
+        exo.setVolume(Math.max(0f, Math.min(1f, volume * sleepFade * Math.min(1f, gain))));
         int mb = gain > 1f ? Math.round(2000f * (float) Math.log10(gain)) : 0;
         LoudnessEnhancer e = enhancer();
         if (e == null || mb == boostMb) return;

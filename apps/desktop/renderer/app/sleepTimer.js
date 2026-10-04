@@ -6,6 +6,9 @@
 // it) and "Time Left" counts down
 // above the timeline; over the last seconds the music fades out, then pauses.
 //
+// On the phone the player keeps the timer itself (it fades and pauses with
+// the screen off, when this page's timers stop); here it is only shown.
+//
 // The shutdown is handed to Windows when the timer starts (main.js), so it
 // happens even if Flow is closed by then; the timer is kept in the settings so
 // a restarted Flow still shows it and can call it off. Starting, cancelling
@@ -120,12 +123,15 @@ const SleepTimer = {
     clearInterval(this.timer);
     this.timer = null;
     this.state = null;
+    Player.engine.setSleep(null);
     Player.setSleepFade(1);
     this._save(null);
     this._draw();
   },
 
   _run() {
+    const s = this.state;
+    Player.engine.setSleep(s && !s.ended ? s.endsAt : null, this.FADE_MS);
     clearInterval(this.timer);
     this.timer = setInterval(() => this._tick(), 250);
     this._tick();
@@ -141,7 +147,7 @@ const SleepTimer = {
         this._runOut();
         return;
       }
-      Player.setSleepFade(left < this.FADE_MS ? left / this.FADE_MS : 1);
+      if (!Player.engine.ownSleep) Player.setSleepFade(left < this.FADE_MS ? left / this.FADE_MS : 1);
     } else if (s.shutdownAt && now >= s.shutdownAt) {
       // Windows is shutting down by now.
       this._stop();
@@ -162,6 +168,7 @@ const SleepTimer = {
       return;
     }
     s.ended = true;
+    Player.engine.setSleep(null);
     this._save(s);
     this._draw();
     this._notify(`The music has stopped. Your PC shuts down at ${Util.fmtTimeOfDay(s.shutdownAt)}. `

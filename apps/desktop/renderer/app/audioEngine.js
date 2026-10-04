@@ -10,7 +10,9 @@
 // server's answer when the engine knows it, 401: signed out); fadefailed
 // when the song coming in cannot be played. An engine that moves on to the
 // next song by itself (the phone's, apps/android/src/engine.js) also says
-// advanced, and may start with a song already playing (current).
+// advanced, and may start with a song already playing (current). One that
+// keeps the sleep timer itself (ownSleep: fades and pauses) is handed it with
+// setSleep.
 //
 // HtmlAudioEngine plays through the window's two <audio> elements, routed
 // through Web Audio by the equalizer (equalizer.js), which gives each its own
@@ -125,6 +127,9 @@ class HtmlAudioEngine {
 
   /** The songs that come next: the elements ask the player at each song's end instead. */
   setNext() {}
+
+  /** The sleep timer: here the timer itself fades the volume (sleepTimer.js); see ownSleep. */
+  setSleep() {}
 
   /**
    * What the system shows of the song ({ title, artist, album, artwork }, or
