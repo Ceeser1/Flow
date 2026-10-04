@@ -982,21 +982,33 @@ const Player = {
 
   // ---- what comes next, for an engine that moves on by itself ----
 
-  // How many of the queue's songs such an engine is given ahead.
-  UPCOMING: 10,
+  // How many songs such an engine is given ahead: about two hours, for a
+  // page whose timers the phone stops in the background.
+  UPCOMING: 30,
 
   /**
-   * Tells the engine what comes after the song playing: the queue's songs
-   * (those it can play), or with Repeat the song itself again. The phone's
-   * player moves on to them by itself, even while this page sleeps; the
-   * desktop's elements ask at each song's end instead (`ended`).
+   * Tells the engine what comes after the song playing (those it can play),
+   * or with Repeat the song itself again. The phone's player moves on to them
+   * by itself, even while this page sleeps, so it gets the queue played
+   * ahead on a copy: the list starting over, shuffle's next draws (a page
+   * that wakes takes whatever it played). The desktop's elements ask at each
+   * song's end instead (`ended`).
    */
   _syncUpcoming() {
-    if (!this.engine) return;
-    const ids = this.remote || !this.currentId ? [] : [...this.queue.manual, ...this.queue.auto];
+    if (!this.engine || !this.engine.movesOn) return;
+    const ids = [];
+    if (!this.remote && this.currentId) {
+      const ahead = new PlayQueue(this.queue.random, this.queue.limit);
+      ahead.restore(this.queue.snapshot());
+      const order = this.contextId ? this.idsOf(this.contextId) : [];
+      while (ids.length < this.UPCOMING) {
+        const id = ahead.next(order);
+        if (!id) break;
+        ids.push(id);
+      }
+    }
     const items = [];
     for (const id of ids) {
-      if (items.length >= this.UPCOMING) break;
       const song = Store.song(id);
       const src = song ? Store.audioSrc(song) : '';
       if (src) items.push({ key: id, src, gain: this._normGain(id), meta: this._meta(song) });

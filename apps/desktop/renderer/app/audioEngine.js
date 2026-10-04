@@ -10,7 +10,7 @@
 // server's answer when the engine knows it, 401: signed out); fadefailed
 // when the song coming in cannot be played. An engine that moves on to the
 // next song by itself (the phone's, apps/android/src/engine.js) also says
-// advanced, and may start with a song already playing (current). One that
+// advanced (movesOn), and may start with a song already playing (current). One that
 // keeps the sleep timer itself (ownSleep: fades and pauses) is handed it with
 // setSleep.
 //

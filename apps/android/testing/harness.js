@@ -92,8 +92,15 @@ function connect(url, log) {
   });
 }
 
+// A page frozen in the background answers nothing: the step fails after this long.
+const EVALUATE_TIMEOUT_MS = 20000;
+
 async function evaluate(cdp, expression) {
-  const r = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+  let timer;
+  const r = await Promise.race([
+    cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }),
+    new Promise((_, fail) => { timer = setTimeout(() => fail(new Error('the page did not answer (frozen?)')), EVALUATE_TIMEOUT_MS); }),
+  ]).finally(() => clearTimeout(timer));
   if (r.exceptionDetails) {
     const d = r.exceptionDetails;
     throw new Error((d.exception && d.exception.description) || d.text);

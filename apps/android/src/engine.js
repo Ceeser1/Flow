@@ -311,6 +311,7 @@ function createAudioEngine({
      * The songs that come after this one ([{ key, src, gain, meta }], in
      * order), or with `repeat` this one over and over.
      */
+    movesOn: true,
     setNext(items, { repeat = false } = {}) {
       const list = (items || []).filter((i) => i && i.src);
       const k = JSON.stringify([repeat, list.map((i) => [i.key, i.src, i.gain, i.meta])]);

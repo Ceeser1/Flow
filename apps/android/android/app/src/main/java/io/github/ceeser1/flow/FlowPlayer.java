@@ -416,7 +416,7 @@ final class FlowPlayer {
         return total / 1000.0;
     }
 
-    /** { id, key, pwr: play when ready, st: 1 idle 2 buffering 3 ready 4 ended, t, d (-1 unknown), rate, vol (the player's volume) } */
+    /** { id, key, pwr: play when ready, st: 1 idle 2 buffering 3 ready 4 ended, t, d (-1 unknown), rate, vol (the player's volume), songs (this one and those after it) } */
     JSObject state() {
         JSObject s = new JSObject();
         s.put("id", id);
@@ -429,6 +429,7 @@ final class FlowPlayer {
         s.put("d", d == C.TIME_UNSET ? -1 : d / 1000.0);
         s.put("rate", (double) exo.getPlaybackParameters().speed);
         s.put("vol", (double) exo.getVolume());
+        s.put("songs", exo.getMediaItemCount() - Math.max(0, exo.getCurrentMediaItemIndex()));
         return s;
     }
 
