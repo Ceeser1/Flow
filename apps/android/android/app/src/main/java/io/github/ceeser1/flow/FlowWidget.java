@@ -15,11 +15,12 @@ import androidx.media3.common.MediaMetadata;
 
 /**
  * Flow on the home screen: the song playing (cover, title, artist), Play/Pause
- * and Next. While the player has a song, the buttons go to it (without
+ * and Next, and below them the timeline (where the song is, its length). While the player has a song, the buttons go to it (without
  * opening Flow); with none (Flow not opened since the process started) Play
  * opens Flow and the page plays its last song (FlowPlayer.attach: play), and
  * Next opens Flow. A tap anywhere else opens Flow. FlowPlayer draws it again
- * whenever its song or playing changes.
+ * whenever its song or playing changes, and while playing moves the timeline
+ * on every second (time()).
  *
  * Play always comes here first, never straight to Flow's window: a window
  * opened with a "play" of its own would keep it, and play again whenever
@@ -81,6 +82,7 @@ public class FlowWidget extends AppWidgetProvider {
         Bitmap cover = has ? cover(md.artworkUri) : null;
         if (cover != null) v.setImageViewBitmap(R.id.widget_cover, cover);
         else v.setImageViewResource(R.id.widget_cover, R.drawable.widget_note);
+        timeline(v, has ? player.exo.getCurrentPosition() : 0, has ? player.length() : 0);
         v.setImageViewResource(R.id.widget_play, playing ? R.drawable.widget_pause : R.drawable.widget_play);
         v.setContentDescription(R.id.widget_play, playing ? "Pause" : "Play");
 
@@ -89,6 +91,33 @@ public class FlowWidget extends AppWidgetProvider {
         v.setOnClickPendingIntent(R.id.widget_play, broadcast(context, TOGGLE, 1));
         v.setOnClickPendingIntent(R.id.widget_next, has ? broadcast(context, NEXT, 2) : open);
         manager.updateAppWidget(ids, v);
+    }
+
+    /** The timeline moved on (only it is drawn again): where the song is, its length (ms; 0: not known). */
+    static void time(Context context, long at, long length) {
+        AppWidgetManager manager = AppWidgetManager.getInstance(context);
+        int[] ids = manager.getAppWidgetIds(new ComponentName(context, FlowWidget.class));
+        if (ids.length == 0) return;
+        RemoteViews v = new RemoteViews(context.getPackageName(), R.layout.flow_widget);
+        timeline(v, at, length);
+        manager.partiallyUpdateAppWidget(ids, v);
+    }
+
+    private static void timeline(RemoteViews v, long at, long length) {
+        at = Math.max(0, length > 0 ? Math.min(at, length) : at);
+        v.setTextViewText(R.id.widget_time, clock(at));
+        v.setTextViewText(R.id.widget_length, length > 0 ? clock(length) : "0:00");
+        v.setProgressBar(R.id.widget_progress, 1000, length > 0 ? (int) (at * 1000 / length) : 0, false);
+    }
+
+    /** 3:07, or 1:02:07 from an hour on. */
+    private static String clock(long ms) {
+        long s = ms / 1000;
+        long h = s / 3600;
+        long m = (s / 60) % 60;
+        s %= 60;
+        return h > 0 ? String.format(java.util.Locale.ROOT, "%d:%02d:%02d", h, m, s)
+                : String.format(java.util.Locale.ROOT, "%d:%02d", m, s);
     }
 
     /** The cover (a file in the app's storage), small enough for the widget; null without one. */

@@ -5,6 +5,7 @@ import android.media.audiofx.LoudnessEnhancer;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.SystemClock;
 
 import androidx.media3.common.AudioAttributes;
@@ -122,15 +123,22 @@ final class FlowPlayer {
     private float sleepFade = 1f;
     private final Runnable sleepTick = this::sleepCheck;
 
-    // While playing, the place goes to the page four times a second.
+    // While playing, the place goes to the page four times a second, and to the
+    // widget's timeline when its second changes (not with the screen off).
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
             if (!exo.isPlaying()) return;
             tellState();
+            long second = exo.getCurrentPosition() / 1000;
+            if (second != widgetSecond && screenOn()) {
+                widgetSecond = second;
+                FlowWidget.time(context, exo.getCurrentPosition(), length());
+            }
             main.postDelayed(this, TICK_MS);
         }
     };
+    private long widgetSecond = -1;
 
     private FlowPlayer(Context context) {
         this.context = context;
@@ -166,7 +174,8 @@ final class FlowPlayer {
                     if (player.isPlaying()) main.postDelayed(tick, TICK_MS);
                 }
                 if (ev.containsAny(Player.EVENT_PLAY_WHEN_READY_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION,
-                        Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_TIMELINE_CHANGED)) {
+                        Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_TIMELINE_CHANGED,
+                        Player.EVENT_POSITION_DISCONTINUITY)) {
                     main.removeCallbacks(widget);
                     main.postDelayed(widget, 100);
                 }
@@ -318,7 +327,19 @@ final class FlowPlayer {
     }
 
     private void drawWidget() {
+        widgetSecond = exo.getCurrentPosition() / 1000;
         FlowWidget.refresh(context);
+    }
+
+    /** The song playing's length (ms; 0: not known yet). */
+    long length() {
+        long d = exo.getDuration();
+        return d != C.TIME_UNSET && d > 0 ? d : Math.max(0, durationMs);
+    }
+
+    private boolean screenOn() {
+        PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        return power == null || power.isInteractive();
     }
 
     /** The widget's Next: as Next in the notification. */

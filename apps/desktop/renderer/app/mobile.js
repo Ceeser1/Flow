@@ -128,9 +128,11 @@ const Mobile = {
     bar.append(...parts);
     bar.classList.add('mp');
 
-    // A tap on the mini player (not on its buttons) opens Now Playing.
+    // A tap on the mini player (not on its buttons) opens Now Playing. The path is the
+    // one at the tap: Play swaps its icon first, so the icon tapped is no longer in it.
     bar.addEventListener('click', (e) => {
-      if (!this.playerOpen && !e.target.closest('button, input')) this.expandPlayer();
+      const onButton = e.composedPath().some((n) => n.matches && n.matches('button, input'));
+      if (!this.playerOpen && !onButton) this.expandPlayer();
     });
     this._bindSwipeBack(bar);
   },
@@ -177,7 +179,8 @@ const Mobile = {
     this.follow(bar, {
       decide: (dx, dy, target) => {
         if (!this.playerOpen || dx <= 0 || Math.abs(dx) <= Math.abs(dy) * 1.2 || target.closest(this.NO_SWIPE)) return false;
-        bar.classList.add('mp--dragging');
+        // Pulled too: its slide in (a tap opened it) would start over once the finger lets go.
+        bar.classList.add('mp--dragging', 'mp--pulled');
         return true;
       },
       move: (dx) => {
