@@ -28,3 +28,18 @@ The Gradle wrapper is on 9.1 rather than Capacitor's 8.14: Android Studio
 
 Keystores (`*.jks`, `*.keystore`) are ignored by git and must stay out of the
 repo.
+
+## Testing on the emulator
+
+`testing/harness.js` installs the debug APK on the emulator, starts Flow and
+runs a steps file against its WebView over the DevTools protocol (debug
+builds allow that), saving screenshots:
+
+```
+emulator -avd <name> -no-window -no-snapshot-save -no-boot-anim -no-audio
+node apps/android/testing/harness.js [--build] [--no-install] steps.js out/
+```
+
+A steps file exports `[{ name, js, wait, shot, screen }]`; see the top of the
+harness. It drives `emulator-5554` (or `FLOW_ADB_SERIAL`, which must be an
+emulator) and refuses a phone.
