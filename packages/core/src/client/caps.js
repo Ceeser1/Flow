@@ -24,6 +24,8 @@ const DESKTOP = {
   offline: true,
   // Settings: Check for Updates.
   updateCheck: false,
+  // Flow's own volume slider (a phone's volume is its buttons).
+  volume: true,
 };
 
 const ANDROID = {
@@ -38,6 +40,7 @@ const ANDROID = {
   // Until the phone downloads songs itself (v3.0, Stage 5).
   offline: false,
   updateCheck: true,
+  volume: false,
 };
 
 module.exports = { DESKTOP, ANDROID };

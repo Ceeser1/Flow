@@ -7,6 +7,8 @@
 const { registerPlugin, Capacitor } = require('@capacitor/core');
 
 const plugin = registerPlugin('FlowNative');
+// The player (FlowAudio.java), for the audio engine (engine.js).
+const audio = registerPlugin('FlowAudio');
 
 function sync() {
   if (!globalThis.FlowSync) throw new Error('This only works in Flow\'s Android app.');
@@ -83,5 +85,5 @@ const isMetered = () => !!sync().isMetered();
 const fileUrl = (p) => Capacitor.convertFileSrc(p);
 
 module.exports = {
-  plugin, fs, path, info, secrets, isMetered, fileUrl, toBase64, fromBase64,
+  plugin, audio, fs, path, info, secrets, isMetered, fileUrl, toBase64, fromBase64,
 };

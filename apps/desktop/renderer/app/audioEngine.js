@@ -74,7 +74,9 @@ class HtmlAudioEngine {
 
   /**
    * Loads a song (paused) at loudness `gain`, at full fade. False when there
-   * is nothing to play it from (src '').
+   * is nothing to play it from (src ''). `at` is where it is to start: the
+   * player seeks there once the length is known (an engine that can start
+   * there at once passes over that seek); the elements wait for that seek.
    */
   load(src, gain) {
     const ok = this._setSource(this.main, src);
@@ -116,6 +118,12 @@ class HtmlAudioEngine {
     for (const el of [this.main, this.spare]) el.volume = Equalizer.active ? 1 : v;
     if (Equalizer.active) Equalizer.setVolume(v);
   }
+
+  /**
+   * What the system shows of the song ({ title, artist, album, artwork }, or
+   * null). Here the player keeps navigator.mediaSession itself.
+   */
+  setMeta() {}
 
   /** Plays on output device `id` ('' for the default). Rejects when that is refused. */
   async setSink(id) {

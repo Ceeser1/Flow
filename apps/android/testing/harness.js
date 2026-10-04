@@ -6,8 +6,10 @@
 //
 //   node apps/android/testing/harness.js [--build] [--no-install] <steps.js> <outDir>
 //
-// steps.js exports [{ name, key, js, wait, shot, screen }]: `key` is pressed on
-// the emulator (BACK, HOME), `js` is evaluated in the page (a promise is
+// steps.js exports [{ name, key, shell, js, wait, shot, screen }]: `key` is
+// pressed on the emulator (BACK, HOME, SLEEP), `shell` is run there (adb shell,
+// e.g. dumpsys; its output is logged, only the lines matching the regular
+// expression `grep` when given), `js` is evaluated in the page (a promise is
 // awaited, the value logged), then after `wait` ms (400)
 // `shot` saves the page as <shot>.png and `screen` the whole device screen
 // (status bar, notifications) as <screen>.png. Errors and console warnings go
@@ -131,6 +133,15 @@ async function main() {
       if (step.key) {
         adb('shell', 'input', 'keyevent', `KEYCODE_${step.key}`);
         await sleep(300);
+      }
+      if (step.shell) {
+        try {
+          let out = adb('shell', step.shell);
+          if (step.grep) out = out.split('\n').filter((l) => new RegExp(step.grep).test(l)).join('\n');
+          log('shell', step.name || '', out);
+        } catch (err) {
+          log('shell error', step.name || '', err.message);
+        }
       }
       if (step.js) {
         try {

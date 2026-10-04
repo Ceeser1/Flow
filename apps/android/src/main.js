@@ -14,7 +14,8 @@ const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES } = require('@flow/core/formats');
-const { plugin, fileUrl } = require('./native');
+const { plugin, audio, fileUrl } = require('./native');
+const { createAudioEngine, fileAddressToPath } = require('./engine');
 const { createEnv } = require('./env');
 const { version } = require('../package.json');
 
@@ -218,6 +219,11 @@ function start() {
     onBack: (fn) => plugin.addListener('back', () => fn()),
     /** Back with nothing left to close: Flow goes to the background. */
     leave: call(() => plugin.leave()),
+    /** What the player plays through: the phone's own player, for the background (engine.js). */
+    createAudioEngine: () => createAudioEngine({
+      plugin: audio,
+      toPath: (address) => fileAddressToPath(address, window.location.origin),
+    }),
   };
 
   return flow;

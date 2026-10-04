@@ -178,8 +178,12 @@ const Player = {
   },
 
   init() {
-    this.engine = new HtmlAudioEngine($('mainAudio'), $('fadeAudio'));
-    this.volume = Store.settings.volume;
+    // The app's own engine (the phone's plays natively), else the window's <audio>.
+    this.engine = window.flow.createAudioEngine
+      ? window.flow.createAudioEngine()
+      : new HtmlAudioEngine($('mainAudio'), $('fadeAudio'));
+    // Without a volume slider (the phone's is its buttons), Flow plays at full volume.
+    this.volume = Store.can('volume') ? Store.settings.volume : 1;
     this._applyVolume();
     this.queue.setShuffle(Store.settings.shuffle);
 
@@ -314,7 +318,7 @@ const Player = {
     this.contextId = context;
     this.currentId = songId;
     this._pendingSeek = position > 0 ? position : null;
-    const playable = this.engine.load(Store.audioSrc(song), this._normGain(songId));
+    const playable = this.engine.load(Store.audioSrc(song), this._normGain(songId), position);
     if (!playable && autoplay) {
       toast(`"${song.title}" is on the server, which cannot be reached right now, and is not downloaded.`, 'error');
     } else if (autoplay) this._play();
@@ -1142,8 +1146,15 @@ const Player = {
   },
 
   _updateMediaSession() {
-    if (!('mediaSession' in navigator)) return;
     const song = this.currentId ? Store.song(this.currentId) : null;
+    // The engine's own notification (the phone's), with the song's cover.
+    this.engine.setMeta(song ? {
+      title: song.mix ? `${song.title} (${song.mix})` : song.title,
+      artist: song.artist || '',
+      album: this.listName() || 'Flow',
+      artwork: Store.coverSrc(song),
+    } : null);
+    if (!('mediaSession' in navigator)) return;
     if (!song) {
       navigator.mediaSession.metadata = null;
       return;
