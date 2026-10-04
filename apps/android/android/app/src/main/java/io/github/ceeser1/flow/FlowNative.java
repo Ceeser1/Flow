@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.database.Cursor;
 import android.graphics.Bitmap;
@@ -96,6 +97,8 @@ public class FlowNative extends Plugin {
     private static final int PEAK_RATE = 8000;
     // A share's intent once the page has it.
     private static final String SHARE_TAKEN = "io.github.ceeser1.flow.SHARE_TAKEN";
+    // Where the share that started Flow's task is remembered (its task and text), past Flow's process.
+    private static final String SHARE_PREFS = "flow-share";
 
     private final ExecutorService work = Executors.newCachedThreadPool();
 
@@ -123,7 +126,7 @@ public class FlowNative extends Plugin {
             }
         }, new Handler(Looper.getMainLooper()));
         // Started by a share.
-        shared(getActivity().getIntent());
+        shared(getActivity().getIntent(), true);
     }
 
     private AudioManager audioManager() {
@@ -740,20 +743,29 @@ public class FlowNative extends Plugin {
      * was shared goes to the page as "share" { text, subject }, kept until the
      * page listens (a share may be what starts Flow). Once only: the window
      * made again, or Flow opened from the recent apps, shares nothing.
+     * `base`: the intent the window was made with. Android keeps a task's first
+     * intent, the share that started it too, and makes the window with it again
+     * after Flow's process has gone, so that share is remembered past it.
      */
-    private void shared(Intent intent) {
+    private void shared(Intent intent, boolean base) {
         if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return;
         if ((intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return;
         JSObject s = new JSObject();
         s.put("text", text(intent.getStringExtra(Intent.EXTRA_TEXT)));
         s.put("subject", text(intent.getStringExtra(Intent.EXTRA_SUBJECT)));
         intent.setAction(SHARE_TAKEN);
+        if (base) {
+            String mark = getActivity().getTaskId() + "\n" + s.getString("text") + "\n" + s.getString("subject");
+            SharedPreferences prefs = getContext().getSharedPreferences(SHARE_PREFS, Context.MODE_PRIVATE);
+            if (mark.equals(prefs.getString("taken", null))) return;
+            prefs.edit().putString("taken", mark).commit();
+        }
         notifyListeners("share", s, true);
     }
 
     @Override
     protected void handleOnNewIntent(Intent intent) {
-        shared(intent);
+        shared(intent, false);
     }
 
     // ---- turning sideways ----

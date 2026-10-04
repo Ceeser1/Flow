@@ -140,6 +140,8 @@ body.mobile .menu__settings {
   background: #212126;
 }
 
+/* The drawer scrolls as a whole: a long list never squeezes the items above it. */
+body.mobile .menu > * { flex-shrink: 0; }
 body.mobile .menu__search { height: 48px; border-radius: 24px; font-size: 15px; }
 body.mobile .menu__item { height: 48px; font-size: 15px; }
 /* Settings is an item too, but as tall again as the bar of Android's own buttons under it. */
