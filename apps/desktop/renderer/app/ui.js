@@ -78,6 +78,8 @@ const Modal = {
 
     $('modalRoot').appendChild(backdrop);
     Modal.stack.push(handle);
+    // The phone's sheets go away pulled down.
+    if (sheet && typeof Mobile !== 'undefined' && Mobile.on) Mobile.swipeToClose(handle, ['down']);
     // On the phone a focused box would bring up the keyboard unasked.
     const target = focus ? box.querySelector(focus) : box.querySelector('.btn--primary, .btn--danger');
     if (target && !(sheet && target.matches('input'))) setTimeout(() => target.focus(), 0);

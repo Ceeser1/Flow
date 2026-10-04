@@ -5,7 +5,8 @@
 // Queue") and the next ones from the list playing (queue.js). A click on an
 // entry plays it now, its x takes it out, and a song can be dragged up or
 // down to another place in its own part (the grab handle shows in front of
-// the song under the pointer). It follows the player while it is open.
+// the song under the pointer; on the phone a finger takes it by the handle,
+// or held still on it). It follows the player while it is open.
 
 const QueueView = {
   modal: null,
@@ -33,6 +34,8 @@ const QueueView = {
     });
     Player.onChange(redraw);
     Store.onLibrary(redraw);
+    // On the phone it goes away swiped to either side, unless a song is held.
+    if (Mobile.on) Mobile.swipeToClose(this.modal, ['left', 'right'], () => !!(this.drag || this._held));
     this.draw();
   },
 
@@ -107,6 +110,10 @@ const QueueView = {
     h('span.queue__dur', Util.fmtClock(song.duration)),
     iconButton('act.act--red.queue__remove', Icons.x, 'Remove from the queue', () => Player.removeFromQueue(part, index)));
     row.addEventListener('pointerdown', (e) => this._press(e, row));
+    // The phone's own menu on a long press.
+    row.addEventListener('contextmenu', (e) => {
+      if (Mobile.on) e.preventDefault();
+    });
     return row;
   },
 
@@ -119,6 +126,60 @@ const QueueView = {
 
   _press(e, row) {
     if (e.button !== 0 || e.target.closest('button')) return;
+    // A finger moving straight away scrolls the list: it takes a song by its
+    // handle, or held still for a moment.
+    if (e.pointerType === 'touch' && !e.target.closest('.queue__grab')) this._hold(e, row);
+    else this._drag(e, row);
+  },
+
+  HOLD_MS: 350,
+
+  /**
+   * A finger held still on a song picks it up (a buzz says so); moved before
+   * that, it scrolls. Once held, the list does not scroll under it.
+   */
+  _hold(e, row) {
+    const start = { x: e.clientX, y: e.clientY };
+    const stopScroll = (ev) => {
+      if (ev.cancelable) ev.preventDefault();
+    };
+    const off = () => {
+      clearTimeout(timer);
+      row.removeEventListener('pointermove', moved);
+      row.removeEventListener('pointerup', off);
+      row.removeEventListener('pointercancel', off);
+    };
+    const moved = (ev) => {
+      if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 10) off();
+    };
+    const timer = setTimeout(() => {
+      off();
+      this._held = true;
+      if (navigator.vibrate) navigator.vibrate(15);
+      row.classList.add('queue__row--held');
+      row.addEventListener('touchmove', stopScroll, { passive: false });
+      const letGo = () => {
+        this._held = false;
+        row.classList.remove('queue__row--held');
+        row.removeEventListener('touchmove', stopScroll);
+        row.removeEventListener('pointerup', letGo);
+        row.removeEventListener('pointercancel', letGo);
+        // Held and let go without moving: not a tap that plays the song.
+        this._justDragged = true;
+        setTimeout(() => {
+          this._justDragged = false;
+        }, 400);
+      };
+      row.addEventListener('pointerup', letGo);
+      row.addEventListener('pointercancel', letGo);
+      this._drag(e, row);
+    }, this.HOLD_MS);
+    row.addEventListener('pointermove', moved);
+    row.addEventListener('pointerup', off);
+    row.addEventListener('pointercancel', off);
+  },
+
+  _drag(e, row) {
     const body = row.closest('.modal__body');
     const part = row.dataset.part;
     const rows = [...this.listEl.querySelectorAll(`.queue__row[data-part="${part}"]`)];

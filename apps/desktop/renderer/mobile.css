@@ -108,6 +108,19 @@ body.mobile .drawer-scrim {
   transition: opacity 0.22s;
 }
 body.mobile.drawer-open .drawer-scrim { opacity: 1; pointer-events: auto; }
+/* Pulled by a finger (Mobile._bindSwipes): out and following it, no slide of its own. */
+body.mobile.drawer-dragging .menu {
+  visibility: visible;
+  transition: none;
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.5);
+}
+body.mobile.drawer-dragging .drawer-scrim { transition: none; }
+/* Sideways moves are the swipes', never a scroll. */
+body.mobile #pages,
+body.mobile .menu,
+body.mobile .mbar,
+body.mobile .player.mp:not(.mp--open) { touch-action: pan-y; }
+body.mobile #pages { transition: transform 0.15s ease-out; }
 .drawer-scrim { display: none; }
 body.mobile .drawer-scrim { display: block; }
 
@@ -198,10 +211,10 @@ body.mobile .player.mp--open {
   inset: 0;
   z-index: 45;
   height: auto;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
   grid-template-rows: auto 1fr auto auto auto auto auto auto auto auto;
   grid-template-areas:
-    "collapse from queue"
+    "collapse from ."
     "cover cover cover"
     "text text text"
     "session session session"
@@ -246,7 +259,6 @@ body.mobile .mp--open #playerFrom {
   text-align: center;
 }
 
-body.mobile .mp--open #btnQueue { grid-area: queue; height: 36px; padding: 0 14px; border-radius: 18px; font-size: 14px; }
 
 body.mobile .mp--open #playerCover {
   grid-area: cover;
@@ -305,6 +317,18 @@ body.mobile .mp--open .sq-btn { width: 48px; height: 48px; border-radius: 12px; 
 body.mobile .mp--open .sq-btn__img { width: 22px; height: 22px; }
 body.mobile .mp--open .sleep-btn { width: 48px; height: 48px; border-radius: 12px; }
 body.mobile .mp--open .sleep-btn .icon { width: 22px; height: 22px; }
+/* The Queue: the fourth of the row, its picture only. */
+body.mobile .mp--open #btnQueue {
+  width: 48px;
+  height: 48px;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  background: none;
+}
+body.mobile .mp--open #btnQueue span { display: none; }
+body.mobile .mp--open #btnQueue .queue-btn__img { width: 22px; height: 22px; opacity: 0.72; }
 
 /* Only while controlling another device's volume: the phone's own is its buttons. */
 body.mobile .mp--open #volWrap { grid-area: vol; display: none; }
@@ -633,16 +657,23 @@ body.mobile .modal--settings {
   padding-bottom: var(--safe-bottom);
   background: var(--bg);
   touch-action: pan-y;
-  transition: transform 0.2s ease-out;
 }
 /* Settings comes from the left (where the drawer was) and goes back there:
-   with the X or Back, or after the finger that pulled it (Mobile.swipeLeftToClose). */
+   with the X or Back, or after the finger that pulled it (Mobile.swipeToClose).
+   Pulled out by a finger (modal--pulled), it comes where the finger takes it. */
 body.mobile .modal--settings.modal--drawer { animation: settings-in 0.22s ease-out; }
-body.mobile .modal-backdrop--out .modal--settings { animation: settings-out 0.2s ease-in forwards; }
-body.mobile .modal--settings.modal--sliding { transition: none; }
-body.mobile .modal-backdrop--out .modal--settings.modal--swiped { animation: none; }
+body.mobile .modal--settings.modal--drawer.modal--pulled { animation: none; }
+body.mobile .modal-backdrop--out .modal--settings.modal--drawer { animation: settings-out 0.2s ease-in forwards; }
 @keyframes settings-in { from { transform: translateX(-100%); } to { transform: none; } }
 @keyframes settings-out { from { transform: none; } to { transform: translateX(-100%); } }
+
+/* A popup that goes away under a finger (Mobile.swipeToClose): it follows the
+   finger, then slides on out from there (or back) by itself. */
+body.mobile .modal--swipeable,
+body.mobile .modal--pulled { transition: transform 0.2s ease-out; }
+body.mobile .modal--swipeable.modal--sliding,
+body.mobile .modal--pulled.modal--sliding { transition: none; }
+body.mobile .modal-backdrop--out .modal--swipeable.modal--swiped { animation: none; }
 
 /* ===== Settings: categories, each on its own screen ===== */
 
@@ -816,3 +847,10 @@ body.mobile .welcome__skip {
   color: var(--text-dim);
   font-size: 15px;
 }
+
+/* ===== the Queue's songs: dragged by the handle, or held still ===== */
+
+body.mobile .queue__row { min-height: 52px; }
+body.mobile .queue__grab { touch-action: none; align-self: stretch; align-items: center; width: 32px; }
+body.mobile .queue__row[data-part] .queue__grab img { opacity: 0.45; }
+body.mobile .queue__row--held { background: var(--glass-hi); }

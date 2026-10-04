@@ -238,7 +238,7 @@ const SettingsPanel = {
       this._backBtn = iconButton('modal__back', Icons.chevronLeft, 'Back', () => this.back());
       this._backBtn.hidden = true;
       modal.el.querySelector('.modal__head').prepend(this._backBtn);
-      Mobile.swipeLeftToClose(modal);
+      Mobile.swipeToClose(modal, ['left']);
     }
     this._refreshAll();
     this._drawStats();
