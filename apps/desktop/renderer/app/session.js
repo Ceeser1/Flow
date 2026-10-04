@@ -530,7 +530,7 @@ const Session = {
       title: song.title || '',
       artist: song.artist || '',
       mix: song.mix || '',
-      duration: Player.audio.duration || song.duration || 0,
+      duration: Player.engine.duration || song.duration || 0,
       playing: Player.isPlaying,
       position: Player.position,
       at: Date.now() + (Store.server.timeOffset || 0),

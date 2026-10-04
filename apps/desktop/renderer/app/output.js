@@ -125,11 +125,7 @@ const Output = {
     const chosen = this._chosen();
     const id = chosen ? chosen.deviceId : '';
     try {
-      if (Equalizer.ctx && Equalizer.ctx.setSinkId) {
-        if (Equalizer.ctx.sinkId !== id) await Equalizer.ctx.setSinkId(id);
-      } else {
-        for (const el of [Player.audio, Player.spare]) if (el.setSinkId && el.sinkId !== id) await el.setSinkId(id);
-      }
+      await Player.engine.setSink(id);
       const preview = $('previewAudio');
       if (preview.setSinkId && preview.sinkId !== id) await preview.setSinkId(id);
       this.current = id;
@@ -137,7 +133,7 @@ const Output = {
     } catch (err) {
       console.warn('Output device:', err);
       try {
-        if (Equalizer.ctx && Equalizer.ctx.setSinkId) await Equalizer.ctx.setSinkId('');
+        await Player.engine.setSink('');
       } catch {
         // The default it is, as before.
       }

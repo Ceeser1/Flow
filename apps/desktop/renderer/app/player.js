@@ -1,14 +1,13 @@
 'use strict';
 
-// The player bar at the bottom of every page, and the <audio> elements the
-// library plays through. The Add Songs preview has its own element; the two
-// never play at the same time (AudioFocus).
+// The player bar at the bottom of every page, and what the library plays: it
+// sounds through an audio engine (audioEngine.js). The Add Songs preview has
+// its own element; the two never play at the same time (AudioFocus).
 //
-// There are two library elements. `audio` is the song the bar shows; `spare`
-// plays the next song during a song transition (Settings): it starts a few
-// seconds before the current song ends, the two are faded over each other,
-// and only when the current song has really ended does the spare become
-// `audio` and the bar move on. Anything the user does in between (pause,
+// During a song transition (Settings) the engine plays two songs: the next
+// one starts a few seconds before the current song ends, the two are faded
+// over each other, and only when the current song has really ended does the
+// one coming in become the current one and the bar move on. Anything the user does in between (pause,
 // previous, seek, another song) calls the transition off; Next goes straight
 // into the song already coming in.
 //
@@ -51,8 +50,7 @@ const AudioFocus = {
 };
 
 const Player = {
-  audio: null,
-  spare: null,
+  engine: null,
   fade: null,       // the transition in progress: { id } of the song coming in
   queue: new PlayQueue(),
   // Equalize volume: every song is brought to this loudness, but turned up by
@@ -85,21 +83,21 @@ const Player = {
 
   get isPlaying() {
     if (this.remote) return !!this.remote.state.playing && !!this.currentId;
-    return !!this.audio && !this.audio.paused && !!this.currentId;
+    return !!this.engine && !this.engine.paused && !!this.currentId;
   },
 
   get position() {
     if (this.remote) return this._remotePosition();
     // Still loading a song that starts further in: where it is going to be.
     if (this._pendingSeek !== null) return this._pendingSeek;
-    return this.audio ? this.audio.currentTime || 0 : 0;
+    return this.engine ? this.engine.time || 0 : 0;
   },
 
   /** The current song's length: as the element knows it, or the library (or the host) says. */
   get duration() {
     if (!this.currentId) return 0;
     if (this.remote) return this.remote.state.duration || (Store.song(this.currentId) || {}).duration || 0;
-    return this.audio.duration || (Store.song(this.currentId) || {}).duration || 0;
+    return this.engine.duration || (Store.song(this.currentId) || {}).duration || 0;
   },
 
   onChange(fn) {
@@ -180,72 +178,59 @@ const Player = {
   },
 
   init() {
-    this.audio = $('mainAudio');
-    this.spare = $('fadeAudio');
+    this.engine = new HtmlAudioEngine($('mainAudio'), $('fadeAudio'));
     this.volume = Store.settings.volume;
-    // The equalizer puts itself between the elements and the speakers, and
-    // the volume then lives on its gain so the picture does not shrink with it.
-    Equalizer.attach([this.audio, this.spare]);
     this._applyVolume();
     this.queue.setShuffle(Store.settings.shuffle);
 
-    // Both elements get the same handlers, which only act for the one that is
-    // `audio` at the time: they swap at every transition.
-    const mine = (fn) => (e) => {
-      if (e.target === this.audio) fn(e);
-    };
-    for (const el of [this.audio, this.spare]) {
-      el.addEventListener('play', mine(() => {
-        AudioFocus.claim('player');
-        this._emit();
-      }));
-      el.addEventListener('pause', mine(() => {
-        this._savePosition();
-        this._emit();
-      }));
-      el.addEventListener('ended', mine(() => {
-        // Playing along with a host: its next song comes with its state.
-        if (this.remote) return;
-        if (this.fade) this._promote();
-        else if (this.repeat) this._restart();
-        else this._advance();
-      }));
-      el.addEventListener('timeupdate', mine(() => {
-        this._countListening();
-        this._drawTime();
-        this._maybeFade();
-      }));
-      // A jump is not listening: the next update starts counting afresh.
-      el.addEventListener('seeking', mine(() => {
-        if (this.session) this.session.lastT = null;
-      }));
-      el.addEventListener('durationchange', mine(() => this._drawTime()));
-      el.addEventListener('loadedmetadata', mine(() => {
-        const a = this.audio;
-        if (this.remote && this.remote.here) {
-          // Where the host is by now, not where it was when the song was asked for.
-          a.currentTime = Math.min(this._hereTarget(), Math.max(0, (a.duration || 0) - 0.5));
-          this._pendingSeek = null;
-        } else if (this._pendingSeek !== null) {
-          a.currentTime = Math.min(this._pendingSeek, Math.max(0, (a.duration || 0) - 0.5));
-          this._pendingSeek = null;
-        }
-        this._drawTime();
-      }));
-      el.addEventListener('error', (e) => {
-        // The song coming in cannot be played: no transition, the current one
-        // ends and Next tries it the ordinary way.
-        if (e.target !== this.audio) {
-          if (e.target.getAttribute('src')) this._cancelFade();
-          return;
-        }
-        if (!this.currentId || !this.audio.getAttribute('src')) return;
-        const song = Store.song(this.currentId);
-        const why = song && !song.file ? 'The server could not send it.' : 'The file may have been moved or deleted.';
-        toast(`Could not play "${song ? song.title : 'this song'}". ${why}`, 'error');
-        this._emit();
-      });
-    }
+    const e = this.engine;
+    e.on('play', () => {
+      AudioFocus.claim('player');
+      this._emit();
+    });
+    e.on('pause', () => {
+      this._savePosition();
+      this._emit();
+    });
+    e.on('ended', () => {
+      // Playing along with a host: its next song comes with its state.
+      if (this.remote) return;
+      if (this.fade) this._promote();
+      else if (this.repeat) this._restart();
+      else this._advance();
+    });
+    e.on('timeupdate', () => {
+      this._countListening();
+      this._drawTime();
+      this._maybeFade();
+    });
+    // A jump is not listening: the next update starts counting afresh.
+    e.on('seeking', () => {
+      if (this.session) this.session.lastT = null;
+    });
+    e.on('durationchange', () => this._drawTime());
+    e.on('loadedmetadata', () => {
+      const end = Math.max(0, (e.duration || 0) - 0.5);
+      if (this.remote && this.remote.here) {
+        // Where the host is by now, not where it was when the song was asked for.
+        e.seek(Math.min(this._hereTarget(), end));
+        this._pendingSeek = null;
+      } else if (this._pendingSeek !== null) {
+        e.seek(Math.min(this._pendingSeek, end));
+        this._pendingSeek = null;
+      }
+      this._drawTime();
+    });
+    e.on('error', () => {
+      if (!this.currentId || !e.loaded) return;
+      const song = Store.song(this.currentId);
+      const why = song && !song.file ? 'The server could not send it.' : 'The file may have been moved or deleted.';
+      toast(`Could not play "${song ? song.title : 'this song'}". ${why}`, 'error');
+      this._emit();
+    });
+    // The song coming in cannot be played: no transition, the current one
+    // ends and Next tries it the ordinary way.
+    e.on('fadefailed', () => this._cancelFade());
     AudioFocus.register('player', () => this.pauseHere());
 
     this._bindBar();
@@ -260,13 +245,13 @@ const Player = {
         // The host's song may be newer than this library: it shows from the host's state.
       } else if (this.currentId && !Store.song(this.currentId)) this.stop();
       else if (this.contextId && !Store.playlist(this.contextId) && !this.lists.has(this.contextId)) this.contextId = 'all';
-      if (this.currentId) this._setNorm(this.audio, this.currentId, true);
+      if (this.currentId) this.engine.setGain(this._normGain(this.currentId), true);
       this._drawBar();
     });
     Store.onSettings((patch) => {
       if (!('normalize' in patch)) return;
-      if (this.currentId) this._setNorm(this.audio, this.currentId, true);
-      if (this.fade) this._setNorm(this.spare, this.fade.id, true);
+      if (this.currentId) this.engine.setGain(this._normGain(this.currentId), true);
+      if (this.fade) this.engine.setIncomingGain(this._normGain(this.fade.id), true);
     });
 
     setInterval(() => {
@@ -329,9 +314,7 @@ const Player = {
     this.contextId = context;
     this.currentId = songId;
     this._pendingSeek = position > 0 ? position : null;
-    const playable = this._setSource(this.audio, song);
-    this._setNorm(this.audio, songId);
-    this._setFade(this.audio, 1);
+    const playable = this.engine.load(Store.audioSrc(song), this._normGain(songId));
     if (!playable && autoplay) {
       toast(`"${song.title}" is on the server, which cannot be reached right now, and is not downloaded.`, 'error');
     } else if (autoplay) this._play();
@@ -341,13 +324,10 @@ const Player = {
   },
 
   _play() {
-    const p = this.audio.play();
-    if (p && p.catch) {
-      p.catch((err) => {
-        if (err && err.name === 'AbortError') return; // replaced by another load
-        this._emit();
-      });
-    }
+    this.engine.play().catch((err) => {
+      if (err && err.name === 'AbortError') return; // replaced by another load
+      this._emit();
+    });
   },
 
   /**
@@ -364,7 +344,7 @@ const Player = {
       this.load(songId, contextId);
       return;
     }
-    if (!this.audio.paused) {
+    if (!this.engine.paused) {
       this.pause();
       return;
     }
@@ -402,7 +382,7 @@ const Player = {
       this.togglePlaylist(context);
       return;
     }
-    if (this.audio.paused) this._play();
+    if (this.engine.paused) this._play();
     else this.pause();
   },
 
@@ -414,7 +394,7 @@ const Player = {
   /** Pauses this device's own playback only (another player starting, the sleep timer). */
   pauseHere() {
     this._cancelFade();
-    if (this.audio && !this.audio.paused) this.audio.pause();
+    if (this.engine) this.engine.pause();
   },
 
   /** Next, pressed: another song started by hand, so Repeat goes off. */
@@ -449,7 +429,7 @@ const Player = {
   _restart() {
     this._endSession();
     this._startSession(this.currentId);
-    this.audio.currentTime = 0;
+    this.engine.seek(0);
     this._play();
   },
 
@@ -464,7 +444,7 @@ const Player = {
     if (id === this.currentId) {
       this._endSession();
       this._startSession(id);
-      this.audio.currentTime = 0;
+      this.engine.seek(0);
       this._emit();
       return;
     }
@@ -542,8 +522,8 @@ const Player = {
       return;
     }
     this._cancelFade();
-    const d = this.audio.duration || 0;
-    this.audio.currentTime = Math.max(0, Math.min(d ? d - 0.05 : seconds, seconds));
+    const d = this.engine.duration || 0;
+    this.engine.seek(Math.max(0, Math.min(d ? d - 0.05 : seconds, seconds)));
     this._drawTime();
     for (const fn of this._seekListeners) fn();
   },
@@ -582,9 +562,7 @@ const Player = {
   },
 
   _applyVolume() {
-    const v = this.volume * this.sleepFade;
-    for (const el of [this.audio, this.spare]) el.volume = Equalizer.active ? 1 : v;
-    if (Equalizer.active) Equalizer.setVolume(v);
+    this.engine.setVolume(this.volume * this.sleepFade);
   },
 
   // The sleep timer turns the music down over its last seconds (sleepTimer.js)
@@ -613,9 +591,7 @@ const Player = {
   stop() {
     this._cancelFade();
     this._endSession();
-    this.audio.pause();
-    this.audio.removeAttribute('src');
-    this.audio.load();
+    this.engine.unload();
     this.currentId = null;
     this._pendingSeek = null;
     this._savePosition();
@@ -633,9 +609,7 @@ const Player = {
     if (this.fade && (songId === this.fade.id || songId === this.currentId)) this._cancelFade();
     if (songId !== this.currentId) return null;
     const token = { songId, contextId: this.contextId, position: this.position, playing: this.isPlaying };
-    this.audio.pause();
-    this.audio.removeAttribute('src');
-    this.audio.load();
+    this.engine.unload();
     return token;
   },
 
@@ -682,9 +656,7 @@ const Player = {
     if (!this.remote) {
       this._cancelFade();
       this._endSession();
-      this.audio.pause();
-      this.audio.removeAttribute('src');
-      this.audio.load();
+      this.engine.unload();
       this._pendingSeek = null;
       this.remote = { state, sampledAt: 0, listKey: null, ticker: setInterval(() => this._remoteTick(), 250) };
     }
@@ -734,7 +706,7 @@ const Player = {
     const state = { ...this.remote.state, position: this._remotePosition() };
     if (keepAudio) {
       this.remote.hereSong = null;
-      this.audio.playbackRate = 1;
+      this.engine.setRate(1);
     } else this._stopHere();
     clearInterval(this.remote.ticker);
     this.remote = null;
@@ -766,10 +738,8 @@ const Player = {
     if (!r || !r.hereSong) return;
     r.hereSong = null;
     r.drift = null;
-    this.audio.pause();
-    this.audio.playbackRate = 1;
-    this.audio.removeAttribute('src');
-    this.audio.load();
+    this.engine.unload();
+    this.engine.setRate(1);
   },
 
   /**
@@ -789,7 +759,7 @@ const Player = {
     const r = this.remote;
     if (!r || !r.here) return;
     const st = r.state;
-    const a = this.audio;
+    const a = this.engine;
     const song = st.songId ? Store.song(st.songId) : null;
     if (!song) {
       // Nothing there, or a song this library does not know yet.
@@ -801,30 +771,28 @@ const Player = {
       r.hereSong = song.id;
       r.settleUntil = now + 800;
       r.correcting = false;
-      a.playbackRate = 1;
-      this._setSource(a, song);
-      this._setNorm(a, song.id);
-      this._setFade(a, 1);
+      a.setRate(1);
+      a.load(Store.audioSrc(song), this._normGain(song.id));
       if (st.playing) this._play();
       return;
     }
     if (!st.playing) {
-      if (!a.paused) a.pause();
-      a.playbackRate = 1;
+      a.pause();
+      a.setRate(1);
       r.drift = null;
-      if (a.readyState >= 1 && Math.abs(a.currentTime - st.position) > 0.25) a.currentTime = st.position;
+      if (a.readyState >= 1 && Math.abs(a.time - st.position) > 0.25) a.seek(st.position);
       return;
     }
     if (a.readyState < 2) return;
     if (a.paused) {
-      a.currentTime = this._hereTarget() + (r.seekLead || 0);
+      a.seek(this._hereTarget() + (r.seekLead || 0));
       r.settleUntil = now + 800;
       r.jumped = true;
       this._play();
       return;
     }
     if (now < r.settleUntil) return;
-    const drift = a.currentTime - this._hereTarget();
+    const drift = a.time - this._hereTarget();
     r.drift = drift;
     if (r.jumped) {
       // How far behind the last jump landed: the next one goes that much further.
@@ -832,9 +800,9 @@ const Player = {
       r.seekLead = Math.max(0, Math.min(0.5, (r.seekLead || 0) - drift));
     }
     if (Math.abs(drift) > this.SYNC_JUMP) {
-      a.playbackRate = 1;
+      a.setRate(1);
       r.correcting = false;
-      a.currentTime = this._hereTarget() + (r.seekLead || 0);
+      a.seek(this._hereTarget() + (r.seekLead || 0));
       r.settleUntil = now + 800;
       r.jumped = true;
       return;
@@ -842,9 +810,9 @@ const Player = {
     // Eased in from SYNC_OK on, until within a third of it.
     if (Math.abs(drift) > this.SYNC_OK) r.correcting = true;
     else if (Math.abs(drift) < this.SYNC_OK / 3) r.correcting = false;
-    a.playbackRate = r.correcting
+    a.setRate(r.correcting
       ? Math.max(1 - this.SYNC_RATE, Math.min(1 + this.SYNC_RATE, 1 - drift))
-      : 1;
+      : 1);
   },
 
   /**
@@ -854,7 +822,7 @@ const Player = {
   endRemote({ keepPlaying = false } = {}) {
     const r = this.remote;
     // Playing along already: that goes on without loading it again (the server may be gone).
-    const along = keepPlaying && !!r && r.here && r.hereSong === r.state.songId && !this.audio.paused;
+    const along = keepPlaying && !!r && r.here && r.hereSong === r.state.songId && !this.engine.paused;
     const state = this._leaveRemote({ keepAudio: along });
     if (!state) return;
     if (along) this._adopt(state);
@@ -885,10 +853,10 @@ const Player = {
    */
   _maybeFade() {
     const s = Store.settings;
-    if (this.remote || this.fade || this.repeat || !s.crossfade || !Equalizer.active || !this.currentId || this.audio.paused) return;
-    const d = this.audio.duration;
+    if (this.remote || this.fade || this.repeat || !s.crossfade || !this.engine.canFade || !this.currentId || this.engine.paused) return;
+    const d = this.engine.duration;
     if (!d || !Number.isFinite(d)) return;
-    const left = d - this.audio.currentTime;
+    const left = d - this.engine.time;
     let length = Math.min(s.crossfadeSeconds, d / 3);
     if (left > length || left < 0.2) return;
     const id = this.queue.peek(this.idsOf(this.contextId));
@@ -900,55 +868,11 @@ const Player = {
     this._startFade(id, song, left);
   },
 
-  /**
-   * Points an audio element at a song: its file, or its stream from the
-   * server. A stream is asked for with CORS, or the Web Audio graph behind
-   * the equalizer would only hear silence. False when there is nothing to
-   * play it from.
-   */
-  _setSource(el, song) {
-    const src = Store.audioSrc(song);
-    if (/^https?:/i.test(src)) el.crossOrigin = 'anonymous';
-    else el.removeAttribute('crossorigin');
-    if (src) {
-      el.src = src;
-      return true;
-    }
-    el.removeAttribute('src');
-    el.load();
-    return false;
-  },
-
   _startFade(id, song, seconds) {
-    if (!Store.audioSrc(song)) return;
-    const incoming = this.spare;
+    const src = Store.audioSrc(song);
+    if (!src) return;
     this.fade = { id };
-    this._setSource(incoming, song);
-    this._setNorm(incoming, id);
-    // Equal power: the two together stay as loud as one all the way across.
-    const n = 64;
-    const down = new Float32Array(n);
-    const up = new Float32Array(n);
-    for (let i = 0; i < n; i += 1) {
-      const x = (i / (n - 1)) * (Math.PI / 2);
-      down[i] = Math.cos(x);
-      up[i] = Math.sin(x);
-    }
-    const out = Equalizer.channel(this.audio).fade.gain;
-    const inn = Equalizer.channel(incoming).fade.gain;
-    const t = Equalizer.ctx.currentTime;
-    out.cancelScheduledValues(t);
-    inn.cancelScheduledValues(t);
-    inn.value = 0;
-    try {
-      out.setValueCurveAtTime(down, t + 0.02, seconds);
-      inn.setValueCurveAtTime(up, t + 0.02, seconds);
-    } catch {
-      out.linearRampToValueAtTime(0, t + seconds);
-      inn.linearRampToValueAtTime(1, t + seconds);
-    }
-    const p = incoming.play();
-    if (p && p.catch) p.catch(() => this._cancelFade());
+    this.engine.fadeIn(src, this._normGain(id), seconds);
   },
 
   /** The current song has ended (or Next was pressed): the one coming in takes over. */
@@ -956,24 +880,15 @@ const Player = {
     const f = this.fade;
     if (!f) return;
     this.fade = null;
-    const old = this.audio;
-    const incoming = this.spare;
     this._endSession();
-    this.audio = incoming;
-    this.spare = old;
-    old.pause();
-    old.removeAttribute('src');
-    old.load();
-    this._holdFade(incoming, 1, 0.05);
-    this._setFade(old, 1);
+    // What played of it during the transition counts as listened.
+    const heard = this.engine.promote();
     this.queue.take(f.id, this.idsOf(this.contextId));
     this.currentId = f.id;
-    // What played of it during the transition counts as listened.
-    const heard = incoming.currentTime || 0;
     this._startSession(f.id, heard);
     this.session.lastT = heard;
     this._pendingSeek = null;
-    if (incoming.paused) this._play();
+    if (this.engine.paused) this._play();
     this._updateMediaSession();
     this._savePosition();
     this._emit();
@@ -983,30 +898,7 @@ const Player = {
   _cancelFade() {
     if (!this.fade) return;
     this.fade = null;
-    const b = this.spare;
-    b.pause();
-    b.removeAttribute('src');
-    b.load();
-    this._holdFade(this.audio, 1, 0.08);
-  },
-
-  _setFade(el, value) {
-    const ch = Equalizer.channel(el);
-    if (!ch) return;
-    const t = Equalizer.ctx.currentTime;
-    ch.fade.gain.cancelScheduledValues(t);
-    ch.fade.gain.setValueAtTime(value, t);
-  },
-
-  /** Stops a fade where it is and glides to `value` from there. */
-  _holdFade(el, value, glide) {
-    const ch = Equalizer.channel(el);
-    if (!ch) return;
-    const g = ch.fade.gain;
-    const t = Equalizer.ctx.currentTime;
-    if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(t);
-    else g.cancelScheduledValues(t);
-    g.setTargetAtTime(value, t, glide);
+    this.engine.cancelFade();
   },
 
   // ---- equalize volume ----
@@ -1017,17 +909,6 @@ const Player = {
     if (!Store.settings.normalize || !song || song.loudness === null || song.loudness === undefined) return 1;
     const db = Math.max(-this.MAX_CUT_DB, Math.min(this.MAX_BOOST_DB, this.TARGET_LUFS - song.loudness));
     return 10 ** (db / 20);
-  },
-
-  _setNorm(el, songId, smooth = false) {
-    const ch = Equalizer.channel(el);
-    if (!ch) return;
-    const g = this._normGain(songId);
-    const t = Equalizer.ctx.currentTime;
-    if (Math.abs(ch.norm.gain.value - g) < 0.001) return;
-    ch.norm.gain.cancelScheduledValues(t);
-    if (smooth) ch.norm.gain.setTargetAtTime(g, t, 0.3);
-    else ch.norm.gain.setValueAtTime(g, t);
   },
 
   // ---- listening statistics ----
@@ -1042,8 +923,8 @@ const Player = {
     if (this.remote) return;
     const s = this.session;
     if (!s || s.songId !== this.currentId) return;
-    const t = this.audio.currentTime || 0;
-    if (!this.audio.paused && s.lastT !== null) {
+    const t = this.engine.time || 0;
+    if (!this.engine.paused && s.lastT !== null) {
       const step = t - s.lastT;
       // Updates come about four times a second; anything bigger is a jump.
       if (step > 0 && step < 1.5) s.listened += step;
@@ -1051,7 +932,7 @@ const Player = {
     s.lastT = t;
     // The length as played, for a song whose length is not known yet (one a
     // Flow Server found in its folder without ffprobe).
-    if (Number.isFinite(this.audio.duration)) s.duration = this.audio.duration;
+    if (Number.isFinite(this.engine.duration)) s.duration = this.engine.duration;
   },
 
   /** Counts the listen in progress (the song is changing) and forgets it. */
