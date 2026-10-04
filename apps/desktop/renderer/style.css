@@ -1935,25 +1935,33 @@ div.import__frame-head { cursor: default; }
 }
 .sq-btn--on:hover { background: rgba(120, 200, 140, 0.3); }
 
+/* The Sleep Timer's moon, drawn like Shuffle and Repeat (.sq-btn): no
+   border until a timer runs, then the same rounded box in amber. */
 .sleep-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-bright);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  background: var(--glass);
-  color: var(--grey);
+  justify-content: center;
   cursor: pointer;
-  white-space: nowrap;
-  font-size: 12px;
+  flex: none;
+  opacity: 0.72;
 }
 
-.sleep-btn:hover { color: var(--text-bright); border-color: #50505a; background: var(--glass-hi); }
-.sleep-btn .icon { width: 14px; height: 14px; }
-.sleep-btn--on { color: var(--amber); border-color: rgba(224, 176, 112, 0.5); background: rgba(224, 176, 112, 0.1); }
-.sleep-btn--on:hover { color: #f0c888; border-color: rgba(224, 176, 112, 0.7); background: rgba(224, 176, 112, 0.18); }
+.sleep-btn:hover { opacity: 1; background: var(--glass-hi); }
+.sleep-btn .icon { width: 17px; height: 17px; }
+.sleep-btn--on {
+  opacity: 1;
+  color: var(--amber);
+  background: rgba(224, 176, 112, 0.2);
+  border-color: rgba(224, 176, 112, 0.55);
+}
+.sleep-btn--on:hover { background: rgba(224, 176, 112, 0.3); }
 
 .player__volume {
   display: flex;
@@ -2005,18 +2013,14 @@ div.import__frame-head { cursor: default; }
 
 /* A narrow window: the main buttons closer together and a shorter volume
    slider without its number, so both sides keep their buttons
-   (after the rules they change). Narrower still: Sleep Timer is its moon. */
+   (after the rules they change). */
 @media (max-width: 1180px) {
   .player__buttons { gap: 8px; }
   .volume-slider { width: 72px; }
   .vol-value { display: none; }
-  .sq-btn { width: 28px; height: 28px; }
+  .sq-btn,
+  .sleep-btn { width: 28px; height: 28px; }
   .player__extras { gap: 4px; }
-}
-
-@media (max-width: 1080px) {
-  .sleep-btn { padding: 0 7px; }
-  .sleep-btn span { display: none; }
 }
 
 /* ===== popups ===== */

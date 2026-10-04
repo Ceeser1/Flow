@@ -2,7 +2,8 @@
 
 // The player bar's Sleep Timer. The popup offers 15, 30, 45 or 60 minutes or
 // a time of one's own, and "Shut down my PC" 5 minutes after it runs out.
-// While it runs the button reads "Cancel Timer" and "Time Left" counts down
+// The button is a moon. While it runs the moon turns amber (a click cancels
+// it) and "Time Left" counts down
 // above the timeline; over the last seconds the music fades out, then pauses.
 //
 // The shutdown is handed to Windows when the timer starts (main.js), so it
@@ -96,7 +97,7 @@ const SleepTimer = {
     }
   },
 
-  /** Cancel Timer: the timer and any planned shutdown are off. */
+  /** The amber moon clicked: the timer and any planned shutdown are off. */
   async cancel() {
     const s = this.state;
     this._stop();
@@ -164,7 +165,7 @@ const SleepTimer = {
     this._save(s);
     this._draw();
     this._notify(`The music has stopped. Your PC shuts down at ${Util.fmtTimeOfDay(s.shutdownAt)}. `
-      + 'To stop that, open Flow and press "Cancel Timer".');
+      + 'To stop that, open Flow and click the moon (Sleep Timer).');
   },
 
   _notify(text) {
@@ -177,11 +178,12 @@ const SleepTimer = {
 
   _draw() {
     const on = !!this.state;
-    $('btnSleep').innerHTML = `${Icons.moon}<span>${on ? 'Cancel Timer' : 'Sleep Timer'}</span>`;
+    $('btnSleep').innerHTML = Icons.moon;
     $('btnSleep').classList.toggle('sleep-btn--on', on);
     $('btnSleep').title = on
       ? (this.state.shutdownAt ? 'Cancel the sleep timer and the planned shutdown' : 'Cancel the sleep timer')
-      : 'Stop the music after a while';
+      : 'Sleep Timer: stop the music after a while';
+    $('btnSleep').setAttribute('aria-label', $('btnSleep').title);
     $('player').classList.toggle('player--sleep', on);
     $('sleepLeft').hidden = !on;
     this._drawLeft();

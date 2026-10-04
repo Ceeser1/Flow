@@ -304,9 +304,8 @@ body.mobile .mp--open .mp__extras {
 }
 body.mobile .mp--open .sq-btn { width: 48px; height: 48px; border-radius: 12px; }
 body.mobile .mp--open .sq-btn__img { width: 22px; height: 22px; }
-body.mobile .mp--open .sleep-btn { height: 40px; padding: 0 16px; border-radius: 20px; font-size: 14px; }
-body.mobile .mp--open .sleep-btn span { display: inline; }
-body.mobile .mp--open .sleep-btn .icon { width: 16px; height: 16px; }
+body.mobile .mp--open .sleep-btn { width: 48px; height: 48px; border-radius: 12px; }
+body.mobile .mp--open .sleep-btn .icon { width: 22px; height: 22px; }
 
 /* Only while controlling another device's volume: the phone's own is its buttons. */
 body.mobile .mp--open #volWrap { grid-area: vol; display: none; }

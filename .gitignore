@@ -8,8 +8,9 @@ dist/
 # README for where they come from.
 tools/
 
-# Personal launcher, kept only on this PC.
+# Personal launchers, kept only on this PC.
 start.bat
+start-android.bat
 
 # Personal list of server commands, kept only on this PC.
 commands.txt

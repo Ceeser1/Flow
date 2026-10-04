@@ -147,7 +147,7 @@ const PlaylistPage = {
   },
 
   /**
-   * Top right of the title: your own playlist gets "Share with others" (the
+   * Top right of the title: your own playlist gets "Share" (the
    * other profiles on the server can see and follow it); one another profile
    * shares gets "Follow". Both need a server with profiles.
    */
@@ -164,7 +164,7 @@ const PlaylistPage = {
     btn.title = mine
       ? 'Let the other profiles on this server see this playlist and follow it'
       : `Follow this playlist: it shows in the menu under Followed Playlists`;
-    btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span><span>${mine ? 'Share with others' : 'Following'}</span>`;
+    btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span><span>${mine ? 'Share' : 'Following'}</span>`;
   },
 
   /**
