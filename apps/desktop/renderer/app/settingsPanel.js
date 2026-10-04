@@ -53,6 +53,7 @@ const SettingsPanel = {
       if (!this.modal) return;
       this._drawMeasured();
       this._drawCovers();
+      this._drawStorage();
     });
     Store.onServer(() => {
       if (this.modal) this._drawServer();
@@ -249,6 +250,7 @@ const SettingsPanel = {
     this._drawStats();
     this._drawMeasured();
     this._drawCovers();
+    this._drawStorage();
     this._drawServer();
     // Profiles made or renamed on other devices since.
     if (Store.server.on && Store.server.state === 'online') window.flow.profiles().catch(() => {});
@@ -359,7 +361,8 @@ const SettingsPanel = {
 
   /**
    * The phone app's own: Check for Updates, the songs kept on the phone, and
-   * help for playing on with the screen off. Not built yet (v3.0, Stage 8).
+   * help for playing on with the screen off. Updates and the help are not
+   * built yet (v3.0, Stage 8).
    */
   _appRows() {
     const later = () => toast('Not ready yet', 'info');
@@ -370,11 +373,7 @@ const SettingsPanel = {
         desc: `Flow ${Store.version || ''}`.trim(),
         right: h('button.btn.btn--small', { type: 'button', onclick: later }, 'Check'),
       }),
-      this._row({
-        label: 'Storage',
-        desc: 'The songs kept on this phone, and how much room they take.',
-        right: h('span.settings__note', '-'),
-      }),
+      this._storageRow(),
       this._row({
         label: 'Playing with the screen off',
         desc: 'How to keep the phone from stopping Flow in the background.',
@@ -1011,6 +1010,51 @@ const SettingsPanel = {
       h('div.settings__label.settings__label--plain', 'Covers'),
       h('div.settings__desc', 'Covers are found by the client or server.'));
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._coversNode, this._clearCovers)));
+  },
+
+  /** The phone's songs and their room; Remove downloads deletes the server's songs kept here. */
+  _storageRow() {
+    this._storageNode = h('span.settings__note');
+    this._removeDownloads = h('button.btn.btn--small', {
+      type: 'button',
+      onclick: () => this._removeAllDownloads(),
+    }, 'Remove downloads');
+    const left = h('div.settings__left',
+      h('div.settings__label.settings__label--plain', 'Storage'),
+      h('div.settings__desc', 'The songs kept on this phone, and how much room they take. Remove downloads deletes '
+        + 'the Flow Server\'s songs kept here and unmarks every playlist\'s Download; they still play from the server.'));
+    return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._storageNode, this._removeDownloads)));
+  },
+
+  async _drawStorage() {
+    if (!this._storageNode || !window.flow.storageStats) return;
+    try {
+      const st = await window.flow.storageStats();
+      if (!this._storageNode) return;
+      const parts = [`${Util.plural(st.songs, 'song')} · ${fmtBytes(st.bytes)}`];
+      if (st.downloaded && st.downloaded < st.songs) parts.push(`${st.downloaded} downloaded`);
+      this._storageNode.textContent = parts.join(', ');
+      this._removeDownloads.hidden = !Store.server.on || !(st.downloaded || (Store.server.offline || []).length);
+    } catch {
+      this._storageNode.textContent = '';
+    }
+  },
+
+  async _removeAllDownloads() {
+    const ok = await confirmDialog({
+      title: 'Remove downloads?',
+      message: 'The Flow Server\'s songs kept on this phone are deleted here, and no playlist is downloaded any more. '
+        + 'They stay on the server and play from there while it can be reached.',
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
+    await attempt(async () => {
+      const r = await window.flow.removeAllDownloads();
+      toast(r.inUse ? `Removed ${Util.plural(r.removed, 'song')}; ${r.inUse} playing now ${r.inUse === 1 ? 'goes' : 'go'} later`
+        : `Removed ${Util.plural(r.removed, 'song')} from this phone`, 'success');
+    });
+    this._drawStorage();
   },
 
   async _drawCovers() {

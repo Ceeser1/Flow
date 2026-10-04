@@ -7,7 +7,8 @@
 // The table stays in the page, empty and hidden, so its id still finds the
 // list (the list is the element after it).
 //
-// mobile: { lead(row), title(row), sub(row), tap(row), more(row) -> buttons,
+// mobile: { lead(row), title(row), sub(row), mark(row) -> an icon's html at the
+//           start of the line below, tap(row), more(row) -> buttons,
 //           side(row) -> a node in place of More, sheetTitle(row),
 //           select: { actions: [{ icon, label, kind, run(rows) }] } }
 
@@ -54,6 +55,7 @@ const TouchList = {
     const extra = opts.rowClass ? opts.rowClass(row) : '';
     const node = h('div.mrow' + (extra ? '.' + extra.split(' ').filter(Boolean).join('.') : ''), { dataset: { id: key } });
     const sub = opts.sub ? opts.sub(row) : '';
+    const mark = opts.mark ? opts.mark(row) : '';
     let end = opts.side ? opts.side(row) : null;
     const items = !end && opts.more ? opts.more(row) : null;
     if (items && items.length) {
@@ -64,7 +66,8 @@ const TouchList = {
     node.append(...[
       h('span.mrow__check', { html: Icons.check }),
       opts.lead ? opts.lead(row) : null,
-      h('div.mrow__text', h('div.mrow__title', opts.title(row)), sub ? h('div.mrow__sub', sub) : null),
+      h('div.mrow__text', h('div.mrow__title', opts.title(row)),
+        sub || mark ? h('div.mrow__sub', mark ? h('span.mrow__mark', { html: mark }) : null, sub) : null),
       end,
     ].filter(Boolean));
     if (chosen && chosen.has(key)) node.classList.add('mrow--chosen');

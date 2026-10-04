@@ -2256,6 +2256,31 @@ function createRemote(env) {
     refreshView();
   }
 
+  /**
+   * Every download goes: no playlist is marked for download any more, no song
+   * kept by hand, and the copies fetched from the server are deleted (songs
+   * that began here stay, and so does one still to go up). Resolves how many
+   * were deleted, and how many are in use (playing) and stay for now.
+   */
+  async function removeAllDownloads() {
+    if (!active()) throw new Error('Tick "Use a Flow Server" first.');
+    sync.offline = [];
+    sync.offlineKeep = {};
+    sync.kept = {};
+    saveSync();
+    emitStatus();
+    let removed = 0;
+    let inUse = 0;
+    for (const lid of Object.keys(sync.fetched)) {
+      const sid = sync.songMap[lid];
+      if (sync.queue.some((c) => c.type === 'upload' && (c.localId === lid || c.songId === sid))) continue;
+      if (await forgetLocal(lid, { deleteFile: true })) removed += 1;
+      else inUse += 1;
+    }
+    refreshView();
+    return { removed, inUse };
+  }
+
   /** The local copy of a server song, if there is one. */
   function localFileOf(songId) {
     const copy = localCopies().get(songId);
@@ -2475,7 +2500,7 @@ function createRemote(env) {
     init, active, reconfigure, setSecret, stop,
     coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
     trimSong, trimmedHere, songPeaks, newCutId,
-    status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, pushNew, pushImport, deleteSong, localFileOf, sessions, leaveSession,
+    status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, pushNew, pushImport, deleteSong, localFileOf, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, deleteProfile,
   };
 }

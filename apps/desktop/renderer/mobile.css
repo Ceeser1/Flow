@@ -501,6 +501,9 @@ body.mobile .mrow__sub { overflow: hidden; text-overflow: ellipsis; white-space:
 body.mobile .mrow__title { color: var(--text-bright); font-size: 16px; }
 body.mobile .mrow__sub { margin-top: 2px; color: var(--text-dim); font-size: 13.5px; }
 body.mobile .mrow.row--current .mrow__title { color: var(--green); }
+/* A song kept on the phone: a small golden arrow before the artist. */
+body.mobile .mrow__mark { display: inline-flex; vertical-align: -2px; margin-right: 4px; color: #f5be3c; }
+body.mobile .mrow__mark svg { width: 14px; height: 14px; }
 
 body.mobile .mrow__more,
 body.mobile .mrow > .act {
@@ -640,6 +643,10 @@ body.mobile .pl-head__row { gap: 10px; }
 body.mobile .pl-meta { flex: 1 1 100%; font-size: 14px; }
 body.mobile .pl-head__row .toggle,
 body.mobile .pl-head__row .btn--play { height: 44px; border-radius: 22px; font-size: 15px; }
+/* Download: only its icon, golden while the playlist is kept on the phone. */
+body.mobile #plOffline { width: 44px; padding: 0; justify-content: center; }
+body.mobile #plOffline .icon { width: 20px; height: 20px; }
+body.mobile #plOffline.toggle--on { color: #f5be3c; border-color: rgba(245, 190, 60, 0.5); background: rgba(245, 190, 60, 0.16); }
 body.mobile #plPlay { margin-left: auto; padding: 0 24px 0 20px; }
 body.mobile .pl-search-row { flex-wrap: wrap; gap: 6px; }
 body.mobile .pl-search-row .search-box { flex: 1 1 100%; height: 44px; }

@@ -42,8 +42,7 @@ const ANDROID = {
   keyboard: false,
   localTrim: false,
   moveOriginals: false,
-  // Until the phone downloads songs itself (v3.0, Stage 5).
-  offline: false,
+  offline: true,
   updateCheck: true,
   volume: false,
   // The phone's player fades from one song to the next itself (setTransition).

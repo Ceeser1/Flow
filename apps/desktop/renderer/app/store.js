@@ -47,6 +47,11 @@ const Store = {
     return this.caps[cap] !== false;
   },
 
+  /** The device as the window names it: "this phone" or "this computer". */
+  get here() {
+    return this.platform === 'android' ? 'this phone' : 'this computer';
+  },
+
   onLibrary(fn) {
     this._listeners.push(fn);
   },
@@ -79,7 +84,7 @@ const Store = {
     return Covers.src(song);
   },
 
-  /** Whether a playlist's songs are kept on this computer (server playlists marked for download). */
+  /** Whether a playlist's songs are kept here (server playlists marked for download). */
   isOffline(playlistId) {
     return !!this.server.on && (this.server.offline || []).includes(playlistId);
   },

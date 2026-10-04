@@ -14,7 +14,7 @@ const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES } = require('@flow/core/formats');
-const { plugin, audio, fileUrl } = require('./native');
+const { plugin, audio, fileUrl, fs } = require('./native');
 const { createAudioEngine, fileAddressToPath } = require('./engine');
 const { createEnv } = require('./env');
 const { version } = require('../package.json');
@@ -194,6 +194,8 @@ function start() {
     setOffline: call((playlistId, isOn) => remote.setOffline(playlistId, !!isOn)),
     downloadServerSong: call((songId) => remote.downloadSong(songId)),
     removeServerDownload: call((songId) => remote.removeDownload(songId)),
+    /** Settings > Storage's Remove: every download (as remote.removeAllDownloads). */
+    removeAllDownloads: call(() => remote.removeAllDownloads()),
     profiles: call(() => remote.loadProfiles()),
     profileLogin: call((profileId, pin) => remote.loginProfile(profileId, pin)),
     profileCreate: call((name, pin) => remote.createProfile(name, pin)),
@@ -221,6 +223,23 @@ function start() {
     // The phone's own (no desktop counterpart).
     /** A file in the app's storage as an address for <img> and <audio> (Util.fileUrl). */
     fileUrl,
+    /**
+     * Settings > Storage: the songs kept on the phone and their bytes, those
+     * downloaded from the server apart ({ songs, bytes, downloaded, downloadedBytes }).
+     */
+    storageStats: call(() => {
+      const out = { songs: 0, bytes: 0, downloaded: 0, downloadedBytes: 0 };
+      for (const s of library.get().songs) {
+        const size = Math.max(0, fs.size(s.file));
+        out.songs += 1;
+        out.bytes += size;
+        if (remote.isServerCopy(s.id)) {
+          out.downloaded += 1;
+          out.downloadedBytes += size;
+        }
+      }
+      return out;
+    }),
     /** Back pressed (the button or the gesture): fn decides what it closes. */
     onBack: (fn) => plugin.addListener('back', () => fn()),
     /** Back with nothing left to close: Flow goes to the background. */

@@ -141,6 +141,18 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.equal(remote.localFileOf('roads1'), roadsFile);
   });
 
+  await t.test('every download removed at once: the songs that began here stay', async () => {
+    await remote.downloadSong('glory1');
+    await remote.setOffline(model.ALL_SONGS_ID, true);
+    const copy = remote.localFileOf('glory1');
+    assert.ok(copy);
+    assert.deepEqual(await remote.removeAllDownloads(), { removed: 1, inUse: 0 });
+    assert.deepEqual(remote.status().offline, []);
+    assert.equal(remote.localFileOf('glory1'), null);
+    assert.equal(fs.existsSync(copy), false);
+    assert.equal(remote.localFileOf('roads1'), roadsFile);
+  });
+
   await t.test('the live channel opens, and Active Sessions answer', async () => {
     await until(() => remote.status().live, 'the live channel');
     assert.ok(live.includes('hello'));

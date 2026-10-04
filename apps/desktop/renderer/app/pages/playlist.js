@@ -31,8 +31,25 @@ const PlaylistPage = {
     $('plPlay').onclick = () => Player.togglePlaylist(this.id);
     $('plOffline').onclick = async () => {
       const on = !Store.isOffline(this.id);
-      // All Songs is the whole library: ask before it starts coming down.
-      if (on && this.id === 'all') {
+      // The phone's is only an icon: it asks either way, what it is about to do.
+      if (Store.uiMode === 'mobile') {
+        const p = Store.playlist(this.id);
+        const total = Store.rowsOf(this.id).length;
+        const name = this.id === 'all' ? 'All Songs' : (p ? p.name : 'this playlist');
+        const ok = await confirmDialog(on ? {
+          title: 'Download',
+          message: `Download all ${Util.plural(total, 'song')} of ${name} to ${Store.here}? New songs of it come down too.`,
+          confirmLabel: 'Download',
+        } : {
+          title: 'Stop downloading',
+          message: `${name} is no longer kept on ${Store.here}: its downloaded songs are deleted here `
+            + '(except those another download holds). They still play from the server.',
+          confirmLabel: 'Delete downloads',
+          danger: true,
+        });
+        if (!ok) return;
+      } else if (on && this.id === 'all') {
+        // All Songs is the whole library: ask before it starts coming down.
         const total = Store.library.songs.length;
         const ok = await confirmDialog({
           title: 'Download all songs',
@@ -168,7 +185,7 @@ const PlaylistPage = {
   },
 
   /**
-   * With a Flow Server: Download keeps a playlist's songs on this computer
+   * With a Flow Server: Download keeps a playlist's songs on this device
    * too, and says how many have arrived. For All Songs, playlists of your own
    * and ones you follow; each then follows the server (new songs come, deleted
    * ones go).
@@ -185,12 +202,19 @@ const PlaylistPage = {
     const on = Store.isOffline(this.id);
     btn.classList.toggle('toggle--on', on);
     btn.setAttribute('aria-pressed', String(on));
-    btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.download}<span>Download</span>`;
+    if (Store.uiMode === 'mobile') {
+      // Only the icon on the phone, golden while the playlist is kept here.
+      btn.innerHTML = Icons.download;
+      btn.title = on ? `Downloaded to ${Store.here}` : `Download to ${Store.here}`;
+      btn.setAttribute('aria-label', btn.title);
+    } else {
+      btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.download}<span>Download</span>`;
+    }
     const rows = Store.rowsOf(this.id);
     const here = rows.filter((r) => r.song.file).length;
     note.textContent = !rows.length ? ''
-      : here === rows.length ? (on ? 'All downloaded' : `All ${rows.length} on this computer`)
-        : on ? `${here} of ${rows.length} downloaded` : here ? `${here} of ${rows.length} on this computer` : '';
+      : here === rows.length ? (on ? 'All downloaded' : `All ${rows.length} on ${Store.here}`)
+        : on ? `${here} of ${rows.length} downloaded` : here ? `${here} of ${rows.length} on ${Store.here}` : '';
   },
 
   renderTable() {
@@ -278,6 +302,14 @@ const PlaylistPage = {
         for (const r of rows) if (!r.song.favouriteAt) await window.flow.setFavourite(r.song.id, true);
       }) },
     ];
+    // With a Flow Server: the chosen songs kept on the phone too.
+    const offline = Store.server.on && Store.can('offline');
+    if (offline) {
+      actions.push({ icon: Icons.download, label: 'Download', short: 'Download', run: (rows) => {
+        // Choosing ends at once; the songs come down one after another.
+        this.downloadSongs(rows.map((r) => r.song));
+      } });
+    }
     if (listId === 'all') {
       actions.push({ icon: Icons.x, label: 'Delete Songs', short: 'Delete', kind: 'danger', run: (rows) => this.deleteSongs(rows.map((r) => r.song)) });
     } else if (!smartList && listId !== FAVOURITES_ID && !readOnly) {
@@ -293,6 +325,8 @@ const PlaylistPage = {
         const line = [r.song.artist, r.song.mix ? `(${r.song.mix})` : ''].filter(Boolean).join(' - ');
         return smartList && this._from(r.song) ? `${line} · ${this._from(r.song)}` : line;
       },
+      // A song kept here (downloaded from the server).
+      mark: (r) => (offline && r.song.file ? Icons.download : ''),
       sheetTitle: (r) => Util.songLine(r.song),
       tap: (r) => this._playFromTitle(r.song),
       side: (r) => (pickTarget ? this._pickButton(r.song, pickTarget, pickSet) : null),
@@ -401,16 +435,37 @@ const PlaylistPage = {
   _downloadButton(song) {
     const on = !!song.file;
     return iconButton(on ? 'act.act--dl.act--dl-on' : 'act.act--dl', Icons.download,
-      on ? 'Downloaded: click to delete it from this PC' : 'Download',
+      // On the phone the label is a line of its action sheet.
+      on ? (Store.uiMode === 'mobile' ? `Delete from ${Store.here}` : `Downloaded: click to delete it from ${Store.here}`) : 'Download',
       () => attempt(async () => {
         if (on) {
           await window.flow.removeServerDownload(song.id);
-          toast(`Deleted "${song.title}" from this PC`, 'success');
+          toast(`Deleted "${song.title}" from ${Store.here}`, 'success');
         } else {
           await window.flow.downloadServerSong(song.id);
           toast(`Downloaded "${song.title}"`, 'success');
         }
       }));
+  },
+
+  /** The phone's Download for the songs chosen: one after another, those not here yet. */
+  async downloadSongs(songs) {
+    const todo = songs.filter((s) => !s.file);
+    if (!todo.length) {
+      toast(`${songs.length === 1 ? 'It is' : 'They are'} on ${Store.here} already`, 'info');
+      return;
+    }
+    let done = 0;
+    for (const s of todo) {
+      try {
+        await window.flow.downloadServerSong(s.id);
+        done += 1;
+      } catch (err) {
+        toast(err.message, 'error');
+        break;
+      }
+    }
+    if (done) toast(`Downloaded ${Util.plural(done, 'song')}`, 'success');
   },
 
   /** An empty green star, or a filled golden one for a favourite; a click turns it over. */
