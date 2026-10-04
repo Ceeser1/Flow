@@ -8,12 +8,14 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
 
+import androidx.annotation.OptIn;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 
@@ -61,6 +63,8 @@ import java.util.List;
  * headphones are pulled out, and keeps the CPU and Wi-Fi awake while it plays.
  * Everything here runs on the main thread, as ExoPlayer wants.
  */
+// Media3 marks the audio session and its sink "unstable": used knowingly (the loudness boost).
+@OptIn(markerClass = UnstableApi.class)
 final class FlowPlayer {
     /** What the page hears; every event carries the id of the song it is about. */
     interface Events {

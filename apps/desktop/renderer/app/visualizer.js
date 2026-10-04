@@ -164,7 +164,7 @@ const Visualizer = {
     // Flow draws nothing of its own: the layer is see-through, over the
     // window's background, and only there for the X and the pointer.
     this.canvas = flow ? null : h('canvas.viz-full__canvas');
-    const close = iconButton('viz-full__close', Icons.x, 'Close (Esc)', () => this.close());
+    const close = iconButton('viz-full__close', Icons.x, Store.can('keyboard') ? 'Close (Esc)' : 'Close', () => this.close());
     this.el = h('div.viz-full' + (flow ? '.viz-full--flow' : ''), this.canvas, close);
     if (!Equalizer.active && !flow) {
       this.el.appendChild(h('p.viz-full__note', 'The visualizer needs Web Audio, which could not be started on this computer.'));

@@ -1241,7 +1241,8 @@ const Player = {
     $('playerFromName').textContent = from;
     const playing = this.isPlaying;
     $('btnPlay').innerHTML = playing ? Icons.pause : Icons.play;
-    $('btnPlay').title = playing ? 'Pause (Space)' : 'Play (Space)';
+    // The key's name only where there is a keyboard (TalkBack reads the title on the phone).
+    $('btnPlay').title = (playing ? 'Pause' : 'Play') + (Store.can('keyboard') ? ' (Space)' : '');
     for (const id of ['btnPrev', 'btnNext', 'btnBack10', 'btnFwd10']) $(id).disabled = !song;
     const toggles = [['btnShuffle', this.queue.shuffle, 'Shuffle'], ['btnRepeat', this.repeat, 'Repeat this song']];
     for (const [id, on, label] of toggles) {

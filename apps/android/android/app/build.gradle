@@ -20,8 +20,26 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // The release key, never in the repo: C:/Users/Ceeser/FlowSigning (or the
+    // keystore.properties FLOW_SIGNING names) with storeFile, storePassword,
+    // keyAlias, keyPassword. Every release must be signed with this same key,
+    // or phones cannot update Flow. See apps/android/README.md.
+    def signingFile = file(System.getenv('FLOW_SIGNING') ?: "${System.getProperty('user.home')}/FlowSigning/keystore.properties")
+    if (signingFile.exists()) {
+        def signing = new Properties()
+        signingFile.withInputStream { signing.load(it) }
+        signingConfigs {
+            release {
+                storeFile file(signing.storeFile)
+                storePassword signing.storePassword
+                keyAlias signing.keyAlias
+                keyPassword signing.keyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signingFile.exists()) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

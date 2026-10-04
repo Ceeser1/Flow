@@ -1,6 +1,7 @@
 package io.github.ceeser1.flow;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
@@ -24,12 +25,14 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResult;
+import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -911,6 +914,106 @@ public class FlowNative extends Plugin {
                 extractor.release();
             }
         });
+    }
+
+    // ---- updates ----
+
+    /**
+     * Hands the APK at `path` (in the app's cache) to Android's installer,
+     * which asks before it installs. Flow may only do that once allowed to
+     * ("Install unknown apps"): until then its setting opens instead (unless
+     * `ask` is false). Resolves { allowed, started }.
+     */
+    @PluginMethod
+    public void installApk(PluginCall call) {
+        Context ctx = getContext();
+        boolean ask = !Boolean.FALSE.equals(call.getBoolean("ask", true));
+        File apk;
+        String cache;
+        try {
+            apk = new File(call.getString("path", "")).getCanonicalFile();
+            cache = ctx.getCacheDir().getCanonicalPath() + File.separator;
+        } catch (IOException e) {
+            call.reject("No such update.");
+            return;
+        }
+        if (!apk.getPath().startsWith(cache) || !apk.isFile()) {
+            call.reject("No such update.");
+            return;
+        }
+        getActivity().runOnUiThread(() -> {
+            JSObject r = new JSObject();
+            if (Build.VERSION.SDK_INT >= 26 && !ctx.getPackageManager().canRequestPackageInstalls()) {
+                if (ask) start(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + ctx.getPackageName())));
+                r.put("allowed", false);
+                r.put("started", false);
+                call.resolve(r);
+                return;
+            }
+            Uri uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".fileprovider", apk);
+            Intent install = new Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            r.put("allowed", true);
+            r.put("started", start(install));
+            call.resolve(r);
+        });
+    }
+
+    // ---- playing with the screen off ----
+
+    /**
+     * How Android treats Flow in the background: { unrestricted (exempt from
+     * battery optimisation: Samsung's "Unrestricted"), restricted (background
+     * use stopped: Samsung's "Restricted" or a sleeping app), maker }.
+     */
+    @PluginMethod
+    public void power(PluginCall call) {
+        Context ctx = getContext();
+        PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+        JSObject r = new JSObject();
+        r.put("unrestricted", pm != null && pm.isIgnoringBatteryOptimizations(ctx.getPackageName()));
+        boolean restricted = false;
+        if (Build.VERSION.SDK_INT >= 28) {
+            ActivityManager am = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
+            restricted = am != null && am.isBackgroundRestricted();
+        }
+        r.put("restricted", restricted);
+        r.put("maker", Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase(Locale.ROOT));
+        call.resolve(r);
+    }
+
+    /**
+     * Android's own question "Let Flow always run in the background?" (battery
+     * optimisation off); where a phone has no such question, its list of them.
+     * Resolves { shown }.
+     */
+    @PluginMethod
+    public void allowBackground(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            String pkg = getContext().getPackageName();
+            boolean shown = start(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + pkg)));
+            if (!shown) shown = start(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+            JSObject r = new JSObject();
+            r.put("shown", shown);
+            call.resolve(r);
+        });
+    }
+
+    /** Flow's page in Android's settings (App info: its Battery, its notifications). */
+    @PluginMethod
+    public void appSettings(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            JSObject r = new JSObject();
+            r.put("shown", start(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName()))));
+            call.resolve(r);
+        });
+    }
+
+    /** Back in Flow (from Android's settings, another app): "resume". */
+    @Override
+    protected void handleOnResume() {
+        notifyListeners("resume", new JSObject());
     }
 
     @Override

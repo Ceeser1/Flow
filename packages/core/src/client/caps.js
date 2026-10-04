@@ -32,6 +32,8 @@ const DESKTOP = {
   songTransition: true,
   // Equalize volume measures Local Files songs here (ffmpeg); elsewhere only a server's are.
   measureLoudness: true,
+  // Help with an OS that stops apps in the background to save battery (Settings, once by itself).
+  batteryHelp: false,
 };
 
 const ANDROID = {
@@ -50,6 +52,7 @@ const ANDROID = {
   // The phone's player fades from one song to the next itself (setTransition).
   songTransition: true,
   measureLoudness: false,
+  batteryHelp: true,
 };
 
 module.exports = { DESKTOP, ANDROID };

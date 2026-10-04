@@ -27,6 +27,8 @@ fs.cpSync(path.join(desktop, 'images'), path.join(www, 'images'), {
   filter: (src) => !src.endsWith('.psd'),
 });
 bundle(path.join(www, 'flow-android.js'));
+// First of all: a WebView too old for Flow says so (web/webview-check.js).
+fs.copyFileSync(path.join(__dirname, '..', 'web', 'webview-check.js'), path.join(www, 'webview-check.js'));
 
 const indexFile = path.join(www, 'index.html');
 let html = fs.readFileSync(indexFile, 'utf8');
@@ -34,6 +36,6 @@ const csp = /(<meta http-equiv="Content-Security-Policy"\s+content=")[^"]*(")/;
 const firstScript = /<script src="app\//;
 if (!csp.test(html) || !firstScript.test(html)) throw new Error('index.html changed: its CSP or its first script was not found.');
 html = html.replace(csp, `$1${CSP}$2`);
-html = html.replace(firstScript, '<script src="flow-android.js"></script>\n$&');
+html = html.replace(firstScript, '<script src="webview-check.js"></script>\n<script src="flow-android.js"></script>\n$&');
 fs.writeFileSync(indexFile, html);
-console.log('www/ built from apps/desktop/renderer and images, with flow-android.js');
+console.log('www/ built from apps/desktop/renderer and images, with webview-check.js and flow-android.js');

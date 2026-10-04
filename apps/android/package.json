@@ -1,11 +1,12 @@
 {
   "name": "flow-android",
-  "version": "2.10.1",
+  "version": "3.0.0",
   "description": "Flow for Android: the desktop renderer in a Capacitor shell",
   "private": true,
   "scripts": {
     "web": "node scripts/build-web.js",
     "sync": "node scripts/build-web.js && cap sync android",
+    "release": "node scripts/release.js",
     "open": "cap open android",
     "test": "node --test"
   },

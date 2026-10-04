@@ -45,6 +45,8 @@
   Keys.init();
   Mobile.init();
   Welcome.init();
+  Updates.init();
+  BackgroundHelp.init();
 
   window.flow.onLibraryChanged((lib) => Store.setLibrary(lib));
   window.flow.onServerStatus((st) => Store.setServer(st));

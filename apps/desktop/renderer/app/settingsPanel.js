@@ -84,7 +84,7 @@ const SettingsPanel = {
         key: 'crossfade',
         label: 'Song Transition',
         desc: 'Smoothly transition between songs for the set time.',
-        right: this._slider({ key: 'crossfadeSeconds', min: 0.1, max: 10, step: 0.1, format: (v) => `${v.toFixed(1)} s`, when: () => Store.settings.crossfade }),
+        right: this._slider({ key: 'crossfadeSeconds', name: 'Song Transition length', min: 0.1, max: 10, step: 0.1, format: (v) => `${v.toFixed(1)} s`, when: () => Store.settings.crossfade }),
       }) : null,
       this._row({
         key: 'normalize',
@@ -215,14 +215,14 @@ const SettingsPanel = {
         desc: 'How far the edge flash and its fade-out reach, and how bright it starts at the edges.',
         sub: true,
         when: () => Store.settings.flashOn,
-        right: this._slider({ key: 'flashRange', when: () => Store.settings.flashOn }),
+        right: this._slider({ key: 'flashRange', name: 'Flash range', when: () => Store.settings.flashOn }),
       }),
 
       h('h3.settings__section', 'Music Visualizer'),
       this._visualizerRow(),
       ] : []),
 
-      ...(Store.can('updateCheck') ? this._appRows() : []),
+      ...(Store.can('updateCheck') || Store.can('batteryHelp') ? this._appRows() : []),
     ]));
 
     // The phone's Settings comes in from the left, where the drawer it is
@@ -365,21 +365,45 @@ const SettingsPanel = {
    * built yet (v3.0, Stage 8).
    */
   _appRows() {
-    const later = () => toast('Not ready yet', 'info');
     return [
       h('h3.settings__section', 'App'),
-      this._row({
-        label: 'Check for Updates',
-        desc: `Flow ${Store.version || ''}`.trim(),
-        right: h('button.btn.btn--small', { type: 'button', onclick: later }, 'Check'),
-      }),
+      Store.can('updateCheck') ? this._updateRow() : null,
       this._storageRow(),
-      this._row({
+      Store.can('batteryHelp') ? this._row({
         label: 'Playing with the screen off',
         desc: 'How to keep the phone from stopping Flow in the background.',
-        right: h('button.btn.btn--small', { type: 'button', onclick: later }, 'Show'),
-      }),
+        right: h('button.btn.btn--small', { type: 'button', onclick: () => BackgroundHelp.open() }, 'Show'),
+      }) : null,
     ];
+  },
+
+  /** Check for Updates: always looks; a newer Flow found earlier shows below it, with its Update. */
+  _updateRow() {
+    const desc = h('div');
+    const check = h('button.btn.btn--small', {
+      type: 'button',
+      onclick: async () => {
+        check.disabled = true;
+        try {
+          await Updates.check();
+        } finally {
+          check.disabled = false;
+        }
+      },
+    }, 'Check');
+    const draw = () => {
+      const found = Updates.found;
+      clear(desc);
+      desc.append(h('div', `Flow ${Store.version || ''}`.trim()));
+      if (found) {
+        desc.append(h('div.settings__update',
+          h('span', `Flow ${found.version} is available. `),
+          h('button.link-btn', { type: 'button', onclick: () => Updates.ask(found) }, 'Update')));
+      }
+    };
+    draw();
+    this._refresh.push(draw);
+    return this._row({ label: 'Check for Updates', desc, right: check });
   },
 
   _row({ key, label, desc, right = null, sub = false, when = null, show = null }) {
@@ -409,8 +433,9 @@ const SettingsPanel = {
   },
 
   /** A slider with its value beside it. Percent 1-100 unless told otherwise. */
-  _slider({ key, label = '', min = 1, max = 100, step = 1, format = (v) => `${Math.round(v)}%`, when }) {
-    const input = h('input.volume-slider.settings__slider', { type: 'range', min, max, step, value: Store.settings[key] });
+  _slider({ key, label = '', name = label, min = 1, max = 100, step = 1, format = (v) => `${Math.round(v)}%`, when }) {
+    // `name`: what a screen reader calls it (its label when it shows one).
+    const input = h('input.volume-slider.settings__slider', { type: 'range', min, max, step, value: Store.settings[key], 'aria-label': name || null });
     const value = h('span.settings__value');
     const draw = () => {
       const v = Number(input.value);

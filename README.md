@@ -556,7 +556,7 @@ sets it, and with it set Electron starts as plain Node.
 packages/core/   shared by every Flow app: plain Node, no Electron
 apps/desktop/    the Electron app (Windows now, Linux from the same code)
 apps/server/     Flow Server: hosts a library for the apps (see its README)
-apps/android/    the Android app, planned
+apps/android/    the Android app (v3.0, a Flow Server client; see its README)
 ```
 
 `packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,

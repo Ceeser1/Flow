@@ -458,6 +458,7 @@ const AddPage = {
     this._drawVolume(Player.volume);
 
     $('previewPlay').onclick = () => this.togglePreview();
+    this._drawPreviewButton();
     this.audio.addEventListener('play', () => {
       AudioFocus.claim('preview');
       this._drawPreviewButton();
@@ -615,7 +616,7 @@ const AddPage = {
   _drawPreviewButton() {
     const playing = !this.audio.paused;
     $('previewPlay').innerHTML = playing ? Icons.pause : Icons.play;
-    $('previewPlay').title = playing ? 'Pause (Space)' : 'Play (Space)';
+    $('previewPlay').title = (playing ? 'Pause' : 'Play') + (Store.can('keyboard') ? ' (Space)' : '');
   },
 
   // ---- the preview ----

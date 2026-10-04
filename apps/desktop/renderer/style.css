@@ -2833,3 +2833,10 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 .server-state--online { color: var(--green); }
 .server-state--error { color: var(--red); }
 .server-state > div + div { color: var(--text-dim); }
+
+/* Updates (updates.js) and playing with the screen off (backgroundHelp.js): the phone's. */
+.settings__update { margin-top: 4px; color: var(--green); }
+.update__progress { font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.bg-help__status { margin: 4px 0 10px; padding-left: 10px; border-left: 3px solid var(--red); line-height: 1.5; }
+.bg-help__status--good { border-left-color: var(--green); }
+.bg-help__buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
