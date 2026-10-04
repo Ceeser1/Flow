@@ -9,14 +9,17 @@
 // What the phone cannot do (Add Songs' own downloads, the music folder, the
 // shutdown) answers "not on the phone"; the window hides those controls by
 // its caps (@flow/core/client/caps), so they are not offered in the first place.
+// Local files go through localFiles.js.
 
 const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES } = require('@flow/core/formats');
-const { plugin, audio, fileUrl, fs } = require('./native');
+const { plugin, audio, fileUrl, fs, path, info } = require('./native');
 const { createAudioEngine, fileAddressToPath } = require('./engine');
 const { createEnv } = require('./env');
+const { createLocalFiles } = require('./localFiles');
+const ask = require('./ask');
 const { version } = require('../package.json');
 
 // ---- events to the window (the preload's on* calls) ----
@@ -66,9 +69,29 @@ function start() {
     onNotice: (text, kind) => emit('server:notice', { text, kind }),
     onSettings: (patch) => emit('settings:changed', patch),
     onLive: (ev) => emit('server:live', ev),
-    // Songs of the phone's own going up to a server: the phone keeps none yet.
-    confirmUpload: async () => false,
-    askExisting: async () => ({ choice: 'keep', all: true }),
+    // Songs of the phone's own going up to a server, asked in the window (ask.js).
+    confirmUpload: (q) => ask.upload(q),
+    askExisting: (q) => ask.existing(q),
+  });
+
+  // Files picked wait here until saved; what a closed Flow left behind goes.
+  const stageDir = path.join(info().files, 'Import');
+  try {
+    if (fs.exists(stageDir)) fs.remove(stageDir, { recursive: true });
+  } catch {
+    // Tried again at the next start.
+  }
+  const local = createLocalFiles({
+    plugin,
+    fs,
+    path,
+    stageDir,
+    library,
+    covers,
+    exporter: env.exporter,
+    remote,
+    progress: (p, run) => emit('import:progress', { ...p, run }),
+    onStaged: (staged) => emit('cover:staged', staged),
   });
 
   // ---- the calls ----
@@ -160,18 +183,19 @@ function start() {
     moveMusicFolder: notHere('Moving the music folder'),
     onFolderProgress: nothing,
 
-    // Add Songs on the phone downloads through the server ("Download (Server)").
+    // Add Songs on the phone downloads through the server ("Download (Server)");
+    // local files are its own (localFiles.js).
     probe: notHere('Downloading on the phone'),
     listImport: notHere('Importing on the phone'),
     downloadImport: notHere('Importing on the phone'),
-    pickLocalFiles: notHere('Adding files'),
-    pickLocalFolder: notHere('Adding a folder'),
-    listLocal: notHere('Adding files'),
-    prepareLocal: notHere('Adding files'),
-    finishImport: notHere('Importing on the phone'),
+    pickLocalFiles: call(() => local.pick(false)),
+    pickLocalFolder: call(() => local.pick(true)),
+    listLocal: call((picked) => local.listLocal(picked)),
+    prepareLocal: call((items, opts, run) => local.prepareLocal(items, run)),
+    finishImport: call((job, run) => local.finish(job, (p) => emit('import:progress', { ...p, run }))),
     setImportPending: call(nothing),
-    cancelImport: call(nothing),
-    onImportProgress: nothing,
+    cancelImport: call(() => local.cancel()),
+    onImportProgress: on('import:progress'),
     openUrl: call((url) => {
       if (/^https:\/\//i.test(String(url || ''))) return plugin.openUrl({ url: String(url) });
       return undefined;
@@ -183,7 +207,7 @@ function start() {
     notifySession: call(() => false),
     download: notHere('Downloading on the phone'),
     cancelDownload: call(nothing),
-    discardDownload: call(nothing),
+    discardDownload: call((cachePath) => local.discard(cachePath)),
     onDownloadProgress: nothing,
     peaks: notHere('Reading a file\'s waveform'),
     sponsorSegments: call(() => []),
@@ -217,8 +241,8 @@ function start() {
     coverStats: call(() => ({ local: covers.localStore().size(), server: remote.active() ? remote.coverStats() : null })),
     clearCoverCache: call(() => remote.clearCoverCache()),
     onCoversUpdated: on('covers:updated'),
-    stagedCover: call(() => null),
-    onCoverStaged: nothing,
+    stagedCover: call((cachePath) => local.stagedCover(cachePath)),
+    onCoverStaged: on('cover:staged'),
 
     // The phone's own (no desktop counterpart).
     /** A file in the app's storage as an address for <img> and <audio> (Util.fileUrl). */

@@ -30,6 +30,8 @@ const DESKTOP = {
   volume: true,
   // Song Transition: the next song faded in over the end of this one.
   songTransition: true,
+  // Equalize volume measures Local Files songs here (ffmpeg); elsewhere only a server's are.
+  measureLoudness: true,
 };
 
 const ANDROID = {
@@ -47,6 +49,7 @@ const ANDROID = {
   volume: false,
   // The phone's player fades from one song to the next itself (setTransition).
   songTransition: true,
+  measureLoudness: false,
 };
 
 module.exports = { DESKTOP, ANDROID };

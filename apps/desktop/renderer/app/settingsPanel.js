@@ -1077,7 +1077,7 @@ const SettingsPanel = {
     this._measuredNode.textContent = !songs.length ? ''
       : done >= songs.length ? (songs.length === 1 ? 'The song is measured' : `All ${songs.length} songs measured`)
         // With a server, songs only streamed are measured by the server (with ffmpeg).
-        : `${done} of ${songs.length} songs measured${Store.settings.normalize && !Store.server.on ? '...' : ''}`;
+        : `${done} of ${songs.length} songs measured${Store.settings.normalize && !Store.server.on && Store.can('measureLoudness') ? '...' : ''}`;
   },
 
   _openFolder() {

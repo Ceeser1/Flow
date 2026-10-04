@@ -5,8 +5,9 @@
 // discovery, through "Use a Flow Server" turned on with no Home address) and
 // connects to the one it finds. Found none: the address (and the password, if
 // the server has one) is typed in. Once connected, a server with profiles
-// opens Settings' Flow Server screen to pick one. "Not now" leaves an empty
-// Flow; Settings connects later.
+// opens Settings' Flow Server screen to pick one. "Songs on this phone"
+// opens Add Songs' file picker instead; "Not now" leaves an empty Flow;
+// Settings connects later.
 //
 // Only in the phone's layout; the desktop starts with Local Files.
 
@@ -43,7 +44,8 @@ const Welcome = {
       h('label.welcome__label', h('span', 'Password'), this._password),
       this._connectBtn,
       h('p.welcome__hint', 'The Flow Server shows its address when it starts, and on its page in the browser.'),
-      h('button.btn.welcome__again', { type: 'button', onclick: () => this.search() }, 'Look on this network again'));
+      h('button.btn.welcome__again', { type: 'button', onclick: () => this.search() }, 'Look on this network again'),
+      h('button.btn.welcome__again', { type: 'button', onclick: () => this.localFiles() }, 'Add songs from this phone'));
     this.el = h('div.welcome', { role: 'dialog', 'aria-label': 'Welcome to Flow' },
       h('div.welcome__inner',
         h('img.welcome__icon', { src: 'assets/icon.png', alt: '' }),
@@ -84,6 +86,13 @@ const Welcome = {
       if (pw) await window.flow.setServerSecret(pw);
       await Store.saveSettings({ serverOn: true, serverHome: address });
     });
+  },
+
+  /** No server: the songs on the phone, picked on Add Songs. */
+  localFiles() {
+    this.skip();
+    Nav.show('add');
+    AddPage.openLocal(false);
   },
 
   skip() {

@@ -53,8 +53,9 @@ function createEnv({ tellCovers }) {
     write: (value) => writeJson(file('settings.json'), value),
   });
 
-  // Local Files: songs kept on the phone. Empty until the phone keeps songs
-  // of its own (downloads for offline, files added); nothing to scan.
+  // Local Files: songs kept on the phone, downloaded from a server or added
+  // from the phone's own files (localFiles.js). Only Flow puts files in its
+  // Music folder, so there is nothing to scan.
   const library = createLocalLibrary({
     read: () => readJson(file('library.json')),
     write: (data) => writeJson(file('library.json'), data),

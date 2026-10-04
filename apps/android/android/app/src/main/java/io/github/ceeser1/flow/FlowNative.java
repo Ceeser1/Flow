@@ -1,30 +1,41 @@
 package io.github.ceeser1.flow;
 
+import android.app.Activity;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
+import android.media.MediaMetadataRetriever;
 import android.media.MediaRoute2Info;
 import android.media.MediaRouter2;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
 import android.provider.Settings;
 
 import androidx.activity.OnBackPressedCallback;
+import androidx.activity.result.ActivityResult;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -38,10 +49,13 @@ import java.net.NetworkInterface;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -54,11 +68,20 @@ import java.util.concurrent.Executors;
  * Back button to the page ("back"), which closes what is open or, with nothing
  * left, calls leave(). Where the sound comes out: output() names it,
  * chooseOutput() opens Android's own chooser, "outputChanged" says it changed.
+ * Songs of the phone's own: pickAudio() lets the user pick files or a folder,
+ * importAudio() copies one into Flow's storage and reads its names and cover,
+ * upload() sends a file to a server.
  */
 @CapacitorPlugin(name = "FlowNative")
 public class FlowNative extends Plugin {
     private static final int DISCOVERY_PORT = 7878;
     private static final byte[] DISCOVER = "{\"app\":\"flow-discover\",\"v\":1}".getBytes(StandardCharsets.UTF_8);
+    // What Flow plays as it is (@flow/core/formats AUDIO_EXTS); no ffmpeg on the phone to make anything else playable.
+    private static final List<String> AUDIO_EXTS = Arrays.asList("mp3", "m4a", "aac", "opus", "ogg", "oga", "flac", "wav");
+    // A folder is looked through for at most this many songs (as the desktop's localScan MAX_FILES).
+    private static final int MAX_FILES = 2000;
+    // Covers are squares this big (@flow/core/cover SIZE).
+    private static final int COVER_SIZE = 512;
 
     private final ExecutorService work = Executors.newCachedThreadPool();
 
@@ -348,6 +371,349 @@ public class FlowNative extends Plugin {
             result.put("answers", answers);
             result.put("own", own);
             call.resolve(result);
+        });
+    }
+
+    // ---- songs of the phone's own ----
+
+    /**
+     * Android's picker: audio files (several), or with `folder` a folder, looked
+     * through for audio files (at most MAX_FILES). Resolves { items: [{ uri,
+     * name, size }], name (the folder's), truncated }, or { cancelled: true }.
+     */
+    @PluginMethod
+    public void pickAudio(PluginCall call) {
+        Intent intent;
+        if (call.getBoolean("folder", false)) {
+            intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            startActivityForResult(call, intent, "pickedFolder");
+        } else {
+            intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("audio/*");
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            startActivityForResult(call, intent, "pickedFiles");
+        }
+    }
+
+    private static JSObject cancelledPick() {
+        JSObject r = new JSObject();
+        r.put("cancelled", true);
+        return r;
+    }
+
+    @ActivityCallback
+    private void pickedFiles(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        Intent data = result.getData();
+        if (result.getResultCode() != Activity.RESULT_OK || data == null) {
+            call.resolve(cancelledPick());
+            return;
+        }
+        List<Uri> uris = new ArrayList<>();
+        if (data.getClipData() != null) {
+            for (int i = 0; i < data.getClipData().getItemCount(); i++) uris.add(data.getClipData().getItemAt(i).getUri());
+        } else if (data.getData() != null) {
+            uris.add(data.getData());
+        }
+        work.execute(() -> {
+            JSArray items = new JSArray();
+            ContentResolver cr = getContext().getContentResolver();
+            for (Uri uri : uris) {
+                String name = "";
+                long size = -1;
+                try (Cursor c = cr.query(uri, new String[] { OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE }, null, null, null)) {
+                    if (c != null && c.moveToFirst()) {
+                        name = c.isNull(0) ? "" : c.getString(0);
+                        size = c.isNull(1) ? -1 : c.getLong(1);
+                    }
+                } catch (RuntimeException e) {
+                    // Named by its address below.
+                }
+                JSObject it = new JSObject();
+                it.put("uri", uri.toString());
+                it.put("name", name.isEmpty() ? uri.getLastPathSegment() : name);
+                it.put("size", size);
+                items.put(it);
+            }
+            JSObject r = new JSObject();
+            r.put("items", items);
+            r.put("name", "");
+            r.put("truncated", false);
+            call.resolve(r);
+        });
+    }
+
+    @ActivityCallback
+    private void pickedFolder(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        Intent data = result.getData();
+        if (result.getResultCode() != Activity.RESULT_OK || data == null || data.getData() == null) {
+            call.resolve(cancelledPick());
+            return;
+        }
+        Uri tree = data.getData();
+        work.execute(() -> {
+            JSArray items = new JSArray();
+            boolean[] truncated = { false };
+            String rootId = DocumentsContract.getTreeDocumentId(tree);
+            String name = "";
+            try (Cursor c = getContext().getContentResolver().query(DocumentsContract.buildDocumentUriUsingTree(tree, rootId),
+                    new String[] { DocumentsContract.Document.COLUMN_DISPLAY_NAME }, null, null, null)) {
+                if (c != null && c.moveToFirst() && !c.isNull(0)) name = c.getString(0);
+            } catch (RuntimeException e) {
+                // Unnamed.
+            }
+            walk(tree, rootId, items, truncated, 0);
+            JSObject r = new JSObject();
+            r.put("items", items);
+            r.put("name", name);
+            r.put("truncated", truncated[0]);
+            call.resolve(r);
+        });
+    }
+
+    /** The audio files in a picked folder, then those of the folders in it, A to Z within each. */
+    private void walk(Uri tree, String parentId, JSArray items, boolean[] truncated, int depth) {
+        if (depth > 12 || truncated[0]) return;
+        List<String[]> dirs = new ArrayList<>();
+        List<JSObject> found = new ArrayList<>();
+        String[] cols = {
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE,
+        };
+        try (Cursor c = getContext().getContentResolver().query(DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId), cols, null, null, null)) {
+            while (c != null && c.moveToNext()) {
+                String id = c.getString(0);
+                String name = c.isNull(1) ? "" : c.getString(1);
+                String mime = c.isNull(2) ? "" : c.getString(2);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
+                    if (!name.startsWith(".")) dirs.add(new String[] { id, name });
+                    continue;
+                }
+                if (!AUDIO_EXTS.contains(extOf(name))) continue;
+                JSObject it = new JSObject();
+                it.put("uri", DocumentsContract.buildDocumentUriUsingTree(tree, id).toString());
+                it.put("name", name);
+                it.put("size", c.isNull(3) ? -1 : c.getLong(3));
+                found.add(it);
+            }
+        } catch (RuntimeException e) {
+            return;
+        }
+        found.sort((a, b) -> a.getString("name", "").compareToIgnoreCase(b.getString("name", "")));
+        for (JSObject it : found) {
+            if (items.length() >= MAX_FILES) {
+                truncated[0] = true;
+                return;
+            }
+            items.put(it);
+        }
+        dirs.sort((a, b) -> a[1].compareToIgnoreCase(b[1]));
+        for (String[] d : dirs) walk(tree, d[0], items, truncated, depth + 1);
+    }
+
+    private static String extOf(String name) {
+        int i = name.lastIndexOf('.');
+        return i <= 0 ? "" : name.substring(i + 1).toLowerCase(Locale.ROOT);
+    }
+
+    /** The kind of file by its type, for a picked file whose name says nothing. */
+    private static String extOfMime(String mime) {
+        switch (mime == null ? "" : mime.toLowerCase(Locale.ROOT)) {
+            case "audio/mpeg": case "audio/mp3": return "mp3";
+            case "audio/mp4": case "audio/x-m4a": case "audio/m4a": return "m4a";
+            case "audio/aac": case "audio/aacp": return "aac";
+            case "audio/flac": case "audio/x-flac": return "flac";
+            case "audio/ogg": case "application/ogg": return "ogg";
+            case "audio/opus": return "opus";
+            case "audio/wav": case "audio/x-wav": case "audio/wave": return "wav";
+            default: return "";
+        }
+    }
+
+    /** True for a file in Flow's own storage (its files or its cache). */
+    private boolean ours(File f) throws IOException {
+        String p = f.getCanonicalPath();
+        String files = getContext().getFilesDir().getCanonicalPath() + File.separator;
+        String cache = getContext().getCacheDir().getCanonicalPath() + File.separator;
+        return p.startsWith(files) || p.startsWith(cache);
+    }
+
+    /**
+     * A picked file (`uri`) copied to `stem` + its extension in Flow's storage,
+     * with what its tags say, and its picture (when it has one) as a square
+     * JPEG at `cover`. Resolves { path, format, title, artist, album,
+     * duration (s), cover (true when written), bytes }. A file that is no
+     * audio, or of a kind Flow cannot play, is refused and not kept.
+     */
+    @PluginMethod
+    public void importAudio(PluginCall call) {
+        String uri = call.getString("uri", "");
+        String stem = call.getString("stem", "");
+        String coverPath = call.getString("cover", "");
+        work.execute(() -> {
+            File dest = null;
+            try {
+                ContentResolver cr = getContext().getContentResolver();
+                Uri u = Uri.parse(uri);
+                String name = "";
+                try (Cursor c = cr.query(u, new String[] { OpenableColumns.DISPLAY_NAME }, null, null, null)) {
+                    if (c != null && c.moveToFirst() && !c.isNull(0)) name = c.getString(0);
+                } catch (RuntimeException e) {
+                    // By its type below.
+                }
+                String ext = extOf(name);
+                if (!AUDIO_EXTS.contains(ext)) ext = extOfMime(cr.getType(u));
+                if (ext.isEmpty()) {
+                    call.reject("Flow cannot play this kind of file on the phone (MP3, M4A, AAC, Opus, Ogg, FLAC and WAV play).");
+                    return;
+                }
+                dest = new File(stem + "." + ext);
+                if (!ours(dest)) {
+                    call.reject("Not one of Flow's files: " + stem);
+                    return;
+                }
+                File dir = dest.getParentFile();
+                if (dir != null && !dir.isDirectory()) dir.mkdirs();
+                long bytes = 0;
+                try (InputStream in = cr.openInputStream(u); OutputStream out = new FileOutputStream(dest)) {
+                    if (in == null) throw new IOException("The file could not be opened.");
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        bytes += n;
+                    }
+                }
+                JSObject r = new JSObject();
+                MediaMetadataRetriever mmr = new MediaMetadataRetriever();
+                try {
+                    mmr.setDataSource(dest.getPath());
+                    String hasAudio = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO);
+                    String ms = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                    double duration = ms == null ? 0 : Long.parseLong(ms) / 1000.0;
+                    if ("no".equals(hasAudio) || duration <= 0) throw new IOException("This file has no audio in it.");
+                    r.put("duration", duration);
+                    r.put("title", text(mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)));
+                    String artist = text(mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST));
+                    if (artist.isEmpty()) artist = text(mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST));
+                    r.put("artist", artist);
+                    r.put("album", text(mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)));
+                    boolean cover = false;
+                    if (!coverPath.isEmpty()) cover = writeCover(mmr.getEmbeddedPicture(), new File(coverPath));
+                    r.put("cover", cover);
+                } catch (RuntimeException e) {
+                    throw new IOException("The file could not be read as audio.");
+                } finally {
+                    try {
+                        mmr.release();
+                    } catch (Exception ignored) {
+                        // Released either way.
+                    }
+                }
+                r.put("path", dest.getPath());
+                r.put("format", ext);
+                r.put("bytes", bytes);
+                call.resolve(r);
+            } catch (Exception e) {
+                if (dest != null) dest.delete();
+                call.reject(e.getMessage() == null ? "The file could not be opened." : e.getMessage());
+            }
+        });
+    }
+
+    private static String text(String s) {
+        return s == null ? "" : s.trim();
+    }
+
+    /** A file's picture as a COVER_SIZE square JPEG (the middle of it), as the desktop makes covers. */
+    private boolean writeCover(byte[] picture, File dest) {
+        if (picture == null || picture.length == 0) return false;
+        try {
+            if (!ours(dest)) return false;
+            Bitmap full = BitmapFactory.decodeByteArray(picture, 0, picture.length);
+            if (full == null) return false;
+            int side = Math.min(full.getWidth(), full.getHeight());
+            Bitmap square = Bitmap.createBitmap(full, (full.getWidth() - side) / 2, (full.getHeight() - side) / 2, side, side);
+            Bitmap scaled = Bitmap.createScaledBitmap(square, COVER_SIZE, COVER_SIZE, true);
+            File dir = dest.getParentFile();
+            if (dir != null && !dir.isDirectory()) dir.mkdirs();
+            try (OutputStream out = new FileOutputStream(dest)) {
+                scaled.compress(Bitmap.CompressFormat.JPEG, 90, out);
+            }
+            return true;
+        } catch (Exception e) {
+            dest.delete();
+            return false;
+        }
+    }
+
+    /**
+     * Sends the file `path` (in Flow's storage) to `url` as the body (`method`,
+     * PUT by default), with `headers`. Resolves { status, text }. Unreachable,
+     * timed out or cut off: rejected with code OFFLINE. Progress goes out as
+     * "uploadProgress" { id, frac } when `id` is given.
+     */
+    @PluginMethod
+    public void upload(PluginCall call) {
+        String url = call.getString("url", "");
+        String path = call.getString("path", "");
+        String method = call.getString("method", "PUT");
+        String id = call.getString("id", "");
+        int timeout = call.getInt("timeout", 120000);
+        JSObject headers = call.getObject("headers", new JSObject());
+        work.execute(() -> {
+            HttpURLConnection conn = null;
+            try {
+                File file = new File(path);
+                if (!ours(file) || !file.isFile()) {
+                    call.reject("Not one of Flow's files: " + path);
+                    return;
+                }
+                long total = file.length();
+                conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setConnectTimeout(Math.min(timeout, 30000));
+                conn.setReadTimeout(timeout);
+                conn.setRequestMethod(method);
+                conn.setDoOutput(true);
+                conn.setFixedLengthStreamingMode(total);
+                for (Iterator<String> it = headers.keys(); it.hasNext(); ) {
+                    String k = it.next();
+                    conn.setRequestProperty(k, headers.getString(k));
+                }
+                long sent = 0;
+                long told = 0;
+                try (InputStream in = new FileInputStream(file); OutputStream out = conn.getOutputStream()) {
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        sent += n;
+                        if (!id.isEmpty() && total > 0 && (sent - told > total / 50 || sent == total)) {
+                            told = sent;
+                            JSObject p = new JSObject();
+                            p.put("id", id);
+                            p.put("frac", (double) sent / total);
+                            notifyListeners("uploadProgress", p);
+                        }
+                    }
+                }
+                int status = conn.getResponseCode();
+                InputStream body = status >= 400 ? conn.getErrorStream() : conn.getInputStream();
+                JSObject result = new JSObject();
+                result.put("status", status);
+                result.put("text", body == null ? "" : readAll(body));
+                call.resolve(result);
+            } catch (SocketTimeoutException e) {
+                call.reject("The server did not answer in time.", "OFFLINE");
+            } catch (IOException e) {
+                call.reject(e.getMessage() == null ? "The connection failed." : e.getMessage(), "OFFLINE");
+            } catch (Exception e) {
+                call.reject(e.getMessage() == null ? "The upload failed." : e.getMessage());
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
         });
     }
 

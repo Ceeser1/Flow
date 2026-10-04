@@ -652,7 +652,9 @@ const ImportPanel = {
       head.appendChild(h('span.import__warn-text', 'A Mix never ends: its first 50 songs are listed.'));
     }
     if (this.state !== 'review') {
-      const hint = `Click a ${this.local ? 'ready' : 'downloaded'} song to trim it or change its names.`;
+      const hint = this._wholeOnly()
+        ? 'Tap a ready song to change its names. Songs are saved whole on the phone; trim them once they are on a Flow Server.'
+        : `${Store.uiMode === 'mobile' ? 'Tap' : 'Click'} a ${this.local ? 'ready' : 'downloaded'} song to trim it or change its names.`;
       head.appendChild(h('span.muted-text', hint));
     }
     this._drawWarnings();
@@ -851,7 +853,7 @@ const ImportPanel = {
     else if (it.trim) {
       sub = `trimmed ${Util.fmtClock(it.trim.start)} - ${Util.fmtClock(it.trim.end)}, `
         + `${Util.fmtClock(it.trim.end - it.trim.start)} of ${Util.fmtClock(it.media.duration)}`;
-    } else sub = open ? '' : 'click to trim or rename';
+    } else sub = open ? '' : this._wholeOnly() ? 'tap to rename' : `${Store.uiMode === 'mobile' ? 'tap' : 'click'} to trim or rename`;
 
     const length = st === 'ready'
       ? Util.fmtClock(it.trim ? it.trim.end - it.trim.start : it.media.duration)
@@ -1029,7 +1031,7 @@ const ImportPanel = {
     const ready = this._ready().length;
     const failed = this.included.filter((it) => it.state === 'failed').length;
     toast(`${Util.plural(ready, 'song')} ${job.local ? 'ready' : 'downloaded'}${failed ? `, ${failed} failed` : ''}. `
-      + 'Trim any you like, then "Finish all".', ready ? 'success' : 'error');
+      + `${this._wholeOnly() ? 'Change any names you like' : 'Trim any you like'}, then "Finish all".`, ready ? 'success' : 'error');
   },
 
   /**
@@ -1042,6 +1044,11 @@ const ImportPanel = {
     for (let n = 0; n < 10 && run === this.run && open(); n += 1) {
       await new Promise((resolve) => setTimeout(resolve, 30));
     }
+  },
+
+  /** Local files where they cannot be cut (the phone): saved whole, only their names change. */
+  _wholeOnly() {
+    return this.local && !Store.can('localTrim');
   },
 
   /** True once a song of this import has been saved. */

@@ -9,8 +9,11 @@
 // --keep leaves Flow running as it is (its music, its player) and only opens
 // its window again; otherwise it is stopped and started afresh.
 //
-// steps.js exports [{ name, key, shell, js, wait, shot, screen }]: `key` is
-// pressed on the emulator (BACK, HOME, SLEEP), `shell` is run there (adb shell,
+// steps.js exports [{ name, key, tap, shell, js, wait, shot, screen }]: `key` is
+// pressed on the emulator (BACK, HOME, SLEEP), `tap` taps what shows that text
+// on the screen (Android's own screens too, such as its file picker; a
+// regular expression, matched against each element's text and description;
+// `long` holds it), `shell` is run there (adb shell,
 // e.g. dumpsys; its output is logged, only the lines matching the regular
 // expression `grep` when given), `js` is evaluated in the page (a promise is
 // awaited, the value logged), then after `wait` ms (400)
@@ -34,6 +37,49 @@ const PORT = Number(process.env.FLOW_CDP_PORT) || 9222;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const adb = (...args) => execFileSync('adb', ['-s', SERIAL, ...args], { encoding: 'utf8' }).trim();
 const adbRaw = (...args) => execFileSync('adb', ['-s', SERIAL, ...args], { maxBuffer: 64 * 1024 * 1024 });
+
+/**
+ * Taps (or with `long` holds) the middle of the first element on the screen
+ * whose text or description matches `pattern`, as uiautomator sees the screen.
+ * Looks again for up to 6 s (a screen sliding in), and waits until it has
+ * stopped moving. Returns what it tapped.
+ */
+async function tap(pattern, long = false) {
+  let last = '';
+  for (let i = 0; i < 12; i += 1) {
+    const at = findOnScreen(pattern);
+    // The same place twice in a row: it is where it stays.
+    if (at && at.where === last) {
+      if (long) adb('shell', 'input', 'swipe', String(at.x), String(at.y), String(at.x), String(at.y), '800');
+      else adb('shell', 'input', 'tap', String(at.x), String(at.y));
+      return `${at.label} at ${at.where}`;
+    }
+    last = at ? at.where : '';
+    await sleep(500);
+  }
+  throw new Error(`Nothing on the screen says ${pattern}`);
+}
+
+/** { label, x, y, where } of the first element matching `pattern`, or null. */
+function findOnScreen(pattern) {
+  adb('shell', 'uiautomator', 'dump', '/sdcard/flow-ui.xml');
+  const xml = adb('shell', 'cat', '/sdcard/flow-ui.xml');
+  const re = new RegExp(pattern);
+  const attr = (node, name) => {
+    const m = node.match(new RegExp(` ${name}="([^"]*)"`));
+    return m ? m[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'") : '';
+  };
+  for (const node of xml.match(/<node [^>]*>/g) || []) {
+    const label = attr(node, 'text') || attr(node, 'content-desc');
+    if (!label || !re.test(label)) continue;
+    const b = attr(node, 'bounds').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+    if (!b) continue;
+    const x = Math.round((Number(b[1]) + Number(b[3])) / 2);
+    const y = Math.round((Number(b[2]) + Number(b[4])) / 2);
+    return { label, x, y, where: `${x},${y}` };
+  }
+  return null;
+}
 
 function build() {
   const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' });
@@ -144,6 +190,14 @@ async function main() {
         adb('shell', 'input', 'keyevent', `KEYCODE_${step.key}`);
         await sleep(300);
       }
+      if (step.tap) {
+        try {
+          log('tap', step.name || '', await tap(step.tap, step.long));
+        } catch (err) {
+          log('tap error', step.name || '', err.message);
+        }
+        await sleep(300);
+      }
       if (step.shell) {
         try {
           let out = adb('shell', step.shell);
@@ -163,8 +217,12 @@ async function main() {
       }
       await sleep(step.wait || 400);
       if (step.shot) {
-        const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
-        fs.writeFileSync(path.join(outDir, step.shot + '.png'), Buffer.from(data, 'base64'));
+        // The page draws nothing while another app is over it (Android's picker): no shot then.
+        const shot = cdp.send('Page.captureScreenshot', { format: 'png' });
+        const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 10000));
+        const got = await Promise.race([shot, timeout]);
+        if (got) fs.writeFileSync(path.join(outDir, step.shot + '.png'), Buffer.from(got.data, 'base64'));
+        else log('shot error', step.name || '', 'the page did not draw (another app in front?)');
       }
       if (step.screen) fs.writeFileSync(path.join(outDir, step.screen + '.png'), adbRaw('exec-out', 'screencap', '-p'));
     }

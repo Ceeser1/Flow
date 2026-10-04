@@ -106,6 +106,16 @@ function createStore(dir) {
       other.adopt(toId, e);
       return e.v;
     },
+    /** A JPEG elsewhere in Flow's storage moved in as `id`'s cover; its version. */
+    take(id, jpegFile) {
+      const dest = file(id);
+      fs.mkdir(dir);
+      fs.rename(jpegFile, dest);
+      const v = fs.sha1(dest).slice(0, 10);
+      load()[id] = { v, size: Math.max(0, fs.size(dest)) };
+      saveSoon();
+      return v;
+    },
     adopt(id, entry) {
       load()[id] = { ...entry };
       saveSoon();

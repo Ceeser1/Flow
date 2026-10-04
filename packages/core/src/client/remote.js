@@ -1776,7 +1776,7 @@ function createRemote(env) {
         saveSync();
         queueLocalChanges();
       } else {
-        hooks.onNotice(`Your ${count} Local Files songs stay on this computer. Synchronize now in Settings uploads them to "${conn.name}".`, 'info');
+        hooks.onNotice(`Your ${count} Local Files songs stay here. Synchronize now in Settings uploads them to "${conn.name}".`, 'info');
       }
     })().finally(() => { asking = null; });
     return asking;

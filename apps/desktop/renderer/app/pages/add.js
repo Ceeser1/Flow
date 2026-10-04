@@ -511,6 +511,9 @@ const AddPage = {
       $('edCover').replaceWith(box);
     }
     $('edCover').hidden = !withCover;
+    // A file of the phone's own is saved whole: no cut without ffmpeg (caps.localTrim).
+    const whole = !!m.local && !Store.can('localTrim');
+    this.editorEl.classList.toggle('editor--whole', whole);
     this.slider.setRange(m.duration, start || 0, end === null || end === undefined ? m.duration : end);
     this._syncFields();
     if (!this.embedded) this._source = this.probed ? { key: this.probed.key, url: this.probed.url } : null;
@@ -523,6 +526,7 @@ const AddPage = {
     this._drawPreviewButton();
     this._setPhase('ready');
     this.peaks = null;
+    if (whole) return;
     $('waveStatus').hidden = false;
     $('waveStatus').textContent = 'Drawing waveform...';
     requestAnimationFrame(() => this._redraw());

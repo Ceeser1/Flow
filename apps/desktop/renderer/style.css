@@ -1447,6 +1447,13 @@ div.import__frame-head { cursor: default; }
 .act--fav-on:hover, .act--dl-on:hover { background: rgba(245, 190, 60, 0.3); border-color: rgba(245, 190, 60, 0.45); }
 .act--open { background: rgba(184, 184, 192, 0.3); border-color: rgba(184, 184, 192, 0.45); color: var(--text-bright); }
 
+/* A file saved whole (the phone's own): names and a preview, no trim. */
+.editor--whole .trim-head,
+.editor--whole .audio-canvas-wrap,
+.editor--whole .trim-slider,
+.editor--whole .time-group,
+.editor--whole .span-label { display: none !important; }
+
 /* More's tray: slides out to the left of the button, over the row. */
 .act-tray {
   position: fixed;
