@@ -278,6 +278,16 @@ test('the sleep timer goes to the player, which keeps it itself', async () => {
   assert.deepEqual(plugin.runs, [[{ op: 'sleep', at: 1791120000000, fade: 10000 }, { op: 'sleep', at: 0, fade: 10000 }]]);
 });
 
+test('Song Transition goes to the player, which fades by itself; the page does not', async () => {
+  const { plugin, engine } = setup();
+  assert.equal(engine.canFade, false);
+  engine.setTransition(3);
+  engine.setTransition(3);
+  engine.setTransition(0);
+  await settle();
+  assert.deepEqual(plugin.runs, [[{ op: 'transition', ms: 3000 }, { op: 'transition', ms: 0 }]]);
+});
+
 test('each page names its songs differently from the pages before it', async () => {
   const ids = [];
   for (let i = 0; i < 2; i += 1) {

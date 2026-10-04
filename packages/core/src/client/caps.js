@@ -46,8 +46,8 @@ const ANDROID = {
   offline: false,
   updateCheck: true,
   volume: false,
-  // The phone plays gaplessly; fading songs over each other comes later (3.1).
-  songTransition: false,
+  // The phone's player fades from one song to the next itself (setTransition).
+  songTransition: true,
 };
 
 module.exports = { DESKTOP, ANDROID };

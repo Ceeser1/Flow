@@ -52,6 +52,11 @@ import java.util.List;
  * The sleep timer runs here too (the page's timers stop with the screen off):
  * the music fades out over its last seconds, then pauses.
  *
+ * Song Transition (crossfade) too: shortly before a song ends, a second
+ * player (the tail) is made ready at the place the transition starts; there
+ * it plays the song's end on, fading down, while this player moves on to the
+ * next song, fading it up. A pause, a seek or another song cuts the tail.
+ *
  * It takes audio focus (a call or another player pauses it), pauses when
  * headphones are pulled out, and keeps the CPU and Wi-Fi awake while it plays.
  * Everything here runs on the main thread, as ExoPlayer wants.
@@ -124,6 +129,24 @@ final class FlowPlayer {
     private long sleepFadeMs = 10000;
     private float sleepFade = 1f;
     private final Runnable sleepTick = this::sleepCheck;
+    // Song Transition: its length (ms; 0: none), the tail playing the end of the song
+    // before (made ready for tailFor, from tailFrom), the song coming in (fading up), and
+    // whether the move on is the transition's (told as "auto", a song that ended).
+    private long transitionMs = 0;
+    private ExoPlayer tail;
+    private String tailFor = "";
+    private long tailFrom = 0;
+    private long tailLength = 0;
+    private float tailGain = 1f;
+    private LoudnessEnhancer tailEnhancer;
+    private boolean crossStartSet;
+    private boolean crossing;
+    private String fadeInId = "";
+    private long fadeInMs = 0;
+    private float fadeIn = 1f;
+    private final Runnable crossStart = this::crossStart;
+    private final Runnable crossTick = this::crossTick;
+    private final AudioAttributes music;
 
     // While playing, the place goes to the page four times a second, and to the
     // widget's timeline when its second changes (not with the screen off).
@@ -132,6 +155,7 @@ final class FlowPlayer {
         public void run() {
             if (!exo.isPlaying()) return;
             tellState();
+            checkTransition();
             long second = exo.getCurrentPosition() / 1000;
             if (second != widgetSecond && screenOn()) {
                 widgetSecond = second;
@@ -148,7 +172,7 @@ final class FlowPlayer {
         heardFile = new File(context.getFilesDir(), "audio-heard.json");
         lastFile = new File(context.getFilesDir(), "audio-last.json");
         heardWhileAway = readHeard();
-        AudioAttributes music = new AudioAttributes.Builder()
+        music = new AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                 .build();
@@ -206,6 +230,7 @@ final class FlowPlayer {
 
             @Override
             public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+                if (!playWhenReady) dropTail("paused");
                 FlowLog.i((playWhenReady ? "play" : "pause") + " " + id + " (" + playReason(reason) + ")");
             }
 
@@ -281,6 +306,8 @@ final class FlowPlayer {
      * starts later, its place and how long it was heard go into a file.
      */
     void letGo() {
+        dropTail("let go");
+        endFadeIn();
         sleepAt = 0;
         main.removeCallbacks(sleepTick);
         if (sleepFade != 1f) {
@@ -368,6 +395,8 @@ final class FlowPlayer {
             JSONObject op = ops.getJSONObject(i);
             switch (op.getString("op")) {
                 case "load": {
+                    dropTail("another song");
+                    fadeInId = "";
                     id = op.optString("id", "");
                     key = op.optString("key", "");
                     endedTold = false;
@@ -406,7 +435,12 @@ final class FlowPlayer {
                         applyVolume();
                     }
                     break;
+                case "transition":
+                    transitionMs = Math.max(0, (long) op.optDouble("ms", 0));
+                    if (transitionMs == 0) dropTail("transition off");
+                    break;
                 case "unload":
+                    dropTail("unloaded");
                     exo.stop();
                     exo.clearMediaItems();
                     exo.setPlayWhenReady(false);
@@ -427,6 +461,8 @@ final class FlowPlayer {
                     exo.pause();
                     break;
                 case "seek":
+                    dropTail("seek");
+                    endFadeIn();
                     exo.seekTo((long) (op.optDouble("t", 0) * 1000));
                     endedTold = false;
                     break;
@@ -498,8 +534,16 @@ final class FlowPlayer {
         endedTold = false;
         durationMs = 0;
         applyVolume();
-        String why = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ? "auto"
+        // The song coming in by a transition fades up; any other cuts the tail.
+        if (!crossing) {
+            dropTail("next");
+            fadeInId = "";
+        }
+        fadeIn = id.equals(fadeInId) ? 0f : 1f;
+        applyVolume();
+        String why = crossing || reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ? "auto"
                 : reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT ? "repeat" : "next";
+        crossing = false;
         FlowLog.i("on to " + id + " (" + why + "), " + from + " heard " + Math.round(heard) + " s");
         // The songs before it are done with (after this event, not inside it).
         main.post(() -> {
@@ -591,9 +635,139 @@ final class FlowPlayer {
         main.postDelayed(sleepTick, left > sleepFadeMs + 1000 ? Math.min(left - sleepFadeMs, 30000) : 250);
     }
 
+    /**
+     * Song Transition, checked while playing: the tail made ready a while
+     * before the transition starts, and its start set to the moment. None
+     * with Repeat, without a next song, or for a song too short (a transition
+     * is at most a third of it).
+     */
+    private void checkTransition() {
+        // Not while the tail still plays the end of the song before.
+        if (tail != null && tail.getPlayWhenReady()) return;
+        if (transitionMs <= 0 || crossStartSet || exo.getRepeatMode() == Player.REPEAT_MODE_ONE || !exo.hasNextMediaItem()) return;
+        long d = exo.getDuration();
+        if (d == C.TIME_UNSET || d <= 0) return;
+        long length = Math.min(transitionMs, d / 3);
+        if (length < 200) return;
+        long from = d - length;
+        long pos = exo.getCurrentPosition();
+        long left = from - pos;
+        if (left > 12000) return;
+        if (tail == null || !tailFor.equals(id) || tailFrom != from) {
+            // Too late to make it ready: this one goes over without a transition.
+            if (left < 1500) return;
+            makeTail(from, length);
+            return;
+        }
+        if (left > 1200) return;
+        crossStartSet = true;
+        main.postDelayed(crossStart, Math.max(0, (long) (left / Math.max(0.1f, exo.getPlaybackParameters().speed))));
+    }
+
+    /** The song playing again in the tail, ready (paused) at the place its transition starts. */
+    private void makeTail(long from, long length) {
+        dropTail(null);
+        MediaItem current = exo.getCurrentMediaItem();
+        if (current == null) return;
+        tail = new ExoPlayer.Builder(context).setAudioAttributes(music, false).build();
+        tail.setMediaItem(current, from);
+        tail.setPlaybackParameters(exo.getPlaybackParameters());
+        tail.setVolume(0f);
+        tail.prepare();
+        tail.setPlayWhenReady(false);
+        tailFor = id;
+        tailFrom = from;
+        tailLength = length;
+        tailGain = gain;
+        FlowLog.i("transition of " + id + " made ready at " + Math.round(from / 100.0) / 10.0 + " s, " + length + " ms");
+    }
+
+    /** The moment: the tail plays the song's end on, and this player moves on to the next one, which fades up. */
+    private void crossStart() {
+        crossStartSet = false;
+        if (tail == null || !tailFor.equals(id) || !exo.isPlaying() || !exo.hasNextMediaItem()) {
+            dropTail("not playing on");
+            return;
+        }
+        if (tail.getPlaybackState() != Player.STATE_READY) {
+            dropTail("its song was not ready");
+            return;
+        }
+        // Where this player has got to, should the moment have come late.
+        long at = exo.getCurrentPosition();
+        if (at > tailFrom + 150) tail.seekTo(at);
+        tail.play();
+        if (tailGain > 1f) {
+            try {
+                tailEnhancer = new LoudnessEnhancer(tail.getAudioSessionId());
+                tailEnhancer.setTargetGain(Math.round(2000f * (float) Math.log10(tailGain)));
+                tailEnhancer.setEnabled(true);
+            } catch (RuntimeException e) {
+                tailEnhancer = null;
+            }
+        }
+        int next = exo.getNextMediaItemIndex();
+        Tag tag = tagOf(exo.getMediaItemAt(next));
+        fadeInId = tag == null ? "" : tag.id;
+        fadeInMs = tailLength;
+        crossing = true;
+        FlowLog.i("transition from " + id + " to " + fadeInId);
+        exo.seekToNextMediaItem();
+        crossTick();
+    }
+
+    /** Twenty times a second during a transition: the tail down, the song coming in up, each by its own place. */
+    private void crossTick() {
+        main.removeCallbacks(crossTick);
+        boolean going = false;
+        if (tail != null && tail.getPlayWhenReady()) {
+            if (tail.getPlaybackState() == Player.STATE_ENDED) dropTail(null);
+            else {
+                float p = Math.min(1f, Math.max(0f, (tail.getCurrentPosition() - tailFrom) / (float) Math.max(1, tailLength)));
+                tail.setVolume(Math.max(0f, Math.min(1f, volume * sleepFade * Math.min(1f, tailGain))) * (float) Math.cos(p * Math.PI / 2));
+                if (p >= 1f) dropTail(null);
+                else going = true;
+            }
+        }
+        if (!fadeInId.isEmpty() && id.equals(fadeInId)) {
+            float p = Math.min(1f, exo.getCurrentPosition() / (float) Math.max(1, fadeInMs));
+            fadeIn = (float) Math.sin(p * Math.PI / 2);
+            applyVolume();
+            if (p >= 1f) endFadeIn();
+            else going = true;
+        }
+        if (going) main.postDelayed(crossTick, 50);
+    }
+
+    /** The song coming in at its full volume (its transition done, or cut short). */
+    private void endFadeIn() {
+        fadeInId = "";
+        if (fadeIn != 1f) {
+            fadeIn = 1f;
+            applyVolume();
+        }
+    }
+
+    /** No tail (any more): the end of the song before stops, or the transition is not to be (why: logged). */
+    private void dropTail(String why) {
+        main.removeCallbacks(crossStart);
+        crossStartSet = false;
+        if (tail == null) return;
+        boolean playing = tail.getPlayWhenReady();
+        if (tailEnhancer != null) {
+            tailEnhancer.release();
+            tailEnhancer = null;
+        }
+        tail.release();
+        tail = null;
+        tailFor = "";
+        if (why != null) FlowLog.i("transition " + (playing ? "cut short" : "dropped") + " (" + why + ")");
+        if (playing) endFadeIn();
+    }
+
     /** The app's volume times the song's gain: down by the player's volume, up by the enhancer. */
     private void applyVolume() {
-        exo.setVolume(Math.max(0f, Math.min(1f, volume * sleepFade * Math.min(1f, gain))));
+        exo.setVolume(Math.max(0f, Math.min(1f, volume * sleepFade * fadeIn * Math.min(1f, gain))));
         int mb = gain > 1f ? Math.round(2000f * (float) Math.log10(gain)) : 0;
         LoudnessEnhancer e = enhancer();
         if (e == null || mb == boostMb) return;

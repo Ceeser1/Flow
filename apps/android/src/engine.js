@@ -22,7 +22,8 @@
 // the song it stopped on in `resume`. `startPlaying`: the widget's Play opened
 // Flow, so the page plays.
 //
-// No song transitions yet (canFade is false): the phone plays gaplessly.
+// Song transitions are the player's own (setTransition; canFade is false, the
+// page does not fade): it moves on by itself, so it fades by itself too.
 
 // Player.STATE_* in Media3.
 const IDLE = 1;
@@ -354,10 +355,18 @@ function createAudioEngine({
     },
     ownSleep: true,
 
+    /** Song Transition: how long (s) the end of a song and the start of the next one overlap; 0: none. */
+    setTransition(seconds) {
+      const ms = Math.round((seconds || 0) * 1000);
+      if (ms === sent.transition) return;
+      sent.transition = ms;
+      op({ op: 'transition', ms });
+    },
+
     // Output devices are the phone's own business.
     setSink: async () => {},
 
-    // Song transitions come later.
+    // The page's own transitions: none (setTransition).
     canFade: false,
     fadeIn() {},
     setIncomingGain() {},

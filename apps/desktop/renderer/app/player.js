@@ -275,6 +275,7 @@ const Player = {
       }
     });
     Store.onSettings((patch) => {
+      if ('crossfade' in patch || 'crossfadeSeconds' in patch) this._syncUpcoming();
       if (!('normalize' in patch)) return;
       if (this.currentId) this.engine.setGain(this._normGain(this.currentId), true);
       if (this.fade) this.engine.setIncomingGain(this._normGain(this.fade.id), true);
@@ -1006,6 +1007,11 @@ const Player = {
    */
   _syncUpcoming() {
     if (!this.engine || !this.engine.movesOn) return;
+    // The phone's player fades from one song to the next by itself too.
+    if (this.engine.setTransition) {
+      const s = Store.settings;
+      this.engine.setTransition(!this.remote && s.crossfade ? s.crossfadeSeconds : 0);
+    }
     const ids = [];
     if (!this.remote && this.currentId) {
       const ahead = new PlayQueue(this.queue.random, this.queue.limit);
