@@ -1,6 +1,7 @@
 package io.github.ceeser1.flow;
 
 import android.content.Context;
+import android.media.audiofx.LoudnessEnhancer;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
@@ -42,6 +43,10 @@ import java.util.List;
  * sleeps or is gone; Next in the notification goes there too. Each move is
  * told to the page ("advance", with how long the song before was heard).
  * Without a page, those listens are kept in a file until one asks (attach).
+ *
+ * Equalize volume: a song is turned down by the player's volume and up by a
+ * LoudnessEnhancer on its sound, which also keeps the peaks of a song turned
+ * up from clipping (the desktop's limiter).
  *
  * It takes audio focus (a call or another player pauses it), pauses when
  * headphones are pulled out, and keeps the CPU and Wi-Fi awake while it plays.
@@ -93,6 +98,9 @@ final class FlowPlayer {
     // How long the song playing has been heard: playing time, not places.
     private long heardMs = 0;
     private long playingSince = -1;
+    private LoudnessEnhancer enhancer;
+    private int enhancerSession = C.AUDIO_SESSION_ID_UNSET;
+    private int boostMb = -1;
 
     // While playing, the place goes to the page four times a second.
     private final Runnable tick = new Runnable() {
@@ -151,6 +159,11 @@ final class FlowPlayer {
             public void onMediaItemTransition(MediaItem item, int reason) {
                 if (item == null || reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) return;
                 advanced(item, reason);
+            }
+
+            @Override
+            public void onAudioSessionIdChanged(int audioSessionId) {
+                applyVolume();
             }
 
             @Override
@@ -383,7 +396,7 @@ final class FlowPlayer {
         return total / 1000.0;
     }
 
-    /** { id, key, pwr: play when ready, st: 1 idle 2 buffering 3 ready 4 ended, t, d (-1 unknown), rate } */
+    /** { id, key, pwr: play when ready, st: 1 idle 2 buffering 3 ready 4 ended, t, d (-1 unknown), rate, vol (the player's volume) } */
     JSObject state() {
         JSObject s = new JSObject();
         s.put("id", id);
@@ -395,6 +408,7 @@ final class FlowPlayer {
         if (d != C.TIME_UNSET) durationMs = d;
         s.put("d", d == C.TIME_UNSET ? -1 : d / 1000.0);
         s.put("rate", (double) exo.getPlaybackParameters().speed);
+        s.put("vol", (double) exo.getVolume());
         return s;
     }
 
@@ -403,9 +417,37 @@ final class FlowPlayer {
         if (events != null) events.onState(s);
     }
 
-    // Equalize volume may turn a song up, which a player's volume (at most 1) cannot yet.
+    /** The app's volume times the song's gain: down by the player's volume, up by the enhancer. */
     private void applyVolume() {
-        exo.setVolume(Math.max(0f, Math.min(1f, volume * gain)));
+        exo.setVolume(Math.max(0f, Math.min(1f, volume * Math.min(1f, gain))));
+        int mb = gain > 1f ? Math.round(2000f * (float) Math.log10(gain)) : 0;
+        LoudnessEnhancer e = enhancer();
+        if (e == null || mb == boostMb) return;
+        try {
+            e.setTargetGain(mb);
+            e.setEnabled(mb > 0);
+            boostMb = mb;
+            FlowLog.i("turned up " + (mb / 100.0) + " dB");
+        } catch (RuntimeException ex) {
+            FlowLog.i("could not turn up: " + ex.getMessage());
+        }
+    }
+
+    /** The enhancer on the player's sound, made again when that changes; null when the phone has none. */
+    private LoudnessEnhancer enhancer() {
+        int session = exo.getAudioSessionId();
+        if (session == C.AUDIO_SESSION_ID_UNSET) return null;
+        if (enhancer != null && enhancerSession == session) return enhancer;
+        if (enhancer != null) enhancer.release();
+        enhancer = null;
+        boostMb = -1;
+        try {
+            enhancer = new LoudnessEnhancer(session);
+            enhancerSession = session;
+        } catch (RuntimeException ex) {
+            FlowLog.i("no loudness enhancer: " + ex.getMessage());
+        }
+        return enhancer;
     }
 
     /** A song's file (a path in the app's storage) or stream (an address). */

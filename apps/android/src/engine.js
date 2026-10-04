@@ -19,8 +19,7 @@
 // (Flow was swiped away and opened again) finds that song in `current`, and
 // the listens of the songs played meanwhile in `heardAway`.
 //
-// No song transitions yet (canFade is false), and a song's loudness gain only
-// turns it down.
+// No song transitions yet (canFade is false): the phone plays gaplessly.
 
 // Player.STATE_* in Media3.
 const IDLE = 1;

@@ -26,6 +26,8 @@ const DESKTOP = {
   updateCheck: false,
   // Flow's own volume slider (a phone's volume is its buttons).
   volume: true,
+  // Song Transition: the next song faded in over the end of this one.
+  songTransition: true,
 };
 
 const ANDROID = {
@@ -41,6 +43,8 @@ const ANDROID = {
   offline: false,
   updateCheck: true,
   volume: false,
+  // The phone plays gaplessly; fading songs over each other comes later (3.1).
+  songTransition: false,
 };
 
 module.exports = { DESKTOP, ANDROID };

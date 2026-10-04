@@ -276,6 +276,7 @@ const Player = {
       if (!('normalize' in patch)) return;
       if (this.currentId) this.engine.setGain(this._normGain(this.currentId), true);
       if (this.fade) this.engine.setIncomingGain(this._normGain(this.fade.id), true);
+      this._syncUpcoming();
     });
 
     setInterval(() => {

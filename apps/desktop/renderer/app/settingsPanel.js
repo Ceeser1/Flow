@@ -74,12 +74,12 @@ const SettingsPanel = {
         desc: 'Where the music plays from.',
         right: this._outputSelect(),
       }) : null,
-      this._row({
+      Store.can('songTransition') ? this._row({
         key: 'crossfade',
         label: 'Song Transition',
         desc: 'Smoothly transition between songs for the set time.',
         right: this._slider({ key: 'crossfadeSeconds', min: 0.1, max: 10, step: 0.1, format: (v) => `${v.toFixed(1)} s`, when: () => Store.settings.crossfade }),
-      }),
+      }) : null,
       this._row({
         key: 'normalize',
         label: 'Equalize volume',
