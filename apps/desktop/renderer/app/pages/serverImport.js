@@ -137,6 +137,38 @@ const ServerImport = {
   },
 
   /**
+   * A shared link (AddPage.shared): downloaded at once when the server can,
+   * else once it connects (Flow may just be starting) while the link is still
+   * in the box, within a minute. Without such a server the page's hint says
+   * how to get one.
+   */
+  startShared(url) {
+    if (this._waitShare) this._waitShare();
+    this._waitShare = null;
+    const go = () => {
+      // One still open: start() says so, and the link waits in the box.
+      if ($('linkInput').value.trim() === url) this.start();
+    };
+    if (this.available) {
+      go();
+      return;
+    }
+    if (!Store.server.on) return;
+    let off = null;
+    const timer = setTimeout(() => this._waitShare(), 60000);
+    this._waitShare = () => {
+      clearTimeout(timer);
+      if (off) off();
+      this._waitShare = null;
+    };
+    off = Store.onServer(() => {
+      if (!this.available) return;
+      this._waitShare();
+      go();
+    });
+  },
+
+  /**
    * "Try again" and "Retry failed" (ImportPanel.retryFailed): the server
    * downloads these failed songs once more. Resolves the batch as the last
    * one asked left it, or null when none could be asked.

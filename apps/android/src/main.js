@@ -19,6 +19,7 @@ const { plugin, audio, fileUrl, fs, path, info } = require('./native');
 const { createAudioEngine, fileAddressToPath } = require('./engine');
 const { createEnv } = require('./env');
 const { createLocalFiles } = require('./localFiles');
+const { sharedLink } = require('./share');
 const ask = require('./ask');
 const { version } = require('../package.json');
 
@@ -209,7 +210,8 @@ function start() {
     cancelDownload: call(nothing),
     discardDownload: call((cachePath) => local.discard(cachePath)),
     onDownloadProgress: nothing,
-    peaks: notHere('Reading a file\'s waveform'),
+    // A song's waveform for the trim, read by Android's decoder (FlowNative.peaks).
+    peaks: call(async (file, duration) => (await plugin.peaks({ path: String(file || ''), duration: Number(duration) || 0 })).peaks),
     sponsorSegments: call(() => []),
 
     serverStatus: call(() => remote.status()),
@@ -272,6 +274,10 @@ function start() {
     outputName: call(async () => (await plugin.output()).name),
     chooseOutput: call(() => plugin.chooseOutput()),
     onOutputChange: (fn) => plugin.addListener('outputChanged', () => fn()),
+    /** A link shared to Flow (Android's Share): fn({ url, text }), url '' when there was none. */
+    onShare: (fn) => plugin.addListener('share', (s) => fn(sharedLink(s))),
+    /** Whether the window may turn sideways (Add Songs) or stays upright. */
+    setOrientation: call((free) => plugin.orientation({ free: !!free })),
     /** What the player plays through: the phone's own player, for the background (engine.js). */
     createAudioEngine: () => createAudioEngine({
       plugin: audio,

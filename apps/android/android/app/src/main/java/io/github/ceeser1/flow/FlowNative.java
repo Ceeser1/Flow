@@ -4,13 +4,18 @@ import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
+import android.media.AudioFormat;
 import android.media.AudioManager;
+import android.media.MediaCodec;
+import android.media.MediaExtractor;
+import android.media.MediaFormat;
 import android.media.MediaMetadataRetriever;
 import android.media.MediaRoute2Info;
 import android.media.MediaRouter2;
@@ -48,6 +53,8 @@ import java.net.InterfaceAddress;
 import java.net.NetworkInterface;
 import java.net.SocketTimeoutException;
 import java.net.URL;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -70,7 +77,9 @@ import java.util.concurrent.Executors;
  * chooseOutput() opens Android's own chooser, "outputChanged" says it changed.
  * Songs of the phone's own: pickAudio() lets the user pick files or a folder,
  * importAudio() copies one into Flow's storage and reads its names and cover,
- * upload() sends a file to a server.
+ * upload() sends a file to a server. A link shared to Flow goes to the page
+ * ("share"); orientation() lets the window turn sideways (Add Songs);
+ * peaks() reads a file's waveform for the trim.
  */
 @CapacitorPlugin(name = "FlowNative")
 public class FlowNative extends Plugin {
@@ -82,6 +91,11 @@ public class FlowNative extends Plugin {
     private static final int MAX_FILES = 2000;
     // Covers are squares this big (@flow/core/cover SIZE).
     private static final int COVER_SIZE = 512;
+    // The waveform, as the desktop's (@flow/core/media): at most this many stretches, 8000 samples a second.
+    private static final int PEAK_BUCKETS = 6400;
+    private static final int PEAK_RATE = 8000;
+    // A share's intent once the page has it.
+    private static final String SHARE_TAKEN = "io.github.ceeser1.flow.SHARE_TAKEN";
 
     private final ExecutorService work = Executors.newCachedThreadPool();
 
@@ -108,6 +122,8 @@ public class FlowNative extends Plugin {
                 notifyListeners("outputChanged", new JSObject());
             }
         }, new Handler(Looper.getMainLooper()));
+        // Started by a share.
+        shared(getActivity().getIntent());
     }
 
     private AudioManager audioManager() {
@@ -713,6 +729,169 @@ public class FlowNative extends Plugin {
                 call.reject(e.getMessage() == null ? "The upload failed." : e.getMessage());
             } finally {
                 if (conn != null) conn.disconnect();
+            }
+        });
+    }
+
+    // ---- a link shared to Flow ----
+
+    /**
+     * Android's Share with Flow chosen (a link from YouTube, a browser): what
+     * was shared goes to the page as "share" { text, subject }, kept until the
+     * page listens (a share may be what starts Flow). Once only: the window
+     * made again, or Flow opened from the recent apps, shares nothing.
+     */
+    private void shared(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return;
+        if ((intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return;
+        JSObject s = new JSObject();
+        s.put("text", text(intent.getStringExtra(Intent.EXTRA_TEXT)));
+        s.put("subject", text(intent.getStringExtra(Intent.EXTRA_SUBJECT)));
+        intent.setAction(SHARE_TAKEN);
+        notifyListeners("share", s, true);
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        shared(intent);
+    }
+
+    // ---- turning sideways ----
+
+    /**
+     * `free`: the window turns with the phone (when the phone's own auto-rotate
+     * lets it), as on Add Songs; otherwise it stays upright.
+     */
+    @PluginMethod
+    public void orientation(PluginCall call) {
+        boolean free = Boolean.TRUE.equals(call.getBoolean("free", false));
+        getActivity().runOnUiThread(() -> {
+            getActivity().setRequestedOrientation(free ? ActivityInfo.SCREEN_ORIENTATION_USER : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+            call.resolve();
+        });
+    }
+
+    // ---- a waveform ----
+
+    /**
+     * The waveform of `path` (in Flow's storage), `duration` s long, as the
+     * desktop draws it with ffmpeg (@flow/core/media peaksFor): the channels
+     * mixed, the song cut into stretches (at most PEAK_BUCKETS, 8000 a second),
+     * each with its lowest and highest sample (-1 to 1). Android's own decoder
+     * reads the file. Resolves { peaks: [min, max, ...] }.
+     */
+    @PluginMethod
+    public void peaks(PluginCall call) {
+        String path = call.getString("path", "");
+        double duration = call.getDouble("duration", 0.0);
+        work.execute(() -> {
+            MediaExtractor extractor = new MediaExtractor();
+            MediaCodec codec = null;
+            try {
+                File f = new File(path);
+                if (!ours(f) || !f.isFile()) throw new IOException("Not one of Flow's files: " + path);
+                extractor.setDataSource(f.getPath());
+                MediaFormat format = null;
+                for (int i = 0; i < extractor.getTrackCount() && format == null; i += 1) {
+                    MediaFormat t = extractor.getTrackFormat(i);
+                    String mime = t.getString(MediaFormat.KEY_MIME);
+                    if (mime != null && mime.startsWith("audio/")) {
+                        extractor.selectTrack(i);
+                        format = t;
+                    }
+                }
+                if (format == null) throw new IOException("This file has no audio in it.");
+                double length = duration;
+                if (length <= 0 && format.containsKey(MediaFormat.KEY_DURATION)) length = format.getLong(MediaFormat.KEY_DURATION) / 1e6;
+                if (length <= 0) throw new IOException("The song's length is not known.");
+                int channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+                int rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+                int buckets = (int) Math.max(1, Math.min(PEAK_BUCKETS, Math.round(length * PEAK_RATE)));
+                long perBucket = Math.max(1, (long) Math.ceil(Math.round(length * rate) / (double) buckets));
+                float[] mins = new float[buckets];
+                float[] maxs = new float[buckets];
+                boolean[] seen = new boolean[buckets];
+                boolean floats = false;
+                long frame = 0;
+
+                codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME));
+                codec.configure(format, null, null, 0);
+                codec.start();
+                MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+                boolean inputDone = false;
+                while (true) {
+                    if (!inputDone) {
+                        int in = codec.dequeueInputBuffer(10000);
+                        if (in >= 0) {
+                            ByteBuffer buf = codec.getInputBuffer(in);
+                            int n = buf == null ? -1 : extractor.readSampleData(buf, 0);
+                            if (n < 0) {
+                                codec.queueInputBuffer(in, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                                inputDone = true;
+                            } else {
+                                codec.queueInputBuffer(in, 0, n, extractor.getSampleTime(), 0);
+                                extractor.advance();
+                            }
+                        }
+                    }
+                    int out = codec.dequeueOutputBuffer(info, 10000);
+                    if (out == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        MediaFormat o = codec.getOutputFormat();
+                        channels = Math.max(1, o.getInteger(MediaFormat.KEY_CHANNEL_COUNT));
+                        if (o.getInteger(MediaFormat.KEY_SAMPLE_RATE) != rate) {
+                            rate = o.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+                            perBucket = Math.max(1, (long) Math.ceil(Math.round(length * rate) / (double) buckets));
+                        }
+                        floats = o.containsKey(MediaFormat.KEY_PCM_ENCODING)
+                                && o.getInteger(MediaFormat.KEY_PCM_ENCODING) == AudioFormat.ENCODING_PCM_FLOAT;
+                    } else if (out >= 0) {
+                        ByteBuffer buf = codec.getOutputBuffer(out);
+                        if (buf != null && info.size > 0) {
+                            buf.position(info.offset);
+                            buf.limit(info.offset + info.size);
+                            buf.order(ByteOrder.nativeOrder());
+                            int frames = info.size / ((floats ? 4 : 2) * channels);
+                            for (int k = 0; k < frames; k += 1) {
+                                float sum = 0;
+                                for (int c = 0; c < channels; c += 1) sum += floats ? buf.getFloat() : buf.getShort() / 32768f;
+                                float v = sum / channels;
+                                int b = (int) Math.min(buckets - 1, frame / perBucket);
+                                if (!seen[b]) {
+                                    seen[b] = true;
+                                    mins[b] = v;
+                                    maxs[b] = v;
+                                } else {
+                                    if (v < mins[b]) mins[b] = v;
+                                    if (v > maxs[b]) maxs[b] = v;
+                                }
+                                frame += 1;
+                            }
+                        }
+                        codec.releaseOutputBuffer(out, false);
+                        if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) break;
+                    }
+                }
+                if (frame == 0) throw new IOException("No audio could be read from the file.");
+                JSArray flat = new JSArray();
+                for (int b = 0; b < buckets; b += 1) {
+                    flat.put(Math.round(mins[b] * 1000) / 1000.0);
+                    flat.put(Math.round(maxs[b] * 1000) / 1000.0);
+                }
+                JSObject r = new JSObject();
+                r.put("peaks", flat);
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject(e.getMessage() == null ? "The waveform could not be read." : e.getMessage());
+            } finally {
+                if (codec != null) {
+                    try {
+                        codec.stop();
+                    } catch (RuntimeException ignored) {
+                        // Released below either way.
+                    }
+                    codec.release();
+                }
+                extractor.release();
             }
         });
     }

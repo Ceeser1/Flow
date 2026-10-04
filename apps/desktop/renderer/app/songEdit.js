@@ -54,7 +54,7 @@ function songTrimEditor(song, { enabled = true } = {}) {
   const src = Store.audioSrc(song);
   if (src) audio.src = src;
   playBtn.disabled = !src;
-  if (!src) playBtn.title = 'Not on this computer, and the server cannot be reached';
+  if (!src) playBtn.title = `Not on ${Store.here}, and the server cannot be reached`;
 
   const slider = new TrimSlider(sliderEl, startHandle, endHandle, fill);
   addTrimNudges(slider, startField.parentNode, endField.parentNode);
@@ -209,23 +209,30 @@ function songTrimEditor(song, { enabled = true } = {}) {
   async function loadPeaks() {
     if (!duration) return;
     const st = Store.server;
-    let job = null;
-    if (song.file) job = window.flow.peaks(song.file, duration);
-    else if (st.on && st.state === 'online') job = window.flow.serverSongPeaks(song.id);
-    if (!job) {
-      setStatus('No waveform: the song is not on this computer and the server cannot be reached. It can still be trimmed.');
+    const online = st.on && st.state === 'online';
+    // Where the song's own file is cut (the desktop), from that file; where the
+    // server cuts it (the phone), from the server's while it can be reached.
+    const jobs = [];
+    if (song.file) jobs.push(() => window.flow.peaks(song.file, duration));
+    if (online) jobs.push(() => window.flow.serverSongPeaks(song.id));
+    if (!Store.can('localTrim')) jobs.reverse();
+    if (!jobs.length) {
+      setStatus(`No waveform: the song is not on ${Store.here} and the server cannot be reached. It can still be trimmed.`);
       return;
     }
     setStatus('Drawing waveform...');
-    try {
-      const got = await job;
-      if (gone) return;
-      peaks = got;
-      setStatus('');
-    } catch {
-      if (gone) return;
-      setStatus('Could not draw the waveform, but the song can still be trimmed.');
+    let got = null;
+    for (const job of jobs) {
+      try {
+        got = await job();
+        break;
+      } catch {
+        // The next way, if there is one.
+      }
     }
+    if (gone) return;
+    peaks = got;
+    setStatus(got ? '' : 'Could not draw the waveform, but the song can still be trimmed.');
     draw();
   }
   if (duration) loadPeaks();
@@ -285,9 +292,11 @@ function editSongDialog(song, heading = 'Edit Song') {
     // without ffmpeg) cannot. Not connected, the trim waits for it.
     const st = Store.server;
     const serverCannot = st.on && st.state === 'online' && !st.trim;
-    const trim = songTrimEditor(song, { enabled: !serverCannot });
+    // The phone cuts no file itself: without a server, no trim there.
+    const trim = Store.can('localTrim') || st.on ? songTrimEditor(song, { enabled: !serverCannot }) : null;
     let note;
-    if (serverCannot) note = 'This Flow Server cannot trim songs. Update it, and install ffmpeg on it (sudo apt install ffmpeg).';
+    if (!trim) note = 'Songs on this phone are trimmed through a Flow Server (Settings, Flow Server).';
+    else if (serverCannot) note = 'This Flow Server cannot trim songs. Update it, and install ffmpeg on it (sudo apt install ffmpeg).';
     else if (st.on && st.state === 'online') note = 'Save cuts the song\'s file on the server; the uncut file stays in its trash for 30 days.';
     else if (st.on) note = 'Save cuts the song\'s copy here, if there is one, and the server cuts its file once it is connected again.';
     else note = 'Save cuts the song\'s file; the uncut file goes to the Recycle Bin.';
@@ -302,9 +311,9 @@ function editSongDialog(song, heading = 'Edit Song') {
         return false;
       }
       const renamed = meta.artist !== song.artist || meta.title !== song.title || meta.mix !== song.mix;
-      const cut = trim.cut();
+      const cut = trim && trim.cut();
       if (!renamed && !cut) return true;
-      trim.stop();
+      if (trim) trim.stop();
       const token = Player.release(song.id);
       try {
         if (renamed) await window.flow.editSong(song.id, meta);
@@ -329,8 +338,8 @@ function editSongDialog(song, heading = 'Edit Song') {
         row('Artist', artist),
         row('Title', title),
         row('Mix', mix),
-        h('h3.settings__section.settings__section--static.song-edit__trim-head', h('span', 'Trim'), trim.hint, trim.resetBtn),
-        trim.el,
+        trim && h('h3.settings__section.settings__section--static.song-edit__trim-head', h('span', 'Trim'), trim.hint, trim.resetBtn),
+        trim && trim.el,
         h('div.settings__desc.song-edit__note', note),
         error)],
       buttons: [
@@ -338,7 +347,7 @@ function editSongDialog(song, heading = 'Edit Song') {
         { label: 'Save', kind: 'primary', onClick: save },
       ],
       onClose: () => {
-        trim.destroy();
+        if (trim) trim.destroy();
         resolve(saved);
       },
     });

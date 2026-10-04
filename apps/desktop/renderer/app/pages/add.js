@@ -59,16 +59,34 @@ const AddPage = {
     $('addToPlaylistBtn').onclick = () => (ImportPanel.ownsFooter ? ImportPanel.choosePlaylists() : this.choosePlaylists());
     this._drawPlaylistButton();
     $('finishBtn').onclick = () => (ImportPanel.ownsFooter ? ImportPanel.finishAll() : this.finish());
+
+    // The phone's Share > Flow.
+    if (window.flow.onShare) window.flow.onShare((s) => this.shared(s));
   },
 
-  show() {
-    if (this.phase === 'idle') {
+  /** opts.shared: opened for a shared link (no keyboard brought up). */
+  show(opts = {}) {
+    if (this.phase === 'idle' && !opts.shared) {
       setTimeout(() => $('linkInput').focus(), 0);
     }
     // A download on the server may have moved on (or been started elsewhere).
     if (ServerImport.available) ServerImport.poll();
     // The canvas had no size while the page was hidden.
     requestAnimationFrame(() => this._redraw());
+  },
+
+  /**
+   * A link shared to Flow (the phone's Share; { url, text }): Add Songs opens
+   * with it in the box, and the server downloads it as soon as it can.
+   */
+  shared({ url, text }) {
+    if (!url) {
+      toast(text ? 'Nothing to add: what was shared has no link in it.' : 'Nothing to add: nothing was shared.', 'error');
+      return;
+    }
+    Nav.show('add', { shared: true });
+    $('linkInput').value = url;
+    ServerImport.startShared(url);
   },
 
   get editorReady() {

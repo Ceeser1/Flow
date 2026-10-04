@@ -42,7 +42,9 @@ const Mobile = {
       this.closeDrawer();
       this.collapsePlayer();
       this._drawTitle();
+      this._orient();
     };
+    this._orient();
     Store.onLibrary(() => this._drawTitle());
     $('pages').addEventListener('scroll', () => this._drawTitle(), { passive: true });
     // The phone's Back (button or gesture); with nothing left to close, Flow goes to the background.
@@ -151,6 +153,7 @@ const Mobile = {
     bar.classList.toggle('mp--pulled', pulled);
     bar.classList.add('mp--open');
     document.body.classList.add('player-open');
+    this._orient();
   },
 
   collapsePlayer() {
@@ -163,6 +166,18 @@ const Mobile = {
     bar.classList.add('mp--leaving');
     document.body.classList.remove('player-open');
     this._leaving = setTimeout(() => bar.classList.remove('mp--open', 'mp--leaving', 'mp--pulled'), this.SLIDE_MS);
+    this._orient();
+  },
+
+  /**
+   * Only Add Songs turns sideways with the phone (its names beside the trim,
+   * a wider waveform); everything else, Now Playing over it too, stays upright.
+   */
+  _orient() {
+    const free = Nav.page === 'add' && !this.playerOpen;
+    if (free === this._free || !window.flow.setOrientation) return;
+    this._free = free;
+    window.flow.setOrientation(free).catch(() => {});
   },
 
   /** The page beside Now Playing, `d` px from its own place (a finger moving both). */

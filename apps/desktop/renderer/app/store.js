@@ -61,9 +61,13 @@ const Store = {
     for (const fn of this._serverListeners || []) fn(this.server);
   },
 
+  /** Returns what stops listening. */
   onServer(fn) {
     this._serverListeners = this._serverListeners || [];
     this._serverListeners.push(fn);
+    return () => {
+      this._serverListeners = this._serverListeners.filter((f) => f !== fn);
+    };
   },
 
   /**
