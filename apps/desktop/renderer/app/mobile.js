@@ -41,6 +41,12 @@ const Mobile = {
     };
     Store.onLibrary(() => this._drawTitle());
     $('pages').addEventListener('scroll', () => this._drawTitle(), { passive: true });
+    // The phone's Back (button or gesture); with nothing left to close, Flow goes to the background.
+    if (window.flow.onBack) {
+      window.flow.onBack(() => {
+        if (!this.back()) window.flow.leave().catch(() => {});
+      });
+    }
   },
 
   // ---- top bar ----

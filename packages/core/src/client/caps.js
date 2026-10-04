@@ -20,6 +20,8 @@ const DESKTOP = {
   localTrim: true,
   // Local files picked for Add Songs may be moved instead of copied.
   moveOriginals: true,
+  // A Flow Server's songs kept here too: a playlist's Download, a song's.
+  offline: true,
   // Settings: Check for Updates.
   updateCheck: false,
 };
@@ -33,6 +35,8 @@ const ANDROID = {
   keyboard: false,
   localTrim: false,
   moveOriginals: false,
+  // Until the phone downloads songs itself (v3.0, Stage 5).
+  offline: false,
   updateCheck: true,
 };
 

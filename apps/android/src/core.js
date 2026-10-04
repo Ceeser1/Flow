@@ -1,8 +1,9 @@
 'use strict';
 
-// What the Android app's page uses of @flow/core, bundled into
-// www/flow-core.js as window.FlowCore (scripts/bundle.js). On the desktop the
-// same code runs in Electron's main process.
+// The shared client as the Android app's page uses it (src/main.js builds
+// window.flow from it), gathered for test/bundle.test.js, which bundles it as
+// window.FlowCore and runs it without Node. On the desktop the same code runs
+// in Electron's main process.
 
 module.exports = {
   createRemote: require('@flow/core/client/remote').createRemote,

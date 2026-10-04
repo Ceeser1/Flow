@@ -1,5 +1,8 @@
 {
   "appId": "io.github.ceeser1.flow",
   "appName": "Flow",
-  "webDir": "www"
+  "webDir": "www",
+  "server": {
+    "androidScheme": "http"
+  }
 }

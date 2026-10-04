@@ -44,6 +44,7 @@
   SleepTimer.init();
   Keys.init();
   Mobile.init();
+  Welcome.init();
 
   window.flow.onLibraryChanged((lib) => Store.setLibrary(lib));
   window.flow.onServerStatus((st) => Store.setServer(st));

@@ -6,8 +6,9 @@
 //
 //   node apps/android/testing/harness.js [--build] [--no-install] <steps.js> <outDir>
 //
-// steps.js exports [{ name, js, wait, shot, screen }]: `js` is evaluated in the
-// page (a promise is awaited, the value logged), then after `wait` ms (400)
+// steps.js exports [{ name, key, js, wait, shot, screen }]: `key` is pressed on
+// the emulator (BACK, HOME), `js` is evaluated in the page (a promise is
+// awaited, the value logged), then after `wait` ms (400)
 // `shot` saves the page as <shot>.png and `screen` the whole device screen
 // (status bar, notifications) as <screen>.png. Errors and console warnings go
 // to <outDir>/log.txt.
@@ -32,7 +33,9 @@ const adbRaw = (...args) => execFileSync('adb', ['-s', SERIAL, ...args], { maxBu
 function build() {
   const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' });
   run('npm', ['run', 'sync'], ANDROID);
-  run(process.platform === 'win32' ? 'gradlew.bat' : './gradlew', ['assembleDebug', '-q'], path.join(ANDROID, 'android'));
+  // By its full path: a shell may not look in the current folder for programs.
+  const project = path.join(ANDROID, 'android');
+  run(path.join(project, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew'), ['assembleDebug', '-q'], project);
 }
 
 // The app's WebView, found by the DevTools socket its process opens.
@@ -124,6 +127,11 @@ async function main() {
     }
     await sleep(800);
     for (const step of steps) {
+      // A key pressed on the emulator first (KEYCODE_ name without the prefix: BACK, HOME).
+      if (step.key) {
+        adb('shell', 'input', 'keyevent', `KEYCODE_${step.key}`);
+        await sleep(300);
+      }
       if (step.js) {
         try {
           const r = await evaluate(cdp, step.js);

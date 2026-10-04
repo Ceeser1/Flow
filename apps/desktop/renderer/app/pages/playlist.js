@@ -178,7 +178,7 @@ const PlaylistPage = {
     const btn = $('plOffline');
     const note = $('plOfflineNote');
     // A playlist another profile shares can be downloaded once it is followed.
-    const can = !!p && Store.server.on && !p.isFavourites && !p.isSmart && (!p.isShared || Store.isFollowing(p.id));
+    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && (!p.isShared || Store.isFollowing(p.id));
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;
@@ -377,7 +377,7 @@ const PlaylistPage = {
     const buttons = [
       this._favButton(song),
       // With a Flow Server the songs are streamed, and one can be kept here too.
-      ...(Store.server.on ? [this._downloadButton(song)] : []),
+      ...(Store.server.on && Store.can('offline') ? [this._downloadButton(song)] : []),
       iconButton('act.act--grey', Icons.search, 'Song Details', () => SongDetails.open(song.id)),
       iconButton('act.act--grey', Icons.pencil, 'Edit', () => this.edit(song)),
     ];

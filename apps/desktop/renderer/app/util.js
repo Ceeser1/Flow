@@ -62,6 +62,8 @@
   /** file:/// URL for a Windows path, the same as Node's pathToFileURL. */
   function fileUrl(filePath) {
     const p = String(filePath || '').replace(/\\/g, '/');
+    // The phone serves its files itself (Capacitor), at addresses of its own.
+    if (typeof window !== 'undefined' && window.flow && window.flow.fileUrl) return window.flow.fileUrl(p);
     const enc = (seg) => encodeURIComponent(seg);
     if (p.startsWith('//')) {
       const [host, ...rest] = p.slice(2).split('/');
