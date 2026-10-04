@@ -4,7 +4,10 @@
 // Electron window: installs the debug APK, starts the app, then runs a steps
 // file against the WebView over the DevTools protocol and saves screenshots.
 //
-//   node apps/android/testing/harness.js [--build] [--no-install] <steps.js> <outDir>
+//   node apps/android/testing/harness.js [--build] [--no-install] [--keep] <steps.js> <outDir>
+//
+// --keep leaves Flow running as it is (its music, its player) and only opens
+// its window again; otherwise it is stopped and started afresh.
 //
 // steps.js exports [{ name, key, shell, js, wait, shot, screen }]: `key` is
 // pressed on the emulator (BACK, HOME, SLEEP), `shell` is run there (adb shell,
@@ -102,7 +105,7 @@ async function main() {
   const args = process.argv.slice(2);
   const flags = new Set(args.filter((a) => a.startsWith('--')));
   const [stepsFile, outDir] = args.filter((a) => !a.startsWith('--'));
-  if (!stepsFile || !outDir) throw new Error('usage: harness.js [--build] [--no-install] <steps.js> <outDir>');
+  if (!stepsFile || !outDir) throw new Error('usage: harness.js [--build] [--no-install] [--keep] <steps.js> <outDir>');
   if (!SERIAL.startsWith('emulator-')) throw new Error(`${SERIAL} is not an emulator; the harness drives emulators only`);
   const steps = require(path.resolve(stepsFile));
   fs.mkdirSync(outDir, { recursive: true });
@@ -114,7 +117,7 @@ async function main() {
 
   if (flags.has('--build')) build();
   if (!flags.has('--no-install')) adb('install', '-r', APK);
-  adb('shell', 'am', 'force-stop', APP);
+  if (!flags.has('--keep')) adb('shell', 'am', 'force-stop', APP);
   adb('shell', 'am', 'start', '-W', '-n', `${APP}/.MainActivity`);
 
   const cdp = await connect(await pageSocket(), log);

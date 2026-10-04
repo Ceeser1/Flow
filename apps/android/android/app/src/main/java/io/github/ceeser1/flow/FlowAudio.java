@@ -12,8 +12,9 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 /**
  * The page's way to FlowPlayer, for its audio engine (apps/android/src/engine.js):
  * run({ ops }) applies a list of operations and answers the state after them,
- * state() answers where it is.
- * Events: "state", "ended" { id } and "error" { id, message }.
+ * state() answers where it is, attach() what the page starting finds (see
+ * FlowPlayer.attach). Events: "state", "ended" { id }, "error" { id, message }
+ * and "advance" { from, id, key, heard, reason }.
  */
 @CapacitorPlugin(name = "FlowAudio")
 public class FlowAudio extends Plugin implements FlowPlayer.Events {
@@ -39,6 +40,11 @@ public class FlowAudio extends Plugin implements FlowPlayer.Events {
                 call.reject(e.getMessage() == null ? "The player refused." : e.getMessage());
             }
         });
+    }
+
+    @PluginMethod
+    public void attach(PluginCall call) {
+        bridge.executeOnMainThread(() -> call.resolve(player.attach()));
     }
 
     @PluginMethod
@@ -74,6 +80,17 @@ public class FlowAudio extends Plugin implements FlowPlayer.Events {
         e.put("id", id);
         e.put("message", message);
         notifyListeners("error", e);
+    }
+
+    @Override
+    public void onAdvance(String from, String id, String key, double heard, String reason) {
+        JSObject e = new JSObject();
+        e.put("from", from);
+        e.put("id", id);
+        e.put("key", key);
+        e.put("heard", heard);
+        e.put("reason", reason);
+        notifyListeners("advance", e);
     }
 
     @Override

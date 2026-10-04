@@ -175,6 +175,7 @@ const Player = {
   _emit() {
     for (const fn of this._listeners) fn();
     this._drawBar();
+    this._syncUpcoming();
   },
 
   init() {
@@ -235,6 +236,8 @@ const Player = {
     // The song coming in cannot be played: no transition, the current one
     // ends and Next tries it the ordinary way.
     e.on('fadefailed', () => this._cancelFade());
+    // The engine moved on by itself (the phone's player, to the next song of the queue).
+    e.on('advanced', (songId, heard, reason) => this._advanced(songId, heard, reason));
     AudioFocus.register('player', () => this.pauseHere());
 
     this._bindBar();
@@ -251,6 +254,7 @@ const Player = {
       else if (this.contextId && !Store.playlist(this.contextId) && !this.lists.has(this.contextId)) this.contextId = 'all';
       if (this.currentId) this.engine.setGain(this._normGain(this.currentId), true);
       this._drawBar();
+      this._syncUpcoming();
     });
     Store.onSettings((patch) => {
       if (!('normalize' in patch)) return;
@@ -276,14 +280,31 @@ const Player = {
     });
   },
 
-  /** Puts the song from the last session back in place, paused. */
+  /**
+   * Puts the song from the last session back in place, paused. The phone's
+   * player may have played on while Flow's window was gone (swiped away): the
+   * songs it played then are counted, and the one it still has is taken over
+   * as it is, playing or not.
+   */
   restore() {
     const s = Store.settings;
+    const context = Store.playlist(s.lastContextId) ? s.lastContextId : 'all';
+    for (const l of this.engine.heardAway || []) this._recordListen(l.key, l.heard, context);
+    const live = this.engine.current;
+    if (live && Store.song(live.key)) {
+      this.queue.start(context, this.idsOf(context), live.key);
+      this.contextId = context;
+      this.currentId = live.key;
+      this._startSession(live.key, live.heard);
+      this._updateMediaSession();
+      this._savePosition();
+      this._emit();
+      return;
+    }
     if (!s.lastSongId || !Store.song(s.lastSongId)) {
       this._drawBar();
       return;
     }
-    const context = Store.playlist(s.lastContextId) ? s.lastContextId : 'all';
     const carried = s.listenSession && s.listenSession.songId === s.lastSongId ? s.listenSession.listened : 0;
     this.load(s.lastSongId, context, { autoplay: false, position: s.lastPosition || 0, listened: carried });
   },
@@ -318,7 +339,7 @@ const Player = {
     this.contextId = context;
     this.currentId = songId;
     this._pendingSeek = position > 0 ? position : null;
-    const playable = this.engine.load(Store.audioSrc(song), this._normGain(songId), position);
+    const playable = this.engine.load(Store.audioSrc(song), this._normGain(songId), { at: position, key: songId });
     if (!playable && autoplay) {
       toast(`"${song.title}" is on the server, which cannot be reached right now, and is not downloaded.`, 'error');
     } else if (autoplay) this._play();
@@ -776,7 +797,7 @@ const Player = {
       r.settleUntil = now + 800;
       r.correcting = false;
       a.setRate(1);
-      a.load(Store.audioSrc(song), this._normGain(song.id));
+      a.load(Store.audioSrc(song), this._normGain(song.id), { key: song.id });
       if (st.playing) this._play();
       return;
     }
@@ -905,6 +926,60 @@ const Player = {
     this.engine.cancelFade();
   },
 
+  // ---- what comes next, for an engine that moves on by itself ----
+
+  // How many of the queue's songs such an engine is given ahead.
+  UPCOMING: 10,
+
+  /**
+   * Tells the engine what comes after the song playing: the queue's songs
+   * (those it can play), or with Repeat the song itself again. The phone's
+   * player moves on to them by itself, even while this page sleeps; the
+   * desktop's elements ask at each song's end instead (`ended`).
+   */
+  _syncUpcoming() {
+    if (!this.engine) return;
+    const ids = this.remote || !this.currentId ? [] : [...this.queue.manual, ...this.queue.auto];
+    const items = [];
+    for (const id of ids) {
+      if (items.length >= this.UPCOMING) break;
+      const song = Store.song(id);
+      const src = song ? Store.audioSrc(song) : '';
+      if (src) items.push({ key: id, src, gain: this._normGain(id), meta: this._meta(song) });
+    }
+    this.engine.setNext(items, { repeat: !this.remote && this.repeat });
+  },
+
+  /**
+   * The engine moved on by itself (`reason`: the song ended, Next in the
+   * notification, or Repeat), with how long the song before was heard: it
+   * may have played on while this page slept.
+   */
+  _advanced(songId, heard, reason) {
+    if (this.remote) return;
+    if (this.session && heard > this.session.listened) this.session.listened = heard;
+    this._endSession();
+    // Next in the notification leaves Repeat, as the bar's does.
+    if (reason === 'next') this.repeat = false;
+    if (reason !== 'repeat') this.queue.take(songId, this.idsOf(this.contextId));
+    this.currentId = songId;
+    this._startSession(songId);
+    this._pendingSeek = null;
+    this._updateMediaSession();
+    this._savePosition();
+    this._emit();
+  },
+
+  /** What the system shows of a song (the phone's notification and lock screen). */
+  _meta(song) {
+    return {
+      title: song.mix ? `${song.title} (${song.mix})` : song.title,
+      artist: song.artist || '',
+      album: this.listName() || 'Flow',
+      artwork: Store.coverSrc(song),
+    };
+  },
+
   // ---- equalize volume ----
 
   /** The gain that brings a song to the target loudness (1 when off or not measured). */
@@ -943,15 +1018,20 @@ const Player = {
   _endSession() {
     const s = this.session;
     this.session = null;
+    if (s) this._recordListen(s.songId, s.listened, this.contextId, s.duration);
+  },
+
+  /** Counts `listened` seconds of a song; `played`: its length as played, when the library has none. */
+  _recordListen(songId, listened, contextId, played = 0) {
     // Under 5 seconds counts as nothing (the same limit as MIN_LISTEN_SECONDS in libraryModel.js).
-    if (!s || s.listened < 5) return;
-    const song = Store.song(s.songId);
-    const duration = (song && song.duration) || s.duration || 0;
+    if (!(listened >= 5)) return;
+    const song = Store.song(songId);
+    const duration = (song && song.duration) || played || 0;
     // The time also counts for the list that was playing, if the song is in it
     // (one queued from elsewhere is not).
-    const list = this.contextId ? Store.playlist(this.contextId) : null;
-    const inList = !!list && list.entries.some((e) => e.songId === s.songId);
-    window.flow.recordListen(s.songId, s.listened, duration, inList ? this.contextId : null).catch(() => {});
+    const list = contextId ? Store.playlist(contextId) : null;
+    const inList = !!list && list.entries.some((e) => e.songId === songId);
+    window.flow.recordListen(songId, listened, duration, inList ? contextId : null).catch(() => {});
   },
 
   _sessionToKeep() {
@@ -1148,12 +1228,7 @@ const Player = {
   _updateMediaSession() {
     const song = this.currentId ? Store.song(this.currentId) : null;
     // The engine's own notification (the phone's), with the song's cover.
-    this.engine.setMeta(song ? {
-      title: song.mix ? `${song.title} (${song.mix})` : song.title,
-      artist: song.artist || '',
-      album: this.listName() || 'Flow',
-      artwork: Store.coverSrc(song),
-    } : null);
+    this.engine.setMeta(song ? this._meta(song) : null);
     if (!('mediaSession' in navigator)) return;
     if (!song) {
       navigator.mediaSession.metadata = null;

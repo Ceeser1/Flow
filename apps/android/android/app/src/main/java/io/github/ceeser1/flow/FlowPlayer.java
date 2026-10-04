@@ -4,6 +4,7 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
@@ -20,6 +21,13 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * The phone's player: one ExoPlayer for as long as the app's process lives,
@@ -27,6 +35,12 @@ import java.io.File;
  * (notification, lock screen, headset buttons) around it; the page drives it
  * through FlowAudio as its audio engine (apps/android/src/engine.js), with
  * lists of operations, and hears back its state.
+ *
+ * Its playlist is the song playing and the songs the page says come after it
+ * (its queue), so it moves on by itself, without a gap, even while the page
+ * sleeps or is gone; Next in the notification goes there too. Each move is
+ * told to the page ("advance", with how long the song before was heard).
+ * Without a page, those listens are kept in a file until one asks (attach).
  *
  * It takes audio focus (a call or another player pauses it), pauses when
  * headphones are pulled out, and keeps the CPU and Wi-Fi awake while it plays.
@@ -38,6 +52,21 @@ final class FlowPlayer {
         void onState(JSObject state);
         void onEnded(String id);
         void onError(String id, String message);
+        /** On to the next song (`reason`: auto, next pressed, repeat); `heard`: seconds of the one before. */
+        void onAdvance(String from, String id, String key, double heard, String reason);
+    }
+
+    /** What the page knows a song in the playlist by: its id there, the song's id, its gain. */
+    private static final class Tag {
+        final String id;
+        final String key;
+        final float gain;
+
+        Tag(String id, String key, float gain) {
+            this.id = id;
+            this.key = key;
+            this.gain = gain;
+        }
     }
 
     private static final int TICK_MS = 250;
@@ -50,11 +79,18 @@ final class FlowPlayer {
 
     final ExoPlayer exo;
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final File heardFile;
+    private JSONArray heardWhileAway;
     private Events events;
-    private String id = "";      // the page's id of the song loaded
+    private String id = "";      // the page's id of the song playing
+    private String key = "";     // the song's own id
     private float volume = 1f;   // the app's volume (the sleep timer's fade)
     private float gain = 1f;     // the song's own (Equalize volume)
     private boolean endedTold;
+    private long durationMs = 0; // the song playing's length, as last known
+    // How long the song playing has been heard: playing time, not places.
+    private long heardMs = 0;
+    private long playingSince = -1;
 
     // While playing, the place goes to the page four times a second.
     private final Runnable tick = new Runnable() {
@@ -68,6 +104,8 @@ final class FlowPlayer {
 
     private FlowPlayer(Context context) {
         FlowLog.init(context);
+        heardFile = new File(context.getFilesDir(), "audio-heard.json");
+        heardWhileAway = readHeard();
         AudioAttributes music = new AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -89,11 +127,28 @@ final class FlowPlayer {
                     endedTold = true;
                     FlowLog.i("ended " + id);
                     if (events != null) events.onEnded(id);
+                    else away(key, takeHeard());
                 }
                 if (ev.contains(Player.EVENT_IS_PLAYING_CHANGED)) {
                     main.removeCallbacks(tick);
                     if (player.isPlaying()) main.postDelayed(tick, TICK_MS);
                 }
+            }
+
+            @Override
+            public void onIsPlayingChanged(boolean isPlaying) {
+                long now = SystemClock.elapsedRealtime();
+                if (isPlaying && playingSince < 0) playingSince = now;
+                if (!isPlaying && playingSince >= 0) {
+                    heardMs += now - playingSince;
+                    playingSince = -1;
+                }
+            }
+
+            @Override
+            public void onMediaItemTransition(MediaItem item, int reason) {
+                if (item == null || reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) return;
+                advanced(item, reason);
             }
 
             @Override
@@ -126,6 +181,22 @@ final class FlowPlayer {
     }
 
     /**
+     * A page starts: what is loaded (the state, the song's id and how long it
+     * has been heard), and the listens kept while there was no page, which it
+     * now records (they are forgotten here).
+     */
+    JSObject attach() {
+        JSObject a = new JSObject();
+        a.put("state", state());
+        a.put("heard", heardSoFar() / 1000.0);
+        a.put("away", heardWhileAway);
+        FlowLog.i("page attached, " + (key.isEmpty() ? "nothing loaded" : id + " loaded") + ", " + heardWhileAway.length() + " listens kept");
+        heardWhileAway = new JSONArray();
+        heardFile.delete();
+        return a;
+    }
+
+    /**
      * Applies the page's operations in order. True when one of them starts
      * playing (PlaybackService must be running then).
      */
@@ -136,7 +207,10 @@ final class FlowPlayer {
             switch (op.getString("op")) {
                 case "load": {
                     id = op.optString("id", "");
+                    key = op.optString("key", "");
                     endedTold = false;
+                    durationMs = 0;
+                    takeHeard();
                     gain = (float) op.optDouble("gain", 1);
                     String src = op.optString("src", "");
                     boolean play = op.optBoolean("play", false);
@@ -145,7 +219,7 @@ final class FlowPlayer {
                         exo.clearMediaItems();
                         play = false;
                     } else {
-                        exo.setMediaItem(item(src, op.optJSONObject("meta")), (long) (op.optDouble("at", 0) * 1000));
+                        exo.setMediaItem(item(id, key, gain, src, op.optJSONObject("meta")), (long) (op.optDouble("at", 0) * 1000));
                         exo.prepare();
                     }
                     exo.setPlaybackSpeed(1f);
@@ -155,10 +229,14 @@ final class FlowPlayer {
                     FlowLog.i("load " + id + " " + redact(src) + (play ? " playing" : ""));
                     break;
                 }
+                case "next":
+                    setNext(op.optJSONArray("items"), op.optBoolean("repeat", false));
+                    break;
                 case "unload":
                     exo.stop();
                     exo.clearMediaItems();
                     exo.setPlayWhenReady(false);
+                    takeHeard();
                     break;
                 case "play":
                     if (exo.getMediaItemCount() == 0) break;
@@ -204,21 +282,116 @@ final class FlowPlayer {
         return plays;
     }
 
-    /** { id, pwr: play when ready, st: 1 idle 2 buffering 3 ready 4 ended, t, d (-1 unknown), rate } */
+    /**
+     * The songs after the one playing, as the page's queue has them; those
+     * already in place stay (one being loaded ahead keeps what it has).
+     * `repeat`: the song playing over and over instead (Next still leaves it).
+     */
+    private void setNext(JSONArray items, boolean repeat) throws JSONException {
+        exo.setRepeatMode(repeat ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
+        if (items == null || exo.getMediaItemCount() == 0) return;
+        int after = exo.getCurrentMediaItemIndex() + 1;
+        int have = exo.getMediaItemCount() - after;
+        int keep = 0;
+        while (keep < have && keep < items.length() && same(exo.getMediaItemAt(after + keep), items.getJSONObject(keep))) keep += 1;
+        if (keep < have) exo.removeMediaItems(after + keep, exo.getMediaItemCount());
+        List<MediaItem> add = new ArrayList<>();
+        for (int i = keep; i < items.length(); i += 1) {
+            JSONObject it = items.getJSONObject(i);
+            add.add(item(it.optString("id", ""), it.optString("key", ""), (float) it.optDouble("gain", 1),
+                    it.optString("src", ""), it.optJSONObject("meta")));
+        }
+        if (!add.isEmpty()) exo.addMediaItems(add);
+    }
+
+    private static boolean same(MediaItem item, JSONObject it) {
+        Tag tag = tagOf(item);
+        if (tag == null || item.localConfiguration == null) return false;
+        return tag.key.equals(it.optString("key", ""))
+                && tag.gain == (float) it.optDouble("gain", 1)
+                && item.localConfiguration.uri.equals(uriOf(it.optString("src", "")));
+    }
+
+    /** On to the next song by itself, by Next, or the same one again (Repeat). */
+    private void advanced(MediaItem item, int reason) {
+        Tag tag = tagOf(item);
+        String from = id;
+        String fromKey = key;
+        double heard = takeHeard();
+        id = tag == null ? "" : tag.id;
+        key = tag == null ? "" : tag.key;
+        gain = tag == null ? 1f : tag.gain;
+        endedTold = false;
+        durationMs = 0;
+        applyVolume();
+        String why = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ? "auto"
+                : reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT ? "repeat" : "next";
+        FlowLog.i("on to " + id + " (" + why + "), " + from + " heard " + Math.round(heard) + " s");
+        // The songs before it are done with (after this event, not inside it).
+        main.post(() -> {
+            int at = exo.getCurrentMediaItemIndex();
+            if (at > 0) exo.removeMediaItems(0, at);
+        });
+        if (events != null) events.onAdvance(from, id, key, heard, why);
+        else away(fromKey, heard);
+    }
+
+    /** A listen while there is no page to record it. */
+    private void away(String songKey, double heard) {
+        if (songKey.isEmpty() || heard < 1) return;
+        try {
+            JSONObject l = new JSONObject();
+            l.put("key", songKey);
+            l.put("heard", heard);
+            l.put("at", System.currentTimeMillis());
+            heardWhileAway.put(l);
+            try (OutputStream out = new FileOutputStream(heardFile)) {
+                out.write(heardWhileAway.toString().getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (JSONException | IOException e) {
+            FlowLog.i("could not keep a listen: " + e.getMessage());
+        }
+    }
+
+    private JSONArray readHeard() {
+        try {
+            if (heardFile.isFile()) return new JSONArray(new String(Files.readAllBytes(heardFile.toPath()), StandardCharsets.UTF_8));
+        } catch (JSONException | IOException e) {
+            FlowLog.i("listens kept could not be read: " + e.getMessage());
+        }
+        return new JSONArray();
+    }
+
+    private long heardSoFar() {
+        return heardMs + (playingSince >= 0 ? SystemClock.elapsedRealtime() - playingSince : 0);
+    }
+
+    /** How long the song playing was heard, in seconds; counting starts again. */
+    private double takeHeard() {
+        long total = heardSoFar();
+        heardMs = 0;
+        if (playingSince >= 0) playingSince = SystemClock.elapsedRealtime();
+        return total / 1000.0;
+    }
+
+    /** { id, key, pwr: play when ready, st: 1 idle 2 buffering 3 ready 4 ended, t, d (-1 unknown), rate } */
     JSObject state() {
         JSObject s = new JSObject();
         s.put("id", id);
+        s.put("key", key);
         s.put("pwr", exo.getPlayWhenReady());
         s.put("st", exo.getPlaybackState());
         s.put("t", exo.getCurrentPosition() / 1000.0);
         long d = exo.getDuration();
+        if (d != C.TIME_UNSET) durationMs = d;
         s.put("d", d == C.TIME_UNSET ? -1 : d / 1000.0);
         s.put("rate", (double) exo.getPlaybackParameters().speed);
         return s;
     }
 
     private void tellState() {
-        if (events != null) events.onState(state());
+        JSObject s = state();
+        if (events != null) events.onState(s);
     }
 
     // Equalize volume may turn a song up, which a player's volume (at most 1) cannot yet.
@@ -227,9 +400,22 @@ final class FlowPlayer {
     }
 
     /** A song's file (a path in the app's storage) or stream (an address). */
-    private MediaItem item(String src, JSONObject meta) {
-        Uri uri = src.startsWith("/") ? Uri.fromFile(new File(src)) : Uri.parse(src);
-        return new MediaItem.Builder().setMediaId(id).setUri(uri).setMediaMetadata(metadata(meta)).build();
+    private static Uri uriOf(String src) {
+        return src.startsWith("/") ? Uri.fromFile(new File(src)) : Uri.parse(src);
+    }
+
+    private static MediaItem item(String itemId, String songKey, float itemGain, String src, JSONObject meta) {
+        return new MediaItem.Builder()
+                .setMediaId(itemId)
+                .setUri(uriOf(src))
+                .setTag(new Tag(itemId, songKey, itemGain))
+                .setMediaMetadata(metadata(meta))
+                .build();
+    }
+
+    private static Tag tagOf(MediaItem item) {
+        Object tag = item.localConfiguration == null ? null : item.localConfiguration.tag;
+        return tag instanceof Tag ? (Tag) tag : null;
     }
 
     /** What the notification and the lock screen show: { title, artist, album, artwork (a file) }. */

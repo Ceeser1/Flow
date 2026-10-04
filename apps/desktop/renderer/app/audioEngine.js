@@ -7,7 +7,9 @@
 //
 // The engine's events are the current song's only: play, pause, ended,
 // timeupdate, seeking, durationchange, loadedmetadata and error; fadefailed
-// when the song coming in cannot be played.
+// when the song coming in cannot be played. An engine that moves on to the
+// next song by itself (the phone's, apps/android/src/engine.js) also says
+// advanced, and may start with a song already playing (current).
 //
 // HtmlAudioEngine plays through the window's two <audio> elements, routed
 // through Web Audio by the equalizer (equalizer.js), which gives each its own
@@ -74,9 +76,10 @@ class HtmlAudioEngine {
 
   /**
    * Loads a song (paused) at loudness `gain`, at full fade. False when there
-   * is nothing to play it from (src ''). `at` is where it is to start: the
-   * player seeks there once the length is known (an engine that can start
-   * there at once passes over that seek); the elements wait for that seek.
+   * is nothing to play it from (src ''). Options { at, key }: where it is to
+   * start (the player seeks there once the length is known; an engine that
+   * can start there at once passes over that seek, the elements wait for it),
+   * and the song's id.
    */
   load(src, gain) {
     const ok = this._setSource(this.main, src);
@@ -118,6 +121,9 @@ class HtmlAudioEngine {
     for (const el of [this.main, this.spare]) el.volume = Equalizer.active ? 1 : v;
     if (Equalizer.active) Equalizer.setVolume(v);
   }
+
+  /** The songs that come next: the elements ask the player at each song's end instead. */
+  setNext() {}
 
   /**
    * What the system shows of the song ({ title, artist, album, artwork }, or

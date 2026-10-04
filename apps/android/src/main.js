@@ -95,21 +95,27 @@ function start() {
   });
   const nothing = () => {};
 
+  // What the phone's player had when this page started (FlowAudio.attach), for its engine.
+  let attached = null;
+
   const flow = {
-    init: call(() => ({
-      platform: 'android',
-      uiMode: 'mobile',
-      caps: caps.ANDROID,
-      library: actions.currentLibrary(),
-      server: remote.status(),
-      settings: settings.all(),
-      musicDir: '',
-      tools: {},
-      mp3Qualities: MP3_QUALITIES,
-      version,
-      iconDataUrl: '',
-      covers: coverDirs(),
-    })),
+    init: call(async () => {
+      attached = await audio.attach().catch(() => null);
+      return {
+        platform: 'android',
+        uiMode: 'mobile',
+        caps: caps.ANDROID,
+        library: actions.currentLibrary(),
+        server: remote.status(),
+        settings: settings.all(),
+        musicDir: '',
+        tools: {},
+        mp3Qualities: MP3_QUALITIES,
+        version,
+        iconDataUrl: '',
+        covers: coverDirs(),
+      };
+    }),
     setSettings: call((patch) => {
       // The password only ever arrives through setServerSecret, to be encrypted.
       const clean = { ...(patch || {}) };
@@ -222,6 +228,7 @@ function start() {
     /** What the player plays through: the phone's own player, for the background (engine.js). */
     createAudioEngine: () => createAudioEngine({
       plugin: audio,
+      attached,
       toPath: (address) => fileAddressToPath(address, window.location.origin),
     }),
   };

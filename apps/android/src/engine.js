@@ -12,6 +12,13 @@
 // place, with its notification text. While a list is on its way, state events
 // sent before it arrived are passed over; its answer is the state after it.
 //
+// The player also holds the songs that come next (setNext, the player's
+// queue) and moves on to them by itself, without a gap and whether the page
+// is awake or not: "advanced" (song id, seconds the one before was heard,
+// reason) tells the page. A page that starts while the player still plays
+// (Flow was swiped away and opened again) finds that song in `current`, and
+// the listens of the songs played meanwhile in `heardAway`.
+//
 // No song transitions yet (canFade is false), and a song's loudness gain only
 // turns it down.
 
@@ -22,10 +29,16 @@ const READY = 3;
 const ENDED = 4;
 
 /**
- * `plugin`: FlowAudio (run, state, addListener). `toPath`: a page address of
- * a file in the app's storage (Util.fileUrl) back to its path, else as it is.
+ * `plugin`: FlowAudio (run, addListener). `toPath`: a page address of a file
+ * in the app's storage (Util.fileUrl) back to its path, else as it is.
+ * `attached`: what FlowAudio.attach() answered as the page started.
+ * `prefix`: this page's own start of the ids it gives songs, so none is
+ * taken for one an earlier page gave (the player may still have it).
  */
-function createAudioEngine({ plugin, toPath = (src) => src, now = () => performance.now() }) {
+function createAudioEngine({
+  plugin, toPath = (src) => src, now = () => performance.now(), attached = null,
+  prefix = `${Math.random().toString(36).slice(2, 7)}-`,
+}) {
   const handlers = {};
   let ops = [];
   let batchLoad = null;   // the load in the list not sent yet
@@ -40,7 +53,27 @@ function createAudioEngine({ plugin, toPath = (src) => src, now = () => performa
   let dur = NaN;
   let rate = 1;
   let startAt = null;     // the place the load starts at, until something else moves it
-  const sent = { rate: 1, gain: null, volume: null, meta: '' };
+  let nexts = 0;
+  const sent = { rate: 1, gain: null, volume: null, meta: '', next: '' };
+
+  // Still playing from before this page (or loaded, paused): taken as it is.
+  let current = null;
+  const was = attached && attached.state;
+  if (was && was.id && was.key && was.st !== IDLE) {
+    id = was.id;
+    src = 'native';
+    paused = !was.pwr || was.st === ENDED;
+    t = was.t;
+    at = now();
+    st = was.st;
+    dur = was.d > 0 ? was.d : NaN;
+    rate = was.rate || 1;
+    current = { key: was.key, playing: !paused, heard: Number(attached.heard) || 0 };
+  }
+  const heardAway = (attached && Array.isArray(attached.away) ? attached.away : [])
+    .filter((l) => l && typeof l.key === 'string' && l.heard > 0);
+
+  const metaOut = (meta) => (meta ? { ...meta, artwork: meta.artwork ? toPath(meta.artwork) : '' } : null);
 
   function emit(type, ...args) {
     for (const fn of handlers[type] || []) {
@@ -124,6 +157,18 @@ function createAudioEngine({ plugin, toPath = (src) => src, now = () => performa
     }
     emit('ended');
   });
+  plugin.addListener('advance', (e) => {
+    if (!e || e.from !== id) return;
+    id = e.id;
+    t = 0;
+    at = now();
+    st = BUFFERING;
+    dur = NaN;
+    startAt = null;
+    // What the player has after it now is not what was last sent: the next list goes again.
+    sent.next = '';
+    emit('advanced', e.key, Number(e.heard) || 0, e.reason);
+  });
   plugin.addListener('error', (e) => {
     if (!e || e.id !== id) return;
     console.warn('Flow audio:', e.message);
@@ -155,9 +200,17 @@ function createAudioEngine({ plugin, toPath = (src) => src, now = () => performa
       return !!src;
     },
 
-    load(source, gain, start = 0) {
+    /** What was playing (or loaded) before this page started: { key, playing, heard }, else null. */
+    get current() {
+      return current;
+    },
+    /** Listens of the songs played while there was no page: [{ key, heard, at }]. */
+    heardAway,
+
+    load(source, gain, { at: start = 0, key = '' } = {}) {
+      current = null;
       loads += 1;
-      id = String(loads);
+      id = `${prefix}${loads}`;
       src = source || '';
       paused = true;
       t = start > 0 ? start : 0;
@@ -168,11 +221,14 @@ function createAudioEngine({ plugin, toPath = (src) => src, now = () => performa
       startAt = start > 0 ? start : null;
       sent.rate = 1;
       sent.gain = gain;
-      op({ op: 'load', id, src: toPath(src), gain, at: startAt || 0, play: false });
+      sent.next = '';
+      op({ op: 'load', id, key, src: toPath(src), gain, at: startAt || 0, play: false });
       return !!src;
     },
 
     unload() {
+      current = null;
+      sent.next = '';
       src = '';
       paused = true;
       st = IDLE;
@@ -244,11 +300,30 @@ function createAudioEngine({ plugin, toPath = (src) => src, now = () => performa
 
     /** What the notification and the lock screen show: { title, artist, album, artwork }. */
     setMeta(meta) {
-      const m = meta ? { ...meta, artwork: meta.artwork ? toPath(meta.artwork) : '' } : null;
+      const m = metaOut(meta);
       const key = JSON.stringify(m);
       if (key === sent.meta) return;
       sent.meta = key;
       if (m) op({ op: 'meta', meta: m });
+    },
+
+    /**
+     * The songs that come after this one ([{ key, src, gain, meta }], in
+     * order), or with `repeat` this one over and over.
+     */
+    setNext(items, { repeat = false } = {}) {
+      const list = (items || []).filter((i) => i && i.src);
+      const k = JSON.stringify([repeat, list.map((i) => [i.key, i.src, i.gain, i.meta])]);
+      if (k === sent.next) return;
+      sent.next = k;
+      op({
+        op: 'next',
+        repeat: !!repeat,
+        items: list.map((i) => {
+          nexts += 1;
+          return { id: `${prefix}n${nexts}`, key: i.key, src: toPath(i.src), gain: i.gain, meta: metaOut(i.meta) };
+        }),
+      });
     },
 
     // Output devices are the phone's own business.
