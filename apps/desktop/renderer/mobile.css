@@ -413,6 +413,7 @@ body.mobile .modal__back {
   padding: 0 16px 0 0;
   align-items: center;
   justify-content: flex-end;
+  border: none;
   border-radius: 0;
   background: none;
   color: var(--text-bright);
@@ -430,8 +431,6 @@ body.mobile .modal__back .icon { width: 22px; height: 22px; }
 body.mobile .modal__close:active .icon,
 body.mobile .modal__back:active .icon { opacity: 0.6; }
 body.mobile .modal__close:hover { background: none; }
-body.mobile .modal__close:focus-visible,
-body.mobile .modal__back:focus-visible { outline: none; }
 body.mobile .picker__row { min-height: 48px; font-size: 15px; }
 body.mobile .check input { width: 20px; height: 20px; }
 
