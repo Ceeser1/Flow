@@ -166,8 +166,7 @@ body.mobile .mp .mp__sub {
   white-space: nowrap;
 }
 
-body.mobile .mp .mp__buttons { grid-area: buttons; align-items: center; gap: 4px; }
-body.mobile .mp:not(.mp--open) #btnPrev,
+body.mobile .mp .mp__buttons { grid-area: buttons; align-items: center; gap: 0; }
 body.mobile .mp:not(.mp--open) #btnBack10,
 body.mobile .mp:not(.mp--open) #btnFwd10 { display: none; }
 body.mobile .mp:not(.mp--open) .round-btn {
@@ -340,9 +339,8 @@ body.mobile .modal--sheet {
   max-width: 560px;
   max-height: 100%;
   border-radius: 16px 16px 0 0;
-  border-bottom: none;
+  border-width: 1px 0 0;
   padding-bottom: var(--safe-bottom);
-  background: #26262c;
   animation: sheet-in 0.22s ease-out;
 }
 body.mobile .modal-backdrop--sheet.modal-backdrop--out { animation: backdrop-out 0.2s ease-in forwards; }
@@ -362,14 +360,6 @@ body.mobile .modal--sheet::before {
   background: #4a4a54;
 }
 
-body.mobile .modal--actions .modal__head { padding-bottom: 4px; }
-body.mobile .modal--actions .modal__title {
-  font-size: 15px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 body.mobile .modal--actions .modal__body { padding-top: 0; padding-bottom: 8px; }
 body.mobile .sheet__subtitle { margin: 0 0 6px; color: var(--text-dim); }
 
@@ -399,7 +389,49 @@ body.mobile .sheet__item--on .sheet__label { color: var(--accent-hi); }
 body.mobile .modal { width: 100%; }
 body.mobile .modal--small { width: 100%; max-width: 420px; }
 body.mobile .modal__footer .btn { height: 44px; padding: 0 18px; font-size: 15px; }
-body.mobile .modal__close { width: 44px; height: 44px; }
+/* Every popup's head alike: the name, the X at the right edge of the content
+   with a finger's room around it (out into the margin), and on a Settings
+   category a < in front of the name. The buttons' room overlaps the head's
+   padding, so the head is no taller than the name. */
+body.mobile .modal__head { gap: 4px; padding: 14px 16px 8px; }
+body.mobile .modal__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.mobile .modal__close,
+body.mobile .modal__back {
+  flex: none;
+  box-sizing: border-box;
+  width: 60px;
+  height: 52px;
+  margin: -14px -16px -14px 0;
+  padding: 0 16px 0 0;
+  align-items: center;
+  justify-content: flex-end;
+  border-radius: 0;
+  background: none;
+  color: var(--text-bright);
+}
+body.mobile .modal__back {
+  width: 48px;
+  margin: -14px 0 -14px -16px;
+  padding: 0 0 0 12px;
+  justify-content: flex-start;
+  display: inline-flex;
+}
+body.mobile .modal__back[hidden] { display: none; }
+body.mobile .modal__close .icon,
+body.mobile .modal__back .icon { width: 22px; height: 22px; }
+body.mobile .modal__close:active .icon,
+body.mobile .modal__back:active .icon { opacity: 0.6; }
+body.mobile .modal__close:hover { background: none; }
+body.mobile .modal__close:focus-visible,
+body.mobile .modal__back:focus-visible { outline: none; }
 body.mobile .picker__row { min-height: 48px; font-size: 15px; }
 body.mobile .check input { width: 20px; height: 20px; }
 
@@ -589,6 +621,8 @@ body.mobile .modal--drawer {
   padding-top: var(--safe-top);
   padding-bottom: var(--safe-bottom);
 }
+/* The Queue covers the page: nothing shows through it. */
+body.mobile .modal--queue { width: 100%; background: var(--bg); }
 body.mobile .modal-backdrop:has(> .modal--settings) { padding: 0; }
 body.mobile .modal--settings {
   width: 100%;
@@ -599,7 +633,17 @@ body.mobile .modal--settings {
   padding-top: var(--safe-top);
   padding-bottom: var(--safe-bottom);
   background: var(--bg);
+  touch-action: pan-y;
+  transition: transform 0.2s ease-out;
 }
+/* Settings comes from the left (where the drawer was) and goes back there:
+   with the X or Back, or after the finger that pulled it (Mobile.swipeLeftToClose). */
+body.mobile .modal--settings.modal--drawer { animation: settings-in 0.22s ease-out; }
+body.mobile .modal-backdrop--out .modal--settings { animation: settings-out 0.2s ease-in forwards; }
+body.mobile .modal--settings.modal--sliding { transition: none; }
+body.mobile .modal-backdrop--out .modal--settings.modal--swiped { animation: none; }
+@keyframes settings-in { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes settings-out { from { transform: none; } to { transform: translateX(-100%); } }
 
 /* ===== Settings: categories, each on its own screen ===== */
 

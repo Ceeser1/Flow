@@ -175,6 +175,57 @@ const Mobile = {
     bar.addEventListener('pointercancel', end);
   },
 
+  /**
+   * A full-screen popup (Settings) follows a finger pulling it to the left and
+   * closes past a third of the way, or on a quick flick. Sliders, boxes and
+   * an up-and-down scroll keep the finger.
+   */
+  swipeLeftToClose(modal) {
+    const box = modal.el;
+    let start = null;
+    box.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('input, select, textarea, .settings__slider')) return;
+      start = { x: e.clientX, y: e.clientY, t: e.timeStamp, id: e.pointerId, dx: 0, sliding: false };
+    });
+    box.addEventListener('pointermove', (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (!start.sliding) {
+        // Decided by the first 10 px: sideways to the left slides, anything else is not ours.
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        if (dx > -10 || Math.abs(dy) > Math.abs(dx)) {
+          start = null;
+          return;
+        }
+        start.sliding = true;
+        box.classList.add('modal--sliding');
+        try { box.setPointerCapture(e.pointerId); } catch { /* the pointer may be gone */ }
+      }
+      start.dx = Math.min(0, dx);
+      box.style.transform = `translateX(${start.dx}px)`;
+    });
+    const end = (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      const { dx, sliding, t } = start;
+      start = null;
+      if (!sliding) return;
+      const fast = -dx > 48 && -dx / Math.max(1, e.timeStamp - t) > 0.6;
+      const far = -dx > box.offsetWidth / 3;
+      box.classList.remove('modal--sliding');
+      if (e.type === 'pointerup' && (far || fast)) {
+        // Out from where the finger left it; the backdrop fades as usual.
+        box.classList.add('modal--swiped');
+        box.style.transform = 'translateX(-100%)';
+        modal.close();
+      } else {
+        box.style.transform = '';
+      }
+    };
+    box.addEventListener('pointerup', end);
+    box.addEventListener('pointercancel', end);
+  },
+
   // ---- what the phone does not have ----
 
   _hideByCaps() {

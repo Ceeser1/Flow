@@ -38,6 +38,7 @@ const Icons = (() => {
     more: svg('<circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/>', true),    speaker: svg('<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>'),
     menu: svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),
     chevronDown: svg('<path d="M6 9l6 6 6-6"/>'),
+    chevronLeft: svg('<path d="M15 6l-6 6 6 6"/>'),
     back10: `<span class="skip-label">-10</span>`,
     fwd10: `<span class="skip-label">+10</span>`,
   };

@@ -219,16 +219,27 @@ const SettingsPanel = {
       ...(Store.can('updateCheck') ? this._appRows() : []),
     ]));
 
+    // The phone's Settings comes in from the left, where the drawer it is
+    // opened from was, and goes back there with the X or a swipe to the left.
+    const mobile = document.body.classList.contains('mobile');
     this.modal = Modal.open({
       title: 'Settings',
       className: 'modal--settings',
+      drawer: mobile,
       body: [body],
-      buttons: [{ label: 'Close', kind: 'primary' }],
+      buttons: mobile ? [] : [{ label: 'Close', kind: 'primary' }],
       onClose: () => {
         this.modal = null;
         this._refresh = [];
       },
     });
+    if (mobile) {
+      const modal = this.modal;
+      this._backBtn = iconButton('modal__back', Icons.chevronLeft, 'Back', () => this.back());
+      this._backBtn.hidden = true;
+      modal.el.querySelector('.modal__head').prepend(this._backBtn);
+      Mobile.swipeLeftToClose(modal);
+    }
     this._refreshAll();
     this._drawStats();
     this._drawMeasured();
@@ -329,6 +340,7 @@ const SettingsPanel = {
     for (const g of this._screenGroups) g.hidden = g.dataset.title !== title;
     const head = this.modal && this.modal.el.querySelector('.modal__title');
     if (head) head.textContent = title || 'Settings';
+    if (this._backBtn) this._backBtn.hidden = !title;
     const body = this.modal && this.modal.el.querySelector('.modal__body');
     if (body) body.scrollTop = 0;
   },
