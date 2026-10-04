@@ -56,8 +56,10 @@ const SleepTimer = {
     modal = Modal.open({
       title: 'Sleep Timer',
       className: 'modal--sleep',
+      sheet: document.body.classList.contains('mobile'),
       body: [
-        h('label.check.sleep__shutdown', shutdown, h('span', 'Shut down my PC after the timer runs out (+5 min delay). Make sure you\'ve saved everything.')),
+        // Only where Flow can shut the device down (not the phone).
+        !Store.can('shutdown') ? null : h('label.check.sleep__shutdown', shutdown, h('span', 'Shut down my PC after the timer runs out (+5 min delay). Make sure you\'ve saved everything.')),
         h('div.sleep__row',
           ...presets,
           h('span.sleep__sep'),

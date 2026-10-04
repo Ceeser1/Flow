@@ -34,6 +34,24 @@ function sliderMetrics(cssWidth, handleW = 16) {
   return { inset: 8 + handleW / 2, usable: Math.max(1, cssWidth - 16 - handleW) };
 }
 
+/**
+ * The phone's fine control (no Shift or Ctrl there): -0.1 s and +0.1 s
+ * buttons after the Start and End fields. Nothing on the desktop's layout.
+ */
+function addTrimNudges(slider, startGroup, endGroup) {
+  if (!document.body.classList.contains('mobile')) return;
+  const nudge = (isStart, by) => h('button.btn.trim-nudge', {
+    type: 'button',
+    'aria-label': `${isStart ? 'Start' : 'End'} ${by > 0 ? '+' : '-'}0.1 seconds`,
+    onclick: () => {
+      if (isStart) slider.setStart(Math.round((slider.start + by) * 1000) / 1000);
+      else slider.setEnd(Math.round((slider.end + by) * 1000) / 1000);
+    },
+  }, by > 0 ? '+0.1' : '-0.1');
+  startGroup.append(nudge(true, -0.1), nudge(true, 0.1));
+  endGroup.append(nudge(false, -0.1), nudge(false, 0.1));
+}
+
 class TrimSlider {
   constructor(rootEl, startHandleEl, endHandleEl, fillEl) {
     this.root = rootEl;

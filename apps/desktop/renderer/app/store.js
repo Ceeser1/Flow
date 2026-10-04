@@ -15,6 +15,12 @@ const Store = {
   musicDir: '',
   iconDataUrl: '',
   mp3Qualities: [],
+  // Which app this window is in ('desktop', 'android'), its layout ('desktop',
+  // 'mobile') and what it can do (@flow/core/client/caps).
+  platform: 'desktop',
+  uiMode: 'desktop',
+  caps: {},
+  version: '',
   // The Flow Server's state (remote.js publicStatus); `on` false without one.
   server: { on: false, state: 'off', offline: [] },
   songsById: new Map(),
@@ -34,6 +40,11 @@ const Store = {
       }
     }
     for (const fn of this._listeners) fn(lib);
+  },
+
+  /** Whether this app can do `cap` (@flow/core/client/caps); its controls are hidden when not. */
+  can(cap) {
+    return this.caps[cap] !== false;
   },
 
   onLibrary(fn) {

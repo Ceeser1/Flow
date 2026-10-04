@@ -69,11 +69,11 @@ const SettingsPanel = {
     this._refresh = [];
     const body = h('div.settings', ...this._sections([
       h('h3.settings__section', 'General'),
-      this._row({
+      Store.can('outputDevices') ? this._row({
         label: 'Output device',
         desc: 'Where the music plays from.',
         right: this._outputSelect(),
-      }),
+      }) : null,
       this._row({
         key: 'crossfade',
         label: 'Song Transition',
@@ -86,13 +86,15 @@ const SettingsPanel = {
         desc: 'Play all songs at an equal volume. It reduces loud spikes and makes quiet songs louder.',
         right: this._measuredNode = h('span.settings__note'),
       }),
-      this._savedSongsRow(),
+      Store.can('musicFolder') ? this._savedSongsRow() : null,
       this._coversRow(),
 
       ...this._serverRows(),
 
       ...this._jamRows(),
 
+      // yt-dlp runs on this device (not on the phone, where the server downloads).
+      ...(Store.can('downloadHere') ? [
       h('h3.settings__section', 'Website Downloads'),
       this._row({
         key: 'useCookies',
@@ -136,7 +138,9 @@ const SettingsPanel = {
         sub: true,
         when: () => Store.settings.alwaysMp3,
       }),
+      ] : []),
 
+      ...(Store.can('effects') ? [
       h('h3.settings__section', 'Visual Effects'),
       this._row({
         key: 'cloudsOn',
@@ -210,6 +214,9 @@ const SettingsPanel = {
 
       h('h3.settings__section', 'Music Visualizer'),
       this._visualizerRow(),
+      ] : []),
+
+      ...(Store.can('updateCheck') ? this._appRows() : []),
     ]));
 
     this.modal = Modal.open({
@@ -248,9 +255,10 @@ const SettingsPanel = {
    * arrow while they are hidden.
    */
   _sections(nodes) {
+    if (document.body.classList.contains('mobile')) return this._screens(nodes.filter(Boolean));
     const groups = [];
     let rows = null;
-    for (const node of nodes) {
+    for (const node of nodes.filter(Boolean)) {
       if (!node.classList.contains('settings__section')) {
         rows.appendChild(node);
         continue;
@@ -284,6 +292,78 @@ const SettingsPanel = {
       groups.push(h('div.settings__group', node, own));
     }
     return groups;
+  },
+
+  /**
+   * The phone's Settings: the categories as a list, each opening on its own
+   * screen (Back returns to the list, see back()).
+   */
+  _screens(nodes) {
+    const groups = [];
+    let rows = null;
+    for (const node of nodes) {
+      if (!node.classList.contains('settings__section')) {
+        rows.appendChild(node);
+        continue;
+      }
+      const title = node.childNodes[0].textContent;
+      rows = h('div.settings__group-rows');
+      const group = h('div.settings__group', rows);
+      group.dataset.title = title;
+      groups.push(group);
+    }
+    const list = h('div.settings__categories', ...groups.map((g) => h('button.settings__category', {
+      type: 'button',
+      onclick: () => this._openScreen(g.dataset.title),
+    }, h('span', g.dataset.title), h('span.settings__chevron', { html: Icons.chevron }))));
+    this._screenList = list;
+    this._screenGroups = groups;
+    this._screen = null;
+    for (const g of groups) g.hidden = true;
+    return [list, ...groups];
+  },
+
+  _openScreen(title) {
+    this._screen = title;
+    this._screenList.hidden = !!title;
+    for (const g of this._screenGroups) g.hidden = g.dataset.title !== title;
+    const head = this.modal && this.modal.el.querySelector('.modal__title');
+    if (head) head.textContent = title || 'Settings';
+    const body = this.modal && this.modal.el.querySelector('.modal__body');
+    if (body) body.scrollTop = 0;
+  },
+
+  /** The phone's Back while Settings is open: from a category to the list. False on the list. */
+  back() {
+    if (!this.modal || !this._screen) return false;
+    this._openScreen(null);
+    return true;
+  },
+
+  /**
+   * The phone app's own: Check for Updates, the songs kept on the phone, and
+   * help for playing on with the screen off. Not built yet (v3.0, Stage 8).
+   */
+  _appRows() {
+    const later = () => toast('Not ready yet', 'info');
+    return [
+      h('h3.settings__section', 'App'),
+      this._row({
+        label: 'Check for Updates',
+        desc: `Flow ${Store.version || ''}`.trim(),
+        right: h('button.btn.btn--small', { type: 'button', onclick: later }, 'Check'),
+      }),
+      this._row({
+        label: 'Storage',
+        desc: 'The songs kept on this phone, and how much room they take.',
+        right: h('span.settings__note', '-'),
+      }),
+      this._row({
+        label: 'Playing with the screen off',
+        desc: 'How to keep the phone from stopping Flow in the background.',
+        right: h('button.btn.btn--small', { type: 'button', onclick: later }, 'Show'),
+      }),
+    ];
   },
 
   _row({ key, label, desc, right = null, sub = false, when = null, show = null }) {
@@ -864,6 +944,8 @@ const SettingsPanel = {
   },
 
   async _drawStats() {
+    // No Local Files row where the folder is not the user's to see (the phone).
+    if (!Store.can('musicFolder')) return;
     this._pathNode.textContent = `Location: ${Store.musicDir}`;
     this._pathNode.title = Store.musicDir;
     try {

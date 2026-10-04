@@ -11,6 +11,11 @@
     document.body.textContent = 'Flow could not start: ' + err.message;
     return;
   }
+  Store.platform = init.platform || 'desktop';
+  Store.uiMode = init.uiMode || 'desktop';
+  Store.caps = init.caps || {};
+  Store.version = init.version || '';
+  document.body.classList.toggle('mobile', Store.uiMode === 'mobile');
   Store.settings = init.settings;
   Store.musicDir = init.musicDir;
   Store.iconDataUrl = init.iconDataUrl;
@@ -38,6 +43,7 @@
   SongActions.init();
   SleepTimer.init();
   Keys.init();
+  Mobile.init();
 
   window.flow.onLibraryChanged((lib) => Store.setLibrary(lib));
   window.flow.onServerStatus((st) => Store.setServer(st));

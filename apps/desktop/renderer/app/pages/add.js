@@ -37,7 +37,10 @@ const AddPage = {
 
     $('downloadBtn').onclick = () => this.startDownload();
     $('linkInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') this.startDownload();
+      if (e.key !== 'Enter') return;
+      // Where songs cannot be downloaded here (the phone), the server downloads.
+      if (Store.can('downloadHere')) this.startDownload();
+      else if (!$('serverDownloadBtn').hidden) $('serverDownloadBtn').click();
     });
     $('openFilesBtn').onclick = () => this.openLocal(false);
     $('openFolderBtn').onclick = () => this.openLocal(true);
@@ -337,6 +340,7 @@ const AddPage = {
 
   _initEditor() {
     this.slider = new TrimSlider($('trimSlider'), $('startHandle'), $('endHandle'), $('trimFill'));
+    addTrimNudges(this.slider, $('startField').parentNode, $('endField').parentNode);
     this.slider.onChange = (start, end, which) => {
       this._syncFields();
       this._redraw();

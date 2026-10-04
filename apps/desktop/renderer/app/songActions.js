@@ -82,6 +82,7 @@ const SongActions = {
    * then closes the popup and the tray; so does a click anywhere else.
    */
   pickPlaylists(anchor, song) {
+    if (document.body.classList.contains('mobile')) return this._pickPlaylistsSheet(song);
     if (this.picker) {
       this.picker.remove();
       this.picker = null;
@@ -111,6 +112,30 @@ const SongActions = {
     const height = picker.getBoundingClientRect().height;
     picker.style.top = `${Math.max(8, Math.min(Math.round(t.top), window.innerHeight - height - 8))}px`;
     this.picker = picker;
+  },
+
+  /** The phone's Add to Playlists: the same list with boxes, as a sheet with Apply. */
+  _pickPlaylistsSheet(song) {
+    const lists = Store.sortedPlaylists();
+    const had = new Set(lists.filter((p) => p.entries.some((e) => e.songId === song.id)).map((p) => p.id));
+    const boxes = new Map();
+    const rows = lists.map((p) => {
+      const box = h('input', { type: 'checkbox', checked: had.has(p.id) });
+      boxes.set(p.id, box);
+      return h('label.check.picker__row', box, h('span.picker__name', p.name),
+        h('span.picker__meta', Util.plural(p.entries.length, 'song')));
+    });
+    Modal.open({
+      title: 'Add to Playlists',
+      sheet: true,
+      className: 'modal--picker',
+      body: [h('p.modal__subtitle', Util.songLine(song)),
+        h('div.picker__list', ...(rows.length ? rows : [h('div.picker__empty', 'No playlists yet.')]))],
+      buttons: [
+        { label: 'Cancel' },
+        { label: 'Apply', kind: 'primary', onClick: () => { this._applyPlaylists(song, had, boxes); } },
+      ],
+    });
   },
 
   async _applyPlaylists(song, had, boxes) {

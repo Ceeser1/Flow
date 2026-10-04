@@ -57,6 +57,7 @@ function songTrimEditor(song, { enabled = true } = {}) {
   if (!src) playBtn.title = 'Not on this computer, and the server cannot be reached';
 
   const slider = new TrimSlider(sliderEl, startHandle, endHandle, fill);
+  addTrimNudges(slider, startField.parentNode, endField.parentNode);
   const setStatus = (text) => {
     status.textContent = text;
     status.hidden = !text;

@@ -91,6 +91,15 @@ const SessionsPage = {
           render: (s) => h('div.actions', ...this._actions(s)),
         },
       ],
+      mobile: {
+        lead: () => h('span.mrow__icon', { html: Icons.sessions }),
+        title: (s) => (this._isOwn(s) ? `${s.name} (you)` : s.name),
+        sub: (s) => [
+          s.song ? `${s.playing ? '' : 'Paused: '}${s.song.title}${s.song.artist ? ` - ${s.song.artist}` : ''}` : 'Nothing loaded',
+          Util.plural(s.listeners, 'listener'),
+        ].join(' · '),
+        side: (s) => (this._isOwn(s) ? h('span') : h('div.actions.mrow__side', ...this._actions(s))),
+      },
     });
     this._tick();
   },

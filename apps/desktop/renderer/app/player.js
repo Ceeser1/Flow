@@ -1175,6 +1175,11 @@ const Player = {
     bar.classList.toggle('player--remote', !!this.remote);
     $('playerTitle').textContent = song ? Util.songLine(song) : 'Nothing playing';
     $('playerTitle').title = song ? Util.songLine(song) : '';
+    // The phone's player (mobile.js): the title alone, the artist and mix below it.
+    if ($('playerSub')) {
+      if (song) $('playerTitle').textContent = song.title || 'Untitled';
+      $('playerSub').textContent = song ? [song.artist, song.mix ? `(${song.mix})` : ''].filter(Boolean).join(' - ') : '';
+    }
     // The cover only changes with the song (or its cover): drawn again, it would flicker.
     const coverKey = song ? `${song.id}/${song.cover || ''}` : '';
     if ($('playerCover').dataset.key !== coverKey || !$('playerCover').firstChild) {

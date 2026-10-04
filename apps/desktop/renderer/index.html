@@ -2,10 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src file: http: https:" />
   <title>Flow</title>
   <link rel="stylesheet" href="style.css" />
+  <!-- The phone's layout, all under body.mobile (mobile.js). -->
+  <link rel="stylesheet" href="mobile.css" />
 </head>
 <body>
 <div class="app">
@@ -75,6 +78,9 @@
             <!-- With a Flow Server that downloads songs itself (serverImport.js). -->
             <button id="serverDownloadBtn" class="btn btn--big" type="button" hidden>Download (Server)</button>
           </div>
+          <!-- Where songs are not downloaded here (the phone) and no server downloads them. -->
+          <div id="downloadHint" class="muted-text download-hint" hidden>
+            To download from a link, connect to a Flow Server that downloads songs (Settings, Flow Server).</div>
           <!-- Songs from the computer instead: hidden once something is open. -->
           <div id="localPick" class="local-pick">
             <div class="local-pick__or">or</div>
@@ -383,6 +389,7 @@
 <script src="app/store.js"></script>
 <script src="app/covers.js"></script>
 <script src="app/ui.js"></script>
+<script src="app/touchList.js"></script>
 <script src="app/trim.js"></script>
 <script src="app/songEdit.js"></script>
 <script src="app/spectrum.js"></script>
@@ -411,6 +418,7 @@
 <script src="app/settingsPanel.js"></script>
 <script src="app/serverChip.js"></script>
 <script src="app/keys.js"></script>
+<script src="app/mobile.js"></script>
 <script src="app/main.js"></script>
 </body>
 </html>

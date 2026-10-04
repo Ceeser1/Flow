@@ -27,6 +27,7 @@ const remote = require('./src/remote');
 const env = require('./src/env');
 const { createActions } = require('@flow/core/client/actions');
 const sponsorblock = require('@flow/core/sponsorblock');
+const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
 
@@ -80,16 +81,21 @@ function restoredBounds() {
   return visible ? b : null;
 }
 
+// For working on the Android app's layout: FLOW_UI=mobile shows the phone's
+// layout and leaves out what the phone cannot do, in a phone-sized window.
+const MOBILE_UI = process.env.FLOW_UI === 'mobile';
+
 function createWindow() {
   nativeTheme.themeSource = 'dark';
   Menu.setApplicationMenu(null);
-  const bounds = restoredBounds();
+  const bounds = MOBILE_UI ? null : restoredBounds();
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 860,
+    width: MOBILE_UI ? 412 : 1280,
+    height: MOBILE_UI ? 891 : 860,
     ...(bounds || {}),
-    minWidth: 960,
-    minHeight: 640,
+    useContentSize: MOBILE_UI,
+    minWidth: MOBILE_UI ? 320 : 960,
+    minHeight: MOBILE_UI ? 480 : 640,
     show: false,
     title: 'Flow',
     backgroundColor: '#1e1e22',
@@ -102,7 +108,7 @@ function createWindow() {
       autoplayPolicy: 'no-user-gesture-required',
     },
   });
-  if (settings.get('windowMaximized')) mainWindow.maximize();
+  if (settings.get('windowMaximized') && !MOBILE_UI) mainWindow.maximize();
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.on('close', (e) => {
@@ -124,10 +130,12 @@ function createWindow() {
       }
       importPending = 0;
     }
-    settings.set({
-      windowBounds: mainWindow.getNormalBounds(),
-      windowMaximized: mainWindow.isMaximized(),
-    });
+    if (!MOBILE_UI) {
+      settings.set({
+        windowBounds: mainWindow.getNormalBounds(),
+        windowMaximized: mainWindow.isMaximized(),
+      });
+    }
   });
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -184,6 +192,9 @@ function iconDataUrl() {
 }
 
 handle('app:init', () => ({
+  platform: 'desktop',
+  uiMode: MOBILE_UI ? 'mobile' : 'desktop',
+  caps: MOBILE_UI ? caps.ANDROID : caps.DESKTOP,
   library: currentLibrary(),
   server: remote.status(),
   settings: settings.all(),

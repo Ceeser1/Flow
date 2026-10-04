@@ -50,6 +50,10 @@ const ServerImport = {
   drawButtons() {
     const on = this.available;
     $('serverDownloadBtn').hidden = !on;
+    // The phone does not download itself: only the server's button, or a word on how to get one.
+    const here = Store.can('downloadHere');
+    $('downloadBtn').hidden = !here;
+    $('downloadHint').hidden = here || on;
     $('downloadBtn').textContent = on ? 'Download (Client)' : 'Download';
     const busy = ImportPanel.busy || ['probing', 'downloading', 'saving'].includes(AddPage.phase);
     $('serverDownloadBtn').disabled = busy;

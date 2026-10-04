@@ -1,0 +1,712 @@
+/* The phone's layout (mobile.js). Every rule is under body.mobile, so the
+   desktop's layout is untouched. Touch targets at least 44-48 px; the system
+   bars' room through env(safe-area-inset-*). */
+
+body.mobile {
+  --mbar-h: 56px;
+  --mini-h: 64px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  font-size: 15px;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* No clouds, equalizer or screen flash on the phone (yet). */
+body.mobile .ambient-canvas,
+body.mobile .eq-canvas,
+body.mobile .flash-canvas { display: none; }
+
+body.mobile ::-webkit-scrollbar { width: 0; height: 0; }
+
+/* ===== shell ===== */
+
+body.mobile .app {
+  display: block;
+  height: 100vh;
+  height: 100dvh;
+}
+
+body.mobile .content { height: 100%; }
+
+.mbar { display: none; }
+
+body.mobile .mbar {
+  flex: none;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: calc(var(--mbar-h) + var(--safe-top));
+  padding: var(--safe-top) 8px 0 4px;
+  background: rgba(23, 23, 26, 0.96);
+  border-bottom: 1px solid #25252a;
+}
+
+body.mobile .mbar__menu {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 24px;
+  color: var(--text-bright);
+}
+body.mobile .mbar__menu:active { background: rgba(255, 255, 255, 0.08); }
+body.mobile .mbar__menu .icon { width: 24px; height: 24px; }
+
+body.mobile .mbar__title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-bright);
+  font-size: 19px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.mobile .page { padding: 16px 16px 24px; }
+/* The top bar names the page; a playlist keeps its own big title. */
+body.mobile .page > .page__title { display: none; }
+
+/* ===== drawer (the desktop's menu) ===== */
+
+body.mobile .menu {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 47;
+  width: min(84vw, 320px);
+  padding: calc(16px + var(--safe-top)) 12px 0;
+  overflow-y: auto;
+  transform: translateX(-100%);
+  transition: transform 0.22s ease-out, visibility 0s 0.22s;
+  visibility: hidden;
+  box-shadow: none;
+}
+
+body.mobile.drawer-open .menu {
+  transform: none;
+  visibility: visible;
+  transition: transform 0.22s ease-out;
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.5);
+}
+
+body.mobile .drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 46;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s;
+}
+body.mobile.drawer-open .drawer-scrim { opacity: 1; pointer-events: auto; }
+.drawer-scrim { display: none; }
+body.mobile .drawer-scrim { display: block; }
+
+/* The cog beside the name goes; Settings sits at the drawer's bottom instead. */
+body.mobile .settings-btn { display: none; }
+.menu__settings { display: none; }
+body.mobile .menu__settings {
+  display: flex;
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  flex: none;
+  height: calc(56px + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  border-top: 1px solid #2c2c33;
+  border-radius: 0;
+  background: #1c1c20;
+}
+
+body.mobile .menu__search { height: 48px; border-radius: 24px; font-size: 15px; }
+body.mobile .menu__item { height: 48px; font-size: 15px; }
+body.mobile .menu__sub { height: 44px; font-size: 15px; }
+body.mobile .menu__subs { flex: none; overflow: visible; }
+body.mobile .menu__chevron--toggle { padding: 12px 8px; margin: 0 -8px 0 -6px; }
+body.mobile .menu__item:hover,
+body.mobile .menu__sub:hover { background: none; }
+
+/* ===== player: mini player at the bottom ===== */
+
+body.mobile .player.mp {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "cover text buttons";
+  align-items: center;
+  column-gap: 12px;
+  height: calc(var(--mini-h) + var(--safe-bottom));
+  padding: 0 8px var(--safe-bottom) 10px;
+  background: rgba(30, 30, 35, 0.98);
+  border-top: none;
+}
+
+body.mobile .mp > * { display: none; }
+body.mobile .mp > #playerCover,
+body.mobile .mp > .mp__text,
+body.mobile .mp > .mp__buttons,
+body.mobile .mp > #playerTrack { display: flex; }
+
+body.mobile .mp #playerCover { grid-area: cover; width: 44px; height: 44px; border-radius: 6px; }
+body.mobile .mp .mp__text { grid-area: text; flex-direction: column; min-width: 0; }
+body.mobile .mp .player__title { font-size: 15px; }
+body.mobile .mp .mp__sub {
+  color: var(--text-dim);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.mobile .mp .mp__buttons { grid-area: buttons; align-items: center; gap: 4px; }
+body.mobile .mp:not(.mp--open) #btnPrev,
+body.mobile .mp:not(.mp--open) #btnBack10,
+body.mobile .mp:not(.mp--open) #btnFwd10 { display: none; }
+body.mobile .mp:not(.mp--open) .round-btn {
+  width: 48px;
+  height: 48px;
+  border: none;
+  background: none;
+  color: var(--text-bright);
+}
+body.mobile .mp:not(.mp--open) .round-btn .icon { width: 24px; height: 24px; }
+
+/* The progress: a thin line along the mini player's top edge, not a control. */
+body.mobile .mp:not(.mp--open) #playerTrack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 2px;
+  margin: 0;
+  pointer-events: none;
+}
+body.mobile .mp:not(.mp--open) .timeline__rail { top: 0; height: 2px; border-radius: 0; background: #34343c; }
+body.mobile .mp:not(.mp--open) .timeline__knob { display: none; }
+
+/* ===== player: Now Playing, full screen ===== */
+
+body.mobile .player.mp--open {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  height: auto;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  grid-template-rows: auto 1fr auto auto auto auto auto auto auto auto;
+  grid-template-areas:
+    "collapse from queue"
+    "cover cover cover"
+    "text text text"
+    "session session session"
+    "track track track"
+    "times times times"
+    "buttons buttons buttons"
+    "extras extras extras"
+    "vol vol vol";
+  row-gap: 8px;
+  padding: calc(8px + var(--safe-top)) 20px calc(20px + var(--safe-bottom));
+  background: linear-gradient(to bottom, #2a2a32, var(--bg) 60%);
+  animation: mp-up 0.22s ease-out;
+  touch-action: none;
+}
+body.mobile .player.mp--dragging { transition: none; animation: none; }
+
+@keyframes mp-up { from { transform: translateY(40%); opacity: 0.4; } to { transform: none; opacity: 1; } }
+
+body.mobile .mp--open > * { display: flex; }
+body.mobile .mp--open > [hidden],
+body.mobile .mp--open [hidden] { display: none !important; }
+
+body.mobile .mp--open #playerCollapse {
+  grid-area: collapse;
+  width: 48px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  margin-left: -12px;
+  background: none;
+  border: none;
+  color: var(--text-bright);
+}
+body.mobile .mp--open #playerCollapse .icon { width: 28px; height: 28px; }
+
+body.mobile .mp--open #playerFrom {
+  grid-area: from;
+  justify-self: center;
+  display: block;
+  max-width: 100%;
+  font-size: 13px;
+  text-align: center;
+}
+
+body.mobile .mp--open #btnQueue { grid-area: queue; height: 36px; padding: 0 14px; border-radius: 18px; font-size: 14px; }
+
+body.mobile .mp--open #playerCover {
+  grid-area: cover;
+  align-self: center;
+  justify-self: center;
+  width: min(100%, 44vh);
+  height: auto;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+body.mobile .mp--open #playerCover .cover__note .icon { width: 30%; height: 30%; }
+
+body.mobile .mp--open .mp__text { grid-area: text; margin-top: 12px; }
+body.mobile .mp--open .player__title {
+  font-size: 22px;
+  font-weight: 700;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+body.mobile .mp--open .mp__sub { font-size: 16px; margin-top: 2px; }
+
+body.mobile .mp--open .mp__session { grid-area: session; flex-wrap: wrap; gap: 8px; }
+body.mobile .mp--open .mp__session:not(:has(> :not([hidden]))) { display: none; }
+body.mobile .mp--open .player__session,
+body.mobile .mp--open .player__leave { height: 36px; border-radius: 18px; font-size: 14px; padding: 0 14px; }
+body.mobile .mp--open .player__sleep-left { align-self: center; font-size: 13px; }
+
+body.mobile .mp--open #playerTrack { grid-area: track; height: 32px; margin: 4px 0 0; }
+body.mobile .mp--open .timeline__rail { top: 14px; height: 4px; }
+body.mobile .mp--open .timeline__knob { top: 9px; width: 14px; height: 14px; margin-left: -7px; }
+
+body.mobile .mp--open .mp__times { grid-area: times; justify-content: center; margin-top: -6px; }
+body.mobile .mp--open .time-readout { font-size: 13px; }
+
+body.mobile .mp--open .mp__buttons {
+  grid-area: buttons;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 0;
+}
+body.mobile .mp--open .round-btn { width: 52px; height: 52px; }
+body.mobile .mp--open .round-btn .icon { width: 22px; height: 22px; }
+body.mobile .mp--open .round-btn--main { width: 72px; height: 72px; }
+body.mobile .mp--open .round-btn--main .icon { width: 30px; height: 30px; }
+body.mobile .mp--open .skip-label { font-size: 14px; }
+
+body.mobile .mp--open .mp__extras {
+  grid-area: extras;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 4px 0;
+}
+body.mobile .mp--open .sq-btn { width: 48px; height: 48px; border-radius: 12px; }
+body.mobile .mp--open .sq-btn__img { width: 22px; height: 22px; }
+body.mobile .mp--open .sleep-btn { height: 40px; padding: 0 16px; border-radius: 20px; font-size: 14px; }
+body.mobile .mp--open .sleep-btn span { display: inline; }
+body.mobile .mp--open .sleep-btn .icon { width: 16px; height: 16px; }
+
+/* Only while controlling another device's volume: the phone's own is its buttons. */
+body.mobile .mp--open #volWrap { grid-area: vol; display: none; }
+body.mobile .mp--open.player--remote #volWrap:not([hidden]) { display: flex; width: auto; gap: 10px; }
+body.mobile .mp--open.player--remote .volume-slider { flex: 1; width: auto; }
+body.mobile .mp--open.player--remote .vol-value { display: inline; }
+
+body.mobile .mp:hover .timeline__fill { background: var(--accent); }
+
+/* ===== popups and toasts ===== */
+
+body.mobile .modal-backdrop { padding: calc(12px + var(--safe-top)) 12px calc(12px + var(--safe-bottom)); }
+
+body.mobile .toasts {
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--mini-h) + var(--safe-bottom) + 12px);
+  align-items: stretch;
+}
+body.mobile .toast { max-width: none; white-space: normal; }
+body.mobile.player-open .toasts { bottom: calc(24px + var(--safe-bottom)); }
+
+/* ===== bottom sheets (Modal.open with `sheet`, actionSheet) ===== */
+
+body.mobile .modal-backdrop--sheet {
+  align-items: flex-end;
+  padding: calc(48px + var(--safe-top)) 0 0;
+  animation: backdrop-in 0.2s ease-out;
+}
+body.mobile .modal--sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 100%;
+  border-radius: 16px 16px 0 0;
+  border-bottom: none;
+  padding-bottom: var(--safe-bottom);
+  background: #26262c;
+  animation: sheet-in 0.22s ease-out;
+}
+body.mobile .modal-backdrop--sheet.modal-backdrop--out { animation: backdrop-out 0.2s ease-in forwards; }
+body.mobile .modal-backdrop--out .modal--sheet { animation: sheet-out 0.2s ease-in forwards; }
+@keyframes sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes sheet-out { from { transform: none; } to { transform: translateY(100%); } }
+
+/* A grab line at the top of each sheet. */
+body.mobile .modal--sheet::before {
+  content: "";
+  align-self: center;
+  flex: none;
+  width: 36px;
+  height: 4px;
+  margin: 8px 0 0;
+  border-radius: 2px;
+  background: #4a4a54;
+}
+
+body.mobile .modal--actions .modal__head { padding-bottom: 4px; }
+body.mobile .modal--actions .modal__title {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.mobile .modal--actions .modal__body { padding-top: 0; padding-bottom: 8px; }
+body.mobile .sheet__subtitle { margin: 0 0 6px; color: var(--text-dim); }
+
+body.mobile .sheet__item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 4px;
+  background: none;
+  border: none;
+  color: var(--text-bright);
+  font-size: 16px;
+  text-align: left;
+}
+body.mobile .sheet__item:active { background: rgba(255, 255, 255, 0.06); }
+body.mobile .sheet__item:disabled { opacity: 0.45; }
+body.mobile .sheet__icon { flex: none; width: 24px; display: inline-flex; justify-content: center; color: var(--grey); }
+body.mobile .sheet__icon .icon { width: 20px; height: 20px; }
+body.mobile .sheet__item--danger,
+body.mobile .sheet__item--danger .sheet__icon { color: var(--red); }
+body.mobile .sheet__item--on .sheet__icon { color: #f5be3c; }
+body.mobile .sheet__item--on .sheet__label { color: var(--accent-hi); }
+
+/* Dialogs on the phone: as wide as the screen allows, bigger buttons. */
+body.mobile .modal { width: 100%; }
+body.mobile .modal--small { width: 100%; max-width: 420px; }
+body.mobile .modal__footer .btn { height: 44px; padding: 0 18px; font-size: 15px; }
+body.mobile .modal__close { width: 44px; height: 44px; }
+body.mobile .picker__row { min-height: 48px; font-size: 15px; }
+body.mobile .check input { width: 20px; height: 20px; }
+
+/* ===== touch rows (touchList.js) ===== */
+
+body.mobile .mlist { margin: 0 -16px; }
+
+body.mobile .mlist__head { display: flex; justify-content: flex-end; padding: 0 12px 4px; }
+body.mobile .mlist__sort {
+  height: 36px;
+  padding: 0 12px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+body.mobile .mrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 0 4px 0 16px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+body.mobile .mrow:active { background: rgba(255, 255, 255, 0.04); }
+body.mobile .mrow .cover { width: 48px; height: 48px; border-radius: 6px; }
+body.mobile .mrow__text { flex: 1; min-width: 0; }
+body.mobile .mrow__title,
+body.mobile .mrow__sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.mobile .mrow__title { color: var(--text-bright); font-size: 16px; }
+body.mobile .mrow__sub { margin-top: 2px; color: var(--text-dim); font-size: 13.5px; }
+body.mobile .mrow.row--current .mrow__title { color: var(--green); }
+
+body.mobile .mrow__more,
+body.mobile .mrow > .act {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 24px;
+  background: none;
+  color: var(--text-dim);
+}
+body.mobile .mrow > .act { width: 40px; height: 40px; margin-right: 4px; border-radius: 10px; }
+body.mobile .mrow > .act--green { background: rgba(120, 200, 140, 0.14); color: var(--green); }
+body.mobile .mrow .icon { width: 20px; height: 20px; }
+
+/* Choosing: a tick in front of each row, filled on the chosen ones. */
+body.mobile .mrow__check { display: none; }
+body.mobile .mlist--choosing .mrow__check {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #5a5a64;
+  border-radius: 50%;
+  color: transparent;
+}
+body.mobile .mlist--choosing .mrow__check .icon { width: 14px; height: 14px; }
+body.mobile .mlist--choosing .mrow--chosen { background: rgba(90, 140, 220, 0.12); }
+body.mobile .mlist--choosing .mrow--chosen .mrow__check { background: var(--accent); border-color: var(--accent); color: #fff; }
+body.mobile .mlist--choosing .mrow__more { visibility: hidden; }
+
+.choose-bar { display: none; }
+body.mobile .choose-bar:not([hidden]) {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: calc(var(--mini-h) + var(--safe-bottom) + 8px);
+  z-index: 44;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 60px;
+  padding: 4px 6px;
+  border-radius: 14px;
+  background: #33333c;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+body.mobile .choose-bar__close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 22px;
+  background: none;
+  color: var(--text-bright);
+}
+body.mobile .choose-bar__count { flex: none; color: var(--text-bright); font-weight: 600; white-space: nowrap; }
+body.mobile .choose-bar__actions { flex: 1; display: flex; justify-content: flex-end; gap: 2px; min-width: 0; }
+body.mobile .choose-bar__btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 54px;
+  height: 52px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-bright);
+  font-size: 11px;
+}
+body.mobile .choose-bar__btn:active { background: rgba(255, 255, 255, 0.08); }
+body.mobile .choose-bar__btn--danger { color: var(--red); }
+body.mobile .choose-bar__btn .icon { width: 20px; height: 20px; }
+/* The list's end clears the bar. */
+body.mobile.choosing .page { padding-bottom: 96px; }
+
+/* ===== pages ===== */
+
+body.mobile .mrow__icon {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--glass-btn);
+  color: var(--grey);
+}
+body.mobile .mrow__icon .icon { width: 22px; height: 22px; }
+body.mobile .mrow__side { flex: none; display: flex; align-items: center; gap: 6px; margin-right: 8px; }
+body.mobile .mrow .btn--small,
+body.mobile .mrow__side .btn { height: 36px; padding: 0 14px; font-size: 14px; }
+body.mobile .row--pinned .mrow__title { font-weight: 600; }
+
+body.mobile .panel { padding: 12px; }
+body.mobile .link-row { flex-wrap: wrap; }
+body.mobile .link-row .input { flex: 1 1 100%; }
+body.mobile .link-row .btn { flex: 1 1 auto; }
+body.mobile .input--big,
+body.mobile .btn--big { height: 48px; font-size: 16px; }
+body.mobile .input { font-size: 16px; }
+
+body.mobile .section-head { margin-top: 18px; }
+body.mobile .section-head__btn { min-height: 44px; }
+
+/* Search: one column, Playlists, Songs and Artists under each other. */
+body.mobile .page--search { height: auto; }
+body.mobile .search-box--big { height: 48px; }
+body.mobile .results { display: block; }
+body.mobile .results__col { margin-top: 14px; overflow: visible; }
+body.mobile .results__list { overflow: visible; padding: 4px; }
+body.mobile .result { min-height: 56px; gap: 12px; }
+body.mobile .result__icon,
+body.mobile .result .cover { width: 44px; height: 44px; }
+body.mobile .result__title { font-size: 15px; }
+body.mobile .result__meta { font-size: 13px; }
+body.mobile .result--song .act { width: 40px; height: 40px; }
+body.mobile .result:hover { background: none; }
+
+/* One playlist: the name, then its numbers, then Shuffle and Play side by side. */
+body.mobile .pl-top { padding: 4px 0 6px; background: none; backdrop-filter: none; }
+body.mobile .pl-head { margin-bottom: 10px; }
+body.mobile .pl-head .page__title { font-size: 26px; white-space: normal; }
+body.mobile .pl-head__row { gap: 10px; }
+body.mobile .pl-meta { flex: 1 1 100%; font-size: 14px; }
+body.mobile .pl-head__row .toggle,
+body.mobile .pl-head__row .btn--play { height: 44px; border-radius: 22px; font-size: 15px; }
+body.mobile #plPlay { margin-left: auto; padding: 0 24px 0 20px; }
+body.mobile .pl-search-row { flex-wrap: wrap; gap: 6px; }
+body.mobile .pl-search-row .search-box { flex: 1 1 100%; height: 44px; }
+body.mobile .pick-banner { position: sticky; top: 0; z-index: 3; }
+
+/* ===== full-screen popups: Queue, Settings ===== */
+
+body.mobile .modal-backdrop--drawer { padding: 0; }
+body.mobile .modal--drawer {
+  width: 100%;
+  border-radius: 0;
+  border: none;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+body.mobile .modal-backdrop:has(> .modal--settings) { padding: 0; }
+body.mobile .modal--settings {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  border: none;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  background: var(--bg);
+}
+
+/* ===== Settings: categories, each on its own screen ===== */
+
+.settings__categories { display: none; }
+body.mobile .settings__categories { display: flex; flex-direction: column; }
+body.mobile .settings__category {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+  padding: 0 4px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #34343c;
+  color: var(--text-bright);
+  font-size: 16px;
+  text-align: left;
+}
+body.mobile .settings__category:active { background: rgba(255, 255, 255, 0.05); }
+body.mobile .settings__category .settings__chevron { transform: none; color: var(--text-dim); }
+body.mobile .settings__category .settings__chevron .icon { width: 18px; height: 18px; }
+
+/* A setting: its name and what it does, then its value under it. */
+body.mobile .settings__row { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 0; }
+body.mobile .settings__right { justify-content: flex-start; }
+body.mobile .settings__right:empty { display: none; }
+body.mobile .settings__label { font-size: 15px; }
+body.mobile .settings__desc { font-size: 13px; }
+body.mobile .settings__slider { flex: 1; width: auto; }
+body.mobile .settings__right .settings__control { flex: 1; }
+body.mobile .settings__right select,
+body.mobile .settings__right .input { height: 44px; max-width: 100%; }
+body.mobile .settings__right .btn { height: 40px; }
+
+/* ===== Add Songs ===== */
+
+body.mobile .download-hint { margin-top: 10px; line-height: 1.45; }
+body.mobile .local-pick__buttons { flex-wrap: wrap; }
+body.mobile .local-pick__buttons .btn { flex: 1 1 auto; }
+
+body.mobile .meta-grid,
+body.mobile .meta-grid--cover { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+body.mobile .cover--editor { width: 72px; height: 72px; align-self: start; }
+body.mobile #trimHint,
+body.mobile .song-edit__hint { display: none; }
+body.mobile .trim-head { justify-content: space-between; }
+
+body.mobile .audio-canvas-wrap,
+body.mobile .audio-canvas { height: 120px; }
+
+/* The handles keep their size (the waveform lines up with them) and get a
+   finger's room around them. */
+body.mobile .trim-slider { height: 44px; }
+body.mobile .trim-slider__track { top: 20px; }
+body.mobile .trim-slider__handle { top: 14px; }
+body.mobile .trim-slider__handle::before { content: ""; position: absolute; inset: -14px -12px; }
+body.mobile .playhead--trim { top: 16px; }
+
+/* Start and End each on a line with their nudges; the preview under them. */
+body.mobile .trim-row {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "start" "end" "play" "span";
+  gap: 10px;
+}
+body.mobile .trim-row > .time-group:first-child { grid-area: start; }
+body.mobile .trim-row > .time-group--end { grid-area: end; justify-content: flex-start; }
+body.mobile .trim-row > .preview-transport { grid-area: play; justify-content: center; }
+body.mobile .trim-row > .span-cell { grid-area: span; height: auto; }
+body.mobile .time-caption { width: 40px; font-size: 14px; }
+body.mobile .time-field { flex: 1; min-width: 0; height: 44px; font-size: 16px; }
+.trim-nudge { display: none; }
+body.mobile .trim-nudge { display: inline-flex; flex: none; height: 44px; min-width: 56px; padding: 0 8px; font-size: 14px; }
+body.mobile .preview-transport .round-btn--main { width: 56px; height: 56px; }
+body.mobile .span-volume { display: none; }
+
+body.mobile .add-footer {
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0 -16px -24px;
+  padding: 10px 16px calc(12px + var(--safe-bottom));
+  background: rgba(30, 30, 35, 0.97);
+}
+body.mobile .add-footer__left:not(:has(> :not([hidden]))),
+body.mobile .add-footer__center:not(:has(> :not([hidden]))) { display: none; }
+body.mobile .add-footer__right { flex-wrap: wrap; justify-content: flex-end; }
+body.mobile .add-footer__right .btn { height: 48px; flex: 1 1 auto; font-size: 15px; }
+body.mobile .add-footer__right .muted-text { flex: 1 1 100%; }
+
+body.mobile .import__buttons { flex-wrap: wrap; }
+body.mobile .import__buttons .btn { flex: 1 1 auto; height: 44px; }
+
+/* Landscape (only Add Songs turns, Stage 6): the editor's fields beside the trim. */
+@media (orientation: landscape) {
+  body.mobile #editor:not([hidden]) {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    column-gap: 16px;
+  }
+  body.mobile #editor > .meta-grid,
+  body.mobile #editor > #edError { grid-column: 1; }
+  body.mobile #editor > :not(.meta-grid):not(#edError) { grid-column: 2; }
+  body.mobile #editor > .meta-grid { grid-row: 1 / span 6; align-content: start; }
+  body.mobile .audio-canvas-wrap,
+  body.mobile .audio-canvas { height: 90px; }
+}
+
+/* ===== Edit Song ===== */
+
+body.mobile .modal--song-edit { width: 100%; }
+body.mobile .song-edit__input { width: 100%; }

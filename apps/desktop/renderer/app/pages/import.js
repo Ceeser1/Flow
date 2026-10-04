@@ -462,7 +462,7 @@ const ImportPanel = {
 
   /** Copy Files / Move Originals, in the middle of the footer for local files. */
   _drawCopyMove(shown) {
-    $('copyMove').hidden = !shown;
+    $('copyMove').hidden = !shown || !Store.can('moveOriginals');
     if (!shown) return;
     const move = this.moveOriginals;
     const sw = $('copyMoveSwitch');

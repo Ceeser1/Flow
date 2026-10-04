@@ -70,6 +70,11 @@ const FollowedPage = {
           }, 'Unfollow')),
         },
       ],
+      mobile: {
+        ...listRowSpec((p) => [p.ownerName ? `by ${p.ownerName}` : '', Util.plural(p.entries.length, 'song'),
+          Util.fmtClock(Store.totalDuration(p.id))].filter(Boolean).join(' · ')),
+        more: (p) => [{ icon: Icons.x, label: 'Unfollow', kind: 'danger', onClick: () => attempt(() => window.flow.setFollowing(p.id, false)) }],
+      },
     });
   },
 };

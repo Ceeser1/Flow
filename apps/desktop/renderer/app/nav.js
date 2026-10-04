@@ -5,6 +5,10 @@
 const Nav = {
   page: null,
   playlistId: null,
+  // The pages shown before this one ({ page, playlistId }), for the phone's
+  // Back; the last is the one Back returns to.
+  history: [],
+  _at: null,
 
   init() {
     $('menuSearch').innerHTML = Icons.search + '<span>Search</span>';
@@ -74,6 +78,12 @@ const Nav = {
     if (page !== 'playlist' && typeof PlaylistPage !== 'undefined') PlaylistPage.pickFor = null;
     // The preview belongs to the Add Songs page and stops when it is left.
     if (this.page === 'add' && page !== 'add') AddPage.audio.pause();
+    const at = { page, playlistId: page === 'playlist' ? this.playlistId : null };
+    if (this._at && !opts.back && (this._at.page !== at.page || this._at.playlistId !== at.playlistId)) {
+      this.history.push(this._at);
+      if (this.history.length > 50) this.history.shift();
+    }
+    this._at = at;
     this.page = page;
     for (const node of document.querySelectorAll('.page')) {
       node.hidden = node.id !== 'page-' + page;
@@ -87,6 +97,23 @@ const Nav = {
     else if (page === 'trend') TrendPage.show(opts);
     else if (page === 'playlist') PlaylistPage.show(this.playlistId, opts);
     this.drawMenu();
+  },
+
+  /** Goes back to the page shown before this one; false when there is none. */
+  back() {
+    while (this.history.length) {
+      const prev = this.history.pop();
+      if (prev.page !== 'playlist') {
+        this.show(prev.page, { back: true });
+        return true;
+      }
+      // A playlist deleted since is skipped.
+      if (Store.playlist(prev.playlistId)) {
+        this.openPlaylist(prev.playlistId, { back: true });
+        return true;
+      }
+    }
+    return false;
   },
 
   openPlaylist(id, opts = {}) {

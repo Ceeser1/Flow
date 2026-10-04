@@ -53,6 +53,7 @@ const TrendPage = {
         // Your own time listening to it, as the list playing.
         { key: 'listened', label: 'Listen Duration', cls: 'col-listened', render: (p) => Util.fmtClock(Store.listenedTo(p.id)) },
       ],
+      mobile: listRowSpec((p) => [p.desc || '', Util.plural(p.entries.length, 'song')].filter(Boolean).join(' · ')),
     });
   },
 };

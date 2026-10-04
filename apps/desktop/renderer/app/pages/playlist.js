@@ -246,8 +246,62 @@ const PlaylistPage = {
         { key: 'added', label: 'Added', cls: 'col-date', render: (r) => Util.fmtDate(r.addedAt) },
         { key: 'actions', label: 'Actions', sortable: false, cls: 'col-actions', render: (r) => this._actions(r, pickTarget, pickSet) },
       ],
+      mobile: this._touchRows(pickTarget, pickSet, smartList),
     });
     this._drawPlayState();
+  },
+
+  /**
+   * The phone's rows (touchList.js): a tap plays the song, More has Add to
+   * Queue and the desktop's More; adding songs to a playlist, the + takes
+   * More's place. A long press chooses songs for the bar's actions.
+   */
+  _touchRows(pickTarget, pickSet, smartList) {
+    const listId = this.id;
+    const p = Store.playlist(listId);
+    const readOnly = !!(p && p.isShared);
+    const actions = [
+      { icon: Icons.plus, label: 'Add to Queue', short: 'Queue', run: (rows) => {
+        for (const r of rows) Player.addToQueue(r.song.id);
+        toast(`${Util.plural(rows.length, 'song')} added to the queue`, 'success');
+      } },
+      { icon: Icons.playlists, label: 'Add to Playlists', short: 'Playlist', run: async (rows) => {
+        const ids = await pickPlaylists({ subtitle: Util.plural(rows.length, 'song') });
+        if (!ids || !ids.length) return false;
+        await attempt(async () => {
+          for (const id of ids) await window.flow.addSongsToPlaylist(id, rows.map((r) => r.song.id));
+          toast('Playlists updated', 'success');
+        });
+        return true;
+      } },
+      { icon: Icons.star, label: 'Favourite', short: 'Favourite', run: (rows) => attempt(async () => {
+        for (const r of rows) if (!r.song.favouriteAt) await window.flow.setFavourite(r.song.id, true);
+      }) },
+    ];
+    if (listId === 'all') {
+      actions.push({ icon: Icons.x, label: 'Delete Songs', short: 'Delete', kind: 'danger', run: (rows) => this.deleteSongs(rows.map((r) => r.song)) });
+    } else if (!smartList && listId !== FAVOURITES_ID && !readOnly) {
+      actions.push({ icon: Icons.x, label: 'Remove from Playlist', short: 'Remove', kind: 'danger', run: (rows) => attempt(async () => {
+        for (const r of rows) await window.flow.removeFromPlaylist(listId, r.song.id);
+        toast(`Removed ${Util.plural(rows.length, 'song')} from ${p ? p.name : 'the playlist'}`, 'success');
+      }) });
+    }
+    return {
+      lead: (r) => Covers.el(r.song),
+      title: (r) => r.song.title,
+      sub: (r) => {
+        const line = [r.song.artist, r.song.mix ? `(${r.song.mix})` : ''].filter(Boolean).join(' - ');
+        return smartList && this._from(r.song) ? `${line} · ${this._from(r.song)}` : line;
+      },
+      sheetTitle: (r) => Util.songLine(r.song),
+      tap: (r) => this._playFromTitle(r.song),
+      side: (r) => (pickTarget ? this._pickButton(r.song, pickTarget, pickSet) : null),
+      more: (r) => [
+        iconButton('act.act--green', Icons.plus, 'Add to Queue', () => Player.addToQueue(r.song.id)),
+        ...this._moreButtons(r.song),
+      ],
+      select: { actions },
+    };
   },
 
   /**
@@ -293,40 +347,50 @@ const PlaylistPage = {
     const play = iconButton('act.act--green', Icons.play, 'Play', () => Player.toggleSong(song.id, this.id));
     this._playButtons.set(song.id, play);
     const queue = () => iconButton('act.act--green', Icons.plus, 'Add to Queue', () => Player.addToQueue(song.id));
+    const more = () => {
+      const buttons = this._moreButtons(song);
+      if (pickTarget) buttons.unshift(queue());
+      return buttons;
+    };
+    const first = pickTarget ? this._pickButton(song, pickTarget, pickSet) : queue();
+    return SongActions.cell([first, play], more);
+  },
+
+  /** While adding songs to a playlist: + adds the song to it, a tick once it is there. */
+  _pickButton(song, pickTarget, pickSet) {
+    if (pickSet.has(song.id)) {
+      const done = iconButton('act.act--done', Icons.check, `Already in ${pickTarget.name}`, null);
+      done.disabled = true;
+      return done;
+    }
+    return iconButton('act.act--green', Icons.plus, `Add to ${pickTarget.name}`, () => attempt(async () => {
+      await window.flow.addSongsToPlaylist(pickTarget.id, [song.id]);
+      toast(`Added to ${pickTarget.name}`, 'success');
+    }));
+  },
+
+  /** More's buttons for a song (on the phone, its action sheet). */
+  _moreButtons(song) {
     const listId = this.id;
     // A playlist another profile shares can only be changed by its owner.
     const readOnly = !!(Store.playlist(listId) || {}).isShared;
-    const more = () => {
-      const buttons = [
-        this._favButton(song),
-        // With a Flow Server the songs are streamed, and one can be kept here too.
-        ...(Store.server.on ? [this._downloadButton(song)] : []),
-        iconButton('act.act--grey', Icons.search, 'Song Details', () => SongDetails.open(song.id)),
-        iconButton('act.act--grey', Icons.pencil, 'Edit', () => this.edit(song)),
-      ];
-      if (listId === 'all') {
-        buttons.push(iconButton('act.act--red', Icons.x, 'Delete Song', () => this.deleteSong(song)));
-      } else if (SmartLists.isSmart(listId)) {
-        buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist(s)', () => this.removeFromLists(song)));
-      } else if (listId !== FAVOURITES_ID && !readOnly) {
-        buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist', () => this.removeFromList(song)));
-      }
-      if (pickTarget) buttons.unshift(queue());
-      // All Songs and the listening trend lists: put the song into playlists from here, the leftmost button.
-      if (listId === 'all' || SmartLists.isSmart(listId)) buttons.unshift(SongActions.playlistButton(song));
-      return buttons;
-    };
-    let first = queue();
-    if (pickTarget && pickSet.has(song.id)) {
-      first = iconButton('act.act--done', Icons.check, `Already in ${pickTarget.name}`, null);
-      first.disabled = true;
-    } else if (pickTarget) {
-      first = iconButton('act.act--green', Icons.plus, `Add to ${pickTarget.name}`, () => attempt(async () => {
-        await window.flow.addSongsToPlaylist(pickTarget.id, [song.id]);
-        toast(`Added to ${pickTarget.name}`, 'success');
-      }));
+    const buttons = [
+      this._favButton(song),
+      // With a Flow Server the songs are streamed, and one can be kept here too.
+      ...(Store.server.on ? [this._downloadButton(song)] : []),
+      iconButton('act.act--grey', Icons.search, 'Song Details', () => SongDetails.open(song.id)),
+      iconButton('act.act--grey', Icons.pencil, 'Edit', () => this.edit(song)),
+    ];
+    if (listId === 'all') {
+      buttons.push(iconButton('act.act--red', Icons.x, 'Delete Song', () => this.deleteSong(song)));
+    } else if (SmartLists.isSmart(listId)) {
+      buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist(s)', () => this.removeFromLists(song)));
+    } else if (listId !== FAVOURITES_ID && !readOnly) {
+      buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist', () => this.removeFromList(song)));
     }
-    return SongActions.cell([first, play], more);
+    // All Songs and the listening trend lists: put the song into playlists from here, the leftmost button.
+    if (listId === 'all' || SmartLists.isSmart(listId)) buttons.unshift(SongActions.playlistButton(song));
+    return buttons;
   },
 
   /**
@@ -368,7 +432,7 @@ const PlaylistPage = {
     $('plShuffle').innerHTML = `<span class="toggle__box">${Player.queue.shuffle ? Icons.check : ''}</span>`
       + '<img class="toggle__img" src="../images/shuffle.png" alt="" /><span>Shuffle</span>';
 
-    for (const tr of document.querySelectorAll('#plTable tbody tr')) {
+    for (const tr of document.querySelectorAll('#plTable tbody tr, #plTableList .mrow')) {
       const current = tr.dataset.id === Player.currentId;
       tr.classList.toggle('row--current', current);
     }
@@ -410,6 +474,37 @@ const PlaylistPage = {
   /** Edit Song (songEdit.js): its names and its trim, saved by the dialog itself. */
   edit(song) {
     return editSongDialog(song);
+  },
+
+  /** The phone's chosen songs: deleted together, after one question. */
+  async deleteSongs(songs) {
+    if (songs.length === 1) return this.deleteSong(songs[0]);
+    const onServer = Store.server.on;
+    const answer = await confirmDialog({
+      title: 'Delete songs',
+      message: onServer
+        ? `Delete ${songs.length} songs from the server's library and every playlist? Their files stay in the server's trash for 30 days.`
+        : `Delete ${songs.length} songs from your library and every playlist?`,
+      confirmLabel: 'Delete',
+      danger: true,
+      checkbox: onServer && !songs.some((s) => s.file) ? null : {
+        label: onServer ? 'Also delete their files from Local Files on this device' : 'Also delete the files from Local Files',
+        checked: true,
+      },
+    });
+    if (!answer) return false;
+    let deleted = 0;
+    for (const song of songs) {
+      const token = Player.release(song.id);
+      const ok = await attempt(async () => {
+        await window.flow.deleteSong(song.id, !!answer.checked);
+        return true;
+      });
+      if (ok) deleted += 1;
+      else Player.resume(token);
+    }
+    if (deleted) toast(`Deleted ${Util.plural(deleted, 'song')}`, 'success');
+    return true;
   },
 
   async deleteSong(song) {

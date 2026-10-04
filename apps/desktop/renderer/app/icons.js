@@ -36,6 +36,8 @@ const Icons = (() => {
     folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
     moon: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
     more: svg('<circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/>', true),    speaker: svg('<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>'),
+    menu: svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),
+    chevronDown: svg('<path d="M6 9l6 6 6-6"/>'),
     back10: `<span class="skip-label">-10</span>`,
     fwd10: `<span class="skip-label">+10</span>`,
   };

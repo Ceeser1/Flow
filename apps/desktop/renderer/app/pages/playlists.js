@@ -79,8 +79,8 @@ const PlaylistsPage = {
     // must not start another redraw in the middle of this one.
     this._drawing = true;
     try {
-      this._drawTable($('sharedTable'), sharedRows, (p) => this._sharedActions(p));
-      this._drawTable($('playlistsTable'), rows, (p) => this._actions(p));
+      this._drawTable($('sharedTable'), sharedRows, (p) => this._sharedActions(p), (p) => this._sharedSide(p));
+      this._drawTable($('playlistsTable'), rows, (p) => this._actions(p), null, (p) => this._moreButtons(p));
     } finally {
       this._drawing = false;
     }
@@ -92,7 +92,7 @@ const PlaylistsPage = {
     }
   },
 
-  _drawTable(table, rows, actions) {
+  _drawTable(table, rows, actions, side = null, more = null) {
     renderTable(table, {
       rows,
       sort: this.sort,
@@ -113,6 +113,12 @@ const PlaylistsPage = {
         { key: 'created', label: 'Created', cls: 'col-date', render: (p) => (p.createdAt ? Util.fmtDate(p.createdAt) : '') },
         { key: 'actions', label: 'Actions', sortable: false, cls: 'col-actions', render: actions },
       ],
+      mobile: {
+        ...listRowSpec((p) => [Util.plural(p.entries.length, 'song'), Util.fmtClock(Store.totalDuration(p.id)),
+          p.ownerName ? `by ${p.ownerName}` : ''].filter(Boolean).join(' · ')),
+        side,
+        more: more && ((p) => more(p)),
+      },
     });
   },
 
@@ -169,13 +175,36 @@ const PlaylistsPage = {
 
   _actions(p) {
     if (p.isFavourites) return h('span.muted', '');
-    return h('div.actions',
+    return h('div.actions', ...this._moreButtons(p));
+  },
+
+  /** Add Songs, Rename and Delete; on the phone in a sheet, where Rename asks in a dialog. */
+  _moreButtons(p) {
+    if (p.isFavourites) return null;
+    return [
       iconButton('act.act--green', Icons.plus, 'Add Songs', () => Nav.openPlaylist('all', { pickFor: p.id })),
       iconButton('act.act--grey', Icons.pencil, 'Rename', () => {
+        if (document.body.classList.contains('mobile')) {
+          this.renameDialog(p);
+          return;
+        }
         this.renaming = p.id;
         this.render();
       }),
-      iconButton('act.act--red', Icons.x, 'Delete', () => this.remove(p)));
+      iconButton('act.act--red', Icons.x, 'Delete', () => this.remove(p)),
+    ];
+  },
+
+  async renameDialog(p) {
+    const name = await promptDialog({ title: 'Rename playlist', value: p.name, confirmLabel: 'Rename', maxLength: 80 });
+    if (name === null || name.trim() === p.name) return;
+    attempt(() => window.flow.renamePlaylist(p.id, name));
+  },
+
+  /** The phone's Follow / Unfollow at the end of a shared playlist's row. */
+  _sharedSide(p) {
+    if (p.isAll) return h('span');
+    return this._sharedActions(p).firstChild;
   },
 
   async remove(p) {

@@ -12,9 +12,10 @@ const Modal = {
    * Opens a popup. `buttons` is [{ label, kind, onClick }], where onClick may
    * return false to keep the popup open. Resolves nothing itself: callers wrap
    * it in their own promise. `drawer` makes it a panel that slides in from the
-   * right over a lighter backdrop. Returns { close, el }.
+   * right over a lighter backdrop; `sheet` one that rises from the bottom
+   * (the phone's menus, mobile.css). Returns { close, el }.
    */
-  open({ title, body, buttons = [], className = '', onClose, focus, drawer = false }) {
+  open({ title, body, buttons = [], className = '', onClose, focus, drawer = false, sheet = false }) {
     const closeBtn = iconButton('modal__close', Icons.x, 'Close', () => handle.close());
     const footer = h('div.modal__footer');
     const box = h('div.modal' + (className ? '.' + className : ''), { role: 'dialog', 'aria-modal': 'true' },
@@ -23,6 +24,10 @@ const Modal = {
       footer);
     const backdrop = h('div.modal-backdrop' + (drawer ? '.modal-backdrop--drawer' : ''), box);
     if (drawer) box.classList.add('modal--drawer');
+    if (sheet) {
+      backdrop.classList.add('modal-backdrop--sheet');
+      box.classList.add('modal--sheet');
+    }
     // Opened from the player bar over the full-screen visualizer: over it too.
     if (document.body.classList.contains('viz-open')) backdrop.classList.add('modal-backdrop--over');
 
@@ -32,7 +37,7 @@ const Modal = {
       close(result) {
         if (closed) return;
         closed = true;
-        if (drawer) {
+        if (drawer || sheet) {
           // Out the way it came; gone once the slide is over.
           backdrop.classList.add('modal-backdrop--out');
           setTimeout(() => backdrop.remove(), 200);
@@ -73,8 +78,9 @@ const Modal = {
 
     $('modalRoot').appendChild(backdrop);
     Modal.stack.push(handle);
+    // On the phone a focused box would bring up the keyboard unasked.
     const target = focus ? box.querySelector(focus) : box.querySelector('.btn--primary, .btn--danger');
-    if (target) setTimeout(() => target.focus(), 0);
+    if (target && !(sheet && target.matches('input'))) setTimeout(() => target.focus(), 0);
     return handle;
   },
 
@@ -113,6 +119,78 @@ function confirmDialog({ title, message, confirmLabel = 'OK', danger = false, ch
       onClose: () => resolve(answer),
     });
   });
+}
+
+/**
+ * The phone's menu of actions, rising from the bottom. `items` are buttons
+ * made for the desktop (iconButton: the icon and its title become the row;
+ * the row clicks the button) or { icon, label, kind, onClick }. A row closes
+ * the sheet, then does its thing.
+ */
+function actionSheet({ title, subtitle = '', items }) {
+  let handle = null;
+  const rows = items.filter(Boolean).map((item) => {
+    const isButton = item instanceof Node;
+    const label = isButton ? (item.getAttribute('aria-label') || item.title || item.textContent) : item.label;
+    const icon = isButton ? item.innerHTML : (item.icon || '');
+    const kind = isButton
+      ? (/act--red/.test(item.className) ? 'danger' : /fav-on|dl-on/.test(item.className) ? 'on' : '')
+      : (item.kind || '');
+    return h('button.sheet__item' + (kind ? '.sheet__item--' + kind : ''), {
+      type: 'button',
+      disabled: isButton ? item.disabled : !!item.disabled,
+      onclick: () => {
+        handle.close();
+        if (isButton) item.click();
+        else item.onClick();
+      },
+    }, h('span.sheet__icon', { html: icon }), h('span.sheet__label', label));
+  });
+  handle = Modal.open({
+    title,
+    sheet: true,
+    className: 'modal--actions',
+    body: [subtitle ? h('p.sheet__subtitle', subtitle) : null, h('div.sheet__list', ...rows)],
+  });
+  return handle;
+}
+
+/** Asks for a line of text; resolves it, or null when cancelled. */
+function promptDialog({ title, value = '', confirmLabel = 'OK', maxLength = 150 }) {
+  return new Promise((resolve) => {
+    const input = h('input.input', { type: 'text', value, maxLength, spellcheck: false });
+    let answer = null;
+    const handle = Modal.open({
+      title,
+      className: 'modal--small',
+      body: [input],
+      focus: 'input',
+      buttons: [
+        { label: 'Cancel' },
+        { label: confirmLabel, kind: 'primary', onClick: () => { answer = input.value; } },
+      ],
+      onClose: () => resolve(answer),
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        answer = input.value;
+        handle.close();
+      }
+    });
+  });
+}
+
+/**
+ * The phone's row for a playlist (renderTable's `mobile`): its icon and name,
+ * `sub` below, and a tap opens it.
+ */
+function listRowSpec(sub) {
+  return {
+    lead: (p) => h('span.mrow__icon', { html: listIcon(p) }),
+    title: (p) => p.name,
+    sub,
+    tap: (p) => Nav.openPlaylist(p.id),
+  };
 }
 
 // ---- toasts ----
@@ -172,7 +250,12 @@ async function attempt(fn) {
  * (buttons in it keep their own clicks). `sort` is { key, dir } and onSort(key) is called with the
  * clicked column. rowKey(row) goes on each <tr> as data-id.
  */
-function renderTable(table, { columns, rows, sort, onSort, rowKey, rowClass, onRowDblClick }) {
+function renderTable(table, { columns, rows, sort, onSort, rowKey, rowClass, onRowDblClick, mobile }) {
+  // The phone draws the rows as a touch list instead (touchList.js).
+  if (mobile && document.body.classList.contains('mobile')) {
+    TouchList.render(table, { columns, rows, sort, onSort, rowKey, rowClass, ...mobile });
+    return;
+  }
   clear(table);
   const headRow = h('tr');
   for (const col of columns) {
@@ -278,6 +361,7 @@ function pickPlaylists({ title = 'Add to Playlist', subtitle = '', lockedIds = [
     Modal.open({
       title,
       className: 'modal--picker',
+      sheet: document.body.classList.contains('mobile'),
       body: [
         subtitle ? h('p.modal__subtitle', subtitle) : null,
         h('div.picker__create', nameBox, h('button.btn', { type: 'button', onclick: create }, 'Create')),
