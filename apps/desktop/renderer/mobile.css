@@ -136,11 +136,14 @@ body.mobile .menu__settings {
   padding-bottom: var(--safe-bottom);
   border-top: 1px solid #2c2c33;
   border-radius: 0;
-  background: #1c1c20;
+  /* The menu's own colour at its bottom (style.css .menu): no box of its own, but a long list scrolls under it unseen. */
+  background: #212126;
 }
 
 body.mobile .menu__search { height: 48px; border-radius: 24px; font-size: 15px; }
 body.mobile .menu__item { height: 48px; font-size: 15px; }
+/* Settings is an item too, but as tall again as the bar of Android's own buttons under it. */
+body.mobile .menu__item.menu__settings { height: calc(56px + var(--safe-bottom)); }
 body.mobile .menu__sub { height: 44px; font-size: 15px; }
 body.mobile .menu__subs { flex: none; overflow: visible; }
 body.mobile .menu__chevron--toggle { padding: 12px 8px; margin: 0 -8px 0 -6px; }
