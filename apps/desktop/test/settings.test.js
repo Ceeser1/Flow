@@ -141,11 +141,16 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ visualizer: 'waveform' }).visualizer, 'waveform');
   assert.equal(settings.clean({ visualizer: 'flow' }).visualizer, 'flow');
   assert.equal(settings.clean({ visualizer: 'synthwave' }).visualizer, 'synthwave');
-  // The wireframe landscape: on, at half visibility, unless chosen otherwise.
-  assert.equal(d.landscapeOn, true);
-  assert.equal(d.landscapeVisibility, 50);
-  assert.equal(settings.clean({ landscapeOn: false }).landscapeOn, false);
-  assert.equal(settings.clean({ landscapeVisibility: 300 }).landscapeVisibility, 100);
+  assert.equal(settings.clean({}).synColor, '#9f38fa');
+  assert.equal(settings.clean({ synColor: '#00FF80' }).synColor, '#00ff80');
+  assert.equal(settings.clean({ synColor: 'red' }).synColor, '#9f38fa');
+  assert.equal(settings.clean({}).synBumps, true);
+  assert.equal(settings.clean({ synCarTilt: false }).synCarTilt, false);
+  assert.equal(settings.clean({}).synBobbingAmount, 100);
+  assert.equal(settings.clean({ synCameraTiltAmount: 0 }).synCameraTiltAmount, 0);
+  assert.equal(settings.clean({ synCarTiltAmount: 147 }).synCarTiltAmount, 145);
+  assert.equal(settings.clean({ synCarTiltAmount: 900 }).synCarTiltAmount, 200);
+  assert.equal(settings.clean({ synBobbingAmount: 'x' }).synBobbingAmount, 100);
   assert.equal(settings.clean({ eqColors: 'greyscale' }).eqColors, 'greyscale');
   // The clouds: rainbow and half as many by default; amount in steps of 10, 0 allowed.
   assert.equal(d.cloudsColors, 'rainbow');

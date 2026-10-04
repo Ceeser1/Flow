@@ -21,7 +21,10 @@
 //             hidden (the body's class viz-flow), and the equalizer stands on
 //             the bottom edge of the screen, so it only goes up.
 //   Synthwave the wireframe landscape (landscape.js) flown over at full
-//             screen, under a purple sky and a sun, from a ship's nose.
+//             screen, under a purple sky and a sun, from a ship's nose. A
+//             cogwheel at the top left opens, to the right, onto its own
+//             settings: the wireframe's colour, the floor's bumps, and the
+//             camera bobbing, the camera tilting and the car tilting on them.
 //   Random    one of the others, a different one than last time if it can.
 //
 // Both read the player's sound where the equalizer does, before the volume.
@@ -63,6 +66,18 @@ const VISUALIZERS = [
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>',
   },
 ];
+
+/** The hue (0..360) of r, g, b in 0..1. */
+function hueOf(r, g, b) {
+  const max = Math.max(r, g, b);
+  const c = max - Math.min(r, g, b);
+  if (!c) return 0;
+  let hue;
+  if (max === r) hue = ((g - b) / c) % 6;
+  else if (max === g) hue = (b - r) / c + 2;
+  else hue = (r - g) / c + 4;
+  return (hue * 60 + 360) % 360;
+}
 
 const Visualizer = {
   el: null,            // the full-screen layer while open
@@ -111,6 +126,21 @@ const Visualizer = {
   SYN_FLOOR: 3.5,      // half the valley floor's width
   SYN_CAM_H: 1.1,      // the eye above the floor
   SYN_HORIZON: 0.5,    // of the screen's height
+  SYN_FOCAL: 0.5,      // the lens: a cell one ahead is this share of the width
+  SYN_BUMPS: 0.14,     // the floor's bumps at the most intense music, in cells
+  SYN_BUMPS_KICK: 0.8, // a full kick lifts them by this much more, a calm beat less
+  SYN_BEAT_MS: 3000,   // the kicks the bumps heave on, against the strongest of about this long
+  SYN_BEAT_FLOOR: 0.3, // or at least this, so faint kicks in a calm part stay faint
+  SYN_RIDE_MS: 70,     // how fast the car follows the bumps under it
+  SYN_LIFT: 0.536,     // how much of a bump lifts the eye
+  SYN_PITCH: 0.235,    // how much the nose tips up as the ground rises ahead
+  SYN_ROLL: 0.35,      // radians the car leans per cell one side stands higher
+  SYN_ROLL_MS: 110,    // and how fast, a little slower than the bumps, a wobble
+  SYN_ROLL_MAX: 0.04,  // and at most (radians), what the margins below cover
+  SYN_ROLL_EYE: 0.75,  // how much of the lean the world tilts (the eye following it)
+  SYN_ROLL_NOSE: 1.125, // and the nose the other way, more, so the car is seen to rock
+  // The wireframe colours offered under the picker; the first is the default.
+  SYN_PRESETS: ['#9f38fa', '#00e5ff', '#ff2bd6', '#39ff14', '#ffb000', '#ff3030', '#ffffff'],
 
   AWAKE_MS: 3000,      // the X stays this long after the mouse stops
 
@@ -139,14 +169,19 @@ const Visualizer = {
     if (!Equalizer.active && !flow) {
       this.el.appendChild(h('p.viz-full__note', 'The visualizer needs Web Audio, which could not be started on this computer.'));
     }
+    if (kind === 'synthwave') this.el.appendChild(this._synPanel());
     if (kind === 'bars') {
       this.canvas.title = 'Click to switch between spectrum and oscilloscope';
       this.canvas.addEventListener('click', () => {
         this.mode = this.mode === 'bars' ? 'scope' : 'bars';
       });
     }
-    // Anywhere, the player bar included, since that is over the layer.
-    this._onPointer = () => this._wake();
+    // Anywhere, the player bar included, since that is over the layer; but
+    // on the Queue (a drawer over it) they get out of the way instead.
+    this._onPointer = (e) => {
+      if (e.target instanceof Element && e.target.closest('.modal--drawer')) this._sleep();
+      else this._wake();
+    };
     document.addEventListener('pointermove', this._onPointer);
     document.addEventListener('pointerdown', this._onPointer);
     // Space should not press the button it was opened with again.
@@ -196,6 +231,9 @@ const Visualizer = {
     document.removeEventListener('fullscreenchange', this._onFullscreen);
     document.removeEventListener('pointermove', this._onPointer);
     document.removeEventListener('pointerdown', this._onPointer);
+    if (this._synOutside) document.removeEventListener('pointerdown', this._synOutside, true);
+    this._synOutside = null;
+    this._synDraft = null;
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     document.body.classList.remove('viz-open', 'viz-awake', 'viz-flow');
     this._drawButton(false);
@@ -240,6 +278,12 @@ const Visualizer = {
     document.body.classList.add('viz-awake');
     clearTimeout(this._idle);
     this._idle = setTimeout(() => document.body.classList.remove('viz-awake'), this.AWAKE_MS);
+  },
+
+  /** The X, the cogwheel and the player bar gone at once (the pointer stays, over the Queue). */
+  _sleep() {
+    clearTimeout(this._idle);
+    document.body.classList.remove('viz-awake');
   },
 
   _size() {
@@ -477,7 +521,14 @@ const Visualizer = {
       rows: this.SYN_ROWS, cols: this.SYN_COLS, floor: this.SYN_FLOOR, camH: this.SYN_CAM_H, seed: Math.floor(Math.random() * 1e9),
     });
     this.synKick = new Kick();
+    this.synIntensity = new Intensity();
+    this.synBeatPeak = 0;
     this.synSpeed = this.SYN_SPEED;
+    this.synLift = 0;
+    this.synPitch = 0;
+    this.synRoll = 0;
+    this.synEye = this._synEyeOf(Store.settings);
+    this.synNose = this._synNoseOf(Store.settings);
     // Stars: where they are (shares of the screen), how big, and their twinkle.
     this.stars = [];
     for (let i = 0; i < 160; i += 1) {
@@ -496,17 +547,62 @@ const Visualizer = {
     const target = this.SYN_SPEED * (playing ? 1 + this.SYN_KICK_SPEED * kick + 0.4 * bass : this.SYN_IDLE);
     this.synSpeed += (target - this.synSpeed) * (1 - Math.exp(-dt / 0.6));
     this.terrain.advance(this.synSpeed * dt, playing ? Equalizer.levels : null);
-    const hy = hgt * this.SYN_HORIZON;
+    // The floor in front of the car is as rough as the music is intense right
+    // now, and heaves on the kicks: measured against the song's own recent
+    // kicks, since a long electronic kick over a held bass rises much less
+    // above it than a rock drum does, and its drops stayed nearly flat.
+    const intensity = this.synIntensity.follow(playing ? Equalizer.levels : null, dt * 1000);
+    this.synBeatPeak = Math.max(kick, this.synBeatPeak * Math.exp(-dt * 1000 / this.SYN_BEAT_MS));
+    const beat = kick / Math.max(this.SYN_BEAT_FLOOR, this.synBeatPeak);
+    const set = Store.settings;
+    this.terrain.bumps = set.synBumps
+      ? this.SYN_BUMPS * intensity * (1 - this.SYN_BUMPS_KICK / 2 + this.SYN_BUMPS_KICK * beat)
+      : 0;
+
+    // The car rides the floor's bumps: between its back (under the eye) and
+    // its front the ground lifts it and tips its nose, and the view shakes
+    // with it. The horizon moving is the nose tipping: up as the ground rises
+    // ahead, so the horizon drops. Camera bobbing off (or no bumps), it
+    // settles back level.
+    const bob = set.synBumps && set.synBobbing ? set.synBobbingAmount / 100 : 0;
+    const back = bob ? this.terrain.groundAt(0.8) * bob : 0;
+    const front = bob ? this.terrain.groundAt(1.8) * bob : 0;
+    const ride = 1 - Math.exp(-dt * 1000 / this.SYN_RIDE_MS);
+    this.synLift += (this.SYN_LIFT * (back + front) / 2 - this.synLift) * ride;
+    this.synPitch += ((front - back) - this.synPitch) * ride;
+    const horizon = this.SYN_HORIZON + (this.synPitch * this.SYN_PITCH * w * this.SYN_FOCAL) / hgt;
+    const hy = hgt * horizon;
+    // And it leans to the side whose wheels sit lower. The eye follows part
+    // of the lean (SYN_ROLL_EYE), so the world tilts by that much, and the
+    // nose the other way (SYN_ROLL_NOSE): the car is seen rocking under you.
+    // Either can be switched off or set stronger or weaker (Camera tilt, Car
+    // tilt, 0-200%), each eased there.
+    const left = this.terrain.groundAt(1.3, -2, -1);
+    const right = this.terrain.groundAt(1.3, 1, 2);
+    const lean = Math.max(-this.SYN_ROLL_MAX, Math.min(this.SYN_ROLL_MAX, (right - left) * this.SYN_ROLL));
+    const roll = 1 - Math.exp(-dt * 1000 / this.SYN_ROLL_MS);
+    this.synRoll += (lean - this.synRoll) * roll;
+    this.synEye += (this._synEyeOf(set) - this.synEye) * roll;
+    this.synNose += (this._synNoseOf(set) - this.synNose) * roll;
+
+    // Under it all the floor's colour, for the corners the tilt uncovers.
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'hsl(236, 75%, 6%)';
+    ctx.fillRect(0, 0, w, hgt);
+    ctx.save();
+    ctx.translate(w / 2, hgt);
+    ctx.rotate(this.synRoll * this.synEye);
+    ctx.translate(-w / 2, -hgt);
+    const pad = w * 0.1; // reaching past the edges, tilted
 
     // The sky, deep purple to magenta at the horizon.
     const sky = ctx.createLinearGradient(0, 0, 0, hy);
     sky.addColorStop(0, '#12002a');
     sky.addColorStop(0.5, '#4a0a5e');
     sky.addColorStop(1, '#b0157a');
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
     ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, hgt);
+    ctx.fillRect(-pad, -pad, w + 2 * pad, hgt);
 
     ctx.fillStyle = '#fff';
     for (const s of this.stars) {
@@ -526,7 +622,7 @@ const Visualizer = {
     haze.addColorStop(0, `rgba(255, 60, 140, ${0.45 + 0.35 * kick})`);
     haze.addColorStop(1, 'rgba(255, 60, 140, 0)');
     ctx.fillStyle = haze;
-    ctx.fillRect(0, 0, w, hy);
+    ctx.fillRect(-pad, -pad, w + 2 * pad, hy + pad);
     const sun = ctx.createLinearGradient(0, sy - r, 0, sy + r);
     sun.addColorStop(0, '#ff1f6e');
     sun.addColorStop(0.55, '#ff3d8b');
@@ -536,13 +632,21 @@ const Visualizer = {
     ctx.arc(w / 2, sy, r, 0, Math.PI * 2);
     ctx.fill();
 
-    this.terrain.render(ctx, w, hgt, {
-      horizon: this.SYN_HORIZON,
+    // The terrain a little wider than the screen, the lens the same, so
+    // tilted it still reaches the sides: the sine of the most it tilts (the
+    // camera at 200%) times the height. Fixed, so its buffer keeps its size.
+    const side = Math.ceil(hgt * (Math.sin(this.SYN_ROLL_MAX * this.SYN_ROLL_EYE * 2) + 0.01));
+    ctx.translate(-side, 0);
+    this.terrain.render(ctx, w + 2 * side, hgt, {
+      horizon,
+      lift: this.synLift,
       fill: (d) => `hsl(236, 75%, ${(6 + 10 * d).toFixed(1)}%)`,
       glow: 0.8,
       kick,
-      focal: 0.5,
+      focal: (this.SYN_FOCAL * w) / (w + 2 * side),
+      line: this._synLine(this._synDraft || set.synColor),
     });
+    ctx.translate(side, 0);
 
     // Where the valley meets the sky, a band of light.
     const band = ctx.createLinearGradient(0, hy - hgt * 0.04, 0, hy + hgt * 0.03);
@@ -551,26 +655,232 @@ const Visualizer = {
     band.addColorStop(1, 'rgba(255, 90, 170, 0)');
     ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = band;
-    ctx.fillRect(0, hy - hgt * 0.04, w, hgt * 0.07);
+    ctx.fillRect(-pad, hy - hgt * 0.04, w + 2 * pad, hgt * 0.07);
     ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();
 
+    ctx.save();
+    ctx.translate(w / 2, hgt);
+    ctx.rotate(-this.synRoll * this.synNose);
+    ctx.translate(-w / 2, -hgt);
     this._drawShip(ctx, w, hgt);
+    ctx.restore();
   },
 
-  /** The ship's nose at the bottom of the screen, and the rails off its sides. */
+  /** How much of the lean the world tilts, by Camera tilt and its amount. */
+  _synEyeOf(set) {
+    return set.synCameraTilt ? (this.SYN_ROLL_EYE * set.synCameraTiltAmount) / 100 : 0;
+  },
+
+  /** And the nose, by Car tilt and its amount. */
+  _synNoseOf(set) {
+    return set.synCarTilt ? (this.SYN_ROLL_NOSE * set.synCarTiltAmount) / 100 : 0;
+  },
+
+  /**
+   * '#rrggbb' as { h, s, l } for the terrain's lines, the last one kept. The
+   * default violet turns blue into the distance; a chosen colour stays itself.
+   */
+  _synLine(hex) {
+    if (this._synLineFor === hex) return this._synLineHsl;
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const c = max - min;
+    const s = c ? c / (1 - Math.abs(2 * l - 1)) : 0;
+    this._synLineFor = hex;
+    this._synLineHsl = { h: hueOf(r, g, b), s: s * 100, l: l * 100, drift: hex === this.SYN_PRESETS[0] ? 52 : 0 };
+    return this._synLineHsl;
+  },
+
+  /**
+   * Synthwave's cogwheel at the top left. A click opens it to the right,
+   * along the top, onto its settings (no dialog); the cogwheel again, or a
+   * click anywhere else, closes it. The camera and the car ride the bumps,
+   * so their boxes are greyed out while the bumps are off; each has a slider
+   * for how strong, 0-200%. Saved as they change.
+   */
+  _synPanel() {
+    const panel = h('div.viz-cfg');
+    let picker = null;
+    const setOpen = (on) => {
+      panel.classList.toggle('viz-cfg--open', on);
+      cog.setAttribute('aria-expanded', String(on));
+      if (!on) picker.close();
+    };
+    const cog = iconButton('viz-cfg__cog', Icons.cog, 'Synthwave settings', () => setOpen(!panel.classList.contains('viz-cfg--open')));
+    cog.setAttribute('aria-expanded', 'false');
+
+    const swatch = h('button.viz-cfg__swatch', { type: 'button', title: 'Choose the wireframe colour' });
+    const paint = (hex) => {
+      swatch.style.background = hex;
+    };
+    paint(Store.settings.synColor);
+    picker = this._synPicker(panel, swatch, paint);
+    swatch.addEventListener('click', () => picker.toggle());
+
+    const boxes = {};
+    const check = (key, label) => {
+      const box = h('input', { type: 'checkbox', checked: !!Store.settings[key] });
+      box.addEventListener('change', () => {
+        Store.saveSettings({ [key]: box.checked });
+        refresh();
+      });
+      boxes[key] = box;
+      return h('label.check.viz-cfg__check', box, h('span', label));
+    };
+    // Its box, and under it the slider with its value; dragging shows at
+    // once, letting go saves.
+    const sliders = {};
+    const option = (key, label) => {
+      const amount = key + 'Amount';
+      const input = h('input.volume-slider.viz-cfg__slider', { type: 'range', min: 0, max: 200, step: 5, value: Store.settings[amount] });
+      const value = h('span.viz-cfg__value');
+      const draw = () => {
+        value.textContent = `${input.value}%`;
+        input.style.setProperty('--fill', `${Number(input.value) / 2}%`);
+      };
+      input.addEventListener('input', () => {
+        draw();
+        Store.previewSettings({ [amount]: Number(input.value) });
+      });
+      input.addEventListener('change', () => Store.saveSettings({ [amount]: Number(input.value) }));
+      draw();
+      sliders[key] = input;
+      return h('div.viz-cfg__opt', check(key, label), h('div.viz-cfg__amount', input, value));
+    };
+    const ride = h('div.viz-cfg__ride',
+      option('synBobbing', 'Camera bobbing'),
+      option('synCameraTilt', 'Camera tilt'),
+      option('synCarTilt', 'Car tilt'));
+    const refresh = () => {
+      const on = !!Store.settings.synBumps;
+      ride.classList.toggle('viz-cfg__ride--off', !on);
+      for (const key of ['synBobbing', 'synCameraTilt', 'synCarTilt']) {
+        boxes[key].disabled = !on;
+        sliders[key].disabled = !on || !Store.settings[key];
+        sliders[key].parentNode.classList.toggle('viz-cfg__amount--off', !Store.settings[key]);
+      }
+    };
+
+    panel.append(cog, h('div.viz-cfg__body',
+      h('div.viz-cfg__item', h('span', 'Wireframe color:'), swatch),
+      h('div.viz-cfg__item.viz-cfg__bumps', check('synBumps', 'Ground bumps'), ride)));
+    refresh();
+
+    this._synOutside = (e) => {
+      if (panel.classList.contains('viz-cfg--open') && !panel.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', this._synOutside, true);
+    return panel;
+  },
+
+  /**
+   * The colour picker under the swatch: a square of saturation (across) and
+   * brightness (up), a hue bar, and the presets. Dragging shows the colour on
+   * the wireframe at once; it is saved on letting go.
+   */
+  _synPicker(panel, swatch, paint) {
+    const sv = h('div.viz-pick__sv', h('div.viz-pick__dot'));
+    const hueBar = h('div.viz-pick__hue', h('div.viz-pick__knob'));
+    const presets = h('div.viz-pick__presets');
+    const el = h('div.viz-pick', sv, hueBar, presets);
+    let hsv = { h: 0, s: 0, v: 0 };
+
+    const toHex = ({ h: hue, s, v }) => {
+      const f = (n) => {
+        const k = (n + hue / 60) % 6;
+        return Math.round(255 * (v - v * s * Math.max(0, Math.min(k, 4 - k, 1))));
+      };
+      return '#' + [f(5), f(3), f(1)].map((x) => x.toString(16).padStart(2, '0')).join('');
+    };
+    const fromHex = (hex) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+      const max = Math.max(r, g, b);
+      const c = max - Math.min(r, g, b);
+      return { h: hueOf(r, g, b), s: max ? c / max : 0, v: max };
+    };
+    const show = () => {
+      sv.style.backgroundColor = `hsl(${hsv.h}, 100%, 50%)`;
+      sv.firstChild.style.left = `${hsv.s * 100}%`;
+      sv.firstChild.style.top = `${(1 - hsv.v) * 100}%`;
+      hueBar.firstChild.style.left = `${(hsv.h / 360) * 100}%`;
+    };
+    // While dragging only drawn (_synDraft); saved when let go.
+    const set = (hex, save) => {
+      paint(hex);
+      this._synDraft = save ? null : hex;
+      if (save && hex !== Store.settings.synColor) Store.saveSettings({ synColor: hex });
+    };
+    const drag = (area, move) => {
+      area.addEventListener('pointerdown', (e) => {
+        area.setPointerCapture(e.pointerId);
+        const at = (ev) => {
+          const r = area.getBoundingClientRect();
+          move(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)), Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height)));
+          show();
+          set(toHex(hsv), false);
+        };
+        const up = () => {
+          area.removeEventListener('pointermove', at);
+          area.removeEventListener('pointerup', up);
+          area.removeEventListener('pointercancel', up);
+          set(toHex(hsv), true);
+        };
+        at(e);
+        area.addEventListener('pointermove', at);
+        area.addEventListener('pointerup', up);
+        area.addEventListener('pointercancel', up);
+      });
+    };
+    drag(sv, (x, y) => {
+      hsv.s = x;
+      hsv.v = 1 - y;
+    });
+    drag(hueBar, (x) => {
+      hsv.h = Math.min(359.9, x * 360);
+    });
+    for (const hex of this.SYN_PRESETS) {
+      const title = hex === this.SYN_PRESETS[0] ? 'Default' : hex;
+      const btn = h('button.viz-pick__preset', {
+        type: 'button',
+        title,
+        'aria-label': title,
+        onclick: () => {
+          hsv = fromHex(hex);
+          show();
+          set(hex, true);
+        },
+      });
+      btn.style.background = hex;
+      presets.appendChild(btn);
+    }
+
+    const picker = {
+      close: () => el.remove(),
+      toggle: () => {
+        if (el.isConnected) return picker.close();
+        hsv = fromHex(Store.settings.synColor);
+        show();
+        // Under the swatch: the panel's body clips, so it hangs from the panel.
+        const p = panel.getBoundingClientRect();
+        const s = swatch.getBoundingClientRect();
+        el.style.left = `${s.left + s.width / 2 - p.left}px`;
+        panel.appendChild(el);
+        return null;
+      },
+    };
+    return picker;
+  },
+
+  /** The ship's nose at the bottom of the screen. */
   _drawShip(ctx, w, hgt) {
     const cx = w / 2;
     const top = hgt * 0.86;
     const half = Math.min(w * 0.16, hgt * 0.3);
-    ctx.strokeStyle = 'rgba(220, 225, 255, 0.55)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx - half * 0.85, top + hgt * 0.06);
-    ctx.lineTo(cx - half * 2.6, hgt);
-    ctx.moveTo(cx + half * 0.85, top + hgt * 0.06);
-    ctx.lineTo(cx + half * 2.6, hgt);
-    ctx.stroke();
-
+    // Down past the screen's edge, so leaning it uncovers nothing.
+    const bottom = hgt * 1.05;
     const hull = ctx.createLinearGradient(0, top, 0, hgt);
     hull.addColorStop(0, '#f4f6ff');
     hull.addColorStop(0.35, '#c9d0e6');
@@ -579,8 +889,8 @@ const Visualizer = {
     ctx.beginPath();
     ctx.moveTo(cx - half, top + hgt * 0.02);
     ctx.quadraticCurveTo(cx, top - hgt * 0.012, cx + half, top + hgt * 0.02);
-    ctx.lineTo(cx + half * 1.25, hgt);
-    ctx.lineTo(cx - half * 1.25, hgt);
+    ctx.lineTo(cx + half * 1.3, bottom);
+    ctx.lineTo(cx - half * 1.3, bottom);
     ctx.closePath();
     ctx.fill();
 

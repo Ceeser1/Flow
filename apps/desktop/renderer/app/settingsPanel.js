@@ -167,12 +167,6 @@ const SettingsPanel = {
         right: this._slider({ key: 'cloudsAmount', label: 'Amount', min: 0, max: 100, step: 10, when: () => Store.settings.cloudsOn }),
       }),
       this._row({
-        key: 'landscapeOn',
-        label: 'Enable Wireframe Landscape',
-        desc: 'A neon grid of mountains behind the pages, flown over while a song plays. The louder the music, the higher they rise.',
-        right: this._slider({ key: 'landscapeVisibility', label: 'Alpha', when: () => Store.settings.landscapeOn }),
-      }),
-      this._row({
         key: 'eqOn',
         label: 'Enable Equalizer',
         desc: 'The music\'s frequencies glowing up from the player bar.',

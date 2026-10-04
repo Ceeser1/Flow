@@ -86,17 +86,6 @@ button, input, select { font: inherit; color: inherit; }
   pointer-events: none;
 }
 
-/* The wireframe landscape (landscape.js), see-through between its lines. */
-.landscape-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.5; /* Settings' Visibility (landscape.js) */
-}
-
 /* Positioned and sized by equalizer.js: from above the reach of its shine
    down to the bottom of the window. */
 .flash-canvas {
@@ -2427,6 +2416,149 @@ div.import__frame-head { cursor: default; }
 .viz-awake .viz-full__close { opacity: 0.85; pointer-events: auto; }
 .viz-full__close:hover { opacity: 1; background: rgba(255, 255, 255, 0.16); }
 .viz-full__close .icon { width: 44px; height: 44px; stroke-width: 2.5; }
+
+/* Synthwave's settings: a cogwheel at the top left, shown with the X, that
+   opens to the right along the top (and stays while open). */
+.viz-cfg {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  height: 72px;
+  border-radius: 36px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 15px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s, background 0.2s;
+}
+.viz-awake .viz-cfg { opacity: 0.85; pointer-events: auto; }
+.viz-cfg--open { opacity: 1; pointer-events: auto; background: rgba(12, 4, 28, 0.82); cursor: default; }
+.viz-awake .viz-cfg--open { opacity: 1; }
+.viz-cfg__cog {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.viz-cfg__cog:hover { background: rgba(255, 255, 255, 0.16); }
+.viz-cfg__cog .icon { width: 40px; height: 40px; transition: transform 0.4s; }
+.viz-cfg--open .viz-cfg__cog .icon { transform: rotate(90deg); }
+.viz-cfg__body {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  transition: max-width 0.35s ease, opacity 0.25s, padding 0.35s;
+}
+.viz-cfg--open .viz-cfg__body { max-width: 1400px; padding: 0 28px 0 6px; opacity: 1; }
+.viz-cfg__item { display: flex; align-items: center; gap: 10px; }
+.viz-cfg__swatch {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.viz-cfg__swatch:hover { border-color: #fff; box-shadow: 0 0 10px rgba(255, 255, 255, 0.35); }
+.viz-cfg__bumps { gap: 14px; }
+/* What rides on the bumps, joined to them; greyed out without them. */
+.viz-cfg__ride {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 14px;
+  border-left: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0 16px 16px 0;
+  background: rgba(255, 255, 255, 0.07);
+  transition: opacity 0.2s;
+}
+.viz-cfg__ride--off { opacity: 0.4; }
+.viz-cfg__ride--off .viz-cfg__check { cursor: default; }
+/* Each one's box, and under it how strong. */
+.viz-cfg__opt { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.viz-cfg__amount { display: flex; align-items: center; gap: 8px; padding-left: 2px; transition: opacity 0.2s; }
+.viz-cfg__amount--off { opacity: 0.4; }
+.viz-cfg .viz-cfg__slider { width: 120px; }
+.viz-cfg__slider:disabled { cursor: default; }
+.viz-cfg__value { width: 38px; font-size: 12px; color: rgba(255, 255, 255, 0.75); font-variant-numeric: tabular-nums; }
+
+/* Its colour picker, hanging under the swatch. */
+.viz-pick {
+  position: absolute;
+  top: 84px;
+  width: 240px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-radius: 14px;
+  background: rgba(12, 4, 28, 0.94);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  transform: translateX(-50%);
+}
+.viz-pick__sv {
+  position: relative;
+  height: 150px;
+  border-radius: 8px;
+  background-image: linear-gradient(to top, #000, rgba(0, 0, 0, 0)), linear-gradient(to right, #fff, rgba(255, 255, 255, 0));
+  cursor: crosshair;
+  touch-action: none;
+}
+.viz-pick__dot {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.viz-pick__hue {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+  cursor: pointer;
+  touch-action: none;
+}
+.viz-pick__knob {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 20px;
+  margin: -10px 0 0 -4px;
+  border: 2px solid #fff;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.viz-pick__presets { display: flex; justify-content: space-between; }
+.viz-pick__preset {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.viz-pick__preset:hover { border-color: #fff; }
 
 .viz-full__note {
   position: absolute;

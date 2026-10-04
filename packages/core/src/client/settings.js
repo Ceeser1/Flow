@@ -67,10 +67,6 @@ const DEFAULTS = {
   // (CLOUD_COLORS), and how many there are (percent, 0-100 in steps of 10).
   cloudsColors: 'rainbow',
   cloudsAmount: 50,
-  // The neon wireframe landscape between the clouds and the equalizer, and
-  // how solid it shows (percent).
-  landscapeOn: true,
-  landscapeVisibility: 50,
   // The equalizer: height and shine in percent, and its colours.
   eqOn: true,
   eqHeight: 50,
@@ -87,6 +83,18 @@ const DEFAULTS = {
 
   // The fullscreen Music Visualizer the player bar's button opens (VISUALIZERS).
   visualizer: 'bars',
+  // Synthwave's own (its cogwheel): the wireframe's colour (#rrggbb), the
+  // floor's bumps, and with them the camera bobbing up and down, the camera
+  // tilting and the car tilting, each as strong as its amount (percent,
+  // 0-200 in steps of 5).
+  synColor: '#9f38fa',
+  synBumps: true,
+  synBobbing: true,
+  synBobbingAmount: 100,
+  synCameraTilt: true,
+  synCameraTiltAmount: 100,
+  synCarTilt: true,
+  synCarTiltAmount: 100,
 
   // ---- Use a Flow Server ----
   // The library lives on the server; see remote.js.
@@ -178,13 +186,14 @@ function clean(raw) {
   for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
     'sponsorBlock', 'sponsorBlockIntros']) s[key] = s[key] === true;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'landscapeOn', 'eqOn', 'eqShine',
-    'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare']) {
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+    'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
+    'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;
   }
   const fade = Math.round(Number(s.crossfadeSeconds) * 10) / 10;
   s.crossfadeSeconds = Number.isFinite(fade) ? Math.min(10, Math.max(0.1, fade)) : DEFAULTS.crossfadeSeconds;
-  for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'landscapeVisibility', 'eqHeight', 'eqVisibility', 'eqShineSpread', 'flashTriggers', 'flashRange']) {
+  for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'eqHeight', 'eqVisibility', 'eqShineSpread', 'flashTriggers', 'flashRange']) {
     s[key] = percent(s[key], DEFAULTS[key]);
   }
   if (!EQ_COLORS.includes(s.eqColors)) s.eqColors = DEFAULTS.eqColors;
@@ -192,6 +201,11 @@ function clean(raw) {
   const amount = Math.round(Number(s.cloudsAmount) / 10) * 10;
   s.cloudsAmount = Number.isFinite(amount) ? Math.min(100, Math.max(0, amount)) : DEFAULTS.cloudsAmount;
   if (!VISUALIZERS.includes(s.visualizer)) s.visualizer = DEFAULTS.visualizer;
+  s.synColor = /^#[0-9a-f]{6}$/i.test(String(s.synColor)) ? String(s.synColor).toLowerCase() : DEFAULTS.synColor;
+  for (const key of ['synBobbingAmount', 'synCameraTiltAmount', 'synCarTiltAmount']) {
+    const v = Math.round(Number(s[key]) / 5) * 5;
+    s[key] = Number.isFinite(v) ? Math.min(200, Math.max(0, v)) : DEFAULTS[key];
+  }
   return s;
 }
 
