@@ -10,7 +10,6 @@ import android.content.pm.ActivityInfo;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
@@ -19,7 +18,6 @@ import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.media.MediaMetadataRetriever;
-import android.media.MediaRoute2Info;
 import android.media.MediaRouter2;
 import android.net.Uri;
 import android.os.Build;
@@ -142,40 +140,11 @@ public class FlowNative extends Plugin {
      */
     @PluginMethod
     public void output(PluginCall call) {
-        String name = "";
-        if (Build.VERSION.SDK_INT >= 33) {
-            AudioAttributes media = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build();
-            List<AudioDeviceInfo> devices = audioManager().getAudioDevicesForAttributes(media);
-            if (!devices.isEmpty()) name = deviceName(devices.get(0));
-        }
-        if (name.isEmpty() && Build.VERSION.SDK_INT >= 30) {
-            try {
-                List<MediaRoute2Info> routes = MediaRouter2.getInstance(getContext()).getSystemController().getSelectedRoutes();
-                if (!routes.isEmpty()) name = String.valueOf(routes.get(0).getName());
-            } catch (RuntimeException ignored) {
-                // Named below.
-            }
-        }
+        String name = DeviceLog.output(getContext());
         JSObject r = new JSObject();
-        if (name.isEmpty()) name = "This phone";
         r.put("name", name);
         r.put("builtin", name.equals("This phone"));
         call.resolve(r);
-    }
-
-    private static String deviceName(AudioDeviceInfo d) {
-        switch (d.getType()) {
-            case AudioDeviceInfo.TYPE_BUILTIN_SPEAKER:
-            case AudioDeviceInfo.TYPE_BUILTIN_EARPIECE:
-                return "This phone";
-            case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
-            case AudioDeviceInfo.TYPE_WIRED_HEADSET:
-                return "Headphones";
-            default: {
-                CharSequence product = d.getProductName();
-                return product == null ? "" : product.toString();
-            }
-        }
     }
 
     /**
@@ -200,6 +169,7 @@ public class FlowNative extends Plugin {
                         .putExtra("com.android.settings.panel.extra.PACKAGE_NAME", getContext().getPackageName()));
             }
             if (!shown) shown = start(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
+            FlowLog.i("output switcher " + (shown ? "opened" : "not shown") + ", music to " + DeviceLog.output(getContext()));
             JSObject r = new JSObject();
             r.put("shown", shown);
             call.resolve(r);

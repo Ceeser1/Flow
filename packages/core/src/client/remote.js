@@ -437,6 +437,25 @@ function createRemote(env) {
     return token;
   }
 
+  /**
+   * A token this app got by signing in without this client: the phone's
+   * player signs in again by itself (password, then the same profile) when
+   * the server ended the session while the page slept. The server has
+   * replaced this app's old token with it, so it is taken over rather than
+   * signing in again here (which would end the player's in turn).
+   */
+  function adoptToken(token) {
+    if (!token || token === runToken) return;
+    runToken = token;
+    sync.token = encrypt(token);
+    saveSync();
+    if (status.state !== 'online') return;
+    conn.token = token;
+    // The live channel opened with the old token, which the server no longer knows.
+    startLive();
+    emitStatus();
+  }
+
   /** Tries home, then remote. Resolves true once online. */
   function connect() {
     // A setting changed while an attempt was under way: that one is void (its
@@ -2497,7 +2516,7 @@ function createRemote(env) {
   }
 
   return {
-    init, active, reconfigure, setSecret, stop,
+    init, active, reconfigure, setSecret, stop, adoptToken,
     coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
     trimSong, trimmedHere, songPeaks, newCutId,
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, pushNew, pushImport, deleteSong, localFileOf, sessions, leaveSession,

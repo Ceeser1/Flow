@@ -75,6 +75,9 @@ function start() {
     confirmUpload: (q) => ask.upload(q),
     askExisting: (q) => ask.existing(q),
   });
+  // The phone's player signed in again by itself (the server had ended the
+  // session while this page slept): its token is this app's now.
+  audio.addListener('signedIn', (e) => remote.adoptToken(e && e.token));
 
   // Files picked wait here until saved; what a closed Flow left behind goes.
   const stageDir = path.join(info().files, 'Import');

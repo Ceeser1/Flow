@@ -18,6 +18,7 @@ import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.MediaSource;
 
 import com.getcapacitor.JSObject;
 
@@ -59,6 +60,13 @@ import java.util.List;
  * it plays the song's end on, fading down, while this player moves on to the
  * next song, fading it up. A pause, a seek or another song cuts the tail.
  *
+ * Songs from a Flow Server are fetched as Streams has it: with the newest
+ * token, and a stream that broke off (no network for a while) tried again
+ * while the player waits, until it carries on. A song the server refuses
+ * because its session ended (401) is not the page's to fix: the player signs
+ * in again itself (ServerSignIn), tells the page the new token and plays on
+ * where it was. Only when that does not work does the page hear the error.
+ *
  * It takes audio focus (a call or another player pauses it), pauses when
  * headphones are pulled out, and keeps the CPU and Wi-Fi awake while it plays.
  * Everything here runs on the main thread, as ExoPlayer wants.
@@ -72,6 +80,8 @@ final class FlowPlayer {
         void onEnded(String id);
         /** `status`: the server's answer when it refused the song (401: signed out), else 0. */
         void onError(String id, String message, int status);
+        /** The player signed in to the server again itself (its session had ended): the app's token now. */
+        void onSignedIn(String token);
         /** On to the next song (`reason`: auto, next pressed, repeat); `heard`: seconds of the one before. */
         void onAdvance(String from, String id, String key, double heard, String reason);
         /** The widget's Previous: the page goes back (it knows the songs before). */
@@ -151,6 +161,11 @@ final class FlowPlayer {
     private final Runnable crossStart = this::crossStart;
     private final Runnable crossTick = this::crossTick;
     private final AudioAttributes music;
+    private final MediaSource.Factory sources;
+    // Signing in to the server again (a song refused with 401), and whether it
+    // has since this player last played: refused again after it, the page is told.
+    private boolean signingIn;
+    private boolean signedInAgain;
 
     // While playing, the place goes to the page four times a second, and to the
     // widget's timeline when its second changes (not with the screen off).
@@ -169,6 +184,7 @@ final class FlowPlayer {
         }
     };
     private long widgetSecond = -1;
+    private long waitingSince = -1; // since when it waits for data (elapsed ms; -1: not)
 
     private FlowPlayer(Context context) {
         this.context = context;
@@ -180,7 +196,9 @@ final class FlowPlayer {
                 .setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                 .build();
+        sources = Streams.factory(context);
         exo = new ExoPlayer.Builder(context)
+                .setMediaSourceFactory(sources)
                 .setAudioAttributes(music, true)
                 .setHandleAudioBecomingNoisy(true)
                 .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -198,6 +216,20 @@ final class FlowPlayer {
                     FlowLog.i("ended " + id);
                     if (events != null) events.onEnded(id);
                     else away(key, takeHeard());
+                }
+                // For the log: a song that had to wait for its data (a slow or lost network).
+                if (ev.contains(Player.EVENT_PLAYBACK_STATE_CHANGED)) {
+                    int state = player.getPlaybackState();
+                    if (state == Player.STATE_READY) signedInAgain = false;
+                    long now = SystemClock.elapsedRealtime();
+                    if (state == Player.STATE_BUFFERING && player.getPlayWhenReady()) {
+                        if (waitingSince < 0) waitingSince = now;
+                    } else if (waitingSince >= 0) {
+                        long waited = now - waitingSince;
+                        waitingSince = -1;
+                        if (waited >= 1000) FlowLog.i("waited " + Math.round(waited / 100.0) / 10.0 + " s for data of " + id
+                                + (state == Player.STATE_READY ? "" : " (then stopped)"));
+                    }
                 }
                 if (ev.contains(Player.EVENT_IS_PLAYING_CHANGED)) {
                     main.removeCallbacks(tick);
@@ -235,7 +267,8 @@ final class FlowPlayer {
             @Override
             public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
                 if (!playWhenReady) dropTail("paused");
-                FlowLog.i((playWhenReady ? "play" : "pause") + " " + id + " (" + playReason(reason) + ")");
+                FlowLog.i((playWhenReady ? "play" : "pause") + " " + id + " (" + playReason(reason) + ")"
+                        + (playWhenReady ? " on " + DeviceLog.output(context) : ""));
             }
 
             @Override
@@ -255,10 +288,22 @@ final class FlowPlayer {
                     }
                 }
                 FlowLog.i("error " + id + " " + text + (status > 0 ? " (" + status + ")" : ""));
+                MediaItem item = exo.getCurrentMediaItem();
+                String base = item == null || item.localConfiguration == null ? "" : Streams.baseOf(item.localConfiguration.uri);
+                if (status == 401 && !base.isEmpty() && !signedInAgain) {
+                    signIn(base, text);
+                    return;
+                }
+                // Paused, nobody is waiting for it: Play tries it again.
+                if (!exo.getPlayWhenReady() && status != 401) {
+                    FlowLog.i("(paused: not told)");
+                    return;
+                }
                 if (events != null) events.onError(id, text, status);
             }
         });
         FlowLog.i("player ready");
+        DeviceLog.start(context);
     }
 
     void setEvents(Events events) {
@@ -297,6 +342,33 @@ final class FlowPlayer {
         heardFile.delete();
         lastFile.delete();
         return a;
+    }
+
+    /**
+     * The server ended this app's session: signed in again, and the song tried
+     * again where it stopped (playing on if it was), now with the new token.
+     * The page takes the token over. Failing that, the page hears the error.
+     */
+    private void signIn(String base, String error) {
+        signingIn = true;
+        tellState();
+        FlowLog.i("signed out by the server: signing in again");
+        ServerSignIn.start(context, base, (r) -> {
+            signingIn = false;
+            if (r.token == null) {
+                FlowLog.i("could not sign in again: " + r.problem);
+                tellState();
+                if (events != null) events.onError(id, error, 401);
+                return;
+            }
+            signedInAgain = true;
+            Streams.signedIn(r.token);
+            FlowLog.i("signed in again" + (r.profileOk ? "" : " (" + r.problem + ")"));
+            // Without the profile the token is not the one the page signs in with: it signs in itself.
+            if (r.profileOk && events != null) events.onSignedIn(r.token);
+            if (exo.getMediaItemCount() > 0 && exo.getPlaybackState() == Player.STATE_IDLE) exo.prepare();
+            tellState();
+        });
     }
 
     /** The widget's Play with nothing loaded opens Flow: the page that starts plays (one already there is not asked). */
@@ -404,6 +476,7 @@ final class FlowPlayer {
                     id = op.optString("id", "");
                     key = op.optString("key", "");
                     endedTold = false;
+                    signedInAgain = false;
                     durationMs = 0;
                     takeHeard();
                     gain = (float) op.optDouble("gain", 1);
@@ -606,7 +679,8 @@ final class FlowPlayer {
         s.put("id", id);
         s.put("key", key);
         s.put("pwr", exo.getPlayWhenReady());
-        s.put("st", exo.getPlaybackState());
+        // Signing in again, the song is as good as loading.
+        s.put("st", signingIn && exo.getPlaybackState() == Player.STATE_IDLE ? Player.STATE_BUFFERING : exo.getPlaybackState());
         s.put("t", exo.getCurrentPosition() / 1000.0);
         s.put("at", (double) System.currentTimeMillis());
         long d = exo.getDuration();
@@ -678,7 +752,7 @@ final class FlowPlayer {
         dropTail(null);
         MediaItem current = exo.getCurrentMediaItem();
         if (current == null) return;
-        tail = new ExoPlayer.Builder(context).setAudioAttributes(music, false).build();
+        tail = new ExoPlayer.Builder(context).setMediaSourceFactory(sources).setAudioAttributes(music, false).build();
         tail.setMediaItem(current, from);
         tail.setPlaybackParameters(exo.getPlaybackParameters());
         tail.setVolume(0f);
@@ -813,6 +887,7 @@ final class FlowPlayer {
     }
 
     private static MediaItem item(String itemId, String songKey, float itemGain, String src, JSONObject meta) {
+        Streams.fromPage(src);
         return new MediaItem.Builder()
                 .setMediaId(itemId)
                 .setUri(uriOf(src))

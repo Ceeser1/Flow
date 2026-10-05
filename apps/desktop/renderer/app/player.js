@@ -274,6 +274,22 @@ const Player = {
         this._carryOn();
       }
     });
+    // A song put back while its server could not be reached yet (the phone's
+    // Flow starting, signing in after the page) is loaded once it can be
+    // streamed, where it was: paused, or playing when it was asked to play
+    // while the server was being connected to (its session had ended). Not
+    // connected after all, the toast says so then.
+    Store.onServer((st) => {
+      if (this._unloaded()) {
+        const play = this._playWhenBack === this.currentId;
+        this.load(this.currentId, this.contextId, { autoplay: play, position: this.position, keepSession: true, fromQueue: true });
+        return;
+      }
+      const waiting = this._playWhenBack;
+      if (!waiting || st.state === 'connecting' || st.state === 'online') return;
+      this._playWhenBack = null;
+      if (waiting === this.currentId) this._unreachable(Store.song(waiting));
+    });
     Store.onSettings((patch) => {
       if ('crossfade' in patch || 'crossfadeSeconds' in patch) this._syncUpcoming();
       if (!('normalize' in patch)) return;
@@ -352,6 +368,8 @@ const Player = {
     }
     const song = Store.song(songId);
     if (!song) return;
+    this._letGo = null;
+    this._playWhenBack = null;
     this._cancelFade();
     if (!(keepSession && this.session && this.session.songId === songId)) {
       this._endSession();
@@ -369,14 +387,43 @@ const Player = {
     this._pendingSeek = position > 0 ? position : null;
     const playable = this.engine.load(Store.audioSrc(song), this._normGain(songId), { at: position, key: songId });
     if (!playable && autoplay) {
-      toast(`"${song.title}" is on the server, which cannot be reached right now, and is not downloaded.`, 'error');
+      // Being connected to (signing in again, Flow starting): it plays once there.
+      if (Store.server.state === 'connecting') this._playWhenBack = songId;
+      else this._unreachable(song);
     } else if (autoplay) this._play();
     this._updateMediaSession();
     this._savePosition();
     this._emit();
   },
 
+  _unreachable(song) {
+    if (song) toast(`"${song.title}" is on the server, which cannot be reached right now, and is not downloaded.`, 'error');
+  },
+
+  /** The song let go of for a rename (release), until it is loaded again. */
+  _letGo: null,
+
+  /** The song asked to play while its server was being connected to: it plays once there. */
+  _playWhenBack: null,
+
+  /** Whether the current song has nothing to play from (its server was out of reach) but now could have. */
+  _unloaded() {
+    const song = this._putBack() ? Store.song(this.currentId) : null;
+    return !!song && !!Store.audioSrc(song);
+  },
+
+  /** A current song with nothing loaded that was not let go of on purpose. */
+  _putBack() {
+    return !!this.currentId && !this.remote && !this.engine.loaded && this._letGo !== this.currentId;
+  },
+
   _play() {
+    // Play on a song that was put back without its server: loaded now (or the
+    // toast that the server cannot be reached), rather than nothing at all.
+    if (this._putBack()) {
+      this.load(this.currentId, this.contextId, { position: this.position, keepSession: true, fromQueue: true });
+      return;
+    }
     this.engine.play().catch((err) => {
       if (err && err.name === 'AbortError') return; // replaced by another load
       this._emit();
@@ -446,6 +493,7 @@ const Player = {
 
   /** Pauses this device's own playback only (another player starting, the sleep timer). */
   pauseHere() {
+    this._playWhenBack = null;
     this._cancelFade();
     if (this.engine) this.engine.pause();
   },
@@ -642,6 +690,7 @@ const Player = {
   },
 
   stop() {
+    this._playWhenBack = null;
     this._cancelFade();
     this._endSession();
     this.engine.unload();
@@ -663,6 +712,7 @@ const Player = {
     if (songId !== this.currentId) return null;
     const token = { songId, contextId: this.contextId, position: this.position, playing: this.isPlaying };
     this.engine.unload();
+    this._letGo = songId;
     return token;
   },
 
