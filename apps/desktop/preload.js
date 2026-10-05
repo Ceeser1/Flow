@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('flow', {
   editSong: (songId, meta) => call('library:editSong', { songId, ...meta }),
   trimSong: (songId, start, end) => call('library:trimSong', { songId, start, end }),
   serverSongPeaks: (songId) => call('server:songPeaks', songId),
+  songAudio: (songId) => call('audio:song', songId),
   setFavourite: (songId, on) => call('library:setFavourite', { songId, on }),
   recordListen: (songId, listened, duration, contextId) => call('library:recordListen', { songId, listened, duration, contextId }),
   findBySource: (url, key) => call('library:findBySource', { url, key }),

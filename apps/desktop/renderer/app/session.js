@@ -134,7 +134,18 @@ const Session = {
       this._changed();
       this._drawBar();
     });
+    // The phone's volume is its media volume (its buttons): hosting, the others see it.
+    if (!Store.can('volume') && window.flow.onMediaVolume) {
+      window.flow.mediaVolume().then((v) => { this._mediaVolume = v; }, () => {});
+      window.flow.onMediaVolume((v) => {
+        this._mediaVolume = v;
+        this._changed();
+      });
+    }
   },
+
+  /** The phone's media volume (0-1), told to the others while hosting. */
+  _mediaVolume: 1,
 
   /**
    * "[Profile] - [Output device]": what the others see this app as. Without
@@ -543,7 +554,7 @@ const Session = {
       name: this.name(),
       shared: Store.settings.sessionShare !== false,
       allowVolume: !!Store.settings.sessionAllowVolume,
-      volume: Player.volume,
+      volume: Store.can('volume') ? Player.volume : this._mediaVolume,
       crossfade: Store.settings.crossfade ? Store.settings.crossfadeSeconds : 0,
     };
     // The long parts only when they changed.
@@ -619,7 +630,10 @@ const Session = {
         } else Player.playList(args.ids, args.contextName, null);
         break;
       case 'volume':
-        if (Store.settings.sessionAllowVolume) Player.setVolume(Number(args.value));
+        if (!Store.settings.sessionAllowVolume) break;
+        // The phone has no volume of its own in Flow: its media volume, as its buttons.
+        if (Store.can('volume')) Player.setVolume(Number(args.value));
+        else if (window.flow.setMediaVolume) window.flow.setMediaVolume(Number(args.value)).catch(() => {});
         break;
       default:
     }

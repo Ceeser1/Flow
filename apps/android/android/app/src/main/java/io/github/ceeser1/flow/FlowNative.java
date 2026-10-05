@@ -2,9 +2,11 @@ package io.github.ceeser1.flow;
 
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.database.Cursor;
@@ -30,6 +32,7 @@ import android.provider.Settings;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResult;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSArray;
@@ -126,12 +129,56 @@ public class FlowNative extends Plugin {
                 notifyListeners("outputChanged", new JSObject());
             }
         }, new Handler(Looper.getMainLooper()));
+        // The phone's media volume changed (its buttons, or a session's member): told as 0-1.
+        ContextCompat.registerReceiver(getContext(), new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context c, Intent intent) {
+                if (intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1) != AudioManager.STREAM_MUSIC) return;
+                JSObject r = new JSObject();
+                r.put("value", mediaVolumeNow());
+                notifyListeners("mediaVolume", r);
+            }
+        }, new IntentFilter("android.media.VOLUME_CHANGED_ACTION"), ContextCompat.RECEIVER_NOT_EXPORTED);
         // Started by a share.
         shared(getActivity().getIntent(), true);
     }
 
     private AudioManager audioManager() {
         return (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+    }
+
+    /** The phone's media volume, 0-1 (what its buttons set): { value }. */
+    @PluginMethod
+    public void mediaVolume(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("value", mediaVolumeNow());
+        call.resolve(r);
+    }
+
+    /**
+     * Sets the phone's media volume ({ value } 0-1), as its buttons would,
+     * without showing Android's volume panel: a session's member changing the
+     * volume of the phone hosting it.
+     */
+    @PluginMethod
+    public void setMediaVolume(PluginCall call) {
+        AudioManager am = audioManager();
+        int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        double v = Math.max(0, Math.min(1, call.getDouble("value", 0d)));
+        try {
+            am.setStreamVolume(AudioManager.STREAM_MUSIC, (int) Math.round(v * max), 0);
+        } catch (SecurityException e) {
+            // Do Not Disturb may refuse it.
+            call.reject("The phone did not let Flow change its volume.");
+            return;
+        }
+        mediaVolume(call);
+    }
+
+    private double mediaVolumeNow() {
+        AudioManager am = audioManager();
+        int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        return max > 0 ? (double) am.getStreamVolume(AudioManager.STREAM_MUSIC) / max : 0;
     }
 
     /**

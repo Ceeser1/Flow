@@ -226,6 +226,11 @@ const Player = {
       }
       this._drawTime();
     });
+    // A seek in an MP3 checked: the place heard moved. Hosting, the others hear of it at once.
+    e.on('corrected', () => {
+      for (const fn of this._seekListeners) fn();
+      this._emit();
+    });
     e.on('error', (status) => {
       if (!this.currentId || !e.loaded) return;
       const song = Store.song(this.currentId);
@@ -385,7 +390,7 @@ const Player = {
     this.contextId = context;
     this.currentId = songId;
     this._pendingSeek = position > 0 ? position : null;
-    const playable = this.engine.load(Store.audioSrc(song), this._normGain(songId), { at: position, key: songId });
+    const playable = this.engine.load(Store.audioSrc(song), this._normGain(songId), { at: position, key: songId, inexact: this._inexact(song) });
     if (!playable && autoplay) {
       // Being connected to (signing in again, Flow starting): it plays once there.
       if (Store.server.state === 'connecting') this._playWhenBack = songId;
@@ -394,6 +399,11 @@ const Player = {
     this._updateMediaSession();
     this._savePosition();
     this._emit();
+  },
+
+  /** Whether a song's seeks land off the place asked for (an MP3; the engine checks them). */
+  _inexact(song) {
+    return !!song && (/^mp3$/i.test(song.format || '') || /\.mp3$/i.test(song.file || ''));
   },
 
   _unreachable(song) {
@@ -878,7 +888,7 @@ const Player = {
       r.settleUntil = now + 800;
       r.correcting = false;
       a.setRate(1);
-      a.load(Store.audioSrc(song), this._normGain(song.id), { key: song.id });
+      a.load(Store.audioSrc(song), this._normGain(song.id), { key: song.id, inexact: this._inexact(song) });
       if (st.playing) this._play();
       return;
     }
@@ -898,6 +908,8 @@ const Player = {
       return;
     }
     if (now < r.settleUntil) return;
+    // A seek being checked (an MP3): its place is not known yet.
+    if (a.settling) return;
     const drift = a.time - this._hereTarget();
     r.drift = drift;
     if (r.jumped) {
@@ -978,7 +990,7 @@ const Player = {
     const src = Store.audioSrc(song);
     if (!src) return;
     this.fade = { id };
-    this.engine.fadeIn(src, this._normGain(id), seconds);
+    this.engine.fadeIn(src, this._normGain(id), seconds, { key: id, inexact: this._inexact(Store.song(id)) });
   },
 
   /** The current song has ended (or Next was pressed): the one coming in takes over. */
@@ -1206,7 +1218,7 @@ const Player = {
     const vol = $('volSlider');
     vol.addEventListener('input', () => this._barVolume(Number(vol.value) / 100));
     $('volBtn').onclick = () => {
-      if (!this.remote || this.remote.here) this.toggleMute();
+      if (!this._hostVolume() && (!this.remote || this.remote.here)) this.toggleMute();
       else this._barVolume(this._shownVolume() > 0 ? 0 : (this._muteRestore || 0.8));
     };
     // Scrolling over the volume nudges it, as in most players.
@@ -1242,13 +1254,21 @@ const Player = {
     });
   },
 
-  /** The bar's volume: this device's, or in remote mode the host's (when it allows that). */
+  /**
+   * In someone else's session whose host lets the others change its volume:
+   * the bar's slider is the host's then, playing along or not (this device's
+   * own sound then goes by the system's volume).
+   */
+  _hostVolume() {
+    return !!this.remote && !!this.remote.state.allowVolume;
+  },
+
+  /** The bar's volume: this device's, or in a session the host's (when it allows that). */
   _barVolume(v) {
-    if (!this.remote || this.remote.here) {
-      this.setVolume(v);
+    if (!this._hostVolume()) {
+      if (!this.remote || this.remote.here) this.setVolume(v);
       return;
     }
-    if (!this.remote.state.allowVolume) return;
     const vol = Math.max(0, Math.min(1, v));
     if (vol > 0) this._muteRestore = vol;
     this.remote.state = { ...this.remote.state, volume: vol };
@@ -1263,7 +1283,7 @@ const Player = {
   },
 
   _shownVolume() {
-    return this.remote && !this.remote.here ? Number(this.remote.state.volume) || 0 : this.volume;
+    return this._hostVolume() ? Number(this.remote.state.volume) || 0 : this.volume;
   },
 
   _drawBar() {
@@ -1326,10 +1346,11 @@ const Player = {
   },
 
   _drawVolume() {
-    // In remote mode the slider is the host's volume, and only there when the host allows it.
-    const hosts = !!this.remote && !this.remote.here;
+    // In a session whose host allows it the slider is the host's volume; only
+    // controlling (not playing along) there is none otherwise.
+    const hosts = this._hostVolume();
     // Without a volume of its own (the phone's is its buttons), only the host's.
-    $('volWrap').hidden = hosts ? !this.remote.state.allowVolume : !Store.can('volume');
+    $('volWrap').hidden = hosts ? false : (!!this.remote && !this.remote.here) || !Store.can('volume');
     $('volWrap').title = hosts ? 'The host\'s volume' : '';
     const v = this._shownVolume();
     $('volSlider').value = String(Math.round(v * 100));

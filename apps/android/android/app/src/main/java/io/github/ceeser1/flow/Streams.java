@@ -15,6 +15,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
+import androidx.media3.extractor.DefaultExtractorsFactory;
+import androidx.media3.extractor.mp3.Mp3Extractor;
 
 import java.io.IOException;
 
@@ -34,6 +36,13 @@ import java.io.IOException;
  * kept awake), and carries on where it stopped once the server answers. A
  * refusal (401 signed out, 403, 404) is not waited out: it fails at once.
  * Anything else (a broken file) is tried a few times, as ExoPlayer would.
+ *
+ * Exactly, in an MP3: its own seek table is coarse (a hundred points, or a
+ * guess from the bitrate), so a seek lands up to a second or more from the
+ * place asked for while the player says it is there. Heard alone that does
+ * not matter; in step with other devices (Active Sessions) it is an echo.
+ * The frames are counted instead (index seeking): a seek further on than
+ * read so far reads on to the place.
  */
 @OptIn(markerClass = UnstableApi.class)
 final class Streams {
@@ -50,11 +59,13 @@ final class Streams {
 
     private Streams() {}
 
-    /** The players' songs: fetched with the newest token, a broken stream tried again. */
+    /** The players' songs: fetched with the newest token, a broken stream tried again, an MP3 seeked exactly. */
     static MediaSource.Factory factory(Context context) {
         ResolvingDataSource.Factory sources = new ResolvingDataSource.Factory(
                 new DefaultDataSource.Factory(context), Streams::withToken);
-        return new DefaultMediaSourceFactory(sources).setLoadErrorHandlingPolicy(new Patience());
+        DefaultExtractorsFactory extractors = new DefaultExtractorsFactory()
+                .setMp3ExtractorFlags(Mp3Extractor.FLAG_ENABLE_INDEX_SEEKING);
+        return new DefaultMediaSourceFactory(sources, extractors).setLoadErrorHandlingPolicy(new Patience());
     }
 
     /** An address the page sent: the token in it is the one to use, if the page has a new one. */

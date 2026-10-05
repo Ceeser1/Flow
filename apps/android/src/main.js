@@ -318,6 +318,10 @@ function start() {
     output: call(() => plugin.output()),
     chooseOutput: call(() => plugin.chooseOutput()),
     onOutputChange: (fn) => plugin.addListener('outputChanged', () => fn()),
+    /** The phone's media volume (0-1), as its buttons set it; a session's host takes members' changes there. */
+    mediaVolume: call(async () => (await plugin.mediaVolume()).value),
+    setMediaVolume: call(async (value) => (await plugin.setMediaVolume({ value })).value),
+    onMediaVolume: (fn) => plugin.addListener('mediaVolume', (e) => fn(e.value)),
     /** A link shared to Flow (Android's Share): fn({ url, text }), url '' when there was none. */
     onShare: (fn) => plugin.addListener('share', (s) => fn(sharedLink(s))),
     /** Whether the window may turn sideways (Add Songs) or stays upright. */

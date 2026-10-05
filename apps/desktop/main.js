@@ -274,6 +274,20 @@ handle('server:syncNow', () => remote.syncNow());
 handle('server:setOffline', ({ playlistId, on }) => remote.setOffline(playlistId, !!on));
 handle('server:downloadSong', (songId) => remote.downloadSong(songId));
 handle('server:songPeaks', (songId) => remote.songPeaks(songId));
+// A song's whole file as bytes, as the player plays it (seekCheck.js decodes it).
+handle('audio:song', async (songId) => {
+  if (!remote.active()) {
+    const song = model.songById(library.get(), songId);
+    if (!song || !song.file) throw new Error('No such song here.');
+    return fs.promises.readFile(song.file);
+  }
+  const { file, temp } = await remote.songAudio(songId);
+  try {
+    return await fs.promises.readFile(file);
+  } finally {
+    if (temp) fs.promises.rm(file, { force: true }).catch(() => {});
+  }
+});
 handle('server:removeDownload', (songId) => remote.removeDownload(songId));
 handle('server:profiles', () => remote.loadProfiles());
 handle('server:profileLogin', ({ profileId, pin }) => remote.loginProfile(profileId, pin));

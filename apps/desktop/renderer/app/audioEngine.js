@@ -18,6 +18,16 @@
 // through Web Audio by the equalizer (equalizer.js), which gives each its own
 // loudness and fade gains. Without Web Audio the elements play as they are,
 // with no transition or evening out (canFade is false, gains do nothing).
+//
+// A song whose seeks are not exact (an MP3: the element lands up to a second
+// or more away and says it is where it was asked to be) is checked after each
+// seek (seekCheck.js): once it has played a moment, what it sounds is matched
+// against the song itself, and `time` is the place really heard from then on.
+// Meanwhile `settling` is true; a check that moves the place says `corrected`.
+// The next seek nearby goes that much further at once, so it lands closer.
+
+// How long a song plays on after a seek before it is checked (the decoder settled, a second heard).
+const CHECK_AFTER_MS = 1600;
 
 class HtmlAudioEngine {
   constructor(main, spare) {
@@ -27,6 +37,13 @@ class HtmlAudioEngine {
     // The equalizer puts itself between the elements and the speakers, and
     // the volume then lives on its gain so the picture does not shrink with it.
     Equalizer.attach([main, spare]);
+    // Each element's song and how far its currentTime is off (seekCheck.js).
+    this._seek = new Map();
+    for (const el of [main, spare]) {
+      this._seek.set(el, { key: '', inexact: false, error: 0, errorAt: null, checking: 0, tries: 0, measuring: false, tap: null });
+      const ch = Equalizer.channel(el);
+      if (ch) SeekCheck.tap(Equalizer.ctx, ch.norm).then((tap) => { this._seek.get(el).tap = tap; });
+    }
 
     // Both elements get the same handlers, which only pass on what the one
     // that is `main` at the time does: they swap at every transition.
@@ -58,8 +75,14 @@ class HtmlAudioEngine {
     return this.main.paused;
   }
 
+  /** The place heard: currentTime less how far a seek left it off. */
   get time() {
-    return this.main.currentTime;
+    return this.main.currentTime - this._seek.get(this.main).error;
+  }
+
+  /** A seek is being checked (seekCheck.js): the place may still move a little. */
+  get settling() {
+    return this._seek.get(this.main).checking > 0;
   }
 
   /** As the element knows it: NaN before it is loaded. */
@@ -82,9 +105,10 @@ class HtmlAudioEngine {
    * is nothing to play it from (src ''). Options { at, key }: where it is to
    * start (the player seeks there once the length is known; an engine that
    * can start there at once passes over that seek, the elements wait for it),
-   * and the song's id.
+   * the song's id, and whether its seeks are not exact (an MP3: checked).
    */
-  load(src, gain) {
+  load(src, gain, { key = '', inexact = false } = {}) {
+    this._fresh(this.main, key, inexact);
     const ok = this._setSource(this.main, src);
     this._setNorm(this.main, gain);
     this._setFade(this.main, 1);
@@ -92,6 +116,7 @@ class HtmlAudioEngine {
   }
 
   unload() {
+    this._fresh(this.main, '', false);
     this.main.pause();
     this.main.removeAttribute('src');
     this.main.load();
@@ -107,7 +132,16 @@ class HtmlAudioEngine {
   }
 
   seek(seconds) {
-    this.main.currentTime = seconds;
+    const s = this._seek.get(this.main);
+    if (!s.inexact) {
+      this.main.currentTime = seconds;
+      return;
+    }
+    // Near the last place checked, it lands about as far off again: allowed for at once.
+    const guess = s.errorAt !== null && Math.abs(seconds - s.errorAt) < 20 ? s.error : 0;
+    this.main.currentTime = Math.max(0, seconds + guess);
+    s.error = guess;
+    this._check(this.main);
   }
 
   /** Plays a little faster or slower (in step with a session's host). */
@@ -156,8 +190,9 @@ class HtmlAudioEngine {
    * Starts the next song (at loudness `gain`) and fades it in over `seconds`
    * while the current one fades out.
    */
-  fadeIn(src, gain, seconds) {
+  fadeIn(src, gain, seconds, { key = '', inexact = false } = {}) {
     const incoming = this.spare;
+    this._fresh(incoming, key, inexact);
     this._setSource(incoming, src);
     this._setNorm(incoming, gain);
     // Equal power: the two together stay as loud as one all the way across.
@@ -200,21 +235,93 @@ class HtmlAudioEngine {
     const incoming = this.spare;
     this.main = incoming;
     this.spare = old;
+    this._fresh(old, '', false);
     old.pause();
     old.removeAttribute('src');
     old.load();
     this._holdFade(incoming, 1, 0.05);
     this._setFade(old, 1);
-    return incoming.currentTime || 0;
+    return this.time || 0;
   }
 
   /** Calls the transition off: the song coming in stops, the current one is back to full. */
   cancelFade() {
     const b = this.spare;
+    this._fresh(b, '', false);
     b.pause();
     b.removeAttribute('src');
     b.load();
     this._holdFade(this.main, 1, 0.08);
+  }
+
+  // ---- seeks that are not exact (seekCheck.js) ----
+
+  /** A new song in `el`: from its start its place is exact. Any check under way is void. */
+  _fresh(el, key, inexact) {
+    const s = this._seek.get(el);
+    s.key = key;
+    s.inexact = inexact && !!key;
+    s.error = 0;
+    s.errorAt = null;
+    s.checking = 0;
+    s.tries = 0;
+  }
+
+  /**
+   * After a seek in `el`: once it has played CHECK_AFTER_MS on, what it
+   * sounds is matched against the song. Tried again a few times when that
+   * tells nothing (silence); a newer seek or song takes over.
+   */
+  _check(el) {
+    const s = this._seek.get(el);
+    if (!s.tap || !Equalizer.ctx) return;
+    const run = (s.checking = (this._checks = (this._checks || 0) + 1));
+    const key = s.key;
+    // The reference is decoded meanwhile.
+    SeekCheck.reference(key).catch(() => {});
+    const times = [];
+    let played = 0;
+    let last = performance.now();
+    const timer = setInterval(async () => {
+      const now = performance.now();
+      if (s.checking !== run || s.key !== key) {
+        clearInterval(timer);
+        return;
+      }
+      if (el.paused || el.readyState < 3) {
+        played = 0;
+        times.length = 0;
+      } else played += now - last;
+      last = now;
+      times.push({ c: Equalizer.ctx.currentTime, e: el.currentTime });
+      if (times.length > 1500) times.splice(0, 500);
+      if (played < CHECK_AFTER_MS || s.measuring) return;
+      s.measuring = true;
+      let r = null;
+      try {
+        r = await SeekCheck.measure(s.tap, Equalizer.ctx, key, times);
+      } catch (err) {
+        console.warn('Seek check:', err && err.message);
+      }
+      s.measuring = false;
+      if (s.checking !== run || s.key !== key) return;
+      s.tries += 1;
+      if (!r && s.tries < 4) {
+        played = CHECK_AFTER_MS - 1000;
+        return;
+      }
+      clearInterval(timer);
+      s.checking = 0;
+      s.tries = 0;
+      if (!r) return;
+      const moved = Math.abs(r.error - s.error) > 0.005;
+      s.error = r.error;
+      s.errorAt = el.currentTime - r.error;
+      if (moved && el === this.main) {
+        this._emit('corrected');
+        this._emit('timeupdate');
+      }
+    }, 4);
   }
 
   // ---- the elements ----

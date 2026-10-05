@@ -2306,6 +2306,28 @@ function createRemote(env) {
     return copy && files.exists(copy.file) ? copy.file : null;
   }
 
+  /**
+   * A song's whole file, as the player plays it: the copy here when there is
+   * one, else the server's, fetched into the cache. Resolves { file, temp }
+   * (temp: the caller removes it). For the desktop's check of where a seek in
+   * an MP3 really landed, which decodes the song from its start.
+   */
+  async function songAudio(songId) {
+    const here = localFileOf(songId);
+    if (here) return { file: here, temp: false };
+    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached.');
+    files.mkdir(paths.cacheDir());
+    const tmp = files.join(paths.cacheDir(), `.flow-audio-${randomHex(5)}`);
+    try {
+      const r = await request(conn.base, `/api/songs/${encodeURIComponent(songId)}/audio`, { token: conn.token, saveTo: tmp, timeout: 60000 });
+      if (r.status !== 200) throw new Error(`the server answered ${r.status}`);
+    } catch (err) {
+      files.rm(tmp, { force: true });
+      throw err;
+    }
+    return { file: tmp, temp: true };
+  }
+
   // ---- downloads by the server ("Download (Server)" on Add Songs) ----
   //
   // The server keeps one batch per profile (apps/server/src/downloads.js) and
@@ -2519,7 +2541,7 @@ function createRemote(env) {
     init, active, reconfigure, setSecret, stop, adoptToken,
     coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
     trimSong, trimmedHere, songPeaks, newCutId,
-    status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, pushNew, pushImport, deleteSong, localFileOf, sessions, leaveSession,
+    status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, deleteProfile,
   };
 }
