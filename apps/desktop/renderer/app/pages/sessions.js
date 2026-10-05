@@ -15,8 +15,22 @@ const SessionsPage = {
     });
   },
 
-  show() {
+  /**
+   * opts.sessionId (a session chosen in the menu): its row is brought into
+   * view and lit for 2 s (kept through the redraws meanwhile).
+   */
+  show(opts = {}) {
+    clearTimeout(this._litTimer);
+    this._lit = opts.sessionId || null;
     this.render();
+    if (!this._lit) return;
+    const row = [...document.querySelectorAll('#page-sessions [data-id]')]
+      .find((node) => node.dataset.id === this._lit && node.offsetParent);
+    if (row) row.scrollIntoView({ block: 'nearest' });
+    this._litTimer = setTimeout(() => {
+      this._lit = null;
+      if (Nav.page === 'sessions') this.render();
+    }, 2000);
   },
 
   _value(s, key) {
@@ -50,7 +64,10 @@ const SessionsPage = {
       rows: Util.sortRows(rows, this.sort, (s, k) => this._value(s, k)),
       sort: this.sort,
       rowKey: (s) => s.id,
-      rowClass: (s) => (Session.mine && Session.mine.session.id === s.id ? 'row--current' : ''),
+      rowClass: (s) => [
+        Session.mine && Session.mine.session.id === s.id ? 'row--current' : '',
+        this._lit === s.id ? 'row--lit' : '',
+      ].filter(Boolean).join(' '),
       onSort: (key) => {
         this.sort = Util.cycleSort(this.sort, key);
         this.render();

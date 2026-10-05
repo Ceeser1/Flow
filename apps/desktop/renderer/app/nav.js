@@ -16,8 +16,8 @@ const Nav = {
       + '<span id="menuAddBadge" class="menu__badge" hidden title="Playlist import running"></span>';
     this._entry('menuPlaylists', 'Playlists', 'playlistsMenuOpen');
     this._entry('menuFollowed', 'Followed Playlists', 'followedMenuOpen');
-    $('menuSessions').innerHTML = Icons.sessions + '<span>Active Sessions</span>'
-      + '<span id="menuSessionsBadge" class="menu__badge" hidden></span>';
+    this._entry('menuSessions', 'Active Sessions', 'sessionsMenuOpen', { icon: Icons.sessions });
+    $('menuSessions').appendChild(h('span.menu__badge', { id: 'menuSessionsBadge', hidden: true }));
     this._entry('menuTrend', 'Your listening trend', 'trendMenuOpen', {
       icon: '<img class="menu__img" src="../images/trend.png" alt="" />',
       shut: true,
@@ -171,6 +171,28 @@ const Nav = {
     $('menuSessionsBadge').hidden = !others;
     $('menuSessionsBadge').textContent = String(others);
     $('menuSessionsBadge').title = `${Util.plural(others, 'other device')} playing`;
+    // Under it the sessions, as the playlists: one opens the page at it.
+    const sessionsOpen = this._open('sessionsMenuOpen');
+    this._drawArrow('sessionsMenuOpen', sessionsOpen, 'the sessions');
+    $('menuSessionsList').hidden = !Session.visible || !sessionsOpen;
+    const sessionList = clear($('menuSessionsList'));
+    if (Session.visible && sessionsOpen) {
+      const inId = Session.mine ? Session.mine.session.id : null;
+      const sessions = [...Session.list].sort((a, b) => a.name.localeCompare(b.name));
+      for (const s of sessions) {
+        // Its tag as on the page, kept whole when a long name is cut.
+        const tag = s.host.client === Store.server.clientId ? 'You' : s.id === inId ? 'Joined' : '';
+        const song = s.song ? `${s.playing ? '' : 'Paused: '}${s.song.title}${s.song.artist ? ` - ${s.song.artist}` : ''}` : 'Nothing loaded';
+        sessionList.appendChild(h('button.menu__sub' + (s.playing ? '.menu__sub--playing' : ''), {
+          type: 'button',
+          title: `${s.name}${tag ? ` (${tag.toLowerCase()})` : ''}\n${song}`,
+          onclick: () => this.show('sessions', { sessionId: s.id }),
+        },
+        h('span.menu__sub-name', s.name),
+        tag ? h('span.session-tag', tag) : null,
+        s.playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null));
+      }
+    }
 
     // Your listening trend: always there, its lists closed until opened.
     $('menuTrendList').hidden = !trendOpen;

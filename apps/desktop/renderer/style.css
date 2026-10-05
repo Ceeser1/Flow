@@ -1319,6 +1319,9 @@ div.import__frame-head { cursor: default; }
 .row--current td { color: var(--green); }
 .row--current .cell-title { font-weight: 600; }
 .row--pinned td { background: rgba(90, 140, 220, 0.06); }
+/* A session chosen in the menu, for a moment (pages/sessions.js). */
+.row--lit td,
+.mrow.row--lit { background: rgba(90, 140, 220, 0.18); transition: background 0.3s; }
 
 .cell-title { color: var(--text-bright); }
 .row--current .cell-title { color: var(--green); }
