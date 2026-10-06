@@ -44,7 +44,7 @@ function iconButton(cls, icon, title, onclick) {
 
 /** The icon beside a playlist's name: which kind of list it is. */
 function listIcon(p) {
-  if (p.isAll) return Icons.library;
+  if (p.isAll || p.isFrom) return Icons.library;
   if (p.isFavourites) return Icons.star;
   return p.isSmart ? Icons.pulse : Icons.list;
 }

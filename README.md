@@ -118,9 +118,10 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   `flow-server tag-songs` writes them).
 - **Details** (the magnifier on an All Songs row): the song's cover, its names and length,
   the playlists it is in as buttons (click one to take it out, click again to
-  put it back), "Add to Playlists", and its statistics: added, last listened,
-  times played, times fully listened, average listen duration, times stopped,
-  times skipped early.
+  put it back), "Add to Playlists", and its statistics: added, added by (the
+  profile, with a Flow Server that has profiles), last listened, times played,
+  average listen duration, and how often it was listened to over 80% of its
+  length, under 80%, and skipped in the first 30 seconds.
   Under "Downloaded from": the Direct Url of the song's page, and for a song
   that came with a playlist import also that playlist's Url. Both open in the
   browser.
@@ -136,7 +137,12 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   Copies on other devices are replaced by the trimmed file. A trim made
   while another device had trimmed the same song already is not applied.
   The server needs ffmpeg for it.
-- **Favourites** (under All Songs in the menu): every starred song, newest
+- **All Songs** (its own entry in the menu, with a music note): every song.
+  With a Flow Server that has profiles, its arrow opens one entry per profile
+  that added songs, "from Ceeser": All Songs with only the songs that profile
+  uploaded or had the server download. Songs added before Flow kept track, and songs put
+  into the server's music folder by hand, belong to nobody.
+- **Favourites** (first under Playlists in the menu): every starred song, newest
   star first; "Added" is when it was starred. Read-only apart from the stars.
 - **Your listening trend** (its own entry in the menu, below Followed
   Playlists and Active Sessions; its lists closed until opened, and its page

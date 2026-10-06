@@ -171,7 +171,7 @@ const PlaylistPage = {
   _drawShare() {
     const p = Store.playlist(this.id);
     const btn = $('plShare');
-    const mine = !!p && !p.isAll && !p.isFavourites && !p.isSmart && !p.isShared;
+    const mine = !!p && !p.isAll && !p.isFrom && !p.isFavourites && !p.isSmart && !p.isShared;
     const can = !!p && Store.canShare() && (mine || p.isShared);
     btn.hidden = !can;
     if (!can) return;
@@ -194,8 +194,9 @@ const PlaylistPage = {
     const p = Store.playlist(this.id);
     const btn = $('plOffline');
     const note = $('plOfflineNote');
-    // A playlist another profile shares can be downloaded once it is followed.
-    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && (!p.isShared || Store.isFollowing(p.id));
+    // A playlist another profile shares can be downloaded once it is followed;
+    // the songs one profile added are a view of All Songs, not kept apart.
+    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && !p.isFrom && (!p.isShared || Store.isFollowing(p.id));
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;
@@ -310,7 +311,7 @@ const PlaylistPage = {
         this.downloadSongs(rows.map((r) => r.song));
       } });
     }
-    if (listId === 'all') {
+    if (Store.isAllSongs(listId)) {
       actions.push({ icon: Icons.x, label: 'Delete Songs', short: 'Delete', kind: 'danger', run: (rows) => this.deleteSongs(rows.map((r) => r.song)) });
     } else if (!smartList && listId !== FAVOURITES_ID && !readOnly) {
       actions.push({ icon: Icons.x, label: 'Remove from Playlist', short: 'Remove', kind: 'danger', run: (rows) => attempt(async () => {
@@ -415,7 +416,7 @@ const PlaylistPage = {
       iconButton('act.act--grey', Icons.search, 'Song Details', () => SongDetails.open(song.id)),
       iconButton('act.act--grey', Icons.pencil, 'Edit', () => this.edit(song)),
     ];
-    if (listId === 'all') {
+    if (Store.isAllSongs(listId)) {
       buttons.push(iconButton('act.act--red', Icons.x, 'Delete Song', () => this.deleteSong(song)));
     } else if (SmartLists.isSmart(listId)) {
       buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist(s)', () => this.removeFromLists(song)));
@@ -423,7 +424,7 @@ const PlaylistPage = {
       buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist', () => this.removeFromList(song)));
     }
     // All Songs and the listening trend lists: put the song into playlists from here, the leftmost button.
-    if (listId === 'all' || SmartLists.isSmart(listId)) buttons.unshift(SongActions.playlistButton(song));
+    if (Store.isAllSongs(listId) || SmartLists.isSmart(listId)) buttons.unshift(SongActions.playlistButton(song));
     return buttons;
   },
 

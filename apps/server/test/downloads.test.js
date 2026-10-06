@@ -277,6 +277,10 @@ test('a batch nobody looks at expires, and each profile sees only its own', need
     await allSettled(base, b);
     assert.equal((await fetch(`${base}/api/downloads/items/0/audio`, { headers: b })).status, 200);
     assert.equal((await fetch(`${base}/api/downloads/items/0/audio`, { headers: a })).status, 200);
+    // A song finished is the profile's that had it downloaded.
+    const done = await api(base, 'POST', '/api/downloads/items/0/finish', { meta: { title: 'Mine' }, start: 0, end: 3 }, b);
+    assert.equal(done.status, 200);
+    assert.equal(server.library.data.songs.find((s) => s.id === done.json.song.id).addedBy, server.config.get().profiles.find((p) => p.name === 'Ben').id);
 
     server.downloads.expire(Date.now() + 31 * 24 * 60 * 60 * 1000);
     assert.equal(await batchOf(base, a), null);

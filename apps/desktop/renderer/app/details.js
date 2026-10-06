@@ -124,15 +124,19 @@ const SongDetails = {
     const share = avg && song.duration ? ` (${Math.round((avg / song.duration) * 100)}% of the song)` : '';
 
     const row = (label, value) => [h('div.details__label', label), h('div.details__value', value)];
+    // With a Flow Server that has profiles: the one that uploaded the song or had the server download it.
+    const by = Store.canShare() ? (song.addedBy && Store.profileName(song.addedBy)) || 'Not known' : null;
     return h('section.details__section',
       h('h4.details__heading', 'Statistics'),
       h('div.details__grid',
         ...row('Added', Util.fmtDate(song.addedAt)),
+        ...(by ? row('Added by', by) : []),
         ...row('Last listened', last ? `${Util.fmtDate(last)}  (${Util.fmtAgo(last)})` : 'Never'),
         ...row('Times played (>5 seconds)', String(sessions)),
         ...row('Average listen duration', sessions ? Util.fmtClock(avg) + share : '-'),
-        ...row('Times fully listened (>80% duration)', String(plays)),
-        ...row('Times stopped listening (>30s but <80% duration)', String(st.stops || 0)),
-        ...row('Times skipped early (<30 seconds)', String(st.skips || 0))));
+        // Short enough for one line each on the phone.
+        ...row('Listened > 80% duration', `${plays}x`),
+        ...row('Listened < 80% duration', `${st.stops || 0}x`),
+        ...row('Skipped early < 30s', `${st.skips || 0}x`)));
   },
 };

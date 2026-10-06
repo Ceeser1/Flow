@@ -5,13 +5,16 @@
 // src/library.js owns loading, saving and the files on disk.
 //
 //   song      { id, file, title, artist, mix, duration, format,
-//               sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, stats,
-//               favouriteAt, loudness, cover }
+//               sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, addedBy,
+//               stats, favouriteAt, loudness, cover }
 //   cover is the version of the song's cover file (cover.js), '-' when it
 //   was looked for and none found, null when not looked for yet. Only the
 //   app or server that keeps the covers sets it (setCover); no command can.
 //   sourceUrl is the page the song was downloaded from, sourcePlaylistUrl the
 //   playlist it came in with when it was part of a playlist import (else '').
+//   addedBy is the id of the Flow Server profile that uploaded the song or had
+//   the server download it; '' for songs from before, ones put into the music
+//   folder by hand, and every song without a server.
 //   stats     { plays, stops, skips, sessions, listened, lastPlayedAt }
 //   playlist  { id, name, createdAt, entries: [{ songId, addedAt }], source, shared }
 //   source    { url, kind } for a playlist imported from a link, else null.
@@ -28,6 +31,8 @@
 //                    unfollowing a shared list deletes it.
 //   sharedPlaylists  the other profiles' shared playlists, for reading:
 //                    { id, name, createdAt, entries, ownerId, ownerName }
+//   profileNames     { [profileId]: name } of the server's profiles, for the
+//                    songs' addedBy ("All Songs from ...")
 //
 // "All Songs" is not stored: it is every song, and a song's addedAt is when it
 // was downloaded. Neither is "Favourites": the songs with a favouriteAt, which
@@ -68,7 +73,7 @@ function cleanStats(raw) {
 }
 
 function emptyLibrary() {
-  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {} };
+  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, profileNames: {} };
 }
 
 /** { listId: seconds }: only sensible ids and positive numbers stay. */
@@ -114,6 +119,16 @@ function cleanCut(v) {
   return /^[0-9a-f]{6,40}$/.test(t) ? t : '';
 }
 
+/** { profileId: name }: only sensible ids and names stay. */
+function cleanNames(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [id, name] of Object.entries(raw)) {
+    if (/^[\w-]{1,64}$/.test(id) && typeof name === 'string' && name.trim()) out[id] = name.trim();
+  }
+  return out;
+}
+
 /** A list of ids: strings, no empties, no repeats. */
 function cleanIds(list) {
   return [...new Set((Array.isArray(list) ? list : []).map((x) => String(x || '')).filter(Boolean))];
@@ -138,6 +153,7 @@ function sanitize(raw) {
       sourceKey: String(s.sourceKey || ''),
       sourcePlaylistUrl: String(s.sourcePlaylistUrl || ''),
       addedAt: Number(s.addedAt) || Date.now(),
+      addedBy: String(s.addedBy || ''),
       stats: cleanStats(s.stats),
       // LUFS, for "Equalize volume"; null until measured (loudness.js).
       loudness: cleanLoudness(s.loudness),
@@ -169,6 +185,7 @@ function sanitize(raw) {
   }
   data.follows = cleanIds(raw.follows);
   data.playlistListened = cleanListened(raw.playlistListened);
+  data.profileNames = cleanNames(raw.profileNames);
   const seenShared = new Set();
   for (const p of Array.isArray(raw.sharedPlaylists) ? raw.sharedPlaylists : []) {
     if (!p || !p.id || seenShared.has(p.id) || seenLists.has(p.id)) continue;
@@ -314,6 +331,7 @@ function addSong(data, song) {
   song.stats = cleanStats(song.stats);
   song.favouriteAt = Number(song.favouriteAt) || null;
   song.sourcePlaylistUrl = String(song.sourcePlaylistUrl || '');
+  song.addedBy = String(song.addedBy || '');
   song.loudness = cleanLoudness(song.loudness);
   song.cover = cleanCover(song.cover);
   song.tagged = cleanTagged(song.tagged);

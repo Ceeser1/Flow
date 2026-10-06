@@ -280,8 +280,6 @@ button, input, select { font: inherit; color: inherit; }
 
 .menu__sub:hover { background: #1f1f24; }
 
-.menu__sub--all { font-weight: 600; }
-
 .menu__sub--active,
 .menu__sub--active:hover {
   color: var(--text-bright);

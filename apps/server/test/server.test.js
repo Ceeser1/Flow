@@ -854,6 +854,38 @@ test('playlists shared by a profile reach the others, with the owner\'s name, an
   });
 });
 
+test('a song remembers the profile that uploaded it, and the library names the profiles', async () => {
+  await withServer(async ({ base, dirs, server }) => {
+    await upload(base, 's0', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3' });
+    const anna = (await post(base, '/api/profiles', { name: 'Anna', device: 'pc' })).json;
+    const ben = (await post(base, '/api/profiles', { name: 'Ben', device: 'phone' })).json;
+    const as = (t) => ({ Authorization: `Bearer ${t}` });
+    await upload(base, 's1', { title: 'Roads', artist: 'Portishead', format: 'mp3' }, FAKE_MP3, as(anna.token));
+    await upload(base, 's2', { title: 'Glory Box', artist: 'Portishead', format: 'mp3' }, FAKE_MP3, as(ben.token));
+    // The same song again from another profile stays the first one's.
+    await upload(base, 's3', { title: 'Roads', artist: 'Portishead', format: 'mp3' }, FAKE_MP3, as(ben.token));
+    // Put into the folder by hand: nobody's.
+    const file = path.join(dirs.music, 'Portishead - Sour Times.mp3');
+    fs.writeFileSync(file, FAKE_MP3);
+    const old = new Date(Date.now() - 60000);
+    fs.utimesSync(file, old, old);
+    await server.library.scan();
+
+    const lib = (await get(base, '/api/library', ben.token)).json.library;
+    const by = Object.fromEntries(lib.songs.map((s) => [s.title, s.addedBy]));
+    assert.deepEqual(by, {
+      Teardrop: '', Roads: anna.profile.id, 'Glory Box': ben.profile.id, 'Sour Times': '',
+    });
+    assert.deepEqual(lib.profileNames, { [anna.profile.id]: 'Anna', [ben.profile.id]: 'Ben' });
+
+    // Kept over a restart of the library file, and a rename reaches the names.
+    const saved = JSON.parse(fs.readFileSync(server.library.file || path.join(server.config.home, 'library.json'), 'utf8'));
+    assert.equal(saved.songs.find((s) => s.id === 's1').addedBy, anna.profile.id);
+    await post(base, '/api/profiles/rename', { name: 'Anna B' }, anna.token);
+    assert.equal((await get(base, '/api/library', ben.token)).json.library.profileNames[anna.profile.id], 'Anna B');
+  });
+});
+
 test('a playlist deleted with its songs keeps those another playlist or profile still has', async () => {
   await withServer(async ({ base, dirs }) => {
     const names = ['Teardrop', 'Roads', 'Glory Box', 'Angel', 'Unfinished Sympathy'];

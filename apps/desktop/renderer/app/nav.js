@@ -14,6 +14,10 @@ const Nav = {
     $('menuSearch').innerHTML = Icons.search + '<span>Search</span>';
     $('menuAdd').innerHTML = Icons.add + '<span>Add Songs</span>'
       + '<span id="menuAddBadge" class="menu__badge" hidden title="Playlist import running"></span>';
+    this._entry('menuAllSongs', 'All Songs', 'allSongsMenuOpen', { icon: Icons.library });
+    // The speaker while All Songs plays, or a part of it that is folded away.
+    this._allPlaying = h('span.menu__playing', { html: Icons.speaker, title: 'Playing' });
+    $('menuAllSongs').appendChild(this._allPlaying);
     this._entry('menuPlaylists', 'Playlists', 'playlistsMenuOpen');
     this._entry('menuFollowed', 'Followed Playlists', 'followedMenuOpen');
     this._entry('menuSessions', 'Active Jams', 'sessionsMenuOpen', { icon: Icons.sessions });
@@ -27,6 +31,7 @@ const Nav = {
     $('menuTrend').appendChild(this._trendPlaying);
     $('menuSearch').onclick = () => this.show('search');
     $('menuAdd').onclick = () => this.show('add');
+    $('menuAllSongs').onclick = () => this.openPlaylist('all');
     $('menuPlaylists').onclick = () => this.show('playlists');
     $('menuFollowed').onclick = () => this.show('followed');
     $('menuSessions').onclick = () => this.show('sessions');
@@ -125,6 +130,7 @@ const Nav = {
   drawMenu() {
     $('menuSearch').classList.toggle('menu__item--active', this.page === 'search');
     $('menuAdd').classList.toggle('menu__item--active', this.page === 'add');
+    $('menuAllSongs').classList.toggle('menu__item--active', this.page === 'playlist' && this.playlistId === 'all');
     $('menuPlaylists').classList.toggle('menu__item--active', this.page === 'playlists');
     $('menuFollowed').classList.toggle('menu__item--active', this.page === 'followed');
     $('menuSessions').classList.toggle('menu__item--active', this.page === 'sessions');
@@ -137,24 +143,34 @@ const Nav = {
     this._drawArrow('trendMenuOpen', trendOpen, 'the listening trend lists');
     $('menuPlaylistList').hidden = !playlistsOpen;
 
-    const list = clear($('menuPlaylistList'));
     // The list playing has the speaker, and its bar on the left stays green.
     const item = (p) => {
       const active = this.page === 'playlist' && this.playlistId === p.id;
       const playing = Player.contextId === p.id && Player.isPlaying;
       return h('button.menu__sub'
         + (active ? '.menu__sub--active' : '')
-        + (playing ? '.menu__sub--playing' : '')
-        + (p.isAll ? '.menu__sub--all' : ''), {
+        + (playing ? '.menu__sub--playing' : ''), {
         type: 'button',
         title: p.name,
         onclick: () => this.openPlaylist(p.id),
       },
-      h('span.menu__sub-name', p.name),
+      h('span.menu__sub-name', p.menuName || p.name),
       playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null);
     };
 
-    list.appendChild(item(Store.allSongsPlaylist()));
+    // All Songs: with a Flow Server, under it the songs each profile added
+    // ("from ..."); the arrow only while there are any.
+    const froms = Store.fromPlaylists();
+    const allOpen = this._open('allSongsMenuOpen');
+    this._drawArrow('allSongsMenuOpen', allOpen, 'who added the songs');
+    this._arrows.allSongsMenuOpen.hidden = !froms.length;
+    $('menuAllSongsList').hidden = !froms.length || !allOpen;
+    const allList = clear($('menuAllSongsList'));
+    for (const p of froms) allList.appendChild(item(p));
+    const fromPlaying = froms.some((p) => p.id === Player.contextId);
+    this._allPlaying.hidden = !Player.isPlaying || !(Player.contextId === 'all' || (fromPlaying && !allOpen));
+
+    const list = clear($('menuPlaylistList'));
     list.appendChild(item(Store.favouritesPlaylist()));
     for (const p of Store.sortedPlaylists()) list.appendChild(item(p));
 

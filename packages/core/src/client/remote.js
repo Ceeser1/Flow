@@ -95,8 +95,8 @@ function createRemote(env) {
   // an older Flow may lack what this one reads (2.7 dropped song.cover), and
   // the server answers "nothing new" while its revision is the same: a copy of
   // another format is shown at start but fetched whole again. Raise it whenever
-  // the songs or playlists gain a field the server sends.
-  const CACHE_FORMAT = 2;
+  // the songs or playlists gain a field the server sends (3: addedBy, profileNames).
+  const CACHE_FORMAT = 3;
 
   function emptySync(serverId = '') {
     return {
@@ -307,11 +307,14 @@ function createRemote(env) {
     return byServer;
   }
 
-  /** A queued upload as the song it will become, for the window. */
+  /**
+   * A queued upload as the song it will become, for the window: added by the
+   * profile signed in, as the server will have it.
+   */
   function uploadAsAddSong(cmd) {
     const local = model.songById(library.get(), cmd.localId);
     if (!local) return null;
-    return { type: 'addSong', at: cmd.at, playlistIds: cmd.playlistIds, song: { ...local, id: cmd.songId } };
+    return { type: 'addSong', at: cmd.at, playlistIds: cmd.playlistIds, song: { ...local, id: cmd.songId, addedBy: currentProfile() } };
   }
 
   function buildView() {

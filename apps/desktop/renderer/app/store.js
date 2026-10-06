@@ -8,6 +8,8 @@ const ALL_SONGS_ID = 'all';
 const ALL_SONGS_NAME = 'All Songs';
 const FAVOURITES_ID = 'favourites';
 const FAVOURITES_NAME = 'Favourites';
+// "All Songs from <profile>": the songs one profile of the Flow Server added.
+const FROM_PREFIX = 'from:';
 
 const Store = {
   library: { songs: [], playlists: [], ignoredFiles: [] },
@@ -101,6 +103,7 @@ const Store = {
     if (id === ALL_SONGS_ID) return this.allSongsPlaylist();
     if (id === FAVOURITES_ID) return this.favouritesPlaylist();
     if (SmartLists.isSmart(id)) return this.smartPlaylist(id);
+    if (String(id).startsWith(FROM_PREFIX)) return this.fromPlaylist(id.slice(FROM_PREFIX.length));
     const own = this.library.playlists.find((p) => p.id === id);
     if (own) return own;
     // A playlist another profile shares: to read, not to change.
@@ -165,6 +168,41 @@ const Store = {
       entries: this.library.songs.map((s) => ({ songId: s.id, addedAt: s.addedAt })),
       isAll: true,
     };
+  },
+
+  /** All Songs or a part of it ("All Songs from ..."): the lists whose songs can be deleted from the library. */
+  isAllSongs(id) {
+    return id === ALL_SONGS_ID || String(id || '').startsWith(FROM_PREFIX);
+  },
+
+  /**
+   * A server profile's name: the server's list while online (it follows a
+   * rename at once), else the names the library came with; '' for a profile
+   * that is gone.
+   */
+  profileName(profileId) {
+    const live = (this.server.profiles || []).find((p) => p.id === profileId);
+    return live ? live.name : (this.library.profileNames || {})[profileId] || '';
+  },
+
+  /**
+   * The songs one profile added (uploaded, or had the server download),
+   * shaped like All Songs; null when the profile is gone or added none.
+   */
+  fromPlaylist(profileId) {
+    const name = this.profileName(profileId);
+    const entries = this.library.songs
+      .filter((s) => s.addedBy === profileId)
+      .map((s) => ({ songId: s.id, addedAt: s.addedAt }));
+    if (!name || !entries.length) return null;
+    return { id: FROM_PREFIX + profileId, name: `All Songs from ${name}`, menuName: `from ${name}`, entries, isFrom: true };
+  },
+
+  /** The "All Songs from ..." lists under All Songs in the menu: profiles that added songs, A to Z. */
+  fromPlaylists() {
+    const ids = new Set(this.library.songs.map((s) => s.addedBy).filter(Boolean));
+    return [...ids].map((id) => this.fromPlaylist(id)).filter(Boolean)
+      .sort((a, b) => Util.compareValues(a.menuName, b.menuName));
   },
 
   /** The favourite songs, shaped like a playlist whose entries were added when made one. */

@@ -182,14 +182,17 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
 
   /**
    * The library as sent to an app signed in to `profileId` (null: none):
-   * paths inside the music folder, not the server's own.
+   * paths inside the music folder, not the server's own, and the profiles'
+   * names for who added the songs.
    */
   function snapshot(profileId = null) {
-    const v = prof.view(data, profiles, profileId, profileNames());
+    const names = profileNames();
+    const v = prof.view(data, profiles, profileId, names);
     return {
       ...v,
       songs: v.songs.map((s) => ({ ...s, file: relative(s.file) })),
       ignoredFiles: [],
+      profileNames: names,
     };
   }
 
@@ -351,7 +354,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
    * folder) as a song. The id is the app's own when it is free, so the app's
    * playlists keep pointing at it. Its favourite and stats are those of the
    * profile it came from, and so are the playlists it goes into, at
-   * `playlistAt` (else the time it was added).
+   * `playlistAt` (else the time it was added). That profile is who added it.
    */
   function addUploaded(tmp, requestedId, meta, playlistIds, profileId = null, { playlistAt } = {}) {
     checkProfile(profileId);
@@ -374,6 +377,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
       sourceKey: String(meta.sourceKey || ''),
       sourcePlaylistUrl: String(meta.sourcePlaylistUrl || ''),
       addedAt: Number(meta.addedAt) || Date.now(),
+      addedBy: profileId || '',
       loudness: meta.loudness,
       favouriteAt: meta.favouriteAt,
       stats: meta.stats,
