@@ -188,13 +188,20 @@ class HtmlAudioEngine {
 
   /**
    * Starts the next song (at loudness `gain`) and fades it in over `seconds`
-   * while the current one fades out.
+   * while the current one fades out; `at`: from there instead of its start
+   * (playing along with a host whose transition began a moment ago).
    */
-  fadeIn(src, gain, seconds, { key = '', inexact = false } = {}) {
+  fadeIn(src, gain, seconds, { key = '', inexact = false, at = 0 } = {}) {
     const incoming = this.spare;
     this._fresh(incoming, key, inexact);
     this._setSource(incoming, src);
     this._setNorm(incoming, gain);
+    // At its own speed (an element let go of may have been easing in step).
+    incoming.playbackRate = 1;
+    if (at > 0) {
+      incoming.currentTime = at;
+      if (this._seek.get(incoming).inexact) this._check(incoming);
+    }
     // Equal power: the two together stay as loud as one all the way across.
     const n = 64;
     const down = new Float32Array(n);
@@ -219,6 +226,33 @@ class HtmlAudioEngine {
     }
     const p = incoming.play();
     if (p && p.catch) p.catch(() => this._emit('fadefailed'));
+  }
+
+  /** The place heard of the song coming in, and its playing speed (in step with a host meanwhile). */
+  get incomingTime() {
+    return this.spare.currentTime - this._seek.get(this.spare).error;
+  }
+
+  setIncomingRate(rate) {
+    this.spare.playbackRate = rate;
+  }
+
+  /** The song coming in to `seconds` (an MP3 checked as after any seek). */
+  seekIncoming(seconds) {
+    const s = this._seek.get(this.spare);
+    this.spare.currentTime = Math.max(0, seconds);
+    s.error = 0;
+    if (s.inexact) this._check(this.spare);
+  }
+
+  /** As `settling`, for the song coming in. */
+  get incomingSettling() {
+    return this._seek.get(this.spare).checking > 0;
+  }
+
+  /** As `readyState`, for the song coming in. */
+  get incomingReady() {
+    return this.spare.readyState;
   }
 
   /** The song coming in's loudness gain. */

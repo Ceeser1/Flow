@@ -548,7 +548,10 @@ const Session = {
   },
 
   _state() {
-    const song = Player.currentId ? Store.song(Player.currentId) : null;
+    // In a song transition the song coming in is the one told: it is what plays
+    // on, and those playing along fade into it at the same moment.
+    const fading = Player.fade && Player.engine.incomingTime !== undefined ? Store.song(Player.fade.id) : null;
+    const song = fading || (Player.currentId ? Store.song(Player.currentId) : null);
     if (!song) return { songId: null };
     const ids = Player.contextId ? Player.idsOf(Player.contextId) : [];
     const queue = Player.queue.snapshot();
@@ -557,10 +560,10 @@ const Session = {
       title: song.title || '',
       artist: song.artist || '',
       mix: song.mix || '',
-      duration: Player.engine.duration || song.duration || 0,
+      duration: (fading ? 0 : Player.engine.duration) || song.duration || 0,
       playing: Player.isPlaying,
       // Held back by its output delay where the player cannot hold its sound back (Output.shift).
-      position: Player.position + Output.shift(),
+      position: (fading ? Player.engine.incomingTime : Player.position) + Output.shift(),
       at: Date.now() + (Store.server.timeOffset || 0),
       repeat: !!Player.repeat,
       shuffle: !!Player.queue.shuffle,

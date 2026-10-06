@@ -198,8 +198,11 @@ const Player = {
       this._emit();
     });
     e.on('ended', () => {
-      // Playing along with a host: its next song comes with its state.
-      if (this.remote) return;
+      // Playing along with a host: its next song comes with its state (or is fading in already).
+      if (this.remote) {
+        if (this.remote.hereFade) this._herePromote();
+        return;
+      }
       if (this.fade) this._promote();
       else if (this.repeat) this._restart();
       else this._advance();
@@ -818,6 +821,7 @@ const Player = {
     if (!this.remote) return null;
     const state = { ...this.remote.state, position: this._remotePosition() };
     if (keepAudio) {
+      if (this.remote.hereFade) this._herePromote();
       this.remote.hereSong = null;
       this.engine.setRate(1);
     } else this._stopHere();
@@ -852,6 +856,10 @@ const Player = {
   _stopHere() {
     const r = this.remote;
     if (!r || !r.hereSong) return;
+    if (r.hereFade) {
+      r.hereFade = null;
+      this.engine.cancelFade();
+    }
     r.hereSong = null;
     r.drift = null;
     this.engine.unload();
@@ -883,10 +891,27 @@ const Player = {
       return;
     }
     const now = performance.now();
+    if (r.hereFade) {
+      // Fading into the host's new song: the old one plays out, the new one is kept in step.
+      if (r.hereFade.id === song.id && st.playing && now < r.hereFade.until) {
+        this._hereFadeSync(now);
+        return;
+      }
+      this._herePromote();
+    }
     if (r.hereSong !== song.id) {
+      const fade = this._hereFadeLength(st);
       r.hereSong = song.id;
-      r.settleUntil = now + 800;
       r.correcting = false;
+      if (fade) {
+        // The host began a song transition: here too, over what is left of the song before.
+        r.hereFade = { id: song.id, until: now + fade * 1000 + 1500, settleUntil: now + 800, jumped: true };
+        a.fadeIn(Store.audioSrc(song), this._normGain(song.id), fade, {
+          key: song.id, inexact: this._inexact(song), at: this._hereTarget() + (r.seekLead || 0),
+        });
+        return;
+      }
+      r.settleUntil = now + 800;
       a.setRate(1);
       a.load(Store.audioSrc(song), this._normGain(song.id), { key: song.id, inexact: this._inexact(song) });
       if (st.playing) this._play();
@@ -931,6 +956,51 @@ const Player = {
     a.setRate(r.correcting
       ? Math.max(1 - this.SYNC_RATE, Math.min(1 + this.SYNC_RATE, 1 - drift))
       : 1);
+  },
+
+  /**
+   * Whether to fade into the host's new song, and over how long (s; 0: not):
+   * the host has Song Transition on, and the song before still plays here
+   * near its end, where the host's transition began.
+   */
+  _hereFadeLength(st) {
+    const a = this.engine;
+    if (!st.crossfade || !st.playing || !a.canFade || !this.remote.hereSong || a.paused || a.readyState < 2) return 0;
+    const left = (a.duration || 0) - a.time;
+    return left > 0.3 && left <= st.crossfade + 1 ? left : 0;
+  },
+
+  /** During that fade: the song coming in eased or jumped to the host's place, as _hereSync does. */
+  _hereFadeSync(now) {
+    const r = this.remote;
+    const f = r.hereFade;
+    const a = this.engine;
+    if (now < f.settleUntil || a.incomingReady < 2 || a.incomingSettling) return;
+    const drift = a.incomingTime - this._hereTarget();
+    r.drift = drift;
+    if (f.jumped) {
+      f.jumped = false;
+      r.seekLead = Math.max(0, Math.min(0.5, (r.seekLead || 0) - drift));
+    }
+    if (Math.abs(drift) > this.SYNC_JUMP) {
+      a.setIncomingRate(1);
+      a.seekIncoming(this._hereTarget() + (r.seekLead || 0));
+      f.settleUntil = now + 800;
+      f.jumped = true;
+      return;
+    }
+    if (Math.abs(drift) > this.SYNC_OK) r.correcting = true;
+    else if (Math.abs(drift) < this.SYNC_OK / 3) r.correcting = false;
+    a.setIncomingRate(r.correcting ? Math.max(1 - this.SYNC_RATE, Math.min(1 + this.SYNC_RATE, 1 - drift)) : 1);
+  },
+
+  /** The fade into the host's song done (the song before ended, or the host moved on): it is the one playing. */
+  _herePromote() {
+    const r = this.remote;
+    if (!r || !r.hereFade) return;
+    r.hereFade = null;
+    r.settleUntil = 0;
+    this.engine.promote();
   },
 
   /**
@@ -991,6 +1061,12 @@ const Player = {
     if (!src) return;
     this.fade = { id };
     this.engine.fadeIn(src, this._normGain(id), seconds, { key: id, inexact: this._inexact(Store.song(id)) });
+    // Hosting a session, the others hear of the song coming in now (session.js),
+    // and again once it plays, its place then known.
+    this._emit();
+    setTimeout(() => {
+      if (this.fade && this.fade.id === id) this._emit();
+    }, 700);
   },
 
   /** The current song has ended (or Next was pressed): the one coming in takes over. */
