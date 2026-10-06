@@ -190,6 +190,23 @@ test('settings are kept within their ranges', () => {
   assert.deepEqual(settings.clean({ settingsCollapsed: 'General' }).settingsCollapsed, []);
   assert.equal(settings.clean({ settingsCategory: 'App' }).settingsCategory, 'App');
   assert.equal(settings.clean({ settingsCategory: 7 }).settingsCategory, '');
+  // Bars' colours: Lime by default, the old Winamp and Equalizer left behind.
+  assert.equal(d.brColors, 'lime');
+  assert.equal(settings.clean({ brColors: 'ice' }).brColors, 'ice');
+  assert.equal(settings.clean({ brColors: 'classic' }).brColors, 'lime');
+  assert.equal(settings.clean({ brColors: 'equalizer' }).brColors, 'lime');
+  // Waveform: rainbow bars by default.
+  assert.equal(d.wfColors, 'rainbow');
+  assert.equal(d.wfStyle, 'bars');
+  assert.equal(settings.clean({ wfStyle: 'wave', wfColors: 'blue' }).wfStyle, 'wave');
+  assert.equal(settings.clean({ wfColors: 'black' }).wfColors, 'rainbow');
+  // Aurora Waves, Liquid and Mandala are their own now, no longer Nebula's looks.
+  assert.equal(settings.clean({ nbLook: 'liquid' }).nbLook, 'auto');
+  assert.equal(settings.clean({ nbLook: 'starburst' }).nbLook, 'starburst');
+  assert.equal(settings.clean({ visualizer: 'mandala' }).visualizer, 'mandala');
+  assert.equal(settings.clean({ visualizer: 'aurorawaves' }).visualizer, 'aurorawaves');
+  assert.equal(d.lqTrails, 100);
+  assert.equal(settings.clean({ awTrails: 7 }).awTrails, 25);
 });
 
 test('a metered connection is told apart from a free one', () => {

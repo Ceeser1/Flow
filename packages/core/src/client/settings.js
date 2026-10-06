@@ -18,13 +18,18 @@ const VIZ_OPTIONS = {
   // Synthwave: how fast it flies (percent; its other settings are below with
   // the rest of the window's).
   synSpeed: ['range', 100, 50, 150, 5],
-  // Bars: how many, their colours, solid or in LED steps, the peak caps,
-  // the floor mirroring them.
+  // Bars: how many, their colours ('classic' and 'equalizer' are gone: a value
+  // saved as one of them is left behind), solid or in LED steps, the peak
+  // caps, the floor mirroring them.
   brCount: ['range', 40, 16, 128, 4],
-  brColors: ['choice', 'classic', ['classic', 'fire', 'ice', 'rainbow', 'equalizer']],
+  brColors: ['choice', 'lime', ['fire', 'ice', 'lime', 'rainbow']],
   brStyle: ['choice', 'solid', ['solid', 'led']],
   brPeaks: ['bool', true],
   brMirror: ['bool', false],
+  // Waveform: its colours (the equalizer's, without black), and distinct
+  // bars or one smooth wave.
+  wfColors: ['choice', 'rainbow', ['rainbow', 'spectrum', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple']],
+  wfStyle: ['choice', 'bars', ['bars', 'wave']],
   // Lightning: the bolts' colour, the sky lighting up with them (and how
   // much), rain, and how readily it strikes (percent).
   ltColor: ['color', '#a9c4ff'],
@@ -34,9 +39,16 @@ const VIZ_OPTIONS = {
   ltStrikes: ['range', 100, 25, 200, 5],
   // Nebula: its look ('auto' moves on by itself), how often Auto moves on
   // (seconds), and how long the trails last (percent).
-  nbLook: ['choice', 'auto', ['auto', 'vortex', 'tunnel', 'kaleido', 'aurora', 'starburst', 'liquid', 'mandala']],
+  // (Aurora, Liquid and Mandala were looks of it; a value saved as one of
+  // them is left behind.)
+  nbLook: ['choice', 'auto', ['auto', 'vortex', 'tunnel', 'kaleido', 'starburst']],
   nbEvery: ['range', 30, 10, 120, 5],
   nbTrails: ['range', 100, 25, 200, 5],
+  // Aurora Waves, Liquid and Mandala (Nebula's once): how long the trails
+  // last (percent).
+  awTrails: ['range', 100, 25, 200, 5],
+  lqTrails: ['range', 100, 25, 200, 5],
+  mdTrails: ['range', 100, 25, 200, 5],
   // Halo: the cover round or square, turning (round only), the spectrum as
   // bars, a line or dots, the sparks, the cover blurred behind, the title.
   hlShape: ['choice', 'round', ['round', 'square']],
@@ -284,7 +296,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'aurorawaves', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
