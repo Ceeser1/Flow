@@ -32,8 +32,9 @@
       float r = star.x;
       // The arms turn as a whole (they are a pattern the stars pass through:
       // were each star to keep its own pace, they would wind up tight within
-      // minutes); each star sways a little about its place.
-      float ang = star.y + time * 0.3 + 0.04 * sin(time * 1.3 + star.w * 40.0) / (0.3 + r);
+      // minutes), against the way they wind out, so their tips trail behind
+      // as a real galaxy's do; each star sways a little about its place.
+      float ang = star.y - time * 0.3 + 0.04 * sin(time * 1.3 + star.w * 40.0) / (0.3 + r);
       vec3 p = vec3(cos(ang) * r, star.z * (0.06 + 0.12 * (1.0 - r)), sin(ang) * r);
       // Turned about its axis, tipped towards us.
       float ct = cos(turn), st = sin(turn);
@@ -179,7 +180,7 @@
 
       const spin = set('gxSpin') / 100;
       this.time += dt * spin * (a.playing ? (0.5 + 0.8 * a.level) * (0.6 + 0.4 * a.pace) : 0.15);
-      this.turn += dt * 0.02;
+      this.turn -= dt * 0.02;    // the same way as the arms
       const view = set('gxView');
       // How far the disc is turned towards us: pi/2 seen from above, 0 edge on.
       const tilt = view === 'face' ? 1.45 : (view === 'edge' ? 0.1 : 0.5);
