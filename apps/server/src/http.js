@@ -814,7 +814,11 @@ function createHttpServer({
     const id = (entry && entry.client) || String(body.client || url.searchParams.get('client') || '');
     if (!CLIENT_ID.test(id)) throw new HttpError(400, 'Sessions need the app\'s id.');
     if (req.method === 'GET') return sendJson(res, 200, sessions.view(id));
-    return sendJson(res, 200, { ok: true, ...sessions.handle(id, body) });
+    const p = profileOf(entry);
+    const signedIn = entry ? {
+      profileId: p ? p.id : null, profileName: p ? p.name : '', device: String(entry.device || ''), ip: '',
+    } : null;
+    return sendJson(res, 200, { ok: true, ...sessions.handle(id, body, signedIn) });
   }
 
   /** The server's own downloads, those of the profile signed in to (see the top). */

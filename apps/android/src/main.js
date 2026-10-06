@@ -322,6 +322,12 @@ function start() {
     mediaVolume: call(async () => (await plugin.mediaVolume()).value),
     setMediaVolume: call(async (value) => (await plugin.setMediaVolume({ value })).value),
     onMediaVolume: (fn) => plugin.addListener('mediaVolume', (e) => fn(e.value)),
+    /**
+     * What this app last told the server it plays (Active Sessions: { base,
+     * token, client, state, shift, offset }), which the player tells it again
+     * while Flow is out of sight and its page frozen; null: hosting nothing.
+     */
+    keepSession: call((o) => audio.keepSession(o || { off: true })),
     /** A link shared to Flow (Android's Share): fn({ url, text }), url '' when there was none. */
     onShare: (fn) => plugin.addListener('share', (s) => fn(sharedLink(s))),
     /** Whether the window may turn sideways (Add Songs) or stays upright. */

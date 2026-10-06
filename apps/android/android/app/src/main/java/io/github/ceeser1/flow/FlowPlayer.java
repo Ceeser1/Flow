@@ -314,6 +314,17 @@ final class FlowPlayer {
         return events;
     }
 
+    /** The song loaded: its own id (the server's; "" with nothing loaded). */
+    String songKey() {
+        return key;
+    }
+
+    /** A token SessionKeeper signed in for: the players use it, the page takes it over. */
+    void tookToken(String token, boolean profileOk) {
+        Streams.signedIn(token);
+        if (profileOk && events != null) events.onSignedIn(token);
+    }
+
     /**
      * A page starts: what is loaded (the state, the song's id and how long it
      * has been heard), and the listens kept while there was no page, which it
@@ -363,6 +374,7 @@ final class FlowPlayer {
             }
             signedInAgain = true;
             Streams.signedIn(r.token);
+            SessionKeeper.signedIn(r.token);
             FlowLog.i("signed in again" + (r.profileOk ? "" : " (" + r.problem + ")"));
             // Without the profile the token is not the one the page signs in with: it signs in itself.
             if (r.profileOk && events != null) events.onSignedIn(r.token);

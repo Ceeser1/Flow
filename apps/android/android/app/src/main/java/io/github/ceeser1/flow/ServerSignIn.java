@@ -107,7 +107,8 @@ final class ServerSignIn {
         return text.isEmpty() || text.equals("null") ? new JSONObject() : new JSONObject(text);
     }
 
-    private static final class Answer {
+    /** A server's answer: its status and JSON body (empty when it sent none). */
+    static final class Answer {
         final int status;
         final JSONObject json;
 
@@ -118,10 +119,15 @@ final class ServerSignIn {
     }
 
     private static Answer post(String url, JSONObject body, String token) throws IOException {
+        return post(url, body, token, TIMEOUT_MS);
+    }
+
+    /** POSTs `body` as JSON (with the token, if any); also for SessionKeeper. */
+    static Answer post(String url, JSONObject body, String token, int timeoutMs) throws IOException {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         try {
-            c.setConnectTimeout(TIMEOUT_MS);
-            c.setReadTimeout(TIMEOUT_MS);
+            c.setConnectTimeout(timeoutMs);
+            c.setReadTimeout(timeoutMs);
             c.setRequestMethod("POST");
             c.setDoOutput(true);
             c.setRequestProperty("Content-Type", "application/json");

@@ -354,6 +354,47 @@ test('a dropped live channel counts as leaving after 15 s, unless it is back', (
   assert.equal(changed.reason, 'dropped');
 });
 
+test('a host without its live channel stays while it tells what it plays, and goes 15 s after it stops', () => {
+  const t = setup();
+  // Alone: its session stays listed while it keeps telling.
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing() });
+  t.live.drop('host-aaaaaaaa');
+  for (let i = 0; i < 12; i += 1) {
+    t.clock.advance(5000);
+    t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ position: 10 + i * 5 }) });
+  }
+  assert.equal(t.sessions.list().length, 1);
+  t.clock.advance(GRACE_MS + 10);
+  assert.equal(t.sessions.list().length, 0, 'it stopped telling');
+
+  // Its session ended meanwhile (an older server, a longer gap): told again, it is a new one, kept the same way.
+  const signedIn = { profileId: null, profileName: 'Ceeser', device: 'Galaxy A56', ip: '' };
+  assert.throws(() => t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing() }), /live channel/, 'nobody it could be');
+  const { sessionId } = t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ name: '' }) }, signedIn);
+  assert.ok(sessionId);
+  assert.equal(t.sessions.list()[0].name, 'Ceeser - Galaxy A56', 'named as its sign-in names it');
+  t.clock.advance(GRACE_MS - 1000);
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ name: '', position: 24 }) });
+  t.clock.advance(GRACE_MS - 1000);
+  assert.equal(t.sessions.list().length, 1);
+  t.clock.advance(2000);
+  assert.equal(t.sessions.list().length, 0);
+
+  // With company: the others keep it as their host meanwhile, and get what it plays.
+  t.live.connect('host-aaaaaaaa', { profileName: 'Ceeser', device: 'Living room' });
+  const shared = joined(t);
+  t.live.drop('host-aaaaaaaa');
+  t.live.clear('join-bbbbbbbb');
+  for (let i = 0; i < 6; i += 1) {
+    t.clock.advance(5000);
+    t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ position: 40 + i * 5 }) });
+  }
+  assert.equal(t.live.take('join-bbbbbbbb', 'hostChanged'), null);
+  assert.equal(t.live.all('join-bbbbbbbb', 'state').pop().sessionId, shared);
+  t.clock.advance(GRACE_MS + 10);
+  assert.equal(t.live.take('join-bbbbbbbb', 'hostChanged').reason, 'dropped');
+});
+
 test('a join request outlives its host\'s handover and reaches the new host', () => {
   const t = setup();
   const sessionId = joined(t);

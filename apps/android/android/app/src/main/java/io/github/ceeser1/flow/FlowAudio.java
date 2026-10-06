@@ -15,16 +15,19 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * state() answers where it is, attach() what the page starting finds (see
  * FlowPlayer.attach). Events: "state", "ended" { id }, "error" { id, message, status },
  * "advance" { from, id, key, heard, reason } and "signedIn" { token } (the
- * player signed in to the server again itself).
+ * player signed in to the server again itself). keepSession(state) hands
+ * SessionKeeper what the page last told the server, for while Flow is out of sight.
  */
 @CapacitorPlugin(name = "FlowAudio")
 public class FlowAudio extends Plugin implements FlowPlayer.Events {
     private FlowPlayer player;
+    private SessionKeeper keeper;
 
     @Override
     public void load() {
         player = FlowPlayer.get(getContext());
         player.setEvents(this);
+        keeper = SessionKeeper.get(getContext());
         startService();
     }
 
@@ -40,6 +43,16 @@ public class FlowAudio extends Plugin implements FlowPlayer.Events {
                 FlowLog.i("operations failed: " + e);
                 call.reject(e.getMessage() == null ? "The player refused." : e.getMessage());
             }
+        });
+    }
+
+    /** What this app last told the server it plays, for SessionKeeper ({ off: true }: hosting nothing). */
+    @PluginMethod
+    public void keepSession(PluginCall call) {
+        JSObject o = call.getData();
+        bridge.executeOnMainThread(() -> {
+            keeper.keep(o);
+            call.resolve();
         });
     }
 
@@ -105,6 +118,16 @@ public class FlowAudio extends Plugin implements FlowPlayer.Events {
     @Override
     public void onPrevious() {
         notifyListeners("previous", new JSObject());
+    }
+
+    @Override
+    protected void handleOnStart() {
+        keeper.away(false);
+    }
+
+    @Override
+    protected void handleOnStop() {
+        keeper.away(true);
     }
 
     @Override

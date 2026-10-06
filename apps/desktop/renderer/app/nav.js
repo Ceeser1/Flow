@@ -16,7 +16,7 @@ const Nav = {
       + '<span id="menuAddBadge" class="menu__badge" hidden title="Playlist import running"></span>';
     this._entry('menuPlaylists', 'Playlists', 'playlistsMenuOpen');
     this._entry('menuFollowed', 'Followed Playlists', 'followedMenuOpen');
-    this._entry('menuSessions', 'Active Sessions', 'sessionsMenuOpen', { icon: Icons.sessions });
+    this._entry('menuSessions', 'Active Jams', 'sessionsMenuOpen', { icon: Icons.sessions });
     $('menuSessions').appendChild(h('span.menu__badge', { id: 'menuSessionsBadge', hidden: true }));
     this._entry('menuTrend', 'Your listening trend', 'trendMenuOpen', {
       icon: '<img class="menu__img" src="../images/trend.png" alt="" />',
@@ -173,7 +173,7 @@ const Nav = {
     $('menuSessionsBadge').title = `${Util.plural(others, 'other device')} playing`;
     // Under it the sessions, as the playlists: one opens the page at it.
     const sessionsOpen = this._open('sessionsMenuOpen');
-    this._drawArrow('sessionsMenuOpen', sessionsOpen, 'the sessions');
+    this._drawArrow('sessionsMenuOpen', sessionsOpen, 'the jams');
     $('menuSessionsList').hidden = !Session.visible || !sessionsOpen;
     const sessionList = clear($('menuSessionsList'));
     if (Session.visible && sessionsOpen) {

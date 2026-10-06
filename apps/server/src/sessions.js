@@ -10,7 +10,9 @@
 // are carried out by the host. Members are kept in the order they joined;
 // the first is the host. When the host leaves (on purpose at once, a dropped
 // live channel after GRACE_MS), the next in line takes over and plays on
-// from where it was. The last one leaving ends the session.
+// from where it was. The last one leaving ends the session. A host still
+// telling what it plays without its live channel (a phone whose page sleeps
+// while its player plays on) stays, until GRACE_MS after the last time.
 //
 // The apps talk to it with POST /api/sessions { type, ... } and hear back on
 // their live channel (live.js):
@@ -239,8 +241,22 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
     }, Math.max(0, PAUSED_LISTED_MS - (now() - s.pausedAt)) + 10);
   }
 
-  function setState(client, raw) {
-    const me = who(client);
+  /**
+   * Who a host telling what it plays is: from its live channel, else (gone a
+   * while, a phone whose page sleeps) as its session knows it, else as its
+   * sign-in names it (`signedIn`, from the HTTP side).
+   */
+  function hostWho(client, signedIn) {
+    if (live.info(client)) return who(client);
+    const s = sessions.get(memberOf.get(client));
+    const m = s && s.members.find((x) => x.client === client);
+    if (m) return { client, profileId: m.profileId, profileName: m.profileName, device: m.device, ip: m.ip || '' };
+    if (signedIn) return { ...signedIn, client };
+    return who(client);
+  }
+
+  function setState(client, raw, signedIn = null) {
+    const me = hostWho(client, signedIn);
     const st = cleanState(raw);
     let s = sessions.get(memberOf.get(client));
     if (s && hostOf(s).client !== client) throw new SessionError(409, 'Only the session\'s host sends what it plays.');
@@ -253,6 +269,8 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
       sessions.set(s.id, s);
       memberOf.set(client, s.id);
     }
+    // Without its live channel, it stays as long as it keeps telling.
+    if (!live.has(client)) dropLater(client);
     Object.assign(hostOf(s), { profileId: me.profileId, profileName: me.profileName, device: me.device });
     const was = s.state;
     if (st.ids === undefined) st.ids = was ? was.ids : [];
@@ -559,21 +577,30 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
     if (reason === 'replaced') return;
     // Gone for good unless it is back within GRACE_MS.
     if (!memberOf.has(client) && !requestOf.has(client)) return;
+    dropLater(client);
+  });
+
+  /** Gone for good unless its live channel is back (or, a host, it tells what it plays) within GRACE_MS. */
+  function dropLater(client) {
     clock.clearTimeout(grace.get(client));
     grace.set(client, clock.setTimeout(() => {
       grace.delete(client);
       if (!live.has(client)) leave(client, 'dropped');
     }, GRACE_MS));
-  });
+  }
 
   // ---- for the HTTP side ----
 
-  /** POST /api/sessions from the app `client`. Resolves what to answer. */
-  function handle(client, body) {
+  /**
+   * POST /api/sessions from the app `client`. Resolves what to answer.
+   * `signedIn` ({ profileId, profileName, device, ip }): who its sign-in names,
+   * for a host telling what it plays without its live channel.
+   */
+  function handle(client, body, signedIn = null) {
     if (!CLIENT.test(String(client || ''))) throw new SessionError(400, 'Sessions need the app\'s id.');
     const b = body && typeof body === 'object' ? body : {};
     switch (b.type) {
-      case 'state': return setState(client, b.state);
+      case 'state': return setState(client, b.state, signedIn);
       case 'join': return join(client, b);
       case 'cancelJoin': return cancelJoin(client);
       case 'answer': return answer(client, b);

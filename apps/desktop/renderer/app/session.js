@@ -103,7 +103,20 @@ const Session = {
     Player.onSeek(() => this._changed(true));
     // The profile signed in to, as long as connected (Flow may be connected before the window opens).
     if (this.available) this._profileId = Store.server.profile ? Store.server.profile.id : null;
+    this._wasAvailable = this.available;
     Store.onServer(() => {
+      // The live channel open again (its hello comes a moment before the status
+      // says so, which the hello's own publish found closed): what plays here is
+      // told again, everything included, the heartbeat with it.
+      const back = this.available && !this._wasAvailable;
+      this._wasAvailable = this.available;
+      if (back && (this._published || Player.isPlaying)) {
+        this._sentIds = '';
+        this._sentQueue = '';
+        this._changed(true);
+      }
+      // No server any more (switched off, another one): nothing to keep.
+      if (!Store.server.on) this._keep(null);
       if (!this.available && (this.mine || this.list.length || this.request)) {
         // Reconnecting: what the server knows comes again with the stream.
         this.list = [];
@@ -205,6 +218,7 @@ const Session = {
 
   _out() {
     if (Player.remote) Player.endRemote();
+    this._keep(null);
     this.mine = null;
     this.sessionId = null;
     this._published = false;
@@ -216,6 +230,7 @@ const Session = {
 
   /** Joined: this app's own session (if any) is handed on by the server; its playback stops here. */
   _becomeMember(session, state) {
+    this._keep(null);
     this.mine = { session, host: false };
     this.sessionId = null;
     this._published = false;
@@ -573,11 +588,13 @@ const Session = {
 
   async _publish() {
     clearTimeout(this._heartbeat);
+    // Not connected: told again once the live channel is back (Store.onServer above).
     if (!this.available || this.isMember) return;
     const state = this._state();
     try {
       const r = await window.flow.sessions({ type: 'state', state });
       this._published = !!r.sessionId;
+      this._keep(r.sessionId ? state : null);
       if (r.sessionId !== this.sessionId) {
         this.sessionId = r.sessionId || null;
         if (!r.sessionId && this.mine && this.mine.host) this.mine = null;
@@ -589,6 +606,21 @@ const Session = {
       this._sentQueue = '';
     }
     if (Player.isPlaying) this._heartbeat = setTimeout(() => this._publish(), this.HEARTBEAT_MS);
+  },
+
+  /**
+   * The phone: what was told goes to its player too, which tells it again
+   * while Flow is out of sight (a minute after, the WebView freezes this page:
+   * no timers, no network, and a live channel that broke stays broken, so the
+   * server would let the session go). null: this app hosts nothing.
+   */
+  _keep(state) {
+    if (!window.flow.keepSession || (!state && !this._kept)) return;
+    this._kept = !!state;
+    const s = Store.server;
+    window.flow.keepSession(state ? {
+      base: s.base, token: s.token, client: s.clientId, state, shift: Output.shift(), offset: s.timeOffset || 0,
+    } : null).catch(() => {});
   },
 
   // ---- buttons pressed on other devices ----
