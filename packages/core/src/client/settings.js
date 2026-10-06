@@ -39,6 +39,12 @@ const VIZ_OPTIONS = {
   scColor: ['color', '#5dff7a'],
   scPersist: ['range', 50, 0, 100, 5],
   scGrid: ['bool', true],
+  // Warp: how fast and how many stars (percent), their colours, and the
+  // hyperspace jumps on big drops.
+  wpSpeed: ['range', 100, 25, 300, 5],
+  wpCount: ['range', 100, 25, 200, 5],
+  wpColor: ['choice', 'spectrum', ['white', 'spectrum', 'nebula']],
+  wpJumps: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -185,7 +191,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
