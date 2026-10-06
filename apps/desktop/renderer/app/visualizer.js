@@ -27,7 +27,8 @@
 //             cogwheel at the top left opens, to the right, onto its own
 //             settings: the wireframe's colour, the floor's bumps, and the
 //             camera bobbing, the camera tilting and the car tilting on them.
-//   Random    one of the others, a different one than last time if it can.
+//   Random    one of the others, a different one than last time if it can;
+//             with vizRandomEach (Settings) another one with each song.
 //
 // Both read the player's sound where the equalizer does, before the volume.
 // Bars runs its own short analysis (about 46 ms) so they jump the way
@@ -154,30 +155,12 @@ const Visualizer = {
     if (this.el) return;
     const kind = id === 'random' ? this._pickRandom() : id;
     if (!VISUALIZERS.some((v) => v.id === kind && v.ready)) return;
-    this.kind = kind;
-    this.mode = 'bars';
+    // Opened as Random it may move on to another with each song (vizRandomEach).
+    this._random = id === 'random';
+    this._songAt = Player.currentId;
 
-    const flow = kind === 'flow';
-    // Flow draws nothing of its own: the layer is see-through, over the
-    // window's background, and only there for the X and the pointer.
-    this.canvas = flow ? null : h('canvas.viz-full__canvas');
     const close = iconButton('viz-full__close', Icons.x, Store.can('keyboard') ? 'Close (Esc)' : 'Close', () => this.close());
-    this.el = h('div.viz-full' + (flow ? '.viz-full--flow' : ''), this.canvas, close);
-    if (!Equalizer.active && !flow) {
-      this.el.appendChild(h('p.viz-full__note', 'The visualizer needs Web Audio, which could not be started on this computer.'));
-    }
-    if (kind === 'synthwave') this.el.appendChild(this._synPanel());
-    if (kind === 'bars') this.el.appendChild(this._barsPanel());
-    const def = this.scenes[kind];
-    if (def && def.options) this.el.appendChild(this._cfgPanel(`${def.name} settings`, def.options));
-    if (def && def.click) this.canvas.addEventListener('click', () => this.scene && def.click(this.scene));
-    if (def && def.hint) this.canvas.title = def.hint;
-    if (kind === 'bars') {
-      this.canvas.title = 'Click to switch between spectrum and oscilloscope';
-      this.canvas.addEventListener('click', () => {
-        this.mode = this.mode === 'bars' ? 'scope' : 'bars';
-      });
-    }
+    this.el = h('div.viz-full', close);
     // Anywhere, the player bar included, since that is over the layer; but
     // on the Queue (a drawer over it) they get out of the way instead.
     this._onPointer = (e) => {
@@ -190,7 +173,6 @@ const Visualizer = {
     if (document.activeElement) document.activeElement.blur();
     document.body.appendChild(this.el);
     document.body.classList.add('viz-open');
-    document.body.classList.toggle('viz-flow', flow);
     this._drawButton(true);
     this._wake();
 
@@ -203,6 +185,41 @@ const Visualizer = {
     this._wasFull = false;
     // Refused (it should not be): it still covers the window.
     root.requestFullscreen().catch(() => {});
+    this._watchSongs();
+    this._mount(kind);
+  },
+
+  /**
+   * The visualizer `kind` into the open layer: its canvas, its cogwheel, and
+   * its drawing started. Everything of it lives in one box (this.stage), so
+   * it can be swapped for another without leaving full screen.
+   */
+  _mount(kind) {
+    this.kind = kind;
+    this.mode = 'bars';
+    const flow = kind === 'flow';
+    // Flow draws nothing of its own: the layer is see-through, over the
+    // window's background, and only there for the X and the pointer.
+    this.canvas = flow ? null : h('canvas.viz-full__canvas');
+    this.stage = h('div.viz-full__stage', this.canvas);
+    this.el.insertBefore(this.stage, this.el.firstChild);
+    this.el.classList.toggle('viz-full--flow', flow);
+    document.body.classList.toggle('viz-flow', flow);
+    if (!Equalizer.active && !flow) {
+      this.stage.appendChild(h('p.viz-full__note', 'The visualizer needs Web Audio, which could not be started on this computer.'));
+    }
+    if (kind === 'synthwave') this.stage.appendChild(this._synPanel());
+    if (kind === 'bars') this.stage.appendChild(this._barsPanel());
+    const def = this.scenes[kind];
+    if (def && def.options) this.stage.appendChild(this._cfgPanel(`${def.name} settings`, def.options));
+    if (def && def.click) this.canvas.addEventListener('click', () => this.scene && def.click(this.scene));
+    if (def && def.hint) this.canvas.title = def.hint;
+    if (kind === 'bars') {
+      this.canvas.title = 'Click to switch between spectrum and oscilloscope';
+      this.canvas.addEventListener('click', () => {
+        this.mode = this.mode === 'bars' ? 'scope' : 'bars';
+      });
+    }
 
     if (flow) {
       // Measured again now the menu, the page and the player bar are out of
@@ -219,7 +236,7 @@ const Visualizer = {
         this.scene = def.create(this.canvas);
       } catch (err) {
         console.warn('Visualizer:', err);
-        this.el.appendChild(h('p.viz-full__note', `${def.name} could not be started on this computer (${def.gl ? 'it needs WebGL 2' : String(err.message || err)}).`));
+        this.stage.appendChild(h('p.viz-full__note', `${def.name} could not be started on this computer (${def.gl ? 'it needs WebGL 2' : String(err.message || err)}).`));
         return;
       }
     }
@@ -233,16 +250,12 @@ const Visualizer = {
     this.raf = requestAnimationFrame((t) => this._frame(t));
   },
 
-  close() {
-    if (!this.el) return;
+  /** The visualizer showing taken out of the layer, the layer left open. */
+  _unmount() {
     cancelAnimationFrame(this.raf);
     this.raf = null;
-    clearTimeout(this._idle);
     if (this._resize) this._resize.disconnect();
     this._resize = null;
-    document.removeEventListener('fullscreenchange', this._onFullscreen);
-    document.removeEventListener('pointermove', this._onPointer);
-    document.removeEventListener('pointerdown', this._onPointer);
     if (this._cfgOutside) document.removeEventListener('pointerdown', this._cfgOutside, true);
     this._cfgOutside = null;
     this._draft = null;
@@ -254,6 +267,42 @@ const Visualizer = {
       }
       this.scene = null;
     }
+    const flow = this.kind === 'flow';
+    document.body.classList.remove('viz-flow');
+    if (this.stage) this.stage.remove();
+    this.stage = null;
+    this.canvas = null;
+    this.scratch = null;
+    this.glow = null;
+    this.terrain = null;
+    if (flow) Equalizer._layout();
+  },
+
+  /** On to another one, at random (not the one showing), staying in full screen. */
+  next() {
+    if (!this.el) return;
+    this._unmount();
+    this._mount(this._pickRandom());
+  },
+
+  /** Opened as Random with "a new one with each song": the song changing moves it on. */
+  _watchSongs() {
+    if (this._watching) return;
+    this._watching = true;
+    Player.onChange(() => {
+      if (!this.el || Player.currentId === this._songAt) return;
+      this._songAt = Player.currentId;
+      if (this._random && Store.settings.vizRandomEach && Player.currentId) this.next();
+    });
+  },
+
+  close() {
+    if (!this.el) return;
+    this._unmount();
+    clearTimeout(this._idle);
+    document.removeEventListener('fullscreenchange', this._onFullscreen);
+    document.removeEventListener('pointermove', this._onPointer);
+    document.removeEventListener('pointerdown', this._onPointer);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     document.body.classList.remove('viz-open', 'viz-awake', 'viz-flow');
     this._drawButton(false);
@@ -261,10 +310,6 @@ const Visualizer = {
     Equalizer._layout();
     this.el.remove();
     this.el = null;
-    this.canvas = null;
-    this.scratch = null;
-    this.glow = null;
-    this.terrain = null;
     this._closedAt = performance.now();
   },
 
@@ -284,7 +329,7 @@ const Visualizer = {
 
   _pickRandom() {
     const ids = VISUALIZERS.filter((v) => v.ready && v.id !== 'random').map((v) => v.id);
-    const fresh = ids.filter((v) => v !== this._lastRandom);
+    const fresh = ids.filter((v) => v !== this._lastRandom && v !== this.kind);
     const pool = fresh.length ? fresh : ids;
     this._lastRandom = pool[Math.floor(Math.random() * pool.length)];
     return this._lastRandom;

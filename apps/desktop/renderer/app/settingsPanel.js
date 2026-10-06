@@ -220,6 +220,13 @@ const SettingsPanel = {
 
       h('h3.settings__section', 'Music Visualizer'),
       this._visualizerRow(),
+      this._row({
+        key: 'vizRandomEach',
+        label: 'Random: a new one with each song',
+        desc: 'With Random chosen, the visualizer changes to another one whenever the next song starts, staying in full screen.',
+        sub: true,
+        when: () => Store.settings.visualizer === 'random',
+      }),
       ] : []),
 
       ...(Store.can('updateCheck') || Store.can('batteryHelp') ? this._appRows() : []),
@@ -492,6 +499,7 @@ const SettingsPanel = {
         onclick: () => {
           Store.saveSettings({ visualizer: v.id });
           draw();
+          this._refreshAll();
         },
       }, art, h('span.viz-tile__name', v.name), v.ready ? null : h('span.viz-tile__soon', 'Soon')));
     }

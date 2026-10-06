@@ -13,6 +13,8 @@ const { randomBase64Url } = require('./common');
 // default]; ['range', default, min, max, step]; ['choice', default, values].
 // Each visualizer's start with its own letters.
 const VIZ_OPTIONS = {
+  // Opened as Random, another one with each song.
+  vizRandomEach: ['bool', false],
   // Bars: how many, their colours, solid or in LED steps, the peak caps,
   // the floor mirroring them.
   brCount: ['range', 40, 16, 128, 4],
