@@ -82,6 +82,11 @@ const VIZ_OPTIONS = {
   obColors: ['choice', 'aurora', ['aurora', 'ember', 'ice', 'rainbow', 'white']],
   obSpin: ['range', 100, 0, 200, 5],
   obRing: ['bool', true],
+  // Lava: its colours, how many blobs, how fast they drift (percent), the gloss.
+  lvColors: ['choice', 'lava', ['lava', 'neon', 'ocean', 'candy', 'chrome']],
+  lvBlobs: ['range', 10, 4, 16, 1],
+  lvSpeed: ['range', 100, 25, 300, 5],
+  lvGloss: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -228,7 +233,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
