@@ -41,8 +41,8 @@ const VISUALIZERS = [
     desc: 'A different visualizer each time',
     glyph: '<img class="viz-tile__icon" src="../images/shuffle.png" alt="" />',
   },
-  { id: 'bars', name: 'Bars', ready: true, desc: 'Spectrum bars with falling peaks, in the manner of Winamp', glyph: Icons.speaker },
-  { id: 'waveform', name: 'Waveform', ready: true, desc: 'The equalizer, glowing out from the middle of the screen', glyph: Icons.pulse },
+  { id: 'bars', name: 'Bars', ready: true, desc: 'Spectrum bars with falling peaks, in the manner of Winamp', glyph: Icons.speaker, image: '../images/viz-bars.jpg' },
+  { id: 'waveform', name: 'Waveform', ready: true, desc: 'The equalizer, glowing out from the middle of the screen', glyph: Icons.pulse, image: '../images/viz-waveform.jpg' },
   {
     id: 'flow',
     name: 'Flow (Settings)',
@@ -56,6 +56,7 @@ const VISUALIZERS = [
     name: 'Synthwave',
     ready: true,
     desc: 'A flight through neon mountains made of the music; the kicks speed it up and make it glow',
+    image: '../images/viz-synthwave.jpg',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="4"/><path d="M2 20l6-8 3 4 2-2 4 6"/>'
       + '<path d="M15 16l2-3 5 7"/></svg>',
@@ -276,7 +277,9 @@ const Visualizer = {
    */
   add(def) {
     this.scenes[def.id] = def;
-    VISUALIZERS.push({ id: def.id, name: def.name, ready: true, desc: def.desc, glyph: def.glyph, image: def.image });
+    // Its picture in Settings: images/viz-<id>.jpg, a moment of it playing.
+    const image = def.image === undefined ? `../images/viz-${def.id}.jpg` : def.image;
+    VISUALIZERS.push({ id: def.id, name: def.name, ready: true, desc: def.desc, glyph: def.glyph, image });
   },
 
   _pickRandom() {

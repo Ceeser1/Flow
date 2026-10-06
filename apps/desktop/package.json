@@ -30,7 +30,8 @@
       "preload.js",
       "src/**/*",
       "renderer/**/*",
-      "images/*.png"
+      "images/*.png",
+      "images/*.jpg"
     ],
     "extraResources": [
       {
