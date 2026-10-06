@@ -78,6 +78,8 @@ function createRemote(env) {
   } = env;
 
   const ALL = model.ALL_SONGS_ID;
+  // "All Songs from <profile>": the songs one profile added (song.addedBy).
+  const FROM = 'from:';
   const PROTOCOL = 1;
   const POLL_MS = 10000;
   // While on the remote address, how often home is tried again.
@@ -1370,13 +1372,26 @@ function createRemote(env) {
   }
 
   /**
+   * All Songs or the songs one profile added: everyone's, whichever profile
+   * is signed in, and always as the library has them now (new ones come too).
+   */
+  function isAllList(pid) {
+    return pid === ALL || pid.startsWith(FROM);
+  }
+
+  function allListSongs(pid, v) {
+    if (pid === ALL) return v.songs.map((s) => s.id);
+    const by = pid.slice(FROM.length);
+    return v.songs.filter((s) => s.addedBy === by).map((s) => s.id);
+  }
+
+  /**
    * The songs of a playlist marked for download: as the library has them when
    * it is the signed-in profile's (or one it follows), else as last seen
    * (another profile's, or a followed one that is not shared for the moment).
    */
   function markedSongs(pid, v) {
-    // All Songs is everyone's, whichever profile is signed in.
-    if (pid === ALL) return v.songs.map((s) => s.id);
+    if (isAllList(pid)) return allListSongs(pid, v);
     const p = markedList(v, pid);
     if (p) return p.entries.map((e) => e.songId);
     const keep = sync.offlineKeep[pid];
@@ -1399,7 +1414,7 @@ function createRemote(env) {
   function rememberMarked(v) {
     if (!cache.library || cache.profile !== currentProfile()) return;
     for (const pid of sync.offline.slice()) {
-      if (pid === ALL) continue;
+      if (isAllList(pid)) continue;
       const p = markedList(v, pid);
       const keep = sync.offlineKeep[pid];
       if (p) sync.offlineKeep[pid] = { profile: currentProfile(), songs: p.entries.map((e) => e.songId) };
@@ -1520,10 +1535,11 @@ function createRemote(env) {
     const want = [];
     const seen = new Set();
     for (const pid of sync.offline) {
-      const p = markedList(v, pid);
-      if (!p && pid !== ALL) continue;
-      // All Songs: every song, new ones as they turn up on the server.
-      const songIds = pid === ALL ? v.songs.map((x) => x.id) : p.entries.map((e) => e.songId);
+      const all = isAllList(pid);
+      const p = all ? null : markedList(v, pid);
+      if (!p && !all) continue;
+      // All Songs (or a profile's part of it): new songs as they turn up on the server.
+      const songIds = all ? allListSongs(pid, v) : p.entries.map((e) => e.songId);
       for (const songId of songIds) {
         if (seen.has(songId) || copies.has(songId)) continue;
         seen.add(songId);
@@ -2141,10 +2157,11 @@ function createRemote(env) {
 
   /** Marks a server playlist for download, or no longer. */
   async function setOffline(pid, on) {
-    if (on && pid !== ALL && !markedList(getView(), pid)) throw new Error('Only All Songs, your own playlists and the ones you follow can be downloaded.');
+    const all = isAllList(pid);
+    if (on && !all && !markedList(getView(), pid)) throw new Error('Only All Songs, your own playlists and the ones you follow can be downloaded.');
     if (on && !sync.offline.includes(pid)) sync.offline.push(pid);
     if (!on) sync.offline = sync.offline.filter((x) => x !== pid);
-    if (on && pid !== ALL) sync.offlineKeep[pid] = { profile: currentProfile(), songs: markedSongs(pid, getView()) };
+    if (on && !all) sync.offlineKeep[pid] = { profile: currentProfile(), songs: markedSongs(pid, getView()) };
     else delete sync.offlineKeep[pid];
     saveSync();
     emitStatus();
@@ -2424,7 +2441,8 @@ function createRemote(env) {
     let changed = sync.queue.length !== before;
     for (const pid of sync.offline.slice()) {
       const keep = sync.offlineKeep[pid];
-      if (keep && gone(keep.profile)) {
+      // A profile deleted: its songs' list is no longer in the menu to unmark.
+      if ((keep && gone(keep.profile)) || (pid.startsWith(FROM) && gone(pid.slice(FROM.length)))) {
         sync.offline = sync.offline.filter((x) => x !== pid);
         delete sync.offlineKeep[pid];
         changed = true;

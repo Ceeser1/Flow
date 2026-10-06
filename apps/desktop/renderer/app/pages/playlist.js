@@ -48,12 +48,14 @@ const PlaylistPage = {
           danger: true,
         });
         if (!ok) return;
-      } else if (on && this.id === 'all') {
-        // All Songs is the whole library: ask before it starts coming down.
-        const total = Store.library.songs.length;
+      } else if (on && Store.isAllSongs(this.id)) {
+        // All Songs is the whole library (a profile's part of it may be most
+        // of it): ask before it starts coming down.
+        const total = Store.rowsOf(this.id).length;
+        const p = Store.playlist(this.id);
         const ok = await confirmDialog({
           title: 'Download all songs',
-          message: `Are you sure you want to download all ${total} ${total === 1 ? 'song' : 'songs'}?`,
+          message: `Are you sure you want to download all ${total} ${total === 1 ? 'song' : 'songs'}${p && p.isFrom ? ` ${p.menuName}` : ''}?`,
           confirmLabel: 'Yes',
         });
         if (!ok) return;
@@ -186,17 +188,16 @@ const PlaylistPage = {
 
   /**
    * With a Flow Server: Download keeps a playlist's songs on this device
-   * too, and says how many have arrived. For All Songs, playlists of your own
-   * and ones you follow; each then follows the server (new songs come, deleted
-   * ones go).
+   * too, and says how many have arrived. For All Songs and each profile's
+   * part of it ("from ..."), playlists of your own and ones you follow; each
+   * then follows the server (new songs come, deleted ones go).
    */
   _drawOffline() {
     const p = Store.playlist(this.id);
     const btn = $('plOffline');
     const note = $('plOfflineNote');
-    // A playlist another profile shares can be downloaded once it is followed;
-    // the songs one profile added are a view of All Songs, not kept apart.
-    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && !p.isFrom && (!p.isShared || Store.isFollowing(p.id));
+    // A playlist another profile shares can be downloaded once it is followed.
+    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && (!p.isShared || Store.isFollowing(p.id));
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;

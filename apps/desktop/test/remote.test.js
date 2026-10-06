@@ -197,6 +197,42 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.ok(!model.playlistById(remote.view(), 'mine1'));
   });
 
+  await t.test('the songs one profile added, marked for download: only those, new ones too, unmarked once it is gone', async () => {
+    const post = async (route, body, token) => (await fetch(`${one.base}${route}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+    })).json();
+    const upload = (id, title, token) => fetch(`${one.base}/api/songs/${id}?meta=${encodeURIComponent(JSON.stringify({ title, artist: 'Massive Attack', format: 'mp3' }))}`, {
+      method: 'PUT', body: FAKE_MP3, headers: { Authorization: `Bearer ${token}` },
+    });
+    const anna = await post('/api/profiles', { name: 'Anna', device: 'annas-phone' });
+    await upload('tear1', 'Teardrop', anna.token);
+    await remote.syncNow();
+    const mark = `from:${anna.profile.id}`;
+    await remote.setOffline(mark, true);
+    await until(() => remote.localFileOf('tear1'), 'Anna\'s song');
+    assert.equal(remote.localFileOf('glory1'), null, 'nobody\'s song stays on the server');
+    await upload('angel1', 'Angel', anna.token);
+    await remote.syncNow();
+    await until(() => remote.localFileOf('angel1'), 'Anna\'s new song');
+    await assert.rejects(remote.removeDownload('tear1'), /marked for download/);
+
+    await remote.setOffline(mark, false);
+    assert.equal(remote.localFileOf('tear1'), null);
+    assert.equal(remote.localFileOf('roads1'), roadsFile);
+
+    // Her profile deleted: the list is gone from the menu, so the mark goes too.
+    await remote.setOffline(mark, true);
+    await until(() => remote.localFileOf('tear1') && remote.localFileOf('angel1'), 'her songs again');
+    await post('/api/profiles/delete', {}, anna.token);
+    await remote.loadProfiles();
+    assert.deepEqual(remote.status().offline, []);
+    // Nothing of hers left here for the steps after.
+    await remote.removeAllDownloads();
+    assert.equal(remote.localFileOf('tear1'), null);
+  });
+
   await t.test('a server with a password: asked for, refused when wrong, then the songs here go up there too', async () => {
     const two = await serve({ password: 'Secret123' });
     settings.set({ serverHome: two.address });
