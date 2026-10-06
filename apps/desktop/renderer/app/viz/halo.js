@@ -81,97 +81,7 @@
       o = vec4(col, a);
     }`;
 
-  /** '#rrggbb'-free colour helpers: rgb 0..1 from hue 0..1, saturation, value. */
-  function hsv(h, s, v) {
-    const f = (n) => {
-      const k = (n + h * 6) % 6;
-      return v - v * s * Math.max(0, Math.min(k, 4 - k, 1));
-    };
-    return [f(5), f(3), f(1)];
-  }
-
-  function hash(text) {
-    let x = 2166136261;
-    for (let i = 0; i < text.length; i += 1) x = Math.imul(x ^ text.charCodeAt(i), 16777619);
-    return (x >>> 0) / 4294967296;
-  }
-
-  /**
-   * The two most colourful hues of an image: [primary, secondary] as rgb,
-   * read from it at 24 x 24; null for one with hardly any colour.
-   */
-  function paletteOf(img) {
-    const c = document.createElement('canvas');
-    c.width = 24;
-    c.height = 24;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0, 24, 24);
-    const px = ctx.getImageData(0, 0, 24, 24).data;
-    const bins = Array.from({ length: 12 }, () => ({ w: 0, r: 0, g: 0, b: 0 }));
-    for (let i = 0; i < px.length; i += 4) {
-      const r = px[i] / 255;
-      const g = px[i + 1] / 255;
-      const b = px[i + 2] / 255;
-      const max = Math.max(r, g, b);
-      const sat = max ? (max - Math.min(r, g, b)) / max : 0;
-      const w = sat * sat * max;
-      if (w < 0.02) continue;
-      const bin = bins[Math.floor(hueOf(r, g, b) / 30) % 12];
-      bin.w += w;
-      bin.r += r * w;
-      bin.g += g * w;
-      bin.b += b * w;
-    }
-    const order = bins.map((b, i) => ({ ...b, i })).filter((b) => b.w > 0).sort((x, y) => y.w - x.w);
-    if (!order.length || order[0].w < 2) return null;
-    const colour = (b) => {
-      const rgb = [b.r / b.w, b.g / b.w, b.b / b.w];
-      // As bright as a light: the strongest channel up to 1.
-      const m = Math.max(...rgb, 0.01);
-      return rgb.map((v) => Math.min(1, (v / m) * 0.95));
-    };
-    const first = order[0];
-    const second = order.find((b) => Math.min(Math.abs(b.i - first.i), 12 - Math.abs(b.i - first.i)) >= 2 && b.w > first.w * 0.15);
-    const a = colour(first);
-    return [a, second ? colour(second) : a.map((v) => Math.min(1, v * 0.6 + 0.4))];
-  }
-
-  /** A record, for a song without a cover: dark grooves and a label in its colour. */
-  function record(hue) {
-    const c = document.createElement('canvas');
-    c.width = 512;
-    c.height = 512;
-    const ctx = c.getContext('2d');
-    ctx.fillStyle = '#0b0b0e';
-    ctx.fillRect(0, 0, 512, 512);
-    for (let r = 250; r > 110; r -= 3) {
-      ctx.strokeStyle = `rgba(255, 255, 255, ${0.025 + 0.03 * Math.abs(Math.sin(r * 0.37))})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(256, 256, r, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    // The shine across it.
-    const shine = ctx.createConicGradient(0.6, 256, 256);
-    shine.addColorStop(0, 'rgba(255,255,255,0)');
-    shine.addColorStop(0.08, 'rgba(255,255,255,0.08)');
-    shine.addColorStop(0.16, 'rgba(255,255,255,0)');
-    shine.addColorStop(0.5, 'rgba(255,255,255,0)');
-    shine.addColorStop(0.58, 'rgba(255,255,255,0.08)');
-    shine.addColorStop(0.66, 'rgba(255,255,255,0)');
-    ctx.fillStyle = shine;
-    ctx.fillRect(0, 0, 512, 512);
-    const [r, g, b] = hsv(hue, 0.75, 0.9).map((v) => Math.round(v * 255));
-    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-    ctx.beginPath();
-    ctx.arc(256, 256, 100, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#0b0b0e';
-    ctx.beginPath();
-    ctx.arc(256, 256, 9, 0, Math.PI * 2);
-    ctx.fill();
-    return c;
-  }
+  const hsv = VizCover.hsv;
 
   class Halo {
     constructor(canvas) {
@@ -181,10 +91,8 @@
       this.bg = VizGL.program(gl, VizGL.SCREEN_VS, BG_FS);
       this.disc = VizGL.program(gl, VizGL.SCREEN_VS, COVER_FS);
       this.lines = VizGL.lines(gl, 40000);
-      this.tex = gl.createTexture();
-      this.key = null;         // the song and cover shown
-      this.colors = [[0.6, 0.4, 1], [1, 0.5, 0.8]];
-      this.target = this.colors;
+      this.cover = new VizCover(gl, { standIn: 'record' });
+      this.colors = this.cover.colors;
       this.coverOn = 0;        // the cover behind fading in, 0..1
       this.angle = 0;
       this.turn = 0;
@@ -210,56 +118,15 @@
       VizGL.lose(this.gl);
     }
 
-    /** The song playing changed (or its cover did): its picture, colours and title. */
+    /** The song playing changed (or its cover did): its title, faded in. */
     _song() {
-      const id = Player.currentId;
-      const song = id ? Store.song(id) || (Player.remote ? { ...Player.remote.state, id } : null) : null;
-      const src = song ? Covers.src(song) : '';
-      const key = `${id}|${src}`;
-      if (key === this.key) return;
-      this.key = key;
+      if (!this.cover.update()) return;
+      const song = this.cover.song;
       this.text.firstChild.textContent = song ? song.title || 'Untitled' : '';
       this.text.lastChild.textContent = song ? [song.artist, song.mix ? `(${song.mix})` : ''].filter(Boolean).join(' ') : '';
       this.text.classList.remove('viz-halo--in');
       void this.text.offsetWidth;
       this.text.classList.add('viz-halo--in');
-      const hue = hash(id || 'flow');
-      const fallback = () => {
-        if (this.key !== key) return;
-        this._upload(record(hue));
-        this.target = [hsv(hue, 0.7, 1), hsv((hue + 0.12) % 1, 0.6, 1)];
-      };
-      if (!src) {
-        fallback();
-        return;
-      }
-      const img = new Image();
-      img.onload = () => {
-        if (this.key !== key) return;
-        this._upload(img);
-        let pal = null;
-        try {
-          pal = paletteOf(img);
-        } catch {
-          // Unreadable: the song's own colour.
-        }
-        this.target = pal || [hsv(hue, 0.6, 1), hsv((hue + 0.1) % 1, 0.5, 1)];
-      };
-      img.onerror = fallback;
-      img.src = src;
-    }
-
-    _upload(source) {
-      const gl = this.gl;
-      gl.bindTexture(gl.TEXTURE_2D, this.tex);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
-      this.loaded = true;
     }
 
     /** Which of the 96 bands each of the BARS reads, MIN_HZ..MAX_HZ on a log axis. */
@@ -286,9 +153,9 @@
       const h = this.h;
       // Colours glide to a new song's.
       const k = 1 - Math.exp(-dt / 0.6);
-      this.colors = this.colors.map((c, i) => c.map((v, j) => v + (this.target[i][j] - v) * k));
+      this.colors = this.colors.map((c, i) => c.map((v, j) => v + (this.cover.colors[i][j] - v) * k));
       const [c1, c2] = this.colors;
-      this.coverOn += ((set.hlBackground && this.loaded ? 1 : 0) - this.coverOn) * k;
+      this.coverOn += ((set.hlBackground && this.cover.loaded ? 1 : 0) - this.coverOn) * k;
 
       const cx = w / 2;
       const cy = h * 0.46;
@@ -302,7 +169,7 @@
       VizGL.into(gl, null);
       gl.useProgram(this.bg.p);
       let u = this.bg.u;
-      VizGL.bind(gl, u.cover, this.tex, 0);
+      VizGL.bind(gl, u.cover, this.cover.tex, 0);
       gl.uniform2f(u.res, w, h);
       gl.uniform1f(u.zoom, 1.25 + 0.04 * a.kick);
       gl.uniform1f(u.turn, this.turn);
@@ -322,7 +189,7 @@
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.useProgram(this.disc.p);
       u = this.disc.u;
-      VizGL.bind(gl, u.cover, this.tex, 0);
+      VizGL.bind(gl, u.cover, this.cover.tex, 0);
       gl.uniform2f(u.res, w, h);
       gl.uniform2f(u.center, cx, h - cy);
       gl.uniform1f(u.radius, R);
