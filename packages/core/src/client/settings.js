@@ -45,6 +45,12 @@ const VIZ_OPTIONS = {
   wpCount: ['range', 100, 25, 200, 5],
   wpColor: ['choice', 'spectrum', ['white', 'spectrum', 'nebula']],
   wpJumps: ['bool', true],
+  // Inferno: the flames' colours, their height (percent), the bass in the
+  // middle or on the left, the embers.
+  ifColor: ['choice', 'fire', ['fire', 'blue', 'green', 'purple', 'rainbow']],
+  ifHeight: ['range', 100, 50, 200, 5],
+  ifLayout: ['choice', 'centre', ['centre', 'across']],
+  ifEmbers: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -191,7 +197,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
