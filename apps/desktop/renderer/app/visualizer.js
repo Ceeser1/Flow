@@ -13,7 +13,9 @@
 //   Bars      in the manner of Winamp's: 40 bars from 40 Hz to 16 kHz, green
 //             at the floor through yellow to red at the top, with peak caps
 //             that hang a moment and then drop. A click switches to the
-//             oscilloscope and back.
+//             oscilloscope and back. Its cogwheel: how many bars (16-128),
+//             their colours (Winamp's, fire, ice, a rainbow, the
+//             equalizer's), solid or in LED steps, the caps, a mirror floor.
 //   Waveform  the equalizer behind the pages (equalizer.js), mirrored about
 //             the middle of the screen, in the colour scheme chosen for it.
 //   Flow      the window's own background, clouds and equalizer as set in
@@ -88,8 +90,7 @@ const Visualizer = {
   _idle: null,
   _resize: null,
 
-  // Bars
-  BARS: 40,
+  // Bars (how many: Settings' brCount)
   FLOOR_DB: -64,
   CEIL_DB: -10,
   TILT_DB: 14,         // added across the range, low to high: music is quieter up high
@@ -165,6 +166,7 @@ const Visualizer = {
       this.el.appendChild(h('p.viz-full__note', 'The visualizer needs Web Audio, which could not be started on this computer.'));
     }
     if (kind === 'synthwave') this.el.appendChild(this._synPanel());
+    if (kind === 'bars') this.el.appendChild(this._barsPanel());
     const def = this.scenes[kind];
     if (def && def.options) this.el.appendChild(this._cfgPanel(`${def.name} settings`, def.options));
     if (def && def.click) this.canvas.addEventListener('click', () => this.scene && def.click(this.scene));
@@ -351,13 +353,30 @@ const Visualizer = {
   // ---- Bars ----
 
   _startBars() {
+    this._barsFor(Store.settings.brCount);
+  },
+
+  /** The analysis and the bars' state for `count` bars. */
+  _barsFor(count) {
+    this.barCount = count;
     this.spec = new Spectrum.Analyser({
-      sampleRate: Equalizer.ctx.sampleRate, bars: this.BARS, minHz: 40, maxHz: 16000, windowSeconds: 0.046, hop: 128,
+      sampleRate: Equalizer.ctx.sampleRate, bars: count, minHz: 40, maxHz: 16000, windowSeconds: 0.046, hop: 128,
     });
-    this.levels = new Float32Array(this.BARS);
-    this.peaks = new Float32Array(this.BARS);
-    this.peakHold = new Float32Array(this.BARS);
-    this.peakSpeed = new Float32Array(this.BARS);
+    this.levels = new Float32Array(count);
+    this.peaks = new Float32Array(count);
+    this.peakHold = new Float32Array(count);
+    this.peakSpeed = new Float32Array(count);
+  },
+
+  /** Bars' cogwheel. */
+  _barsPanel() {
+    return this._cfgPanel('Bars settings', [
+      { type: 'slider', key: 'brCount', label: 'Bars', min: 16, max: 128, step: 4, unit: '' },
+      { type: 'choice', key: 'brColors', label: 'Colors', choices: [['classic', 'Winamp'], ['fire', 'Fire'], ['ice', 'Ice'], ['rainbow', 'Rainbow'], ['equalizer', 'Equalizer']] },
+      { type: 'choice', key: 'brStyle', label: 'Style', choices: [['solid', 'Solid'], ['led', 'LED']] },
+      { type: 'check', key: 'brPeaks', label: 'Peaks' },
+      { type: 'check', key: 'brMirror', label: 'Mirror floor' },
+    ]);
   },
 
   _background(ctx, w, hgt) {
@@ -372,24 +391,45 @@ const Visualizer = {
     }
   },
 
+  /** The bars' colours from the floor (0) to the top (1), as a gradient's stops. */
+  _barStops(scheme) {
+    switch (scheme) {
+      case 'fire': return [[0, '#3a0000'], [0.35, '#c0160b'], [0.65, '#ff7a00'], [0.85, '#ffd23a'], [1, '#fff6c8']];
+      case 'ice': return [[0, '#06123a'], [0.4, '#1650d8'], [0.7, '#2fb6ff'], [0.9, '#a8f0ff'], [1, '#ffffff']];
+      default: return [[0, '#1fb81f'], [0.45, '#9ee21e'], [0.65, '#ffe01a'], [0.82, '#ff8c1a'], [1, '#ff2a1a']];
+    }
+  },
+
   _drawBars(dt, now) {
+    const set = Store.settings;
+    if (set.brCount !== this.barCount) this._barsFor(set.brCount);
     const c = this.canvas;
     const ctx = c.getContext('2d');
     const w = c.width;
     const hgt = c.height;
     this._background(ctx, w, hgt);
     const db = Player.isPlaying ? this.spec.analyse(this.samples) : null;
-    const n = this.BARS;
+    const n = this.barCount;
+    const mirror = !!set.brMirror;
+    // With the mirror the floor stands higher, and the bars are seen again below it.
+    const floor = mirror ? Math.round(hgt * 0.74) : hgt;
     const pitch = w / n;
-    const barW = Math.max(1, pitch * 0.78);
-    const full = hgt * this.TOP;
-    const grad = ctx.createLinearGradient(0, hgt, 0, hgt - full);
-    grad.addColorStop(0, '#1fb81f');
-    grad.addColorStop(0.45, '#9ee21e');
-    grad.addColorStop(0.65, '#ffe01a');
-    grad.addColorStop(0.82, '#ff8c1a');
-    grad.addColorStop(1, '#ff2a1a');
+    const barW = Math.max(1, pitch * (n > 80 ? 0.7 : 0.78));
+    const full = floor * this.TOP;
+    const scheme = set.brColors;
+    let grad = null;
+    if (scheme !== 'rainbow' && scheme !== 'equalizer') {
+      grad = ctx.createLinearGradient(0, floor, 0, floor - full);
+      for (const [at, colour] of this._barStops(scheme)) grad.addColorStop(at, colour);
+    }
+    const led = set.brStyle === 'led';
     const cap = Math.max(2, Math.round(hgt / 90));
+    // LED: each bar in steps, the unlit ones faintly there.
+    const cell = Math.max(4, Math.round(full / 32));
+    const gap = Math.max(1, Math.round(cell * 0.28));
+    const shift = (now / 15000) % 1;
+    const eq = set.eqColors || 'rainbow';
+    const eqSolid = eq === 'black' ? Palette.solid.white : Palette.solid[eq];
 
     for (let i = 0; i < n; i += 1) {
       const target = db ? Spectrum.unit(db[i] + (this.TILT_DB * i) / (n - 1), this.FLOOR_DB, this.CEIL_DB) : 0;
@@ -405,11 +445,47 @@ const Visualizer = {
         this.peaks[i] = Math.max(level, this.peaks[i] - this.peakSpeed[i] * dt);
       }
       const x = i * pitch + (pitch - barW) / 2;
-      const top = hgt - level * full;
-      ctx.fillStyle = grad;
-      ctx.fillRect(x, top, barW, hgt - top);
-      ctx.fillStyle = '#d8d8e0';
-      ctx.fillRect(x, Math.min(hgt - cap, hgt - this.peaks[i] * full - cap), barW, cap);
+      if (scheme === 'rainbow') ctx.fillStyle = Palette.rainbow(i / n - shift);
+      else if (scheme === 'equalizer') ctx.fillStyle = eqSolid || (eq === 'rainbow' ? Palette.rainbow(i / n - shift) : Palette.by(eq, level));
+      else ctx.fillStyle = grad;
+      if (led) {
+        // Whole cells only, and the dark ones above them.
+        const lit = Math.floor((level * full) / cell);
+        ctx.globalAlpha = 0.09;
+        for (let k = lit; (k + 1) * cell <= full; k += 1) ctx.fillRect(x, floor - (k + 1) * cell + gap, barW, cell - gap);
+        ctx.globalAlpha = 1;
+        for (let k = 0; k < lit; k += 1) ctx.fillRect(x, floor - (k + 1) * cell + gap, barW, cell - gap);
+      } else {
+        const top = floor - level * full;
+        ctx.fillRect(x, top, barW, floor - top);
+      }
+      if (set.brPeaks) {
+        ctx.fillStyle = '#d8d8e0';
+        if (led) {
+          const k = Math.max(0, Math.ceil((this.peaks[i] * full) / cell) - 1);
+          ctx.fillRect(x, floor - (k + 1) * cell + gap, barW, cell - gap);
+        } else {
+          ctx.fillRect(x, Math.min(floor - cap, floor - this.peaks[i] * full - cap), barW, cap);
+        }
+      }
+    }
+
+    if (mirror) {
+      // The floor: what stands above it, upside down and fading into the dark.
+      const below = hgt - floor;
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.translate(0, floor * 2);
+      ctx.scale(1, -1);
+      ctx.drawImage(c, 0, floor - below, w, below, 0, floor - below, w, below);
+      ctx.restore();
+      const fade = ctx.createLinearGradient(0, floor, 0, hgt);
+      fade.addColorStop(0, 'rgba(0, 0, 0, 0.1)');
+      fade.addColorStop(1, 'rgba(0, 0, 0, 1)');
+      ctx.fillStyle = fade;
+      ctx.fillRect(0, floor, w, below);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.fillRect(0, floor, w, Math.max(1, Math.round(hgt / 900)));
     }
   },
 

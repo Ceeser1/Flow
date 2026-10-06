@@ -13,6 +13,13 @@ const { randomBase64Url } = require('./common');
 // default]; ['range', default, min, max, step]; ['choice', default, values].
 // Each visualizer's start with its own letters.
 const VIZ_OPTIONS = {
+  // Bars: how many, their colours, solid or in LED steps, the peak caps,
+  // the floor mirroring them.
+  brCount: ['range', 40, 16, 128, 4],
+  brColors: ['choice', 'classic', ['classic', 'fire', 'ice', 'rainbow', 'equalizer']],
+  brStyle: ['choice', 'solid', ['solid', 'led']],
+  brPeaks: ['bool', true],
+  brMirror: ['bool', false],
   // Lightning: the bolts' colour, the sky lighting up with them (and how
   // much), rain, and how readily it strikes (percent).
   ltColor: ['color', '#a9c4ff'],
