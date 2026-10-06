@@ -37,7 +37,6 @@ const SettingsPanel = {
   modal: null,
   _refresh: [],       // re-greys rows after a tick box changes
   _onProgress: null,  // the save folder move, while it runs
-  _collapsed: new Set(), // titles of the categories folded shut; kept while the app runs
 
   init() {
     $('menuSettings').innerHTML = '<img class="settings-btn__icon" src="../images/settings.png" alt="" />';
@@ -252,6 +251,8 @@ const SettingsPanel = {
       this._backBtn.hidden = true;
       modal.el.querySelector('.modal__head').prepend(this._backBtn);
       Mobile.swipeToClose(modal, ['left']);
+      // Back on the category open last time: its title and the Back button.
+      if (this._screen) this._openScreen(this._screen);
     }
     this._refreshAll();
     this._drawStats();
@@ -288,22 +289,27 @@ const SettingsPanel = {
         rows.appendChild(node);
         continue;
       }
-      const title = node.textContent;
+      // The heading's own text, without a note beside it (which changes).
+      const title = node.childNodes[0].textContent;
       const chevron = h('span.settings__chevron', { html: Icons.chevron });
       node.prepend(chevron);
       Object.assign(node, { tabIndex: 0, title: 'Show or hide this category' });
       node.setAttribute('role', 'button');
       const own = h('div.settings__group-rows');
       rows = own;
+      // Folded shut or open as left last time (settingsCollapsed, kept).
+      const folded = () => new Set(Store.settings.settingsCollapsed);
       const draw = () => {
-        const shut = this._collapsed.has(title);
+        const shut = folded().has(title);
         own.hidden = shut;
         chevron.classList.toggle('settings__chevron--down', shut);
         node.setAttribute('aria-expanded', String(!shut));
       };
       const toggle = () => {
-        if (this._collapsed.has(title)) this._collapsed.delete(title);
-        else this._collapsed.add(title);
+        const shut = folded();
+        if (shut.has(title)) shut.delete(title);
+        else shut.add(title);
+        Store.saveSettings({ settingsCollapsed: [...shut] });
         draw();
       };
       node.addEventListener('click', toggle);
@@ -345,11 +351,19 @@ const SettingsPanel = {
     this._screenGroups = groups;
     this._screen = null;
     for (const g of groups) g.hidden = true;
+    // Open on the category open when Settings last closed (settingsCategory).
+    const last = Store.settings.settingsCategory;
+    if (last && groups.some((g) => g.dataset.title === last)) {
+      this._screen = last;
+      list.hidden = true;
+      for (const g of groups) g.hidden = g.dataset.title !== last;
+    }
     return [list, ...groups];
   },
 
   _openScreen(title) {
     this._screen = title;
+    if ((title || '') !== Store.settings.settingsCategory) Store.saveSettings({ settingsCategory: title || '' });
     this._screenList.hidden = !!title;
     for (const g of this._screenGroups) g.hidden = g.dataset.title !== title;
     const head = this.modal && this.modal.el.querySelector('.modal__title');

@@ -156,6 +156,11 @@ const DEFAULTS = {
   trendMenuOpen: false,
   // Whether the Shared Playlists section of the Playlists page is open.
   sharedGroupOpen: true,
+  // Settings' categories folded shut (their titles), on the computer; and on
+  // the phone the category whose screen was open when Settings closed ('' the
+  // list), opened again with it.
+  settingsCollapsed: [],
+  settingsCategory: '',
   // The sleep timer running, kept so a restart still shows (and can cancel)
   // the shutdown Windows has been told about: { endsAt, shutdownAt, ended },
   // times in ms, shutdownAt null without a shutdown.
@@ -301,6 +306,10 @@ function clean(raw) {
   s.followedMenuOpen = s.followedMenuOpen !== false;
   s.trendMenuOpen = s.trendMenuOpen === true;
   s.sharedGroupOpen = s.sharedGroupOpen !== false;
+  s.settingsCollapsed = Array.isArray(s.settingsCollapsed)
+    ? [...new Set(s.settingsCollapsed.filter((t) => typeof t === 'string' && t && t.length <= 60))].slice(0, 30)
+    : [];
+  s.settingsCategory = typeof s.settingsCategory === 'string' ? s.settingsCategory.slice(0, 60) : '';
   const st = s.sleepTimer;
   const endsAt = st && typeof st === 'object' ? Number(st.endsAt) : NaN;
   const shutdownAt = st && Number.isFinite(Number(st.shutdownAt)) && st.shutdownAt !== null ? Number(st.shutdownAt) : null;

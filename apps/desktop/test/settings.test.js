@@ -174,6 +174,13 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ cloudsAmount: 74 }).cloudsAmount, 70);
   assert.equal(settings.clean({ cloudsAmount: 400 }).cloudsAmount, 100);
   assert.equal(settings.clean({ cloudsAmount: 'lots' }).cloudsAmount, 50);
+  // Settings' folded categories and the phone's last category: kept, tidied.
+  assert.deepEqual(d.settingsCollapsed, []);
+  assert.equal(d.settingsCategory, '');
+  assert.deepEqual(settings.clean({ settingsCollapsed: ['General', 'General', 3, '', 'Flow Server'] }).settingsCollapsed, ['General', 'Flow Server']);
+  assert.deepEqual(settings.clean({ settingsCollapsed: 'General' }).settingsCollapsed, []);
+  assert.equal(settings.clean({ settingsCategory: 'App' }).settingsCategory, 'App');
+  assert.equal(settings.clean({ settingsCategory: 7 }).settingsCategory, '');
 });
 
 test('a metered connection is told apart from a free one', () => {
