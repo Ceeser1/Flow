@@ -102,6 +102,11 @@ const VIZ_OPTIONS = {
   sgColors: ['choice', 'inferno', ['inferno', 'magma', 'viridis', 'ice', 'grey']],
   sgSpeed: ['range', 100, 25, 300, 5],
   sgGrid: ['bool', true],
+  // Aurora: its colours, how restless (percent), the lake, the stars.
+  auColors: ['choice', 'green', ['green', 'red', 'violet', 'rainbow']],
+  auActivity: ['range', 100, 25, 300, 5],
+  auLake: ['bool', true],
+  auStars: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -248,7 +253,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
