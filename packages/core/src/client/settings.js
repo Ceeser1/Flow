@@ -125,6 +125,10 @@ const VIZ_OPTIONS = {
   dmCopper: ['bool', true],
   dmScroller: ['bool', true],
   dmCrt: ['bool', true],
+  // Reactor: its colour, how many rings, how fast they turn (percent).
+  rxColor: ['color', '#38e8ff'],
+  rxRings: ['range', 10, 4, 16, 1],
+  rxSpin: ['range', 100, 0, 300, 5],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -271,7 +275,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
