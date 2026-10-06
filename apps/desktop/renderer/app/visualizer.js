@@ -278,6 +278,16 @@ const Visualizer = {
     if (flow) Equalizer._layout();
   },
 
+  /** The one before (-1) or after (1) in Settings' order, staying in full screen (Up and Down). */
+  step(dir) {
+    if (!this.el) return;
+    const ids = VISUALIZERS.filter((v) => v.ready && v.id !== 'random').map((v) => v.id);
+    const at = ids.indexOf(this.kind);
+    this._unmount();
+    this._mount(ids[(at + dir + ids.length) % ids.length]);
+    this._wake();
+  },
+
   /** On to another one, at random (not the one showing), staying in full screen. */
   next() {
     if (!this.el) return;

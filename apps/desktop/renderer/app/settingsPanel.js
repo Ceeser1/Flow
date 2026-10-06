@@ -507,7 +507,7 @@ const SettingsPanel = {
     const preview = h('button.btn.btn--small', { type: 'button', onclick: () => Visualizer.open() }, 'Preview selected');
     const left = h('div.settings__left',
       h('div.settings__label.settings__label--plain', 'Select your Music Visualizer'),
-      h('div.settings__desc', 'Opens in full screen from the visualizer button in the player bar. Escape or the X closes it.'));
+      h('div.settings__desc', 'Opens in full screen from the visualizer button in the player bar. Escape or the X closes it; the Up and Down arrow keys switch to the one before or after.'));
     return h('div.settings__viz',
       h('div.settings__row.settings__row--flat', left, h('div.settings__right', preview)),
       tiles);

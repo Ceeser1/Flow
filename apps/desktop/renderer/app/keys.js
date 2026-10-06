@@ -1,7 +1,8 @@
 'use strict';
 
 // Keyboard: Space plays / pauses, Left and Right skip 10 seconds, whenever no
-// text box has the focus. On Add Songs with a song in the editor they drive
+// text box has the focus; with the visualizer open, Up and Down switch to the
+// one before or after it. On Add Songs with a song in the editor they drive
 // the preview; everywhere else the player. Media keys go through the media
 // session in player.js, so they are not handled here as well.
 
@@ -60,6 +61,9 @@ const Keys = {
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
       this._target().skip(10);
+    } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && Visualizer.shown) {
+      e.preventDefault();
+      Visualizer.step(e.key === 'ArrowDown' ? 1 : -1);
     }
   },
 };
