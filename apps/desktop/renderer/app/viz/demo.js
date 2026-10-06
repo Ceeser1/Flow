@@ -152,7 +152,7 @@
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, lw, lh);
         for (const s of this.stars) {
-          s.z -= dt * (0.25 * a.pace + 1.2 * a.throb + 0.5 * a.level);
+          s.z -= dt * (0.25 * a.rush + 1.2 * a.throb + 0.5 * a.level);
           if (s.z <= 0.05) this._star(s).z = 1.1;
           const x = Math.round(lw / 2 + (s.x / s.z) * lh * 0.5);
           const y = Math.round(lh / 2 + (s.y / s.z) * lh * 0.5);

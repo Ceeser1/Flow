@@ -116,11 +116,11 @@ const Visualizer = {
   RAINBOW_MS: 15000,
 
   // Synthwave. Distances in grid cells.
-  SYN_SPEED: 7,        // cells per second while a song plays
+  SYN_SPEED: 4.7,      // cells per second while a song plays (times Speed in its cogwheel)
   SYN_IDLE: 0.25,      // and this much of it while paused
   SYN_KICK_SPEED: 1.4, // a full kick adds this much of SYN_SPEED (no clear beat)
-  SYN_CELLS: 4,        // with a beat: cells a beat (8 a second at 120 BPM)
-  SYN_SURGE: 0.5,      // and how much it rushes on the beat, easing off before the next
+  SYN_BEAT_SPEED: 7.4, // with a clear beat: cells a second at 120 BPM (what the kicks averaged)
+  SYN_SURGE: 0.2,      // and how much faster just after each beat, slower between
   SYN_ROWS: 52,        // how far ahead it is drawn
   SYN_COLS: 64,        // each side of the middle
   SYN_FLOOR: 3.5,      // half the valley floor's width
@@ -715,14 +715,15 @@ const Visualizer = {
     const playing = Player.isPlaying;
     const bass = playing ? Equalizer.bass || 0 : 0;
     const kick = this.synKick.follow(bass, dt * 1000);
-    // With a clear beat it flies SYN_CELLS a beat, rushing on each beat
+    // With a clear beat it flies as fast as the kicks pushed it on average at
+    // 120 BPM, far faster for faster songs (VizAudio.rush), swelling gently with each beat
     // (VizAudio.surge); without one the kicks push it on, as before.
     const a = VizAudio;
     const byKick = this.SYN_SPEED * (1 + this.SYN_KICK_SPEED * kick + 0.4 * bass);
-    const byBeat = ((this.SYN_CELLS * 120) / 60) * a.surge(this.SYN_SURGE) * (1 + 0.15 * bass);
-    const target = playing ? byKick + (byBeat - byKick) * a.lock : this.SYN_SPEED * this.SYN_IDLE;
-    // Eased: slowly for the kicks' push, quickly enough for the beat's rush to show.
-    const ease = 0.6 + (0.06 - 0.6) * a.lock;
+    const byBeat = this.SYN_BEAT_SPEED * a.surge(this.SYN_SURGE);
+    const target = (playing ? byKick + (byBeat - byKick) * a.lock : this.SYN_SPEED * this.SYN_IDLE) * (this.setting('synSpeed') / 100);
+    // Eased: slowly for the kicks' push, enough less for the swell to show.
+    const ease = 0.6 + (0.15 - 0.6) * a.lock;
     this.synSpeed += (target - this.synSpeed) * (1 - Math.exp(-dt / ease));
     this.terrain.advance(this.synSpeed * dt, playing ? Equalizer.levels : null);
     // The floor in front of the car is as rough as the music is intense right
@@ -1013,11 +1014,12 @@ const Visualizer = {
     return panel;
   },
 
-  /** Synthwave's: the wireframe's colour, and the bumps the car rides. */
+  /** Synthwave's: the wireframe's colour, how fast it flies, and the bumps the car rides. */
   _synPanel() {
     const amount = (key) => ({ key, min: 0, max: 200, step: 5 });
     return this._cfgPanel('Synthwave settings', [
       { type: 'color', key: 'synColor', label: 'Wireframe color', presets: this.SYN_PRESETS },
+      { type: 'slider', key: 'synSpeed', label: 'Speed', min: 50, max: 150, step: 5 },
       {
         type: 'check',
         key: 'synBumps',

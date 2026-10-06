@@ -111,12 +111,13 @@
       const since = this.age - this.lastJump;
       this.jump = since < this.jumpFor ? Math.sin(Math.min(1, since / this.jumpFor) * Math.PI) ** 0.7 : 0;
 
-      // Faster the more intense the music; with a clear beat rushing on each
-      // beat (VizAudio.surge), without one pushed on by the kicks.
+      // Faster the more intense the music; with a clear beat as fast as the
+      // kicks pushed it on average, swelling gently with each beat
+      // (VizAudio.surge), without one pushed on by the kicks.
       const byKick = 1 + 2.4 * a.kick;
-      const byBeat = 1.45 * a.surge(0.6);
+      const byBeat = 1.7 * a.surge(0.25);
       const target = (a.playing ? 0.22 * (byKick + (byBeat - byKick) * a.lock + 1.2 * a.intensity) : 0.04) * (set('wpSpeed') / 100);
-      this.speed += (target - this.speed) * (1 - Math.exp(-dt / (0.25 - 0.17 * a.lock)));
+      this.speed += (target - this.speed) * (1 - Math.exp(-dt / (0.25 - 0.13 * a.lock)));
       const speed = this.speed * (1 + 7 * this.jump);
       this.roll += dt * (0.03 + 0.12 * a.mid);
       // The view sways a little, steered by the music.

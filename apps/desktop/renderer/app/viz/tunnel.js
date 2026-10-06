@@ -140,12 +140,13 @@
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, n, 1, 0, gl.RED, gl.UNSIGNED_BYTE, this.bytes);
 
       const pace = set('tnSpeed') / 100;
-      // With a clear beat rushing on each beat (VizAudio.surge), without one
-      // pushed on by the kicks; faster the more intense.
+      // With a clear beat as fast as the kicks pushed it on average, swelling
+      // gently with each beat (VizAudio.surge); without one pushed on by the
+      // kicks; faster the more intense.
       const byKick = 1 + 3.2 * a.kick;
-      const byBeat = 1.6 * a.surge(0.6);
+      const byBeat = 1.85 * a.surge(0.25);
       const target = a.playing ? byKick + (byBeat - byKick) * a.lock + 1.5 * a.intensity : 0.25;
-      this.speed += (target - this.speed) * (1 - Math.exp(-dt / (0.2 - 0.13 * a.lock)));
+      this.speed += (target - this.speed) * (1 - Math.exp(-dt / (0.2 - 0.08 * a.lock)));
       this.travel += dt * this.speed * pace;
       this.spin += dt * (0.01 + 0.04 * a.mid) * (a.playing ? 1 : 0.3);
       this.twist += ((a.playing ? Math.sin(this.age * 0.15) * (2 + 4 * a.intensity) : 0) - this.twist) * (1 - Math.exp(-dt / 1.5));

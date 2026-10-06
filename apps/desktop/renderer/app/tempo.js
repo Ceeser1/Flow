@@ -10,15 +10,21 @@
 // EVAL_MS the last few seconds of it are compared with themselves shifted
 // (autocorrelation): the shift at which the jumps line up best is the beat.
 // A shift whose multiples line up too counts more, so the beat wins over the
-// half beat; tempos far from about 130 BPM count a little less, so the
-// quarter note wins over the half and the double (the usual octave doubt).
+// half beat (as much as the beat itself: a dotted beat, 3/2 of the true
+// one, has nothing half-way); tempos far from about 150 BPM count a little
+// less, so the quarter note wins over the half and the double (the usual
+// octave doubt; fast songs are more often heard at half than slow ones at
+// double).
 // The scores are smoothed over the evaluations, so one odd bar does not
 // flip it, and a tempo found is kept until another scores clearly higher.
 //
-// Measured offline on 56 songs of known tempo (rock, metal, dance,
-// hardstyle, drum and bass): the right tempo about 83% of the time after
-// the first 10 s, half or double it 6%, mostly found within 4-8 s. The
-// misses are mostly rock heard at 2/3 of its tempo. The beats tick within a
+// Measured offline on the first 4 minutes of 56 songs of known tempo (rock,
+// metal, dance, hardstyle, drum and bass) at 144 fps: the right tempo 90%
+// of the time after the first 10 s, half or double it 6%, wrong 4% (rock
+// heard at 2/3 of its tempo, mostly); mostly found within 4-8 s. Whether a
+// fast song is meant at half its tempo or in full the sound alone cannot
+// say (the half and quarter beats line up as well in a 95 BPM rock song),
+// so VizAudio's speeds count a slow tempo double. The beats tick within a
 // few milliseconds of a click track's.
 //
 // The phase is a clock running at that tempo, pulled toward where the
@@ -42,7 +48,7 @@
      * minBpm/maxBpm: the tempos considered. centerBpm/octaves: the tempo
      * preferred and how fast the preference falls off (a log-normal weight).
      */
-    constructor({ rate = 100, seconds = 10, minBpm = 60, maxBpm = 190, centerBpm = 130, octaves = 0.9, evalMs = 200, leadMs = 10, half = 0.5, keep = 1.2 } = {}) {
+    constructor({ rate = 100, seconds = 10, minBpm = 60, maxBpm = 190, centerBpm = 150, octaves = 0.9, evalMs = 200, leadMs = 10, half = 1, keep = 1.2 } = {}) {
       this.half = half;
       this.keep = keep;
       this.rate = rate;

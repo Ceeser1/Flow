@@ -151,6 +151,15 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ synCarTiltAmount: 147 }).synCarTiltAmount, 145);
   assert.equal(settings.clean({ synCarTiltAmount: 900 }).synCarTiltAmount, 200);
   assert.equal(settings.clean({ synBobbingAmount: 'x' }).synBobbingAmount, 100);
+  // Inferno's height on its own scale (100% what 200% was), 25-150%.
+  assert.equal(settings.clean({}).ifFlameHeight, 100);
+  assert.equal(settings.clean({ ifFlameHeight: 10 }).ifFlameHeight, 25);
+  assert.equal(settings.clean({ ifFlameHeight: 300 }).ifFlameHeight, 150);
+  // Synthwave's Speed: 50-150% in steps of 5, 100% by default.
+  assert.equal(settings.clean({}).synSpeed, 100);
+  assert.equal(settings.clean({ synSpeed: 33 }).synSpeed, 50);
+  assert.equal(settings.clean({ synSpeed: 122 }).synSpeed, 120);
+  assert.equal(settings.clean({ synSpeed: 400 }).synSpeed, 150);
   // The visualizers' own (VIZ_OPTIONS): colours, boxes, ranges in their steps, choices.
   assert.equal(settings.clean({ visualizer: 'lightning' }).visualizer, 'lightning');
   assert.equal(d.ltColor, '#a9c4ff');

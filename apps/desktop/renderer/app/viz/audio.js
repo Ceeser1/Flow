@@ -36,10 +36,15 @@
 //   tick       true on the frame a beat lands (only while sure enough)
 //   beats      beats so far (a bar is four): for things that change every few
 //   pulse      1 on the beat, falling away before the next (0 while unsure)
-//   pace       about 1 at 120 BPM, more for faster songs (1 while unsure),
-//              eased: what motion should be scaled by
+//   pace       1 at 120 BPM, a little more for faster songs and less for
+//              slower ones (the square root: 100 BPM 0.91, 150 BPM 1.12; a
+//              tempo under 95 counts double, see FOLD_BPM; 1 while unsure),
+//              eased: for what turns or flows
+//   rush       the same for flying forward, much steeper above 120 BPM: the
+//              square there (150 BPM 1.56, 174 BPM 2.1, 185 BPM 2.4), the
+//              square root below; 1 while unsure, eased
 //   lock       0..1, how far to go by the tempo rather than the kicks (sure
-//              blended in over a little range, 0 while paused)
+//              blended in over a little range, gliding; 0 while paused)
 //   throb      0..1, the kick while there is no clear beat, the beat's pulse
 //              once there is (by lock): for what moves to the rhythm
 //   surge(), motion()  speed factors that move with the beat, see there
@@ -93,6 +98,7 @@ const VizAudio = {
   beats: 0,
   pulse: 0,
   pace: 1,
+  rush: 1,
   lock: 0,
   throb: 0,
   frames: 0,           // counts the frames, for what is worked out once a frame
@@ -112,9 +118,11 @@ const VizAudio = {
   _notes: null,
   _notesAt: -1,
   _dt: 0.016,
-  // The tempo counts from SURE on; pace eases over PACE_MS.
+  // The tempo counts from SURE on; pace eases over PACE_MS, lock over LOCK_MS.
   SURE: 0.35,
   PACE_MS: 2000,
+  LOCK_MS: 1000,
+  FOLD_BPM: 95,        // for pace and rush, a tempo under this counts double
 
   /** Ready for a visualizer opening; stereo when it wants both channels. */
   reset({ stereo = false } = {}) {
@@ -149,7 +157,7 @@ const VizAudio = {
       this._tempo.reset();
       if (this._notes) this._notes.reset();
       this._song = Player.currentId;
-      Object.assign(this, { bpm: 0, sure: 0, phase: 0, tick: false, beats: 0, pulse: 0, pace: 1, lock: 0, throb: 0 });
+      Object.assign(this, { bpm: 0, sure: 0, phase: 0, tick: false, beats: 0, pulse: 0, pace: 1, rush: 1, lock: 0, throb: 0 });
     }
     this._stereo = stereo && Equalizer.active ? Equalizer.stereo() : null;
     this.left = this._stereo ? new Float32Array(this._stereo.left.fftSize) : null;
@@ -266,22 +274,34 @@ const VizAudio = {
     const sure = this.sure >= this.SURE && playing;
     this.tick = t.tick && sure;
     this.pulse = sure ? Math.exp(-5 * this.phase) : this.pulse * Math.exp(-ms / 150);
-    const pace = sure ? Math.max(0.5, Math.min(1.6, this.bpm / 120)) : (playing ? this.pace : 1);
-    this.pace += (pace - this.pace) * (1 - Math.exp(-ms / this.PACE_MS));
-    this.lock = playing ? Math.max(0, Math.min(1, (this.sure - this.SURE + 0.1) / 0.25)) : 0;
+    // Only nudged by the tempo: scaled straight by it, a 90 BPM rock song
+    // crawled at three quarters of the speed it had flown at before.
+    // A tempo under FOLD_BPM counts double: fast music is often found at half
+    // its tempo in one part and in full in the next (drum and bass at 92 then
+    // 185), which flew four times as fast in the second.
+    const r = Math.max(0.5, Math.min(1.6, (this.bpm < this.FOLD_BPM ? 2 * this.bpm : this.bpm) / 120));
+    const pace = sure ? Math.sqrt(r) : (playing ? this.pace : 1);
+    const ease = 1 - Math.exp(-ms / this.PACE_MS);
+    this.pace += (pace - this.pace) * ease;
+    // Flying forward should feel the tempo: a 185 BPM drop well over twice
+    // as fast as a 120 BPM song.
+    const rush = sure ? (r < 1 ? Math.sqrt(r) : r * r) : (playing ? this.rush : 1);
+    this.rush += (rush - this.rush) * ease;
+    // Gliding (over about LOCK_MS), so a sureness wavering about the line
+    // does not flip motion between the beat and the kicks frame by frame.
+    const lock = playing ? Math.max(0, Math.min(1, (this.sure - this.SURE + 0.1) / 0.25)) : 0;
+    this.lock += (lock - this.lock) * (1 - Math.exp(-ms / this.LOCK_MS));
     this.throb = this.kick + (this.pulse - this.kick) * this.lock;
   },
 
   /**
-   * The tempo's speed factor: `pace` on average over each beat, but rushing
-   * right after the beat and easing off before the next (surge 0: steady,
-   * 1: nearly stopping between beats).
+   * The tempo's speed factor for flying forward: `rush` on average over each beat, swelling
+   * gently to its fastest just after the beat and easing to its slowest half
+   * way to the next (surge: how far either way, 0.2 = 20%). A smooth swell:
+   * a sharp rush on the beat with a crawl between felt like lagging.
    */
-  surge(surge = 0.5) {
-    // k e^(-k phase) / (1 - e^-k) averages 1 over the beat.
-    const K = 3;
-    const shape = (K * Math.exp(-K * this.phase)) / (1 - Math.exp(-K));
-    return this.pace * (1 - surge + surge * shape);
+  surge(surge = 0.2) {
+    return this.rush * (1 + surge * Math.cos(2 * Math.PI * (this.phase - 0.08)));
   },
 
   /**
@@ -289,7 +309,7 @@ const VizAudio = {
    * the beat is clear; with no clear beat 1 and the kick's push (kickPush of
    * it for a full kick), blended between the two by lock.
    */
-  motion(surge = 0.5, kickPush = 1.5) {
+  motion(surge = 0.2, kickPush = 1.5) {
     const kick = 1 + kickPush * this.kick;
     return kick + (this.surge(surge) - kick) * this.lock;
   },

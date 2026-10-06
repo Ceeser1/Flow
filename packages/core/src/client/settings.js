@@ -15,6 +15,9 @@ const { randomBase64Url } = require('./common');
 const VIZ_OPTIONS = {
   // Opened as Random, another one with each song.
   vizRandomEach: ['bool', false],
+  // Synthwave: how fast it flies (percent; its other settings are below with
+  // the rest of the window's).
+  synSpeed: ['range', 100, 50, 150, 5],
   // Bars: how many, their colours, solid or in LED steps, the peak caps,
   // the floor mirroring them.
   brCount: ['range', 40, 16, 128, 4],
@@ -54,10 +57,11 @@ const VIZ_OPTIONS = {
   wpCount: ['range', 100, 25, 200, 5],
   wpColor: ['choice', 'spectrum', ['white', 'spectrum', 'nebula']],
   wpJumps: ['bool', true],
-  // Inferno: the flames' colours, their height (percent), the bass in the
-  // middle or on the left, the embers.
+  // Inferno: the flames' colours, their height (percent; ifFlameHeight's 100%
+  // is twice the old ifHeight's, so a value saved on that scale is left
+  // behind), the bass in the middle or on the left, the embers.
   ifColor: ['choice', 'fire', ['fire', 'blue', 'green', 'purple', 'rainbow']],
-  ifHeight: ['range', 100, 50, 200, 5],
+  ifFlameHeight: ['range', 100, 25, 150, 5],
   ifLayout: ['choice', 'centre', ['centre', 'across']],
   ifEmbers: ['bool', true],
   // Ridges: white, neon or heat; how many lines; how fast they flow
