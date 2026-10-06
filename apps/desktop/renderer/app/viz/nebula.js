@@ -34,7 +34,7 @@
     { id: 'vortex', name: 'Vortex', zoom: 1.012, kickZoom: 0.03, rot: 0.006, twist: 0.012, swirl: 0.004, swirlScale: 2.2, drift: [0, 0], decay: 0.965, hue: 0.0015, base: 0.62, wave: 1, size: 0.22, kaleido: 0 },
     { id: 'tunnel', name: 'Tunnel', zoom: 1.035, kickZoom: 0.05, rot: 0.0, twist: 0.0, swirl: 0.0015, swirlScale: 3.0, drift: [0, 0], decay: 0.95, hue: 0.003, base: 0.05, wave: 1, size: 0.12, kaleido: 0 },
     { id: 'kaleido', name: 'Kaleidoscope', zoom: 1.01, kickZoom: 0.025, rot: 0.004, twist: 0.0, swirl: 0.006, swirlScale: 1.6, drift: [0, 0], decay: 0.96, hue: 0.002, base: 0.85, wave: 0, size: 0.18, kaleido: 6 },
-    { id: 'aurora', name: 'Aurora', zoom: 0.998, kickZoom: 0.01, rot: 0.0, twist: 0.0, swirl: 0.007, swirlScale: 1.2, drift: [0, 0.0028], decay: 0.975, hue: 0.0006, base: 0.36, wave: 0, size: 0.16, kaleido: 0, y: 0.3 },
+    { id: 'aurora', name: 'Aurora', zoom: 0.998, kickZoom: 0.01, rot: 0.0, twist: 0.0, swirl: 0.007, swirlScale: 1.2, drift: [0, 0.0028], decay: 0.975, hue: 0.0006, base: 0.36, wave: 0, size: 0.16, kaleido: 0, y: 0.7 },
     { id: 'starburst', name: 'Starburst', zoom: 1.05, kickZoom: 0.06, rot: -0.002, twist: 0.0, swirl: 0.001, swirlScale: 4.0, drift: [0, 0], decay: 0.91, hue: 0.004, base: 0.1, wave: 2, size: 0.1, kaleido: 0 },
     { id: 'liquid', name: 'Liquid', zoom: 1.002, kickZoom: 0.02, rot: 0.001, twist: 0.004, swirl: 0.012, swirlScale: 2.8, drift: [0, 0], decay: 0.972, hue: 0.0012, base: 0.75, wave: 3, size: 0.3, kaleido: 0 },
     { id: 'mandala', name: 'Mandala', zoom: 0.992, kickZoom: -0.02, rot: -0.005, twist: 0.006, swirl: 0.003, swirlScale: 2.0, drift: [0, 0], decay: 0.962, hue: 0.0025, base: 0.95, wave: 2, size: 0.16, kaleido: 8 },
@@ -75,27 +75,6 @@
       c = turnHue(c, hue * 6.2831853 * step);
       c = max(c * pow(decay, step) - 0.0015 * step, 0.0);
       o = vec4(c, 1.0);
-    }`;
-
-  const SHAPE_VS = `
-    layout(location = 0) in vec2 pos;
-    layout(location = 1) in vec4 color;
-    layout(location = 2) in float across;
-    uniform vec2 res;
-    out vec4 c;
-    out float x;
-    void main() {
-      c = color;
-      x = across;
-      gl_Position = vec4(pos / res * 2.0 - 1.0, 0.0, 1.0);
-    }`;
-  const SHAPE_FS = `
-    in vec4 c;
-    in float x;
-    out vec4 o;
-    void main() {
-      float f = max(0.0, 1.0 - x * x);
-      o = vec4(c.rgb * c.a * f, 1.0);
     }`;
 
   const OUT_FS = `
@@ -141,9 +120,8 @@
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
       this.warp = VizGL.program(gl, VizGL.SCREEN_VS, WARP_FS);
-      this.shape = VizGL.program(gl, SHAPE_VS, SHAPE_FS);
       this.out = VizGL.program(gl, VizGL.SCREEN_VS, OUT_FS);
-      this.verts = VizGL.stream(gl, [[0, 2], [1, 4], [2, 1]], MAX_VERTS);
+      this.lines = VizGL.lines(gl, MAX_VERTS);
       this.age = 0;
       this.spin = 0;
       this.hue = Math.random();
@@ -250,24 +228,17 @@
       VizGL.screen(gl);
 
       // 2. The music drawn into it: this look's shape, and the last one's fading out.
-      let count = 0;
       if (this.from && this.from.wave !== this.look.wave) {
-        count = this._shape(a, this.from.wave, (1 - e) * 1, count);
-        count = this._shape(a, this.look.wave, e, count);
+        this._shape(a, this.from.wave, 1 - e);
+        this._shape(a, this.look.wave, e);
       } else {
-        count = this._shape(a, this.look.wave, 1, count);
+        this._shape(a, this.look.wave, 1);
       }
-      count = this._rings(a, dt, count);
-      if (count) {
-        gl.useProgram(this.shape.p);
-        gl.uniform2f(this.shape.u.res, this.w, this.h);
-        gl.enable(gl.BLEND);
-        gl.blendFunc(gl.ONE, gl.ONE);
-        this.verts.put(count);
-        gl.drawArrays(gl.TRIANGLES, 0, count);
-        gl.bindVertexArray(null);
-        gl.disable(gl.BLEND);
-      }
+      this._rings(a, dt);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      this.lines.draw(this.w, this.h);
+      gl.disable(gl.BLEND);
 
       // 3. Onto the screen, through the kaleidoscope if the look has one.
       VizGL.into(gl, null);
@@ -285,66 +256,8 @@
       [this.a, this.b] = [this.b, this.a];
     }
 
-    /** One soft segment from (x0, y0) to (x1, y1), `width` px, colour rgb and alpha. */
-    _seg(count, x0, y0, x1, y1, width, rgb, alpha) {
-      if (count >= MAX_VERTS - 6) return count;
-      const len = Math.hypot(x1 - x0, y1 - y0) || 1;
-      const nx = (-(y1 - y0) / len) * width;
-      const ny = ((x1 - x0) / len) * width;
-      const d = this.verts.data;
-      const put = (x, y, s) => {
-        const k = count * 7;
-        d[k] = x;
-        d[k + 1] = y;
-        d[k + 2] = rgb[0];
-        d[k + 3] = rgb[1];
-        d[k + 4] = rgb[2];
-        d[k + 5] = alpha;
-        d[k + 6] = s;
-        count += 1;
-      };
-      put(x0 + nx, y0 + ny, 1);
-      put(x0 - nx, y0 - ny, -1);
-      put(x1 + nx, y1 + ny, 1);
-      put(x1 + nx, y1 + ny, 1);
-      put(x0 - nx, y0 - ny, -1);
-      put(x1 - nx, y1 - ny, -1);
-      return count;
-    }
-
-    /**
-     * The waveform as WAVE_POINTS (newest last), -1..1: the low end only (a
-     * loud song's full waveform is a wall of noise), evened out so a quiet
-     * song swings as wide as a loud one. Once a frame.
-     */
-    _wave(a) {
-      if (this._waveAt === this.age) return this.wave;
-      this._waveAt = this.age;
-      const src = a.wave(4096);
-      const n = WAVE_POINTS;
-      const per = src.length / n;
-      // Twice through a one-pole low pass, about 300 Hz.
-      let y1 = 0;
-      let y2 = 0;
-      let peak = 0;
-      const k = 0.04;
-      let j = 0;
-      for (let i = 0; i < n; i += 1) {
-        const end = Math.floor((i + 1) * per);
-        for (; j < end; j += 1) {
-          y1 += (src[j] - y1) * k;
-          y2 += (y1 - y2) * k;
-        }
-        this.wave[i] = y2;
-        peak = Math.max(peak, Math.abs(y2));
-      }
-      this.gain = Math.max(peak, (this.gain || 0.05) * 0.97, 0.02);
-      for (let i = 0; i < n; i += 1) this.wave[i] /= this.gain;
-      return this.wave;
-    }
-
-    _shape(a, kind, fade, count) {
-      if (fade <= 0.01) return count;
+    _shape(a, kind, fade) {
+      if (fade <= 0.01) return;
       const w = this.w;
       const h = this.h;
       const cx = w / 2;
@@ -355,7 +268,7 @@
       const lw = (h / 1080) * (1.4 + 1.2 * a.bass);
       const col = (t) => hsv((this.hue + this.look.base + t) % 1, 0.75, 1);
       if (kind === 0 || kind === 1) {
-        const wave = this._wave(a);
+        const wave = a.lowWave(WAVE_POINTS);
         const n = wave.length;
         let px = 0;
         let py = 0;
@@ -371,14 +284,14 @@
             x = cx + Math.cos(ang) * r;
             y = cy + Math.sin(ang) * r;
           }
-          if (i) count = this._seg(count, px, py, x, y, lw, col(i / n * 0.3), alpha);
+          if (i) this.lines.seg(px, py, x, y, lw, col(i / n * 0.3), alpha);
           px = x;
           py = y;
         }
         if (kind === 1) {
           // Closed.
           const r = size * (1 + 0.35 * a.kick) + wave[0] * size * 0.6;
-          count = this._seg(count, px, py, cx + r, cy, lw, col(0), alpha);
+          this.lines.seg(px, py, cx + r, cy, lw, col(0), alpha);
         }
       } else if (kind === 2) {
         // The spectrum as rays from the middle, both halves the same.
@@ -388,16 +301,16 @@
           const v = bands[i];
           if (v < 0.05) continue;
           for (const side of [1, -1]) {
-            const ang = -Math.PI / 2 + side * ((i + 0.5) / n) * Math.PI;
+            const ang = Math.PI / 2 + side * ((i + 0.5) / n) * Math.PI;
             const r0 = size * 0.6;
             const r1 = r0 + v * v * h * 0.45;
-            count = this._seg(count, cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0, cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1,
+            this.lines.seg(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0, cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1,
               lw * 1.2, col(i / n * 0.5), fade * (0.05 + 0.16 * v) * v * this.step);
           }
         }
       } else {
         // Dots: the waveform's points scattered round a slowly turning ring.
-        const wave = this._wave(a);
+        const wave = a.lowWave(WAVE_POINTS);
         const n = wave.length;
         for (let i = 0; i < n; i += 3) {
           const ang = (i / n) * Math.PI * 2 + this.age * 0.3;
@@ -405,14 +318,13 @@
           const x = cx + Math.cos(ang) * r;
           const y = cy + Math.sin(ang) * r;
           const d = lw * 1.5;
-          count = this._seg(count, x - d, y, x + d, y, d * 1.4, col(i / n), alpha * 1.4);
+          this.lines.seg(x - d, y, x + d, y, d * 1.4, col(i / n), alpha * 1.4);
         }
       }
-      return count;
     }
 
     /** A ring on each strong beat, swelling from the middle and dropped into the flow. */
-    _rings(a, dt, count) {
+    _rings(a, dt) {
       if (a.onset && a.onsetPower > 0.35) this.rings.push({ r: this.p.size * this.h * 0.3, life: 1, hue: this.hue + 0.5 });
       const cx = this.w / 2;
       const cy = this.h / 2;
@@ -424,12 +336,11 @@
         for (let i = 0; i < n; i += 1) {
           const a0 = (i / n) * Math.PI * 2;
           const a1 = ((i + 1) / n) * Math.PI * 2;
-          count = this._seg(count, cx + Math.cos(a0) * ring.r, cy + Math.sin(a0) * ring.r, cx + Math.cos(a1) * ring.r, cy + Math.sin(a1) * ring.r,
+          this.lines.seg(cx + Math.cos(a0) * ring.r, cy + Math.sin(a0) * ring.r, cx + Math.cos(a1) * ring.r, cy + Math.sin(a1) * ring.r,
             (this.h / 1080) * 2, rgb, Math.max(0, ring.life) * 0.25 * this.step);
         }
       }
       this.rings = this.rings.filter((r) => r.life > 0);
-      return count;
     }
   }
 

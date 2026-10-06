@@ -25,6 +25,14 @@ const VIZ_OPTIONS = {
   nbLook: ['choice', 'auto', ['auto', 'vortex', 'tunnel', 'kaleido', 'aurora', 'starburst', 'liquid', 'mandala']],
   nbEvery: ['range', 30, 10, 120, 5],
   nbTrails: ['range', 100, 25, 200, 5],
+  // Halo: the cover round or square, turning (round only), the spectrum as
+  // bars, a line or dots, the sparks, the cover blurred behind, the title.
+  hlShape: ['choice', 'round', ['round', 'square']],
+  hlSpin: ['bool', true],
+  hlStyle: ['choice', 'bars', ['bars', 'line', 'dots']],
+  hlParticles: ['bool', true],
+  hlBackground: ['bool', true],
+  hlTitle: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -171,7 +179,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));

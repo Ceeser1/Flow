@@ -821,7 +821,9 @@ const Visualizer = {
           refreshers.push(() => group.classList.toggle('viz-cfg__ride--off', !on()));
           return h('div.viz-cfg__item.viz-cfg__bumps', label, group);
         }
-        return h('div.viz-cfg__item', label);
+        const el = h('div.viz-cfg__item', label);
+        refreshers.push(() => el.classList.toggle('viz-cfg__opt--off', !enabled()));
+        return el;
       }
       if (item.type === 'slider') {
         const s = slider(item);

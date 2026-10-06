@@ -13,6 +13,9 @@
 //              short analysis (about 46 ms), the high ones tilted up a little
 //              since music is quieter up there
 //   smooth     the same, rising fast and falling over about a third of a second
+//   dynamic    smooth against each band's own average of the last few
+//              seconds: a loud master's wall of sound still moves, a band
+//              holding steady sits at about half, what jumps out stands out
 //   bass, mid, treble  0..1, the smooth bands averaged up to 150 Hz, to 2 kHz,
 //              and above; level: all of them
 //   kick       0..1, the bass rising above its own recent average (Kick,
@@ -50,6 +53,8 @@ const VizAudio = {
   right: null,
   bands: new Float32Array(0),
   smooth: new Float32Array(0),
+  dynamic: new Float32Array(0),
+  _mean: new Float32Array(0),
   bass: 0,
   mid: 0,
   treble: 0,
@@ -62,6 +67,7 @@ const VizAudio = {
   hit: false,
   hitPower: 0,
   time: 0,
+  frames: 0,           // counts the frames, for what is worked out once a frame
 
   _spec: null,
   _prev: null,
@@ -80,6 +86,9 @@ const VizAudio = {
       : null;
     this.bands = new Float32Array(n);
     this.smooth = new Float32Array(n);
+    this.dynamic = new Float32Array(n);
+    this._mean = new Float32Array(n);
+    this._heard = false;
     this._prev = new Float32Array(n);
     this._kick = new Kick();
     this._intensity = new Intensity();
@@ -106,6 +115,7 @@ const VizAudio = {
 
   /** samples: the analyser's newest (Visualizer reads them); dt in seconds, now in ms. */
   update(samples, dt, now) {
+    this.frames += 1;
     this.samples = samples;
     const playing = Player.isPlaying && !!this._spec;
     this.playing = playing;
@@ -140,6 +150,18 @@ const VizAudio = {
         if (i < this._lowEnd) lowFlux += d;
         allFlux += d;
       }
+    }
+    // Each band against its own recent average, while something plays.
+    // The first frames heard start the averages where they are.
+    if (playing && !this._heard) {
+      this._heard = true;
+      this._mean.set(bands);
+    }
+    const km = playing ? 1 - Math.exp(-ms / 3000) : 0;
+    for (let i = 0; i < n; i += 1) {
+      const m = (this._mean[i] += (smooth[i] - this._mean[i]) * km);
+      const d = 0.3 + (smooth[i] - m) * 2.2 + m * 0.35;
+      this.dynamic[i] = smooth[i] < 0.02 ? smooth[i] : Math.min(1, Math.max(0, Math.min(d, smooth[i] * 1.6)));
     }
     this.bass = this._lowEnd ? bass / this._lowEnd : 0;
     this.mid = this._midEnd > this._lowEnd ? mid / (this._midEnd - this._lowEnd) : 0;
@@ -182,6 +204,42 @@ const VizAudio = {
     if (over <= 0 || flux < this.ONSET_MIN / 0.016 || now - s.last < this.ONSET_GAP_MS) return 0;
     s.last = now;
     return Math.min(1, 0.25 + over / Math.max(1e-6, s.mean + 3 * s.dev));
+  },
+
+  /**
+   * The waveform as `n` points (newest last), -1..1: the low end only (a
+   * loud song's full waveform is a wall of noise), evened out so a quiet
+   * song swings as wide as a loud one. Worked out once a frame per n.
+   */
+  lowWave(n) {
+    let w = this._low_waves && this._low_waves.get(n);
+    if (!w) {
+      w = { out: new Float32Array(n), gain: 0.05, at: -1 };
+      this._low_waves = this._low_waves || new Map();
+      this._low_waves.set(n, w);
+    }
+    if (w.at === this.frames) return w.out;
+    w.at = this.frames;
+    const src = this.wave(4096);
+    const per = src.length / n;
+    // Twice through a one-pole low pass, about 300 Hz.
+    let y1 = 0;
+    let y2 = 0;
+    let peak = 0;
+    const k = 0.04;
+    let j = 0;
+    for (let i = 0; i < n; i += 1) {
+      const end = Math.floor((i + 1) * per);
+      for (; j < end; j += 1) {
+        y1 += (src[j] - y1) * k;
+        y2 += (y1 - y2) * k;
+      }
+      w.out[i] = y2;
+      peak = Math.max(peak, Math.abs(y2));
+    }
+    w.gain = Math.max(peak, w.gain * 0.97, 0.02);
+    for (let i = 0; i < n; i += 1) w.out[i] /= w.gain;
+    return w.out;
   },
 
   /** The newest `count` mono samples as a view (no copy). */

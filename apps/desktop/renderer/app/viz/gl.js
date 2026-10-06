@@ -163,6 +163,84 @@ const VizGL = {
   },
   _blurs: new WeakMap(),
 
+  /**
+   * Soft lines in pixels (y down), each a quad with a falloff across it:
+   * seg(x0, y0, x1, y1, halfWidth, rgb, a) adds one, draw(w, h) draws
+   * them all with the blending set by the caller and starts over. rgb is
+   * [r, g, b] 0..1; the colour leaves premultiplied (rgb * a, alpha a).
+   */
+  lines(gl, capacity = 30000) {
+    let prog = this._lines.get(gl);
+    if (!prog) {
+      prog = this.program(gl, `
+        layout(location = 0) in vec2 pos;
+        layout(location = 1) in vec4 color;
+        layout(location = 2) in float across;
+        uniform vec2 res;
+        out vec4 c;
+        out float x;
+        void main() {
+          c = color;
+          x = across;
+          gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
+        }`, `
+        in vec4 c;
+        in float x;
+        out vec4 o;
+        void main() {
+          float f = max(0.0, 1.0 - x * x);
+          f *= f;
+          o = vec4(c.rgb * c.a * f, c.a * f);
+        }`);
+      this._lines.set(gl, prog);
+    }
+    const stream = this.stream(gl, [[0, 2], [1, 4], [2, 1]], capacity);
+    const d = stream.data;
+    const l = {
+      count: 0,
+      seg(x0, y0, x1, y1, width, rgb, a) {
+        const [r, g, b] = rgb;
+        if (l.count > capacity - 6) return;
+        const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+        const nx = (-(y1 - y0) / len) * width;
+        const ny = ((x1 - x0) / len) * width;
+        let k = l.count * 7;
+        const put = (x, y, s) => {
+          d[k] = x;
+          d[k + 1] = y;
+          d[k + 2] = r;
+          d[k + 3] = g;
+          d[k + 4] = b;
+          d[k + 5] = a;
+          d[k + 6] = s;
+          k += 7;
+        };
+        put(x0 + nx, y0 + ny, 1);
+        put(x0 - nx, y0 - ny, -1);
+        put(x1 + nx, y1 + ny, 1);
+        put(x1 + nx, y1 + ny, 1);
+        put(x0 - nx, y0 - ny, -1);
+        put(x1 - nx, y1 - ny, -1);
+        l.count += 6;
+      },
+      /** A round dot: a short segment as long as it is wide. */
+      dot(x, y, radius, rgb, a) {
+        l.seg(x - radius * 0.5, y, x + radius * 0.5, y, radius, rgb, a);
+      },
+      draw(w, h) {
+        if (!l.count) return;
+        gl.useProgram(prog.p);
+        gl.uniform2f(prog.u.res, w, h);
+        stream.put(l.count);
+        gl.drawArrays(gl.TRIANGLES, 0, l.count);
+        gl.bindVertexArray(null);
+        l.count = 0;
+      },
+    };
+    return l;
+  },
+  _lines: new WeakMap(),
+
   /** Frees the GPU's memory now rather than whenever the page gets round to it. */
   lose(gl) {
     const ext = gl && gl.getExtension('WEBGL_lose_context');
