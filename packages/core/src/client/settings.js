@@ -64,6 +64,12 @@ const VIZ_OPTIONS = {
   rdRows: ['range', 60, 20, 120, 5],
   rdSpeed: ['range', 100, 25, 200, 5],
   rdSource: ['choice', 'spectrum', ['spectrum', 'wave']],
+  // Fireworks: festive, gold and silver or the music's colours; how large
+  // the bursts are and how long the trails hang (percent); the city.
+  fwColors: ['choice', 'festive', ['festive', 'gold', 'music']],
+  fwSize: ['range', 100, 50, 200, 5],
+  fwTrails: ['range', 50, 0, 100, 5],
+  fwCity: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -210,7 +216,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
