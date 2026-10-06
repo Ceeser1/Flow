@@ -33,6 +33,12 @@ const VIZ_OPTIONS = {
   hlParticles: ['bool', true],
   hlBackground: ['bool', true],
   hlTitle: ['bool', true],
+  // Scope: XY, goniometer, wave or polar; the phosphor's colour; how long
+  // it glows on (percent); the grid.
+  scMode: ['choice', 'xy', ['xy', 'gonio', 'wave', 'polar']],
+  scColor: ['color', '#5dff7a'],
+  scPersist: ['range', 50, 0, 100, 5],
+  scGrid: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -179,7 +185,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
