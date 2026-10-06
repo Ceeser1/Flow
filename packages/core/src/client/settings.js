@@ -118,6 +118,13 @@ const VIZ_OPTIONS = {
   gxColors: ['choice', 'classic', ['classic', 'neon', 'fire', 'ice']],
   gxSpin: ['range', 100, 0, 300, 5],
   gxView: ['choice', 'slant', ['face', 'slant', 'edge']],
+  // Demo: plasma or stars behind, the plasma's palette, the copper bars, the
+  // scroller, CRT lines.
+  dmBack: ['choice', 'plasma', ['plasma', 'stars']],
+  dmPalette: ['choice', 'amiga', ['amiga', 'c64', 'neon']],
+  dmCopper: ['bool', true],
+  dmScroller: ['bool', true],
+  dmCrt: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -264,7 +271,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
