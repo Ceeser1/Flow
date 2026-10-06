@@ -2612,6 +2612,17 @@ div.import__frame-head { cursor: default; }
 .viz-halo__title { font-size: clamp(22px, 3.2vh, 44px); font-weight: 600; letter-spacing: 0.01em; }
 .viz-halo__artist { margin-top: 6px; font-size: clamp(15px, 2vh, 26px); color: rgba(255, 255, 255, 0.75); }
 
+/* Spectrogram's octave names along the left edge. */
+.viz-spec { position: absolute; inset: 0; pointer-events: none; }
+.viz-spec__label {
+  position: absolute;
+  left: 10px;
+  transform: translateY(50%);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
 .viz-full__note {
   position: absolute;
   left: 0;

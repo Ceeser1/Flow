@@ -478,9 +478,12 @@ const SettingsPanel = {
     };
     for (const v of VISUALIZERS) {
       const art = h('span.viz-tile__art');
-      // Its picture once there is one; a sign for it until then.
-      if (v.image) art.appendChild(h('img.viz-tile__img', { src: v.image, alt: '' }));
-      else art.innerHTML = v.glyph || '';
+      // Its picture once there is one; a sign for it until then (or if it is missing).
+      const glyph = () => {
+        art.innerHTML = v.glyph || '';
+      };
+      if (v.image) art.appendChild(h('img.viz-tile__img', { src: v.image, alt: '', onerror: glyph }));
+      else glyph();
       tiles.appendChild(h('button.viz-tile' + (v.ready ? '' : '.viz-tile--soon'), {
         type: 'button',
         disabled: !v.ready,
