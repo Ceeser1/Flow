@@ -58,6 +58,12 @@ const VIZ_OPTIONS = {
   ifHeight: ['range', 100, 50, 200, 5],
   ifLayout: ['choice', 'centre', ['centre', 'across']],
   ifEmbers: ['bool', true],
+  // Ridges: white, neon or heat; how many lines; how fast they flow
+  // (percent); the spectrum or the waveform.
+  rdColor: ['choice', 'white', ['white', 'neon', 'heat']],
+  rdRows: ['range', 60, 20, 120, 5],
+  rdSpeed: ['range', 100, 25, 200, 5],
+  rdSource: ['choice', 'spectrum', ['spectrum', 'wave']],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -204,7 +210,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));

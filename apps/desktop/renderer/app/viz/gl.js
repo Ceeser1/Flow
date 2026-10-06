@@ -223,6 +223,22 @@ const VizGL = {
         put(x1 - nx, y1 - ny, -1);
         l.count += 6;
       },
+      /** A solid triangle (no falloff), drawn in its place among the lines. */
+      tri(x0, y0, x1, y1, x2, y2, rgb, a) {
+        if (l.count > capacity - 3) return;
+        let k = l.count * 7;
+        for (const [x, y] of [[x0, y0], [x1, y1], [x2, y2]]) {
+          d[k] = x;
+          d[k + 1] = y;
+          d[k + 2] = rgb[0];
+          d[k + 3] = rgb[1];
+          d[k + 4] = rgb[2];
+          d[k + 5] = a;
+          d[k + 6] = 0;
+          k += 7;
+        }
+        l.count += 3;
+      },
       /** A round dot: a short segment as long as it is wide. */
       dot(x, y, radius, rgb, a) {
         l.seg(x - radius * 0.5, y, x + radius * 0.5, y, radius, rgb, a);
