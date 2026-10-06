@@ -113,6 +113,11 @@ const VIZ_OPTIONS = {
   skColors: ['choice', 'classic', ['classic', 'neon', 'ice', 'fire']],
   skCamera: ['choice', 'orbit', ['orbit', 'front', 'above']],
   skHistory: ['range', 70, 25, 100, 5],
+  // Galaxy: how many arms, its colours, how fast it turns (percent), the view.
+  gxArms: ['choice', '2', ['2', '3', '4', '6']],
+  gxColors: ['choice', 'classic', ['classic', 'neon', 'fire', 'ice']],
+  gxSpin: ['range', 100, 0, 300, 5],
+  gxView: ['choice', 'slant', ['face', 'slant', 'edge']],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -259,7 +264,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
