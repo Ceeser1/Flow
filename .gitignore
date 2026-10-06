@@ -14,3 +14,6 @@ start-android.bat
 
 # Personal list of server commands, kept only on this PC.
 commands.txt
+
+# Personal list of changes to make, kept only on this PC.
+changes.txt
