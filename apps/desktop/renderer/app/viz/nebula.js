@@ -1,0 +1,452 @@
+'use strict';
+
+// Nebula: in the manner of Milkdrop. Every frame starts from the last one,
+// zoomed, turned, swirled and faded a little, its colours drifting, and the
+// music is drawn into it again (the waveform, the spectrum as rays, rings on
+// the beats), so what was drawn flows away in trails. The kicks push the zoom.
+//
+// It has several looks (LOOKS: how it zooms, turns and swirls, what it draws
+// and whether it is seen through a kaleidoscope). Auto moves on to another
+// every so often, on a beat, gliding from one to the next; a click moves on
+// at once. Its cogwheel: the look (or Auto), how often Auto moves on, and
+// how long the trails are.
+//
+// WebGL (viz/gl.js): two half-float textures drawn into in turn (the frame
+// before and the new one), then the new one onto the screen.
+
+(() => {
+  const MAX_VERTS = 24000;
+  const WAVE_POINTS = 384;
+  const GLIDE_S = 4;      // from one look to the next
+
+  // Numbers glide; draw and kaleido are faded across.
+  //   zoom      per frame at 60 fps (>1 flows outwards)
+  //   kickZoom  more of it on a full kick
+  //   rot       turn per frame (radians), twist: more towards the middle
+  //   swirl     how far the noise field pushes, swirlScale its size
+  //   drift     the whole picture flowing (x, y per frame)
+  //   decay     how much of the last frame stays (at Trails 100%)
+  //   hue       colour drift per frame, base: the looks' own colour
+  //   wave      0 a line across, 1 a ring, 2 rays (the spectrum), 3 dots
+  //   size      how large it is drawn
+  //   kaleido   mirrored slices seen through (0: none)
+  const LOOKS = [
+    { id: 'vortex', name: 'Vortex', zoom: 1.012, kickZoom: 0.03, rot: 0.006, twist: 0.012, swirl: 0.004, swirlScale: 2.2, drift: [0, 0], decay: 0.965, hue: 0.0015, base: 0.62, wave: 1, size: 0.22, kaleido: 0 },
+    { id: 'tunnel', name: 'Tunnel', zoom: 1.035, kickZoom: 0.05, rot: 0.0, twist: 0.0, swirl: 0.0015, swirlScale: 3.0, drift: [0, 0], decay: 0.95, hue: 0.003, base: 0.05, wave: 1, size: 0.12, kaleido: 0 },
+    { id: 'kaleido', name: 'Kaleidoscope', zoom: 1.01, kickZoom: 0.025, rot: 0.004, twist: 0.0, swirl: 0.006, swirlScale: 1.6, drift: [0, 0], decay: 0.96, hue: 0.002, base: 0.85, wave: 0, size: 0.18, kaleido: 6 },
+    { id: 'aurora', name: 'Aurora', zoom: 0.998, kickZoom: 0.01, rot: 0.0, twist: 0.0, swirl: 0.007, swirlScale: 1.2, drift: [0, 0.0028], decay: 0.975, hue: 0.0006, base: 0.36, wave: 0, size: 0.16, kaleido: 0, y: 0.3 },
+    { id: 'starburst', name: 'Starburst', zoom: 1.05, kickZoom: 0.06, rot: -0.002, twist: 0.0, swirl: 0.001, swirlScale: 4.0, drift: [0, 0], decay: 0.91, hue: 0.004, base: 0.1, wave: 2, size: 0.1, kaleido: 0 },
+    { id: 'liquid', name: 'Liquid', zoom: 1.002, kickZoom: 0.02, rot: 0.001, twist: 0.004, swirl: 0.012, swirlScale: 2.8, drift: [0, 0], decay: 0.972, hue: 0.0012, base: 0.75, wave: 3, size: 0.3, kaleido: 0 },
+    { id: 'mandala', name: 'Mandala', zoom: 0.992, kickZoom: -0.02, rot: -0.005, twist: 0.006, swirl: 0.003, swirlScale: 2.0, drift: [0, 0], decay: 0.962, hue: 0.0025, base: 0.95, wave: 2, size: 0.16, kaleido: 8 },
+  ];
+  const NUMBERS = ['zoom', 'kickZoom', 'rot', 'twist', 'swirl', 'swirlScale', 'decay', 'hue', 'size'];
+
+  const WARP_FS = VizGL.NOISE + `
+    in vec2 uv;
+    uniform sampler2D prev;
+    uniform float aspect, zoom, rot, twist, swirl, swirlScale, decay, hue, time, step;
+    uniform vec2 drift;
+    out vec4 o;
+
+    vec3 turnHue(vec3 c, float a) {
+      // About the grey axis.
+      const vec3 k = vec3(0.57735);
+      float cs = cos(a);
+      return c * cs + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - cs);
+    }
+
+    void main() {
+      vec2 p = uv - 0.5;
+      p.x *= aspect;
+      float r = length(p);
+      // Each frame's motion scaled to how long the frame was (step: 60 fps = 1).
+      p /= pow(zoom, step);
+      float a = (rot + twist * max(0.0, 0.8 - r)) * step;
+      p = mat2(cos(a), -sin(a), sin(a), cos(a)) * p;
+      vec2 n = vec2(vnoise(p * swirlScale + vec2(time * 0.07, 0.0)), vnoise(p * swirlScale + vec2(7.3, -time * 0.06))) - 0.5;
+      p += n * swirl * step;
+      p -= drift * step;
+      p.x /= aspect;
+      vec2 q = p + 0.5;
+      // A little softened as it flows, so it stays smoke rather than grain.
+      vec2 t = 0.5 / vec2(textureSize(prev, 0));
+      vec3 c = 0.25 * (texture(prev, q + vec2(t.x, t.y)).rgb + texture(prev, q - vec2(t.x, t.y)).rgb
+        + texture(prev, q + vec2(t.x, -t.y)).rgb + texture(prev, q + vec2(-t.x, t.y)).rgb);
+      c = turnHue(c, hue * 6.2831853 * step);
+      c = max(c * pow(decay, step) - 0.0015 * step, 0.0);
+      o = vec4(c, 1.0);
+    }`;
+
+  const SHAPE_VS = `
+    layout(location = 0) in vec2 pos;
+    layout(location = 1) in vec4 color;
+    layout(location = 2) in float across;
+    uniform vec2 res;
+    out vec4 c;
+    out float x;
+    void main() {
+      c = color;
+      x = across;
+      gl_Position = vec4(pos / res * 2.0 - 1.0, 0.0, 1.0);
+    }`;
+  const SHAPE_FS = `
+    in vec4 c;
+    in float x;
+    out vec4 o;
+    void main() {
+      float f = max(0.0, 1.0 - x * x);
+      o = vec4(c.rgb * c.a * f, 1.0);
+    }`;
+
+  const OUT_FS = `
+    in vec2 uv;
+    uniform sampler2D src;
+    uniform float aspect, segA, segB, mixB, spin;
+    out vec4 o;
+
+    vec2 kaleido(vec2 q, float segs) {
+      if (segs < 1.0) return q;
+      vec2 p = q - 0.5;
+      p.x *= aspect;
+      float r = length(p);
+      float slice = 6.2831853 / segs;
+      float a = atan(p.y, p.x) + spin;
+      a = mod(a, slice);
+      a = abs(a - slice * 0.5);
+      p = vec2(cos(a), sin(a)) * r;
+      p.x /= aspect;
+      return p + 0.5;
+    }
+
+    void main() {
+      vec3 c = mix(texture(src, kaleido(uv, segA)).rgb, texture(src, kaleido(uv, segB)).rgb, mixB);
+      vec2 v = uv - 0.5;
+      v.x *= aspect;
+      c *= 1.0 - 0.35 * smoothstep(0.4, 1.1, length(v));
+      c = 1.0 - exp(-c * 1.15);
+      o = vec4(c, 1.0);
+    }`;
+
+  function hsv(h, s, v) {
+    const f = (n) => {
+      const k = (n + h * 6) % 6;
+      return v - v * s * Math.max(0, Math.min(k, 4 - k, 1));
+    };
+    return [f(5), f(3), f(1)];
+  }
+
+  class Nebula {
+    constructor(canvas) {
+      const gl = VizGL.context(canvas);
+      if (!gl) throw new Error('no WebGL 2');
+      this.gl = gl;
+      this.warp = VizGL.program(gl, VizGL.SCREEN_VS, WARP_FS);
+      this.shape = VizGL.program(gl, SHAPE_VS, SHAPE_FS);
+      this.out = VizGL.program(gl, VizGL.SCREEN_VS, OUT_FS);
+      this.verts = VizGL.stream(gl, [[0, 2], [1, 4], [2, 1]], MAX_VERTS);
+      this.age = 0;
+      this.spin = 0;
+      this.hue = Math.random();
+      this.from = null;       // the look it glides from, and since when
+      this.fromAt = 0;
+      this.look = this._choose(null);
+      this.since = 0;         // how long this look has shown
+      this.p = { ...this.look };
+      this.wave = new Float32Array(WAVE_POINTS);
+      this.rings = [];
+      this.w = 1;
+      this.h = 1;
+    }
+
+    size(w, h) {
+      const gl = this.gl;
+      this.w = w;
+      this.h = h;
+      const old = [this.a, this.b];
+      const opts = { wrap: gl.MIRRORED_REPEAT };
+      this.a = VizGL.target(gl, w, h, opts);
+      this.b = VizGL.target(gl, w, h, opts);
+      for (const t of old) VizGL.freeTarget(gl, t);
+    }
+
+    destroy() {
+      VizGL.lose(this.gl);
+    }
+
+    /** The look set in its cogwheel, or for Auto one other than `not`. */
+    _choose(not) {
+      const set = Visualizer.setting('nbLook');
+      if (set !== 'auto') return LOOKS.find((l) => l.id === set) || LOOKS[0];
+      const pool = LOOKS.filter((l) => l !== not);
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    /** On to `look`, gliding there. */
+    _go(look) {
+      if (look === this.look) return;
+      this.from = { ...this.p, wave: this.look.wave, kaleido: this.look.kaleido };
+      this.fromAt = this.age;
+      this.look = look;
+      this.since = 0;
+    }
+
+    next() {
+      const set = Visualizer.setting('nbLook');
+      if (set === 'auto') this._go(this._choose(this.look));
+      else {
+        // A chosen look: the click goes on to the next one and keeps it.
+        const i = LOOKS.findIndex((l) => l.id === set);
+        const look = LOOKS[(i + 1) % LOOKS.length];
+        Store.saveSettings({ nbLook: look.id });
+        this._go(look);
+      }
+    }
+
+    frame(a, dt) {
+      this.age += dt;
+      this.since += dt;
+      const set = Visualizer.setting('nbLook');
+      if (set !== 'auto' && set !== this.look.id) this._go(this._choose(null));
+      // Auto: once its time is up, on the next strong beat (or a few seconds later anyway).
+      const every = Visualizer.setting('nbEvery');
+      if (set === 'auto' && this.since > every && ((a.onset && a.beat > 0.7) || this.since > every + 5)) this._go(this._choose(this.look));
+
+      // Gliding from the last look to this one.
+      const g = this.from ? Math.min(1, (this.age - this.fromAt) / GLIDE_S) : 1;
+      const e = g * g * (3 - 2 * g);
+      const p = this.p;
+      for (const k of NUMBERS) p[k] = this.from ? this.from[k] + (this.look[k] - this.from[k]) * e : this.look[k];
+      const drift = this.from ? [0, 1].map((i) => this.from.drift[i] + (this.look.drift[i] - this.from.drift[i]) * e) : this.look.drift;
+      p.drift = drift;
+      if (g >= 1) this.from = null;
+
+      const trails = Visualizer.setting('nbTrails') / 100;
+      // Trails: the share that fades each frame shrinks or grows.
+      const decay = 1 - (1 - p.decay) / Math.max(0.2, trails);
+      const step = dt * 60;
+      // What is drawn each frame is as much less as the frames come faster.
+      this.step = Math.min(2, step);
+      this.hue = (this.hue + p.hue * step + (a.onset ? 0.02 * a.onsetPower : 0)) % 1;
+      this.spin += dt * (0.05 + 0.25 * a.mid);
+
+      const gl = this.gl;
+      // 1. The last frame, moved on, into the other texture.
+      gl.disable(gl.BLEND);
+      gl.useProgram(this.warp.p);
+      VizGL.into(gl, this.b);
+      const u = this.warp.u;
+      VizGL.bind(gl, u.prev, this.a.tex, 0);
+      gl.uniform1f(u.aspect, this.w / this.h);
+      gl.uniform1f(u.zoom, p.zoom + p.kickZoom * a.kick);
+      gl.uniform1f(u.rot, p.rot * (1 + a.mid));
+      gl.uniform1f(u.twist, p.twist);
+      gl.uniform1f(u.swirl, p.swirl * (0.6 + a.level));
+      gl.uniform1f(u.swirlScale, p.swirlScale);
+      gl.uniform1f(u.decay, Math.min(0.995, Math.max(0.5, decay)));
+      gl.uniform1f(u.hue, p.hue * 0.6);
+      gl.uniform1f(u.time, this.age);
+      gl.uniform1f(u.step, step);
+      gl.uniform2f(u.drift, drift[0], drift[1]);
+      VizGL.screen(gl);
+
+      // 2. The music drawn into it: this look's shape, and the last one's fading out.
+      let count = 0;
+      if (this.from && this.from.wave !== this.look.wave) {
+        count = this._shape(a, this.from.wave, (1 - e) * 1, count);
+        count = this._shape(a, this.look.wave, e, count);
+      } else {
+        count = this._shape(a, this.look.wave, 1, count);
+      }
+      count = this._rings(a, dt, count);
+      if (count) {
+        gl.useProgram(this.shape.p);
+        gl.uniform2f(this.shape.u.res, this.w, this.h);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE);
+        this.verts.put(count);
+        gl.drawArrays(gl.TRIANGLES, 0, count);
+        gl.bindVertexArray(null);
+        gl.disable(gl.BLEND);
+      }
+
+      // 3. Onto the screen, through the kaleidoscope if the look has one.
+      VizGL.into(gl, null);
+      gl.useProgram(this.out.p);
+      const o = this.out.u;
+      VizGL.bind(gl, o.src, this.b.tex, 0);
+      gl.uniform1f(o.aspect, this.w / this.h);
+      const segA = this.from ? this.from.kaleido : this.look.kaleido;
+      gl.uniform1f(o.segA, segA);
+      gl.uniform1f(o.segB, this.look.kaleido);
+      gl.uniform1f(o.mixB, this.from ? e : 1);
+      gl.uniform1f(o.spin, this.spin);
+      VizGL.screen(gl);
+
+      [this.a, this.b] = [this.b, this.a];
+    }
+
+    /** One soft segment from (x0, y0) to (x1, y1), `width` px, colour rgb and alpha. */
+    _seg(count, x0, y0, x1, y1, width, rgb, alpha) {
+      if (count >= MAX_VERTS - 6) return count;
+      const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+      const nx = (-(y1 - y0) / len) * width;
+      const ny = ((x1 - x0) / len) * width;
+      const d = this.verts.data;
+      const put = (x, y, s) => {
+        const k = count * 7;
+        d[k] = x;
+        d[k + 1] = y;
+        d[k + 2] = rgb[0];
+        d[k + 3] = rgb[1];
+        d[k + 4] = rgb[2];
+        d[k + 5] = alpha;
+        d[k + 6] = s;
+        count += 1;
+      };
+      put(x0 + nx, y0 + ny, 1);
+      put(x0 - nx, y0 - ny, -1);
+      put(x1 + nx, y1 + ny, 1);
+      put(x1 + nx, y1 + ny, 1);
+      put(x0 - nx, y0 - ny, -1);
+      put(x1 - nx, y1 - ny, -1);
+      return count;
+    }
+
+    /**
+     * The waveform as WAVE_POINTS (newest last), -1..1: the low end only (a
+     * loud song's full waveform is a wall of noise), evened out so a quiet
+     * song swings as wide as a loud one. Once a frame.
+     */
+    _wave(a) {
+      if (this._waveAt === this.age) return this.wave;
+      this._waveAt = this.age;
+      const src = a.wave(4096);
+      const n = WAVE_POINTS;
+      const per = src.length / n;
+      // Twice through a one-pole low pass, about 300 Hz.
+      let y1 = 0;
+      let y2 = 0;
+      let peak = 0;
+      const k = 0.04;
+      let j = 0;
+      for (let i = 0; i < n; i += 1) {
+        const end = Math.floor((i + 1) * per);
+        for (; j < end; j += 1) {
+          y1 += (src[j] - y1) * k;
+          y2 += (y1 - y2) * k;
+        }
+        this.wave[i] = y2;
+        peak = Math.max(peak, Math.abs(y2));
+      }
+      this.gain = Math.max(peak, (this.gain || 0.05) * 0.97, 0.02);
+      for (let i = 0; i < n; i += 1) this.wave[i] /= this.gain;
+      return this.wave;
+    }
+
+    _shape(a, kind, fade, count) {
+      if (fade <= 0.01) return count;
+      const w = this.w;
+      const h = this.h;
+      const cx = w / 2;
+      const cy = h / 2;
+      const size = this.p.size * h;
+      const loud = Math.min(1, 0.25 + a.level * 1.6);
+      const alpha = fade * loud * 0.42 * this.step;
+      const lw = (h / 1080) * (1.4 + 1.2 * a.bass);
+      const col = (t) => hsv((this.hue + this.look.base + t) % 1, 0.75, 1);
+      if (kind === 0 || kind === 1) {
+        const wave = this._wave(a);
+        const n = wave.length;
+        let px = 0;
+        let py = 0;
+        for (let i = 0; i < n; i += 1) {
+          let x;
+          let y;
+          if (kind === 0) {
+            x = (i / (n - 1)) * w * 0.9 + w * 0.05;
+            y = h * (this.look.y || 0.5) + wave[i] * size * 1.2;
+          } else {
+            const ang = (i / n) * Math.PI * 2;
+            const r = size * (1 + 0.35 * a.kick) + wave[i] * size * 0.6;
+            x = cx + Math.cos(ang) * r;
+            y = cy + Math.sin(ang) * r;
+          }
+          if (i) count = this._seg(count, px, py, x, y, lw, col(i / n * 0.3), alpha);
+          px = x;
+          py = y;
+        }
+        if (kind === 1) {
+          // Closed.
+          const r = size * (1 + 0.35 * a.kick) + wave[0] * size * 0.6;
+          count = this._seg(count, px, py, cx + r, cy, lw, col(0), alpha);
+        }
+      } else if (kind === 2) {
+        // The spectrum as rays from the middle, both halves the same.
+        const bands = a.smooth;
+        const n = bands.length;
+        for (let i = 0; i < n; i += 1) {
+          const v = bands[i];
+          if (v < 0.05) continue;
+          for (const side of [1, -1]) {
+            const ang = -Math.PI / 2 + side * ((i + 0.5) / n) * Math.PI;
+            const r0 = size * 0.6;
+            const r1 = r0 + v * v * h * 0.45;
+            count = this._seg(count, cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0, cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1,
+              lw * 1.2, col(i / n * 0.5), fade * (0.05 + 0.16 * v) * v * this.step);
+          }
+        }
+      } else {
+        // Dots: the waveform's points scattered round a slowly turning ring.
+        const wave = this._wave(a);
+        const n = wave.length;
+        for (let i = 0; i < n; i += 3) {
+          const ang = (i / n) * Math.PI * 2 + this.age * 0.3;
+          const r = size * (0.5 + 0.6 * Math.abs(wave[i])) * (1 + 0.4 * a.kick);
+          const x = cx + Math.cos(ang) * r;
+          const y = cy + Math.sin(ang) * r;
+          const d = lw * 1.5;
+          count = this._seg(count, x - d, y, x + d, y, d * 1.4, col(i / n), alpha * 1.4);
+        }
+      }
+      return count;
+    }
+
+    /** A ring on each strong beat, swelling from the middle and dropped into the flow. */
+    _rings(a, dt, count) {
+      if (a.onset && a.onsetPower > 0.35) this.rings.push({ r: this.p.size * this.h * 0.3, life: 1, hue: this.hue + 0.5 });
+      const cx = this.w / 2;
+      const cy = this.h / 2;
+      for (const ring of this.rings) {
+        ring.r += dt * this.h * 0.9;
+        ring.life -= dt * 3;
+        const rgb = hsv(ring.hue % 1, 0.6, 1);
+        const n = 72;
+        for (let i = 0; i < n; i += 1) {
+          const a0 = (i / n) * Math.PI * 2;
+          const a1 = ((i + 1) / n) * Math.PI * 2;
+          count = this._seg(count, cx + Math.cos(a0) * ring.r, cy + Math.sin(a0) * ring.r, cx + Math.cos(a1) * ring.r, cy + Math.sin(a1) * ring.r,
+            (this.h / 1080) * 2, rgb, Math.max(0, ring.life) * 0.25 * this.step);
+        }
+      }
+      this.rings = this.rings.filter((r) => r.life > 0);
+      return count;
+    }
+  }
+
+  Visualizer.add({
+    id: 'nebula',
+    name: 'Nebula',
+    desc: 'In the manner of Milkdrop: the music drawn into a picture that flows on, zooming, swirling and changing colour',
+    glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
+      + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 12m-2 0a2 2 0 1 0 4 0a4 4 0 1 0-8 0a6 6 0 1 0 12 0a8 8 0 1 0-16 0"/></svg>',
+    gl: true,
+    hint: 'Click for the next look',
+    create: (canvas) => new Nebula(canvas),
+    click: (scene) => scene.next(),
+    options: [
+      { type: 'choice', key: 'nbLook', label: 'Look', choices: [['auto', 'Auto'], ...LOOKS.map((l) => [l.id, l.name])] },
+      { type: 'slider', key: 'nbEvery', label: 'Auto changes every', min: 10, max: 120, step: 5, unit: ' s', when: (s) => s.nbLook === 'auto' },
+      { type: 'slider', key: 'nbTrails', label: 'Trails', min: 25, max: 200, step: 5 },
+    ],
+  });
+})();

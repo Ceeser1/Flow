@@ -2511,6 +2511,24 @@ div.import__frame-head { cursor: default; }
 .viz-cfg .viz-cfg__slider { width: 120px; }
 .viz-cfg__slider:disabled { cursor: default; }
 .viz-cfg__value { width: 38px; font-size: 12px; color: rgba(255, 255, 255, 0.75); font-variant-numeric: tabular-nums; }
+.viz-cfg__label { font-size: 13px; color: rgba(255, 255, 255, 0.85); }
+.viz-cfg__opt--off { opacity: 0.4; }
+/* One of a few: a row of pills, the chosen one lit. */
+.viz-cfg__pills { display: flex; gap: 4px; }
+.viz-cfg__pill {
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.viz-cfg__pill:hover:not(:disabled) { border-color: #fff; }
+.viz-cfg__pill--on { background: rgba(255, 255, 255, 0.85); border-color: #fff; color: #120428; }
+.viz-cfg__pill:disabled { cursor: default; opacity: 0.4; }
 
 /* Its colour picker, hanging under the swatch. */
 .viz-pick {

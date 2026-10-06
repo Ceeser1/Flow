@@ -8,6 +8,25 @@ const { DEFAULT_MP3_QUALITY, clampQuality } = require('../formats');
 const { BROWSERS } = require('../cookies');
 const { randomBase64Url } = require('./common');
 
+// The visualizers' own settings (their cogwheels, apps/desktop/renderer/app/
+// viz/), by what they may be: ['color', default] a '#rrggbb'; ['bool',
+// default]; ['range', default, min, max, step]; ['choice', default, values].
+// Each visualizer's start with its own letters.
+const VIZ_OPTIONS = {
+  // Lightning: the bolts' colour, the sky lighting up with them (and how
+  // much), rain, and how readily it strikes (percent).
+  ltColor: ['color', '#a9c4ff'],
+  ltFlash: ['bool', true],
+  ltFlashAmount: ['range', 100, 0, 200, 5],
+  ltRain: ['bool', true],
+  ltStrikes: ['range', 100, 25, 200, 5],
+  // Nebula: its look ('auto' moves on by itself), how often Auto moves on
+  // (seconds), and how long the trails last (percent).
+  nbLook: ['choice', 'auto', ['auto', 'vortex', 'tunnel', 'kaleido', 'aurora', 'starburst', 'liquid', 'mandala']],
+  nbEvery: ['range', 30, 10, 120, 5],
+  nbTrails: ['range', 100, 25, 200, 5],
+};
+
 // What the app remembers between sessions. Small and flat, read once at start
 // and written whenever the window changes something. Some only mean something
 // on one of the apps (the window's size on the desktop).
@@ -95,6 +114,7 @@ const DEFAULTS = {
   synCameraTiltAmount: 100,
   synCarTilt: true,
   synCarTiltAmount: 100,
+  ...Object.fromEntries(Object.entries(VIZ_OPTIONS).map(([key, [, def]]) => [key, def])),
 
   // ---- Use a Flow Server ----
   // The library lives on the server; see remote.js.
@@ -151,7 +171,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
@@ -224,6 +244,16 @@ function clean(raw) {
     const v = Math.round(Number(s[key]) / 5) * 5;
     s[key] = Number.isFinite(v) ? Math.min(200, Math.max(0, v)) : DEFAULTS[key];
   }
+  for (const [key, [kind, def, a, b, step]] of Object.entries(VIZ_OPTIONS)) {
+    const v = s[key];
+    if (kind === 'color') s[key] = /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v).toLowerCase() : def;
+    else if (kind === 'bool') s[key] = typeof v === 'boolean' ? v : def;
+    else if (kind === 'choice') s[key] = a.includes(v) ? v : def;
+    else {
+      const n = Math.round(Number(v) / step) * step;
+      s[key] = v !== null && v !== '' && Number.isFinite(n) ? Math.min(b, Math.max(a, n)) : def;
+    }
+  }
   return s;
 }
 
@@ -271,4 +301,4 @@ function createSettings({ read, write }) {
   return { load, all, get, set, clientId };
 }
 
-module.exports = { createSettings, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, VISUALIZERS };
+module.exports = { createSettings, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, VISUALIZERS, VIZ_OPTIONS };

@@ -58,13 +58,6 @@ const VISUALIZERS = [
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="4"/><path d="M2 20l6-8 3 4 2-2 4 6"/>'
       + '<path d="M15 16l2-3 5 7"/></svg>',
   },
-  {
-    id: 'lightning',
-    name: 'Lightning',
-    ready: false,
-    glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
-      + 'stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>',
-  },
 ];
 
 /** The hue (0..360) of r, g, b in 0..1. */
@@ -82,7 +75,9 @@ function hueOf(r, g, b) {
 const Visualizer = {
   el: null,            // the full-screen layer while open
   canvas: null,
-  kind: null,          // 'bars', 'waveform' or 'synthwave', the one showing
+  kind: null,          // the id of the one showing
+  scenes: {},          // id -> the visualizers in viz/ (add)
+  scene: null,         // the one of those showing, as made by its create
   mode: 'bars',        // Bars: 'bars' or 'scope'
   samples: null,
   raf: null,
@@ -170,6 +165,10 @@ const Visualizer = {
       this.el.appendChild(h('p.viz-full__note', 'The visualizer needs Web Audio, which could not be started on this computer.'));
     }
     if (kind === 'synthwave') this.el.appendChild(this._synPanel());
+    const def = this.scenes[kind];
+    if (def && def.options) this.el.appendChild(this._cfgPanel(`${def.name} settings`, def.options));
+    if (def && def.click) this.canvas.addEventListener('click', () => this.scene && def.click(this.scene));
+    if (def && def.hint) this.canvas.title = def.hint;
     if (kind === 'bars') {
       this.canvas.title = 'Click to switch between spectrum and oscilloscope';
       this.canvas.addEventListener('click', () => {
@@ -211,6 +210,16 @@ const Visualizer = {
     }
     if (!Equalizer.active) return;
     this.samples = new Float32Array(Equalizer.analyser.fftSize);
+    if (def) {
+      VizAudio.reset({ stereo: !!def.stereo });
+      try {
+        this.scene = def.create(this.canvas);
+      } catch (err) {
+        console.warn('Visualizer:', err);
+        this.el.appendChild(h('p.viz-full__note', `${def.name} could not be started on this computer (${def.gl ? 'it needs WebGL 2' : String(err.message || err)}).`));
+        return;
+      }
+    }
     if (kind === 'bars') this._startBars();
     else if (kind === 'waveform') this._startWave();
     else if (kind === 'synthwave') this._startSynthwave();
@@ -231,9 +240,17 @@ const Visualizer = {
     document.removeEventListener('fullscreenchange', this._onFullscreen);
     document.removeEventListener('pointermove', this._onPointer);
     document.removeEventListener('pointerdown', this._onPointer);
-    if (this._synOutside) document.removeEventListener('pointerdown', this._synOutside, true);
-    this._synOutside = null;
-    this._synDraft = null;
+    if (this._cfgOutside) document.removeEventListener('pointerdown', this._cfgOutside, true);
+    this._cfgOutside = null;
+    this._draft = null;
+    if (this.scene) {
+      try {
+        if (this.scene.destroy) this.scene.destroy();
+      } catch (err) {
+        console.warn('Visualizer:', err);
+      }
+      this.scene = null;
+    }
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     document.body.classList.remove('viz-open', 'viz-awake', 'viz-flow');
     this._drawButton(false);
@@ -246,6 +263,18 @@ const Visualizer = {
     this.glow = null;
     this.terrain = null;
     this._closedAt = performance.now();
+  },
+
+  /**
+   * A visualizer from viz/: { id, name, desc, glyph, create(canvas) -> scene,
+   * options?, click?(scene), hint?, stereo?, gl?, resolution?, sharp? }. The
+   * scene: size(w, h) (canvas pixels), frame(audio, dt, now) with audio
+   * VizAudio, destroy?(). resolution: canvas pixels per css pixel (1), sharp:
+   * the screen's own.
+   */
+  add(def) {
+    this.scenes[def.id] = def;
+    VISUALIZERS.push({ id: def.id, name: def.name, ready: true, desc: def.desc, glyph: def.glyph, image: def.image });
   },
 
   _pickRandom() {
@@ -291,7 +320,8 @@ const Visualizer = {
     if (!c) return;
     // Waveform is blurred twice a frame: at css pixels, which is sharp enough
     // for light and much cheaper on a large screen.
-    const r = this.kind === 'bars' ? window.devicePixelRatio || 1 : 1;
+    const def = this.scenes[this.kind];
+    const r = this.kind === 'bars' || (def && def.sharp) ? window.devicePixelRatio || 1 : (def && def.resolution) || 1;
     const w = Math.max(1, Math.round(c.clientWidth * r));
     const hgt = Math.max(1, Math.round(c.clientHeight * r));
     for (const x of [c, this.scratch, this.glow]) {
@@ -300,6 +330,7 @@ const Visualizer = {
       if (x.height !== hgt) x.height = hgt;
     }
     if (this.kind === 'waveform') this._layoutWave();
+    if (this.scene && this.scene.size) this.scene.size(w, hgt);
   },
 
   _frame(now) {
@@ -307,7 +338,10 @@ const Visualizer = {
     const dt = Math.min(0.1, Math.max(0.001, (now - this.last) / 1000));
     this.last = now;
     Equalizer.analyser.getFloatTimeDomainData(this.samples);
-    if (this.kind === 'synthwave') this._drawSynthwave(dt, now);
+    if (this.scene) {
+      VizAudio.update(this.samples, dt, now);
+      this.scene.frame(VizAudio, dt, now);
+    } else if (this.kind === 'synthwave') this._drawSynthwave(dt, now);
     else if (this.kind === 'waveform') this._drawWave(dt);
     else if (this.mode === 'bars') this._drawBars(dt, now);
     else this._drawScope();
@@ -644,7 +678,7 @@ const Visualizer = {
       glow: 0.8,
       kick,
       focal: (this.SYN_FOCAL * w) / (w + 2 * side),
-      line: this._synLine(this._synDraft || set.synColor),
+      line: this._synLine(this.setting('synColor')),
     });
     ctx.translate(side, 0);
 
@@ -695,97 +729,172 @@ const Visualizer = {
   },
 
   /**
-   * Synthwave's cogwheel at the top left. A click opens it to the right,
-   * along the top, onto its settings (no dialog); the cogwheel again, or a
-   * click anywhere else, closes it. The camera and the car ride the bumps,
-   * so their boxes are greyed out while the bumps are off; each has a slider
-   * for how strong, 0-200%. Saved as they change.
+   * A visualizer's own settings value: while a colour is being dragged in
+   * the picker, that colour (shown at once, saved on letting go).
    */
-  _synPanel() {
-    const panel = h('div.viz-cfg');
-    let picker = null;
-    const setOpen = (on) => {
-      panel.classList.toggle('viz-cfg--open', on);
-      cog.setAttribute('aria-expanded', String(on));
-      if (!on) picker.close();
-    };
-    const cog = iconButton('viz-cfg__cog', Icons.cog, 'Synthwave settings', () => setOpen(!panel.classList.contains('viz-cfg--open')));
-    cog.setAttribute('aria-expanded', 'false');
-
-    const swatch = h('button.viz-cfg__swatch', { type: 'button', title: 'Choose the wireframe colour' });
-    const paint = (hex) => {
-      swatch.style.background = hex;
-    };
-    paint(Store.settings.synColor);
-    picker = this._synPicker(panel, swatch, paint);
-    swatch.addEventListener('click', () => picker.toggle());
-
-    const boxes = {};
-    const check = (key, label) => {
-      const box = h('input', { type: 'checkbox', checked: !!Store.settings[key] });
-      box.addEventListener('change', () => {
-        Store.saveSettings({ [key]: box.checked });
-        refresh();
-      });
-      boxes[key] = box;
-      return h('label.check.viz-cfg__check', box, h('span', label));
-    };
-    // Its box, and under it the slider with its value; dragging shows at
-    // once, letting go saves.
-    const sliders = {};
-    const option = (key, label) => {
-      const amount = key + 'Amount';
-      const input = h('input.volume-slider.viz-cfg__slider', { type: 'range', min: 0, max: 200, step: 5, value: Store.settings[amount] });
-      const value = h('span.viz-cfg__value');
-      const draw = () => {
-        value.textContent = `${input.value}%`;
-        input.style.setProperty('--fill', `${Number(input.value) / 2}%`);
-      };
-      input.addEventListener('input', () => {
-        draw();
-        Store.previewSettings({ [amount]: Number(input.value) });
-      });
-      input.addEventListener('change', () => Store.saveSettings({ [amount]: Number(input.value) }));
-      draw();
-      sliders[key] = input;
-      return h('div.viz-cfg__opt', check(key, label), h('div.viz-cfg__amount', input, value));
-    };
-    const ride = h('div.viz-cfg__ride',
-      option('synBobbing', 'Camera bobbing'),
-      option('synCameraTilt', 'Camera tilt'),
-      option('synCarTilt', 'Car tilt'));
-    const refresh = () => {
-      const on = !!Store.settings.synBumps;
-      ride.classList.toggle('viz-cfg__ride--off', !on);
-      for (const key of ['synBobbing', 'synCameraTilt', 'synCarTilt']) {
-        boxes[key].disabled = !on;
-        sliders[key].disabled = !on || !Store.settings[key];
-        sliders[key].parentNode.classList.toggle('viz-cfg__amount--off', !Store.settings[key]);
-      }
-    };
-
-    panel.append(cog, h('div.viz-cfg__body',
-      h('div.viz-cfg__item', h('span', 'Wireframe color:'), swatch),
-      h('div.viz-cfg__item.viz-cfg__bumps', check('synBumps', 'Ground bumps'), ride)));
-    refresh();
-
-    this._synOutside = (e) => {
-      if (panel.classList.contains('viz-cfg--open') && !panel.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', this._synOutside, true);
-    return panel;
+  setting(key) {
+    return this._draft && key in this._draft ? this._draft[key] : Store.settings[key];
   },
 
   /**
-   * The colour picker under the swatch: a square of saturation (across) and
-   * brightness (up), a hue bar, and the presets. Dragging shows the colour on
-   * the wireframe at once; it is saved on letting go.
+   * The cogwheel at the top left, for a visualizer with settings. A click
+   * opens it to the right, along the top, onto them (no dialog); the
+   * cogwheel again, or a click anywhere else, closes it. Saved as they change.
+   *
+   * items, each one of:
+   *   { type: 'color', key, label, presets }   a swatch opening a picker
+   *   { type: 'check', key, label, amount?, group? }
+   *       a box; amount: { key, min, max, step } a slider under it, greyed
+   *       while it is off; group: items beside it, greyed while it is off
+   *   { type: 'slider', key, label, min, max, step, unit? }
+   *   { type: 'choice', key, label, choices: [[value, label], ...] }
+   * Any of them with when: (settings) => bool, greyed out while it is false.
    */
-  _synPicker(panel, swatch, paint) {
+  _cfgPanel(title, items) {
+    const panel = h('div.viz-cfg');
+    const pickers = [];
+    const refreshers = [];
+    const refresh = () => refreshers.forEach((fn) => fn());
+    const setOpen = (on) => {
+      // Changed meanwhile (a click on Nebula moves its look on): shown as it is now.
+      if (on) refresh();
+      panel.classList.toggle('viz-cfg--open', on);
+      cog.setAttribute('aria-expanded', String(on));
+      if (!on) pickers.forEach((p) => p.close());
+    };
+    const cog = iconButton('viz-cfg__cog', Icons.cog, title, () => setOpen(!panel.classList.contains('viz-cfg--open')));
+    cog.setAttribute('aria-expanded', 'false');
+
+    // A slider and its value; dragging shows at once, letting go saves.
+    const slider = ({ key, min = 0, max = 200, step = 5, unit = '%' }, cls = '') => {
+      const input = h('input.volume-slider.viz-cfg__slider' + cls, { type: 'range', min, max, step, value: Store.settings[key] });
+      const value = h('span.viz-cfg__value');
+      const draw = () => {
+        value.textContent = `${input.value}${unit}`;
+        input.style.setProperty('--fill', `${((Number(input.value) - min) / (max - min)) * 100}%`);
+      };
+      input.addEventListener('input', () => {
+        draw();
+        Store.previewSettings({ [key]: Number(input.value) });
+      });
+      input.addEventListener('change', () => Store.saveSettings({ [key]: Number(input.value) }));
+      draw();
+      return { input, el: h('div.viz-cfg__amount', input, value) };
+    };
+
+    // enabled: whether what it hangs on (a box around it) is on; an item's
+    // own `when` (settings => bool) greys it out too.
+    const build = (item, around) => {
+      const enabled = item.when ? () => around() && item.when(Store.settings) : around;
+      if (item.type === 'color') {
+        const swatch = h('button.viz-cfg__swatch', { type: 'button', title: `Choose the ${item.label.toLowerCase()}` });
+        const paint = (hex) => {
+          swatch.style.background = hex;
+        };
+        paint(Store.settings[item.key]);
+        const picker = this._picker(panel, swatch, paint, item.key, item.presets);
+        pickers.push(picker);
+        swatch.addEventListener('click', () => picker.toggle());
+        return h('div.viz-cfg__item', h('span', `${item.label}:`), swatch);
+      }
+      if (item.type === 'check') {
+        const box = h('input', { type: 'checkbox', checked: !!Store.settings[item.key] });
+        box.addEventListener('change', () => {
+          Store.saveSettings({ [item.key]: box.checked });
+          refresh();
+        });
+        const label = h('label.check.viz-cfg__check', box, h('span', item.label));
+        const on = () => enabled() && !!Store.settings[item.key];
+        refreshers.push(() => {
+          box.disabled = !enabled();
+        });
+        if (item.amount) {
+          const s = slider(item.amount);
+          refreshers.push(() => {
+            s.input.disabled = !on();
+            s.el.classList.toggle('viz-cfg__amount--off', !Store.settings[item.key]);
+          });
+          return h('div.viz-cfg__opt', label, s.el);
+        }
+        if (item.group) {
+          const group = h('div.viz-cfg__ride', item.group.map((g) => build(g, on)));
+          refreshers.push(() => group.classList.toggle('viz-cfg__ride--off', !on()));
+          return h('div.viz-cfg__item.viz-cfg__bumps', label, group);
+        }
+        return h('div.viz-cfg__item', label);
+      }
+      if (item.type === 'slider') {
+        const s = slider(item);
+        refreshers.push(() => {
+          s.input.disabled = !enabled();
+        });
+        const el = h('div.viz-cfg__opt', h('span.viz-cfg__label', item.label), s.el);
+        refreshers.push(() => el.classList.toggle('viz-cfg__opt--off', !enabled()));
+        return el;
+      }
+      if (item.type === 'choice') {
+        const pills = h('div.viz-cfg__pills', { role: 'group', 'aria-label': item.label });
+        for (const [value, text] of item.choices) {
+          pills.appendChild(h('button.viz-cfg__pill', {
+            type: 'button',
+            dataset: { value },
+            onclick: () => {
+              Store.saveSettings({ [item.key]: value });
+              refresh();
+            },
+          }, text));
+        }
+        refreshers.push(() => {
+          for (const b of pills.children) {
+            const on = b.dataset.value === String(Store.settings[item.key]);
+            b.classList.toggle('viz-cfg__pill--on', on);
+            b.setAttribute('aria-pressed', String(on));
+            b.disabled = !enabled();
+          }
+        });
+        return h('div.viz-cfg__opt', h('span.viz-cfg__label', item.label), pills);
+      }
+      return null;
+    };
+
+    panel.append(cog, h('div.viz-cfg__body', items.map((item) => build(item, () => true))));
+    refresh();
+
+    this._cfgOutside = (e) => {
+      if (panel.classList.contains('viz-cfg--open') && !panel.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', this._cfgOutside, true);
+    return panel;
+  },
+
+  /** Synthwave's: the wireframe's colour, and the bumps the car rides. */
+  _synPanel() {
+    const amount = (key) => ({ key, min: 0, max: 200, step: 5 });
+    return this._cfgPanel('Synthwave settings', [
+      { type: 'color', key: 'synColor', label: 'Wireframe color', presets: this.SYN_PRESETS },
+      {
+        type: 'check',
+        key: 'synBumps',
+        label: 'Ground bumps',
+        group: [
+          { type: 'check', key: 'synBobbing', label: 'Camera bobbing', amount: amount('synBobbingAmount') },
+          { type: 'check', key: 'synCameraTilt', label: 'Camera tilt', amount: amount('synCameraTiltAmount') },
+          { type: 'check', key: 'synCarTilt', label: 'Car tilt', amount: amount('synCarTiltAmount') },
+        ],
+      },
+    ]);
+  },
+
+  /**
+   * The colour picker under a swatch: a square of saturation (across) and
+   * brightness (up), a hue bar, and the presets (the first is the default).
+   * Dragging shows the colour at once (setting); it is saved on letting go.
+   */
+  _picker(panel, swatch, paint, key, presets) {
     const sv = h('div.viz-pick__sv', h('div.viz-pick__dot'));
     const hueBar = h('div.viz-pick__hue', h('div.viz-pick__knob'));
-    const presets = h('div.viz-pick__presets');
-    const el = h('div.viz-pick', sv, hueBar, presets);
+    const row = h('div.viz-pick__presets');
+    const el = h('div.viz-pick', sv, hueBar, row);
     let hsv = { h: 0, s: 0, v: 0 };
 
     const toHex = ({ h: hue, s, v }) => {
@@ -807,11 +916,13 @@ const Visualizer = {
       sv.firstChild.style.top = `${(1 - hsv.v) * 100}%`;
       hueBar.firstChild.style.left = `${(hsv.h / 360) * 100}%`;
     };
-    // While dragging only drawn (_synDraft); saved when let go.
+    // While dragging only drawn (the draft); saved when let go.
     const set = (hex, save) => {
       paint(hex);
-      this._synDraft = save ? null : hex;
-      if (save && hex !== Store.settings.synColor) Store.saveSettings({ synColor: hex });
+      this._draft = this._draft || {};
+      if (save) delete this._draft[key];
+      else this._draft[key] = hex;
+      if (save && hex !== Store.settings[key]) Store.saveSettings({ [key]: hex });
     };
     const drag = (area, move) => {
       area.addEventListener('pointerdown', (e) => {
@@ -841,8 +952,8 @@ const Visualizer = {
     drag(hueBar, (x) => {
       hsv.h = Math.min(359.9, x * 360);
     });
-    for (const hex of this.SYN_PRESETS) {
-      const title = hex === this.SYN_PRESETS[0] ? 'Default' : hex;
+    for (const hex of presets) {
+      const title = hex === presets[0] ? 'Default' : hex;
       const btn = h('button.viz-pick__preset', {
         type: 'button',
         title,
@@ -854,14 +965,14 @@ const Visualizer = {
         },
       });
       btn.style.background = hex;
-      presets.appendChild(btn);
+      row.appendChild(btn);
     }
 
     const picker = {
       close: () => el.remove(),
       toggle: () => {
         if (el.isConnected) return picker.close();
-        hsv = fromHex(Store.settings.synColor);
+        hsv = fromHex(Store.settings[key]);
         show();
         // Under the swatch: the panel's body clips, so it hangs from the panel.
         const p = panel.getBoundingClientRect();

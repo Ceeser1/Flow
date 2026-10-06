@@ -112,7 +112,7 @@ test('a song\'s loudness is kept, and only as a number', () => {
 test('settings are kept within their ranges', () => {
   const s = settings.clean({
     crossfadeSeconds: 25, cloudsIntensity: 0, eqHeight: 250, eqShineSpread: '70', eqColors: 'plaid',
-    crossfade: false, normalize: 'yes', musicDir: 42, visualizer: 'lightning',
+    crossfade: false, normalize: 'yes', musicDir: 42, visualizer: 'geiss',
   });
   assert.equal(s.crossfadeSeconds, 10);
   assert.equal(s.cloudsIntensity, 1);
@@ -151,6 +151,18 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ synCarTiltAmount: 147 }).synCarTiltAmount, 145);
   assert.equal(settings.clean({ synCarTiltAmount: 900 }).synCarTiltAmount, 200);
   assert.equal(settings.clean({ synBobbingAmount: 'x' }).synBobbingAmount, 100);
+  // The visualizers' own (VIZ_OPTIONS): colours, boxes, ranges in their steps, choices.
+  assert.equal(settings.clean({ visualizer: 'lightning' }).visualizer, 'lightning');
+  assert.equal(d.ltColor, '#a9c4ff');
+  assert.equal(settings.clean({ ltColor: '#FFAA00' }).ltColor, '#ffaa00');
+  assert.equal(settings.clean({ ltColor: 'blue' }).ltColor, '#a9c4ff');
+  assert.equal(d.ltRain, true);
+  assert.equal(settings.clean({ ltRain: false }).ltRain, false);
+  assert.equal(settings.clean({ ltRain: 'no' }).ltRain, true);
+  assert.equal(settings.clean({ ltStrikes: 3 }).ltStrikes, 25);
+  assert.equal(settings.clean({ ltStrikes: 133 }).ltStrikes, 135);
+  assert.equal(settings.clean({ ltStrikes: null }).ltStrikes, 100);
+  assert.equal(settings.clean({ ltFlashAmount: 0 }).ltFlashAmount, 0);
   assert.equal(settings.clean({ eqColors: 'greyscale' }).eqColors, 'greyscale');
   // The clouds: rainbow and half as many by default; amount in steps of 10, 0 allowed.
   assert.equal(d.cloudsColors, 'rainbow');

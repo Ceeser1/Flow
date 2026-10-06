@@ -166,6 +166,26 @@ const Equalizer = {
     return this.channels ? this.channels.get(el) || null : null;
   },
 
+  /**
+   * An analyser for each channel, beside the one for both, for the
+   * visualizers that show left against right; made the first time one asks.
+   */
+  stereo() {
+    if (!this.ctx) return null;
+    if (!this._stereo) {
+      const split = this.ctx.createChannelSplitter(2);
+      const left = this.ctx.createAnalyser();
+      const right = this.ctx.createAnalyser();
+      left.fftSize = 4096;
+      right.fftSize = 4096;
+      this.delay.connect(split);
+      split.connect(left, 0);
+      split.connect(right, 1);
+      this._stereo = { left, right };
+    }
+    return this._stereo;
+  },
+
   /** The limiter goes in with "Equalize volume", which may turn songs up. */
   setLimiter(on) {
     if (!this.ctx) return;
