@@ -10,12 +10,15 @@
 // a rainbow across), its height, the layout, the embers.
 //
 // WebGL (viz/gl.js): the heat is a texture at a quarter of the screen's size
-// worked on 60 times a second whatever the screen's rate (each step: the heat
+// worked on 120 times a second whatever the screen's rate (each step: the heat
 // below risen, swayed by noise, spread and cooled, the bands' heat added at
 // the bottom), then coloured onto the screen.
 
 (() => {
-  const STEP_S = 1 / 60;
+  const STEP_S = 1 / 120;
+  // The flames' height at 100%: the cooling each step allows for (twice what
+  // was 100% before ifFlameHeight).
+  const TALL = 2;
   const PALETTES = {
     // Each channel comes in from lo to hi heat.
     fire: [[0.02, 0.32, 0.75], [0.55, 1.0, 1.4]],
@@ -125,10 +128,13 @@
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, n, 1, 0, gl.RED, gl.UNSIGNED_BYTE, this.bandBytes);
 
-      // The fire, 60 steps a second.
-      const height = set('ifHeight') / 100;
+      // The fire, 120 steps a second: rising and swaying twice as fast as it
+      // first did (each step lifts the heat as far and cools it as much as
+      // before, so the flames stand as tall; the sway's noise runs twice as
+      // fast).
+      const height = (set('ifFlameHeight') / 100) * TALL;
       const cool = 0.02 / height;
-      this.owed = Math.min(4, this.owed + dt / STEP_S);
+      this.owed = Math.min(8, this.owed + dt / STEP_S);
       gl.disable(gl.BLEND);
       gl.useProgram(this.sim.p);
       const u = this.sim.u;
@@ -138,7 +144,7 @@
         VizGL.bind(gl, u.prev, this.a.tex, 0);
         VizGL.bind(gl, u.bands, this.bandTex, 1);
         gl.uniform2f(u.texel, 1 / this.a.w, 1 / this.a.h);
-        gl.uniform1f(u.time, this.age);
+        gl.uniform1f(u.time, this.age * 2);
         gl.uniform1f(u.cool, cool);
         gl.uniform1f(u.flare, a.kick);
         gl.uniform1f(u.centre, set('ifLayout') === 'centre' ? 1 : 0);
@@ -224,7 +230,7 @@
     create: (canvas) => new Inferno(canvas),
     options: [
       { type: 'choice', key: 'ifColor', label: 'Flames', choices: [['fire', 'Fire'], ['blue', 'Blue'], ['green', 'Toxic'], ['purple', 'Purple'], ['rainbow', 'Rainbow']] },
-      { type: 'slider', key: 'ifHeight', label: 'Height', min: 50, max: 200, step: 5 },
+      { type: 'slider', key: 'ifFlameHeight', label: 'Height', min: 25, max: 150, step: 5 },
       { type: 'choice', key: 'ifLayout', label: 'Bass', choices: [['centre', 'In the middle'], ['across', 'On the left']] },
       { type: 'check', key: 'ifEmbers', label: 'Embers' },
     ],
