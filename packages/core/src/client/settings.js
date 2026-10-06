@@ -93,6 +93,11 @@ const VIZ_OPTIONS = {
   tnWalls: ['choice', 'grid', ['grid', 'hex', 'rings']],
   tnColors: ['choice', 'neon', ['neon', 'sunset', 'matrix', 'ice', 'gold']],
   tnSpeed: ['range', 100, 25, 300, 5],
+  // Code Rain: its colour, how dense and how fast (percent), the glyphs.
+  rnColor: ['color', '#4dff7a'],
+  rnDensity: ['range', 100, 50, 200, 5],
+  rnSpeed: ['range', 100, 25, 300, 5],
+  rnGlyphs: ['choice', 'katakana', ['katakana', 'binary', 'latin']],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -239,7 +244,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
