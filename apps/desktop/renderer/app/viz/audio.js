@@ -28,6 +28,25 @@
 //   hit        the same for the whole range: snares, claps, crashes
 //   time       seconds of music played since the visualizer opened (stands
 //              still while paused): for things that move with the music
+//
+// The tempo (tempo.js), from the same jumps the onsets come from:
+//   bpm        beats a minute, 0 until there is one
+//   sure       0..1, how clearly the music has a beat (a drumless intro: ~0)
+//   phase      0..1 through the beat, 0 on it
+//   tick       true on the frame a beat lands (only while sure enough)
+//   beats      beats so far (a bar is four): for things that change every few
+//   pulse      1 on the beat, falling away before the next (0 while unsure)
+//   pace       about 1 at 120 BPM, more for faster songs (1 while unsure),
+//              eased: what motion should be scaled by
+//   lock       0..1, how far to go by the tempo rather than the kicks (sure
+//              blended in over a little range, 0 while paused)
+//   throb      0..1, the kick while there is no clear beat, the beat's pulse
+//              once there is (by lock): for what moves to the rhythm
+//   surge(), motion()  speed factors that move with the beat, see there
+//
+// The notes (notes.js), worked out only for those that ask: notes() gives
+// the levels per semitone, the chroma, the key; noteHue() a colour for the
+// chord sounding.
 
 const VizAudio = {
   BANDS: 96,
@@ -67,6 +86,15 @@ const VizAudio = {
   hit: false,
   hitPower: 0,
   time: 0,
+  bpm: 0,
+  sure: 0,
+  phase: 0,
+  tick: false,
+  beats: 0,
+  pulse: 0,
+  pace: 1,
+  lock: 0,
+  throb: 0,
   frames: 0,           // counts the frames, for what is worked out once a frame
 
   _spec: null,
@@ -77,6 +105,16 @@ const VizAudio = {
   _low: null,
   _all: null,
   _stereo: null,
+  _tempo: null,
+  _song: undefined,    // the song the tempo and the notes are of
+  _fedAt: -1e9,        // when the tempo was last fed (ms)
+  _clock: null,        // the audio clock then (seconds)
+  _notes: null,
+  _notesAt: -1,
+  _dt: 0.016,
+  // The tempo counts from SURE on; pace eases over PACE_MS.
+  SURE: 0.35,
+  PACE_MS: 2000,
 
   /** Ready for a visualizer opening; stereo when it wants both channels. */
   reset({ stereo = false } = {}) {
@@ -103,6 +141,16 @@ const VizAudio = {
       while (this._midEnd < n && this._spec.barHz(this._midEnd) <= this.TREBLE_HZ) this._midEnd += 1;
     }
     Object.assign(this, { bass: 0, mid: 0, treble: 0, level: 0, kick: 0, beat: 0, intensity: 0, onset: false, onsetPower: 0, hit: false, hitPower: 0, time: 0 });
+    // The tempo carries on when one visualizer gives way to another on the
+    // same song (the arrow keys, Random), and starts again otherwise.
+    this._clock = null;
+    if (!this._tempo || this._song !== Player.currentId || performance.now() - this._fedAt > 1000) {
+      this._tempo = this._tempo || new Tempo();
+      this._tempo.reset();
+      if (this._notes) this._notes.reset();
+      this._song = Player.currentId;
+      Object.assign(this, { bpm: 0, sure: 0, phase: 0, tick: false, beats: 0, pulse: 0, pace: 1, lock: 0, throb: 0 });
+    }
     this._stereo = stereo && Equalizer.active ? Equalizer.stereo() : null;
     this.left = this._stereo ? new Float32Array(this._stereo.left.fftSize) : null;
     this.right = this._stereo ? new Float32Array(this._stereo.right.fftSize) : null;
@@ -180,6 +228,8 @@ const VizAudio = {
     const hit = this._detect(this._all, (allFlux / n) / dt, ms, now, playing);
     this.hit = hit > 0;
     this.hitPower = hit;
+    this._dt = dt;
+    this._follow(allFlux / n, dt, ms, playing);
 
     if (this._stereo && playing) {
       this._stereo.left.getFloatTimeDomainData(this.left);
@@ -188,6 +238,94 @@ const VizAudio = {
       this.left.fill(0);
       this.right.fill(0);
     }
+  },
+
+  /** The tempo fed this frame's jump (a new song starts it again). */
+  _follow(flux, dt, ms, playing) {
+    const t = this._tempo;
+    if (this._song !== Player.currentId) {
+      this._song = Player.currentId;
+      t.reset();
+      if (this._notes) this._notes.reset();
+    }
+    // Timed by the audio clock, not the frame's (capped) time: a frame held
+    // up while a visualizer starts would otherwise shift all the beats before
+    // it against those after. A frame that got no new sound gets no time,
+    // the next one all of it.
+    const clock = Equalizer.ctx ? Equalizer.ctx.currentTime : null;
+    let span = clock !== null && this._clock !== null ? clock - this._clock : dt;
+    this._clock = clock;
+    if (!(span >= 0) || span > 1) span = dt;
+    if (playing) t.push(flux, span);
+    else t.hold();
+    this._fedAt = performance.now();
+    this.bpm = t.bpm;
+    this.sure = t.confidence;
+    this.phase = t.phase;
+    this.beats = t.beats;
+    const sure = this.sure >= this.SURE && playing;
+    this.tick = t.tick && sure;
+    this.pulse = sure ? Math.exp(-5 * this.phase) : this.pulse * Math.exp(-ms / 150);
+    const pace = sure ? Math.max(0.5, Math.min(1.6, this.bpm / 120)) : (playing ? this.pace : 1);
+    this.pace += (pace - this.pace) * (1 - Math.exp(-ms / this.PACE_MS));
+    this.lock = playing ? Math.max(0, Math.min(1, (this.sure - this.SURE + 0.1) / 0.25)) : 0;
+    this.throb = this.kick + (this.pulse - this.kick) * this.lock;
+  },
+
+  /**
+   * The tempo's speed factor: `pace` on average over each beat, but rushing
+   * right after the beat and easing off before the next (surge 0: steady,
+   * 1: nearly stopping between beats).
+   */
+  surge(surge = 0.5) {
+    // k e^(-k phase) / (1 - e^-k) averages 1 over the beat.
+    const K = 3;
+    const shape = (K * Math.exp(-K * this.phase)) / (1 - Math.exp(-K));
+    return this.pace * (1 - surge + surge * shape);
+  },
+
+  /**
+   * A speed factor for things that fly or turn with the music: surge() while
+   * the beat is clear; with no clear beat 1 and the kick's push (kickPush of
+   * it for a full kick), blended between the two by lock.
+   */
+  motion(surge = 0.5, kickPush = 1.5) {
+    const kick = 1 + kickPush * this.kick;
+    return kick + (this.surge(surge) - kick) * this.lock;
+  },
+
+  /** The notes this frame (notes.js): level per semitone, chroma, key. Worked out on the first call a frame. */
+  notes() {
+    if (!this._notes) this._notes = new Notes({ sampleRate: Equalizer.ctx ? Equalizer.ctx.sampleRate : 48000 });
+    if (this._notesAt !== this.frames) {
+      this._notesAt = this.frames;
+      const ok = this.playing && this.samples.length >= this._notes.inputLength;
+      this._notes.analyse(ok ? this.samples : null, this._dt);
+    }
+    return this._notes;
+  },
+
+  /**
+   * A colour for the harmony sounding: the chroma's pitch classes laid round
+   * the circle of fifths (so related chords get related hues: C red, G
+   * orange, D yellow ...) and averaged. { hue 0..1, strength 0..1 }: how
+   * clearly one harmony stands out.
+   */
+  noteHue() {
+    const c = this.notes().chroma;
+    let x = 0;
+    let y = 0;
+    let sum = 0;
+    for (let p = 0; p < 12; p += 1) {
+      const a = (((p * 7) % 12) / 12) * Math.PI * 2;
+      const v = c[p] * c[p];
+      x += Math.cos(a) * v;
+      y += Math.sin(a) * v;
+      sum += v;
+    }
+    if (sum <= 0) return { hue: 0, strength: 0 };
+    const hue = ((Math.atan2(y, x) / (Math.PI * 2)) + 1) % 1;
+    return { hue, strength: Math.min(1, Math.hypot(x, y) / sum * 1.5) * this._notes.tonal };
   },
 
   /** An onset for this flux (per second), or 0: how far above the usual it went, 0..1. */

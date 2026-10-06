@@ -96,8 +96,9 @@ const Equalizer = {
       const analyser = ctx.createAnalyser();
       this.spec = new Spectrum.Analyser({ sampleRate: ctx.sampleRate, bars: 1 });
       // The analyser only keeps the newest fftSize samples; two frames need
-      // the window plus the hop between them.
-      analyser.fftSize = Math.min(32768, 2 ** Math.ceil(Math.log2(this.spec.inputLength)));
+      // the window plus the hop between them. At least 16384: the
+      // visualizers' notes (notes.js) look at a longer window.
+      analyser.fftSize = Math.min(32768, Math.max(16384, 2 ** Math.ceil(Math.log2(this.spec.inputLength))));
       const mix = ctx.createGain();
       // Only there to catch peaks: fast, hard, and just under full scale.
       const limiter = ctx.createDynamicsCompressor();

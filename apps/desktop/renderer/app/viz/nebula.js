@@ -185,9 +185,12 @@
       this.since += dt;
       const set = Visualizer.setting('nbLook');
       if (set !== 'auto' && set !== this.look.id) this._go(this._choose(null));
-      // Auto: once its time is up, on the next strong beat (or a few seconds later anyway).
+      // Auto: once its time is up, on the next phrase (the first of eight
+      // beats) while the beat is clear, else on the next strong kick (or a
+      // few seconds later anyway).
       const every = Visualizer.setting('nbEvery');
-      if (set === 'auto' && this.since > every && ((a.onset && a.beat > 0.7) || this.since > every + 5)) this._go(this._choose(this.look));
+      const cue = a.lock > 0.5 ? a.tick && a.beats % 8 === 0 : a.onset && a.beat > 0.7;
+      if (set === 'auto' && this.since > every && (cue || this.since > every + 5)) this._go(this._choose(this.look));
 
       // Gliding from the last look to this one.
       const g = this.from ? Math.min(1, (this.age - this.fromAt) / GLIDE_S) : 1;
@@ -215,7 +218,7 @@
       const u = this.warp.u;
       VizGL.bind(gl, u.prev, this.a.tex, 0);
       gl.uniform1f(u.aspect, this.w / this.h);
-      gl.uniform1f(u.zoom, p.zoom + p.kickZoom * a.kick);
+      gl.uniform1f(u.zoom, p.zoom + p.kickZoom * a.throb);
       gl.uniform1f(u.rot, p.rot * (1 + a.mid));
       gl.uniform1f(u.twist, p.twist);
       gl.uniform1f(u.swirl, p.swirl * (0.6 + a.level));

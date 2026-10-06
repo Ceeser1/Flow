@@ -140,7 +140,7 @@
           this.fall[i] += dt * 1.5;
           if (this.fall[i] > 0) this.peaks[i] = Math.max(this.levels[i], this.peaks[i] - this.fall[i] * dt);
         }
-        this.turns[i] += dt * spin * (i % 2 ? -1 : 1) * (0.06 + 0.05 * (i % 3)) * (a.playing ? 0.6 + 1.2 * a.level : 0.2);
+        this.turns[i] += dt * spin * (i % 2 ? -1 : 1) * (0.06 + 0.05 * (i % 3)) * (a.playing ? (0.6 + 1.2 * a.level) * a.pace : 0.2);
         this.data[i * 4] = this.levels[i];
         this.data[i * 4 + 1] = this.peaks[i];
         this.data[i * 4 + 2] = this.turns[i];

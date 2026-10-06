@@ -146,10 +146,17 @@
       const set = Visualizer.setting('fwColors');
       if (set === 'gold') return GOLD[Math.floor(Math.random() * GOLD.length)];
       if (set === 'music') {
-        // The loudest band's place on the spectrum as a hue: bass red, highs blue.
-        let best = 0;
-        for (let i = 1; i < a.BANDS; i += 1) if (a.dynamic[i] > a.dynamic[best]) best = i;
-        const hue = (best / a.BANDS) * 0.75 + (Math.random() - 0.5) * 0.06;
+        // The harmony sounding as a hue (VizAudio.noteHue: related chords
+        // near each other); without clear notes the loudest band's place on
+        // the spectrum: bass red, highs blue.
+        const chord = a.noteHue();
+        let hue = chord.hue;
+        if (chord.strength < 0.2) {
+          let best = 0;
+          for (let i = 1; i < a.BANDS; i += 1) if (a.dynamic[i] > a.dynamic[best]) best = i;
+          hue = (best / a.BANDS) * 0.75;
+        }
+        hue += (Math.random() - 0.5) * 0.06;
         const f = (n) => {
           const k = (n + hue * 6 + 6) % 6;
           return 1 - Math.max(0, Math.min(k, 4 - k, 1)) * 0.75;

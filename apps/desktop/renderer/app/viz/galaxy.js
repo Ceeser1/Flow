@@ -178,7 +178,7 @@
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, n, 1, 0, gl.RED, gl.UNSIGNED_BYTE, this.bytes);
 
       const spin = set('gxSpin') / 100;
-      this.time += dt * spin * (a.playing ? 0.5 + 0.8 * a.level : 0.15);
+      this.time += dt * spin * (a.playing ? (0.5 + 0.8 * a.level) * (0.6 + 0.4 * a.pace) : 0.15);
       this.turn += dt * 0.02;
       const view = set('gxView');
       // How far the disc is turned towards us: pi/2 seen from above, 0 edge on.

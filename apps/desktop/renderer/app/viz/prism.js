@@ -87,13 +87,14 @@
       const spin = set('psSpin') / 100;
       const music = a.playing ? 1 : 0.2;
       // Turning with the music, a nudge on each beat.
-      this.angle += dt * spin * (0.08 + 0.35 * a.mid + 0.5 * a.kick) * music + (a.onset ? 0.03 * a.onsetPower * spin : 0);
+      const nudge = a.lock > 0.5 ? (a.tick ? 0.025 + 0.02 * a.beat : 0) : (a.onset ? 0.03 * a.onsetPower : 0);
+      this.angle += dt * spin * (0.08 + 0.35 * a.mid + 0.5 * a.throb) * music + nudge * spin;
       // Drifting through the picture, the way bending slowly.
       this.heading += dt * 0.15 * (Math.sin(this.age * 0.21) + 0.3);
       const pace = dt * 0.025 * (0.4 + a.level) * music * Math.max(0.3, spin);
       this.drift[0] += Math.cos(this.heading) * pace;
       this.drift[1] += Math.sin(this.heading) * pace;
-      const target = 0.55 - 0.12 * a.kick - 0.05 * a.intensity;
+      const target = 0.55 - 0.12 * a.throb - 0.05 * a.intensity;
       this.zoom += (target - this.zoom) * (1 - Math.exp(-dt / 0.12));
       if (set('psShift')) this.shift = (this.shift + dt * (0.04 + 0.2 * a.treble) * music) % (Math.PI * 2);
       else this.shift *= Math.exp(-dt * 2);

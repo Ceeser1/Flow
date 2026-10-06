@@ -125,7 +125,12 @@
       this.textFor = id;
       const song = id ? Store.song(id) || (Player.remote ? Player.remote.state : null) : null;
       const now = song ? `NOW PLAYING: ${song.title || 'UNTITLED'}${song.artist ? ` BY ${song.artist}` : ''}` : 'FLOW';
-      this.text = `${now} *** FLOW MUSIC VISUALIZER *** GREETINGS TO EVERYONE STILL LISTENING ***     `.toUpperCase().replace(/[^ -`]/g, '?');
+      // The tempo and the key once they are known.
+      const a = VizAudio;
+      const notes = a._notes;
+      const key = notes && notes.key >= 0 && notes.clarity > 0.3 ? ` IN ${Notes.keyName(notes.key, notes.minor).replace('#', ' SHARP')}` : '';
+      const beat = a.sure > 0.4 && a.bpm ? ` *** ${Math.round(a.bpm)} BPM${key}` : '';
+      this.text = `${now}${beat} *** FLOW MUSIC VISUALIZER *** GREETINGS TO EVERYONE STILL LISTENING ***     `.toUpperCase().replace(/[^ -`]/g, '?');
       return this.text;
     }
 
@@ -141,13 +146,13 @@
         this.colors = palette(pal);
       }
       this.t += dt * (0.6 + 1.4 * a.level) * (a.playing ? 1 : 0.3);
-      this.cycle = (this.cycle + dt * (30 + 160 * a.kick + 60 * a.intensity) * (a.playing ? 1 : 0.2)) % 256;
+      this.cycle = (this.cycle + dt * (30 * a.pace + 160 * a.throb + 60 * a.intensity) * (a.playing ? 1 : 0.2)) % 256;
 
       if (set('dmBack') === 'stars') {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, lw, lh);
         for (const s of this.stars) {
-          s.z -= dt * (0.25 + 1.2 * a.kick + 0.5 * a.level);
+          s.z -= dt * (0.25 * a.pace + 1.2 * a.throb + 0.5 * a.level);
           if (s.z <= 0.05) this._star(s).z = 1.1;
           const x = Math.round(lw / 2 + (s.x / s.z) * lh * 0.5);
           const y = Math.round(lh / 2 + (s.y / s.z) * lh * 0.5);
@@ -186,7 +191,7 @@
         const parts = [a.bass, (a.bass + a.mid) / 2, a.mid, (a.mid + a.treble) / 2, a.treble];
         this.bars.forEach((bar, i) => {
           bar.level += (parts[i] - bar.level) * Math.min(1, dt * 10);
-          const y = lh * (0.5 + 0.38 * Math.sin(this.age * (1.1 + i * 0.17) + bar.phase)) - (a.kick * 10 * (i === 0 ? 1 : 0.4));
+          const y = lh * (0.5 + 0.38 * Math.sin(this.age * (1.1 + i * 0.17) + bar.phase)) - (a.throb * 10 * (i === 0 ? 1 : 0.4));
           const half = Math.round(2 + 4 * bar.level);
           const hue = (i / 5 + this.age * 0.02) % 1;
           for (let k = -half; k <= half; k += 1) {
@@ -200,10 +205,14 @@
 
       // The sine scroller.
       if (set('dmScroller')) {
+        a.notes(); // the key, for the text
         const text = this._message();
         const cell = GLYPH;
         const speed = 60 + 50 * a.level;
-        this.scroll = (this.scroll + dt * speed * (a.playing ? 1 : 0.5)) % (text.length * cell);
+        const scroll = this.scroll + dt * speed * (a.playing ? 1 : 0.5);
+        // Round once: the tempo and key found meanwhile go into the text.
+        if (scroll >= text.length * cell) this.textFor = null;
+        this.scroll = scroll % (text.length * cell);
         const base = lh * 0.72;
         const amp = 5 + 12 * a.mid + 5 * a.kick;
         const first = Math.floor(this.scroll / cell);
@@ -252,7 +261,7 @@
   Visualizer.add({
     id: 'demo',
     name: 'Demo',
-    desc: 'In the manner of the Amiga and C64 demos: a plasma, copper bars bouncing on the beat and a sine scroller with the song',
+    desc: 'In the manner of the Amiga and C64 demos: a plasma, copper bars bouncing on the beat and a sine scroller with the song, its tempo and key',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="square"><path d="M3 7h18M3 11h18M3 15h18"/><path d="M5 19l2-2 2 2 2-2 2 2 2-2 2 2 2-2"/></svg>',
     create: (canvas) => new Demo(canvas),

@@ -163,7 +163,7 @@
         const c = this.columns[i];
         const v = bands[Math.min(nb - 1, Math.floor(c.band * nb * 0.85))];
         c.level += (v - c.level) * (1 - Math.exp(-dt / 0.1));
-        const fall = (c.speed + 0.9 * c.level + 0.4 * a.kick) * pace * (a.playing ? 1 : 0.3);
+        const fall = (c.speed + 0.9 * c.level + 0.4 * a.throb) * pace * (a.playing ? 1 : 0.3);
         for (let k = 0; k < DROPS; k += 1) {
           c.heads[k] += fall * dt;
           if (c.heads[k] > 1.25) c.heads[k] = -0.1 - Math.random() * 0.6;
@@ -177,10 +177,12 @@
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this.cols, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.bytes);
 
-      // A strong beat sends a wave of light down the screen.
-      if (a.onset && a.onsetPower > 0.4 && this.wave > 0.6) {
+      // A wave of light down the screen: on each phrase (eight beats) while
+      // the beat is clear, else on a strong onset.
+      const cue = a.lock > 0.5 ? (a.tick && a.beats % 8 === 0 ? 0.8 + 0.3 * a.intensity : 0) : (a.onset && a.onsetPower > 0.4 ? 0.6 + 0.5 * a.onsetPower : 0);
+      if (cue && this.wave > 0.6) {
         this.wave = -0.05;
-        this.flash = 0.6 + 0.5 * a.onsetPower;
+        this.flash = cue;
       }
       this.wave += dt * 1.6;
       this.flash *= Math.exp(-dt * 1.5);

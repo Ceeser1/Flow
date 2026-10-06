@@ -56,7 +56,7 @@ const VISUALIZERS = [
     id: 'synthwave',
     name: 'Synthwave',
     ready: true,
-    desc: 'A flight through neon mountains made of the music; the kicks speed it up and make it glow',
+    desc: 'A flight through neon mountains made of the music, rushing on with every beat and glowing on the kicks',
     image: '../images/viz-synthwave.jpg',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="4"/><path d="M2 20l6-8 3 4 2-2 4 6"/>'
@@ -118,7 +118,9 @@ const Visualizer = {
   // Synthwave. Distances in grid cells.
   SYN_SPEED: 7,        // cells per second while a song plays
   SYN_IDLE: 0.25,      // and this much of it while paused
-  SYN_KICK_SPEED: 1.4, // a full kick adds this much of SYN_SPEED
+  SYN_KICK_SPEED: 1.4, // a full kick adds this much of SYN_SPEED (no clear beat)
+  SYN_CELLS: 4,        // with a beat: cells a beat (8 a second at 120 BPM)
+  SYN_SURGE: 0.5,      // and how much it rushes on the beat, easing off before the next
   SYN_ROWS: 52,        // how far ahead it is drawn
   SYN_COLS: 64,        // each side of the middle
   SYN_FLOOR: 3.5,      // half the valley floor's width
@@ -230,8 +232,8 @@ const Visualizer = {
     }
     if (!Equalizer.active) return;
     this.samples = new Float32Array(Equalizer.analyser.fftSize);
+    VizAudio.reset({ stereo: !!(def && def.stereo) });
     if (def) {
-      VizAudio.reset({ stereo: !!def.stereo });
       try {
         this.scene = def.create(this.canvas);
       } catch (err) {
@@ -398,8 +400,8 @@ const Visualizer = {
     const dt = Math.min(0.1, Math.max(0.001, (now - this.last) / 1000));
     this.last = now;
     Equalizer.analyser.getFloatTimeDomainData(this.samples);
+    VizAudio.update(this.samples, dt, now);
     if (this.scene) {
-      VizAudio.update(this.samples, dt, now);
       this.scene.frame(VizAudio, dt, now);
     } else if (this.kind === 'synthwave') this._drawSynthwave(dt, now);
     else if (this.kind === 'waveform') this._drawWave(dt);
@@ -681,8 +683,9 @@ const Visualizer = {
   //
   // The wireframe landscape (landscape.js) at full screen, its mountains
   // filled dark, under a purple sky with stars and a sun sitting in the
-  // valley's gap, seen from a ship whose nose shows at the bottom. The kicks
-  // push it on faster and make the grid and the sun glow.
+  // valley's gap, seen from a ship whose nose shows at the bottom. It flies
+  // in time with the beat (VizAudio's tempo), or pushed on by the kicks
+  // while there is no clear beat; the kicks make the grid and the sun glow.
 
   _startSynthwave() {
     this.terrain = new Terrain({
@@ -712,8 +715,15 @@ const Visualizer = {
     const playing = Player.isPlaying;
     const bass = playing ? Equalizer.bass || 0 : 0;
     const kick = this.synKick.follow(bass, dt * 1000);
-    const target = this.SYN_SPEED * (playing ? 1 + this.SYN_KICK_SPEED * kick + 0.4 * bass : this.SYN_IDLE);
-    this.synSpeed += (target - this.synSpeed) * (1 - Math.exp(-dt / 0.6));
+    // With a clear beat it flies SYN_CELLS a beat, rushing on each beat
+    // (VizAudio.surge); without one the kicks push it on, as before.
+    const a = VizAudio;
+    const byKick = this.SYN_SPEED * (1 + this.SYN_KICK_SPEED * kick + 0.4 * bass);
+    const byBeat = ((this.SYN_CELLS * 120) / 60) * a.surge(this.SYN_SURGE) * (1 + 0.15 * bass);
+    const target = playing ? byKick + (byBeat - byKick) * a.lock : this.SYN_SPEED * this.SYN_IDLE;
+    // Eased: slowly for the kicks' push, quickly enough for the beat's rush to show.
+    const ease = 0.6 + (0.06 - 0.6) * a.lock;
+    this.synSpeed += (target - this.synSpeed) * (1 - Math.exp(-dt / ease));
     this.terrain.advance(this.synSpeed * dt, playing ? Equalizer.levels : null);
     // The floor in front of the car is as rough as the music is intense right
     // now, and heaves on the kicks: measured against the song's own recent

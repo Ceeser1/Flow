@@ -85,8 +85,9 @@
       const set = (k) => Visualizer.setting(k);
       const count = set('rdRows');
       const speed = set('rdSpeed') / 100;
-      // About 22 new rows a second at 100%; while paused it flows on slowly.
-      this.offset += dt * 22 * speed * (a.playing ? 1 : 0.15);
+      // About 22 new rows a second at 100% and 120 BPM (with the tempo's
+      // pace); while paused it flows on slowly.
+      this.offset += dt * 22 * speed * (a.playing ? a.pace : 0.15);
       if (!this.rows.length) this.rows.unshift(this._row(a));
       while (this.offset >= 1) {
         this.offset -= 1;

@@ -64,6 +64,7 @@
       this.age = 0;
       this.jump = 0;       // 0..1, a hyperspace jump under way
       this.lastJump = -20;
+      this.jumpFor = 1.6;
       this.w = 1;
       this.h = 1;
     }
@@ -99,15 +100,23 @@
       while (this.stars.length < want) this.stars.push(this._star({}, true));
       if (this.stars.length > want) this.stars.length = want;
 
-      // Hyperspace: a strong beat in an intense part, not too often.
-      if (set('wpJumps') && a.onset && a.beat > 0.85 && a.intensity > 0.8 && this.age - this.lastJump > 12 && Math.random() < 0.35) {
+      // Hyperspace: in an intense part, not too often. With a clear beat on
+      // the first beat of a phrase (eight beats), lasting four beats; without
+      // one on a strong kick, for 1.6 s.
+      const phrase = a.lock > 0.5 ? a.tick && a.beats % 8 === 0 : a.onset && a.beat > 0.85;
+      if (set('wpJumps') && phrase && a.intensity > 0.8 && this.age - this.lastJump > 12 && Math.random() < 0.4) {
         this.lastJump = this.age;
+        this.jumpFor = a.lock > 0.5 ? Math.min(3, (4 * 60) / a.bpm) : 1.6;
       }
       const since = this.age - this.lastJump;
-      this.jump = since < 1.6 ? Math.sin(Math.min(1, since / 1.6) * Math.PI) ** 0.7 : 0;
+      this.jump = since < this.jumpFor ? Math.sin(Math.min(1, since / this.jumpFor) * Math.PI) ** 0.7 : 0;
 
-      const target = (a.playing ? 0.22 * (1 + 2.4 * a.kick + 1.2 * a.intensity) : 0.04) * (set('wpSpeed') / 100);
-      this.speed += (target - this.speed) * (1 - Math.exp(-dt / 0.25));
+      // Faster the more intense the music; with a clear beat rushing on each
+      // beat (VizAudio.surge), without one pushed on by the kicks.
+      const byKick = 1 + 2.4 * a.kick;
+      const byBeat = 1.45 * a.surge(0.6);
+      const target = (a.playing ? 0.22 * (byKick + (byBeat - byKick) * a.lock + 1.2 * a.intensity) : 0.04) * (set('wpSpeed') / 100);
+      this.speed += (target - this.speed) * (1 - Math.exp(-dt / (0.25 - 0.17 * a.lock)));
       const speed = this.speed * (1 + 7 * this.jump);
       this.roll += dt * (0.03 + 0.12 * a.mid);
       // The view sways a little, steered by the music.
@@ -179,7 +188,7 @@
   Visualizer.add({
     id: 'warp',
     name: 'Warp',
-    desc: 'Flying through the stars, faster on the kicks; every star shines with its part of the spectrum, and big drops jump to hyperspace',
+    desc: 'Flying through the stars, rushing on with every beat; each star shines with its part of the spectrum, and big drops jump to hyperspace',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 12l-8-6M12 12l8-6M12 12l-8 6M12 12l8 6M12 12V3M12 12v9M12 12H2M12 12h10"/></svg>',
     gl: true,

@@ -108,7 +108,7 @@
       const set = (k) => Visualizer.setting(k);
       const count = Math.max(3, Math.min(MAX, Number(set('lvBlobs'))));
       const speed = set('lvSpeed') / 100;
-      this.time += dt * speed * (a.playing ? 0.6 + 0.8 * a.level : 0.25);
+      this.time += dt * speed * (a.playing ? (0.6 + 0.8 * a.level) * (0.6 + 0.4 * a.pace) : 0.25);
       const aspect = this.w / this.h;
       const bands = a.dynamic;
       const nb = bands.length;

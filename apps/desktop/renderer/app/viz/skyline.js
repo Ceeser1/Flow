@@ -208,8 +208,9 @@
       this.age += dt;
       const set = (k) => Visualizer.setting(k);
       const depth = Math.round((MAX_ROWS * set('skHistory')) / 100);
-      // About 14 rows a second; the newest one follows the music every frame.
-      this.offset += dt * 14 * (a.playing ? 1 : 0.2);
+      // About 14 rows a second (seven a beat at 120 BPM: the tempo's pace),
+      // the newest one following the music every frame.
+      this.offset += dt * 14 * (a.playing ? a.pace : 0.2);
       if (!this.rows.length) this.rows.unshift(this._row(a));
       while (this.offset >= 1) {
         this.offset -= 1;
