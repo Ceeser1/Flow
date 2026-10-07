@@ -142,7 +142,7 @@
     // hazier and standing on its own band of the hill's height (the front
     // row the lowest third, mostly on a narrow bank by the water, the back
     // row the highest), every tree anywhere in its band, so they cover the
-    // hillside from the water to near the top. In clusters
+    // hillside from the water to the top. In clusters
     // with clearings between, each its own size (a few larger all round, up
     // to three times the rest by the water, less so further back), in tiers
     // narrowing to the tip, on a stem. Drawn from the back.
@@ -157,15 +157,16 @@
     vec3 forest(vec3 col, float x, float y, float top, float ink) {
       if (y < 0.0 || y > top + 0.08) return col;
       float edge = 1.2 / res.y;
-      const float FAR = 1.0 / (1.0 + 0.3 * float(DEPTHS - 1));
+      const float FAR = 1.0 / (1.0 + 0.125 * float(DEPTHS - 1));
       for (int row = DEPTHS - 1; row >= 0; row--) {
         float fr = float(row);
-        float scale = 1.0 / (1.0 + 0.3 * fr);        // 1, 0.77, 0.63
+        float scale = 1.0 / (1.0 + 0.125 * fr);      // 1, 0.89, 0.8
         float back = (1.0 - scale) / (1.0 - FAR);      // 0 at the water, 1 the farthest
-        // This row's band of the hillside: the front row the lowest third,
-        // the back row the highest, each tree somewhere in it.
-        float lo = top * 0.85 * fr / float(DEPTHS);
-        float hi = top * 0.85 * (fr + 1.0) / float(DEPTHS);
+        // This row's band of the hillside, each tree somewhere in it: the
+        // front row the lowest third, the middle one the middle, the back
+        // row the top third, up to the top.
+        float lo = top * 0.325 * fr;
+        float hi = top * min(1.0, 0.35 + 0.325 * fr);
         vec3 shade = mix(vec3(0.0015, 0.002, 0.003), vec3(0.013, 0.017, 0.028), 0.7 * back);
         float tallest = 0.026 * scale;
         float w = 0.45 * tallest;
@@ -193,7 +194,7 @@
           // just above the water.
           float up = hash12(id + 2.6);
           float at = row == 0 && hash12(id + 4.7) < 0.55 ? 0.002 + 0.004 * up : mix(max(lo, 0.006), hi, up);
-          if (y < at || y > at + lift + h || at > top - 0.002) continue;
+          if (y < at || y > at + lift + h || at > top) continue;
           // In a clearing, or not there anyway.
           float dense = smoothstep(0.2, 0.5, noise1((c + 0.5) * w * 6.0 + fr * 5.3));
           if (hash12(id + 3.3) > dense * (0.92 - 0.15 * back)) continue;   // a little sparser further back
