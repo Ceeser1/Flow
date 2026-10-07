@@ -5,9 +5,11 @@
 // light rain; the rings spread, cross and bounce off the banks. Through the
 // water a pebbly bottom with the sun's caustic light dancing over it, the
 // ripples bending both; koi swim under lily pads that ride the waves, faster
-// with the tempo. Or the same pond at night, the ripples catching the moon.
+// with the tempo. Or the same pond at night, the ripples catching the moon,
+// or the one fading into the other and back.
 //
-// Its cogwheel: day or night, the koi, the lily pads, the rain.
+// Its cogwheel: day, night or alternating, the koi, the lily pads, the rain
+// and how heavy it is.
 //
 // WebGL (viz/gl.js): the water's surface is a wave simulation in a float
 // texture at half the screen's size, stepped 120 times a second (each
@@ -20,6 +22,8 @@
   const PADS = 7;
   const DROPS = 8;
   const RATE = 120;
+  // The treble rain's drops a second at full treble (at 100%).
+  const RAIN = 9.3;
 
   const SIM_FS = `
     in vec2 uv;
@@ -48,7 +52,7 @@
     in vec2 uv;
     uniform sampler2D state;
     uniform vec2 res, simRes;
-    uniform float time, light, night;
+    uniform float time, light, night;   // night: 0 day .. 1 night
     uniform vec4 fish[${FISH}];     // x, y (0..1), heading, tail phase
     uniform vec4 pads[${PADS}];     // x, y, radius, notch angle
     uniform float showFish, showPads;
@@ -130,7 +134,7 @@
       vec3 bed = bottom(p);
       float caus = caustic(p * 1.6, time * 0.5) * 0.9 + caustic(p * 2.3 + 3.0, time * 0.37) * 0.5;
       caus += clamp(-lap * 6.0, 0.0, 1.5);
-      vec3 sun = night > 0.5 ? vec3(0.25, 0.35, 0.55) : vec3(1.0, 0.95, 0.8);
+      vec3 sun = mix(vec3(1.0, 0.95, 0.8), vec3(0.25, 0.35, 0.55), night);
       vec3 col = bed * (0.45 + caus * light * 0.9) * sun;
       // The fish, between the bottom and the surface: their shadows first.
       if (showFish > 0.5) {
@@ -144,8 +148,8 @@
         }
       }
       // The water itself: greener and darker the deeper it looks.
-      vec3 water = night > 0.5 ? vec3(0.01, 0.03, 0.06) : vec3(0.05, 0.22, 0.2);
-      col = mix(col, water, night > 0.5 ? 0.55 : 0.35);
+      vec3 water = mix(vec3(0.05, 0.22, 0.2), vec3(0.01, 0.03, 0.06), night);
+      col = mix(col, water, mix(0.35, 0.55, night));
 
       // The lily pads float on the water, each as one piece: a ripple passing
       // under one only nudges and tilts it a little (the water's height round
@@ -177,12 +181,12 @@
       // The surface: the sky (or the moon) in its slopes, a glint where it faces the light.
       vec3 v = vec3(0.0, 0.0, 1.0);
       vec3 ldir = normalize(vec3(-0.5, 0.6, 0.8));
-      float spec = pow(max(0.0, dot(reflect(-ldir, n), v)), night > 0.5 ? 400.0 : 180.0);
+      float spec = pow(max(0.0, dot(reflect(-ldir, n), v)), mix(180.0, 400.0, night));
       float fres = pow(1.0 - n.z, 3.0);
-      vec3 sky = night > 0.5 ? vec3(0.4, 0.55, 0.9) : vec3(0.75, 0.9, 1.0);
-      col += sky * fres * (night > 0.5 ? 6.0 : 2.5) + vec3(1.0) * spec * (night > 0.5 ? 2.5 : 1.2);
+      vec3 sky = mix(vec3(0.75, 0.9, 1.0), vec3(0.4, 0.55, 0.9), night);
+      col += sky * fres * mix(2.5, 6.0, night) + vec3(1.0) * spec * mix(1.2, 2.5, night);
       // At night the ripples glint with the moon all over.
-      if (night > 0.5) col += vec3(0.5, 0.65, 1.0) * clamp(abs(lap) * 9.0, 0.0, 1.0) * 0.5;
+      col += vec3(0.5, 0.65, 1.0) * clamp(abs(lap) * 9.0, 0.0, 1.0) * 0.5 * night;
 
       // The pads on top of it all, lit by how they tilt.
       if (showPads > 0.5) {
@@ -197,7 +201,7 @@
           float veins = 0.85 + 0.15 * smoothstep(0.0, 0.02, abs(sin(an * 9.0)) * r);
           float lit = 1.0 + 0.25 * dot(padTilt[i], normalize(ldir.xy));
           vec3 green = mix(vec3(0.12, 0.32, 0.1), vec3(0.25, 0.48, 0.15), r / pd.z) * veins * lit;
-          if (night > 0.5) green *= 0.25;
+          green *= mix(1.0, 0.25, night);
           col = mix(col, green, pad);
           // A flower on some (by the pad, not where it drifts to).
           if (fract(float(i) * 0.618) > 0.45) {
@@ -205,7 +209,7 @@
             float fr = length(q) / (pd.z * 0.42) * (1.0 - 0.25 * abs(sin(pan)));
             float flower = smoothstep(1.0, 0.92, fr);
             vec3 petal = mix(vec3(1.0, 0.85, 0.9), vec3(0.95, 0.45, 0.65), fr) * lit;
-            if (night > 0.5) petal *= 0.45;
+            petal *= mix(1.0, 0.45, night);
             col = mix(col, mix(petal, vec3(1.0, 0.85, 0.3), smoothstep(0.3, 0.0, fr)), flower);
           }
         }
@@ -264,14 +268,17 @@
       const set = (k) => Visualizer.setting(k);
       dt = Math.min(dt, 0.05);
       this.age += dt;
-      const night = set('pdLook') === 'night';
+      // Day, night, or alternating: three minutes from one to the other and
+      // three back, eased at each end.
+      const look = set('pdLook');
+      const night = look === 'night' ? 1 : look === 'alternate' ? 0.5 - 0.5 * Math.cos((this.age / 180) * Math.PI) : 0;
 
       // The music falling in.
       if (a.playing) {
         if (a.onset) this._drop(a.onsetPower, false);
         else if (a.hit) this._drop(a.hitPower, true);
         if (set('pdRain')) {
-          this.rain += dt * 14 * a.treble * a.treble;
+          this.rain += dt * RAIN * (Number(set('pdRainAmount')) / 100) * a.treble * a.treble;
           while (this.rain >= 1) {
             this.rain -= 1;
             this._drop(0, true);
@@ -337,7 +344,7 @@
       gl.uniform2f(u.simRes, this.sw, this.sh);
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.light, a.playing ? 0.7 + 0.5 * a.level : 0.6);
-      gl.uniform1f(u.night, night ? 1 : 0);
+      gl.uniform1f(u.night, night);
       const fish = new Float32Array(FISH * 4);
       this.fish.forEach((f, i) => fish.set([f.x, 1 - f.y, -f.h, f.tail], i * 4));
       gl.uniform4fv(u.fish, fish);
@@ -359,10 +366,11 @@
     gl: true,
     create: (canvas) => new Pond(canvas),
     options: [
-      { type: 'choice', key: 'pdLook', label: 'Time', choices: [['day', 'Day'], ['night', 'Night']] },
+      { type: 'choice', key: 'pdLook', label: '', choices: [['day', 'Day'], ['night', 'Night'], ['alternate', 'Alternate']] },
       { type: 'check', key: 'pdKoi', label: 'Koi' },
       { type: 'check', key: 'pdPads', label: 'Lily pads' },
-      { type: 'check', key: 'pdRain', label: 'Rain with the highs' },
+      { type: 'check', key: 'pdRain', label: 'Treble rain' },
+      { type: 'slider', key: 'pdRainAmount', label: 'Rain intensity', min: 50, max: 150, step: 5, when: (s) => s.pdRain },
     ],
   });
 })();

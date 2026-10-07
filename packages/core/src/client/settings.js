@@ -188,11 +188,13 @@ const VIZ_OPTIONS = {
   dsColors: ['choice', 'aurora', ['aurora', 'ember', 'ice', 'rainbow']],
   dsCount: ['range', 9, 3, 16, 1],
   dsLight: ['bool', true],
-  // Pond: day or night, the koi, the lily pads, the rain with the highs.
-  pdLook: ['choice', 'day', ['day', 'night']],
+  // Pond: day, night or the one fading into the other and back, the koi,
+  // the lily pads, the treble rain and how heavy it is (percent).
+  pdLook: ['choice', 'day', ['day', 'night', 'alternate']],
   pdKoi: ['bool', true],
   pdPads: ['bool', true],
   pdRain: ['bool', true],
+  pdRainAmount: ['range', 100, 50, 150, 5],
   // Coral: the kind of growth, the colours, how fast it grows (percent).
   crKind: ['choice', 'coral', ['coral', 'maze', 'spots']],
   crColors: ['choice', 'reef', ['reef', 'neon', 'lichen']],

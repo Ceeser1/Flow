@@ -972,7 +972,7 @@ const Visualizer = {
    *       a box; amount: { key, min, max, step } a slider under it, greyed
    *       while it is off; group: items beside it, greyed while it is off
    *   { type: 'slider', key, label, min, max, step, unit? }
-   *   { type: 'choice', key, label, choices: [[value, label], ...] }
+   *   { type: 'choice', key, label, choices: [[value, label], ...] }  (label '': the pills alone)
    * Any of them with when: (settings) => bool, greyed out while it is false.
    */
   _cfgPanel(title, items) {
@@ -1079,7 +1079,7 @@ const Visualizer = {
             b.disabled = !enabled();
           }
         });
-        return h('div.viz-cfg__opt', h('span.viz-cfg__label', item.label), pills);
+        return h('div.viz-cfg__opt', item.label ? h('span.viz-cfg__label', item.label) : null, pills);
       }
       return null;
     };
