@@ -50,14 +50,14 @@
   // the same in the shaders and for the sparks.
   const RIDGE = `
     float ridge(float x) {
-      return 0.5 + 0.03 * sin(x * 5.1 + 1.3) + 0.018 * sin(x * 11.7 + 0.4) + 0.007 * sin(x * 27.0 + 2.0);
+      return 0.75 + 0.045 * sin(x * 5.1 + 1.3) + 0.027 * sin(x * 11.7 + 0.4) + 0.01 * sin(x * 27.0 + 2.0);
     }
     // Where a row at depth d (0 front, 1 the ridge) stands: rows near the
     // front far apart on the screen, the far ones crowded under the ridge.
     float groundAt(float x, float d) {
       return ridge(x) * (1.0 - (1.0 - d) * (1.0 - d)) - 0.04 * (1.0 - d);
     }`;
-  const ridge = (x) => 0.5 + 0.03 * Math.sin(x * 5.1 + 1.3) + 0.018 * Math.sin(x * 11.7 + 0.4) + 0.007 * Math.sin(x * 27.0 + 2.0);
+  const ridge = (x) => 0.75 + 0.045 * Math.sin(x * 5.1 + 1.3) + 0.027 * Math.sin(x * 11.7 + 0.4) + 0.01 * Math.sin(x * 27.0 + 2.0);
   const groundAt = (x, d) => ridge(x) * (1 - (1 - d) * (1 - d)) - 0.04 * (1 - d);
 
   const FOREST_FS = VizGL.NOISE + RIDGE + `
@@ -67,20 +67,43 @@
     const int ROWS = ${ROWS};
     // A fir, at q in its own heights from its foot: how much of the pixel it
     // covers, and how much of that is crown. Some are dead snags, thin and
-    // with their tops broken off.
+    // with their tops broken off. The big ones near the front get their
+    // detail: drooping layers of branches with gaps between them, a ragged
+    // fringe of needles, holes burnt through, rough bark.
     vec2 tree(vec2 q, float seed, float pxu) {
       float u = q.x, v = q.y;
-      if (v < -0.1 || v > 1.05 || abs(u) > 0.32) return vec2(0.0);
+      if (v < -0.1 || v > 1.05 || abs(u) > 0.34) return vec2(0.0);
+      float au = abs(u);
+      float detail = smoothstep(0.006, 0.002, pxu);
       float dead = step(0.78, fract(seed * 7.13));
       float top = 1.0 - dead * (0.12 + 0.22 * fract(seed * 3.7));
-      float trunkW = 0.014 + 0.012 * (1.0 - v);
-      float trunk = clamp((trunkW - abs(u)) / pxu + 0.5, 0.0, 1.0) * step(v, top);
+      float trunkW = (0.014 + 0.012 * (1.0 - v)) * (1.0 + 0.3 * detail * (vnoise(vec2(v * 70.0, seed)) - 0.5));
+      float trunk = clamp((trunkW - au) / pxu + 0.5, 0.0, 1.0) * step(v, top);
       float tiers = 5.0 + floor(fract(seed * 11.3) * 4.0);
-      float saw = fract(v * tiers + seed);
+      // The branches droop: further out, the same tier lower down.
+      float droop = 0.55 * detail;
+      float saw = fract(v * tiers + au * droop * tiers + seed);
       float side = vnoise(vec2(sign(u) * 13.0 + seed * 50.0, v * 22.0));
       float hw = 0.2 * pow(max(1.0 - v / top, 0.0), 0.9) * (0.6 + 0.4 * (1.0 - saw)) * (0.72 + 0.56 * side);
       hw *= mix(1.0, 0.6 * step(0.45, vnoise(vec2(seed * 31.0, v * 14.0))), dead);
-      float crown = clamp((hw - abs(u)) / pxu + 0.5, 0.0, 1.0) * step(0.1, v);
+      float crown = 0.0;
+      if (detail > 0.0) {
+        // Needles: the edge ragged at two sizes.
+        float fringe = (vnoise(vec2(v * 150.0 + seed * 9.0, sign(u) * 5.0 + au * 40.0)) - 0.5) * 0.3
+          + (vnoise(vec2(v * 480.0, sign(u) * 3.0 + au * 120.0 + seed)) - 0.5) * 0.16;
+        hw *= 1.0 + fringe * detail;
+        crown = clamp((hw - au) / pxu + 0.5, 0.0, 1.0) * step(0.1, v);
+        // Each tier in three layers of branches, open between them out
+        // towards the tips.
+        float layer = fract(v * tiers * 3.0 + au * droop * tiers * 3.0 + seed * 2.0);
+        float out_ = smoothstep(0.35, 0.8, au / max(hw, 1e-4));
+        float gap = out_ * smoothstep(0.55, 0.85, layer) * (1.0 - smoothstep(0.92, 1.0, layer));
+        // Holes burnt through, more in the dead ones.
+        float holes = smoothstep(0.6, 0.7, fbm(q * vec2(16.0, 11.0) + seed * 3.0)) * (0.6 + 0.4 * dead);
+        crown *= 1.0 - detail * clamp(gap * 0.95 + holes * 0.85, 0.0, 1.0);
+      } else {
+        crown = clamp((hw - au) / pxu + 0.5, 0.0, 1.0) * step(0.1, v);
+      }
       return vec2(max(trunk, crown), crown);
     }
     void main() {
@@ -101,7 +124,7 @@
         for (int k = -2; k <= 2; k++) {
           float id = c + float(k);
           float h = hash12(vec2(id, fi * 7.31 + 0.5));
-          if (h > mix(0.36, 0.62, d)) continue;
+          if (h > mix(0.42, 0.7, d)) continue;
           float tx = (id + 0.15 + 0.7 * hash12(vec2(id * 1.7, fi + 3.1))) * cell;
           float big = hash12(vec2(id * 3.3, fi + 9.2));
           float th = H * (0.75 + 0.45 * big + 0.5 * pow(big, 8.0));
@@ -226,6 +249,14 @@
       float speck = smoothstep(0.55, 0.85, fbm(cp)) * (0.6 + 0.4 * vnoise(cp * 1.7 + time * 1.2));
       bark += colour(0.45 + 0.4 * speck) * speck * f.b * 0.7;
       col = mix(col, bark, cov);
+      // Smoke between here and the back of the hill: the further, the more
+      // it greys out, drifting thicker and thinner.
+      vec3 veilCol = mix(vec3(0.11, 0.105, 0.105), ember * 0.5, 0.1) * (0.55 + 0.6 * blaze + 0.9 * wide);
+      float drift = 0.65 + 0.7 * smoke;
+      float far = trees * (above < 0.0 ? depthAt(p.y, r) : 1.0 - smoothstep(0.0, 0.12, above) * 0.6);
+      far = mix(far, td, cov);
+      float veil = smoothstep(0.1, 1.0, far) * 0.8 * drift;
+      col = mix(col, veilCol, clamp(veil, 0.0, 0.9));
       // The fire, hidden where a tree stands in front of it, fainter up the hill.
       vec4 h = texture(heat, uv);
       float t = h.r;
@@ -233,10 +264,16 @@
       // A tree in front of the fire hides most of it, one burning hides
       // its own flames in part, so it stands dark among them.
       float hidden = cov * (1.0 - smoothstep(0.0, 0.3, h.g - ts)) * mix(0.75, 0.92, smoothstep(-0.1, 0.15, ts - h.g));
-      vec3 fire = colour(t) * (1.0 - 0.85 * hidden) * mix(1.0, 0.7, hd);
+      vec3 fire = colour(t) * (1.0 - 0.85 * hidden) * mix(1.0, 0.7, hd) * (1.0 - clamp(smoothstep(0.1, 1.0, hd) * 0.6 * drift * trees, 0.0, 0.85));
       // A faint glow of the fire on the air above it.
       float g = textureLod(heat, uv - vec2(0.0, 0.02), 3.0).r;
       col += fire + colour(min(g, 0.6)) * 0.25;
+      // Faint smoke rising off the flames in front, over their tips.
+      vec2 fp = vec2(p.x * aspect * 2.2 + time * 0.03, p.y * 3.0 - time * 0.22);
+      float plume = smoothstep(0.45, 0.8, fbm(fp + 0.8 * vec2(vnoise(fp * 0.6 + time * 0.1), 0.0)));
+      float fed = smoothstep(0.05, 0.45, textureLod(heat, vec2(p.x, max(p.y - 0.1, 0.0)), 5.0).r);
+      vec3 fume = vec3(0.06, 0.055, 0.055) + ember * 0.3 * wide;
+      col = mix(col, fume, plume * fed * 0.4);
       col += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
       o = vec4(col, 1.0);
     }`;
