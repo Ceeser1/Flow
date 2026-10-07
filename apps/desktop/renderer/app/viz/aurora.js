@@ -252,14 +252,14 @@
       // The mountains, dark against the sky (a little hazy, being far), a
       // little of the aurora's light on their snow.
       float top = ridge(p.x * aspect) + H - HORIZON;
-      float mirrored = 2.0 * H - top;
       if ((p.y < top && p.y > H) || (lake < 0.5 && p.y < top)) {
         float snow = smoothstep(top - 0.03, top, p.y) * 0.5;
         col = vec3(0.013, 0.017, 0.028) + low * snow * 0.04;
-      } else if (lake > 0.5 && p.y < H && p.y > mirrored) {
-        // The low land barely shows in the water (what stands on it does),
-        // but for the bank right at the water's edge.
-        col = mix(col, vec3(0.006, 0.009, 0.016), mix(0.7, 0.12, smoothstep(0.0, 0.007, H - p.y)));
+      } else if (lake > 0.5 && p.y < H && H - p.y + wave * 0.5 < ridge((p.x + wave) * aspect) - HORIZON) {
+        // The land mirrored softly, broken by the waves like the rest (the
+        // trees on it stand on its reflection), a little more so at the
+        // water's edge.
+        col = mix(col, vec3(0.008, 0.011, 0.019), mix(0.7, 0.45, smoothstep(0.0, 0.007, H - p.y)));
       }
       // The trees in front, and mirrored in the lake, broken by its waves.
       if (p.y >= H) col = forest(col, p.x * aspect, p.y - H, top - H, 1.0);
