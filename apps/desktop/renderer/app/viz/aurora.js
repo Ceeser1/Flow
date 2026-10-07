@@ -137,28 +137,38 @@
     }
 
     // The fir trees along the shore, x across (screen heights) and y above
-    // the shore: how much of this point they cover. In clusters with
-    // clearings between, each its own height, in tiers narrowing to the tip.
-    float trees(float x, float y) {
-      if (y < 0.0 || y > 0.07) return 0.0;
-      const float W = 0.011;
-      float cell = floor(x / W);
+    // the shore, laid over col: three rows, the farthest a little up the
+    // slope, smaller and hazier, the nearest at the water's edge, largest and
+    // nearly black. In clusters with clearings between, each tree its own
+    // height and footing, in tiers narrowing to the tip.
+    vec3 forest(vec3 col, float x, float y) {
+      if (y < 0.0 || y > 0.075) return col;
       float edge = 1.2 / res.y;
-      float cover = 0.0;
-      for (int k = -2; k <= 2; k++) {
-        float c = cell + float(k);
-        float forest = smoothstep(0.35, 0.6, vnoise(vec2(c * 0.07, 7.0)));
-        if (hash12(vec2(c, 3.3)) > forest * 0.95) continue;
-        float h = (0.016 + 0.034 * hash12(vec2(c, 5.1))) * (0.65 + 0.45 * forest);
-        float t = y / h;
-        if (t > 1.0) continue;
-        float cx = (c + 0.5 + 0.7 * (hash12(vec2(c, 8.2)) - 0.5)) * W;
-        float tiers = 4.0 + floor(3.0 * hash12(vec2(c, 9.9)));
-        float wide = h * 0.26 * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
-        if (t < 0.1) wide = max(wide, h * 0.025);   // the trunk
-        cover = max(cover, smoothstep(-edge, edge, wide - abs(x - cx)) * smoothstep(-edge, edge, h - y));
+      for (int row = 0; row < 3; row++) {
+        float fr = float(row);
+        float scale = 0.45 + 0.275 * fr;        // 0.45, 0.725, 1
+        float foot = 0.014 - 0.007 * fr;        // above the shore
+        vec3 shade = mix(vec3(0.0015, 0.002, 0.003), vec3(0.013, 0.017, 0.028), 0.55 - 0.275 * fr);
+        float w = 0.011 * scale;
+        float cell = floor(x / w);
+        float cover = 0.0;
+        for (int k = -2; k <= 2; k++) {
+          float c = cell + float(k);
+          vec2 id = vec2(c, fr * 17.0);
+          float dense = smoothstep(0.35, 0.6, vnoise(vec2(c * 0.07 * scale + fr * 5.3, 7.0)));
+          if (hash12(id + 3.3) > dense * 0.95) continue;
+          float h = (0.016 + 0.034 * hash12(id + 5.1)) * (0.65 + 0.45 * dense) * scale;
+          float t = (y - foot - 0.004 * scale * hash12(id + 2.6)) / h;
+          if (t < 0.0 || t > 1.0) continue;
+          float cx = (c + 0.5 + 0.7 * (hash12(id + 8.2) - 0.5)) * w;
+          float tiers = 4.0 + floor(3.0 * hash12(id + 9.9));
+          float wide = h * 0.26 * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
+          if (t < 0.1) wide = max(wide, h * 0.025);   // the trunk
+          cover = max(cover, smoothstep(-edge, edge, wide - abs(x - cx)) * smoothstep(-edge, edge, 1.0 - t) * smoothstep(-edge, edge, t * h));
+        }
+        col = mix(col, shade, cover);
       }
-      return cover;
+      return col;
     }
 
     void main() {
@@ -184,13 +194,12 @@
         float snow = smoothstep(top - 0.03, top, p.y) * 0.5;
         col = vec3(0.013, 0.017, 0.028) + low * snow * 0.04;
       } else if (lake > 0.5 && p.y < HORIZON && p.y > mirrored) {
-        col = vec3(0.006, 0.009, 0.016);
+        // Their reflection only faint, so the trees' stand out.
+        col = mix(col, vec3(0.006, 0.009, 0.016), 0.3);
       }
-      // The trees in front, nearly black, and mirrored in the lake, broken
-      // by its waves.
-      const vec3 TREE = vec3(0.0015, 0.002, 0.003);
-      if (p.y >= HORIZON) col = mix(col, TREE, trees(p.x * aspect, p.y - HORIZON));
-      else if (lake > 0.5) col = mix(col, TREE, trees((p.x + wave) * aspect, HORIZON - p.y + wave * 0.5));
+      // The trees in front, and mirrored in the lake, broken by its waves.
+      if (p.y >= HORIZON) col = forest(col, p.x * aspect, p.y - HORIZON);
+      else if (lake > 0.5) col = forest(col, (p.x + wave) * aspect, HORIZON - p.y + wave * 0.5);
       col = 1.0 - exp(-col * 1.4);
       col += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
       o = vec4(col, 1.0);
