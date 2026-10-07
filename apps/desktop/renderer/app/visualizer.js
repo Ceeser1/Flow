@@ -91,7 +91,13 @@ const VIZ_CATEGORIES = [
     id: 'trippy',
     name: 'Trippy',
     desc: 'Patterns, colour and motion',
-    ids: ['kaleidoscope', 'prism', 'lava', 'demo', 'rain', 'chladni', 'arcade', 'coral', 'shatter', 'attractor', 'julia', 'plasmaglobe', 'tunnel'],
+    ids: ['kaleidoscope', 'prism', 'lava', 'demo', 'rain', 'chladni', 'coral', 'attractor', 'julia', 'plasmaglobe', 'tunnel'],
+  },
+  {
+    id: 'other',
+    name: 'Other',
+    desc: 'Games and the cover in pieces',
+    ids: ['arcade', 'shatter'],
   },
 ];
 
