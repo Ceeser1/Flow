@@ -2893,3 +2893,19 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 .bg-help__status { margin: 4px 0 10px; padding-left: 10px; border-left: 3px solid var(--red); line-height: 1.5; }
 .bg-help__status--good { border-left-color: var(--green); }
 .bg-help__buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+
+/* Settings: the visualizers' categories, each folding away with a click on its heading. */
+.viz-cat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 18px 0 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+}
+.viz-cat:hover { color: var(--text-bright); }
+.viz-cat__note { margin-left: 4px; font-size: 12px; font-weight: 400; color: var(--text-dim); }
+.viz-picker[hidden] { display: none; }

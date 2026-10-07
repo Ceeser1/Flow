@@ -31,6 +31,12 @@
 //             camera bobbing, the camera tilting and the car tilting on them.
 //   Random    one of the others, a different one than last time if it can;
 //             with vizRandomEach (Settings) another one with each song.
+//             Each category (VIZ_CATEGORIES) has its own Random too
+//             ('random-<category>'), picking only from that category.
+//
+// In Settings the visualizers stand in categories (VIZ_CATEGORIES), each
+// folding away with a click on its heading (vizCollapsed); Up and Down go
+// through them in that order.
 //
 // Both read the player's sound where the equalizer does, before the volume.
 // Bars runs its own short analysis (about 46 ms) so they jump the way
@@ -63,6 +69,29 @@ const VISUALIZERS = [
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="4"/><path d="M2 20l6-8 3 4 2-2 4 6"/>'
       + '<path d="M15 16l2-3 5 7"/></svg>',
+  },
+];
+
+// The categories in Settings, each's visualizers in their order there (and
+// for Up and Down). Random and Flow stand above them, in none.
+const VIZ_CATEGORIES = [
+  {
+    id: 'equalizers',
+    name: 'Equalizers',
+    desc: 'The sound itself: bars, waves, rings and dots',
+    ids: ['bars', 'waveform', 'scope', 'spectrogram', 'ridges', 'skyline', 'halo', 'orb', 'reactor', 'liquid', 'mandala'],
+  },
+  {
+    id: 'worlds',
+    name: 'Worlds',
+    desc: 'Places to look at or fly through',
+    ids: ['synthwave', 'warp', 'tunnel', 'galaxy', 'aurora', 'lightning', 'inferno', 'fireworks'],
+  },
+  {
+    id: 'trippy',
+    name: 'Trippy',
+    desc: 'Patterns, colour and motion',
+    ids: ['kaleidoscope', 'prism', 'lava', 'demo', 'rain'],
   },
 ];
 
@@ -159,10 +188,12 @@ const Visualizer = {
 
   open(id = Store.settings.visualizer) {
     if (this.el) return;
-    const kind = id === 'random' ? this._pickRandom() : id;
+    const pool = this._pool(id);
+    const kind = pool ? this._pickRandom(pool) : id;
     if (!VISUALIZERS.some((v) => v.id === kind && v.ready)) return;
-    // Opened as Random it may move on to another with each song (vizRandomEach).
-    this._random = id === 'random';
+    // Opened as a Random it may move on to another of its own with each
+    // song (vizRandomEach): which Random, or null.
+    this._random = pool ? id : null;
     this._songAt = Player.currentId;
 
     const close = iconButton('viz-full__close', Icons.x, Store.can('keyboard') ? 'Close (Esc)' : 'Close', () => this.close());
@@ -278,21 +309,38 @@ const Visualizer = {
     if (flow) Equalizer._layout();
   },
 
+  /**
+   * All of them in Settings' order: Flow, then the categories', then any in
+   * none of them.
+   */
+  ordered() {
+    const ready = VISUALIZERS.filter((v) => v.ready && v.id !== 'random').map((v) => v.id);
+    const listed = ['flow', ...VIZ_CATEGORIES.flatMap((c) => c.ids)].filter((id) => ready.includes(id));
+    return [...listed, ...ready.filter((id) => !listed.includes(id))];
+  },
+
+  /** A Random's choices: all of them for 'random', a category's for 'random-<category>'; null for any other id. */
+  _pool(id) {
+    if (id === 'random') return this.ordered();
+    const cat = typeof id === 'string' && id.startsWith('random-') && VIZ_CATEGORIES.find((c) => `random-${c.id}` === id);
+    return cat ? this.ordered().filter((v) => cat.ids.includes(v)) : null;
+  },
+
   /** The one before (-1) or after (1) in Settings' order, staying in full screen (Up and Down). */
   step(dir) {
     if (!this.el) return;
-    const ids = VISUALIZERS.filter((v) => v.ready && v.id !== 'random').map((v) => v.id);
+    const ids = this.ordered();
     const at = ids.indexOf(this.kind);
     this._unmount();
     this._mount(ids[(at + dir + ids.length) % ids.length]);
     this._wake();
   },
 
-  /** On to another one, at random (not the one showing), staying in full screen. */
+  /** On to another one, at random (not the one showing; of its Random's own if opened as one), staying in full screen. */
   next() {
     if (!this.el) return;
     this._unmount();
-    this._mount(this._pickRandom());
+    this._mount(this._pickRandom(this._pool(this._random || 'random')));
   },
 
   /** Opened as Random with "a new one with each song": the song changing moves it on. */
@@ -337,8 +385,8 @@ const Visualizer = {
     VISUALIZERS.push({ id: def.id, name: def.name, ready: true, desc: def.desc, glyph: def.glyph, image });
   },
 
-  _pickRandom() {
-    const ids = VISUALIZERS.filter((v) => v.ready && v.id !== 'random').map((v) => v.id);
+  /** One of `ids` at random, not the last one picked nor the one showing if it can. */
+  _pickRandom(ids) {
     const fresh = ids.filter((v) => v !== this._lastRandom && v !== this.kind);
     const pool = fresh.length ? fresh : ids;
     this._lastRandom = pool[Math.floor(Math.random() * pool.length)];

@@ -177,6 +177,8 @@ const DEFAULTS = {
   // list), opened again with it.
   settingsCollapsed: [],
   settingsCategory: '',
+  // The Music Visualizer's categories folded shut in Settings (their ids).
+  vizCollapsed: [],
   // The sleep timer running, kept so a restart still shows (and can cancel)
   // the shutdown Windows has been told about: { endsAt, shutdownAt, ended },
   // times in ms, shutdownAt null without a shutdown.
@@ -295,8 +297,11 @@ const DEFAULTS = {
 
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
-// The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor'];
+// The ones that can be chosen; 'random' picks one of the others each time,
+// 'random-<category>' one of a category's (VIZ_CATEGORIES in the desktop's
+// visualizer.js).
+const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy'];
+const VISUALIZERS = ['random', ...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
@@ -326,6 +331,7 @@ function clean(raw) {
     ? [...new Set(s.settingsCollapsed.filter((t) => typeof t === 'string' && t && t.length <= 60))].slice(0, 30)
     : [];
   s.settingsCategory = typeof s.settingsCategory === 'string' ? s.settingsCategory.slice(0, 60) : '';
+  s.vizCollapsed = Array.isArray(s.vizCollapsed) ? [...new Set(s.vizCollapsed.filter((c) => VIZ_CATEGORY_IDS.includes(c)))] : [];
   const st = s.sleepTimer;
   const endsAt = st && typeof st === 'object' ? Number(st.endsAt) : NaN;
   const shutdownAt = st && Number.isFinite(Number(st.shutdownAt)) && st.shutdownAt !== null ? Number(st.shutdownAt) : null;

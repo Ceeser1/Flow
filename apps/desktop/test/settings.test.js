@@ -210,6 +210,12 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ visualizer: 'mandala' }).visualizer, 'mandala');
   assert.equal(settings.clean({ visualizer: 'aurorawaves' }).visualizer, 'aurora');
   assert.equal(d.lqTrails, 100);
+  // The visualizers' categories: a Random each, and which are folded shut.
+  assert.equal(settings.clean({ visualizer: 'random-worlds' }).visualizer, 'random-worlds');
+  assert.equal(settings.clean({ visualizer: 'random-nope' }).visualizer, 'bars');
+  assert.deepEqual(d.vizCollapsed, []);
+  assert.deepEqual(settings.clean({ vizCollapsed: ['trippy', 'trippy', 'nope', 3, 'worlds'] }).vizCollapsed, ['trippy', 'worlds']);
+  assert.deepEqual(settings.clean({ vizCollapsed: 'trippy' }).vizCollapsed, []);
   // Aurora's Glare: 50-150%, 100% by default.
   assert.equal(d.auGlare, 100);
   assert.equal(settings.clean({ auGlare: 20 }).auGlare, 50);

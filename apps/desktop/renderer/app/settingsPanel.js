@@ -222,9 +222,9 @@ const SettingsPanel = {
       this._row({
         key: 'vizRandomEach',
         label: 'Random: a new one with each song',
-        desc: 'With Random chosen, the visualizer changes to another one whenever the next song starts, staying in full screen.',
+        desc: 'With a Random chosen, the visualizer changes to another one (of the same category, for a category\'s Random) whenever the next song starts, staying in full screen.',
         sub: true,
-        when: () => Store.settings.visualizer === 'random',
+        when: () => Store.settings.visualizer.startsWith('random'),
       }),
       ] : []),
 
@@ -486,18 +486,23 @@ const SettingsPanel = {
 
   /**
    * "Select your Music Visualizer": a 16:9 tile each (VISUALIZERS in
-   * visualizer.js), the chosen one outlined, and Preview to open it.
+   * visualizer.js), the chosen one outlined, and Preview to open it. Random
+   * and Flow on top, then the categories (VIZ_CATEGORIES), each with its own
+   * Random first, folding away with a click on its heading (vizCollapsed,
+   * kept); folded, the heading says which of its own is chosen.
    */
   _visualizerRow() {
-    const tiles = h('div.viz-picker');
+    const all = [];
+    const notes = [];
     const draw = () => {
-      for (const tile of tiles.children) {
+      for (const tile of all) {
         const on = tile.dataset.id === Store.settings.visualizer;
         tile.classList.toggle('viz-tile--on', on);
         tile.setAttribute('aria-pressed', String(on));
       }
+      for (const note of notes) note();
     };
-    for (const v of VISUALIZERS) {
+    const tile = (v) => {
       const art = h('span.viz-tile__art');
       // Its picture once there is one; a sign for it until then (or if it is missing).
       const glyph = () => {
@@ -505,7 +510,7 @@ const SettingsPanel = {
       };
       if (v.image) art.appendChild(h('img.viz-tile__img', { src: v.image, alt: '', onerror: glyph }));
       else glyph();
-      tiles.appendChild(h('button.viz-tile' + (v.ready ? '' : '.viz-tile--soon'), {
+      const el = h('button.viz-tile' + (v.ready ? '' : '.viz-tile--soon'), {
         type: 'button',
         disabled: !v.ready,
         title: v.ready ? v.desc : 'Coming soon',
@@ -515,8 +520,50 @@ const SettingsPanel = {
           draw();
           this._refreshAll();
         },
-      }, art, h('span.viz-tile__name', v.name), v.ready ? null : h('span.viz-tile__soon', 'Soon')));
-    }
+      }, art, h('span.viz-tile__name', v.name), v.ready ? null : h('span.viz-tile__soon', 'Soon'));
+      all.push(el);
+      return el;
+    };
+    const byId = new Map(VISUALIZERS.map((v) => [v.id, v]));
+    const shuffle = byId.get('random').glyph;
+    // Any not in a category yet go with Random and Flow.
+    const top = h('div.viz-picker', ...VISUALIZERS.filter((v) => !VIZ_CATEGORIES.some((c) => c.ids.includes(v.id))).map(tile));
+    const groups = VIZ_CATEGORIES.map((cat) => {
+      const members = cat.ids.map((id) => byId.get(id)).filter(Boolean);
+      const random = { id: `random-${cat.id}`, name: 'Random', ready: true, desc: `A different one of the ${cat.name} each time`, glyph: shuffle };
+      const grid = h('div.viz-picker', tile(random), ...members.map(tile));
+      const chevron = h('span.settings__chevron', { html: Icons.chevron });
+      const note = h('span.viz-cat__note');
+      const head = h('div.viz-cat', { tabIndex: 0, title: 'Show or hide this category' }, chevron, h('span', cat.name), note);
+      head.setAttribute('role', 'button');
+      const shut = () => Store.settings.vizCollapsed.includes(cat.id);
+      notes.push(() => {
+        const chosen = Store.settings.visualizer === random.id ? random : members.find((v) => v.id === Store.settings.visualizer);
+        note.textContent = shut() && chosen ? `${chosen.name} chosen` : cat.desc;
+      });
+      const fold = () => {
+        grid.hidden = shut();
+        chevron.classList.toggle('settings__chevron--down', shut());
+        head.setAttribute('aria-expanded', String(!shut()));
+      };
+      const toggle = () => {
+        const now = new Set(Store.settings.vizCollapsed);
+        if (now.has(cat.id)) now.delete(cat.id);
+        else now.add(cat.id);
+        Store.saveSettings({ vizCollapsed: [...now] });
+        fold();
+        draw();
+      };
+      head.addEventListener('click', toggle);
+      head.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggle();
+        }
+      });
+      fold();
+      return h('div.viz-cat-group', head, grid);
+    });
     draw();
     const preview = h('button.btn.btn--small', { type: 'button', onclick: () => Visualizer.open() }, 'Preview selected');
     const left = h('div.settings__left',
@@ -524,7 +571,8 @@ const SettingsPanel = {
       h('div.settings__desc', 'Opens in full screen from the visualizer button in the player bar. Escape or the X closes it; the Up and Down arrow keys switch to the one before or after.'));
     return h('div.settings__viz',
       h('div.settings__row.settings__row--flat', left, h('div.settings__right', preview)),
-      tiles);
+      top,
+      ...groups);
   },
 
   /** The browser the cookies come from: those found on this computer first. */
