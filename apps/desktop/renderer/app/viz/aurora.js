@@ -213,38 +213,54 @@
       return col;
     }
 
+    // Where the water meets the land across the screen (x 0..1): not
+    // straight but gently rising and falling, as a real shore does (low on
+    // the left, up to around 40%, down past 60% to around 70%, a little
+    // rise near 80%, down again to the right), with a little unevenness.
+    float shore(float x) {
+      float xs[6] = float[](0.0, 0.4, 0.6, 0.7, 0.78, 1.0);
+      float ys[6] = float[](-0.6, 0.8, 0.0, -0.5, -0.2, -0.8);
+      float y = ys[0];
+      for (int i = 0; i < 5; i++) {
+        float t = clamp((x - xs[i]) / (xs[i + 1] - xs[i]), 0.0, 1.0);
+        if (x >= xs[i]) y = mix(ys[i], ys[i + 1], t * t * (3.0 - 2.0 * t));
+      }
+      return HORIZON + 0.012 * y + 0.003 * (vnoise(vec2(x * 25.0, 2.0)) - 0.5) + 0.0012 * (vnoise(vec2(x * 110.0, 5.0)) - 0.5);
+    }
+
     void main() {
       float aspect = res.x / res.y;
       vec2 p = uv;
+      float H = shore(p.x);
       vec3 col;
       float wave = 0.0;
-      if (p.y >= HORIZON || lake < 0.5) {
+      if (p.y >= H || lake < 0.5) {
         col = sky(p, aspect);
       } else {
         // The lake: the sky mirrored, broken by small waves, darker.
-        float depth = (HORIZON - p.y) / HORIZON;
+        float depth = (H - p.y) / H;
         wave = (vnoise(vec2(p.x * aspect * 40.0, p.y * 260.0 - time * 0.8)) - 0.5) * 0.012 * (0.3 + depth);
-        vec2 m = vec2(p.x + wave, 2.0 * HORIZON - p.y + wave * 0.5);
+        vec2 m = vec2(p.x + wave, 2.0 * H - p.y + wave * 0.5);
         col = sky(m, aspect) * (0.55 - 0.25 * depth);
         col += vec3(0.0, 0.01, 0.02);
       }
       // The mountains, dark against the sky (a little hazy, being far), a
       // little of the aurora's light on their snow.
-      float top = ridge(p.x * aspect);
-      float mirrored = 2.0 * HORIZON - ridge(p.x * aspect);
-      if ((p.y < top && p.y > HORIZON) || (lake < 0.5 && p.y < top)) {
+      float top = ridge(p.x * aspect) + H - HORIZON;
+      float mirrored = 2.0 * H - top;
+      if ((p.y < top && p.y > H) || (lake < 0.5 && p.y < top)) {
         float snow = smoothstep(top - 0.03, top, p.y) * 0.5;
         col = vec3(0.013, 0.017, 0.028) + low * snow * 0.04;
-      } else if (lake > 0.5 && p.y < HORIZON && p.y > mirrored) {
+      } else if (lake > 0.5 && p.y < H && p.y > mirrored) {
         // The low land barely shows in the water (what stands on it does),
         // but for the bank right at the water's edge.
-        col = mix(col, vec3(0.006, 0.009, 0.016), mix(0.7, 0.12, smoothstep(0.0, 0.007, HORIZON - p.y)));
+        col = mix(col, vec3(0.006, 0.009, 0.016), mix(0.7, 0.12, smoothstep(0.0, 0.007, H - p.y)));
       }
       // The trees in front, and mirrored in the lake, broken by its waves.
-      if (p.y >= HORIZON) col = forest(col, p.x * aspect, p.y - HORIZON, top - HORIZON, 1.0);
-      else if (lake > 0.5) col = forest(col, (p.x + wave) * aspect, HORIZON - p.y + wave * 0.5, top - HORIZON, 0.8);
+      if (p.y >= H) col = forest(col, p.x * aspect, p.y - H, top - H, 1.0);
+      else if (lake > 0.5) col = forest(col, (p.x + wave) * aspect, H - p.y + wave * 0.5, top - H, 0.8);
       // A thin glint along the water's edge, where the calm water catches the sky.
-      if (lake > 0.5) col += low * 0.035 * (0.5 + 0.5 * vnoise(vec2(p.x * aspect * 90.0, time * 0.3))) * exp(-abs(p.y - HORIZON) * res.y / 1.3);
+      if (lake > 0.5) col += low * 0.035 * (0.5 + 0.5 * vnoise(vec2(p.x * aspect * 90.0, time * 0.3))) * exp(-abs(p.y - H) * res.y / 1.3);
       col = 1.0 - exp(-col * 1.4);
       col += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
       o = vec4(col, 1.0);
