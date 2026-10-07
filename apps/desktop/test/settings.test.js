@@ -208,9 +208,9 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ ksLook: 'auto' }).ksLook, 'auto');
   assert.equal(settings.clean({ ksLook: 'starburst' }).ksLook, 'starburst');
   assert.equal(settings.clean({ visualizer: 'mandala' }).visualizer, 'mandala');
-  assert.equal(settings.clean({ visualizer: 'aurorawaves' }).visualizer, 'aurorawaves');
+  assert.equal(settings.clean({ visualizer: 'aurorawaves' }).visualizer, 'aurora');
   assert.equal(d.lqTrails, 100);
-  assert.equal(settings.clean({ awTrails: 7 }).awTrails, 25);
+  assert.equal(settings.clean({ lqTrails: 7 }).lqTrails, 25);
 });
 
 test('a metered connection is told apart from a free one', () => {

@@ -1,11 +1,14 @@
 'use strict';
 
-// Aurora: the northern lights over dark mountains and a still lake. Curtains
-// of light hang across the sky, rippling and drifting, made of fine rays;
-// across the sky each part of a curtain belongs to a band of the spectrum
-// (the bass in the middle) and glows with it, the music's intensity sets how
-// restless they are, and the kicks make them flare. The lake mirrors it all,
-// broken by small waves.
+// Aurora: the northern lights over dark mountains and a still lake. Three
+// curtains of light hang across the sky, rippling and drifting, made of fine
+// rays. Each listens to its own part of the music, low to high from left to
+// right on a log axis (CURTAINS): the lowest the bass (to 400 Hz), the middle
+// one the mids (to 2 kHz), the highest the highs. Where its part is loud the
+// curtain glows brighter, and where it is louder than it just was its lower
+// edge lifts (quieter: dips), easing back as it settles. The
+// music's intensity sets how restless they are, and the kicks make them
+// flare. The lake mirrors it all, broken by small waves.
 //
 // Its cogwheel: the colours (green, the rarer red and violet, rainbow), how
 // restless, the lake, the stars.
@@ -14,6 +17,14 @@
 // works out the sky again where it would be mirrored.
 
 (() => {
+  // Each curtain's part of the music, lowest curtain first (Hz; VizAudio's
+  // bands start at 30 Hz and end at 16 kHz).
+  const CURTAINS = [[30, 400], [400, 2000], [2000, 16000]];
+  const ACROSS = 64;       // levels across each curtain
+  const LIFT = 0.06;       // the most the edge moves up or down, of the screen
+  const LIFT_GAIN = 7;     // a level this many times its rise over its average
+  const SETTLE_S = 1.2;    // the average each place is measured against
+
   const PALETTES = {
     // low edge, top
     green: [[0.15, 1.0, 0.45], [0.55, 0.2, 0.9]],
@@ -26,7 +37,7 @@
     in vec2 uv;
     uniform sampler2D bands;
     uniform vec2 res;
-    uniform float time, drift, flare, lake, stars, rainbow;
+    uniform float time, drift, flare, lake, stars, rainbow, lift;
     uniform vec3 low, high;
     out vec4 o;
 
@@ -47,9 +58,15 @@
       // Three curtains, one behind the other.
       for (int i = 0; i < 3; i++) {
         float fi = float(i);
-        // The curtain's lower edge folds and waves across the sky.
+        // Its part of the music here (a row each, low to high across): how
+        // loud (r), and how much louder or quieter than it just was (g, 0.5
+        // as before).
+        vec2 heard = texture(bands, vec2(clamp(p.x, 0.0, 1.0), (fi + 0.5) / 3.0)).rg;
+        float level = heard.r;
+        // The curtain's lower edge folds and waves across the sky, lifted
+        // where its part of the music rises.
         float base = 0.44 + fi * 0.08 + 0.07 * sin(x * (1.3 + fi * 0.4) + drift * (0.5 + fi * 0.2) + fi * 2.0)
-          + 0.14 * (fbm(vec2(x * 0.7 + fi * 3.7 + drift * 0.4, fi + drift * 0.1)) - 0.5);
+          + 0.14 * (fbm(vec2(x * 0.7 + fi * 3.7 + drift * 0.4, fi + drift * 0.1)) - 0.5) + lift * (heard.g - 0.5) * 2.0;
         float d = p.y - base;
         float tall = 0.2 + 0.08 * fi;
         {
@@ -58,7 +75,6 @@
           float rays = vnoise(vec2(rx * 70.0 + fi * 13.0 + drift * 3.0, fi)) * 0.6 + vnoise(vec2(rx * 23.0 - drift * 1.3, fi + 5.0)) * 0.6;
           rays = pow(rays, 1.8);
           float profile = smoothstep(-0.02, 0.012, d) * exp(-max(d, 0.0) / (tall * 0.35));
-          float level = texture(bands, vec2(clamp(abs(p.x - 0.5) * 2.0, 0.0, 1.0) * 0.85 + 0.02, 0.5)).r;
           float glow = profile * (0.2 + rays) * (0.15 + 1.4 * level + 0.6 * flare) * (1.0 - fi * 0.25);
           vec3 c = mix(low, high, smoothstep(0.0, tall, d));
           if (rainbow > 0.5) c = hsv2rgb(vec3(fract(x * 0.12 + drift * 0.03 + fi * 0.2), 0.7, 1.0));
@@ -110,8 +126,10 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      this.levels = null;
-      this.bytes = null;
+      this.levels = new Float32Array(3 * ACROSS);
+      this.settled = new Float32Array(3 * ACROSS);   // each place's level, averaged over SETTLE_S
+      this.bytes = new Uint8Array(3 * ACROSS * 2);    // level, rise
+      this.raw = new Float32Array(ACROSS);
       this.drift = Math.random() * 50;
       this.age = 0;
       this.w = 1;
@@ -130,21 +148,11 @@
     frame(a, dt) {
       this.age += dt;
       const set = (k) => Visualizer.setting(k);
-      const n = a.BANDS;
-      if (!this.levels) {
-        this.levels = new Float32Array(n);
-        this.bytes = new Uint8Array(n);
-      }
-      // Slower to fall than the bars: light that lingers.
-      for (let i = 0; i < n; i += 1) {
-        const v = 0.5 * a.smooth[i] + 0.5 * a.dynamic[i];
-        this.levels[i] = v > this.levels[i] ? this.levels[i] + (v - this.levels[i]) * Math.min(1, dt * 12) : this.levels[i] + (v - this.levels[i]) * Math.min(1, dt * 1.5);
-        this.bytes[i] = Math.round(Math.min(1, this.levels[i]) * 255);
-      }
+      this._listen(a, dt);
       const gl = this.gl;
       gl.bindTexture(gl.TEXTURE_2D, this.bandTex);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, n, 1, 0, gl.RED, gl.UNSIGNED_BYTE, this.bytes);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8, ACROSS, 3, 0, gl.RG, gl.UNSIGNED_BYTE, this.bytes);
 
       const restless = set('auActivity') / 100;
       this.drift += dt * restless * (0.08 + 0.5 * a.intensity + 0.3 * a.level) * (a.playing ? 1 : 0.4);
@@ -158,6 +166,7 @@
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.drift, this.drift);
       gl.uniform1f(u.flare, a.kick);
+      gl.uniform1f(u.lift, LIFT);
       gl.uniform1f(u.lake, set('auLake') ? 1 : 0);
       gl.uniform1f(u.stars, set('auStars') ? 1 : 0);
       gl.uniform1f(u.rainbow, set('auColors') === 'rainbow' ? 1 : 0);
@@ -165,12 +174,45 @@
       gl.uniform3f(u.high, ...pal[1]);
       VizGL.screen(gl);
     }
+
+    /** Each curtain's levels across, from its part of VizAudio's bands, and their rises, into this.bytes. */
+    _listen(a, dt) {
+      const n = a.BANDS;
+      const span = Math.log(a.MAX_HZ / a.MIN_HZ);
+      const raw = this.raw;
+      // Up fast, down slowly: light that lingers, an edge that sinks back.
+      const up = Math.min(1, dt * 12);
+      const down = Math.min(1, dt * 1.5);
+      const settle = 1 - Math.exp(-dt / SETTLE_S);
+      CURTAINS.forEach(([lo, hi], c) => {
+        for (let k = 0; k < ACROSS; k += 1) {
+          // The band (fractional) at this frequency: bands sit at
+          // MIN_HZ * (MAX_HZ / MIN_HZ) ** ((i + 0.5) / n).
+          const hz = lo * (hi / lo) ** ((k + 0.5) / ACROSS);
+          const f = Math.max(0, Math.min(n - 1, (Math.log(hz / a.MIN_HZ) / span) * n - 0.5));
+          const i = Math.min(n - 2, Math.floor(f));
+          const t = f - i;
+          const at = (j) => 0.5 * a.smooth[j] + 0.5 * a.dynamic[j];
+          raw[k] = at(i) * (1 - t) + at(i + 1) * t;
+        }
+        for (let k = 0; k < ACROSS; k += 1) {
+          // A little of the neighbours, so the edge billows rather than jags.
+          const v = 0.25 * raw[Math.max(0, k - 1)] + 0.5 * raw[k] + 0.25 * raw[Math.min(ACROSS - 1, k + 1)];
+          const j = c * ACROSS + k;
+          const level = (this.levels[j] += (v - this.levels[j]) * (v > this.levels[j] ? up : down));
+          const was = (this.settled[j] += (level - this.settled[j]) * settle);
+          const rise = Math.max(-1, Math.min(1, (level - was) * LIFT_GAIN));
+          this.bytes[j * 2] = Math.round(Math.min(1, level) * 255);
+          this.bytes[j * 2 + 1] = Math.round((0.5 + 0.5 * rise) * 255);
+        }
+      });
+    }
   }
 
   Visualizer.add({
     id: 'aurora',
     name: 'Aurora',
-    desc: 'The northern lights over mountains and a still lake, the curtains glowing with the music',
+    desc: 'The northern lights over mountains and a still lake, each curtain rising and glowing with its own part of the music: bass, mids and highs',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M3 10c3-4 6 2 9-2s6 1 9-3M3 14c3-3 6 2 9-1s6 1 9-2"/><path d="M2 21l5-5 3 3 4-5 8 7"/></svg>',
     gl: true,

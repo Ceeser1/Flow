@@ -43,9 +43,8 @@ const VIZ_OPTIONS = {
   ksLook: ['choice', 'kaleido', ['auto', 'kaleido', 'vortex', 'tunnel', 'starburst']],
   ksEvery: ['range', 30, 10, 120, 5],
   ksTrails: ['range', 100, 25, 200, 5],
-  // Aurora Waves, Liquid and Mandala (Kaleidoscope's looks once): how long
-  // the trails last (percent).
-  awTrails: ['range', 100, 25, 200, 5],
+  // Liquid and Mandala (Kaleidoscope's looks once): how long the trails last
+  // (percent).
   lqTrails: ['range', 100, 25, 200, 5],
   mdTrails: ['range', 100, 25, 200, 5],
   // Halo: the cover round or square, turning (round only), the spectrum as
@@ -295,7 +294,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'aurorawaves', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
@@ -366,8 +365,9 @@ function clean(raw) {
   if (!CLOUD_COLORS.includes(s.cloudsColors)) s.cloudsColors = DEFAULTS.cloudsColors;
   const amount = Math.round(Number(s.cloudsAmount) / 10) * 10;
   s.cloudsAmount = Number.isFinite(amount) ? Math.min(100, Math.max(0, amount)) : DEFAULTS.cloudsAmount;
-  // Nebula is Kaleidoscope now.
+  // Nebula is Kaleidoscope now; Aurora Waves gave way to Aurora.
   if (s.visualizer === 'nebula') s.visualizer = 'kaleidoscope';
+  if (s.visualizer === 'aurorawaves') s.visualizer = 'aurora';
   if (!VISUALIZERS.includes(s.visualizer)) s.visualizer = DEFAULTS.visualizer;
   s.synColor = /^#[0-9a-f]{6}$/i.test(String(s.synColor)) ? String(s.synColor).toLowerCase() : DEFAULTS.synColor;
   for (const key of ['synBobbingAmount', 'synCameraTiltAmount', 'synCarTiltAmount']) {

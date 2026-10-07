@@ -12,9 +12,8 @@
 // at once. Its cogwheel: the look (Kaleidoscope by default, or Auto), how
 // often Auto moves on, and how long the trails are.
 //
-// Three more looks are visualizers of their own (SOLO), with only Trails in
-// their cogwheels: Aurora Waves (the waveform flowing up in curtains, without
-// the rings on the beats), Liquid and Mandala.
+// Two more looks are visualizers of their own (SOLO), with only Trails in
+// their cogwheels: Liquid and Mandala.
 //
 // WebGL (viz/gl.js): two half-float textures drawn into in turn (the frame
 // before and the new one), then the new one onto the screen.
@@ -43,7 +42,6 @@
   ];
   // The visualizers of their own, by their ids.
   const SOLO = {
-    aurorawaves: { id: 'aurorawaves', name: 'Aurora Waves', zoom: 0.998, kickZoom: 0.01, rot: 0.0, twist: 0.0, swirl: 0.007, swirlScale: 1.2, drift: [0, 0.0028], decay: 0.975, hue: 0.0006, base: 0.36, wave: 0, size: 0.16, kaleido: 0, y: 0.7 },
     liquid: { id: 'liquid', name: 'Liquid', zoom: 1.002, kickZoom: 0.02, rot: 0.001, twist: 0.004, swirl: 0.012, swirlScale: 2.8, drift: [0, 0], decay: 0.972, hue: 0.0012, base: 0.75, wave: 3, size: 0.3, kaleido: 0 },
     mandala: { id: 'mandala', name: 'Mandala', zoom: 0.992, kickZoom: -0.02, rot: -0.005, twist: 0.006, swirl: 0.003, swirlScale: 2.0, drift: [0, 0], decay: 0.962, hue: 0.0025, base: 0.95, wave: 2, size: 0.16, kaleido: 8 },
   };
@@ -123,10 +121,7 @@
   }
 
   class Kaleidoscope {
-    /**
-     * solo: one of SOLO, shown on its own (its look fixed, its own Trails),
-     * with rings: false for none on the beats.
-     */
+    /** solo: { look: one of SOLO, trails: its Trails setting }, shown on its own. */
     constructor(canvas, solo = null) {
       this.solo = solo;
       const gl = VizGL.context(canvas);
@@ -243,7 +238,7 @@
       } else {
         this._shape(a, this.look.wave, 1);
       }
-      if (!this.solo || this.solo.rings) this._rings(a, dt);
+      this._rings(a, dt);
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       this.lines.draw(this.w, this.h);
@@ -383,7 +378,7 @@
   });
 
   /** One of SOLO as a visualizer of its own: `trails` its Trails setting. */
-  function solo(look, { trails, rings, desc, glyph }) {
+  function solo(look, { trails, desc, glyph }) {
     Visualizer.add({
       id: look.id,
       name: look.name,
@@ -391,26 +386,18 @@
       glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
         + `stroke-linecap="round" stroke-linejoin="round">${glyph}</svg>`,
       gl: true,
-      create: (canvas) => new Kaleidoscope(canvas, { look, trails, rings }),
+      create: (canvas) => new Kaleidoscope(canvas, { look, trails }),
       options: [{ type: 'slider', key: trails, label: 'Trails', min: 25, max: 200, step: 5 }],
     });
   }
 
-  solo(SOLO.aurorawaves, {
-    trails: 'awTrails',
-    rings: false,
-    desc: 'The waveform drawn across the sky and flowing up in swirling curtains of light',
-    glyph: '<path d="M3 17c3-3 5 0 9-3s6 0 9-3"/><path d="M3 11c3-3 5 0 9-3s6 0 9-3" opacity="0.6"/>',
-  });
   solo(SOLO.liquid, {
     trails: 'lqTrails',
-    rings: true,
     desc: 'The waveform scattered round a turning ring and melting away in swirls',
     glyph: '<path d="M12 3c3 4 6 7 6 11a6 6 0 0 1-12 0c0-4 3-7 6-11z"/>',
   });
   solo(SOLO.mandala, {
     trails: 'mdTrails',
-    rings: true,
     desc: 'The spectrum as rays, seen through an eightfold kaleidoscope, flowing inwards',
     glyph: '<circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"/>',
   });
