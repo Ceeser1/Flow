@@ -189,7 +189,8 @@ const VIZ_OPTIONS = {
   dsCount: ['range', 9, 3, 16, 1],
   dsLight: ['bool', true],
   // Pond: day, night or the one fading into the other and back, the koi,
-  // the lily pads, the treble rain and how heavy it is (percent).
+  // the lily pads, the treble rain, how many drops fall (the kicks', the
+  // hits' and the rain's, percent).
   pdLook: ['choice', 'day', ['day', 'night', 'alternate']],
   pdKoi: ['bool', true],
   pdPads: ['bool', true],

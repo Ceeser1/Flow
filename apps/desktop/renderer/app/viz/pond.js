@@ -8,8 +8,8 @@
 // with the tempo. Or the same pond at night, the ripples catching the moon,
 // or the one fading into the other and back.
 //
-// Its cogwheel: day, night or alternating, how heavy the rain is, the koi,
-// the lily pads, the rain.
+// Its cogwheel: day, night or alternating, how many drops fall (the kicks',
+// the hits' and the rain's), the koi, the lily pads, the rain.
 //
 // WebGL (viz/gl.js): the water's surface is a wave simulation in a float
 // texture at half the screen's size, stepped 120 times a second (each
@@ -231,6 +231,8 @@
       this.owed = 0;
       this.drops = [];
       this.rain = 0;
+      this.kicks = 0.5;
+      this.hits = 0.5;
       this.fish = Array.from({ length: FISH }, () => ({ x: Math.random(), y: Math.random(), h: Math.random() * Math.PI * 2, tail: Math.random() * 6, turn: 0, speed: 0.04 + Math.random() * 0.03 }));
       this.pads = null;
       this.w = 1;
@@ -273,12 +275,19 @@
       const look = set('pdLook');
       const night = look === 'night' ? 1 : look === 'alternate' ? 0.5 - 0.5 * Math.cos((this.age / 180) * Math.PI) : 0;
 
-      // The music falling in.
+      // The music falling in, as many drops as the intensity says: at 50%
+      // every other kick, at 150% one and two in turn (the same for the hits).
       if (a.playing) {
-        if (a.onset) this._drop(a.onsetPower, false);
-        else if (a.hit) this._drop(a.hitPower, true);
+        const more = Number(set('pdRainAmount')) / 100;
+        const fall = (owed, power, small) => {
+          owed += more;
+          for (; owed >= 1; owed -= 1) this._drop(power, small);
+          return owed;
+        };
+        if (a.onset) this.kicks = fall(this.kicks, a.onsetPower, false);
+        else if (a.hit) this.hits = fall(this.hits, a.hitPower, true);
         if (set('pdRain')) {
-          this.rain += dt * RAIN * (Number(set('pdRainAmount')) / 100) * a.treble * a.treble;
+          this.rain += dt * RAIN * more * a.treble * a.treble;
           while (this.rain >= 1) {
             this.rain -= 1;
             this._drop(0, true);
@@ -367,7 +376,7 @@
     create: (canvas) => new Pond(canvas),
     options: [
       { type: 'choice', key: 'pdLook', label: '', choices: [['day', 'Day'], ['night', 'Night'], ['alternate', 'Alternate']] },
-      { type: 'slider', key: 'pdRainAmount', label: 'Rain intensity', min: 50, max: 150, step: 5, when: (s) => s.pdRain },
+      { type: 'slider', key: 'pdRainAmount', label: 'Rain intensity', min: 50, max: 150, step: 5 },
       { type: 'check', key: 'pdKoi', label: 'Koi' },
       { type: 'check', key: 'pdPads', label: 'Lily pads' },
       { type: 'check', key: 'pdRain', label: 'Treble rain' },
