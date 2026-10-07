@@ -142,11 +142,12 @@
     // hill (bunching towards its top, as far things do), smaller and hazier,
     // each tree a little higher or lower than its row, so they stand
     // scattered over the hillside from the water to near the top. In clusters
-    // with clearings between, each its own height, in tiers narrowing to the
-    // tip. Drawn from the back.
+    // with clearings between, each its own height (a few up to three times
+    // the rest, slenderer as they tower), in tiers narrowing to the tip.
+    // Drawn from the back.
     const int DEPTHS = 5;
     vec3 forest(vec3 col, float x, float y, float top) {
-      if (y < 0.0 || y > top + 0.03) return col;
+      if (y < 0.0 || y > top + 0.08) return col;
       float edge = 1.2 / res.y;
       const float FAR = 1.0 / (1.0 + 0.7 * float(DEPTHS - 1));
       for (int row = DEPTHS - 1; row >= 0; row--) {
@@ -159,19 +160,24 @@
         float w = 0.45 * tallest;
         float cell = floor(x / w);
         float cover = 0.0;
+        // Nothing of this row reaches here.
+        float spread = top * 0.075;
+        if (y < foot - spread || y > foot + spread + 3.0 * tallest) continue;
         for (int k = -1; k <= 1; k++) {
           float c = cell + float(k);
           vec2 id = vec2(c, fr * 17.0);
           float dense = smoothstep(0.3, 0.6, vnoise(vec2((c + 0.5) * w * 6.0 + fr * 5.3, 7.0)));
           if (hash12(id + 3.3) > dense * 0.92) continue;
-          float at = foot + (hash12(id + 2.6) - 0.5) * top * (row == 0 ? 0.0 : 0.15);
+          float at = foot + (hash12(id + 2.6) - 0.5) * 2.0 * spread * (row == 0 ? 0.0 : 1.0);
           if (at > top - 0.002) continue;
-          float h = tallest * (0.55 + 0.45 * hash12(id + 5.1));
+          // Most about the same, a few towering over them.
+          float tower = 1.0 + 2.0 * pow(hash12(id + 6.4), 6.0);
+          float h = tallest * (0.55 + 0.45 * hash12(id + 5.1)) * tower;
           float t = (y - at) / h;
           if (t < 0.0 || t > 1.0) continue;
           float cx = (c + 0.5 + 0.4 * (hash12(id + 8.2) - 0.5)) * w;
           float tiers = 4.0 + floor(3.0 * hash12(id + 9.9));
-          float wide = h * 0.26 * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
+          float wide = h * 0.26 / sqrt(tower) * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
           if (t < 0.1) wide = max(wide, h * 0.025);   // the trunk
           cover = max(cover, smoothstep(-edge, edge, wide - abs(x - cx)) * smoothstep(-edge, edge, h - (y - at)));
         }
