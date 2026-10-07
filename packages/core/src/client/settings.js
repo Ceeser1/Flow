@@ -174,9 +174,9 @@ const VIZ_OPTIONS = {
   dcColors: ['choice', 'disco', ['disco', 'warm', 'cool']],
   dcBeams: ['bool', true],
   dcSpin: ['range', 100, 0, 300, 5],
-  // Stained Glass: the window (a pointed arch, a rose, the whole screen),
+  // Stained Glass: the window (a rose, a pointed arch, the whole screen),
   // how many panes across, the shafts of light.
-  sgWindow: ['choice', 'arch', ['arch', 'rose', 'full']],
+  sgWindow: ['choice', 'rose', ['rose', 'arch', 'full']],
   sgPanes: ['range', 11, 6, 24, 1],
   sgRays: ['bool', true],
   // Black Hole: the colours, the view (edge on, slanted, from above), how

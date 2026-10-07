@@ -8,7 +8,7 @@
 // dark, motes drifting in them, and lie on the stone floor below. A song
 // without a cover gets a pattern of its own colour.
 //
-// Its cogwheel: a pointed arch, a rose window or glass over the whole
+// Its cogwheel: a rose window, a pointed arch or glass over the whole
 // screen; how many panes; the shafts of light.
 //
 // WebGL (viz/gl.js): the panes are the cells of a Voronoi pattern (in the
@@ -224,16 +224,17 @@
           float lead;
           vec3 g = glass(p, lead);
           vec3 l = vec3(0.025, 0.025, 0.028);
-          // Tracery: the rose's spokes and inner ring, the arch's mullion and iron bars.
+          // Tracery: the rose's spokes (out to the frame) and inner ring, the
+          // arch's mullion and iron bars.
           float bar = 0.0;
           if (shape == 1) {
             float r = length(p);
             float an = atan(p.y, p.x);
             float seg = 2.0 * PI / 12.0;
             float fa = abs(mod(an + seg * 0.5, seg) - seg * 0.5);
-            bar = max(step(r, 0.95) * step(0.24, r) * (1.0 - smoothstep(0.014, 0.022, fa * r)), 1.0 - smoothstep(0.015, 0.025, abs(r - 0.24)));
+            bar = max(step(0.24, r) * (1.0 - smoothstep(0.009, 0.015, fa * r)), 1.0 - smoothstep(0.01, 0.017, abs(r - 0.24)));
           } else {
-            bar = max(1.0 - smoothstep(0.018, 0.028, abs(p.x)) * 1.0, 0.0) * step(p.y, 0.55);
+            bar = (1.0 - smoothstep(0.009, 0.016, abs(p.x))) * step(p.y, 0.55);
             float ib = smoothstep(0.488, 0.494, abs(fract((p.y + 1.0) * 2.6) - 0.5));
             lead = max(lead, ib * 0.9);
           }
@@ -314,7 +315,7 @@
       this.age += dt;
       // A new song: new panes.
       if (this.cover.update()) this.seed = Math.random() * 100;
-      const shape = { arch: 0, rose: 1, full: 2 }[set('sgWindow')] ?? 0;
+      const shape = { arch: 0, rose: 1, full: 2 }[set('sgWindow')] ?? 1;
       const panes = Number(set('sgPanes'));
       const target = a.playing ? 0.55 + 0.6 * a.level + 0.25 * a.intensity : 0.4;
       this.light += (target - this.light) * Math.min(1, dt * 4);
@@ -371,7 +372,7 @@
     gl: true,
     create: (canvas) => new StainedGlass(canvas),
     options: [
-      { type: 'choice', key: 'sgWindow', label: 'Window', choices: [['arch', 'Arch'], ['rose', 'Rose'], ['full', 'Whole screen']] },
+      { type: 'choice', key: 'sgWindow', label: 'Window', choices: [['rose', 'Rose'], ['arch', 'Arch'], ['full', 'Whole screen']] },
       { type: 'slider', key: 'sgPanes', label: 'Panes', min: 6, max: 24, step: 1, unit: '' },
       { type: 'check', key: 'sgRays', label: 'Shafts of light', when: (s) => s.sgWindow !== 'full' },
     ],
