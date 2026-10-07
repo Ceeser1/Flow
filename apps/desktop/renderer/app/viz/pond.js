@@ -147,30 +147,30 @@
       vec3 water = night > 0.5 ? vec3(0.01, 0.03, 0.06) : vec3(0.05, 0.22, 0.2);
       col = mix(col, water, night > 0.5 ? 0.55 : 0.35);
 
-      // Lily pads riding the waves, their shadows on the bottom.
+      // The lily pads float on the water, each as one piece: a ripple passing
+      // under one only nudges and tilts it a little (the water's height round
+      // its rim, so it follows the swell, not every small wave). Their
+      // shadows lie on the bottom, under the surface.
+      vec2 padOff[${PADS}];
+      vec2 padTilt[${PADS}];
       if (showPads > 0.5) {
         for (int i = 0; i < ${PADS}; i++) {
           vec4 pd = pads[i];
-          vec2 q = uv * asp - pd.xy + n.xy * 0.01;
-          float r = length(q);
-          float an = atan(q.y, q.x) - pd.w;
-          float notch = smoothstep(0.03, 0.0, abs(mod(an + 3.14159, TAU) - 3.14159)) * step(r, pd.z);
-          vec2 qs = uv * asp - pd.xy - vec2(0.015, -0.015);
-          col *= 1.0 - 0.35 * smoothstep(pd.z, pd.z * 0.9, length(qs)) * (1.0 - notch);
-          float pad = smoothstep(pd.z, pd.z - 0.003, r) * (1.0 - smoothstep(0.0, 1.0, notch * 4.0));
-          float veins = 0.85 + 0.15 * smoothstep(0.0, 0.02, abs(sin(an * 9.0)) * r);
-          vec3 green = mix(vec3(0.12, 0.32, 0.1), vec3(0.25, 0.48, 0.15), r / pd.z) * veins;
-          if (night > 0.5) green *= 0.25;
-          col = mix(col, green, pad);
-          // A flower on some.
-          if (fract(pd.x * 13.7) > 0.55) {
-            float pan = atan(q.y, q.x) * 6.0;
-            float fr = length(q) / (pd.z * 0.42) * (1.0 - 0.25 * abs(sin(pan)));
-            float flower = smoothstep(1.0, 0.92, fr);
-            vec3 petal = mix(vec3(1.0, 0.85, 0.9), vec3(0.95, 0.45, 0.65), fr);
-            if (night > 0.5) petal *= 0.45;
-            col = mix(col, mix(petal, vec3(1.0, 0.85, 0.3), smoothstep(0.3, 0.0, fr)), flower);
+          padOff[i] = vec2(0.0);
+          padTilt[i] = vec2(0.0);
+          if (length(uv * asp - pd.xy) > pd.z * 1.15 + 0.03) continue;
+          vec2 c = pd.xy / asp;
+          vec2 tilt = vec2(0.0);
+          for (int k = 0; k < 8; k++) {
+            float a = float(k) * TAU / 8.0;
+            vec2 dir = vec2(cos(a), sin(a));
+            tilt -= dir * texture(state, c + dir * pd.z * 0.6 / asp).r;
           }
+          tilt = clamp(tilt * 0.25, -1.0, 1.0);
+          padTilt[i] = tilt;
+          padOff[i] = tilt * 0.003;
+          vec2 qs = uv * asp - pd.xy - padOff[i] - vec2(0.015, -0.015);
+          col *= 1.0 - 0.35 * smoothstep(pd.z, pd.z * 0.9, length(qs));
         }
       }
 
@@ -183,6 +183,33 @@
       col += sky * fres * (night > 0.5 ? 6.0 : 2.5) + vec3(1.0) * spec * (night > 0.5 ? 2.5 : 1.2);
       // At night the ripples glint with the moon all over.
       if (night > 0.5) col += vec3(0.5, 0.65, 1.0) * clamp(abs(lap) * 9.0, 0.0, 1.0) * 0.5;
+
+      // The pads on top of it all, lit by how they tilt.
+      if (showPads > 0.5) {
+        for (int i = 0; i < ${PADS}; i++) {
+          vec4 pd = pads[i];
+          vec2 q = uv * asp - pd.xy - padOff[i];
+          float r = length(q);
+          if (r > pd.z * 1.05) continue;
+          float an = atan(q.y, q.x) - pd.w;
+          float notch = smoothstep(0.03, 0.0, abs(mod(an + 3.14159, TAU) - 3.14159)) * step(r, pd.z);
+          float pad = smoothstep(pd.z, pd.z - 0.003, r) * (1.0 - smoothstep(0.0, 1.0, notch * 4.0));
+          float veins = 0.85 + 0.15 * smoothstep(0.0, 0.02, abs(sin(an * 9.0)) * r);
+          float lit = 1.0 + 0.25 * dot(padTilt[i], normalize(ldir.xy));
+          vec3 green = mix(vec3(0.12, 0.32, 0.1), vec3(0.25, 0.48, 0.15), r / pd.z) * veins * lit;
+          if (night > 0.5) green *= 0.25;
+          col = mix(col, green, pad);
+          // A flower on some (by the pad, not where it drifts to).
+          if (fract(float(i) * 0.618) > 0.45) {
+            float pan = atan(q.y, q.x) * 6.0;
+            float fr = length(q) / (pd.z * 0.42) * (1.0 - 0.25 * abs(sin(pan)));
+            float flower = smoothstep(1.0, 0.92, fr);
+            vec3 petal = mix(vec3(1.0, 0.85, 0.9), vec3(0.95, 0.45, 0.65), fr) * lit;
+            if (night > 0.5) petal *= 0.45;
+            col = mix(col, mix(petal, vec3(1.0, 0.85, 0.3), smoothstep(0.3, 0.0, fr)), flower);
+          }
+        }
+      }
       col *= 1.0 - 0.3 * pow(length(uv - 0.5) * 1.3, 2.0);
       col = 1.0 - exp(-col * 1.4);
       col += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
