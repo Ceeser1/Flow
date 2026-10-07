@@ -8,11 +8,12 @@
 // curtain glows brighter, and where it is louder than it just was its lower
 // edge lifts a little (quieter: dips), easing back as it settles. The
 // music's intensity sets how restless they are, and the kicks make them
-// flare. The lake mirrors it all, broken by small waves.
+// flare. Fir trees stand along the shore before the mountains, and the lake
+// mirrors it all, broken by small waves.
 //
 // Its cogwheel: the colours (green, the rarer red and violet, rainbow), how
 // restless, the lake, the stars (faint and bright ones, each twinkling in its
-// own time, the brightest with a glare).
+// own time, the brightest with a glare flashing a little with the bass).
 //
 // WebGL (viz/gl.js): one pass over the screen; below the horizon each pixel
 // works out the sky again where it would be mirrored.
@@ -38,7 +39,7 @@
     in vec2 uv;
     uniform sampler2D bands;
     uniform vec2 res;
-    uniform float time, drift, flare, lake, stars, rainbow, lift;
+    uniform float time, drift, flare, lake, stars, rainbow, lift, boom;
     uniform vec3 low, high;
     out vec4 o;
 
@@ -88,8 +89,9 @@
           float glow = exp(-dot(d, d) / (r * r));
           glow += 0.1 * m * exp(-length(d) / (2.0 + 4.0 * m));
           if (m > 0.5) {
-            float reach = 3.0 + 8.0 * m;
-            glow += 0.25 * m * (exp(-abs(d.y) / 0.45 - abs(d.x) / reach) + exp(-abs(d.x) / 0.45 - abs(d.y) / reach));
+            // Flashing a little with the bass.
+            float reach = (3.0 + 8.0 * m) * (1.0 + 0.3 * boom);
+            glow += 0.25 * m * (1.0 + 0.8 * boom) * (exp(-abs(d.y) / 0.45 - abs(d.x) / reach) + exp(-abs(d.x) / 0.45 - abs(d.y) / reach));
           }
           vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.88, 0.72), hash12(g + 6.6));
           sum += tint * (0.3 + 1.0 * m) * twinkle(g, 0.45) * glow;
@@ -133,29 +135,61 @@
       return col;
     }
 
+    // The fir trees along the shore, x across (screen heights) and y above
+    // the shore: how much of this point they cover. In clusters with
+    // clearings between, each its own height, in tiers narrowing to the tip.
+    float trees(float x, float y) {
+      if (y < 0.0 || y > 0.07) return 0.0;
+      const float W = 0.011;
+      float cell = floor(x / W);
+      float edge = 1.2 / res.y;
+      float cover = 0.0;
+      for (int k = -2; k <= 2; k++) {
+        float c = cell + float(k);
+        float forest = smoothstep(0.35, 0.6, vnoise(vec2(c * 0.07, 7.0)));
+        if (hash12(vec2(c, 3.3)) > forest * 0.95) continue;
+        float h = (0.016 + 0.034 * hash12(vec2(c, 5.1))) * (0.65 + 0.45 * forest);
+        float t = y / h;
+        if (t > 1.0) continue;
+        float cx = (c + 0.5 + 0.7 * (hash12(vec2(c, 8.2)) - 0.5)) * W;
+        float tiers = 4.0 + floor(3.0 * hash12(vec2(c, 9.9)));
+        float wide = h * 0.26 * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
+        if (t < 0.1) wide = max(wide, h * 0.025);   // the trunk
+        cover = max(cover, smoothstep(-edge, edge, wide - abs(x - cx)) * smoothstep(-edge, edge, h - y));
+      }
+      return cover;
+    }
+
     void main() {
       float aspect = res.x / res.y;
       vec2 p = uv;
       vec3 col;
+      float wave = 0.0;
       if (p.y >= HORIZON || lake < 0.5) {
         col = sky(p, aspect);
       } else {
         // The lake: the sky mirrored, broken by small waves, darker.
         float depth = (HORIZON - p.y) / HORIZON;
-        float wave = (vnoise(vec2(p.x * aspect * 40.0, p.y * 260.0 - time * 0.8)) - 0.5) * 0.012 * (0.3 + depth);
+        wave = (vnoise(vec2(p.x * aspect * 40.0, p.y * 260.0 - time * 0.8)) - 0.5) * 0.012 * (0.3 + depth);
         vec2 m = vec2(p.x + wave, 2.0 * HORIZON - p.y + wave * 0.5);
         col = sky(m, aspect) * (0.55 - 0.25 * depth);
         col += vec3(0.0, 0.01, 0.02);
       }
-      // The mountains, black against the sky, a little of the aurora's light on their snow.
+      // The mountains, dark against the sky (a little hazy, being far), a
+      // little of the aurora's light on their snow.
       float top = ridge(p.x * aspect);
       float mirrored = 2.0 * HORIZON - ridge(p.x * aspect);
       if ((p.y < top && p.y > HORIZON) || (lake < 0.5 && p.y < top)) {
         float snow = smoothstep(top - 0.03, top, p.y) * 0.5;
-        col = vec3(0.006, 0.008, 0.014) + low * snow * 0.04;
+        col = vec3(0.013, 0.017, 0.028) + low * snow * 0.04;
       } else if (lake > 0.5 && p.y < HORIZON && p.y > mirrored) {
-        col = vec3(0.003, 0.005, 0.01);
+        col = vec3(0.006, 0.009, 0.016);
       }
+      // The trees in front, nearly black, and mirrored in the lake, broken
+      // by its waves.
+      const vec3 TREE = vec3(0.0015, 0.002, 0.003);
+      if (p.y >= HORIZON) col = mix(col, TREE, trees(p.x * aspect, p.y - HORIZON));
+      else if (lake > 0.5) col = mix(col, TREE, trees((p.x + wave) * aspect, HORIZON - p.y + wave * 0.5));
       col = 1.0 - exp(-col * 1.4);
       col += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
       o = vec4(col, 1.0);
@@ -214,6 +248,7 @@
       gl.uniform1f(u.drift, this.drift);
       gl.uniform1f(u.flare, a.kick);
       gl.uniform1f(u.lift, LIFT);
+      gl.uniform1f(u.boom, a.kick);
       gl.uniform1f(u.lake, set('auLake') ? 1 : 0);
       gl.uniform1f(u.stars, set('auStars') ? 1 : 0);
       gl.uniform1f(u.rainbow, set('auColors') === 'rainbow' ? 1 : 0);
