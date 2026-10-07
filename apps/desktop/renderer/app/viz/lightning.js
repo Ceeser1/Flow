@@ -6,7 +6,10 @@
 // flickers once or twice more as real lightning does; a weaker beat or a calm
 // part flashes inside the clouds instead, lighting them from within, and
 // snares and claps add small sparks between them. With nothing playing the
-// storm rumbles on far away now and then.
+// storm rumbles on far away now and then. A strike comes down on the ground
+// of one of the land's three layers, between it and the next, hidden by the
+// ones in front; now and then one hits a tree, with a bigger flash, and the
+// tree glows on for a few seconds, fading.
 //
 // Drawn with WebGL (viz/gl.js): the bolts as soft lines into a texture of
 // their own (the brightest wins where they cross, so joints and branches do
@@ -25,6 +28,9 @@
   const LEADER_S = 0.055;  // the leader's way down, before the stroke
   const STROKE_S = 0.085;  // the stroke's fall
   const LINGER_S = 0.3;    // the channel's afterglow
+  const TREE_CHANCE = 0.5;   // how many of the music's big peaks strike a tree
+  const TREE_GAP_S = 25;     // and at least this far apart
+  const GLOW_S = 3;          // how long a struck tree glows
   const PRESETS = ['#a9c4ff', '#ffffff', '#c77dff', '#ff5ec4', '#ffd166', '#6bff8f', '#ff4d4d'];
 
   const BOLT_VS = `
@@ -34,31 +40,38 @@
     uniform vec2 res;
     out float a;
     out float x;
+    out float depth;
     void main() {
-      a = alpha;
+      // alpha carries how near the bolt is in its tens.
+      depth = floor(alpha / 10.0);
+      a = alpha - depth * 10.0;
       x = across;
       gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
     }`;
   const BOLT_FS = `
     in float a;
     in float x;
+    in float depth;
     out vec4 o;
     void main() {
       float f = max(0.0, 1.0 - x * x);
-      o = vec4(vec3(a * f * f), 1.0);
+      // Into the channel for how near it is: the clouds, or the layer it strikes.
+      o = a * f * f * vec4(depth < 0.5, abs(depth - 1.0) < 0.5, abs(depth - 2.0) < 0.5, depth > 2.5);
     }`;
 
 
-  // The land: three layers of hills, far, middle and near, each with firs
-  // along it (smaller the further back, in stretches of forest and open
-  // ground, some standing lower down the slope) and now and then a broad oak.
-  // Drawn once for the screen's size: how much of each pixel each layer
-  // covers, in R (far), G (middle), B (near).
-  const LAND_FS = VizGL.NOISE + `
-    in vec2 uv;
-    uniform vec2 res;
-    out vec4 o;
+  // The layers, far to near: how wide their hills are (xs), how high (h),
+  // how rough, their firs' height (of the screen's) and how many oaks. The
+  // same in the shaders and here, where a strike is aimed.
+  const LAYERS = [
+    { xs: 1.0, seed: 3, h: 0.245, rough: 0.012, treeH: 0.03, oaks: 0 },
+    { xs: 0.9, seed: 7, h: 0.185, rough: 0.016, treeH: 0.052, oaks: 0.012 },
+    { xs: 0.8, seed: 11, h: 0.15, rough: 0.02, treeH: 0.088, oaks: 0.03 },
+  ];
+  const glsl = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
 
+  // The hills and the trees' shapes, for the land and for the struck tree.
+  const TREES = `
     float hills(float x, float seed, float h, float rough) {
       return h + 0.2 * (fbm(vec2(x * 1.8 + seed, seed)) - 0.45) + rough * vnoise(vec2(x * 9.0, seed + 4.0));
     }
@@ -109,6 +122,19 @@
       return max(wood, crown);
     }
 
+`;
+
+  // The land: three layers of hills, far, middle and near, each with firs
+  // along it (smaller the further back, in stretches of forest and open
+  // ground, some standing lower down the slope) and now and then a broad oak.
+  // Drawn once for the screen's size: how much of each pixel each layer
+  // covers, in R (far), G (middle), B (near).
+  const LAND_FS = VizGL.NOISE + TREES + `
+    in vec2 uv;
+    uniform vec2 res;
+    out vec4 o;
+
+
     // One layer: its hill and its trees. xs: how wide its hills are; h: how
     // high; treeH: its firs' height (of the screen's); oaks: how many oaks.
     float layer(vec2 p, float xs, float seed, float h, float rough, float treeH, float oaks) {
@@ -137,18 +163,18 @@
 
     void main() {
       vec2 p = vec2(uv.x * res.x / res.y, uv.y);
-      float far = layer(p, 1.0, 3.0, 0.22, 0.012, 0.03, 0.0);
-      float mid = layer(p, 0.9, 7.0, 0.14, 0.016, 0.052, 0.012);
-      float near = layer(p, 0.8, 11.0, 0.07, 0.02, 0.088, 0.03);
-      o = vec4(far, mid, near, 1.0);
+${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.seed)}, ${glsl(l.h)}, ${glsl(l.rough)}, ${glsl(l.treeH)}, ${glsl(l.oaks)});`).join('\n')}
+      o = vec4(l0, l1, l2, 1.0);
     }`;
 
-  const SKY_FS = VizGL.NOISE + `
+  const SKY_FS = VizGL.NOISE + TREES + `
     in vec2 uv;
     uniform sampler2D core;
     uniform sampler2D glowA;
     uniform sampler2D glowB;
     uniform sampler2D land;
+    uniform vec4 struck;
+    uniform vec4 struckBy;
     uniform vec2 res;
     uniform float time;
     uniform float flash;
@@ -199,37 +225,114 @@
       // The whole sky lighting up.
       col += tint * flash * (0.05 + 0.5 * dens * shade + 0.12 * band);
 
-      // The bolts, white hot in the middle, their colour in the glow.
-      float c = texture(core, uv).r;
-      float g = texture(glowA, uv).r * 1.3 + texture(glowB, uv).r * 2.0;
+      // The land's layers here (far, middle, near).
+      vec3 cov = texture(land, uv).rgb;
+      // The bolts, white hot in the middle, their colour in the glow; each
+      // hidden by the layers in front of where it strikes, those in the
+      // clouds by all of them.
+      vec4 seen = vec4(1.0 - max(cov.r, max(cov.g, cov.b)), 1.0 - max(cov.g, cov.b), 1.0 - cov.b, 1.0);
+      float c = dot(texture(core, uv), seen);
+      float g = dot(texture(glowA, uv), seen) * 1.3 + dot(texture(glowB, uv), seen) * 2.0;
       vec3 bolt = color * g + mix(color, vec3(1.0), 0.7) * c * 1.4;
 
-      // Rain, lit by the flashes.
-      float r = 0.0;
-      if (rain > 0.0) {
-        r = rainLayer(p, 60.0, 2.3, 1.0) * 0.6 + rainLayer(p, 34.0, 1.6, 5.0) * 0.8 + rainLayer(p, 18.0, 1.1, 9.0);
-        col += vec3(0.5, 0.55, 0.65) * r * rain * (0.035 + 0.5 * flash + 0.6 * lit);
-      }
+      // Rain, lit by the flashes, in three depths: the smallest drops far
+      // off behind the far hills, the middling ones behind the middle hills,
+      // the big ones in front of everything.
+      vec3 drops = vec3(0.5, 0.55, 0.65) * rain * (0.035 + 0.5 * flash + 0.6 * lit);
+      vec3 rainSmall = rain > 0.0 ? drops * rainLayer(p, 60.0, 2.3, 1.0) * 0.6 : vec3(0.0);
+      vec3 rainMid = rain > 0.0 ? drops * rainLayer(p, 34.0, 1.6, 5.0) * 0.8 : vec3(0.0);
+      vec3 rainBig = rain > 0.0 ? drops * rainLayer(p, 18.0, 1.1, 9.0) : vec3(0.0);
+      col += rainSmall;
 
       // The land, three layers with their trees: the far one dim against the
       // flashes, the nearer ones darker, the near one black; their top edges
       // catch the light; they stand in front of the bolts.
-      vec3 cov = texture(land, uv).rgb;
       vec2 up = vec2(0.0, 1.0 / res.y);
       vec3 over = (texture(land, uv + up * 2.0).rgb + texture(land, uv + up * 5.0).rgb) * 0.5;
       vec3 rim = cov * (1.0 - over);
       float shine = flash + lit * 0.6;
-      bolt *= 1.0 - max(cov.r, max(cov.g, cov.b));
       col = mix(col, vec3(0.02, 0.022, 0.032) + tint * (flash * 0.1 + lit * 0.05 + rim.r * shine * 0.1), cov.r * 0.92);
+      col += rainMid;
       col = mix(col, vec3(0.01, 0.011, 0.017) + tint * (flash * 0.05 + lit * 0.025 + rim.g * shine * 0.11), cov.g * 0.96);
       col = mix(col, vec3(0.003, 0.003, 0.005) + tint * rim.b * shine * 0.12, cov.b);
+      // A tree the lightning struck, glowing: white hot at first, then
+      // embers, fading; hidden by the layers in front of it.
+      if (struck.w > 0.0) {
+        vec2 q = (p - struck.xy) / struck.z;
+        float pxu = 1.0 / (res.y * struck.z);
+        float tree = struckBy.y > 0.5 ? oak(q, struckBy.z, pxu) : pine(q, struckBy.z, pxu);
+        tree *= 1.0 - (struckBy.x < 0.5 ? max(cov.g, cov.b) : struckBy.x < 1.5 ? cov.b : 0.0);
+        float a = struck.w;
+        vec3 hot = mix(vec3(1.0, 0.42, 0.1), mix(color, vec3(1.0), 0.7) * 2.5, smoothstep(0.85, 1.0, a));
+        float flick = 0.7 + 0.3 * vnoise(q * 14.0 + vec2(0.0, -time * 5.0));
+        col += hot * tree * a * a * 1.3 * flick;
+        vec2 hq = (q - vec2(0.0, 0.45)) * vec2(1.5, 1.0);
+        col += hot * exp(-dot(hq, hq) * 2.5) * a * a * 0.22;
+      }
       col += bolt;
+      col += rainBig;
 
       // Softly into white, and a little noise against banding in the dark.
       col = 1.0 - exp(-col * 1.25);
       col += (hash12(gl_FragCoord.xy + fract(time) * 100.0) - 0.5) / 255.0;
       o = vec4(col, 1.0);
     }`;
+
+  // The shaders' noise in JS, to know where their hills and trees are.
+  const fract = (v) => v - Math.floor(v);
+  const smooth = (e0, e1, v) => {
+    const k = Math.min(1, Math.max(0, (v - e0) / (e1 - e0)));
+    return k * k * (3 - 2 * k);
+  };
+  function hash12(x, y) {
+    let a = fract(x * 0.1031);
+    let b = fract(y * 0.1031);
+    let c = a;
+    const d = a * (b + 33.33) + b * (c + 33.33) + c * (a + 33.33);
+    a += d;
+    b += d;
+    c += d;
+    return fract((a + b) * c);
+  }
+  function vnoise(x, y) {
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    const fx = x - ix;
+    const fy = y - iy;
+    const ux = fx * fx * (3 - 2 * fx);
+    const uy = fy * fy * (3 - 2 * fy);
+    const lo = hash12(ix, iy) + (hash12(ix + 1, iy) - hash12(ix, iy)) * ux;
+    const hi = hash12(ix, iy + 1) + (hash12(ix + 1, iy + 1) - hash12(ix, iy + 1)) * ux;
+    return lo + (hi - lo) * uy;
+  }
+  function fbm(x, y) {
+    let v = 0;
+    let a = 0.5;
+    for (let i = 0; i < 5; i += 1) {
+      v += a * vnoise(x, y);
+      x = x * 2.03 + 17.1;
+      y = y * 2.03 + 3.7;
+      a *= 0.5;
+    }
+    return v;
+  }
+  /** A layer's hilltop at x (in screen heights from the left), 0..1 up. */
+  function hillAt(l, x) {
+    return l.h + 0.2 * (fbm(x * l.xs * 1.8 + l.seed, l.seed) - 0.45) + l.rough * vnoise(x * l.xs * 9, l.seed + 4);
+  }
+  /** The tree in a layer's cell, if one stands there: its foot, height, kind. */
+  function treeIn(l, id, px) {
+    const cell = l.treeH * 0.33;
+    const hh = hash12(id, l.seed);
+    const stand = smooth(0.25, 0.55, vnoise(id * cell * 2.2, l.seed * 3));
+    if (hh > 0.92 * stand) return null;
+    const tx = (id + 0.2 + 0.6 * hash12(id * 1.7, l.seed + 3.1)) * cell;
+    const big = hash12(id * 3.3, l.seed + 9.2);
+    const oak = hash12(id * 3.7, l.seed + 2) < l.oaks;
+    const th = l.treeH * (oak ? 1.05 + 0.2 * big : 0.7 + 0.5 * big + 0.4 * big ** 6);
+    const ty = hillAt(l, tx) - th * 0.35 * hash12(id * 5.1, l.seed + 1.7) - px * 2;
+    return { tx, ty, th, oak, seed: hh * 91.7 };
+  }
 
   /** A seeded random 0..1. */
   function random(seed) {
@@ -345,21 +448,91 @@
       }
     }
 
-    /** A bolt to the ground near x (0..1 of the width), as strong as power 0..1. */
-    _strike(power) {
+    /**
+     * Where a bolt to the ground comes down: on the ground of one of the
+     * layers, between it and the one in front (or on the near one), or now
+     * and then on a tree. { x, y } in pixels, the layer, and the tree if one.
+     */
+    _target(tree) {
+      const r = this.rand;
+      const { w, h } = this;
+      const aspect = w / h;
+      if (tree) {
+        const hit = this._tree();
+        if (hit) return hit;
+      }
+      for (let tries = 0; tries < 8; tries += 1) {
+        const roll = r();
+        const layer = roll < 0.4 ? 0 : roll < 0.75 ? 1 : 2;
+        const ux = 0.08 + r() * 0.84;
+        const top = hillAt(LAYERS[layer], ux * aspect);
+        // Its ground is seen down to where the next layer's hills rise.
+        let below = 0;
+        for (let i = layer + 1; i < LAYERS.length; i += 1) below = Math.max(below, hillAt(LAYERS[i], ux * aspect));
+        const gap = top - below;
+        if (layer < 2 && gap < 0.012) continue;
+        const y = top - (layer < 2 ? gap * (0.1 + 0.6 * r()) : top * (0.05 + 0.5 * r()));
+        return { x: ux * w, y: h * (1 - y), layer, tree: null };
+      }
+      return { x: w * (0.1 + r() * 0.8), y: h * (1 - LAYERS[2].h * 0.6), layer: 2, tree: null };
+    }
+
+    /** A tree to strike, one standing in sight, or null. */
+    _tree() {
+      const r = this.rand;
+      const { w, h } = this;
+      const aspect = w / h;
+      const gl = this.gl;
+      const px = new Uint8Array(4);
+      for (let tries = 0; tries < 12; tries += 1) {
+        const layer = r() < 0.55 ? 2 : r() < 0.7 ? 1 : 0;
+        const l = LAYERS[layer];
+        const cell = l.treeH * 0.33;
+        const t = treeIn(l, Math.floor(((0.1 + r() * 0.8) * aspect) / cell), 1 / h);
+        if (!t) continue;
+        // Its crown must be there (the land as drawn says so) and its top
+        // not behind a nearer layer.
+        const at = (ux, uy) => {
+          gl.bindFramebuffer(gl.FRAMEBUFFER, this.landT.fb);
+          gl.readPixels(Math.round(ux * h), Math.round(uy * h), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          return [px[0], px[1], px[2]];
+        };
+        const crown = at(t.tx, t.ty + t.th * 0.6);
+        const tip = at(t.tx, t.ty + t.th * 0.9);
+        let hidden = 0;
+        for (let i = layer + 1; i < 3; i += 1) hidden = Math.max(hidden, tip[i]);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        if (crown[layer] < 160 || hidden > 60) continue;
+        return { x: t.tx * h, y: h * (1 - (t.ty + t.th * 0.97)), layer, tree: { ...t, layer } };
+      }
+      return null;
+    }
+
+    /** A bolt to the ground, as strong as power 0..1; at a tree if `tree` (and one is in sight). */
+    _strike(power, tree = false) {
       const r = this.rand;
       const w = this.w;
       const h = this.h;
-      const x = w * (0.12 + r() * 0.76);
+      const aim = this._target(tree);
+      const struck = aim.tree;
+      // A tree struck: the strongest strike there is.
+      if (struck) {
+        power = 1;
+        this.lastTree = this.age;
+      }
+      const x = Math.max(w * 0.05, Math.min(w * 0.95, aim.x + (r() - 0.5) * w * 0.35));
       const y = h * (0.08 + r() * 0.14);
-      const tx = x + (r() - 0.5) * w * 0.35;
-      const ty = h * (0.93 + r() * 0.05);
-      const main = this._walk(x, y, { tx, ty, len: h * 2, step: h / 55, jag: 0.62 });
+      const main = this._walk(x, y, { tx: aim.x, ty: aim.y, len: h * 2, step: h / 55, jag: 0.62 });
+      // Right onto the mark at the end.
+      main.push(aim.x, aim.y);
       const span = length(main);
-      const width = (h / 1080) * (1.6 + 1.6 * power);
+      const width = (h / 1080) * (1.6 + 1.6 * power) * (struck ? 1.25 : 1);
       const paths = [{ pts: main, from: 0, span, width, bright: 1, main: true }];
       this._branches(paths, main, 0, span, width, 0.85, 2, 0.16 + 0.12 * power, true);
-      this._add({ paths, span, power, ground: true, lx: x / w, ly: 1 - y / h, radius: 0.32 + 0.12 * power });
+      this._add({
+        paths, span, power: struck ? 1.6 : power, ground: true, depth: aim.layer + 1, lx: x / w, ly: 1 - y / h, radius: 0.32 + 0.12 * power + (struck ? 0.15 : 0),
+        gx: aim.x / w, gy: 1 - aim.y / h, tree: struck,
+      });
       this.lastStrike = this.age;
     }
 
@@ -439,13 +612,21 @@
         if (t >= 0) {
           flash += glow * b.power * (b.ground ? 1 : 0.55);
           lit.push([b.lx, b.ly, b.radius, glow * (0.4 + 0.6 * b.power)]);
+          // A tree struck: lit where it was hit, and set glowing.
+          if (b.tree) {
+            lit.push([b.gx, b.gy, 0.18, glow * 1.2]);
+            if (!b.lit) {
+              b.lit = true;
+              this.glowing = { ...b.tree, age: 0 };
+            }
+          }
         }
         for (const p of b.paths) {
           // Branches fade faster than the channel they hang from.
           const fade = p.main || t < 0 ? 1 : Math.exp(-t / 0.11);
           const alpha = glow * p.bright * fade * (t < 0 ? 0.6 : 1);
           if (alpha < 0.01) continue;
-          count = this._line(data, count, p, upTo, alpha);
+          count = this._line(data, count, p, upTo, alpha + (b.depth || 0) * 10);
           if (count >= MAX_VERTS - 6) break;
         }
       }
@@ -455,8 +636,9 @@
 
       // 1. The lines, the brightest winning where they cross.
       VizGL.into(gl, this.core);
-      gl.clearColor(0, 0, 0, 1);
+      gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.clearColor(0, 0, 0, 1);
       if (count) {
         gl.useProgram(this.bolt.p);
         gl.uniform2f(this.bolt.u.res, this.w, this.h);
@@ -489,6 +671,15 @@
       // Without Screen flash the clouds still glow around the bolts, less.
       for (let i = 0; i < MAX_LIGHTS; i += 1) lights[i * 4 + 3] *= 0.25 + 0.75 * Math.min(1, amount);
       gl.uniform4fv(u.lights, lights);
+      // The struck tree, glowing for GLOW_S, fading.
+      const g = this.glowing;
+      if (g) {
+        g.age += dt;
+        if (g.age > GLOW_S) this.glowing = null;
+      }
+      const left = this.glowing ? 1 - g.age / GLOW_S : 0;
+      gl.uniform4f(u.struck, g ? g.tx : 0, g ? g.ty : 0, g ? g.th : 1, left);
+      gl.uniform4f(u.struckBy, g ? g.layer : 0, g && g.oak ? 1 : 0, g ? g.seed : 0, 0);
       VizGL.screen(gl);
     }
 
@@ -542,7 +733,13 @@
         return;
       }
       const calm = 1 - a.intensity;
-      if (a.onset) {
+      // Only the music's big peaks (a full bass hit at the top of the kicks
+      // lately, or a full hat or snare) strike a tree, now and then.
+      const peak = (a.onset && a.onsetPower >= 0.95 && a.beat >= 0.97) || (a.hit && a.hitPower >= 1);
+      if (peak) this.peaks = (this.peaks || 0) + 1;
+      if (peak && !this.glowing && this.age - (this.lastTree ?? -TREE_GAP_S) >= TREE_GAP_S && r() < TREE_CHANCE) {
+        this._strike(1, true);
+      } else if (a.onset) {
         const strength = Math.min(1, 0.4 * a.onsetPower + 0.6 * a.beat);
         // Ground strikes take an intense part and a real beat, and a moment
         // between them, shorter the more readily it strikes.
