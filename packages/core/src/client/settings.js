@@ -69,11 +69,13 @@ const VIZ_OPTIONS = {
   wpJumps: ['bool', true],
   // Inferno: the flames' colours, their height (percent; ifFlameHeight's 100%
   // is twice the old ifHeight's, so a value saved on that scale is left
-  // behind), the bass in the middle or on the left, the embers.
+  // behind), the bass in the middle or on the left, the embers, the burning
+  // forest on the hill behind.
   ifColor: ['choice', 'fire', ['fire', 'blue', 'green', 'purple', 'rainbow']],
   ifFlameHeight: ['range', 100, 25, 150, 5],
   ifLayout: ['choice', 'centre', ['centre', 'across']],
   ifEmbers: ['bool', true],
+  ifForest: ['bool', true],
   // Ridges: white, neon or heat; how many lines; how fast they flow
   // (percent); the spectrum or the waveform.
   rdColor: ['choice', 'white', ['white', 'neon', 'heat']],

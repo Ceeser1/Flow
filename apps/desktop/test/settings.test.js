@@ -221,6 +221,10 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ auGlare: 20 }).auGlare, 50);
   assert.equal(settings.clean({ auGlare: 151 }).auGlare, 150);
   assert.equal(settings.clean({ lqTrails: 7 }).lqTrails, 25);
+  // Inferno's burning forest: on by default.
+  assert.equal(d.ifForest, true);
+  assert.equal(settings.clean({ ifForest: false }).ifForest, false);
+  assert.equal(settings.clean({ ifForest: 'no' }).ifForest, true);
 });
 
 test('a metered connection is told apart from a free one', () => {
