@@ -79,7 +79,7 @@ const VIZ_CATEGORIES = [
   {
     id: 'worlds',
     name: 'Worlds',
-    desc: 'Places to look at or fly through',
+    desc: 'Places to look at',
     ids: ['synthwave', 'warp', 'galaxy', 'aurora', 'lightning', 'inferno', 'fireworks', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond'],
   },
   {
@@ -91,7 +91,7 @@ const VIZ_CATEGORIES = [
   {
     id: 'other',
     name: 'Other',
-    desc: "Flow's own look, games and the cover in pieces",
+    desc: 'The odd ones',
     ids: ['flow', 'arcade', 'shatter'],
   },
 ];
