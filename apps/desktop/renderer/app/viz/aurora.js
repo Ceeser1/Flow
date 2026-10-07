@@ -138,10 +138,11 @@
 
     // The fir trees on the hills, x across (screen heights) and y above the
     // shore, laid over col; top: the hill's height here, above the shore.
-    // Seen from across the lake: DEPTHS rows going back, each further up the
-    // hill (bunching towards its top, as far things do), smaller and hazier,
-    // each tree a little higher or lower than its row, so they stand
-    // scattered over the hillside from the water to near the top. In clusters
+    // Seen from across the lake: DEPTHS rows going back, each smaller and
+    // hazier and standing on its own band of the hill's height (the front
+    // row the lowest third, mostly on a narrow bank by the water, the back
+    // row the highest), every tree anywhere in its band, so they cover the
+    // hillside from the water to near the top. In clusters
     // with clearings between, each its own size (a few larger all round, up
     // to three times the rest by the water, less so further back), in tiers
     // narrowing to the tip. Drawn from the back.
@@ -161,16 +162,18 @@
         float fr = float(row);
         float scale = 1.0 / (1.0 + 0.3 * fr);        // 1, 0.77, 0.63
         float back = (1.0 - scale) / (1.0 - FAR);      // 0 at the water, 1 the farthest
-        float foot = top * 0.8 * back;
+        // This row's band of the hillside: the front row the lowest third,
+        // the back row the highest, each tree somewhere in it.
+        float lo = top * 0.85 * fr / float(DEPTHS);
+        float hi = top * 0.85 * (fr + 1.0) / float(DEPTHS);
         vec3 shade = mix(vec3(0.0015, 0.002, 0.003), vec3(0.013, 0.017, 0.028), 0.7 * back);
         float tallest = 0.026 * scale;
         float w = 0.45 * tallest;
         float cell = floor(x / w);
         float cover = 0.0;
-        // Nothing of this row reaches here.
-        float spread = top * 0.075;
         float most = 3.0 - 1.6 * back;                 // the largest a tree here grows
-        if (y < foot - spread || y > foot + spread + most * tallest) continue;
+        // Nothing of this row reaches here.
+        if (y < lo || y > hi + most * tallest) continue;
         for (int k = -2; k <= 2; k++) {
           // The cheap tests first: most trees do not reach this point.
           float c = cell + float(k);
@@ -180,14 +183,15 @@
           float grow = 1.0 + (most - 1.0) * pow(hash12(id + 6.4), 6.0);
           float h = tallest * (0.55 + 0.45 * hash12(id + 5.1)) * grow;
           if (abs(x - cx) > h * 0.27 + edge) continue;
-          // The front row on a narrow bank above the water, the others
-          // scattered up and down the slope.
-          float at = row == 0 ? 0.002 + 0.004 * hash12(id + 2.6) : foot + (hash12(id + 2.6) - 0.5) * 2.0 * spread;
+          // Anywhere in its band; most of the front row on a narrow bank
+          // just above the water.
+          float up = hash12(id + 2.6);
+          float at = row == 0 && hash12(id + 4.7) < 0.55 ? 0.002 + 0.004 * up : mix(max(lo, 0.006), hi, up);
           float t = (y - at) / h;
           if (t < 0.0 || t > 1.0 || at > top - 0.002) continue;
           // In a clearing, or not there anyway.
-          float dense = smoothstep(0.3, 0.6, noise1((c + 0.5) * w * 6.0 + fr * 5.3));
-          if (hash12(id + 3.3) > dense * (0.92 - 0.3 * back)) continue;   // sparser further back
+          float dense = smoothstep(0.2, 0.5, noise1((c + 0.5) * w * 6.0 + fr * 5.3));
+          if (hash12(id + 3.3) > dense * (0.92 - 0.15 * back)) continue;   // a little sparser further back
           float tiers = 4.0 + floor(3.0 * hash12(id + 9.9));
           float wide = h * 0.26 * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
           if (t < 0.1) wide = max(wide, h * 0.025);   // the trunk
