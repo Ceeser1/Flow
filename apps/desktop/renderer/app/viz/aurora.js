@@ -152,7 +152,8 @@
       float f = fract(x);
       return mix(hash12(vec2(i, 7.0)), hash12(vec2(i + 1.0, 7.0)), f * f * (3.0 - 2.0 * f));
     }
-    vec3 forest(vec3 col, float x, float y, float top) {
+    // ink: how dark they are laid over (the water mirrors them a little lighter).
+    vec3 forest(vec3 col, float x, float y, float top, float ink) {
       if (y < 0.0 || y > top + 0.08) return col;
       float edge = 1.2 / res.y;
       const float FAR = 1.0 / (1.0 + 0.3 * float(DEPTHS - 1));
@@ -179,7 +180,9 @@
           float grow = 1.0 + (most - 1.0) * pow(hash12(id + 6.4), 6.0);
           float h = tallest * (0.55 + 0.45 * hash12(id + 5.1)) * grow;
           if (abs(x - cx) > h * 0.27 + edge) continue;
-          float at = foot + (hash12(id + 2.6) - 0.5) * 2.0 * spread * (row == 0 ? 0.0 : 1.0);
+          // The front row on a narrow bank above the water, the others
+          // scattered up and down the slope.
+          float at = row == 0 ? 0.002 + 0.004 * hash12(id + 2.6) : foot + (hash12(id + 2.6) - 0.5) * 2.0 * spread;
           float t = (y - at) / h;
           if (t < 0.0 || t > 1.0 || at > top - 0.002) continue;
           // In a clearing, or not there anyway.
@@ -190,7 +193,7 @@
           if (t < 0.1) wide = max(wide, h * 0.025);   // the trunk
           cover = max(cover, smoothstep(-edge, edge, wide - abs(x - cx)) * smoothstep(-edge, edge, h - (y - at)));
         }
-        col = mix(col, shade, cover);
+        col = mix(col, shade, cover * ink);
       }
       return col;
     }
@@ -218,12 +221,15 @@
         float snow = smoothstep(top - 0.03, top, p.y) * 0.5;
         col = vec3(0.013, 0.017, 0.028) + low * snow * 0.04;
       } else if (lake > 0.5 && p.y < HORIZON && p.y > mirrored) {
-        // The low land barely shows in the water; what stands on it does.
-        col = mix(col, vec3(0.006, 0.009, 0.016), 0.12);
+        // The low land barely shows in the water (what stands on it does),
+        // but for the bank right at the water's edge.
+        col = mix(col, vec3(0.006, 0.009, 0.016), mix(0.7, 0.12, smoothstep(0.0, 0.007, HORIZON - p.y)));
       }
       // The trees in front, and mirrored in the lake, broken by its waves.
-      if (p.y >= HORIZON) col = forest(col, p.x * aspect, p.y - HORIZON, top - HORIZON);
-      else if (lake > 0.5) col = forest(col, (p.x + wave) * aspect, HORIZON - p.y + wave * 0.5, top - HORIZON);
+      if (p.y >= HORIZON) col = forest(col, p.x * aspect, p.y - HORIZON, top - HORIZON, 1.0);
+      else if (lake > 0.5) col = forest(col, (p.x + wave) * aspect, HORIZON - p.y + wave * 0.5, top - HORIZON, 0.8);
+      // A thin glint along the water's edge, where the calm water catches the sky.
+      if (lake > 0.5) col += low * 0.035 * (0.5 + 0.5 * vnoise(vec2(p.x * aspect * 90.0, time * 0.3))) * exp(-abs(p.y - HORIZON) * res.y / 1.3);
       col = 1.0 - exp(-col * 1.4);
       col += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
       o = vec4(col, 1.0);
