@@ -153,7 +153,7 @@
       float f = fract(x);
       return mix(hash12(vec2(i, 7.0)), hash12(vec2(i + 1.0, 7.0)), f * f * (3.0 - 2.0 * f));
     }
-    // ink: how dark they are laid over (the water mirrors them a little lighter).
+    // ink: how much they cover (the water mirrors them lighter).
     vec3 forest(vec3 col, float x, float y, float top, float ink) {
       if (y < 0.0 || y > top + 0.08) return col;
       float edge = 1.2 / res.y;
@@ -167,11 +167,15 @@
         // row the top third, up to the top.
         float lo = top * 0.325 * fr;
         float hi = top * min(1.0, 0.35 + 0.325 * fr);
-        vec3 shade = mix(vec3(0.0015, 0.002, 0.003), vec3(0.013, 0.017, 0.028), 0.7 * back);
+        // Dark brownish green, the stems browner; hazier further back.
+        vec3 haze = vec3(0.013, 0.017, 0.028);
+        vec3 shade = mix(vec3(0.009, 0.0075, 0.0045), haze, 0.7 * back);
+        vec3 wood = mix(vec3(0.022, 0.012, 0.005), haze, 0.7 * back);
         float tallest = 0.026 * scale;
         float w = 0.45 * tallest;
         float cell = floor(x / w);
         float cover = 0.0;
+        float bark = 0.0;
         float most = 3.0 - 1.6 * back;                 // the largest a tree here grows
         // Each tree's crown lifted onto a stem in the middle of it, by row
         // (screen pixels): the front 9 high and 3 wide, the middle 6 by 2,
@@ -200,7 +204,7 @@
           if (hash12(id + 3.3) > dense * (0.92 - 0.15 * back)) continue;   // a little sparser further back
           if (y < at + lift) {
             // The stem, whole pixels wide.
-            cover = max(cover, clamp((stem * 0.5 - abs(x - cx)) / px + 0.5, 0.0, 1.0));
+            bark = max(bark, clamp((stem * 0.5 - abs(x - cx)) / px + 0.5, 0.0, 1.0));
             continue;
           }
           float t = (y - at - lift) / h;
@@ -208,6 +212,7 @@
           float wide = h * 0.26 * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
           cover = max(cover, smoothstep(-edge, edge, wide - abs(x - cx)) * smoothstep(-edge, edge, h - (y - at - lift)));
         }
+        col = mix(col, wood, bark * ink);
         col = mix(col, shade, cover * ink);
       }
       return col;
@@ -258,7 +263,7 @@
       }
       // The trees in front, and mirrored in the lake, broken by its waves.
       if (p.y >= H) col = forest(col, p.x * aspect, p.y - H, top - H, 1.0);
-      else if (lake > 0.5) col = forest(col, (p.x + wave) * aspect, H - p.y + wave * 0.5, top - H, 0.8);
+      else if (lake > 0.5) col = forest(col, (p.x + wave) * aspect, H - p.y + wave * 0.5, top - H, 0.65);
       // A thin glint along the water's edge, where the calm water catches the sky.
       if (lake > 0.5) col += low * 0.035 * (0.5 + 0.5 * vnoise(vec2(p.x * aspect * 90.0, time * 0.3))) * exp(-abs(p.y - H) * res.y / 1.3);
       col = 1.0 - exp(-col * 1.4);
