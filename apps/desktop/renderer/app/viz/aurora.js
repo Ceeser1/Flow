@@ -145,7 +145,7 @@
     // with clearings between, each its own size (a few larger all round, up
     // to three times the rest by the water, less so further back), in tiers
     // narrowing to the tip. Drawn from the back.
-    const int DEPTHS = 5;
+    const int DEPTHS = 3;   // few rows of fair-sized trees rather than thousands of tiny ones
     // Value noise along a line, for the clusters (cheaper than vnoise).
     float noise1(float x) {
       float i = floor(x);
@@ -155,10 +155,10 @@
     vec3 forest(vec3 col, float x, float y, float top) {
       if (y < 0.0 || y > top + 0.08) return col;
       float edge = 1.2 / res.y;
-      const float FAR = 1.0 / (1.0 + 0.7 * float(DEPTHS - 1));
+      const float FAR = 1.0 / (1.0 + 0.3 * float(DEPTHS - 1));
       for (int row = DEPTHS - 1; row >= 0; row--) {
         float fr = float(row);
-        float scale = 1.0 / (1.0 + 0.7 * fr);
+        float scale = 1.0 / (1.0 + 0.3 * fr);        // 1, 0.77, 0.63
         float back = (1.0 - scale) / (1.0 - FAR);      // 0 at the water, 1 the farthest
         float foot = top * 0.8 * back;
         vec3 shade = mix(vec3(0.0015, 0.002, 0.003), vec3(0.013, 0.017, 0.028), 0.7 * back);
@@ -184,7 +184,7 @@
           if (t < 0.0 || t > 1.0 || at > top - 0.002) continue;
           // In a clearing, or not there anyway.
           float dense = smoothstep(0.3, 0.6, noise1((c + 0.5) * w * 6.0 + fr * 5.3));
-          if (hash12(id + 3.3) > dense * 0.92) continue;
+          if (hash12(id + 3.3) > dense * (0.92 - 0.3 * back)) continue;   // sparser further back
           float tiers = 4.0 + floor(3.0 * hash12(id + 9.9));
           float wide = h * 0.26 * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
           if (t < 0.1) wide = max(wide, h * 0.025);   // the trunk
