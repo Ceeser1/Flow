@@ -11,8 +11,9 @@
 // Drawn with WebGL (viz/gl.js): the bolts as soft lines into a texture of
 // their own (the brightest wins where they cross, so joints and branches do
 // not bead), that blurred twice for their glow, and the sky, the clouds, the
-// rain and the hills in one pass over the whole screen, lit by where the
-// bolts are.
+// rain and the land in one pass over the whole screen, lit by where the
+// bolts are. The land (three layers of hills with firs and the odd oak on
+// them) is drawn once for the screen's size into a texture of its own.
 //
 // Its cogwheel: the bolts' colour, Screen flash (the sky lighting up, and how
 // much), Rain, and Strikes (how readily it strikes).
@@ -47,11 +48,107 @@
       o = vec4(vec3(a * f * f), 1.0);
     }`;
 
+
+  // The land: three layers of hills, far, middle and near, each with firs
+  // along it (smaller the further back, in stretches of forest and open
+  // ground, some standing lower down the slope) and now and then a broad oak.
+  // Drawn once for the screen's size: how much of each pixel each layer
+  // covers, in R (far), G (middle), B (near).
+  const LAND_FS = VizGL.NOISE + `
+    in vec2 uv;
+    uniform vec2 res;
+    out vec4 o;
+
+    float hills(float x, float seed, float h, float rough) {
+      return h + 0.2 * (fbm(vec2(x * 1.8 + seed, seed)) - 0.45) + rough * vnoise(vec2(x * 9.0, seed + 4.0));
+    }
+
+    // A fir, at q in its own heights from its foot.
+    float pine(vec2 q, float seed, float pxu) {
+      float u = q.x, v = q.y;
+      if (v < -0.5 || v > 1.02 || abs(u) > 0.32) return 0.0;
+      float trunk = clamp((0.02 - abs(u)) / pxu + 0.5, 0.0, 1.0) * step(v, 0.3);
+      float tiers = 4.0 + floor(fract(seed * 11.3) * 4.0);
+      float saw = fract(v * tiers + abs(u) * 1.5 + seed);
+      float side = vnoise(vec2(sign(u) * 13.0 + seed * 50.0, v * 20.0));
+      float hw = 0.23 * pow(max(1.0 - v, 0.0), 0.95) * (0.62 + 0.38 * (1.0 - saw)) * (0.75 + 0.5 * side);
+      // Needles: the edge ragged.
+      hw *= 1.0 + 0.3 * (vnoise(vec2(v * 90.0 + seed * 7.0, sign(u) * 3.0 + abs(u) * 30.0)) - 0.5);
+      float crown = clamp((hw - abs(u)) / pxu + 0.5, 0.0, 1.0) * step(0.1, v);
+      return max(trunk, crown);
+    }
+
+    float segment(vec2 p, vec2 a, vec2 b) {
+      vec2 pa = p - a, ba = b - a;
+      return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0));
+    }
+
+    // An oak: a thick trunk forking into a broad, lumpy, leafy crown.
+    float oak(vec2 q, float seed, float pxu) {
+      if (q.y < -0.5 || q.y > 1.1 || abs(q.x) > 0.7) return 0.0;
+      float bend = 0.025 * sin(q.y * 6.0 + seed);
+      float tw = 0.04 + 0.035 * smoothstep(0.12, 0.0, q.y);
+      float wood = clamp((tw - abs(q.x - bend)) / pxu + 0.5, 0.0, 1.0) * step(q.y, 0.5);
+      for (int i = 0; i < 3; i++) {
+        float fi = float(i);
+        vec2 a = vec2(bend, 0.32 + 0.06 * fi);
+        vec2 b = vec2((fi - 1.0) * 0.32 + 0.08 * (hash12(vec2(seed, fi)) - 0.5), 0.62 + 0.08 * hash12(vec2(fi, seed)));
+        wood = max(wood, clamp((0.022 - segment(q, a, b)) / pxu + 0.5, 0.0, 1.0));
+      }
+      float d = 1e3;
+      for (int i = 0; i < 8; i++) {
+        float fi = float(i);
+        vec2 c = vec2((hash12(vec2(seed, fi + 2.0)) - 0.5) * 0.85, 0.6 + 0.3 * hash12(vec2(fi + 5.0, seed)));
+        float r = 0.15 + 0.11 * hash12(vec2(seed + fi, 3.1));
+        d = min(d, length((q - c) * vec2(1.0, 1.2)) - r);
+      }
+      // Leaves: the crown's edge lumpy and frayed, a few holes through it.
+      d += 0.05 * (fbm(q * 16.0 + seed) - 0.5);
+      float crown = clamp(-d / pxu + 0.5, 0.0, 1.0);
+      crown *= 1.0 - smoothstep(0.66, 0.72, fbm(q * 9.0 + seed * 1.7)) * smoothstep(-0.02, -0.08, d);
+      return max(wood, crown);
+    }
+
+    // One layer: its hill and its trees. xs: how wide its hills are; h: how
+    // high; treeH: its firs' height (of the screen's); oaks: how many oaks.
+    float layer(vec2 p, float xs, float seed, float h, float rough, float treeH, float oaks) {
+      float px = 1.0 / res.y;
+      float cov = clamp((hills(p.x * xs, seed, h, rough) - p.y) / px + 0.5, 0.0, 1.0);
+      if (p.y > h + 0.12 + treeH * 1.8) return cov;
+      float cell = treeH * 0.33;
+      float c = floor(p.x / cell);
+      for (int k = -3; k <= 3; k++) {
+        float id = c + float(k);
+        float hh = hash12(vec2(id, seed));
+        // Stretches of forest and open ground.
+        float stand = smoothstep(0.25, 0.55, vnoise(vec2(id * cell * 2.2, seed * 3.0)));
+        if (hh > 0.92 * stand) continue;
+        float tx = (id + 0.2 + 0.6 * hash12(vec2(id * 1.7, seed + 3.1))) * cell;
+        float big = hash12(vec2(id * 3.3, seed + 9.2));
+        bool isOak = hash12(vec2(id * 3.7, seed + 2.0)) < oaks;
+        float th = treeH * (isOak ? 1.05 + 0.2 * big : 0.7 + 0.5 * big + 0.4 * pow(big, 6.0));
+        // Some stand a little down the slope, showing less of themselves.
+        float ty = hills(tx * xs, seed, h, rough) - th * 0.35 * hash12(vec2(id * 5.1, seed + 1.7)) - px * 2.0;
+        vec2 q = vec2(p.x - tx, p.y - ty) / th;
+        cov = max(cov, isOak ? oak(q, hh * 91.7, px / th) : pine(q, hh * 91.7, px / th));
+      }
+      return cov;
+    }
+
+    void main() {
+      vec2 p = vec2(uv.x * res.x / res.y, uv.y);
+      float far = layer(p, 1.0, 3.0, 0.22, 0.012, 0.03, 0.0);
+      float mid = layer(p, 0.9, 7.0, 0.14, 0.016, 0.052, 0.012);
+      float near = layer(p, 0.8, 11.0, 0.07, 0.02, 0.088, 0.03);
+      o = vec4(far, mid, near, 1.0);
+    }`;
+
   const SKY_FS = VizGL.NOISE + `
     in vec2 uv;
     uniform sampler2D core;
     uniform sampler2D glowA;
     uniform sampler2D glowB;
+    uniform sampler2D land;
     uniform vec2 res;
     uniform float time;
     uniform float flash;
@@ -59,10 +156,6 @@
     uniform vec3 color;
     uniform vec4 lights[${MAX_LIGHTS}];
     out vec4 o;
-
-    float hills(float x, float seed, float h, float rough) {
-      return h + 0.2 * (fbm(vec2(x * 1.8 + seed, seed)) - 0.45) + rough * vnoise(vec2(x * 9.0, seed + 4.0));
-    }
 
     float rainLayer(vec2 p, float scale, float speed, float seed) {
       p.x += p.y * 0.18;
@@ -118,19 +211,18 @@
         col += vec3(0.5, 0.55, 0.65) * r * rain * (0.035 + 0.5 * flash + 0.6 * lit);
       }
 
-      // The hills: far ones dim against the flashes, near ones black; they
-      // stand in front of the bolts.
-      float far = hills(p.x, 3.0, 0.15, 0.012);
-      float near = hills(p.x * 0.8, 11.0, 0.075, 0.02);
-      if (uv.y < far) {
-        bolt *= smoothstep(far - 0.004, far, uv.y);
-        col = mix(col, vec3(0.012, 0.013, 0.02) + tint * (flash * 0.1 + lit * 0.05), 0.92);
-      }
-      if (uv.y < near) {
-        bolt *= 0.0;
-        float rim = smoothstep(near - 0.006, near, uv.y);
-        col = vec3(0.004, 0.004, 0.007) + tint * rim * (flash * 0.12 + lit * 0.08);
-      }
+      // The land, three layers with their trees: the far one dim against the
+      // flashes, the nearer ones darker, the near one black; their top edges
+      // catch the light; they stand in front of the bolts.
+      vec3 cov = texture(land, uv).rgb;
+      vec2 up = vec2(0.0, 1.0 / res.y);
+      vec3 over = (texture(land, uv + up * 2.0).rgb + texture(land, uv + up * 5.0).rgb) * 0.5;
+      vec3 rim = cov * (1.0 - over);
+      float shine = flash + lit * 0.6;
+      bolt *= 1.0 - max(cov.r, max(cov.g, cov.b));
+      col = mix(col, vec3(0.02, 0.022, 0.032) + tint * (flash * 0.1 + lit * 0.05 + rim.r * shine * 0.1), cov.r * 0.92);
+      col = mix(col, vec3(0.01, 0.011, 0.017) + tint * (flash * 0.05 + lit * 0.025 + rim.g * shine * 0.11), cov.g * 0.96);
+      col = mix(col, vec3(0.003, 0.003, 0.005) + tint * rim.b * shine * 0.12, cov.b);
       col += bolt;
 
       // Softly into white, and a little noise against banding in the dark.
@@ -165,6 +257,7 @@
       this.gl = gl;
       this.bolt = VizGL.program(gl, BOLT_VS, BOLT_FS);
       this.sky = VizGL.program(gl, VizGL.SCREEN_VS, SKY_FS);
+      this.land = VizGL.program(gl, VizGL.SCREEN_VS, LAND_FS);
       this.verts = VizGL.stream(gl, [[0, 2], [1, 1], [2, 1]], MAX_VERTS);
       this.bolts = [];
       this.rand = random(Date.now());
@@ -180,7 +273,14 @@
       const gl = this.gl;
       this.w = w;
       this.h = h;
-      for (const t of [this.core, this.qa, this.qb, this.ea, this.eb]) VizGL.freeTarget(gl, t);
+      for (const t of [this.core, this.qa, this.qb, this.ea, this.eb, this.landT]) VizGL.freeTarget(gl, t);
+      // The land, drawn once for this size.
+      this.landT = VizGL.target(gl, w, h, { half: false });
+      gl.disable(gl.BLEND);
+      VizGL.into(gl, this.landT);
+      gl.useProgram(this.land.p);
+      gl.uniform2f(this.land.u.res, w, h);
+      VizGL.screen(gl);
       this.core = VizGL.target(gl, w, h, { half: false });
       const qw = Math.max(1, Math.round(w / 4));
       const qh = Math.max(1, Math.round(h / 4));
@@ -380,6 +480,7 @@
       VizGL.bind(gl, u.core, this.core.tex, 0);
       VizGL.bind(gl, u.glowA, this.qb.tex, 1);
       VizGL.bind(gl, u.glowB, this.eb.tex, 2);
+      VizGL.bind(gl, u.land, this.landT.tex, 3);
       gl.uniform2f(u.res, this.w, this.h);
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.flash, Math.min(1.2, flash * 0.32 * amount));
