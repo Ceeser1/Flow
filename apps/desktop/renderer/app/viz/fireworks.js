@@ -30,24 +30,22 @@
       o = vec4(max(texture(prev, uv).rgb * keep - 0.002, 0.0), 1.0);
     }`;
 
-  const SKY_FS = VizGL.NOISE + `
+  const SKY_FS = VizGL.NOISE + VizGL.STARS + `
     in vec2 uv;
     uniform sampler2D sparks;
     uniform sampler2D glowA;
     uniform sampler2D glowB;
     uniform sampler2D city;
     uniform vec2 res;
-    uniform float flash, time, hasCity;
+    uniform float flash, time, hasCity, boom;
     uniform vec3 flashColor;
     out vec4 o;
     void main() {
       // Deep blue above, a little city glow low down.
       vec3 col = mix(vec3(0.03, 0.035, 0.07), vec3(0.004, 0.006, 0.02), smoothstep(0.0, 0.9, uv.y));
       col += vec3(0.06, 0.04, 0.05) * (1.0 - smoothstep(0.0, 0.3, uv.y)) * hasCity;
-      // Stars, twinkling.
-      vec2 g = gl_FragCoord.xy / 3.0;
-      float h = hash12(floor(g));
-      if (h > 0.9985) col += vec3(0.6) * (0.5 + 0.5 * sin(time * (1.0 + h * 3.0) + h * 100.0)) * smoothstep(0.25, 0.6, uv.y);
+      // Stars, twinkling (as Aurora's), fading out low over the city.
+      col += starField(gl_FragCoord.xy, time, boom) * smoothstep(0.2, 0.5, uv.y);
       col += flashColor * flash * (0.03 + 0.06 * uv.y);
       // The sparks and their glow.
       col += texture(sparks, uv).rgb + texture(glowA, uv).rgb * 0.9 + texture(glowB, uv).rgb * 1.4;
@@ -348,6 +346,7 @@
       gl.uniform2f(u.res, this.w, this.h);
       gl.uniform1f(u.flash, this.flash);
       gl.uniform1f(u.time, this.age);
+      gl.uniform1f(u.boom, a.kick);
       gl.uniform1f(u.hasCity, set('fwCity') ? 1 : 0);
       gl.uniform3f(u.flashColor, ...this.flashColor);
       VizGL.screen(gl);

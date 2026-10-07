@@ -289,4 +289,57 @@ const VizGL = {
       vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
       return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
     }`,
+
+  // Shared shader code: a night sky's stars, as Aurora's (after NOISE).
+  STARS: `
+    // A star's twinkle: its own speed and moment, a little irregular; depth
+    // is how far it dims.
+    float twinkle(vec2 g, float depth, float time) {
+      float phase = hash12(g + 31.1) * 6.2831853;
+      float speed = 1.2 + 4.0 * hash12(g + 41.7);
+      float t = 0.5 + 0.3 * sin(time * speed + phase) + 0.2 * sin(time * speed * 2.37 + phase * 1.7);
+      return 1.0 - depth * t;
+    }
+
+    // The stars at px (pixels): many faint ones a pixel across, and fewer
+    // bright ones, larger, white to blue or warm, the brightest with a halo
+    // and four thin spikes of glare (flashing a little with boom, the kick).
+    vec3 starField(vec2 px, float time, float boom) {
+      vec3 sum = vec3(0.0);
+      {
+        const float CELL = 5.0;
+        vec2 g = floor(px / CELL);
+        if (hash12(g + 11.3) > 0.955) {
+          vec2 c = (g + 0.2 + 0.6 * vec2(hash12(g + 3.1), hash12(g + 7.7))) * CELL;
+          vec2 d = px - c;
+          float b = 0.1 + 0.3 * hash12(g + 5.2) * hash12(g + 8.8);
+          sum += vec3(0.85, 0.9, 1.0) * b * twinkle(g, 0.6, time) * exp(-dot(d, d) / 0.45);
+        }
+      }
+      // The bright ones look into the cells round about too: their glare
+      // reaches past their own.
+      const float BIG = 40.0;
+      vec2 g0 = floor(px / BIG);
+      for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+          vec2 g = g0 + vec2(float(i), float(j));
+          if (hash12(g + 23.9) < 0.8) continue;
+          vec2 c = (g + 0.5 + 0.8 * (vec2(hash12(g + 1.7), hash12(g + 9.4)) - 0.5)) * BIG;
+          vec2 d = px - c;
+          // Most of them modest, a few brilliant.
+          float m = pow(hash12(g + 4.4), 3.0);
+          float r = 0.65 + 1.1 * m;
+          float glow = exp(-dot(d, d) / (r * r));
+          glow += 0.1 * m * exp(-length(d) / (2.0 + 4.0 * m));
+          if (m > 0.5) {
+            // Flashing a little with the bass.
+            float reach = (3.0 + 8.0 * m) * (1.0 + 0.3 * boom);
+            glow += 0.25 * m * (1.0 + 0.8 * boom) * (exp(-abs(d.y) / 0.45 - abs(d.x) / reach) + exp(-abs(d.x) / 0.45 - abs(d.y) / reach));
+          }
+          vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.88, 0.72), hash12(g + 6.6));
+          sum += tint * (0.3 + 1.0 * m) * twinkle(g, 0.45, time) * glow;
+        }
+      }
+      return sum;
+    }`,
 };

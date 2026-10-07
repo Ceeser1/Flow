@@ -36,7 +36,7 @@
     rainbow: [[0.2, 1.0, 0.6], [1.0, 0.3, 0.5]],
   };
 
-  const FS = VizGL.NOISE + `
+  const FS = VizGL.NOISE + VizGL.STARS + `
     in vec2 uv;
     uniform sampler2D bands;
     uniform vec2 res;
@@ -50,61 +50,10 @@
       return HORIZON + 0.012 + 0.09 * max(0.0, fbm(vec2(x * 1.4 + 2.0, 1.3)) - 0.3) + 0.012 * vnoise(vec2(x * 11.0, 4.0));
     }
 
-    // A star's twinkle: its own speed and moment, a little irregular; depth
-    // is how far it dims.
-    float twinkle(vec2 g, float depth) {
-      float phase = hash12(g + 31.1) * 6.2831853;
-      float speed = 1.2 + 4.0 * hash12(g + 41.7);
-      float t = 0.5 + 0.3 * sin(time * speed + phase) + 0.2 * sin(time * speed * 2.37 + phase * 1.7);
-      return 1.0 - depth * t;
-    }
-
-    // The stars at px (pixels): many faint ones a pixel across, and fewer
-    // bright ones, larger, white to blue or warm, the brightest with a halo
-    // and four thin spikes of glare.
-    vec3 starField(vec2 px) {
-      vec3 sum = vec3(0.0);
-      {
-        const float CELL = 5.0;
-        vec2 g = floor(px / CELL);
-        if (hash12(g + 11.3) > 0.955) {
-          vec2 c = (g + 0.2 + 0.6 * vec2(hash12(g + 3.1), hash12(g + 7.7))) * CELL;
-          vec2 d = px - c;
-          float b = 0.1 + 0.3 * hash12(g + 5.2) * hash12(g + 8.8);
-          sum += vec3(0.85, 0.9, 1.0) * b * twinkle(g, 0.6) * exp(-dot(d, d) / 0.45);
-        }
-      }
-      // The bright ones look into the cells round about too: their glare
-      // reaches past their own.
-      const float BIG = 40.0;
-      vec2 g0 = floor(px / BIG);
-      for (int j = -1; j <= 1; j++) {
-        for (int i = -1; i <= 1; i++) {
-          vec2 g = g0 + vec2(float(i), float(j));
-          if (hash12(g + 23.9) < 0.8) continue;
-          vec2 c = (g + 0.5 + 0.8 * (vec2(hash12(g + 1.7), hash12(g + 9.4)) - 0.5)) * BIG;
-          vec2 d = px - c;
-          // Most of them modest, a few brilliant.
-          float m = pow(hash12(g + 4.4), 3.0);
-          float r = 0.65 + 1.1 * m;
-          float glow = exp(-dot(d, d) / (r * r));
-          glow += 0.1 * m * exp(-length(d) / (2.0 + 4.0 * m));
-          if (m > 0.5) {
-            // Flashing a little with the bass.
-            float reach = (3.0 + 8.0 * m) * (1.0 + 0.3 * boom);
-            glow += 0.25 * m * (1.0 + 0.8 * boom) * (exp(-abs(d.y) / 0.45 - abs(d.x) / reach) + exp(-abs(d.x) / 0.45 - abs(d.y) / reach));
-          }
-          vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.88, 0.72), hash12(g + 6.6));
-          sum += tint * (0.3 + 1.0 * m) * twinkle(g, 0.45) * glow;
-        }
-      }
-      return sum;
-    }
-
     vec3 sky(vec2 p, float aspect) {
       float x = p.x * aspect;
       vec3 col = mix(vec3(0.01, 0.02, 0.05), vec3(0.0, 0.004, 0.02), smoothstep(HORIZON, 1.0, p.y));
-      if (stars > 0.0) col += starField(p * res) * smoothstep(HORIZON, HORIZON + 0.2, p.y);
+      if (stars > 0.0) col += starField(p * res, time, boom) * smoothstep(HORIZON, HORIZON + 0.2, p.y);
       // Three curtains, one behind the other.
       for (int i = 0; i < 3; i++) {
         float fi = float(i);

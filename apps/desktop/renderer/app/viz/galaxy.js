@@ -62,20 +62,18 @@
       o = vec4(c * f * f, 1.0);
     }`;
 
-  const OUT_FS = VizGL.NOISE + `
+  const OUT_FS = VizGL.NOISE + VizGL.STARS + `
     in vec2 uv;
     uniform sampler2D light;
     uniform sampler2D glowA;
     uniform sampler2D glowB;
     uniform vec2 res;
-    uniform float time;
+    uniform float time, boom;
     out vec4 o;
     void main() {
       vec3 col = vec3(0.004, 0.004, 0.01);
-      // Far stars behind.
-      vec2 g = floor(gl_FragCoord.xy / 2.0);
-      float h = hash12(g);
-      if (h > 0.9975) col += vec3(0.5) * (h - 0.9975) / 0.0025;
+      // Far stars behind (as Aurora's).
+      col += starField(gl_FragCoord.xy, time, boom);
       col += texture(light, uv).rgb + texture(glowA, uv).rgb * 1.3 + texture(glowB, uv).rgb * 2.0;
       col = 1.0 - exp(-col * 1.2);
       col += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
@@ -220,6 +218,7 @@
       VizGL.bind(gl, o.glowB, this.eb.tex, 2);
       gl.uniform2f(o.res, this.w, this.h);
       gl.uniform1f(o.time, this.age);
+      gl.uniform1f(o.boom, a.kick);
       VizGL.screen(gl);
     }
   }

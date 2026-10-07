@@ -7,7 +7,8 @@
 // disk shines with the music, its inner edge with the bass; its gas swirls
 // faster near the hole (and with the tempo), in streaks the mids stir up;
 // the kicks set hot spots flaring that circle in and fade; the highs make
-// the ring round the shadow shimmer. The stars behind are bent round it too.
+// the ring round the shadow shimmer. The stars behind (as Aurora's) are bent
+// round it too.
 //
 // Its cogwheel: the colours, the view (almost edge on, slanted, from above),
 // how fast the gas turns.
@@ -16,6 +17,10 @@
 // the hole's field (a photon's path round a Schwarzschild black hole, its
 // pull 1.5 h^2 / r^5, h its angular momentum), gathering the disk's light
 // each time it crosses the disk, at half the screen's size; then a glow.
+// The stars are drawn at the full size afterwards: the ray pass keeps, in a
+// second texture, where on the sky each pixel's bent ray ends up (as an
+// offset from where it would without the hole, which is smooth enough to
+// be read between pixels) and how much of the sky shows there.
 
 (() => {
   const SPOTS = 4;
@@ -28,8 +33,9 @@
     uniform vec3 eye;
     uniform float time, spin, glow, inner, stir, shimmer;
     uniform int palette;
+    layout(location = 1) out vec4 o2;   // the stars' bend (screen plane), how much sky shows
     uniform vec4 spots[${SPOTS}];   // radius, angle, age, strength
-    out vec4 o;
+    layout(location = 0) out vec4 o;
 
     const float R_IN = 2.6;
     const float R_OUT = 13.0;
@@ -87,19 +93,13 @@
       return vec4(c, alpha);
     }
 
+    // The sky behind, but for its stars (drawn later, at the full size): a
+    // faint band of the galaxy's dust.
     vec3 sky(vec3 d) {
       vec2 sp = vec2(atan(d.z, d.x), asin(clamp(d.y, -1.0, 1.0)));
       vec3 c = vec3(0.0);
-      for (int k = 0; k < 2; k++) {
-        float sc = k == 0 ? 160.0 : 60.0;
-        vec2 cell = floor(sp * sc);
-        float h = hash12(cell + float(k) * 31.0);
-        vec2 f = fract(sp * sc) - 0.5;
-        float star = step(k == 0 ? 0.985 : 0.995, h) * exp(-dot(f, f) * 40.0);
-        c += star * mix(vec3(1.0, 0.85, 0.7), vec3(0.75, 0.85, 1.0), hash12(cell + 9.0)) * (k == 0 ? 0.6 : 1.4);
-      }
       float band = exp(-pow(d.y * 3.0 + 0.4 * sin(sp.x * 2.0), 2.0));
-      c += vec3(0.05, 0.04, 0.06) * band * fbm(sp * 4.0);
+      c += vec3(0.05, 0.04, 0.06) * band * fbm(d.xz * 3.0 + d.y * 2.0);   // no seam where the angle wraps
       return c;
     }
 
@@ -145,17 +145,37 @@
         // (Only for rays that get away again: those falling in stay black.)
         ringLight += (1.0 - hidden) * tint(0.9) * exp(-pow(r - 1.5, 2.0) * 18.0) * dt * 0.035 * (0.4 + shimmer * 1.6);
       }
-      if (!swallowed) col += (1.0 - hidden) * sky(normalize(vel)) + ringLight;
+      vec2 bend = vec2(0.0);
+      float starsShow = 0.0;
+      if (!swallowed) {
+        vec3 d = normalize(vel);
+        col += (1.0 - hidden) * sky(d) + ringLight;
+        // Where the ray points now, on the screen's plane (rays bent round
+        // to behind the eye show no stars).
+        float f = dot(d, fw);
+        if (f > 0.05) {
+          bend = vec2(dot(d, rt), dot(d, up)) / f - sc * 0.95;
+          starsShow = (1.0 - hidden) * smoothstep(0.05, 0.2, f);
+        }
+      }
       o = vec4(col, 1.0);
+      o2 = vec4(bend, starsShow, 1.0);
     }`;
 
-  const SHOW_FS = VizGL.NOISE + `
+  const SHOW_FS = VizGL.NOISE + VizGL.STARS + `
     in vec2 uv;
-    uniform sampler2D scene, glow;
-    uniform float time;
+    uniform sampler2D scene, glow, bent;
+    uniform vec2 res;
+    uniform float time, boom, orbit;
     out vec4 o;
     void main() {
       vec3 c = texture(scene, uv).rgb + texture(glow, uv).rgb * 0.8;
+      // The stars where this pixel's ray ends up, moving on as the eye
+      // circles round.
+      vec3 b = texture(bent, uv).xyz;
+      vec2 sc = (uv - 0.5) * vec2(res.x / res.y, 1.0);
+      vec2 px = (sc + b.xy / 0.95) * res.y + res * 0.5 + vec2(orbit / 0.95 * res.y, 0.0);
+      if (b.z > 0.0) c += starField(px, time, boom) * b.z;
       c = 1.0 - exp(-c * 1.2);
       c = pow(c, vec3(0.95));
       c += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
@@ -183,9 +203,17 @@
       const gl = this.gl;
       this.w = w;
       this.h = h;
-      for (const t of [this.t, this.b1, this.b2]) VizGL.freeTarget(gl, t);
-      // Half the screen's size: every pixel steps a long way.
-      this.t = VizGL.target(gl, Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2)));
+      for (const t of [this.t, this.bent, this.b1, this.b2]) VizGL.freeTarget(gl, t);
+      // Half the screen's size: every pixel steps a long way. The ray pass
+      // draws into both: the picture, and where the stars are bent to.
+      const hw = Math.max(1, Math.round(w / 2));
+      const hh = Math.max(1, Math.round(h / 2));
+      this.t = VizGL.target(gl, hw, hh);
+      this.bent = VizGL.target(gl, hw, hh);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.t.fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.bent.tex, 0);
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       const sw = Math.max(1, Math.round(w / 6));
       const sh = Math.max(1, Math.round(h / 6));
       this.b1 = VizGL.target(gl, sw, sh);
@@ -252,7 +280,11 @@
       gl.useProgram(this.show.p);
       VizGL.bind(gl, this.show.u.scene, this.t.tex, 0);
       VizGL.bind(gl, this.show.u.glow, this.b2.tex, 1);
+      VizGL.bind(gl, this.show.u.bent, this.bent.tex, 2);
+      gl.uniform2f(this.show.u.res, this.w, this.h);
       gl.uniform1f(this.show.u.time, this.age);
+      gl.uniform1f(this.show.u.boom, a.kick);
+      gl.uniform1f(this.show.u.orbit, this.orbit);
       VizGL.screen(gl);
     }
   }
