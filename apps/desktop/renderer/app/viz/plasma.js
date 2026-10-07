@@ -1,21 +1,25 @@
 'use strict';
 
-// Plasma Globe: a glass sphere on a black stand, crackling tendrils of
-// plasma reaching from the glowing electrode in its middle out to the glass.
+// Plasma: crackling tendrils of plasma reaching from a glowing electrode out
+// to the glass of a globe round it, or out across the whole screen.
 // More of them the louder the music, wriggling with the mids, flickering
 // with the highs, all brighter on the beat; the big kicks are a fingertip on
 // the glass, the tendrils gathering to it in a bright bundle and wandering
 // off again.
 //
-// Its cogwheel: the colours, how many tendrils at most, the stand.
+// Its cogwheel: the shape (the whole screen or a globe), the colours, how
+// many tendrils at most.
 //
 // WebGL (viz/gl.js): one pass over the screen; each tendril a wavering line
 // from the middle to a point on the glass (the points wander over the
-// sphere, those behind dimmer), its distance from each pixel worked out
-// along twenty pieces; then the glass's shine and the stand.
+// sphere, those behind dimmer; on the whole screen the line runs on past
+// its edge the same way), its distance from each pixel worked out along
+// forty pieces (the points in a small float texture, a row a tendril);
+// then the glass's shine.
 
 (() => {
-  const MAX = 14;
+  const MAX = 20;
+  const PTS = 21;   // a tendril's 41 points, two to a texel
   const PALETTES = {
     plasma: [[1.0, 0.35, 0.85], [0.55, 0.3, 1.0]],
     blue: [[0.35, 0.7, 1.0], [0.2, 0.35, 1.0]],
@@ -26,10 +30,11 @@
   const FS = VizGL.NOISE + `
     in vec2 uv;
     uniform vec2 res;
-    uniform float time, glow, wiggle, flicker, touch, stand;
-    uniform vec4 tips[${MAX}];      // x, y (on the globe, -1..1), depth (-1 behind .. 1 in front), strength
+    uniform float time, glow, wiggle, flicker, touch;
+    uniform bool full;              // the whole screen, no globe
+    uniform vec4 tips[${MAX}];      // x, y (on the globe, -1..1; past the screen's edge when full), depth (-1 behind .. 1 in front), strength
     uniform vec3 cols[${MAX}];
-    uniform vec4 pts[${MAX * 11}];  // each tendril's 21 points, two to a vec4
+    uniform sampler2D pts;          // row i: tendril i's 41 points, two to a texel
     uniform vec3 inner;
     uniform int count;
     out vec4 o;
@@ -40,7 +45,7 @@
     }
 
     void main() {
-      vec2 p = (uv - vec2(0.5, 0.54)) * vec2(res.x / res.y, 1.0);
+      vec2 p = (uv - vec2(0.5, full ? 0.5 : 0.54)) * vec2(res.x / res.y, 1.0);
       const float R = 0.36;
       vec2 q = p / R;
       float r = length(q);
@@ -48,21 +53,24 @@
       vec3 col = vec3(0.01, 0.008, 0.015) * (1.0 - 0.5 * length(uv - 0.5));
       // The room lit faintly by the globe.
       col += inner * 0.05 * glow * exp(-r * 1.2);
-      if (r < 1.02) {
-        // Inside the glass: a dim haze of the gas.
-        float inside = smoothstep(1.0 + px, 1.0 - px, r);
-        vec3 gas = inner * (0.05 + 0.08 * glow) * (1.0 - r * 0.6) * (0.8 + 0.4 * fbm(q * 3.0 + time * 0.3));
+      if (full || r < 1.02) {
+        // Inside the glass (everywhere, without one): a dim haze of the gas.
+        float inside = full ? 1.0 : smoothstep(1.0 + px, 1.0 - px, r);
+        float haze = full ? exp(-r * 0.7) : 1.0 - r * 0.6;
+        vec3 gas = inner * (0.05 + 0.08 * glow) * haze * (0.8 + 0.4 * fbm(q * 3.0 + time * 0.3));
         vec3 light = vec3(0.0);
         for (int i = 0; i < ${MAX}; i++) {
           if (i >= count) break;
           vec4 tip = tips[i];
           if (tip.w <= 0.0) continue;
           vec2 e = tip.xy;
+          // Too far from its line for any of its light: skip it.
+          if (segDist(q, vec2(0.0), e) > 0.27 * length(e) + 0.4) continue;
           float seed = float(i) * 7.31;
           float d = 1e3;
-          for (int k = 0; k < 10; k++) {
-            vec4 ab = pts[i * 11 + k];
-            vec2 c = pts[i * 11 + k + 1].xy;
+          for (int k = 0; k < ${PTS - 1}; k++) {
+            vec4 ab = texelFetch(pts, ivec2(k, i), 0);
+            vec2 c = texelFetch(pts, ivec2(k + 1, i), 0).xy;
             d = min(d, min(segDist(q, ab.xy, ab.zw), segDist(q, ab.zw, c)));
           }
           float bright = tip.w * (0.55 + 0.45 * (tip.z * 0.5 + 0.5));
@@ -70,33 +78,20 @@
           light += cols[i] * (exp(-d * d / (px * px * 12.0)) * 1.5 + exp(-d * 14.0) * 0.4) * bright * fl;
           light += vec3(1.0) * exp(-d * d / (px * px * 1.5)) * 0.6 * bright * fl;
           // Where it meets the glass: a bright spot.
-          light += cols[i] * exp(-pow(length(q - e) / 0.06, 2.0)) * bright * 0.8;
+          if (!full) light += cols[i] * exp(-pow(length(q - e) / 0.06, 2.0)) * bright * 0.8;
         }
         // The electrode: a hot ball in the middle.
         float core = exp(-pow(r / 0.12, 2.0));
         light += mix(inner, vec3(1.0), 0.6) * core * (1.2 + glow) + inner * exp(-r * 6.0) * 0.6 * glow;
         col = mix(col, col * 0.5 + gas + light, inside);
-        // The glass: darker and tinted at its rim, a window's glint, a soft ring.
-        float rim = smoothstep(0.75, 1.0, r) * inside;
-        col += inner * rim * 0.12 * (0.5 + glow);
-        vec2 g = q - vec2(-0.42, 0.45);
-        float glint = exp(-pow(length(g * vec2(1.0, 1.6)) / 0.18, 2.0)) * 0.35 + exp(-pow((r - 0.93) / 0.03, 2.0)) * 0.08;
-        col += vec3(0.9, 0.92, 1.0) * glint * inside;
-        col += vec3(0.6, 0.65, 0.8) * exp(-pow((r - 1.0) / (px * 2.0), 2.0)) * 0.35;
-      }
-      // The stand: a black cone with a chrome band, under the globe.
-      if (stand > 0.5) {
-        vec2 s = q - vec2(0.0, -1.0);
-        float top = 0.34, bottom = 0.62, h = 0.55;
-        float y = -s.y / h;
-        float half_ = mix(top, bottom, clamp(y, 0.0, 1.0));
-        if (y > -0.05 && y < 1.0 && abs(s.x) < half_ && r > 0.97) {
-          float shade = 0.03 + 0.05 * pow(1.0 - abs(s.x) / half_, 2.0) + inner.x * 0.0;
-          vec3 base = vec3(shade);
-          float band = smoothstep(0.02, 0.0, abs(y - 0.12) - 0.04);
-          base = mix(base, vec3(0.3, 0.31, 0.33) * (0.5 + 0.8 * pow(1.0 - abs(s.x) / half_, 3.0)), band);
-          base += inner * 0.15 * glow * smoothstep(0.3, 0.0, y);
-          col = base;
+        if (!full) {
+          // The glass: darker and tinted at its rim, a window's glint, a soft ring.
+          float rim = smoothstep(0.75, 1.0, r) * inside;
+          col += inner * rim * 0.12 * (0.5 + glow);
+          vec2 g = q - vec2(-0.42, 0.45);
+          float glint = exp(-pow(length(g * vec2(1.0, 1.6)) / 0.18, 2.0)) * 0.35 + exp(-pow((r - 0.93) / 0.03, 2.0)) * 0.08;
+          col += vec3(0.9, 0.92, 1.0) * glint * inside;
+          col += vec3(0.6, 0.65, 0.8) * exp(-pow((r - 1.0) / (px * 2.0), 2.0)) * 0.35;
         }
       }
       col = 1.0 - exp(-col * 1.3);
@@ -120,12 +115,16 @@
     return [Math.cos(a) * r, Math.sin(a) * r, z];
   }
 
-  class PlasmaGlobe {
+  class Plasma {
     constructor(canvas) {
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
       this.prog = VizGL.program(gl, VizGL.SCREEN_VS, FS);
+      this.ptsTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.ptsTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, PTS, MAX, 0, gl.RGBA, gl.FLOAT, null);
+      for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST);
       this.tendrils = Array.from({ length: MAX }, (_, i) => ({ d: onSphere(), drift: onSphere(), on: 0, hue: i / MAX }));
       this.touch = 0;
       this.finger = [0, 0, 1];
@@ -165,7 +164,11 @@
 
       const tips = new Float32Array(MAX * 4);
       const cols = new Float32Array(MAX * 3);
-      const pts = new Float32Array(MAX * 11 * 4);
+      const pts = new Float32Array(MAX * PTS * 4);
+      const full = set('pgShape') === 'full';
+      // On the whole screen: how far out its edges lie (in globe radii).
+      const hx = (0.5 * this.w) / this.h / 0.36;
+      const hy = 0.5 / 0.36;
       const wiggle = a.playing ? a.mid : 0.2;
       const jitter = a.playing ? a.treble : 0.1;
       this.phase = (this.phase || 0) + dt * (a.playing ? 1 + a.level : 0.4);
@@ -181,23 +184,33 @@
         t.d = t.d.map((v) => v / len);
         t.on += ((i < want ? 1 : 0) - t.on) * Math.min(1, dt * 4);
         const strength = t.on * this.glow * (1 + this.touch * 0.8);
-        tips.set([t.d[0] * 0.97, t.d[1] * 0.97, t.d[2], strength], i * 4);
+        // Its tip: on the glass, or (on the whole screen) on out the same
+        // way to a little past the screen's edge.
+        let ex = t.d[0] * 0.97;
+        let ey = t.d[1] * 0.97;
+        if (full) {
+          const l = Math.hypot(ex, ey) || 1;
+          const dx = ex / l;
+          const dy = ey / l;
+          const reach = Math.min(hx / Math.max(Math.abs(dx), 1e-3), hy / Math.max(Math.abs(dy), 1e-3)) * 1.08;
+          ex = dx * reach;
+          ey = dy * reach;
+        }
+        tips.set([ex, ey, t.d[2], strength], i * 4);
         // Its line: from the middle to the tip, wavering (slow waves, quicker
         // ripples with the highs), still at both ends.
-        const ex = t.d[0] * 0.97;
-        const ey = t.d[1] * 0.97;
         const span = Math.hypot(ex, ey) || 1;
         const nx = -ey / span;
         const ny = ex / span;
         const amp = (0.1 + 0.16 * wiggle) * span;
         const ph = this.phase;
-        for (let k = 0; k <= 20; k += 1) {
-          const f = k / 20;
+        for (let k = 0; k <= (PTS - 1) * 2; k += 1) {
+          const f = k / ((PTS - 1) * 2);
           const wob = Math.sin(f * 5 + ph * 3.1 + i * 1.7) * 0.6 + Math.sin(f * 10.5 - ph * 4.7 + i * 2.9) * 0.3
             + Math.sin(f * 16 + ph * 11 + i * 5.3) * 0.1 * (0.4 + jitter);
           const off = wob * amp * Math.sin(Math.PI * f);
-          pts[(i * 11) * 4 + k * 2] = ex * f + nx * off;
-          pts[(i * 11) * 4 + k * 2 + 1] = ey * f + ny * off;
+          pts[(i * PTS) * 4 + k * 2] = ex * f + nx * off;
+          pts[(i * PTS) * 4 + k * 2 + 1] = ey * f + ny * off;
         }
         const c = pal ? pal[i % 2] : hsv((t.hue + this.age * 0.03) % 1, 0.7, 1);
         cols.set(c, i * 3);
@@ -214,10 +227,12 @@
       gl.uniform1f(u.wiggle, a.playing ? a.mid : 0.2);
       gl.uniform1f(u.flicker, a.playing ? 0.3 + a.treble : 0.2);
       gl.uniform1f(u.touch, this.touch);
-      gl.uniform1f(u.stand, set('pgStand') ? 1 : 0);
+      gl.uniform1i(u.full, full ? 1 : 0);
       gl.uniform4fv(u.tips, tips);
       gl.uniform3fv(u.cols, cols);
-      gl.uniform4fv(u.pts, pts);
+      gl.bindTexture(gl.TEXTURE_2D, this.ptsTex);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, PTS, MAX, gl.RGBA, gl.FLOAT, pts);
+      VizGL.bind(gl, u.pts, this.ptsTex, 0);
       gl.uniform3f(u.inner, inner[0], inner[1], inner[2]);
       gl.uniform1i(u.count, MAX);
       VizGL.screen(gl);
@@ -226,16 +241,16 @@
 
   Visualizer.add({
     id: 'plasmaglobe',
-    name: 'Plasma Globe',
-    desc: 'A plasma globe crackling with the music, its tendrils reaching for the glass and gathering to a fingertip on the big kicks',
+    name: 'Plasma',
+    desc: 'Plasma crackling with the music, its tendrils reaching out across the screen or for the glass of a globe, gathering to a fingertip on the big kicks',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
-      + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="8"/><path d="M12 10l-4-5M12 10l5-3M12 10l-1 6M12 10l6 3"/><path d="M8 21h8l-1-3H9z"/></svg>',
+      + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 12l-4-6M12 12l6-3M12 12l-1 7M12 12l7 3"/></svg>',
     gl: true,
-    create: (canvas) => new PlasmaGlobe(canvas),
+    create: (canvas) => new Plasma(canvas),
     options: [
+      { type: 'choice', key: 'pgShape', label: 'Shape', choices: [['full', 'Full screen'], ['globe', 'Globe']] },
       { type: 'choice', key: 'pgColors', label: 'Colours', choices: [['plasma', 'Plasma'], ['blue', 'Blue'], ['green', 'Green'], ['rainbow', 'Rainbow']] },
       { type: 'slider', key: 'pgCount', label: 'Tendrils', min: 4, max: MAX, step: 1, unit: '' },
-      { type: 'check', key: 'pgStand', label: 'Stand' },
     ],
   });
 })();

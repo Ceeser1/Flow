@@ -205,10 +205,11 @@ const VIZ_OPTIONS = {
   shPieces: ['range', 10, 4, 20, 1],
   shForce: ['range', 100, 25, 200, 5],
   shWhen: ['choice', 'hits', ['hits', 'bar']],
-  // Plasma Globe: the colours, how many tendrils at most, the stand.
+  // Plasma: the shape (the whole screen or a globe), the colours, how many
+  // tendrils at most.
+  pgShape: ['choice', 'globe', ['full', 'globe']],
   pgColors: ['choice', 'plasma', ['plasma', 'blue', 'green', 'rainbow']],
-  pgCount: ['range', 10, 4, 14, 1],
-  pgStand: ['bool', true],
+  pgCount: ['range', 10, 4, 20, 1],
   // Attractor: which one (Clifford, De Jong, Lorenz), the colours, how fast
   // it turns (percent).
   atKind: ['choice', 'clifford', ['clifford', 'dejong', 'lorenz']],
