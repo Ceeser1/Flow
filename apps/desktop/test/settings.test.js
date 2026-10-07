@@ -210,6 +210,10 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ visualizer: 'mandala' }).visualizer, 'mandala');
   assert.equal(settings.clean({ visualizer: 'aurorawaves' }).visualizer, 'aurora');
   assert.equal(d.lqTrails, 100);
+  // Aurora's Glare: 50-150%, 100% by default.
+  assert.equal(d.auGlare, 100);
+  assert.equal(settings.clean({ auGlare: 20 }).auGlare, 50);
+  assert.equal(settings.clean({ auGlare: 151 }).auGlare, 150);
   assert.equal(settings.clean({ lqTrails: 7 }).lqTrails, 25);
 });
 

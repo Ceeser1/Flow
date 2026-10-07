@@ -12,7 +12,7 @@
 // mirrors it all, broken by small waves.
 //
 // Its cogwheel: the colours (green, the rarer red and violet, rainbow), how
-// restless, the lake, the stars (faint and bright ones, each twinkling in its
+// restless, how high the curtains shine (Glare), the lake, the stars (faint and bright ones, each twinkling in its
 // own time, the brightest with a glare flashing a little with the bass).
 //
 // WebGL (viz/gl.js): one pass over the screen; below the horizon each pixel
@@ -26,6 +26,7 @@
   const LIFT = 0.02;       // the most the edge moves up or down, of the screen (the curtains are 0.08 apart)
   const LIFT_GAIN = 5;     // a level this many times its rise over its average
   const SETTLE_S = 1.2;    // the average each place is measured against
+  const SHINE = 0.67;      // how high the curtains shine at Glare 100% (of what they first did)
 
   const PALETTES = {
     // low edge, top
@@ -39,7 +40,7 @@
     in vec2 uv;
     uniform sampler2D bands;
     uniform vec2 res;
-    uniform float time, drift, flare, lake, stars, rainbow, lift, boom;
+    uniform float time, drift, flare, lake, stars, rainbow, lift, boom, shine;
     uniform vec3 low, high;
     out vec4 o;
 
@@ -117,7 +118,7 @@
         float base = 0.44 + fi * 0.08 + 0.07 * sin(x * (1.3 + fi * 0.4) + drift * (0.5 + fi * 0.2) + fi * 2.0)
           + 0.14 * (fbm(vec2(x * 0.7 + fi * 3.7 + drift * 0.4, fi + drift * 0.1)) - 0.5) + lift * (heard.g - 0.5) * 2.0;
         float d = p.y - base;
-        float tall = 0.2 + 0.08 * fi;
+        float tall = (0.2 + 0.08 * fi) * shine;
         {
           // Fine rays, drifting along, leaning a little as they rise.
           float rx = x + d * 0.25;
@@ -249,6 +250,7 @@
       gl.uniform1f(u.flare, a.kick);
       gl.uniform1f(u.lift, LIFT);
       gl.uniform1f(u.boom, a.kick);
+      gl.uniform1f(u.shine, SHINE * (set('auGlare') / 100));
       gl.uniform1f(u.lake, set('auLake') ? 1 : 0);
       gl.uniform1f(u.stars, set('auStars') ? 1 : 0);
       gl.uniform1f(u.rainbow, set('auColors') === 'rainbow' ? 1 : 0);
@@ -302,6 +304,7 @@
     options: [
       { type: 'choice', key: 'auColors', label: 'Colors', choices: [['green', 'Green'], ['red', 'Red'], ['violet', 'Violet'], ['rainbow', 'Rainbow']] },
       { type: 'slider', key: 'auActivity', label: 'Restless', min: 25, max: 300, step: 5 },
+      { type: 'slider', key: 'auGlare', label: 'Glare', min: 50, max: 150, step: 5 },
       { type: 'check', key: 'auLake', label: 'Lake' },
       { type: 'check', key: 'auStars', label: 'Stars' },
     ],

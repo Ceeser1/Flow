@@ -118,9 +118,11 @@ const VIZ_OPTIONS = {
   sgColors: ['choice', 'inferno', ['inferno', 'magma', 'viridis', 'ice', 'grey']],
   sgSpeed: ['range', 100, 25, 300, 5],
   sgGrid: ['bool', true],
-  // Aurora: its colours, how restless (percent), the lake, the stars.
+  // Aurora: its colours, how restless and how high the curtains shine
+  // (percent), the lake, the stars.
   auColors: ['choice', 'green', ['green', 'red', 'violet', 'rainbow']],
   auActivity: ['range', 100, 25, 300, 5],
+  auGlare: ['range', 100, 50, 150, 5],
   auLake: ['bool', true],
   auStars: ['bool', true],
   // Skyline: its colours, the camera, how far back the rows reach (percent).
