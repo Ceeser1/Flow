@@ -212,8 +212,16 @@
     // The scene behind burns in a fire's own colours whatever the flames in
     // front are, but for the rainbow, all of it in rainbow (and without the
     // forest the sky follows the flames).
+    vec3 real(float t) {
+      return smoothstep(vec3(${PALETTES.fire[0].join(', ')}), vec3(${PALETTES.fire[1].join(', ')}), vec3(t));
+    }
     vec3 burning(float t) {
-      return trees > 0.5 && rainbow < 0.5 ? smoothstep(vec3(${PALETTES.fire[0].join(', ')}), vec3(${PALETTES.fire[1].join(', ')}), vec3(t)) : colour(t);
+      return trees > 0.5 && rainbow < 0.5 ? real(t) : colour(t);
+    }
+    // The bands' flames: the chosen colour where they are hot, turning to a
+    // fire's red as they cool towards their tips (the rainbow stays rainbow).
+    vec3 flame(float t) {
+      return rainbow > 0.5 ? colour(t) : mix(real(t), colour(t), smoothstep(0.15, 0.6, t));
     }
     // How far up the hill (0 front, 1 the ridge) the ground at height y is.
     float depthAt(float y, float r) {
@@ -257,7 +265,7 @@
       float td = (1.0 / ts - 1.0) / ${FAR}.0;
       vec3 bark = mix(vec3(0.012, 0.008, 0.006), haze, 0.7 * td);
       vec4 lg = textureLod(heat, uv, 3.0);
-      bark += (colour(min(lg.r, 0.7)) + burning(min(lg.b, 0.7))) * 0.16;
+      bark += (flame(min(lg.r, 0.7)) + burning(min(lg.b, 0.7))) * 0.16;
       vec2 cp = gl_FragCoord.xy / (5.0 + 16.0 * ts) + vec2(0.0, -time * 0.4);
       float speck = smoothstep(0.55, 0.85, fbm(cp)) * (0.6 + 0.4 * vnoise(cp * 1.7 + time * 1.2));
       bark += burning(0.45 + 0.4 * speck) * speck * f.b * 0.7;
@@ -279,12 +287,12 @@
       float hidden = cov * (1.0 - smoothstep(0.0, 0.3, h.g - ts)) * mix(0.75, 0.92, smoothstep(-0.1, 0.15, ts - h.g));
       float hiddenF = cov * (1.0 - smoothstep(0.0, 0.3, 1.0 - ts)) * mix(0.75, 0.92, smoothstep(-0.1, 0.15, ts - 1.0));
       vec3 trees_ = burning(h.b) * (1.0 - 0.85 * hidden) * mix(1.0, 0.7, hd) * (1.0 - clamp(smoothstep(0.1, 1.0, hd) * 0.6 * drift * trees, 0.0, 0.85));
-      vec3 flames = colour(h.r) * (1.0 - 0.85 * hiddenF);
+      vec3 flames = flame(h.r) * (1.0 - 0.85 * hiddenF);
       // The trees' fire behind the flames, mostly lost in them where they burn bright.
       vec3 fire = flames + trees_ * (1.0 - 0.6 * smoothstep(0.1, 0.7, h.r));
       // A faint glow of the fire on the air above it.
       vec4 ag = textureLod(heat, uv - vec2(0.0, 0.02), 3.0);
-      col += fire + (colour(min(ag.r, 0.6)) + burning(min(ag.b, 0.6))) * 0.25;
+      col += fire + (flame(min(ag.r, 0.6)) + burning(min(ag.b, 0.6))) * 0.25;
       // Faint smoke rising off the flames in front, over their tips.
       vec2 fp = vec2(p.x * aspect * 2.2 + time * 0.03, p.y * 3.0 - time * 0.22);
       float plume = smoothstep(0.45, 0.8, fbm(fp + 0.8 * vec2(vnoise(fp * 0.6 + time * 0.1), 0.0)));
@@ -497,13 +505,17 @@
       }
       // The trees' sparks in a fire's own colours, the flames' in theirs;
       // with the rainbow, all of them in rainbow.
+      // The flames' sparks too turn red as they cool.
+      const smooth = (a, b, x) => {
+        const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
+        return k * k * (3 - 2 * k);
+      };
       const heatColour = (t, tree) => {
         if (palette === 'rainbow') return [1, 0.9 - 0.4 * (1 - t), 0.6 - 0.5 * (1 - t)];
-        const q = tree ? PALETTES.fire : p;
-        return [0, 1, 2].map((c) => {
-          const x = Math.min(1, Math.max(0, (t - q[0][c]) / (q[1][c] - q[0][c])));
-          return x * x * (3 - 2 * x);
-        });
+        const real = [0, 1, 2].map((c) => smooth(PALETTES.fire[0][c], PALETTES.fire[1][c], t));
+        if (tree) return real;
+        const k = smooth(0.55, 0.95, t);
+        return [0, 1, 2].map((c) => real[c] + (smooth(p[0][c], p[1][c], t) - real[c]) * k);
       };
       const d = this.sparkBuf.data;
       let count = 0;
