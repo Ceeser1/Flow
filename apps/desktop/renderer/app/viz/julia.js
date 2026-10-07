@@ -1,6 +1,6 @@
 'use strict';
 
-// Julia: the Julia set of z^2 + c, its c gliding along the edge of the
+// Fractals: the Julia set of z^2 + c, its c gliding along the edge of the
 // Mandelbrot set, where the shapes are richest: islands joining into
 // coastlines and breaking into dust again. The glide moves on with the
 // tempo and a little further on each beat; the bass draws the view in; it
@@ -133,7 +133,7 @@
 
   Visualizer.add({
     id: 'julia',
-    name: 'Julia',
+    name: 'Fractals',
     desc: 'A Julia set gliding along the edge of the Mandelbrot set with the tempo, its islands joining and breaking apart, glowing with the beat',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 12c2-4 7-4 8 0s-4 6-8 3-6-1-8-3 4-6 8 0z"/><circle cx="6" cy="7" r="1.5"/><circle cx="18" cy="17" r="1.5"/></svg>',

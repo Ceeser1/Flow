@@ -1,6 +1,6 @@
 'use strict';
 
-// Chladni: sand on a metal plate set ringing by the music, gathering where
+// Chladni Plate: sand on a metal plate set ringing by the music, gathering where
 // the plate stands still. Which way it rings (its mode, and so the figure
 // the sand draws) comes from the note the music has dwelt on lately: a new
 // one, held a moment, and the sand runs from the old lines to the new ones,
@@ -8,7 +8,7 @@
 // lines and the faster they find them again; a kick jolts them all.
 // A click rings the next figure.
 //
-// Its cogwheel: a square or a round plate or the whole screen, the sand's
+// Its cogwheel: the whole screen, a square or a round plate, the sand's
 // colour (or the colour of the harmony), how hard it shakes.
 //
 // WebGL (viz/gl.js): the grains (a quarter of a million) live in a float
@@ -353,7 +353,7 @@
 
   Visualizer.add({
     id: 'chladni',
-    name: 'Chladni',
+    name: 'Chladni Plate',
     desc: 'Sand on a ringing metal plate, gathering in the figure of the note the music dwells on and running to the next when it changes',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1"/>'
@@ -362,7 +362,7 @@
     create: (canvas) => new Chladni(canvas),
     click: (scene) => scene.next(),
     options: [
-      { type: 'choice', key: 'chPlate', label: 'Plate', choices: [['square', 'Square'], ['round', 'Round'], ['full', 'Whole screen']] },
+      { type: 'choice', key: 'chPlate', label: 'Plate', choices: [['full', 'Whole screen'], ['square', 'Square'], ['round', 'Round']] },
       { type: 'choice', key: 'chColors', label: 'Sand', choices: [['sand', 'Sand'], ['gold', 'Gold'], ['ice', 'Ice'], ['notes', 'By the notes']] },
       { type: 'slider', key: 'chShake', label: 'Shaking', min: 25, max: 200, step: 5 },
     ],

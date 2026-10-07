@@ -134,7 +134,7 @@ const VIZ_OPTIONS = {
   skCamera: ['choice', 'orbit', ['orbit', 'front', 'above']],
   skHistory: ['range', 70, 25, 100, 5],
   // Galaxy: how many arms, its colours, how fast it turns (percent), the view.
-  gxArms: ['choice', '2', ['2', '3', '4', '6']],
+  gxArms: ['choice', '4', ['2', '3', '4', '6']],
   gxColors: ['choice', 'classic', ['classic', 'neon', 'fire', 'ice']],
   gxSpin: ['range', 100, 0, 300, 5],
   gxView: ['choice', 'slant', ['face', 'slant', 'edge']],
@@ -155,9 +155,9 @@ const VIZ_OPTIONS = {
   hfDisplay: ['choice', 'teal', ['teal', 'amber', 'blue', 'green']],
   hfMeters: ['choice', 'amber', ['amber', 'white', 'blue']],
   hfPeaks: ['bool', true],
-  // Chladni: the plate (square, round, the whole screen), the sand's colour
+  // Chladni Plate: the plate (the whole screen, square, round), the sand's colour
   // ('notes': the harmony's), how hard it shakes (percent).
-  chPlate: ['choice', 'square', ['square', 'round', 'full']],
+  chPlate: ['choice', 'full', ['full', 'square', 'round']],
   chColors: ['choice', 'sand', ['sand', 'gold', 'ice', 'notes']],
   chShake: ['range', 100, 25, 200, 5],
   // Piano Roll: the colours (left and right hand, per note, neon), how fast
@@ -207,7 +207,7 @@ const VIZ_OPTIONS = {
   shWhen: ['choice', 'hits', ['hits', 'bar']],
   // Plasma: the shape (the whole screen or a globe), the colours, how many
   // tendrils at most.
-  pgShape: ['choice', 'globe', ['full', 'globe']],
+  pgShape: ['choice', 'full', ['full', 'globe']],
   pgColors: ['choice', 'plasma', ['plasma', 'blue', 'green', 'rainbow']],
   pgCount: ['range', 10, 4, 20, 1],
   // Attractor: which one (Clifford, De Jong, Lorenz), the colours, how fast
@@ -215,7 +215,7 @@ const VIZ_OPTIONS = {
   atKind: ['choice', 'clifford', ['clifford', 'dejong', 'lorenz']],
   atColors: ['choice', 'fire', ['fire', 'ice', 'rainbow', 'gold']],
   atSpin: ['range', 100, 0, 300, 5],
-  // Julia: the look (glowing edges, bands, ink), how fast it changes
+  // Fractals: the look (glowing edges, bands, ink), how fast it changes
   // (percent).
   jlLook: ['choice', 'neon', ['neon', 'classic', 'ink']],
   jlSpeed: ['range', 100, 25, 300, 5],
