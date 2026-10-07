@@ -85,13 +85,13 @@ const VIZ_CATEGORIES = [
     id: 'worlds',
     name: 'Worlds',
     desc: 'Places to look at or fly through',
-    ids: ['synthwave', 'warp', 'tunnel', 'galaxy', 'aurora', 'lightning', 'inferno', 'fireworks', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'plasmaglobe'],
+    ids: ['synthwave', 'warp', 'tunnel', 'galaxy', 'aurora', 'lightning', 'inferno', 'fireworks', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond'],
   },
   {
     id: 'trippy',
     name: 'Trippy',
     desc: 'Patterns, colour and motion',
-    ids: ['kaleidoscope', 'prism', 'lava', 'demo', 'rain', 'chladni', 'arcade', 'coral', 'shatter', 'attractor', 'julia'],
+    ids: ['kaleidoscope', 'prism', 'lava', 'demo', 'rain', 'chladni', 'arcade', 'coral', 'shatter', 'attractor', 'julia', 'plasmaglobe'],
   },
 ];
 
