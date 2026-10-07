@@ -6,7 +6,7 @@
 // right on a log axis (CURTAINS): the lowest the bass (to 400 Hz), the middle
 // one the mids (to 2 kHz), the highest the highs. Where its part is loud the
 // curtain glows brighter, and where it is louder than it just was its lower
-// edge lifts (quieter: dips), easing back as it settles. The
+// edge lifts a little (quieter: dips), easing back as it settles. The
 // music's intensity sets how restless they are, and the kicks make them
 // flare. The lake mirrors it all, broken by small waves.
 //
@@ -21,8 +21,8 @@
   // bands start at 30 Hz and end at 16 kHz).
   const CURTAINS = [[30, 400], [400, 2000], [2000, 16000]];
   const ACROSS = 64;       // levels across each curtain
-  const LIFT = 0.06;       // the most the edge moves up or down, of the screen
-  const LIFT_GAIN = 7;     // a level this many times its rise over its average
+  const LIFT = 0.02;       // the most the edge moves up or down, of the screen (the curtains are 0.08 apart)
+  const LIFT_GAIN = 5;     // a level this many times its rise over its average
   const SETTLE_S = 1.2;    // the average each place is measured against
 
   const PALETTES = {
