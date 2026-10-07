@@ -1,6 +1,6 @@
 'use strict';
 
-// Pond: a garden pond seen from above. The music falls into it: each kick
+// Rainy Pond: a garden pond seen from above. The music falls into it: each kick
 // drops a big ring of ripples somewhere, the hits smaller ones, the highs a
 // light rain; the rings spread, cross and bounce off the banks. Through the
 // water a pebbly bottom with the sun's caustic light dancing over it, the
@@ -8,7 +8,7 @@
 // with the tempo. Or the same pond at night, the ripples catching the moon,
 // or the one fading into the other and back.
 //
-// Its cogwheel: day, night or alternating, how many drops fall (the kicks',
+// Its cogwheel: alternating, day or night, how many drops fall (the kicks',
 // the hits' and the rain's), the koi, the lily pads, the rain.
 //
 // WebGL (viz/gl.js): the water's surface is a wave simulation in a float
@@ -368,14 +368,14 @@
 
   Visualizer.add({
     id: 'pond',
-    name: 'Pond',
+    name: 'Rainy Pond',
     desc: 'A garden pond seen from above: the beats falling into it as rings of ripples, koi swimming under lily pads, the sun dancing on the bottom',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="10"/></svg>',
     gl: true,
     create: (canvas) => new Pond(canvas),
     options: [
-      { type: 'choice', key: 'pdLook', label: '', choices: [['day', 'Day'], ['night', 'Night'], ['alternate', 'Alternate']] },
+      { type: 'choice', key: 'pdLook', label: '', choices: [['alternate', 'Alternate'], ['day', 'Day'], ['night', 'Night']] },
       { type: 'slider', key: 'pdRainAmount', label: 'Rain intensity', min: 50, max: 150, step: 5 },
       { type: 'check', key: 'pdKoi', label: 'Koi' },
       { type: 'check', key: 'pdPads', label: 'Lily pads' },

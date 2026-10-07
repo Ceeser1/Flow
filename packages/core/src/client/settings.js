@@ -188,10 +188,10 @@ const VIZ_OPTIONS = {
   dsColors: ['choice', 'aurora', ['aurora', 'ember', 'ice', 'rainbow']],
   dsCount: ['range', 9, 3, 16, 1],
   dsLight: ['bool', true],
-  // Pond: day, night or the one fading into the other and back, the koi,
+  // Rainy Pond: day and night fading into each other, day, or night, the koi,
   // the lily pads, the treble rain, how many drops fall (the kicks', the
   // hits' and the rain's, percent).
-  pdLook: ['choice', 'day', ['day', 'night', 'alternate']],
+  pdLook: ['choice', 'alternate', ['alternate', 'day', 'night']],
   pdKoi: ['bool', true],
   pdPads: ['bool', true],
   pdRain: ['bool', true],
