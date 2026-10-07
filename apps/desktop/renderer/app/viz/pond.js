@@ -8,8 +8,8 @@
 // with the tempo. Or the same pond at night, the ripples catching the moon,
 // or the one fading into the other and back.
 //
-// Its cogwheel: day, night or alternating, the koi, the lily pads, the rain
-// and how heavy it is.
+// Its cogwheel: day, night or alternating, how heavy the rain is, the koi,
+// the lily pads, the rain.
 //
 // WebGL (viz/gl.js): the water's surface is a wave simulation in a float
 // texture at half the screen's size, stepped 120 times a second (each
@@ -367,10 +367,10 @@
     create: (canvas) => new Pond(canvas),
     options: [
       { type: 'choice', key: 'pdLook', label: '', choices: [['day', 'Day'], ['night', 'Night'], ['alternate', 'Alternate']] },
+      { type: 'slider', key: 'pdRainAmount', label: 'Rain intensity', min: 50, max: 150, step: 5, when: (s) => s.pdRain },
       { type: 'check', key: 'pdKoi', label: 'Koi' },
       { type: 'check', key: 'pdPads', label: 'Lily pads' },
       { type: 'check', key: 'pdRain', label: 'Treble rain' },
-      { type: 'slider', key: 'pdRainAmount', label: 'Rain intensity', min: 50, max: 150, step: 5, when: (s) => s.pdRain },
     ],
   });
 })();
