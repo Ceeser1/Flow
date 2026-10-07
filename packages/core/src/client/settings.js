@@ -165,6 +165,11 @@ const VIZ_OPTIONS = {
   prColors: ['choice', 'hands', ['hands', 'rainbow', 'neon']],
   prSpeed: ['range', 100, 25, 300, 5],
   prSparks: ['bool', true],
+  // Arcade: which game ('auto': another each song), the colours (the
+  // arcade's own, green or amber phosphor), the screen's lines.
+  arGame: ['choice', 'auto', ['auto', 'pong', 'breakout', 'invaders']],
+  arColors: ['choice', 'arcade', ['arcade', 'green', 'amber']],
+  arCrt: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -321,7 +326,7 @@ const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'pur
 // 'random-<category>' one of a category's (VIZ_CATEGORIES in the desktop's
 // visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy'];
-const VISUALIZERS = ['random', ...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll'];
+const VISUALIZERS = ['random', ...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
