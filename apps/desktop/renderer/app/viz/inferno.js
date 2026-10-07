@@ -154,22 +154,35 @@
       return texture(bands, vec2(x * 0.98 + 0.01, 0.5)).r;
     }
     void main() {
-      // How near the fire here is (1 in front, down to 1/6 on the ridge):
-      // the further, the slower it rises, the finer it whirls, the sooner
-      // it cools. Read just below, where the heat coming in is from.
+      vec2 dx = vec2(texel.x, 0.0);
+      // Two fires rising side by side: the bands' flames in front (R), in the
+      // chosen colour, and the trees' (B, with how near they are in G), in a
+      // fire's own.
+      // The bands' flames: where this heat came from, below, swayed sideways
+      // by the noise; cooled unevenly into tongues of flame; fed along the
+      // bottom.
+      float nF = vnoise(vec2(uv.x * 22.0, uv.y * 9.0 - time * 2.6));
+      float mF = vnoise(vec2(uv.x * 48.0 + 5.0, uv.y * 24.0 - time * 5.5));
+      vec2 fromF = uv - vec2((nF - 0.5) * texel.x * 2.2, texel.y * 1.6);
+      float flames = texture(prev, fromF).r * 0.5 + (texture(prev, fromF + dx).r + texture(prev, fromF - dx).r) * 0.25;
+      flames -= cool * (0.2 + 1.8 * mF * mF);
+      float base = 1.0 - smoothstep(0.0, 0.035, uv.y);
+      float feed = (level(uv.x) * 1.05 + flare * 0.25) * (0.6 + 0.8 * mF) * base;
+      flames = max(flames, feed);
+      // The trees' fire. How near it is (1 in front, down to 1/6 on the
+      // ridge): the further, the slower it rises, the finer it whirls, the
+      // sooner it cools. Read just below, where the heat coming in is from.
       float s = clamp(texture(prev, uv - vec2(0.0, texel.y)).g, 0.15, 1.0);
-      float n = mix(vnoise(vec2(uv.x * 80.0 + 3.0, uv.y * 34.0 - time * 4.0)), vnoise(vec2(uv.x * 22.0, uv.y * 9.0 - time * 2.6)), s);
-      float m = mix(vnoise(vec2(uv.x * 150.0 + 5.0, uv.y * 75.0 - time * 7.0)), vnoise(vec2(uv.x * 48.0 + 5.0, uv.y * 24.0 - time * 5.5)), s);
+      float n = mix(vnoise(vec2(uv.x * 80.0 + 3.0, uv.y * 34.0 - time * 4.0)), nF, s);
+      float m = mix(vnoise(vec2(uv.x * 150.0 + 5.0, uv.y * 75.0 - time * 7.0)), mF, s);
       float rise = mix(0.3, 1.0, s);
-      // Where this heat came from: below, swayed sideways by the noise.
       vec2 from = uv - vec2((n - 0.5) * texel.x * mix(2.6, 2.2, s), texel.y * 1.6 * rise);
       vec4 c = texture(prev, from);
-      vec4 r = texture(prev, from + vec2(texel.x, 0.0));
-      vec4 l = texture(prev, from - vec2(texel.x, 0.0));
-      float heat = c.r * 0.5 + (r.r + l.r) * 0.25;
+      vec4 r = texture(prev, from + dx);
+      vec4 l = texture(prev, from - dx);
+      float heat = c.b * 0.5 + (r.b + l.b) * 0.25;
       // The cold air counts as near, so heat rising into it is not held back.
-      float near = mix(1.0, (c.g * c.r * 0.5 + (r.g * r.r + l.g * l.r) * 0.25) / max(heat, 1e-4), smoothstep(0.0, 0.02, heat));
-      // Cooling, unevenly: the tongues of flame.
+      float near = mix(1.0, (c.g * c.b * 0.5 + (r.g * r.b + l.g * l.b) * 0.25) / max(heat, 1e-4), smoothstep(0.0, 0.02, heat));
       heat -= cool * (0.2 + 1.8 * m * m) / rise;
       // The crowns on fire, each with the band below it, flickering.
       vec4 f = textureLod(forest, uv, 2.0);
@@ -179,14 +192,7 @@
         heat = crowns;
         near = clamp(f.g / max(f.r, 1e-3), 0.15, 1.0);
       }
-      // The bands' heat along the bottom.
-      float base = 1.0 - smoothstep(0.0, 0.035, uv.y);
-      float feed = (level(uv.x) * 1.05 + flare * 0.25) * (0.6 + 0.8 * m) * base;
-      if (feed > heat) {
-        heat = feed;
-        near = 1.0;
-      }
-      o = vec4(max(heat, 0.0), near, 0.0, 1.0);
+      o = vec4(max(flames, 0.0), near, max(heat, 0.0), 1.0);
     }`;
 
   const OUT_FS = VizGL.NOISE + RIDGE + `
@@ -203,6 +209,12 @@
       }
       return smoothstep(lo, hi, vec3(t));
     }
+    // The scene behind burns in a fire's own colours whatever the flames in
+    // front are, but for the rainbow, all of it in rainbow (and without the
+    // forest the sky follows the flames).
+    vec3 burning(float t) {
+      return trees > 0.5 && rainbow < 0.5 ? smoothstep(vec3(${PALETTES.fire[0].join(', ')}), vec3(${PALETTES.fire[1].join(', ')}), vec3(t)) : colour(t);
+    }
     // How far up the hill (0 front, 1 the ridge) the ground at height y is.
     float depthAt(float y, float r) {
       return 1.0 - sqrt(1.0 - clamp((y + 0.04) / (r + 0.04), 0.0, 1.0));
@@ -212,8 +224,9 @@
       float r = ridge(p.x);
       float above = p.y - r;
       // The fire's light on everything: broad, from the heat far below.
-      float wide = textureLod(heat, vec2(p.x, max(p.y - 0.12, 0.0)), 6.0).r;
-      vec3 ember = colour(0.42);
+      vec4 w4 = textureLod(heat, vec2(p.x, max(p.y - 0.12, 0.0)), 6.0);
+      float wide = w4.r + w4.b;
+      vec3 ember = burning(0.42);
       // The night, glowing red over the ridge.
       vec3 col = vec3(0.010, 0.007, 0.010) + ember * (0.07 + 0.14 * blaze) * exp(-max(above, 0.0) * 3.5) * (0.4 + 0.6 * trees);
       // Smoke rising, lit from below.
@@ -233,7 +246,7 @@
         vec3 ground = mix(vec3(0.016, 0.010, 0.007), haze, 0.1 + 0.45 * d);
         vec2 gp = vec2(p.x * aspect, p.y * 1.8) / (0.2 * s);
         float burns = smoothstep(0.6, 0.8, fbm(gp)) * (0.55 + 0.45 * vnoise(gp * 2.0 + vec2(0.0, -time * 0.8)));
-        ground += colour(0.45 + 0.35 * burns) * burns * 0.22 * (1.0 - 0.5 * d);
+        ground += burning(0.45 + 0.35 * burns) * burns * 0.22 * (1.0 - 0.5 * d);
         col = mix(col, ground, edge);
       }
       // The trees, dark against the fire, lit at their edges by it, embers
@@ -243,11 +256,11 @@
       float ts = clamp(f.g / max(f.r, 1e-3), 0.15, 1.0);
       float td = (1.0 / ts - 1.0) / ${FAR}.0;
       vec3 bark = mix(vec3(0.012, 0.008, 0.006), haze, 0.7 * td);
-      float glow = textureLod(heat, uv, 3.0).r;
-      bark += colour(min(glow, 0.7)) * 0.16;
+      vec4 lg = textureLod(heat, uv, 3.0);
+      bark += (colour(min(lg.r, 0.7)) + burning(min(lg.b, 0.7))) * 0.16;
       vec2 cp = gl_FragCoord.xy / (5.0 + 16.0 * ts) + vec2(0.0, -time * 0.4);
       float speck = smoothstep(0.55, 0.85, fbm(cp)) * (0.6 + 0.4 * vnoise(cp * 1.7 + time * 1.2));
-      bark += colour(0.45 + 0.4 * speck) * speck * f.b * 0.7;
+      bark += burning(0.45 + 0.4 * speck) * speck * f.b * 0.7;
       col = mix(col, bark, cov);
       // Smoke between here and the back of the hill: the further, the more
       // it greys out, drifting thicker and thinner.
@@ -259,15 +272,19 @@
       col = mix(col, veilCol, clamp(veil, 0.0, 0.9));
       // The fire, hidden where a tree stands in front of it, fainter up the hill.
       vec4 h = texture(heat, uv);
-      float t = h.r;
       float hd = (1.0 / clamp(h.g, 0.15, 1.0) - 1.0) / ${FAR}.0;
-      // A tree in front of the fire hides most of it, one burning hides
-      // its own flames in part, so it stands dark among them.
+      // A tree in front of a fire hides most of it, one burning hides its
+      // own flames in part, so it stands dark among them. The bands' flames
+      // are as near as the front row.
       float hidden = cov * (1.0 - smoothstep(0.0, 0.3, h.g - ts)) * mix(0.75, 0.92, smoothstep(-0.1, 0.15, ts - h.g));
-      vec3 fire = colour(t) * (1.0 - 0.85 * hidden) * mix(1.0, 0.7, hd) * (1.0 - clamp(smoothstep(0.1, 1.0, hd) * 0.6 * drift * trees, 0.0, 0.85));
+      float hiddenF = cov * (1.0 - smoothstep(0.0, 0.3, 1.0 - ts)) * mix(0.75, 0.92, smoothstep(-0.1, 0.15, ts - 1.0));
+      vec3 trees_ = burning(h.b) * (1.0 - 0.85 * hidden) * mix(1.0, 0.7, hd) * (1.0 - clamp(smoothstep(0.1, 1.0, hd) * 0.6 * drift * trees, 0.0, 0.85));
+      vec3 flames = colour(h.r) * (1.0 - 0.85 * hiddenF);
+      // The trees' fire behind the flames, mostly lost in them where they burn bright.
+      vec3 fire = flames + trees_ * (1.0 - 0.6 * smoothstep(0.1, 0.7, h.r));
       // A faint glow of the fire on the air above it.
-      float g = textureLod(heat, uv - vec2(0.0, 0.02), 3.0).r;
-      col += fire + colour(min(g, 0.6)) * 0.25;
+      vec4 ag = textureLod(heat, uv - vec2(0.0, 0.02), 3.0);
+      col += fire + (colour(min(ag.r, 0.6)) + burning(min(ag.b, 0.6))) * 0.25;
       // Faint smoke rising off the flames in front, over their tips.
       vec2 fp = vec2(p.x * aspect * 2.2 + time * 0.03, p.y * 3.0 - time * 0.22);
       float plume = smoothstep(0.45, 0.8, fbm(fp + 0.8 * vec2(vnoise(fp * 0.6 + time * 0.1), 0.0)));
@@ -475,13 +492,16 @@
           x: x * w + (Math.random() - 0.5) * 30 * unit * s, y,
           vx: Math.sin(angle) * speed, vy: -Math.cos(angle) * speed,
           life: 1, fade: big ? 0.18 + 0.15 * Math.random() : 0.45 + 0.9 * Math.random(),
-          size, s, big, seed: Math.random() * 100, wob: 1 + 3 * Math.random(),
+          size, s, big, tree: d > 0, seed: Math.random() * 100, wob: 1 + 3 * Math.random(),
         });
       }
-      const heatColour = (t) => {
+      // The trees' sparks in a fire's own colours, the flames' in theirs;
+      // with the rainbow, all of them in rainbow.
+      const heatColour = (t, tree) => {
         if (palette === 'rainbow') return [1, 0.9 - 0.4 * (1 - t), 0.6 - 0.5 * (1 - t)];
+        const q = tree ? PALETTES.fire : p;
         return [0, 1, 2].map((c) => {
-          const x = Math.min(1, Math.max(0, (t - p[0][c]) / (p[1][c] - p[0][c])));
+          const x = Math.min(1, Math.max(0, (t - q[0][c]) / (q[1][c] - q[0][c])));
           return x * x * (3 - 2 * x);
         });
       };
@@ -501,7 +521,7 @@
         // ones as they tumble.
         const temp = e.life ** 0.8;
         const flicker = e.big ? 0.55 + 0.45 * Math.sin(this.age * (5 + e.wob * 2) + e.seed) ** 2 : 0.75 + 0.25 * Math.sin(this.age * 31 + e.seed);
-        const col = heatColour(0.45 + 0.75 * temp);
+        const col = heatColour(0.45 + 0.75 * temp, e.tree);
         // Under a pixel and a bit, a dot is drawn that size and dimmer, so it
         // stays round instead of a hard little square.
         const r = Math.max(e.size, 0.8);
