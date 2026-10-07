@@ -145,7 +145,7 @@
     // hillside from the water to near the top. In clusters
     // with clearings between, each its own size (a few larger all round, up
     // to three times the rest by the water, less so further back), in tiers
-    // narrowing to the tip. Drawn from the back.
+    // narrowing to the tip, on a stem. Drawn from the back.
     const int DEPTHS = 3;   // few rows of fair-sized trees rather than thousands of tiny ones
     // Value noise along a line, for the clusters (cheaper than vnoise).
     float noise1(float x) {
@@ -172,8 +172,14 @@
         float cell = floor(x / w);
         float cover = 0.0;
         float most = 3.0 - 1.6 * back;                 // the largest a tree here grows
+        // Each tree's crown lifted onto a stem in the middle of it, by row
+        // (screen pixels): the front 9 high and 3 wide, the middle 6 by 2,
+        // the back 3 by 1.
+        float px = 1.0 / res.y;
+        float lift = (9.0 - 3.0 * fr) * px;
+        float stem = lift / 3.0;
         // Nothing of this row reaches here.
-        if (y < lo || y > hi + most * tallest) continue;
+        if (y < lo || y > hi + lift + most * tallest) continue;
         for (int k = -2; k <= 2; k++) {
           // The cheap tests first: most trees do not reach this point.
           float c = cell + float(k);
@@ -182,20 +188,24 @@
           // Most about the same, a few larger all round.
           float grow = 1.0 + (most - 1.0) * pow(hash12(id + 6.4), 6.0);
           float h = tallest * (0.55 + 0.45 * hash12(id + 5.1)) * grow;
-          if (abs(x - cx) > h * 0.27 + edge) continue;
+          if (abs(x - cx) > max(h * 0.27, stem) + edge) continue;
           // Anywhere in its band; most of the front row on a narrow bank
           // just above the water.
           float up = hash12(id + 2.6);
           float at = row == 0 && hash12(id + 4.7) < 0.55 ? 0.002 + 0.004 * up : mix(max(lo, 0.006), hi, up);
-          float t = (y - at) / h;
-          if (t < 0.0 || t > 1.0 || at > top - 0.002) continue;
+          if (y < at || y > at + lift + h || at > top - 0.002) continue;
           // In a clearing, or not there anyway.
           float dense = smoothstep(0.2, 0.5, noise1((c + 0.5) * w * 6.0 + fr * 5.3));
           if (hash12(id + 3.3) > dense * (0.92 - 0.15 * back)) continue;   // a little sparser further back
+          if (y < at + lift) {
+            // The stem, whole pixels wide.
+            cover = max(cover, clamp((stem * 0.5 - abs(x - cx)) / px + 0.5, 0.0, 1.0));
+            continue;
+          }
+          float t = (y - at - lift) / h;
           float tiers = 4.0 + floor(3.0 * hash12(id + 9.9));
           float wide = h * 0.26 * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
-          if (t < 0.1) wide = max(wide, h * 0.025);   // the trunk
-          cover = max(cover, smoothstep(-edge, edge, wide - abs(x - cx)) * smoothstep(-edge, edge, h - (y - at)));
+          cover = max(cover, smoothstep(-edge, edge, wide - abs(x - cx)) * smoothstep(-edge, edge, h - (y - at - lift)));
         }
         col = mix(col, shade, cover * ink);
       }
