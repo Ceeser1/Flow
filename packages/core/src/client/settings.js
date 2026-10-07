@@ -149,6 +149,12 @@ const VIZ_OPTIONS = {
   rxColor: ['color', '#38e8ff'],
   rxRings: ['range', 10, 4, 16, 1],
   rxSpin: ['range', 100, 0, 300, 5],
+  // Hi-Fi: the faceplates' finish, the display's colour, the meters' light,
+  // the analyser's peaks.
+  hfFinish: ['choice', 'silver', ['silver', 'black']],
+  hfDisplay: ['choice', 'teal', ['teal', 'amber', 'blue', 'green']],
+  hfMeters: ['choice', 'amber', ['amber', 'white', 'blue']],
+  hfPeaks: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -305,7 +311,7 @@ const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'pur
 // 'random-<category>' one of a category's (VIZ_CATEGORIES in the desktop's
 // visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy'];
-const VISUALIZERS = ['random', ...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor'];
+const VISUALIZERS = ['random', ...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
