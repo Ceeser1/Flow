@@ -2083,8 +2083,10 @@ div.import__frame-head { cursor: default; }
 @keyframes drawer-out { from { transform: none; } to { transform: translateX(100%); } }
 @keyframes backdrop-in { from { background: rgba(0, 0, 0, 0); } }
 @keyframes backdrop-out { to { background: rgba(0, 0, 0, 0); } }
-/* Settings: the app's own background, at 93% (--bg is #1e1e22). */
-.modal--settings { width: 760px; height: min(760px, 100%); background: rgba(30, 30, 34, 0.93); }
+/* Settings: 90% of the window's height (less only where the window is too
+   small for the backdrop's margin), the app's own background at 93% (--bg is
+   #1e1e22). */
+.modal--settings { width: 760px; height: min(90vh, 100%); background: rgba(30, 30, 34, 0.93); }
 /* Edit Song: the Settings look, as tall as it needs. */
 .modal--song-edit { width: 820px; height: auto; }
 .song-edit__input { width: 420px; }
