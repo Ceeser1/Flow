@@ -184,6 +184,10 @@ const VIZ_OPTIONS = {
   bhColors: ['choice', 'warm', ['warm', 'blue', 'neon']],
   bhView: ['choice', 'edge', ['edge', 'slant', 'above']],
   bhSpin: ['range', 100, 0, 300, 5],
+  // Deep Sea: the jellyfish's colours, how many, the light from above.
+  dsColors: ['choice', 'aurora', ['aurora', 'ember', 'ice', 'rainbow']],
+  dsCount: ['range', 9, 3, 16, 1],
+  dsLight: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -340,7 +344,7 @@ const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'pur
 // 'random-<category>' one of a category's (VIZ_CATEGORIES in the desktop's
 // visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy'];
-const VISUALIZERS = ['random', ...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole'];
+const VISUALIZERS = ['random', ...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
