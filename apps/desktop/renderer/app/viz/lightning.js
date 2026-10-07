@@ -18,7 +18,7 @@
 // them) is drawn once for the screen's size into a texture of its own.
 //
 // Its cogwheel: the bolts' colour, Screen flash (the sky lighting up, and how
-// much), Rain, and Strikes (how readily it strikes).
+// much), Strikes (how readily it strikes), and Rain (and how heavy).
 
 (() => {
   const MAX_VERTS = 90000;
@@ -245,10 +245,11 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
       // the big ones in front of everything.
       // It comes in gusts: sheets of heavier and lighter rain drifting by.
       float gust = 0.45 + 0.75 * vnoise(vec2(p.x * 1.2 - time * 0.35, p.y * 0.6 + time * 0.5));
-      vec3 drops = vec3(0.5, 0.55, 0.65) * rain * gust * (0.05 + 0.5 * flash + 0.6 * lit);
-      vec3 rainSmall = rain > 0.0 ? drops * rainLayer(p, vec2(0.006, 0.03), 1.1, 0.6, 0.55, 1.0) * 0.7 : vec3(0.0);
-      vec3 rainMid = rain > 0.0 ? drops * rainLayer(p, vec2(0.013, 0.06), 1.7, 0.9, 0.45, 5.0) * 0.9 : vec3(0.0);
-      vec3 rainBig = rain > 0.0 ? drops * rainLayer(p, vec2(0.032, 0.15), 2.6, 1.7, 0.35, 9.0) : vec3(0.0);
+      // rain: how heavy, 1 the usual, up to 2: more drops, and brighter.
+      vec3 drops = vec3(0.5, 0.55, 0.65) * (0.6 + 0.4 * rain) * gust * (0.05 + 0.5 * flash + 0.6 * lit);
+      vec3 rainSmall = rain > 0.0 ? drops * rainLayer(p, vec2(0.006, 0.03), 1.1, 0.6, min(0.95, 0.55 * rain), 1.0) * 0.7 : vec3(0.0);
+      vec3 rainMid = rain > 0.0 ? drops * rainLayer(p, vec2(0.013, 0.06), 1.7, 0.9, min(0.95, 0.45 * rain), 5.0) * 0.9 : vec3(0.0);
+      vec3 rainBig = rain > 0.0 ? drops * rainLayer(p, vec2(0.032, 0.15), 2.6, 1.7, min(0.95, 0.35 * rain), 9.0) : vec3(0.0);
       col += rainSmall;
 
       // The land, three layers with their trees: the far one dim against the
@@ -589,7 +590,8 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
       gl.uniform2f(u.res, this.w, this.h);
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.flash, Math.min(1.2, flash * 0.32 * amount));
-      gl.uniform1f(u.rain, set('ltRain') ? 1 : 0);
+      // How heavy the rain is: 1 at 50%, the rain it always had.
+      gl.uniform1f(u.rain, set('ltRain') ? set('ltRainAmount') / 50 : 0);
       gl.uniform3f(u.color, color[0], color[1], color[2]);
       // Without Screen flash the clouds still glow around the bolts, less.
       for (let i = 0; i < MAX_LIGHTS; i += 1) lights[i * 4 + 3] *= 0.25 + 0.75 * Math.min(1, amount);
@@ -675,8 +677,8 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
     options: [
       { type: 'color', key: 'ltColor', label: 'Lightning color', presets: PRESETS },
       { type: 'check', key: 'ltFlash', label: 'Screen flash', amount: { key: 'ltFlashAmount', min: 0, max: 200, step: 5 } },
-      { type: 'check', key: 'ltRain', label: 'Rain' },
       { type: 'slider', key: 'ltStrikes', label: 'Strikes', min: 25, max: 200, step: 5 },
+      { type: 'check', key: 'ltRain', label: 'Rain', amount: { key: 'ltRainAmount', min: 0, max: 100, step: 5 } },
     ],
   });
 })();

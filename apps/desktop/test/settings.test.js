@@ -168,6 +168,9 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.ltRain, true);
   assert.equal(settings.clean({ ltRain: false }).ltRain, false);
   assert.equal(settings.clean({ ltRain: 'no' }).ltRain, true);
+  assert.equal(d.ltRainAmount, 50);
+  assert.equal(settings.clean({ ltRainAmount: 0 }).ltRainAmount, 0);
+  assert.equal(settings.clean({ ltRainAmount: 140 }).ltRainAmount, 100);
   assert.equal(settings.clean({ ltStrikes: 3 }).ltStrikes, 25);
   assert.equal(settings.clean({ ltStrikes: 133 }).ltStrikes, 135);
   assert.equal(settings.clean({ ltStrikes: null }).ltStrikes, 100);

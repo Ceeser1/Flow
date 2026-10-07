@@ -31,11 +31,13 @@ const VIZ_OPTIONS = {
   wfColors: ['choice', 'rainbow', ['rainbow', 'spectrum', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple']],
   wfStyle: ['choice', 'bars', ['bars', 'wave']],
   // Lightning: the bolts' colour, the sky lighting up with them (and how
-  // much), rain, and how readily it strikes (percent).
+  // much), how readily it strikes (percent), rain (and how heavy; 50% is
+  // the rain it always had).
   ltColor: ['color', '#a9c4ff'],
   ltFlash: ['bool', true],
   ltFlashAmount: ['range', 100, 0, 200, 5],
   ltRain: ['bool', true],
+  ltRainAmount: ['range', 50, 0, 100, 5],
   ltStrikes: ['range', 100, 25, 200, 5],
   // Kaleidoscope: its look ('auto' moves on by itself), how often Auto moves
   // on (seconds), and how long the trails last (percent). It was Nebula,
