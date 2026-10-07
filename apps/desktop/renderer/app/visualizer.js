@@ -45,9 +45,9 @@
 const VISUALIZERS = [
   {
     id: 'random',
-    name: 'Random',
+    name: 'Random (Any)',
     ready: true,
-    desc: 'A different visualizer each time',
+    desc: 'A different visualizer each time, of any category',
     glyph: '<img class="viz-tile__icon" src="../images/shuffle.png" alt="" />',
   },
   { id: 'bars', name: 'Bars', ready: true, desc: 'Spectrum bars with falling peaks, in the manner of Winamp', glyph: Icons.speaker, image: '../images/viz-bars.jpg' },
