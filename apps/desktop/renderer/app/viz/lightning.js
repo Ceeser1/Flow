@@ -177,16 +177,27 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
     uniform vec4 lights[${MAX_LIGHTS}];
     out vec4 o;
 
-    float rainLayer(vec2 p, float scale, float speed, float seed) {
-      p.x += p.y * 0.18;
-      vec2 g = vec2(p.x * scale, p.y * scale * 0.04 + time * speed);
-      vec2 cell = floor(g);
+    // One depth of rain: a drop (or none) in each cell of a grid falling
+    // past, slanted by the wind, which sways a little. Each is a short streak
+    // (how far it falls while the eye takes it in), brightest at its leading
+    // end and fading behind, with its own length and brightness. cell: the
+    // cells' size (screen heights), fall: how fast (screen heights a second),
+    // wpx: the drops' width in pixels, dense: how many cells hold one.
+    float rainLayer(vec2 p, vec2 cell, float fall, float wpx, float dense, float seed) {
+      p.x += p.y * (0.16 + 0.04 * sin(time * 0.31 + seed));
+      vec2 g = vec2(p.x / cell.x, (p.y + time * fall) / cell.y);
+      vec2 id = floor(g);
       vec2 f = fract(g);
-      float r = hash12(cell + seed);
-      if (r < 0.55) return 0.0;
-      float x = abs(f.x - 0.2 - 0.6 * hash12(cell + seed + 7.0));
-      float streak = smoothstep(0.06, 0.0, x) * smoothstep(0.0, 0.3, f.y) * smoothstep(1.0, 0.5, f.y);
-      return streak * (r - 0.55) * 2.2;
+      if (hash12(id + seed) > dense) return 0.0;
+      float l = 0.3 + 0.45 * hash12(id + seed + 21.0);
+      float cx = 0.2 + 0.6 * hash12(id + seed + 7.0);
+      float cy = l * 0.5 + (1.0 - l) * hash12(id + seed + 13.0);
+      float dx = abs(f.x - cx) * cell.x * res.y;
+      float across = exp(-dx * dx / (wpx * wpx));
+      // -0.5 its leading (lower) end, 0.5 its trailing end.
+      float v = (f.y - cy) / l;
+      float along = smoothstep(0.5, 0.3, abs(v)) * (0.35 + 0.65 * smoothstep(0.5, -0.4, v));
+      return across * along * (0.5 + 0.5 * hash12(id + seed + 3.0));
     }
 
     void main() {
@@ -232,10 +243,12 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
       // Rain, lit by the flashes, in three depths: the smallest drops far
       // off behind the far hills, the middling ones behind the middle hills,
       // the big ones in front of everything.
-      vec3 drops = vec3(0.5, 0.55, 0.65) * rain * (0.035 + 0.5 * flash + 0.6 * lit);
-      vec3 rainSmall = rain > 0.0 ? drops * rainLayer(p, 60.0, 2.3, 1.0) * 0.6 : vec3(0.0);
-      vec3 rainMid = rain > 0.0 ? drops * rainLayer(p, 34.0, 1.6, 5.0) * 0.8 : vec3(0.0);
-      vec3 rainBig = rain > 0.0 ? drops * rainLayer(p, 18.0, 1.1, 9.0) : vec3(0.0);
+      // It comes in gusts: sheets of heavier and lighter rain drifting by.
+      float gust = 0.45 + 0.75 * vnoise(vec2(p.x * 1.2 - time * 0.35, p.y * 0.6 + time * 0.5));
+      vec3 drops = vec3(0.5, 0.55, 0.65) * rain * gust * (0.05 + 0.5 * flash + 0.6 * lit);
+      vec3 rainSmall = rain > 0.0 ? drops * rainLayer(p, vec2(0.006, 0.03), 1.1, 0.6, 0.55, 1.0) * 0.7 : vec3(0.0);
+      vec3 rainMid = rain > 0.0 ? drops * rainLayer(p, vec2(0.013, 0.06), 1.7, 0.9, 0.45, 5.0) * 0.9 : vec3(0.0);
+      vec3 rainBig = rain > 0.0 ? drops * rainLayer(p, vec2(0.032, 0.15), 2.6, 1.7, 0.35, 9.0) : vec3(0.0);
       col += rainSmall;
 
       // The land, three layers with their trees: the far one dim against the
