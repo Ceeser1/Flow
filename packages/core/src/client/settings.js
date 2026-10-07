@@ -193,6 +193,10 @@ const VIZ_OPTIONS = {
   pdKoi: ['bool', true],
   pdPads: ['bool', true],
   pdRain: ['bool', true],
+  // Coral: the kind of growth, the colours, how fast it grows (percent).
+  crKind: ['choice', 'coral', ['coral', 'maze', 'spots']],
+  crColors: ['choice', 'reef', ['reef', 'neon', 'lichen']],
+  crSpeed: ['range', 100, 25, 300, 5],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -349,7 +353,7 @@ const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'pur
 // 'random-<category>' one of a category's (VIZ_CATEGORIES in the desktop's
 // visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy'];
-const VISUALIZERS = ['random', ...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond'];
+const VISUALIZERS = ['random', ...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'coral'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
