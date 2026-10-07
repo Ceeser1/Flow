@@ -142,10 +142,16 @@
     // hill (bunching towards its top, as far things do), smaller and hazier,
     // each tree a little higher or lower than its row, so they stand
     // scattered over the hillside from the water to near the top. In clusters
-    // with clearings between, each its own height (a few up to three times
-    // the rest, slenderer as they tower), in tiers narrowing to the tip.
-    // Drawn from the back.
+    // with clearings between, each its own size (a few larger all round, up
+    // to three times the rest by the water, less so further back), in tiers
+    // narrowing to the tip. Drawn from the back.
     const int DEPTHS = 5;
+    // Value noise along a line, for the clusters (cheaper than vnoise).
+    float noise1(float x) {
+      float i = floor(x);
+      float f = fract(x);
+      return mix(hash12(vec2(i, 7.0)), hash12(vec2(i + 1.0, 7.0)), f * f * (3.0 - 2.0 * f));
+    }
     vec3 forest(vec3 col, float x, float y, float top) {
       if (y < 0.0 || y > top + 0.08) return col;
       float edge = 1.2 / res.y;
@@ -162,22 +168,25 @@
         float cover = 0.0;
         // Nothing of this row reaches here.
         float spread = top * 0.075;
-        if (y < foot - spread || y > foot + spread + 3.0 * tallest) continue;
-        for (int k = -1; k <= 1; k++) {
+        float most = 3.0 - 1.6 * back;                 // the largest a tree here grows
+        if (y < foot - spread || y > foot + spread + most * tallest) continue;
+        for (int k = -2; k <= 2; k++) {
+          // The cheap tests first: most trees do not reach this point.
           float c = cell + float(k);
           vec2 id = vec2(c, fr * 17.0);
-          float dense = smoothstep(0.3, 0.6, vnoise(vec2((c + 0.5) * w * 6.0 + fr * 5.3, 7.0)));
-          if (hash12(id + 3.3) > dense * 0.92) continue;
-          float at = foot + (hash12(id + 2.6) - 0.5) * 2.0 * spread * (row == 0 ? 0.0 : 1.0);
-          if (at > top - 0.002) continue;
-          // Most about the same, a few towering over them.
-          float tower = 1.0 + 2.0 * pow(hash12(id + 6.4), 6.0);
-          float h = tallest * (0.55 + 0.45 * hash12(id + 5.1)) * tower;
-          float t = (y - at) / h;
-          if (t < 0.0 || t > 1.0) continue;
           float cx = (c + 0.5 + 0.4 * (hash12(id + 8.2) - 0.5)) * w;
+          // Most about the same, a few larger all round.
+          float grow = 1.0 + (most - 1.0) * pow(hash12(id + 6.4), 6.0);
+          float h = tallest * (0.55 + 0.45 * hash12(id + 5.1)) * grow;
+          if (abs(x - cx) > h * 0.27 + edge) continue;
+          float at = foot + (hash12(id + 2.6) - 0.5) * 2.0 * spread * (row == 0 ? 0.0 : 1.0);
+          float t = (y - at) / h;
+          if (t < 0.0 || t > 1.0 || at > top - 0.002) continue;
+          // In a clearing, or not there anyway.
+          float dense = smoothstep(0.3, 0.6, noise1((c + 0.5) * w * 6.0 + fr * 5.3));
+          if (hash12(id + 3.3) > dense * 0.92) continue;
           float tiers = 4.0 + floor(3.0 * hash12(id + 9.9));
-          float wide = h * 0.26 / sqrt(tower) * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
+          float wide = h * 0.26 * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
           if (t < 0.1) wide = max(wide, h * 0.025);   // the trunk
           cover = max(cover, smoothstep(-edge, edge, wide - abs(x - cx)) * smoothstep(-edge, edge, h - (y - at)));
         }
@@ -209,9 +218,8 @@
         float snow = smoothstep(top - 0.03, top, p.y) * 0.5;
         col = vec3(0.013, 0.017, 0.028) + low * snow * 0.04;
       } else if (lake > 0.5 && p.y < HORIZON && p.y > mirrored) {
-        // Their reflection dark by the shore, so water and land meet, and
-        // fainter further out, so the trees' stand out.
-        col = mix(col, vec3(0.006, 0.009, 0.016), mix(0.85, 0.3, smoothstep(0.0, 0.03, HORIZON - p.y)));
+        // The low land barely shows in the water; what stands on it does.
+        col = mix(col, vec3(0.006, 0.009, 0.016), 0.12);
       }
       // The trees in front, and mirrored in the lake, broken by its waves.
       if (p.y >= HORIZON) col = forest(col, p.x * aspect, p.y - HORIZON, top - HORIZON);
