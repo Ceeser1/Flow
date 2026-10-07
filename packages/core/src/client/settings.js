@@ -197,11 +197,6 @@ const VIZ_OPTIONS = {
   crKind: ['choice', 'coral', ['coral', 'maze', 'spots']],
   crColors: ['choice', 'reef', ['reef', 'neon', 'lichen']],
   crSpeed: ['range', 100, 25, 300, 5],
-  // Laser Show: the colours, the crowd, a strobe on the drops (off: it
-  // flickers fast).
-  lsColors: ['choice', 'rgb', ['rgb', 'green', 'rainbow', 'ice']],
-  lsCrowd: ['bool', true],
-  lsStrobe: ['bool', false],
   // Shatter: how many shards across, how hard it breaks (percent), when it
   // breaks (on the big hits, every other bar).
   shPieces: ['range', 10, 4, 20, 1],
@@ -376,7 +371,7 @@ const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'pur
 // 'random-<category>' one of a category's (VIZ_CATEGORIES in the desktop's
 // visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy'];
-const VISUALIZERS = ['random', ...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'coral', 'lasershow', 'shatter', 'plasmaglobe', 'attractor', 'julia'];
+const VISUALIZERS = ['random', ...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'coral', 'shatter', 'plasmaglobe', 'attractor', 'julia'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
