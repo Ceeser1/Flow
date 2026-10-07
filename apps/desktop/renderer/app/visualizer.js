@@ -85,7 +85,7 @@ const VIZ_CATEGORIES = [
     id: 'worlds',
     name: 'Worlds',
     desc: 'Places to look at or fly through',
-    ids: ['synthwave', 'warp', 'tunnel', 'galaxy', 'aurora', 'lightning', 'inferno', 'fireworks', 'disco', 'stainedglass'],
+    ids: ['synthwave', 'warp', 'tunnel', 'galaxy', 'aurora', 'lightning', 'inferno', 'fireworks', 'disco', 'stainedglass', 'blackhole'],
   },
   {
     id: 'trippy',
