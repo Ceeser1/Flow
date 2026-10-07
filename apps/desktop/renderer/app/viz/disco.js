@@ -343,7 +343,8 @@
       gl.uniform1f(u.beams, set('dcBeams') ? 1 : 0);
       VizGL.screen(gl);
 
-      VizGL.blur(gl, this.t, this.b1, this.b2, 2);
+      VizGL.blur(gl, this.t, this.b1, this.b2, 1);
+      VizGL.blur(gl, this.b2, this.b1, this.b2, 1.5);
       VizGL.into(gl, null);
       gl.useProgram(this.show.p);
       VizGL.bind(gl, this.show.u.scene, this.t.tex, 0);
