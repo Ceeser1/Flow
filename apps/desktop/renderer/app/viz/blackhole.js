@@ -184,6 +184,7 @@
 
   class BlackHole {
     constructor(canvas) {
+      this.starShift = VizGL.starShift();
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
@@ -284,6 +285,7 @@
       gl.uniform2f(this.show.u.res, this.w, this.h);
       gl.uniform1f(this.show.u.time, this.age);
       gl.uniform1f(this.show.u.boom, a.kick);
+      gl.uniform2f(this.show.u.starShift, ...this.starShift);
       gl.uniform1f(this.show.u.orbit, this.orbit);
       VizGL.screen(gl);
     }

@@ -82,6 +82,7 @@
 
   class Galaxy {
     constructor(canvas) {
+      this.starShift = VizGL.starShift();
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
@@ -219,6 +220,7 @@
       gl.uniform2f(o.res, this.w, this.h);
       gl.uniform1f(o.time, this.age);
       gl.uniform1f(o.boom, a.kick);
+      gl.uniform2f(o.starShift, ...this.starShift);
       VizGL.screen(gl);
     }
   }

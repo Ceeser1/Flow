@@ -268,6 +268,11 @@ const VizGL = {
     return [1, 3, 5].map((i) => parseInt(String(hex).slice(i, i + 2), 16) / 255 || 0);
   },
 
+  /** A random place on the stars' sky (STARS' starShift), in whole pixels. */
+  starShift() {
+    return [Math.floor(Math.random() * 20000), Math.floor(Math.random() * 20000)];
+  },
+
   // Shared shader code: hashes and noise.
   NOISE: `
     float hash12(vec2 p) {
@@ -292,6 +297,10 @@ const VizGL = {
 
   // Shared shader code: a night sky's stars, as Aurora's (after NOISE).
   STARS: `
+    // Where on the endless sky this one looks (VizGL.starShift(), a new place
+    // each time a visualizer opens).
+    uniform vec2 starShift;
+
     // A star's twinkle: its own speed and moment, a little irregular; depth
     // is how far it dims.
     float twinkle(vec2 g, float depth, float time) {
@@ -305,6 +314,7 @@ const VizGL = {
     // bright ones, larger, white to blue or warm, the brightest with a halo
     // and four thin spikes of glare (flashing a little with boom, the kick).
     vec3 starField(vec2 px, float time, float boom) {
+      px += starShift;
       vec3 sum = vec3(0.0);
       {
         const float CELL = 5.0;

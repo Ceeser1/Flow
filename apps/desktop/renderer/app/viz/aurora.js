@@ -222,6 +222,7 @@
 
   class Aurora {
     constructor(canvas) {
+      this.starShift = VizGL.starShift();
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
@@ -274,6 +275,7 @@
       gl.uniform1f(u.flare, a.kick);
       gl.uniform1f(u.lift, LIFT);
       gl.uniform1f(u.boom, a.kick);
+      gl.uniform2f(u.starShift, ...this.starShift);
       gl.uniform1f(u.shine, SHINE * (set('auGlare') / 100));
       gl.uniform1f(u.lake, set('auLake') ? 1 : 0);
       gl.uniform1f(u.stars, set('auStars') ? 1 : 0);
