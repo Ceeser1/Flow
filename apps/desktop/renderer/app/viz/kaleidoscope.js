@@ -1,15 +1,16 @@
 'use strict';
 
-// Nebula: in the manner of Milkdrop. Every frame starts from the last one,
-// zoomed, turned, swirled and faded a little, its colours drifting, and the
-// music is drawn into it again (the waveform, the spectrum as rays, rings on
-// the beats), so what was drawn flows away in trails. The kicks push the zoom.
+// Kaleidoscope (called Nebula until 2026-10-07): in the manner of Milkdrop.
+// Every frame starts from the last one, zoomed, turned, swirled and faded a
+// little, its colours drifting, and the music is drawn into it again (the
+// waveform, the spectrum as rays, rings on the beats), so what was drawn
+// flows away in trails. The kicks push the zoom.
 //
 // It has several looks (LOOKS: how it zooms, turns and swirls, what it draws
 // and whether it is seen through a kaleidoscope). Auto moves on to another
 // every so often, on a beat, gliding from one to the next; a click moves on
-// at once. Its cogwheel: the look (or Auto), how often Auto moves on, and
-// how long the trails are.
+// at once. Its cogwheel: the look (Kaleidoscope by default, or Auto), how
+// often Auto moves on, and how long the trails are.
 //
 // Three more looks are visualizers of their own (SOLO), with only Trails in
 // their cogwheels: Aurora Waves (the waveform flowing up in curtains, without
@@ -35,9 +36,9 @@
   //   size      how large it is drawn
   //   kaleido   mirrored slices seen through (0: none)
   const LOOKS = [
+    { id: 'kaleido', name: 'Kaleidoscope', zoom: 1.01, kickZoom: 0.025, rot: 0.004, twist: 0.0, swirl: 0.006, swirlScale: 1.6, drift: [0, 0], decay: 0.96, hue: 0.002, base: 0.85, wave: 0, size: 0.18, kaleido: 6 },
     { id: 'vortex', name: 'Vortex', zoom: 1.012, kickZoom: 0.03, rot: 0.006, twist: 0.012, swirl: 0.004, swirlScale: 2.2, drift: [0, 0], decay: 0.965, hue: 0.0015, base: 0.62, wave: 1, size: 0.22, kaleido: 0 },
     { id: 'tunnel', name: 'Tunnel', zoom: 1.035, kickZoom: 0.05, rot: 0.0, twist: 0.0, swirl: 0.0015, swirlScale: 3.0, drift: [0, 0], decay: 0.95, hue: 0.003, base: 0.05, wave: 1, size: 0.12, kaleido: 0 },
-    { id: 'kaleido', name: 'Kaleidoscope', zoom: 1.01, kickZoom: 0.025, rot: 0.004, twist: 0.0, swirl: 0.006, swirlScale: 1.6, drift: [0, 0], decay: 0.96, hue: 0.002, base: 0.85, wave: 0, size: 0.18, kaleido: 6 },
     { id: 'starburst', name: 'Starburst', zoom: 1.05, kickZoom: 0.06, rot: -0.002, twist: 0.0, swirl: 0.001, swirlScale: 4.0, drift: [0, 0], decay: 0.91, hue: 0.004, base: 0.1, wave: 2, size: 0.1, kaleido: 0 },
   ];
   // The visualizers of their own, by their ids.
@@ -121,7 +122,7 @@
     return [f(5), f(3), f(1)];
   }
 
-  class Nebula {
+  class Kaleidoscope {
     /**
      * solo: one of SOLO, shown on its own (its look fixed, its own Trails),
      * with rings: false for none on the beats.
@@ -165,7 +166,7 @@
 
     /** The look set in its cogwheel, or for Auto one other than `not`. */
     _choose(not) {
-      const set = Visualizer.setting('nbLook');
+      const set = Visualizer.setting('ksLook');
       if (set !== 'auto') return LOOKS.find((l) => l.id === set) || LOOKS[0];
       const pool = LOOKS.filter((l) => l !== not);
       return pool[Math.floor(Math.random() * pool.length)];
@@ -181,13 +182,13 @@
     }
 
     next() {
-      const set = Visualizer.setting('nbLook');
+      const set = Visualizer.setting('ksLook');
       if (set === 'auto') this._go(this._choose(this.look));
       else {
         // A chosen look: the click goes on to the next one and keeps it.
         const i = LOOKS.findIndex((l) => l.id === set);
         const look = LOOKS[(i + 1) % LOOKS.length];
-        Store.saveSettings({ nbLook: look.id });
+        Store.saveSettings({ ksLook: look.id });
         this._go(look);
       }
     }
@@ -206,7 +207,7 @@
       p.drift = drift;
       if (g >= 1) this.from = null;
 
-      const trails = Visualizer.setting(this.solo ? this.solo.trails : 'nbTrails') / 100;
+      const trails = Visualizer.setting(this.solo ? this.solo.trails : 'ksTrails') / 100;
       // Trails: the share that fades each frame shrinks or grows.
       const decay = 1 - (1 - p.decay) / Math.max(0.2, trails);
       const step = dt * 60;
@@ -266,12 +267,12 @@
 
     /** The look set in the cogwheel followed, and Auto moving on. */
     _auto(a) {
-      const set = Visualizer.setting('nbLook');
+      const set = Visualizer.setting('ksLook');
       if (set !== 'auto' && set !== this.look.id) this._go(this._choose(null));
       // Auto: once its time is up, on the next phrase (the first of eight
       // beats) while the beat is clear, else on the next strong kick (or a
       // few seconds later anyway).
-      const every = Visualizer.setting('nbEvery');
+      const every = Visualizer.setting('ksEvery');
       const cue = a.lock > 0.5 ? a.tick && a.beats % 8 === 0 : a.onset && a.beat > 0.7;
       if (set === 'auto' && this.since > every && (cue || this.since > every + 5)) this._go(this._choose(this.look));
     }
@@ -365,19 +366,19 @@
   }
 
   Visualizer.add({
-    id: 'nebula',
-    name: 'Nebula',
+    id: 'kaleidoscope',
+    name: 'Kaleidoscope',
     desc: 'In the manner of Milkdrop: the music drawn into a picture that flows on, zooming, swirling and changing colour',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 12m-2 0a2 2 0 1 0 4 0a4 4 0 1 0-8 0a6 6 0 1 0 12 0a8 8 0 1 0-16 0"/></svg>',
     gl: true,
     hint: 'Click for the next look',
-    create: (canvas) => new Nebula(canvas),
+    create: (canvas) => new Kaleidoscope(canvas),
     click: (scene) => scene.next(),
     options: [
-      { type: 'choice', key: 'nbLook', label: 'Look', choices: [['auto', 'Auto'], ...LOOKS.map((l) => [l.id, l.name])] },
-      { type: 'slider', key: 'nbEvery', label: 'Auto changes every', min: 10, max: 120, step: 5, unit: ' s', when: (s) => s.nbLook === 'auto' },
-      { type: 'slider', key: 'nbTrails', label: 'Trails', min: 25, max: 200, step: 5 },
+      { type: 'choice', key: 'ksLook', label: 'Look', choices: [['auto', 'Auto'], ...LOOKS.map((l) => [l.id, l.name])] },
+      { type: 'slider', key: 'ksEvery', label: 'Auto changes every', min: 10, max: 120, step: 5, unit: ' s', when: (s) => s.ksLook === 'auto' },
+      { type: 'slider', key: 'ksTrails', label: 'Trails', min: 25, max: 200, step: 5 },
     ],
   });
 
@@ -390,7 +391,7 @@
       glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
         + `stroke-linecap="round" stroke-linejoin="round">${glyph}</svg>`,
       gl: true,
-      create: (canvas) => new Nebula(canvas, { look, trails, rings }),
+      create: (canvas) => new Kaleidoscope(canvas, { look, trails, rings }),
       options: [{ type: 'slider', key: trails, label: 'Trails', min: 25, max: 200, step: 5 }],
     });
   }

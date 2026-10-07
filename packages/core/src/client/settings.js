@@ -37,15 +37,14 @@ const VIZ_OPTIONS = {
   ltFlashAmount: ['range', 100, 0, 200, 5],
   ltRain: ['bool', true],
   ltStrikes: ['range', 100, 25, 200, 5],
-  // Nebula: its look ('auto' moves on by itself), how often Auto moves on
-  // (seconds), and how long the trails last (percent).
-  // (Aurora, Liquid and Mandala were looks of it; a value saved as one of
-  // them is left behind.)
-  nbLook: ['choice', 'auto', ['auto', 'vortex', 'tunnel', 'kaleido', 'starburst']],
-  nbEvery: ['range', 30, 10, 120, 5],
-  nbTrails: ['range', 100, 25, 200, 5],
-  // Aurora Waves, Liquid and Mandala (Nebula's once): how long the trails
-  // last (percent).
+  // Kaleidoscope: its look ('auto' moves on by itself), how often Auto moves
+  // on (seconds), and how long the trails last (percent). It was Nebula,
+  // with nbLook, nbEvery and nbTrails (Auto by default), left behind.
+  ksLook: ['choice', 'kaleido', ['auto', 'kaleido', 'vortex', 'tunnel', 'starburst']],
+  ksEvery: ['range', 30, 10, 120, 5],
+  ksTrails: ['range', 100, 25, 200, 5],
+  // Aurora Waves, Liquid and Mandala (Kaleidoscope's looks once): how long
+  // the trails last (percent).
   awTrails: ['range', 100, 25, 200, 5],
   lqTrails: ['range', 100, 25, 200, 5],
   mdTrails: ['range', 100, 25, 200, 5],
@@ -296,7 +295,7 @@ const DEFAULTS = {
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random' picks one of the others each time.
-const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'nebula', 'aurorawaves', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor'];
+const VISUALIZERS = ['random', 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'aurorawaves', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
@@ -367,6 +366,8 @@ function clean(raw) {
   if (!CLOUD_COLORS.includes(s.cloudsColors)) s.cloudsColors = DEFAULTS.cloudsColors;
   const amount = Math.round(Number(s.cloudsAmount) / 10) * 10;
   s.cloudsAmount = Number.isFinite(amount) ? Math.min(100, Math.max(0, amount)) : DEFAULTS.cloudsAmount;
+  // Nebula is Kaleidoscope now.
+  if (s.visualizer === 'nebula') s.visualizer = 'kaleidoscope';
   if (!VISUALIZERS.includes(s.visualizer)) s.visualizer = DEFAULTS.visualizer;
   s.synColor = /^#[0-9a-f]{6}$/i.test(String(s.synColor)) ? String(s.synColor).toLowerCase() : DEFAULTS.synColor;
   for (const key of ['synBobbingAmount', 'synCameraTiltAmount', 'synCarTiltAmount']) {

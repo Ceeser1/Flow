@@ -200,9 +200,13 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.wfStyle, 'bars');
   assert.equal(settings.clean({ wfStyle: 'wave', wfColors: 'blue' }).wfStyle, 'wave');
   assert.equal(settings.clean({ wfColors: 'black' }).wfColors, 'rainbow');
-  // Aurora Waves, Liquid and Mandala are their own now, no longer Nebula's looks.
-  assert.equal(settings.clean({ nbLook: 'liquid' }).nbLook, 'auto');
-  assert.equal(settings.clean({ nbLook: 'starburst' }).nbLook, 'starburst');
+  // Nebula is Kaleidoscope, its own look first and chosen by default; Aurora
+  // Waves, Liquid and Mandala are their own now, no longer its looks.
+  assert.equal(settings.clean({ visualizer: 'nebula' }).visualizer, 'kaleidoscope');
+  assert.equal(d.ksLook, 'kaleido');
+  assert.equal(settings.clean({ ksLook: 'liquid' }).ksLook, 'kaleido');
+  assert.equal(settings.clean({ ksLook: 'auto' }).ksLook, 'auto');
+  assert.equal(settings.clean({ ksLook: 'starburst' }).ksLook, 'starburst');
   assert.equal(settings.clean({ visualizer: 'mandala' }).visualizer, 'mandala');
   assert.equal(settings.clean({ visualizer: 'aurorawaves' }).visualizer, 'aurorawaves');
   assert.equal(d.lqTrails, 100);

@@ -933,7 +933,7 @@ const Visualizer = {
     const refreshers = [];
     const refresh = () => refreshers.forEach((fn) => fn());
     const setOpen = (on) => {
-      // Changed meanwhile (a click on Nebula moves its look on): shown as it is now.
+      // Changed meanwhile (a click on Kaleidoscope moves its look on): shown as it is now.
       if (on) refresh();
       panel.classList.toggle('viz-cfg--open', on);
       cog.setAttribute('aria-expanded', String(on));
