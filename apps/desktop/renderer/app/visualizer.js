@@ -29,10 +29,9 @@
 //             cogwheel at the top left opens, to the right, onto its own
 //             settings: the wireframe's colour, the floor's bumps, and the
 //             camera bobbing, the camera tilting and the car tilting on them.
-//   Random    one of the others, a different one than last time if it can;
-//             with vizRandomEach (Settings) another one with each song.
-//             Each category (VIZ_CATEGORIES) has its own Random too
-//             ('random-<category>'), picking only from that category.
+//   Random    each category (VIZ_CATEGORIES) has one ('random-<category>'),
+//             one of that category's, a different one than last time if it
+//             can; with vizRandomEach (Settings) another one with each song.
 //
 // In Settings the visualizers stand in categories (VIZ_CATEGORIES), each
 // folding away with a click on its heading (vizCollapsed); Up and Down go
@@ -42,14 +41,10 @@
 // Bars runs its own short analysis (about 46 ms) so they jump the way
 // Winamp's did; Waveform the equalizer's longer one, so it breathes like it.
 
+// The sign on each category's Random tile in Settings.
+const VIZ_RANDOM_GLYPH = '<img class="viz-tile__icon" src="../images/shuffle.png" alt="" />';
+
 const VISUALIZERS = [
-  {
-    id: 'random',
-    name: 'Random (Any)',
-    ready: true,
-    desc: 'A different visualizer each time, of any category',
-    glyph: '<img class="viz-tile__icon" src="../images/shuffle.png" alt="" />',
-  },
   { id: 'bars', name: 'Bars', ready: true, desc: 'Spectrum bars with falling peaks, in the manner of Winamp', glyph: Icons.speaker, image: '../images/viz-bars.jpg' },
   { id: 'waveform', name: 'Waveform', ready: true, desc: 'The equalizer, glowing out from the middle of the screen', glyph: Icons.pulse, image: '../images/viz-waveform.jpg' },
   {
@@ -73,7 +68,7 @@ const VISUALIZERS = [
 ];
 
 // The categories in Settings, each's visualizers in their order there (and
-// for Up and Down). Random and Flow stand above them, in none.
+// for Up and Down), each with its own Random first.
 const VIZ_CATEGORIES = [
   {
     id: 'equalizers',
@@ -96,8 +91,8 @@ const VIZ_CATEGORIES = [
   {
     id: 'other',
     name: 'Other',
-    desc: 'Games and the cover in pieces',
-    ids: ['arcade', 'shatter'],
+    desc: "Flow's own look, games and the cover in pieces",
+    ids: ['flow', 'arcade', 'shatter'],
   },
 ];
 
@@ -315,17 +310,14 @@ const Visualizer = {
     if (flow) Equalizer._layout();
   },
 
-  /**
-   * All of them in Settings' order: Flow, then the categories', then any in
-   * none of them.
-   */
+  /** All of them in Settings' order: the categories', then any in none of them. */
   ordered() {
-    const ready = VISUALIZERS.filter((v) => v.ready && v.id !== 'random').map((v) => v.id);
-    const listed = ['flow', ...VIZ_CATEGORIES.flatMap((c) => c.ids)].filter((id) => ready.includes(id));
+    const ready = VISUALIZERS.filter((v) => v.ready).map((v) => v.id);
+    const listed = VIZ_CATEGORIES.flatMap((c) => c.ids).filter((id) => ready.includes(id));
     return [...listed, ...ready.filter((id) => !listed.includes(id))];
   },
 
-  /** A Random's choices: all of them for 'random', a category's for 'random-<category>'; null for any other id. */
+  /** A Random's choices: a category's for 'random-<category>' (all of them for 'random'); null for any other id. */
   _pool(id) {
     if (id === 'random') return this.ordered();
     const cat = typeof id === 'string' && id.startsWith('random-') && VIZ_CATEGORIES.find((c) => `random-${c.id}` === id);

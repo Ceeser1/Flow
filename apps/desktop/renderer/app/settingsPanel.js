@@ -218,14 +218,12 @@ const SettingsPanel = {
       }),
 
       h('h3.settings__section', 'Music Visualizer'),
-      this._visualizerRow(),
-      this._row({
+      this._visualizerRow(this._row({
         key: 'vizRandomEach',
-        label: 'Random: a new one with each song',
-        desc: 'With a Random chosen, the visualizer changes to another one (of the same category, for a category\'s Random) whenever the next song starts, staying in full screen.',
-        sub: true,
+        label: 'Random for every new song',
+        desc: 'When a new song starts playing a new random visualizer from the selected category is chosen. Keeps full screen.',
         when: () => Store.settings.visualizer.startsWith('random'),
-      }),
+      })),
       ] : []),
 
       ...(Store.can('updateCheck') || Store.can('batteryHelp') ? this._appRows() : []),
@@ -486,12 +484,13 @@ const SettingsPanel = {
 
   /**
    * "Select your Music Visualizer": a 16:9 tile each (VISUALIZERS in
-   * visualizer.js), the chosen one outlined, and Preview to open it. Random
-   * and Flow on top, then the categories (VIZ_CATEGORIES), each with its own
-   * Random first, folding away with a click on its heading (vizCollapsed,
-   * kept); folded, the heading says which of its own is chosen.
+   * visualizer.js), the chosen one outlined, and Preview to open it. Then
+   * `above` (Random for every new song), then the categories
+   * (VIZ_CATEGORIES), each with its own Random first, folding away with a
+   * click on its heading (vizCollapsed, kept); folded, the heading says which
+   * of its own is chosen.
    */
-  _visualizerRow() {
+  _visualizerRow(above) {
     const all = [];
     const notes = [];
     const draw = () => {
@@ -525,9 +524,7 @@ const SettingsPanel = {
       return el;
     };
     const byId = new Map(VISUALIZERS.map((v) => [v.id, v]));
-    const shuffle = byId.get('random').glyph;
-    // Any not in a category yet go with Random and Flow.
-    const top = h('div.viz-picker', ...VISUALIZERS.filter((v) => !VIZ_CATEGORIES.some((c) => c.ids.includes(v.id))).map(tile));
+    const shuffle = VIZ_RANDOM_GLYPH;
     const groups = VIZ_CATEGORIES.map((cat) => {
       const members = cat.ids.map((id) => byId.get(id)).filter(Boolean);
       const random = { id: `random-${cat.id}`, name: 'Random', ready: true, desc: `A different one of the ${cat.name} each time`, glyph: shuffle };
@@ -571,7 +568,7 @@ const SettingsPanel = {
       h('div.settings__desc', 'Opens in full screen from the visualizer button in the player bar. Escape or the X closes it; the Up and Down arrow keys switch to the one before or after.'));
     return h('div.settings__viz',
       h('div.settings__row.settings__row--flat', left, h('div.settings__right', preview)),
-      top,
+      above,
       ...groups);
   },
 
