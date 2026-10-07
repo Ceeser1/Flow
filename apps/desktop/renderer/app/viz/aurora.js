@@ -8,7 +8,7 @@
 // curtain glows brighter, and where it is louder than it just was its lower
 // edge lifts a little (quieter: dips), easing back as it settles. The
 // music's intensity sets how restless they are, and the kicks make them
-// flare. Fir trees stand along the shore before the mountains, and the lake
+// flare. Fir trees stand scattered over the hills, and the lake
 // mirrors it all, broken by small waves.
 //
 // Its cogwheel: the colours (green, the rarer red and violet, rainbow), how
@@ -136,35 +136,44 @@
       return col;
     }
 
-    // The fir trees along the shore, x across (screen heights) and y above
-    // the shore, laid over col: three rows, the farthest a little up the
-    // slope, smaller and hazier, the nearest at the water's edge, largest and
-    // nearly black. In clusters with clearings between, each tree its own
-    // height and footing, in tiers narrowing to the tip.
-    vec3 forest(vec3 col, float x, float y) {
-      if (y < 0.0 || y > 0.075) return col;
+    // The fir trees on the hills, x across (screen heights) and y above the
+    // shore, laid over col; top: the hill's height here, above the shore.
+    // Seen from across the lake: DEPTHS rows going back, each further up the
+    // hill (bunching towards its top, as far things do), smaller and hazier,
+    // each tree a little higher or lower than its row, so they stand
+    // scattered over the hillside from the water to near the top. In clusters
+    // with clearings between, each its own height, in tiers narrowing to the
+    // tip. Drawn from the back.
+    const int DEPTHS = 5;
+    vec3 forest(vec3 col, float x, float y, float top) {
+      if (y < 0.0 || y > top + 0.03) return col;
       float edge = 1.2 / res.y;
-      for (int row = 0; row < 3; row++) {
+      const float FAR = 1.0 / (1.0 + 0.7 * float(DEPTHS - 1));
+      for (int row = DEPTHS - 1; row >= 0; row--) {
         float fr = float(row);
-        float scale = 0.45 + 0.275 * fr;        // 0.45, 0.725, 1
-        float foot = 0.014 - 0.007 * fr;        // above the shore
-        vec3 shade = mix(vec3(0.0015, 0.002, 0.003), vec3(0.013, 0.017, 0.028), 0.55 - 0.275 * fr);
-        float w = 0.011 * scale;
+        float scale = 1.0 / (1.0 + 0.7 * fr);
+        float back = (1.0 - scale) / (1.0 - FAR);      // 0 at the water, 1 the farthest
+        float foot = top * 0.8 * back;
+        vec3 shade = mix(vec3(0.0015, 0.002, 0.003), vec3(0.013, 0.017, 0.028), 0.7 * back);
+        float tallest = 0.026 * scale;
+        float w = 0.45 * tallest;
         float cell = floor(x / w);
         float cover = 0.0;
-        for (int k = -2; k <= 2; k++) {
+        for (int k = -1; k <= 1; k++) {
           float c = cell + float(k);
           vec2 id = vec2(c, fr * 17.0);
-          float dense = smoothstep(0.35, 0.6, vnoise(vec2(c * 0.07 * scale + fr * 5.3, 7.0)));
-          if (hash12(id + 3.3) > dense * 0.95) continue;
-          float h = (0.016 + 0.034 * hash12(id + 5.1)) * (0.65 + 0.45 * dense) * scale;
-          float t = (y - foot - 0.004 * scale * hash12(id + 2.6)) / h;
+          float dense = smoothstep(0.3, 0.6, vnoise(vec2((c + 0.5) * w * 6.0 + fr * 5.3, 7.0)));
+          if (hash12(id + 3.3) > dense * 0.92) continue;
+          float at = foot + (hash12(id + 2.6) - 0.5) * top * (row == 0 ? 0.0 : 0.15);
+          if (at > top - 0.002) continue;
+          float h = tallest * (0.55 + 0.45 * hash12(id + 5.1));
+          float t = (y - at) / h;
           if (t < 0.0 || t > 1.0) continue;
-          float cx = (c + 0.5 + 0.7 * (hash12(id + 8.2) - 0.5)) * w;
+          float cx = (c + 0.5 + 0.4 * (hash12(id + 8.2) - 0.5)) * w;
           float tiers = 4.0 + floor(3.0 * hash12(id + 9.9));
           float wide = h * 0.26 * (1.0 - t) * (0.62 + 0.38 * fract((1.0 - t) * tiers));
           if (t < 0.1) wide = max(wide, h * 0.025);   // the trunk
-          cover = max(cover, smoothstep(-edge, edge, wide - abs(x - cx)) * smoothstep(-edge, edge, 1.0 - t) * smoothstep(-edge, edge, t * h));
+          cover = max(cover, smoothstep(-edge, edge, wide - abs(x - cx)) * smoothstep(-edge, edge, h - (y - at)));
         }
         col = mix(col, shade, cover);
       }
@@ -194,12 +203,13 @@
         float snow = smoothstep(top - 0.03, top, p.y) * 0.5;
         col = vec3(0.013, 0.017, 0.028) + low * snow * 0.04;
       } else if (lake > 0.5 && p.y < HORIZON && p.y > mirrored) {
-        // Their reflection only faint, so the trees' stand out.
-        col = mix(col, vec3(0.006, 0.009, 0.016), 0.3);
+        // Their reflection dark by the shore, so water and land meet, and
+        // fainter further out, so the trees' stand out.
+        col = mix(col, vec3(0.006, 0.009, 0.016), mix(0.85, 0.3, smoothstep(0.0, 0.03, HORIZON - p.y)));
       }
       // The trees in front, and mirrored in the lake, broken by its waves.
-      if (p.y >= HORIZON) col = forest(col, p.x * aspect, p.y - HORIZON);
-      else if (lake > 0.5) col = forest(col, (p.x + wave) * aspect, HORIZON - p.y + wave * 0.5);
+      if (p.y >= HORIZON) col = forest(col, p.x * aspect, p.y - HORIZON, top - HORIZON);
+      else if (lake > 0.5) col = forest(col, (p.x + wave) * aspect, HORIZON - p.y + wave * 0.5, top - HORIZON);
       col = 1.0 - exp(-col * 1.4);
       col += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
       o = vec4(col, 1.0);
