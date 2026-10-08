@@ -19,7 +19,8 @@
 //   native      what the app answers itself, also while its page sleeps
 //               ('player': FlowPlayer's state)
 //   js          the body of an async function run in the page (a string, or a
-//               function whose source is taken); what it returns is the value
+//               function whose source is taken); what it returns is the value.
+//               jsWith: (ctx) => that string, made when the step runs
 //   until       as js, asked again every half second until it returns
 //               something truthy, for at most `timeout` ms (30 s)
 //   wait        ms to wait afterwards (300)
@@ -252,6 +253,7 @@ async function runStep(step, ctx) {
     if (step.run) value = await step.run(ctx);
     if (step.native) value = (await ctx.ask({ native: step.native }, step.timeout || 30000)).v;
     if (step.js) value = await ctx.ask({ js: body(step.js) }, step.timeout || 30000);
+    if (step.jsWith) value = await ctx.ask({ js: body(step.jsWith(ctx)) }, step.timeout || 30000);
     if (step.until) {
       const end = Date.now() + (step.timeout || 30000);
       for (;;) {
@@ -346,8 +348,7 @@ async function main() {
     try {
       simctl(...extra);
     } catch (err) {
-      log(`simctl ${extra[0]} failed: ${err.message.split('
-')[0]}`);
+      log(`simctl ${extra[0]} failed: ${err.message.split(/\r?\n/)[0]}`);
     }
   }
   simctl('install', device.udid, path.resolve(o.app));

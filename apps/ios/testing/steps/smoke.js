@@ -42,12 +42,40 @@ module.exports = [
   },
   { name: 'what iOS plays', native: 'codecs' },
   {
-    name: 'found the CI server',
+    name: 'found the CI server by itself',
     until: 'return Store.server.state === "online" && { name: Store.server.name, home: Store.settings.serverHome };',
-    timeout: 45000,
-    wait: 2000,
+    timeout: 30000,
+    wait: 1500,
     shot: '02-online',
     expect: (v) => v.name === 'Flow CI',
+  },
+  {
+    // Not found: typed in, so the rest still runs.
+    name: 'connected',
+    js: `
+      if (Store.server.state === 'online') return 'already';
+      await Store.saveSettings({ serverOn: true, serverHome: '127.0.0.1:7878' });
+      return 'typed in';
+    `,
+  },
+  {
+    name: 'by the Mac\'s own network address',
+    run: async (ctx) => {
+      const nets = Object.values(require('os').networkInterfaces()).flat();
+      const lan = nets.find((n) => n && n.family === 'IPv4' && !n.internal);
+      ctx.lan = lan ? lan.address : '';
+      return ctx.lan;
+    },
+    jsWith: (ctx) => `
+      if (!'${ctx.lan}') return 'no network address';
+      await Store.saveSettings({ serverOn: true, serverHome: '${ctx.lan}:7878' });
+      for (let i = 0; i < 40 && !(Store.server.state === 'online' && Store.settings.serverHome === '${ctx.lan}:7878'); i += 1) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      return { state: Store.server.state, home: Store.settings.serverHome };
+    `,
+    timeout: 30000,
+    expect: (v) => v === 'no network address' || v.state === 'online',
   },
   {
     name: 'its songs',
