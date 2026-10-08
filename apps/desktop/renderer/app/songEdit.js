@@ -294,9 +294,10 @@ function editSongDialog(song, heading = 'Edit Song') {
     const st = Store.server;
     const serverCannot = st.on && st.state === 'online' && !st.trim;
     // Only the profile that uploaded a song trims it (the server refuses the
-    // others); one without an uploader, or whose uploader is gone, anyone.
+    // others; the Default / Shared is one too); one without an uploader, or
+    // whose uploader is gone, anyone.
     const owner = st.on && song.addedBy ? Store.profileName(song.addedBy) : '';
-    const othersSong = !!owner && song.addedBy !== (st.profile ? st.profile.id : '');
+    const othersSong = !!owner && song.addedBy !== Store.uploaderId();
     // The phone cuts no file itself: without a server, no trim there.
     const trim = !othersSong && (Store.can('localTrim') || st.on) ? songTrimEditor(song, { enabled: !serverCannot }) : null;
     let note;

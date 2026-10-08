@@ -177,7 +177,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
 
   /** Profile id -> name, for the owners of the playlists others share. */
   function profileNames() {
-    return Object.fromEntries(config.get().profiles.map((p) => [p.id, p.name]));
+    return { [prof.DEFAULT_OWNER]: prof.DEFAULT_NAME, ...Object.fromEntries(config.get().profiles.map((p) => [p.id, p.name])) };
   }
 
   /**
@@ -377,7 +377,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
       sourceKey: String(meta.sourceKey || ''),
       sourcePlaylistUrl: String(meta.sourcePlaylistUrl || ''),
       addedAt: Number(meta.addedAt) || Date.now(),
-      addedBy: profileId || '',
+      addedBy: profileId || prof.DEFAULT_OWNER,
       loudness: meta.loudness,
       favouriteAt: meta.favouriteAt,
       stats: meta.stats,

@@ -10,6 +10,8 @@ const FAVOURITES_ID = 'favourites';
 const FAVOURITES_NAME = 'Favourites';
 // "All Songs from <profile>": the songs one profile of the Flow Server added.
 const FROM_PREFIX = 'from:';
+// The Default / Shared's id as a song's addedBy (@flow/core/profiles DEFAULT_OWNER).
+const DEFAULT_PROFILE = 'default';
 
 const Store = {
   library: { songs: [], playlists: [], ignoredFiles: [] },
@@ -198,9 +200,18 @@ const Store = {
     return { id: FROM_PREFIX + profileId, name: `All Songs from ${name}`, menuName: `from ${name}`, entries, isFrom: true };
   },
 
-  /** The "All Songs from ..." lists under All Songs in the menu: profiles that added songs, A to Z. */
+  /** The profile songs added now count as added by: the one signed in to, else the Default / Shared. */
+  uploaderId() {
+    return this.server.profile ? this.server.profile.id : DEFAULT_PROFILE;
+  },
+
+  /**
+   * The "All Songs from ..." lists under All Songs in the menu: profiles that
+   * added songs, A to Z. The Default / Shared's only on a server with profiles.
+   */
   fromPlaylists() {
-    const ids = new Set(this.library.songs.map((s) => s.addedBy).filter(Boolean));
+    const profiles = Object.keys(this.library.profileNames || {}).some((id) => id !== DEFAULT_PROFILE);
+    const ids = new Set(this.library.songs.map((s) => s.addedBy).filter((id) => id && (profiles || id !== DEFAULT_PROFILE)));
     return [...ids].map((id) => this.fromPlaylist(id)).filter(Boolean)
       .sort((a, b) => Util.compareValues(a.menuName, b.menuName));
   },

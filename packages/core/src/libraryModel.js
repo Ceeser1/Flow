@@ -13,8 +13,9 @@
 //   sourceUrl is the page the song was downloaded from, sourcePlaylistUrl the
 //   playlist it came in with when it was part of a playlist import (else '').
 //   addedBy is the id of the Flow Server profile that uploaded the song or had
-//   the server download it; '' for songs from before, ones put into the music
-//   folder by hand, and every song without a server.
+//   the server download it ('default': the Default / Shared); '' for songs
+//   from before, ones put into the music folder by hand, and every song
+//   without a server.
 //   stats     { plays, stops, skips, sessions, listened, lastPlayedAt }
 //   playlist  { id, name, createdAt, entries: [{ songId, addedAt }], source, shared }
 //   source    { url, kind } for a playlist imported from a link, else null.
@@ -31,8 +32,8 @@
 //                    unfollowing a shared list deletes it.
 //   sharedPlaylists  the other profiles' shared playlists, for reading:
 //                    { id, name, createdAt, entries, ownerId, ownerName }
-//   profileNames     { [profileId]: name } of the server's profiles, for the
-//                    songs' addedBy ("All Songs from ...")
+//   profileNames     { [profileId]: name } of the server's profiles (and the
+//                    Default / Shared), for the songs' addedBy ("All Songs from ...")
 //
 // "All Songs" is not stored: it is every song, and a song's addedAt is when it
 // was downloaded. Neither is "Favourites": the songs with a favouriteAt, which

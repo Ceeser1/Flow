@@ -62,6 +62,9 @@
 // songs here while another profile is signed in (offlineKeep).
 
 const model = require('../libraryModel');
+// The Default / Shared's id as a song's addedBy (profiles.js DEFAULT_OWNER,
+// which loads Node's crypto).
+const DEFAULT_OWNER = 'default';
 const { applyCommand } = require('../commands');
 const { songFileStem } = require('../text');
 const { serverBaseUrl: baseUrl, isTailscaleAddress } = require('../address');
@@ -316,7 +319,7 @@ function createRemote(env) {
   function uploadAsAddSong(cmd) {
     const local = model.songById(library.get(), cmd.localId);
     if (!local) return null;
-    return { type: 'addSong', at: cmd.at, playlistIds: cmd.playlistIds, song: { ...local, id: cmd.songId, addedBy: currentProfile() } };
+    return { type: 'addSong', at: cmd.at, playlistIds: cmd.playlistIds, song: { ...local, id: cmd.songId, addedBy: currentProfile() || DEFAULT_OWNER } };
   }
 
   function buildView() {

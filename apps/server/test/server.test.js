@@ -874,9 +874,9 @@ test('a song remembers the profile that uploaded it, and the library names the p
     const lib = (await get(base, '/api/library', ben.token)).json.library;
     const by = Object.fromEntries(lib.songs.map((s) => [s.title, s.addedBy]));
     assert.deepEqual(by, {
-      Teardrop: '', Roads: anna.profile.id, 'Glory Box': ben.profile.id, 'Sour Times': '',
+      Teardrop: 'default', Roads: anna.profile.id, 'Glory Box': ben.profile.id, 'Sour Times': '',
     });
-    assert.deepEqual(lib.profileNames, { [anna.profile.id]: 'Anna', [ben.profile.id]: 'Ben' });
+    assert.deepEqual(lib.profileNames, { default: 'Default / Shared', [anna.profile.id]: 'Anna', [ben.profile.id]: 'Ben' });
 
     // Kept over a restart of the library file, and a rename reaches the names.
     const saved = JSON.parse(fs.readFileSync(server.library.file || path.join(server.config.home, 'library.json'), 'utf8'));
@@ -884,11 +884,11 @@ test('a song remembers the profile that uploaded it, and the library names the p
     await post(base, '/api/profiles/rename', { name: 'Anna B' }, anna.token);
     assert.equal((await get(base, '/api/library', ben.token)).json.library.profileNames[anna.profile.id], 'Anna B');
 
-    // Only the uploader trims a song; nobody's songs anyone (this server has
-    // no ffmpeg, so a trim let through fails on that instead).
+    // Only the uploader trims a song, the Default / Shared too; nobody's songs
+    // anyone (this server has no ffmpeg, so a trim let through fails on that).
     const trim = async (id, token) => {
       const r = await fetch(`${base}/api/songs/${id}/trim`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...as(token) },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? as(token) : {}) },
         body: JSON.stringify({ start: 1, end: 2, base: '', cut: 'cccccc333333' }),
       });
       return { status: r.status, error: (await r.json()).error };
@@ -897,6 +897,11 @@ test('a song remembers the profile that uploaded it, and the library names the p
       status: 403, error: 'This Song was uploaded by Anna B. Only that profile can trim this song.',
     });
     assert.match((await trim('s1', anna.token)).error, /ffmpeg/);
+    assert.match((await trim('s0')).error, /ffmpeg/);
+    assert.deepEqual(await trim('s0', anna.token), {
+      status: 403, error: 'This Song was uploaded by Default / Shared. Only that profile can trim this song.',
+    });
+    assert.equal((await trim('s1')).status, 403);
     const sour = lib.songs.find((s) => s.title === 'Sour Times').id;
     assert.match((await trim(sour, ben.token)).error, /ffmpeg/);
   });

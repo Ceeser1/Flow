@@ -94,6 +94,7 @@ const { URL } = require('url');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const { isPrivateIp, isTailscaleAddress } = require('@flow/core/address');
 const { PUBLIC_LEVEL } = require('@flow/core/password');
+const { DEFAULT_OWNER, DEFAULT_NAME } = require('@flow/core/profiles');
 const { checkPassword, hashPassword, hashToken, CLIENT_ID } = require('./config');
 const { DownloadError } = require('./downloads');
 const cover = require('@flow/core/cover');
@@ -770,11 +771,12 @@ function createHttpServer({
     m = /^\/api\/songs\/([\w-]{1,64})\/trim$/.exec(p);
     if (m && req.method === 'POST') {
       const body = await readJsonBody(req);
-      // Only the profile that uploaded a song trims it; one without an
-      // uploader, or whose uploader is gone, anyone.
+      // Only the profile that uploaded a song trims it (the Default / Shared
+      // its own); one without an uploader, or whose uploader is gone, anyone.
       const song = library.data.songs.find((s) => s.id === m[1]);
-      const owner = song && song.addedBy && profileOf({ profileId: song.addedBy });
-      if (owner && owner.id !== profileId) throw new HttpError(403, `This Song was uploaded by ${owner.name}. Only that profile can trim this song.`);
+      const by = song ? song.addedBy : '';
+      const owner = by === DEFAULT_OWNER ? DEFAULT_NAME : ((by && profileOf({ profileId: by })) || {}).name;
+      if (owner && by !== (profileId || DEFAULT_OWNER)) throw new HttpError(403, `This Song was uploaded by ${owner}. Only that profile can trim this song.`);
       const r = await library.trimSong(m[1], body);
       return sendJson(res, 200, { ...(r.song ? { song: { ...r.song, file: '' } } : {}), skipped: r.skipped, rev: library.rev });
     }
