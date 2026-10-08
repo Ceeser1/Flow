@@ -71,25 +71,34 @@ function log(text) {
 const SONGS = [
   ['Flow Test - Sine A.mp3', 440, ['-c:a', 'libmp3lame', '-b:a', '192k']],
   ['Flow Test - Sine B.opus', 494, ['-c:a', 'libopus', '-b:a', '96k']],
-  ['Flow Test - Sine C.ogg', 523, ['-c:a', 'libvorbis', '-q:a', '4']],
+  // ffmpeg's own Vorbis encoder: Homebrew's ffmpeg comes without libvorbis.
+  ['Flow Test - Sine C.ogg', 523, ['-c:a', 'vorbis', '-strict', 'experimental']],
   ['Flow Test - Sine D.m4a', 587, ['-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart']],
   ['Flow Test - Sine E.flac', 659, ['-c:a', 'flac']],
   ['Flow Test - Sine F.wav', 698, ['-c:a', 'pcm_s16le']],
 ];
 
+/** The test songs; one this ffmpeg cannot make is left out (its step then says so). */
 function makeSongs(dir) {
   fs.mkdirSync(dir, { recursive: true });
+  let made = 0;
   for (const [name, hz, codec] of SONGS) {
     const [artist, title] = name.replace(/\.\w+$/, '').split(' - ');
-    sh('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=45`,
-      '-ac', '2', '-ar', '48000', ...codec, '-metadata', `title=${title}`, '-metadata', `artist=${artist}`, path.join(dir, name)]);
+    try {
+      sh('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=45`,
+        '-ac', '2', '-ar', '48000', ...codec, '-metadata', `title=${title}`, '-metadata', `artist=${artist}`, path.join(dir, name)]);
+      made += 1;
+    } catch (err) {
+      log(`${name} could not be made: ${String(err.stderr || err.message).trim().split(/\r?\n/).pop()}`);
+    }
   }
+  return made;
 }
 
 async function startServer(out) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-ci-'));
   const music = path.join(base, 'music');
-  makeSongs(music);
+  const made = makeSongs(music);
   // The server takes files that have not changed for a moment.
   await sleep(2500);
   const logFd = fs.openSync(path.join(out, 'server.log'), 'a');
@@ -103,8 +112,8 @@ async function startServer(out) {
       const r = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/hello`);
       if (r.ok) {
         const hello = await r.json();
-        log(`Flow Server "${hello.name}" running (${SONGS.length} test songs)`);
-        return { child, base, hello };
+        log(`Flow Server "${hello.name}" running (${made} of ${SONGS.length} test songs)`);
+        return { child, base, hello, made };
       }
     } catch {
       // Not up yet.

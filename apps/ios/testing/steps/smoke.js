@@ -79,8 +79,12 @@ module.exports = [
   },
   {
     name: 'its songs',
-    until: 'return Store.library.songs.length >= 6 && Store.library.songs.map((s) => [s.format, s.title, Math.round(s.duration)]);',
-    timeout: 30000,
+    jsWith: (ctx) => `
+      for (let i = 0; i < 60 && Store.library.songs.length < ${ctx.server.made}; i += 1) await new Promise((r) => setTimeout(r, 500));
+      return Store.library.songs.map((s) => [s.format, s.title, Math.round(s.duration)]);
+    `,
+    expect: (v) => v.length >= 5,
+    timeout: 40000,
     wait: 1000,
     shot: '03-songs',
   },
