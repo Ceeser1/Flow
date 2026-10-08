@@ -204,15 +204,16 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ wfStyle: 'wave', wfColors: 'blue' }).wfStyle, 'wave');
   assert.equal(settings.clean({ wfColors: 'black' }).wfColors, 'rainbow');
   // Nebula is Kaleidoscope, its own look first and chosen by default; Aurora
-  // Waves, Liquid and Mandala are their own now, no longer its looks.
+  // Waves is Aurora; Liquid and Mandala (its looks, then their own) are gone.
   assert.equal(settings.clean({ visualizer: 'nebula' }).visualizer, 'kaleidoscope');
   assert.equal(d.ksLook, 'kaleido');
   assert.equal(settings.clean({ ksLook: 'liquid' }).ksLook, 'kaleido');
   assert.equal(settings.clean({ ksLook: 'auto' }).ksLook, 'auto');
   assert.equal(settings.clean({ ksLook: 'starburst' }).ksLook, 'starburst');
-  assert.equal(settings.clean({ visualizer: 'mandala' }).visualizer, 'mandala');
+  assert.equal(settings.clean({ visualizer: 'mandala' }).visualizer, 'bars');
+  assert.equal(settings.clean({ visualizer: 'liquid' }).visualizer, 'bars');
   assert.equal(settings.clean({ visualizer: 'aurorawaves' }).visualizer, 'aurora');
-  assert.equal(d.lqTrails, 100);
+  assert.equal(d.lqTrails, undefined);
   // The visualizers' categories: a Random each, and which are folded shut.
   assert.equal(settings.clean({ visualizer: 'random-worlds' }).visualizer, 'random-worlds');
   assert.equal(settings.clean({ visualizer: 'random-nope' }).visualizer, 'bars');
@@ -223,10 +224,16 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.auGlare, 100);
   assert.equal(settings.clean({ auGlare: 20 }).auGlare, 50);
   assert.equal(settings.clean({ auGlare: 151 }).auGlare, 150);
-  assert.equal(settings.clean({ lqTrails: 7 }).lqTrails, 25);
+  assert.equal(settings.clean({ ksTrails: 7 }).ksTrails, 25);
   // Inferno's burning forest: on by default.
   assert.equal(d.ifForest, true);
   assert.equal(settings.clean({ ifForest: false }).ifForest, false);
+  // Stained Glass: the cover's colours and the torches by default.
+  assert.equal(d.sgGlass, 'cover');
+  assert.equal(settings.clean({ sgGlass: 'cold' }).sgGlass, 'cold');
+  assert.equal(settings.clean({ sgGlass: 'blue' }).sgGlass, 'cover');
+  assert.equal(d.sgTorches, true);
+  assert.equal(settings.clean({ sgTorches: false }).sgTorches, false);
   assert.equal(settings.clean({ ifForest: 'no' }).ifForest, true);
 });
 

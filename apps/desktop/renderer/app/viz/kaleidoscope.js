@@ -12,9 +12,6 @@
 // at once. Its cogwheel: the look (Kaleidoscope by default, or Auto), how
 // often Auto moves on, and how long the trails are.
 //
-// Two more looks are visualizers of their own (SOLO), with only Trails in
-// their cogwheels: Liquid and Mandala.
-//
 // WebGL (viz/gl.js): two half-float textures drawn into in turn (the frame
 // before and the new one), then the new one onto the screen.
 
@@ -31,7 +28,7 @@
   //   drift     the whole picture flowing (x, y per frame)
   //   decay     how much of the last frame stays (at Trails 100%)
   //   hue       colour drift per frame, base: the looks' own colour
-  //   wave      0 a line across, 1 a ring, 2 rays (the spectrum), 3 dots
+  //   wave      0 a line across, 1 a ring, 2 rays (the spectrum)
   //   size      how large it is drawn
   //   kaleido   mirrored slices seen through (0: none)
   const LOOKS = [
@@ -40,11 +37,6 @@
     { id: 'tunnel', name: 'Tunnel', zoom: 1.035, kickZoom: 0.05, rot: 0.0, twist: 0.0, swirl: 0.0015, swirlScale: 3.0, drift: [0, 0], decay: 0.95, hue: 0.003, base: 0.05, wave: 1, size: 0.12, kaleido: 0 },
     { id: 'starburst', name: 'Starburst', zoom: 1.05, kickZoom: 0.06, rot: -0.002, twist: 0.0, swirl: 0.001, swirlScale: 4.0, drift: [0, 0], decay: 0.91, hue: 0.004, base: 0.1, wave: 2, size: 0.1, kaleido: 0 },
   ];
-  // The visualizers of their own, by their ids.
-  const SOLO = {
-    liquid: { id: 'liquid', name: 'Liquid', zoom: 1.002, kickZoom: 0.02, rot: 0.001, twist: 0.004, swirl: 0.012, swirlScale: 2.8, drift: [0, 0], decay: 0.972, hue: 0.0012, base: 0.75, wave: 3, size: 0.3, kaleido: 0 },
-    mandala: { id: 'mandala', name: 'Mandala', zoom: 0.992, kickZoom: -0.02, rot: -0.005, twist: 0.006, swirl: 0.003, swirlScale: 2.0, drift: [0, 0], decay: 0.962, hue: 0.0025, base: 0.95, wave: 2, size: 0.16, kaleido: 8 },
-  };
   const NUMBERS = ['zoom', 'kickZoom', 'rot', 'twist', 'swirl', 'swirlScale', 'decay', 'hue', 'size'];
 
   const WARP_FS = VizGL.NOISE + `
@@ -121,9 +113,7 @@
   }
 
   class Kaleidoscope {
-    /** solo: { look: one of SOLO, trails: its Trails setting }, shown on its own. */
-    constructor(canvas, solo = null) {
-      this.solo = solo;
+    constructor(canvas) {
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
@@ -135,7 +125,7 @@
       this.hue = Math.random();
       this.from = null;       // the look it glides from, and since when
       this.fromAt = 0;
-      this.look = solo ? solo.look : this._choose(null);
+      this.look = this._choose(null);
       this.since = 0;         // how long this look has shown
       this.p = { ...this.look };
       this.wave = new Float32Array(WAVE_POINTS);
@@ -191,7 +181,7 @@
     frame(a, dt) {
       this.age += dt;
       this.since += dt;
-      if (!this.solo) this._auto(a);
+      this._auto(a);
 
       // Gliding from the last look to this one.
       const g = this.from ? Math.min(1, (this.age - this.fromAt) / GLIDE_S) : 1;
@@ -202,7 +192,7 @@
       p.drift = drift;
       if (g >= 1) this.from = null;
 
-      const trails = Visualizer.setting(this.solo ? this.solo.trails : 'ksTrails') / 100;
+      const trails = Visualizer.setting('ksTrails') / 100;
       // Trails: the share that fades each frame shrinks or grows.
       const decay = 1 - (1 - p.decay) / Math.max(0.2, trails);
       const step = dt * 60;
@@ -309,7 +299,7 @@
           const r = size * (1 + 0.35 * a.kick) + wave[0] * size * 0.6;
           this.lines.seg(px, py, cx + r, cy, lw, col(0), alpha);
         }
-      } else if (kind === 2) {
+      } else {
         // The spectrum as rays from the middle, both halves the same.
         const bands = a.smooth;
         const n = bands.length;
@@ -323,18 +313,6 @@
             this.lines.seg(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0, cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1,
               lw * 1.2, col(i / n * 0.5), fade * (0.05 + 0.16 * v) * v * this.step);
           }
-        }
-      } else {
-        // Dots: the waveform's points scattered round a slowly turning ring.
-        const wave = a.lowWave(WAVE_POINTS);
-        const n = wave.length;
-        for (let i = 0; i < n; i += 3) {
-          const ang = (i / n) * Math.PI * 2 + this.age * 0.3;
-          const r = size * (0.5 + 0.6 * Math.abs(wave[i])) * (1 + 0.4 * a.kick);
-          const x = cx + Math.cos(ang) * r;
-          const y = cy + Math.sin(ang) * r;
-          const d = lw * 1.5;
-          this.lines.seg(x - d, y, x + d, y, d * 1.4, col(i / n), alpha * 1.4);
         }
       }
     }
@@ -375,30 +353,5 @@
       { type: 'slider', key: 'ksEvery', label: 'Auto changes every', min: 10, max: 120, step: 5, unit: ' s', when: (s) => s.ksLook === 'auto' },
       { type: 'slider', key: 'ksTrails', label: 'Trails', min: 25, max: 200, step: 5 },
     ],
-  });
-
-  /** One of SOLO as a visualizer of its own: `trails` its Trails setting. */
-  function solo(look, { trails, desc, glyph }) {
-    Visualizer.add({
-      id: look.id,
-      name: look.name,
-      desc,
-      glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
-        + `stroke-linecap="round" stroke-linejoin="round">${glyph}</svg>`,
-      gl: true,
-      create: (canvas) => new Kaleidoscope(canvas, { look, trails }),
-      options: [{ type: 'slider', key: trails, label: 'Trails', min: 25, max: 200, step: 5 }],
-    });
-  }
-
-  solo(SOLO.liquid, {
-    trails: 'lqTrails',
-    desc: 'The waveform scattered round a turning ring and melting away in swirls',
-    glyph: '<path d="M12 3c3 4 6 7 6 11a6 6 0 0 1-12 0c0-4 3-7 6-11z"/>',
-  });
-  solo(SOLO.mandala, {
-    trails: 'mdTrails',
-    desc: 'The spectrum as rays, seen through an eightfold kaleidoscope, flowing inwards',
-    glyph: '<circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"/>',
   });
 })();

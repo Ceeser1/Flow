@@ -1,9 +1,10 @@
 'use strict';
 
-// Lava: glossy liquid blobs drifting, meeting and melting into each other, as
-// in a lava lamp. Each blob carries a part of the spectrum (the big slow ones
-// the bass, the small quick ones the highs) and swells with it; the kicks
-// make them all bulge, and they rise and sink as the warm wax does.
+// Blobs (called Lava until 2026-10-08, its id still lava): glossy liquid
+// blobs drifting, meeting and melting into each other, as in a lava lamp.
+// Each blob carries a part of the spectrum (the big slow ones the bass, the
+// small quick ones the highs) and swells with it; the kicks make them all
+// bulge, and they rise and sink as the warm wax does.
 //
 // Its cogwheel: the colours (lava, neon, ocean, candy, chrome), how many
 // blobs, how fast they drift, the gloss.
@@ -153,7 +154,7 @@
 
   Visualizer.add({
     id: 'lava',
-    name: 'Lava',
+    name: 'Blobs',
     desc: 'Glossy liquid blobs drifting and melting into each other as in a lava lamp, each swelling with its part of the music',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l2 8-2 10H9L7 11z"/><circle cx="12" cy="9" r="1.6"/><path d="M10 15a2 2 0 0 0 4 0"/></svg>',

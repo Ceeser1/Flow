@@ -48,6 +48,10 @@
   Updates.init();
   BackgroundHelp.init();
 
+  // The chosen visualizer's shaders compiled ahead, once the window has
+  // settled, so opening it the first time does not wait for them.
+  setTimeout(() => Visualizer.warm(), 3000);
+
   window.flow.onLibraryChanged((lib) => Store.setLibrary(lib));
   window.flow.onServerStatus((st) => Store.setServer(st));
   // A setting Flow changed by itself (the Remote address filled in).

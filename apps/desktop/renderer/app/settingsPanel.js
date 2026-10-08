@@ -516,6 +516,7 @@ const SettingsPanel = {
         dataset: { id: v.id },
         onclick: () => {
           Store.saveSettings({ visualizer: v.id });
+          Visualizer.warm(v.id);
           draw();
           this._refreshAll();
         },

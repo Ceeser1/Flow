@@ -45,10 +45,6 @@ const VIZ_OPTIONS = {
   ksLook: ['choice', 'kaleido', ['auto', 'kaleido', 'vortex', 'tunnel', 'starburst']],
   ksEvery: ['range', 30, 10, 120, 5],
   ksTrails: ['range', 100, 25, 200, 5],
-  // Liquid and Mandala (Kaleidoscope's looks once): how long the trails last
-  // (percent).
-  lqTrails: ['range', 100, 25, 200, 5],
-  mdTrails: ['range', 100, 25, 200, 5],
   // Halo: the cover round or square, turning (round only), the spectrum as
   // bars, a line or dots, the sparks, the cover blurred behind, the title.
   hlShape: ['choice', 'round', ['round', 'square']],
@@ -102,7 +98,7 @@ const VIZ_OPTIONS = {
   obColors: ['choice', 'aurora', ['aurora', 'ember', 'ice', 'rainbow', 'white']],
   obSpin: ['range', 100, 0, 200, 5],
   obRing: ['bool', true],
-  // Lava: its colours, how many blobs, how fast they drift (percent), the gloss.
+  // Blobs (id lava): its colours, how many blobs, how fast they drift (percent), the gloss.
   lvColors: ['choice', 'lava', ['lava', 'neon', 'ocean', 'candy', 'chrome']],
   lvBlobs: ['range', 10, 4, 16, 1],
   lvSpeed: ['range', 100, 25, 300, 5],
@@ -175,19 +171,23 @@ const VIZ_OPTIONS = {
   dcBeams: ['bool', true],
   dcSpin: ['range', 100, 0, 300, 5],
   // Stained Glass: the window (a rose, a pointed arch, the whole screen),
-  // how many panes across, the shafts of light.
+  // the glass's colours (the cover's, or warm, cold or rainbow glass), how
+  // many panes across, the shafts of light, the torches beside the window.
   sgWindow: ['choice', 'rose', ['rose', 'arch', 'full']],
+  sgGlass: ['choice', 'cover', ['cover', 'warm', 'cold', 'rainbow']],
   sgPanes: ['range', 11, 6, 24, 1],
   sgRays: ['bool', true],
+  sgTorches: ['bool', true],
   // Black Hole: the colours, the view (edge on, slanted, from above), how
   // fast the gas swirls (percent).
   bhColors: ['choice', 'warm', ['warm', 'blue', 'neon']],
   bhView: ['choice', 'edge', ['edge', 'slant', 'above']],
   bhSpin: ['range', 100, 0, 300, 5],
-  // Deep Sea: the jellyfish's colours, how many, the light from above.
+  // Deep Sea: the jellyfish's colours, how many, the light from above, the fish.
   dsColors: ['choice', 'aurora', ['aurora', 'ember', 'ice', 'rainbow']],
   dsCount: ['range', 9, 3, 16, 1],
   dsLight: ['bool', true],
+  dsFish: ['bool', true],
   // Rainy Pond: day and night fading into each other, day, or night, the koi,
   // the lily pads, the treble rain, how many drops fall (the kicks', the
   // hits' and the rain's, percent).
@@ -219,6 +219,40 @@ const VIZ_OPTIONS = {
   // (percent).
   jlLook: ['choice', 'neon', ['neon', 'classic', 'ink']],
   jlSpeed: ['range', 100, 25, 300, 5],
+  // Mandelbulb: the colours (by the notes, fire, ice, rainbow), the view (the
+  // whole of it, close up), how much it breathes (percent).
+  mbColors: ['choice', 'notes', ['notes', 'fire', 'ice', 'rainbow']],
+  mbView: ['choice', 'whole', ['whole', 'close']],
+  mbMorph: ['range', 100, 0, 200, 5],
+  // Lighthouse: the weather (clear, cloudy, a storm with rain), a ship passing.
+  lhWeather: ['choice', 'cloudy', ['clear', 'cloudy', 'storm']],
+  lhShip: ['bool', true],
+  // Night Train: the weather (clear, rain on the glass, snow), the cup of tea.
+  ntWeather: ['choice', 'clear', ['clear', 'rain', 'snow']],
+  ntCup: ['bool', true],
+  // Ferrofluid: the lights' colours (by the notes, neon, gold, ice), how high
+  // the spikes stand (percent).
+  ffColors: ['choice', 'notes', ['notes', 'neon', 'gold', 'ice']],
+  ffSpikes: ['range', 100, 25, 200, 5],
+  // Vinyl: the turntable (wood, black, silver), the grooves' colours (the
+  // music's, silver).
+  vnPlinth: ['choice', 'wood', ['wood', 'black', 'silver']],
+  vnColors: ['choice', 'music', ['music', 'silver']],
+  // Mosaic: the tiles' size, how far each is shifted to the picture's colour
+  // (percent).
+  msSize: ['choice', 'medium', ['small', 'medium', 'large']],
+  msTint: ['range', 60, 0, 100, 5],
+  // Strings: the colours (round the notes, gold, ice), the notes' names and the key.
+  stColors: ['choice', 'notes', ['notes', 'gold', 'ice']],
+  stNames: ['bool', true],
+  // Radar: the phosphor's colour (green, amber, blue), how long it glows
+  // (percent of a turn).
+  raColors: ['choice', 'green', ['green', 'amber', 'blue']],
+  raTrail: ['range', 100, 25, 200, 5],
+  // Moiré: the gratings (lines, rings, both), the colours (ink on paper,
+  // print, neon).
+  mrKind: ['choice', 'rings', ['lines', 'rings', 'both']],
+  mrColors: ['choice', 'neon', ['paper', 'print', 'neon']],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -374,7 +408,7 @@ const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'pur
 // The ones that can be chosen; 'random-<category>' picks one of a
 // category's each time (VIZ_CATEGORIES in the desktop's visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy', 'other'];
-const VISUALIZERS = [...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'liquid', 'mandala', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'coral', 'shatter', 'plasmaglobe', 'attractor', 'julia'];
+const VISUALIZERS = [...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'coral', 'shatter', 'plasmaglobe', 'attractor', 'julia', 'mandelbulb', 'lighthouse', 'train', 'ferrofluid', 'vinyl', 'mosaic', 'strings', 'radar', 'moire'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
@@ -446,7 +480,8 @@ function clean(raw) {
   if (!CLOUD_COLORS.includes(s.cloudsColors)) s.cloudsColors = DEFAULTS.cloudsColors;
   const amount = Math.round(Number(s.cloudsAmount) / 10) * 10;
   s.cloudsAmount = Number.isFinite(amount) ? Math.min(100, Math.max(0, amount)) : DEFAULTS.cloudsAmount;
-  // Nebula is Kaleidoscope now; Aurora Waves gave way to Aurora.
+  // Nebula is Kaleidoscope now; Aurora Waves gave way to Aurora. Liquid and
+  // Mandala are gone (one saved falls back to Bars).
   if (s.visualizer === 'nebula') s.visualizer = 'kaleidoscope';
   if (s.visualizer === 'aurorawaves') s.visualizer = 'aurora';
   if (!VISUALIZERS.includes(s.visualizer)) s.visualizer = DEFAULTS.visualizer;

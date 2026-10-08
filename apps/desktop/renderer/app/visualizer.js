@@ -74,25 +74,25 @@ const VIZ_CATEGORIES = [
     id: 'equalizers',
     name: 'Equalizers',
     desc: 'The sound itself: bars, waves, rings and dots',
-    ids: ['bars', 'waveform', 'scope', 'spectrogram', 'ridges', 'skyline', 'halo', 'orb', 'reactor', 'liquid', 'mandala', 'hifi', 'pianoroll'],
+    ids: ['bars', 'waveform', 'scope', 'spectrogram', 'ridges', 'skyline', 'halo', 'orb', 'reactor', 'hifi', 'pianoroll', 'vinyl', 'strings', 'radar'],
   },
   {
     id: 'worlds',
     name: 'Worlds',
     desc: 'Places to look at',
-    ids: ['synthwave', 'warp', 'galaxy', 'aurora', 'lightning', 'inferno', 'fireworks', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond'],
+    ids: ['synthwave', 'warp', 'galaxy', 'aurora', 'lightning', 'inferno', 'fireworks', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'lighthouse', 'train'],
   },
   {
     id: 'trippy',
     name: 'Trippy',
     desc: 'Patterns, colour and motion',
-    ids: ['kaleidoscope', 'prism', 'lava', 'demo', 'rain', 'chladni', 'coral', 'attractor', 'julia', 'plasmaglobe', 'tunnel'],
+    ids: ['kaleidoscope', 'prism', 'lava', 'demo', 'rain', 'chladni', 'coral', 'attractor', 'julia', 'plasmaglobe', 'tunnel', 'mandelbulb', 'ferrofluid', 'moire'],
   },
   {
     id: 'other',
     name: 'Other',
     desc: 'The odd ones',
-    ids: ['flow', 'arcade', 'shatter'],
+    ids: ['flow', 'arcade', 'shatter', 'mosaic'],
   },
 ];
 
@@ -122,6 +122,8 @@ const Visualizer = {
   _closedAt: 0,
   _idle: null,
   _resize: null,
+  _ahead: null,        // a Random's next one, picked (and warmed) ahead: { random, kind }
+  _unwarm: null,       // stops the warming going on (warm)
 
   // Bars (how many: Settings' brCount)
   FLOOR_DB: -64,
@@ -190,7 +192,7 @@ const Visualizer = {
   open(id = Store.settings.visualizer) {
     if (this.el) return;
     const pool = this._pool(id);
-    const kind = pool ? this._pickRandom(pool) : id;
+    const kind = pool ? this._nextOf(id) : id;
     if (!VISUALIZERS.some((v) => v.id === kind && v.ready)) return;
     // Opened as a Random it may move on to another of its own with each
     // song (vizRandomEach): which Random, or null.
@@ -280,6 +282,8 @@ const Visualizer = {
     this._size();
     this.last = performance.now();
     this.raf = requestAnimationFrame((t) => this._frame(t));
+    // Moving on with each song: the next one ready by then.
+    if (this._random && Store.settings.vizRandomEach) this.warm(this._random);
   },
 
   /** The visualizer showing taken out of the layer, the layer left open. */
@@ -338,7 +342,37 @@ const Visualizer = {
   next() {
     if (!this.el) return;
     this._unmount();
-    this._mount(this._pickRandom(this._pool(this._random || 'random')));
+    this._mount(this._nextOf(this._random || 'random'));
+  },
+
+  /** A Random's next one: the one picked (and warmed) ahead for it, else one picked now. */
+  _nextOf(id) {
+    const ahead = this._ahead;
+    this._ahead = null;
+    if (ahead && ahead.random === id && ahead.kind !== this.kind) return ahead.kind;
+    return this._pickRandom(this._pool(id));
+  },
+
+  /**
+   * Gets the visualizer `id` ready to open without a wait: its shaders
+   * compiled ahead (VizGL.warm), which the first time (before the browser
+   * has them cached) can take seconds. A Random picks its next one now and
+   * warms that. Whatever was being warmed before is dropped. Called at
+   * startup, on choosing one in Settings, and while a Random that moves on
+   * with each song shows (for the next).
+   */
+  warm(id = Store.settings.visualizer) {
+    if (this._unwarm) this._unwarm();
+    this._unwarm = null;
+    let kind = id;
+    const pool = this._pool(id);
+    if (pool) {
+      kind = this._pickRandom(pool);
+      this._ahead = { random: id, kind };
+    }
+    const def = this.scenes[kind];
+    if (!def || !def.gl || kind === this.kind) return;
+    this._unwarm = VizGL.warm((canvas) => def.create(canvas));
   },
 
   /** Opened as Random with "a new one with each song": the song changing moves it on. */

@@ -14,7 +14,7 @@ const VizGL = {
     });
   },
 
-  /** A program from its two shaders; u: its uniforms by name, located once. */
+  /** A program from its two shaders (compiled now, waiting for it); u: its uniforms by name. */
   program(gl, vs, fs) {
     const shader = (type, src) => {
       const s = gl.createShader(type);
@@ -28,6 +28,108 @@ const VizGL = {
     gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('program: ' + gl.getProgramInfoLog(p));
+    return { p, u: this._uniforms(gl, p) };
+  },
+
+  /**
+   * A program compiled in the background where the browser can
+   * (KHR_parallel_shader_compile), for a big shader that would hold the
+   * page up for seconds the first time (before the browser has cached it):
+   * ready() says whether it can be had now without waiting, done() gives
+   * { p, u } as program() does (waiting if it must, throwing if it failed).
+   */
+  programLater(gl, vs, fs) {
+    const ext = gl.getExtension('KHR_parallel_shader_compile');
+    const { p, v, f } = this._link(gl, vs, fs);
+    let result = null;
+    return {
+      ready: () => !!result || !ext || gl.getProgramParameter(p, ext.COMPLETION_STATUS_KHR),
+      done: () => {
+        if (result) return result;
+        if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+          for (const s of [v, f]) {
+            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s));
+          }
+          throw new Error('program: ' + gl.getProgramInfoLog(p));
+        }
+        result = { p, u: this._uniforms(gl, p) };
+        return result;
+      },
+    };
+  },
+
+  /** Starts compiling and linking a program, without asking how it went (which would wait for it). */
+  _link(gl, vs, fs) {
+    const shader = (type, src) => {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, '#version 300 es\nprecision highp float;\n' + src);
+      gl.compileShader(s);
+      return s;
+    };
+    const v = shader(gl.VERTEX_SHADER, vs);
+    const f = shader(gl.FRAGMENT_SHADER, fs);
+    const p = gl.createProgram();
+    gl.attachShader(p, v);
+    gl.attachShader(p, f);
+    gl.linkProgram(p);
+    return { p, v, f };
+  },
+
+  /**
+   * Compiles a visualizer's shaders ahead, so that when it opens the browser
+   * has them cached (shared between canvases) and nothing waits: make is its
+   * create(canvas). Run on a throwaway canvas, its programs are only noted
+   * (none compiled there); they are compiled in a context of their own, in
+   * the background (KHR_parallel_shader_compile; without it, not at all, as
+   * it would hold the page up just the same), which is dropped once they
+   * are done. Returns a function that stops it sooner.
+   */
+  warm(make) {
+    const sources = [];
+    const { program, programLater } = this;
+    this.program = (gl, vs, fs) => {
+      sources.push([vs, fs]);
+      return { p: null, u: {} };
+    };
+    this.programLater = (gl, vs, fs) => {
+      sources.push([vs, fs]);
+      return { ready: () => false, done: () => { throw new Error('only being warmed'); } };
+    };
+    const scratch = document.createElement('canvas');
+    try {
+      const scene = make(scratch);
+      if (scene && scene.destroy) scene.destroy();
+    } catch {
+      // It could not be made here; it will say so when it opens.
+    } finally {
+      this.program = program;
+      this.programLater = programLater;
+    }
+    this.lose(scratch.getContext('webgl2'));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const gl = sources.length ? this.context(canvas) : null;
+    const ext = gl && gl.getExtension('KHR_parallel_shader_compile');
+    if (!ext) {
+      this.lose(gl);
+      return () => {};
+    }
+    const progs = sources.map(([vs, fs]) => this._link(gl, vs, fs).p);
+    let timer = null;
+    const stop = () => {
+      clearInterval(timer);
+      this.lose(gl);
+    };
+    timer = setInterval(() => {
+      if (gl.isContextLost() || progs.every((p) => gl.getProgramParameter(p, ext.COMPLETION_STATUS_KHR))) stop();
+    }, 250);
+    return stop;
+  },
+
+  /** A program's uniforms by name, located once. */
+  _uniforms(gl, p) {
     const u = {};
     const count = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
     for (let i = 0; i < count; i += 1) {
@@ -35,7 +137,7 @@ const VizGL = {
       const name = info.name.replace(/\[0\]$/, '');
       u[name] = gl.getUniformLocation(p, info.name);
     }
-    return { p, u };
+    return u;
   },
 
   // The vertex shader for a full-screen pass: uv 0..1 across it.
