@@ -23,7 +23,8 @@
 //   POST /api/songs/:id/trim { start, end, base, cut }
 //                                      its file cut (only when /api/hello lists
 //                                      the "trim" feature): { song, rev } or
-//                                      { skipped: 'gone' | 'repeat' | 'changed', rev }
+//                                      { skipped: 'gone' | 'repeat' | 'changed', rev };
+//                                      403 for a song another profile uploaded
 //   GET  /api/songs/:id/cover[?v=]     the song's cover (JPEG); with ?v= its
 //                                      current version, cached for good
 //   PUT  /api/songs/:id/cover          an app's cover for a song that has none;
@@ -769,6 +770,11 @@ function createHttpServer({
     m = /^\/api\/songs\/([\w-]{1,64})\/trim$/.exec(p);
     if (m && req.method === 'POST') {
       const body = await readJsonBody(req);
+      // Only the profile that uploaded a song trims it; one without an
+      // uploader, or whose uploader is gone, anyone.
+      const song = library.data.songs.find((s) => s.id === m[1]);
+      const owner = song && song.addedBy && profileOf({ profileId: song.addedBy });
+      if (owner && owner.id !== profileId) throw new HttpError(403, `This Song was uploaded by ${owner.name}. Only that profile can trim this song.`);
       const r = await library.trimSong(m[1], body);
       return sendJson(res, 200, { ...(r.song ? { song: { ...r.song, file: '' } } : {}), skipped: r.skipped, rev: library.rev });
     }

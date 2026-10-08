@@ -883,6 +883,22 @@ test('a song remembers the profile that uploaded it, and the library names the p
     assert.equal(saved.songs.find((s) => s.id === 's1').addedBy, anna.profile.id);
     await post(base, '/api/profiles/rename', { name: 'Anna B' }, anna.token);
     assert.equal((await get(base, '/api/library', ben.token)).json.library.profileNames[anna.profile.id], 'Anna B');
+
+    // Only the uploader trims a song; nobody's songs anyone (this server has
+    // no ffmpeg, so a trim let through fails on that instead).
+    const trim = async (id, token) => {
+      const r = await fetch(`${base}/api/songs/${id}/trim`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...as(token) },
+        body: JSON.stringify({ start: 1, end: 2, base: '', cut: 'cccccc333333' }),
+      });
+      return { status: r.status, error: (await r.json()).error };
+    };
+    assert.deepEqual(await trim('s1', ben.token), {
+      status: 403, error: 'This Song was uploaded by Anna B. Only that profile can trim this song.',
+    });
+    assert.match((await trim('s1', anna.token)).error, /ffmpeg/);
+    const sour = lib.songs.find((s) => s.title === 'Sour Times').id;
+    assert.match((await trim(sour, ben.token)).error, /ffmpeg/);
   });
 });
 
