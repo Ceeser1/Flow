@@ -8,7 +8,9 @@
 
 const { createSettings } = require('@flow/core/client/settings');
 const { createLocalLibrary } = require('@flow/core/client/localLibrary');
-const { fs, path, plugin, info, secrets, isMetered } = require('./native');
+const {
+  platform, fs, path, plugin, info, secrets, isMetered,
+} = require('./native');
 const { request, stream } = require('./http');
 const { createCovers } = require('./covers');
 
@@ -112,7 +114,7 @@ function createEnv({ tellCovers }) {
     },
     http: { request, stream },
     secrets,
-    device: { name: () => phone.device || 'Android' },
+    device: { name: () => phone.device || (platform === 'ios' ? 'iPhone' : 'Android') },
     discovery: {
       async find() {
         const r = await plugin.discover({ timeout: 2500, sends: 3 });

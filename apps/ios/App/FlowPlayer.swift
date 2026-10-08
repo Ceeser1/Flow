@@ -1,0 +1,784 @@
+import AVFoundation
+import MediaPlayer
+import UIKit
+
+/// What the page hears from the player (through FlowAudio); every event
+/// carries the page's id of the song it is about.
+protocol FlowPlayerEvents: AnyObject {
+    func onState(_ state: [String: Any])
+    func onEnded(_ id: String)
+    /// `status`: the server's answer when it refused the song (401: signed out), else 0.
+    func onError(_ id: String, _ message: String, _ status: Int)
+    /// The player signed in to the server again itself: the app's token now.
+    func onSignedIn(_ token: String)
+    /// On to the next song (`reason`: auto, next, repeat); `heard`: seconds of the one before.
+    func onAdvance(_ from: String, _ id: String, _ key: String, _ heard: Double, _ reason: String)
+    /// Previous on the lock screen: the page goes back (it knows the songs before).
+    func onPrevious()
+}
+
+/// The iPhone's player, FlowPlayer.java's counterpart: one AVQueuePlayer for
+/// as long as Flow runs. The page drives it through FlowAudio as its audio
+/// engine (apps/android/src/engine.js), with lists of operations, and hears
+/// back its state, with the same states, events and ids as on Android.
+///
+/// Its queue is the song playing and the songs the page says come after it,
+/// so it moves on by itself, without a gap, while the page is out of sight
+/// (iOS stops a page that is not shown); Next on the lock screen goes there
+/// too. Each move is told to the page ("advance", with how long the song
+/// before was heard). Listens without a page are kept in a file until one
+/// asks (attach).
+///
+/// iOS's own controls work it: the lock screen, Control Center, headphones
+/// and the car (Now Playing and its remote commands). A call or another app's
+/// sound pauses it (and gives it back when iOS says so), unplugged
+/// headphones pause it. The sleep timer runs here too: the music fades out
+/// over its last seconds, then pauses.
+///
+/// Equalize volume turns a song down by the player's volume; up (gains over
+/// 1) not yet. Song Transition (crossfade) not yet either (caps.IOS).
+///
+/// Everything here runs on the main thread.
+final class FlowPlayer: NSObject {
+    static let shared = FlowPlayer()
+
+    /// AVPlayer's states as Media3's, which the page goes by (engine.js).
+    private enum St {
+        static let idle = 1
+        static let buffering = 2
+        static let ready = 3
+        static let ended = 4
+    }
+
+    /// What the page knows a song in the queue by.
+    private struct Tag {
+        let id: String
+        let key: String
+        let gain: Float
+        let src: String
+        var meta: [String: Any]?
+    }
+
+    let player = AVQueuePlayer()
+    weak var events: FlowPlayerEvents?
+
+    private var tags: [ObjectIdentifier: Tag] = [:]
+    private var id = ""          // the page's id of the song loaded
+    private var key = ""         // the song's own id
+    private var src = ""
+    private var gain: Float = 1  // the song's own (Equalize volume)
+    private var volume: Float = 1
+    private var sleepFade: Float = 1
+    private var rate: Float = 1
+    private var wantPlay = false // play when ready: the page's play and pause
+    private var ended = false
+    private var repeatOne = false
+    private var pendingSeek: Double?
+    private var nextPressed = false
+    private var failedTold = ""
+    private var resumeAfterInterruption = false
+    private var signingIn = false
+
+    // How long the song playing has been heard: playing time, not places.
+    private var heardMs: Double = 0
+    private var playingSince: Double?
+    private var heardAway: [[String: Any]] = []
+    private let heardFile = FlowPaths.files.appendingPathComponent("audio-heard.json")
+    private let lastFile = FlowPaths.files.appendingPathComponent("audio-last.json")
+
+    // The sleep timer: when it runs out (wall clock, ms; 0: none) and over how long it fades.
+    private var sleepAt: Double = 0
+    private var sleepFadeMs: Double = 10000
+    private var sleepTimer: Timer?
+
+    // Song Transition's length (ms), kept for when the player can fade.
+    private var transitionMs: Double = 0
+
+    private var timeObserver: Any?
+    private var observations: [NSKeyValueObservation] = []
+    private var itemObservation: NSKeyValueObservation?
+    private var artwork: (path: String, art: MPMediaItemArtwork)?
+    private var waitingSince: Double?
+
+    private override init() {
+        super.init()
+        heardAway = readJsonArray(heardFile)
+        player.actionAtItemEnd = .pause
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .default, policy: .longFormAudio)
+        } catch {
+            FlowLog.i("audio session: \(error.localizedDescription)")
+        }
+        observations.append(player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.playingChanged() }
+        })
+        observations.append(player.observe(\.currentItem, options: [.new]) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.currentChanged() }
+        })
+        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 4), queue: .main) { [weak self] _ in
+            guard let self = self, self.player.timeControlStatus == .playing else { return }
+            self.tellState()
+        }
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(itemEnded(_:)), name: .AVPlayerItemDidPlayToEndTime, object: nil)
+        center.addObserver(self, selector: #selector(itemBroke(_:)), name: .AVPlayerItemFailedToPlayToEndTime, object: nil)
+        center.addObserver(self, selector: #selector(interrupted(_:)), name: AVAudioSession.interruptionNotification, object: session)
+        center.addObserver(self, selector: #selector(routeChanged(_:)), name: AVAudioSession.routeChangeNotification, object: session)
+        setUpRemote()
+        FlowLog.i("player ready")
+    }
+
+    // MARK: the page's operations
+
+    /// Applies the page's operations in order (engine.js).
+    func apply(_ ops: [[String: Any]]) {
+        for op in ops {
+            let name = op["op"] as? String ?? ""
+            switch name {
+            case "load": load(op)
+            case "next": setNext(FlowPlayer.dicts(op["items"]), repeats: FlowPlayer.bool(op["repeat"]))
+            case "sleep": setSleep(at: FlowPlayer.num(op["at"]) ?? 0, fade: FlowPlayer.num(op["fade"]) ?? 10000)
+            case "transition": transitionMs = max(0, FlowPlayer.num(op["ms"]) ?? 0)
+            case "unload": unload()
+            case "play": play()
+            case "pause": pause("asked")
+            case "seek": seek(FlowPlayer.num(op["t"]) ?? 0)
+            case "rate": setRate(Float(FlowPlayer.num(op["rate"]) ?? 1))
+            case "gain":
+                gain = Float(FlowPlayer.num(op["gain"]) ?? 1)
+                applyVolume()
+            case "volume":
+                volume = Float(FlowPlayer.num(op["volume"]) ?? 1)
+                applyVolume()
+            case "meta":
+                if let item = player.currentItem, var tag = tags[ObjectIdentifier(item)] {
+                    tag.meta = op["meta"] as? [String: Any]
+                    tags[ObjectIdentifier(item)] = tag
+                }
+                updateNowPlaying()
+            default:
+                FlowLog.i("unknown operation \(name)")
+            }
+        }
+    }
+
+    private func load(_ op: [String: Any]) {
+        let newSrc = op["src"] as? String ?? ""
+        let play = FlowPlayer.bool(op["play"])
+        let at = FlowPlayer.num(op["at"]) ?? 0
+        _ = takeHeard()
+        player.removeAllItems()
+        tags.removeAll()
+        id = op["id"] as? String ?? ""
+        key = op["key"] as? String ?? ""
+        src = newSrc
+        gain = Float(FlowPlayer.num(op["gain"]) ?? 1)
+        ended = false
+        failedTold = ""
+        pendingSeek = at > 0 ? at : nil
+        setRate(1)
+        if newSrc.isEmpty {
+            wantPlay = false
+            player.pause()
+        } else if let item = makeItem(newSrc) {
+            tags[ObjectIdentifier(item)] = Tag(id: id, key: key, gain: gain, src: newSrc, meta: op["meta"] as? [String: Any])
+            player.insert(item, after: nil)
+            watch(item)
+            wantPlay = play
+            if play { start() }
+        } else {
+            wantPlay = false
+            FlowLog.i("load \(id): not an address: \(FlowPlayer.redact(newSrc))")
+        }
+        applyVolume()
+        updateEnd()
+        updateNowPlaying()
+        FlowLog.i("load \(id) \(FlowPlayer.redact(newSrc))" + (play ? " playing" : ""))
+    }
+
+    /// The songs after the one playing, as the page's queue has them; those
+    /// already in place stay. `repeats`: the song playing over and over instead.
+    private func setNext(_ items: [[String: Any]], repeats: Bool) {
+        repeatOne = repeats
+        defer { updateEnd() }
+        guard let current = player.currentItem, tags[ObjectIdentifier(current)] != nil else { return }
+        let queued = Array(player.items().dropFirst())
+        var keep = 0
+        while keep < queued.count, keep < items.count, same(queued[keep], items[keep]) { keep += 1 }
+        for item in queued[keep...] {
+            player.remove(item)
+            tags[ObjectIdentifier(item)] = nil
+        }
+        var after: AVPlayerItem = keep > 0 ? queued[keep - 1] : current
+        for it in items[keep...] {
+            let itemSrc = it["src"] as? String ?? ""
+            guard let item = makeItem(itemSrc), player.canInsert(item, after: after) else { continue }
+            tags[ObjectIdentifier(item)] = Tag(id: it["id"] as? String ?? "", key: it["key"] as? String ?? "",
+                                               gain: Float(FlowPlayer.num(it["gain"]) ?? 1), src: itemSrc,
+                                               meta: it["meta"] as? [String: Any])
+            player.insert(item, after: after)
+            after = item
+        }
+    }
+
+    private func same(_ item: AVPlayerItem, _ it: [String: Any]) -> Bool {
+        guard let tag = tags[ObjectIdentifier(item)] else { return false }
+        return tag.key == (it["key"] as? String ?? "") && tag.src == (it["src"] as? String ?? "")
+            && tag.gain == Float(FlowPlayer.num(it["gain"]) ?? 1)
+    }
+
+    private func unload() {
+        _ = takeHeard()
+        player.removeAllItems()
+        tags.removeAll()
+        src = ""
+        wantPlay = false
+        ended = false
+        pendingSeek = nil
+        updateNowPlaying()
+    }
+
+    func play() {
+        guard !src.isEmpty else { return }
+        // As an <audio> does: a song that failed is tried again, one that ended starts again.
+        if player.currentItem == nil || player.currentItem?.status == .failed {
+            reload()
+        } else if ended {
+            player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+        ended = false
+        wantPlay = true
+        start()
+        tellState()
+        updateNowPlaying()
+    }
+
+    private func start() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            FlowLog.i("audio session not active: \(error.localizedDescription)")
+        }
+        player.defaultRate = rate
+        player.play()
+        FlowLog.i("play \(id) on \(FlowNativePlugin.outputNow().name)")
+    }
+
+    func pause(_ why: String) {
+        let was = wantPlay
+        wantPlay = false
+        player.pause()
+        if was { FlowLog.i("pause \(id) (\(why))") }
+        tellState()
+        updateNowPlaying()
+    }
+
+    private func seek(_ t: Double) {
+        ended = false
+        guard let item = player.currentItem, item.status == .readyToPlay else {
+            pendingSeek = t
+            return
+        }
+        player.seek(to: CMTime(seconds: max(0, t), preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.tellState()
+                self?.updateNowPlaying()
+            }
+        }
+    }
+
+    private func setRate(_ r: Float) {
+        rate = r > 0 ? r : 1
+        player.defaultRate = rate
+        if player.rate != 0 { player.rate = rate }
+    }
+
+    /// The song loaded again from its address, and the songs after it as they were.
+    private func reload() {
+        let after = player.items().dropFirst().compactMap { tags[ObjectIdentifier($0)] }
+        let meta = player.currentItem.flatMap { tags[ObjectIdentifier($0)]?.meta }
+        let place = player.currentItem.map { $0.currentTime().seconds } ?? 0
+        player.removeAllItems()
+        tags.removeAll()
+        failedTold = ""
+        guard let item = makeItem(src) else { return }
+        tags[ObjectIdentifier(item)] = Tag(id: id, key: key, gain: gain, src: src, meta: meta)
+        player.insert(item, after: nil)
+        watch(item)
+        if place.isFinite, place > 0 { pendingSeek = place }
+        var last = item
+        for tag in after {
+            guard let next = makeItem(tag.src), player.canInsert(next, after: last) else { continue }
+            tags[ObjectIdentifier(next)] = tag
+            player.insert(next, after: last)
+            last = next
+        }
+        updateEnd()
+        FlowLog.i("reload \(id)")
+    }
+
+    /// A song's file (a path in Flow's storage) or stream (an address).
+    private func makeItem(_ source: String) -> AVPlayerItem? {
+        let url: URL
+        if source.hasPrefix("/") {
+            guard let file = FlowPaths.resolve(source) else { return nil }
+            url = file
+        } else {
+            guard let u = URL(string: source), u.scheme == "http" || u.scheme == "https" else { return nil }
+            url = u
+        }
+        var options: [String: Any] = [:]
+        // Ogg (Opus, Vorbis) as such: iOS goes by a file's type, which these names may not tell it.
+        if url.isFileURL, ["opus", "ogg", "oga"].contains(url.pathExtension.lowercased()) {
+            options[AVURLAssetOverrideMIMETypeKey] = "audio/ogg"
+        }
+        let item = AVPlayerItem(asset: AVURLAsset(url: url, options: options))
+        item.audioTimePitchAlgorithm = .timeDomain
+        return item
+    }
+
+    /// At a song's end the player moves on to the next one, or stays there (the last one, or Repeat).
+    private func updateEnd() {
+        player.actionAtItemEnd = !repeatOne && player.items().count > 1 ? .advance : .pause
+    }
+
+    /// The app's volume times the song's gain (turned down only, for now).
+    private func applyVolume() {
+        player.volume = max(0, min(1, volume * sleepFade * min(1, gain)))
+    }
+
+    // MARK: what the player does
+
+    private func watch(_ item: AVPlayerItem) {
+        itemObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            DispatchQueue.main.async { self?.statusChanged(item) }
+        }
+    }
+
+    private func statusChanged(_ item: AVPlayerItem) {
+        guard item === player.currentItem else { return }
+        switch item.status {
+        case .readyToPlay:
+            if let t = pendingSeek {
+                pendingSeek = nil
+                seek(t)
+            }
+            tellState()
+            updateNowPlaying()
+        case .failed:
+            failed(item)
+        default:
+            break
+        }
+    }
+
+    private func playingChanged() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let playing = player.timeControlStatus == .playing
+        if playing, playingSince == nil { playingSince = now }
+        if !playing, let since = playingSince {
+            heardMs += (now - since) * 1000
+            playingSince = nil
+        }
+        // For the log: a song that had to wait for its data (a slow or lost network).
+        if player.timeControlStatus == .waitingToPlayAtSpecifiedRate && wantPlay {
+            if waitingSince == nil { waitingSince = now }
+        } else if let since = waitingSince {
+            waitingSince = nil
+            if now - since >= 1 {
+                FlowLog.i(String(format: "waited %.1f s for data of %@", now - since, id) + (playing ? "" : " (then stopped)"))
+            }
+        }
+        tellState()
+        updateNowPlaying()
+    }
+
+    /// On to the next song by itself, or by Next on the lock screen.
+    private func currentChanged() {
+        guard let item = player.currentItem, let tag = tags[ObjectIdentifier(item)] else { return }
+        watch(item)
+        guard tag.id != id else { return }
+        let from = id
+        let fromKey = key
+        let heard = takeHeard()
+        id = tag.id
+        key = tag.key
+        gain = tag.gain
+        src = tag.src
+        ended = false
+        failedTold = ""
+        let alive = Set(player.items().map { ObjectIdentifier($0) })
+        tags = tags.filter { alive.contains($0.key) }
+        applyVolume()
+        updateEnd()
+        updateNowPlaying()
+        let why = nextPressed ? "next" : "auto"
+        nextPressed = false
+        FlowLog.i("on to \(id) (\(why)), \(from) heard \(Int(heard)) s")
+        if let e = events {
+            e.onAdvance(from, id, key, heard, why)
+        } else {
+            away(fromKey, heard)
+        }
+        tellState()
+    }
+
+    @objc private func itemEnded(_ note: Notification) {
+        DispatchQueue.main.async {
+            guard let item = note.object as? AVPlayerItem, item === self.player.currentItem else { return }
+            if self.repeatOne {
+                // The same song again (Next still leaves it).
+                let heard = self.takeHeard()
+                self.player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+                if self.wantPlay { self.player.play() }
+                FlowLog.i("again \(self.id) (repeat), heard \(Int(heard)) s")
+                self.events?.onAdvance(self.id, self.id, self.key, heard, "repeat")
+                return
+            }
+            // Moving on: told by currentChanged.
+            if self.player.actionAtItemEnd == .advance && self.player.items().count > 1 { return }
+            self.ended = true
+            FlowLog.i("ended \(self.id)")
+            if let e = self.events {
+                e.onEnded(self.id)
+            } else {
+                self.away(self.key, self.takeHeard())
+            }
+            self.tellState()
+            self.updateNowPlaying()
+        }
+    }
+
+    @objc private func itemBroke(_ note: Notification) {
+        DispatchQueue.main.async {
+            guard let item = note.object as? AVPlayerItem, item === self.player.currentItem else { return }
+            self.failed(item)
+        }
+    }
+
+    /// A song that could not be played: the page hears it, with the server's
+    /// answer when it refused it (401: its session ended).
+    private func failed(_ item: AVPlayerItem) {
+        guard failedTold != id else { return }
+        failedTold = id
+        let failedId = id
+        let error = item.error as NSError?
+        let message = error.map { "\($0.domain) \($0.code): \($0.localizedDescription)" } ?? "The song could not be played."
+        let logged = item.errorLog()?.events.last?.errorStatusCode ?? 0
+        let report = { [weak self] (status: Int) in
+            guard let self = self, self.id == failedId else { return }
+            FlowLog.i("error \(failedId) \(message)" + (status > 0 ? " (\(status))" : ""))
+            // Paused, nobody is waiting for it: Play tries it again.
+            if !self.wantPlay && status != 401 {
+                FlowLog.i("(paused: not told)")
+                return
+            }
+            self.events?.onError(failedId, message, status)
+            self.tellState()
+        }
+        if (100...599).contains(logged) {
+            report(logged)
+        } else {
+            probe(src, report)
+        }
+    }
+
+    /// The server's answer to a song's address, when it is not "here it is" (a refusal, 401...); else 0.
+    private func probe(_ source: String, _ done: @escaping (Int) -> Void) {
+        guard source.hasPrefix("http"), let url = URL(string: source) else {
+            done(0)
+            return
+        }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+        request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            DispatchQueue.main.async { done(status >= 400 ? status : 0) }
+        }.resume()
+    }
+
+    @objc private func interrupted(_ note: Notification) {
+        guard let info = note.userInfo, let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+        DispatchQueue.main.async {
+            switch type {
+            case .began:
+                self.resumeAfterInterruption = self.wantPlay
+                if self.wantPlay { self.pause("interrupted") }
+            case .ended:
+                let options = AVAudioSession.InterruptionOptions(rawValue: info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+                if self.resumeAfterInterruption && options.contains(.shouldResume) {
+                    FlowLog.i("interruption over: playing on")
+                    self.play()
+                }
+                self.resumeAfterInterruption = false
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    @objc private func routeChanged(_ note: Notification) {
+        guard let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
+        DispatchQueue.main.async {
+            // Headphones pulled out, a Bluetooth device gone: as any player, it pauses.
+            if reason == .oldDeviceUnavailable && self.wantPlay { self.pause("headphones out") }
+            FlowLog.i("sound to \(FlowNativePlugin.outputNow().name)")
+        }
+    }
+
+    // MARK: state
+
+    private func duration() -> Double {
+        guard let d = player.currentItem?.duration, d.isNumeric, d.seconds.isFinite, d.seconds > 0 else { return -1 }
+        return d.seconds
+    }
+
+    private func position() -> Double {
+        guard player.currentItem != nil else { return 0 }
+        if ended {
+            let d = duration()
+            if d > 0 { return d }
+        }
+        let t = player.currentTime().seconds
+        if !t.isFinite || t < 0 { return pendingSeek ?? 0 }
+        return pendingSeek ?? t
+    }
+
+    private func playbackState() -> Int {
+        guard let item = player.currentItem else { return St.idle }
+        if ended { return St.ended }
+        switch item.status {
+        case .failed:
+            return signingIn ? St.buffering : St.idle
+        case .readyToPlay:
+            return player.timeControlStatus == .waitingToPlayAtSpecifiedRate ? St.buffering : St.ready
+        default:
+            return St.buffering
+        }
+    }
+
+    /// { id, key, pwr: play when ready, st: 1 idle 2 buffering 3 ready 4 ended,
+    /// t, at (when t was read, wall clock ms), d (-1 unknown), rate, vol, songs
+    /// (this one and those after it) }, as FlowPlayer.java's.
+    func state() -> [String: Any] {
+        [
+            "id": id,
+            "key": key,
+            "pwr": wantPlay,
+            "st": playbackState(),
+            "t": position(),
+            "at": Date().timeIntervalSince1970 * 1000,
+            "d": duration(),
+            "rate": Double(rate),
+            "vol": Double(player.volume),
+            "songs": player.items().count,
+        ]
+    }
+
+    private func tellState() {
+        events?.onState(state())
+    }
+
+    // MARK: listens
+
+    private func heardSoFar() -> Double {
+        heardMs + (playingSince.map { (ProcessInfo.processInfo.systemUptime - $0) * 1000 } ?? 0)
+    }
+
+    /// How long the song playing was heard, in seconds; counting starts again.
+    private func takeHeard() -> Double {
+        let total = heardSoFar()
+        heardMs = 0
+        if playingSince != nil { playingSince = ProcessInfo.processInfo.systemUptime }
+        return total / 1000
+    }
+
+    /// A listen while there is no page to record it.
+    private func away(_ songKey: String, _ heard: Double) {
+        guard !songKey.isEmpty, heard >= 1 else { return }
+        heardAway.append(["key": songKey, "heard": heard, "at": Date().timeIntervalSince1970 * 1000])
+        writeJson(heardAway, heardFile)
+    }
+
+    /// A page starts: what is loaded (the state, how long its song has been
+    /// heard), the listens kept while there was no page (now the page's), and
+    /// with nothing loaded the song Flow was closed on (`last` { key, at, heard }).
+    func attach() -> [String: Any] {
+        var a: [String: Any] = ["state": state(), "heard": heardSoFar() / 1000, "away": heardAway, "play": false]
+        if key.isEmpty, let data = try? Data(contentsOf: lastFile), let last = try? JSONSerialization.jsonObject(with: data) {
+            a["last"] = last
+        }
+        FlowLog.i("page attached, " + (key.isEmpty ? "nothing loaded" : "\(id) loaded") + ", \(heardAway.count) listens kept")
+        heardAway = []
+        try? FileManager.default.removeItem(at: heardFile)
+        try? FileManager.default.removeItem(at: lastFile)
+        return a
+    }
+
+    /// Flow closed (swiped away): the music stops; its song, place and listen
+    /// are kept for the next start.
+    func letGo() {
+        guard !key.isEmpty else { return }
+        let last: [String: Any] = ["key": key, "at": position(), "heard": heardSoFar() / 1000]
+        player.pause()
+        if let data = try? JSONSerialization.data(withJSONObject: last) {
+            try? data.write(to: lastFile, options: .atomic)
+        }
+    }
+
+    private func readJsonArray(_ file: URL) -> [[String: Any]] {
+        guard let data = try? Data(contentsOf: file), let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
+            return []
+        }
+        return list
+    }
+
+    private func writeJson(_ value: Any, _ file: URL) {
+        guard let data = try? JSONSerialization.data(withJSONObject: value) else { return }
+        do {
+            try data.write(to: file, options: .atomic)
+        } catch {
+            FlowLog.i("could not keep a listen: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: the sleep timer
+
+    private func setSleep(at: Double, fade: Double) {
+        sleepAt = at
+        sleepFadeMs = max(1, fade)
+        sleepTimer?.invalidate()
+        sleepTimer = nil
+        if sleepAt > 0 {
+            FlowLog.i("sleep timer: stops in \(Int(((sleepAt - Date().timeIntervalSince1970 * 1000) / 1000).rounded())) s")
+            sleepCheck()
+        } else if sleepFade != 1 {
+            sleepFade = 1
+            applyVolume()
+        }
+    }
+
+    private func sleepCheck() {
+        guard sleepAt > 0 else { return }
+        let left = sleepAt - Date().timeIntervalSince1970 * 1000
+        if left <= 0 {
+            sleepAt = 0
+            pause("sleep timer")
+            sleepFade = 1
+            applyVolume()
+            FlowLog.i("sleep timer ran out: paused")
+            return
+        }
+        let f: Float = left < sleepFadeMs ? Float(left / sleepFadeMs) : 1
+        if f != sleepFade {
+            sleepFade = f
+            applyVolume()
+        }
+        // Rarely until the fade, then four times a second.
+        let delay = left > sleepFadeMs + 1000 ? min(left - sleepFadeMs, 30000) : 250
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: delay / 1000, repeats: false) { [weak self] _ in
+            self?.sleepCheck()
+        }
+    }
+
+    // MARK: iOS's controls (lock screen, Control Center, headphones, the car)
+
+    private func setUpRemote() {
+        let c = MPRemoteCommandCenter.shared()
+        c.playCommand.addTarget { [weak self] _ in
+            guard let self = self, !self.src.isEmpty else { return .noSuchContent }
+            self.play()
+            return .success
+        }
+        c.pauseCommand.addTarget { [weak self] _ in
+            self?.pause("lock screen")
+            return .success
+        }
+        c.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self = self, !self.src.isEmpty else { return .noSuchContent }
+            if self.wantPlay { self.pause("lock screen") } else { self.play() }
+            return .success
+        }
+        c.nextTrackCommand.addTarget { [weak self] _ in
+            guard let self = self, self.player.items().count > 1 else { return .noSuchContent }
+            self.nextPressed = true
+            self.player.advanceToNextItem()
+            if self.wantPlay { self.player.play() }
+            return .success
+        }
+        c.previousTrackCommand.addTarget { [weak self] _ in
+            guard let self = self, !self.src.isEmpty else { return .noSuchContent }
+            // Into the song: back to its start; at its start: the song before (the page's).
+            if self.position() > 3 || self.events == nil {
+                self.seek(0)
+            } else {
+                self.events?.onPrevious()
+            }
+            return .success
+        }
+        c.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self = self, let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            self.seek(e.positionTime)
+            return .success
+        }
+    }
+
+    /// What the lock screen and Control Center show: the song's names and cover, its place.
+    private func updateNowPlaying() {
+        let center = MPNowPlayingInfoCenter.default()
+        guard !src.isEmpty, let item = player.currentItem else {
+            center.nowPlayingInfo = nil
+            return
+        }
+        let meta = tags[ObjectIdentifier(item)]?.meta
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: meta?["title"] as? String ?? "",
+            MPMediaItemPropertyArtist: meta?["artist"] as? String ?? "",
+            MPMediaItemPropertyAlbumTitle: meta?["album"] as? String ?? "",
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: position(),
+            MPNowPlayingInfoPropertyPlaybackRate: player.timeControlStatus == .playing ? Double(rate) : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+        ]
+        let d = duration()
+        if d > 0 { info[MPMediaItemPropertyPlaybackDuration] = d }
+        if let art = artworkFor(meta?["artwork"] as? String) { info[MPMediaItemPropertyArtwork] = art }
+        center.nowPlayingInfo = info
+    }
+
+    private func artworkFor(_ path: String?) -> MPMediaItemArtwork? {
+        guard let path = path, !path.isEmpty else { return nil }
+        if let a = artwork, a.path == path { return a.art }
+        guard let file = FlowPaths.resolve(path), let image = UIImage(contentsOfFile: file.path) else { return nil }
+        let art = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        artwork = (path, art)
+        return art
+    }
+
+    // MARK: helpers
+
+    static func num(_ v: Any?) -> Double? {
+        if let n = v as? NSNumber { return n.doubleValue }
+        if let d = v as? Double { return d }
+        if let i = v as? Int { return Double(i) }
+        return nil
+    }
+
+    static func bool(_ v: Any?) -> Bool {
+        if let b = v as? Bool { return b }
+        if let n = v as? NSNumber { return n.boolValue }
+        return false
+    }
+
+    static func dicts(_ v: Any?) -> [[String: Any]] {
+        (v as? [Any] ?? []).compactMap { $0 as? [String: Any] }
+    }
+
+    /// An address without the server's token, for the log.
+    static func redact(_ source: String) -> String {
+        source.replacingOccurrences(of: "([?&]t=)[^&]*", with: "$1...", options: .regularExpression)
+    }
+}

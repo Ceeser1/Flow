@@ -1,0 +1,70 @@
+# The Xcode project, made by XcodeGen (`xcodegen generate` here; the CI does
+# it before each build): Flow.xcodeproj is never kept in the repository.
+# Before it, scripts/build-web.js makes public/ (the page) and Version.xcconfig.
+name: Flow
+options:
+  bundleIdPrefix: io.github.ceeser1
+  deploymentTarget:
+    iOS: "18.4"
+  developmentLanguage: en
+
+packages:
+  # Capacitor's iOS side, the same version as @capacitor/core in the page.
+  Capacitor:
+    url: https://github.com/ionic-team/capacitor-swift-pm.git
+    exactVersion: 8.5.2
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  Flow:
+    type: application
+    platform: iOS
+    configFiles:
+      Debug: Version.xcconfig
+      Release: Version.xcconfig
+    sources:
+      - path: App
+        excludes:
+          - Info.plist
+      # Capacitor looks for the page in the app's "public" folder.
+      - path: public
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.ceeser1.flow
+        PRODUCT_NAME: Flow
+        INFOPLIST_FILE: App/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        # The Simulator runs it signed by no one in particular; an iPhone gets
+        # it signed by each person's own Apple ID (SideStore).
+        "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+      configs:
+        Debug:
+          CAPACITOR_DEBUG: "true"
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+        Release:
+          CAPACITOR_DEBUG: "false"
+    dependencies:
+      - package: Capacitor
+        product: Capacitor
+      - package: Capacitor
+        product: Cordova
+
+schemes:
+  Flow:
+    build:
+      targets:
+        Flow: all
+    run:
+      config: Debug
+    archive:
+      config: Release

@@ -1,0 +1,88 @@
+# The iPhone app (apps/ios), built and tried out in the iOS Simulator on one
+# of GitHub's Macs: on every push to the ios branch, or started by hand with
+# another steps file. The results (screenshots, a video, Flow's log, the
+# build log) are the run's artifact for a week. Only Simulator builds are made
+# here: nothing that installs on an iPhone is ever uploaded.
+name: iOS
+
+on:
+  push:
+    branches: [ios]
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: Steps file in apps/ios/testing/steps (without .js)
+        required: false
+        default: smoke
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    name: Build and test in the Simulator
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: '1'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Tools (XcodeGen; ffmpeg for the test songs)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+          brew install ffmpeg
+          xcodebuild -version
+          node --version
+
+      - name: Node packages
+        run: npm ci --no-audit --no-fund
+
+      - name: The page
+        run: node apps/ios/scripts/build-web.js
+
+      - name: The Xcode project
+        working-directory: apps/ios
+        run: xcodegen generate
+
+      - name: Swift packages from earlier runs
+        uses: actions/cache@v4
+        with:
+          path: apps/ios/build/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('apps/ios/project.yml') }}
+
+      - name: Build
+        working-directory: apps/ios
+        run: |
+          set -o pipefail
+          xcodebuild build -project Flow.xcodeproj -scheme Flow -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -derivedDataPath build -clonedSourcePackagesDirPath build/SourcePackages \
+            2>&1 | tee build.log | xcbeautify --quieter --disable-colored-output
+
+      - name: Test in the Simulator
+        run: |
+          node apps/ios/testing/run.js --video \
+            --app apps/ios/build/Build/Products/Debug-iphonesimulator/Flow.app \
+            --steps "apps/ios/testing/steps/${{ inputs.steps || 'smoke' }}.js" \
+            --out out
+
+      - name: Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-${{ github.run_number }}
+          path: |
+            out/
+            apps/ios/build.log
+          retention-days: 7
+          if-no-files-found: ignore
