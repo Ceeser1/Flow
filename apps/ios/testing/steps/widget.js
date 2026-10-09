@@ -80,11 +80,12 @@ module.exports = [
   },
   { name: 'Flow started by the widget', relaunch: ['-FlowTestWidget', 'toggle'], wait: 1500 },
   {
+    // The songs after it too (the page that starts soon after sends its own).
     name: 'it plays the song it was on',
     native: 'player',
-    waitFor: (v) => v.pwr && v.st === 3,
+    waitFor: (v) => v.pwr && v.st === 3 && v.songs > 1,
     timeout: 20000,
-    expect: (v) => v.key === seen.ended && v.songs > 1,
+    expect: (v) => v.key === seen.ended,
   },
   widget('the widget shows it playing again', (v) => v.playing),
   {

@@ -120,7 +120,9 @@ const closely = (what) => [
       const out = [];
       for (let i = 0; i < 20; i += 1) {
         const st = await Capacitor.Plugins.FlowAudio.run({ ops: [] });
-        out.push({ t: st.t, at: st.at, rate: st.rate, page: Player.engine.time, drift: Player.remote ? Player.remote.drift : null });
+        out.push({
+          t: st.t, at: st.at, rate: st.rate, prate: st.prate, tbr: st.tbr, page: Player.engine.time, drift: Player.remote ? Player.remote.drift : null,
+        });
         ${wait(750)}
       }
       return out;
@@ -131,6 +133,9 @@ const closely = (what) => [
         vsHost: Math.round((x.t - hostPlace(x.at)) * 1000),
         speed: i ? Math.round(((x.t - v[i - 1].t) / ((x.at - v[i - 1].at) / 1000)) * 1000) / 1000 : null,
         rate: Math.round(x.rate * 1000) / 1000,
+        // AVPlayer's own rate, and its song's clock's.
+        prate: Math.round(x.prate * 1000) / 1000,
+        tbr: Math.round(x.tbr * 1000) / 1000,
         pageVsNative: Math.round((x.page - x.t) * 1000),
         drift: x.drift === null ? null : Math.round(x.drift * 1000),
       }));

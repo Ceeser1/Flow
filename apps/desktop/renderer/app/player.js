@@ -271,7 +271,13 @@ const Player = {
     // Signed in again (the server's session had ended): the songs coming next
     // are asked for with the new token, and one that stopped carries on.
     let token = Store.server.token;
+    let base = Store.server.base;
     Store.onServer((st) => {
+      // Reached (Flow starting): its songs coming next can be asked for now.
+      if (st.base !== base) {
+        base = st.base;
+        if (st.token === token) this._syncUpcoming();
+      }
       if (st.token === token) return;
       token = st.token;
       this._syncUpcoming();
@@ -1165,6 +1171,9 @@ const Player = {
         ids.push(id);
       }
     }
+    // The server being reached (Flow starting): the player keeps the songs it
+    // has (it may be playing on from before); these follow once it is there.
+    if (Store.server.state === 'connecting' && ids.some((id) => { const s = Store.song(id); return s && !s.file; })) return;
     const items = [];
     for (const id of ids) {
       const song = Store.song(id);

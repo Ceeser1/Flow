@@ -867,7 +867,8 @@ final class FlowPlayer: NSObject {
 
     /// { id, key, pwr: play when ready, st: 1 idle 2 buffering 3 ready 4 ended,
     /// t, at (when t was read, wall clock ms), d (-1 unknown), rate, vol, songs
-    /// (this one and those after it) }, as FlowPlayer.java's.
+    /// (this one and those after it) }, as FlowPlayer.java's; prate and tbr:
+    /// AVPlayer's own rate and its song's clock's, for the test runner.
     func state() -> [String: Any] {
         [
             "id": id,
@@ -880,6 +881,8 @@ final class FlowPlayer: NSObject {
             "rate": Double(rate),
             "vol": Double(player.volume),
             "songs": player.items().count,
+            "prate": Double(player.rate),
+            "tbr": player.currentItem?.timebase.map { CMTimebaseGetRate($0) } ?? -1,
         ]
     }
 
