@@ -24,8 +24,25 @@ permissions:
 
 jobs:
   simulator:
-    name: Build and test in the Simulator
-    runs-on: macos-26
+    # The newest iOS on the newest iPhone, and the oldest iOS Flow runs on
+    # (18.4; GitHub's Macs have 18.6) on the smallest screen, a phone with a
+    # home button and no notch.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS 26, iPhone 17
+            runner: macos-26
+            xcode: ''
+            device: iPhone 17
+            ios: '26'
+          - name: iOS 18, iPhone SE
+            runner: macos-15
+            xcode: /Applications/Xcode_26.3.app
+            device: iPhone SE (3rd generation)
+            ios: '18'
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
@@ -35,10 +52,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Xcode
+        if: matrix.xcode != ''
+        run: sudo xcode-select -s "${{ matrix.xcode }}"
+
       # A runner's Simulator takes minutes to boot the first time: it boots
       # while the tools are installed and the app is built.
       - name: The Simulator, booting
-        run: node apps/ios/testing/run.js --boot
+        run: node apps/ios/testing/run.js --boot --device "${{ matrix.device }}" --ios "${{ matrix.ios }}"
 
       - name: Tools (XcodeGen; ffmpeg and oggenc for the test songs)
         run: |
@@ -63,16 +84,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/ios/build/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('apps/ios/project.yml') }}
+          key: spm-${{ matrix.runner }}-${{ hashFiles('apps/ios/project.yml') }}
 
       - name: Build
         working-directory: apps/ios
         run: |
           set -o pipefail
           xcodebuild build -project Flow.xcodeproj -scheme Flow -configuration Debug \
-            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build -clonedSourcePackagesDirPath build/SourcePackages \
-            2>&1 | tee build.log | xcbeautify --quieter --disable-colored-output
+            2>&1 | tee build.log | { if command -v xcbeautify > /dev/null; then xcbeautify --quieter --disable-colored-output; else grep -E 'error:|warning:|BUILD' || true; fi; }
 
       # Each steps file on its own (offline.js stops the server), the app
       # started again; its results in out/<steps>.
@@ -80,7 +101,7 @@ jobs:
         run: |
           failed=0
           for steps in ${{ inputs.steps || 'smoke offline effects' }}; do
-            node apps/ios/testing/run.js --video \
+            node apps/ios/testing/run.js --video --device "${{ matrix.device }}" --ios "${{ matrix.ios }}" \
               --app apps/ios/build/Build/Products/Debug-iphonesimulator/Flow.app \
               --steps "apps/ios/testing/steps/$steps.js" \
               --out "out/$steps" || failed=1
@@ -91,7 +112,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-${{ github.run_number }}
+          name: ios-${{ github.run_number }}-ios${{ matrix.ios }}
           path: |
             out/
             apps/ios/build.log

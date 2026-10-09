@@ -8,8 +8,10 @@
 // Screenshots, a video (--video), Flow's log, the app's output, the system
 // log and crash reports go into --out.
 //
-//   node apps/ios/testing/run.js --app <Flow.app> --steps <steps.js> --out <dir> [--device "iPhone 17"] [--video] [--erase]
-//   node apps/ios/testing/run.js --boot [--device "iPhone 17"]
+//   node apps/ios/testing/run.js --app <Flow.app> --steps <steps.js> --out <dir> [--device "iPhone 17"] [--ios 26] [--video] [--erase]
+//   node apps/ios/testing/run.js --boot [--device "iPhone 17"] [--ios 26]
+//
+// --ios: the newest iOS starting so ("18", "18.6"; default: the newest there is).
 //
 // --boot only starts the Simulator booting, so it boots while the app builds.
 // --erase wipes it first (a Mac's own Simulator; a CI runner's is new).
@@ -52,7 +54,7 @@ const sh = (cmd, list, opts = {}) => execFileSync(cmd, list, {
 const simctl = (...a) => sh('xcrun', ['simctl', ...a]);
 
 function options() {
-  const o = { device: 'iPhone 17', video: false, boot: false, erase: false };
+  const o = { device: 'iPhone 17', ios: '', video: false, boot: false, erase: false };
   const a = process.argv.slice(2);
   for (let i = 0; i < a.length; i += 1) {
     if (['--video', '--boot', '--erase'].includes(a[i])) o[a[i].slice(2)] = true;
@@ -157,19 +159,20 @@ async function startServer(out) {
 
 // ---- the Simulator ----
 
-/** The newest iOS's device of this name: { udid, name, runtime, state }. */
-function pickDevice(name) {
+/** The device of this name on the newest iOS (starting with `ios`, if given): { udid, name, runtime, state }. */
+function pickDevice(name, ios = '') {
   const all = JSON.parse(simctl('list', 'devices', 'available', '--json')).devices;
   let best = null;
   for (const [runtime, devices] of Object.entries(all)) {
     const m = /iOS-(\d+)-(\d+)/.exec(runtime);
     if (!m) continue;
+    if (ios && !`${m[1]}.${m[2]}.`.startsWith(`${ios}.`)) continue;
     const version = Number(m[1]) * 100 + Number(m[2]);
     for (const d of devices) {
       if (d.name === name && (!best || version > best.version)) best = { udid: d.udid, name: d.name, runtime, version, state: d.state };
     }
   }
-  if (!best) throw new Error(`No Simulator called "${name}" (xcrun simctl list devices).`);
+  if (!best) throw new Error(`No Simulator called "${name}"${ios ? ` with iOS ${ios}` : ''} (xcrun simctl list devices).`);
   return best;
 }
 
@@ -376,7 +379,7 @@ function collect(ctx) {
 async function main() {
   const o = options();
   if (o.boot) {
-    const device = pickDevice(o.device);
+    const device = pickDevice(o.device, o.ios);
     if (device.state === 'Shutdown') simctl('boot', device.udid);
     log(`Simulator booting: ${device.name}, ${device.runtime.replace(/.*SimRuntime\./, '')}`);
     return;
@@ -387,7 +390,7 @@ async function main() {
   const steps = require(path.resolve(o.steps));
 
   const server = await startServer(out);
-  const device = pickDevice(o.device);
+  const device = pickDevice(o.device, o.ios);
   log(`Simulator: ${device.name}, ${device.runtime.replace(/.*SimRuntime\./, '')} (${device.udid})`);
   if (o.erase) {
     try {
@@ -399,7 +402,7 @@ async function main() {
   }
   timed('booted', () => {
     // Booting already (--boot while the app was built), or booted.
-    if (o.erase || pickDevice(o.device).state === 'Shutdown') simctl('boot', device.udid);
+    if (o.erase || pickDevice(o.device, o.ios).state === 'Shutdown') simctl('boot', device.udid);
     simctl('bootstatus', device.udid, '-b');
   });
   // For the screenshots only: dark, and a tidy status bar.
