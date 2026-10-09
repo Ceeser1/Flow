@@ -17,7 +17,7 @@ const playing = `
 const start = [
   {
     name: 'the page started',
-    until: 'return typeof Store !== "undefined" && !!Store.platform && Store.platform;',
+    until: 'return typeof Store !== "undefined" && !!Store.version && Store.platform;',
     timeout: 30000,
     expect: (v) => v === 'ios',
   },

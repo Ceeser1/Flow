@@ -45,7 +45,7 @@ const plays = ([what, title, vorbis]) => ({
 module.exports = [
   {
     name: 'the page started',
-    until: 'return typeof Store !== "undefined" && !!Store.platform && { platform: Store.platform, ui: Store.uiMode, version: Store.version };',
+    until: 'return typeof Store !== "undefined" && !!Store.version && { platform: Store.platform, ui: Store.uiMode, version: Store.version };',
     timeout: 30000,
     wait: 1500,
     shot: '01-start',

@@ -54,10 +54,17 @@ package; build number as Android's versionCode, 3.0.0 -> 30000).
 `testing/run.js` starts a Flow Server with a test song of each kind
 (ffmpeg, oggenc), installs the Debug build on a Simulator, runs a steps file
 against the page (`testing/steps/`) and saves screenshots, a video and the
-logs. The CI runs `steps/smoke.js` (the server found, every kind of song,
-playing on in the background, the main screens), then `steps/offline.js`
-(songs downloaded and played with the server gone, files imported); others
-are chosen when the workflow is started by hand.
+logs. The CI runs, on iOS 26 (iPhone 17) and iOS 18 (iPhone SE):
+
+- `steps/smoke.js`: the server found, every kind of song, playing on in the
+  background, the main screens;
+- `steps/offline.js`: songs downloaded and played with the server gone,
+  files imported (names, pictures, waveforms);
+- `steps/effects.js`: Song Transition and Equalize volume, measured;
+- `steps/sessions.js`: a second device (the test script) joins the iPhone's
+  Active Session, pauses and plays it, and it stays while Flow is out of sight.
+
+Others are chosen when the workflow is started by hand.
 
 ```
 node apps/ios/testing/run.js --app apps/ios/build/Build/Products/Debug-iphonesimulator/Flow.app \

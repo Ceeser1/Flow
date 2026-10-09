@@ -556,7 +556,16 @@ final class FlowPlayer: NSObject {
             return
         }
         events?.onError(failedId, message, status, unsupported)
-        if status == 0 && !unsupported { pause("not loaded") }
+        if status == 0 && !unsupported {
+            pause("not loaded")
+        } else if item === player.currentItem {
+            // Still on it (iOS 18 stays, iOS 26 moves on by itself): on to the next one, or stopped.
+            if player.items().count > 1 {
+                player.advanceToNextItem()
+            } else {
+                pause("could not play")
+            }
+        }
         tellState()
     }
 
