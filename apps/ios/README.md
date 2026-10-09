@@ -20,8 +20,8 @@ Not on the iPhone (yet): the share target and the widget.
 
 Needs iOS 18.4 or later (iPhone XS / XR and newer): from 18.4 iOS plays Ogg
 Opus itself, the format most of Flow's songs from YouTube are in. Ogg Vorbis
-(.ogg) it does not play (iOS 26 in the Simulator): such a song says so and the
-queue goes on to the next.
+(.ogg) it does not play (neither iOS 18 nor 26): such a song says so and the
+queue goes on to the next, and such a file is not imported.
 
 ## Installing
 
@@ -62,7 +62,10 @@ logs. The CI runs, on iOS 26 (iPhone 17) and iOS 18 (iPhone SE):
   files imported (names, pictures, waveforms);
 - `steps/effects.js`: Song Transition and Equalize volume, measured;
 - `steps/sessions.js`: a second device (the test script) joins the iPhone's
-  Active Session, pauses and plays it, and it stays while Flow is out of sight.
+  Active Session, pauses and plays it, and it stays while Flow is out of
+  sight; then the iPhone joins another device's session, plays along in step
+  with it (Play here), follows its Pause and Play, and its own buttons go to
+  the host.
 
 Others are chosen when the workflow is started by hand.
 

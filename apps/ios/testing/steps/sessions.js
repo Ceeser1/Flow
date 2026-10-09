@@ -6,7 +6,12 @@
 // (Accept), hears what plays, and its Pause and Play are carried out on the
 // iPhone. With Flow out of sight the session stays on the server (iOS stops
 // the page: SessionKeeper tells it from the native player), and the second
-// device leaves at the end.
+// device leaves.
+//
+// Then the iPhone as a member: another device (this script again) hosts a
+// session, playing a song as an app tells it; the iPhone asks to join with
+// Play here, is let in and plays the host's song at the host's place, follows
+// its Pause and Play, and, back to remote, its own Pause goes to the host.
 
 const http = require('http');
 
@@ -16,13 +21,14 @@ const {
 
 const BASE = 'http://127.0.0.1:7878';
 const CLIENT = 'ci-second-device';
+const HOST = 'ci-host-device';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The second device: its live channel's events, in order, and its requests. */
-function secondDevice() {
+function secondDevice(client = CLIENT) {
   const events = [];
-  const stream = http.get(`${BASE}/api/live?client=${CLIENT}&device=CI`, (res) => {
+  const stream = http.get(`${BASE}/api/live?client=${client}&device=CI`, (res) => {
     res.setEncoding('utf8');
     let buffer = '';
     res.on('data', (chunk) => {
@@ -47,10 +53,10 @@ function secondDevice() {
   });
   stream.on('error', () => {});
   const call = async (method, body) => {
-    const r = await fetch(`${BASE}/api/sessions${method === 'GET' ? `?client=${CLIENT}` : ''}`, {
+    const r = await fetch(`${BASE}/api/sessions${method === 'GET' ? `?client=${client}` : ''}`, {
       method,
       headers: body ? { 'content-type': 'application/json' } : {},
-      body: body ? JSON.stringify({ ...body, client: CLIENT }) : undefined,
+      body: body ? JSON.stringify({ ...body, client }) : undefined,
     });
     const answer = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(`the server answered ${r.status}: ${answer.error || ''}`);
@@ -72,6 +78,33 @@ function secondDevice() {
       }
     },
   };
+}
+
+// The other device hosting: the song it plays, from where, since when.
+const hosting = {};
+
+/** Where the host's song is at `at` (ms). */
+const hostPlace = (at = Date.now()) => hosting.position + (hosting.playing ? (at - hosting.since) / 1000 : 0);
+
+/** The host's playback, told to the server as an app tells it. */
+async function tellHost(dev) {
+  const { song: s } = hosting;
+  const at = Date.now();
+  await dev.post({
+    type: 'state',
+    state: {
+      songId: s.id, title: s.title, artist: s.artist, duration: s.duration, playing: hosting.playing,
+      position: hostPlace(at), at, shared: true, name: 'CI - Speakers', ids: [s.id],
+    },
+  });
+}
+
+/** The host playing (or paused) from its place now. */
+async function hostPlays(dev, play) {
+  hosting.position = hostPlace();
+  hosting.since = Date.now();
+  hosting.playing = play;
+  await tellHost(dev);
 }
 
 /** The second device's button, and what the iPhone's page then does. */
@@ -176,4 +209,126 @@ module.exports = [
     timeout: 15000,
   },
   { name: 'pause', js: `Player.pause(); ${wait(800)} return Player.engine.paused;`, expect: (v) => v === true },
+
+  // ---- the iPhone as a member ----
+  {
+    name: 'the song another device plays',
+    js: `const s = ${song('Sine A')}; return { id: s.id, title: s.title, artist: s.artist, duration: s.duration };`,
+    expect: (v) => {
+      hosting.song = v;
+      return !!v.id;
+    },
+  },
+  {
+    name: 'another device hosts a session',
+    run: async (ctx) => {
+      ctx.host = secondDevice(HOST);
+      await ctx.host.heard((e) => e.type === 'hello', 0, 10000);
+      Object.assign(hosting, { position: 3, since: Date.now(), playing: true });
+      await tellHost(ctx.host);
+      // Every few seconds while playing, as an app does.
+      ctx.beat = setInterval(() => tellHost(ctx.host).catch(() => {}), 4000);
+      return 'playing';
+    },
+    until: `
+      const s = Session.others().find((x) => x.song && x.song.title === 'Sine A');
+      return s && { name: s.name, playing: s.playing };
+    `,
+    timeout: 15000,
+  },
+  {
+    name: 'the iPhone asks to join, to play along',
+    js: `
+      await Store.saveSettings({ sessionPlayHere: true });
+      const s = Session.others().find((x) => x.song && x.song.title === 'Sine A');
+      await Session.join(s.id);
+      return !!Session.request;
+    `,
+    expect: (v) => v === true,
+  },
+  {
+    name: 'the host lets it in',
+    run: async (ctx) => {
+      const e = await ctx.host.heard((x) => x.type === 'joinRequest');
+      await ctx.host.post({ type: 'answer', requestId: e.data.requestId, accept: true });
+      return e.data.device || e.data.profileName;
+    },
+    until: `
+      const e = Player.engine;
+      return Session.isMember && !!Player.remote && Player.remote.here && !e.paused && e.time > 0
+        && { now: (Store.song(Player.currentId) || {}).title, t: Math.round(e.time * 10) / 10, members: Session.mine.session.members.length };
+    `,
+    timeout: 20000,
+    wait: 4000,
+    shot: '04-member',
+    expect: (v) => v.now === 'Sine A' && v.members === 2,
+  },
+  {
+    // The native player's own place, at the moment it was read, against the host's then.
+    name: 'in step with the host',
+    native: 'player',
+    expect: (v) => {
+      hosting.drift = Math.round((v.t - hostPlace(v.at)) * 1000);
+      return v.pwr && v.st === 3 && Math.abs(hosting.drift) < 250;
+    },
+  },
+  { name: 'how far apart (ms)', run: async () => hosting.drift },
+  {
+    name: 'the host pauses: the iPhone too',
+    run: async (ctx) => {
+      await hostPlays(ctx.host, false);
+      return hostPlace();
+    },
+    until: 'return Player.engine.paused && { t: Math.round(Player.engine.time * 10) / 10 };',
+    timeout: 10000,
+  },
+  {
+    name: 'the host plays on: the iPhone too',
+    run: async (ctx) => {
+      await hostPlays(ctx.host, true);
+      return hostPlace();
+    },
+    until: 'return !Player.engine.paused && Player.engine.time > 0 && { t: Math.round(Player.engine.time * 10) / 10 };',
+    timeout: 10000,
+    wait: 3000,
+  },
+  {
+    name: 'in step again',
+    native: 'player',
+    expect: (v) => v.pwr && Math.abs(v.t - hostPlace(v.at)) < 0.25,
+  },
+  {
+    name: 'remote only: the iPhone stops playing along',
+    js: `Session.setHere(false); ${wait(1500)} return { here: Player.remote.here, playing: !Player.engine.paused && !!Player.engine.loaded };`,
+    expect: (v) => v.here === false && !v.playing,
+  },
+  {
+    name: 'Pause on the iPhone',
+    run: async (ctx) => {
+      ctx.pressed = Date.now();
+      return 'pressed';
+    },
+    js: 'Player.pause(); return true;',
+  },
+  {
+    name: 'goes to the host',
+    run: async (ctx) => (await ctx.host.heard((x) => x.type === 'control', ctx.pressed, 10000)).data.action,
+    expect: (v) => v === 'pause',
+  },
+  {
+    name: 'the iPhone leaves',
+    js: 'await Session.leave(); return { member: Session.isMember, mine: !!Session.mine };',
+    expect: (v) => !v.member,
+  },
+  {
+    name: 'the host alone again',
+    run: async (ctx) => {
+      const e = await ctx.host.heard((x) => x.type === 'session' && x.data.session && x.data.session.members.length === 1, ctx.pressed, 10000);
+      clearInterval(ctx.beat);
+      await ctx.host.post({ type: 'leave' });
+      ctx.host.close();
+      return e.data.session.members.length;
+    },
+    expect: (v) => v === 1,
+  },
 ];
