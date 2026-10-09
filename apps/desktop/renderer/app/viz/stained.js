@@ -169,9 +169,29 @@
       float sw = exp(-s * s * 6.0) * 0.6;
       float fl = step(hash12(vec2(id * 91.0, flashSeed)), 0.12) * flash;
       return c * (light * (0.95 + 0.6 * band) + sw + fl * 1.2) * 1.25;
+    }
+
+    // The tracery where p is (0..1): the rose's spokes (out to the frame)
+    // and inner ring, the arch's mullion; iron: the arch's iron bars.
+    float tracery(vec2 p, out float iron) {
+      iron = 0.0;
+      if (shape == 1) {
+        float r = length(p);
+        float an = atan(p.y, p.x);
+        float seg = 2.0 * PI / 12.0;
+        float fa = abs(mod(an + seg * 0.5, seg) - seg * 0.5);
+        return max(step(0.24, r) * (1.0 - smoothstep(0.009, 0.015, fa * r)), 1.0 - smoothstep(0.01, 0.017, abs(r - 0.24)));
+      }
+      if (shape == 0) {
+        iron = smoothstep(0.488, 0.494, abs(fract((p.y + 1.0) * 2.6) - 0.5));
+        return (1.0 - smoothstep(0.009, 0.016, abs(p.x))) * step(p.y, 0.55);
+      }
+      return 0.0;
     }`;
 
-  // The glass's light alone, small: for the shafts and the floor.
+  // The glass's light alone, small: for the shafts and the floor. Alpha:
+  // what the tracery lets through, for the floor only (in the shafts the
+  // bars' shadows would hang down as hard dark lines).
   const EMIT_FS = COMMON + `
     in vec2 uv;
     out vec4 o;
@@ -179,9 +199,13 @@
       vec2 p = winSpace(uv);
       float depth;
       float m = inside(p, depth);
-      float lead;
-      vec3 c = m > 0.0 ? glass(p, lead) * (1.0 - lead) : vec3(0.0);
-      o = vec4(c * m, 1.0);
+      float lead, iron = 0.0, bar = 0.0;
+      vec3 c = vec3(0.0);
+      if (m > 0.0) {
+        c = glass(p, lead) * (1.0 - lead);
+        bar = tracery(p, iron);
+      }
+      o = vec4(c * m, (1.0 - bar) * (1.0 - 0.9 * iron));
     }`;
 
   // The shafts: each pixel gathers the light lying between it and the window's middle.
@@ -224,9 +248,12 @@
       return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
     }
 
-    // Where a torch's cup sits (side -1 left, 1 right): beside the window.
+    // Where a torch's cup sits (side -1 left, 1 right): halfway between the
+    // window's frame and the screen's side.
     vec2 torchAt(float side) {
-      return vec2(side * min(shape == 1 ? 0.64 : 0.44, res.x / res.y * 0.5 - 0.08), 0.58);
+      float frame = shape == 1 ? 0.436 : 0.236;
+      float sx = res.x / res.y * 0.5;
+      return vec2(side * min((frame + sx) * 0.5, sx - 0.08), 0.58);
     }
 
     // The torches' light at q.
@@ -483,8 +510,12 @@
           float seam = smoothstep(0.0, 0.03, ff.x) * smoothstep(0.0, 0.05, ff.y);
           vec3 fq = vec3(s.x * depthF, FLOOR, (depthF - 1.0) * 0.15);
           col = lit(vec3(0.25, 0.23, 0.22) * (0.6 + 0.4 * seam), fq) * (0.6 + 0.4 * uv.y / FLOOR);
-          col += texture(emit, vec2(0.5 + (uv.x - 0.5) * 0.7 / (0.4 + 0.6 * (1.0 - uv.y / FLOOR)), 0.25 + 0.55 * (uv.y / FLOOR))).rgb
-            * 0.45 * smoothstep(0.0, 0.03, uv.y);
+          // Its bottom (0.13 up the screen) lands a fifth of the way out
+          // from the wall, its top furthest out; as wide as the window. The
+          // tracery's shadows on it.
+          float back = uv.y / FLOOR;
+          vec4 e = texture(emit, vec2(uv.x, 0.13 + 0.7 * (0.8 - back)));
+          col += e.rgb * e.a * 0.45 * smoothstep(0.0, 0.03, uv.y) * smoothstep(0.95, 0.8, back);
         }
         col *= nearShade(s);
         // The stone frame round the window.
@@ -496,20 +527,9 @@
           float lead;
           vec3 g = glass(p, lead);
           vec3 l = vec3(0.025, 0.025, 0.028);
-          // Tracery: the rose's spokes (out to the frame) and inner ring, the
-          // arch's mullion and iron bars.
-          float bar = 0.0;
-          if (shape == 1) {
-            float r = length(p);
-            float an = atan(p.y, p.x);
-            float seg = 2.0 * PI / 12.0;
-            float fa = abs(mod(an + seg * 0.5, seg) - seg * 0.5);
-            bar = max(step(0.24, r) * (1.0 - smoothstep(0.009, 0.015, fa * r)), 1.0 - smoothstep(0.01, 0.017, abs(r - 0.24)));
-          } else {
-            bar = (1.0 - smoothstep(0.009, 0.016, abs(p.x))) * step(p.y, 0.55);
-            float ib = smoothstep(0.488, 0.494, abs(fract((p.y + 1.0) * 2.6) - 0.5));
-            lead = max(lead, ib * 0.9);
-          }
+          float iron;
+          float bar = tracery(p, iron);
+          lead = max(lead, iron * 0.9);
           col = mix(col, mix(g, l, lead), m);
           col = mix(col, vec3(0.07, 0.065, 0.06), bar * m);
         }
