@@ -26,7 +26,11 @@ const plays = ([what, title, vorbis]) => ({
       Player.engine.on('error', (status, kind) => window.flowCiErrors.push({ status, kind }));
     }
     Player.load(s.id, 'all');
-    ${wait(5000)}
+    // Until it has played 2 s (a busy Simulator starts slowly), or failed, or another one plays.
+    for (let i = 0; i < 48; i += 1) {
+      ${wait(250)}
+      if (window.flowCiErrors.length || Player.currentId !== s.id || Player.engine.time >= 2) break;
+    }
     const e = Player.engine;
     return {
       title: s.title, format: s.format, own: Player.currentId === s.id, now: (Store.song(Player.currentId) || {}).title,
