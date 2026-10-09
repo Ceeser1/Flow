@@ -39,7 +39,7 @@ enum WidgetFeed {
             guard let songFile = FlowGroup.songFile, let coverFile = FlowGroup.coverFile else { return }
             var out = song
             if newCover {
-                out.cover = writeCover(artwork, to: coverFile)
+                out.cover = WidgetFeed.writeCover(artwork, to: coverFile)
             } else {
                 out.cover = out.cover && FileManager.default.fileExists(atPath: coverFile.path)
             }

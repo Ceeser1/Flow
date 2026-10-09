@@ -107,6 +107,39 @@ async function hostPlays(dev, play) {
   await tellHost(dev);
 }
 
+/**
+ * For the record: the native player's place against the host's, and what
+ * the page reckons (its place against the native one, the drift it eases
+ * away), every 3/4 s for 15 s; `speed`: how fast the native place moved
+ * since the sample before.
+ */
+const closely = (what) => [
+  {
+    name: `playing along, closely: ${what}`,
+    js: `
+      const out = [];
+      for (let i = 0; i < 20; i += 1) {
+        const st = await Capacitor.Plugins.FlowAudio.run({ ops: [] });
+        out.push({ t: st.t, at: st.at, rate: st.rate, page: Player.engine.time, drift: Player.remote ? Player.remote.drift : null });
+        ${wait(750)}
+      }
+      return out;
+    `,
+    timeout: 30000,
+    expect: (v) => {
+      hosting.samples = v.map((x, i) => ({
+        vsHost: Math.round((x.t - hostPlace(x.at)) * 1000),
+        speed: i ? Math.round(((x.t - v[i - 1].t) / ((x.at - v[i - 1].at) / 1000)) * 1000) / 1000 : null,
+        rate: Math.round(x.rate * 1000) / 1000,
+        pageVsNative: Math.round((x.page - x.t) * 1000),
+        drift: x.drift === null ? null : Math.round(x.drift * 1000),
+      }));
+      return true;
+    },
+  },
+  { name: `the samples: ${what}`, run: async () => hosting.samples },
+];
+
 /** The second device's button, and what the iPhone's page then does. */
 const control = (action, paused) => ({
   name: `${action} from the second device`,
@@ -212,11 +245,15 @@ module.exports = [
 
   // ---- the iPhone as a member ----
   {
-    name: 'the song another device plays',
-    js: `const s = ${song('Sine A')}; return { id: s.id, title: s.title, artist: s.artist, duration: s.duration };`,
-    expect: (v) => {
-      hosting.song = v;
-      return !!v.id;
+    name: 'the songs another device plays',
+    js: `
+      const of = (s) => ({ id: s.id, title: s.title, artist: s.artist, duration: s.duration });
+      return [of(${song('Sine A')}), of(${song('Sine B')})];
+    `,
+    expect: ([a, b]) => {
+      hosting.song = a;
+      hosting.other = b;
+      return !!a.id && !!b.id;
     },
   },
   {
@@ -301,37 +338,26 @@ module.exports = [
     },
   },
   { name: 'how far apart now (ms)', run: async () => hosting.drift },
+  ...closely('with Equalize volume (the sine is turned up: an audio tap)'),
   {
-    // For the record: the native player's place against the host's, and what
-    // the page reckons (its place, the target, the drift it eases away), every
-    // 3/4 s; `speed` how fast the native place moved since the sample before.
-    name: 'playing along, closely',
-    js: `
-      const out = [];
-      for (let i = 0; i < 8; i += 1) {
-        const st = await Capacitor.Plugins.FlowAudio.run({ ops: [] });
-        out.push({
-          t: st.t, at: st.at, rate: st.rate, page: Player.engine.time, target: Player._hereTarget(),
-          drift: Player.remote ? Player.remote.drift : null, shift: Output.shift(),
-        });
-        ${wait(750)}
-      }
-      return out;
-    `,
-    timeout: 20000,
-    expect: (v) => {
-      hosting.samples = v.map((s, i) => ({
-        vsHost: Math.round((s.t - hostPlace(s.at)) * 1000),
-        speed: i ? Math.round(((s.t - v[i - 1].t) / ((s.at - v[i - 1].at) / 1000)) * 1000) / 1000 : null,
-        rate: s.rate,
-        pageVsNative: Math.round((s.page - s.t) * 1000),
-        drift: s.drift === null ? null : Math.round(s.drift * 1000),
-        shift: s.shift,
-      }));
-      return true;
-    },
+    name: 'Equalize volume off',
+    js: 'await Store.saveSettings({ normalize: false }); return true;',
   },
-  { name: 'the samples', run: async () => hosting.samples },
+  {
+    // A song loaded anew: no audio tap on it.
+    name: 'the host plays another song',
+    run: async (ctx) => {
+      hosting.song = hosting.other;
+      Object.assign(hosting, { position: 3, since: Date.now(), playing: true });
+      await tellHost(ctx.host);
+      return hosting.song.title;
+    },
+    until: 'return !Player.engine.paused && (Store.song(Player.currentId) || {}).title === "Sine B" && Player.engine.time > 0 && Player.engine.time;',
+    timeout: 15000,
+    wait: 3000,
+  },
+  ...closely('without'),
+  { name: 'Equalize volume on again', js: 'await Store.saveSettings({ normalize: true }); return true;' },
   {
     name: 'remote only: the iPhone stops playing along',
     js: `Session.setHere(false); ${wait(1500)} return { here: Player.remote.here, playing: !Player.engine.paused && !!Player.engine.loaded };`,
