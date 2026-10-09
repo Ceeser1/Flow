@@ -38,8 +38,8 @@
     out float x;
     out float depth;
     void main() {
-      // alpha carries how near the bolt is in its tens.
-      depth = floor(alpha / 10.0);
+      // alpha carries how near the bolt is in its tens (its brightness is under 10).
+      depth = floor(alpha / 10.0 + 0.0005);
       a = alpha - depth * 10.0;
       x = across;
       gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
@@ -550,7 +550,7 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
           const fade = p.main || t < 0 ? 1 : Math.exp(-t / 0.11);
           const alpha = glow * p.bright * fade * (t < 0 ? 0.6 : 1);
           if (alpha < 0.01) continue;
-          count = this._line(data, count, p, upTo, alpha + (b.depth || 0) * 10);
+          count = this._line(data, count, p, upTo, alpha, b.depth || 0);
           if (count >= MAX_VERTS - 6) break;
         }
       }
@@ -599,8 +599,12 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
       VizGL.screen(gl);
     }
 
-    /** One path's soft line into data from vertex `count`, up to `upTo` of the bolt's way down. */
-    _line(data, count, p, upTo, alpha) {
+    /**
+     * One path's soft line into data from vertex `count`, up to `upTo` of the
+     * bolt's way down; depth (which layer it strikes, 0 in the clouds) goes
+     * along in the brightness's tens, added after it is faded.
+     */
+    _line(data, count, p, upTo, alpha, depth) {
       const pts = p.pts;
       const n = pts.length / 2;
       let along = p.from;
@@ -615,7 +619,7 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
         // Thinner towards the end, and coming out of the cloud at the start.
         const taper = 1 - 0.5 * (i / n);
         const out = p.from === 0 ? Math.min(1, (along - len) / (this.h * 0.08)) : 1;
-        const a = alpha * out * out;
+        const a = Math.min(9.99, alpha * out * out) + depth * 10;
         const hw = p.width * taper * 2;
         const nx = (-(y1 - y0) / len) * hw;
         const ny = ((x1 - x0) / len) * hw;
