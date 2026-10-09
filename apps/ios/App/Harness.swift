@@ -67,6 +67,9 @@ enum Harness {
         case "player": value = FlowPlayer.shared.state()
         case "source": value = FlowPlayer.shared.sourceNow()
         case "effects": value = FlowPlayer.shared.effectsNow()
+        case "nowplaying": value = FlowPlayer.shared.nowPlayingNow()
+        // Next as the lock screen presses it.
+        case "next": value = FlowPlayer.shared.remoteNext()
         case "output": value = ["name": FlowNativePlugin.outputNow().name]
         // The kinds of sound this iOS's player takes (Ogg: iOS 18.4 and later).
         case "codecs": value = AVURLAsset.audiovisualMIMETypes().filter { $0.hasPrefix("audio/") }.sorted()

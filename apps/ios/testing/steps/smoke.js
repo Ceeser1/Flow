@@ -12,6 +12,9 @@ const SONGS = [
   ['flac', 'Sine E'], ['wav', 'Sine F'], ['ogg (libvorbis)', 'Sine G', true],
 ];
 
+// The native player's song while Flow is out of sight: before and after Next.
+const away = {};
+
 const wait = (ms) => `await new Promise((r) => setTimeout(r, ${ms}));`;
 
 const plays = ([what, title, vorbis]) => ({
@@ -138,10 +141,32 @@ module.exports = [
   {
     name: 'plays on in the background',
     native: 'player',
-    expect: (v) => v && v.pwr && v.st === 3 && v.t > 5,
+    expect: (v) => {
+      away.before = v && v.key;
+      return v && v.pwr && v.st === 3 && v.t > 5;
+    },
   },
+  {
+    name: 'the lock screen shows it',
+    native: 'nowplaying',
+    expect: (v) => v.title === 'Sine B' && v.artist === 'Flow Test' && v.duration > 40 && v.rate > 0,
+  },
+  { name: 'Next on the lock screen', native: 'next', wait: 3000, expect: (v) => v === true },
+  {
+    name: 'on to the next song, out of sight',
+    native: 'player',
+    expect: (v) => {
+      away.after = v.key;
+      return v.pwr && v.st === 3 && v.key !== away.before;
+    },
+  },
+  { name: 'the lock screen shows the next one', native: 'nowplaying', expect: (v) => !!v.title && v.title !== 'Sine B' && v.rate > 0 },
   { name: 'back to Flow', foreground: true, wait: 2500, shot: '05-back' },
-  { name: 'the page caught up', js: 'return { t: Math.round(Player.engine.time), paused: Player.engine.paused, id: Player.currentId };' },
+  {
+    name: 'the page caught up',
+    js: 'return { t: Math.round(Player.engine.time), paused: Player.engine.paused, id: Player.currentId };',
+    expect: (v) => v.id === away.after && !v.paused,
+  },
   {
     name: 'pause',
     js: `Player.pause(); ${wait(800)} return Player.engine.paused;`,

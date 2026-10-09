@@ -990,11 +990,7 @@ final class FlowPlayer: NSObject {
             return .success
         }
         c.nextTrackCommand.addTarget { [weak self] _ in
-            guard let self = self, self.player.items().count > 1 else { return .noSuchContent }
-            self.nextPressed = true
-            self.player.advanceToNextItem()
-            if self.wantPlay { self.player.play() }
-            return .success
+            self?.remoteNext() == true ? .success : .noSuchContent
         }
         c.previousTrackCommand.addTarget { [weak self] _ in
             guard let self = self, !self.src.isEmpty else { return .noSuchContent }
@@ -1011,6 +1007,28 @@ final class FlowPlayer: NSObject {
             self.seek(e.positionTime)
             return .success
         }
+    }
+
+    /// Next on the lock screen, in Control Center, on headphones or in the car: on to the queue's next song.
+    func remoteNext() -> Bool {
+        guard player.items().count > 1 else { return false }
+        nextPressed = true
+        player.advanceToNextItem()
+        if wantPlay { player.play() }
+        return true
+    }
+
+    /// What the lock screen shows now, for the test runner.
+    func nowPlayingNow() -> [String: Any] {
+        let info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        return [
+            "title": info[MPMediaItemPropertyTitle] as? String ?? "",
+            "artist": info[MPMediaItemPropertyArtist] as? String ?? "",
+            "duration": info[MPMediaItemPropertyPlaybackDuration] as? Double ?? 0,
+            "elapsed": info[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double ?? 0,
+            "rate": info[MPNowPlayingInfoPropertyPlaybackRate] as? Double ?? 0,
+            "artwork": info[MPMediaItemPropertyArtwork] != nil,
+        ]
     }
 
     /// What the lock screen and Control Center show: the song's names and cover, its place.
