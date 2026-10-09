@@ -1,0 +1,146 @@
+'use strict';
+
+// Songs on the iPhone itself: server songs downloaded for offline play from
+// the phone's own copy, also with the server gone, while a song not
+// downloaded waits for it; files from the phone imported with their names,
+// cover and waveform (iOS's picker hands Flow a copy: here the test puts one
+// into the app's tmp folder), an Ogg Vorbis file among them.
+
+const fs = require('fs');
+const path = require('path');
+
+const BUNDLE = 'io.github.ceeser1.flow';
+
+const wait = (ms) => `await new Promise((r) => setTimeout(r, ${ms}));`;
+const song = (title) => `Store.library.songs.find((x) => x.title === ${JSON.stringify(title)})`;
+
+/** The page's player: its song, place and whether it plays. */
+const playing = `
+  const e = Player.engine;
+  return { now: (Store.song(Player.currentId) || {}).title, t: Math.round(e.time * 10) / 10, paused: e.paused };
+`;
+
+/** A test song's file put into the app's tmp folder: its file:// address there. */
+function intoApp(ctx, name) {
+  const data = ctx.sh('xcrun', ['simctl', 'get_app_container', ctx.udid, BUNDLE, 'data']);
+  const dest = path.join(data, 'tmp', name.replace(/^Flow Test - /, ''));
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(path.join(ctx.server.base, 'music', name), dest);
+  return `file://${encodeURI(dest)}`;
+}
+
+/** Imports a file into the import folder as the page's Add Songs does (localFiles.js), then its waveform. */
+const imports = (label, name) => ({
+  name: `imports ${label}`,
+  run: async (ctx) => {
+    ctx.uri = intoApp(ctx, name);
+    return ctx.uri.replace(/.*\/tmp\//, 'tmp/');
+  },
+  jsWith: (ctx) => `
+    const stem = '/Flow/cache/import/test-' + Date.now();
+    let r;
+    try {
+      r = await Capacitor.Plugins.FlowNative.importAudio({ uri: ${JSON.stringify(ctx.uri)}, stem, cover: stem + '.jpg' });
+    } catch (err) {
+      return { error: err.message };
+    }
+    const peaks = await window.flow.peaks(r.path, r.duration);
+    return { ...r, peaks: peaks.length, loud: Math.max(...peaks.map(Math.abs)) };
+  `,
+  timeout: 30000,
+});
+
+module.exports = [
+  {
+    name: 'the page started',
+    until: 'return typeof Store !== "undefined" && !!Store.platform && Store.platform;',
+    timeout: 30000,
+    expect: (v) => v === 'ios',
+  },
+  {
+    name: 'connected',
+    js: `
+      await Store.saveSettings({ serverOn: true, serverHome: '127.0.0.1:7878' });
+      for (let i = 0; i < 60 && Store.server.state !== 'online'; i += 1) ${wait(500)}
+      return Store.server.state;
+    `,
+    timeout: 40000,
+    expect: (v) => v === 'online',
+  },
+  {
+    name: 'its songs',
+    jsWith: (ctx) => `
+      for (let i = 0; i < 60 && Store.library.songs.length < ${ctx.server.made}; i += 1) ${wait(500)}
+      return Store.library.songs.length;
+    `,
+    timeout: 40000,
+    expect: (v) => v >= 6,
+  },
+  {
+    name: 'two songs downloaded (mp3, opus)',
+    js: `
+      const out = {};
+      for (const title of ['Sine A', 'Sine B']) {
+        const s = Store.library.songs.find((x) => x.title === title);
+        await window.flow.downloadServerSong(s.id);
+        for (let i = 0; i < 40 && !(Store.song(s.id) || {}).file; i += 1) ${wait(250)}
+        out[title] = (Store.song(s.id) || {}).file || null;
+      }
+      return out;
+    `,
+    timeout: 60000,
+    wait: 1000,
+    shot: '01-downloaded',
+    expect: (v) => !!v['Sine A'] && !!v['Sine B'],
+  },
+  {
+    name: 'plays its own copy',
+    js: `Player.load(${song('Sine A')}.id, 'all'); ${wait(4000)} ${playing}`,
+    timeout: 15000,
+    expect: (v) => v.now === 'Sine A' && v.t >= 2 && !v.paused,
+  },
+  {
+    name: 'from the phone, not the server',
+    native: 'source',
+    expect: (v) => typeof v === 'string' && v.startsWith('/') && /Library\/(Caches\/)?Flow\//.test(v),
+  },
+  {
+    name: 'the server goes away',
+    run: async (ctx) => {
+      ctx.server.child.kill();
+      return 'stopped';
+    },
+    until: 'return Store.server.state !== "online" && Store.server.state;',
+    timeout: 60000,
+    wait: 500,
+    shot: '02-server-gone',
+  },
+  {
+    name: 'plays its own Opus copy without it',
+    js: `Player.load(${song('Sine B')}.id, 'all'); ${wait(4000)} ${playing}`,
+    timeout: 15000,
+    expect: (v) => v.now === 'Sine B' && v.t >= 2 && !v.paused,
+  },
+  {
+    // Streamed: it waits for the server (StreamLoader tries again for minutes).
+    name: 'a song not downloaded waits',
+    js: `
+      const s = ${song('Sine D')};
+      const src = Store.audioSrc(s);
+      if (src) Player.load(s.id, 'all');
+      ${wait(5000)}
+      const e = Player.engine;
+      return { src: src ? 'stream' : 'none', now: (Store.song(Player.currentId) || {}).title, t: Math.round(e.time * 10) / 10, paused: e.paused };
+    `,
+    timeout: 15000,
+    wait: 500,
+    shot: '03-not-downloaded',
+    expect: (v) => v.src === 'none' || v.t < 1,
+  },
+  { name: 'stopped', js: `Player.pause(); ${wait(500)} return Player.engine.paused;` },
+  { ...imports('an mp3', 'Flow Test - Sine A.mp3'), expect: (v) => v.format === 'mp3' && v.title === 'Sine A' && Math.round(v.duration) === 45 && v.peaks > 100 && v.loud > 0.1 },
+  { ...imports('an Opus file', 'Flow Test - Sine B.opus'), expect: (v) => v.format === 'opus' && Math.round(v.duration) === 45 && v.peaks > 100 && v.loud > 0.1 },
+  { ...imports('a FLAC file', 'Flow Test - Sine E.flac'), expect: (v) => v.format === 'flac' && Math.round(v.duration) === 45 && v.peaks > 100 },
+  // iOS has no Vorbis: refused with a reason, or (a later iOS) imported.
+  { ...imports('an Ogg Vorbis file', 'Flow Test - Sine G.ogg'), expect: (v) => !!v.error || v.peaks > 100 },
+];

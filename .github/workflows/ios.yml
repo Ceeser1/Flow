@@ -11,9 +11,9 @@ on:
   workflow_dispatch:
     inputs:
       steps:
-        description: Steps file in apps/ios/testing/steps (without .js)
+        description: Steps files in apps/ios/testing/steps (without .js), in order
         required: false
-        default: smoke
+        default: smoke offline
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -74,12 +74,18 @@ jobs:
             -derivedDataPath build -clonedSourcePackagesDirPath build/SourcePackages \
             2>&1 | tee build.log | xcbeautify --quieter --disable-colored-output
 
+      # Each steps file on its own (offline.js stops the server), the app
+      # started again; its results in out/<steps>.
       - name: Test in the Simulator
         run: |
-          node apps/ios/testing/run.js --video \
-            --app apps/ios/build/Build/Products/Debug-iphonesimulator/Flow.app \
-            --steps "apps/ios/testing/steps/${{ inputs.steps || 'smoke' }}.js" \
-            --out out
+          failed=0
+          for steps in ${{ inputs.steps || 'smoke offline' }}; do
+            node apps/ios/testing/run.js --video \
+              --app apps/ios/build/Build/Products/Debug-iphonesimulator/Flow.app \
+              --steps "apps/ios/testing/steps/$steps.js" \
+              --out "out/$steps" || failed=1
+          done
+          exit $failed
 
       - name: Results
         if: always()

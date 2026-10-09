@@ -580,6 +580,11 @@ final class FlowPlayer: NSObject {
         if profileOk { events?.onSignedIn(t) }
     }
 
+    /// Where the song loaded comes from (a file of Flow's, or an address without its token), for the test runner.
+    func sourceNow() -> String {
+        FlowPlayer.redact(src)
+    }
+
     /// What SessionKeeper tells the server: the song loaded, whether it plays, where, how long, its names.
     func sessionNow() -> (key: String, playing: Bool, position: Double, duration: Double, title: String, artist: String)? {
         guard !key.isEmpty, let item = player.currentItem else { return nil }
