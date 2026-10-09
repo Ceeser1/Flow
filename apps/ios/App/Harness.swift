@@ -66,6 +66,7 @@ enum Harness {
         switch what {
         case "player": value = FlowPlayer.shared.state()
         case "source": value = FlowPlayer.shared.sourceNow()
+        case "effects": value = FlowPlayer.shared.effectsNow()
         case "output": value = ["name": FlowNativePlugin.outputNow().name]
         // The kinds of sound this iOS's player takes (Ogg: iOS 18.4 and later).
         case "codecs": value = AVURLAsset.audiovisualMIMETypes().filter { $0.hasPrefix("audio/") }.sorted()

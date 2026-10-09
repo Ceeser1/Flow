@@ -42,8 +42,12 @@ protocol FlowPlayerEvents: AnyObject {
 /// that still fails is told to the page; AVQueuePlayer moves past it by
 /// itself (see failed).
 ///
-/// Equalize volume turns a song down by the player's volume; up (gains over
-/// 1) not yet. Song Transition (crossfade) not yet either (caps.IOS).
+/// Equalize volume turns a song down by the player's volume, up through an
+/// audio tap (Boost). Song Transition (crossfade) as on Android: shortly
+/// before a song ends, a second player (the tail) is made ready at the place
+/// the transition starts; there it plays the song's end on, fading it down,
+/// while this player moves on to the next song, fading it up. A pause, a seek
+/// or another song cuts the tail.
 ///
 /// Everything here runs on the main thread.
 final class FlowPlayer: NSObject {
@@ -64,6 +68,8 @@ final class FlowPlayer: NSObject {
         let gain: Float
         let src: String
         var meta: [String: Any]?
+        // Turning the song up (gains over 1), put on its sound once needed.
+        let boost = Boost()
     }
 
     let player = AVQueuePlayer()
@@ -99,8 +105,26 @@ final class FlowPlayer: NSObject {
     private var sleepFadeMs: Double = 10000
     private var sleepTimer: Timer?
 
-    // Song Transition's length (ms), kept for when the player can fade.
+    // Song Transition: its length (ms; 0: none), the tail playing the end of the
+    // song before (made ready for tailFor, from tailFrom s), the song coming in
+    // (fading up), and whether the move on is the transition's (told as "auto").
     private var transitionMs: Double = 0
+    private var tail: AVPlayer?
+    private var tailItemObservation: NSKeyValueObservation?
+    private var tailBoost: Boost?
+    private var tailFor = ""
+    private var tailFrom: Double = 0
+    private var tailLength: Double = 0
+    private var tailGain: Float = 1
+    private var tailReady = false
+    private var tailPlaying = false
+    private var crossStartSet = false
+    private var crossGeneration = 0
+    private var crossing = false
+    private var crossTimer: Timer?
+    private var fadeInId = ""
+    private var fadeInMs: Double = 0
+    private var fadeIn: Float = 1
 
     private var timeObserver: Any?
     private var observations: [NSKeyValueObservation] = []
@@ -126,6 +150,7 @@ final class FlowPlayer: NSObject {
         })
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 4), queue: .main) { [weak self] _ in
             guard let self = self, self.player.timeControlStatus == .playing else { return }
+            self.checkTransition()
             self.tellState()
         }
         let center = NotificationCenter.default
@@ -147,7 +172,9 @@ final class FlowPlayer: NSObject {
             case "load": load(op)
             case "next": setNext(FlowPlayer.dicts(op["items"]), repeats: FlowPlayer.bool(op["repeat"]))
             case "sleep": setSleep(at: FlowPlayer.num(op["at"]) ?? 0, fade: FlowPlayer.num(op["fade"]) ?? 10000)
-            case "transition": transitionMs = max(0, FlowPlayer.num(op["ms"]) ?? 0)
+            case "transition":
+                transitionMs = max(0, FlowPlayer.num(op["ms"]) ?? 0)
+                if transitionMs == 0 { dropTail("transition off") }
             case "unload": unload()
             case "play": play()
             case "pause": pause("asked")
@@ -176,6 +203,8 @@ final class FlowPlayer: NSObject {
         let play = FlowPlayer.bool(op["play"])
         let at = FlowPlayer.num(op["at"]) ?? 0
         _ = takeHeard()
+        dropTail("another song")
+        endFadeIn()
         player.removeAllItems()
         tags.removeAll()
         id = op["id"] as? String ?? ""
@@ -193,6 +222,7 @@ final class FlowPlayer: NSObject {
             player.pause()
         } else if let item = makeItem(newSrc) {
             tags[ObjectIdentifier(item)] = Tag(id: id, key: key, gain: gain, src: newSrc, meta: op["meta"] as? [String: Any])
+            boost(item)
             player.insert(item, after: nil)
             itemNow = item
             watch(item)
@@ -230,6 +260,7 @@ final class FlowPlayer: NSObject {
                                                gain: Float(FlowPlayer.num(it["gain"]) ?? 1), src: itemSrc,
                                                meta: it["meta"] as? [String: Any])
             player.insert(item, after: after)
+            boost(item)
             after = item
         }
     }
@@ -242,6 +273,8 @@ final class FlowPlayer: NSObject {
 
     private func unload() {
         _ = takeHeard()
+        dropTail("unloaded")
+        endFadeIn()
         player.removeAllItems()
         tags.removeAll()
         itemNow = nil
@@ -282,6 +315,7 @@ final class FlowPlayer: NSObject {
         let was = wantPlay
         wantPlay = false
         player.pause()
+        dropTail("paused")
         if was { FlowLog.i("pause \(id) (\(why))") }
         tellState()
         updateNowPlaying()
@@ -289,6 +323,7 @@ final class FlowPlayer: NSObject {
 
     private func seek(_ t: Double) {
         ended = false
+        dropTail("seek")
         guard let item = player.currentItem, item.status == .readyToPlay else {
             pendingSeek = t
             return
@@ -320,13 +355,15 @@ final class FlowPlayer: NSObject {
         tags[ObjectIdentifier(item)] = Tag(id: id, key: key, gain: gain, src: src, meta: meta)
         player.insert(item, after: nil)
         itemNow = item
+        boost(item)
         watch(item)
         if place.isFinite, place > 0 { pendingSeek = place }
         var last = item
         for tag in after {
             guard let next = makeItem(tag.src), player.canInsert(next, after: last) else { continue }
-            tags[ObjectIdentifier(next)] = tag
+            tags[ObjectIdentifier(next)] = Tag(id: tag.id, key: tag.key, gain: tag.gain, src: tag.src, meta: tag.meta)
             player.insert(next, after: last)
+            boost(next)
             last = next
         }
         updateEnd()
@@ -358,9 +395,20 @@ final class FlowPlayer: NSObject {
         player.actionAtItemEnd = !repeatOne && player.items().count > 1 ? .advance : .pause
     }
 
-    /// The app's volume times the song's gain (turned down only, for now).
+    /// The app's volume times the song's gain: down by the player's volume, up by its Boost.
     private func applyVolume() {
-        player.volume = max(0, min(1, volume * sleepFade * min(1, gain)))
+        player.volume = max(0, min(1, volume * sleepFade * fadeIn * min(1, gain)))
+        if let item = itemNow, let tag = tags[ObjectIdentifier(item)] {
+            if gain > 1 { tag.boost.attach(to: item) }
+            tag.boost.gain = max(1, gain)
+        }
+    }
+
+    /// A song in the queue turned up by its own gain, should it have one over 1.
+    private func boost(_ item: AVPlayerItem) {
+        guard let tag = tags[ObjectIdentifier(item)], tag.gain > 1 else { return }
+        tag.boost.gain = tag.gain
+        tag.boost.attach(to: item)
     }
 
     // MARK: what the player does
@@ -432,10 +480,17 @@ final class FlowPlayer: NSObject {
         failedTold = ""
         let alive = Set(player.items().map { ObjectIdentifier($0) })
         tags = tags.filter { alive.contains($0.key) }
+        // The song coming in by a transition fades up; any other cuts the tail.
+        if !crossing {
+            dropTail("next")
+            fadeInId = ""
+        }
+        fadeIn = id == fadeInId ? 0 : 1
         applyVolume()
         updateEnd()
         updateNowPlaying()
-        let why = nextPressed ? "next" : "auto"
+        let why = crossing || !nextPressed ? "auto" : "next"
+        crossing = false
         nextPressed = false
         FlowLog.i("on to \(id) (\(why)), \(from) heard \(Int(heard)) s")
         if let e = events {
@@ -545,6 +600,166 @@ final class FlowPlayer: NSObject {
             if reason == .oldDeviceUnavailable && self.wantPlay { self.pause("headphones out") }
             FlowLog.i("sound to \(FlowNativePlugin.outputNow().name)")
         }
+    }
+
+    // MARK: Song Transition
+
+    /// Checked while playing: the tail made ready a while before the transition
+    /// starts, and its start set to the moment. None with Repeat, without a next
+    /// song, or for a song too short (a transition is at most a third of it).
+    private func checkTransition() {
+        // Not while the tail still plays the end of the song before.
+        if tailPlaying { return }
+        guard transitionMs > 0, !crossStartSet, !repeatOne, player.items().count > 1 else { return }
+        let d = duration()
+        guard d > 0 else { return }
+        let length = min(transitionMs / 1000, d / 3)
+        guard length >= 0.2 else { return }
+        let from = d - length
+        let left = from - position()
+        guard left <= 12 else { return }
+        if tail == nil || tailFor != id || tailFrom != from {
+            // Too late to make it ready: this one goes over without a transition.
+            if left >= 1.5 { makeTail(from, length) }
+            return
+        }
+        guard left <= 1.2 else { return }
+        crossStartSet = true
+        let generation = crossGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, left / Double(max(0.1, rate)))) { [weak self] in
+            guard let self = self, self.crossGeneration == generation else { return }
+            self.crossStart()
+        }
+    }
+
+    /// The song playing again in the tail, ready (paused, silent) at the place its transition starts.
+    private func makeTail(_ from: Double, _ length: Double) {
+        dropTail(nil)
+        guard let item = makeItem(src) else { return }
+        let t = AVPlayer(playerItem: item)
+        t.volume = 0
+        t.actionAtItemEnd = .pause
+        tail = t
+        tailFor = id
+        tailFrom = from
+        tailLength = length
+        tailGain = gain
+        tailReady = false
+        if gain > 1 {
+            let b = Boost()
+            b.gain = gain
+            b.attach(to: item)
+            tailBoost = b
+        }
+        let place = CMTime(seconds: from, preferredTimescale: 1000)
+        tailItemObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            DispatchQueue.main.async {
+                guard let self = self, self.tail === t, item.status == .readyToPlay, self.tailItemObservation != nil else { return }
+                self.tailItemObservation = nil
+                t.seek(to: place, toleranceBefore: .zero, toleranceAfter: .zero) { done in
+                    DispatchQueue.main.async {
+                        if done, self.tail === t { self.tailReady = true }
+                    }
+                }
+            }
+        }
+        FlowLog.i(String(format: "transition of %@ made ready at %.1f s, %ld ms", id, from, Int(length * 1000)))
+    }
+
+    /// The moment: the tail plays the song's end on, and this player moves on to the next one, which fades up.
+    private func crossStart() {
+        crossStartSet = false
+        guard let t = tail, tailFor == id, wantPlay, player.timeControlStatus == .playing, player.items().count > 1 else {
+            dropTail("not playing on")
+            return
+        }
+        guard tailReady else {
+            dropTail("its song was not ready")
+            return
+        }
+        // Where this player has got to, should the moment have come late.
+        let at = position()
+        if at > tailFrom + 0.15 { t.seek(to: CMTime(seconds: at, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero) }
+        t.volume = max(0, min(1, volume * sleepFade * min(1, tailGain)))
+        t.playImmediately(atRate: rate)
+        tailPlaying = true
+        let next = player.items()[1]
+        fadeInId = tags[ObjectIdentifier(next)]?.id ?? ""
+        fadeInMs = tailLength * 1000
+        crossing = true
+        FlowLog.i("transition from \(id) to \(fadeInId)")
+        // Silent until it fades up (currentChanged comes a moment later).
+        fadeIn = 0
+        applyVolume()
+        player.advanceToNextItem()
+        crossTimer?.invalidate()
+        crossTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.crossTick() }
+    }
+
+    /// Twenty times a second during a transition: the tail down, the song coming in up, each by its own place.
+    private func crossTick() {
+        var going = false
+        if let t = tail, tailPlaying {
+            let p = min(1, max(0, (t.currentTime().seconds - tailFrom) / max(0.001, tailLength)))
+            t.volume = max(0, min(1, volume * sleepFade * min(1, tailGain))) * Float(cos(p * .pi / 2))
+            if p >= 1 || t.timeControlStatus == .paused {
+                dropTail(nil)
+            } else {
+                going = true
+            }
+        }
+        if !fadeInId.isEmpty {
+            if id == fadeInId {
+                let p = min(1, max(0, position()) / max(0.001, fadeInMs / 1000))
+                fadeIn = Float(sin(p * .pi / 2))
+                applyVolume()
+                if p >= 1 { endFadeIn() } else { going = true }
+            } else if crossing {
+                // On its way in (currentChanged not yet).
+                going = true
+            }
+        }
+        if !going {
+            crossTimer?.invalidate()
+            crossTimer = nil
+        }
+    }
+
+    /// The song coming in at its full volume (its transition done, or cut short).
+    private func endFadeIn() {
+        fadeInId = ""
+        if fadeIn != 1 {
+            fadeIn = 1
+            applyVolume()
+        }
+    }
+
+    /// No tail (any more): the end of the song before stops, or the transition is not to be (why: logged).
+    private func dropTail(_ why: String?) {
+        crossGeneration += 1
+        crossStartSet = false
+        guard let t = tail else { return }
+        let playing = tailPlaying
+        t.pause()
+        t.replaceCurrentItem(with: nil)
+        tail = nil
+        tailItemObservation = nil
+        tailBoost = nil
+        tailFor = ""
+        tailReady = false
+        tailPlaying = false
+        if let why = why { FlowLog.i("transition " + (playing ? "cut short" : "dropped") + " (\(why))") }
+        if playing { endFadeIn() }
+    }
+
+    /// For the test runner: the transition and the boost as they are.
+    func effectsNow() -> [String: Any] {
+        let b = itemNow.flatMap { tags[ObjectIdentifier($0)]?.boost }
+        return [
+            "transitionMs": transitionMs, "tail": tail != nil, "tailReady": tailReady, "tailPlaying": tailPlaying,
+            "tailVolume": Double(tail?.volume ?? 0), "fadeIn": Double(fadeIn), "volume": Double(player.volume),
+            "gain": Double(gain), "boost": Double(b?.gain ?? 1), "peakIn": Double(b?.peakIn ?? 0), "peakOut": Double(b?.peakOut ?? 0),
+        ]
     }
 
     // MARK: the server's token

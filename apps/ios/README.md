@@ -13,9 +13,10 @@ in the iOS Simulator on GitHub's Macs; not yet tried on a real iPhone.
   The sleep timer works there too.
 - **Downloads** and **songs of the phone's own** (Add Songs > Open local
   File(s) / Folder, from the Files app).
+- **Song Transition** (the end of a song and the start of the next one
+  overlap) and **Equalize volume** both ways, also with the screen locked.
 
-Not on the iPhone (yet): Song Transition and turning quiet songs up (Equalize
-volume only turns loud ones down), the share target and the widget.
+Not on the iPhone (yet): the share target and the widget.
 
 Needs iOS 18.4 or later (iPhone XS / XR and newer): from 18.4 iOS plays Ogg
 Opus itself, the format most of Flow's songs from YouTube are in. Ogg Vorbis

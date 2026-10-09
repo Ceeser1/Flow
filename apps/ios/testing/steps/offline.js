@@ -9,16 +9,11 @@
 const fs = require('fs');
 const path = require('path');
 
+const {
+  wait, song, playing, start,
+} = require('./common');
+
 const BUNDLE = 'io.github.ceeser1.flow';
-
-const wait = (ms) => `await new Promise((r) => setTimeout(r, ${ms}));`;
-const song = (title) => `Store.library.songs.find((x) => x.title === ${JSON.stringify(title)})`;
-
-/** The page's player: its song, place and whether it plays. */
-const playing = `
-  const e = Player.engine;
-  return { now: (Store.song(Player.currentId) || {}).title, t: Math.round(e.time * 10) / 10, paused: e.paused };
-`;
 
 /** A test song's file put into the app's tmp folder: its file:// address there. */
 function intoApp(ctx, name) {
@@ -51,31 +46,7 @@ const imports = (label, name) => ({
 });
 
 module.exports = [
-  {
-    name: 'the page started',
-    until: 'return typeof Store !== "undefined" && !!Store.platform && Store.platform;',
-    timeout: 30000,
-    expect: (v) => v === 'ios',
-  },
-  {
-    name: 'connected',
-    js: `
-      await Store.saveSettings({ serverOn: true, serverHome: '127.0.0.1:7878' });
-      for (let i = 0; i < 60 && Store.server.state !== 'online'; i += 1) ${wait(500)}
-      return Store.server.state;
-    `,
-    timeout: 40000,
-    expect: (v) => v === 'online',
-  },
-  {
-    name: 'its songs',
-    jsWith: (ctx) => `
-      for (let i = 0; i < 60 && Store.library.songs.length < ${ctx.server.made}; i += 1) ${wait(500)}
-      return Store.library.songs.length;
-    `,
-    timeout: 40000,
-    expect: (v) => v >= 6,
-  },
+  ...start,
   {
     name: 'two songs downloaded (mp3, opus)',
     js: `

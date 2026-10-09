@@ -60,8 +60,6 @@ const IOS = {
   ...ANDROID,
   // Sideloaded and signed by each person (SideStore): nothing to update from.
   updateCheck: false,
-  // The phone's player has no fade of its own yet.
-  songTransition: false,
   // iOS lets a playing app run in the background: nothing to ask for.
   batteryHelp: false,
 };

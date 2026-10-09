@@ -13,7 +13,7 @@ on:
       steps:
         description: Steps files in apps/ios/testing/steps (without .js), in order
         required: false
-        default: smoke offline
+        default: smoke offline effects
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -79,7 +79,7 @@ jobs:
       - name: Test in the Simulator
         run: |
           failed=0
-          for steps in ${{ inputs.steps || 'smoke offline' }}; do
+          for steps in ${{ inputs.steps || 'smoke offline effects' }}; do
             node apps/ios/testing/run.js --video \
               --app apps/ios/build/Build/Products/Debug-iphonesimulator/Flow.app \
               --steps "apps/ios/testing/steps/$steps.js" \

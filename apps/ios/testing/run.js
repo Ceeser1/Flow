@@ -21,7 +21,9 @@
 //   simctl      arguments for `xcrun simctl` ("{udid}" is the Simulator's id)
 //   run         async (ctx) => value, run here on the Mac (ctx: { udid, out, server, sh })
 //   native      what the app answers itself, also while its page sleeps
-//               ('player': FlowPlayer's state)
+//               ('player': FlowPlayer's state; 'source', 'effects', 'codecs',
+//               'types', 'output'); waitFor: (value) => true asks again every
+//               quarter second until it is so (for at most `timeout` ms)
 //   js          the body of an async function run in the page (a string, or a
 //               function whose source is taken); what it returns is the value.
 //               jsWith: (ctx) => that string, made when the step runs
@@ -283,7 +285,15 @@ async function runStep(step, ctx) {
     if (step.foreground) simctl('launch', ctx.udid, BUNDLE);
     if (step.simctl) simctl(...step.simctl.map((a) => (a === '{udid}' ? ctx.udid : a)));
     if (step.run) value = await step.run(ctx);
-    if (step.native) value = (await ctx.ask({ native: step.native }, step.timeout || 30000)).v;
+    if (step.native) {
+      const end = Date.now() + (step.timeout || 30000);
+      for (;;) {
+        value = (await ctx.ask({ native: step.native }, Math.max(1000, end - Date.now()))).v;
+        if (!step.waitFor || step.waitFor(value)) break;
+        if (Date.now() >= end) throw new Error(`Not so within ${Math.round((step.timeout || 30000) / 1000)} s (last: ${short(value)})`);
+        await sleep(250);
+      }
+    }
     if (step.js) value = await ctx.ask({ js: body(step.js) }, step.timeout || 30000);
     if (step.jsWith) value = await ctx.ask({ js: body(step.jsWith(ctx)) }, step.timeout || 30000);
     if (step.until) {
