@@ -19,7 +19,7 @@ const Store = {
   musicDir: '',
   iconDataUrl: '',
   mp3Qualities: [],
-  // Which app this window is in ('desktop', 'android'), its layout ('desktop',
+  // Which app this window is in ('desktop', 'android', 'ios'), its layout ('desktop',
   // 'mobile') and what it can do (@flow/core/client/caps).
   platform: 'desktop',
   uiMode: 'desktop',
@@ -51,9 +51,14 @@ const Store = {
     return this.caps[cap] !== false;
   },
 
+  /** Whether this app runs on a phone (Android or iPhone). */
+  get phone() {
+    return this.platform === 'android' || this.platform === 'ios';
+  },
+
   /** The device as the window names it: "this phone" or "this computer". */
   get here() {
-    return this.platform === 'android' ? 'this phone' : 'this computer';
+    return this.phone ? 'this phone' : 'this computer';
   },
 
   onLibrary(fn) {
@@ -84,7 +89,9 @@ const Store = {
     if (song.file) return Util.fileUrl(song.file);
     const st = this.server;
     if (!st.on || !st.base) return '';
-    return `${st.base}/api/songs/${encodeURIComponent(song.id)}/audio${st.token ? `?t=${encodeURIComponent(st.token)}` : ''}`;
+    // An app that cannot play Ogg Vorbis (the iPhone) gets such a song as Opus.
+    const query = [st.token ? `t=${encodeURIComponent(st.token)}` : '', this.can('vorbis') ? '' : 'vorbis=0'].filter(Boolean).join('&');
+    return `${st.base}/api/songs/${encodeURIComponent(song.id)}/audio${query ? `?${query}` : ''}`;
   },
 
   /** A song's cover file as an address, '' without one (covers.js: Covers.el shows it). */

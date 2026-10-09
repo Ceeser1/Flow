@@ -1,10 +1,10 @@
 'use strict';
 
-// window.flow for the Android app: the same calls the desktop's preload.js
-// offers the window, answered here in the page by the shared client
-// (@flow/core/client) instead of in Electron's main process. Bundled into
-// www/flow-android.js (scripts/bundle.js), which index.html loads before the
-// window's own scripts.
+// window.flow for the Android app (and the iPhone's, apps/ios, which has the
+// same plugins in Swift): the same calls the desktop's preload.js offers the
+// window, answered here in the page by the shared client (@flow/core/client)
+// instead of in Electron's main process. Bundled into www/flow-android.js
+// (scripts/bundle.js), which index.html loads before the window's own scripts.
 //
 // What the phone cannot do (Add Songs' own downloads, the music folder, the
 // shutdown) answers "not on the phone"; the window hides those controls by
@@ -15,7 +15,9 @@ const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES } = require('@flow/core/formats');
-const { plugin, audio, fileUrl, fs, path, info } = require('./native');
+const {
+  platform, plugin, audio, fileUrl, fs, path, info,
+} = require('./native');
 const { createAudioEngine, fileAddressToPath } = require('./engine');
 const { createEnv } = require('./env');
 const { createLocalFiles } = require('./localFiles');
@@ -168,9 +170,9 @@ function start() {
     init: call(async () => {
       attached = await audio.attach().catch(() => null);
       return {
-        platform: 'android',
+        platform,
         uiMode: 'mobile',
-        caps: caps.ANDROID,
+        caps: platform === 'ios' ? caps.IOS : caps.ANDROID,
         library: actions.currentLibrary(),
         server: remote.status(),
         settings: settings.all(),
@@ -349,7 +351,8 @@ function start() {
     createAudioEngine: () => createAudioEngine({
       plugin: audio,
       attached,
-      toPath: (address) => fileAddressToPath(address, window.location.origin),
+      // Capacitor's address of the page (capacitor://localhost on the iPhone, whose origin reads "null").
+      toPath: (address) => fileAddressToPath(address, window.WEBVIEW_SERVER_URL || window.location.origin),
     }),
   };
 

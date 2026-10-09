@@ -1,0 +1,198 @@
+# The iPhone app (apps/ios), built and tried out in the iOS Simulator on one
+# of GitHub's Macs: on every push to the ios branch, or started by hand with
+# another steps file. The results (screenshots, a video, Flow's log, the
+# build log) are the run's artifact for a week. Flow.ipa, the build that
+# installs on an iPhone, is uploaded only sealed with the owner's key (the
+# secret FLOW_IPA_KEY, apps/ios/scripts/sealed.js): the repository is public.
+name: iOS
+
+on:
+  push:
+    branches: [ios]
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: Steps files in apps/ios/testing/steps (without .js), in order
+        required: false
+        default: smoke offline effects sessions widget
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    # The newest iOS on the newest iPhone, and the oldest iOS Flow runs on
+    # (18.4; GitHub's Macs have 18.6) on the smallest screen, a phone with a
+    # home button and no notch.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS 26, iPhone 17
+            runner: macos-26
+            xcode: ''
+            device: iPhone 17
+            ios: '26'
+          - name: iOS 18, iPhone SE
+            runner: macos-15
+            xcode: /Applications/Xcode_26.3.app
+            device: iPhone SE (3rd generation)
+            ios: '18'
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: '1'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Xcode
+        if: matrix.xcode != ''
+        run: sudo xcode-select -s "${{ matrix.xcode }}"
+
+      # A runner's Simulator takes minutes to boot the first time: it boots
+      # while the tools are installed and the app is built.
+      - name: The Simulator, booting
+        run: node apps/ios/testing/run.js --boot --device "${{ matrix.device }}" --ios "${{ matrix.ios }}"
+
+      - name: Tools (XcodeGen; ffmpeg and oggenc for the test songs)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+          brew install ffmpeg vorbis-tools
+          xcodebuild -version
+          node --version
+
+      - name: Node packages
+        run: npm ci --no-audit --no-fund
+
+      - name: The page
+        run: node apps/ios/scripts/build-web.js
+
+      - name: The Xcode project
+        working-directory: apps/ios
+        run: xcodegen generate
+
+      - name: Swift packages from earlier runs
+        uses: actions/cache@v4
+        with:
+          path: apps/ios/build/SourcePackages
+          key: spm-${{ matrix.runner }}-${{ hashFiles('apps/ios/project.yml') }}
+
+      - name: Build
+        working-directory: apps/ios
+        run: |
+          set -o pipefail
+          xcodebuild build -project Flow.xcodeproj -scheme Flow -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build -clonedSourcePackagesDirPath build/SourcePackages \
+            2>&1 | tee build.log | { if command -v xcbeautify > /dev/null; then xcbeautify --quieter --disable-colored-output; else grep -E 'error:|warning:|BUILD' || true; fi; }
+
+      # Each steps file on its own (offline.js stops the server), the app
+      # started again; its results in out/<steps>.
+      - name: Test in the Simulator
+        run: |
+          failed=0
+          for steps in ${{ inputs.steps || 'smoke offline effects sessions widget' }}; do
+            node apps/ios/testing/run.js --video --device "${{ matrix.device }}" --ios "${{ matrix.ios }}" \
+              --app apps/ios/build/Build/Products/Debug-iphonesimulator/Flow.app \
+              --steps "apps/ios/testing/steps/$steps.js" \
+              --out "out/$steps" || failed=1
+          done
+          exit $failed
+
+      - name: Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-${{ github.run_number }}-ios${{ matrix.ios }}
+          path: |
+            out/
+            apps/ios/build.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Flow.ipa for iPhones, signed by no one (SideStore signs it with each
+  # person's own Apple ID), and sealed: without the key, nothing is uploaded.
+  device:
+    name: Flow.ipa (sealed)
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      FLOW_IPA_KEY: ${{ secrets.FLOW_IPA_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: XcodeGen
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Node packages
+        run: npm ci --no-audit --no-fund
+
+      - name: The page
+        run: node apps/ios/scripts/build-web.js
+
+      - name: The Xcode project
+        working-directory: apps/ios
+        run: xcodegen generate
+
+      - name: Swift packages from earlier runs
+        uses: actions/cache@v4
+        with:
+          path: apps/ios/build/SourcePackages
+          key: spm-device-${{ hashFiles('apps/ios/project.yml') }}
+
+      - name: Build for iPhones
+        working-directory: apps/ios
+        run: |
+          set -o pipefail
+          xcodebuild build -project Flow.xcodeproj -scheme Flow -configuration Release             -destination 'generic/platform=iOS'             -derivedDataPath build -clonedSourcePackagesDirPath build/SourcePackages             CODE_SIGNING_ALLOWED=NO             2>&1 | tee build-device.log | { grep -E 'error:|warning:|BUILD' || true; }
+
+      - name: Flow.ipa, sealed
+        if: env.FLOW_IPA_KEY != ''
+        run: |
+          mkdir -p "$RUNNER_TEMP/ipa/Payload" sealed
+          app="$RUNNER_TEMP/ipa/Payload/Flow.app"
+          cp -R apps/ios/build/Build/Products/Release-iphoneos/Flow.app "$app"
+          # Signed by no one in particular, but saying what each part needs
+          # (the App Group it shares with the widget), which SideStore reads
+          # when it signs Flow with a person's Apple ID.
+          for f in "$app"/Frameworks/*; do if [ -e "$f" ]; then codesign --force --sign - "$f"; fi; done
+          codesign --force --sign - --entitlements apps/ios/Widget/FlowWidget.entitlements "$app/PlugIns/FlowWidget.appex"
+          codesign --force --sign - --entitlements apps/ios/App/Flow.entitlements "$app"
+          codesign -d --entitlements - "$app" 2>/dev/null | grep -q application-groups
+          (cd "$RUNNER_TEMP/ipa" && zip -qry Flow.ipa Payload)
+          version=$(node -p "require('./apps/ios/package.json').version")
+          node apps/ios/scripts/sealed.js seal "$RUNNER_TEMP/ipa/Flow.ipa" "sealed/Flow-$version.ipa.sealed"
+          rm -rf "$RUNNER_TEMP/ipa"
+          ls -l sealed
+
+      - name: Upload the sealed Flow.ipa
+        if: env.FLOW_IPA_KEY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flow-ipa-${{ github.run_number }}
+          path: sealed/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: The build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-${{ github.run_number }}-device-build
+          path: apps/ios/build-device.log
+          retention-days: 7
+          if-no-files-found: ignore

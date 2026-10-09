@@ -1,0 +1,10 @@
+# Built by scripts/build-web.js from apps/desktop and apps/android/src.
+public/
+Version.xcconfig
+
+# Made by XcodeGen from project.yml, and Xcode's output.
+*.xcodeproj/
+build/
+DerivedData/
+xcuserdata/
+.DS_Store

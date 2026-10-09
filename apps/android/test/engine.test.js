@@ -205,11 +205,20 @@ test('an error: paused, and told', async () => {
   await settle();
   plugin.fire('error', { id: '1', message: 'ERROR_CODE_IO_BAD_HTTP_STATUS', status: 401 });
   assert.equal(engine.paused, true);
-  assert.deepEqual(events.at(-1), ['error', 401]);
+  assert.deepEqual(events.at(-1), ['error', 401, '']);
   assert.equal(engine.loaded, true);
   engine.unload();
   assert.equal(engine.loaded, false);
   await engine.play().then(() => assert.fail('played nothing'), () => {});
+});
+
+test('an error the phone cannot play: told so', async () => {
+  const { plugin, engine, events } = setup();
+  engine.load('http://pi/a', 1, { key: 's1' });
+  engine.play();
+  await settle();
+  plugin.fire('error', { id: '1', message: 'cannot play', status: 0, unsupported: true });
+  assert.deepEqual(events.at(-1), ['error', 0, 'format']);
 });
 
 test('the songs that come next go to the player, again only when they change', async () => {

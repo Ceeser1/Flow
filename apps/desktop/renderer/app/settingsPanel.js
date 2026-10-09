@@ -687,7 +687,7 @@ const SettingsPanel = {
       }),
       this._row({
         label: 'Server Password (if the server is password protected)',
-        desc: `Entered once; Flow keeps it encrypted ${Store.platform === 'android' ? 'on this phone' : 'for your Windows account'}. Empty the box to forget it.`,
+        desc: `Entered once; Flow keeps it encrypted ${Store.phone ? 'on this phone' : 'for your Windows account'}. Empty the box to forget it.`,
         sub: true,
         when: on,
         right: this._secretField(on),

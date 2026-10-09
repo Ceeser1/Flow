@@ -1,0 +1,12 @@
+{
+  "appId": "io.github.ceeser1.flow",
+  "appName": "Flow",
+  "webDir": "public",
+  "backgroundColor": "#1e1e22",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false,
+    "allowsLinkPreview": false,
+    "preferredContentMode": "mobile"
+  }
+}
