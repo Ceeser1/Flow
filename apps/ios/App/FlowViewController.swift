@@ -39,11 +39,29 @@ final class FlowViewController: CAPBridgeViewController {
             flowUIDelegate = delegate
             webView.uiDelegate = delegate
         }
+        hideFormBar(webView)
         bridge?.registerPluginInstance(FlowNativePlugin())
         bridge?.registerPluginInstance(FlowAudioPlugin())
         #if DEBUG
         Harness.start(webView: webView)
         #endif
+    }
+
+    /// No bar of arrows and a tick over the keyboard (a web page's, which an
+    /// app's text fields do not have, nor Android's): the page's content view
+    /// becomes a kind of itself without one, as Capacitor's Keyboard plugin does it.
+    private func hideFormBar(_ webView: WKWebView) {
+        guard let content = webView.scrollView.subviews.first(where: { String(describing: type(of: $0)).hasPrefix("WKContent") }),
+              let base: AnyClass = object_getClass(content) else { return }
+        let name = "\(base)_FlowNoFormBar"
+        var plain: AnyClass? = NSClassFromString(name)
+        if plain == nil, let made = objc_allocateClassPair(base, name, 0) {
+            let none: @convention(block) (AnyObject) -> UIView? = { _ in nil }
+            class_addMethod(made, #selector(getter: UIResponder.inputAccessoryView), imp_implementationWithBlock(none), "@@:")
+            objc_registerClassPair(made)
+            plain = made
+        }
+        if let plain = plain { object_setClass(content, plain) }
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {

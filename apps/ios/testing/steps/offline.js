@@ -110,8 +110,15 @@ module.exports = [
   },
   { name: 'stopped', js: `Player.pause(); ${wait(500)} return Player.engine.paused;` },
   { ...imports('an mp3', 'Flow Test - Sine A.mp3'), expect: (v) => v.format === 'mp3' && v.title === 'Sine A' && Math.round(v.duration) === 45 && v.peaks > 100 && v.loud > 0.1 },
-  { ...imports('an Opus file', 'Flow Test - Sine B.opus'), expect: (v) => v.format === 'opus' && Math.round(v.duration) === 45 && v.peaks > 100 && v.loud > 0.1 },
-  { ...imports('a FLAC file', 'Flow Test - Sine E.flac'), expect: (v) => v.format === 'flac' && Math.round(v.duration) === 45 && v.peaks > 100 },
+  // Their names from their Vorbis comments (VorbisComments.swift: iOS reads none).
+  {
+    ...imports('an Opus file', 'Flow Test - Sine B.opus'),
+    expect: (v) => v.format === 'opus' && v.title === 'Sine B' && v.artist === 'Flow Test' && Math.round(v.duration) === 45 && v.peaks > 100 && v.loud > 0.1,
+  },
+  {
+    ...imports('a FLAC file with a picture', 'Flow Test - Sine E.flac'),
+    expect: (v) => v.format === 'flac' && v.title === 'Sine E' && v.artist === 'Flow Test' && v.cover === true && v.peaks > 100,
+  },
   // iOS has no Vorbis: refused with a reason, or (a later iOS) imported.
-  { ...imports('an Ogg Vorbis file', 'Flow Test - Sine G.ogg'), expect: (v) => !!v.error || v.peaks > 100 },
+  { ...imports('an Ogg Vorbis file', 'Flow Test - Sine G.ogg'), expect: (v) => (v.error ? /Vorbis/.test(v.error) : v.peaks > 100) },
 ];

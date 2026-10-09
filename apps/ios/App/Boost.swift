@@ -8,8 +8,15 @@ import MediaToolbox
 /// there). Put on a song only once it is to be turned up.
 final class Boost {
     /// The factor (read on the audio thread; a word-sized store).
-    var gain: Float = 1
-    // The loudest sample before and after, for the test runner.
+    var gain: Float = 1 {
+        didSet {
+            if gain != oldValue {
+                peakIn = 0
+                peakOut = 0
+            }
+        }
+    }
+    // The loudest sample before and after (since the factor changed), for the test runner.
     var peakIn: Float = 0
     var peakOut: Float = 0
     // Whether the tap's sound is 32-bit float, the only kind it changes.

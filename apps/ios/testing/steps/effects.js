@@ -1,9 +1,10 @@
 'use strict';
 
 // Song Transition and Equalize volume on the iPhone: the end of a song played
-// on by the tail while the next one fades up, and a song turned up (Boost),
-// its peaks measured before and after, the limiter keeping a big boost under
-// full scale.
+// on by the tail while the next one fades up (equal power: the two volumes'
+// squares add up to 1), and a song turned up (Boost), its peaks measured
+// before and after, the limiter keeping a big boost under full scale. The
+// test songs peak at 0.088 (a sine of 1/8, -3 dB from mono to stereo).
 
 const { wait, playing, start } = require('./common');
 
@@ -46,7 +47,7 @@ module.exports = [
     timeout: 15000,
     wait: 0,
     shot: '01-transition',
-    expect: (v) => v.tailVolume > 0.05 && v.tailVolume < 0.95,
+    expect: (v) => v.tailVolume > 0.05 && Math.abs(v.tailVolume ** 2 + v.fadeIn ** 2 - 1) < 0.2,
   },
   { name: 'transition over', native: 'effects', waitFor: (v) => !v.tail && v.fadeIn === 1, timeout: 15000 },
   {
@@ -60,13 +61,16 @@ module.exports = [
     native: 'effects',
     waitFor: (v) => v.peakIn > 0 && v.peakOut > 0,
     timeout: 10000,
-    expect: (v) => v.boost === 2 && Math.abs(v.peakOut / v.peakIn - 2) < 0.2,
+    expect: (v) => v.boost === 2 && Math.abs(v.peakOut / v.peakIn - 2) < 0.1,
   },
-  { name: 'turned up 10x', js: `${gain(10)} ${wait(3000)} return true;`, timeout: 10000 },
+  // 0.088 x 20 = 1.77: bent down to just under 1.
+  { name: 'turned up 20x', js: `${gain(20)} ${wait(3000)} return true;`, timeout: 10000 },
   {
     name: 'held under full scale',
     native: 'effects',
-    expect: (v) => v.boost === 10 && v.peakOut > 0.9 && v.peakOut < 1,
+    waitFor: (v) => v.peakIn > 0 && v.peakOut > 0,
+    timeout: 10000,
+    expect: (v) => v.boost === 20 && v.peakOut > 0.95 && v.peakOut < 1,
   },
-  { name: 'back to its own gain', js: `${gain(1)} Player.pause(); ${wait(500)} return Player.engine.paused;` },
+  { name: 'not turned up any more', js: `${gain(1)} Player.pause(); ${wait(500)} return Player.engine.paused;` },
 ];

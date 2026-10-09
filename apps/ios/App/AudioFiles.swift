@@ -152,6 +152,13 @@ enum AudioFiles {
                 default: break
                 }
             }
+            // Ogg and FLAC: their Vorbis comments, which iOS does not read.
+            if ["opus", "ogg", "oga", "flac"].contains(ext), let v = VorbisComments.read(dest) {
+                if title.isEmpty { title = v.title }
+                if artist.isEmpty { artist = v.artist.isEmpty ? v.albumArtist : v.artist }
+                if album.isEmpty { album = v.album }
+                if picture == nil { picture = v.picture }
+            }
             if artist.isEmpty {
                 // The album's artist (ID3 TPE2, iTunes aART) when the song names none.
                 let all = try await asset.load(.metadata)
@@ -171,7 +178,9 @@ enum AudioFiles {
                 "duration": duration, "cover": wrote, "bytes": bytes,
             ]
         } catch {
+            let vorbis = ["ogg", "oga"].contains(ext) && VorbisComments.isVorbis(dest)
             try? fm.removeItem(at: dest)
+            if vorbis { throw FlowError(message: "This is an Ogg Vorbis file, which the iPhone cannot play (Ogg Opus plays).") }
             if let e = error as? FlowError { throw e }
             throw FlowError(message: "The file could not be read as audio.")
         }

@@ -91,7 +91,7 @@ const SONGS = [
   ['Flow Test - Sine B.opus', 494, ['-c:a', 'libopus', '-b:a', '96k']],
   ['Flow Test - Sine C.ogg', 523, ['-c:a', 'vorbis', '-strict', 'experimental']],
   ['Flow Test - Sine D.m4a', 587, ['-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart']],
-  ['Flow Test - Sine E.flac', 659, ['-c:a', 'flac']],
+  ['Flow Test - Sine E.flac', 659, 'flac-cover'],
   ['Flow Test - Sine F.wav', 698, ['-c:a', 'pcm_s16le']],
   ['Flow Test - Sine G.ogg', 740, 'oggenc'],
 ];
@@ -109,6 +109,13 @@ function makeSongs(dir) {
         sh('ffmpeg', [...tone, '-c:a', 'pcm_s16le', wav]);
         sh('oggenc', ['-Q', '-q', '4', '-t', title, '-a', artist, '-o', path.join(dir, name), wav]);
         fs.rmSync(wav, { force: true });
+      } else if (codec === 'flac-cover') {
+        // With a picture in it (not square: an import crops it to one).
+        const png = path.join(os.tmpdir(), 'flow-ci-cover.png');
+        sh('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=0x3366cc:s=320x240', '-frames:v', '1', png]);
+        sh('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=45`, '-i', png,
+          '-map', '0:a', '-map', '1:v', '-ac', '2', '-ar', '48000', '-c:a', 'flac', '-c:v', 'png', '-disposition:v', 'attached_pic',
+          '-metadata', `title=${title}`, '-metadata', `artist=${artist}`, path.join(dir, name)]);
       } else {
         sh('ffmpeg', [...tone, ...codec, '-metadata', `title=${title}`, '-metadata', `artist=${artist}`, path.join(dir, name)]);
       }
