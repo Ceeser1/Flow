@@ -43,9 +43,11 @@ struct SongProvider: TimelineProvider {
 }
 
 // Flow's colours (renderer/style.css: --bg, --text, --accent).
-private let background = Color(red: 0x1E / 255, green: 0x1E / 255, blue: 0x22 / 255)
-private let ink = Color(red: 0xD2 / 255, green: 0xD2 / 255, blue: 0xD8 / 255)
-private let accent = Color(red: 0x5A / 255, green: 0x8C / 255, blue: 0xDC / 255)
+private enum Palette {
+    static let background = Color(red: 0x1E / 255, green: 0x1E / 255, blue: 0x22 / 255)
+    static let ink = Color(red: 0xD2 / 255, green: 0xD2 / 255, blue: 0xD8 / 255)
+    static let accent = Color(red: 0x5A / 255, green: 0x8C / 255, blue: 0xDC / 255)
+}
 
 struct FlowWidgetView: View {
     @Environment(\.widgetFamily) private var family
@@ -63,14 +65,14 @@ struct FlowWidgetView: View {
                 empty
             }
         }
-        .containerBackground(for: .widget) { background }
+        .containerBackground(for: .widget) { Palette.background }
     }
 
     private var empty: some View {
         VStack(spacing: 6) {
-            Image(systemName: "music.note").font(.title2).foregroundStyle(accent)
-            Text("Flow").font(.headline).foregroundStyle(ink)
-            Text("Open Flow and play a song.").font(.caption2).foregroundStyle(ink.opacity(0.6)).multilineTextAlignment(.center)
+            Image(systemName: "music.note").font(.title2).foregroundStyle(Palette.accent)
+            Text("Flow").font(.headline).foregroundStyle(Palette.ink)
+            Text("Open Flow and play a song.").font(.caption2).foregroundStyle(Palette.ink.opacity(0.6)).multilineTextAlignment(.center)
         }
     }
 
@@ -103,8 +105,8 @@ struct FlowWidgetView: View {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
             } else {
                 ZStack {
-                    accent.opacity(0.22)
-                    Image(systemName: "music.note").font(.system(size: size * 0.36)).foregroundStyle(accent)
+                    Palette.accent.opacity(0.22)
+                    Image(systemName: "music.note").font(.system(size: size * 0.36)).foregroundStyle(Palette.accent)
                 }
             }
         }
@@ -115,9 +117,9 @@ struct FlowWidgetView: View {
     private func names(_ song: WidgetSong, lines: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(song.title.isEmpty ? "Unknown" : song.title)
-                .font(.subheadline.weight(.semibold)).foregroundStyle(ink).lineLimit(lines)
+                .font(.subheadline.weight(.semibold)).foregroundStyle(Palette.ink).lineLimit(lines)
             if !song.artist.isEmpty {
-                Text(song.artist).font(.caption).foregroundStyle(ink.opacity(0.65)).lineLimit(1)
+                Text(song.artist).font(.caption).foregroundStyle(Palette.ink.opacity(0.65)).lineLimit(1)
             }
         }
     }
@@ -133,9 +135,9 @@ struct FlowWidgetView: View {
                 } currentValueLabel: {
                     EmptyView()
                 }
-                .tint(accent)
+                .tint(Palette.accent)
             } else {
-                ProgressView(value: min(max(song.position, 0), song.duration), total: song.duration).tint(accent)
+                ProgressView(value: min(max(song.position, 0), song.duration), total: song.duration).tint(Palette.accent)
             }
         }
     }
@@ -150,7 +152,7 @@ struct FlowWidgetView: View {
         }
         .buttonStyle(.plain)
         .font(.title3)
-        .foregroundStyle(ink)
+        .foregroundStyle(Palette.ink)
     }
 }
 
