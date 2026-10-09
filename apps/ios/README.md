@@ -43,7 +43,7 @@ stay through renewals and updates.
 repository is public. Opened with the key:
 
 ```
-node apps/ios/scripts/sealed.js open Flow-3.0.0.ipa.sealed Flow.ipa --key-file <the key's file>
+node apps/ios/scripts/sealed.js open Flow-3.1.0.ipa.sealed Flow.ipa --key-file <the key's file>
 ```
 
 ## Building
