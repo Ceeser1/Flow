@@ -1,7 +1,7 @@
 'use strict';
 
-// Mosaic: the song's cover built from the covers of your own library, a
-// tile for each: every tile the cover whose colour best fits that spot of
+// Mosaic Cover: the song's cover built from the covers of your own library,
+// a tile for each: every tile the cover whose colour best fits that spot of
 // the picture, shifted a little further towards it. The tiles flip over on
 // the beat (a ripple round a place on each beat, a wave across on each bar)
 // to another cover that fits as well; a new song turns them all over, from
@@ -11,15 +11,19 @@
 // Its cogwheel: the tiles' size, how far each is shifted to the picture's
 // colour.
 //
-// WebGL (viz/gl.js): the covers sit in one texture (16 x 16 of them), each's
+// WebGL (viz/gl.js): the covers sit in one texture (32 x 32 of them, each
+// put in as it loads; mipmapped, so the tiny tiles do not shimmer), each's
 // average colour noted; the tiles' state (which cover each side, how far
-// turned) is a small texture refreshed each frame; one pass draws them.
+// turned) is a small texture refreshed each frame; one pass draws them. The
+// covers that best fit a tile are looked for once a picture (and again as
+// covers come in), when the tile first turns.
 
 (() => {
-  const ATLAS = 16;             // covers across the atlas (and down)
+  const ATLAS = 32;             // covers across the atlas (and down)
   const CELL = 64;              // pixels a cover there
   const MAX = ATLAS * ATLAS;
-  const SIZES = { small: 30, medium: 20, large: 13 };
+  const LEVELS = 5;             // the atlas's mipmaps: down to 4 pixels a cover
+  const SIZES = { tiny: 45, small: 30, medium: 20, large: 13 };
   const FLIP_S = 0.5;
 
   const FS = VizGL.NOISE + `
@@ -46,8 +50,14 @@
       if (abs(x) < 0.5 - gap && abs(f.y - 0.5) < 0.5 - gap) {
         vec2 q = vec2(x + 0.5, f.y);
         q = (q - 0.5) / (1.0 - 2.0 * gap) + 0.5;
+        // As sharp as the tile is big on the screen (narrower while turning), and
+        // half a pixel of that inside its cover, so the neighbours do not bleed in.
+        vec2 texels = ${CELL}.0 * grid / (res * (1.0 - 2.0 * gap));
+        float lod = clamp(log2(max(texels.y, texels.x / max(w, 1e-3))), 0.0, ${LEVELS - 1}.0);
+        float edge = 0.5 * exp2(ceil(lod)) / ${CELL}.0;
+        q = clamp(vec2(q.x, 1.0 - q.y), edge, 1.0 - edge);
         vec2 at = vec2(mod(idx, ${ATLAS}.0), floor(idx / ${ATLAS}.0));
-        vec3 c = texture(atlas, (at + vec2(q.x, 1.0 - q.y) * 0.98 + 0.01) / ${ATLAS}.0).rgb;
+        vec3 c = textureLod(atlas, (at + q) / ${ATLAS}.0, lod).rgb;
         vec3 mean = texelFetch(means, ivec2(at), 0).rgb;
         // Shifted towards the picture's colour there, its own light and dark kept.
         vec3 shifted = c * (target + 0.03) / (mean + 0.03);
@@ -89,17 +99,18 @@
       this.prog = VizGL.program(gl, VizGL.SCREEN_VS, FS);
       this.age = 0;
       this.dead = false;
-      // The covers: drawn into a canvas, its average colours noted.
-      this.atlasCanvas = document.createElement('canvas');
-      this.atlasCanvas.width = ATLAS * CELL;
-      this.atlasCanvas.height = ATLAS * CELL;
-      this.actx = this.atlasCanvas.getContext('2d', { willReadFrequently: true });
-      this.actx.fillStyle = '#111';
-      this.actx.fillRect(0, 0, ATLAS * CELL, ATLAS * CELL);
+      // The covers: each drawn into a cover's square, put into the atlas, its average colour noted.
+      this.cell = document.createElement('canvas');
+      this.cell.width = CELL;
+      this.cell.height = CELL;
+      this.cctx = this.cell.getContext('2d', { willReadFrequently: true });
+      this.cctx.imageSmoothingQuality = 'high';
       this.means = new Uint8Array(MAX * 4);
       this.count = 0;
       this.atlasDirty = true;
       this.atlas = this._tex(gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texStorage2D(gl.TEXTURE_2D, LEVELS, gl.RGBA8, ATLAS * CELL, ATLAS * CELL);
       this.meansTex = this._tex(gl.NEAREST);
       this.tilesTex = this._tex(gl.NEAREST);
       this.targetsTex = this._tex(gl.NEAREST);
@@ -107,6 +118,15 @@
       this.cols = 0;
       this.tiles = [];
       this.targets = null;
+      this.targetsDirty = false;
+      // The covers that best fit each tile (4 a tile, -1 none), looked for again when `gen` moves on.
+      this.cands = null;
+      this.candsGen = null;
+      this.gen = 1;
+      this.genCount = 0;
+      this.genAt = 0;
+      this.best = new Float64Array(4);
+      this.bestAt = new Int32Array(4);
       this.songKey = null;
       this.pending = null;
       this._fillStandIns();
@@ -131,15 +151,13 @@
         const h = i / n;
         const v = 0.35 + 0.6 * ((i * 7) % 5) / 4;
         const [r, g, b] = hsv(h, i % 6 === 0 ? 0.1 : 0.75, v);
-        const x = (i % ATLAS) * CELL;
-        const y = Math.floor(i / ATLAS) * CELL;
-        const grad = this.actx.createLinearGradient(x, y, x + CELL, y + CELL);
+        const grad = this.cctx.createLinearGradient(0, 0, CELL, CELL);
         const css = (k) => `rgb(${Math.round(r * 255 * k)}, ${Math.round(g * 255 * k)}, ${Math.round(b * 255 * k)})`;
         grad.addColorStop(0, css(1.1));
         grad.addColorStop(1, css(0.75));
-        this.actx.fillStyle = grad;
-        this.actx.fillRect(x, y, CELL, CELL);
-        this.means.set([r * 255 * 0.92, g * 255 * 0.92, b * 255 * 0.92, 255], i * 4);
+        this.cctx.fillStyle = grad;
+        this.cctx.fillRect(0, 0, CELL, CELL);
+        this._put(i);
       }
       this.standIns = n;
       this.count = n;
@@ -193,28 +211,36 @@
       for (let i = 0; i < 6; i += 1) next();
     }
 
-    /** A cover into the atlas at `at`, cut square from its middle, its average colour noted. */
+    /** A cover into the atlas at `at`, cut square from its middle. */
     _place(img, at) {
-      const x = (at % ATLAS) * CELL;
-      const y = Math.floor(at / ATLAS) * CELL;
       const side = Math.min(img.naturalWidth, img.naturalHeight) || 1;
       try {
-        this.actx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, x, y, CELL, CELL);
-        const px = this.actx.getImageData(x, y, CELL, CELL).data;
-        let r = 0;
-        let g = 0;
-        let b = 0;
-        for (let i = 0; i < px.length; i += 16) {
-          r += px[i];
-          g += px[i + 1];
-          b += px[i + 2];
-        }
-        const n = px.length / 16;
-        this.means.set([r / n, g / n, b / n, 255], at * 4);
-        this.atlasDirty = true;
+        this.cctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, CELL, CELL);
+        this._put(at);
       } catch {
         // Unreadable: left as it was.
       }
+    }
+
+    /** The cover's square as drawn into the atlas at `at`, its average colour noted. */
+    _put(at) {
+      const gl = this.gl;
+      const img = this.cctx.getImageData(0, 0, CELL, CELL);
+      const px = img.data;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      for (let i = 0; i < px.length; i += 16) {
+        r += px[i];
+        g += px[i + 1];
+        b += px[i + 2];
+      }
+      const n = px.length / 16;
+      this.means.set([r / n, g / n, b / n, 255], at * 4);
+      gl.bindTexture(gl.TEXTURE_2D, this.atlas);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, (at % ATLAS) * CELL, Math.floor(at / ATLAS) * CELL, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      this.atlasDirty = true;
     }
 
     /** The song's picture at the grid's size: its cover, or a glow in its own colour. */
@@ -257,23 +283,54 @@
       img.src = src;
     }
 
-    /** One of the covers that best fit colour c (a few of the best, at random; not `not`). */
-    _pick(c, not = -1) {
-      let best = [];
+    /** One of the covers that best fit tile k's colour (a few of the best, at random; not `not`). */
+    _pick(k, not = -1) {
+      const o = k * 4;
+      if (this.candsGen[k] !== this.gen) {
+        this.candsGen[k] = this.gen;
+        this._fit(this.targets[o], this.targets[o + 1], this.targets[o + 2], o);
+      }
+      const c = this.cands;
+      let n = 0;
+      for (let j = o; j < o + 4; j += 1) if (c[j] >= 0 && c[j] !== not) n += 1;
+      let r = Math.floor(Math.random() * n);
+      for (let j = o; j < o + 4; j += 1) {
+        if (c[j] < 0 || c[j] === not) continue;
+        if (r === 0) return c[j];
+        r -= 1;
+      }
+      return 0;
+    }
+
+    /** The 4 covers whose colour is nearest (r, g, b), best first, into cands at o. */
+    _fit(r, g, b, o) {
+      const m = this.means;
+      const best = this.best;
+      const at = this.bestAt;
+      let n = 0;
       for (let i = 0; i < this.count; i += 1) {
-        const m = this.means;
-        const dr = m[i * 4] - c[0];
-        const dg = m[i * 4 + 1] - c[1];
-        const db = m[i * 4 + 2] - c[2];
+        const dr = m[i * 4] - r;
+        const dg = m[i * 4 + 1] - g;
+        const db = m[i * 4 + 2] - b;
         const d = dr * dr * 0.3 + dg * dg * 0.59 + db * db * 0.11;
-        if (best.length < 4 || d < best[best.length - 1].d) {
-          best.push({ i, d });
-          best.sort((a, b) => a.d - b.d);
-          if (best.length > 4) best.pop();
+        if (n < 4 || d < best[3]) {
+          let j = n < 4 ? n++ : 3;
+          for (; j > 0 && best[j - 1] > d; j -= 1) {
+            best[j] = best[j - 1];
+            at[j] = at[j - 1];
+          }
+          best[j] = d;
+          at[j] = i;
         }
       }
-      best = best.filter((b) => b.i !== not);
-      return best.length ? best[Math.floor(Math.random() * best.length)].i : 0;
+      for (let j = 0; j < 4; j += 1) this.cands[o + j] = j < n ? at[j] : -1;
+    }
+
+    /** The tiles' best fits looked for again (a new picture, more covers). */
+    _refit() {
+      this.gen += 1;
+      this.genCount = this.count;
+      this.genAt = this.age;
     }
 
     size(w, h) {
@@ -290,6 +347,9 @@
       this.cols = cols;
       this.tiles = Array.from({ length: rows * cols }, () => ({ front: Math.floor(Math.random() * this.count), back: 0, at: null, pop: 0 }));
       this.targets = new Uint8Array(rows * cols * 4);
+      this.targetsDirty = true;
+      this.cands = new Int16Array(rows * cols * 4);
+      this.candsGen = new Uint32Array(rows * cols);
       this.tileData = new Float32Array(rows * cols * 4);
       this.songKey = null;
     }
@@ -299,7 +359,10 @@
       VizGL.lose(this.gl);
     }
 
-    /** Flips the tiles within `radius` (tiles) of (cx, cy), the wave spreading at `speed` tiles a second. */
+    /**
+     * Flips the tiles within `radius` (tiles) of (cx, cy), the wave spreading
+     * at `speed` tiles a second; each's new cover is picked as it starts to turn.
+     */
     _wave(cx, cy, radius, speed) {
       for (let y = 0; y < this.rows; y += 1) {
         for (let x = 0; x < this.cols; x += 1) {
@@ -307,8 +370,7 @@
           if (d > radius) continue;
           const t = this.tiles[y * this.cols + x];
           if (t.at !== null) continue;
-          const k = (y * this.cols + x) * 4;
-          t.back = this._pick([this.targets[k], this.targets[k + 1], this.targets[k + 2]], t.front);
+          t.back = -1;
           t.at = this.age + d / speed;
         }
       }
@@ -328,13 +390,19 @@
         this._target(song, (px) => {
           if (this.dead || this.songKey !== asked) return;
           if (px) this.targets.set(px);
+          this.targetsDirty = true;
+          this._refit();
           for (const t of this.tiles) t.at = null;
           this._wave(this.cols / 2, this.rows / 2, 1e9, Math.max(this.cols, this.rows) / 1.2);
         });
       }
       if (this.rewave && this.targets) {
         this.rewave = false;
+        this._refit();
         this._wave(this.cols / 2, this.rows / 2, 1e9, Math.max(this.cols, this.rows) / 1.5);
+      } else if (this.count !== this.genCount && this.age - this.genAt > 0.5) {
+        // Covers still coming in: looked for among them too, now and then.
+        this._refit();
       }
       // On the beat a ripple round some place; on each bar a wide wave.
       if (a.playing && (a.lock > 0.5 ? a.tick : a.onset)) {
@@ -350,6 +418,7 @@
         const t = this.tiles[i];
         let turn = 0;
         if (t.at !== null && this.age >= t.at) {
+          if (t.back < 0) t.back = this._pick(i, t.front);
           turn = (this.age - t.at) / FLIP_S;
           if (turn >= 1) {
             t.front = t.back;
@@ -362,7 +431,7 @@
         // Eased: quick through the middle.
         const e = turn * turn * (3 - 2 * turn);
         data[i * 4] = t.front;
-        data[i * 4 + 1] = t.back;
+        data[i * 4 + 1] = t.back < 0 ? t.front : t.back;
         data[i * 4 + 2] = e;
         data[i * 4 + 3] = t.pop * (a.playing ? 1 : 0.3);
       }
@@ -370,19 +439,22 @@
       if (this.atlasDirty) {
         this.atlasDirty = false;
         gl.bindTexture(gl.TEXTURE_2D, this.atlas);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.atlasCanvas);
+        gl.generateMipmap(gl.TEXTURE_2D);
         gl.bindTexture(gl.TEXTURE_2D, this.meansTex);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, ATLAS, ATLAS, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.means);
       }
       gl.bindTexture(gl.TEXTURE_2D, this.tilesTex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, this.cols, this.rows, 0, gl.RGBA, gl.FLOAT, data);
-      gl.bindTexture(gl.TEXTURE_2D, this.targetsTex);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      // Canvas rows run down, the screen's up: flipped as they go in.
-      const flipped = new Uint8Array(this.targets.length);
-      const rowBytes = this.cols * 4;
-      for (let y = 0; y < this.rows; y += 1) flipped.set(this.targets.subarray(y * rowBytes, (y + 1) * rowBytes), (this.rows - 1 - y) * rowBytes);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this.cols, this.rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, flipped);
+      if (this.targetsDirty) {
+        this.targetsDirty = false;
+        gl.bindTexture(gl.TEXTURE_2D, this.targetsTex);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        // Canvas rows run down, the screen's up: flipped as they go in.
+        const flipped = new Uint8Array(this.targets.length);
+        const rowBytes = this.cols * 4;
+        for (let y = 0; y < this.rows; y += 1) flipped.set(this.targets.subarray(y * rowBytes, (y + 1) * rowBytes), (this.rows - 1 - y) * rowBytes);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this.cols, this.rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, flipped);
+      }
 
       gl.disable(gl.BLEND);
       VizGL.into(gl, null);
@@ -402,14 +474,14 @@
 
   Visualizer.add({
     id: 'mosaic',
-    name: 'Mosaic',
+    name: 'Mosaic Cover',
     desc: "The song's cover built from the covers in your own library, the tiles flipping over on the beat",
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 15l3.5-1.5L21 15v5l-3.5 1.5L14 20z"/></svg>',
     gl: true,
     create: (canvas) => new Mosaic(canvas),
     options: [
-      { type: 'choice', key: 'msSize', label: 'Tiles', choices: [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']] },
+      { type: 'choice', key: 'msSize', label: 'Tiles', choices: [['tiny', 'Tiny'], ['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']] },
       { type: 'slider', key: 'msTint', label: 'Towards the picture', min: 0, max: 100, step: 5 },
     ],
   });

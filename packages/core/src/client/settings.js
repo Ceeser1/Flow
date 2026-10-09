@@ -238,9 +238,9 @@ const VIZ_OPTIONS = {
   // music's, silver).
   vnPlinth: ['choice', 'wood', ['wood', 'black', 'silver']],
   vnColors: ['choice', 'music', ['music', 'silver']],
-  // Mosaic: the tiles' size, how far each is shifted to the picture's colour
-  // (percent).
-  msSize: ['choice', 'medium', ['small', 'medium', 'large']],
+  // Mosaic Cover: the tiles' size, how far each is shifted to the picture's
+  // colour (percent).
+  msSize: ['choice', 'medium', ['tiny', 'small', 'medium', 'large']],
   msTint: ['range', 60, 0, 100, 5],
   // Strings: the colours (round the notes, gold, ice), the notes' names and the key.
   stColors: ['choice', 'notes', ['notes', 'gold', 'ice']],
