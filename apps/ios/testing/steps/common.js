@@ -14,6 +14,14 @@ const playing = `
   return { now: (Store.song(Player.currentId) || {}).title, t: Math.round(e.time * 10) / 10, paused: e.paused };
 `;
 
+/** A test song loaded and played: the page's player once it has played 2 s (a busy Simulator starts slowly), at most 12 s on. */
+const loadAndPlay = (title) => `
+  const s = ${song(title)};
+  Player.load(s.id, 'all');
+  for (let i = 0; i < 48 && Player.currentId === s.id && Player.engine.time < 2; i += 1) ${wait(250)}
+  ${playing}
+`;
+
 const start = [
   {
     name: 'the page started',
@@ -42,4 +50,6 @@ const start = [
   },
 ];
 
-module.exports = { wait, song, playing, start };
+module.exports = {
+  wait, song, playing, loadAndPlay, start,
+};

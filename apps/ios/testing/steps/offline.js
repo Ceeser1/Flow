@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 const {
-  wait, song, playing, start,
+  wait, song, loadAndPlay, start,
 } = require('./common');
 
 const BUNDLE = 'io.github.ceeser1.flow';
@@ -66,8 +66,8 @@ module.exports = [
   },
   {
     name: 'plays its own copy',
-    js: `Player.load(${song('Sine A')}.id, 'all'); ${wait(4000)} ${playing}`,
-    timeout: 15000,
+    js: loadAndPlay('Sine A'),
+    timeout: 20000,
     expect: (v) => v.now === 'Sine A' && v.t >= 2 && !v.paused,
   },
   {
@@ -88,7 +88,7 @@ module.exports = [
   },
   {
     name: 'plays its own Opus copy without it',
-    js: `Player.load(${song('Sine B')}.id, 'all'); ${wait(4000)} ${playing}`,
+    js: loadAndPlay('Sine B'),
     timeout: 15000,
     expect: (v) => v.now === 'Sine B' && v.t >= 2 && !v.paused,
   },

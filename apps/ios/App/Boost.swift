@@ -29,7 +29,14 @@ final class Boost {
         attached = true
         let asset = item.asset
         Task {
-            guard let track = try? await asset.loadTracks(withMediaType: .audio).first else {
+            let tracks: [AVAssetTrack]
+            do {
+                tracks = try await asset.loadTracks(withMediaType: .audio)
+            } catch {
+                FlowLog.i("could not turn up: \(error.localizedDescription)")
+                return
+            }
+            guard let track = tracks.first else {
                 FlowLog.i("could not turn up: no audio track")
                 return
             }

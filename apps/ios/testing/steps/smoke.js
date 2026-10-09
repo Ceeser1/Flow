@@ -163,9 +163,18 @@ module.exports = [
   { name: 'the lock screen shows the next one', native: 'nowplaying', expect: (v) => !!v.title && v.title !== 'Sine B' && v.rate > 0 },
   { name: 'back to Flow', foreground: true, wait: 2500, shot: '05-back' },
   {
+    // Coming back can take the Simulator long (40 s once): the song may have ended meanwhile.
+    name: 'the native player now',
+    native: 'player',
+    expect: (v) => {
+      away.back = v.key;
+      return v.pwr && v.key !== away.before;
+    },
+  },
+  {
     name: 'the page caught up',
     js: 'return { t: Math.round(Player.engine.time), paused: Player.engine.paused, id: Player.currentId };',
-    expect: (v) => v.id === away.after && !v.paused,
+    expect: (v) => v.id === away.back && !v.paused,
   },
   {
     name: 'pause',

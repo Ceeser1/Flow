@@ -222,7 +222,6 @@ final class FlowPlayer: NSObject {
             player.pause()
         } else if let item = makeItem(newSrc) {
             tags[ObjectIdentifier(item)] = Tag(id: id, key: key, gain: gain, src: newSrc, meta: op["meta"] as? [String: Any])
-            boost(item)
             player.insert(item, after: nil)
             itemNow = item
             watch(item)
@@ -260,9 +259,9 @@ final class FlowPlayer: NSObject {
                                                gain: Float(FlowPlayer.num(it["gain"]) ?? 1), src: itemSrc,
                                                meta: it["meta"] as? [String: Any])
             player.insert(item, after: after)
-            boost(item)
             after = item
         }
+        boostNext()
     }
 
     private func same(_ item: AVPlayerItem, _ it: [String: Any]) -> Bool {
@@ -355,7 +354,7 @@ final class FlowPlayer: NSObject {
         tags[ObjectIdentifier(item)] = Tag(id: id, key: key, gain: gain, src: src, meta: meta)
         player.insert(item, after: nil)
         itemNow = item
-        boost(item)
+        applyVolume()
         watch(item)
         if place.isFinite, place > 0 { pendingSeek = place }
         var last = item
@@ -363,9 +362,9 @@ final class FlowPlayer: NSObject {
             guard let next = makeItem(tag.src), player.canInsert(next, after: last) else { continue }
             tags[ObjectIdentifier(next)] = Tag(id: tag.id, key: tag.key, gain: tag.gain, src: tag.src, meta: tag.meta)
             player.insert(next, after: last)
-            boost(next)
             last = next
         }
+        boostNext()
         updateEnd()
         FlowLog.i("reload \(id)")
     }
@@ -404,11 +403,13 @@ final class FlowPlayer: NSObject {
         }
     }
 
-    /// A song in the queue turned up by its own gain, should it have one over 1.
-    private func boost(_ item: AVPlayerItem) {
-        guard let tag = tags[ObjectIdentifier(item)], tag.gain > 1 else { return }
+    /// The song after this one turned up by its own gain, should it have one
+    /// over 1, ready for the move to it. Not the songs further on (about two
+    /// hours of them): each would fetch its sound now.
+    private func boostNext() {
+        guard let next = player.items().dropFirst().first, let tag = tags[ObjectIdentifier(next)], tag.gain > 1 else { return }
         tag.boost.gain = tag.gain
-        tag.boost.attach(to: item)
+        tag.boost.attach(to: next)
     }
 
     // MARK: what the player does
@@ -487,6 +488,7 @@ final class FlowPlayer: NSObject {
         }
         fadeIn = id == fadeInId ? 0 : 1
         applyVolume()
+        boostNext()
         updateEnd()
         updateNowPlaying()
         let why = crossing || !nextPressed ? "auto" : "next"
