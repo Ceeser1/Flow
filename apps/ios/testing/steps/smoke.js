@@ -176,6 +176,35 @@ module.exports = [
     js: 'return { t: Math.round(Player.engine.time), paused: Player.engine.paused, id: Player.currentId };',
     expect: (v) => v.id === away.back && !v.paused,
   },
+  // iOS ends the page of an app out of sight when it wants the memory: the
+  // music plays on, and the page, started again, picks up the song playing.
+  { name: 'this page marked', js: 'window.flowCiMark = true; return true;' },
+  { name: 'out of sight again', background: true, wait: 3000 },
+  { name: 'the page ended, as iOS does', native: 'killpage', wait: 3000, expect: (v) => v === true },
+  { name: 'the music plays on without it', native: 'player', expect: (v) => v.pwr && v.st === 3 },
+  { name: 'back to Flow once more', foreground: true, wait: 2000 },
+  {
+    name: 'a new page',
+    until: `return typeof Store !== 'undefined' && !!Store.version && !!Player.currentId
+      && { mark: !!window.flowCiMark, id: Player.currentId, paused: Player.engine.paused, t: Math.round(Player.engine.time) };`,
+    timeout: 40000,
+    wait: 1500,
+    shot: '05b-new-page',
+    expect: (v) => !v.mark,
+  },
+  {
+    name: 'the native player now',
+    native: 'player',
+    expect: (v) => {
+      away.now = v.key;
+      return v.pwr && v.st === 3;
+    },
+  },
+  {
+    name: 'the new page has the song playing',
+    js: 'return { id: Player.currentId, paused: Player.engine.paused, t: Math.round(Player.engine.time) };',
+    expect: (v) => v.id === away.now && !v.paused,
+  },
   {
     name: 'pause',
     js: `Player.pause(); ${wait(800)} return Player.engine.paused;`,

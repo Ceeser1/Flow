@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import UIKit
 
 /// Finding a Flow Server on the home network (FlowNative.discover, as
 /// FlowNative.java's, @flow/core/discovery's question on UDP port 7878; each
@@ -98,7 +99,37 @@ enum Discovery {
         }
         FlowLog.i("discovery: asked \(targets.count) addresses on \(networks.count) network(s) \(sent)x"
             + (failed > 0 ? ", \(failed) sends refused" : "") + ", \(answers.count) answer(s)")
-        return ["answers": answers, "own": own]
+        return ["answers": answers, "own": own, "refused": answers.isEmpty && failed > 0]
+    }
+
+    /// After a search iOS refused (sends fail "no route to host" until this app
+    /// may use the local network): while iOS's question about it is up (the
+    /// app not in front meanwhile), waits for the answer, up to `seconds`.
+    /// True once it is allowed; false at once without the question (it was
+    /// answered "Don't Allow" before: Settings > Flow > Local Network).
+    static func waitUntilAllowed(seconds: Double) -> Bool {
+        let end = Date().addingTimeInterval(seconds)
+        let front = { DispatchQueue.main.sync { MainActor.assumeIsolated { UIApplication.shared.applicationState == .active } } }
+        guard !front() else { return false }
+        while Date() < end, !front() { _ = usleep(250_000) }
+        // Allowed takes a moment to apply.
+        for _ in 0..<12 {
+            if probe() { return true }
+            _ = usleep(250_000)
+        }
+        return false
+    }
+
+    /// Whether one question to the network goes out now.
+    private static func probe() -> Bool {
+        guard let n = ownNetworks().first else { return false }
+        let base = n.ip & max(n.mask, 0xffff_ff00)
+        let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        guard fd >= 0 else { return false }
+        defer { _ = close(fd) }
+        var noSigpipe: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, socklen_t(MemoryLayout<Int32>.size))
+        return send(fd, to: base | (n.ip == base | 1 ? 2 : 1)) >= 0
     }
 
     private static func send(_ fd: Int32, to ip: UInt32) -> Int {

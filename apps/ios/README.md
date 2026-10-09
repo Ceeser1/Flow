@@ -32,6 +32,14 @@ person installs SideStore once (with a computer, for the setup), opens
 lasts 7 days, and SideStore renews it on the phone. Flow's songs and settings
 stay through renewals and updates.
 
+`Flow.ipa` comes from the iOS workflow's runs on GitHub (the artifact
+`Flow-ipa-<run>`, kept 30 days), sealed with the owner's key, as the
+repository is public. Opened with the key:
+
+```
+node apps/ios/scripts/sealed.js open Flow-3.0.0.ipa.sealed Flow.ipa --key-file <the key's file>
+```
+
 ## Building
 
 There is no Mac here: GitHub's Macs build it (`.github/workflows/ios.yml`), on
@@ -74,8 +82,9 @@ node apps/ios/testing/run.js --app apps/ios/build/Build/Products/Debug-iphonesim
   --steps apps/ios/testing/steps/smoke.js --out out --video
 ```
 
-Only Debug builds answer the test runner (`App/Harness.swift`). Nothing that
-installs on an iPhone is ever uploaded by the workflow.
+Only Debug builds answer the test runner (`App/Harness.swift`). What installs
+on an iPhone (a Release build) the workflow uploads only sealed, and nothing
+without the repository's secret `FLOW_IPA_KEY`.
 
 ## How it fits together
 
@@ -93,7 +102,9 @@ Swift in `App/`, with the plugins and calls of the Android app's Java:
   (`Library/Flow`, `Library/Caches/Flow`).
 - `FlowNative.swift`: downloads and uploads (`Transfers.swift`), finding a
   Flow Server (`Discovery.swift`: iOS allows no broadcast, so every address of
-  the home network is asked directly), iOS's file picker and the songs' names,
+  the home network is asked directly; the first search waits for the answer
+  to iOS's "find devices on your local network" question and asks again once
+  it is allowed), iOS's file picker and the songs' names,
   covers and waveforms (`AudioFiles.swift`), where the sound comes out.
 - `FlowPlayer.swift` / `FlowAudio.swift`: the player (an AVQueuePlayer)
   with the operations, states and events of the Android player, so the page's

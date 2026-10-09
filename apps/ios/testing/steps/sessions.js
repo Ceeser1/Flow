@@ -295,8 +295,12 @@ module.exports = [
   {
     name: 'in step again',
     native: 'player',
-    expect: (v) => v.pwr && Math.abs(v.t - hostPlace(v.at)) < 0.25,
+    expect: (v) => {
+      hosting.drift = Math.round((v.t - hostPlace(v.at)) * 1000);
+      return v.pwr && Math.abs(hosting.drift) < 250;
+    },
   },
+  { name: 'how far apart now (ms)', run: async () => hosting.drift },
   {
     name: 'remote only: the iPhone stops playing along',
     js: `Session.setHere(false); ${wait(1500)} return { here: Player.remote.here, playing: !Player.engine.paused && !!Player.engine.loaded };`,

@@ -138,7 +138,16 @@ public class FlowNativePlugin: CAPPlugin, CAPBridgedPlugin {
         let timeout = call.getInt("timeout") ?? 2500
         let sends = call.getInt("sends") ?? 3
         DispatchQueue.global(qos: .userInitiated).async {
-            call.resolve(Discovery.run(timeoutMs: timeout, sends: sends))
+            var r = Discovery.run(timeoutMs: timeout, sends: sends)
+            // The first search makes iOS ask whether Flow may find devices on
+            // the local network, and nothing goes out until that is answered:
+            // once allowed, searched again, so the first start still finds the server.
+            if r["refused"] as? Bool == true, Discovery.waitUntilAllowed(seconds: 120) {
+                FlowLog.i("discovery: the local network allowed, asking again")
+                r = Discovery.run(timeoutMs: timeout, sends: sends)
+            }
+            r["refused"] = nil
+            call.resolve(r)
         }
     }
 

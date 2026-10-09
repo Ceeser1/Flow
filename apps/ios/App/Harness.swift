@@ -70,6 +70,15 @@ enum Harness {
         case "nowplaying": value = FlowPlayer.shared.nowPlayingNow()
         // Next as the lock screen presses it.
         case "next": value = FlowPlayer.shared.remoteNext()
+        // The page's process ended, as iOS ends it for memory while Flow is out of sight.
+        case "killpage":
+            let kill = NSSelectorFromString("_killWebContentProcess")
+            if webView.responds(to: kill) {
+                webView.perform(kill)
+                value = true
+            } else {
+                value = false
+            }
         case "output": value = ["name": FlowNativePlugin.outputNow().name]
         // The kinds of sound this iOS's player takes (Ogg: iOS 18.4 and later).
         case "codecs": value = AVURLAsset.audiovisualMIMETypes().filter { $0.hasPrefix("audio/") }.sorted()

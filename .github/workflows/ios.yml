@@ -1,8 +1,9 @@
 # The iPhone app (apps/ios), built and tried out in the iOS Simulator on one
 # of GitHub's Macs: on every push to the ios branch, or started by hand with
 # another steps file. The results (screenshots, a video, Flow's log, the
-# build log) are the run's artifact for a week. Only Simulator builds are made
-# here: nothing that installs on an iPhone is ever uploaded.
+# build log) are the run's artifact for a week. Flow.ipa, the build that
+# installs on an iPhone, is uploaded only sealed with the owner's key (the
+# secret FLOW_IPA_KEY, apps/ios/scripts/sealed.js): the repository is public.
 name: iOS
 
 on:
@@ -116,5 +117,74 @@ jobs:
           path: |
             out/
             apps/ios/build.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Flow.ipa for iPhones, signed by no one (SideStore signs it with each
+  # person's own Apple ID), and sealed: without the key, nothing is uploaded.
+  device:
+    name: Flow.ipa (sealed)
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      FLOW_IPA_KEY: ${{ secrets.FLOW_IPA_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: XcodeGen
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Node packages
+        run: npm ci --no-audit --no-fund
+
+      - name: The page
+        run: node apps/ios/scripts/build-web.js
+
+      - name: The Xcode project
+        working-directory: apps/ios
+        run: xcodegen generate
+
+      - name: Swift packages from earlier runs
+        uses: actions/cache@v4
+        with:
+          path: apps/ios/build/SourcePackages
+          key: spm-device-${{ hashFiles('apps/ios/project.yml') }}
+
+      - name: Build for iPhones
+        working-directory: apps/ios
+        run: |
+          set -o pipefail
+          xcodebuild build -project Flow.xcodeproj -scheme Flow -configuration Release             -destination 'generic/platform=iOS'             -derivedDataPath build -clonedSourcePackagesDirPath build/SourcePackages             CODE_SIGNING_ALLOWED=NO             2>&1 | tee build-device.log | { grep -E 'error:|warning:|BUILD' || true; }
+
+      - name: Flow.ipa, sealed
+        if: env.FLOW_IPA_KEY != ''
+        run: |
+          mkdir -p "$RUNNER_TEMP/ipa/Payload" sealed
+          cp -R apps/ios/build/Build/Products/Release-iphoneos/Flow.app "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry Flow.ipa Payload)
+          version=$(node -p "require('./apps/ios/package.json').version")
+          node apps/ios/scripts/sealed.js seal "$RUNNER_TEMP/ipa/Flow.ipa" "sealed/Flow-$version.ipa.sealed"
+          rm -rf "$RUNNER_TEMP/ipa"
+          ls -l sealed
+
+      - name: Upload the sealed Flow.ipa
+        if: env.FLOW_IPA_KEY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flow-ipa-${{ github.run_number }}
+          path: sealed/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: The build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-${{ github.run_number }}-device-build
+          path: apps/ios/build-device.log
           retention-days: 7
           if-no-files-found: ignore
