@@ -234,11 +234,12 @@ const Player = {
       for (const fn of this._seekListeners) fn();
       this._emit();
     });
-    e.on('error', (status) => {
+    e.on('error', (status, kind) => {
       if (!this.currentId || !e.loaded) return;
       const song = Store.song(this.currentId);
       if ((status === 401 || status === 403) && song && !song.file && this._signedOut(song)) return;
-      const why = song && !song.file ? 'The server could not send it.' : 'The file may have been moved or deleted.';
+      let why = song && !song.file ? 'The server could not send it.' : 'The file may have been moved or deleted.';
+      if (kind === 'format') why = `This phone cannot play this file${song && song.format ? ` (.${song.format})` : ''}.`;
       toast(`Could not play "${song ? song.title : 'this song'}". ${why}`, 'error');
       this._emit();
     });

@@ -202,8 +202,9 @@ function createAudioEngine({
     console.warn('Flow audio:', e.message);
     st = IDLE;
     paused = true;
-    // With the server's answer when it refused the song (401: its session ended).
-    emit('error', Number(e.status) || 0);
+    // With the server's answer when it refused the song (401: its session ended),
+    // or 'format': the phone cannot play the file itself (the iPhone and Ogg Vorbis).
+    emit('error', Number(e.status) || 0, e.unsupported ? 'format' : '');
   });
 
   return {

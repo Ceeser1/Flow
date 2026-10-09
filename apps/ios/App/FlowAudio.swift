@@ -5,10 +5,10 @@ import Foundation
 /// (apps/android/src/engine.js), as FlowAudio.java: run({ ops }) applies a list
 /// of operations and answers the state after them, state() answers where it
 /// is, attach() what the page starting finds (FlowPlayer.attach). Events:
-/// "state", "ended" { id }, "error" { id, message, status }, "advance" { from,
+/// "state", "ended" { id }, "error" { id, message, status, unsupported }, "advance" { from,
 /// id, key, heard, reason }, "signedIn" { token } and "previous".
-/// keepSession(state) hands over what the page last told the server, for
-/// while Flow is out of sight (not kept on the iPhone yet).
+/// keepSession(state) hands SessionKeeper what the page last told the server,
+/// for while Flow is out of sight.
 @objc(FlowAudioPlugin)
 public class FlowAudioPlugin: CAPPlugin, CAPBridgedPlugin, FlowPlayerEvents {
     public let identifier = "FlowAudioPlugin"
@@ -22,7 +22,11 @@ public class FlowAudioPlugin: CAPPlugin, CAPBridgedPlugin, FlowPlayerEvents {
 
     override public func load() {
         let me = self
-        DispatchQueue.main.async { FlowPlayer.shared.events = me }
+        DispatchQueue.main.async {
+            FlowPlayer.shared.events = me
+            // Watching for Flow going out of sight from the start.
+            _ = SessionKeeper.shared
+        }
     }
 
     @objc func run(_ call: CAPPluginCall) {
@@ -43,8 +47,16 @@ public class FlowAudioPlugin: CAPPlugin, CAPBridgedPlugin, FlowPlayerEvents {
         DispatchQueue.main.async { call.resolve(FlowPlayer.shared.attach()) }
     }
 
+    /// What this app last told the server, for SessionKeeper ({ off: true }: hosting nothing).
     @objc func keepSession(_ call: CAPPluginCall) {
-        call.resolve()
+        var o: [String: Any] = [:]
+        for (k, v) in call.options ?? [:] {
+            if let name = k as? String { o[name] = v }
+        }
+        DispatchQueue.main.async {
+            SessionKeeper.shared.keep(o)
+            call.resolve()
+        }
     }
 
     // MARK: FlowPlayerEvents
@@ -57,8 +69,8 @@ public class FlowAudioPlugin: CAPPlugin, CAPBridgedPlugin, FlowPlayerEvents {
         notifyListeners("ended", data: ["id": id])
     }
 
-    func onError(_ id: String, _ message: String, _ status: Int) {
-        notifyListeners("error", data: ["id": id, "message": message, "status": status])
+    func onError(_ id: String, _ message: String, _ status: Int, _ unsupported: Bool) {
+        notifyListeners("error", data: ["id": id, "message": message, "status": status, "unsupported": unsupported])
     }
 
     func onSignedIn(_ token: String) {

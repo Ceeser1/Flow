@@ -8,7 +8,11 @@
 // Screenshots, a video (--video), Flow's log, the app's output, the system
 // log and crash reports go into --out.
 //
-//   node apps/ios/testing/run.js --app <Flow.app> --steps <steps.js> --out <dir> [--device "iPhone 17"] [--video]
+//   node apps/ios/testing/run.js --app <Flow.app> --steps <steps.js> --out <dir> [--device "iPhone 17"] [--video] [--erase]
+//   node apps/ios/testing/run.js --boot [--device "iPhone 17"]
+//
+// --boot only starts the Simulator booting, so it boots while the app builds.
+// --erase wipes it first (a Mac's own Simulator; a CI runner's is new).
 //
 // A steps file exports [{ name, js, until, native, background, foreground,
 // simctl, run, timeout, wait, shot, expect }], each step doing what it has,
@@ -46,12 +50,13 @@ const sh = (cmd, list, opts = {}) => execFileSync(cmd, list, {
 const simctl = (...a) => sh('xcrun', ['simctl', ...a]);
 
 function options() {
-  const o = { device: 'iPhone 17', video: false };
+  const o = { device: 'iPhone 17', video: false, boot: false, erase: false };
   const a = process.argv.slice(2);
   for (let i = 0; i < a.length; i += 1) {
-    if (a[i] === '--video') o.video = true;
+    if (['--video', '--boot', '--erase'].includes(a[i])) o[a[i].slice(2)] = true;
     else if (a[i].startsWith('--')) o[a[i].slice(2)] = a[(i += 1)];
   }
+  if (o.boot) return o;
   for (const k of ['app', 'steps', 'out']) {
     if (!o[k]) throw new Error(`--${k} is missing. Usage: node run.js --app <Flow.app> --steps <steps.js> --out <dir>`);
   }
@@ -65,28 +70,46 @@ function log(text) {
   if (logFile) fs.appendFileSync(logFile, `${line}\n`);
 }
 
+/** fn(), its time in the log. */
+function timed(what, fn) {
+  const t0 = Date.now();
+  const value = fn();
+  log(`${what} (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+  return value;
+}
+
 // ---- a Flow Server with test songs ----
 
-// One song of each kind Flow keeps, each its own tone, 45 s long.
+// One song of each kind Flow keeps, each its own tone, 45 s long. Vorbis
+// twice: ffmpeg's own encoder (Homebrew's ffmpeg comes without libvorbis) and
+// the reference one (oggenc, from vorbis-tools), to tell the iPhone's player
+// apart from one encoder's files.
 const SONGS = [
   ['Flow Test - Sine A.mp3', 440, ['-c:a', 'libmp3lame', '-b:a', '192k']],
   ['Flow Test - Sine B.opus', 494, ['-c:a', 'libopus', '-b:a', '96k']],
-  // ffmpeg's own Vorbis encoder: Homebrew's ffmpeg comes without libvorbis.
   ['Flow Test - Sine C.ogg', 523, ['-c:a', 'vorbis', '-strict', 'experimental']],
   ['Flow Test - Sine D.m4a', 587, ['-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart']],
   ['Flow Test - Sine E.flac', 659, ['-c:a', 'flac']],
   ['Flow Test - Sine F.wav', 698, ['-c:a', 'pcm_s16le']],
+  ['Flow Test - Sine G.ogg', 740, 'oggenc'],
 ];
 
-/** The test songs; one this ffmpeg cannot make is left out (its step then says so). */
+/** The test songs; one that cannot be made here is left out (its step then says so). */
 function makeSongs(dir) {
   fs.mkdirSync(dir, { recursive: true });
   let made = 0;
   for (const [name, hz, codec] of SONGS) {
     const [artist, title] = name.replace(/\.\w+$/, '').split(' - ');
+    const tone = ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=45`, '-ac', '2', '-ar', '48000'];
     try {
-      sh('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=45`,
-        '-ac', '2', '-ar', '48000', ...codec, '-metadata', `title=${title}`, '-metadata', `artist=${artist}`, path.join(dir, name)]);
+      if (codec === 'oggenc') {
+        const wav = path.join(os.tmpdir(), `flow-ci-${hz}.wav`);
+        sh('ffmpeg', [...tone, '-c:a', 'pcm_s16le', wav]);
+        sh('oggenc', ['-Q', '-q', '4', '-t', title, '-a', artist, '-o', path.join(dir, name), wav]);
+        fs.rmSync(wav, { force: true });
+      } else {
+        sh('ffmpeg', [...tone, ...codec, '-metadata', `title=${title}`, '-metadata', `artist=${artist}`, path.join(dir, name)]);
+      }
       made += 1;
     } catch (err) {
       log(`${name} could not be made: ${String(err.stderr || err.message).trim().split(/\r?\n/).pop()}`);
@@ -125,7 +148,7 @@ async function startServer(out) {
 
 // ---- the Simulator ----
 
-/** The newest iOS's device of this name: { udid, name, runtime }. */
+/** The newest iOS's device of this name: { udid, name, runtime, state }. */
 function pickDevice(name) {
   const all = JSON.parse(simctl('list', 'devices', 'available', '--json')).devices;
   let best = null;
@@ -134,7 +157,7 @@ function pickDevice(name) {
     if (!m) continue;
     const version = Number(m[1]) * 100 + Number(m[2]);
     for (const d of devices) {
-      if (d.name === name && (!best || version > best.version)) best = { udid: d.udid, name: d.name, runtime, version };
+      if (d.name === name && (!best || version > best.version)) best = { udid: d.udid, name: d.name, runtime, version, state: d.state };
     }
   }
   if (!best) throw new Error(`No Simulator called "${name}" (xcrun simctl list devices).`);
@@ -335,6 +358,12 @@ function collect(ctx) {
 
 async function main() {
   const o = options();
+  if (o.boot) {
+    const device = pickDevice(o.device);
+    if (device.state === 'Shutdown') simctl('boot', device.udid);
+    log(`Simulator booting: ${device.name}, ${device.runtime.replace(/.*SimRuntime\./, '')}`);
+    return;
+  }
   const out = path.resolve(o.out);
   fs.mkdirSync(out, { recursive: true });
   logFile = path.join(out, 'log.txt');
@@ -343,14 +372,19 @@ async function main() {
   const server = await startServer(out);
   const device = pickDevice(o.device);
   log(`Simulator: ${device.name}, ${device.runtime.replace(/.*SimRuntime\./, '')} (${device.udid})`);
-  try {
-    simctl('shutdown', device.udid);
-  } catch {
-    // Not running.
+  if (o.erase) {
+    try {
+      simctl('shutdown', device.udid);
+    } catch {
+      // Not running.
+    }
+    timed('erased', () => simctl('erase', device.udid));
   }
-  simctl('erase', device.udid);
-  simctl('boot', device.udid);
-  simctl('bootstatus', device.udid, '-b');
+  timed('booted', () => {
+    // Booting already (--boot while the app was built), or booted.
+    if (o.erase || pickDevice(o.device).state === 'Shutdown') simctl('boot', device.udid);
+    simctl('bootstatus', device.udid, '-b');
+  });
   // For the screenshots only: dark, and a tidy status bar.
   for (const extra of [['ui', device.udid, 'appearance', 'dark'],
     ['status_bar', device.udid, 'override', '--time', '9:41', '--batteryState', 'charged', '--batteryLevel', '100']]) {
@@ -360,7 +394,7 @@ async function main() {
       log(`simctl ${extra[0]} failed: ${err.message.split(/\r?\n/)[0]}`);
     }
   }
-  simctl('install', device.udid, path.resolve(o.app));
+  timed('installed', () => simctl('install', device.udid, path.resolve(o.app)));
 
   const video = o.video
     ? spawn('xcrun', ['simctl', 'io', device.udid, 'recordVideo', '--codec=h264', '--force', path.join(out, 'run.mp4')], { stdio: 'ignore' })

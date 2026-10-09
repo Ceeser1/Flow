@@ -68,6 +68,10 @@ enum Harness {
         case "output": value = ["name": FlowNativePlugin.outputNow().name]
         // The kinds of sound this iOS's player takes (Ogg: iOS 18.4 and later).
         case "codecs": value = AVURLAsset.audiovisualMIMETypes().filter { $0.hasPrefix("audio/") }.sorted()
+        // The type StreamLoader gives AVPlayer for each kind the Flow Server sends.
+        case "types":
+            value = Dictionary(uniqueKeysWithValues: ["audio/mpeg", "audio/mp4", "audio/aac", "audio/ogg", "audio/flac", "audio/wav"]
+                .map { ($0, StreamLoader.type(of: $0)) })
         default: value = NSNull()
         }
         if let data = try? JSONSerialization.data(withJSONObject: ["v": value]) {

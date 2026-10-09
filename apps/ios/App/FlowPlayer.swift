@@ -7,8 +7,9 @@ import UIKit
 protocol FlowPlayerEvents: AnyObject {
     func onState(_ state: [String: Any])
     func onEnded(_ id: String)
-    /// `status`: the server's answer when it refused the song (401: signed out), else 0.
-    func onError(_ id: String, _ message: String, _ status: Int)
+    /// `status`: the server's answer when it refused the song (401: signed out), else 0;
+    /// `unsupported`: iOS cannot play the file itself (its kind, or it is broken).
+    func onError(_ id: String, _ message: String, _ status: Int, _ unsupported: Bool)
     /// The player signed in to the server again itself: the app's token now.
     func onSignedIn(_ token: String)
     /// On to the next song (`reason`: auto, next, repeat); `heard`: seconds of the one before.
@@ -34,6 +35,12 @@ protocol FlowPlayerEvents: AnyObject {
 /// sound pauses it (and gives it back when iOS says so), unplugged
 /// headphones pause it. The sleep timer runs here too: the music fades out
 /// over its last seconds, then pauses.
+///
+/// Songs from a Flow Server are fetched by StreamLoader: with the newest token,
+/// signed in again when the server ended this app's session (the page takes
+/// the new token over), and patiently through a network that drops. A song
+/// that still fails is told to the page; AVQueuePlayer moves past it by
+/// itself (see failed).
 ///
 /// Equalize volume turns a song down by the player's volume; up (gains over
 /// 1) not yet. Song Transition (crossfade) not yet either (caps.IOS).
@@ -77,7 +84,8 @@ final class FlowPlayer: NSObject {
     private var nextPressed = false
     private var failedTold = ""
     private var resumeAfterInterruption = false
-    private var signingIn = false
+    // The item `id` is: AVQueuePlayer may have moved past it (it failed) before this hears of it.
+    private var itemNow: AVPlayerItem?
 
     // How long the song playing has been heard: playing time, not places.
     private var heardMs: Double = 0
@@ -177,6 +185,8 @@ final class FlowPlayer: NSObject {
         ended = false
         failedTold = ""
         pendingSeek = at > 0 ? at : nil
+        itemNow = nil
+        StreamLoader.shared.fromPage(newSrc)
         setRate(1)
         if newSrc.isEmpty {
             wantPlay = false
@@ -184,6 +194,7 @@ final class FlowPlayer: NSObject {
         } else if let item = makeItem(newSrc) {
             tags[ObjectIdentifier(item)] = Tag(id: id, key: key, gain: gain, src: newSrc, meta: op["meta"] as? [String: Any])
             player.insert(item, after: nil)
+            itemNow = item
             watch(item)
             wantPlay = play
             if play { start() }
@@ -213,6 +224,7 @@ final class FlowPlayer: NSObject {
         var after: AVPlayerItem = keep > 0 ? queued[keep - 1] : current
         for it in items[keep...] {
             let itemSrc = it["src"] as? String ?? ""
+            StreamLoader.shared.fromPage(itemSrc)
             guard let item = makeItem(itemSrc), player.canInsert(item, after: after) else { continue }
             tags[ObjectIdentifier(item)] = Tag(id: it["id"] as? String ?? "", key: it["key"] as? String ?? "",
                                                gain: Float(FlowPlayer.num(it["gain"]) ?? 1), src: itemSrc,
@@ -232,6 +244,7 @@ final class FlowPlayer: NSObject {
         _ = takeHeard()
         player.removeAllItems()
         tags.removeAll()
+        itemNow = nil
         src = ""
         wantPlay = false
         ended = false
@@ -302,9 +315,11 @@ final class FlowPlayer: NSObject {
         player.removeAllItems()
         tags.removeAll()
         failedTold = ""
+        itemNow = nil
         guard let item = makeItem(src) else { return }
         tags[ObjectIdentifier(item)] = Tag(id: id, key: key, gain: gain, src: src, meta: meta)
         player.insert(item, after: nil)
+        itemNow = item
         watch(item)
         if place.isFinite, place > 0 { pendingSeek = place }
         var last = item
@@ -320,20 +335,20 @@ final class FlowPlayer: NSObject {
 
     /// A song's file (a path in Flow's storage) or stream (an address).
     private func makeItem(_ source: String) -> AVPlayerItem? {
-        let url: URL
+        let asset: AVURLAsset
         if source.hasPrefix("/") {
             guard let file = FlowPaths.resolve(source) else { return nil }
-            url = file
+            var options: [String: Any] = [:]
+            // Ogg (Opus, Vorbis) as such: iOS goes by a file's type, which these names may not tell it.
+            if ["opus", "ogg", "oga"].contains(file.pathExtension.lowercased()) {
+                options[AVURLAssetOverrideMIMETypeKey] = "audio/ogg"
+            }
+            asset = AVURLAsset(url: file, options: options)
         } else {
-            guard let u = URL(string: source), u.scheme == "http" || u.scheme == "https" else { return nil }
-            url = u
+            guard let streamed = StreamLoader.shared.asset(source) else { return nil }
+            asset = streamed
         }
-        var options: [String: Any] = [:]
-        // Ogg (Opus, Vorbis) as such: iOS goes by a file's type, which these names may not tell it.
-        if url.isFileURL, ["opus", "ogg", "oga"].contains(url.pathExtension.lowercased()) {
-            options[AVURLAssetOverrideMIMETypeKey] = "audio/ogg"
-        }
-        let item = AVPlayerItem(asset: AVURLAsset(url: url, options: options))
+        let item = AVPlayerItem(asset: asset)
         item.audioTimePitchAlgorithm = .timeDomain
         return item
     }
@@ -350,14 +365,16 @@ final class FlowPlayer: NSObject {
 
     // MARK: what the player does
 
+    /// The song's status from now on, and as it is: one that failed while it was
+    /// only next in the queue is already failed.
     private func watch(_ item: AVPlayerItem) {
-        itemObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+        itemObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             DispatchQueue.main.async { self?.statusChanged(item) }
         }
     }
 
     private func statusChanged(_ item: AVPlayerItem) {
-        guard item === player.currentItem else { return }
+        guard item === itemNow else { return }
         switch item.status {
         case .readyToPlay:
             if let t = pendingSeek {
@@ -367,7 +384,7 @@ final class FlowPlayer: NSObject {
             tellState()
             updateNowPlaying()
         case .failed:
-            failed(item)
+            failed(item, id, src)
         default:
             break
         }
@@ -396,7 +413,12 @@ final class FlowPlayer: NSObject {
 
     /// On to the next song by itself, or by Next on the lock screen.
     private func currentChanged() {
+        // The song left could not be played (AVQueuePlayer moved past it): told first.
+        if let left = itemNow, left !== player.currentItem, left.status == .failed {
+            failed(left, id, src)
+        }
         guard let item = player.currentItem, let tag = tags[ObjectIdentifier(item)] else { return }
+        itemNow = item
         watch(item)
         guard tag.id != id else { return }
         let from = id
@@ -452,50 +474,46 @@ final class FlowPlayer: NSObject {
 
     @objc private func itemBroke(_ note: Notification) {
         DispatchQueue.main.async {
-            guard let item = note.object as? AVPlayerItem, item === self.player.currentItem else { return }
-            self.failed(item)
+            guard let item = note.object as? AVPlayerItem, item === self.itemNow else { return }
+            self.failed(item, self.id, self.src)
         }
     }
 
     /// A song that could not be played: the page hears it, with the server's
-    /// answer when it refused it (401: its session ended).
-    private func failed(_ item: AVPlayerItem) {
-        guard failedTold != id else { return }
-        failedTold = id
-        let failedId = id
+    /// answer when it refused it (StreamLoader), or that iOS cannot play the
+    /// file. AVQueuePlayer moves on past it by itself. Past a refusal or such
+    /// a file it plays on; a song the network did not bring (StreamLoader
+    /// waited minutes for it) pauses it, so the songs after it are not each
+    /// given up in turn.
+    private func failed(_ item: AVPlayerItem, _ failedId: String, _ itemSrc: String) {
+        guard failedTold != failedId else { return }
+        failedTold = failedId
         let error = item.error as NSError?
+        let under = error?.userInfo[NSUnderlyingErrorKey] as? NSError
         let message = error.map { "\($0.domain) \($0.code): \($0.localizedDescription)" } ?? "The song could not be played."
-        let logged = item.errorLog()?.events.last?.errorStatusCode ?? 0
-        let report = { [weak self] (status: Int) in
-            guard let self = self, self.id == failedId else { return }
-            FlowLog.i("error \(failedId) \(message)" + (status > 0 ? " (\(status))" : ""))
-            // Paused, nobody is waiting for it: Play tries it again.
-            if !self.wantPlay && status != 401 {
-                FlowLog.i("(paused: not told)")
-                return
-            }
-            self.events?.onError(failedId, message, status)
-            self.tellState()
-        }
-        if (100...599).contains(logged) {
-            report(logged)
-        } else {
-            probe(src, report)
-        }
-    }
-
-    /// The server's answer to a song's address, when it is not "here it is" (a refusal, 401...); else 0.
-    private func probe(_ source: String, _ done: @escaping (Int) -> Void) {
-        guard source.hasPrefix("http"), let url = URL(string: source) else {
-            done(0)
+        let status = StreamLoader.shared.refusal(of: itemSrc)
+        let unsupported = status == 0 && FlowPlayer.cannotPlay(error)
+        FlowLog.i("error \(failedId) \(message)" + (under.map { " (\($0.domain) \($0.code))" } ?? "")
+                  + (status > 0 ? " (\(status))" : "") + (unsupported ? ": iOS cannot play this file" : ""))
+        // Paused, nobody is waiting for it: Play tries it again.
+        guard wantPlay else {
+            FlowLog.i("(paused: not told)")
             return
         }
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
-        request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
-        URLSession.shared.dataTask(with: request) { _, response, _ in
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            DispatchQueue.main.async { done(status >= 400 ? status : 0) }
-        }.resume()
+        events?.onError(failedId, message, status, unsupported)
+        if status == 0 && !unsupported { pause("not loaded") }
+        tellState()
+    }
+
+    /// Whether an item's error says iOS cannot play the file itself (its kind,
+    /// or it is broken), rather than that it could not get it.
+    private static func cannotPlay(_ error: NSError?) -> Bool {
+        guard let e = error else { return false }
+        // File format not recognized, failed to parse, no decoder, not supported for the asset.
+        if e.domain == AVFoundationErrorDomain && [-11828, -11829, -11833, -11838].contains(e.code) { return true }
+        // "Operation Stopped" from the format reader (iOS 26 and an Ogg Vorbis file).
+        if let under = e.userInfo[NSUnderlyingErrorKey] as? NSError, under.code == -12873 { return true }
+        return false
     }
 
     @objc private func interrupted(_ note: Notification) {
@@ -529,6 +547,46 @@ final class FlowPlayer: NSObject {
         }
     }
 
+    // MARK: the server's token
+
+    /// A Flow Server's address of a song's sound ("https://host/flow/api/songs/<id>/audio?t=..."): the server's, else "".
+    static func baseOf(_ source: String) -> String {
+        guard source.hasPrefix("http://") || source.hasPrefix("https://"), let r = source.range(of: "/api/songs/") else { return "" }
+        return String(source[..<r.lowerBound])
+    }
+
+    static func tokenOf(_ source: String) -> String {
+        guard source.hasPrefix("http") else { return "" }
+        return URLComponents(string: source)?.queryItems?.first(where: { $0.name == "t" })?.value ?? ""
+    }
+
+    /// StreamLoader signed in again (the server had ended this app's session):
+    /// SessionKeeper and the page take the new token over. Failing that, the
+    /// song fails with 401 and the page signs in itself.
+    func streamsSignedIn(_ r: ServerSignIn.Result) {
+        guard let t = r.token else {
+            FlowLog.i("could not sign in again: \(r.problem)")
+            return
+        }
+        SessionKeeper.shared.signedIn(t)
+        FlowLog.i("signed in again" + (r.profileOk ? "" : " (\(r.problem))"))
+        // Without the profile the token is not the one the page signs in with: it signs in itself.
+        if r.profileOk { events?.onSignedIn(t) }
+    }
+
+    /// A token SessionKeeper signed in for: the songs go with it, the page takes it over.
+    func tookToken(_ t: String, profileOk: Bool) {
+        StreamLoader.shared.use(t)
+        if profileOk { events?.onSignedIn(t) }
+    }
+
+    /// What SessionKeeper tells the server: the song loaded, whether it plays, where, how long, its names.
+    func sessionNow() -> (key: String, playing: Bool, position: Double, duration: Double, title: String, artist: String)? {
+        guard !key.isEmpty, let item = player.currentItem else { return nil }
+        let meta = tags[ObjectIdentifier(item)]?.meta
+        return (key, wantPlay && !ended, position(), max(0, duration()), meta?["title"] as? String ?? "", meta?["artist"] as? String ?? "")
+    }
+
     // MARK: state
 
     private func duration() -> Double {
@@ -552,7 +610,7 @@ final class FlowPlayer: NSObject {
         if ended { return St.ended }
         switch item.status {
         case .failed:
-            return signingIn ? St.buffering : St.idle
+            return St.idle
         case .readyToPlay:
             return player.timeControlStatus == .waitingToPlayAtSpecifiedRate ? St.buffering : St.ready
         default:

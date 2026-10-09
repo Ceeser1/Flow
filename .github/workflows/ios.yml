@@ -35,12 +35,17 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Tools (XcodeGen; ffmpeg for the test songs)
+      # A runner's Simulator takes minutes to boot the first time: it boots
+      # while the tools are installed and the app is built.
+      - name: The Simulator, booting
+        run: node apps/ios/testing/run.js --boot
+
+      - name: Tools (XcodeGen; ffmpeg and oggenc for the test songs)
         run: |
           curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
           unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
-          brew install ffmpeg
+          brew install ffmpeg vorbis-tools
           xcodebuild -version
           node --version
 

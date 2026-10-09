@@ -18,7 +18,9 @@ Not on the iPhone (yet): Song Transition and turning quiet songs up (Equalize
 volume only turns loud ones down), the share target and the widget.
 
 Needs iOS 18.4 or later (iPhone XS / XR and newer): from 18.4 iOS plays Ogg
-(Opus, Vorbis) itself, the format most of Flow's songs from YouTube are in.
+Opus itself, the format most of Flow's songs from YouTube are in. Ogg Vorbis
+(.ogg) it does not play (iOS 26 in the Simulator): such a song says so and the
+queue goes on to the next.
 
 ## Installing
 
@@ -49,7 +51,7 @@ package; build number as Android's versionCode, 3.0.0 -> 30000).
 ### Trying it out in the Simulator
 
 `testing/run.js` starts a Flow Server with a test song of each kind
-(ffmpeg), installs the Debug build on a fresh Simulator, runs a steps file
+(ffmpeg, oggenc), installs the Debug build on a Simulator, runs a steps file
 against the page (`testing/steps/`) and saves screenshots, a video and the
 logs. The CI runs `steps/smoke.js`; another one is chosen when the workflow
 is started by hand.
@@ -84,4 +86,10 @@ Swift in `App/`, with the plugins and calls of the Android app's Java:
   with the operations, states and events of the Android player, so the page's
   audio engine (`apps/android/src/engine.js`) is the same; the lock screen and
   Control Center.
+- `StreamLoader.swift`: the songs from a Flow Server, fetched for the player
+  by Flow itself (as Android's `Streams.java`): with the newest token, signed
+  in again when the server ended this app's session (`ServerSignIn.swift`),
+  and tried again for a while when the network drops.
+- `SessionKeeper.swift`: keeps this phone's Active Session on the server
+  while Flow is out of sight.
 - `FlowLog.swift`: `Library/Flow/logs/flow.log`.
