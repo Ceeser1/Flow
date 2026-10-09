@@ -302,6 +302,37 @@ module.exports = [
   },
   { name: 'how far apart now (ms)', run: async () => hosting.drift },
   {
+    // For the record: the native player's place against the host's, and what
+    // the page reckons (its place, the target, the drift it eases away), every
+    // 3/4 s; `speed` how fast the native place moved since the sample before.
+    name: 'playing along, closely',
+    js: `
+      const out = [];
+      for (let i = 0; i < 8; i += 1) {
+        const st = await Capacitor.Plugins.FlowAudio.run({ ops: [] });
+        out.push({
+          t: st.t, at: st.at, rate: st.rate, page: Player.engine.time, target: Player._hereTarget(),
+          drift: Player.remote ? Player.remote.drift : null, shift: Output.shift(),
+        });
+        ${wait(750)}
+      }
+      return out;
+    `,
+    timeout: 20000,
+    expect: (v) => {
+      hosting.samples = v.map((s, i) => ({
+        vsHost: Math.round((s.t - hostPlace(s.at)) * 1000),
+        speed: i ? Math.round(((s.t - v[i - 1].t) / ((s.at - v[i - 1].at) / 1000)) * 1000) / 1000 : null,
+        rate: s.rate,
+        pageVsNative: Math.round((s.page - s.t) * 1000),
+        drift: s.drift === null ? null : Math.round(s.drift * 1000),
+        shift: s.shift,
+      }));
+      return true;
+    },
+  },
+  { name: 'the samples', run: async () => hosting.samples },
+  {
     name: 'remote only: the iPhone stops playing along',
     js: `Session.setHere(false); ${wait(1500)} return { here: Player.remote.here, playing: !Player.engine.paused && !!Player.engine.loaded };`,
     expect: (v) => v.here === false && !v.playing,

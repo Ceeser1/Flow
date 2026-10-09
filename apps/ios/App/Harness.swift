@@ -70,6 +70,18 @@ enum Harness {
         case "nowplaying": value = FlowPlayer.shared.nowPlayingNow()
         // Next as the lock screen presses it.
         case "next": value = FlowPlayer.shared.remoteNext()
+        // What the widget shows (from the App Group's folder), and its buttons.
+        case "widget":
+            if let song = FlowGroup.song(), let data = try? JSONEncoder().encode(song),
+               var o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                o["coverFile"] = FlowGroup.coverFile.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+                value = o
+            } else {
+                value = ["group": FlowGroup.folder != nil]
+            }
+        case "widget-toggle", "widget-next", "widget-previous":
+            FlowPlayer.shared.widget(WidgetAction(rawValue: String(what.dropFirst(7))) ?? .toggle)
+            value = true
         // The page's process ended, as iOS ends it for memory while Flow is out of sight.
         case "killpage":
             let kill = NSSelectorFromString("_killWebContentProcess")

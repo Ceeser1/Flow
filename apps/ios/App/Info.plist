@@ -79,6 +79,11 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- The App Group shared with the widget: SideStore puts the name it gives it here. -->
+	<key>ALTAppGroups</key>
+	<array>
+		<string>group.io.github.ceeser1.flow</string>
+	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Flow looks for your Flow Server on this network and plays its songs.</string>
 </dict>

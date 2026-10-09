@@ -15,13 +15,19 @@ in the iOS Simulator on GitHub's Macs; not yet tried on a real iPhone.
   File(s) / Folder, from the Files app).
 - **Song Transition** (the end of a song and the start of the next one
   overlap) and **Equalize volume** both ways, also with the screen locked.
+- **The home screen widget** (small and medium): the song playing with
+  Play/Pause and Next (the medium one: Previous and the timeline too). Its
+  Play also works when Flow is not running: Flow starts in the background
+  and plays the song it was on.
 
-Not on the iPhone (yet): the share target and the widget.
+Not on the iPhone: the share target (each extension of an app costs a free
+Apple ID one of its 10 App IDs a week; Flow and its widget take two).
 
 Needs iOS 18.4 or later (iPhone XS / XR and newer): from 18.4 iOS plays Ogg
 Opus itself, the format most of Flow's songs from YouTube are in. Ogg Vorbis
-(.ogg) it does not play (neither iOS 18 nor 26): such a song says so and the
-queue goes on to the next, and such a file is not imported.
+(.ogg) iOS does not play (neither 18 nor 26): a Flow Server with ffmpeg sends
+such a song as Opus (converted once and kept), streamed or downloaded; a
+Vorbis file of the phone's own is not imported, and says why.
 
 ## Installing
 
@@ -69,6 +75,8 @@ logs. The CI runs, on iOS 26 (iPhone 17) and iOS 18 (iPhone SE):
 - `steps/offline.js`: songs downloaded and played with the server gone,
   files imported (names, pictures, waveforms);
 - `steps/effects.js`: Song Transition and Equalize volume, measured;
+- `steps/widget.js`: what the widget shows, its buttons, and its Play
+  starting Flow when it is not running;
 - `steps/sessions.js`: a second device (the test script) joins the iPhone's
   Active Session, pauses and plays it, and it stays while Flow is out of
   sight; then the iPhone joins another device's session, plays along in step
@@ -116,4 +124,7 @@ Swift in `App/`, with the plugins and calls of the Android app's Java:
   and tried again for a while when the network drops.
 - `SessionKeeper.swift`: keeps this phone's Active Session on the server
   while Flow is out of sight.
+- `WidgetFeed.swift`: the widget's song, written into the App Group shared
+  with the widget (`Widget/FlowWidget.swift`, WidgetKit); its buttons are
+  App Intents (`Shared/WidgetShared.swift`) that run in Flow's process.
 - `FlowLog.swift`: `Library/Flow/logs/flow.log`.

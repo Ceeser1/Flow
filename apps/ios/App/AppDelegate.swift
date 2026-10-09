@@ -8,6 +8,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         let info = Bundle.main.infoDictionary ?? [:]
         FlowLog.i("Flow \(info["CFBundleShortVersionString"] ?? "?") (\(info["CFBundleVersion"] ?? "?")) started on iOS "
             + UIDevice.current.systemVersion)
+        WidgetFeed.start()
+        #if DEBUG
+        // The test runner: a widget's button with Flow not running (Flow started for it).
+        if let action = UserDefaults.standard.string(forKey: "FlowTestWidget").flatMap(WidgetAction.init(rawValue:)) {
+            FlowPlayer.shared.widget(action)
+        }
+        #endif
         return true
     }
 

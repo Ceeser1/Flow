@@ -17,9 +17,12 @@
 // --erase wipes it first (a Mac's own Simulator; a CI runner's is new).
 //
 // A steps file exports [{ name, js, until, native, background, foreground,
-// simctl, run, timeout, wait, shot, expect }], each step doing what it has,
-// in this order:
+// relaunch, simctl, run, timeout, wait, shot, expect }], each step doing what
+// it has, in this order:
 //   background  Flow out of sight (iOS's Settings app opened); foreground: back
+//   relaunch    Flow ended and started again, with these launch arguments
+//               too (['-FlowTestWidget', 'toggle']: a widget's button pressed
+//               while Flow was not running)
 //   simctl      arguments for `xcrun simctl` ("{udid}" is the Simulator's id)
 //   run         async (ctx) => value, run here on the Mac (ctx: { udid, out, server, sh })
 //   native      what the app answers itself, also while its page sleeps
@@ -293,6 +296,16 @@ async function runStep(step, ctx) {
   try {
     if (step.background) simctl('launch', ctx.udid, 'com.apple.Preferences');
     if (step.foreground) simctl('launch', ctx.udid, BUNDLE);
+    if (step.relaunch) {
+      try {
+        simctl('terminate', ctx.udid, BUNDLE);
+      } catch {
+        // Not running.
+      }
+      await sleep(1000);
+      simctl('launch', `--stdout=${path.join(ctx.out, 'app-stdout-2.txt')}`, `--stderr=${path.join(ctx.out, 'app-stderr-2.txt')}`,
+        ctx.udid, BUNDLE, '-FlowHarness', `http://127.0.0.1:${HARNESS_PORT}`, ...step.relaunch);
+    }
     if (step.simctl) simctl(...step.simctl.map((a) => (a === '{udid}' ? ctx.udid : a)));
     if (step.run) value = await step.run(ctx);
     if (step.native) {

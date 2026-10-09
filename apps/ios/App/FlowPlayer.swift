@@ -42,6 +42,12 @@ protocol FlowPlayerEvents: AnyObject {
 /// that still fails is told to the page; AVQueuePlayer moves past it by
 /// itself (see failed).
 ///
+/// The home screen widget shows what plays (WidgetFeed) and its buttons come
+/// here (widget). For its Play while Flow is not running (iOS starts Flow in
+/// the background, without a page), what plays is kept in a file all along
+/// (saveResume): the song, the songs after it, the place; Play plays it from
+/// there (resumeAlone), and a page that starts later takes it over.
+///
 /// Equalize volume turns a song down by the player's volume, up through an
 /// audio tap (Boost). Song Transition (crossfade) as on Android: shortly
 /// before a song ends, a second player (the tail) is made ready at the place
@@ -99,6 +105,9 @@ final class FlowPlayer: NSObject {
     private var heardAway: [[String: Any]] = []
     private let heardFile = FlowPaths.files.appendingPathComponent("audio-heard.json")
     private let lastFile = FlowPaths.files.appendingPathComponent("audio-last.json")
+    // What plays, for the widget's Play without a page (saveResume, resumeAlone).
+    private let resumeFile = FlowPaths.files.appendingPathComponent("audio-resume.json")
+    private var resumeSavedAt: Double = 0
 
     // The sleep timer: when it runs out (wall clock, ms; 0: none) and over how long it fades.
     private var sleepAt: Double = 0
@@ -152,12 +161,16 @@ final class FlowPlayer: NSObject {
             guard let self = self, self.player.timeControlStatus == .playing else { return }
             self.checkTransition()
             self.tellState()
+            if ProcessInfo.processInfo.systemUptime - self.resumeSavedAt > 30 { self.saveResume() }
         }
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(itemEnded(_:)), name: .AVPlayerItemDidPlayToEndTime, object: nil)
         center.addObserver(self, selector: #selector(itemBroke(_:)), name: .AVPlayerItemFailedToPlayToEndTime, object: nil)
         center.addObserver(self, selector: #selector(interrupted(_:)), name: AVAudioSession.interruptionNotification, object: session)
         center.addObserver(self, selector: #selector(routeChanged(_:)), name: AVAudioSession.routeChangeNotification, object: session)
+        _ = center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.saveResume()
+        }
         setUpRemote()
         FlowLog.i("player ready")
     }
@@ -262,6 +275,7 @@ final class FlowPlayer: NSObject {
             after = item
         }
         boostNext()
+        saveResume()
     }
 
     private func same(_ item: AVPlayerItem, _ it: [String: Any]) -> Bool {
@@ -318,6 +332,7 @@ final class FlowPlayer: NSObject {
         if was { FlowLog.i("pause \(id) (\(why))") }
         tellState()
         updateNowPlaying()
+        saveResume()
     }
 
     private func seek(_ t: Double) {
@@ -491,6 +506,7 @@ final class FlowPlayer: NSObject {
         boostNext()
         updateEnd()
         updateNowPlaying()
+        saveResume()
         let why = crossing || !nextPressed ? "auto" : "next"
         crossing = false
         nextPressed = false
@@ -911,6 +927,7 @@ final class FlowPlayer: NSObject {
     /// are kept for the next start.
     func letGo() {
         guard !key.isEmpty else { return }
+        saveResume()
         let last: [String: Any] = ["key": key, "at": position(), "heard": heardSoFar() / 1000]
         player.pause()
         if let data = try? JSONSerialization.data(withJSONObject: last) {
@@ -996,12 +1013,7 @@ final class FlowPlayer: NSObject {
         }
         c.previousTrackCommand.addTarget { [weak self] _ in
             guard let self = self, !self.src.isEmpty else { return .noSuchContent }
-            // Into the song: back to its start; at its start: the song before (the page's).
-            if self.position() > 3 || self.events == nil {
-                self.seek(0)
-            } else {
-                self.events?.onPrevious()
-            }
+            self.previous()
             return .success
         }
         c.changePlaybackPositionCommand.addTarget { [weak self] event in
@@ -1018,6 +1030,78 @@ final class FlowPlayer: NSObject {
         player.advanceToNextItem()
         if wantPlay { player.play() }
         return true
+    }
+
+    /// Previous: into the song, back to its start; at its start, the song before (the page's).
+    private func previous() {
+        if position() > 3 || events == nil {
+            seek(0)
+        } else {
+            events?.onPrevious()
+        }
+    }
+
+    // MARK: the widget
+
+    /// The widget's buttons (WidgetFeed). With nothing loaded (iOS started
+    /// Flow for the button, no page yet), Play plays the song kept last.
+    func widget(_ action: WidgetAction) {
+        FlowLog.i("widget: \(action.rawValue)" + (src.isEmpty ? " (nothing loaded)" : ""))
+        switch action {
+        case .toggle:
+            if src.isEmpty {
+                resumeAlone()
+            } else if wantPlay {
+                pause("widget")
+            } else {
+                play()
+            }
+        case .next:
+            if !src.isEmpty { _ = remoteNext() }
+        case .previous:
+            if !src.isEmpty { previous() }
+        }
+    }
+
+    private func tagJson(_ t: Tag) -> [String: Any] {
+        var o: [String: Any] = ["id": t.id, "key": t.key, "src": t.src, "gain": Double(t.gain)]
+        if let meta = t.meta { o["meta"] = meta }
+        return o
+    }
+
+    /// What plays, kept: the song as the page loaded it, the songs after it,
+    /// the place (on a pause, a new song, a new queue, going out of sight, and
+    /// every half minute while playing).
+    private func saveResume() {
+        guard let item = player.currentItem, let tag = tags[ObjectIdentifier(item)] else { return }
+        resumeSavedAt = ProcessInfo.processInfo.systemUptime
+        let next = player.items().dropFirst().compactMap { tags[ObjectIdentifier($0)] }.map(tagJson)
+        let r: [String: Any] = [
+            "song": tagJson(tag), "next": next, "at": pendingSeek ?? position(), "repeat": repeatOne,
+            "transition": transitionMs, "volume": Double(volume),
+        ]
+        guard JSONSerialization.isValidJSONObject(r), let data = try? JSONSerialization.data(withJSONObject: r) else { return }
+        try? data.write(to: resumeFile, options: .atomic)
+    }
+
+    /// The widget's Play with nothing loaded: the song kept last plays from
+    /// where it was, the songs after it next, as the page had them.
+    private func resumeAlone() {
+        guard let data = try? Data(contentsOf: resumeFile), let r = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              var load = r["song"] as? [String: Any], !(load["src"] as? String ?? "").isEmpty else {
+            FlowLog.i("widget: no song kept to play")
+            return
+        }
+        load["op"] = "load"
+        load["at"] = FlowPlayer.num(r["at"]) ?? 0
+        load["play"] = true
+        FlowLog.i("widget: \(load["id"] as? String ?? "?") again, without a page")
+        apply([
+            ["op": "volume", "volume": FlowPlayer.num(r["volume"]) ?? 1],
+            ["op": "transition", "ms": FlowPlayer.num(r["transition"]) ?? 0],
+            load,
+            ["op": "next", "items": r["next"] ?? [[String: Any]](), "repeat": FlowPlayer.bool(r["repeat"])],
+        ])
     }
 
     /// What the lock screen shows now, for the test runner.
@@ -1038,6 +1122,7 @@ final class FlowPlayer: NSObject {
         let center = MPNowPlayingInfoCenter.default()
         guard !src.isEmpty, let item = player.currentItem else {
             center.nowPlayingInfo = nil
+            WidgetFeed.stopped()
             return
         }
         let meta = tags[ObjectIdentifier(item)]?.meta
@@ -1054,6 +1139,8 @@ final class FlowPlayer: NSObject {
         if d > 0 { info[MPMediaItemPropertyPlaybackDuration] = d }
         if let art = artworkFor(meta?["artwork"] as? String) { info[MPMediaItemPropertyArtwork] = art }
         center.nowPlayingInfo = info
+        WidgetFeed.tell(title: meta?["title"] as? String ?? "", artist: meta?["artist"] as? String ?? "", playing: wantPlay,
+                        position: position(), duration: d, artwork: meta?["artwork"] as? String ?? "")
     }
 
     private func artworkFor(_ path: String?) -> MPMediaItemArtwork? {

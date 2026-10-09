@@ -14,7 +14,7 @@ on:
       steps:
         description: Steps files in apps/ios/testing/steps (without .js), in order
         required: false
-        default: smoke offline effects sessions
+        default: smoke offline effects sessions widget
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -101,7 +101,7 @@ jobs:
       - name: Test in the Simulator
         run: |
           failed=0
-          for steps in ${{ inputs.steps || 'smoke offline effects sessions' }}; do
+          for steps in ${{ inputs.steps || 'smoke offline effects sessions widget' }}; do
             node apps/ios/testing/run.js --video --device "${{ matrix.device }}" --ios "${{ matrix.ios }}" \
               --app apps/ios/build/Build/Products/Debug-iphonesimulator/Flow.app \
               --steps "apps/ios/testing/steps/$steps.js" \
@@ -164,7 +164,15 @@ jobs:
         if: env.FLOW_IPA_KEY != ''
         run: |
           mkdir -p "$RUNNER_TEMP/ipa/Payload" sealed
-          cp -R apps/ios/build/Build/Products/Release-iphoneos/Flow.app "$RUNNER_TEMP/ipa/Payload/"
+          app="$RUNNER_TEMP/ipa/Payload/Flow.app"
+          cp -R apps/ios/build/Build/Products/Release-iphoneos/Flow.app "$app"
+          # Signed by no one in particular, but saying what each part needs
+          # (the App Group it shares with the widget), which SideStore reads
+          # when it signs Flow with a person's Apple ID.
+          for f in "$app"/Frameworks/*; do if [ -e "$f" ]; then codesign --force --sign - "$f"; fi; done
+          codesign --force --sign - --entitlements apps/ios/Widget/FlowWidget.entitlements "$app/PlugIns/FlowWidget.appex"
+          codesign --force --sign - --entitlements apps/ios/App/Flow.entitlements "$app"
+          codesign -d --entitlements - "$app" 2>/dev/null | grep -q application-groups
           (cd "$RUNNER_TEMP/ipa" && zip -qry Flow.ipa Payload)
           version=$(node -p "require('./apps/ios/package.json').version")
           node apps/ios/scripts/sealed.js seal "$RUNNER_TEMP/ipa/Flow.ipa" "sealed/Flow-$version.ipa.sealed"
