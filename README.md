@@ -534,7 +534,8 @@ npm install     # once, in the Flow folder: installs every app and package
 npm start       # run the desktop app
 npm test        # every package's tests: no network; the parts that need ffmpeg run
                 # with apps/desktop/tools/ (or ffmpeg on the PATH), else are skipped
-npm run icon    # build/icon.ico and renderer/assets/icon.png from build/flow.png
+npm run icon    # every app's icons (desktop, Android, iPhone) from icons/flow.png
+                # (the wave alone) and icons/flow-bg.jpg (the wave on its background)
 npm run dist    # build the installer into apps/desktop/dist/
 ```
 
@@ -565,6 +566,8 @@ packages/core/   shared by every Flow app: plain Node, no Electron
 apps/desktop/    the Electron app (Windows now, Linux from the same code)
 apps/server/     Flow Server: hosts a library for the apps (see its README)
 apps/android/    the Android app (v3.0, a Flow Server client; see its README)
+apps/ios/        the iPhone app (the Android app's page in Swift; see its README)
+icons/           Flow's icon, the source of every app's (npm run icon)
 ```
 
 `packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,
