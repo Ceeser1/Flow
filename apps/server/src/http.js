@@ -18,7 +18,9 @@
 //                                      names come back (an app asks when they
 //                                      differ); meta.onExisting "new" takes it
 //                                      as a song of its own all the same
-//   GET  /api/songs/:id/audio          the song's file
+//   GET  /api/songs/:id/audio          the song's file; with ?vorbis=0 (an app that
+//                                      cannot play Ogg Vorbis: the iPhone) such a
+//                                      song as Ogg Opus, converted once (vorbis.js)
 //   GET  /api/songs/:id/peaks          { peaks }: its waveform, for an app's trim
 //   POST /api/songs/:id/trim { start, end, base, cut }
 //                                      its file cut (only when /api/hello lists
@@ -100,6 +102,7 @@ const { DownloadError } = require('./downloads');
 const cover = require('@flow/core/cover');
 const tools = require('./tools');
 const { SessionError } = require('./sessions');
+const { createVorbis } = require('./vorbis');
 
 const PROTOCOL = 1;
 // What this server can do beyond protocol 1, for apps that know to ask.
@@ -327,6 +330,7 @@ function createHttpServer({
   config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null,
 }) {
   const throttle = createThrottle();
+  const vorbis = createVorbis({ home: () => config.home, ffmpeg: tools.ffmpeg, log });
   // Sessions of levels 3 and 4 do not outlive the server's run.
   const startedAt = Date.now();
 
@@ -760,7 +764,7 @@ function createHttpServer({
     if (m && (req.method === 'GET' || req.method === 'HEAD')) {
       const file = library.songFile(m[1]);
       if (!file) throw new HttpError(404, 'That song is not on the server.');
-      return sendFile(req, res, file);
+      return sendFile(req, res, url.searchParams.get('vorbis') === '0' ? await vorbis.playable(m[1], file) : file);
     }
     m = /^\/api\/songs\/([\w-]{1,64})\/peaks$/.exec(p);
     if (m && is('GET', /./)) {

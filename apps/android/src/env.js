@@ -115,6 +115,8 @@ function createEnv({ tellCovers }) {
     http: { request, stream },
     secrets,
     device: { name: () => phone.device || (platform === 'ios' ? 'iPhone' : 'Android') },
+    // iOS plays no Ogg Vorbis: a Flow Server sends such a song as Opus (caps.vorbis).
+    audioQuery: platform === 'ios' ? 'vorbis=0' : '',
     discovery: {
       async find() {
         const r = await plugin.discover({ timeout: 2500, sends: 3 });

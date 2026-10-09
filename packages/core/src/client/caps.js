@@ -34,6 +34,8 @@ const DESKTOP = {
   measureLoudness: true,
   // Help with an OS that stops apps in the background to save battery (Settings, once by itself).
   batteryHelp: false,
+  // Ogg Vorbis plays; without, a Flow Server sends such a song as Opus (audio ?vorbis=0).
+  vorbis: true,
 };
 
 const ANDROID = {
@@ -53,6 +55,7 @@ const ANDROID = {
   songTransition: true,
   measureLoudness: false,
   batteryHelp: true,
+  vorbis: true,
 };
 
 // The iPhone: as the Android phone, without what iOS has no need or room for.
@@ -62,6 +65,8 @@ const IOS = {
   updateCheck: false,
   // iOS lets a playing app run in the background: nothing to ask for.
   batteryHelp: false,
+  // iOS has no Vorbis decoder (it plays Ogg Opus).
+  vorbis: false,
 };
 
 module.exports = { DESKTOP, ANDROID, IOS };

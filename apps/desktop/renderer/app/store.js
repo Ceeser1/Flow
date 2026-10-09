@@ -89,7 +89,9 @@ const Store = {
     if (song.file) return Util.fileUrl(song.file);
     const st = this.server;
     if (!st.on || !st.base) return '';
-    return `${st.base}/api/songs/${encodeURIComponent(song.id)}/audio${st.token ? `?t=${encodeURIComponent(st.token)}` : ''}`;
+    // An app that cannot play Ogg Vorbis (the iPhone) gets such a song as Opus.
+    const query = [st.token ? `t=${encodeURIComponent(st.token)}` : '', this.can('vorbis') ? '' : 'vorbis=0'].filter(Boolean).join('&');
+    return `${st.base}/api/songs/${encodeURIComponent(song.id)}/audio${query ? `?${query}` : ''}`;
   },
 
   /** A song's cover file as an address, '' without one (covers.js: Covers.el shows it). */

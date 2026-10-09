@@ -73,7 +73,9 @@ const { OfflineError, AuthError, randomHex } = require('./common');
 /**
  * The client of one app. `env`: settings, library (Local Files), covers,
  * jsonFiles (the client's own JSON files, by name), files, paths, exporter, http,
- * secrets, device, discovery, network.
+ * secrets, device, discovery, network; audioQuery: what this app adds when
+ * it fetches a song's audio ('vorbis=0': an iPhone, which cannot play Ogg
+ * Vorbis, gets such a song as Opus).
  */
 function createRemote(env) {
   const {
@@ -81,6 +83,7 @@ function createRemote(env) {
   } = env;
 
   const ALL = model.ALL_SONGS_ID;
+  const audioPath = (id) => `/api/songs/${encodeURIComponent(id)}/audio${env.audioQuery ? `?${env.audioQuery}` : ''}`;
   // "All Songs from <profile>": the songs one profile added (song.addedBy).
   const FROM = 'from:';
   const PROTOCOL = 1;
@@ -1015,7 +1018,7 @@ function createRemote(env) {
       if (!now || !cur || (cur.cut || '') === (now.cut || '')) continue;
       const tmp = files.join(files.dirname(now.file), `.flow-download-${randomHex(5)}${files.extname(now.file)}`);
       try {
-        const r = await request(conn.base, `/api/songs/${encodeURIComponent(there.id)}/audio`, { token: conn.token, saveTo: tmp, timeout: 60000 });
+        const r = await request(conn.base, audioPath(there.id), { token: conn.token, saveTo: tmp, timeout: 60000 });
         if (r.status === 401) throw new AuthError('Signed out.');
         if (r.status !== 200) throw new Error((r.json && r.json.error) || `the server answered ${r.status}`);
         await library.quietly(async () => {
@@ -1588,7 +1591,7 @@ function createRemote(env) {
     const ext = String(s.format || 'mp3').toLowerCase();
     const tmp = files.join(paths.musicDir(), `.flow-download-${randomHex(5)}.${ext}`);
     try {
-      const r = await request(conn.base, `/api/songs/${encodeURIComponent(s.id)}/audio`, {
+      const r = await request(conn.base, audioPath(s.id), {
         token: conn.token, saveTo: tmp, timeout: 60000, onProgress,
       });
       if (r.status === 401) throw new AuthError('Signed out.');
@@ -2342,7 +2345,7 @@ function createRemote(env) {
     files.mkdir(paths.cacheDir());
     const tmp = files.join(paths.cacheDir(), `.flow-audio-${randomHex(5)}`);
     try {
-      const r = await request(conn.base, `/api/songs/${encodeURIComponent(songId)}/audio`, { token: conn.token, saveTo: tmp, timeout: 60000 });
+      const r = await request(conn.base, audioPath(songId), { token: conn.token, saveTo: tmp, timeout: 60000 });
       if (r.status !== 200) throw new Error(`the server answered ${r.status}`);
     } catch (err) {
       files.rm(tmp, { force: true });

@@ -2,14 +2,13 @@
 
 // Flow's first start on the iPhone: it finds the CI's Flow Server by itself,
 // lists its songs, plays each kind of file Flow keeps, plays on with Flow out
-// of sight, and its main screens are photographed. Ogg Vorbis (two encoders)
-// either plays or is told as a file this phone cannot play, the queue moving
-// on past it (iOS 26 plays Ogg Opus, not Vorbis).
+// of sight, and its main screens are photographed. Ogg Vorbis (two encoders),
+// which iOS cannot play, plays too: the Flow Server sends it as Opus.
 
-// [what, the test song's title (run.js), Vorbis]
+// [what, the test song's title (run.js)]
 const SONGS = [
-  ['mp3', 'Sine A'], ['opus', 'Sine B'], ['ogg (ffmpeg\'s Vorbis)', 'Sine C', true], ['m4a', 'Sine D'],
-  ['flac', 'Sine E'], ['wav', 'Sine F'], ['ogg (libvorbis)', 'Sine G', true],
+  ['mp3', 'Sine A'], ['opus', 'Sine B'], ['ogg (ffmpeg\'s Vorbis, as Opus)', 'Sine C'], ['m4a', 'Sine D'],
+  ['flac', 'Sine E'], ['wav', 'Sine F'], ['ogg (libvorbis, as Opus)', 'Sine G'],
 ];
 
 // The native player's song while Flow is out of sight: before and after Next.
@@ -17,7 +16,7 @@ const away = {};
 
 const wait = (ms) => `await new Promise((r) => setTimeout(r, ${ms}));`;
 
-const plays = ([what, title, vorbis]) => ({
+const plays = ([what, title]) => ({
   name: `plays ${what}`,
   js: `
     const s = Store.library.songs.find((x) => x.title === '${title}');
@@ -42,11 +41,7 @@ const plays = ([what, title, vorbis]) => ({
   `,
   timeout: 20000,
   shot: title === 'Sine G' ? '03b-vorbis' : undefined,
-  expect: (v) => {
-    if (!v || v.missing) return false;
-    const played = v.own && v.t >= 2 && !v.paused && !v.errors.length;
-    return played || (!!vorbis && v.errors.some((x) => x.kind === 'format'));
-  },
+  expect: (v) => !!v && !v.missing && v.own && v.t >= 2 && !v.paused && !v.errors.length,
 });
 
 module.exports = [

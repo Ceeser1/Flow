@@ -48,10 +48,11 @@ const imports = (label, name) => ({
 module.exports = [
   ...start,
   {
-    name: 'two songs downloaded (mp3, opus)',
+    // Sine C is Ogg Vorbis: the server sends the phone an Opus copy.
+    name: 'three songs downloaded (mp3, opus, Vorbis)',
     js: `
       const out = {};
-      for (const title of ['Sine A', 'Sine B']) {
+      for (const title of ['Sine A', 'Sine B', 'Sine C']) {
         const s = Store.library.songs.find((x) => x.title === title);
         await window.flow.downloadServerSong(s.id);
         for (let i = 0; i < 40 && !(Store.song(s.id) || {}).file; i += 1) ${wait(250)}
@@ -62,7 +63,7 @@ module.exports = [
     timeout: 60000,
     wait: 1000,
     shot: '01-downloaded',
-    expect: (v) => !!v['Sine A'] && !!v['Sine B'],
+    expect: (v) => !!v['Sine A'] && !!v['Sine B'] && !!v['Sine C'],
   },
   {
     name: 'plays its own copy',
@@ -91,6 +92,12 @@ module.exports = [
     js: loadAndPlay('Sine B'),
     timeout: 15000,
     expect: (v) => v.now === 'Sine B' && v.t >= 2 && !v.paused,
+  },
+  {
+    name: 'and its Vorbis song, downloaded as Opus',
+    js: loadAndPlay('Sine C'),
+    timeout: 20000,
+    expect: (v) => v.now === 'Sine C' && v.t >= 2 && !v.paused,
   },
   {
     // Streamed: it waits for the server (StreamLoader tries again for minutes).
