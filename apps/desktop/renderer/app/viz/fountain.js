@@ -13,7 +13,8 @@
 //
 // Its cogwheel: the lamps' colours (rainbow, by the chords, warm white,
 // blue), where the bass is (the middle, the left), how many jets (spread
-// evenly, the edges as far off as the jets are apart), the bursts' ripples.
+// evenly, the edges as far off as the jets are apart), the gravity (0.5-2 G,
+// the same heights, slower or faster), the bursts' ripples.
 //
 // WebGL (viz/gl.js): the water is streaks of light drawn into a texture,
 // blurred for the glow; the mist is soft round points drawn at half size
@@ -22,7 +23,7 @@
 // ledge in front in one pass over it all.
 
 (() => {
-  const MAX_DROPS = 9000;
+  const MAX_DROPS = 16000;
   const MAX_MIST = 700;
   const MAX_JETS = 64;
   const FOAM_BINS = 160;
@@ -278,7 +279,10 @@
       const unit = this.h / 1080;
       const WL = this.h * WATER;
       const maxH = WL - this.h * 0.08;
-      const g = 3900 * unit;
+      // Gravity (1 G = 2000, weak for the size, so the water turns gently at
+      // the top): the water is thrown up as fast as reaches the same heights.
+      const G = Math.max(0.5, Math.min(2, (set('fnGravity') || 100) / 100));
+      const g = 2000 * G * unit;
       this._jets(a, Math.max(4, Math.min(MAX_JETS, set('fnJets') | 0)), set('fnLayout'));
       const jets = this.jets;
 
@@ -332,7 +336,8 @@
         const jet = jets[j];
         const height = maxH * (0.03 + 0.97 * jet.level);
         const v0 = Math.sqrt(2 * g * height);
-        const width = unit * (1.5 + 2.2 * (1 - jet.t));
+        // Every jet's water as fine, bass or highs.
+        const width = unit * 2.5;
         jet.owed += dt * (60 + 40 * jet.level);
         while (jet.owed >= 1) {
           jet.owed -= 1;
@@ -345,8 +350,10 @@
             vy: -v0 * (1 + gauss() * 0.02),
             w: width,
           };
-          // Born somewhere within this frame, so the stream has no gaps.
-          const f = Math.random() * dt;
+          // Born somewhere within this frame, so the stream has no gaps (and,
+          // as the step below still moves it on, from a frame back, or the
+          // first frame's stretch above the water stays empty).
+          const f = Math.random() * dt - dt;
           d.x += d.vx * f;
           d.vy += g * f;
           d.y += d.vy * f;
@@ -384,8 +391,8 @@
               vy: -v0 * (0.88 + 0.12 * Math.random()),
               w: unit * (2.5 + 2 * Math.random()),
             };
-            // A gush over a tenth of a second, not one lump.
-            const f = Math.random() * 0.1;
+            // A gush over a tenth of a second, not one lump (from a frame back, as the jets').
+            const f = Math.random() * 0.1 - dt;
             d.x += d.vx * f;
             d.vy += gb * f;
             d.y += d.vy * f;
@@ -410,6 +417,13 @@
       const foam = this.foam;
       for (let k = 0; k < FOAM_BINS; k += 1) foam[k] *= Math.exp(-dt * 3);
       const STREAK = 0.03;
+      // A burst's spray dims as it falls, at one rate for all: a full-height
+      // burst's (falling towards its terminal speed, from 0.88 maxH, where a
+      // drop thrown at the average speed turns) is at half when it reaches
+      // the water, a lower one's brighter.
+      const gFull = g * 0.35;
+      const fullFall = Math.acosh(Math.exp(2 * 0.88)) * 0.5 * Math.sqrt(2 * gFull * maxH) / gFull;
+      const dim = 0.5 / fullFall;
       let alive = 0;
       for (let i = 0; i < drops.length; i += 1) {
         const d = drops[i];
@@ -417,14 +431,13 @@
         const gg = d.g || g;
         if (d.vt && d.vy > 0) d.vy += gg * dt * Math.max(0, 1 - (d.vy / d.vt) ** 2);
         else d.vy += gg * dt;
+        if (d.kind === 1 && d.vy > 0) d.fell = (d.fell || 0) + dt;
         d.x += d.vx * dt;
         d.y += d.vy * dt;
         const jet = jets[d.j];
         if (!jet) continue;
         if (!d.top && d.vy >= 0) {
           d.top = true;
-          // Falling, the water opens out and breaks into drops.
-          d.vx += gauss() * unit * (10 + 30 * jet.level);
           // Where the water turns, a loud jet leaves mist hanging.
           const chance = d.kind === 1 ? 0.12 : d.kind === 0 && jet.level > 0.55 ? 0.05 * jet.level : 0;
           if (Math.random() < chance && mist.length < MAX_MIST) {
@@ -462,8 +475,23 @@
         // Lit from below: brightest near the lamp.
         const lit = jet.lamp * (0.35 + 0.65 * Math.exp(-(WL - d.y) / (0.8 * maxH)));
         // Falling as bright as rising: the lamps light the water both ways.
-        const alpha = (d.kind === 2 ? 0.3 : 0.4) * lit;
-        lines.seg(d.x - d.vx * STREAK, d.y - d.vy * STREAK, d.x, d.y, d.w, jet.rgb, alpha);
+        const alpha = (d.kind === 2 ? 0.3 : 0.4) * lit * (d.fell ? Math.max(0, 1 - dim * d.fell) : 1);
+        // Its streak, where it was a moment ago; never shorter than a drop,
+        // or one hanging at the top (all but still) would vanish.
+        let sx = d.vx * STREAK;
+        let sy = d.vy * STREAK;
+        const len = Math.hypot(sx, sy);
+        const least = d.w * 2;
+        if (len < least) {
+          if (len > 1e-3) {
+            sx *= least / len;
+            sy *= least / len;
+          } else {
+            sx = 0;
+            sy = -least;
+          }
+        }
+        lines.seg(d.x - sx, d.y - sy, d.x, d.y, d.w, jet.rgb, alpha);
       }
       drops.length = alive;
 
@@ -568,6 +596,7 @@
       { type: 'choice', key: 'fnColors', label: 'Lights', choices: [['rainbow', 'Rainbow'], ['notes', 'By the chords'], ['white', 'Warm white'], ['blue', 'Blue']] },
       { type: 'choice', key: 'fnLayout', label: 'Bass', choices: [['middle', 'In the middle'], ['left', 'On the left']] },
       { type: 'slider', key: 'fnJets', label: 'Jets', min: 16, max: MAX_JETS, step: 4, unit: '' },
+      { type: 'slider', key: 'fnGravity', label: 'Gravity', min: 50, max: 200, step: 5, format: (v) => `${(v / 100).toFixed(2)} G` },
       { type: 'check', key: 'fnRipples', label: 'Ripples' },
     ],
   });

@@ -238,12 +238,15 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ sgGlass: 'blue' }).sgGlass, 'cover');
   assert.equal(d.sgTorches, true);
   assert.equal(settings.clean({ sgTorches: false }).sgTorches, false);
-  // Fountain Show: rainbow lamps, the bass in the middle, 40 jets, ripples on.
+  // Fountain Show: rainbow lamps, the bass in the middle, 40 jets, 1 G, ripples on.
   assert.equal(d.fnColors, 'rainbow');
   assert.equal(d.fnLayout, 'middle');
   assert.equal(settings.clean({ fnLayout: 'right' }).fnLayout, 'middle');
   assert.equal(d.fnJets, 40);
   assert.equal(settings.clean({ fnJets: 70 }).fnJets, 64);
+  assert.equal(d.fnGravity, 100);
+  assert.equal(settings.clean({ fnGravity: 30 }).fnGravity, 50);
+  assert.equal(settings.clean({ fnGravity: 117 }).fnGravity, 115);
   assert.equal(d.fnRipples, true);
   assert.equal(d.fnBursts, undefined);
   assert.equal(settings.clean({ ifForest: 'no' }).ifForest, true);

@@ -251,10 +251,12 @@ const VIZ_OPTIONS = {
   mrColors: ['choice', 'neon', ['paper', 'print', 'neon']],
   // Fountain Show: the lamps' colours (rainbow, by the chords, warm white, blue),
   // where the bass is (in the middle or on the left), how many jets, the
-  // rings the bursts leave on the water.
+  // gravity (percent of 1 G, shown as 0.5-2 G), the rings the bursts leave
+  // on the water.
   fnColors: ['choice', 'rainbow', ['rainbow', 'notes', 'white', 'blue']],
   fnLayout: ['choice', 'middle', ['middle', 'left']],
   fnJets: ['range', 40, 16, 64, 4],
+  fnGravity: ['range', 100, 50, 200, 5],
   fnRipples: ['bool', true],
 };
 

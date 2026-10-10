@@ -995,11 +995,12 @@ const Visualizer = {
     cog.setAttribute('aria-expanded', 'false');
 
     // A slider and its value; dragging shows at once, letting go saves.
-    const slider = ({ key, min = 0, max = 200, step = 5, unit = '%' }, cls = '') => {
+    // format (number => text) shows the value otherwise than as itself and its unit.
+    const slider = ({ key, min = 0, max = 200, step = 5, unit = '%', format }, cls = '') => {
       const input = h('input.volume-slider.viz-cfg__slider' + cls, { type: 'range', min, max, step, value: Store.settings[key] });
       const value = h('span.viz-cfg__value');
       const draw = () => {
-        value.textContent = `${input.value}${unit}`;
+        value.textContent = format ? format(Number(input.value)) : `${input.value}${unit}`;
         input.style.setProperty('--fill', `${((Number(input.value) - min) / (max - min)) * 100}%`);
       };
       input.addEventListener('input', () => {
