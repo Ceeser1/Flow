@@ -557,7 +557,7 @@ npm start       # run the desktop app
 npm test        # every package's tests: no network; the parts that need ffmpeg run
                 # with apps/desktop/tools/ (or ffmpeg on the PATH), else are skipped
 npm run icon    # every app's icons (desktop, Android, iPhone) from icons/flow.png
-                # (the wave alone) and icons/flow-bg.jpg (the wave on its background)
+                # (the white wave on its blue square)
 npm run dist    # build the installer into apps/desktop/dist/
 ```
 
