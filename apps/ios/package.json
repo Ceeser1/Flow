@@ -1,6 +1,6 @@
 {
   "name": "flow-ios",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Flow for iPhone: the desktop renderer in a Capacitor shell, built and tested on GitHub's Macs",
   "private": true,
   "scripts": {
