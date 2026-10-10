@@ -230,10 +230,6 @@ const VIZ_OPTIONS = {
   // Night Train: the weather (clear, rain on the glass, snow), the cup of tea.
   ntWeather: ['choice', 'clear', ['clear', 'rain', 'snow']],
   ntCup: ['bool', true],
-  // Ferrofluid: the lights' colours (by the notes, neon, gold, ice), how high
-  // the spikes stand (percent).
-  ffColors: ['choice', 'notes', ['notes', 'neon', 'gold', 'ice']],
-  ffSpikes: ['range', 100, 25, 200, 5],
   // Vinyl: the turntable (wood, black, silver), the grooves' colours (the
   // music's, silver).
   vnPlinth: ['choice', 'wood', ['wood', 'black', 'silver']],
@@ -253,6 +249,13 @@ const VIZ_OPTIONS = {
   // print, neon).
   mrKind: ['choice', 'rings', ['lines', 'rings', 'both']],
   mrColors: ['choice', 'neon', ['paper', 'print', 'neon']],
+  // Fountain Show: the lamps' colours (rainbow, by the chords, warm white, blue),
+  // where the bass is (in the middle or on the left), how many jets, the
+  // rings the bursts leave on the water.
+  fnColors: ['choice', 'rainbow', ['rainbow', 'notes', 'white', 'blue']],
+  fnLayout: ['choice', 'middle', ['middle', 'left']],
+  fnJets: ['range', 40, 16, 64, 4],
+  fnRipples: ['bool', true],
 };
 
 // What the app remembers between sessions. Small and flat, read once at start
@@ -403,7 +406,7 @@ const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'pur
 // The ones that can be chosen; 'random-<category>' picks one of a
 // category's each time (VIZ_CATEGORIES in the desktop's visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy', 'other'];
-const VISUALIZERS = [...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'flow', 'synthwave', 'lightning', 'kaleidoscope', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'coral', 'shatter', 'plasmaglobe', 'attractor', 'julia', 'mandelbulb', 'lighthouse', 'train', 'ferrofluid', 'vinyl', 'mosaic', 'strings', 'radar', 'moire'];
+const VISUALIZERS = [...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'synthwave', 'lightning', 'kaleidoscope', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'coral', 'shatter', 'plasmaglobe', 'attractor', 'julia', 'mandelbulb', 'lighthouse', 'train', 'vinyl', 'mosaic', 'strings', 'radar', 'moire', 'fountain'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));

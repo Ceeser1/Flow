@@ -48,7 +48,8 @@
       vec2 v = uv - 0.5;
       v.x *= res.x / res.y;
       vec3 col = vec3(0.012, 0.016, 0.014) * (1.0 - 0.6 * length(v));
-      // The graticule: ten by eight squares in a square, with ticks on the axes.
+      // The graticule: squares across the whole screen, eight to the middle
+      // square's side and centred on it, with ticks along the axes.
       if (grid > 0.0) {
         float side = min(res.x, res.y) * 0.9;
         vec2 p = (uv * res - res * 0.5) / side;
@@ -57,8 +58,7 @@
         vec2 tick = abs(fract(p * 40.0 + 0.5) - 0.5) * side / 40.0;
         float ticks = (1.0 - smoothstep(0.4, 1.2, abs(p.x) * side)) * (1.0 - smoothstep(3.0, 4.0, tick.y))
           + (1.0 - smoothstep(0.4, 1.2, abs(p.y) * side)) * (1.0 - smoothstep(3.0, 4.0, tick.x));
-        float inside = step(abs(p.x), 0.5 + 0.5 / side) * step(abs(p.y), 0.5 + 0.5 / side);
-        col += color * 0.06 * grid * inside * max(line, min(1.0, ticks));
+        col += color * 0.06 * grid * max(line, min(1.0, ticks));
       }
       // The beam: its colour, white where it is brightest.
       col += color * g + mix(color, vec3(1.0), clamp(b * 0.5, 0.0, 0.7)) * b;

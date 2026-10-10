@@ -139,7 +139,11 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.cloudsBassAmount, 50);
   assert.equal(d.eqColors, 'rainbow');
   assert.equal(settings.clean({ visualizer: 'waveform' }).visualizer, 'waveform');
-  assert.equal(settings.clean({ visualizer: 'flow' }).visualizer, 'flow');
+  // Flow (Settings) is gone: one saved falls back to Bars.
+  assert.equal(settings.clean({ visualizer: 'flow' }).visualizer, 'bars');
+  // Ferrofluid is gone too.
+  assert.equal(settings.clean({ visualizer: 'ferrofluid' }).visualizer, 'bars');
+  assert.equal(d.ffSpikes, undefined);
   assert.equal(settings.clean({ visualizer: 'synthwave' }).visualizer, 'synthwave');
   assert.equal(settings.clean({}).synColor, '#9f38fa');
   assert.equal(settings.clean({ synColor: '#00FF80' }).synColor, '#00ff80');
@@ -234,6 +238,14 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ sgGlass: 'blue' }).sgGlass, 'cover');
   assert.equal(d.sgTorches, true);
   assert.equal(settings.clean({ sgTorches: false }).sgTorches, false);
+  // Fountain Show: rainbow lamps, the bass in the middle, 40 jets, ripples on.
+  assert.equal(d.fnColors, 'rainbow');
+  assert.equal(d.fnLayout, 'middle');
+  assert.equal(settings.clean({ fnLayout: 'right' }).fnLayout, 'middle');
+  assert.equal(d.fnJets, 40);
+  assert.equal(settings.clean({ fnJets: 70 }).fnJets, 64);
+  assert.equal(d.fnRipples, true);
+  assert.equal(d.fnBursts, undefined);
   assert.equal(settings.clean({ ifForest: 'no' }).ifForest, true);
 });
 

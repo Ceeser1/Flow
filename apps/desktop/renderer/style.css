@@ -2408,14 +2408,6 @@ div.import__frame-head { cursor: default; }
 .viz-open .modal-backdrop--over { z-index: 1002; }
 .viz-open .toasts { z-index: 1003; }
 
-/* The Flow visualizer: the window's own clouds and equalizer, full screen. */
-.viz-full--flow { background: transparent; }
-.viz-flow .app { grid-template-columns: 1fr; }
-.viz-flow .menu { display: none; }
-.viz-flow .pages { visibility: hidden; }
-/* The see-through layer would show the dialogs under it (Settings, after Preview selected). */
-.viz-flow .modal-backdrop:not(.modal-backdrop--over) { visibility: hidden; }
-
 /* Only while the mouse moves, and 3 seconds after. */
 .viz-full__close {
   position: absolute;

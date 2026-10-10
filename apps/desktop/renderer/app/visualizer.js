@@ -20,10 +20,6 @@
 //             about the middle of the screen and glowing. Its cogwheel: the
 //             colours (the equalizer's schemes), and distinct bars with a
 //             thin gap between or one smooth wave.
-//   Flow      the window's own background, clouds and equalizer as set in
-//             Settings, across the whole screen: the menu and the page are
-//             hidden (the body's class viz-flow), and the equalizer stands on
-//             the bottom edge of the screen, so it only goes up.
 //   Synthwave the wireframe landscape (landscape.js) flown over at full
 //             screen, under a purple sky and a sun, from a ship's nose. A
 //             cogwheel at the top left opens, to the right, onto its own
@@ -48,14 +44,6 @@ const VISUALIZERS = [
   { id: 'bars', name: 'Bars', ready: true, desc: 'Spectrum bars with falling peaks, in the manner of Winamp', glyph: Icons.speaker, image: '../images/viz-bars.jpg' },
   { id: 'waveform', name: 'Waveform', ready: true, desc: 'The equalizer, glowing out from the middle of the screen', glyph: Icons.pulse, image: '../images/viz-waveform.jpg' },
   {
-    id: 'flow',
-    name: 'Flow (Settings)',
-    ready: true,
-    desc: 'The clouds and equalizer as set above, across the whole screen',
-    glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
-      + 'stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.2 9.3 4.4 4.4 0 0 0 7 18z"/></svg>',
-  },
-  {
     id: 'synthwave',
     name: 'Synthwave',
     ready: true,
@@ -74,25 +62,25 @@ const VIZ_CATEGORIES = [
     id: 'equalizers',
     name: 'Equalizers',
     desc: 'The sound itself: bars, waves, rings and dots',
-    ids: ['bars', 'waveform', 'scope', 'spectrogram', 'ridges', 'skyline', 'halo', 'orb', 'reactor', 'hifi', 'pianoroll', 'vinyl', 'strings', 'radar'],
+    ids: ['bars', 'waveform', 'scope', 'spectrogram', 'ridges', 'skyline', 'halo', 'orb', 'reactor', 'hifi', 'vinyl', 'strings', 'radar'],
   },
   {
     id: 'worlds',
     name: 'Worlds',
     desc: 'Places to look at',
-    ids: ['synthwave', 'warp', 'galaxy', 'aurora', 'lightning', 'inferno', 'fireworks', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'lighthouse', 'train'],
+    ids: ['synthwave', 'galaxy', 'aurora', 'lightning', 'inferno', 'fireworks', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'lighthouse', 'train', 'fountain'],
   },
   {
     id: 'trippy',
     name: 'Trippy',
     desc: 'Patterns, colour and motion',
-    ids: ['kaleidoscope', 'prism', 'lava', 'demo', 'rain', 'chladni', 'coral', 'attractor', 'julia', 'plasmaglobe', 'tunnel', 'mandelbulb', 'ferrofluid', 'moire'],
+    ids: ['kaleidoscope', 'prism', 'lava', 'demo', 'rain', 'chladni', 'coral', 'attractor', 'julia', 'plasmaglobe', 'tunnel', 'warp', 'mandelbulb', 'moire'],
   },
   {
     id: 'other',
     name: 'Other',
     desc: 'The odd ones',
-    ids: ['flow', 'arcade', 'shatter', 'mosaic'],
+    ids: ['pianoroll', 'arcade', 'shatter', 'mosaic'],
   },
 ];
 
@@ -236,15 +224,10 @@ const Visualizer = {
    */
   _mount(kind) {
     this.kind = kind;
-    const flow = kind === 'flow';
-    // Flow draws nothing of its own: the layer is see-through, over the
-    // window's background, and only there for the X and the pointer.
-    this.canvas = flow ? null : h('canvas.viz-full__canvas');
+    this.canvas = h('canvas.viz-full__canvas');
     this.stage = h('div.viz-full__stage', this.canvas);
     this.el.insertBefore(this.stage, this.el.firstChild);
-    this.el.classList.toggle('viz-full--flow', flow);
-    document.body.classList.toggle('viz-flow', flow);
-    if (!Equalizer.active && !flow) {
+    if (!Equalizer.active) {
       this.stage.appendChild(h('p.viz-full__note', 'The visualizer needs Web Audio, which could not be started on this computer.'));
     }
     if (kind === 'synthwave') this.stage.appendChild(this._synPanel());
@@ -254,14 +237,6 @@ const Visualizer = {
     if (def && def.options) this.stage.appendChild(this._cfgPanel(`${def.name} settings`, def.options));
     if (def && def.click) this.canvas.addEventListener('click', () => this.scene && def.click(this.scene));
     if (def && def.hint) this.canvas.title = def.hint;
-
-    if (flow) {
-      // Measured again now the menu, the page and the player bar are out of
-      // the way (and again as the window grows to full screen).
-      Equalizer._layout();
-      Equalizer.wake();
-      return;
-    }
     if (!Equalizer.active) return;
     this.samples = new Float32Array(Equalizer.analyser.fftSize);
     VizAudio.reset({ stereo: !!(def && def.stereo) });
@@ -303,15 +278,12 @@ const Visualizer = {
       }
       this.scene = null;
     }
-    const flow = this.kind === 'flow';
-    document.body.classList.remove('viz-flow');
     if (this.stage) this.stage.remove();
     this.stage = null;
     this.canvas = null;
     this.scratch = null;
     this.glow = null;
     this.terrain = null;
-    if (flow) Equalizer._layout();
   },
 
   /** All of them in Settings' order: the categories', then any in none of them. */
@@ -394,7 +366,7 @@ const Visualizer = {
     document.removeEventListener('pointermove', this._onPointer);
     document.removeEventListener('pointerdown', this._onPointer);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    document.body.classList.remove('viz-open', 'viz-awake', 'viz-flow');
+    document.body.classList.remove('viz-open', 'viz-awake');
     this._drawButton(false);
     // The player bar is back in its place: the equalizer measures from it.
     Equalizer._layout();

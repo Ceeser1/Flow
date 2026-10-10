@@ -248,9 +248,8 @@ const Equalizer = {
     const player = $('player');
     if (!content || !player || !this.canvas) return;
     const width = content.clientWidth;
-    // The top edge of the player bar; as the Flow visualizer (visualizer.js),
-    // the bottom of the screen.
-    const lineY = document.body.classList.contains('viz-flow') ? content.clientHeight : player.offsetTop;
+    // The top edge of the player bar.
+    const lineY = player.offsetTop;
     const look = this._look();
     const reach = lineY * look.reach;
     const top = Math.max(0, lineY - reach * Math.max(1, look.shine) * 1.05);
@@ -355,9 +354,8 @@ const Equalizer = {
     out.setTransform(1, 0, 0, 1, 0, 0);
     out.clearRect(0, 0, this.canvas.width, this.canvas.height);
     // Turned off: nothing drawn, but the analysis goes on for the clouds.
-    // Under the full-screen visualizer nobody would see it, unless that is
-    // the Flow one, which is this.
-    if (Store.settings.eqOn === false || (Visualizer.shown && Visualizer.kind !== 'flow')) return;
+    // Under the full-screen visualizer nobody would see it.
+    if (Store.settings.eqOn === false || Visualizer.shown) return;
     const levels = this.levels;
     let any = false;
     for (let i = 0; i < levels.length; i += 1) {
