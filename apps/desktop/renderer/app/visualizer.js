@@ -18,8 +18,8 @@
 //             had is Scope's, viz/scope.js.)
 //   Waveform  like the equalizer behind the pages (equalizer.js), mirrored
 //             about the middle of the screen and glowing. Its cogwheel: the
-//             colours (the equalizer's schemes), and distinct bars with a
-//             thin gap between or one smooth wave.
+//             colours (the equalizer's schemes), distinct bars with a
+//             thin gap between or one smooth wave, and the shine round it.
 //   Synthwave the wireframe landscape (landscape.js) flown over at full
 //             screen, under a purple sky and a sun, from a ship's nose. A
 //             cogwheel at the top left opens, to the right, onto its own
@@ -131,8 +131,8 @@ const Visualizer = {
   WAVE_FLOOR_DB: -58,
   WAVE_CEIL_DB: -8,
   WAVE_REACH: 0.32,    // a full bar reaches this share of the screen, each way
-  WAVE_SHINE: 1.8,     // the shine reaches this much further
-  WAVE_SHINE_BLUR: 40,
+  WAVE_SHINE: 1.8,     // the shine reaches this much further (at 50% spread;
+  WAVE_SHINE_BLUR: 40, // nothing further and less blurred at 0%, twice at 100%)
   WAVE_SHINE_ALPHA: 0.6,
   WAVE_CORE_BLUR: 3,
   WAVE_ATTACK_MS: 30,
@@ -164,6 +164,8 @@ const Visualizer = {
   SYN_ROLL_EYE: 0.75,  // how much of the lean the world tilts (the eye following it)
   SYN_ROLL_NOSE: 1.125, // and the nose the other way, more, so the car is seen to rock
   // The wireframe colours offered under the picker; the first is the default.
+  // An own colour's presets (the swatch after a visualizer's colours): the first the default.
+  OWN_PRESETS: ['#3484f4', '#ebebeb', '#ed1d1d', '#25d041', '#f9dc1f', '#aa55e7'],
   SYN_PRESETS: ['#9f38fa', '#00e5ff', '#ff2bd6', '#39ff14', '#ffb000', '#ff3030', '#ffffff'],
 
   AWAKE_MS: 3000,      // the X stays this long after the mouse stops
@@ -481,7 +483,13 @@ const Visualizer = {
   _barsPanel() {
     return this._cfgPanel('Bars settings', [
       { type: 'slider', key: 'brCount', label: 'Bars', min: 16, max: 128, step: 4, unit: '' },
-      { type: 'choice', key: 'brColors', label: 'Colors', choices: [['fire', 'Fire'], ['ice', 'Ice'], ['lime', 'Lime'], ['rainbow', 'Rainbow']] },
+      {
+        type: 'choice',
+        key: 'brColors',
+        label: 'Colors',
+        choices: [['fire', 'Fire'], ['ice', 'Ice'], ['lime', 'Lime'], ['rainbow', 'Rainbow']],
+        color: { value: 'custom', key: 'brColor', presets: this.OWN_PRESETS },
+      },
       { type: 'choice', key: 'brStyle', label: 'Style', choices: [['solid', 'Solid'], ['led', 'LED']] },
       { type: 'check', key: 'brPeaks', label: 'Peaks' },
       { type: 'check', key: 'brMirror', label: 'Mirror floor' },
@@ -503,6 +511,12 @@ const Visualizer = {
   /** The bars' colours from the floor (0) to the top (1), as a gradient's stops. */
   _barStops(scheme) {
     switch (scheme) {
+      // Its own colour: dark at the floor, lighter at the top.
+      case 'custom': {
+        const c = VizGL.rgb(this.setting('brColor'));
+        const css = (k, white) => `rgb(${c.map((v) => Math.round(255 * (v * k + white))).join(', ')})`;
+        return [[0, css(0.25, 0)], [0.6, css(1, 0)], [1, css(0.45, 0.55)]];
+      }
       case 'fire': return [[0, '#3a0000'], [0.35, '#c0160b'], [0.65, '#ff7a00'], [0.85, '#ffd23a'], [1, '#fff6c8']];
       case 'ice': return [[0, '#06123a'], [0.4, '#1650d8'], [0.7, '#2fb6ff'], [0.9, '#a8f0ff'], [1, '#ffffff']];
       // Lime: Winamp's.
@@ -616,10 +630,11 @@ const Visualizer = {
         type: 'choice',
         key: 'wfColors',
         label: 'Color',
-        choices: [['rainbow', 'Rainbow'], ['spectrum', 'Spectrum'], ['greyscale', 'Greyscale'], ['white', 'White'], ['red', 'Red'],
-          ['green', 'Green'], ['yellow', 'Yellow'], ['blue', 'Blue'], ['purple', 'Purple']],
+        choices: [['rainbow', 'Rainbow'], ['spectrum', 'Spectrum'], ['greyscale', 'Greyscale']],
+        color: { value: 'custom', key: 'wfColor', presets: this.OWN_PRESETS },
       },
       { type: 'choice', key: 'wfStyle', label: 'Style', choices: [['bars', 'Bars'], ['wave', 'Wave']] },
+      { type: 'check', key: 'wfShine', label: 'Shine', amount: { key: 'wfShineSpread', min: 0, max: 100, step: 5 } },
     ]);
   },
 
@@ -675,7 +690,7 @@ const Visualizer = {
     sc.globalCompositeOperation = 'source-over';
     sc.clearRect(0, 0, w, hgt);
     const scheme = this.setting('wfColors');
-    const solid = Palette.solid[scheme] || null;
+    const solid = scheme === 'custom' ? this.setting('wfColor') : Palette.solid[scheme] || null;
     const colour = (i, v) => solid || (scheme === 'rainbow' ? Palette.rainbow(i / n - this.shift) : Palette.by(scheme, v));
     if (wave) {
       // Coloured along it: a stop every so often, by its height there.
@@ -724,14 +739,18 @@ const Visualizer = {
     sc.fillRect(0, 0, w, hgt);
     sc.globalCompositeOperation = 'source-over';
 
-    // 3. The shine, stretched out from the middle both ways.
-    const gl = this.glow.getContext('2d');
-    gl.clearRect(0, 0, w, hgt);
-    gl.filter = `blur(${this.WAVE_SHINE_BLUR}px)`;
-    gl.drawImage(this.scratch, 0, cy - cy * this.WAVE_SHINE, w, hgt * this.WAVE_SHINE);
-    gl.filter = 'none';
-    out.globalAlpha = this.WAVE_SHINE_ALPHA;
-    out.drawImage(this.glow, 0, 0);
+    // 3. The shine, stretched out from the middle both ways (unless turned off).
+    if (this.setting('wfShine')) {
+      const spread = this.setting('wfShineSpread') / 50;
+      const stretch = 1 + (this.WAVE_SHINE - 1) * spread;
+      const gl = this.glow.getContext('2d');
+      gl.clearRect(0, 0, w, hgt);
+      gl.filter = `blur(${this.WAVE_SHINE_BLUR * (0.4 + 0.6 * spread)}px)`;
+      gl.drawImage(this.scratch, 0, cy - cy * stretch, w, hgt * stretch);
+      gl.filter = 'none';
+      out.globalAlpha = this.WAVE_SHINE_ALPHA;
+      out.drawImage(this.glow, 0, 0);
+    }
 
     // 4. The bars (or the wave), only softened.
     out.globalAlpha = 1;
@@ -977,6 +996,8 @@ const Visualizer = {
    *       while it is off; group: items beside it, greyed while it is off
    *   { type: 'slider', key, label, min, max, step, unit? }
    *   { type: 'choice', key, label, choices: [[value, label], ...] }  (label '': the pills alone)
+   *       color: { value, key, presets }: after the pills a swatch, choosing
+   *       `value` (lit while it is chosen) and opening a picker for `key`
    * Any of them with when: (settings) => bool, greyed out while it is false.
    */
   _cfgPanel(title, items) {
@@ -1072,9 +1093,28 @@ const Visualizer = {
             dataset: { value },
             onclick: () => {
               Store.saveSettings({ [item.key]: value });
+              pickers.forEach((p) => p.close());
               refresh();
             },
           }, text));
+        }
+        if (item.color) {
+          // Its own colour: the swatch picks it (and opens the picker).
+          const { value, key, presets } = item.color;
+          const swatch = h('button.viz-cfg__pill.viz-cfg__pill--swatch', { type: 'button', title: 'Choose a color', 'aria-label': 'Own color', dataset: { value } });
+          const paint = (hex) => swatch.style.setProperty('--swatch', hex);
+          paint(Store.settings[key]);
+          const picker = this._picker(panel, swatch, paint, key, presets);
+          pickers.push(picker);
+          swatch.addEventListener('click', () => {
+            if (Store.settings[item.key] !== value) {
+              Store.saveSettings({ [item.key]: value });
+              refresh();
+            }
+            picker.toggle();
+          });
+          refreshers.push(() => paint(this.setting(key)));
+          pills.appendChild(swatch);
         }
         refreshers.push(() => {
           for (const b of pills.children) {

@@ -202,11 +202,29 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ brColors: 'ice' }).brColors, 'ice');
   assert.equal(settings.clean({ brColors: 'classic' }).brColors, 'lime');
   assert.equal(settings.clean({ brColors: 'equalizer' }).brColors, 'lime');
+  // Own colours after the schemes: blue by default; Orb's Ember, Ice and
+  // White became own ones.
+  for (const [scheme, key] of [['brColors', 'brColor'], ['rdColor', 'rdOwnColor'], ['skColors', 'skColor'], ['obColors', 'obColor'],
+    ['vnColors', 'vnColor'], ['stColors', 'stColor'], ['raColors', 'raColor']]) {
+    assert.equal(d[key], '#3484f4');
+    assert.equal(settings.clean({ [scheme]: 'custom' })[scheme], 'custom');
+  }
+  const ember = settings.clean({ obColors: 'ember' });
+  assert.equal(ember.obColors, 'custom');
+  assert.equal(ember.obColor, '#ff8a33');
+  assert.equal(settings.clean({ obColors: 'rainbow' }).obColors, 'rainbow');
   // Waveform: rainbow bars by default.
   assert.equal(d.wfColors, 'rainbow');
   assert.equal(d.wfStyle, 'bars');
   assert.equal(settings.clean({ wfStyle: 'wave', wfColors: 'blue' }).wfStyle, 'wave');
   assert.equal(settings.clean({ wfColors: 'black' }).wfColors, 'rainbow');
+  // Its own colour: blue by default; the old one-colour schemes become one.
+  assert.equal(d.wfColor, '#3484f4');
+  const red = settings.clean({ wfColors: 'red' });
+  assert.equal(red.wfColors, 'custom');
+  assert.equal(red.wfColor, '#ed1d1d');
+  assert.equal(settings.clean({ wfColors: 'custom', wfColor: '#00FF80' }).wfColor, '#00ff80');
+  assert.equal(settings.clean({ wfColors: 'custom', wfColor: 'nope' }).wfColor, '#3484f4');
   // Nebula is Kaleidoscope, its own look first and chosen by default; Aurora
   // Waves is Aurora; Liquid and Mandala (its looks, then their own) are gone.
   assert.equal(settings.clean({ visualizer: 'nebula' }).visualizer, 'kaleidoscope');

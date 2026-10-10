@@ -267,9 +267,10 @@ const VizGL = {
 
   /**
    * Soft lines in pixels (y down), each a quad with a falloff across it:
-   * seg(x0, y0, x1, y1, halfWidth, rgb, a) adds one, draw(w, h) draws
+   * seg(x0, y0, x1, y1, halfWidth, rgb, a, a1) adds one, draw(w, h) draws
    * them all with the blending set by the caller and starts over. rgb is
-   * [r, g, b] 0..1; the colour leaves premultiplied (rgb * a, alpha a).
+   * [r, g, b] 0..1; the colour leaves premultiplied (rgb * a, alpha a). a1,
+   * if given, is the alpha at the far end, blended smoothly along it.
    */
   lines(gl, capacity = 30000) {
     let prog = this._lines.get(gl);
@@ -300,29 +301,29 @@ const VizGL = {
     const d = stream.data;
     const l = {
       count: 0,
-      seg(x0, y0, x1, y1, width, rgb, a) {
+      seg(x0, y0, x1, y1, width, rgb, a, a1 = a) {
         const [r, g, b] = rgb;
         if (l.count > capacity - 6) return;
         const len = Math.hypot(x1 - x0, y1 - y0) || 1;
         const nx = (-(y1 - y0) / len) * width;
         const ny = ((x1 - x0) / len) * width;
         let k = l.count * 7;
-        const put = (x, y, s) => {
+        const put = (x, y, s, al) => {
           d[k] = x;
           d[k + 1] = y;
           d[k + 2] = r;
           d[k + 3] = g;
           d[k + 4] = b;
-          d[k + 5] = a;
+          d[k + 5] = al;
           d[k + 6] = s;
           k += 7;
         };
-        put(x0 + nx, y0 + ny, 1);
-        put(x0 - nx, y0 - ny, -1);
-        put(x1 + nx, y1 + ny, 1);
-        put(x1 + nx, y1 + ny, 1);
-        put(x0 - nx, y0 - ny, -1);
-        put(x1 - nx, y1 - ny, -1);
+        put(x0 + nx, y0 + ny, 1, a);
+        put(x0 - nx, y0 - ny, -1, a);
+        put(x1 + nx, y1 + ny, 1, a1);
+        put(x1 + nx, y1 + ny, 1, a1);
+        put(x0 - nx, y0 - ny, -1, a);
+        put(x1 - nx, y1 - ny, -1, a1);
         l.count += 6;
       },
       /** A solid triangle (no falloff), drawn in its place among the lines. */

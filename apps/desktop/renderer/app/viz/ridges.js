@@ -6,7 +6,7 @@
 // edges) or of the waveform, every one hiding what lies
 // behind it, flowing away into the distance.
 //
-// Its cogwheel: the colours (white on black, neon, heat), how many lines,
+// Its cogwheel: the colours (white on black, neon, heat, its own), how many lines,
 // how fast they flow, and what they show.
 //
 // WebGL (viz/gl.js): each line is a black band filled down from it, then
@@ -14,6 +14,7 @@
 
 (() => {
   const POINTS = 120;
+  const TAIL = 12;          // pieces of each line's smooth fade out to the screen's edge
   const BLACK = [0, 0, 0];
 
   function hsv(h, s, v) {
@@ -29,7 +30,7 @@
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
-      this.lines = VizGL.lines(gl, 220000);
+      this.lines = VizGL.lines(gl, 260000);
       this.rows = [];        // newest first: Float32Array(POINTS) of 0..1
       this.offset = 0;       // 0..1 of the way to the next row
       this.age = 0;
@@ -99,6 +100,7 @@
       const w = this.w;
       const h = this.h;
       const colors = set('rdColor');
+      const own = VizGL.rgb(set('rdOwnColor'));
       gl.disable(gl.BLEND);
       VizGL.into(gl, null);
       gl.clearColor(0, 0, 0, 1);
@@ -115,7 +117,7 @@
         const depth = pos;
         const scale = 1 / (1 + depth * 0.3);
         const y0 = front - (front - back) * (1 - (1 - depth) ** 1.15);
-        const width = Math.min(w * 0.62, h * 0.95) * scale;
+        const width = Math.min(w * 0.825, h * 1.26) * scale;
         const x0 = (w - width) / 2;
         const amp = h * 0.22 * scale;
         const row = this.rows[r];
@@ -123,7 +125,21 @@
         const fade = Math.min(1, (1 - pos) * 6);
         let rgb;
         if (colors === 'neon') rgb = hsv((0.52 + depth * 0.35 + this.age * 0.01) % 1, 0.8, 1);
+        else if (colors === 'custom') rgb = own;
         else rgb = [1, 1, 1];
+        const thick = 1.6 * unit * (0.6 + 0.4 * scale);
+        const alpha = fade * (0.55 + 0.45 * scale);
+        // Flat on out to the screen's edges either side, fading away.
+        const tail = (xa, ya, xb) => {
+          const col = colors === 'heat' ? [0.35, 0, 0] : rgb;
+          for (let s = 0; s < TAIL; s += 1) {
+            const t0 = s / TAIL;
+            const t1 = (s + 1) / TAIL;
+            lines.seg(xa + (xb - xa) * t0, ya, xa + (xb - xa) * t1, ya, thick, col, alpha * (1 - t0) ** 2, alpha * (1 - t1) ** 2);
+          }
+        };
+        tail(x0, y0 - row[0] * amp, 0);
+        tail(x0 + width, y0 - row[POINTS - 1] * amp, w);
         let px = 0;
         let py = 0;
         for (let i = 0; i < POINTS; i += 1) {
@@ -138,7 +154,7 @@
               const t = Math.min(1, (row[i] + row[i - 1]) * 0.9);
               col = [Math.min(1, 0.35 + t * 1.6), Math.min(1, t * 1.2), Math.min(1, t * t * 1.4)];
             }
-            lines.seg(px, py, x, y, 1.6 * unit * (0.6 + 0.4 * scale), col, fade * (0.55 + 0.45 * scale));
+            lines.seg(px, py, x, y, thick, col, alpha);
           }
           px = x;
           py = y;
@@ -160,7 +176,7 @@
     gl: true,
     create: (canvas) => new Ridges(canvas),
     options: [
-      { type: 'choice', key: 'rdColor', label: 'Colors', choices: [['white', 'White'], ['neon', 'Neon'], ['heat', 'Heat']] },
+      { type: 'choice', key: 'rdColor', label: 'Colors', choices: [['white', 'White'], ['neon', 'Neon'], ['heat', 'Heat']], color: { value: 'custom', key: 'rdOwnColor', presets: Visualizer.OWN_PRESETS } },
       { type: 'slider', key: 'rdRows', label: 'Lines', min: 20, max: 120, step: 5, unit: '' },
       { type: 'slider', key: 'rdSpeed', label: 'Speed', min: 25, max: 200, step: 5 },
       { type: 'choice', key: 'rdSource', label: 'Shows', choices: [['spectrum', 'Spectrum'], ['wave', 'Waveform']] },

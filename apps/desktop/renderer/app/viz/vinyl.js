@@ -11,7 +11,7 @@
 // lamp, the speed buttons, a pitch fader that shows the tempo.
 //
 // Its cogwheel: the turntable (wood, black, silver), the grooves' colours
-// (the music's, silver).
+// (the music's, silver, their own).
 //
 // WebGL (viz/gl.js): one pass. What has been played is kept in a texture
 // round the record (across: the way round, down: from the rim in), a row
@@ -35,7 +35,8 @@
     uniform float rot, stylusR, time, level, lamp, pitch, armAng, onRecord;
     uniform vec2 tip;
     uniform int plinth;
-    uniform bool mono;
+    uniform int grooves;            // 0 the music's colours, 1 silver, 2 their own
+    uniform vec3 own;
     out vec4 o;
 
     const vec2 C = vec2(${C[0]}, ${C[1]});
@@ -157,7 +158,8 @@
           vec4 m = texture(played, t);
           if (m.a > 0.0) {
             float lv = m.r;
-            vec3 hue = mono ? vec3(0.8, 0.82, 0.88) : mix(vec3(1.0, 0.35, 0.12), vec3(0.25, 0.55, 1.0), smoothstep(0.2, 0.7, m.b / (m.g + m.b + 0.02)));
+            bool mono = grooves == 1;
+            vec3 hue = mono ? vec3(0.8, 0.82, 0.88) : grooves == 2 ? own : mix(vec3(1.0, 0.35, 0.12), vec3(0.25, 0.55, 1.0), smoothstep(0.2, 0.7, m.b / (m.g + m.b + 0.02)));
             rc += hue * lv * 0.3;
             sc = mix(sc, hue, mono ? 0.0 : 0.6) * (0.4 + 1.4 * lv);
           }
@@ -325,7 +327,8 @@
       gl.uniform1f(u.onRecord, onRecord);
       gl.uniform2f(u.tip, tip[0], tip[1]);
       gl.uniform1i(u.plinth, PLINTHS[set('vnPlinth')] ?? 0);
-      gl.uniform1i(u.mono, set('vnColors') === 'silver' ? 1 : 0);
+      gl.uniform1i(u.grooves, { silver: 1, custom: 2 }[set('vnColors')] || 0);
+      gl.uniform3f(u.own, ...VizGL.rgb(set('vnColor')));
       VizGL.screen(gl);
     }
   }
@@ -340,7 +343,7 @@
     create: (canvas) => new Vinyl(canvas),
     options: [
       { type: 'choice', key: 'vnPlinth', label: 'Turntable', choices: [['wood', 'Wood'], ['black', 'Black'], ['silver', 'Silver']] },
-      { type: 'choice', key: 'vnColors', label: 'Grooves', choices: [['music', "The music's colours"], ['silver', 'Silver']] },
+      { type: 'choice', key: 'vnColors', label: 'Grooves', choices: [['music', "The music's colours"], ['silver', 'Silver']], color: { value: 'custom', key: 'vnColor', presets: Visualizer.OWN_PRESETS } },
     ],
   });
 })();

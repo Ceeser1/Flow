@@ -6,7 +6,7 @@
 // the music leaves a landscape of towers behind it that the camera circles
 // slowly. The bars' colour goes with their height, their tops glow.
 //
-// Its cogwheel: the colours (classic, neon, ice, fire), the camera (circling,
+// Its cogwheel: the colours (classic, neon, ice, fire, its own), the camera (circling,
 // from the front, from above), how far back the history reaches.
 //
 // WebGL (viz/gl.js) with a depth buffer: one cube drawn for every bar at once
@@ -255,7 +255,12 @@
       }
       const view = lookAt(eye, at, [0, 1, 0]);
       const proj = perspective(0.9, this.w / this.h, 0.5, 300);
-      const pal = PALETTES[set('skColors')] || PALETTES.classic;
+      let pal = PALETTES[set('skColors')] || PALETTES.classic;
+      if (set('skColors') === 'custom') {
+        // Its own colour: dark at the foot, itself, near white at the top.
+        const c = VizGL.rgb(set('skColor'));
+        pal = [c.map((v) => v * 0.35), c, c.map((v) => v * 0.3 + 0.7)];
+      }
       const fog = 0.022;
 
       const gl = this.gl;
@@ -301,7 +306,7 @@
     gl: true,
     create: (canvas) => new Skyline(canvas),
     options: [
-      { type: 'choice', key: 'skColors', label: 'Colors', choices: [['classic', 'Classic'], ['neon', 'Neon'], ['ice', 'Ice'], ['fire', 'Fire']] },
+      { type: 'choice', key: 'skColors', label: 'Colors', choices: [['classic', 'Classic'], ['neon', 'Neon'], ['ice', 'Ice'], ['fire', 'Fire']], color: { value: 'custom', key: 'skColor', presets: Visualizer.OWN_PRESETS } },
       { type: 'choice', key: 'skCamera', label: 'Camera', choices: [['orbit', 'Circling'], ['front', 'Front'], ['above', 'Above']] },
       { type: 'slider', key: 'skHistory', label: 'History', min: 25, max: 100, step: 5 },
     ],

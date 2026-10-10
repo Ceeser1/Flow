@@ -6,7 +6,9 @@
 // moves like something alive; it turns, swells on the kicks, and a ring of
 // sparks circles it, quickening with the highs.
 //
-// Its cogwheel: dots or a wireframe, the colours, how fast it turns, the ring.
+// Its cogwheel: dots or a wireframe, the colours (aurora, rainbow, its own),
+// how fast it turns, the ring,
+// and whether the view zooms in on the kicks.
 //
 // WebGL (viz/gl.js): the points or lines as light into a texture, that
 // blurred twice for the glow, the background and both together in one pass.
@@ -17,9 +19,6 @@
   const RING = 700;
   const PALETTES = {
     aurora: [[0.2, 1, 0.85], [0.55, 0.35, 1]],
-    ember: [[1, 0.85, 0.3], [1, 0.2, 0.15]],
-    ice: [[0.85, 0.95, 1], [0.25, 0.5, 1]],
-    white: [[1, 1, 1], [0.75, 0.8, 0.9]],
   };
 
   const OUT_FS = VizGL.NOISE + `
@@ -102,7 +101,8 @@
       const h = this.h;
       const cx = w / 2;
       const cy = h / 2;
-      const R = h * 0.24 * (1 + 0.08 * a.kick);
+      const zoom = set('obZoom') ? a.kick : 0;
+      const R = h * 0.24 * (1 + 0.08 * zoom);
       const f = 3.2;   // the eye this many radii away
       const tilt = 0.42 + 0.12 * Math.sin(t * 0.13);
       const cy1 = Math.cos(this.turn);
@@ -147,7 +147,12 @@
       }
 
       const palette = set('obColors');
-      const pal = PALETTES[palette];
+      let pal = PALETTES[palette] || PALETTES.aurora;
+      if (palette === 'custom') {
+        // Its own colour round the middle, paler and darker towards the poles.
+        const c = VizGL.rgb(set('obColor'));
+        pal = [c, c.map((v) => (v * 0.55 + 0.45) * 0.85)];
+      }
       const colour = (j, depth) => {
         const x = j / (LAT - 1);
         if (palette === 'rainbow') return hsv((x * 0.8 + t * 0.03) % 1, 0.7, 1);
@@ -185,7 +190,7 @@
         const ringRgb = palette === 'rainbow' ? [1, 1, 1] : pal[0];
         for (const s of this.ring) {
           s.a += dt * s.v * (0.3 + 1.6 * a.treble) * (a.playing ? 1 : 0.3);
-          const r = s.r * (1 + 0.1 * a.kick);
+          const r = s.r * (1 + 0.1 * zoom);
           project(Math.cos(s.a) * r, s.y, Math.sin(s.a) * r, out, 0);
           const bright = (0.2 + 0.8 * out[2]) * (0.5 + 0.8 * a.treble) * (0.6 + 0.4 * Math.sin(t * 3 + s.s * 20));
           lines.dot(out[0], out[1], (1 + 1.4 * out[2]) * unit, ringRgb, Math.min(1, bright));
@@ -227,9 +232,10 @@
     create: (canvas) => new Orb(canvas),
     options: [
       { type: 'choice', key: 'obStyle', label: 'Surface', choices: [['dots', 'Dots'], ['wire', 'Wireframe']] },
-      { type: 'choice', key: 'obColors', label: 'Colors', choices: [['aurora', 'Aurora'], ['ember', 'Ember'], ['ice', 'Ice'], ['rainbow', 'Rainbow'], ['white', 'White']] },
+      { type: 'choice', key: 'obColors', label: 'Colors', choices: [['aurora', 'Aurora'], ['rainbow', 'Rainbow']], color: { value: 'custom', key: 'obColor', presets: Visualizer.OWN_PRESETS } },
       { type: 'slider', key: 'obSpin', label: 'Turning', min: 0, max: 200, step: 5 },
       { type: 'check', key: 'obRing', label: 'Ring' },
+      { type: 'check', key: 'obZoom', label: 'Bass Zoom' },
     ],
   });
 })();

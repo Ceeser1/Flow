@@ -2530,6 +2530,17 @@ div.import__frame-head { cursor: default; }
 .viz-cfg__pill:hover:not(:disabled) { border-color: #fff; }
 .viz-cfg__pill--on { background: rgba(255, 255, 255, 0.85); border-color: #fff; color: #120428; }
 .viz-cfg__pill:disabled { cursor: default; opacity: 0.4; }
+/* The pill for an own colour: a dot of it, ringed while it is chosen. */
+.viz-cfg__pill--swatch,
+.viz-cfg__pill--swatch.viz-cfg__pill--on {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--swatch, #3484f4);
+}
+.viz-cfg__pill--swatch.viz-cfg__pill--on { box-shadow: 0 0 0 2px rgba(18, 4, 40, 0.9), 0 0 0 4px #fff; }
 
 /* Its colour picker, hanging under the swatch. */
 .viz-pick {
