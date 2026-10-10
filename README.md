@@ -21,6 +21,15 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
     video's sponsored parts show yellow, and its intros and outros red.
   - **Add to Playlist** picks playlists, **Finish** saves to `Music\FlowPlayer` as
     `Artist - Title (Mix).ext`, with the names written into the file's tags.
+- **Downloads?**: Flow comes without yt-dlp, which downloading needs. Until
+  `yt-dlp.exe` is in Flow's tools folder (`%LOCALAPPDATA%\Flow\tools`), Add
+  Songs shows a **Downloads?** button where the link box was (or, with a Flow
+  Server that downloads songs, Download (Client) greyed out). It opens a legal
+  note; once **I understand and want to proceed** is ticked it says to
+  download `yt-dlp.exe` yourself from its latest release at GitHub, with
+  **Open Tools Folder**, and **Done** looks for it there. Playing your own
+  files needs none of this. The phone apps show the same button when no
+  connected Flow Server downloads songs.
 - **Whole playlists**: paste a YouTube playlist, a SoundCloud set, a Bandcamp
   album, or a Spotify playlist or album into Add Songs. The songs are listed
   first, all ticked: untick what you do not want, then Download Selected or
@@ -510,24 +519,27 @@ listen (who, on hover), and **Join**.
 - Covers: `Covers` in that folder (moved along when it changes): `local`
   for the songs in Local Files, and a folder per Flow Server, each cover
   named after its song's id. Files dropped into `Covers` are not songs.
-- Library, settings, the download cache and an updatable yt-dlp:
-  `%LOCALAPPDATA%\Flow`. The library is `library.json`, with the previous
+- Library, settings, the download cache and the tools folder (where
+  `yt-dlp.exe` goes): `%LOCALAPPDATA%\Flow`. The library is `library.json`, with the previous
   version kept as `library.json.bak`.
 
-yt-dlp updates itself once a day in the background, since YouTube changes often
-enough to break an old copy.
+yt-dlp, once put there, updates itself once a day in the background, since
+YouTube changes often enough to break an old copy.
 
 ## Development
 
 `apps/desktop/tools/` is not in the repository (`ffmpeg.exe` and `ffprobe.exe`
-are over GitHub's 100MB file limit). Put the Windows builds of all three there:
+are over GitHub's 100MB file limit). Put the Windows builds of both there:
 
 ```
 apps/desktop/tools/
   ffmpeg.exe
   ffprobe.exe
-  yt-dlp.exe
 ```
+
+The installer ships only these two. yt-dlp is not shipped: to download, put
+`yt-dlp.exe` into the tools folder (`%LOCALAPPDATA%\Flow\tools`, or `tools`
+under `FLOW_HOME`).
 
 ```
 npm install     # once, in the Flow folder: installs every app and package

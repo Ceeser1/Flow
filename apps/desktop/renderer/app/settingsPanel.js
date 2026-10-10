@@ -226,7 +226,7 @@ const SettingsPanel = {
       })),
       ] : []),
 
-      ...(Store.can('updateCheck') || Store.can('batteryHelp') ? this._appRows() : []),
+      ...(Store.can('batteryHelp') ? this._appRows() : []),
     ]));
 
     // The phone's Settings comes in from the left, where the drawer it is
@@ -379,14 +379,13 @@ const SettingsPanel = {
   },
 
   /**
-   * The phone app's own: Check for Updates, the songs kept on the phone, and
-   * help for playing on with the screen off. Updates and the help are not
-   * built yet (v3.0, Stage 8).
+   * The phone app's own: its version, the songs kept on the phone, and help
+   * for playing on with the screen off.
    */
   _appRows() {
     return [
       h('h3.settings__section', 'App'),
-      Store.can('updateCheck') ? this._updateRow() : null,
+      this._row({ label: 'Version', desc: `Flow ${Store.version || ''}`.trim() }),
       this._storageRow(),
       Store.can('batteryHelp') ? this._row({
         label: 'Playing with the screen off',
@@ -394,35 +393,6 @@ const SettingsPanel = {
         right: h('button.btn.btn--small', { type: 'button', onclick: () => BackgroundHelp.open() }, 'Show'),
       }) : null,
     ];
-  },
-
-  /** Check for Updates: always looks; a newer Flow found earlier shows below it, with its Update. */
-  _updateRow() {
-    const desc = h('div');
-    const check = h('button.btn.btn--small', {
-      type: 'button',
-      onclick: async () => {
-        check.disabled = true;
-        try {
-          await Updates.check();
-        } finally {
-          check.disabled = false;
-        }
-      },
-    }, 'Check');
-    const draw = () => {
-      const found = Updates.found;
-      clear(desc);
-      desc.append(h('div', `Flow ${Store.version || ''}`.trim()));
-      if (found) {
-        desc.append(h('div.settings__update',
-          h('span', `Flow ${found.version} is available. `),
-          h('button.link-btn', { type: 'button', onclick: () => Updates.ask(found) }, 'Update')));
-      }
-    };
-    draw();
-    this._refresh.push(draw);
-    return this._row({ label: 'Check for Updates', desc, right: check });
   },
 
   _row({ key, label, desc, right = null, sub = false, when = null, show = null }) {

@@ -24,8 +24,6 @@ const DESKTOP = {
   moveOriginals: true,
   // A Flow Server's songs kept here too: a playlist's Download, a song's.
   offline: true,
-  // Settings: Check for Updates.
-  updateCheck: false,
   // Flow's own volume slider (a phone's volume is its buttons).
   volume: true,
   // Song Transition: the next song faded in over the end of this one.
@@ -49,7 +47,6 @@ const ANDROID = {
   localTrim: false,
   moveOriginals: false,
   offline: true,
-  updateCheck: true,
   volume: false,
   // The phone's player fades from one song to the next itself (setTransition).
   songTransition: true,
@@ -61,8 +58,6 @@ const ANDROID = {
 // The iPhone: as the Android phone, without what iOS has no need or room for.
 const IOS = {
   ...ANDROID,
-  // Sideloaded and signed by each person (SideStore): nothing to update from.
-  updateCheck: false,
   // iOS lets a playing app run in the background: nothing to ask for.
   batteryHelp: false,
   // iOS has no Vorbis decoder (it plays Ogg Opus).

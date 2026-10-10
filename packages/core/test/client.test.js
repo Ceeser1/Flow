@@ -101,3 +101,11 @@ test('settings: cleaned, saved whole, and one id made once', () => {
   const broken = createSettings({ read: () => null, write: () => { throw new Error('read-only'); } });
   assert.equal(broken.set({ volume: 0.5 }).volume, 0.5);
 });
+
+test('settings: what the phone\'s update check saved is dropped', () => {
+  const { clean } = require('../src/client/settings');
+  const s = clean({ updateFound: { version: '3.0.1', url: 'https://example.com/Flow.apk' }, updateNoPrompt: true, batteryHelpShown: true });
+  assert.equal('updateFound' in s, false);
+  assert.equal('updateNoPrompt' in s, false);
+  assert.equal(s.batteryHelpShown, true);
+});

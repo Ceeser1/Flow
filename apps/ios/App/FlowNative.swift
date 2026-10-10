@@ -31,7 +31,6 @@ public class FlowNativePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "chooseOutput", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "mediaVolume", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setMediaVolume", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "installApk", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "power", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "allowBackground", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "appSettings", returnType: CAPPluginReturnPromise),
@@ -304,10 +303,6 @@ public class FlowNativePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     // MARK: Android's alone
-
-    @objc func installApk(_ call: CAPPluginCall) {
-        call.reject("The iPhone gets Flow through SideStore, not from inside Flow.")
-    }
 
     /// iOS lets an app that plays run in the background: nothing restricts Flow.
     @objc func power(_ call: CAPPluginCall) {

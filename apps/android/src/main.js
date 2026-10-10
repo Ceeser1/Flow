@@ -22,7 +22,6 @@ const { createAudioEngine, fileAddressToPath } = require('./engine');
 const { createEnv } = require('./env');
 const { createLocalFiles } = require('./localFiles');
 const { sharedLink } = require('./share');
-const { latestRelease, isNewer } = require('./update');
 const ask = require('./ask');
 const { version } = require('../package.json');
 
@@ -127,44 +126,6 @@ function start() {
 
   // What the phone's player had when this page started (FlowAudio.attach), for its engine.
   let attached = null;
-
-  // ---- updates (update.js) ----
-
-  plugin.addListener('downloadProgress', ({ id, frac }) => {
-    if (id === 'flow-update') emit('update:progress', { frac });
-  });
-
-  /** The newest release and whether it is newer than this Flow: { current, latest, newer }. */
-  async function checkUpdate() {
-    const latest = await latestRelease();
-    return { current: version, latest, newer: !!latest && isNewer(latest.version, version) };
-  }
-
-  /**
-   * Downloads the release `found` ({ version, url, size }) into the cache
-   * (once: a complete copy is used again) and hands it to Android's
-   * installer: { allowed, started }; not allowed yet, Android's setting for it opened.
-   */
-  async function installUpdate(found, { ask = true } = {}) {
-    if (!found || !isNewer(found.version, version) || !/^https:\/\//.test(String(found.url))) {
-      throw new Error('There is no newer Flow to install.');
-    }
-    const dir = path.join(info().cache, 'update');
-    const file = path.join(dir, `Flow-${found.version}.apk`);
-    const whole = fs.exists(file) && (!found.size || fs.size(file) === found.size);
-    if (!whole) {
-      if (fs.exists(dir)) fs.remove(dir, { recursive: true });
-      fs.mkdir(dir);
-      let r;
-      try {
-        r = await plugin.download({ url: found.url, path: file, id: 'flow-update', timeout: 60000 });
-      } catch {
-        throw new Error('The update could not be downloaded. Is the phone online?');
-      }
-      if (r.status !== 200) throw new Error(`The update could not be downloaded (GitHub answered ${r.status}).`);
-    }
-    return plugin.installApk({ path: file, ask: !!ask });
-  }
 
   const flow = {
     init: call(async () => {
@@ -334,11 +295,6 @@ function start() {
     onShare: (fn) => plugin.addListener('share', (s) => fn(sharedLink(s))),
     /** Whether the window may turn sideways (Add Songs) or stays upright. */
     setOrientation: call((free) => plugin.orientation({ free: !!free })),
-    /** The newest Flow on GitHub: { current, latest: { version, url, size, page } or null, newer }. */
-    checkUpdate: call(checkUpdate),
-    /** Downloads it (progress: onUpdateProgress) and opens Android's installer: { allowed, started }. */
-    installUpdate: call(installUpdate),
-    onUpdateProgress: on('update:progress'),
     /** How Android treats Flow in the background: { unrestricted, restricted, maker }. */
     power: call(() => plugin.power()),
     /** Android's "Let Flow always run in the background?" */

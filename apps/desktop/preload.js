@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld('flow', {
   rescan: () => call('library:rescan'),
   showSong: (songId) => call('shell:showSong', songId),
   openMusicFolder: () => call('shell:openMusicFolder'),
+  openToolsFolder: () => call('tools:openFolder'),
+  toolStatus: () => call('tools:status'),
   folderStats: () => call('library:folderStats'),
   chooseFolder: () => call('folder:choose'),
   moveMusicFolder: (dir) => call('folder:move', dir),

@@ -35,11 +35,13 @@ const AddPage = {
     this.editorEl = $('editor');
     AudioFocus.register('preview', () => this.audio.pause());
 
-    $('downloadBtn').onclick = () => this.startDownload();
+    // Without yt-dlp in the tools folder it is greyed out and opens the legal note.
+    $('downloadBtn').onclick = () => (DownloadsHelp.here ? this.startDownload() : DownloadsHelp.open());
+    $('downloadsHelpBtn').onclick = () => DownloadsHelp.open();
     $('linkInput').addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
-      // Where songs cannot be downloaded here (the phone), the server downloads.
-      if (Store.can('downloadHere')) this.startDownload();
+      // Where songs cannot be downloaded here (the phone, no yt-dlp), the server downloads.
+      if (DownloadsHelp.here) this.startDownload();
       else if (!$('serverDownloadBtn').hidden) $('serverDownloadBtn').click();
     });
     $('openFilesBtn').onclick = () => this.openLocal(false);

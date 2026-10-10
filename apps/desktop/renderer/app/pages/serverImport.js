@@ -46,14 +46,22 @@ const ServerImport = {
     return !!(Store.server && Store.server.downloads);
   },
 
-  /** "Download (Client)" and "Download (Server)", or the one Download without such a server. */
+  /**
+   * "Download (Client)" and "Download (Server)", or the one Download without
+   * such a server; "Downloads?" instead of the link box where nothing
+   * downloads (downloadsHelp.js).
+   */
   drawButtons() {
     const on = this.available;
+    const computer = Store.can('downloadHere');
+    const none = !on && !DownloadsHelp.here;
+    $('linkInput').hidden = none;
+    $('downloadsHelpBtn').hidden = !none;
     $('serverDownloadBtn').hidden = !on;
-    // The phone does not download itself: only the server's button, or a word on how to get one.
-    const here = Store.can('downloadHere');
-    $('downloadBtn').hidden = !here;
-    $('downloadHint').hidden = here || on;
+    // The phone does not download itself: only the server's button. A computer
+    // without yt-dlp shows its own greyed out (a click opens the legal note).
+    $('downloadBtn').hidden = !computer || none;
+    $('downloadBtn').classList.toggle('btn--off', computer && !DownloadsHelp.here);
     $('downloadBtn').textContent = on ? 'Download (Client)' : 'Download';
     const busy = ImportPanel.busy || ['probing', 'downloading', 'saving'].includes(AddPage.phase);
     $('serverDownloadBtn').disabled = busy;

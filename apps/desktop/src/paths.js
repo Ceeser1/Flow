@@ -28,8 +28,7 @@ const userDataDir = () => path.join(rootDir(), 'data');
 const libraryFile = () => path.join(ensure(rootDir()), 'library.json');
 const settingsFile = () => path.join(ensure(rootDir()), 'settings.json');
 const cacheDir = () => ensure(path.join(rootDir(), 'cache'));
-// A copy of yt-dlp the app can update. The installed one sits in Program
-// Files, where yt-dlp -U is not allowed to write.
+// Where yt-dlp.exe goes (Flow does not ship it), somewhere yt-dlp -U may write.
 const localToolsDir = () => ensure(path.join(rootDir(), 'tools'));
 
 // The folder chosen in Settings, once there is one (main.js hands it over at

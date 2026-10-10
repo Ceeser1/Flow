@@ -53,8 +53,8 @@ level includes the ones above it:
 Levels 3 and 4 need a strong password (see below).
 
 Then it links `@flow/core` (there is no npm needed), asks whether the server
-should download songs itself (and if so installs ffmpeg, yt-dlp and Deno for
-it; see [Downloads by the server](#downloads-by-the-server-optional)), offers
+should download songs itself (and if so shows the legal note, installs ffmpeg
+and Deno for it and waits while you install yt-dlp; see [Downloads by the server](#downloads-by-the-server-optional)), offers
 ffmpeg otherwise, asks whether the apps may find the server on the network by
 themselves (see below), offers a password, installs Tailscale at level 2, writes and starts the
 `flow-server` service (also at boot), and opens the port in ufw or firewalld
@@ -171,11 +171,15 @@ own, and a long playlist keeps downloading when the app is closed.
 - **What it needs:** yt-dlp and ffmpeg on the server, and for YouTube a
   JavaScript runtime for yt-dlp: Deno, or Node.js 22 or newer with
   `--js-runtimes node` in `/etc/yt-dlp.conf`. `install.sh` asks early on
-  whether the server should download songs; with yes it installs ffmpeg, the
-  standalone yt-dlp from github.com/yt-dlp into `/usr/local/bin` (a timer
-  updates it once a day, since YouTube changes often enough that a yt-dlp a
-  few weeks old stops working), and Deno when Node.js is older than 22 (there
-  is no Deno for 32-bit ARM: there, YouTube fails and other sites work).
+  whether the server should download songs; with yes it shows the legal note
+  (declined: downloads stay off), installs ffmpeg and Deno when Node.js is
+  older than 22 (there is no Deno for 32-bit ARM: there, YouTube fails and
+  other sites work). Flow does not come with yt-dlp: the script names the
+  standalone yt-dlp file for the machine and waits while you install it
+  yourself as `/usr/local/bin/yt-dlp` (`s` skips; then `sudo systemctl
+  restart flow-server` once it is there). A timer updates that copy once a
+  day, since YouTube changes often enough that a yt-dlp a few weeks old stops
+  working.
   `flow-server --downloads` / `--no-downloads` turns it on or off later; never
   set, it is on whenever the tools are there. The server's start says what it
   found, `/api/hello` lists `download` in `features` only when it can, and

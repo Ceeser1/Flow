@@ -36,7 +36,11 @@
     "extraResources": [
       {
         "from": "tools",
-        "to": "tools"
+        "to": "tools",
+        "filter": [
+          "ffmpeg.exe",
+          "ffprobe.exe"
+        ]
       },
       {
         "from": "build/icon.ico",

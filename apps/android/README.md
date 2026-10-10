@@ -17,11 +17,11 @@ Now Playing, the Queue, Settings.
 - **Add Songs:** share a link to Flow (Share > Flow, from YouTube or a
   browser) and the server downloads it; trim and name it on the phone (it
   turns sideways there). Songs already on the phone come in through Open local
-  File(s) / Folder.
+  File(s) / Folder. Without a server that downloads songs, a **Downloads?**
+  button stands where the link box was: a legal note, then how the server gets
+  yt-dlp (Flow does not come with it).
 - **Active Sessions:** join another device's session and control it, or play
   its music on the phone too, in step; or host one, while Flow is open.
-- **Updates:** Flow looks for a newer version on GitHub when it starts, and
-  Settings > App > Check for Updates looks any time.
 
 Not on the phone: downloading with yt-dlp on the phone itself (the server
 does that), the visualizers, the clouds and the equalizer, the screen flash.
@@ -30,17 +30,14 @@ does that), the visualizers, the clouds and the equalizer, the screen flash.
 
 Flow is not in the Play Store: its APK is installed by hand ("sideloaded").
 
-1. Download `Flow-<version>.apk` from the newest release on GitHub
-   (Ceeser1/Flow, Releases), on the phone.
+1. Put `Flow-<version>.apk` on the phone (downloaded, or copied over USB).
 2. Open it. Android asks once whether your browser (or Files app) may install
    unknown apps: allow it, go back, and tap Install.
 3. Open Flow. It looks for your Flow Server; if it is not found, type in the
    address the server shows when it starts (for example `192.168.0.20:7878`).
 
-Later versions install over it: Flow says when there is one ("Newer version
-X available, update?"), downloads it and opens Android's installer. The first
-time, Android asks whether Flow may install apps: switch that on for Flow and
-come back; the update goes on by itself. Songs, downloads and settings stay.
+Flow does not look for newer versions itself. A later APK installs over it the
+same way (it is signed with the same key); songs, downloads and settings stay.
 
 Flow needs Android 8 or later and an up-to-date **Android System WebView**
 (version 108 or later; phones with the Play Store keep it up to date). With an
@@ -68,10 +65,7 @@ npm run release -w apps/android      # dist/Flow-<version>.apk, signed
 ```
 
 The version is the one in `apps/android/package.json` (3.0.0 -> versionCode
-30000), the same for every Flow package. On GitHub, a release whose tag is the
-version (`v3.0.1`) with the APK attached is what Flow's update check finds
-(once the repository is public; until then GitHub answers "not found" and
-Flow finds nothing).
+30000), the same for every Flow package.
 
 ## How it fits together
 
@@ -89,8 +83,8 @@ comes from native pieces in `android/app/src/main/java/io/github/ceeser1/flow/`:
   Keystore), the phone's name.
 - `FlowNative` (a Capacitor plugin): what takes a while: files downloaded and
   uploaded, Flow Servers looked for on the network (UDP), local files picked
-  and read, waveforms, links shared to Flow, the output, orientation, updates,
-  battery settings, the Back button.
+  and read, waveforms, links shared to Flow, the output, orientation, battery
+  settings, the Back button.
 - `FlowPlayer`, `PlaybackService`, `FlowAudio`: the native player (Media3
   ExoPlayer) that plays on in the background, holds the songs coming next and
   moves on by itself; `src/engine.js` is the page's side of it.
@@ -122,7 +116,7 @@ repo.
 ## Testing on the emulator
 
 `npm test -w apps/android` runs the unit tests (the engine, local files,
-shares, updates, the bundle).
+shares, the bundle).
 
 `testing/harness.js` installs the debug APK on the emulator, starts Flow and
 runs a steps file against its WebView over the DevTools protocol (debug

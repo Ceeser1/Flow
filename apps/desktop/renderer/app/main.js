@@ -20,6 +20,8 @@
   Store.musicDir = init.musicDir;
   Store.iconDataUrl = init.iconDataUrl;
   Store.mp3Qualities = init.mp3Qualities;
+  // The computer's ffmpeg, ffprobe and yt-dlp (downloadsHelp.js).
+  Store.tools = init.tools || {};
   Store.setServer(init.server);
   Store.setLibrary(init.library);
   Covers.init(init.covers);
@@ -45,7 +47,6 @@
   Keys.init();
   Mobile.init();
   Welcome.init();
-  Updates.init();
   BackgroundHelp.init();
 
   // The chosen visualizer's shaders compiled ahead, once the window has
@@ -73,7 +74,8 @@
     if (parts.length) toast(`Local Files: ${parts.join(', ')}`, 'success');
   });
 
-  const missing = Object.entries(init.tools).filter(([, ok]) => !ok).map(([name]) => name);
+  // yt-dlp is not shipped (downloadsHelp.js): only ffmpeg and ffprobe are missed.
+  const missing = Object.entries(init.tools || {}).filter(([name, ok]) => !ok && name !== 'ytDlp').map(([name]) => name);
   if (missing.length) {
     toast(`Missing tools: ${missing.join(', ')}. Downloading will not work until Flow is reinstalled.`, 'error');
   }

@@ -33,7 +33,6 @@ import android.provider.Settings;
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.ContextCompat;
-import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -930,50 +929,6 @@ public class FlowNative extends Plugin {
                 }
                 extractor.release();
             }
-        });
-    }
-
-    // ---- updates ----
-
-    /**
-     * Hands the APK at `path` (in the app's cache) to Android's installer,
-     * which asks before it installs. Flow may only do that once allowed to
-     * ("Install unknown apps"): until then its setting opens instead (unless
-     * `ask` is false). Resolves { allowed, started }.
-     */
-    @PluginMethod
-    public void installApk(PluginCall call) {
-        Context ctx = getContext();
-        boolean ask = !Boolean.FALSE.equals(call.getBoolean("ask", true));
-        File apk;
-        String cache;
-        try {
-            apk = new File(call.getString("path", "")).getCanonicalFile();
-            cache = ctx.getCacheDir().getCanonicalPath() + File.separator;
-        } catch (IOException e) {
-            call.reject("No such update.");
-            return;
-        }
-        if (!apk.getPath().startsWith(cache) || !apk.isFile()) {
-            call.reject("No such update.");
-            return;
-        }
-        getActivity().runOnUiThread(() -> {
-            JSObject r = new JSObject();
-            if (Build.VERSION.SDK_INT >= 26 && !ctx.getPackageManager().canRequestPackageInstalls()) {
-                if (ask) start(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + ctx.getPackageName())));
-                r.put("allowed", false);
-                r.put("started", false);
-                call.resolve(r);
-                return;
-            }
-            Uri uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".fileprovider", apk);
-            Intent install = new Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(uri, "application/vnd.android.package-archive")
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-            r.put("allowed", true);
-            r.put("started", start(install));
-            call.resolve(r);
         });
     }
 

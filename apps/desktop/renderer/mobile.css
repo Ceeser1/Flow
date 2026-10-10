@@ -737,7 +737,6 @@ body.mobile .settings__right .btn { height: 40px; }
 
 /* ===== Add Songs ===== */
 
-body.mobile .download-hint { margin-top: 10px; line-height: 1.45; }
 body.mobile .local-pick__buttons { flex-wrap: wrap; }
 body.mobile .local-pick__buttons .btn { flex: 1 1 auto; }
 

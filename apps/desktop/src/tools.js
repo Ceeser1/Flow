@@ -24,15 +24,17 @@ function bundled(exeName) {
 const findFfmpeg = () => bundled('ffmpeg.exe');
 const findFfprobe = () => bundled('ffprobe.exe');
 
+// yt-dlp is not shipped with Flow: whoever wants to download puts it into
+// Flow's tools folder (%LOCALAPPDATA%\Flow\tools) themselves; Add Songs'
+// "Downloads?" says how.
 function localYtDlp() {
   return path.join(paths.localToolsDir(), 'yt-dlp.exe');
 }
 
-/** The updatable copy when there is one, otherwise the bundled yt-dlp. */
+/** yt-dlp.exe in Flow's tools folder, or null. */
 function findYtDlp() {
   const local = localYtDlp();
-  if (fs.existsSync(local)) return local;
-  return bundled('yt-dlp.exe');
+  return fs.existsSync(local) ? local : null;
 }
 
 function run(exe, args, timeout = 60000) {
@@ -43,33 +45,17 @@ function run(exe, args, timeout = 60000) {
   });
 }
 
-async function versionOf(exe) {
-  if (!exe || !fs.existsSync(exe)) return '';
-  const r = await run(exe, ['--version'], 30000);
-  return r.ok ? r.stdout.trim() : '';
-}
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * YouTube changes often enough that a yt-dlp more than a few weeks old stops
- * working. The installed copy cannot update itself inside Program Files, so
- * the first run copies it to %LOCALAPPDATA%\Flow\tools, and from then on
- * that copy runs `yt-dlp -U` at most once a day, in the background. A newer
- * bundled copy (after installing a new Flow) replaces an older local one.
- * Never throws: a failed update just leaves the working copy in place.
+ * working: the one in the tools folder runs `yt-dlp -U` at most once a day,
+ * in the background. Never throws: a failed update just leaves the working
+ * copy in place.
  */
 async function refreshYtDlp() {
   try {
-    const shipped = bundled('yt-dlp.exe');
     const local = localYtDlp();
-    if (shipped && shipped !== local) {
-      const [shippedVer, localVer] = await Promise.all([versionOf(shipped), versionOf(local)]);
-      // yt-dlp versions are dates (2026.08.19), so they compare as text.
-      if (!localVer || (shippedVer && shippedVer > localVer)) {
-        fs.copyFileSync(shipped, local);
-      }
-    }
     if (!fs.existsSync(local)) return;
     if (Date.now() - (settings.get('ytDlpCheckedAt') || 0) < DAY_MS) return;
     settings.set({ ytDlpCheckedAt: Date.now() });
@@ -87,4 +73,7 @@ function status() {
   };
 }
 
-module.exports = { findFfmpeg, findFfprobe, findYtDlp, refreshYtDlp, status };
+/** Flow's tools folder, where yt-dlp.exe goes. */
+const toolsDir = () => paths.localToolsDir();
+
+module.exports = { findFfmpeg, findFfprobe, findYtDlp, refreshYtDlp, status, toolsDir };

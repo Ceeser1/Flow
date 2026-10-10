@@ -22,7 +22,8 @@
 #   --yes            no questions: the defaults, and install what the level needs
 #   --no-tailscale   leave Tailscale alone (don't install it)
 #   --no-discovery   do not let the apps find the server on the network by themselves
-#   --downloads      let the server download songs itself (installs ffmpeg, yt-dlp, Deno)
+#   --downloads      let the server download songs itself (installs ffmpeg and Deno;
+#                    yt-dlp you install yourself, after its legal note)
 #   --no-downloads   don't (asked when left out; without a terminal: as before, else no)
 #   --uninstall      remove the service (the library and the music stay)
 #
@@ -111,7 +112,7 @@ if [ "$UNINSTALL" = 1 ]; then
   $SUDO rm -f "$UNIT" /etc/systemd/system/flow-ytdlp-update.service /etc/systemd/system/flow-ytdlp-update.timer
   $SUDO systemctl daemon-reload
   say "Removed. The library (~/.local/share/flow-server) and the music are still there,"
-  say "and so are ffmpeg and yt-dlp (sudo rm /usr/local/bin/yt-dlp to remove the one this put there)."
+  say "and so are ffmpeg and yt-dlp (sudo rm /usr/local/bin/yt-dlp to remove the one put there for Flow)."
   exit 0
 fi
 
@@ -194,7 +195,7 @@ CADDYFILE=/etc/caddy/Caddyfile
 SETUP="$REPO/apps/server/src/setup.js"
 DUCK_DIR=/etc/flow-server
 DUCK_UNIT=/etc/systemd/system/flow-duckdns
-# yt-dlp as this script installs it (it updates itself once a day).
+# yt-dlp where it is to be installed for Flow (it then updates itself once a day).
 YTDLP_BIN=/usr/local/bin/yt-dlp
 YTDLP_UNIT=/etc/systemd/system/flow-ytdlp-update
 lan_ip() { ip -4 route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit } }'; }
@@ -257,8 +258,9 @@ fi
 
 step "Should the server download songs itself?"
 say "With this, the Flow apps get \"Download (Server)\" on Add Songs: the server fetches the"
-say "songs, so a phone or a browser needs no downloader of its own. It needs ffmpeg and"
-say "yt-dlp, and for YouTube Deno (or Node.js 22+), which this script installs next."
+say "songs, so a phone or a browser needs no downloader of its own. It needs ffmpeg and,"
+say "for YouTube, Deno (or Node.js 22+), which this script installs next, and yt-dlp, which"
+say "you install yourself: Flow does not come with it."
 if [ "$DOWNLOADS" = ask ]; then
   if [ "$YES" = 1 ] || [ ! -t 0 ]; then
     # Unattended: as chosen before, else no (nothing is fetched unasked).
@@ -269,6 +271,17 @@ if [ "$DOWNLOADS" = ask ]; then
   else
     DOWNLOADS=0
   fi
+fi
+# yt-dlp is not installed by this script. Whoever wants the server to download
+# reads the legal note and installs it themselves (the yt-dlp step waits for it);
+# declining the note leaves downloads off. --yes or no terminal never agrees to
+# it: the yt-dlp step then only says how. One already there needs no note.
+if [ "$DOWNLOADS" = 1 ] && ! have yt-dlp && [ "$YES" != 1 ] && [ -t 0 ]; then
+  say ""
+  say "Legal note: using Flow to play your own local music files is completely fine."
+  say "Downloading requires yt-dlp. Using yt-dlp or downloading from URLs may break copyright"
+  say "law in your country or the terms of the site you download from. Use at your own risk."
+  ask_no "I understand and want to proceed" || DOWNLOADS=0
 fi
 if [ "$DOWNLOADS" = 1 ]; then say "Yes."; else say "No (run this again with --downloads to turn it on later)."; fi
 
@@ -301,23 +314,47 @@ if [ "$DOWNLOADS" = 1 ]; then
     armv7l|armv7*) YTDLP_ASSET=yt-dlp_linux_armv7l; DENO_TARGET="" ;;
     *) YTDLP_ASSET=""; DENO_TARGET="" ;;
   esac
-  if have yt-dlp; then
-    say "Found: $(command -v yt-dlp) ($(yt-dlp --version 2>/dev/null || echo 'version unknown'))."
-  elif [ -z "$YTDLP_ASSET" ]; then
-    say "There is no ready-made yt-dlp for this machine ($(uname -m)): https://github.com/yt-dlp/yt-dlp#installation"
-  else
-    say "Installing it from github.com/yt-dlp into $YTDLP_BIN."
-    TMP=$(mktemp)
-    if fetch "https://github.com/yt-dlp/yt-dlp/releases/latest/download/$YTDLP_ASSET" "$TMP"; then
-      $SUDO install -m 755 "$TMP" "$YTDLP_BIN"
-      say "Installed: yt-dlp $("$YTDLP_BIN" --version 2>/dev/null)"
+  # How to install it: the file for this machine, where it goes. No link.
+  ytdlp_hint() {
+    if [ -n "$YTDLP_ASSET" ]; then
+      say "Download $YTDLP_ASSET yourself from yt-dlp's latest release at GitHub and install it"
+      say "as $YTDLP_BIN, in the folder you downloaded it to:"
+      say "  sudo mv $YTDLP_ASSET $YTDLP_BIN && sudo chmod +x $YTDLP_BIN"
     else
-      say "Could not download it; the server works, but cannot download songs until it is there."
+      say "There is no ready-made yt-dlp for this machine ($(uname -m)): install yt-dlp yourself"
+      say "so that the command yt-dlp runs it."
     fi
-    rm -f "$TMP"
+  }
+  ytdlp_found() { say "Found: $(command -v yt-dlp) ($(yt-dlp --version 2>/dev/null || echo 'version unknown'))."; }
+  if have yt-dlp; then
+    ytdlp_found
+  elif [ "$YES" = 1 ] || [ ! -t 0 ]; then
+    say "Not installed (Flow does not install it). To let the server download:"
+    ytdlp_hint
+    say "Then: sudo systemctl restart $SERVICE"
+  else
+    ytdlp_hint
+    while :; do
+      printf 'Do it now in a second terminal, then press Enter here (s = skip): '
+      read -r answer || answer=s
+      case "$answer" in
+        s|S)
+          say "Skipped. The server cannot download songs until it is there. Later:"
+          ytdlp_hint
+          say "Then: sudo systemctl restart $SERVICE"
+          break
+          ;;
+      esac
+      if have yt-dlp; then
+        ytdlp_found
+        break
+      fi
+      say "Not found."
+      ytdlp_hint
+    done
   fi
-  # The copy this script put there keeps itself up to date: YouTube changes
-  # often enough that a yt-dlp a few weeks old stops working.
+  # The copy at $YTDLP_BIN keeps itself up to date: YouTube changes often
+  # enough that a yt-dlp a few weeks old stops working.
   if [ -x "$YTDLP_BIN" ] && [ "$(command -v yt-dlp)" = "$YTDLP_BIN" ]; then
     TMP=$(mktemp)
     cat > "$TMP" <<EOF
@@ -350,36 +387,35 @@ EOF
     say "It updates itself once a day."
   fi
   # YouTube's pages need JavaScript solved: yt-dlp does that with Deno, or with
-  # Node.js from version 22 when its config says so.
-  if have yt-dlp; then
-    if have deno; then
-      say "YouTube: yt-dlp uses Deno ($(command -v deno))."
-    elif [ "$NODE_MAJOR" -ge 22 ] && [ "$(command -v yt-dlp)" = "$YTDLP_BIN" ]; then
-      if ! grep -qs -- '--js-runtimes' /etc/yt-dlp.conf; then
-        printf '# Written by Flow'"'"'s install.sh: YouTube'"'"'s JavaScript is solved with Node.js.\n--js-runtimes node\n' | $SUDO tee -a /etc/yt-dlp.conf >/dev/null
-      fi
-      say "YouTube: yt-dlp uses Node.js $("$NODE" -v) (set in /etc/yt-dlp.conf)."
+  # Node.js from version 22 when its config says so. Set up even while yt-dlp
+  # is still to come.
+  if have deno; then
+    say "YouTube: yt-dlp uses Deno ($(command -v deno))."
+  elif [ "$NODE_MAJOR" -ge 22 ] && { ! have yt-dlp || [ "$(command -v yt-dlp)" = "$YTDLP_BIN" ]; }; then
+    if ! grep -qs -- '--js-runtimes' /etc/yt-dlp.conf; then
+      printf '# Written by Flow'"'"'s install.sh: YouTube'"'"'s JavaScript is solved with Node.js.\n--js-runtimes node\n' | $SUDO tee -a /etc/yt-dlp.conf >/dev/null
+    fi
+    say "YouTube: yt-dlp uses Node.js $("$NODE" -v) (set in /etc/yt-dlp.conf)."
+  else
+    say "For YouTube, yt-dlp needs a JavaScript runtime: Deno, or Node.js 22 or newer (this is $("$NODE" -v))."
+    if [ -z "$DENO_TARGET" ]; then
+      say "There is no Deno for this machine ($(uname -m)); YouTube downloads will fail, other sites work."
     else
-      say "For YouTube, yt-dlp needs a JavaScript runtime: Deno, or Node.js 22 or newer (this is $("$NODE" -v))."
-      if [ -z "$DENO_TARGET" ]; then
-        say "There is no Deno for this machine ($(uname -m)); YouTube downloads will fail, other sites work."
+      say "Installing Deno from github.com/denoland into /usr/local/bin."
+      have unzip || install_packages unzip >/dev/null 2>&1 || true
+      TMP=$(mktemp -d)
+      if have unzip && fetch "https://github.com/denoland/deno/releases/latest/download/deno-$DENO_TARGET.zip" "$TMP/deno.zip" \
+        && unzip -q "$TMP/deno.zip" -d "$TMP"; then
+        $SUDO install -m 755 "$TMP/deno" /usr/local/bin/deno
+        say "Installed: $(/usr/local/bin/deno --version 2>/dev/null | head -n 1)"
       else
-        say "Installing Deno from github.com/denoland into /usr/local/bin."
-        have unzip || install_packages unzip >/dev/null 2>&1 || true
-        TMP=$(mktemp -d)
-        if have unzip && fetch "https://github.com/denoland/deno/releases/latest/download/deno-$DENO_TARGET.zip" "$TMP/deno.zip" \
-          && unzip -q "$TMP/deno.zip" -d "$TMP"; then
-          $SUDO install -m 755 "$TMP/deno" /usr/local/bin/deno
-          say "Installed: $(/usr/local/bin/deno --version 2>/dev/null | head -n 1)"
-        else
-          say "Could not install it (it needs unzip and the internet); YouTube downloads will fail, other sites work."
-        fi
-        rm -rf "$TMP"
+        say "Could not install it (it needs unzip and the internet); YouTube downloads will fail, other sites work."
       fi
+      rm -rf "$TMP"
     fi
   fi
 else
-  # No downloads: the copy of yt-dlp this script put there no longer needs updating.
+  # No downloads: the copy of yt-dlp put there for Flow no longer needs updating.
   $SUDO systemctl disable --now flow-ytdlp-update.timer >/dev/null 2>&1 || true
 fi
 

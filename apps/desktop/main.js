@@ -314,6 +314,9 @@ handle('shell:showSong', (songId) => {
   else shell.openPath(paths.musicDir());
 });
 handle('shell:openMusicFolder', () => shell.openPath(paths.musicDir()));
+// "Downloads?" on Add Songs: where yt-dlp.exe goes, and whether it is there now.
+handle('tools:openFolder', () => shell.openPath(tools.toolsDir()));
+handle('tools:status', () => tools.status());
 
 // ---- the save folder (Settings) ----
 

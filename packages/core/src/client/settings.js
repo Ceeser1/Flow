@@ -394,11 +394,6 @@ const DEFAULTS = {
   sessionPlayHere: false,
 
   // ---- the phone's own ----
-  // Updates (updates.js): a newer Flow found on GitHub ({ version, url, size,
-  // page }, or null), and the start not asking about one ("Don't ask again";
-  // Settings' Check for Updates still does).
-  updateFound: null,
-  updateNoPrompt: false,
   // The help about playing with the screen off has shown by itself once.
   batteryHelpShown: false,
 };
@@ -455,16 +450,10 @@ function clean(raw) {
     .slice(0, 50)
     .map(([k, v]) => [k, Math.round(Math.max(0, Math.min(1000, Number(v))))]));
   for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
-    'sponsorBlock', 'sponsorBlockIntros', 'updateNoPrompt', 'batteryHelpShown']) s[key] = s[key] === true;
-  const found = s.updateFound;
-  s.updateFound = found && typeof found === 'object' && /^\d+\.\d+\.\d+$/.test(String(found.version)) && /^https:\/\//.test(String(found.url))
-    ? {
-      version: String(found.version),
-      url: String(found.url).slice(0, 1000),
-      size: Math.max(0, Number(found.size) || 0),
-      page: /^https:\/\//.test(String(found.page || '')) ? String(found.page).slice(0, 1000) : '',
-    }
-    : null;
+    'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown']) s[key] = s[key] === true;
+  // The phone's update check is gone: what it saved goes too.
+  delete s.updateFound;
+  delete s.updateNoPrompt;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',

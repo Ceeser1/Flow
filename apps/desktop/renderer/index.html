@@ -81,10 +81,9 @@
             <button id="downloadBtn" class="btn btn--primary btn--big" type="button">Download</button>
             <!-- With a Flow Server that downloads songs itself (serverImport.js). -->
             <button id="serverDownloadBtn" class="btn btn--big" type="button" hidden>Download (Server)</button>
+            <!-- Where nothing downloads from links: the legal note and how to get yt-dlp (downloadsHelp.js). -->
+            <button id="downloadsHelpBtn" class="btn btn--big downloads-help-btn" type="button" hidden>Downloads?</button>
           </div>
-          <!-- Where songs are not downloaded here (the phone) and no server downloads them. -->
-          <div id="downloadHint" class="muted-text download-hint" hidden>
-            To download from a link, connect to a Flow Server that downloads songs (Settings, Flow Server).</div>
           <!-- Songs from the computer instead: hidden once something is open. -->
           <div id="localPick" class="local-pick">
             <div class="local-pick__or">or</div>
@@ -462,6 +461,7 @@
 <script src="app/pages/add.js"></script>
 <script src="app/pages/import.js"></script>
 <script src="app/pages/serverImport.js"></script>
+<script src="app/downloadsHelp.js"></script>
 <script src="app/pages/playlists.js"></script>
 <script src="app/pages/followed.js"></script>
 <script src="app/pages/sessions.js"></script>
@@ -473,7 +473,6 @@
 <script src="app/keys.js"></script>
 <script src="app/mobile.js"></script>
 <script src="app/welcome.js"></script>
-<script src="app/updates.js"></script>
 <script src="app/backgroundHelp.js"></script>
 <script src="app/main.js"></script>
 </body>
