@@ -1,8 +1,8 @@
 'use strict';
 
 // Reading whole playlists, shared by the desktop app and the Flow Server: a
-// YouTube playlist, a SoundCloud set, a Bandcamp album, or a Spotify playlist
-// or album by way of YouTube. Each app makes a lister with createLister(),
+// YouTube playlist, a SoundCloud set, a Bandcamp album, or a Spotify, Deezer
+// or Amazon Music playlist or album by way of YouTube. Each app makes a lister with createLister(),
 // handing over its media tools (media.js) and its library, so songs it
 // already has are marked.
 //
@@ -11,12 +11,14 @@
 //   download()  fetches the chosen songs one after another into the cache.
 //
 // One at a time on purpose: many downloads at once is what gets a client
-// throttled. Only the Spotify lookups run four at a time, since a search is
-// small.
+// throttled. Only the YouTube lookups of a Spotify, Deezer or Amazon list run
+// four at a time, since a search is small.
 
 const fs = require('fs');
 const model = require('./libraryModel');
 const spotify = require('./spotify');
+const deezer = require('./deezer');
+const amazonMusic = require('./amazonMusic');
 const { parseTitle, cleanUploader } = require('./titleParser');
 const { normalizeListUrl, sourceKey } = require('./text');
 
@@ -215,7 +217,7 @@ function createLister({ media, library }) {
   }
 
   /**
-   * The YouTube upload for one Spotify song: { quality, cand, diff }.
+   * The YouTube upload for one Spotify (Deezer, Amazon Music) song: { quality, cand, diff }.
    *   1. YouTube Music's song search. Its first fitting result is nearly always
    *      the album audio; the search gives titles only, so its length is read
    *      once to be sure.
@@ -259,6 +261,38 @@ function createLister({ media, library }) {
     onProgress({ phase: 'listing', text: 'Reading the Spotify playlist...' });
     const page = await spotify.fetchSpotify(ref);
     if (group.cancelled) throw cancelled();
+    return listByName(page, {
+      source: 'Spotify',
+      sourceUrl: `https://open.spotify.com/${ref.type}/${ref.id}`,
+      truncated: page.tracks.length >= SPOTIFY_PAGE_LIMIT ? 'spotify' : false,
+    }, group, onProgress);
+  }
+
+  /** A Deezer playlist, album or song, each song looked up on YouTube. */
+  async function listDeezer(ref, url, group, onProgress) {
+    onProgress({ phase: 'listing', text: 'Reading the Deezer playlist...' });
+    const page = await deezer.fetchDeezer(await deezer.resolveShortLink(ref), () => group.cancelled);
+    if (group.cancelled) throw cancelled();
+    return listByName(page, { source: 'Deezer', sourceUrl: page.url, truncated: false }, group, onProgress);
+  }
+
+  /** An Amazon Music playlist, album or song, each song looked up on YouTube. */
+  async function listAmazonMusic(ref, url, group, onProgress) {
+    onProgress({ phase: 'listing', text: 'Reading the Amazon Music playlist...' });
+    const page = await amazonMusic.fetchAmazonMusic(ref);
+    if (group.cancelled) throw cancelled();
+    return listByName(page, {
+      source: 'Amazon Music',
+      sourceUrl: amazonMusic.pageUrl(ref),
+      truncated: page.total > page.tracks.length ? 'amazon' : false,
+    }, group, onProgress);
+  }
+
+  /**
+   * A list known by its songs' names only (page: { name, tracks: [{ title,
+   * artists, duration, playable }] }), each song looked up on YouTube.
+   */
+  async function listByName(page, { source, sourceUrl, truncated }, group, onProgress) {
     const tracks = page.tracks;
     const data = library();
     const items = tracks.map((t, index) => {
@@ -268,11 +302,11 @@ function createLister({ media, library }) {
         title: [t.artists, t.title].filter(Boolean).join(' - '),
         duration: t.duration,
         meta,
-        spotify: { title: t.title, artists: t.artists, duration: t.duration },
+        track: { title: t.title, artists: t.artists, duration: t.duration },
         url: '',
         key: '',
         status: t.playable ? 'pending' : 'unavailable',
-        note: t.playable ? '' : 'not playable on Spotify',
+        note: t.playable ? '' : `not playable on ${source}`,
         match: null,
         existing: existingInfo(existingSong(data, { meta })),
       };
@@ -291,7 +325,7 @@ function createLister({ media, library }) {
         if (group.cancelled) throw cancelled();
         let pick = null;
         try {
-          pick = await matchOnYouTube(it.spotify, group);
+          pick = await matchOnYouTube(it.track, group);
         } catch (err) {
           if (group.cancelled) throw cancelled();
           it.status = 'notfound';
@@ -318,19 +352,13 @@ function createLister({ media, library }) {
     };
     await Promise.all(Array.from({ length: SEARCH_PARALLEL }, worker));
 
-    return {
-      source: 'Spotify',
-      sourceUrl: `https://open.spotify.com/${ref.type}/${ref.id}`,
-      name: page.name,
-      truncated: tracks.length >= SPOTIFY_PAGE_LIMIT ? 'spotify' : false,
-      items,
-    };
+    return { source, sourceUrl, name: page.name, truncated, items };
   }
 
   /**
    * Reads a playlist link. Resolves { single: true, probed } when the link is
    * one song after all, or the listing: { source, sourceUrl, name, truncated,
-   * items: [{ index, title, duration, url, key, status, note, meta?, spotify?,
+   * items: [{ index, title, duration, url, key, status, note, meta?, track?,
    * match?, existing? }] }. status is 'ok', 'unavailable' or 'notfound'.
    */
   async function list(rawUrl, group, onProgress, { knownArtists = [] } = {}) {
@@ -339,6 +367,10 @@ function createLister({ media, library }) {
     if (spotify.isSpotifyTrackUrl(rawUrl)) {
       throw new Error('Single Spotify songs cannot be downloaded. Paste a Spotify playlist or album link, or the song\'s YouTube link.');
     }
+    const dz = deezer.parseDeezerUrl(rawUrl);
+    if (dz) return listDeezer(dz, rawUrl, group, onProgress);
+    const amazon = amazonMusic.parseAmazonMusicUrl(rawUrl);
+    if (amazon) return listAmazonMusic(amazon, rawUrl, group, onProgress);
     const url = normalizeListUrl(rawUrl);
     if (!url) throw new Error('That does not look like a link.');
     const listing = await listWithYtDlp(url, group, onProgress);
@@ -369,7 +401,7 @@ function createLister({ media, library }) {
           title: probed.title,
           meta: fromSource ? it.meta : { artist: probed.guess.artist, title: probed.guess.title, mix: probed.guess.mix },
           artistFromChannel: !fromSource && !!probed.guess.artistFromChannel,
-          // For its cover (@flow/core/cover): a Spotify song's upload was
+          // For its cover (@flow/core/cover): a Spotify (Deezer, Amazon) song's upload was
           // found by YouTube Music's search already.
           thumbnails: probed.thumbnails,
           noSearch: !!fromSource,
@@ -378,7 +410,7 @@ function createLister({ media, library }) {
     });
   }
 
-  return { list, download, listWithYtDlp, listSpotify, matchOnYouTube };
+  return { list, download, listWithYtDlp, listSpotify, listDeezer, listAmazonMusic, matchOnYouTube };
 }
 
 module.exports = {

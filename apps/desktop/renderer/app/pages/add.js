@@ -1,7 +1,8 @@
 'use strict';
 
 // Add Songs: paste a link, download, trim, name, pick playlists, Finish.
-// A link to a whole playlist (or a Spotify list) goes to import.js instead,
+// A link to a whole playlist (or a Spotify, Deezer or Amazon Music list) goes
+// to import.js instead,
 // which shows a checklist and imports untrimmed. Files from the computer
 // ("Open local File(s)" / "Open local Folder") go there too, straight to the
 // trimming step.

@@ -11,8 +11,9 @@
 // an app finishes a song: then the trim is cut out straight into the music
 // folder, with its names in the tags, and the song added like an upload.
 //
-//   listing      the link is read in the background (a Spotify list is looked
-//                up on YouTube, which takes a while); an app polls.
+//   listing      the link is read in the background (a Spotify, Deezer or
+//                Amazon Music list is looked up on YouTube, which takes a
+//                while); an app polls.
 //   ready        the list is known. Its songs download one after another:
 //                queued -> downloading -> converting -> ready (or failed).
 //                Songs the library has already are 'library', not downloaded.

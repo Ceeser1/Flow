@@ -28,7 +28,7 @@ const { applyCommand } = require('@flow/core/commands');
 const prof = require('@flow/core/profiles');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { parseTitle } = require('@flow/core/titleParser');
-const { sourceKeyFromUrl, songFileStem } = require('@flow/core/text');
+const { sourceKeyFromUrl, songFileStem, isNameOnlyList } = require('@flow/core/text');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const cover = require('@flow/core/cover');
 const { createMedia } = require('@flow/core/media');
@@ -588,8 +588,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
       title: s.title,
       duration: s.duration,
       thumbnails: s.thumbnails,
-      // A Spotify import's song is YouTube Music's own already: no search.
-      noSearch: /spotify\.com/i.test(s.sourcePlaylistUrl || ''),
+      // A Spotify (Deezer, Amazon Music) import's song is YouTube Music's own already: no search.
+      noSearch: isNameOnlyList(s.sourcePlaylistUrl),
     }, {
       ffmpeg,
       ...lookups,
