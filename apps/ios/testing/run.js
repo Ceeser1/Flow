@@ -207,6 +207,11 @@ function harness() {
       if (jobs.length) return give(res, jobs.shift());
       if (held) held.end();
       held = res;
+      // An app ended while asking (relaunch) leaves its question behind: a
+      // job given to it would be lost, so it waits for the next one instead.
+      res.on('close', () => {
+        if (held === res) held = null;
+      });
       clearTimeout(heldTimer);
       heldTimer = setTimeout(() => {
         if (held === res) {
@@ -269,6 +274,12 @@ function harness() {
 
   return {
     listen: () => new Promise((r) => server.listen(HARNESS_PORT, '127.0.0.1', r)),
+    /** The app was ended: what it was asking goes, its jobs wait for the app that starts. */
+    drop: () => {
+      if (held) held.end();
+      held = null;
+      clearTimeout(heldTimer);
+    },
     close: () => {
       if (held) held.end();
       clearTimeout(heldTimer);
@@ -302,6 +313,9 @@ async function runStep(step, ctx) {
       } catch {
         // Not running.
       }
+      // Its question to the harness died with it; iOS 26 takes over a second
+      // to start the new one, and a job given to the old question was lost.
+      ctx.drop();
       await sleep(1000);
       simctl('launch', `--stdout=${path.join(ctx.out, 'app-stdout-2.txt')}`, `--stderr=${path.join(ctx.out, 'app-stderr-2.txt')}`,
         ctx.udid, BUNDLE, '-FlowHarness', `http://127.0.0.1:${HARNESS_PORT}`, ...step.relaunch);
@@ -441,7 +455,7 @@ async function main() {
   log(up ? 'Flow is up and asking for steps' : 'Flow never asked for a step in 60 s');
 
   const ctx = {
-    udid: device.udid, out, server, sh, ask: h.ask, log,
+    udid: device.udid, out, server, sh, ask: h.ask, drop: h.drop, log,
   };
   let failed = up ? 0 : 1;
   if (up) {
