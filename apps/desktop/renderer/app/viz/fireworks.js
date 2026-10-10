@@ -9,7 +9,8 @@
 // lights the sky and the city.
 //
 // Its cogwheel: the colours (festive, gold and silver, the music's), how
-// large the bursts are, how long the trails hang, the city.
+// large the bursts are, how long the trails hang, the city, the screen
+// flashing with the bursts (and how much).
 //
 // WebGL (viz/gl.js): the sparks are dots of light drawn into a texture that
 // keeps the frames before fading (their trails), blurred for the glow; the
@@ -345,7 +346,8 @@
       VizGL.bind(gl, u.glowB, this.eb.tex, 2);
       VizGL.bind(gl, u.city, this.cityTex, 3);
       gl.uniform2f(u.res, this.w, this.h);
-      gl.uniform1f(u.flash, this.flash);
+      // The sky and city lit by the bursts: 75% as it first was.
+      gl.uniform1f(u.flash, set('fwFlash') ? this.flash * (set('fwFlashAmount') / 75) : 0);
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.boom, a.kick);
       gl.uniform2f(u.starShift, ...this.starShift);
@@ -370,6 +372,7 @@
       { type: 'slider', key: 'fwSize', label: 'Bursts', min: 50, max: 200, step: 5 },
       { type: 'slider', key: 'fwTrails', label: 'Trails', min: 0, max: 100, step: 5 },
       { type: 'check', key: 'fwCity', label: 'City' },
+      { type: 'check', key: 'fwFlash', label: 'Screen flash', amount: { key: 'fwFlashAmount', min: 0, max: 100, step: 5 } },
     ],
   });
 })();

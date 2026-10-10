@@ -88,11 +88,14 @@ const VIZ_OPTIONS = {
   rdSpeed: ['range', 100, 25, 200, 5],
   rdSource: ['choice', 'spectrum', ['spectrum', 'wave']],
   // Fireworks: festive, gold and silver or the music's colours; how large
-  // the bursts are and how long the trails hang (percent); the city.
+  // the bursts are and how long the trails hang (percent); the city; the
+  // screen flashing with the bursts (and how much, percent; 75 as it first was).
   fwColors: ['choice', 'festive', ['festive', 'gold', 'music']],
   fwSize: ['range', 100, 50, 200, 5],
   fwTrails: ['range', 50, 0, 100, 5],
   fwCity: ['bool', true],
+  fwFlash: ['bool', true],
+  fwFlashAmount: ['range', 50, 0, 100, 5],
   // Prism: a kaleidoscope or tiles, how many slices, how fast it turns
   // (percent), the colours shifting.
   psMode: ['choice', 'kaleido', ['kaleido', 'tiles']],
@@ -101,13 +104,15 @@ const VIZ_OPTIONS = {
   psShift: ['bool', true],
   // Orb: dots or a wireframe, its colours (aurora, rainbow, or its own,
   // obColor; ember, ice and white became own ones), how fast it turns
-  // (percent), the ring of sparks, the zoom on the kicks.
+  // (percent), the ring of sparks, the zoom on the kicks (and how far, percent;
+  // 80 as it first was).
   obStyle: ['choice', 'dots', ['dots', 'wire']],
   obColors: ['choice', 'aurora', ['aurora', 'rainbow', 'custom']],
   obColor: ['color', '#3484f4'],
   obSpin: ['range', 100, 0, 200, 5],
   obRing: ['bool', true],
   obZoom: ['bool', true],
+  obZoomAmount: ['range', 50, 0, 100, 5],
   // Blobs (id lava): its colours, how many blobs, how fast they drift (percent), the gloss.
   lvColors: ['choice', 'lava', ['lava', 'neon', 'ocean', 'candy', 'chrome']],
   lvBlobs: ['range', 10, 4, 16, 1],

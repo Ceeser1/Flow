@@ -266,6 +266,40 @@ const VizGL = {
   _blurs: new WeakMap(),
 
   /**
+   * src made smaller into dst, each of dst's pixels the mean of all of src
+   * under it (n x n samples), so small bright things are not missed or
+   * caught whole by a single pixel, which blurred and drawn large again
+   * shows as a square round them.
+   */
+  shrink(gl, src, dst) {
+    let p = this._shrinks.get(gl);
+    if (!p) {
+      p = this.program(gl, this.SCREEN_VS, `
+        in vec2 uv;
+        uniform sampler2D src;
+        uniform vec2 cell;
+        uniform int n;
+        out vec4 o;
+        void main() {
+          vec4 c = vec4(0.0);
+          for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) c += texture(src, uv + ((vec2(i, j) + 0.5) / float(n) - 0.5) * cell);
+          }
+          o = c / float(n * n);
+        }`);
+      this._shrinks.set(gl, p);
+    }
+    gl.disable(gl.BLEND);
+    gl.useProgram(p.p);
+    this.into(gl, dst);
+    this.bind(gl, p.u.src, src.tex);
+    gl.uniform2f(p.u.cell, 1 / dst.w, 1 / dst.h);
+    gl.uniform1i(p.u.n, Math.min(12, Math.ceil(Math.max(src.w / dst.w, src.h / dst.h))));
+    this.screen(gl);
+  },
+  _shrinks: new WeakMap(),
+
+  /**
    * Soft lines in pixels (y down), each a quad with a falloff across it:
    * seg(x0, y0, x1, y1, halfWidth, rgb, a, a1) adds one, draw(w, h) draws
    * them all with the blending set by the caller and starts over. rgb is
