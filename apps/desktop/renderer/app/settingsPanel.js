@@ -561,7 +561,7 @@ const SettingsPanel = {
     const value = h('span.settings__value');
     const detected = h('span.settings__note');
     let hz = 0;
-    const fpsText = (v) => (v ? `${v} FPS` : '∞');
+    const fpsText = (v) => `${v || '∞'} FPS`;
     const draw = () => {
       const vsync = Store.settings.vizVsync;
       const control = input.parentNode;
