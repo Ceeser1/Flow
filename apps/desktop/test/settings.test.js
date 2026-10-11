@@ -205,7 +205,7 @@ test('settings are kept within their ranges', () => {
   // Own colours after the schemes: blue by default; Orb's Ember, Ice and
   // White became own ones.
   for (const [scheme, key] of [['brColors', 'brColor'], ['rdColor', 'rdOwnColor'], ['skColors', 'skColor'], ['obColors', 'obColor'],
-    ['vnColors', 'vnColor'], ['stColors', 'stColor'], ['raColors', 'raColor']]) {
+    ['vnColors', 'vnColor'], ['stColors', 'stColor'], ['raColors', 'raColor'], ['szInk', 'szColor']]) {
     assert.equal(d[key], '#3484f4');
     assert.equal(settings.clean({ [scheme]: 'custom' })[scheme], 'custom');
   }
@@ -267,6 +267,16 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ fnGravity: 117 }).fnGravity, 115);
   assert.equal(d.fnRipples, true);
   assert.equal(d.fnBursts, undefined);
+  // Seismograph: green grid paper, a colour for each of 8 pens, the paper at 100%.
+  assert.equal(d.szPaper, 'green');
+  assert.equal(settings.clean({ szPaper: 'pink' }).szPaper, 'green');
+  assert.equal(d.szInk, 'classic');
+  assert.equal(d.szPens, 8);
+  assert.equal(settings.clean({ szPens: 20 }).szPens, 12);
+  assert.equal(d.szSpeed, 100);
+  assert.equal(settings.clean({ szSpeed: 30 }).szSpeed, 50);
+  // Not Spectrogram's speed (sgSpeed).
+  assert.equal(d.sgSpeed, 100);
   assert.equal(settings.clean({ ifForest: 'no' }).ifForest, true);
 });
 

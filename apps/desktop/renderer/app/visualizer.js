@@ -62,7 +62,7 @@ const VIZ_CATEGORIES = [
     id: 'equalizers',
     name: 'Equalizers',
     desc: 'The sound itself: bars, waves, rings and dots',
-    ids: ['bars', 'waveform', 'scope', 'spectrogram', 'ridges', 'skyline', 'halo', 'orb', 'reactor', 'hifi', 'vinyl', 'strings', 'radar'],
+    ids: ['bars', 'waveform', 'scope', 'spectrogram', 'ridges', 'skyline', 'halo', 'orb', 'reactor', 'hifi', 'vinyl', 'strings', 'radar', 'seismo'],
   },
   {
     id: 'worlds',

@@ -281,6 +281,14 @@ const VIZ_OPTIONS = {
   raColors: ['choice', 'green', ['green', 'amber', 'blue', 'custom']],
   raColor: ['color', '#3484f4'],
   raTrail: ['range', 100, 25, 200, 5],
+  // Seismograph: the paper's grid (green, red, blue), the ink (a colour for
+  // each pen, black, or its own, szColor), how many pens, the paper's speed
+  // (percent).
+  szPaper: ['choice', 'green', ['green', 'red', 'blue']],
+  szInk: ['choice', 'classic', ['classic', 'black', 'custom']],
+  szColor: ['color', '#3484f4'],
+  szPens: ['range', 8, 4, 12, 1],
+  szSpeed: ['range', 100, 50, 200, 10],
   // Moiré: the gratings (lines, rings, both), the colours (ink on paper,
   // print, neon).
   mrKind: ['choice', 'rings', ['lines', 'rings', 'both']],
@@ -444,7 +452,7 @@ const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'pur
 // The ones that can be chosen; 'random-<category>' picks one of a
 // category's each time (VIZ_CATEGORIES in the desktop's visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy', 'other'];
-const VISUALIZERS = [...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'synthwave', 'lightning', 'kaleidoscope', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'coral', 'shatter', 'plasmaglobe', 'attractor', 'julia', 'mandelbulb', 'lighthouse', 'train', 'vinyl', 'mosaic', 'strings', 'radar', 'moire', 'fountain'];
+const VISUALIZERS = [...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'synthwave', 'lightning', 'kaleidoscope', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'coral', 'shatter', 'plasmaglobe', 'attractor', 'julia', 'mandelbulb', 'lighthouse', 'train', 'vinyl', 'mosaic', 'strings', 'radar', 'moire', 'fountain', 'seismo'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
