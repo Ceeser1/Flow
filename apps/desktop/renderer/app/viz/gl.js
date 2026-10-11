@@ -156,9 +156,10 @@ const VizGL = {
 
   /**
    * A texture to draw into: { tex, fb, w, h }. half: 16-bit float, so faint
-   * trails fading over many frames do not band or stick.
+   * trails fading over many frames do not band or stick. depth: with a depth
+   * buffer of its own (24-bit).
    */
-  target(gl, w, h, { half = true, filter = gl.LINEAR, wrap = gl.CLAMP_TO_EDGE } = {}) {
+  target(gl, w, h, { half = true, filter = gl.LINEAR, wrap = gl.CLAMP_TO_EDGE, depth = false } = {}) {
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     const float = half && gl.getExtension('EXT_color_buffer_float');
@@ -171,16 +172,25 @@ const VizGL = {
     const fb = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    let rb = null;
+    if (depth) {
+      rb = gl.createRenderbuffer();
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    }
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    return { tex, fb, w, h };
+    return { tex, fb, rb, w, h };
   },
 
   freeTarget(gl, t) {
     if (!t) return;
     gl.deleteTexture(t.tex);
     gl.deleteFramebuffer(t.fb);
+    if (t.rb) gl.deleteRenderbuffer(t.rb);
   },
 
   /** Draws into t (null: the screen) from here on. */
