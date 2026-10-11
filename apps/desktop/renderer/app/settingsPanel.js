@@ -94,6 +94,11 @@ const SettingsPanel = {
         desc: 'Play all songs at an equal volume. It reduces loud spikes and makes quiet songs louder.',
         right: this._measuredNode = h('span.settings__note'),
       }),
+      this._row({
+        key: 'showTrend',
+        label: 'Show listening trends',
+        desc: 'If disabled, your listening trend category will be hidden in the menu.',
+      }),
       Store.can('musicFolder') ? this._savedSongsRow() : null,
       this._coversRow(),
 

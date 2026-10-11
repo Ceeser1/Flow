@@ -173,7 +173,7 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
 - **Favourites** (first under Playlists in the menu): every starred song, newest
   star first; "Added" is when it was starred. Read-only apart from the stars.
 - **Your listening trend** (its own entry in the menu, below Followed
-  Playlists and Active Sessions; its lists closed until opened, and its page
+  Playlists and Active Sessions, unless Show listening trends is off; its lists closed until opened, and its page
   lists them with what each is made from). Made from the statistics of the
   songs in your own playlists (All Songs does not count). A song's listen
   score is times played * (average listen duration / song duration).
@@ -250,6 +250,8 @@ The cog at the bottom left of the menu. Every change counts at once.
     (-14 LUFS, turned up by at most 8 dB), with a limiter catching the peaks
     of songs turned up. Each song is measured once in the background (EBU R128,
     well under a second a song) and the result kept in the library.
+  - **Show listening trends** (on): off hides Your listening trend from the
+    menu (a trend list open then goes back to All Songs).
   - **Local Files**: its Location, how many songs and how much room they take. Open shows
     the folder in Explorer. Change picks another folder and moves every song
     file there, subfolders and all (a name already taken there gets a number);

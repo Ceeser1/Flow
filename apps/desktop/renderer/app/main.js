@@ -81,6 +81,8 @@
   }
 
   Player.restore();
-  Nav.openPlaylist(init.settings.lastPlaylistId || 'all');
+  // A listening trend list last open stays shut while they are hidden.
+  const last = init.settings.lastPlaylistId || 'all';
+  Nav.openPlaylist(Store.settings.showTrend === false && SmartLists.isSmart(last) ? 'all' : last);
   document.body.classList.add('ready');
 })();

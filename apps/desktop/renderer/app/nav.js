@@ -40,6 +40,15 @@ const Nav = {
     Store.onServer(() => this.drawMenu());
     Player.onChange(() => this.drawMenu());
     Session.onChange(() => this.drawMenu());
+    Store.onSettings((patch) => {
+      if (!('showTrend' in patch)) return;
+      // Hidden while its page or one of its lists is open: back to All Songs.
+      if (!patch.showTrend && (this.page === 'trend' || (this.page === 'playlist' && SmartLists.isSmart(this.playlistId)))) {
+        this.openPlaylist('all');
+      } else {
+        this.drawMenu();
+      }
+    });
   },
 
   /**
@@ -210,8 +219,10 @@ const Nav = {
       }
     }
 
-    // Your listening trend: always there, its lists closed until opened.
-    $('menuTrendList').hidden = !trendOpen;
+    // Your listening trend: there unless switched off in Settings, its lists closed until opened.
+    const trendOn = Store.settings.showTrend !== false;
+    $('menuTrend').hidden = !trendOn;
+    $('menuTrendList').hidden = !trendOn || !trendOpen;
     const trendList = clear($('menuTrendList'));
     for (const p of Store.smartPlaylists()) trendList.appendChild(item(p));
     this._trendPlaying.hidden = trendOpen || !(SmartLists.isSmart(Player.contextId) && Player.isPlaying);
