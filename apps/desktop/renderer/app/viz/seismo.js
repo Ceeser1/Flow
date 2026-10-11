@@ -9,7 +9,8 @@
 // the top margin steps up on every beat (higher on a bar's first). The paper
 // is grid paper with holes along its edges; the ink is darker while wet and
 // lighter where a pen moved fast. On the right the machine: a slot each pen
-// arm comes out of, a lamp glowing with its level, its frequency.
+// arm comes out of, a lamp glowing with its level (the marker's flashing on
+// each beat), its frequency.
 //
 // Its cogwheel: the paper's grid (green, red, blue), the ink (a colour for
 // each pen, black, its own), how many pens, the paper's speed.
@@ -26,7 +27,7 @@
   const BODY = 0.045;        // the machine's guides above and below the paper, in screen heights
   const MARGIN = 0.03;       // the paper's edge with its holes
   const MARKER = 0.04;       // the marker pen's lane under it
-  const HOUSING = 0.2;       // the machine on the right
+  const HOUSING = 0.134;     // the machine on the right
   const ARM = 0.1;           // the pen arms' length out of it
   const PER_S = 0.18;        // the paper's speed at 100%, screen heights a second
   const INK_LINES = 240000;  // vertices: up to 2400 segments a pen and the marker's
@@ -46,14 +47,15 @@
     in vec2 uv;
     uniform sampler2D ink, labels;
     uniform vec2 res;
-    uniform float scroll, penX, laneTop, lane, major, wetPx, time;
+    uniform float area, scroll, penX, laneTop, lane, major, wetPx, time;
     uniform int pens, paper;
-    uniform float leds[${MAX_PENS}];
+    uniform float leds[${MAX_PENS}], beatLed;
     out vec4 o;
 
     void main() {
       vec2 f = vec2(gl_FragCoord.x, res.y - gl_FragCoord.y);   // pixels, y down
-      float H = res.y;
+      // The height it is laid out in: above the player bar (under it only the machine).
+      float H = area;
       float px = 1.0;
       float body = ${BODY} * H;
       float hx = res.x - ${HOUSING} * H;
@@ -120,22 +122,22 @@
           float y = i < 0 ? H * (${BODY} + ${MARGIN} + ${MARKER} * 0.8) : laneTop + lane * (float(pens - 1 - i) + 0.5);
           float dy = f.y - y;
           if (abs(dy) > 0.03 * H) continue;
-          vec2 slot = vec2(d - 0.016 * H, dy);
-          vec2 q = abs(slot) - vec2(0.016 * H, 0.0035 * H);
+          vec2 slot = vec2(d - 0.011 * H, dy);
+          vec2 q = abs(slot) - vec2(0.011 * H, 0.0035 * H);
           float s = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
           col = mix(col, vec3(0.015), smoothstep(px, -px, s));
           col += vec3(0.12) * smoothstep(px, 0.0, abs(s)) * step(0.0, dy);
-          if (i >= 0) {
-            float lv = leds[i];
-            vec2 l = vec2(d - 0.045 * H, dy);
+          {
+            float lv = i < 0 ? beatLed : leds[max(i, 0)];
+            vec2 l = vec2(d - 0.03 * H, dy);
             float r = length(l);
             vec3 lamp = vec3(1.0, 0.18, 0.08);
             col = mix(col, mix(vec3(0.18, 0.03, 0.02), lamp * (0.6 + 1.2 * lv), min(1.0, lv * 1.5)), smoothstep(0.0055 * H + px, 0.0055 * H - px, r));
             col += lamp * exp(-r / (0.006 * H)) * lv * 0.5;
           }
           // The label: a cell of the texture, four times as wide as it is high.
-          float lh = min(0.026 * H, lane * 0.4);
-          vec2 t = vec2((d - 0.06 * H) / (lh * 4.0), dy / lh + 0.5);
+          float lh = min(0.022 * H, lane * 0.4);
+          vec2 t = vec2((d - 0.04 * H) / (lh * 4.0), dy / lh + 0.5);
           if (t.x > 0.0 && t.x < 1.0 && t.y > 0.0 && t.y < 1.0) {
             float a = texture(labels, vec2(t.x, (float(i + 1) + t.y) / float(${MAX_PENS + 1}))).r;
             col = mix(col, vec3(0.78, 0.76, 0.7), a);
@@ -179,6 +181,8 @@
       this.prev = null;
       this.mark = 0;           // the marker's step, 0 or up
       this.markLeft = 0;       // how long it stays up (s)
+      this.beatLed = 0;        // the lamp by BEAT: lit on each, fading
+      this.lastKick = -1;      // when the marker last went up on a kick (s)
       this.labelCanvas = document.createElement('canvas');
       this.labelCanvas.width = 256;
       this.labelCanvas.height = 64 * (MAX_PENS + 1);
@@ -188,6 +192,9 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.canvas = canvas;
+      this.paperEnd = 1;       // where the paper ends, in the canvas's pixels from the top
+      this.measured = -1;
       this.w = 1;
       this.h = 1;
     }
@@ -195,6 +202,7 @@
     size(w, h) {
       this.w = w;
       this.h = h;
+      this.measured = -1;
       VizGL.freeTarget(this.gl, this.ink);
       this.ink = VizGL.target(this.gl, w, h);
     }
@@ -273,12 +281,20 @@
         }
       }
       this.prev.set(a.bands);
-      // The marker: up for a moment on each beat (with no clear beat, each kick), higher on a bar's first.
-      const beat = a.playing && (a.lock > 0.5 ? a.tick : a.onset);
+      // The marker: up for a moment on each beat, higher on a bar's first; as
+      // soon as the tempo is sure, its ticks (on the beat, not after it as a
+      // kick heard is); before, only clear kicks a beat apart at the most
+      // (no off-beats).
+      const sure = a.sure >= a.SURE;
+      const kick = a.onset && a.onsetPower >= 0.35 && this.age - this.lastKick >= 0.3;
+      if (kick) this.lastKick = this.age;
+      const beat = a.playing && (sure ? a.tick : kick);
       if (beat) {
-        this.mark = a.lock > 0.5 && a.beats % 4 === 0 ? 1 : 0.6;
+        this.mark = sure && a.beats % 4 === 0 ? 1 : 0.6;
         this.markLeft = 0.08;
+        this.beatLed = this.mark;
       }
+      this.beatLed *= Math.exp(-dt / 0.12);
     }
 
     /** One step of the pens (1 / RATE s), keeping where they are. */
@@ -330,7 +346,17 @@
       const gl = this.gl;
       const set = (k) => Visualizer.setting(k);
       const W = this.w;
-      const H = this.h;
+      // The paper ends a little above the player bar's timeline (measured now
+      // and then, as the bar can change); the machine's guide under it, behind the bar.
+      if (this.age - this.measured > 0.5 || this.measured < 0) {
+        this.measured = this.age;
+        const rail = document.querySelector('#playerTrack .timeline__rail');
+        const box = this.canvas.getBoundingClientRect();
+        const r = rail && rail.getBoundingClientRect();
+        const bottom = r && r.height && box.height ? Math.max(0.6 * box.height, r.top - box.top - 12) : box.height;
+        this.paperEnd = bottom * (this.h / Math.max(1, box.height));
+      }
+      const H = Math.max(1, Math.min(this.h, this.paperEnd / (1 - BODY)));
       const pens = Math.max(4, Math.min(MAX_PENS, Math.round(set('szPens')) || 8));
       if (pens !== this.pens) {
         // The traces start again: each would mean another part of the spectrum.
@@ -410,7 +436,8 @@
       const u = this.prog.u;
       VizGL.bind(gl, u.ink, this.ink.tex, 0);
       VizGL.bind(gl, u.labels, this.labelTex, 1);
-      gl.uniform2f(u.res, W, H);
+      gl.uniform2f(u.res, W, this.h);
+      gl.uniform1f(u.area, H);
       gl.uniform1f(u.scroll, this.scroll);
       gl.uniform1f(u.penX, penX);
       gl.uniform1f(u.laneTop, top);
@@ -421,6 +448,7 @@
       gl.uniform1i(u.pens, pens);
       gl.uniform1i(u.paper, PAPERS[set('szPaper')] ?? 0);
       gl.uniform1fv(u.leds, this.leds);
+      gl.uniform1f(u.beatLed, this.beatLed);
       VizGL.screen(gl);
 
       // The pen arms, out of the machine to their tips: a shadow on the paper, the rod, a tip of ink.
@@ -439,7 +467,7 @@
       }
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      lines.draw(W, H);
+      lines.draw(W, this.h);
       gl.disable(gl.BLEND);
     }
   }
