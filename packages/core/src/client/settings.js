@@ -15,6 +15,12 @@ const { randomBase64Url } = require('./common');
 const VIZ_OPTIONS = {
   // Opened as Random, another one with each song.
   vizRandomEach: ['bool', false],
+  // Limit framerate: whether, how many frames a second the visualizers draw
+  // at most (0: no limit), and V-Sync: as many as the screen shows (the
+  // limit then not used).
+  vizFpsOn: ['bool', false],
+  vizFps: ['choice', 60, [15, 30, 45, 60, 75, 90, 105, 120, 144, 165, 240, 360, 0]],
+  vizVsync: ['bool', false],
   // Synthwave: how fast it flies (percent; its other settings are below with
   // the rest of the window's).
   synSpeed: ['range', 100, 50, 150, 5],
@@ -183,10 +189,17 @@ const VIZ_OPTIONS = {
   arGame: ['choice', 'auto', ['auto', 'pong', 'breakout', 'invaders']],
   arColors: ['choice', 'arcade', ['arcade', 'green', 'amber']],
   arCrt: ['bool', true],
-  // Disco: the colours, the beams, how fast the ball turns (percent).
+  // Disco: the colours, the beams, the strobes (how much they light the
+  // room, percent), how fast the ball turns, whether the camera swivels and
+  // how fast (percent), the render scale (percent of the screen's pixels across).
   dcColors: ['choice', 'disco', ['disco', 'warm', 'cool']],
   dcBeams: ['bool', true],
+  dcStrobes: ['bool', true],
+  dcStrobeRoom: ['range', 50, 0, 100, 5],
   dcSpin: ['range', 100, 0, 300, 5],
+  dcCamera: ['bool', true],
+  dcSwivel: ['range', 100, 0, 500, 5],
+  dcScale: ['choice', '100', ['100', '75', '50']],
   // Stained Glass: the window (a rose, a pointed arch, the whole screen),
   // the glass's colours (the cover's, or warm, cold or rainbow glass), how
   // many panes across, the shafts of light, the torches beside the window.

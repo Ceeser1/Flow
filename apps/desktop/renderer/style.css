@@ -2203,6 +2203,7 @@ div.import__frame-head { cursor: default; }
 .settings__note { color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
 .settings__slider { width: 160px; }
 .settings__slider:disabled { cursor: default; }
+.settings__control--off { opacity: 0.45; }
 /* The Add to Playlists dialog: like Settings, the app's own background at 93%
    and rows divided by thin lines instead of a box of their own. */
 .modal--picker { width: 440px; height: min(560px, 100%); background: rgba(30, 30, 34, 0.93); }

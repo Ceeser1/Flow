@@ -33,6 +33,9 @@ function fmtBytes(bytes) {
   return `${Math.max(0, Math.round(bytes / 1e3))} KB`;
 }
 
+// Limit framerate's steps (frames a second; 0: no limit).
+const VIZ_FPS = [15, 30, 45, 60, 75, 90, 105, 120, 144, 165, 240, 360, 0];
+
 const SettingsPanel = {
   modal: null,
   _refresh: [],       // re-greys rows after a tick box changes
@@ -218,12 +221,15 @@ const SettingsPanel = {
       }),
 
       h('h3.settings__section', 'Music Visualizer'),
-      this._visualizerRow(this._row({
-        key: 'vizRandomEach',
-        label: 'Random for every new song',
-        desc: 'When a new song starts playing a new random visualizer from the selected category is chosen. Keeps full screen.',
-        when: () => Store.settings.visualizer.startsWith('random'),
-      })),
+      this._visualizerRow([
+        ...this._frameRateRows(),
+        this._row({
+          key: 'vizRandomEach',
+          label: 'Random for every new song',
+          desc: 'When a new song starts playing a new random visualizer from the selected category is chosen. Keeps full screen.',
+          when: () => Store.settings.visualizer.startsWith('random'),
+        }),
+      ]),
       ] : []),
 
       ...(Store.can('batteryHelp') ? this._appRows() : []),
@@ -455,7 +461,7 @@ const SettingsPanel = {
   /**
    * "Select your Music Visualizer": a 16:9 tile each (VISUALIZERS in
    * visualizer.js), the chosen one outlined, and Preview to open it. Then
-   * `above` (Random for every new song), then the categories
+   * the rows `above` (Limit framerate, Random for every new song), then the categories
    * (VIZ_CATEGORIES), each with its own Random first, folding away with a
    * click on its heading (vizCollapsed, kept); folded, the heading says which
    * of its own is chosen.
@@ -539,8 +545,64 @@ const SettingsPanel = {
       h('div.settings__desc', 'Opens in full screen from the visualizer button in the player bar. Escape or the X closes it; the Up and Down arrow keys switch to the one before or after.'));
     return h('div.settings__viz',
       h('div.settings__row.settings__row--flat', left, h('div.settings__right', preview)),
-      above,
+      ...above,
       ...groups);
+  },
+
+  /**
+   * Limit framerate: its box and a slider through VIZ_FPS (the last no
+   * limit), and under it V-Sync, as many as the screen shows (its refresh
+   * rate, measured, then shown on the slider). The slider is greyed out
+   * while the limit is off or V-Sync on.
+   */
+  _frameRateRows() {
+    const values = VIZ_FPS;
+    const input = h('input.volume-slider.settings__slider', { type: 'range', min: 0, max: values.length - 1, step: 1, 'aria-label': 'Framerate limit' });
+    const value = h('span.settings__value');
+    const detected = h('span.settings__note');
+    let hz = 0;
+    const fpsText = (v) => (v ? `${v} FPS` : '∞');
+    const draw = () => {
+      const vsync = Store.settings.vizVsync;
+      const control = input.parentNode;
+      // With V-Sync at the step nearest the screen's rate (no limit above all of them).
+      const near = values.slice(0, -1).reduce((best, v, i) => (Math.abs(v - hz) < Math.abs(values[best] - hz) ? i : best), 0);
+      const at = vsync ? (hz > values[values.length - 2] ? values.length - 1 : near) : Math.max(0, values.indexOf(Store.settings.vizFps));
+      if (document.activeElement !== input) input.value = String(at);
+      const shown = vsync ? (hz ? `${hz} FPS` : '…') : fpsText(values[Number(input.value)]);
+      value.textContent = shown;
+      input.disabled = vsync || !Store.settings.vizFpsOn;
+      if (control) control.classList.toggle('settings__control--off', vsync && Store.settings.vizFpsOn);
+      input.style.setProperty('--fill', `${(Number(input.value) / (values.length - 1)) * 100}%`);
+      detected.textContent = hz ? `${hz} Hz detected` : '';
+    };
+    input.addEventListener('input', () => {
+      Store.previewSettings({ vizFps: values[Number(input.value)] });
+      draw();
+    });
+    input.addEventListener('change', () => Store.saveSettings({ vizFps: values[Number(input.value)] }));
+    this._refresh.push(draw);
+    Visualizer.refreshRate((rate) => {
+      hz = rate;
+      draw();
+    });
+    draw();
+    return [
+      this._row({
+        key: 'vizFpsOn',
+        label: 'Limit framerate',
+        desc: 'Set the framerate limit for visualizers to save GPU power consumption.',
+        right: h('div.settings__control', input, value),
+      }),
+      this._row({
+        key: 'vizVsync',
+        label: 'V-Sync (detect monitor refresh rate)',
+        desc: 'Set the limit to draw as many frames as your monitor can show automatically.',
+        sub: true,
+        when: () => Store.settings.vizFpsOn,
+        right: detected,
+      }),
+    ];
   },
 
   /** The browser the cookies come from: those found on this computer first. */

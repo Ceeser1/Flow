@@ -258,6 +258,7 @@ const Visualizer = {
     this._resize.observe(this.canvas);
     this._size();
     this.last = performance.now();
+    this._due = 0;
     this.raf = requestAnimationFrame((t) => this._frame(t));
     // Moving on with each song: the next one ready by then.
     if (this._random && Store.settings.vizRandomEach) this.warm(this._random);
@@ -399,6 +400,35 @@ const Visualizer = {
     return this._lastRandom;
   },
 
+  /**
+   * The screen's refresh rate (Hz), measured over a few dozen of its frames
+   * and rounded to a usual one when close: cb(hz) once known (at once after
+   * the first time).
+   */
+  refreshRate(cb) {
+    if (this._hz) {
+      cb(this._hz);
+      return;
+    }
+    const gaps = [];
+    let last = 0;
+    const tick = (t) => {
+      if (last) gaps.push(t - last);
+      last = t;
+      if (gaps.length < 40) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      gaps.sort((a, b) => a - b);
+      const hz = 1000 / gaps[gaps.length >> 1];
+      const usual = [24, 30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 170, 175, 180, 200, 240, 280, 300, 360, 480, 500];
+      const near = usual.find((u) => Math.abs(u - hz) / u < 0.03);
+      this._hz = near || Math.round(hz);
+      cb(this._hz);
+    };
+    requestAnimationFrame(tick);
+  },
+
   /** The player bar's button shows on while it is open, like Shuffle and Repeat. */
   _drawButton(on) {
     const btn = $('btnVisualizer');
@@ -449,6 +479,18 @@ const Visualizer = {
 
   _frame(now) {
     if (!this.canvas) return;
+    // Limit framerate (vizFps, when on and not V-Sync): a frame only when one
+    // is due, the screen's refreshes between left alone (2 ms early is on time).
+    const fps = Store.settings.vizFpsOn && !Store.settings.vizVsync ? Store.settings.vizFps : 0;
+    if (fps > 0) {
+      const step = 1000 / fps;
+      if (now + 2 < this._due) {
+        this.raf = requestAnimationFrame((t) => this._frame(t));
+        return;
+      }
+      // Fallen behind (a stall, or just started): from now on.
+      this._due = now - this._due > step ? now + step : this._due + step;
+    }
     const dt = Math.min(0.1, Math.max(0.001, (now - this.last) / 1000));
     this.last = now;
     Equalizer.analyser.getFloatTimeDomainData(this.samples);
