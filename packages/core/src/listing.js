@@ -2,7 +2,9 @@
 
 // Reading whole playlists, shared by the desktop app and the Flow Server: a
 // YouTube playlist, a SoundCloud set, a Bandcamp album, or a Spotify, Deezer
-// or Amazon Music playlist or album by way of YouTube. Each app makes a lister with createLister(),
+// or Amazon Music playlist or album, each of whose songs is looked for on
+// YouTube, then on SoundCloud, Bandcamp and the Internet Archive (findSong).
+// Each app makes a lister with createLister(),
 // handing over its media tools (media.js) and its library, so songs it
 // already has are marked.
 //
@@ -11,7 +13,7 @@
 //   download()  fetches the chosen songs one after another into the cache.
 //
 // One at a time on purpose: many downloads at once is what gets a client
-// throttled. Only the YouTube lookups of a Spotify, Deezer or Amazon list run
+// throttled. Only the lookups of a Spotify, Deezer or Amazon list's songs run
 // four at a time, since a search is small.
 
 const fs = require('fs');
@@ -19,6 +21,7 @@ const model = require('./libraryModel');
 const spotify = require('./spotify');
 const deezer = require('./deezer');
 const amazonMusic = require('./amazonMusic');
+const otherSites = require('./otherSites');
 const { parseTitle, cleanUploader } = require('./titleParser');
 const { normalizeListUrl, sourceKey } = require('./text');
 
@@ -27,6 +30,11 @@ const SEARCH_PARALLEL = 4;
 // The embed page has been seen to stop at this many songs.
 const SPOTIFY_PAGE_LIMIT = 100;
 const MIX_LIMIT = 50;
+// Of another site's results, how many are read to find one that can be
+// downloaded (SoundCloud's uploads by labels often cannot: DRM).
+const READ_TRIES = 2;
+const QUALITY_RANK = { good: 2, shaky: 1, none: 0 };
+const SEARCHED_SITES = 'YouTube, SoundCloud, Bandcamp or the Internet Archive';
 
 /**
  * A cancel token for work that runs several processes, possibly at once:
@@ -256,6 +264,101 @@ function createLister({ media, library }) {
     return pick;
   }
 
+  /**
+   * A search result of another site read with yt-dlp: its length, and
+   * whether it can be downloaded at all (it throws if not). null for an
+   * Archive upload of a whole album, whose songs have no links of their own.
+   */
+  async function readCandidate(found, group) {
+    const info = await withSub(group, (t) => media.readJson(['--no-playlist', '-J', found.url], t));
+    if (info._type === 'playlist') return null;
+    return {
+      id: String(info.id),
+      title: String(info.title || found.title),
+      channel: found.channel || String(info.artist || info.creator || info.uploader || ''),
+      duration: Number(info.duration) || 0,
+      url: info.webpage_url || found.url,
+      key: sourceKey(info.extractor_key || '', info.id),
+    };
+  }
+
+  // Where a song is looked for when YouTube has no good upload of it, in turn.
+  // timed: the search gives lengths, so a result too long or short is not read.
+  const OTHER_SITES = [
+    {
+      name: 'SoundCloud',
+      timed: true,
+      search: async (track, group) => {
+        const res = await withSub(group, (t) => media.readJson(
+          ['--flat-playlist', '-J', `scsearch${SEARCH_RESULTS}:${spotify.searchQuery(track)}`], t));
+        return (res.entries || []).filter(Boolean).map((e) => ({ ...asCandidate(e), url: e.webpage_url || e.url }));
+      },
+    },
+    { name: 'Bandcamp', search: (track) => otherSites.searchBandcamp(track) },
+    { name: 'Internet Archive', search: (track) => otherSites.searchArchive(track) },
+  ];
+
+  /**
+   * A song's best upload on one other site: its search ranked by names (and
+   * length, where it gives them), then the best few read until one can be
+   * downloaded. { quality, cand, diff, site } or null.
+   */
+  async function matchOnSite(track, site, group) {
+    const ranked = spotify.rankMatches(track, await site.search(track, group));
+    if (group.cancelled) throw cancelled();
+    let best = null;
+    for (const r of ranked.slice(0, READ_TRIES)) {
+      if (site.timed && r.quality === 'none') break;
+      let cand = null;
+      try {
+        cand = await readCandidate(r.cand, group);
+      } catch {
+        if (group.cancelled) throw cancelled();
+        // Cannot be downloaded (DRM, a preview only); the next one may.
+      }
+      if (!cand) continue;
+      const pick = { ...spotify.pickMatch(track, [cand]), site: site.name };
+      if (!best || QUALITY_RANK[pick.quality] > QUALITY_RANK[best.quality]) best = pick;
+      if (best.quality === 'good') break;
+    }
+    return best;
+  }
+
+  /**
+   * Where a Spotify (Deezer, Amazon Music) song is downloaded from: its YouTube
+   * upload (matchOnYouTube), else the first good one of the other sites in
+   * turn; of uploads none of which is good, the earliest site's best.
+   * Resolves { quality, cand: { id, title, channel, duration, url, key },
+   * diff, site }.
+   */
+  async function findSong(track, group) {
+    let best = null;
+    let failed = null;
+    try {
+      const yt = await matchOnYouTube(track, group);
+      if (yt && yt.cand) {
+        const url = `https://www.youtube.com/watch?v=${yt.cand.id}`;
+        best = { ...yt, site: 'YouTube', cand: { ...yt.cand, url, key: sourceKey('Youtube', yt.cand.id) } };
+      }
+    } catch (err) {
+      if (group.cancelled) throw cancelled();
+      failed = err;
+    }
+    for (const site of OTHER_SITES) {
+      if (best && best.quality === 'good') break;
+      let pick = null;
+      try {
+        pick = await matchOnSite(track, site, group);
+      } catch {
+        if (group.cancelled) throw cancelled();
+        // The site did not answer; the next may.
+      }
+      if (pick && (!best || QUALITY_RANK[pick.quality] > QUALITY_RANK[best.quality])) best = pick;
+    }
+    if (!best && failed) throw failed;
+    return best || { quality: 'none', cand: null, diff: null, site: '' };
+  }
+
   /** A Spotify playlist or album, each song looked up on YouTube. */
   async function listSpotify(ref, url, group, onProgress) {
     onProgress({ phase: 'listing', text: 'Reading the Spotify playlist...' });
@@ -279,7 +382,9 @@ function createLister({ media, library }) {
   /** An Amazon Music playlist, album or song, each song looked up on YouTube. */
   async function listAmazonMusic(ref, url, group, onProgress) {
     onProgress({ phase: 'listing', text: 'Reading the Amazon Music playlist...' });
-    const page = await amazonMusic.fetchAmazonMusic(ref);
+    const page = await amazonMusic.fetchAmazonMusic(ref, () => group.cancelled, (done, total) => {
+      onProgress({ phase: 'listing', text: `Reading the Amazon Music playlist: song ${done} of ${total}...` });
+    });
     if (group.cancelled) throw cancelled();
     return listByName(page, {
       source: 'Amazon Music',
@@ -290,7 +395,7 @@ function createLister({ media, library }) {
 
   /**
    * A list known by its songs' names only (page: { name, tracks: [{ title,
-   * artists, duration, playable }] }), each song looked up on YouTube.
+   * artists, duration, playable }] }), each song looked for (findSong).
    */
   async function listByName(page, { source, sourceUrl, truncated }, group, onProgress) {
     const tracks = page.tracks;
@@ -325,7 +430,7 @@ function createLister({ media, library }) {
         if (group.cancelled) throw cancelled();
         let pick = null;
         try {
-          pick = await matchOnYouTube(it.track, group);
+          pick = await findSong(it.track, group);
         } catch (err) {
           if (group.cancelled) throw cancelled();
           it.status = 'notfound';
@@ -334,13 +439,13 @@ function createLister({ media, library }) {
         if (it.status === 'pending') {
           if (!pick || !pick.cand || pick.quality === 'none') {
             it.status = 'notfound';
-            it.note = pick && pick.cand ? `closest upload is ${Math.round(pick.diff)} s off` : 'nothing found on YouTube';
-            if (pick && pick.cand) it.match = { ...pick.cand, diff: pick.diff, quality: 'none' };
+            it.note = pick && pick.cand ? `closest upload is ${Math.round(pick.diff)} s off` : `nothing found on ${SEARCHED_SITES}`;
+            if (pick && pick.cand) it.match = { ...pick.cand, diff: pick.diff, quality: 'none', site: pick.site };
           } else {
             it.status = 'ok';
-            it.match = { ...pick.cand, diff: pick.diff, quality: pick.quality };
-            it.url = `https://www.youtube.com/watch?v=${pick.cand.id}`;
-            it.key = sourceKey('Youtube', pick.cand.id);
+            it.match = { ...pick.cand, diff: pick.diff, quality: pick.quality, site: pick.site };
+            it.url = pick.cand.url;
+            it.key = pick.cand.key;
             // The very upload may already be in the library under other names.
             const same = model.findBySource(library(), { key: it.key });
             if (same) it.existing = existingInfo(same);
@@ -402,7 +507,7 @@ function createLister({ media, library }) {
           meta: fromSource ? it.meta : { artist: probed.guess.artist, title: probed.guess.title, mix: probed.guess.mix },
           artistFromChannel: !fromSource && !!probed.guess.artistFromChannel,
           // For its cover (@flow/core/cover): a Spotify (Deezer, Amazon) song's upload was
-          // found by YouTube Music's search already.
+          // found by a search already (YouTube Music's, or another site's).
           thumbnails: probed.thumbnails,
           noSearch: !!fromSource,
         },
@@ -410,7 +515,7 @@ function createLister({ media, library }) {
     });
   }
 
-  return { list, download, listWithYtDlp, listSpotify, listDeezer, listAmazonMusic, matchOnYouTube };
+  return { list, download, listWithYtDlp, listSpotify, listDeezer, listAmazonMusic, matchOnYouTube, findSong };
 }
 
 module.exports = {

@@ -6,7 +6,8 @@
 //   listing -> review -> downloading -> trimming -> saving -> (idle)
 //
 // listing      the list is read (for Spotify, Deezer and Amazon Music: every
-//              song looked up on YouTube),
+//              song looked up on YouTube, else SoundCloud, Bandcamp and the
+//              Internet Archive),
 //              shown in the progress frame, with Cancel.
 // review       the checklist. Songs already in the library and a playlist name
 //              that is taken are listed as warnings on top, each with a box to
@@ -787,25 +788,29 @@ const ImportPanel = {
       h('span.import__dur', it.duration ? Util.fmtClock(it.duration) : ''));
   },
 
-  /** For a Spotify (Deezer, Amazon Music) song: the YouTube upload it was matched to. */
+  /**
+   * For a Spotify (Deezer, Amazon Music) song: the upload it was matched to,
+   * on YouTube or the site it was found on instead.
+   */
   _matchLine(it) {
     if (it.status === 'unavailable') return h('div.import__sub.import__sub--bad', it.note || 'not available');
     const m = it.match;
     if (!m) {
-      return it.status === 'notfound' ? h('div.import__sub.import__sub--bad', `Not found: ${it.note || 'no match on YouTube'}`) : null;
+      return it.status === 'notfound' ? h('div.import__sub.import__sub--bad', `Not found: ${it.note || 'no match'}`) : null;
     }
+    const site = m.site || 'YouTube';
     const diff = Math.round((m.duration || 0) - (it.duration || 0));
     const off = diff === 0 ? 'same length' : `${diff > 0 ? '+' : ''}${diff} s`;
     const link = h('button.link-btn.import__link', {
       type: 'button',
-      title: 'Open on YouTube to check',
+      title: `Open on ${site} to check`,
       onclick: (e) => {
         e.preventDefault();
         e.stopPropagation();
-        window.flow.openUrl(`https://www.youtube.com/watch?v=${m.id}`);
+        window.flow.openUrl(m.url || `https://www.youtube.com/watch?v=${m.id}`);
       },
-    }, m.title || 'YouTube');
-    const parts = [h('span', 'YouTube: '), link,
+    }, m.title || site);
+    const parts = [h('span', `${site}: `), link,
       h('span', ` · ${m.channel || '?'} · ${Util.fmtClock(m.duration)} (${off})`)];
     if (it.status === 'notfound') parts.unshift(h('span.import__flag.import__flag--bad', 'not found'));
     else if (m.quality === 'shaky') parts.unshift(h('span.import__flag', 'check'));
@@ -1566,7 +1571,7 @@ const ImportPanel = {
       AddPage._progress({ title: 'Reading playlist...', frac: null, status: p.text });
     } else if (p.phase === 'matching' && this.state === 'listing') {
       AddPage._progress({
-        title: 'Looking up the songs on YouTube...',
+        title: 'Looking up the songs...',
         frac: p.total ? p.done / p.total : null,
         status: `${p.done} of ${p.total}${p.title ? `   ${p.title}` : ''}`,
       });

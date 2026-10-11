@@ -202,6 +202,100 @@ test('Amazon Music\'s page gives the name and each song', () => {
   assert.throws(() => parseAmazonPage('<music-detail-header headline="X" tertiary-text="5 SONGS">'), /changed/);
 });
 
+test('a playlist someone made: its preview card gives the name and the songs in order', () => {
+  const { parsePreviewCard } = require('../src/amazonMusic');
+  const song = (id, n) => `<meta property="music:song" content="https://music.amazon.de/user-playlists/f66e8fce-04?do=play&amp;trackAsin=${id}">`
+    + `<meta property="music:song:track" content="${n}">`;
+  const card = '<meta property="og:title" content="Rock &amp; Roll"><meta property="og:description" content="Playlist von someone">'
+    + song('B0CFPMKYHY', 1) + song('B078NMXD2P', 2);
+  assert.deepEqual(parsePreviewCard(card), { name: 'Rock & Roll', ids: ['B0CFPMKYHY', 'B078NMXD2P'] });
+  // Amazon's home page, which is what a private list shows.
+  assert.throws(() => parsePreviewCard('<meta property="og:site_name" content="Amazon Music">'), /shows nothing/);
+});
+
+/** Amazon Music's pages stood in for: url -> html, or a status number. */
+async function withAmazonPages(pages, fn) {
+  const real = globalThis.fetch;
+  const asked = [];
+  globalThis.fetch = async (url, opts) => {
+    asked.push({ url, agent: opts.headers['User-Agent'] });
+    const page = pages[url];
+    if (page === undefined || typeof page === 'number') return { ok: false, status: page || 404, text: async () => '' };
+    return { ok: true, status: 200, text: async () => page };
+  };
+  try {
+    return await fn(asked);
+  } finally {
+    globalThis.fetch = real;
+  }
+}
+
+/** A song's page: the song on top, its album's songs below. */
+function trackPage(artist, rows) {
+  return `<music-detail-header label="SONG" headline="${rows[0][1]}" primary-text="${artist}">`
+    + rows.map(([id, title, duration], n) => `<music-text-row data-key="k${n}" primary-text="${title}" `
+      + `primary-href="/tracks/${id}" secondary-text-2="" duration="${duration}">`).join('');
+}
+
+test('a playlist someone made is read from its card, then each song\'s own page', async () => {
+  const { fetchAmazonMusic, parseAmazonMusicUrl } = require('../src/amazonMusic');
+  const base = 'https://music.amazon.de';
+  const card = '<meta property="og:title" content="HU">'
+    + ['B0CFPMKYHY', 'B0CFPLPDR1', 'B078NMXD2P'].map((id) => `<meta property="music:song" content="${base}/user-playlists/f66e8fce-04?trackAsin=${id}">`).join('');
+  const pages = {
+    [`${base}/user-playlists/f66e8fce-04`]: card,
+    // A song's page lists its album: only the song itself is taken.
+    [`${base}/tracks/B0CFPMKYHY`]: trackPage('Hollywood Undead', [['B0X9', 'Been To Hell [Explicit]', '03:23'], ['B0CFPMKYHY', 'Hear Me Now', '03:34']]),
+    [`${base}/tracks/B0CFPLPDR1`]: 500,
+    [`${base}/tracks/B078NMXD2P`]: trackPage('Hollywood Undead', [['B078NMXD2P', 'We Are [Explicit]', '04:34']]),
+  };
+  const seen = [];
+  const page = await withAmazonPages(pages, async (asked) => {
+    const got = await fetchAmazonMusic(parseAmazonMusicUrl(`${base}/user-playlists/f66e8fce-04`), () => false, (done, total) => seen.push(`${done}/${total}`));
+    // The card is asked as a chat app's link preview, the songs as a search engine.
+    assert.match(asked[0].agent, /facebookexternalhit/);
+    assert.ok(asked.slice(1).every((a) => /Googlebot/.test(a.agent)));
+    return got;
+  });
+  assert.equal(page.name, 'HU');
+  assert.equal(page.total, 3);
+  assert.deepEqual(page.tracks.map((t) => [t.title, t.artists, t.duration, t.playable]), [
+    ['Hear Me Now', 'Hollywood Undead', 214, true],
+    // Its page did not answer: kept, not playable.
+    ['Song 2', '', 0, false],
+    ['We Are', 'Hollywood Undead', 274, true],
+  ]);
+  assert.deepEqual(seen.sort(), ['1/3', '2/3', '3/3']);
+
+  // A private list's link shows Amazon's home page, without a card.
+  await withAmazonPages({ [`${base}/user-playlists/f66e8fce-04`]: '<html></html>' }, () => assert.rejects(
+    fetchAmazonMusic(parseAmazonMusicUrl(`${base}/user-playlists/f66e8fce-04`)), /Is the playlist public/));
+});
+
+test('a song\'s link is that song, not its whole album', async () => {
+  const { fetchAmazonMusic, parseAmazonMusicUrl } = require('../src/amazonMusic');
+  const pages = {
+    'https://music.amazon.de/tracks/B0CFPMKYHY': trackPage('Hollywood Undead',
+      [['B0X9', 'Been To Hell', '03:23'], ['B0CFPMKYHY', 'Hear Me Now', '03:34'], ['B0X8', 'Apologize', '03:27']]),
+  };
+  const page = await withAmazonPages(pages, () => fetchAmazonMusic(parseAmazonMusicUrl('https://music.amazon.de/tracks/B0CFPMKYHY')));
+  assert.equal(page.name, 'Hollywood Undead - Hear Me Now');
+  assert.deepEqual(page.tracks.map((t) => t.id), ['B0CFPMKYHY']);
+});
+
+test('the search results ranked, each with its quality', () => {
+  const { rankMatches } = require('../src/spotify');
+  const track = { title: 'Hear Me Now', artists: 'Hollywood Undead', duration: 214 };
+  const ranked = rankMatches(track, [
+    { id: 'a', title: 'Hear Me Now (Lyrics)', channel: 'Lyric Vids', duration: 214 },
+    { id: 'b', title: 'Hear Me Now', channel: 'HollywoodUndead', duration: 214 },
+    { id: 'c', title: 'Hear Me Now', channel: 'Someone', duration: 228 },
+    { id: 'd', title: 'Something Else', channel: 'Someone', duration: 300 },
+  ]);
+  assert.deepEqual(ranked.map((r) => [r.cand.id, r.quality]), [['b', 'good'], ['c', 'shaky'], ['a', 'shaky'], ['d', 'none']]);
+  assert.deepEqual(rankMatches(track, []), []);
+});
+
 test('Deezer links and songs', () => {
   const { parseDeezerUrl, trackOf } = require('../src/deezer');
   assert.deepEqual(parseDeezerUrl('https://www.deezer.com/en/playlist/4524622884'), { type: 'playlist', id: '4524622884' });

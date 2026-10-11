@@ -48,6 +48,121 @@ test('the lister needs nothing but media and a library', () => {
   assert.equal(typeof groupToken().sub, 'function');
 });
 
+/**
+ * A lister over a stand-in yt-dlp and stand-in Bandcamp and Archive searches.
+ * sites: { youtube: [results], soundcloud: [results], bandcamp: [hits],
+ * archive: [docs] }; reads: url -> info, or an Error (DRM). Resolves what
+ * fn(lister, asked) gives; asked lists every search and read made.
+ */
+async function withSites(sites, reads, fn) {
+  const asked = [];
+  const media = {
+    async readJson(args) {
+      const what = args[args.length - 1];
+      if (/music\.youtube\.com/.test(what)) {
+        asked.push('youtube music');
+        return { entries: [] };
+      }
+      if (/^ytsearch/.test(what)) {
+        asked.push('youtube');
+        return { entries: sites.youtube || [] };
+      }
+      if (/^scsearch/.test(what)) {
+        asked.push('soundcloud');
+        return { entries: sites.soundcloud || [] };
+      }
+      asked.push(`read ${what}`);
+      const info = reads[what];
+      if (!info || info instanceof Error) throw info || new Error('Could not read this link.');
+      return info;
+    },
+  };
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const bandcamp = /bandcamp\.com/.test(url);
+    asked.push(bandcamp ? 'bandcamp' : 'archive');
+    const body = bandcamp ? { auto: { results: sites.bandcamp || [] } } : { response: { docs: sites.archive || [] } };
+    return { ok: true, status: 200, json: async () => body };
+  };
+  try {
+    return await fn(createLister({ media, library: () => ({ songs: [], playlists: [] }) }), asked);
+  } finally {
+    globalThis.fetch = real;
+  }
+}
+
+const SONG = { title: 'Hear Me Now', artists: 'Hollywood Undead', duration: 214 };
+
+test('a song YouTube has is taken from YouTube, and nothing else is searched', async () => {
+  await withSites({ youtube: [{ id: 'yt1', title: 'Hear Me Now', channel: 'Hollywood Undead - Topic', duration: 214 }] }, {},
+    async (lister, asked) => {
+      const pick = await lister.findSong(SONG, groupToken());
+      assert.equal(pick.site, 'YouTube');
+      assert.equal(pick.quality, 'good');
+      assert.equal(pick.cand.url, 'https://www.youtube.com/watch?v=yt1');
+      assert.equal(pick.cand.key, 'youtube:yt1');
+      assert.deepEqual(asked, ['youtube music', 'youtube']);
+    });
+});
+
+test('not on YouTube: SoundCloud next, past an upload that cannot be downloaded', async () => {
+  const sc = (id, channel) => ({ id, title: 'Hear Me Now', uploader: channel, duration: 214.3, webpage_url: `https://soundcloud.com/${channel}/${id}` });
+  await withSites({ soundcloud: [sc('1', 'hollywoodundead'), sc('2', 'someone')] }, {
+    'https://soundcloud.com/hollywoodundead/1': new Error('This video is DRM protected'),
+    'https://soundcloud.com/someone/2': { id: '2', extractor_key: 'Soundcloud', title: 'Hear Me Now', duration: 214.3, webpage_url: 'https://soundcloud.com/someone/2' },
+  }, async (lister, asked) => {
+    const pick = await lister.findSong(SONG, groupToken());
+    assert.equal(pick.site, 'SoundCloud');
+    assert.equal(pick.quality, 'good');
+    assert.equal(pick.cand.url, 'https://soundcloud.com/someone/2');
+    assert.equal(pick.cand.key, 'soundcloud:2');
+    // Found there: Bandcamp and the Archive are not asked.
+    assert.ok(!asked.includes('bandcamp') && !asked.includes('archive'));
+  });
+});
+
+test('then Bandcamp, then the Internet Archive, whose album uploads do not count', async () => {
+  const bandcampHit = { type: 't', id: 47, name: 'Hear Me Now', band_name: 'Hollywood Undead', item_url_path: 'https://hu.bandcamp.com/track/hear-me-now' };
+  // A Bandcamp song too long is passed on to the Archive.
+  await withSites({
+    bandcamp: [bandcampHit],
+    archive: [{ identifier: 'hu-demos', title: 'Hear Me Now', creator: 'Hollywood Undead' }, { identifier: 'hear-me-now_2025', title: 'Hear Me Now', creator: 'Hollywood Undead' }],
+  }, {
+    'https://hu.bandcamp.com/track/hear-me-now': { id: '47', extractor_key: 'Bandcamp', title: 'Hear Me Now', duration: 260 },
+    'https://archive.org/details/hu-demos': { _type: 'playlist', entries: [] },
+    'https://archive.org/details/hear-me-now_2025': { id: 'hear-me-now_2025', extractor_key: 'ArchiveOrg', title: 'Hear Me Now', duration: 214.3, webpage_url: 'https://archive.org/details/hear-me-now_2025' },
+  }, async (lister, asked) => {
+    const pick = await lister.findSong(SONG, groupToken());
+    assert.equal(pick.site, 'Internet Archive');
+    assert.equal(pick.cand.key, 'archiveorg:hear-me-now_2025');
+    assert.equal(pick.cand.channel, 'Hollywood Undead');
+    assert.deepEqual(asked.filter((a) => !a.startsWith('read')), ['youtube music', 'youtube', 'soundcloud', 'bandcamp', 'archive']);
+  });
+  // The same Bandcamp song at the right length is taken there.
+  await withSites({ bandcamp: [bandcampHit] }, {
+    'https://hu.bandcamp.com/track/hear-me-now': { id: '47', extractor_key: 'Bandcamp', title: 'Hear Me Now', duration: 214 },
+  }, async (lister, asked) => {
+    const pick = await lister.findSong(SONG, groupToken());
+    assert.equal(pick.site, 'Bandcamp');
+    assert.equal(pick.cand.key, 'bandcamp:47');
+    assert.ok(!asked.includes('archive'));
+  });
+});
+
+test('a shaky YouTube upload stays unless another site has a good one; nowhere at all is not found', async () => {
+  const shaky = [{ id: 'yt2', title: 'Hear Me Now', channel: 'Someone', duration: 226 }];
+  await withSites({ youtube: shaky }, {}, async (lister) => {
+    const pick = await lister.findSong(SONG, groupToken());
+    assert.equal(pick.site, 'YouTube');
+    assert.equal(pick.quality, 'shaky');
+  });
+  await withSites({}, {}, async (lister) => {
+    const pick = await lister.findSong(SONG, groupToken());
+    assert.equal(pick.quality, 'none');
+    assert.equal(pick.cand, null);
+  });
+});
+
 test('prepare, cut with tags, and peaks, with real ffmpeg', { skip: !(ffmpeg && ffprobe) && 'no ffmpeg' }, async () => {
   const media = createMedia({ ffmpeg: () => ffmpeg, ffprobe: () => ffprobe, ytdlp: () => null, cacheDir: () => scratch });
   const wav = path.join(scratch, 'tone.wav');

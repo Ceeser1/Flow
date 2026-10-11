@@ -65,10 +65,19 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
     comes from its public API (public playlists, albums and songs, also share
     links, any length). Amazon Music's comes from the page it shows search
     engines (music.amazon.de/... or amazon.de/music/player/..., playlists,
-    albums and songs; an album link shared from one song is that song). Its
+    albums and songs; an album link shared from one song is that song). A
+    playlist someone made (user-playlists/...) needs to be public: its songs
+    come from the preview card Amazon shows chat apps for the link, then each
+    song's own page. Its
     catalog is per country: a link from another country's store may show
     nothing. Amazon's own extras (Alexa's spoken interludes) are not on
     YouTube and come out as not found.
+  - A song YouTube has no good upload of (none within 5 seconds) is looked
+    for on **SoundCloud**, then **Bandcamp**, then the **Internet Archive**
+    (single-song uploads), the first good match winning; one that cannot be
+    downloaded (SoundCloud's DRM, Bandcamp's previews) is passed over. The
+    checklist names the site each song was found on. Vimeo cannot be searched
+    without an account, so it is not among them.
 - **Playlists**: create, rename, delete. Deleting asks first, with **Also
   delete all songs that exist only in this playlist** (off): ticked, the
   songs in no other playlist and not among the favourites go too, files
