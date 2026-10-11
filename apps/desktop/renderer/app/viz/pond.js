@@ -15,7 +15,9 @@
 // texture at half the screen's size, stepped 120 times a second (each
 // point pulled by its neighbours, damped), the drops added as bumps; the
 // picture is one pass reading its slopes to bend the bottom, the fish and
-// the light, and to shine.
+// the light, and to shine. What it reads is drawn before it: the bottom once
+// a size (it never changes), the sun's light on it each frame at half size,
+// the lily pads' tilts each frame, a pixel a pad.
 
 (() => {
   const FISH = 6;
@@ -48,33 +50,10 @@
       o = vec4(n, c.r, 0.0, 1.0);
     }`;
 
-  const SHOW_FS = VizGL.NOISE + `
-    in vec2 uv;
-    uniform sampler2D state;
-    uniform vec2 res, simRes;
-    uniform float time, light, night;   // night: 0 day .. 1 night
-    uniform vec4 fish[${FISH}];     // x, y (0..1), heading, tail phase
-    uniform vec4 pads[${PADS}];     // x, y, radius, notch angle
-    uniform float showFish, showPads;
-    out vec4 o;
-    const float TAU = 6.2831853;
-
-    float caustic(vec2 p, float t) {
-      vec2 q = mod(p * TAU, TAU) - 250.0;
-      vec2 i = q;
-      float c = 1.0;
-      float inten = 0.005;
-      for (int n = 0; n < 5; n++) {
-        float t2 = t * (1.0 - (3.5 / float(n + 1)));
-        i = q + vec2(cos(t2 - i.x) + sin(t2 + i.y), sin(t2 - i.y) + cos(t2 + i.x));
-        c += 1.0 / length(vec2(q.x / (sin(i.x + t2) / inten), q.y / (cos(i.y + t2) / inten)));
-      }
-      c /= 5.0;
-      c = 1.17 - pow(c, 1.4);
-      return pow(abs(c), 8.0);
-    }
-
-    // The bottom: pebbles in sand.
+  // The bottom: pebbles in sand. It never changes, so it is drawn once a size
+  // (BED_FS), a margin round the screen as the ripples bend the view past its
+  // edges; each pixel of the margin-less part one pixel of the screen.
+  const BOTTOM = `
     vec3 bottom(vec2 p) {
       vec2 q = p * 24.0;
       vec2 g = floor(q), f = fract(q);
@@ -95,9 +74,83 @@
       float in_ = smoothstep(r + 0.04, r - 0.04, d1) * smoothstep(0.0, 0.08, d2 - d1);
       vec3 sand = vec3(0.42, 0.37, 0.27) * (0.85 + 0.15 * vnoise(p * 300.0));
       return mix(sand * (1.0 - 0.25 * smoothstep(r + 0.12, r, d1)), stone * (0.75 + 0.35 * (1.0 - d1 / r)), in_);
+    }`;
+
+  const BED_FS = VizGL.NOISE + BOTTOM + `
+    in vec2 uv;
+    uniform vec2 res, margin;   // the screen's size, the margin round it (pixels)
+    out vec4 o;
+    void main() {
+      o = vec4(bottom((gl_FragCoord.xy - margin) / res.y), 1.0);
+    }`;
+
+  // The lily pads float on the water, each as one piece: a ripple passing
+  // under one only nudges and tilts it a little (the water's height round its
+  // rim, so it follows the swell, not every small wave). Each pad's tilt is
+  // worked out once a frame, a pixel a pad.
+  const TILT_FS = `
+    uniform sampler2D state;
+    uniform vec2 res;
+    uniform vec4 pads[${PADS}];     // x, y, radius, notch angle
+    out vec4 o;
+    const float TAU = 6.2831853;
+    void main() {
+      vec2 asp = vec2(res.x / res.y, 1.0);
+      vec4 pd = pads[int(gl_FragCoord.x)];
+      vec2 c = pd.xy / asp;
+      vec2 tilt = vec2(0.0);
+      for (int k = 0; k < 8; k++) {
+        float a = float(k) * TAU / 8.0;
+        vec2 dir = vec2(cos(a), sin(a));
+        tilt -= dir * texture(state, c + dir * pd.z * 0.6 / asp).r;
+      }
+      o = vec4(clamp(tilt * 0.25, -1.0, 1.0), 0.0, 1.0);
+    }`;
+
+  // The sun's light dancing over the bottom, drawn each frame at half the
+  // screen's size, as far round as the bottom.
+  const CAUS_FS = `
+    in vec2 uv;
+    uniform vec2 res, margin;
+    uniform float time;
+    out vec4 o;
+    const float TAU = 6.2831853;
+
+    float caustic(vec2 p, float t) {
+      vec2 q = mod(p * TAU, TAU) - 250.0;
+      vec2 i = q;
+      float c = 1.0;
+      float inten = 0.005;
+      for (int n = 0; n < 5; n++) {
+        float t2 = t * (1.0 - (3.5 / float(n + 1)));
+        i = q + vec2(cos(t2 - i.x) + sin(t2 + i.y), sin(t2 - i.y) + cos(t2 + i.x));
+        c += 1.0 / length(vec2(q.x / (sin(i.x + t2) / inten), q.y / (cos(i.y + t2) / inten)));
+      }
+      c /= 5.0;
+      c = 1.17 - pow(c, 1.4);
+      return pow(abs(c), 8.0);
     }
 
+    void main() {
+      vec2 p = (uv * (res + 2.0 * margin) - margin) / res.y;
+      o = vec4(caustic(p * 1.6, time * 0.5) * 0.9 + caustic(p * 2.3 + 3.0, time * 0.37) * 0.5, 0.0, 0.0, 1.0);
+    }`;
+
+  const SHOW_FS = VizGL.NOISE + `
+    in vec2 uv;
+    uniform sampler2D state, bedTex, causTex, tilts;   // the bottom (BED_FS) and its light (CAUS_FS), a margin round them; the pads' tilts (TILT_FS)
+    uniform vec2 res, simRes, margin;
+    uniform float time, light, night;   // night: 0 day .. 1 night
+    uniform vec4 fish[${FISH}];     // x, y (0..1), heading, tail phase
+    uniform vec4 pads[${PADS}];     // x, y, radius, notch angle
+    uniform float showFish, showPads;
+    out vec4 o;
+    const float TAU = 6.2831853;
+
     // A koi: its body along its heading, its tail swinging; rgb and coverage.
+    // Nothing of it lies farther than KOI_REACH from its middle (its tail's
+    // tip, swung out, 1.42 body lengths), so pixels past that skip it.
+    const float KOI_REACH = 0.11;
     vec4 koi(vec2 p, vec4 f, float k) {
       vec2 d = p - f.xy;
       float c = cos(f.z), s = sin(f.z);
@@ -131,18 +184,23 @@
       // Under the water, bent by its slope.
       vec2 ruv = uv + n.xy * 0.035;
       vec2 p = ruv * asp;
-      vec3 bed = bottom(p);
-      float caus = caustic(p * 1.6, time * 0.5) * 0.9 + caustic(p * 2.3 + 3.0, time * 0.37) * 0.5;
+      vec2 buv = (ruv * res + margin) / (res + 2.0 * margin);
+      vec3 bed = texture(bedTex, buv).rgb;
+      float caus = texture(causTex, buv).r;
       caus += clamp(-lap * 6.0, 0.0, 1.5);
       vec3 sun = mix(vec3(1.0, 0.95, 0.8), vec3(0.25, 0.35, 0.55), night);
       vec3 col = bed * (0.45 + caus * light * 0.9) * sun;
       // The fish, between the bottom and the surface: their shadows first.
       if (showFish > 0.5) {
         for (int i = 0; i < ${FISH}; i++) {
+          vec2 d = p + vec2(-0.02, 0.02) - fish[i].xy;
+          if (dot(d, d) > KOI_REACH * KOI_REACH) continue;
           vec4 sh = koi(p + vec2(-0.02, 0.02), fish[i], float(i) / float(${FISH}));
           col *= 1.0 - sh.a * 0.45;
         }
         for (int i = 0; i < ${FISH}; i++) {
+          vec2 d = p - fish[i].xy;
+          if (dot(d, d) > KOI_REACH * KOI_REACH) continue;
           vec4 k = koi(p, fish[i], float(i) / float(${FISH}));
           col = mix(col, k.rgb * (0.55 + 0.6 * caus * light) * sun, k.a * 0.92);
         }
@@ -151,29 +209,13 @@
       vec3 water = mix(vec3(0.05, 0.22, 0.2), vec3(0.01, 0.03, 0.06), night);
       col = mix(col, water, mix(0.35, 0.55, night));
 
-      // The lily pads float on the water, each as one piece: a ripple passing
-      // under one only nudges and tilts it a little (the water's height round
-      // its rim, so it follows the swell, not every small wave). Their
-      // shadows lie on the bottom, under the surface.
-      vec2 padOff[${PADS}];
-      vec2 padTilt[${PADS}];
+      // The lily pads' shadows lie on the bottom, under the surface; each pad
+      // nudged by its tilt (TILT_FS), at most 0.003.
       if (showPads > 0.5) {
         for (int i = 0; i < ${PADS}; i++) {
           vec4 pd = pads[i];
-          padOff[i] = vec2(0.0);
-          padTilt[i] = vec2(0.0);
           if (length(uv * asp - pd.xy) > pd.z * 1.15 + 0.03) continue;
-          vec2 c = pd.xy / asp;
-          vec2 tilt = vec2(0.0);
-          for (int k = 0; k < 8; k++) {
-            float a = float(k) * TAU / 8.0;
-            vec2 dir = vec2(cos(a), sin(a));
-            tilt -= dir * texture(state, c + dir * pd.z * 0.6 / asp).r;
-          }
-          tilt = clamp(tilt * 0.25, -1.0, 1.0);
-          padTilt[i] = tilt;
-          padOff[i] = tilt * 0.003;
-          vec2 qs = uv * asp - pd.xy - padOff[i] - vec2(0.015, -0.015);
+          vec2 qs = uv * asp - pd.xy - texelFetch(tilts, ivec2(i, 0), 0).xy * 0.003 - vec2(0.015, -0.015);
           col *= 1.0 - 0.35 * smoothstep(pd.z, pd.z * 0.9, length(qs));
         }
       }
@@ -192,14 +234,16 @@
       if (showPads > 0.5) {
         for (int i = 0; i < ${PADS}; i++) {
           vec4 pd = pads[i];
-          vec2 q = uv * asp - pd.xy - padOff[i];
+          if (length(uv * asp - pd.xy) > pd.z * 1.05 + 0.003) continue;
+          vec2 tilt = texelFetch(tilts, ivec2(i, 0), 0).xy;
+          vec2 q = uv * asp - pd.xy - tilt * 0.003;
           float r = length(q);
           if (r > pd.z * 1.05) continue;
           float an = atan(q.y, q.x) - pd.w;
           float notch = smoothstep(0.03, 0.0, abs(mod(an + 3.14159, TAU) - 3.14159)) * step(r, pd.z);
           float pad = smoothstep(pd.z, pd.z - 0.003, r) * (1.0 - smoothstep(0.0, 1.0, notch * 4.0));
           float veins = 0.85 + 0.15 * smoothstep(0.0, 0.02, abs(sin(an * 9.0)) * r);
-          float lit = 1.0 + 0.25 * dot(padTilt[i], normalize(ldir.xy));
+          float lit = 1.0 + 0.25 * dot(tilt, normalize(ldir.xy));
           vec3 green = mix(vec3(0.12, 0.32, 0.1), vec3(0.25, 0.48, 0.15), r / pd.z) * veins * lit;
           green *= mix(1.0, 0.25, night);
           col = mix(col, green, pad);
@@ -227,6 +271,11 @@
       this.gl = gl;
       this.sim = VizGL.program(gl, VizGL.SCREEN_VS, SIM_FS);
       this.show = VizGL.program(gl, VizGL.SCREEN_VS, SHOW_FS);
+      this.bedProg = VizGL.program(gl, VizGL.SCREEN_VS, BED_FS);
+      this.causProg = VizGL.program(gl, VizGL.SCREEN_VS, CAUS_FS);
+      this.tiltProg = VizGL.program(gl, VizGL.SCREEN_VS, TILT_FS);
+      this.tilts = VizGL.target(gl, PADS, 1, { filter: gl.NEAREST });
+      this.bed = null;
       this.age = 0;
       this.owed = 0;
       this.drops = [];
@@ -244,10 +293,24 @@
       this.w = w;
       this.h = h;
       for (const t of this.state || []) VizGL.freeTarget(gl, t);
+      VizGL.freeTarget(gl, this.bed);
+      VizGL.freeTarget(gl, this.caus);
       this.sw = Math.max(1, Math.round(w / 2));
       this.sh = Math.max(1, Math.round(h / 2));
       this.state = [VizGL.target(gl, this.sw, this.sh, { filter: gl.LINEAR }), VizGL.target(gl, this.sw, this.sh, { filter: gl.LINEAR })];
       this.cur = 0;
+      // The bottom, drawn once: the ripples bend the view by up to 0.035 of
+      // the screen, so it reaches a little further round.
+      this.mx = Math.ceil(w * 0.036);
+      this.my = Math.ceil(h * 0.036);
+      this.bed = VizGL.target(gl, w + 2 * this.mx, h + 2 * this.my, { half: false });
+      VizGL.into(gl, this.bed);
+      gl.disable(gl.BLEND);
+      gl.useProgram(this.bedProg.p);
+      gl.uniform2f(this.bedProg.u.res, w, h);
+      gl.uniform2f(this.bedProg.u.margin, this.mx, this.my);
+      VizGL.screen(gl);
+      this.caus = VizGL.target(gl, Math.ceil(this.bed.w / 2), Math.ceil(this.bed.h / 2));
       const asp = w / h;
       this.asp = asp;
       this.pads = Array.from({ length: PADS }, () => ({
@@ -345,23 +408,44 @@
         if (s === 0) this.drops = [];
       }
 
+      const pads = new Float32Array(PADS * 4);
+      this.pads.forEach((p, i) => pads.set([p.x, p.y, p.r, p.notch], i * 4));
+      const showPads = set('pdPads');
+      if (showPads) {
+        VizGL.into(gl, this.tilts);
+        gl.useProgram(this.tiltProg.p);
+        VizGL.bind(gl, this.tiltProg.u.state, this.state[this.cur].tex, 0);
+        gl.uniform2f(this.tiltProg.u.res, this.w, this.h);
+        gl.uniform4fv(this.tiltProg.u.pads, pads);
+        VizGL.screen(gl);
+      }
+
+      VizGL.into(gl, this.caus);
+      gl.useProgram(this.causProg.p);
+      gl.uniform2f(this.causProg.u.res, this.w, this.h);
+      gl.uniform2f(this.causProg.u.margin, this.mx, this.my);
+      gl.uniform1f(this.causProg.u.time, this.age);
+      VizGL.screen(gl);
+
       VizGL.into(gl, null);
       gl.useProgram(this.show.p);
       const u = this.show.u;
       VizGL.bind(gl, u.state, this.state[this.cur].tex, 0);
+      VizGL.bind(gl, u.bedTex, this.bed.tex, 1);
+      VizGL.bind(gl, u.causTex, this.caus.tex, 2);
+      VizGL.bind(gl, u.tilts, this.tilts.tex, 3);
       gl.uniform2f(u.res, this.w, this.h);
       gl.uniform2f(u.simRes, this.sw, this.sh);
+      gl.uniform2f(u.margin, this.mx, this.my);
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.light, a.playing ? 0.7 + 0.5 * a.level : 0.6);
       gl.uniform1f(u.night, night);
       const fish = new Float32Array(FISH * 4);
       this.fish.forEach((f, i) => fish.set([f.x, 1 - f.y, -f.h, f.tail], i * 4));
       gl.uniform4fv(u.fish, fish);
-      const pads = new Float32Array(PADS * 4);
-      this.pads.forEach((p, i) => pads.set([p.x, p.y, p.r, p.notch], i * 4));
       gl.uniform4fv(u.pads, pads);
       gl.uniform1f(u.showFish, set('pdKoi') ? 1 : 0);
-      gl.uniform1f(u.showPads, set('pdPads') ? 1 : 0);
+      gl.uniform1f(u.showPads, showPads ? 1 : 0);
       VizGL.screen(gl);
     }
   }

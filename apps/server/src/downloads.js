@@ -219,7 +219,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     if (it.existing) state = 'library';
     else if (it.status !== 'ok') {
       state = 'failed';
-      error = it.note || (it.status === 'notfound' ? 'not found on YouTube' : 'not available');
+      error = it.note || (it.status === 'notfound' ? 'not found' : 'not available');
     }
     return {
       index: i,

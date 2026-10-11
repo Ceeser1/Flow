@@ -184,6 +184,8 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.cloudsColors, 'rainbow');
   assert.equal(d.cloudsAmount, 50);
   assert.equal(d.trendMenuOpen, false);
+  assert.equal(d.showTrend, true);
+  assert.equal(settings.clean({ showTrend: false }).showTrend, false);
   assert.equal(settings.clean({ cloudsColors: 'blue' }).cloudsColors, 'blue');
   assert.equal(settings.clean({ cloudsColors: 'greyscale' }).cloudsColors, 'rainbow');
   assert.equal(settings.clean({ cloudsAmount: 0 }).cloudsAmount, 0);

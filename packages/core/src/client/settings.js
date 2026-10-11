@@ -362,6 +362,8 @@ const DEFAULTS = {
   crossfadeSeconds: 3,
   // Every song brought to the same loudness, measured once per song.
   normalize: true,
+  // The menu's Your listening trend entry and its lists.
+  showTrend: true,
   // The clouds behind the pages, and how they swell with the bass (percent).
   cloudsOn: true,
   cloudsIntensity: 50,
@@ -505,7 +507,7 @@ function clean(raw) {
   delete s.updateFound;
   delete s.updateNoPrompt;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;

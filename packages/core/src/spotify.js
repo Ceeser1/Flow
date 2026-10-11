@@ -183,27 +183,32 @@ function musicSearchUrl(track) {
 }
 
 /**
- * The best of the search results. quality: 'good' (within 5 s, and from the
- * artist or naming the song), 'shaky' (within 20 s, worth a look), or 'none'.
+ * The search results best first, each with its quality: 'good' (within 5 s,
+ * and from the artist or naming the song), 'shaky' (within 20 s, worth a
+ * look), or 'none'.
  */
+function rankMatches(track, candidates) {
+  const want = fold(searchTitle(track.title));
+  return (candidates || []).filter((cand) => cand && cand.id)
+    .map((cand) => ({ ...scoreMatch(track, cand), cand }))
+    // Stable: of two as good, the one the search put first.
+    .sort((a, b) => b.score - a.score)
+    .map((s) => {
+      const namesSong = fold(s.cand.title).includes(want);
+      let quality;
+      if (s.diff <= 5 && (s.fromArtist || namesSong) && s.score > -10) quality = 'good';
+      else if (s.diff <= 20) quality = 'shaky';
+      else quality = 'none';
+      return { quality, cand: s.cand, diff: s.diff };
+    });
+}
+
+/** The best of the search results (see rankMatches). */
 function pickMatch(track, candidates) {
-  let best = null;
-  for (const cand of candidates || []) {
-    if (!cand || !cand.id) continue;
-    const s = scoreMatch(track, cand);
-    if (!best || s.score > best.score) best = { ...s, cand };
-  }
-  if (!best) return { quality: 'none', cand: null, diff: null };
-  const title = fold(best.cand.title);
-  const namesSong = title.includes(fold(searchTitle(track.title)));
-  let quality;
-  if (best.diff <= 5 && (best.fromArtist || namesSong) && best.score > -10) quality = 'good';
-  else if (best.diff <= 20) quality = 'shaky';
-  else quality = 'none';
-  return { quality, cand: best.cand, diff: best.diff };
+  return rankMatches(track, candidates)[0] || { quality: 'none', cand: null, diff: null };
 }
 
 module.exports = {
   parseSpotifyUrl, isSpotifyTrackUrl, parseEmbedPage, fetchSpotify,
-  searchQuery, searchTitle, scoreMatch, pickMatch, pickMusicResult, musicSearchUrl, channelIsArtist,
+  searchQuery, searchTitle, scoreMatch, rankMatches, pickMatch, pickMusicResult, musicSearchUrl, channelIsArtist, fold,
 };

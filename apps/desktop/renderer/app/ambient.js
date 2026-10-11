@@ -174,6 +174,9 @@ const Ambient = {
     // Turned off in Settings: the plain background, drawn once by _draw.
     if (Store.settings.cloudsOn === false) return;
     this._follow(dt);
+    // Under the full-screen visualizer nobody would see them: they were
+    // about half the GPU's work there, drawn for nothing.
+    if (Visualizer.shown) return;
     // With nothing playing and no pulse left to fade, fewer frames will do.
     const lively = Equalizer.bass > 0 || this.pulse > 0.002;
     if (!lively && now - this.lastDraw < 1000 / this.IDLE_FPS) return;

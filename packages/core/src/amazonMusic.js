@@ -10,13 +10,23 @@
 // every song as a <music-image-row> (an album's as <music-text-row>) with its
 // title, artists, album and length in attributes, without a login.
 //
-// That page is not an official interface. If Amazon changes it, reading fails
-// with a message saying so rather than with nonsense. Catalog pages are per
-// country: a link from another country's store may lead to the home page.
+// A playlist someone made (user-playlists/...) is not drawn for search
+// engines: Amazon hands them its home page, and its player's own service
+// answers only a signed-in visitor. What it does draw is the small card a chat
+// app shows for a shared link, asked as Facebook's link preview: the list's
+// name and every song's track id in order. Each song is then read from its
+// own track page, as above.
+//
+// Those pages are not an official interface. If Amazon changes them, reading
+// fails with a message saying so rather than with nonsense. Catalog pages are
+// per country: a link from another country's store may lead to the home page.
 
 const AMAZON_RE = /^(?:https?:\/\/)?(?:music\.amazon\.((?:com?\.)?[a-z]{2,3})|(?:www\.)?amazon\.((?:com?\.)?[a-z]{2,3})\/music\/player)\/(playlists|user-playlists|albums|tracks)\/([A-Za-z0-9_-]{6,})\/?(?:[?#]|$)/i;
 
 const CRAWLER_UA = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+const PREVIEW_UA = 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)';
+// Track pages read at once for a playlist someone made.
+const TRACK_PARALLEL = 4;
 
 /**
  * { type: 'playlist' | 'user-playlist' | 'album' | 'track', id, tld, trackId,
@@ -128,23 +138,95 @@ function parseAmazonPage(html) {
   return { name: String(header.headline || 'Amazon Music playlist'), type, total, tracks };
 }
 
-/** Fetches and reads a playlist, album or song. */
-async function fetchAmazonMusic(ref) {
+/** The value of each <meta> named `name` (property= or name=), in page order. */
+function metaValues(html, name) {
+  const out = [];
+  for (const m of String(html || '').matchAll(/<meta\s[^>]*>/gi)) {
+    const tag = m[0];
+    const key = /\s(?:property|name)="([^"]*)"/i.exec(tag);
+    const value = /\scontent="([^"]*)"/i.exec(tag);
+    if (key && value && key[1].toLowerCase() === name) out.push(decodeEntities(value[1]));
+  }
+  return out;
+}
+
+/**
+ * The link preview card of a playlist someone made: { name, ids }, ids its
+ * songs' track ids in order.
+ */
+function parsePreviewCard(html) {
+  const name = metaValues(html, 'og:title')[0];
+  if (!name) {
+    throw new Error('Amazon Music shows nothing at this link. Is the playlist public, and from this country\'s Amazon Music?');
+  }
+  const ids = metaValues(html, 'music:song').map(trackIdOf).filter(Boolean);
+  return { name, ids };
+}
+
+async function fetchPage(url, userAgent) {
   let res;
   try {
-    res = await fetch(pageUrl(ref), { headers: { 'User-Agent': CRAWLER_UA, 'Accept-Language': 'en' } });
+    res = await fetch(url, { headers: { 'User-Agent': userAgent, 'Accept-Language': 'en' } });
   } catch {
     throw new Error('Could not reach Amazon Music. Please check the internet connection.');
   }
   if (res.status === 404) throw new Error('Nothing was found at this Amazon Music link. Is the playlist public?');
   if (!res.ok) throw new Error(`Amazon Music refused the request (error ${res.status}). Try again later.`);
-  const page = parseAmazonPage(await res.text());
-  // An album link shared from one of its songs: that song.
-  if (ref.trackId) {
-    const one = page.tracks.filter((t) => t.id === ref.trackId);
-    if (one.length) return { ...page, name: `${one[0].artists} - ${one[0].title}`, total: one.length, tracks: one };
+  return res.text();
+}
+
+/** A song's own row on its track page, or null. */
+async function fetchTrack(tld, id) {
+  const page = parseAmazonPage(await fetchPage(pageUrl({ type: 'track', id, tld }), CRAWLER_UA));
+  return page.tracks.find((t) => t.id === id) || null;
+}
+
+/**
+ * A playlist someone made: its card, then each song's track page, a few at a
+ * time. A song whose page cannot be read stays in the list as not playable.
+ * onTrack(done, total) after each.
+ */
+async function fetchUserPlaylist(ref, isCancelled, onTrack) {
+  const card = parsePreviewCard(await fetchPage(pageUrl(ref), PREVIEW_UA));
+  if (!card.ids.length) throw new Error('This Amazon Music list has no songs.');
+  const tracks = new Array(card.ids.length);
+  let next = 0;
+  let done = 0;
+  const worker = async () => {
+    while (next < card.ids.length && !isCancelled()) {
+      const n = next;
+      next += 1;
+      let track = null;
+      try {
+        track = await fetchTrack(ref.tld, card.ids[n]);
+      } catch {
+        // Below: kept as not playable.
+      }
+      tracks[n] = track || { title: `Song ${n + 1}`, artists: '', duration: 0, playable: false, id: card.ids[n] };
+      done += 1;
+      onTrack(done, card.ids.length);
+    }
+  };
+  await Promise.all(Array.from({ length: TRACK_PARALLEL }, worker));
+  if (tracks.every((t) => !t.playable)) throw new Error('Amazon Music\'s song pages could not be read. Amazon may have changed them.');
+  return { name: card.name, type: 'playlist', total: tracks.length, tracks };
+}
+
+/**
+ * Fetches and reads a playlist, album or song. isCancelled() and
+ * onTrack(done, total) are for a playlist someone made, read song by song.
+ */
+async function fetchAmazonMusic(ref, isCancelled = () => false, onTrack = () => {}) {
+  if (ref.type === 'user-playlist') return fetchUserPlaylist(ref, isCancelled, onTrack);
+  const page = parseAmazonPage(await fetchPage(pageUrl(ref), CRAWLER_UA));
+  // A song's page lists its whole album; an album link shared from one of its
+  // songs is the album's. Either way: that song.
+  const one = ref.type === 'track' ? ref.id : ref.trackId;
+  if (one) {
+    const song = page.tracks.filter((t) => t.id === one);
+    if (song.length) return { ...page, name: `${song[0].artists} - ${song[0].title}`, total: 1, tracks: song };
   }
   return page;
 }
 
-module.exports = { parseAmazonMusicUrl, pageUrl, parseAmazonPage, fetchAmazonMusic, cleanArtists };
+module.exports = { parseAmazonMusicUrl, pageUrl, parseAmazonPage, parsePreviewCard, fetchAmazonMusic, cleanArtists };
