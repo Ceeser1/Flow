@@ -39,10 +39,10 @@
   ];
   const F = 1.5;  // the shader's focal length
 
-  const FS = VizGL.NOISE + VizGL.STARS + `
+  const FS = VizGL.NOISE + VizGL.STAR_SKY + `
     in vec2 uv;
     uniform vec2 res;
-    uniform float time, wave, swell, beamAng, lamp, splash, rain, clouds, haze, boom, roll, rollAmp;
+    uniform float time, wave, swell, beamAng, lamp, splash, rain, clouds, haze, roll, rollAmp;
     uniform vec4 ship;          // x, its way (-1 to the left, 1 to the right), kind (0 fishing boat, 1 yacht, 2 container ship), shown (0..1)
     uniform float shipPitch;
     out vec4 o;
@@ -141,7 +141,7 @@
       float moon = smoothstep(0.99984, 0.99989, md);
       float halo = pow(max(md, 0.0), 300.0) * 0.35 + pow(max(md, 0.0), 20.0) * 0.06;
       float cover = cloudAt(d);
-      if (stars) c += starField(px, time, boom) * (1.0 - cover) * smoothstep(0.0, 0.15, up);
+      if (stars) c += starField(px) * (1.0 - cover) * smoothstep(0.0, 0.15, up);
       // The moon's face, a little mottled.
       vec3 mface = vec3(1.0, 0.97, 0.88) * (0.85 + 0.15 * vnoise(d.xy * 900.0));
       c += (mface * moon * 1.6 + vec3(0.6, 0.7, 0.9) * halo) * (1.0 - 0.85 * cover);
@@ -558,11 +558,11 @@
 
   class Lighthouse {
     constructor(canvas) {
-      this.starShift = VizGL.starShift();
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
       this.prog = VizGL.program(gl, VizGL.SCREEN_VS, FS);
+      this.stars = VizGL.starLayer(gl);
       this.age = 0;
       this.wave = Math.random() * 100;
       this.ang = Math.random() * Math.PI * 2;
@@ -654,12 +654,13 @@
       const showShip = set('lhShip') && s.on ? 1 : 0;
       const pitch = kind.rock * Math.sin(this.age * 0.9) * (0.4 + 0.6 * this.swell);
 
+      this.stars.draw(0, 0, this.w, this.h, this.age, a.kick * playing);
       gl.disable(gl.BLEND);
       VizGL.into(gl, null);
       gl.useProgram(this.prog.p);
       const u = this.prog.u;
       gl.uniform2f(u.res, this.w, this.h);
-      gl.uniform2f(u.starShift, ...this.starShift);
+      this.stars.use(u, 0);
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.wave, this.wave);
       gl.uniform1f(u.swell, this.swell);
@@ -669,7 +670,6 @@
       gl.uniform1f(u.rain, w.rain);
       gl.uniform1f(u.clouds, w.clouds);
       gl.uniform1f(u.haze, w.haze);
-      gl.uniform1f(u.boom, a.kick * playing);
       gl.uniform1f(u.roll, this.roll);
       gl.uniform1f(u.rollAmp, this.rollAmp);
       gl.uniform4f(u.ship, s.x, s.dir, s.kind, showShip);

@@ -15,8 +15,9 @@
 // restless, how high the curtains shine (Glare), the lake, the stars (faint and bright ones, each twinkling in its
 // own time, the brightest with a glare flashing a little with the bass).
 //
-// WebGL (viz/gl.js): one pass over the screen; below the horizon each pixel
-// works out the sky again where it would be mirrored.
+// WebGL (viz/gl.js): the stars drawn ahead (VizGL.starLayer), then one pass
+// over the screen; below the horizon each pixel works out the sky again
+// where it would be mirrored.
 
 (() => {
   // Each curtain's part of the music, lowest curtain first (Hz; VizAudio's
@@ -36,11 +37,11 @@
     rainbow: [[0.2, 1.0, 0.6], [1.0, 0.3, 0.5]],
   };
 
-  const FS = VizGL.NOISE + VizGL.STARS + `
+  const FS = VizGL.NOISE + VizGL.STAR_SKY + `
     in vec2 uv;
     uniform sampler2D bands;
     uniform vec2 res;
-    uniform float time, drift, flare, lake, stars, rainbow, lift, boom, shine;
+    uniform float time, drift, flare, lake, stars, rainbow, lift, shine;
     uniform vec3 low, high;
     out vec4 o;
 
@@ -53,7 +54,7 @@
     vec3 sky(vec2 p, float aspect) {
       float x = p.x * aspect;
       vec3 col = mix(vec3(0.01, 0.02, 0.05), vec3(0.0, 0.004, 0.02), smoothstep(HORIZON, 1.0, p.y));
-      if (stars > 0.0) col += starField(p * res, time, boom) * smoothstep(HORIZON, HORIZON + 0.2, p.y);
+      if (stars > 0.0) col += starField(p * res) * smoothstep(HORIZON, HORIZON + 0.2, p.y);
       // Three curtains, one behind the other.
       for (int i = 0; i < 3; i++) {
         float fi = float(i);
@@ -222,11 +223,11 @@
 
   class Aurora {
     constructor(canvas) {
-      this.starShift = VizGL.starShift();
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
       this.prog = VizGL.program(gl, VizGL.SCREEN_VS, FS);
+      this.stars = VizGL.starLayer(gl);
       this.bandTex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, this.bandTex);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -264,6 +265,11 @@
       const restless = set('auActivity') / 100;
       this.drift += dt * restless * (0.08 + 0.5 * a.intensity + 0.3 * a.level) * (a.playing ? 1 : 0.4);
       const pal = PALETTES[set('auColors')] || PALETTES.green;
+      // The sky's stars from just under the horizon up (mirrored in the
+      // lake too), and a little past the edges where its waves reach.
+      const stars = set('auStars');
+      const below = Math.floor(this.h * 0.28);
+      if (stars) this.stars.draw(-24, below, this.w + 48, this.h - below + 24, this.age, a.kick);
       gl.disable(gl.BLEND);
       VizGL.into(gl, null);
       gl.useProgram(this.prog.p);
@@ -274,11 +280,10 @@
       gl.uniform1f(u.drift, this.drift);
       gl.uniform1f(u.flare, a.kick);
       gl.uniform1f(u.lift, LIFT);
-      gl.uniform1f(u.boom, a.kick);
-      gl.uniform2f(u.starShift, ...this.starShift);
+      this.stars.use(u, 1);
       gl.uniform1f(u.shine, SHINE * (set('auGlare') / 100));
       gl.uniform1f(u.lake, set('auLake') ? 1 : 0);
-      gl.uniform1f(u.stars, set('auStars') ? 1 : 0);
+      gl.uniform1f(u.stars, stars ? 1 : 0);
       gl.uniform1f(u.rainbow, set('auColors') === 'rainbow' ? 1 : 0);
       gl.uniform3f(u.low, ...pal[0]);
       gl.uniform3f(u.high, ...pal[1]);

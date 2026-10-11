@@ -410,6 +410,65 @@ const VizGL = {
     return [Math.floor(Math.random() * 20000), Math.floor(Math.random() * 20000)];
   },
 
+  /**
+   * The stars of STAR_CELLS drawn ahead each frame into a texture of their
+   * own, each only round itself, so a sky reads them in one look a pixel
+   * (STAR_SKY's starField) rather than working out every star near each of
+   * its pixels, as STARS does (a third of Aurora's time at 1440p). Returns
+   * { draw(x, y, w, h, time, boom), use(u, unit) }: draw the part of the sky
+   * from x, y (pixels on it, as the shader will ask) w by h, one texel a
+   * pixel (leaves it drawing into the texture, the blending off); use binds
+   * it for program uniforms u (starTex, starView) on texture unit `unit`.
+   */
+  starLayer(gl) {
+    const prog = this.program(gl, this.NOISE + this.STAR_CELLS + this.STAR_LAYER_VS, this.NOISE + this.STAR_CELLS + this.STAR_LAYER_FS);
+    const shift = this.starShift();
+    let target = null;
+    let view = [0, 0, 1, 1];
+    return {
+      draw(x, y, w, h, time, boom) {
+        w = Math.max(1, Math.ceil(w));
+        h = Math.max(1, Math.ceil(h));
+        if (!target || target.w !== w || target.h !== h) {
+          VizGL.freeTarget(gl, target);
+          target = VizGL.target(gl, w, h);
+        }
+        view = [x, y, w, h];
+        VizGL.into(gl, target);
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE);
+        gl.bindVertexArray(null);
+        gl.useProgram(prog.p);
+        const u = prog.u;
+        gl.uniform2f(u.origin, x, y);
+        gl.uniform2f(u.size, w, h);
+        gl.uniform2f(u.starShift, ...shift);
+        gl.uniform1f(u.time, time);
+        gl.uniform1f(u.boom, boom);
+        // The cells under it: the faint ones in their own, the bright ones
+        // shining into the cells round theirs.
+        for (const [bright, cell, past, corners] of [[0, 5, 0, 6], [1, 40, 1, 18]]) {
+          const fx = Math.floor((x + shift[0]) / cell) - past;
+          const fy = Math.floor((y + shift[1]) / cell) - past;
+          const cols = Math.floor((x + w + shift[0]) / cell) + past - fx + 1;
+          const rows = Math.floor((y + h + shift[1]) / cell) + past - fy + 1;
+          gl.uniform2f(u.first, fx, fy);
+          gl.uniform1i(u.cols, cols);
+          gl.uniform1i(u.bright, bright);
+          gl.drawArraysInstanced(gl.TRIANGLES, 0, corners, cols * rows);
+        }
+        gl.disable(gl.BLEND);
+      },
+      use(u, unit) {
+        if (!target) return;
+        VizGL.bind(gl, u.starTex, target.tex, unit);
+        gl.uniform4f(u.starView, ...view);
+      },
+    };
+  },
+
   // Shared shader code: hashes and noise.
   NOISE: `
     float hash12(vec2 p) {
@@ -432,11 +491,14 @@ const VizGL = {
       return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
     }`,
 
-  // Shared shader code: a night sky's stars, as Aurora's (after NOISE).
-  STARS: `
-    // Where on the endless sky this one looks (VizGL.starShift(), a new place
-    // each time a visualizer opens).
-    uniform vec2 starShift;
+  // Shared shader code: a night sky's stars, one at a time (after NOISE).
+  // Many faint ones a pixel across, one in some of the small cells, and
+  // fewer bright ones, one in some of the big cells, larger, white to blue
+  // or warm, the brightest with a halo and four thin spikes of glare
+  // (flashing a little with boom, the kick).
+  STAR_CELLS: `
+    const float STAR_CELL = 5.0;
+    const float STAR_BIG = 40.0;
 
     // A star's twinkle: its own speed and moment, a little irregular; depth
     // is how far it dims.
@@ -447,46 +509,148 @@ const VizGL = {
       return 1.0 - depth * t;
     }
 
-    // The stars at px (pixels): many faint ones a pixel across, and fewer
-    // bright ones, larger, white to blue or warm, the brightest with a halo
-    // and four thin spikes of glare (flashing a little with boom, the kick).
+    // Whether small cell g has a faint star: where (c, pixels) and its light now.
+    bool faintStar(vec2 g, float time, out vec2 c, out vec3 col) {
+      bool on = hash12(g + 11.3) > 0.955;
+      c = vec2(0.0);
+      col = vec3(0.0);
+      if (on) {
+        c = (g + 0.2 + 0.6 * vec2(hash12(g + 3.1), hash12(g + 7.7))) * STAR_CELL;
+        float b = 0.1 + 0.3 * hash12(g + 5.2) * hash12(g + 8.8);
+        col = vec3(0.85, 0.9, 1.0) * b * twinkle(g, 0.6, time);
+      }
+      return on;
+    }
+    float faintGlow(vec2 d) {
+      return exp(-dot(d, d) / 0.45);
+    }
+
+    // Whether big cell g has a bright star: where, how bright (m, most of
+    // them modest, a few brilliant) and its light now.
+    bool brightStar(vec2 g, float time, out vec2 c, out float m, out vec3 col) {
+      bool on = hash12(g + 23.9) >= 0.8;
+      c = vec2(0.0);
+      m = 0.0;
+      col = vec3(0.0);
+      if (on) {
+        c = (g + 0.5 + 0.8 * (vec2(hash12(g + 1.7), hash12(g + 9.4)) - 0.5)) * STAR_BIG;
+        m = pow(hash12(g + 4.4), 3.0);
+        vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.88, 0.72), hash12(g + 6.6));
+        col = tint * (0.3 + 1.0 * m) * twinkle(g, 0.45, time);
+      }
+      return on;
+    }
+    // Its round glow at d from it.
+    float brightGlow(vec2 d, float m) {
+      float r = 0.65 + 1.1 * m;
+      return exp(-dot(d, d) / (r * r)) + 0.1 * m * exp(-length(d) / (2.0 + 4.0 * m));
+    }
+    // Its spike along x (the brighter half of them), flashing a little with the bass.
+    float brightSpike(vec2 d, float m, float boom) {
+      if (m <= 0.5) return 0.0;
+      float reach = (3.0 + 8.0 * m) * (1.0 + 0.3 * boom);
+      return 0.25 * m * (1.0 + 0.8 * boom) * exp(-abs(d.y) / 0.45 - abs(d.x) / reach);
+    }`,
+
+  // Shared shader code: the stars worked out at each pixel (after NOISE),
+  // for a sky seen bent (Black Hole's); a flat one is far cheaper drawn
+  // ahead (starLayer).
+  STARS: `
+    // Where on the endless sky this one looks (VizGL.starShift(), a new place
+    // each time a visualizer opens).
+    uniform vec2 starShift;
+
+    // The stars at px (pixels).
     vec3 starField(vec2 px, float time, float boom) {
       px += starShift;
       vec3 sum = vec3(0.0);
-      {
-        const float CELL = 5.0;
-        vec2 g = floor(px / CELL);
-        if (hash12(g + 11.3) > 0.955) {
-          vec2 c = (g + 0.2 + 0.6 * vec2(hash12(g + 3.1), hash12(g + 7.7))) * CELL;
-          vec2 d = px - c;
-          float b = 0.1 + 0.3 * hash12(g + 5.2) * hash12(g + 8.8);
-          sum += vec3(0.85, 0.9, 1.0) * b * twinkle(g, 0.6, time) * exp(-dot(d, d) / 0.45);
-        }
-      }
+      vec2 c;
+      vec3 col;
+      if (faintStar(floor(px / STAR_CELL), time, c, col)) sum += col * faintGlow(px - c);
       // The bright ones look into the cells round about too: their glare
       // reaches past their own.
-      const float BIG = 40.0;
-      vec2 g0 = floor(px / BIG);
+      vec2 g0 = floor(px / STAR_BIG);
       for (int j = -1; j <= 1; j++) {
         for (int i = -1; i <= 1; i++) {
-          vec2 g = g0 + vec2(float(i), float(j));
-          if (hash12(g + 23.9) < 0.8) continue;
-          vec2 c = (g + 0.5 + 0.8 * (vec2(hash12(g + 1.7), hash12(g + 9.4)) - 0.5)) * BIG;
+          float m;
+          if (!brightStar(g0 + vec2(float(i), float(j)), time, c, m, col)) continue;
           vec2 d = px - c;
-          // Most of them modest, a few brilliant.
-          float m = pow(hash12(g + 4.4), 3.0);
-          float r = 0.65 + 1.1 * m;
-          float glow = exp(-dot(d, d) / (r * r));
-          glow += 0.1 * m * exp(-length(d) / (2.0 + 4.0 * m));
-          if (m > 0.5) {
-            // Flashing a little with the bass.
-            float reach = (3.0 + 8.0 * m) * (1.0 + 0.3 * boom);
-            glow += 0.25 * m * (1.0 + 0.8 * boom) * (exp(-abs(d.y) / 0.45 - abs(d.x) / reach) + exp(-abs(d.x) / 0.45 - abs(d.y) / reach));
-          }
-          vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.88, 0.72), hash12(g + 6.6));
-          sum += tint * (0.3 + 1.0 * m) * twinkle(g, 0.45, time) * glow;
+          sum += col * (brightGlow(d, m) + brightSpike(d, m, boom) + brightSpike(d.yx, m, boom));
         }
       }
       return sum;
+    }`,
+
+  // Shared shader code: the stars of a starLayer, read at px (pixels on its
+  // sky; after NOISE).
+  STAR_SKY: `
+    uniform sampler2D starTex;
+    uniform vec4 starView;   // the part of the sky in it: from, size (pixels)
+    vec3 starField(vec2 px) {
+      return texture(starTex, (px - starView.xy) / starView.zw).rgb;
+    }`,
+
+  // The starLayer's stars, each drawn as small squares round it: one
+  // instance a cell (the program's bright: the big cells), most of them
+  // empty (drawn as nothing). A bright star is a square as far as its glow
+  // reaches and, the brightest, a bar each way for its spikes (outside the
+  // square); a faint one a square within its own cell, a bright one within
+  // the cells round its own, as far as STARS looks.
+  STAR_LAYER_VS: `
+    uniform vec2 origin, size, starShift, first;
+    uniform int cols;
+    uniform bool bright;
+    uniform float time, boom;
+    out vec2 d;
+    flat out vec3 col;
+    flat out vec3 shape;   // 0 faint, 1 the square, 2-3 a bar; m; the square's half width
+    const float FAINT = 0.0015;   // what is not drawn
+    void main() {
+      vec2 g = first + vec2(float(gl_InstanceID % cols), float(gl_InstanceID / cols));
+      int part = gl_VertexID / 6;
+      int k = gl_VertexID % 6;
+      vec2 corner = vec2(k == 1 || k == 4 || k == 5 ? 1.0 : 0.0, k == 2 || k == 3 || k == 5 ? 1.0 : 0.0);
+      vec2 c, lo, hi;
+      bool on;
+      if (!bright) {
+        on = faintStar(g, time, c, col);
+        lo = max(c - 2.0, g * STAR_CELL);
+        hi = min(c + 2.0, (g + 1.0) * STAR_CELL);
+        shape = vec3(0.0);
+      } else {
+        float m;
+        on = brightStar(g, time, c, m, col);
+        float r = 0.65 + 1.1 * m;
+        float disc = max(r * sqrt(log((0.3 + m) / FAINT)), (2.0 + 4.0 * m) * log(max(0.1 * m * (0.3 + m) / FAINT, 1.0)));
+        float spike = m > 0.5 ? log(max(0.25 * m * (1.0 + 0.8 * boom) * (0.3 + m) / FAINT, 1.0)) : 0.0;
+        float along = (3.0 + 8.0 * m) * (1.0 + 0.3 * boom) * spike;
+        float across = 0.45 * spike;
+        disc = max(disc, across);
+        if (part > 0 && along <= disc) on = false;
+        vec2 ext = part == 0 ? vec2(disc) : part == 1 ? vec2(along, across) : vec2(across, along);
+        lo = max(c - ext, (g - 1.0) * STAR_BIG);
+        hi = min(c + ext, (g + 2.0) * STAR_BIG);
+        shape = vec3(float(part + 1), m, disc);
+      }
+      vec2 at = mix(lo, hi, corner);
+      d = at - c;
+      gl_Position = on ? vec4((at - starShift - origin) / size * 2.0 - 1.0, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
+    }`,
+
+  STAR_LAYER_FS: `
+    in vec2 d;
+    flat in vec3 col;
+    flat in vec3 shape;
+    uniform float boom;
+    out vec4 o;
+    void main() {
+      float k = shape.x;
+      float m = shape.y;
+      float glow;
+      if (k < 0.5) glow = faintGlow(d);
+      else if (k < 1.5) glow = brightGlow(d, m) + brightSpike(d, m, boom) + brightSpike(d.yx, m, boom);
+      else if (max(abs(d.x), abs(d.y)) < shape.z) glow = 0.0;
+      else glow = brightSpike(k < 2.5 ? d : d.yx, m, boom);
+      o = vec4(col * glow, 1.0);
     }`,
 };

@@ -31,14 +31,14 @@
       o = vec4(max(texture(prev, uv).rgb * keep - 0.002, 0.0), 1.0);
     }`;
 
-  const SKY_FS = VizGL.NOISE + VizGL.STARS + `
+  const SKY_FS = VizGL.NOISE + VizGL.STAR_SKY + `
     in vec2 uv;
     uniform sampler2D sparks;
     uniform sampler2D glowA;
     uniform sampler2D glowB;
     uniform sampler2D city;
     uniform vec2 res;
-    uniform float flash, time, hasCity, boom;
+    uniform float flash, time, hasCity;
     uniform vec3 flashColor;
     out vec4 o;
     void main() {
@@ -46,7 +46,7 @@
       vec3 col = mix(vec3(0.03, 0.035, 0.07), vec3(0.004, 0.006, 0.02), smoothstep(0.0, 0.9, uv.y));
       col += vec3(0.06, 0.04, 0.05) * (1.0 - smoothstep(0.0, 0.3, uv.y)) * hasCity;
       // Stars, twinkling (as Aurora's), fading out low over the city.
-      col += starField(gl_FragCoord.xy, time, boom) * smoothstep(0.2, 0.5, uv.y);
+      col += starField(gl_FragCoord.xy) * smoothstep(0.2, 0.5, uv.y);
       col += flashColor * flash * (0.03 + 0.06 * uv.y);
       // The sparks and their glow.
       col += texture(sparks, uv).rgb + texture(glowA, uv).rgb * 0.9 + texture(glowB, uv).rgb * 1.4;
@@ -100,10 +100,10 @@
 
   class Fireworks {
     constructor(canvas) {
-      this.starShift = VizGL.starShift();
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
+      this.stars = VizGL.starLayer(gl);
       this.fade = VizGL.program(gl, VizGL.SCREEN_VS, FADE_FS);
       this.sky = VizGL.program(gl, VizGL.SCREEN_VS, SKY_FS);
       this.lines = VizGL.lines(gl, MAX_SPARKS * 6 + 600);
@@ -337,7 +337,9 @@
       // 3. The glow.
       VizGL.blur(gl, this.b, this.qa, this.qb, 1.4);
       VizGL.blur(gl, this.qb, this.ea, this.eb, 2.2);
-      // 4. The sky, the sparks, the city.
+      // 4. The sky (its stars from where they fade in over the city), the sparks, the city.
+      const low = Math.floor(this.h * 0.2);
+      this.stars.draw(0, low, this.w, this.h - low, this.age, a.kick);
       VizGL.into(gl, null);
       gl.useProgram(this.sky.p);
       const u = this.sky.u;
@@ -349,8 +351,7 @@
       // The sky and city lit by the bursts: 75% as it first was.
       gl.uniform1f(u.flash, set('fwFlash') ? this.flash * (set('fwFlashAmount') / 75) : 0);
       gl.uniform1f(u.time, this.age);
-      gl.uniform1f(u.boom, a.kick);
-      gl.uniform2f(u.starShift, ...this.starShift);
+      this.stars.use(u, 4);
       gl.uniform1f(u.hasCity, set('fwCity') ? 1 : 0);
       gl.uniform3f(u.flashColor, ...this.flashColor);
       VizGL.screen(gl);

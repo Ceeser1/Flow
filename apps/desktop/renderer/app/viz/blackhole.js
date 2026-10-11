@@ -162,7 +162,7 @@
       o2 = vec4(bend, starsShow, 1.0);
     }`;
 
-  const SHOW_FS = VizGL.NOISE + VizGL.STARS + `
+  const SHOW_FS = VizGL.NOISE + VizGL.STAR_CELLS + VizGL.STARS + `
     in vec2 uv;
     uniform sampler2D scene, glow, bent;
     uniform vec2 res;

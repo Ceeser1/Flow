@@ -24,7 +24,7 @@
   const POLES = 1.6;          // between two poles, in screen heights
   const WEATHER = { clear: 0, rain: 1, snow: 2 };
 
-  const FS = VizGL.NOISE + VizGL.STARS + `
+  const FS = VizGL.NOISE + VizGL.STAR_SKY + `
     in vec2 uv;
     uniform vec2 res;
     uniform float time, dist, speed, bob, beat, ripple, rain, snow, cup, beats;
@@ -128,7 +128,7 @@
       // The sky: dark blue, the stars, the moon.
       float up = w.y - HOR;
       col = mix(vec3(0.07, 0.08, 0.13), vec3(0.012, 0.016, 0.045), smoothstep(0.0, 0.5, up)) * (1.0 - 0.45 * rain);
-      col += starField(w * res.y * vec2(1.0, 1.0) + vec2(dist * 2.0, 0.0), time, 0.0) * smoothstep(0.0, 0.15, up) * (1.0 - 0.8 * rain);
+      col += starField(w * res.y + vec2(dist * 2.0, 0.0)) * smoothstep(0.0, 0.15, up) * (1.0 - 0.8 * rain);
       // The moon (round in screen heights, not window space): solid, its
       // dark part almost black against the sky, grey seas on it; how much of
       // it is lit is new each time it opens, its glow as bright as that.
@@ -532,13 +532,13 @@
 
   class NightTrain {
     constructor(canvas) {
-      this.starShift = VizGL.starShift();
       // A new moon each time: from a thin crescent to nearly full, waxing or waning.
       this.moon = [-0.85 + Math.random() * 1.55, Math.random() < 0.5 ? 1 : -1];
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
       this.prog = VizGL.program(gl, VizGL.SCREEN_VS, FS);
+      this.stars = VizGL.starLayer(gl);
       this.age = 0;
       this.dist = Math.random() * 1000;
       this.speed = 0;
@@ -583,12 +583,18 @@
       this.rain += ((weather === 1 ? 1 : 0) - this.rain) * Math.min(1, dt);
       this.snow += ((weather === 2 ? 1 : 0) - this.snow) * Math.min(1, dt);
 
+      // The stars going by in the window (pixels on their sky as land()
+      // asks: x across from the middle plus the way come, y up the window
+      // in screen heights), from just under the horizon up, a little past
+      // where the rocking and the raindrops' bending reach.
+      const low = Math.floor(0.44 * this.h);
+      this.stars.draw(this.dist * 2 - this.w / 2 - 24, low, this.w + 48, 1.08 * this.h - low, this.age, 0);
       gl.disable(gl.BLEND);
       VizGL.into(gl, null);
       gl.useProgram(this.prog.p);
       const u = this.prog.u;
       gl.uniform2f(u.res, this.w, this.h);
-      gl.uniform2f(u.starShift, ...this.starShift);
+      this.stars.use(u, 0);
       gl.uniform2f(u.moon, ...this.moon);
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.dist, this.dist);

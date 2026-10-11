@@ -32,11 +32,11 @@
   const WATER = 0.76;
   const LEDGE = 0.045;
 
-  const SHOW_FS = VizGL.NOISE + VizGL.STARS + `
+  const SHOW_FS = VizGL.NOISE + VizGL.STAR_SKY + `
     in vec2 uv;
     uniform sampler2D drops, glowA, glowB, mist, foam;
     uniform vec2 res;
-    uniform float wl, ledge, time, boom;
+    uniform float wl, ledge, time;
     uniform vec3 ambient;
     uniform int n;
     uniform float jx[${MAX_JETS}], jl[${MAX_JETS}];
@@ -58,7 +58,7 @@
       vec3 col = mix(vec3(0.03, 0.035, 0.07), vec3(0.005, 0.007, 0.02), smoothstep(wl, 1.0, p.y));
       // A town's glow beyond the hills.
       col += vec3(0.05, 0.032, 0.03) * exp(-(p.y - wl) * 14.0);
-      col += starField(vec2(p.x, p.y) * res, time, boom) * smoothstep(wl + 0.08, wl + 0.3, p.y);
+      col += starField(p * res) * smoothstep(wl + 0.08, wl + 0.3, p.y);
       float b = bank(p.x);
       if (p.y < b) {
         col = vec3(0.007, 0.008, 0.013) + ambient * 0.012;
@@ -191,10 +191,10 @@
 
   class Fountain {
     constructor(canvas) {
-      this.starShift = VizGL.starShift();
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
+      this.stars = VizGL.starLayer(gl);
       this.show = VizGL.program(gl, VizGL.SCREEN_VS, SHOW_FS);
       this.lines = VizGL.lines(gl, MAX_DROPS * 6 + 600);
       this.mistProg = VizGL.program(gl, MIST_VS, MIST_FS);
@@ -548,7 +548,10 @@
       gl.bindTexture(gl.TEXTURE_2D, this.foamTex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, FOAM_BINS, 1, 0, gl.RED, gl.FLOAT, foam);
 
-      // The sky, the water, the pool, the ledge.
+      // The sky (its stars from where they fade in over the bank, a little
+      // past the edges for the rippled water's mirror), the water, the pool, the ledge.
+      const bank = Math.floor((1 - WATER + 0.07) * this.h);
+      this.stars.draw(-24, bank, this.w + 48, this.h - bank + 24, this.age, a.kick);
       VizGL.into(gl, null);
       gl.useProgram(this.show.p);
       const u = this.show.u;
@@ -561,8 +564,7 @@
       gl.uniform1f(u.wl, 1 - WATER);
       gl.uniform1f(u.ledge, LEDGE);
       gl.uniform1f(u.time, this.age);
-      gl.uniform1f(u.boom, a.kick);
-      gl.uniform2f(u.starShift, ...this.starShift);
+      this.stars.use(u, 5);
       gl.uniform3f(u.ambient, ...this.ambient);
       gl.uniform1i(u.n, jets.length);
       const jx = new Float32Array(MAX_JETS);
