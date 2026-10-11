@@ -1036,6 +1036,7 @@ const Visualizer = {
    *   { type: 'check', key, label, amount?, group? }
    *       a box; amount: { key, min, max, step } a slider under it, greyed
    *       while it is off; group: items beside it, greyed while it is off
+   *       (both: the box and its slider, the group beside them)
    *   { type: 'slider', key, label, min, max, step, unit? }
    *   { type: 'choice', key, label, choices: [[value, label], ...] }  (label '': the pills alone)
    *       color: { value, key, presets }: after the pills a swatch, choosing
@@ -1101,18 +1102,20 @@ const Visualizer = {
         refreshers.push(() => {
           box.disabled = !enabled();
         });
+        let head = label;
         if (item.amount) {
           const s = slider(item.amount);
           refreshers.push(() => {
             s.input.disabled = !on();
             s.el.classList.toggle('viz-cfg__amount--off', !Store.settings[item.key]);
           });
-          return h('div.viz-cfg__opt', label, s.el);
+          head = h('div.viz-cfg__opt', label, s.el);
+          if (!item.group) return head;
         }
         if (item.group) {
           const group = h('div.viz-cfg__ride', item.group.map((g) => build(g, on)));
           refreshers.push(() => group.classList.toggle('viz-cfg__ride--off', !on()));
-          return h('div.viz-cfg__item.viz-cfg__bumps', label, group);
+          return h('div.viz-cfg__item.viz-cfg__bumps', head, group);
         }
         const el = h('div.viz-cfg__item', label);
         refreshers.push(() => el.classList.toggle('viz-cfg__opt--off', !enabled()));

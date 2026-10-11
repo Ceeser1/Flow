@@ -190,8 +190,8 @@ const VIZ_OPTIONS = {
   arColors: ['choice', 'arcade', ['arcade', 'green', 'amber']],
   arCrt: ['bool', true],
   // Disco: the colours, the beams, the strobes (how much they light the
-  // room, percent), how fast the ball turns, whether the camera swivels and
-  // how fast (percent), the render scale (percent of the screen's pixels across).
+  // room, percent), how fast the ball turns, whether the camera swivels, how
+  // fast and how far (percent), the render scale (percent of the screen's pixels across).
   dcColors: ['choice', 'disco', ['disco', 'warm', 'cool']],
   dcBeams: ['bool', true],
   dcStrobes: ['bool', true],
@@ -199,6 +199,7 @@ const VIZ_OPTIONS = {
   dcSpin: ['range', 100, 0, 300, 5],
   dcCamera: ['bool', true],
   dcSwivel: ['range', 100, 0, 500, 5],
+  dcSwingRange: ['range', 100, 50, 250, 5],
   dcScale: ['choice', '100', ['100', '75', '50']],
   // Stained Glass: the window (a rose, a pointed arch, the whole screen),
   // the glass's colours (the cover's, or warm, cold or rainbow glass), how

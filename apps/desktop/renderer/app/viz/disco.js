@@ -16,8 +16,8 @@
 // under an EXIT sign and a velvet bench with a plant on the right.
 //
 // Its cogwheel: the colours, the beams, the strobes (how much they light the
-// room), how fast the ball turns, whether the camera swivels and how fast
-// (still, the room's tracing is kept and done once), the render scale.
+// room), how fast the ball turns, whether the camera swivels, how fast and
+// how far (still, the room's tracing is kept and done once), the render scale.
 //
 // WebGL (viz/gl.js): one pass over the screen tracing each pixel's ray into
 // the room (planes, boxes, some of them turned, the ball a sphere of facets,
@@ -930,7 +930,7 @@
 
     void main() {
       vec2 sc = (uv - 0.5) * vec2(res.x / res.y, 1.0);
-      vec3 ro = vec3(sin(swivel) * 0.5, 2.5, -6.6);
+      vec3 ro = vec3(swivel, 2.5, -6.6);
       vec3 ta = vec3(0.0, 2.9, 5.0);
       vec3 fw = normalize(ta - ro);
       vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), fw));
@@ -1162,6 +1162,7 @@
       this.age = 0;
       this.spin = 0;
       this.swivel = 0;
+      this.reach = 1;
       this.beatN = 0;
       this.beamT = 0;
       this.beatAt = 0;
@@ -1179,7 +1180,9 @@
       this.h = 1;
 
       // The speakers: two stacks on the stage, turned in a little, and one on
-      // the front of each pillar, high up, turned in and down towards the floor.
+      // the front of each pillar, high up, turned in and down towards the floor
+      // (the front pillars' a little further out, their back corner clear of
+      // the pillar, seen from the side as the camera swings wide).
       this.spkPos = new Float32Array(SPEAKERS * 3);
       this.spkRot = new Float32Array(SPEAKERS * 9);
       this.spkHalf = new Float32Array(SPEAKERS * 3);
@@ -1195,8 +1198,8 @@
       let i = 2;
       for (const s of [-1, 1]) {
         for (const z of PIL_Z) {
-          const pos = [s * (PIL_X - 0.15), 4.9, z - 0.45 - 0.5];
-          put(i, pos, [-s * 0.6, -0.42, -1], [0.42, 0.65, 0.35]);
+          const pos = [s * (PIL_X - 0.15), 4.9, z - 0.45 - (z === PIL_Z[0] ? 0.67 : 0.5)];
+          put(i, pos, [-s * 0.6, -0.42, -1], [0.42, 0.65, 0.315]);
           i += 1;
         }
       }
@@ -1378,9 +1381,12 @@
         this.levels[k] += (v - this.levels[k]) * Math.min(1, dt * 14);
       }
       this.spin += dt * 0.35 * (set('dcSpin') / 100) * (a.playing ? a.pace : 0.3);
-      // The camera's slow swing from side to side.
+      // The camera's slow swing from side to side, Swing range metres each
+      // way at 100 %; as fast along it however far it goes (a wider swing
+      // takes longer). A changed range eases in, the camera not jumping.
       const moving = set('dcCamera');
-      if (moving) this.swivel += dt * 0.07 * (set('dcSwivel') / 100);
+      this.reach += (set('dcSwingRange') / 100 - this.reach) * Math.min(1, dt * 1.5);
+      if (moving) this.swivel += dt * 0.0875 * (set('dcSwivel') / 100) / this.reach;
       else this.swivel = 0;
       if (renderScale() !== this.scale) this.targets();
       const bar = Math.floor(this.beatN / 4);
@@ -1467,7 +1473,7 @@
       gl.uniform2f(u.res, this.w, this.h);
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.spin, this.spin);
-      gl.uniform1f(u.swivel, this.swivel);
+      gl.uniform1f(u.swivel, Math.sin(this.swivel) * this.reach);
       gl.uniform1f(u.beatPh, this.ph);
       gl.uniform1f(u.beatN, this.beatN);
       gl.uniform1f(u.beatT, beatT);
@@ -1554,7 +1560,13 @@
         group: [{ type: 'slider', key: 'dcStrobeRoom', label: 'Room lightup', min: 0, max: 100, step: 5 }],
       },
       { type: 'slider', key: 'dcSpin', label: 'Ball turning', min: 0, max: 300, step: 5 },
-      { type: 'check', key: 'dcCamera', label: 'Camera moves', amount: { key: 'dcSwivel', min: 0, max: 500, step: 5 } },
+      {
+        type: 'check',
+        key: 'dcCamera',
+        label: 'Camera moves',
+        amount: { key: 'dcSwivel', min: 0, max: 500, step: 5 },
+        group: [{ type: 'slider', key: 'dcSwingRange', label: 'Swing range', min: 50, max: 250, step: 5 }],
+      },
       { type: 'choice', key: 'dcScale', label: 'Render scale', choices: [['100', '100%'], ['75', '75%'], ['50', '50%']] },
     ],
   });
