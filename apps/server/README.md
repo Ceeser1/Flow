@@ -162,7 +162,8 @@ to download songs itself (below).
 
 The server can download songs itself: connected to it, Flow's Add Songs page
 has **Download (Server)** next to its own Download. The server reads the
-link (a song, a playlist, a SoundCloud set, a Spotify list by way of YouTube),
+link (a song, a playlist, a SoundCloud set, a Spotify, Deezer or Amazon Music
+list by way of YouTube),
 downloads the songs one after another in the background, at low priority so
 streaming does not suffer, and keeps them aside until an app has trimmed,
 named and finished them. A phone or a browser then needs no downloader of its

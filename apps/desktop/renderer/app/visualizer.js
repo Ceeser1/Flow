@@ -18,13 +18,8 @@
 //             had is Scope's, viz/scope.js.)
 //   Waveform  like the equalizer behind the pages (equalizer.js), mirrored
 //             about the middle of the screen and glowing. Its cogwheel: the
-//             colours (the equalizer's schemes), and distinct bars with a
-//             thin gap between or one smooth wave.
-//   Synthwave the wireframe landscape (landscape.js) flown over at full
-//             screen, under a purple sky and a sun, from a ship's nose. A
-//             cogwheel at the top left opens, to the right, onto its own
-//             settings: the wireframe's colour, the floor's bumps, and the
-//             camera bobbing, the camera tilting and the car tilting on them.
+//             colours (the equalizer's schemes), distinct bars with a
+//             thin gap between or one smooth wave, and the shine round it.
 //   Random    each category (VIZ_CATEGORIES) has one ('random-<category>'),
 //             one of that category's, a different one than last time if it
 //             can; with vizRandomEach (Settings) another one with each song.
@@ -43,16 +38,6 @@ const VIZ_RANDOM_GLYPH = '<img class="viz-tile__icon" src="../images/shuffle.png
 const VISUALIZERS = [
   { id: 'bars', name: 'Bars', ready: true, desc: 'Spectrum bars with falling peaks, in the manner of Winamp', glyph: Icons.speaker, image: '../images/viz-bars.jpg' },
   { id: 'waveform', name: 'Waveform', ready: true, desc: 'The equalizer, glowing out from the middle of the screen', glyph: Icons.pulse, image: '../images/viz-waveform.jpg' },
-  {
-    id: 'synthwave',
-    name: 'Synthwave',
-    ready: true,
-    desc: 'A flight through neon mountains made of the music, rushing on with every beat and glowing on the kicks',
-    image: '../images/viz-synthwave.jpg',
-    glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
-      + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="4"/><path d="M2 20l6-8 3 4 2-2 4 6"/>'
-      + '<path d="M15 16l2-3 5 7"/></svg>',
-  },
 ];
 
 // The categories in Settings, each's visualizers in their order there (and
@@ -62,7 +47,7 @@ const VIZ_CATEGORIES = [
     id: 'equalizers',
     name: 'Equalizers',
     desc: 'The sound itself: bars, waves, rings and dots',
-    ids: ['bars', 'waveform', 'scope', 'spectrogram', 'ridges', 'skyline', 'halo', 'orb', 'reactor', 'hifi', 'vinyl', 'strings', 'radar'],
+    ids: ['bars', 'waveform', 'scope', 'spectrogram', 'ridges', 'skyline', 'halo', 'orb', 'reactor', 'hifi', 'vinyl', 'strings', 'radar', 'seismo'],
   },
   {
     id: 'worlds',
@@ -131,40 +116,16 @@ const Visualizer = {
   WAVE_FLOOR_DB: -58,
   WAVE_CEIL_DB: -8,
   WAVE_REACH: 0.32,    // a full bar reaches this share of the screen, each way
-  WAVE_SHINE: 1.8,     // the shine reaches this much further
-  WAVE_SHINE_BLUR: 40,
+  WAVE_SHINE: 1.8,     // the shine reaches this much further (at 50% spread;
+  WAVE_SHINE_BLUR: 40, // nothing further and less blurred at 0%, twice at 100%)
   WAVE_SHINE_ALPHA: 0.6,
   WAVE_CORE_BLUR: 3,
   WAVE_ATTACK_MS: 30,
   WAVE_RELEASE_MS: 360,
   RAINBOW_MS: 15000,
 
-  // Synthwave. Distances in grid cells.
-  SYN_SPEED: 4.7,      // cells per second while a song plays (times Speed in its cogwheel)
-  SYN_IDLE: 0.25,      // and this much of it while paused
-  SYN_KICK_SPEED: 1.4, // a full kick adds this much of SYN_SPEED (no clear beat)
-  SYN_BEAT_SPEED: 7.4, // with a clear beat: cells a second at 120 BPM (what the kicks averaged)
-  SYN_SURGE: 0.2,      // and how much faster just after each beat, slower between
-  SYN_ROWS: 52,        // how far ahead it is drawn
-  SYN_COLS: 64,        // each side of the middle
-  SYN_FLOOR: 3.5,      // half the valley floor's width
-  SYN_CAM_H: 1.1,      // the eye above the floor
-  SYN_HORIZON: 0.5,    // of the screen's height
-  SYN_FOCAL: 0.5,      // the lens: a cell one ahead is this share of the width
-  SYN_BUMPS: 0.14,     // the floor's bumps at the most intense music, in cells
-  SYN_BUMPS_KICK: 0.8, // a full kick lifts them by this much more, a calm beat less
-  SYN_BEAT_MS: 3000,   // the kicks the bumps heave on, against the strongest of about this long
-  SYN_BEAT_FLOOR: 0.3, // or at least this, so faint kicks in a calm part stay faint
-  SYN_RIDE_MS: 70,     // how fast the car follows the bumps under it
-  SYN_LIFT: 0.536,     // how much of a bump lifts the eye
-  SYN_PITCH: 0.235,    // how much the nose tips up as the ground rises ahead
-  SYN_ROLL: 0.35,      // radians the car leans per cell one side stands higher
-  SYN_ROLL_MS: 110,    // and how fast, a little slower than the bumps, a wobble
-  SYN_ROLL_MAX: 0.04,  // and at most (radians), what the margins below cover
-  SYN_ROLL_EYE: 0.75,  // how much of the lean the world tilts (the eye following it)
-  SYN_ROLL_NOSE: 1.125, // and the nose the other way, more, so the car is seen to rock
-  // The wireframe colours offered under the picker; the first is the default.
-  SYN_PRESETS: ['#9f38fa', '#00e5ff', '#ff2bd6', '#39ff14', '#ffb000', '#ff3030', '#ffffff'],
+  // An own colour's presets (the swatch after a visualizer's colours): the first the default.
+  OWN_PRESETS: ['#3484f4', '#ebebeb', '#ed1d1d', '#25d041', '#f9dc1f', '#aa55e7'],
 
   AWAKE_MS: 3000,      // the X stays this long after the mouse stops
 
@@ -230,7 +191,6 @@ const Visualizer = {
     if (!Equalizer.active) {
       this.stage.appendChild(h('p.viz-full__note', 'The visualizer needs Web Audio, which could not be started on this computer.'));
     }
-    if (kind === 'synthwave') this.stage.appendChild(this._synPanel());
     if (kind === 'bars') this.stage.appendChild(this._barsPanel());
     if (kind === 'waveform') this.stage.appendChild(this._wavePanel());
     const def = this.scenes[kind];
@@ -251,11 +211,11 @@ const Visualizer = {
     }
     if (kind === 'bars') this._startBars();
     else if (kind === 'waveform') this._startWave();
-    else if (kind === 'synthwave') this._startSynthwave();
     this._resize = new ResizeObserver(() => this._size());
     this._resize.observe(this.canvas);
     this._size();
     this.last = performance.now();
+    this._due = 0;
     this.raf = requestAnimationFrame((t) => this._frame(t));
     // Moving on with each song: the next one ready by then.
     if (this._random && Store.settings.vizRandomEach) this.warm(this._random);
@@ -283,7 +243,6 @@ const Visualizer = {
     this.canvas = null;
     this.scratch = null;
     this.glow = null;
-    this.terrain = null;
   },
 
   /** All of them in Settings' order: the categories', then any in none of them. */
@@ -397,6 +356,35 @@ const Visualizer = {
     return this._lastRandom;
   },
 
+  /**
+   * The screen's refresh rate (Hz), measured over a few dozen of its frames
+   * and rounded to a usual one when close: cb(hz) once known (at once after
+   * the first time).
+   */
+  refreshRate(cb) {
+    if (this._hz) {
+      cb(this._hz);
+      return;
+    }
+    const gaps = [];
+    let last = 0;
+    const tick = (t) => {
+      if (last) gaps.push(t - last);
+      last = t;
+      if (gaps.length < 40) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      gaps.sort((a, b) => a - b);
+      const hz = 1000 / gaps[gaps.length >> 1];
+      const usual = [24, 30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 170, 175, 180, 200, 240, 280, 300, 360, 480, 500];
+      const near = usual.find((u) => Math.abs(u - hz) / u < 0.03);
+      this._hz = near || Math.round(hz);
+      cb(this._hz);
+    };
+    requestAnimationFrame(tick);
+  },
+
   /** The player bar's button shows on while it is open, like Shuffle and Repeat. */
   _drawButton(on) {
     const btn = $('btnVisualizer');
@@ -447,14 +435,25 @@ const Visualizer = {
 
   _frame(now) {
     if (!this.canvas) return;
+    // Limit framerate (vizFps, when on and not V-Sync): a frame only when one
+    // is due, the screen's refreshes between left alone (2 ms early is on time).
+    const fps = Store.settings.vizFpsOn && !Store.settings.vizVsync ? Store.settings.vizFps : 0;
+    if (fps > 0) {
+      const step = 1000 / fps;
+      if (now + 2 < this._due) {
+        this.raf = requestAnimationFrame((t) => this._frame(t));
+        return;
+      }
+      // Fallen behind (a stall, or just started): from now on.
+      this._due = now - this._due > step ? now + step : this._due + step;
+    }
     const dt = Math.min(0.1, Math.max(0.001, (now - this.last) / 1000));
     this.last = now;
     Equalizer.analyser.getFloatTimeDomainData(this.samples);
     VizAudio.update(this.samples, dt, now);
     if (this.scene) {
       this.scene.frame(VizAudio, dt, now);
-    } else if (this.kind === 'synthwave') this._drawSynthwave(dt, now);
-    else if (this.kind === 'waveform') this._drawWave(dt);
+    } else if (this.kind === 'waveform') this._drawWave(dt);
     else this._drawBars(dt, now);
     this.raf = requestAnimationFrame((t) => this._frame(t));
   },
@@ -481,7 +480,13 @@ const Visualizer = {
   _barsPanel() {
     return this._cfgPanel('Bars settings', [
       { type: 'slider', key: 'brCount', label: 'Bars', min: 16, max: 128, step: 4, unit: '' },
-      { type: 'choice', key: 'brColors', label: 'Colors', choices: [['fire', 'Fire'], ['ice', 'Ice'], ['lime', 'Lime'], ['rainbow', 'Rainbow']] },
+      {
+        type: 'choice',
+        key: 'brColors',
+        label: 'Colors',
+        choices: [['fire', 'Fire'], ['ice', 'Ice'], ['lime', 'Lime'], ['rainbow', 'Rainbow']],
+        color: { value: 'custom', key: 'brColor', presets: this.OWN_PRESETS },
+      },
       { type: 'choice', key: 'brStyle', label: 'Style', choices: [['solid', 'Solid'], ['led', 'LED']] },
       { type: 'check', key: 'brPeaks', label: 'Peaks' },
       { type: 'check', key: 'brMirror', label: 'Mirror floor' },
@@ -503,6 +508,12 @@ const Visualizer = {
   /** The bars' colours from the floor (0) to the top (1), as a gradient's stops. */
   _barStops(scheme) {
     switch (scheme) {
+      // Its own colour: dark at the floor, lighter at the top.
+      case 'custom': {
+        const c = VizGL.rgb(this.setting('brColor'));
+        const css = (k, white) => `rgb(${c.map((v) => Math.round(255 * (v * k + white))).join(', ')})`;
+        return [[0, css(0.25, 0)], [0.6, css(1, 0)], [1, css(0.45, 0.55)]];
+      }
       case 'fire': return [[0, '#3a0000'], [0.35, '#c0160b'], [0.65, '#ff7a00'], [0.85, '#ffd23a'], [1, '#fff6c8']];
       case 'ice': return [[0, '#06123a'], [0.4, '#1650d8'], [0.7, '#2fb6ff'], [0.9, '#a8f0ff'], [1, '#ffffff']];
       // Lime: Winamp's.
@@ -616,10 +627,11 @@ const Visualizer = {
         type: 'choice',
         key: 'wfColors',
         label: 'Color',
-        choices: [['rainbow', 'Rainbow'], ['spectrum', 'Spectrum'], ['greyscale', 'Greyscale'], ['white', 'White'], ['red', 'Red'],
-          ['green', 'Green'], ['yellow', 'Yellow'], ['blue', 'Blue'], ['purple', 'Purple']],
+        choices: [['rainbow', 'Rainbow'], ['spectrum', 'Spectrum'], ['greyscale', 'Greyscale']],
+        color: { value: 'custom', key: 'wfColor', presets: this.OWN_PRESETS },
       },
       { type: 'choice', key: 'wfStyle', label: 'Style', choices: [['bars', 'Bars'], ['wave', 'Wave']] },
+      { type: 'check', key: 'wfShine', label: 'Shine', amount: { key: 'wfShineSpread', min: 0, max: 100, step: 5 } },
     ]);
   },
 
@@ -675,7 +687,7 @@ const Visualizer = {
     sc.globalCompositeOperation = 'source-over';
     sc.clearRect(0, 0, w, hgt);
     const scheme = this.setting('wfColors');
-    const solid = Palette.solid[scheme] || null;
+    const solid = scheme === 'custom' ? this.setting('wfColor') : Palette.solid[scheme] || null;
     const colour = (i, v) => solid || (scheme === 'rainbow' ? Palette.rainbow(i / n - this.shift) : Palette.by(scheme, v));
     if (wave) {
       // Coloured along it: a stop every so often, by its height there.
@@ -724,14 +736,18 @@ const Visualizer = {
     sc.fillRect(0, 0, w, hgt);
     sc.globalCompositeOperation = 'source-over';
 
-    // 3. The shine, stretched out from the middle both ways.
-    const gl = this.glow.getContext('2d');
-    gl.clearRect(0, 0, w, hgt);
-    gl.filter = `blur(${this.WAVE_SHINE_BLUR}px)`;
-    gl.drawImage(this.scratch, 0, cy - cy * this.WAVE_SHINE, w, hgt * this.WAVE_SHINE);
-    gl.filter = 'none';
-    out.globalAlpha = this.WAVE_SHINE_ALPHA;
-    out.drawImage(this.glow, 0, 0);
+    // 3. The shine, stretched out from the middle both ways (unless turned off).
+    if (this.setting('wfShine')) {
+      const spread = this.setting('wfShineSpread') / 50;
+      const stretch = 1 + (this.WAVE_SHINE - 1) * spread;
+      const gl = this.glow.getContext('2d');
+      gl.clearRect(0, 0, w, hgt);
+      gl.filter = `blur(${this.WAVE_SHINE_BLUR * (0.4 + 0.6 * spread)}px)`;
+      gl.drawImage(this.scratch, 0, cy - cy * stretch, w, hgt * stretch);
+      gl.filter = 'none';
+      out.globalAlpha = this.WAVE_SHINE_ALPHA;
+      out.drawImage(this.glow, 0, 0);
+    }
 
     // 4. The bars (or the wave), only softened.
     out.globalAlpha = 1;
@@ -763,200 +779,6 @@ const Visualizer = {
     return this.waveShown;
   },
 
-  // ---- Synthwave ----
-  //
-  // The wireframe landscape (landscape.js) at full screen, its mountains
-  // filled dark, under a purple sky with stars and a sun sitting in the
-  // valley's gap, seen from a ship whose nose shows at the bottom. It flies
-  // in time with the beat (VizAudio's tempo), or pushed on by the kicks
-  // while there is no clear beat; the kicks make the grid and the sun glow.
-
-  _startSynthwave() {
-    this.terrain = new Terrain({
-      rows: this.SYN_ROWS, cols: this.SYN_COLS, floor: this.SYN_FLOOR, camH: this.SYN_CAM_H, seed: Math.floor(Math.random() * 1e9),
-    });
-    this.synKick = new Kick();
-    this.synIntensity = new Intensity();
-    this.synBeatPeak = 0;
-    this.synSpeed = this.SYN_SPEED;
-    this.synLift = 0;
-    this.synPitch = 0;
-    this.synRoll = 0;
-    this.synEye = this._synEyeOf(Store.settings);
-    this.synNose = this._synNoseOf(Store.settings);
-    // Stars: where they are (shares of the screen), how big, and their twinkle.
-    this.stars = [];
-    for (let i = 0; i < 160; i += 1) {
-      this.stars.push({ x: Math.random(), y: Math.random() ** 1.6, r: 0.5 + Math.random() * 1.3, p: Math.random() * 6.3, s: 0.5 + Math.random() * 2 });
-    }
-  },
-
-  _drawSynthwave(dt, now) {
-    const c = this.canvas;
-    const ctx = c.getContext('2d');
-    const w = c.width;
-    const hgt = c.height;
-    const playing = Player.isPlaying;
-    const bass = playing ? Equalizer.bass || 0 : 0;
-    const kick = this.synKick.follow(bass, dt * 1000);
-    // With a clear beat it flies as fast as the kicks pushed it on average at
-    // 120 BPM, far faster for faster songs (VizAudio.rush), swelling gently with each beat
-    // (VizAudio.surge); without one the kicks push it on, as before.
-    const a = VizAudio;
-    const byKick = this.SYN_SPEED * (1 + this.SYN_KICK_SPEED * kick + 0.4 * bass);
-    const byBeat = this.SYN_BEAT_SPEED * a.surge(this.SYN_SURGE);
-    const target = (playing ? byKick + (byBeat - byKick) * a.lock : this.SYN_SPEED * this.SYN_IDLE) * (this.setting('synSpeed') / 100);
-    // Eased: slowly for the kicks' push, enough less for the swell to show.
-    const ease = 0.6 + (0.15 - 0.6) * a.lock;
-    this.synSpeed += (target - this.synSpeed) * (1 - Math.exp(-dt / ease));
-    this.terrain.advance(this.synSpeed * dt, playing ? Equalizer.levels : null);
-    // The floor in front of the car is as rough as the music is intense right
-    // now, and heaves on the kicks: measured against the song's own recent
-    // kicks, since a long electronic kick over a held bass rises much less
-    // above it than a rock drum does, and its drops stayed nearly flat.
-    const intensity = this.synIntensity.follow(playing ? Equalizer.levels : null, dt * 1000);
-    this.synBeatPeak = Math.max(kick, this.synBeatPeak * Math.exp(-dt * 1000 / this.SYN_BEAT_MS));
-    const beat = kick / Math.max(this.SYN_BEAT_FLOOR, this.synBeatPeak);
-    const set = Store.settings;
-    this.terrain.bumps = set.synBumps
-      ? this.SYN_BUMPS * intensity * (1 - this.SYN_BUMPS_KICK / 2 + this.SYN_BUMPS_KICK * beat)
-      : 0;
-
-    // The car rides the floor's bumps: between its back (under the eye) and
-    // its front the ground lifts it and tips its nose, and the view shakes
-    // with it. The horizon moving is the nose tipping: up as the ground rises
-    // ahead, so the horizon drops. Camera bobbing off (or no bumps), it
-    // settles back level.
-    const bob = set.synBumps && set.synBobbing ? set.synBobbingAmount / 100 : 0;
-    const back = bob ? this.terrain.groundAt(0.8) * bob : 0;
-    const front = bob ? this.terrain.groundAt(1.8) * bob : 0;
-    const ride = 1 - Math.exp(-dt * 1000 / this.SYN_RIDE_MS);
-    this.synLift += (this.SYN_LIFT * (back + front) / 2 - this.synLift) * ride;
-    this.synPitch += ((front - back) - this.synPitch) * ride;
-    const horizon = this.SYN_HORIZON + (this.synPitch * this.SYN_PITCH * w * this.SYN_FOCAL) / hgt;
-    const hy = hgt * horizon;
-    // And it leans to the side whose wheels sit lower. The eye follows part
-    // of the lean (SYN_ROLL_EYE), so the world tilts by that much, and the
-    // nose the other way (SYN_ROLL_NOSE): the car is seen rocking under you.
-    // Either can be switched off or set stronger or weaker (Camera tilt, Car
-    // tilt, 0-200%), each eased there.
-    const left = this.terrain.groundAt(1.3, -2, -1);
-    const right = this.terrain.groundAt(1.3, 1, 2);
-    const lean = Math.max(-this.SYN_ROLL_MAX, Math.min(this.SYN_ROLL_MAX, (right - left) * this.SYN_ROLL));
-    const roll = 1 - Math.exp(-dt * 1000 / this.SYN_ROLL_MS);
-    this.synRoll += (lean - this.synRoll) * roll;
-    this.synEye += (this._synEyeOf(set) - this.synEye) * roll;
-    this.synNose += (this._synNoseOf(set) - this.synNose) * roll;
-
-    // Under it all the floor's colour, for the corners the tilt uncovers.
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = 'hsl(236, 75%, 6%)';
-    ctx.fillRect(0, 0, w, hgt);
-    ctx.save();
-    ctx.translate(w / 2, hgt);
-    ctx.rotate(this.synRoll * this.synEye);
-    ctx.translate(-w / 2, -hgt);
-    const pad = w * 0.1; // reaching past the edges, tilted
-
-    // The sky, deep purple to magenta at the horizon.
-    const sky = ctx.createLinearGradient(0, 0, 0, hy);
-    sky.addColorStop(0, '#12002a');
-    sky.addColorStop(0.5, '#4a0a5e');
-    sky.addColorStop(1, '#b0157a');
-    ctx.fillStyle = sky;
-    ctx.fillRect(-pad, -pad, w + 2 * pad, hgt);
-
-    ctx.fillStyle = '#fff';
-    for (const s of this.stars) {
-      const y = s.y * hy * 0.85;
-      ctx.globalAlpha = (0.55 + 0.45 * Math.sin(now / 1000 * s.s + s.p)) * (1 - y / hy);
-      ctx.beginPath();
-      ctx.arc(s.x * w, y, s.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    // The sun, pink at the top to orange at the bottom, sitting on the
-    // horizon; its haze swells on the kicks.
-    const r = hgt * 0.22;
-    const sy = hy - r * 0.62;
-    const haze = ctx.createRadialGradient(w / 2, sy, r * 0.8, w / 2, sy, r * (2.2 + 0.6 * kick));
-    haze.addColorStop(0, `rgba(255, 60, 140, ${0.45 + 0.35 * kick})`);
-    haze.addColorStop(1, 'rgba(255, 60, 140, 0)');
-    ctx.fillStyle = haze;
-    ctx.fillRect(-pad, -pad, w + 2 * pad, hy + pad);
-    const sun = ctx.createLinearGradient(0, sy - r, 0, sy + r);
-    sun.addColorStop(0, '#ff1f6e');
-    sun.addColorStop(0.55, '#ff3d8b');
-    sun.addColorStop(1, '#ffb347');
-    ctx.fillStyle = sun;
-    ctx.beginPath();
-    ctx.arc(w / 2, sy, r, 0, Math.PI * 2);
-    ctx.fill();
-
-    // The terrain a little wider than the screen, the lens the same, so
-    // tilted it still reaches the sides: the sine of the most it tilts (the
-    // camera at 200%) times the height. Fixed, so its buffer keeps its size.
-    const side = Math.ceil(hgt * (Math.sin(this.SYN_ROLL_MAX * this.SYN_ROLL_EYE * 2) + 0.01));
-    ctx.translate(-side, 0);
-    this.terrain.render(ctx, w + 2 * side, hgt, {
-      horizon,
-      lift: this.synLift,
-      fill: (d) => `hsl(236, 75%, ${(6 + 10 * d).toFixed(1)}%)`,
-      glow: 0.8,
-      kick,
-      focal: (this.SYN_FOCAL * w) / (w + 2 * side),
-      line: this._synLine(this.setting('synColor')),
-    });
-    ctx.translate(side, 0);
-
-    // Where the valley meets the sky, a band of light.
-    const band = ctx.createLinearGradient(0, hy - hgt * 0.04, 0, hy + hgt * 0.03);
-    band.addColorStop(0, 'rgba(255, 90, 170, 0)');
-    band.addColorStop(0.6, `rgba(255, 110, 190, ${0.25 + 0.25 * kick})`);
-    band.addColorStop(1, 'rgba(255, 90, 170, 0)');
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = band;
-    ctx.fillRect(-pad, hy - hgt * 0.04, w + 2 * pad, hgt * 0.07);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.restore();
-
-    ctx.save();
-    ctx.translate(w / 2, hgt);
-    ctx.rotate(-this.synRoll * this.synNose);
-    ctx.translate(-w / 2, -hgt);
-    this._drawShip(ctx, w, hgt);
-    ctx.restore();
-  },
-
-  /** How much of the lean the world tilts, by Camera tilt and its amount. */
-  _synEyeOf(set) {
-    return set.synCameraTilt ? (this.SYN_ROLL_EYE * set.synCameraTiltAmount) / 100 : 0;
-  },
-
-  /** And the nose, by Car tilt and its amount. */
-  _synNoseOf(set) {
-    return set.synCarTilt ? (this.SYN_ROLL_NOSE * set.synCarTiltAmount) / 100 : 0;
-  },
-
-  /**
-   * '#rrggbb' as { h, s, l } for the terrain's lines, the last one kept. The
-   * default violet turns blue into the distance; a chosen colour stays itself.
-   */
-  _synLine(hex) {
-    if (this._synLineFor === hex) return this._synLineHsl;
-    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const l = (max + min) / 2;
-    const c = max - min;
-    const s = c ? c / (1 - Math.abs(2 * l - 1)) : 0;
-    this._synLineFor = hex;
-    this._synLineHsl = { h: hueOf(r, g, b), s: s * 100, l: l * 100, drift: hex === this.SYN_PRESETS[0] ? 52 : 0 };
-    return this._synLineHsl;
-  },
-
   /**
    * A visualizer's own settings value: while a colour is being dragged in
    * the picker, that colour (shown at once, saved on letting go).
@@ -975,8 +797,11 @@ const Visualizer = {
    *   { type: 'check', key, label, amount?, group? }
    *       a box; amount: { key, min, max, step } a slider under it, greyed
    *       while it is off; group: items beside it, greyed while it is off
+   *       (both: the box and its slider, the group beside them)
    *   { type: 'slider', key, label, min, max, step, unit? }
    *   { type: 'choice', key, label, choices: [[value, label], ...] }  (label '': the pills alone)
+   *       color: { value, key, presets }: after the pills a swatch, choosing
+   *       `value` (lit while it is chosen) and opening a picker for `key`
    * Any of them with when: (settings) => bool, greyed out while it is false.
    */
   _cfgPanel(title, items) {
@@ -995,11 +820,12 @@ const Visualizer = {
     cog.setAttribute('aria-expanded', 'false');
 
     // A slider and its value; dragging shows at once, letting go saves.
-    const slider = ({ key, min = 0, max = 200, step = 5, unit = '%' }, cls = '') => {
+    // format (number => text) shows the value otherwise than as itself and its unit.
+    const slider = ({ key, min = 0, max = 200, step = 5, unit = '%', format }, cls = '') => {
       const input = h('input.volume-slider.viz-cfg__slider' + cls, { type: 'range', min, max, step, value: Store.settings[key] });
       const value = h('span.viz-cfg__value');
       const draw = () => {
-        value.textContent = `${input.value}${unit}`;
+        value.textContent = format ? format(Number(input.value)) : `${input.value}${unit}`;
         input.style.setProperty('--fill', `${((Number(input.value) - min) / (max - min)) * 100}%`);
       };
       input.addEventListener('input', () => {
@@ -1037,18 +863,20 @@ const Visualizer = {
         refreshers.push(() => {
           box.disabled = !enabled();
         });
+        let head = label;
         if (item.amount) {
           const s = slider(item.amount);
           refreshers.push(() => {
             s.input.disabled = !on();
             s.el.classList.toggle('viz-cfg__amount--off', !Store.settings[item.key]);
           });
-          return h('div.viz-cfg__opt', label, s.el);
+          head = h('div.viz-cfg__opt', label, s.el);
+          if (!item.group) return head;
         }
         if (item.group) {
           const group = h('div.viz-cfg__ride', item.group.map((g) => build(g, on)));
           refreshers.push(() => group.classList.toggle('viz-cfg__ride--off', !on()));
-          return h('div.viz-cfg__item.viz-cfg__bumps', label, group);
+          return h('div.viz-cfg__item.viz-cfg__bumps', head, group);
         }
         const el = h('div.viz-cfg__item', label);
         refreshers.push(() => el.classList.toggle('viz-cfg__opt--off', !enabled()));
@@ -1071,9 +899,28 @@ const Visualizer = {
             dataset: { value },
             onclick: () => {
               Store.saveSettings({ [item.key]: value });
+              pickers.forEach((p) => p.close());
               refresh();
             },
           }, text));
+        }
+        if (item.color) {
+          // Its own colour: the swatch picks it (and opens the picker).
+          const { value, key, presets } = item.color;
+          const swatch = h('button.viz-cfg__pill.viz-cfg__pill--swatch', { type: 'button', title: 'Choose a color', 'aria-label': 'Own color', dataset: { value } });
+          const paint = (hex) => swatch.style.setProperty('--swatch', hex);
+          paint(Store.settings[key]);
+          const picker = this._picker(panel, swatch, paint, key, presets);
+          pickers.push(picker);
+          swatch.addEventListener('click', () => {
+            if (Store.settings[item.key] !== value) {
+              Store.saveSettings({ [item.key]: value });
+              refresh();
+            }
+            picker.toggle();
+          });
+          refreshers.push(() => paint(this.setting(key)));
+          pills.appendChild(swatch);
         }
         refreshers.push(() => {
           for (const b of pills.children) {
@@ -1096,25 +943,6 @@ const Visualizer = {
     };
     document.addEventListener('pointerdown', this._cfgOutside, true);
     return panel;
-  },
-
-  /** Synthwave's: the wireframe's colour, how fast it flies, and the bumps the car rides. */
-  _synPanel() {
-    const amount = (key) => ({ key, min: 0, max: 200, step: 5 });
-    return this._cfgPanel('Synthwave settings', [
-      { type: 'color', key: 'synColor', label: 'Wireframe color', presets: this.SYN_PRESETS },
-      { type: 'slider', key: 'synSpeed', label: 'Speed', min: 50, max: 150, step: 5 },
-      {
-        type: 'check',
-        key: 'synBumps',
-        label: 'Ground bumps',
-        group: [
-          { type: 'check', key: 'synBobbing', label: 'Camera bobbing', amount: amount('synBobbingAmount') },
-          { type: 'check', key: 'synCameraTilt', label: 'Camera tilt', amount: amount('synCameraTiltAmount') },
-          { type: 'check', key: 'synCarTilt', label: 'Car tilt', amount: amount('synCarTiltAmount') },
-        ],
-      },
-    ]);
   },
 
   /**
@@ -1215,39 +1043,5 @@ const Visualizer = {
       },
     };
     return picker;
-  },
-
-  /** The ship's nose at the bottom of the screen. */
-  _drawShip(ctx, w, hgt) {
-    const cx = w / 2;
-    const top = hgt * 0.86;
-    const half = Math.min(w * 0.16, hgt * 0.3);
-    // Down past the screen's edge, so leaning it uncovers nothing.
-    const bottom = hgt * 1.05;
-    const hull = ctx.createLinearGradient(0, top, 0, hgt);
-    hull.addColorStop(0, '#f4f6ff');
-    hull.addColorStop(0.35, '#c9d0e6');
-    hull.addColorStop(1, '#6f7894');
-    ctx.fillStyle = hull;
-    ctx.beginPath();
-    ctx.moveTo(cx - half, top + hgt * 0.02);
-    ctx.quadraticCurveTo(cx, top - hgt * 0.012, cx + half, top + hgt * 0.02);
-    ctx.lineTo(cx + half * 1.3, bottom);
-    ctx.lineTo(cx - half * 1.3, bottom);
-    ctx.closePath();
-    ctx.fill();
-
-    // The canopy, light blue, on the ridge.
-    const canopy = ctx.createLinearGradient(0, top - hgt * 0.02, 0, top + hgt * 0.03);
-    canopy.addColorStop(0, '#bff0ff');
-    canopy.addColorStop(1, '#3fa9f5');
-    ctx.fillStyle = canopy;
-    ctx.beginPath();
-    ctx.moveTo(cx - half * 0.16, top + hgt * 0.025);
-    ctx.lineTo(cx - half * 0.1, top - hgt * 0.012);
-    ctx.lineTo(cx + half * 0.1, top - hgt * 0.012);
-    ctx.lineTo(cx + half * 0.16, top + hgt * 0.025);
-    ctx.closePath();
-    ctx.fill();
   },
 };

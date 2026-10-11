@@ -1,10 +1,12 @@
 'use strict';
 
-// A whole playlist (or Mix, or Spotify list) on the Add Songs page:
+// A whole playlist (or Mix, or Spotify, Deezer or Amazon Music list) on the
+// Add Songs page:
 //
 //   listing -> review -> downloading -> trimming -> saving -> (idle)
 //
-// listing      the list is read (for Spotify: every song looked up on YouTube),
+// listing      the list is read (for Spotify, Deezer and Amazon Music: every
+//              song looked up on YouTube),
 //              shown in the progress frame, with Cancel.
 // review       the checklist. Songs already in the library and a playlist name
 //              that is taken are listed as warnings on top, each with a box to
@@ -51,7 +53,7 @@
 // task's number is retired, so whatever it still says is ignored.
 
 const SOURCE_NAMES = {
-  youtube: 'YouTube', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', spotify: 'Spotify', vimeo: 'Vimeo', local: 'Local files',
+  youtube: 'YouTube', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', spotify: 'Spotify', deezer: 'Deezer', 'amazon music': 'Amazon Music', vimeo: 'Vimeo', local: 'Local files',
 };
 
 const ImportPanel = {
@@ -648,6 +650,8 @@ const ImportPanel = {
       head.appendChild(h('span.import__warn-text', `The folder holds more files: only the first ${l.items.length} are listed.`));
     } else if (l.truncated === 'spotify') {
       head.appendChild(h('span.import__warn-text', 'Spotify only showed the first 100 songs; the rest of the list is missing.'));
+    } else if (l.truncated === 'amazon') {
+      head.appendChild(h('span.import__warn-text', `Amazon Music only showed the first ${l.items.length} songs; the rest of the list is missing.`));
     } else if (l.truncated === 'mix') {
       head.appendChild(h('span.import__warn-text', 'A Mix never ends: its first 50 songs are listed.'));
     }
@@ -783,7 +787,7 @@ const ImportPanel = {
       h('span.import__dur', it.duration ? Util.fmtClock(it.duration) : ''));
   },
 
-  /** For a Spotify song: the YouTube upload it was matched to. */
+  /** For a Spotify (Deezer, Amazon Music) song: the YouTube upload it was matched to. */
   _matchLine(it) {
     if (it.status === 'unavailable') return h('div.import__sub.import__sub--bad', it.note || 'not available');
     const m = it.match;

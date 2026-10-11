@@ -30,6 +30,7 @@ const { createMedia } = require('@flow/core/media');
 const library = require('./library');
 const model = require('@flow/core/libraryModel');
 const cover = require('@flow/core/cover');
+const { isNameOnlyList } = require('@flow/core/text');
 
 const LOCAL = 'local';
 const BATCH = 10;
@@ -144,7 +145,7 @@ function createFiller({ skip = () => false } = {}) {
       artist: s.artist,
       title: s.title,
       duration: s.duration,
-      noSearch: /spotify\.com/i.test(s.sourcePlaylistUrl || ''),
+      noSearch: isNameOnlyList(s.sourcePlaylistUrl),
     }, {
       ffmpeg,
       ...lookups(),

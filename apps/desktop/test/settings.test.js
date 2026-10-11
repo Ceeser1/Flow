@@ -202,11 +202,29 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ brColors: 'ice' }).brColors, 'ice');
   assert.equal(settings.clean({ brColors: 'classic' }).brColors, 'lime');
   assert.equal(settings.clean({ brColors: 'equalizer' }).brColors, 'lime');
+  // Own colours after the schemes: blue by default; Orb's Ember, Ice and
+  // White became own ones.
+  for (const [scheme, key] of [['brColors', 'brColor'], ['rdColor', 'rdOwnColor'], ['skColors', 'skColor'], ['obColors', 'obColor'],
+    ['vnColors', 'vnColor'], ['stColors', 'stColor'], ['raColors', 'raColor'], ['szInk', 'szColor']]) {
+    assert.equal(d[key], '#3484f4');
+    assert.equal(settings.clean({ [scheme]: 'custom' })[scheme], 'custom');
+  }
+  const ember = settings.clean({ obColors: 'ember' });
+  assert.equal(ember.obColors, 'custom');
+  assert.equal(ember.obColor, '#ff8a33');
+  assert.equal(settings.clean({ obColors: 'rainbow' }).obColors, 'rainbow');
   // Waveform: rainbow bars by default.
   assert.equal(d.wfColors, 'rainbow');
   assert.equal(d.wfStyle, 'bars');
   assert.equal(settings.clean({ wfStyle: 'wave', wfColors: 'blue' }).wfStyle, 'wave');
   assert.equal(settings.clean({ wfColors: 'black' }).wfColors, 'rainbow');
+  // Its own colour: blue by default; the old one-colour schemes become one.
+  assert.equal(d.wfColor, '#3484f4');
+  const red = settings.clean({ wfColors: 'red' });
+  assert.equal(red.wfColors, 'custom');
+  assert.equal(red.wfColor, '#ed1d1d');
+  assert.equal(settings.clean({ wfColors: 'custom', wfColor: '#00FF80' }).wfColor, '#00ff80');
+  assert.equal(settings.clean({ wfColors: 'custom', wfColor: 'nope' }).wfColor, '#3484f4');
   // Nebula is Kaleidoscope, its own look first and chosen by default; Aurora
   // Waves is Aurora; Liquid and Mandala (its looks, then their own) are gone.
   assert.equal(settings.clean({ visualizer: 'nebula' }).visualizer, 'kaleidoscope');
@@ -238,14 +256,27 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ sgGlass: 'blue' }).sgGlass, 'cover');
   assert.equal(d.sgTorches, true);
   assert.equal(settings.clean({ sgTorches: false }).sgTorches, false);
-  // Fountain Show: rainbow lamps, the bass in the middle, 40 jets, ripples on.
+  // Fountain Show: rainbow lamps, the bass in the middle, 40 jets, 1 G, ripples on.
   assert.equal(d.fnColors, 'rainbow');
   assert.equal(d.fnLayout, 'middle');
   assert.equal(settings.clean({ fnLayout: 'right' }).fnLayout, 'middle');
   assert.equal(d.fnJets, 40);
   assert.equal(settings.clean({ fnJets: 70 }).fnJets, 64);
+  assert.equal(d.fnGravity, 100);
+  assert.equal(settings.clean({ fnGravity: 30 }).fnGravity, 50);
+  assert.equal(settings.clean({ fnGravity: 117 }).fnGravity, 115);
   assert.equal(d.fnRipples, true);
   assert.equal(d.fnBursts, undefined);
+  // Seismograph: green grid paper, a colour for each of 8 pens, the paper at 100%.
+  assert.equal(d.szPaper, 'green');
+  assert.equal(settings.clean({ szPaper: 'pink' }).szPaper, 'green');
+  assert.equal(d.szInk, 'classic');
+  assert.equal(d.szPens, 8);
+  assert.equal(settings.clean({ szPens: 20 }).szPens, 12);
+  assert.equal(d.szSpeed, 100);
+  assert.equal(settings.clean({ szSpeed: 30 }).szSpeed, 50);
+  // Not Spectrogram's speed (sgSpeed).
+  assert.equal(d.sgSpeed, 100);
   assert.equal(settings.clean({ ifForest: 'no' }).ifForest, true);
 });
 

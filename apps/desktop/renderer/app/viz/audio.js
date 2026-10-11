@@ -135,6 +135,7 @@ const VizAudio = {
     this.dynamic = new Float32Array(n);
     this._mean = new Float32Array(n);
     this._heard = false;
+    this._was = false;
     this._prev = new Float32Array(n);
     this._kick = new Kick();
     this._intensity = new Intensity();
@@ -229,6 +230,15 @@ const VizAudio = {
     this.beat = this.kick / Math.max(0.3, this._beatPeak);
     this.intensity = this._intensity.follow(playing ? Equalizer.levels : null, ms);
 
+    // The first frame playing (opened on a song under way, played again
+    // after a pause) jumps from the silence before it to the whole song: no
+    // onset, and nothing for the tempo, which would take that jump, far
+    // above any beat, for its loudest beat until it was out of its 10 s.
+    if (playing && !this._was) {
+      lowFlux = 0;
+      allFlux = 0;
+    }
+    this._was = playing;
     // Per frame the jump depends on how long the frame was: per second.
     const o = this._detect(this._low, this._lowEnd ? lowFlux / this._lowEnd / dt : 0, ms, now, playing);
     this.onset = o > 0;

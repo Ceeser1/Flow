@@ -8,9 +8,10 @@
 // song). A song without a cover gets a record instead. Under it the title
 // and the artist.
 //
-// Its cogwheel: the cover round (and turning, like a record) or square; the
-// spectrum as bars with falling caps, as a line, or as dots; the sparks;
-// the cover behind; the title.
+// Its cogwheel: the round cover turning (like a record) or not; the
+// spectrum as bars with falling caps, as a line, or as dots; the colours
+// (the cover's, a rainbow round the circle, by the chord sounding, warm
+// white); the sparks; the cover behind; the title.
 //
 // WebGL (viz/gl.js): the background and the cover are passes over the whole
 // screen reading the cover's texture (its mipmaps blur the background), the
@@ -54,20 +55,15 @@
     in vec2 uv;
     uniform sampler2D cover;
     uniform vec2 res, center;
-    uniform float radius, angle, square, ring;
+    uniform float radius, angle, ring;
     uniform vec3 ringColor;
     out vec4 o;
-
-    float box(vec2 p, float r) {
-      vec2 d = abs(p) - vec2(1.0 - r);
-      return (length(max(d, 0.0)) + min(max(d.x, d.y), 0.0)) / r;
-    }
 
     void main() {
       vec2 px = uv * res;
       vec2 p = (px - center) / radius;
-      // Round: 1 at the edge; square: the same, its corners rounded.
-      float d = mix(length(p), 1.0 + box(p, 0.12) * 0.12, square);
+      // 1 at the edge.
+      float d = length(p);
       float edge = 1.5 / radius;
       float inside = 1.0 - smoothstep(1.0 - edge, 1.0, d);
       vec2 q = mat2(cos(angle), -sin(angle), sin(angle), cos(angle)) * p;
@@ -82,6 +78,8 @@
     }`;
 
   const hsv = VizCover.hsv;
+  const wrap = (x) => ((x % 1) + 1) % 1;
+  const WARM = [hsv(0.08, 0.5, 1), hsv(0.11, 0.12, 1)];
 
   class Halo {
     constructor(canvas) {
@@ -151,16 +149,26 @@
       const gl = this.gl;
       const w = this.w;
       const h = this.h;
-      // Colours glide to a new song's.
+      // The two colours: the cover's (gliding to a new song's), the chord's,
+      // warm white, or turning slowly through the rainbow.
+      const mode = set.hlColors;
+      let target = this.cover.colors;
+      if (mode === 'notes') {
+        const chord = a.playing ? a.noteHue() : null;
+        if (chord) this.chordHue = this.chordHue === undefined ? chord.hue : this.chordHue + ((((chord.hue - this.chordHue + 1.5) % 1) - 0.5) * Math.min(1, dt * 3 * chord.strength));
+        const hue = this.chordHue === undefined ? 0.6 : this.chordHue;
+        target = [hsv(wrap(hue), 0.75, 1), hsv(wrap(hue + 0.1), 0.6, 1)];
+      } else if (mode === 'white') target = WARM;
+      else if (mode === 'rainbow') target = [hsv(wrap(this.age * 0.03), 0.8, 1), hsv(wrap(this.age * 0.03 + 0.2), 0.8, 1)];
       const k = 1 - Math.exp(-dt / 0.6);
-      this.colors = this.colors.map((c, i) => c.map((v, j) => v + (this.cover.colors[i][j] - v) * k));
+      this.colors = this.colors.map((c, i) => c.map((v, j) => v + (target[i][j] - v) * k));
       const [c1, c2] = this.colors;
       this.coverOn += ((set.hlBackground && this.cover.loaded ? 1 : 0) - this.coverOn) * k;
 
       const cx = w / 2;
       const cy = h * 0.46;
       const R = h * 0.17 * (1 + 0.06 * a.kick);
-      if (set.hlSpin && set.hlShape === 'round') this.angle += dt * (0.25 + 0.6 * a.bass);
+      if (set.hlSpin) this.angle += dt * (0.25 + 0.6 * a.bass);
       else this.angle *= Math.exp(-dt * 3);
       this.turn += dt * 0.02;
 
@@ -181,8 +189,9 @@
       // 2. The sparks and the spectrum, added as light.
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
-      if (set.hlParticles) this._sparks(a, dt, cx, cy, R, c1, c2);
-      this._spectrum(a, dt, cx, cy, R, c1, c2, set.hlStyle);
+      const rainbow = mode === 'rainbow';
+      if (set.hlParticles) this._sparks(a, dt, cx, cy, R, c1, c2, rainbow);
+      this._spectrum(a, dt, cx, cy, R, c1, c2, set.hlStyle, rainbow);
       this.lines.draw(w, h);
 
       // 3. The cover on top.
@@ -194,7 +203,6 @@
       gl.uniform2f(u.center, cx, h - cy);
       gl.uniform1f(u.radius, R);
       gl.uniform1f(u.angle, this.angle);
-      gl.uniform1f(u.square, set.hlShape === 'square' ? 1 : 0);
       gl.uniform1f(u.ring, 0.35 + 0.9 * a.kick);
       gl.uniform3f(u.ringColor, c1[0], c1[1], c1[2]);
       VizGL.screen(gl);
@@ -203,7 +211,7 @@
       this.text.hidden = !set.hlTitle;
     }
 
-    _spectrum(a, dt, cx, cy, R, c1, c2, style) {
+    _spectrum(a, dt, cx, cy, R, c1, c2, style, rainbow) {
       const map = this._bands(a);
       const bands = a.dynamic;
       const lines = this.lines;
@@ -226,7 +234,11 @@
         }
       }
       const pitch = (Math.PI / BARS);
-      const colour = (x) => [0, 1, 2].map((j) => c1[j] + (c2[j] - c1[j]) * x);
+      // From the first colour to the second by x; in the rainbow, by the place
+      // round the circle (pos, the top 0, the bottom 1), paler as it rises.
+      const colour = rainbow
+        ? (x, pos) => hsv(wrap(pos * 0.85 + this.age * 0.02), 0.85 - 0.3 * x, 1)
+        : (x) => [0, 1, 2].map((j) => c1[j] + (c2[j] - c1[j]) * x);
       if (style === 'line') {
         // A closed line through the tips, and a fainter one inside it.
         for (const side of [1, -1]) {
@@ -239,7 +251,7 @@
             const x = cx + Math.cos(ang) * len;
             const y = cy + Math.sin(ang) * len;
             if (i) {
-              const col = colour(i / BARS);
+              const col = colour(rainbow ? this.levels[j] : i / BARS, i / BARS);
               lines.seg(px, py, x, y, 6 * unit, col, 0.18);
               lines.seg(px, py, x, y, 1.8 * unit, col, 0.9);
             }
@@ -252,7 +264,7 @@
       for (let i = 0; i < BARS; i += 1) {
         const level = this.levels[i];
         const len = Math.max(2 * unit, level ** 1.4 * reach);
-        const col = colour(Math.min(1, level * 1.2));
+        const col = colour(Math.min(1, level * 1.2), (i + 0.5) / BARS);
         for (const side of [1, -1]) {
           const ang = -Math.PI / 2 + side * (i + 0.5) * pitch;
           const ux = Math.cos(ang);
@@ -279,7 +291,7 @@
       }
     }
 
-    _sparks(a, dt, cx, cy, R, c1, c2) {
+    _sparks(a, dt, cx, cy, R, c1, c2, rainbow) {
       const unit = this.h / 1080;
       // New ones from the rim, many more on the kicks.
       const born = (8 + 160 * a.kick * a.kick + (a.onset ? 40 * a.onsetPower : 0)) * dt * (a.playing ? 1 : 0.3);
@@ -296,7 +308,8 @@
         s.r += s.v * push * dt;
         s.ang += dt * 0.05;
         const fade = Math.max(0, 1 - s.r / far);
-        const col = s.c < 0.45 ? c1 : (s.c < 0.9 ? c2 : [1, 1, 1]);
+        let col = s.c < 0.45 ? c1 : (s.c < 0.9 ? c2 : [1, 1, 1]);
+        if (rainbow && s.c < 0.9) col = hsv(wrap(s.c / 0.9 + this.age * 0.02), 0.75, 1);
         this.lines.dot(cx + Math.cos(s.ang) * s.r, cy + Math.sin(s.ang) * s.r, s.size * 1.6, col, 0.7 * fade);
       }
       this.sparks = this.sparks.filter((s) => s.r < far);
@@ -306,15 +319,15 @@
   Visualizer.add({
     id: 'halo',
     name: 'Halo',
-    desc: "The song's cover with the spectrum around it, in the cover's own colours, sparks flying off on the kicks",
+    desc: "The song's cover with the spectrum around it, in the cover's own colours (or others), sparks flying off on the kicks",
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
     gl: true,
     create: (canvas) => new Halo(canvas),
     options: [
-      { type: 'choice', key: 'hlShape', label: 'Cover', choices: [['round', 'Round'], ['square', 'Square']] },
-      { type: 'check', key: 'hlSpin', label: 'Spin', when: (s) => s.hlShape === 'round' },
+      { type: 'check', key: 'hlSpin', label: 'Spin' },
       { type: 'choice', key: 'hlStyle', label: 'Spectrum', choices: [['bars', 'Bars'], ['line', 'Line'], ['dots', 'Dots']] },
+      { type: 'choice', key: 'hlColors', label: 'Color', choices: [['cover', 'Cover'], ['rainbow', 'Rainbow'], ['notes', 'By the notes'], ['white', 'Warm white']] },
       { type: 'check', key: 'hlParticles', label: 'Sparks' },
       { type: 'check', key: 'hlBackground', label: 'Cover behind' },
       { type: 'check', key: 'hlTitle', label: 'Song title' },

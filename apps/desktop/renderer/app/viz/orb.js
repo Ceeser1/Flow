@@ -6,7 +6,9 @@
 // moves like something alive; it turns, swells on the kicks, and a ring of
 // sparks circles it, quickening with the highs.
 //
-// Its cogwheel: dots or a wireframe, the colours, how fast it turns, the ring.
+// Its cogwheel: dots or a wireframe, the colours (aurora, rainbow, its own),
+// how fast it turns, the ring,
+// and whether the view zooms in on the kicks (and how far).
 //
 // WebGL (viz/gl.js): the points or lines as light into a texture, that
 // blurred twice for the glow, the background and both together in one pass.
@@ -17,10 +19,38 @@
   const RING = 700;
   const PALETTES = {
     aurora: [[0.2, 1, 0.85], [0.55, 0.35, 1]],
-    ember: [[1, 0.85, 0.3], [1, 0.2, 0.15]],
-    ice: [[0.85, 0.95, 1], [0.25, 0.5, 1]],
-    white: [[1, 1, 1], [0.75, 0.8, 0.9]],
   };
+
+  // The dots: round points of light, a solid disc with a smooth edge (a
+  // pixel wide, so even a small one is round) and a soft halo round it,
+  // HALO times their radius wide.
+  const HALO = 7;
+  const DOT_VS = `
+    layout(location = 0) in vec2 pos;
+    layout(location = 1) in vec4 color;
+    layout(location = 2) in float radius;
+    uniform vec2 res;
+    out vec4 c;
+    out float r;
+    void main() {
+      c = color;
+      r = radius;
+      gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
+      gl_PointSize = radius * 2.0 * ${HALO}.0;
+    }`;
+  const DOT_FS = `
+    in vec4 c;
+    in float r;
+    out vec4 o;
+    void main() {
+      // In radii from the middle, and in pixels.
+      float q = length(gl_PointCoord - 0.5) * 2.0 * ${HALO}.0;
+      float d = q * r;
+      float disc = clamp(0.75 * r - d + 0.5, 0.0, 1.0) * (0.75 + 0.25 * exp(-q * q * 1.5));
+      float f = 0.6 * disc + 0.07 * exp(-q * 0.9) * (1.0 - q / ${HALO}.0);
+      f = max(f, 0.0) * c.a;
+      o = vec4(c.rgb * f, f);
+    }`;
 
   const OUT_FS = VizGL.NOISE + `
     in vec2 uv;
@@ -61,7 +91,10 @@
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
       this.out = VizGL.program(gl, VizGL.SCREEN_VS, OUT_FS);
-      this.lines = VizGL.lines(gl, (LON * LAT * 2 + RING + 200) * 6);
+      this.lines = VizGL.lines(gl, (LON * LAT * 2 + 200) * 6);
+      this.dotProg = VizGL.program(gl, DOT_VS, DOT_FS);
+      this.dotStream = VizGL.stream(gl, [[0, 2], [1, 4], [2, 1]], LON * LAT + RING);
+      this.dotCount = 0;
       this.turn = 0;
       this.age = 0;
       this.pts = new Float32Array(LON * LAT * 3);   // screen x, y and depth 0..1 (1 front)
@@ -92,6 +125,24 @@
       VizGL.lose(this.gl);
     }
 
+    /** A round dot of light at x, y (pixels), `radius` its core. */
+    _dot(x, y, radius, rgb, a) {
+      if (this.dotCount >= LON * LAT + RING) return;
+      this.dotStream.data.set([x, y, rgb[0], rgb[1], rgb[2], a, radius], this.dotCount * 7);
+      this.dotCount += 1;
+    }
+
+    _drawDots(w, h) {
+      if (!this.dotCount) return;
+      const gl = this.gl;
+      gl.useProgram(this.dotProg.p);
+      gl.uniform2f(this.dotProg.u.res, w, h);
+      this.dotStream.put(this.dotCount);
+      gl.drawArrays(gl.POINTS, 0, this.dotCount);
+      gl.bindVertexArray(null);
+      this.dotCount = 0;
+    }
+
     frame(a, dt) {
       this.age += dt;
       const set = (k) => Visualizer.setting(k);
@@ -102,7 +153,9 @@
       const h = this.h;
       const cx = w / 2;
       const cy = h / 2;
-      const R = h * 0.24 * (1 + 0.08 * a.kick);
+      // How far it zooms on the kicks: 80% as it first was.
+      const zoom = set('obZoom') ? a.kick * (set('obZoomAmount') / 80) : 0;
+      const R = h * 0.24 * (1 + 0.08 * zoom);
       const f = 3.2;   // the eye this many radii away
       const tilt = 0.42 + 0.12 * Math.sin(t * 0.13);
       const cy1 = Math.cos(this.turn);
@@ -147,7 +200,12 @@
       }
 
       const palette = set('obColors');
-      const pal = PALETTES[palette];
+      let pal = PALETTES[palette] || PALETTES.aurora;
+      if (palette === 'custom') {
+        // Its own colour round the middle, paler and darker towards the poles.
+        const c = VizGL.rgb(set('obColor'));
+        pal = [c, c.map((v) => (v * 0.55 + 0.45) * 0.85)];
+      }
       const colour = (j, depth) => {
         const x = j / (LAT - 1);
         if (palette === 'rainbow') return hsv((x * 0.8 + t * 0.03) % 1, 0.7, 1);
@@ -174,7 +232,7 @@
               lines.seg(pts[k], pts[k + 1], pts[kd], pts[kd + 1], 0.9 * unit, rgb, bright * 0.5);
             }
           } else {
-            lines.dot(pts[k], pts[k + 1], (1.2 + 1.6 * depth) * unit * (1 + this.belt[j]), rgb, bright * 0.85);
+            this._dot(pts[k], pts[k + 1], (1.2 + 1.6 * depth) * unit * (1 + this.belt[j]), rgb, bright);
           }
         }
       }
@@ -185,10 +243,10 @@
         const ringRgb = palette === 'rainbow' ? [1, 1, 1] : pal[0];
         for (const s of this.ring) {
           s.a += dt * s.v * (0.3 + 1.6 * a.treble) * (a.playing ? 1 : 0.3);
-          const r = s.r * (1 + 0.1 * a.kick);
+          const r = s.r * (1 + 0.1 * zoom);
           project(Math.cos(s.a) * r, s.y, Math.sin(s.a) * r, out, 0);
           const bright = (0.2 + 0.8 * out[2]) * (0.5 + 0.8 * a.treble) * (0.6 + 0.4 * Math.sin(t * 3 + s.s * 20));
-          lines.dot(out[0], out[1], (1 + 1.4 * out[2]) * unit, ringRgb, Math.min(1, bright));
+          this._dot(out[0], out[1], (1 + 1.4 * out[2]) * unit, ringRgb, Math.min(1, bright));
         }
       }
 
@@ -199,9 +257,17 @@
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       lines.draw(w, h);
+      this._drawDots(w, h);
       gl.disable(gl.BLEND);
-      VizGL.blur(gl, this.a, this.qa, this.qb, 1.3);
-      VizGL.blur(gl, this.qb, this.ea, this.eb, 2);
+      // The glow: the light made smaller by averaging (so each dot's share
+      // is kept, not caught by one pixel and drawn back as a square), then
+      // blurred; the wide one twice, from that.
+      VizGL.shrink(gl, this.a, this.qb);
+      VizGL.blur(gl, this.qb, this.qa, this.qb, 1.3);
+      VizGL.blur(gl, this.qb, this.qa, this.qb, 1.3);
+      VizGL.shrink(gl, this.qb, this.eb);
+      VizGL.blur(gl, this.eb, this.ea, this.eb, 2);
+      VizGL.blur(gl, this.eb, this.ea, this.eb, 2);
       VizGL.into(gl, null);
       gl.useProgram(this.out.p);
       const u = this.out.u;
@@ -224,12 +290,15 @@
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="6"/><ellipse cx="12" cy="12" rx="10.5" ry="3"/></svg>',
     gl: true,
+    // At the screen's own pixels, so the dots are round, not blown up.
+    sharp: true,
     create: (canvas) => new Orb(canvas),
     options: [
       { type: 'choice', key: 'obStyle', label: 'Surface', choices: [['dots', 'Dots'], ['wire', 'Wireframe']] },
-      { type: 'choice', key: 'obColors', label: 'Colors', choices: [['aurora', 'Aurora'], ['ember', 'Ember'], ['ice', 'Ice'], ['rainbow', 'Rainbow'], ['white', 'White']] },
+      { type: 'choice', key: 'obColors', label: 'Colors', choices: [['aurora', 'Aurora'], ['rainbow', 'Rainbow']], color: { value: 'custom', key: 'obColor', presets: Visualizer.OWN_PRESETS } },
       { type: 'slider', key: 'obSpin', label: 'Turning', min: 0, max: 200, step: 5 },
       { type: 'check', key: 'obRing', label: 'Ring' },
+      { type: 'check', key: 'obZoom', label: 'Bass Zoom', amount: { key: 'obZoomAmount', min: 0, max: 100, step: 5 } },
     ],
   });
 })();

@@ -7,9 +7,12 @@
 // round again, so the screen holds the bar just gone. Each beat and hit
 // leaves a contact under the sweep, as far out as what struck was high,
 // nudged a little left or right as it sounded in the stereo; the contacts
-// glow, then fade, a ring spreading round each.
+// glow, then fade, a ring spreading round each. The screen sits in a ring
+// of brushed silver, its bearings engraved, screwed down at four corners.
 //
-// Its cogwheel: the phosphor's colour (green, amber, blue), how long it glows.
+// Its cogwheel: what lies round the screen (the dark console, or wood, black
+// or silver as on Vinyl's turntable, out to the screen's edges), the
+// phosphor's colour (green, amber, blue, its own), how long it glows.
 //
 // WebGL (viz/gl.js): the phosphor is a texture drawn over each frame (the
 // last frame a little dimmer, the wedge the sweep crossed added); the
@@ -18,6 +21,8 @@
 (() => {
   const COLORS = { green: [0.3, 1.0, 0.45], amber: [1.0, 0.65, 0.15], blue: [0.35, 0.75, 1.0] };
   const BLIPS = 24;
+  const BACKS = { none: 0, wood: 1, black: 2, silver: 3 };
+  const SIZE = 0.41;   // the screen's radius in screen heights (the ring round it reaching 0.47)
 
   const PERSIST_FS = `
     in vec2 uv;
@@ -27,7 +32,7 @@
     out vec4 o;
     const float PI = 3.14159265;
     void main() {
-      vec2 p = (uv - 0.5) * vec2(res.x / res.y, 1.0) / 0.44;
+      vec2 p = (uv - 0.5) * vec2(res.x / res.y, 1.0) / float(${SIZE});
       float r = length(p);
       float v = texture(prev, uv).r * fade;
       // Clockwise from the top: the angle the sweep reaches.
@@ -49,32 +54,69 @@
     uniform vec3 tint;
     uniform float sweep, time, glow;
     uniform vec4 blips[${BLIPS}];   // angle, radius, age (s), strength
+    uniform int back;               // 0 the console, 1 wood, 2 black, 3 silver
     out vec4 o;
     const float PI = 3.14159265;
+    const float RING = 0.145;       // the silver ring's width, in the screen's radii
+
+    // Wood, black or silver, as Vinyl's turntable.
+    vec3 backColour(vec2 s) {
+      // Away from the origin: the noise's hash differs below zero.
+      s += vec2(13.7, 11.3);
+      if (back == 1) {
+        float g = vnoise(vec2(s.x * 4.0, s.y * 90.0 + vnoise(s * 6.0) * 6.0));
+        return mix(vec3(0.16, 0.08, 0.035), vec3(0.3, 0.16, 0.07), g);
+      }
+      float brushed = vnoise(vec2(s.x * 600.0, s.y * 3.0)) * 0.5 + vnoise(vec2(s.x * 2000.0, s.y * 9.0)) * 0.5;
+      if (back == 2) return vec3(0.045, 0.045, 0.05) + 0.02 * brushed;
+      return vec3(0.42, 0.43, 0.45) + 0.08 * brushed;
+    }
 
     void main() {
       float aspect = res.x / res.y;
       vec2 s = (uv - 0.5) * vec2(aspect, 1.0);
-      vec2 p = s / 0.44;
+      vec2 p = s / float(${SIZE});
       float r = length(p);
-      float px = 1.0 / (res.y * 0.44);
+      float px = 1.0 / (res.y * float(${SIZE}));
       float ang = mod(atan(p.x, p.y), 2.0 * PI);
       vec3 col = vec3(0.01, 0.011, 0.012);
-      // The console round the screen: dark, a bevel, screws.
+      // Round the screen: the console or the background, the silver ring, screws.
       float bez = r - 1.0;
       if (bez > 0.0) {
-        col = vec3(0.035, 0.037, 0.04) * (1.0 - 0.3 * smoothstep(0.0, 0.25, bez));
-        col += vec3(0.08) * smoothstep(0.012, 0.0, abs(bez - 0.03)) * (0.5 + 0.5 * p.y / max(r, 1e-3));
+        if (back == 0) col = vec3(0.035, 0.037, 0.04) * (1.0 - 0.3 * smoothstep(0.0, 0.25, bez));
+        else {
+          // Out to the screen's edges, lit from the top left; a shadow round the glass.
+          float light = 0.75 + 0.35 * dot(normalize(vec2(-0.6, 0.8)), s);
+          col = backColour(s) * light * (0.45 + 0.55 * smoothstep(0.0, 0.07, bez));
+        }
+        // The silver ring the screen sits in: brushed round, its shadow on
+        // what lies behind, its outer edge catching the light, a dark lip by the glass.
+        vec2 n = p / max(r, 1e-3);
+        float toLamp = dot(normalize(vec2(-0.6, 0.8)), n);
+        float shadow = length(p - vec2(0.02, -0.03)) - 1.0 - RING;
+        col *= 0.45 + 0.55 * smoothstep(0.0, 0.06, shadow);
+        if (bez < RING + px) {
+          // Fine streaks going round, wavering a little (no seam: by n, not the angle).
+          float brushed = vnoise(vec2(r * 900.0 + 30.0 * vnoise(n * 2.0 + 5.0), 0.5)) * 0.6
+            + vnoise(vec2(r * 2600.0 + 60.0 * vnoise(n * 3.0 + 9.0), 1.5)) * 0.4;
+          // Turned metal's light: two wedges, towards the lamp and away.
+          float sheen = pow(abs(toLamp), 10.0);
+          vec3 metal = (vec3(0.46, 0.47, 0.49) + 0.12 * brushed) * (0.8 + 0.25 * toLamp);
+          metal += vec3(0.28, 0.29, 0.3) * sheen * (0.6 + 0.8 * brushed);
+          metal *= 1.0 + 0.6 * smoothstep(0.014, 0.0, RING - bez) * toLamp;
+          metal *= 0.35 + 0.65 * smoothstep(0.0, 0.014, bez);
+          col = mix(col, metal, smoothstep(RING + px, RING - px, bez));
+        }
         for (int i = 0; i < 4; i++) {
           float a = PI * 0.25 + float(i) * PI * 0.5;
-          vec2 sc = vec2(sin(a), cos(a)) * 1.12;
+          vec2 sc = vec2(sin(a), cos(a)) * 1.085;
           float d = length(p - sc);
           col = mix(col, vec3(0.12, 0.12, 0.13) * (0.7 + 0.5 * (p.y - sc.y) / 0.03), smoothstep(0.03, 0.026, d));
           col = mix(col, vec3(0.02), smoothstep(0.004, 0.0, abs((p - sc).x + (p - sc).y)) * step(d, 0.026));
         }
-        // The bearings round the rim, every ten degrees, longer every thirty.
+        // The bearings engraved round the ring, every ten degrees, longer every thirty.
         float major = step(abs(fract(ang / (2.0 * PI) * 12.0 + 0.5) - 0.5), 0.01);
-        col += tint * 0.35 * step(abs(fract(ang / (2.0 * PI) * 36.0 + 0.5) - 0.5), 0.012) * step(bez, 0.035 + 0.03 * major) * step(0.008, bez);
+        col *= 1.0 - 0.65 * step(abs(fract(ang / (2.0 * PI) * 36.0 + 0.5) - 0.5), 0.012) * step(bez, 0.035 + 0.03 * major) * step(0.016, bez);
       } else {
         // The phosphor, glowing where the sweep has painted.
         float v = texture(phos, uv).r;
@@ -223,11 +265,12 @@
       const u = this.show.u;
       VizGL.bind(gl, u.phos, this.a.tex, 0);
       gl.uniform2f(u.res, this.w, this.h);
-      gl.uniform3f(u.tint, ...(COLORS[set('raColors')] || COLORS.green));
+      gl.uniform3f(u.tint, ...(set('raColors') === 'custom' ? VizGL.rgb(set('raColor')) : COLORS[set('raColors')] || COLORS.green));
       gl.uniform1f(u.sweep, this.sweep);
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.glow, this.glow);
       gl.uniform4fv(u.blips, blips);
+      gl.uniform1i(u.back, BACKS[set('raBack')] ?? 0);
       VizGL.screen(gl);
     }
   }
@@ -242,7 +285,8 @@
     stereo: true,
     create: (canvas) => new Radar(canvas),
     options: [
-      { type: 'choice', key: 'raColors', label: 'Phosphor', choices: [['green', 'Green'], ['amber', 'Amber'], ['blue', 'Blue']] },
+      { type: 'choice', key: 'raBack', label: 'Background', choices: [['none', 'None'], ['wood', 'Wood'], ['black', 'Black'], ['silver', 'Silver']] },
+      { type: 'choice', key: 'raColors', label: 'Phosphor', choices: [['green', 'Green'], ['amber', 'Amber'], ['blue', 'Blue']], color: { value: 'custom', key: 'raColor', presets: Visualizer.OWN_PRESETS } },
       { type: 'slider', key: 'raTrail', label: 'Glow', min: 25, max: 200, step: 5 },
     ],
   });

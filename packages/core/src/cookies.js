@@ -7,6 +7,8 @@
 // own site, out of the Netscape cookie file yt-dlp writes; the server keeps
 // them with that download alone and deletes them with it.
 
+const { isNameOnlyList } = require('./text');
+
 // The browsers yt-dlp reads cookies from (Safari is macOS only).
 const BROWSERS = [
   { id: 'firefox', name: 'Firefox' },
@@ -24,12 +26,13 @@ const MAX_COOKIES = 256 * 1024;
 
 /**
  * The site whose cookies a download of `rawUrl` needs, as a domain
- * (youtube.com for youtu.be and music.youtube.com). A Spotify list's songs
- * come from YouTube, so that is YouTube too. '' when it is no web link.
+ * (youtube.com for youtu.be and music.youtube.com). A Spotify, Deezer or
+ * Amazon Music list's songs come from YouTube, so that is YouTube too. ''
+ * when it is no web link.
  */
 function cookieSite(rawUrl) {
   const raw = String(rawUrl || '').trim();
-  if (/^spotify:/i.test(raw) || /^(https?:\/\/)?([a-z0-9-]+\.)*spotify\.com(\/|$)/i.test(raw)) return 'youtube.com';
+  if (isNameOnlyList(raw)) return 'youtube.com';
   let host;
   try {
     host = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase();

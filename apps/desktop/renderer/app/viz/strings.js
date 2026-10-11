@@ -9,14 +9,14 @@
 // names, and above the key the song is in.
 //
 // Its cogwheel: the colours (round the circle of fifths, as the notes go;
-// gold; ice), the names.
+// gold; ice; their own), the names.
 //
 // WebGL (viz/gl.js): one pass, each pixel measured against the twelve
 // strings' curves; the names come from a small texture drawn with a canvas.
 
 (() => {
   const NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
-  const COLORS = { notes: 0, gold: 1, ice: 2 };
+  const COLORS = { notes: 0, gold: 1, ice: 2, custom: 3 };
 
   const FS = VizGL.NOISE + `
     in vec2 uv;
@@ -25,6 +25,7 @@
     uniform float amp[12], loops[12], speed[12], phase[12];
     uniform float time, glow;
     uniform int palette;
+    uniform vec3 own;
     uniform bool names;
     out vec4 o;
     const float PI = 3.14159265;
@@ -38,6 +39,7 @@
       float f = float(i) / 11.0;
       if (palette == 1) return mix(vec3(1.0, 0.55, 0.15), vec3(1.0, 0.9, 0.55), f);
       if (palette == 2) return mix(vec3(0.3, 0.55, 1.0), vec3(0.75, 0.95, 1.0), f);
+      if (palette == 3) return mix(own, mix(own, vec3(1.0), 0.55), f);
       // Round the circle of fifths: C red, G orange, D yellow ...
       return hsv(float((i * 7) % 12) / 12.0, 0.75, 1.0);
     }
@@ -202,6 +204,7 @@
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.glow, this.glow);
       gl.uniform1i(u.palette, COLORS[set('stColors')] ?? 0);
+      gl.uniform3f(u.own, ...VizGL.rgb(set('stColor')));
       gl.uniform1i(u.names, set('stNames') ? 1 : 0);
       VizGL.screen(gl);
     }
@@ -216,7 +219,7 @@
     gl: true,
     create: (canvas) => new Strings(canvas),
     options: [
-      { type: 'choice', key: 'stColors', label: 'Colours', choices: [['notes', 'Round the notes'], ['gold', 'Gold'], ['ice', 'Ice']] },
+      { type: 'choice', key: 'stColors', label: 'Colours', choices: [['notes', 'Round the notes'], ['gold', 'Gold'], ['ice', 'Ice']], color: { value: 'custom', key: 'stColor', presets: Visualizer.OWN_PRESETS } },
       { type: 'check', key: 'stNames', label: "The notes' names and the key" },
     ],
   });

@@ -112,6 +112,19 @@ function safeFilename(name, limit = 150) {
   return cleaned;
 }
 
+/**
+ * Whether a playlist link is one whose songs only had names there and were
+ * found on YouTube by them: Spotify, Deezer or Amazon Music. Their songs are
+ * YouTube Music's own already (no cover search needed), and downloading them
+ * needs YouTube's cookies, not that site's.
+ */
+function isNameOnlyList(url) {
+  const raw = String(url || '').trim();
+  return /^spotify:/i.test(raw)
+    || /^(?:https?:\/\/)?(?:[a-z0-9-]+\.)*(?:spotify\.com|deezer\.com|deezer\.page\.link|music\.amazon\.[a-z.]+)(?:[/?#]|$)/i.test(raw)
+    || /^(?:https?:\/\/)?(?:www\.)?amazon\.[a-z.]+\/music\//i.test(raw);
+}
+
 /** "Artist - Title (Mix)", the name a saved song's file gets. */
 function songFileStem(artist, title, mix) {
   const a = String(artist || '').trim();
@@ -124,5 +137,5 @@ function songFileStem(artist, title, mix) {
 
 module.exports = {
   parseYouTubeId, normalizeUrl, normalizeListUrl, sourceKey, sourceKeyFromUrl, comparableUrl,
-  safeFilename, songFileStem,
+  safeFilename, songFileStem, isNameOnlyList,
 };

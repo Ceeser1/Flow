@@ -1,17 +1,19 @@
 'use strict';
 
-// Makes every app's icons from the two at the top of the repo: icons/flow.png
-// (the wave alone, see-through around it) and icons/flow-bg.jpg (the same wave
-// on its dark background).
+// Makes every app's icons from the one at the top of the repo: icons/flow.png,
+// a white (and light grey) wave on a blue square. The wave alone is taken out
+// of it here, the blue read from its corner.
 // - Desktop: build/icon.ico (16 to 256 px, PNG inside) for the installer and
 //   the .exe, build/icon.png, and renderer/assets/icon.png for the window, the
-//   welcome page and the Windows media overlay's cover art: the wave alone.
+//   welcome page and the Windows media overlay's cover art: the square with
+//   round corners.
 // - Android: the launcher icon, an adaptive one: the wave in the middle of its
 //   foreground, on ic_launcher_background's colour (values/ic_launcher_
-//   background.xml, the background's #131315); the square and round ones
-//   older launchers take are flow-bg.jpg. The splash pictures Android 8 to 11
-//   show (12 and up show the launcher icon), at the sizes they have.
-// - iPhone: AppIcon.png, flow-bg.jpg at 1024 px with no alpha channel.
+//   background.xml, written here: the picture's blue); the square and round
+//   ones older launchers take are the picture. The splash pictures Android 8
+//   to 11 show, at the sizes they have: the round icon on the splash's dark
+//   colour (values/splash.xml), as 12 and up show it.
+// - iPhone: AppIcon.png, the picture at 1024 px with no alpha channel.
 // Run with: npm run icon
 
 const { app, nativeImage } = require('electron');
@@ -26,8 +28,10 @@ const DENSITIES = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
 // The picture's side in the foreground, in dp: the wave's farthest point
 // (0.95 of the way out) then sits about at the 66 dp circle every mask keeps.
 const FOREGROUND_WAVE = 70;
-// The background's colour, as in flow-bg.jpg.
-const BACKGROUND = { r: 0x13, g: 0x13, b: 0x15 };
+// The splash's colour, as values/splash.xml's splash_background.
+const SPLASH = { r: 0x13, g: 0x13, b: 0x15 };
+// The desktop icon's corners, against its side.
+const DESKTOP_CORNER = 0.2;
 
 function ico(pngs) {
   const header = Buffer.alloc(6);
@@ -154,13 +158,35 @@ function masked(pic, inside) {
 }
 
 const round = (x, y) => (x - 0.5) ** 2 + (y - 0.5) ** 2 <= 0.25;
-// A square with rounded corners, as the launcher icons of Android 7 were.
-const rounded = (x, y) => {
-  const r = 0.12;
+// A square with corners of radius r (against its side); 0.12 is as the
+// launcher icons of Android 7 were.
+const rounded = (r) => (x, y) => {
   const dx = Math.max(0, Math.abs(x - 0.5) - (0.5 - r));
   const dy = Math.max(0, Math.abs(y - 0.5) - (0.5 - r));
   return dx * dx + dy * dy <= r * r;
 };
+
+/**
+ * The wave alone, see-through where `pic` (opaque) shows the blue `bg`. The
+ * wave is grey (white and light grey), so each pixel is a grey g laid at some
+ * alpha a over the blue: its blue minus its red is (1 - a) times the blue's,
+ * which gives a, and its red then gives g.
+ */
+function waveOf(pic, bg) {
+  const out = picture(pic.width, pic.height);
+  for (let i = 0; i < pic.data.length; i += 4) {
+    const r = pic.data[i + order.r];
+    const b = pic.data[i + order.b];
+    const a = Math.min(1, Math.max(0, 1 - (b - r) / (bg.b - bg.r)));
+    if (a < 0.004) continue;
+    const g = Math.min(255, Math.max(0, (r - (1 - a) * bg.r) / a));
+    for (const c of [order.r, order.g, order.b]) out.data[i + c] = Math.round(g * a);
+    out.data[i + order.a] = Math.round(a * 255);
+  }
+  return out;
+}
+
+const hex = ({ r, g, b }) => '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase();
 
 const png = (pic) => nativeImage.createFromBitmap(pic.data, { width: pic.width, height: pic.height }).toPNG();
 
@@ -172,14 +198,16 @@ function write(file, data) {
 app.whenReady().then(() => {
   const repo = path.join(__dirname, '..', '..', '..');
   const root = path.join(__dirname, '..');
-  const wave = nativeImage.createFromPath(path.join(repo, 'icons', 'flow.png'));
-  const onDark = nativeImage.createFromPath(path.join(repo, 'icons', 'flow-bg.jpg'));
-  if (wave.isEmpty() || onDark.isEmpty()) {
-    console.error('icons/flow.png or icons/flow-bg.jpg could not be read.');
+  const icon = nativeImage.createFromPath(path.join(repo, 'icons', 'flow.png'));
+  if (icon.isEmpty()) {
+    console.error('icons/flow.png could not be read.');
     app.exit(1);
     return;
   }
   order = findOrder();
+  const full = { ...icon.getSize(), data: Buffer.from(icon.toBitmap()) };
+  const bg = { r: full.data[order.r], g: full.data[order.g], b: full.data[order.b] };
+  const wave = nativeImage.createFromBitmap(waveOf(full, bg).data, icon.getSize());
   const wrote = [];
   const out = (file, data) => {
     write(file, data);
@@ -187,7 +215,7 @@ app.whenReady().then(() => {
   };
 
   // The desktop.
-  const at = (size) => wave.resize({ width: size, height: size, quality: 'best' }).toPNG();
+  const at = (size) => png(masked(scaled(icon, size), rounded(DESKTOP_CORNER)));
   out(path.join(root, 'renderer', 'assets', 'icon.png'), at(SIZE));
   out(path.join(root, 'build', 'icon.png'), at(SIZE));
   const pngs = [16, 24, 32, 48, 64, 128, 256].map((size) => ({ size, data: at(size) }));
@@ -202,21 +230,25 @@ app.whenReady().then(() => {
     const fore = lay(picture(side, side), w, Math.round((side - w.width) / 2), Math.round((side - w.height) / 2));
     out(path.join(dir, 'ic_launcher_foreground.png'), png(fore));
     const legacy = Math.round(48 * d);
-    out(path.join(dir, 'ic_launcher.png'), png(masked(scaled(onDark, legacy), rounded)));
-    out(path.join(dir, 'ic_launcher_round.png'), png(masked(scaled(onDark, legacy), round)));
+    out(path.join(dir, 'ic_launcher.png'), png(masked(scaled(icon, legacy), rounded(0.12))));
+    out(path.join(dir, 'ic_launcher_round.png'), png(masked(scaled(icon, legacy), round)));
   }
+  out(
+    path.join(res, 'values', 'ic_launcher_background.xml'),
+    `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">${hex(bg)}</color>\n</resources>`
+  );
   for (const dir of fs.readdirSync(res).filter((d) => d === 'drawable' || d.startsWith('drawable-'))) {
     const file = path.join(res, dir, 'splash.png');
     if (!fs.existsSync(file)) continue;
     const { width, height } = nativeImage.createFromPath(file).getSize();
-    const w = scaled(wave, Math.round(Math.min(width, height) * 0.4));
-    const splash = lay(picture(width, height, BACKGROUND), w, Math.round((width - w.width) / 2), Math.round((height - w.height) / 2));
+    const w = masked(scaled(icon, Math.round(Math.min(width, height) * 0.4)), round);
+    const splash = lay(picture(width, height, SPLASH), w, Math.round((width - w.width) / 2), Math.round((height - w.height) / 2));
     out(file, png(splash));
   }
 
   // The iPhone: no alpha channel (iOS fills a see-through icon with black,
   // and the App Store refuses one).
-  const big = scaled(onDark, 1024);
+  const big = scaled(icon, 1024);
   const rgb = Buffer.alloc(big.width * big.height * 3);
   for (let i = 0, j = 0; i < big.data.length; i += 4, j += 3) {
     rgb[j] = big.data[i + order.r];
@@ -225,6 +257,6 @@ app.whenReady().then(() => {
   }
   out(path.join(repo, 'apps', 'ios', 'App', 'Assets.xcassets', 'AppIcon.appiconset', 'AppIcon.png'), opaquePng(rgb, big.width, big.height));
 
-  console.log(`Wrote, from icons/flow.png and icons/flow-bg.jpg:\n  ${wrote.join('\n  ')}`);
+  console.log(`Wrote, from icons/flow.png:\n  ${wrote.join('\n  ')}`);
   app.quit();
 });

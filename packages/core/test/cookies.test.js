@@ -7,12 +7,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { cookieSite, cookiesFor } = require('../src/cookies');
 
-test('a link\'s site: the domain itself, YouTube for its short links and Spotify lists', () => {
+test('a link\'s site: the domain itself, YouTube for its short links and Spotify, Deezer and Amazon Music lists', () => {
   assert.equal(cookieSite('https://www.youtube.com/watch?v=abc'), 'youtube.com');
   assert.equal(cookieSite('https://music.youtube.com/playlist?list=x'), 'youtube.com');
   assert.equal(cookieSite('youtu.be/abc'), 'youtube.com');
   assert.equal(cookieSite('https://open.spotify.com/playlist/x'), 'youtube.com');
   assert.equal(cookieSite('spotify:album:abc'), 'youtube.com');
+  assert.equal(cookieSite('https://www.deezer.com/en/playlist/4524622884'), 'youtube.com');
+  assert.equal(cookieSite('https://music.amazon.de/playlists/B0HJJ7HKT6'), 'youtube.com');
   assert.equal(cookieSite('https://soundcloud.com/a/b'), 'soundcloud.com');
   assert.equal(cookieSite('https://artist.bandcamp.com/album/x'), 'bandcamp.com');
   assert.equal(cookieSite('https://www.bbc.co.uk/sounds/play/x'), 'bbc.co.uk');

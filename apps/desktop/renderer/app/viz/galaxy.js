@@ -62,18 +62,18 @@
       o = vec4(c * f * f, 1.0);
     }`;
 
-  const OUT_FS = VizGL.NOISE + VizGL.STARS + `
+  const OUT_FS = VizGL.NOISE + VizGL.STAR_SKY + `
     in vec2 uv;
     uniform sampler2D light;
     uniform sampler2D glowA;
     uniform sampler2D glowB;
     uniform vec2 res;
-    uniform float time, boom;
+    uniform float time;
     out vec4 o;
     void main() {
       vec3 col = vec3(0.004, 0.004, 0.01);
       // Far stars behind (as Aurora's).
-      col += starField(gl_FragCoord.xy, time, boom);
+      col += starField(gl_FragCoord.xy);
       col += texture(light, uv).rgb + texture(glowA, uv).rgb * 1.3 + texture(glowB, uv).rgb * 2.0;
       col = 1.0 - exp(-col * 1.2);
       col += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
@@ -82,12 +82,12 @@
 
   class Galaxy {
     constructor(canvas) {
-      this.starShift = VizGL.starShift();
       const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
       this.stars = VizGL.program(gl, STAR_VS, STAR_FS);
       this.out = VizGL.program(gl, VizGL.SCREEN_VS, OUT_FS);
+      this.far = VizGL.starLayer(gl);
       this.vao = gl.createVertexArray();
       this.buf = gl.createBuffer();
       this.armsFor = 0;
@@ -211,6 +211,7 @@
 
       VizGL.blur(gl, this.a, this.qa, this.qb, 1.3);
       VizGL.blur(gl, this.qb, this.ea, this.eb, 2);
+      this.far.draw(0, 0, this.w, this.h, this.age, a.kick);
       VizGL.into(gl, null);
       gl.useProgram(this.out.p);
       const o = this.out.u;
@@ -219,8 +220,7 @@
       VizGL.bind(gl, o.glowB, this.eb.tex, 2);
       gl.uniform2f(o.res, this.w, this.h);
       gl.uniform1f(o.time, this.age);
-      gl.uniform1f(o.boom, a.kick);
-      gl.uniform2f(o.starShift, ...this.starShift);
+      this.far.use(o, 3);
       VizGL.screen(gl);
     }
   }

@@ -31,7 +31,8 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   files needs none of this. The phone apps show the same button when no
   connected Flow Server downloads songs.
 - **Whole playlists**: paste a YouTube playlist, a SoundCloud set, a Bandcamp
-  album, or a Spotify playlist or album into Add Songs. The songs are listed
+  album, or a Spotify, Deezer or Amazon Music playlist or album into Add
+  Songs. The songs are listed
   first, all ticked: untick what you do not want, then Download Selected or
   Download All (or Cancel). Songs already in your library and a playlist name
   that is taken are listed as warnings on top, each with a box to untick. The
@@ -59,6 +60,15 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
     uploads scored by length, channel and title. Matches more than 5 seconds
     off are marked "check"; each links to YouTube. Artist, title and mix come
     from Spotify. Spotify's page shows at most 100 songs of a longer list.
+  - **Deezer** and **Amazon Music** are copy protected too and go the same
+    way: only the list comes from them, each song from YouTube. Deezer's list
+    comes from its public API (public playlists, albums and songs, also share
+    links, any length). Amazon Music's comes from the page it shows search
+    engines (music.amazon.de/... or amazon.de/music/player/..., playlists,
+    albums and songs; an album link shared from one song is that song). Its
+    catalog is per country: a link from another country's store may show
+    nothing. Amazon's own extras (Alexa's spoken interludes) are not on
+    YouTube and come out as not found.
 - **Playlists**: create, rename, delete. Deleting asks first, with **Also
   delete all songs that exist only in this playlist** (off): ticked, the
   songs in no other playlist and not among the favourites go too, files
@@ -547,7 +557,7 @@ npm start       # run the desktop app
 npm test        # every package's tests: no network; the parts that need ffmpeg run
                 # with apps/desktop/tools/ (or ffmpeg on the PATH), else are skipped
 npm run icon    # every app's icons (desktop, Android, iPhone) from icons/flow.png
-                # (the wave alone) and icons/flow-bg.jpg (the wave on its background)
+                # (the white wave on its blue square)
 npm run dist    # build the installer into apps/desktop/dist/
 ```
 
@@ -584,11 +594,12 @@ icons/           Flow's icon, the source of every app's (npm run icon)
 
 `packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,
 `libraryModel.js`, `commands.js`, `profiles.js`, `address.js`, `tags.js`,
-`spotify.js`, `relocate.js`, `cookies.js`, `sponsorblock.js` and `jsonFile.js`, each required as
+`spotify.js`, `deezer.js`, `amazonMusic.js`, `relocate.js`, `cookies.js`, `sponsorblock.js` and `jsonFile.js`, each required as
 `@flow/core/<name>`, and the download work the app and the server share:
 `media.js` (yt-dlp and ffmpeg: probe, download, keep / lift out / convert,
 the trim cut with tags, the waveform's peaks; each app makes one with its own
-tools and folder), `listing.js` (whole playlists and Spotify lists read, songs
+tools and folder), `listing.js` (whole playlists and Spotify, Deezer and
+Amazon Music lists read, songs
 fetched one after another) and `processRunner.js`. Everything below is under `apps/desktop/`.
 
 - `main.js` holds the window and every IPC route; `preload.js` exposes
@@ -599,7 +610,7 @@ fetched one after another) and `processRunner.js`. Everything below is under `ap
   - `importer.js`: whole playlists (`@flow/core/listing`) and local files
     (`localScan.js` looks through a folder), each song trimmed in its frame,
     then saved; `spotify.js` reads Spotify lists and picks the YouTube upload
-    per song
+    per song (`deezer.js` and `amazonMusic.js` read theirs for the same)
   - `formats.js`: which format a download is kept in
   - `exporter.js`: the trim cut and the tags, into `Music\FlowPlayer`
   - `titleParser.js`: Artist / Title / Mix from yt-dlp's info

@@ -15,21 +15,32 @@ const { randomBase64Url } = require('./common');
 const VIZ_OPTIONS = {
   // Opened as Random, another one with each song.
   vizRandomEach: ['bool', false],
+  // Limit framerate: whether, how many frames a second the visualizers draw
+  // at most (0: no limit), and V-Sync: as many as the screen shows (the
+  // limit then not used).
+  vizFpsOn: ['bool', false],
+  vizFps: ['choice', 60, [15, 30, 45, 60, 75, 90, 105, 120, 144, 165, 240, 360, 0]],
+  vizVsync: ['bool', false],
   // Synthwave: how fast it flies (percent; its other settings are below with
   // the rest of the window's).
   synSpeed: ['range', 100, 50, 150, 5],
   // Bars: how many, their colours ('classic' and 'equalizer' are gone: a value
-  // saved as one of them is left behind), solid or in LED steps, the peak
-  // caps, the floor mirroring them.
+  // saved as one of them is left behind; 'custom' is brColor), solid or in LED
+  // steps, the peak caps, the floor mirroring them.
   brCount: ['range', 40, 16, 128, 4],
-  brColors: ['choice', 'lime', ['fire', 'ice', 'lime', 'rainbow']],
+  brColors: ['choice', 'lime', ['fire', 'ice', 'lime', 'rainbow', 'custom']],
+  brColor: ['color', '#3484f4'],
   brStyle: ['choice', 'solid', ['solid', 'led']],
   brPeaks: ['bool', true],
   brMirror: ['bool', false],
-  // Waveform: its colours (the equalizer's, without black), and distinct
-  // bars or one smooth wave.
-  wfColors: ['choice', 'rainbow', ['rainbow', 'spectrum', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple']],
+  // Waveform: its colours (rainbow, spectrum, greyscale, or one of its own,
+  // wfColor), distinct bars or one smooth wave, the shine round it and how
+  // far it spreads (percent, 50 as it was).
+  wfColors: ['choice', 'rainbow', ['rainbow', 'spectrum', 'greyscale', 'custom']],
+  wfColor: ['color', '#3484f4'],
   wfStyle: ['choice', 'bars', ['bars', 'wave']],
+  wfShine: ['bool', true],
+  wfShineSpread: ['range', 50, 0, 100, 5],
   // Lightning: the bolts' colour, the sky lighting up with them (and how
   // much), how readily it strikes (percent), rain (and how heavy; 50% is
   // the rain it always had).
@@ -45,11 +56,12 @@ const VIZ_OPTIONS = {
   ksLook: ['choice', 'kaleido', ['auto', 'kaleido', 'vortex', 'tunnel', 'starburst']],
   ksEvery: ['range', 30, 10, 120, 5],
   ksTrails: ['range', 100, 25, 200, 5],
-  // Halo: the cover round or square, turning (round only), the spectrum as
-  // bars, a line or dots, the sparks, the cover blurred behind, the title.
-  hlShape: ['choice', 'round', ['round', 'square']],
+  // Halo: the round cover turning, the spectrum as bars, a line or dots, the
+  // colours (the cover's, rainbow, by the notes, warm white), the sparks, the
+  // cover blurred behind, the title.
   hlSpin: ['bool', true],
   hlStyle: ['choice', 'bars', ['bars', 'line', 'dots']],
+  hlColors: ['choice', 'cover', ['cover', 'rainbow', 'notes', 'white']],
   hlParticles: ['bool', true],
   hlBackground: ['bool', true],
   hlTitle: ['bool', true],
@@ -74,30 +86,39 @@ const VIZ_OPTIONS = {
   ifLayout: ['choice', 'centre', ['centre', 'across']],
   ifEmbers: ['bool', true],
   ifForest: ['bool', true],
-  // Ridges: white, neon or heat; how many lines; how fast they flow
-  // (percent); the spectrum or the waveform.
-  rdColor: ['choice', 'white', ['white', 'neon', 'heat']],
+  // Ridges: white, neon, heat or its own colour (rdOwnColor); how many lines;
+  // how fast they flow (percent); the spectrum or the waveform.
+  rdColor: ['choice', 'white', ['white', 'neon', 'heat', 'custom']],
+  rdOwnColor: ['color', '#3484f4'],
   rdRows: ['range', 60, 20, 120, 5],
   rdSpeed: ['range', 100, 25, 200, 5],
   rdSource: ['choice', 'spectrum', ['spectrum', 'wave']],
   // Fireworks: festive, gold and silver or the music's colours; how large
-  // the bursts are and how long the trails hang (percent); the city.
+  // the bursts are and how long the trails hang (percent); the city; the
+  // screen flashing with the bursts (and how much, percent; 75 as it first was).
   fwColors: ['choice', 'festive', ['festive', 'gold', 'music']],
   fwSize: ['range', 100, 50, 200, 5],
   fwTrails: ['range', 50, 0, 100, 5],
   fwCity: ['bool', true],
+  fwFlash: ['bool', true],
+  fwFlashAmount: ['range', 50, 0, 100, 5],
   // Prism: a kaleidoscope or tiles, how many slices, how fast it turns
   // (percent), the colours shifting.
   psMode: ['choice', 'kaleido', ['kaleido', 'tiles']],
   psSlices: ['choice', '6', ['4', '6', '8', '12']],
   psSpin: ['range', 100, 0, 200, 5],
   psShift: ['bool', true],
-  // Orb: dots or a wireframe, its colours, how fast it turns (percent), the
-  // ring of sparks.
+  // Orb: dots or a wireframe, its colours (aurora, rainbow, or its own,
+  // obColor; ember, ice and white became own ones), how fast it turns
+  // (percent), the ring of sparks, the zoom on the kicks (and how far, percent;
+  // 80 as it first was).
   obStyle: ['choice', 'dots', ['dots', 'wire']],
-  obColors: ['choice', 'aurora', ['aurora', 'ember', 'ice', 'rainbow', 'white']],
+  obColors: ['choice', 'aurora', ['aurora', 'rainbow', 'custom']],
+  obColor: ['color', '#3484f4'],
   obSpin: ['range', 100, 0, 200, 5],
   obRing: ['bool', true],
+  obZoom: ['bool', true],
+  obZoomAmount: ['range', 50, 0, 100, 5],
   // Blobs (id lava): its colours, how many blobs, how fast they drift (percent), the gloss.
   lvColors: ['choice', 'lava', ['lava', 'neon', 'ocean', 'candy', 'chrome']],
   lvBlobs: ['range', 10, 4, 16, 1],
@@ -125,8 +146,10 @@ const VIZ_OPTIONS = {
   auGlare: ['range', 100, 50, 150, 5],
   auLake: ['bool', true],
   auStars: ['bool', true],
-  // Skyline: its colours, the camera, how far back the rows reach (percent).
-  skColors: ['choice', 'classic', ['classic', 'neon', 'ice', 'fire']],
+  // Skyline: its colours (or its own, skColor), the camera, how far back the
+  // rows reach (percent).
+  skColors: ['choice', 'classic', ['classic', 'neon', 'ice', 'fire', 'custom']],
+  skColor: ['color', '#3484f4'],
   skCamera: ['choice', 'orbit', ['orbit', 'front', 'above']],
   skHistory: ['range', 70, 25, 100, 5],
   // Galaxy: how many arms, its colours, how fast it turns (percent), the view.
@@ -166,10 +189,18 @@ const VIZ_OPTIONS = {
   arGame: ['choice', 'auto', ['auto', 'pong', 'breakout', 'invaders']],
   arColors: ['choice', 'arcade', ['arcade', 'green', 'amber']],
   arCrt: ['bool', true],
-  // Disco: the colours, the beams, how fast the ball turns (percent).
+  // Disco: the colours, the beams, the strobes (how much they light the
+  // room, percent), how fast the ball turns, whether the camera swivels, how
+  // fast and how far (percent), the render scale (percent of the screen's pixels across).
   dcColors: ['choice', 'disco', ['disco', 'warm', 'cool']],
   dcBeams: ['bool', true],
+  dcStrobes: ['bool', true],
+  dcStrobeRoom: ['range', 50, 0, 100, 5],
   dcSpin: ['range', 100, 0, 300, 5],
+  dcCamera: ['bool', true],
+  dcSwivel: ['range', 100, 0, 500, 5],
+  dcSwingRange: ['range', 100, 50, 250, 5],
+  dcScale: ['choice', '100', ['100', '75', '50']],
   // Stained Glass: the window (a rose, a pointed arch, the whole screen),
   // the glass's colours (the cover's, or warm, cold or rainbow glass), how
   // many panes across, the shafts of light, the torches beside the window.
@@ -231,30 +262,46 @@ const VIZ_OPTIONS = {
   ntWeather: ['choice', 'clear', ['clear', 'rain', 'snow']],
   ntCup: ['bool', true],
   // Vinyl: the turntable (wood, black, silver), the grooves' colours (the
-  // music's, silver).
+  // music's, silver, or their own, vnColor).
   vnPlinth: ['choice', 'wood', ['wood', 'black', 'silver']],
-  vnColors: ['choice', 'music', ['music', 'silver']],
+  vnColors: ['choice', 'music', ['music', 'silver', 'custom']],
+  vnColor: ['color', '#3484f4'],
   // Mosaic Cover: the tiles' size, how far each is shifted to the picture's
   // colour (percent).
   msSize: ['choice', 'medium', ['tiny', 'small', 'medium', 'large']],
   msTint: ['range', 60, 0, 100, 5],
-  // Strings: the colours (round the notes, gold, ice), the notes' names and the key.
-  stColors: ['choice', 'notes', ['notes', 'gold', 'ice']],
+  // Strings: the colours (round the notes, gold, ice, or their own, stColor),
+  // the notes' names and the key.
+  stColors: ['choice', 'notes', ['notes', 'gold', 'ice', 'custom']],
+  stColor: ['color', '#3484f4'],
   stNames: ['bool', true],
-  // Radar: the phosphor's colour (green, amber, blue), how long it glows
-  // (percent of a turn).
-  raColors: ['choice', 'green', ['green', 'amber', 'blue']],
+  // Radar: what lies round the screen (the console, wood, black, silver), the
+  // phosphor's colour (green, amber, blue, or its own, raColor), how long it
+  // glows (percent of a turn).
+  raBack: ['choice', 'black', ['none', 'wood', 'black', 'silver']],
+  raColors: ['choice', 'green', ['green', 'amber', 'blue', 'custom']],
+  raColor: ['color', '#3484f4'],
   raTrail: ['range', 100, 25, 200, 5],
+  // Seismograph: the paper's grid (green, red, blue), the ink (a colour for
+  // each pen, black, or its own, szColor), how many pens, the paper's speed
+  // (percent).
+  szPaper: ['choice', 'green', ['green', 'red', 'blue']],
+  szInk: ['choice', 'classic', ['classic', 'black', 'custom']],
+  szColor: ['color', '#3484f4'],
+  szPens: ['range', 8, 4, 12, 1],
+  szSpeed: ['range', 100, 50, 200, 10],
   // Moiré: the gratings (lines, rings, both), the colours (ink on paper,
   // print, neon).
   mrKind: ['choice', 'rings', ['lines', 'rings', 'both']],
   mrColors: ['choice', 'neon', ['paper', 'print', 'neon']],
   // Fountain Show: the lamps' colours (rainbow, by the chords, warm white, blue),
   // where the bass is (in the middle or on the left), how many jets, the
-  // rings the bursts leave on the water.
+  // gravity (percent of 1 G, shown as 0.5-2 G), the rings the bursts leave
+  // on the water.
   fnColors: ['choice', 'rainbow', ['rainbow', 'notes', 'white', 'blue']],
   fnLayout: ['choice', 'middle', ['middle', 'left']],
   fnJets: ['range', 40, 16, 64, 4],
+  fnGravity: ['range', 100, 50, 200, 5],
   fnRipples: ['bool', true],
 };
 
@@ -406,7 +453,7 @@ const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'pur
 // The ones that can be chosen; 'random-<category>' picks one of a
 // category's each time (VIZ_CATEGORIES in the desktop's visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy', 'other'];
-const VISUALIZERS = [...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'synthwave', 'lightning', 'kaleidoscope', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'coral', 'shatter', 'plasmaglobe', 'attractor', 'julia', 'mandelbulb', 'lighthouse', 'train', 'vinyl', 'mosaic', 'strings', 'radar', 'moire', 'fountain'];
+const VISUALIZERS = [...VIZ_CATEGORY_IDS.map((c) => `random-${c}`), 'bars', 'waveform', 'synthwave', 'lightning', 'kaleidoscope', 'halo', 'scope', 'warp', 'inferno', 'ridges', 'fireworks', 'prism', 'orb', 'lava', 'tunnel', 'rain', 'spectrogram', 'aurora', 'skyline', 'galaxy', 'demo', 'reactor', 'hifi', 'chladni', 'pianoroll', 'arcade', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'coral', 'shatter', 'plasmaglobe', 'attractor', 'julia', 'mandelbulb', 'lighthouse', 'train', 'vinyl', 'mosaic', 'strings', 'radar', 'moire', 'fountain', 'seismo'];
 
 function percent(v, fallback) {
   const n = Math.round(Number(v));
@@ -481,6 +528,18 @@ function clean(raw) {
   for (const key of ['synBobbingAmount', 'synCameraTiltAmount', 'synCarTiltAmount']) {
     const v = Math.round(Number(s[key]) / 5) * 5;
     s[key] = Number.isFinite(v) ? Math.min(200, Math.max(0, v)) : DEFAULTS[key];
+  }
+  // Waveform's one-colour schemes became a colour of its own.
+  const WAVE_SOLID = { white: '#ebebeb', red: '#ed1d1d', green: '#25d041', yellow: '#f9dc1f', blue: '#3484f4', purple: '#aa55e7' };
+  if (WAVE_SOLID[s.wfColors]) {
+    s.wfColor = WAVE_SOLID[s.wfColors];
+    s.wfColors = 'custom';
+  }
+  // Orb's Ember, Ice and White became colours of its own.
+  const ORB_SOLID = { ember: '#ff8a33', ice: '#7fb2ff', white: '#ffffff' };
+  if (ORB_SOLID[s.obColors]) {
+    s.obColor = ORB_SOLID[s.obColors];
+    s.obColors = 'custom';
   }
   for (const [key, [kind, def, a, b, step]] of Object.entries(VIZ_OPTIONS)) {
     const v = s[key];

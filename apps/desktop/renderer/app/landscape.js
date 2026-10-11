@@ -1,8 +1,8 @@
 'use strict';
 
 // The wireframe landscape: a neon grid of mountains flown over, first person,
-// along a valley, for the Synthwave visualizer (visualizer.js), which flies it
-// under a sky, a sun and a ship's nose.
+// along a valley, for the Synthwave visualizer (viz/synthwave.js, which
+// draws it in WebGL under a sky, a sun and a ship's nose).
 //
 // The terrain is made of the music. It is a grid of rows, one cell apart, each
 // a line of heights across; flying on, the nearest row drops away behind and
@@ -12,13 +12,6 @@
 // next to the valley, higher further out: the louder it is, the higher the
 // mountain there. What lies ahead is the song's last few seconds, and a quiet
 // part comes towards you as low hills.
-//
-// Perspective is one division: a point Z cells ahead is drawn at 1/Z of its
-// size. Rows are drawn from the horizon forwards, and each strip between two
-// rows first is filled dark (or, without a fill, wipes out what it covers),
-// so nearer mountains hide the ones behind. The glow is the whole picture
-// blurred once at half size, not a shadow on every line, which would be far
-// too slow at full screen.
 
 class Kick {
   // The bass rising above its own average of the last AVERAGE_MS.
@@ -71,8 +64,6 @@ class Intensity {
   }
 }
 
-// Cells drawn as one path (see render).
-const PIECE = 2;
 // The floor's bumps stand at full height up to BUMPS_NEAR cells ahead and
 // fade out by BUMPS_FAR: the music now is right in front of the car.
 const BUMPS_NEAR = 5;
@@ -82,28 +73,6 @@ const BUMPS_FAR = 14;
 function bumpsAt(z) {
   const x = Math.min(1, Math.max(0, (BUMPS_FAR - z) / (BUMPS_FAR - BUMPS_NEAR)));
   return x * x * (3 - 2 * x);
-}
-
-/**
- * Where the piece starting at column j ends: pieces always break at the same
- * columns, so they do not regroup as the rows come on and the strips reach
- * further or less far out.
- */
-function pieceEnd(j) {
-  return j - (j % PIECE) + PIECE;
-}
-
-/** A triangle into the path, always clockwise on screen, so none cancel. */
-function triangle(t, ax, ay, bx, by, cx, cy) {
-  t.moveTo(ax, ay);
-  if ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax) >= 0) {
-    t.lineTo(bx, by);
-    t.lineTo(cx, cy);
-  } else {
-    t.lineTo(cx, cy);
-    t.lineTo(bx, by);
-  }
-  t.closePath();
 }
 
 class Terrain {
@@ -132,9 +101,6 @@ class Terrain {
     // when the row came up at the horizon.
     this.bumps = 0;
     this.frac = 0; // 0..1, how far the rows have come since the last one dropped
-    this.buf = document.createElement('canvas');
-    this.glowBuf = document.createElement('canvas');
-    this.px = new Float32Array(this.width * 4); // far x, far y, near x, near y
   }
 
   _rand() {
@@ -225,123 +191,17 @@ class Terrain {
   }
 
   /**
-   * Draws onto `out` (w x h). horizon: its height as a share of h. fill: a
-   * colour for the mountains' sides (by depth, 0 near to 1 far), or null to
-   * leave them see-through. glow: how strong the blurred copy is added. kick:
-   * 0..1, brightens the lines. lift: the eye raised above camH (riding over
-   * bumps), in cells. line: the lines' colour near you as { h, s, l } (hsl),
-   * its hue turning by `drift` degrees towards the horizon.
+   * Every point's height as it stands now, its bumps as high as they stand,
+   * into out: row after row (ring[0] first), `width` to a row.
    */
-  render(out, w, h, {
-    horizon = 0.45, fill = null, glow = 0.7, kick = 0, focal = 0.55, alpha = 1, lift = 0, line = { h: 272, s: 95, l: 60, drift: 52 },
-  } = {}) {
-    const buf = this.buf;
-    if (buf.width !== w) buf.width = w;
-    if (buf.height !== h) buf.height = h;
-    const t = buf.getContext('2d');
-    t.globalCompositeOperation = 'source-over';
-    t.globalAlpha = 1;
-    t.clearRect(0, 0, w, h);
-    const f = w * focal;
-    const cx = w / 2;
-    const hy = h * horizon;
-    const { cols, ring, bumpRing, px } = this;
-    const camH = this.camH + lift;
-    const end = this.rows + 1;
-
-    for (let k = this.rows - 1; k >= 0; k -= 1) {
-      const zf = this.depth(k + 1);
-      const zn = this.depth(k);
-      if (zn < 0.3) continue;
-      const far = ring[k + 1];
-      const near = ring[k];
-      const farBumps = bumpRing[k + 1];
-      const nearBumps = bumpRing[k];
-      const bf = this.bumps * bumpsAt(zf);
-      const bn = this.bumps * bumpsAt(zn);
-      const reach = Math.min(cols, Math.ceil((zf * cx) / f) + 1);
-      const lo = cols - reach;
-      const hi = cols + reach;
-      for (let j = lo; j <= hi; j += 1) {
-        const x = j - cols;
-        px[j * 4] = cx + (x / zf) * f;
-        px[j * 4 + 1] = hy + ((camH - far[j] - bf * farBumps[j]) / zf) * f;
-        px[j * 4 + 2] = cx + (x / zn) * f;
-        px[j * 4 + 3] = hy + ((camH - near[j] - bn * nearBumps[j]) / zn) * f;
-      }
-      const d = zf / end; // 0 near, 1 at the horizon
-
-      // The strip covers whatever lies behind it, a few cells (PIECE) per
-      // path: Chromium draws a long, jagged path on the CPU, as a mask the
-      // size of its bounds, and a short one on the GPU; whole strips across
-      // the screen ran at under 20 fps even on a fast PC. Each cell is two
-      // triangles, all traced the same way round: a cell whose near edge
-      // rises above its far one would otherwise run the other way and cancel
-      // its neighbour out (nonzero winding), leaving a hole that flickered as
-      // the rows came on and the cells were grouped differently. The seams
-      // are under the lines running towards you.
-      if (fill) {
-        t.globalCompositeOperation = 'source-over';
-        t.fillStyle = fill(d);
-      } else {
-        t.globalCompositeOperation = 'destination-out';
-        t.fillStyle = '#000';
-      }
-      for (let p = lo, q; p < hi; p = q) {
-        q = Math.min(hi, pieceEnd(p));
-        t.beginPath();
-        for (let j = p; j < q; j += 1) {
-          const o = j * 4;
-          // far j, far j+1, near j+1 and far j, near j+1, near j
-          triangle(t, px[o], px[o + 1], px[o + 4], px[o + 5], px[o + 6], px[o + 7]);
-          triangle(t, px[o], px[o + 1], px[o + 6], px[o + 7], px[o + 2], px[o + 3]);
-        }
-        t.fill();
-      }
-
-      // Its far row and the lines running towards you. The line colour (by
-      // default violet near, blue further on), fading into the distance so
-      // new rows come in softly.
-      t.globalCompositeOperation = 'source-over';
-      const fog = Math.min(1, ((1 - d) / 0.35)) * (0.55 + 0.45 * (1 - d));
-      t.globalAlpha = Math.min(1, alpha * fog);
-      const hue = line.h - (line.drift || 0) * Math.sqrt(d);
-      const light = Math.max(0, Math.min(Math.max(85, line.l), line.l - 4 + 8 * (1 - d) + 22 * kick));
-      t.strokeStyle = `hsl(${hue.toFixed(0)}, ${line.s.toFixed(0)}%, ${light.toFixed(0)}%)`;
-      t.lineWidth = 0.8 + 1.6 * (1 - d) * (1 - d);
-      for (let p = lo, q; p < hi; p = q) {
-        q = Math.min(hi, pieceEnd(p));
-        t.beginPath();
-        t.moveTo(px[p * 4], px[p * 4 + 1]);
-        for (let j = p + 1; j <= q; j += 1) t.lineTo(px[j * 4], px[j * 4 + 1]);
-        // Each line towards you once: the next piece draws the one at q.
-        const last = q === hi ? q : q - 1;
-        for (let j = p; j <= last; j += 1) {
-          t.moveTo(px[j * 4], px[j * 4 + 1]);
-          t.lineTo(px[j * 4 + 2], px[j * 4 + 3]);
-        }
-        t.stroke();
-      }
-      t.globalAlpha = 1;
+  heights(out) {
+    for (let k = 0; k <= this.rows; k += 1) {
+      const row = this.ring[k];
+      const bumps = this.bumpRing[k];
+      const b = this.bumps * bumpsAt(this.depth(k));
+      const o = k * this.width;
+      for (let j = 0; j < this.width; j += 1) out[o + j] = row[j] + b * bumps[j];
     }
-
-    if (glow > 0) {
-      const g = this.glowBuf;
-      const gw = Math.max(1, Math.round(w / 2));
-      const gh = Math.max(1, Math.round(h / 2));
-      if (g.width !== gw) g.width = gw;
-      if (g.height !== gh) g.height = gh;
-      const gc = g.getContext('2d');
-      gc.clearRect(0, 0, gw, gh);
-      gc.filter = 'blur(5px)';
-      gc.drawImage(buf, 0, 0, gw, gh);
-      gc.filter = 'none';
-      out.globalCompositeOperation = 'lighter';
-      out.globalAlpha = Math.min(1, glow * (1 + 0.8 * kick));
-      out.drawImage(g, 0, 0, w, h);
-    }
-    out.globalCompositeOperation = 'source-over';
-    out.globalAlpha = 1;
-    out.drawImage(buf, 0, 0);
+    return out;
   }
 }
