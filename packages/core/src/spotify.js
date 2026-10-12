@@ -77,9 +77,9 @@ async function fetchSpotify({ type, id }) {
 // Spotify. They only count against a result when Spotify's own title does not
 // say the same.
 const OTHER_VERSION = [
-  'lyrics', 'lyric', 'live', 'cover', 'remix', 'sped up', 'slowed', 'nightcore', 'reverb',
+  'lyrics', 'lyric', 'live', 'cover', 'remix', 'rmx', 'bootleg', 'sped up', 'slowed', 'nightcore', 'reverb',
   '8d', 'karaoke', 'instrumental', 'reaction', 'tutorial', 'loop', 'bass boosted',
-  'acoustic', 'hour', 'hours', 'extended', 'mashup', 'edit', 'version', 'concert', 'fan made',
+  'acoustic', 'hour', 'hours', 'extended', 'mashup', 'mash up', 'edit', 'version', 'concert', 'fan made',
   'performance', 'session', 'sessions', 'tiny desk', 'hootenanny', 'songline', 'unplugged',
 ];
 
@@ -211,4 +211,5 @@ function pickMatch(track, candidates) {
 module.exports = {
   parseSpotifyUrl, isSpotifyTrackUrl, parseEmbedPage, fetchSpotify,
   searchQuery, searchTitle, scoreMatch, rankMatches, pickMatch, pickMusicResult, musicSearchUrl, channelIsArtist, fold,
+  hasWord, OTHER_VERSION,
 };

@@ -5,7 +5,8 @@
 // to import.js instead,
 // which shows a checklist and imports untrimmed. Files from the computer
 // ("Open local File(s)" / "Open local Folder") go there too, straight to the
-// trimming step.
+// trimming step. Words instead of a link (a song's name) are searched for
+// (songSearch.js), and the upload picked is downloaded here as its link.
 //
 //   idle -> probing -> downloading -> ready -> (saving) -> idle
 //
@@ -47,7 +48,11 @@ const AddPage = {
     });
     $('openFilesBtn').onclick = () => this.openLocal(false);
     $('openFolderBtn').onclick = () => this.openLocal(true);
-    $('progCancel').onclick = () => (ImportPanel.busy ? ImportPanel.cancel() : window.flow.cancelDownload());
+    $('progCancel').onclick = () => {
+      if (SongSearch.busy) SongSearch.cancel();
+      else if (ImportPanel.busy) ImportPanel.cancel();
+      else window.flow.cancelDownload();
+    };
     window.flow.onDownloadProgress((p) => this._onProgress(p));
 
     // The checklist's size estimate follows the MP3 settings.
@@ -104,33 +109,26 @@ const AddPage = {
 
   // ---- downloading ----
 
-  async startDownload() {
+  /**
+   * Download for the link in the box. Words instead of a link (a song's
+   * name) are searched for first (songSearch.js); the upload picked there
+   * comes back here as `pick` ({ url, title }), downloaded as that one song.
+   */
+  async startDownload(pick = null) {
     if (this.phase === 'probing' || this.phase === 'downloading' || this.phase === 'saving') return;
-    const url = $('linkInput').value.trim();
+    const url = pick ? pick.url : $('linkInput').value.trim();
     if (!url) {
-      this._showError('Paste a link into the box first.');
+      this._showError('Paste a link, or type the name of a song, into the box first.');
       $('linkInput').focus();
       return;
     }
-    if (this.editorReady) {
-      const ok = await confirmDialog({
-        title: 'Discard current song?',
-        message: 'The song in the editor has not been saved yet. Download the new link and discard it?',
-        confirmLabel: 'Discard',
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    if (ImportPanel.busy) {
-      this._showError('A playlist import is still open. Finish it ("Finish all") or cancel it first.');
+    if (!pick && this.isSearch(url)) {
+      SongSearch.open(url, 'client');
       return;
     }
-    // A new link replaces a checklist that was never started.
-    if (ImportPanel.state === 'review') ImportPanel.close();
-    this._discard();
-    $('progressPanel').hidden = true;
+    if (!await this._clearForNew()) return;
 
-    let kind = this._linkKind(url);
+    let kind = pick ? 'song' : this._linkKind(url);
     if (kind === 'ask') {
       kind = await this._askSongOrList(url);
       if (!kind) return;
@@ -193,6 +191,43 @@ const AddPage = {
     this._openEditor();
   },
 
+  /**
+   * Several uploads picked from a search's results ("Download Selected",
+   * "Download All"; one alone goes to startDownload): downloaded here one
+   * after another, as an import's frames (ImportPanel.openPicked).
+   */
+  async startPicked(picks, name) {
+    if (this.phase === 'probing' || this.phase === 'downloading' || this.phase === 'saving') return;
+    if (!await this._clearForNew()) return;
+    await ImportPanel.openPicked(name, picks);
+  },
+
+  /**
+   * Before a new download: a song in the editor is thrown away (once that is
+   * confirmed), a checklist never started and search results go. False when
+   * it cannot start now (an import still open, or the song kept).
+   */
+  async _clearForNew() {
+    if (this.editorReady) {
+      const ok = await confirmDialog({
+        title: 'Discard current song?',
+        message: 'The song in the editor has not been saved yet. Download the new link and discard it?',
+        confirmLabel: 'Discard',
+        danger: true,
+      });
+      if (!ok) return false;
+    }
+    if (ImportPanel.busy) {
+      this._showError('A playlist import is still open. Finish it ("Finish all") or cancel it first.');
+      return false;
+    }
+    if (ImportPanel.state === 'review') ImportPanel.close();
+    SongSearch.close();
+    this._discard();
+    $('progressPanel').hidden = true;
+    return true;
+  },
+
   // ---- local files ----
 
   /** "Open local File(s)" / "Open local Folder": the picked ones go to import.js. */
@@ -215,6 +250,24 @@ const AddPage = {
   drawLocalPick() {
     const importing = typeof ImportPanel !== 'undefined' && ImportPanel.state !== 'idle';
     $('localPick').hidden = this.phase !== 'idle' || importing;
+  },
+
+  /**
+   * Words typed instead of a link: anything with a space in it, or one word
+   * that names no web host ("Numb", not "youtu.be/abc"). The same test as
+   * @flow/core/songSearch isSearch, which the server and the search use.
+   */
+  isSearch(text) {
+    const t = String(text || '').trim();
+    if (!t || t.includes('://') || /^spotify:/i.test(t)) return false;
+    if (/\s/.test(t)) return true;
+    let host;
+    try {
+      host = new URL(`https://${t}`).hostname;
+    } catch {
+      return true;
+    }
+    return !/\.[a-z]{2,}$/i.test(host) && !/^\d{1,3}(\.\d{1,3}){3}$/.test(host);
   },
 
   /**

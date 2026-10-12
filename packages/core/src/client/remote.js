@@ -193,7 +193,7 @@ function createRemote(env) {
   // The connection in use: base address, token, which address it is, whether
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
-  const conn = { base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, sessions: false, trim: false };
+  const conn = { base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
     message: '',
@@ -273,6 +273,8 @@ function createRemote(env) {
       profilesSupported: conn.profiles,
       // The server downloads songs itself ("Download (Server)" on Add Songs).
       downloads: status.state === 'online' && conn.downloads,
+      // It also searches by a song's name typed instead of a link.
+      search: status.state === 'online' && conn.downloads && conn.search,
       // The server cuts its songs' files (Edit's trim).
       trim: status.state === 'online' && conn.trim,
       // Connected through the Tailscale address (away from home).
@@ -533,12 +535,13 @@ function createRemote(env) {
         if (gen !== generation) return false;
         const profiles = Array.isArray(hello.features) && hello.features.includes('profiles');
         const downloads = Array.isArray(hello.features) && hello.features.includes('download');
+        const search = Array.isArray(hello.features) && hello.features.includes('search');
         const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, sessions, trim,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         if (via === 'home') fillRemote(hello);
@@ -2377,12 +2380,19 @@ function createRemote(env) {
     const item = `/api/downloads/items/${Math.max(0, Math.floor(Number(args.index) || 0))}`;
     try {
       if (action === 'get') return (await call('/api/downloads')).batch;
-      // create: cookies, the link's site's browser cookies (or none).
+      // create: cookies, the link's site's browser cookies (or none). Or items
+      // and name: uploads picked from a search, several at once.
       if (action === 'create') {
-        const { url, kind, options, cookies } = args;
-        return (await call('/api/downloads', { method: 'POST', json: { url, kind, options, cookies: cookies || undefined } })).batch;
+        const { url, kind, options, cookies, items, name } = args;
+        const json = items ? { items, name, options } : { url, kind, options, cookies: cookies || undefined };
+        return (await call('/api/downloads', { method: 'POST', json })).batch;
       }
       if (action === 'cancel') return (await call('/api/downloads', { method: 'DELETE' })).batch;
+      // A song's name typed instead of a link: { query, artist, title, page, results }.
+      if (action === 'search') {
+        if (!conn.search) throw new Error('This Flow Server cannot search for songs by name yet: update it, or paste a link.');
+        return await call('/api/downloads/search', { method: 'POST', json: { query: args.query, page: Number(args.page) || 0 }, timeout: 120000 });
+      }
       if (action === 'peaks') return (await call(`${item}/peaks`, { timeout: 30000 })).peaks;
       if (action === 'cover') return await stagedServerCover(item, args);
       if (action === 'retry') return (await call(`${item}/retry`, { method: 'POST' })).batch;

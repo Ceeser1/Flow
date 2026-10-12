@@ -7,6 +7,8 @@
 //   download()  fetches the chosen songs one after another into the cache,
 //               where the page lets each be trimmed and renamed.
 //   finish()    ("Finish all") saves them all into All Songs and the playlist.
+//   search()    the uploads for a song's name typed instead of a link; the
+//               one picked is downloaded like a pasted link.
 //
 // Reading lists and downloading are @flow/core/listing (shared with the Flow
 // Server); local files and saving are the desktop app's own.
@@ -25,7 +27,7 @@ const {
 const { scanFolder, MAX_FILES } = require('./localScan');
 
 const lister = createLister({ media, library: () => library.get() });
-const { list, download } = lister;
+const { list, download, search } = lister;
 
 // ---- importing: download everything, then save it all at once ----
 //
@@ -287,4 +289,4 @@ async function finish(job, onProgress) {
   return summary;
 }
 
-module.exports = { list, download, listLocal, prepareLocal, finish, groupToken, eachItem };
+module.exports = { list, download, search, listLocal, prepareLocal, finish, groupToken, eachItem };

@@ -629,9 +629,10 @@ button, input, select { font: inherit; color: inherit; }
 .prog-title:empty { display: none; }
 
 /* Waiting on something that says nothing back for a while (the server reading a link),
-   and the footer's line while failed songs are tried again. */
+   the footer's line while failed songs are tried again, and "Search for more". */
 .prog-title--busy::after,
-.import-retry--busy::before {
+.import-retry--busy::before,
+.song-search__spinner {
   content: '';
   display: inline-block;
   width: 12px;
@@ -645,6 +646,8 @@ button, input, select { font: inherit; color: inherit; }
 }
 
 .import-retry--busy::before { margin: 0 8px 0 0; }
+.song-search__spinner { margin-left: 0; flex: none; }
+.song-search__spinner[hidden] { display: none; }
 
 @keyframes prog-spin {
   to { transform: rotate(360deg); }
@@ -1200,6 +1203,33 @@ div.import__frame-head { cursor: default; }
 }
 
 .import__buttons .btn { height: 38px; }
+
+/* ===== a song's name searched for (songSearch.js) ===== */
+
+/* The upload's title: opens it on its site, to check before downloading. */
+.song-search__title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  color: var(--text-bright);
+  font-size: inherit;
+  text-align: left;
+}
+
+.song-search__section {
+  padding: 9px 12px 5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--grey);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.import__flag--best { background: rgba(120, 200, 140, 0.16); color: var(--green); }
+
+.song-search__note { color: var(--text-dim); font-size: 12px; }
+.song-search__note--bad { color: var(--red); }
 
 
 /* ===== playlists page ===== */
