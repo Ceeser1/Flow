@@ -38,15 +38,17 @@ const MIX_LIMIT = 50;
 const READ_TRIES = 2;
 const QUALITY_RANK = { good: 2, shaky: 1, none: 0 };
 const SEARCHED_SITES = 'YouTube, SoundCloud, Bandcamp or the Internet Archive';
-// Words typed instead of a link (search): YouTube's results asked for, the
-// YouTube Music songs read for their artist and length, the uploads listed;
-// with "Search more sites", the Bandcamp and Archive hits read (for their
-// lengths, and to leave out what cannot be downloaded) and those listed.
+// Words typed instead of a link (search): YouTube's results asked for (a
+// page's worth), the YouTube Music songs read for their artist and length;
+// with "Search for more", the other sites' hits read (for their lengths, and
+// to leave out what cannot be downloaded), then YouTube further down, at most
+// this many pages; the uploads listed of the first page, the other sites',
+// and each of YouTube's further pages.
 const TYPED_RESULTS = 10;
 const TYPED_MUSIC_READS = 2;
-const TYPED_LISTED = 8;
 const TYPED_OTHER_READS = 4;
-const TYPED_MORE_LISTED = 8;
+const TYPED_PAGES = 10;
+const TYPED_LISTED = [8, 8, TYPED_RESULTS];
 
 /**
  * A cancel token for work that runs several processes, possibly at once:
@@ -437,22 +439,43 @@ function createLister({ media, library }) {
   }
 
   /**
-   * Songs for words typed instead of a link ("Linkin Park - Numb"), best
-   * first (songSearch.rankSearch): YouTube's, or with `more` the other
-   * sites'. Resolves { query, artist, title, results: [{ id, title, channel,
-   * duration, url, key, site, quality, versions, album?, existing }] }, where
-   * existing is the library song of the same upload, or null.
+   * YouTube's ordinary search further down ("Search for more" from its
+   * second time on): page 2 is its results 11 to 20, page 3 21 to 30 ...
    */
-  async function search(text, group, { more = false } = {}) {
+  async function searchYouTubeFurther(parsed, page, group) {
+    const skip = TYPED_RESULTS * (page - 1);
+    const res = await withSub(group, (t) => media.readJson(
+      ['--flat-playlist', '-J', `ytsearch${skip + TYPED_RESULTS}:${parsed.query}`], t));
+    if (group.cancelled) throw cancelled();
+    return (res.entries || []).slice(skip).filter((e) => e && e.id && Number(e.duration) > 0)
+      .map((e, i) => youTubeResult({ ...asCandidate(e), order: i }));
+  }
+
+  /**
+   * Songs for words typed instead of a link ("Linkin Park - Numb"), best
+   * first (songSearch.rankSearch). `page` is how many times "Search for
+   * more" was asked: 0 YouTube's and YouTube Music's first, 1 the other
+   * sites' (`more: true` is the same), 2 and on YouTube's further down
+   * (searchYouTubeFurther), up to TYPED_PAGES; a page may repeat uploads of
+   * an earlier one, and the app lists those once. Resolves { query, artist,
+   * title, page, results: [{ id, title, channel, duration, url, key, site,
+   * quality, versions, album?, existing }] }, where existing is the library
+   * song of the same upload, or null.
+   */
+  async function search(text, group, { page = 0, more = false } = {}) {
     const parsed = songSearch.parseQuery(text);
     if (!parsed.query) throw new Error('Type the name of a song, or paste a link.');
-    const found = more ? await searchOtherSites(parsed, group) : await searchYouTube(parsed, group);
+    const p = more ? 1 : Math.max(0, Math.floor(Number(page) || 0));
+    let found = [];
+    if (p === 0) found = await searchYouTube(parsed, group);
+    else if (p === 1) found = await searchOtherSites(parsed, group);
+    else if (p <= TYPED_PAGES) found = await searchYouTubeFurther(parsed, p, group);
     const data = library();
-    const results = songSearch.rankSearch(parsed, found).slice(0, more ? TYPED_MORE_LISTED : TYPED_LISTED).map((r) => {
+    const results = songSearch.rankSearch(parsed, found).slice(0, TYPED_LISTED[Math.min(p, 2)]).map((r) => {
       const { order, fromMusic, ...rest } = r;
       return { ...rest, existing: existingInfo(model.findBySource(data, { key: r.key, url: r.url })) };
     });
-    return { query: parsed.query, artist: parsed.artist, title: parsed.title, results };
+    return { query: parsed.query, artist: parsed.artist, title: parsed.title, page: p, results };
   }
 
   /** A Spotify playlist or album, each song looked up on YouTube. */

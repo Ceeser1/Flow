@@ -143,3 +143,22 @@ test('a cancelled search says so', async () => {
   group.cancel();
   await assert.rejects(l.search('Numb', group), (err) => err.cancelled === true);
 });
+
+test('"Search for more" further down YouTube: page 2 is its results 11 to 20; nothing past the last page', async () => {
+  const asked = [];
+  const entries = Array.from({ length: 20 }, (_, i) => ({ id: `v${i + 1}`, title: `Linkin Park - Numb ${i + 1}`, channel: 'Someone', duration: 188 }));
+  const media = {
+    async readJson(args) {
+      asked.push(args[args.length - 1]);
+      return { entries };
+    },
+  };
+  const l = createLister({ media, library: () => ({ songs: [], playlists: [] }) });
+  const r = await l.search('Linkin Park - Numb', groupToken(), { page: 2 });
+  assert.equal(r.page, 2);
+  assert.deepEqual(asked, ['ytsearch20:Linkin Park - Numb']);
+  assert.deepEqual(r.results.map((x) => x.id).sort(), entries.slice(10).map((e) => e.id).sort());
+  asked.length = 0;
+  assert.deepEqual((await l.search('Linkin Park - Numb', groupToken(), { page: 11 })).results, []);
+  assert.deepEqual(asked, []);
+});

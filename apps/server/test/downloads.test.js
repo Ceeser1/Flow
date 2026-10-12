@@ -444,3 +444,30 @@ test('a song\'s name typed instead of a link is searched for; the upload picked 
     process.env.FLOW_SERVER_YTDLP = keep;
   }
 });
+
+test('several uploads picked from a search are one batch, ready at once, saved into All Songs without a playlist', needsFfmpeg, async () => {
+  await withServer(async ({ base }) => {
+    const pick = (id) => ({ url: `https://fake.test/v/${id}`, title: `Song ${id}`, duration: 3 });
+    assert.equal((await api(base, 'POST', '/api/downloads', { items: [] })).status, 400);
+    assert.equal((await api(base, 'POST', '/api/downloads', { items: [{ url: 'http://192.168.0.1/x' }] })).status, 400);
+    assert.equal((await api(base, 'POST', '/api/downloads', { items: Array.from({ length: 51 }, (_, i) => pick(`p${i}`)) })).status, 400);
+    assert.equal(await batchOf(base), null, 'nothing made by the refused ones');
+
+    const r = await api(base, 'POST', '/api/downloads', { items: [pick('a'), pick('b')], name: 'Daft Punk - One More Time' });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.batch.state, 'ready');
+    assert.equal(r.json.batch.single, false);
+    assert.deepEqual(r.json.batch.source, { url: '', name: 'Daft Punk - One More Time', kind: 'search' });
+    assert.deepEqual(r.json.batch.items.map((x) => x.url), ['https://fake.test/v/a', 'https://fake.test/v/b']);
+    const done = await allSettled(base);
+    assert.deepEqual(done.items.map((x) => x.state), ['ready', 'ready']);
+
+    const f = await api(base, 'POST', '/api/downloads/items/0/finish', { meta: { artist: 'Daft Punk', title: 'Song a', mix: '' }, start: 0, end: 3, playlist: null });
+    assert.equal(f.status, 200);
+    assert.equal(f.json.playlistId, null);
+    const lib = (await api(base, 'GET', '/api/library')).json.library;
+    assert.deepEqual(lib.songs.map((s) => s.title), ['Song a']);
+    assert.equal(lib.songs[0].sourcePlaylistUrl || '', '');
+    assert.equal(lib.playlists.length, 0);
+  });
+});

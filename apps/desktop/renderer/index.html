@@ -110,11 +110,17 @@
           <div class="import__head">
             <div id="searchHead" class="import__source"></div>
           </div>
-          <div id="searchList" class="import__list"></div>
-          <div class="song-search__buttons">
+          <div class="import__toolbar">
+            <button id="searchMore" class="btn btn--small btn--light-grey" type="button">Search for more</button>
+            <span id="searchSpinner" class="song-search__spinner" hidden></span>
             <span id="searchNote" class="song-search__note" hidden></span>
-            <button id="searchMore" class="btn btn--light-grey" type="button">Search more sites</button>
-            <button id="searchClose" class="btn" type="button">Close</button>
+            <span id="searchCount" class="import__count"></span>
+          </div>
+          <div id="searchList" class="import__list"></div>
+          <div class="import__buttons">
+            <button id="searchClose" class="btn btn--light-red" type="button">Cancel</button>
+            <button id="searchSelected" class="btn btn--light-green" type="button">Download Selected</button>
+            <button id="searchAll" class="btn btn--light-grey" type="button">Download All</button>
           </div>
         </div>
 

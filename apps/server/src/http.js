@@ -44,9 +44,9 @@
 //   GET    /api/downloads              { batch } (null: none)
 //   POST   /api/downloads { url, kind, options }   a new batch: { batch }, 409 with one already
 //   DELETE /api/downloads              cancel the whole batch
-//   POST   /api/downloads/search { query, more }   uploads for a song's name typed
+//   POST   /api/downloads/search { query, page }   uploads for a song's name typed
 //                                      instead of a link (only with the "search"
-//                                      feature): { query, artist, title, results }
+//                                      feature): { query, artist, title, page, results }
 //   GET    /api/downloads/items/:i/peaks           the song's waveform
 //   GET    /api/downloads/items/:i/audio           the prepared song (Range, ?t=)
 //   GET    /api/downloads/items/:i/cover           the cover found for it (item.cover: its version)

@@ -54,7 +54,7 @@
 // task's number is retired, so whatever it still says is ignored.
 
 const SOURCE_NAMES = {
-  youtube: 'YouTube', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', spotify: 'Spotify', deezer: 'Deezer', 'amazon music': 'Amazon Music', vimeo: 'Vimeo', local: 'Local files',
+  search: 'Search', youtube: 'YouTube', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', spotify: 'Spotify', deezer: 'Deezer', 'amazon music': 'Amazon Music', vimeo: 'Vimeo', local: 'Local files',
 };
 
 const ImportPanel = {
@@ -92,12 +92,18 @@ const ImportPanel = {
     return !!(this.listing && this.listing.local);
   },
 
+  /** Uploads picked from a search's results (songSearch.js), not a playlist. */
+  get picked() {
+    return !!(this.listing && this.listing.search);
+  },
+
   /**
    * The songs make a playlist only when asked to ("Create new Playlist"):
-   * local files, and one song downloaded by the server.
+   * local files, uploads picked from a search, and one song downloaded by
+   * the server.
    */
   get optionalList() {
-    return this.local || !!(this.server && this.server.single);
+    return this.local || this.picked || !!(this.server && this.server.single);
   },
 
   /** The footer at the bottom of the page shows "Finish all". */
@@ -194,6 +200,28 @@ const ImportPanel = {
     this.moveOriginals = false;
     this._resetName(listing.name);
     await this._run(listing.items, { local: true });
+  },
+
+  /**
+   * Uploads picked from a search's results, several at once ([{ url, title,
+   * duration }]; one alone is downloaded as its link instead): downloaded one
+   * after another, each a frame, then saved into All Songs, or into a new
+   * playlist named after the search when "Create new Playlist" is ticked.
+   */
+  async openPicked(name, picks) {
+    if (this.state !== 'idle') return;
+    this.listing = {
+      local: false,
+      search: true,
+      source: 'search',
+      sourceUrl: '',
+      name,
+      truncated: false,
+      items: picks.map((r, index) => ({ index, title: r.title, duration: r.duration, url: r.url, meta: null, existing: null })),
+    };
+    this.moveOriginals = false;
+    this._resetName(name);
+    await this._run(this.listing.items, { source: { url: '', kind: 'search' } });
   },
 
   _setMove(on) {
@@ -1011,7 +1039,8 @@ const ImportPanel = {
     this._setState('downloading');
     if (toFetch.length) {
       AddPage._progress({
-        title: job.local ? `Opening ${Util.plural(toFetch.length, 'file')}` : `Importing "${this._finalName()}"`,
+        title: job.local ? `Opening ${Util.plural(toFetch.length, 'file')}`
+          : (this.picked ? `Downloading ${Util.plural(toFetch.length, 'song')}` : `Importing "${this._finalName()}"`),
         frac: null,
         status: 'Starting...',
       });
@@ -1247,8 +1276,9 @@ const ImportPanel = {
     const kept = (summary.kept || []).length;
     if (kept) parts.push(`${kept} original${kept === 1 ? '' : 's'} could not be removed (in use?)`);
     const kind = summary.saved || summary.fromLibrary ? 'success' : 'error';
-    if (local && !summary.playlistId) {
-      toast(`Local files added to All Songs: ${parts.join(', ') || 'nothing added'}`, kind);
+    if (!summary.playlistId && (local || this.optionalList)) {
+      const what = local ? 'Local files' : (summary.saved === 1 ? 'Song' : 'Songs');
+      toast(`${what} added to All Songs: ${parts.join(', ') || 'nothing added'}`, kind);
       return;
     }
     const id = summary.playlistId;
@@ -1265,6 +1295,7 @@ const ImportPanel = {
   async cancelAll() {
     const ready = this._ready().length;
     const local = this.local;
+    const picked = this.picked;
     const saved = this.job ? this.job.totals.saved : 0;
     if (ready || this.state === 'downloading') {
       const originals = local ? ' The original files stay where they are.' : '';
@@ -1299,7 +1330,7 @@ const ImportPanel = {
     }
     this._reset();
     const keptText = saved ? ` (${Util.plural(saved, 'song')} finished before ${saved === 1 ? 'stays' : 'stay'} saved)` : '';
-    toast((local ? 'Import of local files cancelled' : 'Playlist import cancelled') + keptText, 'info');
+    toast((local ? 'Import of local files cancelled' : (picked ? 'Download cancelled' : 'Playlist import cancelled')) + keptText, 'info');
   },
 
   // ---- a download on the server ----
@@ -1311,7 +1342,7 @@ const ImportPanel = {
     Covers.forgetServerPending();
     this.server = { id: batch.id, single: !!batch.single };
     this.listing = {
-      local: false, source: batch.source.kind || 'server', sourceUrl: batch.source.url, name: batch.source.name, truncated: batch.truncated, items: [],
+      local: false, search: batch.source.kind === 'search', source: batch.source.kind || 'server', sourceUrl: batch.source.url, name: batch.source.name, truncated: batch.truncated, items: [],
     };
     this.included = [];
     this.moveOriginals = false;

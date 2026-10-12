@@ -100,7 +100,7 @@ const ServerImport = {
   /**
    * Download (Server): the link in the box goes to the server. Words instead
    * of a link (a song's name) are searched for there first (songSearch.js);
-   * the upload picked comes back as `pick` ({ url, title }), one song.
+   * one upload picked there comes back as `pick` ({ url, title }), one song.
    */
   async start(pick = null) {
     if (!this.available) return;
@@ -118,33 +118,33 @@ const ServerImport = {
       SongSearch.open(url, 'server');
       return;
     }
-    if (ImportPanel.busy) {
-      AddPage._showError('An import is still open. Finish it or cancel it first.');
-      return;
-    }
-    if (AddPage.editorReady) {
-      const ok = await confirmDialog({
-        title: 'Discard current song?',
-        message: 'The song in the editor has not been saved yet. Download the new link and discard it?',
-        confirmLabel: 'Discard',
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    if (ImportPanel.state === 'review') ImportPanel.close();
-    SongSearch.close();
-    AddPage._discard();
-    $('progressPanel').hidden = true;
+    if (!await AddPage._clearForNew()) return;
     let kind = pick ? 'song' : AddPage._linkKind(url);
     if (kind === 'ask') {
       kind = await AddPage._askSongOrList(url);
       if (!kind) return;
     }
+    await this._create({ url, kind });
+  },
+
+  /**
+   * Several uploads picked from a search's results ("Download Selected",
+   * "Download All"; one alone goes to start): one batch on the server, saved
+   * into All Songs unless "Create new Playlist" is ticked.
+   */
+  async startPicked(picks, name) {
+    if (!this.available) return;
+    if (!await AddPage._clearForNew()) return;
+    await this._create({ items: picks.map((r) => ({ url: r.url, title: r.title, duration: r.duration })), name });
+  },
+
+  /** A new batch on the server (remote.serverDownloads 'create'), shown in the frames. */
+  async _create(args) {
     this.touch();
     $('serverDownloadBtn').disabled = true;
     let batch;
     try {
-      batch = await window.flow.serverDownloads('create', { url, kind, options: AddPage.downloadOptions() });
+      batch = await window.flow.serverDownloads('create', { ...args, options: AddPage.downloadOptions() });
     } catch (err) {
       this.drawButtons();
       AddPage._showError(err.message);

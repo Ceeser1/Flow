@@ -50,7 +50,7 @@ contextBridge.exposeInMainWorld('flow', {
   // `run` numbers the import task; its progress messages carry it.
   listImport: (url, run) => call('import:list', { url, run }),
   // A song's name typed instead of a link: the uploads found (importer.search).
-  searchSongs: (query, more) => call('search:songs', { query, more }),
+  searchSongs: (query, page) => call('search:songs', { query, page }),
   cancelSearch: () => call('search:cancel'),
   downloadImport: (items, opts, run) => call('import:download', { items, opts, run }),
   pickLocalFiles: () => call('local:pickFiles'),

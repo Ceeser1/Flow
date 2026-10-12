@@ -302,7 +302,7 @@ handle('server:sessions', (body) => remote.sessions(body || null));
 // link's site's cookies from the browser chosen along.
 handle('server:downloads', async ({ action, ...args }) => {
   const browser = settings.get('useCookies') && settings.get('shareCookies') ? settings.get('cookiesBrowser') : '';
-  if (action === 'create' && browser) args.cookies = await cookieJar.siteCookies(args.url, browser);
+  if (action === 'create' && args.url && browser) args.cookies = await cookieJar.siteCookies(args.url, browser);
   return remote.serverDownloads(action, args);
 });
 // The browsers the cookies can come from (Settings, Website Downloads).
@@ -465,12 +465,12 @@ handle('import:list', async ({ url, run }) => {
 // search at a time, apart from imports; a new one, or Cancel, stops the one
 // before.
 let searchToken = null;
-handle('search:songs', async ({ query, more }) => {
+handle('search:songs', async ({ query, page }) => {
   if (searchToken) searchToken.cancel();
   const token = importer.groupToken();
   searchToken = token;
   try {
-    return await importer.search(query, token, { more: !!more });
+    return await importer.search(query, token, { page });
   } finally {
     if (searchToken === token) searchToken = null;
   }

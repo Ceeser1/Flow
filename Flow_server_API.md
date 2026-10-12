@@ -448,9 +448,9 @@ profiles, one for everybody).
 | Route | Body | Answer |
 |---|---|---|
 | `GET /api/downloads` | | `{ batch }`, null when there is none |
-| `POST /api/downloads` | `{ url, kind, options, cookies? }` | a new batch: `{ batch }`. 409 with one open already |
+| `POST /api/downloads` | `{ url, kind, options, cookies? }` or `{ items, name, options }` | a new batch: `{ batch }`. 409 with one open already |
 | `DELETE /api/downloads` | | cancels the whole batch: `{ batch: null }` |
-| `POST /api/downloads/search` | `{ query, more? }` | uploads for a song's name, below; downloads nothing |
+| `POST /api/downloads/search` | `{ query, page? }` | uploads for a song's name, below; downloads nothing |
 | `GET /api/downloads/items/<i>/peaks` | | `{ peaks }` of a `ready` song |
 | `GET /api/downloads/items/<i>/audio` | | the prepared file, with `Range` (and `?t=`) |
 | `GET /api/downloads/items/<i>/cover` | | the cover found (`?v=` the item's `cover`); 404 without one |
@@ -463,19 +463,24 @@ profiles, one for everybody).
 one, even from a link into a playlist) or `"list"`. `options`: `{ alwaysMp3,
 quality (64-320, default 192), keepMp3 }`. `cookies`: a Netscape cookie
 file's text, for sites that need a signed-in visitor; only the link's site's
-lines are kept.
+lines are kept. Or, for uploads picked from a search: `items`, up to 50
+`{ url, title, duration }` (each such a link), and `name` (the search's words):
+the batch is `ready` at once, its `source` `{ url: "", name, kind: "search" }`,
+and no playlist is made unless a finish asks for one.
 
 **Searching by name** (only with `search` in `/api/hello`): `query` is a
 song's name as typed (`"Linkin Park - Numb"`, "Artist - Title" split at the
-dash; at most 200 characters, else 400). It searches YouTube and YouTube
-Music; with `more: true` SoundCloud, Bandcamp and the Internet Archive
-instead. It takes a few seconds (up to 90; 504 then); a newer search of the
+dash; at most 200 characters, else 400). `page` (default 0) is how many
+times more was asked for: 0 searches YouTube and YouTube Music, 1
+SoundCloud, Bandcamp and the Internet Archive, 2 and on YouTube's results
+further down (11-20, 21-30 ...; nothing past page 10). A page can repeat
+uploads of an earlier one. It takes a few seconds (up to 90; 504 then); a newer search of the
 same profile stops this one (409). Nothing is downloaded: send the `url` of
-the upload picked as a new batch with `kind: "song"`.
+the upload picked as a new batch with `kind: "song"`, or several as `items`.
 
 ```json
 {
-  "query": "Linkin Park - Numb", "artist": "Linkin Park", "title": "Numb",
+  "query": "Linkin Park - Numb", "artist": "Linkin Park", "title": "Numb", "page": 0,
   "results": [{
     "id": "...", "title": "Numb", "channel": "Linkin Park", "duration": 187, "album": "Meteora",
     "site": "YouTube", "url": "https://www.youtube.com/watch?v=...", "key": "youtube:...",
@@ -484,7 +489,7 @@ the upload picked as a new batch with `kind: "song"`.
 }
 ```
 
-- `results`: best first, at most 8. `quality`: `good` (the song itself, from
+- `results`: best first, at most 8 (10 on YouTube's further pages). `quality`: `good` (the song itself, from
   the artist or YouTube Music), `shaky` or `none`. `versions`: words in the
   title that make it another version and were not typed (`live`, `lyrics`,
   `remix` ...). `existing`: the library song of that very upload, or null.

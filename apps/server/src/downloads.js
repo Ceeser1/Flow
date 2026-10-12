@@ -24,7 +24,8 @@
 // and every song goes in at its place in the source: base - index seconds,
 // as the apps do it (importer.finish). Words typed instead of a link are
 // searched for (search) without a batch: the app lists what was found, and
-// the upload picked comes back as an ordinary one-song batch. A batch nobody opens or finishes
+// the uploads picked come back as a batch of their own (one: a one-song
+// batch of its link; several: createPicked). A batch nobody opens or finishes
 // anything of for downloadKeepDays (30) is thrown away, and so is a deleted
 // profile's.
 
@@ -45,6 +46,8 @@ const MAX_ITEMS = 500;
 const ITEM_TIMEOUT = 20 * 60 * 1000;
 // A search reads a few uploads at once; on a Pi that can take a while.
 const SEARCH_TIMEOUT = 90 * 1000;
+// Uploads picked from a search's results at once (a few pages of "Search for more").
+const MAX_PICKED = 50;
 const MIN_FREE_BYTES = 500 * 1024 * 1024;
 const DAY = 24 * 60 * 60 * 1000;
 // Items still to be dealt with: a batch with none of these left is over.
@@ -495,13 +498,16 @@ function createDownloads({ config, library, tools, log = () => {} }) {
    * A new batch for `url`: { url, kind: 'song' | 'list', options, cookies }.
    * kind 'song' reads only the one song even from a link into a playlist.
    * cookies: a Netscape cookie file's text from the app's browser, of which
-   * only the link's site's cookies are kept.
+   * only the link's site's cookies are kept. Or, for uploads picked from a
+   * search (search), { items: [{ url, title, duration }], name, options }:
+   * those songs, with nothing to read first, and no playlist unless asked.
    */
-  function create(profileId, { url, kind, options, cookies } = {}) {
+  function create(profileId, { url, kind, options, cookies, items, name } = {}) {
     if (config.get().downloads === false) throw new DownloadError(501, 'Downloads are turned off on this server (flow-server --downloads turns them on).');
     if (!tools.canDownload()) throw new DownloadError(501, 'This server cannot download songs: it needs yt-dlp and ffmpeg.');
     const key = keyOf(profileId);
     if (batches.has(key)) throw new DownloadError(409, 'There is a download on the server already. Finish or cancel it first.');
+    if (items !== undefined) return createPicked(key, profileId, { items, name, options });
     const link = checkLink(url);
     if (cookies !== undefined && cookies !== null && (typeof cookies !== 'string' || cookies.length > MAX_COOKIES)) {
       throw new DownloadError(400, 'The browser cookies sent along are not usable.');
@@ -532,14 +538,50 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     return publicBatch(batch);
   }
 
+  /** The uploads picked from a search, as a batch that is ready at once (see create). */
+  function createPicked(key, profileId, { items, name, options }) {
+    if (!Array.isArray(items) || !items.length) throw new DownloadError(400, 'Pick at least one song to download.');
+    if (items.length > MAX_PICKED) throw new DownloadError(400, `At most ${MAX_PICKED} songs can be picked at once.`);
+    const picked = items.map((it, i) => itemOf({
+      title: cleanText(it && it.title, 200) || `Song ${i + 1}`,
+      duration: Number(it && it.duration) || 0,
+      url: checkLink(it && it.url),
+      status: 'ok',
+    }, i));
+    const now = Date.now();
+    const batch = {
+      id: crypto.randomBytes(6).toString('hex'),
+      key,
+      profileId: profileId || null,
+      state: 'ready',
+      error: '',
+      single: false,
+      source: { url: '', name: cleanText(name, 200) || 'Search', kind: 'search' },
+      options: cleanOptions(options),
+      truncated: false,
+      base: 0,
+      playlistId: null,
+      createdAt: now,
+      lastActivity: now,
+      items: picked,
+      cookies: false,
+    };
+    batches.set(key, batch);
+    save(batch);
+    log(`Download batch "${batch.source.name}": ${picked.length} ${picked.length === 1 ? 'song' : 'songs'} picked from a search`);
+    pump();
+    return publicBatch(batch);
+  }
+
   /**
    * Songs for words typed instead of a link ("Linkin Park - Numb"): body
-   * { query, more } -> lister.search's answer, YouTube's uploads or with
-   * `more` the other sites'. Nothing is downloaded: the app sends the one
+   * { query, page } -> lister.search's answer for that page (0 YouTube's, 1
+   * the other sites', 2 and on YouTube's further down; more: true is page
+   * 1). Nothing is downloaded: the app sends the one
    * picked as a new batch (create, kind 'song'). One search per profile at a
    * time; a new one stops the one before.
    */
-  async function search(profileId, { query, more } = {}) {
+  async function search(profileId, { query, page, more } = {}) {
     if (config.get().downloads === false) throw new DownloadError(501, 'Downloads are turned off on this server (flow-server --downloads turns them on).');
     if (!tools.canDownload()) throw new DownloadError(501, 'This server cannot download songs: it needs yt-dlp and ffmpeg.');
     const text = typeof query === 'string' ? query.replace(/\s+/g, ' ').trim() : '';
@@ -555,7 +597,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       group.cancel();
     }, SEARCH_TIMEOUT);
     try {
-      return await lister.search(text, group, { more: !!more });
+      return await lister.search(text, group, { page, more: !!more });
     } catch (err) {
       if (group.timedOut) throw new DownloadError(504, 'The search took too long.');
       if (group.cancelled) throw new DownloadError(409, 'A newer search took the place of this one.');

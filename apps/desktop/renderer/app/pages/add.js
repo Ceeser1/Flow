@@ -126,24 +126,7 @@ const AddPage = {
       SongSearch.open(url, 'client');
       return;
     }
-    if (this.editorReady) {
-      const ok = await confirmDialog({
-        title: 'Discard current song?',
-        message: 'The song in the editor has not been saved yet. Download the new link and discard it?',
-        confirmLabel: 'Discard',
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    if (ImportPanel.busy) {
-      this._showError('A playlist import is still open. Finish it ("Finish all") or cancel it first.');
-      return;
-    }
-    // A new link replaces a checklist that was never started, and search results.
-    if (ImportPanel.state === 'review') ImportPanel.close();
-    SongSearch.close();
-    this._discard();
-    $('progressPanel').hidden = true;
+    if (!await this._clearForNew()) return;
 
     let kind = pick ? 'song' : this._linkKind(url);
     if (kind === 'ask') {
@@ -206,6 +189,43 @@ const AddPage = {
     this.media = media;
     this._progress({ title: probed.title, frac: 1, status: media.summary, cancel: false });
     this._openEditor();
+  },
+
+  /**
+   * Several uploads picked from a search's results ("Download Selected",
+   * "Download All"; one alone goes to startDownload): downloaded here one
+   * after another, as an import's frames (ImportPanel.openPicked).
+   */
+  async startPicked(picks, name) {
+    if (this.phase === 'probing' || this.phase === 'downloading' || this.phase === 'saving') return;
+    if (!await this._clearForNew()) return;
+    await ImportPanel.openPicked(name, picks);
+  },
+
+  /**
+   * Before a new download: a song in the editor is thrown away (once that is
+   * confirmed), a checklist never started and search results go. False when
+   * it cannot start now (an import still open, or the song kept).
+   */
+  async _clearForNew() {
+    if (this.editorReady) {
+      const ok = await confirmDialog({
+        title: 'Discard current song?',
+        message: 'The song in the editor has not been saved yet. Download the new link and discard it?',
+        confirmLabel: 'Discard',
+        danger: true,
+      });
+      if (!ok) return false;
+    }
+    if (ImportPanel.busy) {
+      this._showError('A playlist import is still open. Finish it ("Finish all") or cancel it first.');
+      return false;
+    }
+    if (ImportPanel.state === 'review') ImportPanel.close();
+    SongSearch.close();
+    this._discard();
+    $('progressPanel').hidden = true;
+    return true;
   },
 
   // ---- local files ----

@@ -2380,16 +2380,18 @@ function createRemote(env) {
     const item = `/api/downloads/items/${Math.max(0, Math.floor(Number(args.index) || 0))}`;
     try {
       if (action === 'get') return (await call('/api/downloads')).batch;
-      // create: cookies, the link's site's browser cookies (or none).
+      // create: cookies, the link's site's browser cookies (or none). Or items
+      // and name: uploads picked from a search, several at once.
       if (action === 'create') {
-        const { url, kind, options, cookies } = args;
-        return (await call('/api/downloads', { method: 'POST', json: { url, kind, options, cookies: cookies || undefined } })).batch;
+        const { url, kind, options, cookies, items, name } = args;
+        const json = items ? { items, name, options } : { url, kind, options, cookies: cookies || undefined };
+        return (await call('/api/downloads', { method: 'POST', json })).batch;
       }
       if (action === 'cancel') return (await call('/api/downloads', { method: 'DELETE' })).batch;
-      // A song's name typed instead of a link: { query, artist, title, results }.
+      // A song's name typed instead of a link: { query, artist, title, page, results }.
       if (action === 'search') {
         if (!conn.search) throw new Error('This Flow Server cannot search for songs by name yet: update it, or paste a link.');
-        return await call('/api/downloads/search', { method: 'POST', json: { query: args.query, more: !!args.more }, timeout: 120000 });
+        return await call('/api/downloads/search', { method: 'POST', json: { query: args.query, page: Number(args.page) || 0 }, timeout: 120000 });
       }
       if (action === 'peaks') return (await call(`${item}/peaks`, { timeout: 30000 })).peaks;
       if (action === 'cover') return await stagedServerCover(item, args);
