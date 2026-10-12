@@ -1,0 +1,529 @@
+# Flow Server API
+
+Everything a Flow Server answers, and how to call it. The Flow apps use
+exactly these routes; a script, a test tool or another client can use them
+the same way. The code is in `apps/server/src/http.js` (routes),
+`sessions.js`, `downloads.js`, `live.js` and `packages/core/src/commands.js`.
+
+Contents: [Basics](#basics) · [Signing in](#signing-in) ·
+[Server info](#server-info) · [Library](#library) · [Commands](#commands) ·
+[Songs](#songs) · [Profiles](#profiles) · [Live channel](#live-channel) ·
+[Active Sessions](#active-sessions) · [Downloads by the server](#downloads-by-the-server) ·
+[Finding the server (UDP)](#finding-the-server-udp)
+
+## Basics
+
+- **Address:** `http://<server>:7878` on the home network or Tailscale (7878
+  is the default port, `--port` changes it). At level 3 or 4 also the https
+  address in front of it, which may have a path (`https://example.com/flow`);
+  the routes below go after it.
+- **Format:** requests and answers are JSON (`Content-Type: application/json`),
+  except song files, covers and the live channel. A JSON body may be at most
+  8 MB. A trailing `/` on a path is ignored.
+- **HEAD** works wherever GET does.
+- **CORS:** every answer allows any origin, the methods GET, HEAD, POST, PUT,
+  DELETE, OPTIONS and the headers `Authorization`, `Content-Type`, `Range`.
+  An OPTIONS request gets 204.
+- **Errors:** a status code and `{ "error": "<message fit to show the user>" }`,
+  sometimes with more fields (`retryIn` for a declined session join). Common
+  codes: 400 bad request, 401 password needed or session ended, 403 not
+  allowed (or the server refuses this kind of connection at all, see
+  [Signing in](#signing-in)), 404 not found, 409 conflict with the current
+  state, 413 too large, 415 wrong file type, 429 too many tries, 501 feature
+  off, 503 too many apps connected.
+- **Ids:** song, playlist and profile ids are 1-64 characters of
+  `A-Z a-z 0-9 _ -`. An app's install id (`client`) is 8-64 of the same; each
+  Flow install makes one for itself and keeps it.
+- **`rev`:** the library's revision, a number that goes up with every change.
+  Many answers carry it so an app knows whether to fetch the library again.
+
+### Example
+
+```sh
+S=http://192.168.1.50:7878
+curl $S/api/hello
+TOKEN=$(curl -s -X POST $S/api/login -H 'Content-Type: application/json' \
+  -d '{"password":"secret","device":"My script","client":"my-script-0001"}' | jq -r .token)
+curl -H "Authorization: Bearer $TOKEN" $S/api/library | jq '.library.songs | length'
+```
+
+## Signing in
+
+**Without a server password** every route is open; no token is needed (one
+is only used to say which profile a request is for).
+
+**With a password**, every route except `/api/hello`, `/api/check` and
+`/api/login` needs a token:
+
+- the header `Authorization: Bearer <token>`, or
+- `?t=<token>` in the address (for audio and covers in an `<audio>` or
+  `<img>` element, which cannot send headers).
+
+### POST /api/login
+
+```json
+{ "password": "secret", "device": "Living room PC", "client": "a1b2c3d4e5f6" }
+```
+
+→ `{ "token": "..." }`
+
+- `device`: a name for the device, shown by `flow-server devices` (at most
+  80 characters; the caller's address when left out).
+- `client`: the app's install id, optional. With it, signing in again
+  replaces only this app's old token, so two PCs of the same name don't sign
+  each other out.
+- 401 `Wrong password.` / `This server needs its password.`
+- 429 after wrong tries: each wrong one from the same address waits twice as
+  long as the one before (1 s, 2 s, 4 s ... up to 5 minutes); after 30 wrong
+  ones within 10 minutes from anywhere, everyone waits.
+
+`flow-server set-password` signs every device out: their tokens stop working
+at once.
+
+### Levels 3 and 4 (reachable from the internet)
+
+- A token is a **session**: it ends after 30 minutes without a request, after
+  24 hours in all, or when the server restarts. Then every request gets 401
+  until the client sends the password to `/api/login` again. `/api/hello`
+  says `"session": true`, so a client should sign in with the password each
+  time it starts rather than reuse a saved token.
+- The **home network needs no password** there (a private address, connected
+  directly or through a proxy that passes on `X-Forwarded-For`).
+  `/api/hello` then says `"password": false`.
+- Without a strong password, nobody from outside gets past `/api/hello`
+  (403).
+
+### Requests that get no answer (403)
+
+At any level: plain http straight from a public address, and plain http
+through a proxy from outside. At level 1 and 2: anything a proxy passes on
+from outside.
+
+## Server info
+
+### GET /api/hello
+
+Open to anyone (only the refusals above apply).
+
+```json
+{
+  "app": "flow-server",
+  "protocol": 1,
+  "features": ["profiles", "download", "sessions", "trim"],
+  "version": "3.3.3",
+  "id": "<server id>",
+  "name": "Flow Server",
+  "password": true,
+  "tailscale": { "ip": "100.64.0.5", "dns": "pi.tailnet.ts.net", "port": 7878 },
+  "publicUrl": "https://music.example.com",
+  "session": true
+}
+```
+
+- `features`: `profiles` always; `download` when the server can download
+  songs itself (yt-dlp and ffmpeg there, not turned off); `sessions` for
+  Active Sessions; `trim` when ffmpeg is there.
+- `password`: whether this caller has to sign in.
+- `tailscale`: only at level 2 and up, only to callers on a private network
+  that did not come through a proxy.
+- `publicUrl`: only at level 3 and 4.
+- `session`: only at level 3 and 4, away from home.
+
+### GET /api/check
+
+Open to anyone. What the server made of this request, for `flow-server
+doctor`:
+
+```json
+{ "proxied": true, "trusted": true, "ip": "203.0.113.7", "proto": "https", "level": 3, "locked": null }
+```
+
+`locked`: why nobody from outside is let in (no strong password), else null.
+
+### GET /api/time
+
+→ `{ "time": 1760270000000 }`: the server's clock in ms, for playing in step
+with other devices.
+
+## Library
+
+### GET /api/library
+
+Query: `since=<rev>` and `as=<profile id>` (both optional).
+
+- 204 with no body when `since` is the current `rev` and `as` is the profile
+  this token is signed in to (empty for none): nothing changed.
+- Otherwise 200:
+
+```json
+{ "rev": 412, "library": { ... }, "profile": { "id": "9f3a1c0b7e2d", "name": "Sam", "pin": false } }
+```
+
+`profile` is null without one. `library`, as the signed-in profile sees it:
+
+| Field | |
+|---|---|
+| `songs` | `[{ id, file, title, artist, mix, duration, format, sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, addedBy, stats, favouriteAt, loudness, cover, cut, ... }]`. `file` is relative to the music folder. `stats` and `favouriteAt` are this profile's. |
+| `playlists` | `[{ id, name, createdAt, entries: [{ songId, addedAt }], source, shared }]`, this profile's own |
+| `sharedPlaylists` | other profiles' shared playlists, read-only: `{ id, name, createdAt, entries, ownerId, ownerName }` |
+| `follows` | ids of the shared playlists this profile follows |
+| `playlistListened` | seconds listened per list: `{ [playlistId \| "all" \| "favourites" \| "smart:..."]: seconds }` |
+| `profileNames` | `{ [profileId]: name }`, for the songs' `addedBy` (`"default"`: Default / Shared) |
+
+- `stats`: `{ plays, stops, skips, sessions, listened, lastPlayedAt }`.
+- `cover`: the cover's version (see [covers](#get-apisongsidcover)), `"-"`
+  when none was found, null when not looked for yet.
+- "All Songs" and "Favourites" are not stored: all songs, and the songs with
+  a `favouriteAt`.
+
+### POST /api/rescan
+
+Looks through the music folder now (it also does every five minutes).
+→ `{ "added": 2, "removed": 0, "moved": 1, "rev": 413 }`
+
+## Commands
+
+### POST /api/commands
+
+Every change to the library (except uploads, trims and covers) is a command.
+Send up to 5000 at once:
+
+```json
+{
+  "commands": [
+    { "cid": "c-001", "at": 1760270000000, "type": "createPlaylist", "playlistId": "p-roadtrip", "name": "Road trip" },
+    { "cid": "c-002", "at": 1760270000500, "type": "addSongsToPlaylist", "playlistId": "p-roadtrip", "songIds": ["s1", "s2"] }
+  ]
+}
+```
+
+→ `{ "rev": 414, "results": [{ "cid": "c-001", "ok": true, "value": "p-roadtrip" }, { "cid": "c-002", "ok": true }] }`
+
+- `cid`: unique per command. A command sent twice (its answer got lost)
+  counts once; the second gets `skipped: "repeat"`.
+- `at`: when the change was made (ms; now when left out). The last change
+  wins: a command older than the last change to the same thing is skipped
+  (`"stale"`). A delete always wins.
+- Commands act on the signed-in profile: its playlists, favourites and stats.
+  A song's names (`editSong`) and deleting a song are for everyone.
+- Each result is `{ cid, ok: true }`, maybe with `value` (a new id),
+  `skipped` (`repeat`, `stale`, `gone`: the song or playlist no longer exists,
+  `exists`, `known`) or `deletedSongs`; or `{ cid, ok: false, error }`. One
+  command failing does not stop the others.
+
+| `type` | Arguments | Does |
+|---|---|---|
+| `createPlaylist` | `playlistId`, `name`, `source?` | a new playlist with the id the client chose; a name taken already gets " (2)". `value`: its id |
+| `renamePlaylist` | `playlistId`, `name` | |
+| `deletePlaylist` | `playlistId`, `deleteSongs?` | with `deleteSongs: true` also the songs no other playlist or favourite of any profile has (`deletedSongs` lists them) |
+| `setPlaylistSource` | `playlistId`, `source: { url, kind }` | the link a playlist was imported from |
+| `setPlaylistShared` | `playlistId`, `shared` | other profiles may see and follow it |
+| `followPlaylist` / `unfollowPlaylist` | `playlistId` | another profile's shared playlist |
+| `addSongToPlaylists` | `songId`, `playlistIds` | one song into several playlists |
+| `addSongsToPlaylist` | `playlistId`, `songIds` | several songs into one playlist |
+| `removeFromPlaylist` | `playlistId`, `songId` | |
+| `deleteSong` | `songId` | for everyone; the file goes to `.flow-trash` for 30 days |
+| `editSong` | `songId`, `artist`, `title`, `mix` | new names (title required); the file is renamed and its tags rewritten |
+| `setFavourite` | `songId`, `on` | |
+| `setLoudness` | `songId`, `loudness` | the measured loudness, for Equalize volume |
+| `setDuration` | `songId`, `duration` | only when the server doesn't know the length (`skipped: "known"` otherwise) |
+| `recordListen` | `songId`, `listened`, `duration`, `contextId?` | a listen: `listened` seconds heard of `duration`; counted into the profile's stats |
+
+## Songs
+
+`<id>` is a song's id from the library.
+
+### PUT /api/songs/\<id\>?meta=\<json\>
+
+Uploads a song. The body is the audio file itself (at most 2 GB), `meta` the
+song's details as URL-encoded JSON:
+
+| `meta` field | |
+|---|---|
+| `format` | required: `mp3`, `m4a`, `aac`, `opus`, `ogg`, `oga`, `flac` or `wav` (else 415) |
+| `artist`, `title`, `mix` | the names (`title` defaults to "Untitled") |
+| `duration` | seconds |
+| `sourceUrl`, `sourceKey`, `sourcePlaylistUrl` | where it was downloaded from |
+| `addedAt`, `favouriteAt`, `stats`, `loudness`, `cut` | carried over from the app |
+| `playlistIds` | the profile's playlists to put it into |
+| `onExisting` | `"new"`: take it even if the server has it already |
+
+The `<id>` is kept when it is free, so the app's playlists keep pointing at
+the song.
+
+- → `{ "existing": false, "id": "<id>", "rev": 415 }`: taken.
+- → `{ "existing": true, "id": "<id there>", "rev": 415, "names": { "artist", "title", "mix" } }`:
+  the server has it already (the same id, the same source, or the same names
+  and length); the file was not stored. Send again with `onExisting: "new"`
+  to keep it as a song of its own.
+
+```sh
+curl -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @song.mp3 \
+  "$S/api/songs/my-song-1?meta=$(jq -rn '{format:"mp3",artist:"Daft Punk",title:"Veridis Quo"}|@uri')"
+```
+
+### GET /api/songs/\<id\>/audio
+
+The song's file as it is, with `Range` for seeking (206, or 416 out of range).
+`?vorbis=0`: an Ogg Vorbis song as Ogg Opus instead (for iOS; converted once
+with ffmpeg, then kept).
+
+### GET /api/songs/\<id\>/peaks
+
+→ `{ "peaks": [ ... ] }`: the song's waveform, for a trim editor. Needs ffmpeg.
+
+### POST /api/songs/\<id\>/trim
+
+Only when `/api/hello` lists `trim`. Cuts the song's file to `start`..`end`
+seconds; the uncut file goes to the trash.
+
+```json
+{ "start": 3.2, "end": 241.5, "base": "", "cut": "t-8c1e2a" }
+```
+
+- `cut`: an id for this trim, chosen by the client; `base`: the song's
+  current `cut` (empty for an untrimmed song).
+- → `{ "song": { ... }, "rev": 416 }`, or `{ "skipped": "repeat" | "changed" | "gone", "rev" }`:
+  done already, trimmed by another app since (not applied), deleted.
+- 403 for a song another profile uploaded: only the uploader trims it.
+
+### GET /api/songs/\<id\>/cover
+
+The cover, a 512 x 512 JPEG; 404 when it has none. With `?v=<version>` (the
+song's `cover` field) it may be cached for good. `ETag` / `If-None-Match`
+work (304).
+
+### PUT /api/songs/\<id\>/cover
+
+The body is a JPEG (at most 4 MB; made 512 x 512 with ffmpeg if it is not).
+Kept only when the song has no cover yet. → `{ "cover": "<version>", "rev": 417 }`
+
+## Profiles
+
+People sharing a server can each have a profile: the songs are everyone's,
+playlists, favourites and stats each profile's own. Without a profile a
+request is for "Default / Shared". With a server password, these routes need
+the token from `/api/login` first.
+
+| Route | Body | Answer |
+|---|---|---|
+| `GET /api/profiles` | | `{ profiles: [{ id, name, pin }], current }` (`pin`: whether it has one; `current`: this token's profile id or null) |
+| `POST /api/profiles` | `{ name, pin?, device?, client? }` | a new profile, signed in: `{ token, profile }`. 409 for a name taken |
+| `POST /api/profiles/login` | `{ profileId, pin?, device?, client? }` | `{ token, profile }`. 403 wrong PIN (waits as for the password), 404 gone |
+| `POST /api/profiles/logout` | | `{}`: this token is for no profile again |
+| `POST /api/profiles/rename` | `{ name }` | `{ profile }` |
+| `POST /api/profiles/delete` | | `{}`: deletes the signed-in profile with its playlists, favourites and stats (the songs stay) |
+
+The `token` from signing in to a profile replaces the old one: use it from
+then on. Profile names are at most 40 characters; rename and delete answer
+409 without a profile signed in.
+
+## Live channel
+
+### GET /api/live?client=\<install id\>&device=\<name\>
+
+A Server-Sent Events stream (`text/event-stream`), kept open while the app
+is connected; the server pushes events on it as they happen. One per app: a
+second one of the same `client` replaces the first. `device` is the name
+shown to other devices. With a token from an app that sent its `client` when
+signing in, only that app may open its channel (403).
+
+```
+event: hello
+data: {"client":"a1b2c3d4e5f6","serverTime":1760270000000,"pingMs":10000}
+
+: ping 1760270010000
+
+event: sessions
+data: {"sessions":[...]}
+```
+
+- `hello` first, then a `: ping` comment every 10 seconds.
+- The token is checked again at each ping: a changed password or an ended
+  session closes the stream with `end { reason: "auth" }`. Other reasons:
+  `replaced`, `shutdown`.
+- 503 when 200 apps are connected already.
+- Through a proxy it has to be passed on unbuffered (`proxy_buffering off`
+  in nginx; the server also sends `X-Accel-Buffering: no`).
+
+```sh
+curl -N -H "Authorization: Bearer $TOKEN" "$S/api/live?client=my-script-0001&device=Terminal"
+```
+
+## Active Sessions
+
+Devices on the server listening together. Every app that plays something is
+a session with itself as host; others ask to join, and their buttons are
+carried out by the host. Kept in memory only: a restart ends them all. A
+client needs its live channel open to take part; it hears back there.
+
+### GET /api/sessions?client=\<install id\>
+
+```json
+{
+  "sessions": [{
+    "id": "4e1f0a9c2b7d6e83", "name": "Sam - Living room speakers",
+    "host": { "client": "...", "profileName": "Sam", "device": "Living room PC" },
+    "song": { "id": "s1", "title": "Veridis Quo", "artist": "Daft Punk", "mix": "" },
+    "playing": true, "listeners": 1,
+    "members": [{ "client": "...", "profileName": "Sam", "device": "Living room PC", "mode": "host", "joinedAt": 1760270000000 }]
+  }],
+  "mine": { "session": { "id", "name", "hostClient", "members", "allowVolume" }, "state": { ... }, "host": false },
+  "request": { "requestId": "...", "sessionId": "...", "expiresIn": 42000 }
+}
+```
+
+`mine` is null outside a session, `request` null without an open request to
+join.
+
+### POST /api/sessions
+
+`{ "client": "<install id>", "type": "<type>", ... }` (`client` may be left
+out when the token names the app). → `{ "ok": true, ... }`
+
+| `type` | Fields | Answer / effect |
+|---|---|---|
+| `state` | `state` (below) | the host's playback, on every change and every few seconds while playing. → `{ sessionId }` |
+| `join` | `sessionId`, `mode`: `"remote"` (control only) or `"here"` (plays along) | asks the host. → `{ requestId, expiresIn }`. 429 with `retryIn` for a minute after a decline; 409 full (8 devices) |
+| `cancelJoin` | | takes the request back |
+| `answer` | `requestId`, `accept` | the host's Accept / Decline. → `{ accepted }` |
+| `control` | `action` and its fields, at the top level | a member's button, sent to the host. → `{ sent: true }`. At most 30 per 10 seconds (429) |
+| `mode` | `mode`: `"remote"` or `"here"` | a member switches |
+| `leave` | | out of the session; a host hands over to the next member |
+
+**`state`** (the host's playback; all optional):
+`songId`, `title`, `artist`, `mix`, `duration`, `playing`, `position`,
+`repeat`, `shuffle`, `contextId`, `contextName`, `ids` (the songs of what
+plays, in order; leave out when unchanged), `queue` (`{ contextId, currentId,
+shuffle, manual, auto, used, cursor, history }`), `at` (when `position` was
+read, in server time), `name` ("Profile - Output device"), `shared` (false:
+not listed for others), `allowVolume`, `volume` (0-1), `crossfade`
+(seconds), `outputDelay` (ms).
+
+**`control` actions:**
+
+| `action` | Fields |
+|---|---|
+| `toggle`, `play`, `pause`, `next`, `prev`, `queueClear` | |
+| `seek` | `position` (seconds) |
+| `shuffle`, `repeat` | `on` |
+| `queueAdd` | `songId` |
+| `queueRemove`, `queuePlay` | `part` (`"manual"` or `"auto"`), `index` |
+| `queueMove` | `part`, `from`, `to` |
+| `playSong` | `songId`, `ids?`, `contextName?`, `contextId?` |
+| `playPlaylist` | `playlistId` or `name` (`"all"` / "All Songs" works too); worked out from the library |
+| `volume` | `value` (0-1); only when the host allows it (403) |
+
+```sh
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"client":"my-script-0001","type":"control","action":"seek","position":60}' $S/api/sessions
+```
+
+**Events on the live channel:**
+
+| Event | To | Data |
+|---|---|---|
+| `sessions` | everyone, when the list changes | `{ sessions }` |
+| `joinRequest` | the host | `{ requestId, sessionId, client, profileName, device, ip, expiresIn }` |
+| `joinCancelled` | the host | `{ requestId, sessionId }`: taken back or run out |
+| `joinResult` | who asked | `{ requestId, sessionId, ok: true, session, state }`, or `ok: false` with `reason`: `declined` (+ `retryIn`), `expired`, `full`, `ended`, `unshared` |
+| `session` | every member, when members change | `{ session }` |
+| `state` | the members | `{ sessionId, state }` |
+| `control` | the host | `{ sessionId, action, args, from: { client, profileName, device } }` |
+| `hostChanged` | the new host | `{ sessionId, previous: { client, profileName, device }, reason, state, session }` |
+| `left` | a member that is out | `{ sessionId, reason }`: `left`, `dropped`, `joinedOther`, `ended`, `idle` |
+
+A request to join runs out after a minute. A host whose live channel drops
+hands over after 15 seconds unless it is back. The last member out ends the
+session.
+
+## Downloads by the server
+
+Only when `/api/hello` lists `download` (else 501). The server reads a link,
+downloads its songs in the background and keeps them aside until a client
+finishes (trims and names) each one. One batch per profile (without
+profiles, one for everybody).
+
+| Route | Body | Answer |
+|---|---|---|
+| `GET /api/downloads` | | `{ batch }`, null when there is none |
+| `POST /api/downloads` | `{ url, kind, options, cookies? }` | a new batch: `{ batch }`. 409 with one open already |
+| `DELETE /api/downloads` | | cancels the whole batch: `{ batch: null }` |
+| `GET /api/downloads/items/<i>/peaks` | | `{ peaks }` of a `ready` song |
+| `GET /api/downloads/items/<i>/audio` | | the prepared file, with `Range` (and `?t=`) |
+| `GET /api/downloads/items/<i>/cover` | | the cover found (`?v=` the item's `cover`); 404 without one |
+| `POST /api/downloads/items/<i>/finish` | below | saved into the library: `{ song, batch, playlistId, rev }` |
+| `POST /api/downloads/items/<i>/retry` | | a `failed` song again: `{ batch }` |
+| `DELETE /api/downloads/items/<i>` | | one song thrown away: `{ batch }` |
+
+**Starting:** `url` is an http(s) link on the internet or a `spotify:` link
+(never this machine or the home network: 400). `kind`: `"song"` (just that
+one, even from a link into a playlist) or `"list"`. `options`: `{ alwaysMp3,
+quality (64-320, default 192), keepMp3 }`. `cookies`: a Netscape cookie
+file's text, for sites that need a signed-in visitor; only the link's site's
+lines are kept.
+
+**The batch:**
+
+```json
+{
+  "id": "...", "state": "ready", "error": "",
+  "source": { "url": "...", "name": "Road trip", "kind": "spotify" },
+  "single": false, "truncated": false,
+  "options": { "alwaysMp3": false, "quality": 192, "keepMp3": true },
+  "cookies": false, "playlistId": null, "createdAt": 0, "expiresAt": 0,
+  "progress": null,
+  "items": [{
+    "index": 0, "title": "...", "duration": 245, "url": "...", "state": "ready", "error": "",
+    "meta": { "artist": "...", "title": "...", "mix": "" }, "artistFromChannel": false,
+    "existing": null, "summary": "...", "cover": "<version>", "progress": null
+  }]
+}
+```
+
+- Batch `state`: `listing` (reading the link; poll, `progress` is
+  `{ frac, text }` meanwhile), `ready`, `failed` (`error`; cancel it).
+  `source.kind` is the link's site (`youtube`, `spotify`, ...), `name` the
+  list's name.
+- Item `state`: `queued`, `downloading` (with `progress: { frac, text }`),
+  `converting`, `ready`, `failed` (`error`), `library` (the library has it
+  already; `existing` says which), `saving`, `saved`, `added`, `discarded`.
+- At most 500 songs a batch. A batch nobody looks at for 30 days is thrown
+  away.
+
+**Finishing a song** (`ready` only):
+
+```json
+{
+  "meta": { "artist": "Daft Punk", "title": "Veridis Quo", "mix": "" },
+  "start": 0, "end": 245,
+  "playlistIds": [],
+  "playlist": { "name": "Road trip", "mergeInto": null },
+  "existing": [3, 7]
+}
+```
+
+- `start`/`end`: the trim in seconds. `title` is required.
+- `playlist`: the batch's own playlist, made by the first song finished
+  (`mergeInto`: an existing playlist's id to use instead); null for none.
+- `existing`: indexes of `library` items to put into the same playlists.
+- `batch` in the answer is null once every song is dealt with.
+
+## Finding the server (UDP)
+
+Off unless the server was started with `--discovery`. A client broadcasts
+this datagram to UDP port 7878 (always 7878, whatever the server's port):
+
+```json
+{"app":"flow-discover","v":1}
+```
+
+Each server that hears it answers the sender directly:
+
+```json
+{"app":"flow-server","id":"<server id>","name":"Flow Server","port":7878,"protocol":1}
+```
+
+Only askers on a private address are answered, at most 30 times a minute
+each. Send the question a few times (datagrams get lost) and collect answers
+for a couple of seconds.
