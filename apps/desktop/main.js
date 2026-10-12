@@ -461,6 +461,26 @@ handle('import:list', async ({ url, run }) => {
   }
 });
 
+// A song's name typed instead of a link (Add Songs): the uploads found. One
+// search at a time, apart from imports; a new one, or Cancel, stops the one
+// before.
+let searchToken = null;
+handle('search:songs', async ({ query, more }) => {
+  if (searchToken) searchToken.cancel();
+  const token = importer.groupToken();
+  searchToken = token;
+  try {
+    return await importer.search(query, token, { more: !!more });
+  } finally {
+    if (searchToken === token) searchToken = null;
+  }
+});
+
+handle('search:cancel', () => {
+  if (searchToken) searchToken.cancel();
+  searchToken = null;
+});
+
 // Local files take the playlist's steps: listed (a folder looked through),
 // prepared into the cache (import:download with `local`), then saved by
 // import:finish.
@@ -771,6 +791,7 @@ app.on('window-all-closed', async () => {
   coverFiller.stop();
   tagger.stop();
   if (importToken) importToken.cancel();
+  if (searchToken) searchToken.cancel();
   waveform.abort();
   if (downloadToken && downloadToken.cancel) downloadToken.cancel();
   app.quit();

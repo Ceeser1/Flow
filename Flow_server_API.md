@@ -109,7 +109,7 @@ Open to anyone (only the refusals above apply).
 {
   "app": "flow-server",
   "protocol": 1,
-  "features": ["profiles", "download", "sessions", "trim"],
+  "features": ["profiles", "download", "search", "sessions", "trim"],
   "version": "3.3.3",
   "id": "<server id>",
   "name": "Flow Server",
@@ -121,7 +121,8 @@ Open to anyone (only the refusals above apply).
 ```
 
 - `features`: `profiles` always; `download` when the server can download
-  songs itself (yt-dlp and ffmpeg there, not turned off); `sessions` for
+  songs itself (yt-dlp and ffmpeg there, not turned off), and with it
+  `search` (searching by a song's name; older servers lack it); `sessions` for
   Active Sessions; `trim` when ffmpeg is there.
 - `password`: whether this caller has to sign in.
 - `tailscale`: only at level 2 and up, only to callers on a private network
@@ -449,6 +450,7 @@ profiles, one for everybody).
 | `GET /api/downloads` | | `{ batch }`, null when there is none |
 | `POST /api/downloads` | `{ url, kind, options, cookies? }` | a new batch: `{ batch }`. 409 with one open already |
 | `DELETE /api/downloads` | | cancels the whole batch: `{ batch: null }` |
+| `POST /api/downloads/search` | `{ query, more? }` | uploads for a song's name, below; downloads nothing |
 | `GET /api/downloads/items/<i>/peaks` | | `{ peaks }` of a `ready` song |
 | `GET /api/downloads/items/<i>/audio` | | the prepared file, with `Range` (and `?t=`) |
 | `GET /api/downloads/items/<i>/cover` | | the cover found (`?v=` the item's `cover`); 404 without one |
@@ -462,6 +464,31 @@ one, even from a link into a playlist) or `"list"`. `options`: `{ alwaysMp3,
 quality (64-320, default 192), keepMp3 }`. `cookies`: a Netscape cookie
 file's text, for sites that need a signed-in visitor; only the link's site's
 lines are kept.
+
+**Searching by name** (only with `search` in `/api/hello`): `query` is a
+song's name as typed (`"Linkin Park - Numb"`, "Artist - Title" split at the
+dash; at most 200 characters, else 400). It searches YouTube and YouTube
+Music; with `more: true` SoundCloud, Bandcamp and the Internet Archive
+instead. It takes a few seconds (up to 90; 504 then); a newer search of the
+same profile stops this one (409). Nothing is downloaded: send the `url` of
+the upload picked as a new batch with `kind: "song"`.
+
+```json
+{
+  "query": "Linkin Park - Numb", "artist": "Linkin Park", "title": "Numb",
+  "results": [{
+    "id": "...", "title": "Numb", "channel": "Linkin Park", "duration": 187, "album": "Meteora",
+    "site": "YouTube", "url": "https://www.youtube.com/watch?v=...", "key": "youtube:...",
+    "quality": "good", "versions": [], "existing": null
+  }]
+}
+```
+
+- `results`: best first, at most 8. `quality`: `good` (the song itself, from
+  the artist or YouTube Music), `shaky` or `none`. `versions`: words in the
+  title that make it another version and were not typed (`live`, `lyrics`,
+  `remix` ...). `existing`: the library song of that very upload, or null.
+  `album` only for YouTube Music's songs.
 
 **The batch:**
 

@@ -97,13 +97,25 @@ const ServerImport = {
     this.schedule();
   },
 
-  /** Download (Server): the link in the box goes to the server. */
-  async start() {
+  /**
+   * Download (Server): the link in the box goes to the server. Words instead
+   * of a link (a song's name) are searched for there first (songSearch.js);
+   * the upload picked comes back as `pick` ({ url, title }), one song.
+   */
+  async start(pick = null) {
     if (!this.available) return;
-    const url = $('linkInput').value.trim();
+    const url = pick ? pick.url : $('linkInput').value.trim();
     if (!url) {
-      AddPage._showError('Paste a link into the box first.');
+      AddPage._showError('Paste a link, or type the name of a song, into the box first.');
       $('linkInput').focus();
+      return;
+    }
+    if (!pick && AddPage.isSearch(url)) {
+      if (ImportPanel.busy) {
+        AddPage._showError('An import is still open. Finish it or cancel it first.');
+        return;
+      }
+      SongSearch.open(url, 'server');
       return;
     }
     if (ImportPanel.busy) {
@@ -120,9 +132,10 @@ const ServerImport = {
       if (!ok) return;
     }
     if (ImportPanel.state === 'review') ImportPanel.close();
+    SongSearch.close();
     AddPage._discard();
     $('progressPanel').hidden = true;
-    let kind = AddPage._linkKind(url);
+    let kind = pick ? 'song' : AddPage._linkKind(url);
     if (kind === 'ask') {
       kind = await AddPage._askSongOrList(url);
       if (!kind) return;

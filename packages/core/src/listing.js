@@ -11,6 +11,8 @@
 //   list()      reads the list without downloading anything and marks what is
 //               already in the library.
 //   download()  fetches the chosen songs one after another into the cache.
+//   search()    the uploads that can be a song whose name was typed instead of
+//               a link (songSearch.js); the one picked is downloaded as a link.
 //
 // One at a time on purpose: many downloads at once is what gets a client
 // throttled. Only the lookups of a Spotify, Deezer or Amazon list's songs run
@@ -22,6 +24,7 @@ const spotify = require('./spotify');
 const deezer = require('./deezer');
 const amazonMusic = require('./amazonMusic');
 const otherSites = require('./otherSites');
+const songSearch = require('./songSearch');
 const { parseTitle, cleanUploader } = require('./titleParser');
 const { normalizeListUrl, sourceKey } = require('./text');
 
@@ -35,6 +38,15 @@ const MIX_LIMIT = 50;
 const READ_TRIES = 2;
 const QUALITY_RANK = { good: 2, shaky: 1, none: 0 };
 const SEARCHED_SITES = 'YouTube, SoundCloud, Bandcamp or the Internet Archive';
+// Words typed instead of a link (search): YouTube's results asked for, the
+// YouTube Music songs read for their artist and length, the uploads listed;
+// with "Search more sites", the Bandcamp and Archive hits read (for their
+// lengths, and to leave out what cannot be downloaded) and those listed.
+const TYPED_RESULTS = 10;
+const TYPED_MUSIC_READS = 2;
+const TYPED_LISTED = 8;
+const TYPED_OTHER_READS = 4;
+const TYPED_MORE_LISTED = 8;
 
 /**
  * A cancel token for work that runs several processes, possibly at once:
@@ -359,6 +371,90 @@ function createLister({ media, library }) {
     return best || { quality: 'none', cand: null, diff: null, site: '' };
   }
 
+  /** A search result as the page lists it: where it is, and its key there. */
+  const youTubeResult = (c) => ({
+    ...c, site: 'YouTube', url: `https://www.youtube.com/watch?v=${c.id}`, key: sourceKey('Youtube', c.id),
+  });
+
+  /**
+   * YouTube's uploads for typed words: its ordinary search, and at the same
+   * time YouTube Music's songs (the album audio), whose search gives titles
+   * only, so the first that can be the song are read for their artist and
+   * length. Fails only when both do.
+   */
+  async function searchYouTube(parsed, group) {
+    const plain = withSub(group, (t) => media.readJson(
+      ['--flat-playlist', '-J', `ytsearch${TYPED_RESULTS}:${parsed.query}`], t));
+    const music = (async () => {
+      const res = await withSub(group, (t) => media.readJson(
+        ['--flat-playlist', '-J', '-I', `1:${TYPED_RESULTS}`, songSearch.musicSearchUrl(parsed.query)], t));
+      const hits = songSearch.musicHits(parsed, (res.entries || []).filter(Boolean)).slice(0, TYPED_MUSIC_READS);
+      const read = await Promise.allSettled(hits.map((hit) => withSub(group, (t) => media.readJson(
+        ['--no-playlist', '-j', `https://www.youtube.com/watch?v=${hit.id}`], t))));
+      return read.map((r, i) => (r.status === 'fulfilled'
+        ? { ...asCandidate({ ...r.value, id: hits[i].id }), album: String(r.value.album || ''), fromMusic: true, order: i }
+        : null)).filter(Boolean);
+    })();
+    const [p, m] = await Promise.allSettled([plain, music]);
+    if (group.cancelled) throw cancelled();
+    if (p.status === 'rejected' && m.status === 'rejected') throw p.reason;
+    // Live streams and announced ones have no length.
+    const fromPlain = p.status === 'fulfilled'
+      ? (p.value.entries || []).filter((e) => e && e.id && Number(e.duration) > 0).map((e, i) => ({ ...asCandidate(e), order: i }))
+      : [];
+    const seen = new Set();
+    return [...(m.status === 'fulfilled' ? m.value : []), ...fromPlain]
+      .filter((c) => !seen.has(c.id) && seen.add(c.id))
+      .map(youTubeResult);
+  }
+
+  /**
+   * The other sites' uploads for typed words ("Search more sites"):
+   * SoundCloud, Bandcamp and the Internet Archive at once. The first hits of
+   * each are read before they are listed: Bandcamp's and the Archive's search
+   * give no length, and what cannot be downloaded is left out (SoundCloud's
+   * labels' uploads are DRM, an Archive item holding an album has no links of
+   * its own).
+   */
+  async function searchOtherSites(parsed, group) {
+    const track = { title: parsed.title, artists: parsed.artist };
+    const readSome = async (hits, site) => {
+      const read = await Promise.allSettled(hits.slice(0, TYPED_OTHER_READS).map((h) => readCandidate(h, group)));
+      return read.filter((r) => r.status === 'fulfilled' && r.value).map((r, i) => ({ ...r.value, site, order: i }));
+    };
+    const soundcloud = withSub(group, (t) => media.readJson(
+      ['--flat-playlist', '-J', `scsearch${SEARCH_RESULTS}:${parsed.query}`], t))
+      .then((res) => readSome((res.entries || []).filter((e) => e && e.id)
+        .map((e) => ({ ...asCandidate(e), url: e.webpage_url || e.url })), 'SoundCloud'));
+    const sites = await Promise.allSettled([
+      soundcloud,
+      otherSites.searchBandcamp(track).then((hits) => readSome(hits, 'Bandcamp')),
+      otherSites.searchArchive(track).then((hits) => readSome(hits, 'Internet Archive')),
+    ]);
+    if (group.cancelled) throw cancelled();
+    if (sites.every((s) => s.status === 'rejected')) throw sites[0].reason;
+    return sites.flatMap((s) => (s.status === 'fulfilled' ? s.value : []));
+  }
+
+  /**
+   * Songs for words typed instead of a link ("Linkin Park - Numb"), best
+   * first (songSearch.rankSearch): YouTube's, or with `more` the other
+   * sites'. Resolves { query, artist, title, results: [{ id, title, channel,
+   * duration, url, key, site, quality, versions, album?, existing }] }, where
+   * existing is the library song of the same upload, or null.
+   */
+  async function search(text, group, { more = false } = {}) {
+    const parsed = songSearch.parseQuery(text);
+    if (!parsed.query) throw new Error('Type the name of a song, or paste a link.');
+    const found = more ? await searchOtherSites(parsed, group) : await searchYouTube(parsed, group);
+    const data = library();
+    const results = songSearch.rankSearch(parsed, found).slice(0, more ? TYPED_MORE_LISTED : TYPED_LISTED).map((r) => {
+      const { order, fromMusic, ...rest } = r;
+      return { ...rest, existing: existingInfo(model.findBySource(data, { key: r.key, url: r.url })) };
+    });
+    return { query: parsed.query, artist: parsed.artist, title: parsed.title, results };
+  }
+
   /** A Spotify playlist or album, each song looked up on YouTube. */
   async function listSpotify(ref, url, group, onProgress) {
     onProgress({ phase: 'listing', text: 'Reading the Spotify playlist...' });
@@ -515,7 +611,7 @@ function createLister({ media, library }) {
     });
   }
 
-  return { list, download, listWithYtDlp, listSpotify, listDeezer, listAmazonMusic, matchOnYouTube, findSong };
+  return { list, download, search, listWithYtDlp, listSpotify, listDeezer, listAmazonMusic, matchOnYouTube, findSong };
 }
 
 module.exports = {

@@ -193,6 +193,9 @@ function start() {
     // local files are its own (localFiles.js).
     probe: notHere('Downloading on the phone'),
     listImport: notHere('Importing on the phone'),
+    // A song's name typed into the box goes to the server too (serverDownloads 'search').
+    searchSongs: notHere('Searching for songs on the phone'),
+    cancelSearch: call(nothing),
     downloadImport: notHere('Importing on the phone'),
     pickLocalFiles: call(() => local.pick(false)),
     pickLocalFolder: call(() => local.pick(true)),

@@ -22,7 +22,9 @@
 //
 // The playlist (if the app wants one) is made by the first song finished,
 // and every song goes in at its place in the source: base - index seconds,
-// as the apps do it (importer.finish). A batch nobody opens or finishes
+// as the apps do it (importer.finish). Words typed instead of a link are
+// searched for (search) without a batch: the app lists what was found, and
+// the upload picked comes back as an ordinary one-song batch. A batch nobody opens or finishes
 // anything of for downloadKeepDays (30) is thrown away, and so is a deleted
 // profile's.
 
@@ -37,9 +39,12 @@ const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const { isPrivateIp } = require('@flow/core/address');
 const { coverVersion } = require('@flow/core/cover');
+const { MAX_QUERY } = require('@flow/core/songSearch');
 
 const MAX_ITEMS = 500;
 const ITEM_TIMEOUT = 20 * 60 * 1000;
+// A search reads a few uploads at once; on a Pi that can take a while.
+const SEARCH_TIMEOUT = 90 * 1000;
 const MIN_FREE_BYTES = 500 * 1024 * 1024;
 const DAY = 24 * 60 * 60 * 1000;
 // Items still to be dealt with: a batch with none of these left is over.
@@ -132,6 +137,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   const progress = new Map();   // `${key}/${index}` -> { frac, text } of the song downloading
   const running = new Map();    // `${key}/${index}` -> cancel token
   const listing = new Map();    // profile key -> the listing's cancel group
+  const searching = new Map();  // profile key -> the search's cancel group (search)
   let active = 0;
   let stopped = false;
 
@@ -526,6 +532,40 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     return publicBatch(batch);
   }
 
+  /**
+   * Songs for words typed instead of a link ("Linkin Park - Numb"): body
+   * { query, more } -> lister.search's answer, YouTube's uploads or with
+   * `more` the other sites'. Nothing is downloaded: the app sends the one
+   * picked as a new batch (create, kind 'song'). One search per profile at a
+   * time; a new one stops the one before.
+   */
+  async function search(profileId, { query, more } = {}) {
+    if (config.get().downloads === false) throw new DownloadError(501, 'Downloads are turned off on this server (flow-server --downloads turns them on).');
+    if (!tools.canDownload()) throw new DownloadError(501, 'This server cannot download songs: it needs yt-dlp and ffmpeg.');
+    const text = typeof query === 'string' ? query.replace(/\s+/g, ' ').trim() : '';
+    if (!text) throw new DownloadError(400, 'Type the name of a song first.');
+    if (text.length > MAX_QUERY) throw new DownloadError(400, 'That is too long for the name of a song.');
+    const key = keyOf(profileId);
+    const before = searching.get(key);
+    if (before) before.cancel();
+    const group = groupToken();
+    searching.set(key, group);
+    const timer = setTimeout(() => {
+      group.timedOut = true;
+      group.cancel();
+    }, SEARCH_TIMEOUT);
+    try {
+      return await lister.search(text, group, { more: !!more });
+    } catch (err) {
+      if (group.timedOut) throw new DownloadError(504, 'The search took too long.');
+      if (group.cancelled) throw new DownloadError(409, 'A newer search took the place of this one.');
+      throw new DownloadError(502, `The search failed: ${(err && err.message) || err}`);
+    } finally {
+      clearTimeout(timer);
+      if (searching.get(key) === group) searching.delete(key);
+    }
+  }
+
   /** Cancel import: the whole batch, whatever it is doing. */
   function cancel(profileId) {
     requireBatch(profileId);
@@ -717,6 +757,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     available: () => config.get().downloads !== false && tools.canDownload(),
     get,
     create,
+    search,
     cancel,
     audioFile,
     peaks,
@@ -729,6 +770,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     stop() {
       stopped = true;
       for (const group of listing.values()) group.cancel();
+      for (const group of searching.values()) group.cancel();
       for (const token of running.values()) token.cancel ? token.cancel() : (token.cancelled = true);
     },
   };

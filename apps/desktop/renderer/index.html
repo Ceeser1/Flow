@@ -77,7 +77,7 @@
         <div class="panel">
           <div class="link-row">
             <input id="linkInput" class="input input--big" type="text" autocomplete="off" spellcheck="false"
-                   placeholder="Paste a link from YouTube, SoundCloud, Vimeo, Bandcamp..." />
+                   placeholder="Paste a link from YouTube, SoundCloud, Vimeo, Bandcamp... or type a song&#39;s name" />
             <button id="downloadBtn" class="btn btn--primary btn--big" type="button">Download</button>
             <!-- With a Flow Server that downloads songs itself (serverImport.js). -->
             <button id="serverDownloadBtn" class="btn btn--big" type="button" hidden>Download (Server)</button>
@@ -103,6 +103,19 @@
           </div>
           <div id="progStatus" class="status-label"></div>
           <div id="progError" class="error-hint" hidden></div>
+        </div>
+
+        <!-- A song's name typed instead of a link: the uploads found (songSearch.js). -->
+        <div id="searchPanel" class="panel import song-search" hidden>
+          <div class="import__head">
+            <div id="searchHead" class="import__source"></div>
+          </div>
+          <div id="searchList" class="import__list"></div>
+          <div class="song-search__buttons">
+            <span id="searchNote" class="song-search__note" hidden></span>
+            <button id="searchMore" class="btn btn--light-grey" type="button">Search more sites</button>
+            <button id="searchClose" class="btn" type="button">Close</button>
+          </div>
         </div>
 
         <!-- A whole playlist: the checklist, then its progress. -->
@@ -463,6 +476,7 @@
 <script src="app/pages/add.js"></script>
 <script src="app/pages/import.js"></script>
 <script src="app/pages/serverImport.js"></script>
+<script src="app/pages/songSearch.js"></script>
 <script src="app/downloadsHelp.js"></script>
 <script src="app/pages/playlists.js"></script>
 <script src="app/pages/followed.js"></script>

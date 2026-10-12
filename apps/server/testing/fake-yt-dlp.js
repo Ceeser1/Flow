@@ -10,6 +10,11 @@
 //   https://fake.test/slow/<id>            one song whose download never ends
 //   https://fake.test/fail/<id>            a song that is not available
 //
+// and for the searches of a song's name typed instead of a link (Artist -
+// Title): YouTube's (ytsearch10:...) finds the official video and a live
+// upload by someone else, YouTube Music's the album audio, m1, read as
+// https://www.youtube.com/watch?v=m1 (for "Daft Punk - One More Time" only).
+//
 // A download copies FAKE_YTDLP_AUDIO (a real WAV) to where -o says. Every
 // download writes its process id to FAKE_YTDLP_PIDS, one per line, so a test
 // can check it was stopped. With FAKE_YTDLP_ARGS every run adds a line there:
@@ -23,7 +28,26 @@ if (process.env.FAKE_YTDLP_ARGS) {
   const cookies = i >= 0 && fs.existsSync(args[i + 1]) ? fs.readFileSync(args[i + 1], 'utf8') : null;
   fs.appendFileSync(process.env.FAKE_YTDLP_ARGS, `${JSON.stringify({ args, cookies })}\n`);
 }
-const url = new URL(args[args.length - 1]);
+const last = args[args.length - 1];
+const typed = /^ytsearch\d*:(.*)$/.exec(last);
+if (typed) {
+  process.stdout.write(JSON.stringify({ _type: 'playlist', entries: [
+    { id: 's1', title: `${typed[1]} (Official Video)`, channel: 'Daft Punk', duration: 320 },
+    { id: 's2', title: `${typed[1]} (Live)`, channel: 'A Fan', duration: 380 },
+  ] }) + '\n');
+  process.exit(0);
+}
+const url = new URL(last);
+// Only for the search test's song: a cover's lookup there finds nothing.
+if (url.hostname === 'music.youtube.com' && /One More Time/.test(url.searchParams.get('q') || '')) {
+  const title = url.searchParams.get('q').split(' - ').pop();
+  process.stdout.write(JSON.stringify({ _type: 'playlist', entries: [{ id: 'm1', title }] }) + '\n');
+  process.exit(0);
+}
+if (url.hostname === 'www.youtube.com' && url.searchParams.get('v') === 'm1') {
+  process.stdout.write(JSON.stringify({ id: 'm1', title: 'One More Time', channel: 'Daft Punk', album: 'Discovery', duration: 320, extractor_key: 'Youtube' }) + '\n');
+  process.exit(0);
+}
 const parts = url.pathname.split('/').filter(Boolean);
 
 function video(id, kind = 'v') {

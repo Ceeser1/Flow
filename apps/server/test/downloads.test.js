@@ -410,3 +410,37 @@ test('a downloaded song\'s cover is looked for at once: shown while it waits, th
     await server.close();
   }
 });
+
+test('a song\'s name typed instead of a link is searched for; the upload picked downloads as one song', needsFfmpeg, async () => {
+  await withServer(async ({ base }) => {
+    assert.ok((await api(base, 'GET', '/api/hello')).json.features.includes('search'));
+    const r = await api(base, 'POST', '/api/downloads/search', { query: '  Daft Punk  -  One More Time ' });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.query, 'Daft Punk - One More Time');
+    assert.equal(r.json.artist, 'Daft Punk');
+    // The album audio (YouTube Music's, read for its artist) first, the live upload by a fan last.
+    assert.deepEqual(r.json.results.map((x) => x.id), ['m1', 's1', 's2']);
+    assert.equal(r.json.results[0].album, 'Discovery');
+    assert.equal(r.json.results[0].url, 'https://www.youtube.com/watch?v=m1');
+    assert.deepEqual(r.json.results[2].versions, ['live']);
+    // Nothing is downloaded until one is picked.
+    assert.equal(await batchOf(base), null);
+    assert.equal((await api(base, 'POST', '/api/downloads/search', { query: '   ' })).status, 400);
+    assert.equal((await api(base, 'POST', '/api/downloads/search', { query: 'x'.repeat(201) })).status, 400);
+    assert.equal((await api(base, 'POST', '/api/downloads/search', {})).status, 400);
+
+    const picked = await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/m1', kind: 'song' });
+    assert.equal(picked.status, 200);
+    assert.equal(picked.json.batch.single, true);
+  });
+  const keep = process.env.FLOW_SERVER_YTDLP;
+  process.env.FLOW_SERVER_YTDLP = 'off';
+  try {
+    await withServer(async ({ base }) => {
+      assert.ok(!(await api(base, 'GET', '/api/hello')).json.features.includes('search'));
+      assert.equal((await api(base, 'POST', '/api/downloads/search', { query: 'Daft Punk - One More Time' })).status, 501);
+    });
+  } finally {
+    process.env.FLOW_SERVER_YTDLP = keep;
+  }
+});
