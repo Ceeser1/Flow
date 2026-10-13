@@ -388,13 +388,15 @@ says so next to the Artist box, so you know to check it.
 
 ### Which format a song is saved in
 
-No song is converted from one lossy format to another unless you ask:
+No song is converted from one lossy format to another unless you ask, except
+Ogg Vorbis, which the iPhone cannot play:
 
 | Source                        | Saved as                                    |
 |-------------------------------|---------------------------------------------|
 | Opus (YouTube, SoundCloud)    | `.opus`, untouched                          |
 | AAC (SoundCloud, Vimeo)       | `.m4a`, untouched                           |
-| MP3, Vorbis, FLAC, WAV        | as they are                                 |
+| MP3, FLAC, WAV                | as they are                                 |
+| Ogg Vorbis                    | `.mp3` at 192 kbit/s (or the quality below) |
 | AIFF, ALAC, other lossless    | `.flac`, still lossless                     |
 | anything else                 | `.mp3` at the quality chosen in Settings    |
 

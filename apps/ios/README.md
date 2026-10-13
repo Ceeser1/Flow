@@ -25,8 +25,9 @@ Apple ID one of its 10 App IDs a week; Flow and its widget take two).
 
 Needs iOS 18.4 or later (iPhone XS / XR and newer): from 18.4 iOS plays Ogg
 Opus itself, the format most of Flow's songs from YouTube are in. Ogg Vorbis
-(.ogg) iOS does not play (neither 18 nor 26): a Flow Server with ffmpeg sends
-such a song as Opus (converted once and kept), streamed or downloaded; a
+(.ogg) iOS does not play (neither 18 nor 26): downloads are saved as MP3
+instead, and for an .ogg put into the music folder by hand a Flow Server with
+ffmpeg sends such a song as Opus (converted once and kept), streamed or downloaded; a
 Vorbis file of the phone's own is not imported, and says why.
 
 ## Installing
