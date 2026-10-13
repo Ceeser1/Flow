@@ -92,6 +92,42 @@ test('hello, an upload, and the library it ends up in', async () => {
   });
 });
 
+test('separate folders and kept folder structures: where an upload\'s file goes', async () => {
+  await withServer(async ({ server, base, dirs }) => {
+    const fileOf = async (id) => (await (await fetch(`${base}/api/library`)).json()).library.songs.find((s) => s.id === id).file;
+    // Neither: "Artist - Title" in the music folder, whatever the app's place.
+    await upload(base, 'a1', { title: 'Numb', artist: 'Linkin Park', format: 'mp3', path: 'Linkin Park/Meteora/Numb.mp3' });
+    assert.equal(await fileOf('a1'), 'Linkin Park - Numb.mp3');
+
+    server.config.set({ separateFolders: true });
+    await upload(base, 'a2', { title: 'Faint', artist: 'Linkin Park', format: 'mp3', path: 'Linkin Park/Meteora/Faint.mp3' });
+    assert.equal(await fileOf('a2'), 'Uploads/Linkin Park - Faint.mp3');
+
+    server.config.set({ keepFolders: true });
+    await upload(base, 'a3', { title: 'In the End', artist: 'Linkin Park', format: 'mp3', path: 'Linkin Park/Hybrid Theory/In the End.mp3' });
+    assert.equal(await fileOf('a3'), 'Uploads/Linkin Park/Hybrid Theory/In the End.mp3');
+    assert.ok(fs.existsSync(path.join(dirs.music, 'Uploads', 'Linkin Park', 'Hybrid Theory', 'In the End.mp3')));
+    // Another song of that name there: a number.
+    await upload(base, 'a4', { title: 'In the End', artist: 'Linkin Park', mix: 'Live', format: 'mp3', path: 'Linkin Park\\Hybrid Theory\\In the End.mp3' });
+    assert.equal(await fileOf('a4'), 'Uploads/Linkin Park/Hybrid Theory/In the End (2).mp3');
+    // Never outside the music folder, nor into Flow's hidden folders.
+    await upload(base, 'a5', { title: 'Papercut', artist: 'Linkin Park', format: 'mp3', path: '../../../etc/.flow-trash/a:b/Papercut.mp3' });
+    assert.equal(await fileOf('a5'), 'Uploads/etc/flow-trash/a_b/Papercut.mp3');
+    await upload(base, 'a6', { title: 'Crawling', artist: 'Linkin Park', format: 'mp3', path: '/Crawling.mp3' });
+    assert.equal(await fileOf('a6'), 'Uploads/Crawling.mp3');
+    // No place sent (an older app): as before.
+    await upload(base, 'a7', { title: 'One Step Closer', artist: 'Linkin Park', format: 'mp3' });
+    assert.equal(await fileOf('a7'), 'Uploads/Linkin Park - One Step Closer.mp3');
+
+    // Renamed in an app: the file is renamed where it is.
+    await command(base, [{ cid: 'r1', at: Date.now(), type: 'editSong', songId: 'a3', artist: 'Linkin Park', title: 'In The End', mix: '' }]);
+    assert.equal(await fileOf('a3'), 'Uploads/Linkin Park/Hybrid Theory/Linkin Park - In The End.mp3');
+    // The scan finds them all where they are.
+    await fetch(`${base}/api/rescan`, { method: 'POST' });
+    assert.equal((await (await fetch(`${base}/api/library`)).json()).library.songs.length, 7);
+  });
+});
+
 test('audio is streamed whole or in the part asked for, with CORS', async () => {
   await withServer(async ({ base }) => {
     await upload(base, 's1', { title: 'Windowlicker', artist: 'Aphex Twin', format: 'mp3' });

@@ -4,7 +4,8 @@
 // apps show, the music folder, the password, the profiles (their names and
 // PINs; what is in them is in library.json), whether the apps may find it on
 // the network by themselves, how far it can be reached (its level, public
-// address and trusted proxies), and the devices signed in.
+// address and trusted proxies), where new songs go in the music folder, and
+// the devices signed in.
 //
 //   home   FLOW_SERVER_HOME, else ~/.local/share/flow-server on Linux
 //          (XDG_DATA_HOME when set) and %LOCALAPPDATA%\Flow\server on Windows.
@@ -78,6 +79,12 @@ function clean(raw) {
     downloads: typeof r.downloads === 'boolean' ? r.downloads : null,
     downloadJobs: Math.min(3, Math.max(1, Math.round(Number(r.downloadJobs)) || 1)),
     downloadKeepDays: Math.min(365, Math.max(1, Math.round(Number(r.downloadKeepDays)) || 30)),
+    // Where new songs go in the music folder (library.js addUploaded):
+    // separateFolders puts the apps' uploads into Uploads/ and the server's
+    // downloads into Downloads/; keepFolders keeps an upload's folders and
+    // file name from the app's music folder. Both off until install.sh asks.
+    separateFolders: r.separateFolders === true,
+    keepFolders: r.keepFolders === true,
     // flow-server tag-songs asked for the songs from before to be written
     // (library.js checkTagRequest), until the running server takes it.
     tagSongs: r.tagSongs === true,

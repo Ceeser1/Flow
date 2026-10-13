@@ -27,7 +27,23 @@ stick): the server looks through the folder every five minutes, and at once when
 an app asks it to synchronize. A song renamed or moved there by hand stays the
 same song (its playlists, cover and statistics): found by the `flowid` tag in
 its file (see Covers), else by its format and length. A copy of a song is a
-song of its own.
+song of its own. The server looks through sub-folders up to 16 deep.
+
+Where new songs go is chosen when installing (`install.sh` asks; also
+`--separate-folders` and `--keep-folders`, remembered). Songs there already
+stay where they are.
+
+- **Separate folders for uploads and downloads:** songs the apps upload go
+  into `Uploads/`, songs the server downloads into `Downloads/`. Without,
+  both go straight into the music folder.
+- **Keep uploaded folder structures:** an upload keeps its folders and file
+  name from the app's music folder. A song the PC has in
+  `Music/FlowPlayer/Linkin Park/Hybrid Theory/In the End.mp3` is saved as
+  `Linkin Park/Hybrid Theory/In the End.mp3` (inside `Uploads/` with separate
+  folders). A phone sends the folders of a folder it picked in Add Songs;
+  single files have none. Without, an upload is saved as
+  `Linkin Park - In the End.mp3`. A song renamed in an app later is renamed
+  in its folder.
 
 A song deleted from an app is not gone at once. Its file moves to
 `.flow-trash` in the music folder and is removed after 30 days.
@@ -36,7 +52,7 @@ A song deleted from an app is not gone at once. Its file moves to
 
 ```sh
 git clone <the repo> ~/Flow && cd ~/Flow
-sh apps/server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --downloads, --no-downloads, --uninstall
+sh apps/server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --downloads, --no-downloads, --separate-folders, --keep-folders (and --no-...), --uninstall
 ```
 
 Works on any Linux with systemd and Node 18 or newer (a Raspberry Pi, a home
@@ -54,7 +70,9 @@ Levels 3 and 4 need a strong password (see below).
 
 Then it links `@flow/core` (there is no npm needed), asks whether the server
 should download songs itself (and if so shows the legal note, installs ffmpeg
-and Deno for it and waits while you install yt-dlp; see [Downloads by the server](#downloads-by-the-server-optional)), offers
+and Deno for it and waits while you install yt-dlp; see [Downloads by the server](#downloads-by-the-server-optional)),
+asks where new songs go (separate folders for uploads and downloads, and
+whether uploads keep their folders; see above), offers
 ffmpeg otherwise, asks whether the apps may find the server on the network by
 themselves (see below), offers a password, installs Tailscale at level 2, writes and starts the
 `flow-server` service (also at boot), and opens the port in ufw or firewalld

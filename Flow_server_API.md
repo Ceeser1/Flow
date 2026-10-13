@@ -248,6 +248,7 @@ song's details as URL-encoded JSON:
 | `addedAt`, `favouriteAt`, `stats`, `loudness`, `cut` | carried over from the app |
 | `playlistIds` | the profile's playlists to put it into |
 | `onExisting` | `"new"`: take it even if the server has it already |
+| `path` | where the file is in the app's music folder, like `Linkin Park/Hybrid Theory/In the End.mp3`. A server set to keep uploaded folder structures (`--keep-folders`) saves it there, inside its music folder (and inside `Uploads/` with `--separate-folders`); otherwise it is saved as "Artist - Title". `..`, leading dots and characters file systems refuse are taken out, and at most 12 folders are kept |
 
 The `<id>` is kept when it is free, so the app's playlists keep pointing at
 the song.

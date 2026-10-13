@@ -28,7 +28,7 @@ const { applyCommand } = require('@flow/core/commands');
 const prof = require('@flow/core/profiles');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { parseTitle } = require('@flow/core/titleParser');
-const { sourceKeyFromUrl, songFileStem, isNameOnlyList } = require('@flow/core/text');
+const { sourceKeyFromUrl, songFileStem, isNameOnlyList, splitSongPath } = require('@flow/core/text');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const cover = require('@flow/core/cover');
 const { createMedia } = require('@flow/core/media');
@@ -41,6 +41,11 @@ const TRASH_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 // A file younger than this may still be being copied in.
 const SETTLE_MS = 2000;
 const COVER_PAUSE_MS = 1000;
+// How many folders deep the music folder is looked through.
+const SCAN_DEPTH = 16;
+// With separate folders (server.json separateFolders): the apps' uploads, the server's downloads.
+const UPLOADS_DIR = 'Uploads';
+const DOWNLOADS_DIR = 'Downloads';
 // Commands an app may send. addSong is only ever the app's own preview of an
 // upload; the upload itself adds the song here.
 const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource',
@@ -63,7 +68,7 @@ function listAudioFiles(dir, depth = 0) {
     if (e.name.startsWith('.flow-')) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      if (depth < 4) out.push(...listAudioFiles(full, depth + 1));
+      if (depth < SCAN_DEPTH) out.push(...listAudioFiles(full, depth + 1));
     } else if (AUDIO_EXTS.includes(path.extname(e.name).toLowerCase())) {
       out.push(full);
     }
@@ -133,9 +138,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     return rel.startsWith('..') ? path.basename(file) : rel.split(path.sep).join('/');
   }
 
-  /** A free path for "stem.ext" in the music folder, or beside `current`, which may keep its name. */
-  function uniquePath(stem, ext, current = null) {
-    const dir = current ? path.dirname(current) : musicDir;
+  /** A free path for "stem.ext" in `dir` (the music folder), or beside `current`, which may keep its name. */
+  function uniquePath(stem, ext, current = null, dir = musicDir) {
+    if (current) dir = path.dirname(current);
     const same = (a, b) => !!b && path.resolve(a) === path.resolve(b);
     let candidate = path.join(dir, `${stem}.${ext}`);
     for (let n = 2; fs.existsSync(candidate) && !same(candidate, current); n += 1) {
@@ -350,19 +355,40 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
   }
 
   /**
+   * Where a new song's file goes: "Artist - Title (Mix).ext" in the music
+   * folder, or with separate folders in Uploads/ (`from` 'upload', an app's)
+   * or Downloads/ (the server's). With keepFolders an upload keeps its place
+   * in the app's music folder (meta.path), folders and file name, inside that.
+   */
+  function placeFor(meta, ext, from) {
+    const cfg = config.get();
+    let dir = cfg.separateFolders ? path.join(musicDir, from === 'download' ? DOWNLOADS_DIR : UPLOADS_DIR) : musicDir;
+    let stem = songFileStem(meta.artist, meta.title, meta.mix);
+    const kept = from === 'upload' && cfg.keepFolders ? splitSongPath(meta.path) : null;
+    if (kept) {
+      dir = path.join(dir, ...kept.folders);
+      if (kept.name) stem = kept.name;
+    }
+    fs.mkdirSync(dir, { recursive: true });
+    return uniquePath(stem, ext, null, dir);
+  }
+
+  /**
    * Takes in an uploaded file (already written to `tmp` inside the music
    * folder) as a song. The id is the app's own when it is free, so the app's
    * playlists keep pointing at it. Its favourite and stats are those of the
    * profile it came from, and so are the playlists it goes into, at
    * `playlistAt` (else the time it was added). That profile is who added it.
+   * `from`: 'upload' (an app's) or 'download' (the server's own), for where
+   * its file goes (placeFor).
    */
-  function addUploaded(tmp, requestedId, meta, playlistIds, profileId = null, { playlistAt } = {}) {
+  function addUploaded(tmp, requestedId, meta, playlistIds, profileId = null, { playlistAt, from = 'upload' } = {}) {
     checkProfile(profileId);
     const ext = String(meta.format || path.extname(tmp).slice(1)).toLowerCase();
     const title = String(meta.title || '').trim() || 'Untitled';
     const artist = String(meta.artist || '').trim();
     const mix = String(meta.mix || '').trim();
-    const dest = uniquePath(songFileStem(artist, title, mix), ext);
+    const dest = placeFor({ ...meta, title, artist, mix }, ext, from);
     fs.renameSync(tmp, dest);
     const id = requestedId && !model.songById(data, requestedId) ? requestedId : newId();
     const song = {

@@ -64,10 +64,12 @@ test.after(async () => {
 
 test('a Flow Server as the library, step by step', async (t) => {
   const one = await serve();
+  // The server keeps an upload's folders from the app's music folder.
+  one.server.config.set({ keepFolders: true });
   library.load();
-  // A song in Local Files from before there was a server.
-  const roadsFile = path.join(process.env.FLOW_MUSIC, 'Portishead - Roads.mp3');
-  fs.mkdirSync(process.env.FLOW_MUSIC, { recursive: true });
+  // A song in Local Files from before there was a server, in a folder of its own.
+  const roadsFile = path.join(process.env.FLOW_MUSIC, 'Portishead', 'Dummy', 'Roads.mp3');
+  fs.mkdirSync(path.dirname(roadsFile), { recursive: true });
   fs.writeFileSync(roadsFile, FAKE_MP3);
   library.mutate((d) => model.addSong(d, {
     id: 'roads1', file: roadsFile, title: 'Roads', artist: 'Portishead', mix: '', duration: 305, format: 'mp3', addedAt: Date.now(),
@@ -91,6 +93,7 @@ test('a Flow Server as the library, step by step', async (t) => {
     const there = (await serverLibrary(one.base)).songs[0];
     assert.equal(there.id, 'roads1');
     assert.equal(there.title, 'Roads');
+    assert.equal(there.file, 'Portishead/Dummy/Roads.mp3');
     // Kept here (Keep downloaded files), and the window plays it from here.
     await until(() => remote.view().songs.length === 1, 'the view');
     assert.equal(remote.localFileOf('roads1'), roadsFile);

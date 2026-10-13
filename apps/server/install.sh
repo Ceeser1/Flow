@@ -25,6 +25,13 @@
 #   --downloads      let the server download songs itself (installs ffmpeg and Deno;
 #                    yt-dlp you install yourself, after its legal note)
 #   --no-downloads   don't (asked when left out; without a terminal: as before, else no)
+#   --separate-folders     new songs into Uploads/ (sent by the apps) and Downloads/ (the
+#                    server's own) inside the music folder
+#   --no-separate-folders  straight into the music folder (asked when left out; without a
+#                    terminal: as before)
+#   --keep-folders   an upload keeps its folders and file name from the app's music folder
+#   --no-keep-folders      uploads are saved as "Artist - Title" (asked when left out;
+#                    without a terminal: as before)
 #   --uninstall      remove the service (the library and the music stay)
 #
 # Without a terminal, FLOW_SERVER_PASSWORD gives the password level 3 needs and
@@ -48,6 +55,8 @@ YES=0
 TAILSCALE=1
 DISCOVERY=ask
 DOWNLOADS=ask
+SEPARATE=ask
+KEEP=ask
 UNINSTALL=0
 
 say() { printf '%s\n' "$*"; }
@@ -65,11 +74,15 @@ while [ $# -gt 0 ]; do
     --no-discovery) DISCOVERY=0 ;;
     --downloads) DOWNLOADS=1 ;;
     --no-downloads) DOWNLOADS=0 ;;
+    --separate-folders) SEPARATE=1 ;;
+    --no-separate-folders) SEPARATE=0 ;;
+    --keep-folders) KEEP=1 ;;
+    --no-keep-folders) KEEP=0 ;;
     --uninstall) UNINSTALL=1 ;;
     --url) [ $# -ge 2 ] || die "--url needs an https:// address."; URL="$2"; shift ;;
     --proxy) [ $# -ge 2 ] || die "--proxy needs nginx, apache, caddy, cloudflared or other."; PROXY="$2"; shift ;;
     --proxy-at) [ $# -ge 2 ] || die "--proxy-at needs an IP address."; PROXY_AT="$2"; shift ;;
-    -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option $1. See --help." ;;
   esac
   shift
@@ -284,6 +297,38 @@ if [ "$DOWNLOADS" = 1 ] && ! have yt-dlp && [ "$YES" != 1 ] && [ -t 0 ]; then
   ask_no "I understand and want to proceed" || DOWNLOADS=0
 fi
 if [ "$DOWNLOADS" = 1 ]; then say "Yes."; else say "No (run this again with --downloads to turn it on later)."; fi
+
+step "Where should new songs go in the music folder?"
+say "Songs the apps upload and songs the server downloads can each get a folder of their"
+say "own (Uploads and Downloads), or all go straight into the music folder. Songs there"
+say "already stay where they are."
+if [ "$SEPARATE" = ask ]; then
+  if [ "$YES" = 1 ] || [ ! -t 0 ]; then
+    SEPARATE=$(info_get separate_folders)
+  elif ask "Use separate folders for uploads and downloads?"; then
+    SEPARATE=1
+  else
+    SEPARATE=0
+  fi
+fi
+[ "$SEPARATE" = 1 ] || SEPARATE=0
+if [ "$SEPARATE" = 1 ]; then say "Yes: Uploads and Downloads."; else say "No: straight into the music folder."; fi
+say ""
+say "An upload can keep the folders it is in on the PC or phone: a song in"
+say "Music/FlowPlayer/Linkin Park/Hybrid Theory/In the End.mp3 is saved as"
+say "Linkin Park/Hybrid Theory/In the End.mp3 here$([ "$SEPARATE" = 1 ] && printf ' (inside Uploads)'). Without, it is saved as"
+say "\"Linkin Park - In the End.mp3\"."
+if [ "$KEEP" = ask ]; then
+  if [ "$YES" = 1 ] || [ ! -t 0 ]; then
+    KEEP=$(info_get keep_folders)
+  elif ask "Keep uploaded folder structures?"; then
+    KEEP=1
+  else
+    KEEP=0
+  fi
+fi
+[ "$KEEP" = 1 ] || KEEP=0
+if [ "$KEEP" = 1 ]; then say "Yes."; else say "No."; fi
 
 if [ "$DOWNLOADS" = 1 ]; then step "ffmpeg (needed for downloads)"; else step "ffmpeg (optional)"; fi
 if have ffmpeg; then
@@ -841,6 +886,8 @@ ARGS=" --level $LEVEL"
 [ "$LEVEL" = 4 ] && [ -n "$PROXY_AT" ] && ARGS="$ARGS --trusted-proxy $PROXY_AT"
 if [ "$DISCOVERY" = 1 ]; then ARGS="$ARGS --discovery"; else ARGS="$ARGS --no-discovery"; fi
 if [ "$DOWNLOADS" = 1 ]; then ARGS="$ARGS --downloads"; else ARGS="$ARGS --no-downloads"; fi
+if [ "$SEPARATE" = 1 ]; then ARGS="$ARGS --separate-folders"; else ARGS="$ARGS --no-separate-folders"; fi
+if [ "$KEEP" = 1 ]; then ARGS="$ARGS --keep-folders"; else ARGS="$ARGS --no-keep-folders"; fi
 [ -n "$MUSIC" ] && ARGS="$ARGS --music $MUSIC"
 [ -n "$PORT" ] && ARGS="$ARGS --port $PORT"
 TMP=$(mktemp)

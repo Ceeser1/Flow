@@ -57,7 +57,8 @@ enum AudioFiles {
 
     /// iOS's picker: audio files (several, copied for Flow), or with `folder` a
     /// folder, looked through for audio files. Answers { items: [{ uri, name,
-    /// size }], name (the folder's), truncated }, or { cancelled: true }.
+    /// size, folder }], name (the folder's), truncated }, or { cancelled: true }.
+    /// An item's folder is where it is inside the picked one; picked files have none.
     static func pick(folder: Bool, from vc: UIViewController, done: @escaping ([String: Any]) -> Void) {
         let picker: UIDocumentPickerViewController
         if folder {
@@ -80,7 +81,8 @@ enum AudioFiles {
         openFolder = url.startAccessingSecurityScopedResource() ? url : nil
         var items: [[String: Any]] = []
         var truncated = false
-        func walk(_ dir: URL, _ depth: Int) {
+        // folder: where `dir` is inside the picked one ("Linkin Park/Meteora", "" at its top).
+        func walk(_ dir: URL, _ folder: String, _ depth: Int) {
             if depth > 12 || truncated { return }
             let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey, .nameKey]
             guard let children = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys,
@@ -101,12 +103,12 @@ enum AudioFiles {
                     truncated = true
                     return
                 }
-                items.append(["uri": f.absoluteString, "name": f.lastPathComponent, "size": size])
+                items.append(["uri": f.absoluteString, "name": f.lastPathComponent, "size": size, "folder": folder])
             }
             dirs.sort { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
-            for d in dirs { walk(d, depth + 1) }
+            for d in dirs { walk(d, folder.isEmpty ? d.lastPathComponent : "\(folder)/\(d.lastPathComponent)", depth + 1) }
         }
-        walk(url, 0)
+        walk(url, "", 0)
         return ["items": items, "name": url.lastPathComponent, "truncated": truncated]
     }
 

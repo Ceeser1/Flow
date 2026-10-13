@@ -736,7 +736,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         library.addToPlaylists(profileId, same.id, lists, at(item.index));
         song = same;
       } else {
-        song = library.addUploaded(tmp, null, songMeta, lists, profileId, { playlistAt: at(item.index) });
+        song = library.addUploaded(tmp, null, songMeta, lists, profileId, { playlistAt: at(item.index), from: 'download' });
       }
     } catch (err) {
       removeQuietly(tmp);

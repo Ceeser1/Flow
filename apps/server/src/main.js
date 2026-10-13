@@ -45,6 +45,12 @@ Options:
   --downloads     let the apps have the server download songs (needs yt-dlp and ffmpeg;
                   remembered; install.sh asks)
   --no-downloads  never download songs, even with yt-dlp on the machine
+  --separate-folders     new songs into Uploads/ (the apps') and Downloads/ (the server's)
+                  inside the music folder (remembered; install.sh asks)
+  --no-separate-folders  new songs straight into the music folder (the default)
+  --keep-folders  an upload keeps its folders and file name from the app's music folder,
+                  like Linkin Park/Hybrid Theory/In the End.mp3 (remembered; install.sh asks)
+  --no-keep-folders      uploads are saved as "Artist - Title" (the default)
   --level <n>     how far the server can be reached (remembered; install.sh sets it):
                     1 ${LEVEL_NAMES[1]}, 2 ${LEVEL_NAMES[2]},
                     3 ${LEVEL_NAMES[3]}, 4 ${LEVEL_NAMES[4]}
@@ -76,6 +82,10 @@ function parseArgs(argv) {
     else if (a === '--no-discovery') out.discovery = false;
     else if (a === '--downloads') out.downloads = true;
     else if (a === '--no-downloads') out.downloads = false;
+    else if (a === '--separate-folders') out.separateFolders = true;
+    else if (a === '--no-separate-folders') out.separateFolders = false;
+    else if (a === '--keep-folders') out.keepFolders = true;
+    else if (a === '--no-keep-folders') out.keepFolders = false;
     else if (a === '--level') {
       out.level = parseLevel(value());
       if (!out.level) throw new Error('--level is 1, 2, 3 or 4.');
@@ -184,6 +194,8 @@ async function main() {
   if (args.name) patch.name = args.name;
   if (args.discovery !== undefined) patch.discovery = args.discovery;
   if (args.downloads !== undefined) patch.downloads = args.downloads;
+  if (args.separateFolders !== undefined) patch.separateFolders = args.separateFolders;
+  if (args.keepFolders !== undefined) patch.keepFolders = args.keepFolders;
   if (args.level) patch.level = args.level;
   if (args.publicUrl !== undefined) patch.publicUrl = args.publicUrl;
   if (args.trustedProxies) patch.trustedProxies = args.trustedProxies;
@@ -227,7 +239,8 @@ async function main() {
     const password = !cfg.password ? 'none' : cfg.password.strong ? 'strong' : 'pin';
     console.log([`level=${cfg.level || ''}`, `password=${password}`, `port=${cfg.port}`, `public_url=${cfg.publicUrl}`,
       `trusted_proxies=${cfg.trustedProxies.join(',')}`, `discovery=${cfg.discovery ? 1 : 0}`, `music=${config.musicDir}`, `home=${config.home}`,
-      `downloads=${cfg.downloads === null ? '' : (cfg.downloads ? 1 : 0)}`, `ytdlp=${tools.ytdlp() || ''}`].join('\n'));
+      `downloads=${cfg.downloads === null ? '' : (cfg.downloads ? 1 : 0)}`, `ytdlp=${tools.ytdlp() || ''}`,
+      `separate_folders=${cfg.separateFolders ? 1 : 0}`, `keep_folders=${cfg.keepFolders ? 1 : 0}`].join('\n'));
     return;
   }
   if (args.command === 'tag-songs') {
@@ -252,6 +265,8 @@ async function main() {
   console.log(`Flow Server "${cfg.name}" is running.`);
   console.log(`  Music:    ${server.library.musicDir} (${server.library.data.songs.length} songs)`);
   console.log(`  Library:  ${server.config.home}`);
+  const placed = [cfg.separateFolders && 'uploads into Uploads/, downloads into Downloads/', cfg.keepFolders && 'uploads keep their folders'].filter(Boolean);
+  console.log(`  New songs: ${placed.length ? placed.join('; ') : 'straight into the music folder, as "Artist - Title"'}`);
   console.log(cfg.level
     ? `  Level:    ${cfg.level}, ${LEVEL_NAMES[cfg.level]}${cfg.level >= PUBLIC_LEVEL && cfg.publicUrl ? ` at ${cfg.publicUrl}` : ''}`
     : '  Level:    not chosen (install.sh asks, or --level)');

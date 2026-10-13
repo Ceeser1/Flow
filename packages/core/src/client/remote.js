@@ -1077,6 +1077,18 @@ function createRemote(env) {
     return choice;
   }
 
+  /**
+   * Where a song's file is in this app's music folder ("Artist/Album/Song.mp3"),
+   * for a server that keeps uploads' folders; a file elsewhere: its name only.
+   */
+  function placeInMusic(file) {
+    const slashes = (p) => String(p || '').replace(/\\/g, '/');
+    const root = slashes(paths.musicDir()).replace(/\/+$/, '');
+    const f = slashes(file);
+    if (root && f.toLowerCase().startsWith(`${root.toLowerCase()}/`)) return f.slice(root.length + 1);
+    return f.slice(f.lastIndexOf('/') + 1);
+  }
+
   /** One song up to the server. Its local file stays or goes by "Keep downloaded files". */
   async function uploadOne(cmd, number, total) {
     const local = model.songById(library.get(), cmd.localId);
@@ -1106,6 +1118,7 @@ function createRemote(env) {
       loudness: local.loudness,
       cut: local.cut || undefined,
       onExisting: cmd.onExisting || undefined,
+      path: placeInMusic(local.file),
     };
     if ((cmd.profile || '') === currentProfile()) {
       Object.assign(meta, {

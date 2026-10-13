@@ -422,7 +422,9 @@ public class FlowNative extends Plugin {
     /**
      * Android's picker: audio files (several), or with `folder` a folder, looked
      * through for audio files (at most MAX_FILES). Resolves { items: [{ uri,
-     * name, size }], name (the folder's), truncated }, or { cancelled: true }.
+     * name, size, folder }], name (the folder's), truncated }, or { cancelled: true }.
+     * An item's folder is where it is inside the picked one ("Linkin Park/Meteora",
+     * '' at its top); picked files have none.
      */
     @PluginMethod
     public void pickAudio(PluginCall call) {
@@ -507,7 +509,7 @@ public class FlowNative extends Plugin {
             } catch (RuntimeException e) {
                 // Unnamed.
             }
-            walk(tree, rootId, items, truncated, 0);
+            walk(tree, rootId, "", items, truncated, 0);
             JSObject r = new JSObject();
             r.put("items", items);
             r.put("name", name);
@@ -517,7 +519,7 @@ public class FlowNative extends Plugin {
     }
 
     /** The audio files in a picked folder, then those of the folders in it, A to Z within each. */
-    private void walk(Uri tree, String parentId, JSArray items, boolean[] truncated, int depth) {
+    private void walk(Uri tree, String parentId, String folder, JSArray items, boolean[] truncated, int depth) {
         if (depth > 12 || truncated[0]) return;
         List<String[]> dirs = new ArrayList<>();
         List<JSObject> found = new ArrayList<>();
@@ -539,6 +541,7 @@ public class FlowNative extends Plugin {
                 it.put("uri", DocumentsContract.buildDocumentUriUsingTree(tree, id).toString());
                 it.put("name", name);
                 it.put("size", c.isNull(3) ? -1 : c.getLong(3));
+                it.put("folder", folder);
                 found.add(it);
             }
         } catch (RuntimeException e) {
@@ -553,7 +556,7 @@ public class FlowNative extends Plugin {
             items.put(it);
         }
         dirs.sort((a, b) -> a[1].compareToIgnoreCase(b[1]));
-        for (String[] d : dirs) walk(tree, d[0], items, truncated, depth + 1);
+        for (String[] d : dirs) walk(tree, d[0], folder.isEmpty() ? d[1] : folder + "/" + d[1], items, truncated, depth + 1);
     }
 
     private static String extOf(String name) {

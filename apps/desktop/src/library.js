@@ -27,6 +27,9 @@ const {
 
 // ---- the folder scan ----
 
+// How many folders deep the music folder is looked through (as the Flow Server).
+const SCAN_DEPTH = 16;
+
 function listAudioFiles(dir, depth = 0) {
   let entries;
   try {
@@ -41,7 +44,7 @@ function listAudioFiles(dir, depth = 0) {
     if (depth === 0 && e.isDirectory() && e.name === paths.COVERS) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      if (depth < 4) out.push(...listAudioFiles(full, depth + 1));
+      if (depth < SCAN_DEPTH) out.push(...listAudioFiles(full, depth + 1));
     } else if (AUDIO_EXTS.includes(path.extname(e.name).toLowerCase())) {
       out.push(full);
     }

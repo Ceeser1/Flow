@@ -102,9 +102,11 @@ function createEnv({ tellCovers }) {
     },
     paths: { musicDir: () => musicDir, cacheDir: () => cacheDir },
     exporter: {
-      uniquePath(stem, ext) {
-        let dest = path.join(musicDir, `${stem}.${ext}`);
-        for (let n = 2; fs.exists(dest); n += 1) dest = path.join(musicDir, `${stem} (${n}).${ext}`);
+      // folders: where in the Music folder (a picked folder's own, localFiles.js); none: at its top.
+      uniquePath(stem, ext, folders = []) {
+        const dir = path.join(musicDir, ...folders);
+        let dest = path.join(dir, `${stem}.${ext}`);
+        for (let n = 2; fs.exists(dest); n += 1) dest = path.join(dir, `${stem} (${n}).${ext}`);
         return dest;
       },
       // A server's song is cut by the server; the phone cuts no files itself.

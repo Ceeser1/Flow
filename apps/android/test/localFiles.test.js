@@ -34,14 +34,15 @@ function setup({ serverOn = false, serverSongs = [] } = {}) {
     },
   };
   // What the phone's picker and Android's tags give for each picked file.
+  // folder: where it is inside a picked folder.
   const phone = {
-    'content://a/1': { name: 'Moby - Porcelain.mp3', tags: { title: '', artist: '' }, duration: 241.5, picture: true },
-    'content://a/2': { name: 'track02.flac', tags: { title: 'Teardrop', artist: 'Massive Attack' }, duration: 330.2, picture: false },
+    'content://a/1': { name: 'Moby - Porcelain.mp3', tags: { title: '', artist: '' }, duration: 241.5, picture: true, folder: '' },
+    'content://a/2': { name: 'track02.flac', tags: { title: 'Teardrop', artist: 'Massive Attack' }, duration: 330.2, picture: false, folder: 'Massive Attack/Mezzanine' },
     'content://a/3': { name: 'broken.ogg', fail: 'This file has no audio in it.' },
   };
   const plugin = {
     pickAudio: async ({ folder }) => ({
-      items: Object.entries(phone).map(([uri, f]) => ({ uri, name: f.name, size: 100 })),
+      items: Object.entries(phone).map(([uri, f]) => ({ uri, name: f.name, size: 100, ...(folder ? { folder: f.folder || '' } : {}) })),
       name: folder ? 'Music' : '',
       truncated: false,
     }),
@@ -75,9 +76,10 @@ function setup({ serverOn = false, serverSongs = [] } = {}) {
     tell: (scope, list) => told.push([scope, ...list]),
   };
   const exporter = {
-    uniquePath: (stem, ext) => {
-      let dest = `${MUSIC}/${stem}.${ext}`;
-      for (let n = 2; files.has(dest); n += 1) dest = `${MUSIC}/${stem} (${n}).${ext}`;
+    uniquePath: (stem, ext, folders = []) => {
+      const dir = [MUSIC, ...folders].join('/');
+      let dest = `${dir}/${stem}.${ext}`;
+      for (let n = 2; files.has(dest); n += 1) dest = `${dir}/${stem} (${n}).${ext}`;
       return dest;
     },
   };
@@ -180,6 +182,19 @@ test('Finish all: saved whole into the Music folder and Local Files, with the pl
   assert.deepEqual(p.entries.map((e) => e.songId), summary.songIds);
   assert.deepEqual(progress.map((x) => x.number), [1, 2]);
   assert.deepEqual(t.pushed, []);
+});
+
+test('songs of a picked folder keep their folders and file names in the Music folder', async () => {
+  const t = setup();
+  const { ready } = await prepared(t, true);
+  // A file of that name there already: the new one gets a number, beside it.
+  t.files.set(`${MUSIC}/Moby - Porcelain.mp3`, 'another');
+  const job = { local: true, playlist: false, name: 'Music', base: 1000000, playlistIds: [], entries: ready.map(entryOf) };
+  t.local.finish(job, () => {});
+  assert.deepEqual(t.data().songs.map((s) => s.file), [
+    `${MUSIC}/Moby - Porcelain (2).mp3`,
+    `${MUSIC}/Massive Attack/Mezzanine/track02.flac`,
+  ]);
 });
 
 test('with a Flow Server the saved songs are handed on to go up', async () => {

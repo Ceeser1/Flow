@@ -42,6 +42,13 @@ systemd (Raspberry Pi OS, Debian, Ubuntu). Run the commands on that machine.
      wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64
      sudo mv yt-dlp_linux_aarch64 /usr/local/bin/yt-dlp && sudo chmod +x /usr/local/bin/yt-dlp
      ```
+   - **Separate folders for uploads and downloads:** yes puts songs the apps
+     upload into `Uploads/` and songs the server downloads into `Downloads/`
+     inside the music folder.
+   - **Keep uploaded folder structures:** yes saves a song the PC has in
+     `Music/FlowPlayer/Linkin Park/Hybrid Theory/In the End.mp3` as
+     `Linkin Park/Hybrid Theory/In the End.mp3` on the server; no saves it as
+     `Linkin Park - In the End.mp3`.
    - **Find the server on the network:** yes.
    - **Password:** optional at levels 1 and 2.
    - **Tailscale** (level 2): open the link it prints and sign in.
