@@ -308,7 +308,7 @@
           </div>
         </div>
         <div id="plPickBanner" class="pick-banner" hidden>
-          <span>Adding songs to <strong id="plPickName"></strong>: click <strong>+</strong> on a song to add it.</span>
+          <span>Adding songs to <strong id="plPickName"></strong>: click <strong>+</strong> on a song to add it, <strong>X</strong> to take it out again.</span>
           <button id="plPickDone" class="btn btn--primary" type="button">Done</button>
         </div>
         <div class="pl-search-row">
@@ -367,7 +367,11 @@
             <button id="btnRepeat" class="sq-btn" type="button" aria-pressed="false" title="Repeat this song">
               <img class="sq-btn__img" src="../images/repeat.png" alt="" /></button>
             <button id="btnVisualizer" class="sq-btn" type="button" title="Visualizer">
-              <img class="sq-btn__img" src="../images/visualizer.png" alt="" /></button>          </div>
+              <img class="sq-btn__img" src="../images/visualizer.png" alt="" /></button>
+            <!-- The song playing into playlists, and as a favourite (player.js). -->
+            <button id="btnAddToPlaylist" class="sq-btn" type="button" title="Add to Playlists"></button>
+            <button id="btnFavourite" class="sq-btn" type="button" aria-pressed="false" title="Favourite"></button>
+          </div>
         </div>
         <div class="player__buttons">
           <button id="btnPrev" class="round-btn" type="button" title="Previous song"></button>

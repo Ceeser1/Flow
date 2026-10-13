@@ -45,10 +45,35 @@ const PlaylistsPage = {
       box.value = '';
       $('newPlaylistError').textContent = '';
       toast(`Playlist "${p.name}" created`, 'success');
+      // Straight on to filling it: All Songs, adding songs to it.
+      this._whenListed(p.id, () => Nav.openPlaylist('all', { pickFor: p.id }));
     } catch (err) {
       $('newPlaylistError').textContent = err.message;
       box.focus();
     }
+  },
+
+  /**
+   * Runs `fn` once the library has playlist `id`: at once, or with the
+   * library event that brings it (with a Flow Server it may come after the
+   * answer). Given up after a few seconds, or once another page is open.
+   */
+  _whenListed(id, fn) {
+    if (Store.playlist(id)) {
+      fn();
+      return;
+    }
+    const until = Date.now() + 5000;
+    const check = () => {
+      if (Date.now() > until || Nav.page !== 'playlists') return true;
+      if (!Store.playlist(id)) return false;
+      fn();
+      return true;
+    };
+    const listener = () => {
+      if (check()) Store._listeners = Store._listeners.filter((f) => f !== listener);
+    };
+    Store.onLibrary(listener);
   },
 
   _value(p, key) {

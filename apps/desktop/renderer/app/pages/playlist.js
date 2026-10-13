@@ -5,7 +5,8 @@
 // while the app runs, and the player follows the list exactly as shown.
 //
 // "Adding songs to" mode: the + on a row of the Playlists page opens All Songs
-// with `pickFor` set, and every row's + then adds straight to that list.
+// with `pickFor` set (so does creating a playlist), and every row's + then
+// adds straight to that list, its X takes a song out again.
 
 const PlaylistPage = {
   id: null,
@@ -336,7 +337,8 @@ const PlaylistPage = {
         iconButton('act.act--green', Icons.plus, 'Add to Queue', () => Player.addToQueue(r.song.id)),
         ...this._moreButtons(r.song),
       ],
-      select: { actions },
+      // Adding songs to a playlist, only the + (and X) do anything to a song: no long press.
+      select: pickTarget ? null : { actions },
     };
   },
 
@@ -392,12 +394,16 @@ const PlaylistPage = {
     return SongActions.cell([first, play], more);
   },
 
-  /** While adding songs to a playlist: + adds the song to it, a tick once it is there. */
+  /**
+   * While adding songs to a playlist: + adds the song to it; once it is
+   * there, an orange X takes it out again (a song added by mistake).
+   */
   _pickButton(song, pickTarget, pickSet) {
     if (pickSet.has(song.id)) {
-      const done = iconButton('act.act--done', Icons.check, `Already in ${pickTarget.name}`, null);
-      done.disabled = true;
-      return done;
+      return iconButton('act.act--orange', Icons.x, `Remove from ${pickTarget.name}`, () => attempt(async () => {
+        await window.flow.removeFromPlaylist(pickTarget.id, song.id);
+        toast(`Removed from ${pickTarget.name}`, 'success');
+      }));
     }
     return iconButton('act.act--green', Icons.plus, `Add to ${pickTarget.name}`, () => attempt(async () => {
       await window.flow.addSongsToPlaylist(pickTarget.id, [song.id]);

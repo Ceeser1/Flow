@@ -1473,6 +1473,9 @@ div.import__frame-head { cursor: default; }
 .act--grey { background: rgba(184, 184, 192, 0.12); color: var(--grey); }
 .act--grey:hover { background: rgba(184, 184, 192, 0.24); border-color: rgba(184, 184, 192, 0.35); }
 .act--done { background: rgba(120, 200, 140, 0.06); color: rgba(120, 200, 140, 0.55); cursor: default; }
+/* Adding songs to a playlist: a song just added, taken out again. */
+.act--orange { background: rgba(240, 150, 60, 0.16); color: #f0963c; }
+.act--orange:hover { background: rgba(240, 150, 60, 0.3); border-color: rgba(240, 150, 60, 0.45); }
 /* Favourite: an empty green star, filled gold once it is one. Download: light
    grey (like Song Details) while the song is only on the server, gold once it
    is here too. */
@@ -1529,6 +1532,8 @@ div.import__frame-head { cursor: default; }
 }
 
 .pl-picker__title { margin: 0; font-size: 17px; font-weight: 600; color: var(--text-bright); }
+/* Opened from the player: which song it is about. */
+.pl-picker__song { margin-top: -4px; color: var(--text-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-picker__list { max-height: 340px; overflow-y: auto; }
 
 .pl-picker__row {
@@ -1972,6 +1977,10 @@ div.import__frame-head { cursor: default; }
 
 .sq-btn:hover { opacity: 1; background: var(--glass-hi); }
 .sq-btn__img { width: 17px; height: 17px; display: block; pointer-events: none; }
+.sq-btn .icon { width: 17px; height: 17px; pointer-events: none; }
+.sq-btn:disabled { opacity: 0.3; background: none; cursor: default; }
+/* Favourite: the golden star once the song is one (as on a song's row). */
+.sq-btn--fav-on { opacity: 1; color: #f5be3c; }
 .sq-btn--on {
   opacity: 1;
   background: rgba(120, 200, 140, 0.2);
@@ -2065,6 +2074,13 @@ div.import__frame-head { cursor: default; }
   .sq-btn,
   .sleep-btn { width: 28px; height: 28px; }
   .player__extras { gap: 4px; }
+}
+/* The narrowest windows: the five buttons left of the main ones still beside them. */
+@media (max-width: 1040px) {
+  .player__buttons { gap: 4px; }
+  .sq-btn,
+  .sleep-btn { width: 26px; height: 26px; }
+  .player__extras { gap: 2px; }
 }
 
 /* ===== popups ===== */

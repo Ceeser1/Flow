@@ -220,7 +220,7 @@ body.mobile .player.mp--open {
   grid-template-areas:
     "collapse from ."
     "cover cover cover"
-    "text text text"
+    "text text queue"
     "session session session"
     "track track track"
     "times times times"
@@ -327,11 +327,15 @@ body.mobile .mp--open .mp__extras {
   padding: 8px 4px 0;
 }
 body.mobile .mp--open .sq-btn { width: 48px; height: 48px; border-radius: 12px; }
-body.mobile .mp--open .sq-btn__img { width: 22px; height: 22px; }
+body.mobile .mp--open .sq-btn__img,
+body.mobile .mp--open .sq-btn .icon { width: 22px; height: 22px; }
 body.mobile .mp--open .sleep-btn { width: 48px; height: 48px; border-radius: 12px; }
 body.mobile .mp--open .sleep-btn .icon { width: 22px; height: 22px; }
-/* The Queue: the fourth of the row, its picture only. */
+/* The Queue: right of the title and artist, its picture only. */
 body.mobile .mp--open #btnQueue {
+  grid-area: queue;
+  align-self: center;
+  margin: 12px -12px 0 0;
   width: 48px;
   height: 48px;
   justify-content: center;
@@ -522,6 +526,7 @@ body.mobile .mrow > .act {
 }
 body.mobile .mrow > .act { width: 40px; height: 40px; margin-right: 4px; border-radius: 10px; }
 body.mobile .mrow > .act--green { background: rgba(120, 200, 140, 0.14); color: var(--green); }
+body.mobile .mrow > .act--orange { background: rgba(240, 150, 60, 0.16); color: #f0963c; }
 body.mobile .mrow .icon { width: 20px; height: 20px; }
 
 /* Choosing: a tick in front of each row, filled on the chosen ones. */
