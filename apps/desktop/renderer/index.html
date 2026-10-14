@@ -54,16 +54,23 @@
           <input id="searchInput" class="search-box__input" type="search"
                  placeholder="Search playlists, songs and artists" autocomplete="off" spellcheck="false" />
         </div>
-        <div class="results">
-          <div class="results__col">
+        <!-- Phone only: show one part of the results instead of all three under each other. -->
+        <div id="searchFilter" class="search-filter">
+          <button class="search-filter__btn search-filter__btn--on" type="button" data-part="all">All</button>
+          <button class="search-filter__btn" type="button" data-part="playlists">Playlists</button>
+          <button class="search-filter__btn" type="button" data-part="songs">Songs</button>
+          <button class="search-filter__btn" type="button" data-part="artists">Artists</button>
+        </div>
+        <div id="searchResults" class="results">
+          <div class="results__col" data-part="playlists">
             <h2 class="results__head">Playlists <span id="searchPlaylistsCount" class="count"></span></h2>
             <div id="searchPlaylists" class="results__list"></div>
           </div>
-          <div class="results__col">
+          <div class="results__col" data-part="songs">
             <h2 class="results__head">Songs <span id="searchSongsCount" class="count"></span></h2>
             <div id="searchSongs" class="results__list"></div>
           </div>
-          <div class="results__col">
+          <div class="results__col" data-part="artists">
             <h2 class="results__head">Artists <span id="searchArtistsCount" class="count"></span></h2>
             <div id="searchArtists" class="results__list"></div>
           </div>

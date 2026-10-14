@@ -630,8 +630,26 @@ body.mobile .section-head__btn { min-height: 44px; }
 
 /* Search: one column, Playlists, Songs and Artists under each other. */
 body.mobile .page--search { height: auto; }
-body.mobile .search-box--big { height: 48px; }
+body.mobile .search-box--big { height: 48px; margin-bottom: 14px; }
 body.mobile .results { display: block; }
+/* All, Playlists, Songs, Artists: only the chosen part is shown. */
+body.mobile .search-filter { display: flex; gap: 8px; }
+body.mobile .search-filter__btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 40px;
+  padding: 0 6px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  color: var(--grey);
+  font-size: 14px;
+  white-space: nowrap;
+}
+body.mobile .search-filter__btn--on { background: var(--accent); border-color: var(--accent); color: #fff; }
+body.mobile .results[data-only="playlists"] .results__col:not([data-part="playlists"]),
+body.mobile .results[data-only="songs"] .results__col:not([data-part="songs"]),
+body.mobile .results[data-only="artists"] .results__col:not([data-part="artists"]) { display: none; }
 body.mobile .results__col { margin-top: 14px; overflow: visible; }
 body.mobile .results__list { overflow: visible; padding: 4px; }
 body.mobile .result { min-height: 56px; gap: 12px; }

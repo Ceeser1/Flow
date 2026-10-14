@@ -511,6 +511,9 @@ button, input, select { font: inherit; color: inherit; }
   height: 100%;
 }
 
+/* The phone's All / Playlists / Songs / Artists row (mobile.css). */
+.search-filter { display: none; }
+
 .results {
   flex: 1;
   min-height: 0;

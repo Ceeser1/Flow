@@ -15,6 +15,11 @@ const SearchPage = {
         e.stopPropagation();
       }
     });
+    // Phone: All, Playlists, Songs or Artists, so the artists are not three
+    // long lists down. The PC shows its three columns side by side and hides the row.
+    for (const btn of $('searchFilter').children) {
+      btn.addEventListener('click', () => this._showPart(btn.dataset.part));
+    }
     Store.onLibrary(() => {
       if (Nav.page === 'search') this.render();
     });
@@ -104,6 +109,14 @@ const SearchPage = {
     h('span.result__text',
       h('span.result__title', a.name),
       h('span.result__meta', Util.plural(a.count, 'song')))));
+  },
+
+  _showPart(part) {
+    for (const btn of $('searchFilter').children) {
+      btn.classList.toggle('search-filter__btn--on', btn.dataset.part === part);
+    }
+    $('searchResults').dataset.only = part;
+    $('pages').scrollTop = 0;
   },
 
   // Long lists are cut off: nobody scrolls through 5000 buttons, they type more.
