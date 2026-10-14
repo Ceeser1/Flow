@@ -97,78 +97,33 @@ const SettingsPanel = {
       this._row({
         key: 'showTrend',
         label: 'Show listening trends',
-        desc: 'If disabled, your listening trend category will be hidden in the menu.',
+        desc: 'If disabled, your listening trend category will be hidden in the menu and the search.',
       }),
-      Store.can('musicFolder') ? this._savedSongsRow() : null,
-      this._coversRow(),
 
       ...this._serverRows(),
 
       ...this._jamRows(),
 
-      // yt-dlp runs on this device (not on the phone, where the server downloads).
-      ...(Store.can('downloadHere') ? [
-      h('h3.settings__section', 'Website Downloads'),
-      this._row({
-        key: 'useCookies',
-        label: 'Download using browser cookies from',
-        desc: 'Downloads may be blocked by age restrictions or sites may only serve content to signed-in users. '
-          + 'Pick your browser to use session cookies (no login data) to bypass restrictions. Firefox works best. '
-          + 'Chrome, Edge, Brave may lock cookies on Windows.',
-        right: this._cookieBrowser(),
-      }),
-      this._row({
-        key: 'shareCookies',
-        label: 'Share session cookies with the server for downloads',
-        desc: 'Download (Server) gets the cookies of the link\'s site only (all of YouTube for a YouTube link), '
-          + 'for that one download, and deletes them with it. Over a plain http address at home they travel unencrypted.',
-        sub: true,
-        when: () => Store.settings.useCookies,
-        show: () => Store.settings.serverOn,
-      }),
-      this._row({
-        key: 'sponsorBlock',
-        label: 'Use Sponsorblock for Youtube',
-        desc: 'Shows sponsored segments as yellow in the trim.',
-      }),
-      this._row({
-        key: 'sponsorBlockIntros',
-        label: 'Try to detect intros/outros, marked red in the trim',
-        desc: 'A music video\'s non-music parts (talk, skits, credits) count as these too.',
-        sub: true,
-        when: () => Store.settings.sponsorBlock,
-      }),
-      this._row({
-        key: 'alwaysMp3',
-        label: 'Always convert downloads into MP3',
-        desc: 'Otherwise songs are kept in the format they come in.',
-        right: this._mp3Quality(),
-      }),
-      this._row({
-        key: 'keepMp3',
-        label: 'Ignore files that are already in .mp3 format',
-        desc: 'Leaves MP3s as they are instead of encoding them again at the quality above.',
-        sub: true,
-        when: () => Store.settings.alwaysMp3,
-      }),
-      ] : []),
+      ...this._mediaRows(),
 
-      ...(Store.can('effects') ? [
-      h('h3.settings__section', 'Visual Effects'),
+      // The clouds everywhere; what listens to the music (their bass, the
+      // equalizer, the visualizers) only where the page hears it (effects).
+      h('h3.settings__section', 'App Visuals'),
+      Store.phone ? h('div.settings__desc.settings__intro', 'Using background visuals for the app will drain your battery a bit faster than without.') : null,
       this._row({
         key: 'cloudsOn',
         label: 'Enable Background Clouds',
         desc: 'Slowly drifting clouds of colour behind the pages.',
         right: this._slider({ key: 'cloudsIntensity', label: 'Intensity', when: () => Store.settings.cloudsOn }),
       }),
-      this._row({
+      Store.can('effects') ? this._row({
         key: 'cloudsBass',
         label: 'React to Bass',
         desc: 'The clouds swell and brighten on kicks and bass notes.',
         sub: true,
         when: () => Store.settings.cloudsOn,
         right: this._slider({ key: 'cloudsBassAmount', label: 'Strength', when: () => Store.settings.cloudsOn && Store.settings.cloudsBass }),
-      }),
+      }) : null,
       this._row({
         label: 'Clouds color scheme',
         desc: 'Rainbow gives each cloud a random color as it comes.',
@@ -183,6 +138,8 @@ const SettingsPanel = {
         when: () => Store.settings.cloudsOn,
         right: this._slider({ key: 'cloudsAmount', label: 'Amount', min: 0, max: 100, step: 10, when: () => Store.settings.cloudsOn }),
       }),
+
+      ...(Store.can('effects') ? [
       this._row({
         key: 'eqOn',
         label: 'Enable Equalizer',
@@ -210,19 +167,6 @@ const SettingsPanel = {
         sub: true,
         when: () => Store.settings.eqOn,
         right: this._select({ key: 'eqColors', options: EQ_SCHEMES, when: () => Store.settings.eqOn }),
-      }),
-      this._row({
-        key: 'flashOn',
-        label: 'Screen Flash',
-        desc: 'The window\'s edges glow white from kick and bass peaks.',
-        right: this._slider({ key: 'flashTriggers', label: 'Triggers', when: () => Store.settings.flashOn }),
-      }),
-      this._row({
-        label: 'Flash range',
-        desc: 'How far the edge flash and its fade-out reach, and how bright it starts at the edges.',
-        sub: true,
-        when: () => Store.settings.flashOn,
-        right: this._slider({ key: 'flashRange', name: 'Flash range', when: () => Store.settings.flashOn }),
       }),
 
       h('h3.settings__section', 'Music Visualizer'),
@@ -389,15 +333,11 @@ const SettingsPanel = {
     return true;
   },
 
-  /**
-   * The phone app's own: its version, the songs kept on the phone, and help
-   * for playing on with the screen off.
-   */
+  /** The Android app's own: its version, and help for playing on with the screen off. */
   _appRows() {
     return [
       h('h3.settings__section', 'App'),
       this._row({ label: 'Version', desc: `Flow ${Store.version || ''}`.trim() }),
-      this._storageRow(),
       Store.can('batteryHelp') ? this._row({
         label: 'Playing with the screen off',
         desc: 'How to keep the phone from stopping Flow in the background.',
@@ -731,32 +671,95 @@ const SettingsPanel = {
       }),
       this._row({
         key: 'serverMetered',
-        label: 'Always Download & Synchronize on mobile internet/metered connections',
-        desc: 'Away from home, songs only go up and come down on connections that are not metered, unless ticked. '
-          + 'Streaming works either way, and at home nothing is held back.',
+        label: 'Allow downloads on mobile internet',
+        desc: 'If the app detects a metered connection/mobile internet, it will not download marked-to-download songs '
+          + 'from the Flow Server if it\'s not allowed. Streaming songs always works.',
         sub: true,
         when: on,
         show: () => !!Store.settings.serverRemote && Store.settings.serverRemoteOn !== false,
       }),
+    ];
+    return rows;
+  },
+
+  // ---- Media Management ----
+
+  /**
+   * Where the songs and covers are kept, what goes up to a Flow Server, and
+   * how downloads are made. The browser-cookie and SponsorBlock rows only
+   * where yt-dlp runs (the phone's Download (Server) still takes its MP3 choice).
+   */
+  _mediaRows() {
+    const server = () => Store.settings.serverOn;
+    const here = Store.can('downloadHere');
+    const sync = this._row({
+      key: 'serverAutoSync',
+      label: 'Synchronize local changes',
+      desc: 'Songs added to or removed from local files go to the server by themselves. '
+        + 'If disabled, only the button will sync local changes.',
+      when: server,
+      right: this._syncBtn,
+    });
+    // The button beside the box works whether or not the box is ticked.
+    sync.classList.add('settings__row--keep');
+    return [
+      h('h3.settings__section', 'Media Management'),
+      Store.can('musicFolder') ? this._savedSongsRow() : this._storageRow(),
+      this._coversRow(),
       this._row({
         key: 'serverKeepFiles',
-        label: 'Keep downloaded files after sync with the server',
-        desc: 'If disabled, downloaded songs will be removed locally once they are uploaded to the server '
-          + '(except if they are marked to download).',
-        when: on,
+        label: 'Keep local files after server upload',
+        desc: 'If disabled, your local songs will be removed after they got uploaded to the server, '
+          + 'unless you have these songs marked to be downloaded.',
+        when: server,
+      }),
+      sync,
+      here ? this._row({
+        key: 'useCookies',
+        label: 'Use browser session-cookies for downloading',
+        desc: 'Downloads may be blocked by age restrictions or sites may only serve content to signed-in users. '
+          + 'Pick your browser to use its session cookies so such websites can know you are allowed to find/see '
+          + 'what you are looking for.',
+        right: this._cookieBrowser(),
+      }) : null,
+      here ? this._row({
+        key: 'shareCookies',
+        label: 'Share session cookies with the server',
+        desc: 'When enabled the Download (Server) button will pass -only the required- session cookies to the '
+          + 'Flow Server for this action.',
+        sub: true,
+        when: () => Store.settings.useCookies,
+        show: server,
+      }) : null,
+      here ? this._row({
+        key: 'sponsorBlock',
+        label: 'Use Sponsorblock for Youtube',
+        desc: 'Shows sponsored segments as yellow in the trim.',
+      }) : null,
+      here ? this._row({
+        key: 'sponsorBlockIntros',
+        label: 'Try to detect intros/outros, marked red in the trim',
+        desc: 'A music video\'s non-music parts (talk, skits, credits) count as these too.',
+        sub: true,
+        when: () => Store.settings.sponsorBlock,
+      }) : null,
+      // A phone converts nothing itself: the server does, for its uploads and Download (Server).
+      this._row({
+        key: 'alwaysMp3',
+        label: here ? 'Always convert downloads into MP3' : 'Upload songs to the server as MP3',
+        desc: here ? 'Otherwise songs are kept in the format they come in.'
+          : 'Songs you upload from your phone to the server using local files or using the Download (Server) button '
+            + 'get converted into MP3 at the chosen quality by the server if enabled. Songs downloaded to this phone are not changed.',
+        right: this._mp3Quality(),
       }),
       this._row({
-        key: 'serverAutoSync',
-        label: 'Synchronize local changes',
-        desc: 'Songs added to or removed from local files go to the server by themselves. '
-          + 'If disabled, only the button will sync local changes.',
-        when: on,
-        right: this._syncBtn,
+        key: 'keepMp3',
+        label: 'Ignore files that are already in .mp3 format',
+        desc: 'Leaves MP3s as they are instead of encoding them again at the quality above.',
+        sub: true,
+        when: () => Store.settings.alwaysMp3,
       }),
     ];
-    // The button beside the box works whether or not the box is ticked.
-    rows[rows.length - 1].classList.add('settings__row--keep');
-    return rows;
   },
 
   // ---- Jam session ----
@@ -1141,8 +1144,8 @@ const SettingsPanel = {
       }),
     }, 'Clear cover cache');
     const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', 'Covers'),
-      h('div.settings__desc', 'Covers are found by the client or server.'));
+      h('div.settings__label.settings__label--plain', 'Cover Cache'),
+      h('div.settings__desc', 'Covers are found by the client or server, synchronized automatically.'));
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._coversNode, this._clearCovers)));
   },
 
@@ -1154,7 +1157,7 @@ const SettingsPanel = {
       onclick: () => this._removeAllDownloads(),
     }, 'Remove downloads');
     const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', 'Storage'),
+      h('div.settings__label.settings__label--plain', 'Song Storage'),
       h('div.settings__desc', 'The songs kept on this phone, and how much room they take. Remove downloads deletes '
         + 'the Flow Server\'s songs kept here and unmarks every playlist\'s Download; they still play from the server.'));
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._storageNode, this._removeDownloads)));

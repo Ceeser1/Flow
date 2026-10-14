@@ -305,7 +305,7 @@ handle('server:downloads', async ({ action, ...args }) => {
   if (action === 'create' && args.url && browser) args.cookies = await cookieJar.siteCookies(args.url, browser);
   return remote.serverDownloads(action, args);
 });
-// The browsers the cookies can come from (Settings, Website Downloads).
+// The browsers the cookies can come from (Settings, Media Management).
 handle('cookies:browsers', () => cookieJar.browsers());
 
 handle('shell:showSong', (songId) => {

@@ -75,7 +75,9 @@ const { OfflineError, AuthError, randomHex } = require('./common');
  * jsonFiles (the client's own JSON files, by name), files, paths, exporter, http,
  * secrets, device, discovery, network; audioQuery: what this app adds when
  * it fetches a song's audio ('vorbis=0': an iPhone, which cannot play Ogg
- * Vorbis, gets such a song as Opus).
+ * Vorbis, gets such a song as Opus); convertUploads: uploads carry the
+ * "Always convert" choice (alwaysMp3, mp3Quality, keepMp3) for the server to
+ * convert them by (a phone, which has no ffmpeg; the PC converts its own).
  */
 function createRemote(env) {
   const {
@@ -1089,7 +1091,7 @@ function createRemote(env) {
     return f.slice(f.lastIndexOf('/') + 1);
   }
 
-  /** One song up to the server. Its local file stays or goes by "Keep downloaded files". */
+  /** One song up to the server. Its local file stays or goes by "Keep local files after server upload". */
   async function uploadOne(cmd, number, total) {
     const local = model.songById(library.get(), cmd.localId);
     const drop = () => {
@@ -1119,6 +1121,11 @@ function createRemote(env) {
       cut: local.cut || undefined,
       onExisting: cmd.onExisting || undefined,
       path: placeInMusic(local.file),
+      convert: env.convertUploads ? {
+        alwaysMp3: !!settings.get('alwaysMp3'),
+        quality: Number(settings.get('mp3Quality')),
+        keepMp3: settings.get('keepMp3') !== false,
+      } : undefined,
     };
     if ((cmd.profile || '') === currentProfile()) {
       Object.assign(meta, {

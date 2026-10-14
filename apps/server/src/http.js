@@ -18,6 +18,9 @@
 //                                      names come back (an app asks when they
 //                                      differ); meta.onExisting "new" takes it
 //                                      as a song of its own all the same
+//                                      (meta.convert { alwaysMp3, quality, keepMp3 }:
+//                                      the app's MP3 choice; Ogg Vorbis becomes MP3
+//                                      regardless, in the background after the batch)
 //   GET  /api/songs/:id/audio          the song's file; with ?vorbis=0 (an app that
 //                                      cannot play Ogg Vorbis: the iPhone) such a
 //                                      song as Ogg Opus, converted once (vorbis.js)
@@ -649,7 +652,14 @@ function createHttpServer({
       req.on('end', () => sendJson(res, 200, known(existing)));
       return;
     }
-    const tmp = await receiveFile(req, ext);
+    // The batch's conversions wait until its files are in (library.js).
+    library.uploadStarted();
+    let tmp;
+    try {
+      tmp = await receiveFile(req, ext);
+    } finally {
+      library.uploadEnded();
+    }
     const again = asNew ? null : library.existingFor(id, meta);
     if (again) {
       fs.rmSync(tmp, { force: true });

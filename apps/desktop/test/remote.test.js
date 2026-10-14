@@ -94,7 +94,7 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.equal(there.id, 'roads1');
     assert.equal(there.title, 'Roads');
     assert.equal(there.file, 'Portishead/Dummy/Roads.mp3');
-    // Kept here (Keep downloaded files), and the window plays it from here.
+    // Kept here (Keep local files after server upload), and the window plays it from here.
     await until(() => remote.view().songs.length === 1, 'the view');
     assert.equal(remote.localFileOf('roads1'), roadsFile);
     assert.equal(remote.status().queued, 0);
@@ -238,6 +238,16 @@ test('a Flow Server as the library, step by step', async (t) => {
 
   await t.test('a server with a password: asked for, refused when wrong, then the songs here go up there too', async () => {
     const two = await serve({ password: 'Secret123' });
+    // As a phone: its uploads carry Settings' MP3 choice for the server to convert by.
+    const env = require('../src/env');
+    env.convertUploads = true;
+    settings.set({ alwaysMp3: true, mp3Quality: 160 });
+    const sent = [];
+    const add = two.server.library.addUploaded;
+    two.server.library.addUploaded = (...args) => {
+      sent.push(args[2].convert);
+      return add(...args);
+    };
     settings.set({ serverHome: two.address });
     remote.reconfigure({ serverHome: two.address });
     await until(() => remote.status().state === 'password', 'the password state');
@@ -254,6 +264,9 @@ test('a Flow Server as the library, step by step', async (t) => {
     const token = remote.status().token;
     await until(async () => (await serverLibrary(two.base, token)).songs.some((s) => s.title === 'Roads'), 'the upload to the second server');
     assert.equal(remote.localFileOf('roads1'), roadsFile);
+    assert.deepEqual(sent, [{ alwaysMp3: true, quality: 160, keepMp3: true }]);
+    env.convertUploads = false;
+    settings.set({ alwaysMp3: false });
   });
 
   await t.test('switched off: no server, the window shows Local Files', async () => {

@@ -1,6 +1,6 @@
 'use strict';
 
-// Browser cookies for downloads (Settings, Website Downloads): which browsers
+// Browser cookies for downloads (Settings, Media Management): which browsers
 // this computer has, and, to share with a Flow Server, the cookies of one
 // link's site. yt-dlp reads the browser itself (--cookies-from-browser) and
 // writes what it read to a file in the cache; only the site's lines are kept

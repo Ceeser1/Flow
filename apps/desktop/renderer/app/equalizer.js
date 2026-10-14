@@ -43,7 +43,6 @@ const Equalizer = {
   lastFrame: 0,
   geom: null,
   bass: 0,             // 0..1, the kick band right now, unsmoothed (ambient.js)
-  feel: 0,             // 0..1, the bars up to FEEL_HZ right now, averaged (flash.js)
   feelBars: 0,         // how many bars that is
   rainbowShift: 0,     // 0..1, how far Rainbow has drifted; held while nothing plays
   bassWeights: null,   // per bar, how much it counts towards `bass` (BASS_*)
@@ -77,15 +76,13 @@ const Equalizer = {
   // which turns the flicker of single frames into a slow breathing.
   ATTACK_MS: 30,
   RELEASE_MS: 480,
-  // The bass level the clouds' pulse and Screen Flash react to: the bars
+  // The bass level the clouds' pulse reacts to: the bars
   // weighted by how close they are to BASS_PEAK_HZ, where a kick drum punches,
   // falling in a straight line to nothing at BASS_LOW_HZ (sub rumble and the
   // long tails of kicks) and at BASS_HIGH_HZ (bass lines, snare, voices).
   BASS_LOW_HZ: 20,
   BASS_PEAK_HZ: 70,
   BASS_HIGH_HZ: 120,
-  // Screen Flash only looks at the bass felt more than heard: up to FEEL_HZ.
-  FEEL_HZ: 80,
   RAINBOW_MS: 15000,   // Rainbow drifts one screen width to the right in this long
 
   /** Wires the player's elements through Web Audio. False when that failed. */
@@ -267,8 +264,6 @@ const Equalizer = {
     const bars = Math.max(16, Math.floor(width / this.PITCH));
     if (this.ctx && (!this.spec || this.spec.bars !== bars)) {
       this.spec = new Spectrum.Analyser({ sampleRate: this.ctx.sampleRate, bars });
-      this.feelBars = 0;
-      while (this.feelBars < bars && this.spec.barHz(this.feelBars) <= this.FEEL_HZ) this.feelBars += 1;
       this.bassWeights = new Float32Array(bars);
       for (let i = 0; i < bars; i += 1) {
         const hz = this.spec.barHz(i);
@@ -310,11 +305,7 @@ const Equalizer = {
         bass += w * Spectrum.unit(db[i], this.FLOOR_DB, this.CEIL_DB);
         weight += w;
       }
-      let feel = 0;
-      for (let i = 0; i < this.feelBars; i += 1) feel += Spectrum.unit(db[i], this.FLOOR_DB, this.CEIL_DB);
       this.bass = weight ? bass / weight : 0;
-      this.feel = this.feelBars ? feel / this.feelBars : 0;
-      ScreenFlash.follow(this.feel, dt);
       for (let i = 0; i < levels.length; i += 1) {
         // Each bar leans a little on its neighbours, so single bars do not
         // jump out on their own.
@@ -328,8 +319,6 @@ const Equalizer = {
       }
     } else {
       this.bass = 0;
-      this.feel = 0;
-      ScreenFlash.follow(0, dt);
       for (let i = 0; i < levels.length; i += 1) levels[i] *= fall;
     }
 
@@ -341,7 +330,6 @@ const Equalizer = {
       this.raf = requestAnimationFrame((t) => this._frame(t));
     } else {
       levels.fill(0);
-      ScreenFlash.reset();
       this._draw();
     }
   },

@@ -24,7 +24,7 @@ Now Playing, the Queue, Settings.
   its music on the phone too, in step; or host one, while Flow is open.
 
 Not on the phone: downloading with yt-dlp on the phone itself (the server
-does that), the visualizers, the clouds and the equalizer, the screen flash.
+does that), the visualizers and the equalizer (the clouds are there, without React to Bass).
 
 ## Installing
 

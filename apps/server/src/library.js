@@ -16,6 +16,12 @@
 // goes to the trash too. song.cut says which trim it is, so the apps' copies
 // of the uncut file are replaced.
 //
+// An app's upload is taken in as it comes and converted afterwards, in the
+// background once no upload has come in for a while (a whole batch first):
+// Ogg Vorbis always into MP3, and everything by the app's "Upload songs to
+// the server as MP3" choice (meta.convert, from a phone). The jobs are kept in
+// <home>/convert-queue.json, so a restart carries on.
+//
 // Covers (@flow/core/cover) live in <home>/covers/<song id>.jpg, outside the
 // music folder; song.cover is the file's version. A song's cover goes with
 // the song. Songs without one get one in the background, one at a time.
@@ -29,7 +35,7 @@ const prof = require('@flow/core/profiles');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { parseTitle } = require('@flow/core/titleParser');
 const { sourceKeyFromUrl, songFileStem, isNameOnlyList, splitSongPath } = require('@flow/core/text');
-const { AUDIO_EXTS } = require('@flow/core/formats');
+const { AUDIO_EXTS, planFor, ffmpegArgsFor, clampQuality } = require('@flow/core/formats');
 const cover = require('@flow/core/cover');
 const { createMedia } = require('@flow/core/media');
 const { flowIdText, parseFlowId, ID_EXTS } = require('@flow/core/tags');
@@ -41,6 +47,8 @@ const TRASH_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 // A file younger than this may still be being copied in.
 const SETTLE_MS = 2000;
 const COVER_PAUSE_MS = 1000;
+// Uploads are converted once none has come in for this long.
+const CONVERT_QUIET_MS = 15000;
 // How many folders deep the music folder is looked through.
 const SCAN_DEPTH = 16;
 // With separate folders (server.json separateFolders): the apps' uploads, the server's downloads.
@@ -90,7 +98,7 @@ function songsToTag(data) {
  * ({ fetchImage, readInfo, searchMusic }; the tests' fakes). Left out: the
  * real ones.
  */
-function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
+function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietMs = CONVERT_QUIET_MS } = {}) {
   const musicDir = config.musicDir;
   const covers = cover.createCoverStore(path.join(config.home, 'covers'));
   const trashDir = path.join(musicDir, '.flow-trash');
@@ -420,6 +428,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
       prof.absorb(d, profiles, profileId, v);
     });
     if (song.loudness === null || song.loudness === undefined) queueLoudness();
+    if (from === 'upload') queueConvert(id, meta.convert);
     // The app's cover comes right after (PUT .../cover); the search waits a moment for it.
     setTimeout(queueCovers, 5000).unref();
     return model.songById(data, id);
@@ -819,6 +828,140 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     return { song: model.songById(data, id) };
   }
 
+  // ---- uploads converted ----
+
+  const convertFile = path.join(config.home, 'convert-queue.json');
+  const cleanConvert = (c) => (c && typeof c === 'object'
+    ? { alwaysMp3: c.alwaysMp3 === true, quality: clampQuality(c.quality), keepMp3: c.keepMp3 !== false }
+    : null);
+  // [{ id, opts }]: opts the app's choice, or null (an app that sends none: only Vorbis is converted).
+  const savedJobs = readJson(convertFile);
+  let convertQueue = (Array.isArray(savedJobs) ? savedJobs : [])
+    .filter((j) => j && typeof j.id === 'string')
+    .map((j) => ({ id: j.id, opts: cleanConvert(j.opts) }));
+  let uploadsActive = 0;
+  let lastUpload = 0;
+  let convertTimer = null;
+  let converting = false;
+  let convertRun = Promise.resolve();
+  // Left from before a restart: on with them once the library is up.
+  setImmediate(() => scheduleConvert());
+
+  function saveConvertQueue() {
+    try {
+      if (convertQueue.length) writeJsonAtomic(convertFile, convertQueue);
+      else fs.rmSync(convertFile, { force: true });
+    } catch (err) {
+      log(`Could not save the uploads still to convert: ${err.message}`);
+    }
+  }
+
+  /** An upload's file coming in (http.js): the conversions wait until the batch is in. */
+  function uploadStarted() {
+    uploadsActive += 1;
+    lastUpload = Date.now();
+  }
+
+  function uploadEnded() {
+    uploadsActive = Math.max(0, uploadsActive - 1);
+    lastUpload = Date.now();
+    scheduleConvert();
+  }
+
+  /**
+   * An uploaded song to look at once the batch is in. Only an MP3 choice or
+   * an Ogg file can come to anything (an MP3 kept, an M4A or FLAC without
+   * the choice: nothing to do).
+   */
+  function queueConvert(id, convert) {
+    const opts = cleanConvert(convert);
+    const s = model.songById(data, id);
+    if (!s || (!(opts && opts.alwaysMp3) && !['ogg', 'oga'].includes(String(s.format).toLowerCase()))) return;
+    convertQueue = convertQueue.filter((j) => j.id !== id);
+    convertQueue.push({ id, opts });
+    saveConvertQueue();
+    scheduleConvert();
+  }
+
+  function scheduleConvert() {
+    if (!convertQueue.length || converting || stopped) return;
+    clearTimeout(convertTimer);
+    const wait = Math.max(0, lastUpload + convertQuietMs - Date.now());
+    convertTimer = setTimeout(() => {
+      if (uploadsActive) return; // the one coming in reschedules when it ends
+      if (Date.now() - lastUpload < convertQuietMs) scheduleConvert();
+      else convertRun = convertWork().catch((err) => log(`Converting uploads: ${err.message}`));
+    }, wait);
+    convertTimer.unref();
+  }
+
+  async function convertWork() {
+    if (converting || stopped) return;
+    converting = true;
+    try {
+      // A new batch coming in meanwhile goes in first: the rest waits for it.
+      while (!stopped && convertQueue.length && !uploadsActive) {
+        const job = convertQueue[0];
+        const run = trims.then(() => convertNow(job));
+        trims = run.catch(() => {});
+        try {
+          await run;
+        } catch (err) {
+          const s = model.songById(data, job.id);
+          log(`Could not convert ${s ? [s.artist, s.title].filter(Boolean).join(' - ') : job.id}: ${err.message}`);
+        }
+        if (stopped) break;
+        convertQueue = convertQueue.filter((j) => j !== job);
+        saveConvertQueue();
+      }
+    } finally {
+      converting = false;
+      if (!stopped) scheduleConvert();
+    }
+  }
+
+  /**
+   * One uploaded song's file into MP3 when the plan says so (formats.planFor,
+   * as for a download), put beside the old one, which goes to the trash.
+   * Its flowid and cover are written into the new file afterwards.
+   */
+  async function convertNow({ id, opts }) {
+    const s = model.songById(data, id);
+    if (!s || !fs.existsSync(s.file) || !tools.ffmpeg()) return;
+    const info = await media.probeAudio(s.file);
+    if (!info.codec) return;
+    const plan = planFor(info, opts || {});
+    if (plan.action !== 'mp3' || stopped) return;
+    const file = s.file;
+    const gen = genOf(id);
+    const out = path.join(path.dirname(file), `.flow-convert-${crypto.randomBytes(6).toString('hex')}.mp3`);
+    let dest;
+    let duration;
+    try {
+      await media.runFfmpeg(['-i', file, ...ffmpegArgsFor(plan), out], info.duration || s.duration || 0, null);
+      const final = await media.probeAudio(out);
+      if (!final.codec) throw new Error('the converted file has no audio in it');
+      duration = final.duration || s.duration;
+      // Deleted, renamed or cut meanwhile: left as it is now.
+      const now = model.songById(data, id);
+      if (stopped || !now || now.file !== file || genOf(id) !== gen) return;
+      dest = uniquePath(path.basename(file, path.extname(file)), 'mp3', null, path.dirname(file));
+      fs.renameSync(out, dest);
+      fileGen.set(id, gen + 1);
+      toTrash(file);
+    } finally {
+      fs.rmSync(out, { force: true });
+    }
+    mutate((d) => {
+      if (!model.songById(d, id)) return;
+      model.updateSong(d, id, { file: dest, format: 'mp3', duration });
+      if (model.songById(d, id).tagged !== null) model.setTagged(d, id, '');
+    });
+    tagFailed.delete(id);
+    queueRetag(id);
+    log(`Converted: ${[s.artist, s.title].filter(Boolean).join(' - ')} (${plan.source} to ${plan.target})`);
+  }
+
   /** A song's waveform (media.peaksFor), the last few kept by song and cut. */
   const peakCache = new Map();
   async function songPeaks(id) {
@@ -886,6 +1029,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     songPeaks,
     existingFor,
     addUploaded,
+    uploadStarted,
+    uploadEnded,
     importPlaylist,
     addToPlaylists,
     scan,
@@ -902,7 +1047,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     /** Stops the background work: resolves once what was running has ended. */
     stop() {
       stopped = true;
-      return Promise.all([workRun, coverRun]).then(() => {});
+      clearTimeout(convertTimer);
+      return Promise.all([workRun, coverRun, convertRun]).then(() => {});
     },
   };
 }

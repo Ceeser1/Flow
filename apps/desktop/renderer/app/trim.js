@@ -12,7 +12,7 @@ const AUDIO_SELECTED = '#5a8cdc';
 const AUDIO_UNSELECTED = '#8a8a94';
 const AUDIO_WALL_START = '#78c88c';
 const AUDIO_WALL_END = '#dc7878';
-// SponsorBlock's marked parts (Settings, Website Downloads): the waveform in
+// SponsorBlock's marked parts (Settings, Media Management): the waveform in
 // them, bright inside the selection and dimmed outside, over a faint band.
 const SEGMENT_COLOURS = {
   sponsor: { selected: '#e6c84a', unselected: '#8c8158', band: 'rgba(230, 200, 74, 0.13)' },

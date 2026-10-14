@@ -118,9 +118,6 @@ test('settings are kept within their ranges', () => {
   assert.equal(s.cloudsIntensity, 1);
   assert.equal(s.eqHeight, 100);
   assert.equal(s.eqVisibility, 50);
-  assert.equal(s.flashOn, false);
-  assert.equal(s.flashTriggers, 33);
-  assert.equal(s.flashRange, 10);
   assert.equal(s.eqShineSpread, 70);
   assert.equal(s.eqColors, 'rainbow');
   // Not built yet: the default instead.

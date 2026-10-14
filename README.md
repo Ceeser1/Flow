@@ -251,15 +251,7 @@ The cog at the bottom left of the menu. Every change counts at once.
     of songs turned up. Each song is measured once in the background (EBU R128,
     well under a second a song) and the result kept in the library.
   - **Show listening trends** (on): off hides Your listening trend from the
-    menu (a trend list open then goes back to All Songs).
-  - **Local Files**: its Location, how many songs and how much room they take. Open shows
-    the folder in Explorer. Change picks another folder and moves every song
-    file there, subfolders and all (a name already taken there gets a number);
-    playlists and statistics stay. Not while a download or import runs.
-  - **Covers**: how many covers this computer keeps and how much room they
-    take (with a Flow Server: the servers' covers kept here). With a server
-    also **Clear cover cache**, which deletes those; the covers of the server
-    connected come down again.
+    menu and its lists from Search (a trend list open then goes back to All Songs).
 - **Flow Server**: **Use a Flow Server** (off). See
   [A Flow Server](#a-flow-server) below.
   - **Profile**: which of the server's profiles this is. Not logged in, pick
@@ -278,19 +270,10 @@ The cog at the bottom left of the menu. Every change counts at once.
     Tailscale or `https://` address the same way.
   - **Server Password (if the server is password protected)**: entered once, kept
     encrypted for the Windows account; empty the box to forget it.
-  - **Always Download & Synchronize on mobile internet/metered connections**
+  - **Allow downloads on mobile internet**
     (off; only shown with a Remote address): away from home, songs only go
-    up and come down on connections Windows does not call metered, unless
-    ticked. Streaming and changes go either way, and at home nothing waits.
-  - **Keep downloaded files after sync with the server** (on; not under Use
-    a Flow Server but greyed out without it, like the next one): songs
-    downloaded here stay in Local Files once uploaded. Unticked, each is
-    removed here after its upload (unless a playlist marked for download
-    holds it); songs uploaded before are left alone.
-  - **Synchronize local changes** (on) and **Synchronize now**: songs added
-    to or removed from Local Files by hand, and changes made while the
-    server was off, go to the server by themselves; unticked, only with
-    Synchronize now. Songs downloaded in Flow always go up (once the first upload to that server was agreed to or declined).
+    up and come down on connections Windows (or the phone) calls not metered,
+    unless ticked. Streaming and changes go either way, and at home nothing waits.
 - **Jam session** (only with a Flow Server; the heading says "(requires a Flow server
   connection)" while there is none). See [Active Sessions](#active-sessions).
   - **Share your jam session on the server** (on): other devices on the same
@@ -301,21 +284,37 @@ The cog at the bottom left of the menu. Every change counts at once.
   - **Devices in my Active Session may change my volume** (off).
   - **Output delay (Sync speakers at Jams)** (off), as in the output button's
     menu (see [Active Sessions](#active-sessions)).
-- **Website Downloads**
-  - **Download using browser cookies from** (off) and a browser (those found
+- **Media Management**
+  - **Local Files**: its Location, how many songs and how much room they take. Open shows
+    the folder in Explorer. Change picks another folder and moves every song
+    file there, subfolders and all (a name already taken there gets a number);
+    playlists and statistics stay. Not while a download or import runs.
+  - **Song Storage** (the phones, instead of Local Files): the songs kept on
+    the phone and their room; **Remove downloads** deletes the Flow Server's
+    songs kept there and unmarks every playlist's Download.
+  - **Cover Cache**: how many covers this device keeps and how much room they
+    take (with a Flow Server: the servers' covers kept here). With a server
+    also **Clear cover cache**, which deletes those; the covers of the server
+    connected come down again.
+  - **Keep local files after server upload** (on; greyed out without a Flow
+    Server, like the next one): songs downloaded here stay in Local Files once
+    uploaded. Unticked, each is removed here after its upload (unless a
+    playlist marked for download holds it); songs uploaded before are left alone.
+  - **Synchronize local changes** (on) and **Synchronize now**: songs added
+    to or removed from Local Files by hand, and changes made while the
+    server was off, go to the server by themselves; unticked, only with
+    Synchronize now. Songs downloaded in Flow always go up (once the first upload to that server was agreed to or declined).
+  - **Use browser session-cookies for downloading** (off; PC only) and a browser (those found
     on this computer): yt-dlp reads that browser's cookies, so age-restricted
     videos and sites that want a signed-in visitor download too, as far as
     you are signed in there. Firefox works best; Chrome, Edge and Brave lock
     their cookies on Windows, and an error says so. Under it, with a Flow
-    Server, **Share session cookies with the server for downloads** (off):
+    Server, **Share session cookies with the server** (off):
     Download (Server) then gets the cookies of the link's site only (all of
     YouTube for a YouTube or Spotify link), for that one download, kept
     readable only by the server and deleted with the download. On a plain
     http Home address they cross the home network unencrypted.
-  - **Always convert all downloads into MP3** (off) at 64 to 320 kbit/s
-    (192), and under it **Ignore files that are already in .mp3 format** (on):
-    unticked, MP3s are encoded again at the chosen quality too.
-  - **Use Sponsorblock for Youtube** (off): the trim editor colours what
+  - **Use Sponsorblock for Youtube** (off; PC only): the trim editor colours what
     [SponsorBlock](https://sponsor.ajay.app)'s viewers marked in a YouTube
     video, from start to end: sponsors, plugs of the channel's own things and
     "like and subscribe" yellow. Under it **Try to detect intros/outros,
@@ -323,14 +322,22 @@ The cog at the bottom left of the menu. Every change counts at once.
     non-music parts (talk, skits, credits) red. Only colours, the cut stays
     yours; a video nobody marked, or a SponsorBlock that cannot be reached
     (6 s at most), just shows no colours.
-- **Visuals**
+  - **Always convert all downloads into MP3** (off) at 64 to 320 kbit/s
+    (192), and under it **Ignore files that are already in .mp3 format** (on):
+    unticked, MP3s are encoded again at the chosen quality too.
+    On a phone it is called **Upload songs to the server as MP3**: songs the
+    phone uploads (its own files) and Download (Server) are saved on the
+    server as MP3 at that quality, converted by the server in the background
+    once the batch is uploaded. Songs downloaded to the phone are not changed.
+- **App Visuals** (the phones: the clouds without React to Bass, as the page does not hear the music there,
+  off until turned on, with a note that they drain the battery a bit faster)
   - **Background Clouds** (on), Intensity 1 to 100% (50), and **React to
     Bass** (on), Reaction 1 to 100% (33; 25 is the look as designed, 100
     four times that). **Clouds color scheme**: Rainbow (each cloud a random
     colour every time it comes back) or White, Red, Green, Yellow, Blue,
     Purple or Black. **Clouds amount** 0 to 100% in steps of 10 (50: six
     clouds; 100 twelve, 0 none).
-  - **Equalizer** (on), Height 1 to 100% (50: the loudest bars reach a third
+  - **Equalizer** (on; PC only), Height 1 to 100% (50: the loudest bars reach a third
     of the page), **Visibility** 1 to 100% (50: 100 is fully opaque; above 50
     the shine also starts brighter at the bars and fades out faster),
     **Outer Shine** (on), Spread 1 to 100% (50), and the colour scheme:
@@ -338,19 +345,6 @@ The cog at the bottom left of the menu. Every change counts at once.
     drifting to the right one screen width every 15 seconds), Greyscale (dark
     grey when low, whiter the taller the bar), or White, Red,
     Green, Yellow, Blue, Purple or Black.
-  - **Screen Flash** (off): on each punch of the bass felt more than heard
-    (20 to 80 Hz: a sudden jump of that level above the dip before it) the
-    window glows white from its edges inwards, at once, fading over a few
-    tenths of a second. **Triggers** 1 to 100% (80): how small a punch still
-    counts (a share of the biggest of the last two seconds) and how soon
-    another flash may follow (5 s / Triggers%: 50 ms at 100%, 100 ms at 50%).
-    On 150 BPM hardstyle about 50% flashes on every kick, 80% on the
-    off-beat bass too (4 to 5 a second). **Flash range** 1 to 100%
-    (33): the flash starts that bright at the edges and fades to nothing that
-    share of the window's width in, from every edge alike. Flashing more than
-    three times a second can set off photosensitive epilepsy; on dense music
-    high Triggers can do that. At 1% only a few pixels at the edges, at 50% white edges and a
-    centre hardly touched, at 100% about a quarter white in the middle.
 
 ### How Artist, Title and Mix are guessed
 

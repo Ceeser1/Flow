@@ -225,7 +225,7 @@ own, and a long playlist keeps downloading when the app is closed.
   songs a batch, one download at a time (`downloadJobs` in `server.json`, up
   to 3), 20 minutes a song, and none when the disk has less than 500 MB free.
   Age-restricted videos and sites that want a signed-in visitor need cookies:
-  with "Share session cookies with the server for downloads" in Flow's
+  with "Share session cookies with the server" in Flow's
   settings the app sends the cookies of the link's site (only those) with the
   download; they are kept in its folder in `staging/`, readable only by the
   server, used for that download alone and deleted with it. Without them
@@ -469,7 +469,7 @@ report changes.
 | `POST /api/login` | `{ password, device, client }` → `{ token }` (`client`: the app's install id; one token per app, so two PCs of the same name don't sign each other out) |
 | `GET /api/library?since=<rev>&as=<profile>` | `{ rev, library, profile }`, or 204 when nothing changed for that profile; the library has the profile's `follows` and the others' `sharedPlaylists` |
 | `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`); `deletePlaylist` with `deleteSongs: true` also deletes the songs no playlist or favourite of any profile has, listed in its result's `deletedSongs` |
-| `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file → `{ existing, id, rev }`. A song the server has already (same source, or same names and length) is not taken: `existing` with its `names` (`{ artist, title, mix }`), and the app asks when they differ from its own; `meta.onExisting: "new"` takes it as a song of its own |
+| `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file → `{ existing, id, rev }`. A song the server has already (same source, or same names and length) is not taken: `existing` with its `names` (`{ artist, title, mix }`), and the app asks when they differ from its own; `meta.onExisting: "new"` takes it as a song of its own; `meta.convert` (`{ alwaysMp3, quality, keepMp3 }`) has it converted into MP3 in the background once the batch is in, Ogg Vorbis always |
 | `GET /api/songs/<id>/audio` | the song's file, with Range for seeking; `?vorbis=0` (an app that cannot play Ogg Vorbis): such a song as Ogg Opus (with ffmpeg) |
 | `GET /api/songs/<id>/peaks` | `{ peaks }`: the song's waveform, for an app's Edit trim (needs ffmpeg) |
 | `POST /api/songs/<id>/trim` | `{ start, end, base, cut }` (only when `/api/hello` lists `trim`, i.e. with ffmpeg): the song's file cut to `start`..`end` seconds, the uncut file to the trash → `{ song, rev }`; `cut` is the trim's id (`song.cut`), `base` the cut it was made from. `{ skipped: 'repeat' }` when it is in already, `'changed'` when the song was trimmed by another app since (not applied), `'gone'` when deleted |

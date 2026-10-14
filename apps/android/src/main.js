@@ -228,7 +228,7 @@ function start() {
     setOffline: call((playlistId, isOn) => remote.setOffline(playlistId, !!isOn)),
     downloadServerSong: call((songId) => remote.downloadSong(songId)),
     removeServerDownload: call((songId) => remote.removeDownload(songId)),
-    /** Settings > Storage's Remove: every download (as remote.removeAllDownloads). */
+    /** Settings > Media Management > Song Storage's Remove: every download (as remote.removeAllDownloads). */
     removeAllDownloads: call(() => remote.removeAllDownloads()),
     profiles: call(() => remote.loadProfiles()),
     profileLogin: call((profileId, pin) => remote.loginProfile(profileId, pin)),
@@ -258,7 +258,7 @@ function start() {
     /** A file in the app's storage as an address for <img> and <audio> (Util.fileUrl). */
     fileUrl,
     /**
-     * Settings > Storage: the songs kept on the phone and their bytes, those
+     * Settings > Media Management > Song Storage: the songs kept on the phone and their bytes, those
      * downloaded from the server apart ({ songs, bytes, downloaded, downloadedBytes }).
      */
     storageStats: call(() => {

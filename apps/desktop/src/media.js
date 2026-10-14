@@ -16,6 +16,6 @@ module.exports = createMedia({
   ytdlp: tools.findYtDlp,
   cacheDir: paths.cacheDir,
   missing: (name) => `${name}.exe was not found. Please reinstall Flow.`,
-  // Settings, Website Downloads: the browser's cookies for every yt-dlp run.
+  // Settings, Media Management: the browser's cookies for every yt-dlp run.
   ytdlpArgs: () => cookieJar.ytdlpArgs(settings.get('useCookies') ? settings.get('cookiesBrowser') : ''),
 });

@@ -30,7 +30,6 @@
   Output.init();
   Session.init();
   Ambient.init();
-  ScreenFlash.init();
   Nav.init();
   SearchPage.init();
   AddPage.init();

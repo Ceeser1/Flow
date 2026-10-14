@@ -109,3 +109,18 @@ test('settings: what the phone\'s update check saved is dropped', () => {
   assert.equal('updateNoPrompt' in s, false);
   assert.equal(s.batteryHelpShown, true);
 });
+
+test('settings: the phones get the clouds off once, then as the user leaves them', () => {
+  const { createSettings, cloudsOffOnce } = require('../src/client/settings');
+  let file = null;
+  const make = () => createSettings({ read: () => cloudsOffOnce(file), write: (v) => { file = JSON.parse(JSON.stringify(v)); } });
+  // A new install, and one from before with the clouds saved on.
+  assert.equal(make().get('cloudsOn'), false);
+  file = { cloudsOn: true, volume: 0.4 };
+  const old = make();
+  assert.equal(old.get('cloudsOn'), false);
+  assert.equal(old.get('volume'), 0.4);
+  // Turned on by the user: they stay on.
+  old.set({ cloudsOn: true });
+  assert.equal(make().get('cloudsOn'), true);
+});

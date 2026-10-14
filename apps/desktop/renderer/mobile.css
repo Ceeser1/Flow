@@ -12,10 +12,8 @@ body.mobile {
   overscroll-behavior: none;
 }
 
-/* No clouds, equalizer or screen flash on the phone (yet). */
-body.mobile .ambient-canvas,
-body.mobile .eq-canvas,
-body.mobile .flash-canvas { display: none; }
+/* No equalizer on the phone: the page does not hear the music (the player is native). */
+body.mobile .eq-canvas { display: none; }
 
 body.mobile ::-webkit-scrollbar { width: 0; height: 0; }
 
@@ -750,8 +748,13 @@ body.mobile .settings__row:has(+ .settings__row--sub:not([hidden]), + [hidden] +
 body.mobile .settings__row--sub:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden]))::after { top: 23px; }
 body.mobile .settings__right { justify-content: flex-start; }
 body.mobile .settings__right:empty { display: none; }
+/* Under a tick box the value lines up with the name and its text, as on the PC,
+   so it stays right of the line down to the sub-settings. */
+body.mobile .settings__row:has(> .settings__left > .check) > .settings__right { padding-left: 23px; }
 body.mobile .settings__label { font-size: 15px; }
 body.mobile .settings__desc { font-size: 13px; }
+/* A note at the top of a category, above its rows. */
+body.mobile .settings__intro { padding: 12px 0 2px; }
 body.mobile .settings__slider { flex: 1; width: auto; }
 body.mobile .settings__right .settings__control { flex: 1; }
 body.mobile .settings__right select,

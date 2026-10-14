@@ -23,6 +23,9 @@ const SearchPage = {
     Store.onLibrary(() => {
       if (Nav.page === 'search') this.render();
     });
+    Store.onSettings((patch) => {
+      if ('showTrend' in patch && Nav.page === 'search') this.render();
+    });
     Player.onChange(() => {
       if (Nav.page === 'search') this._markPlaying();
     });
@@ -38,9 +41,10 @@ const SearchPage = {
   render() {
     const q = $('searchInput').value;
 
-    // Playlists
+    // Playlists, the listening trend lists only while they are shown (Settings)
+    const trend = Store.settings.showTrend !== false;
     const lists = [...Store.builtInPlaylists(), ...Store.sortedPlaylists()]
-      .filter((p) => Util.matches(q, p.name));
+      .filter((p) => (trend || !SmartLists.isSmart(p.id)) && Util.matches(q, p.name));
     this._fill('searchPlaylists', 'searchPlaylistsCount', lists, (p) => h('button.result', {
       type: 'button',
       onclick: () => Nav.openPlaylist(p.id),

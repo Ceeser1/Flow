@@ -381,11 +381,6 @@ const DEFAULTS = {
   eqShine: true,
   eqShineSpread: 50,
   eqColors: 'rainbow',
-  // The window's edges flashing white on bass peaks: off unless chosen, how
-  // readily it triggers, and how strong and far in the flash reaches (percent).
-  flashOn: false,
-  flashTriggers: 33,
-  flashRange: 10,
 
   // The fullscreen Music Visualizer the player bar's button opens (VISUALIZERS).
   visualizer: 'bars',
@@ -448,6 +443,9 @@ const DEFAULTS = {
   // ---- the phone's own ----
   // The help about playing with the screen off has shown by itself once.
   batteryHelpShown: false,
+  // The clouds came to the phones in 3.3.5 switched off (they cost battery),
+  // also where cloudsOn: true was saved before: done once (cloudsOffOnce).
+  cloudsPhoneOff: false,
 };
 
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
@@ -501,11 +499,15 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 300 && Number.isFinite(Number(v)))
     .slice(0, 50)
     .map(([k, v]) => [k, Math.round(Math.max(0, Math.min(1000, Number(v))))]));
-  for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
-    'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown']) s[key] = s[key] === true;
+  for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
+    'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown', 'cloudsPhoneOff']) s[key] = s[key] === true;
   // The phone's update check is gone: what it saved goes too.
   delete s.updateFound;
   delete s.updateNoPrompt;
+  // Screen Flash is gone too.
+  delete s.flashOn;
+  delete s.flashTriggers;
+  delete s.flashRange;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
@@ -514,7 +516,7 @@ function clean(raw) {
   }
   const fade = Math.round(Number(s.crossfadeSeconds) * 10) / 10;
   s.crossfadeSeconds = Number.isFinite(fade) ? Math.min(10, Math.max(0.1, fade)) : DEFAULTS.crossfadeSeconds;
-  for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'eqHeight', 'eqVisibility', 'eqShineSpread', 'flashTriggers', 'flashRange']) {
+  for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'eqHeight', 'eqVisibility', 'eqShineSpread']) {
     s[key] = percent(s[key], DEFAULTS[key]);
   }
   if (!EQ_COLORS.includes(s.eqColors)) s.eqColors = DEFAULTS.eqColors;
@@ -554,6 +556,16 @@ function clean(raw) {
     }
   }
   return s;
+}
+
+/**
+ * The phones' saved settings as read: the clouds switched off the first time
+ * (a new install, or one from before they came to the phone), after that as
+ * the user leaves them.
+ */
+function cloudsOffOnce(raw) {
+  const s = raw && typeof raw === 'object' ? raw : {};
+  return s.cloudsPhoneOff === true ? s : { ...s, cloudsOn: false, cloudsPhoneOff: true };
 }
 
 /** read(): the saved settings, or null. write(settings): saves them. */
@@ -600,4 +612,4 @@ function createSettings({ read, write }) {
   return { load, all, get, set, clientId };
 }
 
-module.exports = { createSettings, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, VISUALIZERS, VIZ_OPTIONS };
+module.exports = { createSettings, cloudsOffOnce, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, VISUALIZERS, VIZ_OPTIONS };

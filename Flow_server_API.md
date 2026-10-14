@@ -248,6 +248,7 @@ song's details as URL-encoded JSON:
 | `addedAt`, `favouriteAt`, `stats`, `loudness`, `cut` | carried over from the app |
 | `playlistIds` | the profile's playlists to put it into |
 | `onExisting` | `"new"`: take it even if the server has it already |
+| `convert` | `{ "alwaysMp3", "quality", "keepMp3" }`: the app's "Upload songs to the server as MP3" choice (the phones send it). With `alwaysMp3` the server converts the song into MP3 at `quality` kbit/s (64 to 320, else 192), an MP3 too when `keepMp3` is `false` |
 | `path` | where the file is in the app's music folder, like `Linkin Park/Hybrid Theory/In the End.mp3`. A server set to keep uploaded folder structures (`--keep-folders`) saves it there, inside its music folder (and inside `Uploads/` with `--separate-folders`); otherwise it is saved as "Artist - Title". `..`, leading dots and characters file systems refuse are taken out, and at most 12 folders are kept |
 
 The `<id>` is kept when it is free, so the app's playlists keep pointing at
@@ -258,6 +259,14 @@ the song.
   the server has it already (the same id, the same source, or the same names
   and length); the file was not stored. Send again with `onExisting: "new"`
   to keep it as a song of its own.
+
+An upload is stored as it comes and converted afterwards, in the background,
+once no upload has come in for 15 seconds (so a batch goes up first): into
+MP3 by `convert`, and an Ogg Vorbis file into MP3 at 192 kbit/s (or the
+`convert` quality) always, as the server's own downloads. The song keeps its
+id; its `format` and file change, which the library shows with a new `rev`.
+The old file goes to the trash. A server without ffmpeg keeps every upload as
+it is.
 
 ```sh
 curl -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @song.mp3 \
