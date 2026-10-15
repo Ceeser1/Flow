@@ -59,6 +59,7 @@ const SettingsPanel = {
     });
     Store.onServer(() => {
       if (this.modal) this._drawServer();
+      if (this.modal) this._drawAdmin();
       if (this.modal && this._jamNote) this._jamNote();
     });
     Output.onChange(() => {
@@ -182,6 +183,9 @@ const SettingsPanel = {
       ] : []),
 
       ...(Store.can('batteryHelp') ? this._appRows() : []),
+
+      // Last, and only while an admin profile is logged in (_drawAdmin).
+      ...Admin.rows(),
     ]));
 
     // The phone's Settings comes in from the left, where the drawer it is
@@ -213,6 +217,7 @@ const SettingsPanel = {
     this._drawCovers();
     this._drawStorage();
     this._drawServer();
+    this._drawAdmin(true);
     // Profiles made or renamed on other devices since.
     if (Store.server.on && Store.server.state === 'online') window.flow.profiles().catch(() => {});
   },
@@ -324,6 +329,27 @@ const SettingsPanel = {
     if (this._backBtn) this._backBtn.hidden = !title;
     const body = this.modal && this.modal.el.querySelector('.modal__body');
     if (body) body.scrollTop = 0;
+  },
+
+  /**
+   * Administration is there only while an admin profile is logged in: shown
+   * or hidden as that changes, and fetched when it shows (or `force`).
+   */
+  _drawAdmin(force = false) {
+    const on = !!Store.server.admin;
+    const was = this._adminOn;
+    this._adminOn = on;
+    const title = 'Administration';
+    if (document.body.classList.contains('mobile')) {
+      const btn = [...this._screenList.querySelectorAll('.settings__category')].find((x) => x.textContent === title);
+      if (btn) btn.hidden = !on;
+      if (!on && this._screen === title) this._openScreen(null);
+    } else {
+      const head = [...this.modal.el.querySelectorAll('.settings__section')].find((n) => n.textContent.trim() === title);
+      const group = head && head.closest('.settings__group');
+      if (group) group.hidden = !on;
+    }
+    if (on && (force || !was)) Admin.load();
   },
 
   /** The phone's Back while Settings is open: from a category to the list. False on the list. */

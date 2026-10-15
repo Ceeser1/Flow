@@ -28,6 +28,19 @@
       + `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   }
 
+  /** dd.mm.yy, the day of a moment. */
+  function fmtDay(ms) {
+    if (!ms) return '';
+    const d = new Date(ms);
+    return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${pad2(d.getFullYear() % 100)}`;
+  }
+
+  /** dd:hh:mm, time listened: 2 days, 3 hours and 5 minutes is 02:03:05. */
+  function fmtListened(seconds) {
+    const minutes = Math.floor(Math.max(0, Number(seconds) || 0) / 60);
+    return `${pad2(Math.floor(minutes / 1440))}:${pad2(Math.floor(minutes / 60) % 24)}:${pad2(minutes % 60)}`;
+  }
+
   /** 23:45, the clock time of a moment. */
   function fmtTimeOfDay(ms) {
     const d = new Date(ms);
@@ -161,7 +174,7 @@
   }
 
   return {
-    fmtClock, fmtDate, fmtTimeOfDay, fmtPrecise, parsePrecise, fileUrl,
+    fmtClock, fmtDate, fmtDay, fmtListened, fmtTimeOfDay, fmtPrecise, parsePrecise, fileUrl,
     compareValues, cycleSort, sortRows, fold, matches, songLine, plural, fmtAgo,
   };
 }));

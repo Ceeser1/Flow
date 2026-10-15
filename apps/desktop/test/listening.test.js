@@ -255,3 +255,12 @@ test('how long ago, in the largest unit that fits', () => {
   assert.equal(Util.fmtAgo(now - 70 * 24 * 60 * min, now), '2 months ago');
   assert.equal(Util.fmtAgo(now - 800 * 24 * 60 * min, now), '2 years ago');
 });
+
+test('a day as dd.mm.yy, and time listened as dd:hh:mm', () => {
+  assert.equal(Util.fmtDay(new Date(2026, 9, 5, 23, 59).getTime()), '05.10.26');
+  assert.equal(Util.fmtDay(0), '');
+  assert.equal(Util.fmtListened(0), '00:00:00');
+  assert.equal(Util.fmtListened(59), '00:00:00');
+  assert.equal(Util.fmtListened(2 * 86400 + 3 * 3600 + 5 * 60 + 30), '02:03:05');
+  assert.equal(Util.fmtListened(123 * 86400), '123:00:00');
+});

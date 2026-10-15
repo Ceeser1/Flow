@@ -925,3 +925,32 @@ body.mobile .queue__row { min-height: 52px; }
 body.mobile .queue__grab { touch-action: none; align-self: stretch; align-items: center; width: 32px; }
 body.mobile .queue__row[data-part] .queue__grab img { opacity: 0.45; }
 body.mobile .queue__row--held { background: var(--glass-hi); }
+
+/* ===== Settings: Administration on the phone: each profile opens with a tap ===== */
+
+body.mobile .admin__plist { display: flex; flex-direction: column; margin-top: 8px; }
+body.mobile .admin__prow { border-bottom: 1px solid #34343c; }
+body.mobile .admin__pname {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 2px;
+  background: none;
+  border: none;
+  color: var(--text-bright);
+  font-size: 15px;
+  text-align: left;
+}
+body.mobile .admin__pname:active { background: rgba(255, 255, 255, 0.05); }
+body.mobile .admin__prow--open .admin__facts { padding: 2px 2px 10px; font-size: 13px; }
+body.mobile .admin__prow--open .admin__pactions { padding: 0 2px 12px; }
+body.mobile .admin__pactions .btn--small { height: 34px; padding: 0 12px; font-size: 13px; }
+body.mobile .admin__item,
+body.mobile .admin__facts,
+body.mobile .admin__rule { font-size: 13px; }
+body.mobile .admin__rule { flex-direction: column; align-items: stretch; gap: 6px; }
+body.mobile .admin__form { max-width: none; }
+body.mobile .modal--admin-ips { width: auto; }
