@@ -10,6 +10,7 @@ const { createHttpServer, PROTOCOL } = require('./http');
 const { createDownloads } = require('./downloads');
 const { createLive } = require('./live');
 const { createSessions } = require('./sessions');
+const { createActivity } = require('./activity');
 const model = require('@flow/core/libraryModel');
 const tools = require('./tools');
 const tailscaleMod = require('./tailscale');
@@ -48,8 +49,10 @@ async function startServer(opts = {}) {
   // The apps' live channels (the Active Sessions); nothing about them outlives a restart.
   const live = createLive({ log, pingMs: opts.livePingMs });
   const sessions = createSessions({ live, library: sessionLibrary(library), log });
+  // What the admins see of the profiles: addresses, last seen, failed sign-ins.
+  const activity = createActivity({ config });
   const server = createHttpServer({
-    config, library, version, log, tailscale: () => tailscale, downloads, live, sessions,
+    config, library, version, log, tailscale: () => tailscale, downloads, live, sessions, activity,
   });
 
   const port = opts.port !== undefined ? opts.port : config.get().port;
@@ -89,6 +92,7 @@ async function startServer(opts = {}) {
     downloads,
     live,
     sessions,
+    activity,
     tailscale: () => tailscale,
     discovery: () => discovery,
     close() {

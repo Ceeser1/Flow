@@ -334,9 +334,19 @@ function bareIp(value) {
 const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
 
 function createHttpServer({
-  config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null,
+  config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null, activity = null,
 }) {
   const throttle = createThrottle();
+  // What is noted about the profiles for the admins (activity.js); left out by tests that need none.
+  const note = activity || {
+    created() {}, seen() {}, left() {}, failed() {},
+  };
+  // An app gone from its live channel was last seen then.
+  if (live) {
+    live.onClose((client, info) => {
+      if (info && info.profileId) note.left(info.profileId);
+    });
+  }
   const vorbis = createVorbis({ home: () => config.home, ffmpeg: tools.ffmpeg, log });
   // Sessions of levels 3 and 4 do not outlive the server's run.
   const startedAt = Date.now();
@@ -543,6 +553,7 @@ function createHttpServer({
       config.set({ profiles: [...config.get().profiles, profile] });
       library.createProfile(id);
       log(`Profile made: ${name} (${device})`);
+      note.created(id, { ip, device });
       // As kept: the first one is an admin (config.js).
       const made = config.get().profiles.find((p) => p.id === id);
       return sendJson(res, 200, { token: issueToken(device, id, entry, clientIdOf(body, entry)), profile: publicProfile(made) });
@@ -554,13 +565,16 @@ function createHttpServer({
       if (profile.pin && !checkPassword(profile.pin, String(body.pin || ''))) {
         throttle.fail(ip);
         log(`Wrong PIN for profile ${profile.name} from ${ip}`);
+        note.failed('pin', { profile, ip, device });
         throw new HttpError(403, 'Wrong PIN for this profile.');
       }
       throttle.ok(ip);
       log(`Signed in: ${device} as ${profile.name}`);
+      note.seen(profile.id, { ip, device });
       return sendJson(res, 200, { token: issueToken(device, profile.id, entry, clientIdOf(body, entry)), profile: publicProfile(profile) });
     }
     if (action === 'logout') {
+      if (current) note.left(current.id);
       if (entry) setToken(entry, { profileId: null });
       return sendJson(res, 200, {});
     }
@@ -599,6 +613,7 @@ function createHttpServer({
     if (!checkPassword(cfg.password, String(body.password || ''))) {
       throttle.fail(ip);
       log(`Wrong password from ${ip}`);
+      note.failed('password', { ip, device: String(body.device || '').slice(0, 80) });
       throw new HttpError(401, 'Wrong password.');
     }
     throttle.ok(ip);
@@ -837,8 +852,22 @@ function createHttpServer({
       const p = profileOf(e);
       return { profileId: p ? p.id : null, profileName: p ? p.name : '', device, ip: client.ip };
     };
+    const first = describe(entry);
+    if (first.profileId) note.seen(first.profileId, { ip: client.ip, device }, true);
+    // The profile can change under an open channel (signed out of it): the
+    // one left was last seen then.
+    let was = first.profileId;
+    const check = () => {
+      const now = describe(authorize(token, client));
+      if (now.profileId !== was) {
+        if (was) note.left(was);
+        if (now.profileId) note.seen(now.profileId, { ip: client.ip, device }, true);
+        was = now.profileId;
+      }
+      return now;
+    };
     live.open(req, res, {
-      client: id, ...describe(entry), probe: url.searchParams.get('probe') === '1', check: () => describe(authorize(token, client)),
+      client: id, ...first, probe: url.searchParams.get('probe') === '1', check,
     });
   }
 

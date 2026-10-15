@@ -136,3 +136,70 @@ test('a profile made on the command line gets its part of the library from the r
     assert.equal((await post(base, '/api/profiles', { name: 'ben', device: 'pc' })).status, 409, 'the name is taken');
   });
 });
+
+const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
+const profileIn = (server, id) => server.config.get().profiles.find((p) => p.id === id);
+
+test('where a profile was made, the addresses it came from, and when it was last seen', async () => {
+  await withServer(async ({ base, server }) => {
+    const anna = await post(base, '/api/profiles', { name: 'Anna', pin: '1234', device: 'PC' });
+    const id = anna.json.profile.id;
+    let p = profileIn(server, id);
+    assert.equal(p.createdIp, '127.0.0.1');
+    assert.deepEqual(p.ips.map((e) => [e.ip, e.device]), [['127.0.0.1', 'PC']]);
+    assert.ok(p.lastSeenAt > 0);
+
+    // Signing in from another device puts it first; the same one again only moves its time.
+    await post(base, '/api/profiles/login', { profileId: id, pin: '1234', device: 'Phone' });
+    await post(base, '/api/profiles/login', { profileId: id, pin: '1234', device: 'Phone' });
+    p = profileIn(server, id);
+    assert.deepEqual(p.ips.map((e) => e.device), ['Phone', 'PC']);
+
+    // Signing out is the last time seen.
+    const before = p.lastSeenAt;
+    await tick(5);
+    await post(base, '/api/profiles/logout', {}, anna.json.token);
+    assert.ok(profileIn(server, id).lastSeenAt > before);
+
+    // An app's live channel: seen when it connects, and when it goes.
+    const tablet = await post(base, '/api/profiles/login', { profileId: id, pin: '1234', device: 'Tablet' });
+    const stop = new AbortController();
+    const r = await fetch(`${base}/api/live?client=client-tablet01&device=Tablet`, { headers: { Authorization: `Bearer ${tablet.json.token}` }, signal: stop.signal });
+    assert.equal(r.status, 200);
+    await tick();
+    assert.equal(server.live.clients()[0].profileId, id);
+    const connected = profileIn(server, id).lastSeenAt;
+    await tick(5);
+    stop.abort();
+    await tick(100);
+    assert.equal(server.live.clients().length, 0);
+    assert.ok(profileIn(server, id).lastSeenAt > connected, 'gone from the live channel');
+
+    // lastSeen(): 'now' while connected; else the newest of its own and its devices' times.
+    const later = Date.now() + 60000;
+    assert.equal(server.activity.lastSeen(p, { online: true }), 'now');
+    assert.equal(server.activity.lastSeen(p, { tokens: [{ profileId: id, lastSeenAt: later }, { profileId: 'x', lastSeenAt: later + 1 }] }), later);
+    assert.equal(server.activity.lastSeen({ id: 'y', lastSeenAt: 0 }), 0);
+  });
+});
+
+test('wrong PINs and wrong passwords are kept for the admins, newest first', async () => {
+  await withServer(async ({ base, server, dirs }) => {
+    const anna = await post(base, '/api/profiles', { name: 'Anna', pin: '1234', device: 'PC' });
+    assert.equal((await post(base, '/api/profiles/login', { profileId: anna.json.profile.id, pin: '0000', device: 'Phone' })).status, 403);
+    await tick(1100); // the wait after a wrong try
+    server.config.set({ password: configMod.passwordEntry('0815'), tokens: [] });
+    assert.equal((await post(base, '/api/login', { password: 'nope', device: 'Laptop' })).status, 401);
+    const list = server.activity.failures();
+    assert.deepEqual(list.map((f) => [f.kind, f.profileName, f.ip, f.device]), [
+      ['password', '', '127.0.0.1', 'Laptop'],
+      ['pin', 'Anna', '127.0.0.1', 'Phone'],
+    ]);
+    assert.equal(list[1].profileId, anna.json.profile.id);
+    // Kept in a file of their own, not server.json.
+    const kept = JSON.parse(fs.readFileSync(path.join(dirs.home, 'failed-signins.json'), 'utf8'));
+    assert.equal(kept.length, 2);
+    server.activity.clearFailures();
+    assert.deepEqual(server.activity.failures(), []);
+  });
+});
