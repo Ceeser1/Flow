@@ -173,8 +173,10 @@ function createActions({
   }) {
     // The song may have been deleted while it played; nothing to count then.
     if (!model.songById(currentLibrary(), songId)) return null;
-    return change((d) => model.recordListen(d, songId, { listened, duration, contextId }), 'recordListen', {
-      songId, listened, duration, contextId,
+    // The day and hour it was heard are this device's (listening.js).
+    const tz = new Date().getTimezoneOffset();
+    return change((d) => model.recordListen(d, songId, { listened, duration, contextId, tz }), 'recordListen', {
+      songId, listened, duration, contextId, tz,
     });
   }
 

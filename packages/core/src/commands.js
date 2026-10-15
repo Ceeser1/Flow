@@ -182,7 +182,7 @@ const TYPES = {
       const s = model.songById(d, str(c.songId));
       if (!s) return { skipped: 'gone' };
       if (!(s.duration > 0) && Number(c.duration) > 0) model.updateSong(d, s.id, { duration: Number(c.duration) });
-      return { value: model.recordListen(d, str(c.songId), { listened: c.listened, duration: c.duration, at: c.at, contextId: c.contextId ? str(c.contextId) : null }) };
+      return { value: model.recordListen(d, str(c.songId), { listened: c.listened, duration: c.duration, at: c.at, contextId: c.contextId ? str(c.contextId) : null, tz: c.tz }) };
     },
   },
   // A song trimmed: only ever applied by the app, to show it at its new
