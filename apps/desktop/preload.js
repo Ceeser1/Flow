@@ -86,6 +86,9 @@ contextBridge.exposeInMainWorld('flow', {
   profileLogout: () => call('server:profileLogout'),
   profileRename: (name) => call('server:profileRename', name),
   profileDelete: () => call('server:profileDelete'),
+  // Administration (3.5): an admins' route, and the master's password change.
+  admin: (route, body) => call('server:admin', { route, body }),
+  changeServerPassword: (args) => call('server:changePassword', args),
   onServerStatus: (fn) => ipcRenderer.on('server:status', (_e, st) => fn(st)),
   // Downloads by the server ("Download (Server)"): see remote.serverDownloads.
   serverDownloads: (action, args = {}) => call('server:downloads', { action, ...args }),

@@ -236,6 +236,8 @@ function start() {
     profileLogout: call(() => remote.logoutProfile()),
     profileRename: call((name) => remote.renameProfile(name)),
     profileDelete: call(() => remote.deleteProfile()),
+    admin: call((route, body) => remote.admin(route, body)),
+    changeServerPassword: call((args) => remote.changeServerPassword(args || {})),
     onServerStatus: on('server:status'),
     // No browser cookies on the phone to share with the server.
     serverDownloads: call((action, args = {}) => remote.serverDownloads(action, { ...args })),

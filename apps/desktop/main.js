@@ -301,6 +301,8 @@ handle('server:profileCreate', ({ name, pin }) => remote.createProfile(name, pin
 handle('server:profileLogout', () => remote.logoutProfile());
 handle('server:profileRename', (name) => remote.renameProfile(name));
 handle('server:profileDelete', () => remote.deleteProfile());
+handle('server:admin', ({ route, body }) => remote.admin(route, body));
+handle('server:changePassword', (args) => remote.changeServerPassword(args || {}));
 // Active Sessions: a POST body, or nothing for the list.
 handle('server:sessions', (body) => remote.sessions(body || null));
 // Downloads by the server: they stay there, so closing the app asks nothing.

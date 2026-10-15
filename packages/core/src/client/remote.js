@@ -115,7 +115,11 @@ function createRemote(env) {
   }
 
   function cleanProfile(p) {
-    return p && typeof p === 'object' && p.id ? { id: String(p.id), name: String(p.name || ''), pin: !!p.pin } : null;
+    if (!p || typeof p !== 'object' || !p.id) return null;
+    // admin, master (3.5): Administration in Settings; createdAt: for the Statistics.
+    return {
+      id: String(p.id), name: String(p.name || ''), pin: !!p.pin, createdAt: Number(p.createdAt) || 0, admin: !!p.admin, master: !!p.master,
+    };
   }
 
   function loadSync() {
@@ -195,7 +199,9 @@ function createRemote(env) {
   // The connection in use: base address, token, which address it is, whether
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
-  const conn = { base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false };
+  const conn = {
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false,
+  };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
     message: '',
@@ -206,6 +212,9 @@ function createRemote(env) {
     lastSync: 0,
     profiles: null, // the server's profiles [{ id, name, pin }]; null: it has none to offer
     live: false, // the live channel is open
+    // The admins' rules as they touch this app (3.5): may it make profiles,
+    // and are songs others added theirs to delete ('owner': no).
+    rules: { createProfiles: true, songDelete: 'anyone' },
   };
 
   // ---- profiles ----
@@ -283,6 +292,10 @@ function createRemote(env) {
       tailscale: conn.via === 'remote' && isTailscaleAddress(conn.address),
       // Active Sessions: the server has them, and the live channel is open.
       sessions: status.state === 'online' && conn.sessions,
+      // Administration: the server has it and this profile is an admin (or the master).
+      admin: status.state === 'online' && conn.admin && !!(sync.profile && sync.profile.admin),
+      master: status.state === 'online' && conn.admin && !!(sync.profile && sync.profile.master),
+      rules: { ...status.rules },
       live: status.state === 'online' && status.live,
       // Server time minus this machine's, roughly (from the live channel's greeting).
       timeOffset: live.offset,
@@ -540,10 +553,11 @@ function createRemote(env) {
         const search = Array.isArray(hello.features) && hello.features.includes('search');
         const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
+        const admin = Array.isArray(hello.features) && hello.features.includes('admin');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         if (via === 'home') fillRemote(hello);
@@ -736,6 +750,9 @@ function createRemote(env) {
       loadProfiles().catch(() => {});
     }
     sync.profile = profile;
+    if (r.json.rules && typeof r.json.rules === 'object') {
+      status.rules = { ...status.rules, songDelete: r.json.rules.songDelete === 'owner' ? 'owner' : 'anyone' };
+    }
     cache = { serverId: sync.serverId, rev: Number(r.json.rev), library: model.sanitize(r.json.library), profile: currentProfile() };
     sync.sent = sync.sent.filter((x) => x.rev > cache.rev);
     saveCache();
@@ -2470,6 +2487,7 @@ function createRemote(env) {
     const r = await call('/api/profiles');
     const list = (Array.isArray(r.profiles) ? r.profiles : []).map(cleanProfile).filter(Boolean);
     status.profiles = list;
+    status.rules = { ...status.rules, createProfiles: r.createProfiles !== false };
     const known = new Set(list.map((p) => p.id));
     const gone = (id) => id && !known.has(id);
     const before = sync.queue.length;
@@ -2585,6 +2603,46 @@ function createRemote(env) {
     return switchProfile(undefined, null);
   }
 
+  // ---- Administration (3.5) ----
+
+  /**
+   * One of the admins' routes (/api/admin/<route>, see the server's admin.js):
+   * fetched (no body) or posted (`body`). Only for an admin profile.
+   */
+  async function admin(route, body) {
+    requireProfiles();
+    if (!conn.admin) throw new Error('This Flow Server is too old for Administration. Update it first.');
+    if (!/^[\w/-]{1,120}$/.test(String(route || ''))) throw new Error('No such page in Administration.');
+    const r = await call(`/api/admin/${route}`, body === undefined ? { timeout: 30000 } : { method: 'POST', json: body, timeout: 60000 });
+    // What the admins change can change what this app sees (a song back
+    // from the trash, a rule): fetched now rather than at the next poll.
+    if (body !== undefined) refresh().catch(() => {});
+    return r;
+  }
+
+  /**
+   * The master admin changes the server password (or takes it away:
+   * `remove`). Every other device signs in again; this one keeps going with
+   * the token it gets back, and keeps the new password for its next start.
+   */
+  async function changeServerPassword({ current, password, remove }) {
+    requireProfiles();
+    const r = await call('/api/admin/password', {
+      method: 'POST', json: { current: String(current || ''), password: String(password || ''), remove: !!remove }, timeout: 30000,
+    });
+    settings.set({ serverSecret: encrypt(remove ? '' : String(password || '')) });
+    if (r.token) {
+      conn.token = r.token;
+      runToken = r.token;
+      sync.token = encrypt(r.token);
+      saveSync();
+      // The live channel opened with the old token, which the server no longer knows.
+      startLive();
+    }
+    emitStatus();
+    return {};
+  }
+
   function stop() {
     generation += 1;
     stopLive();
@@ -2600,6 +2658,7 @@ function createRemote(env) {
     trimSong, trimmedHere, songPeaks, newCutId,
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, deleteProfile,
+    admin, changeServerPassword,
   };
 }
 

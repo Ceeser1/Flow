@@ -200,6 +200,40 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.ok(!model.playlistById(remote.view(), 'mine1'));
   });
 
+  await t.test('Administration: an admin profile, the rules, the master changing the password', async () => {
+    const night = (await remote.loadProfiles()).find((p) => p.name === 'Night Listener');
+    await remote.loginProfile(night.id, '');
+    // The first profile on the server: an admin.
+    assert.equal(remote.status().admin, true);
+    assert.equal(remote.status().master, false);
+    const list = await remote.admin('profiles');
+    assert.equal(list.me, night.id);
+    assert.ok(list.profiles.some((p) => p.id === night.id && p.admin));
+    assert.deepEqual(await remote.admin('rules', { songDelete: 'owner' }), { profileCreation: 'anyone', songDelete: 'owner' });
+    assert.equal(remote.status().rules.songDelete, 'anyone', 'an admin may delete any song');
+    await assert.rejects(remote.admin('../hello'), /No such page/);
+    await assert.rejects(remote.changeServerPassword({ password: 'abcd' }), /master/);
+
+    // The master: the password changed, this app carries on with its new token and keeps the password.
+    one.server.config.set({ profiles: one.server.config.get().profiles.map((p) => (p.id === night.id ? { ...p, master: true } : p)) });
+    await remote.logoutProfile();
+    await remote.loginProfile(night.id, '');
+    assert.equal(remote.status().master, true);
+    const before = remote.status().token;
+    await remote.changeServerPassword({ password: 'abcd' });
+    assert.notEqual(remote.status().token, before);
+    assert.ok(one.server.config.get().password);
+    assert.equal(remote.status().hasSecret, true);
+    assert.ok((await remote.admin('profiles')).profiles.length >= 1, 'still in');
+    assert.equal((await fetch(`${one.base}/api/library`)).status, 401, 'everyone else needs it');
+    await remote.changeServerPassword({ current: 'abcd', remove: true });
+    assert.equal(one.server.config.get().password, null);
+    await remote.admin('rules', { songDelete: 'anyone' });
+    one.server.config.set({ profiles: one.server.config.get().profiles.map((p) => ({ ...p, master: false })) });
+    await remote.logoutProfile();
+    assert.equal(remote.status().admin, false);
+  });
+
   await t.test('the songs one profile added, marked for download: only those, new ones too, unmarked once it is gone', async () => {
     const post = async (route, body, token) => (await fetch(`${one.base}${route}`, {
       method: 'POST',
