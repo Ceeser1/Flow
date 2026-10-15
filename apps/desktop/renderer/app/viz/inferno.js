@@ -195,12 +195,30 @@
       o = vec4(max(flames, 0.0), near, max(heat, 0.0), 1.0);
     }`;
 
+  // The smoke's and the plume's noise, soft and slow, worked out at a
+  // quarter of the screen's size (read between its pixels by OUT_FS): R the
+  // smoke, G the plume's before its edge is sharpened.
+  const SMOKE_FS = VizGL.NOISE + `
+    in vec2 uv;
+    uniform float time, aspect;
+    out vec4 o;
+    void main() {
+      vec2 p = uv;
+      vec2 sp = vec2(p.x * aspect * 1.5 + time * 0.012, p.y * 2.2 - time * 0.045);
+      float smoke = fbm(sp + 0.6 * vec2(fbm(sp * 0.7 + time * 0.02), 0.0));
+      vec2 fp = vec2(p.x * aspect * 2.2 + time * 0.03, p.y * 3.0 - time * 0.22);
+      float plume = fbm(fp + 0.8 * vec2(vnoise(fp * 0.6 + time * 0.1), 0.0));
+      o = vec4(smoke, plume, 0.0, 1.0);
+    }`;
+
   const OUT_FS = VizGL.NOISE + RIDGE + `
     in vec2 uv;
     uniform sampler2D heat;
     uniform sampler2D forest;
     uniform vec3 lo, hi;
     uniform float rainbow, time, aspect, blaze, trees;
+    uniform sampler2D smokeTex;     // SMOKE_FS's
+    uniform float pxScale;          // the screen's pixels to one of these (render scale)
     out vec4 o;
     vec3 colour(float t) {
       if (rainbow > 0.5) {
@@ -243,8 +261,8 @@
       // The night, glowing red over the ridge.
       vec3 col = vec3(0.010, 0.007, 0.010) + ember * (0.07 + 0.14 * blaze) * exp(-max(above, 0.0) * 3.5) * (0.4 + 0.6 * trees);
       // Smoke rising, lit from below.
-      vec2 sp = vec2(p.x * aspect * 1.5 + time * 0.012, p.y * 2.2 - time * 0.045);
-      float smoke = fbm(sp + 0.6 * vec2(fbm(sp * 0.7 + time * 0.02), 0.0));
+      vec2 fumes = texture(smokeTex, uv).rg;
+      float smoke = fumes.r;
       float dense = smoothstep(0.42, 0.85, smoke) * (0.35 + 0.65 * smoothstep(-0.25, 0.25, above));
       // Lit from below: bright low down, dark higher up.
       float under = exp(-max(above, 0.0) * 3.0);
@@ -268,13 +286,19 @@
       float cov = f.r * trees;
       float ts = clamp(f.g / max(f.r, 1e-3), 0.15, 1.0);
       float td = (1.0 / ts - 1.0) / ${FAR}.0;
-      vec3 bark = mix(vec3(0.012, 0.008, 0.006), haze, 0.7 * td);
-      vec4 lg = textureLod(heat, uv, 3.0);
-      bark += (flame(min(lg.r, 0.7)) + treeFlame(min(lg.b, 0.7))) * 0.16;
-      vec2 cp = gl_FragCoord.xy / (5.0 + 16.0 * ts) + vec2(0.0, -time * 0.4);
-      float speck = smoothstep(0.55, 0.85, fbm(cp)) * (0.6 + 0.4 * vnoise(cp * 1.7 + time * 1.2));
-      bark += flame(0.45 + 0.4 * speck) * speck * f.b * 0.7;
-      col = mix(col, bark, cov);
+      // (Only where a tree stands: elsewhere cov is 0 and the mix leaves col as it is.)
+      if (cov > 0.0) {
+        vec3 bark = mix(vec3(0.012, 0.008, 0.006), haze, 0.7 * td);
+        vec4 lg = textureLod(heat, uv, 3.0);
+        bark += (flame(min(lg.r, 0.7)) + treeFlame(min(lg.b, 0.7))) * 0.16;
+        // The embers only in a crown (f.b): elsewhere they add nothing.
+        if (f.b > 0.0) {
+          vec2 cp = gl_FragCoord.xy * pxScale / (5.0 + 16.0 * ts) + vec2(0.0, -time * 0.4);
+          float speck = smoothstep(0.55, 0.85, fbm(cp)) * (0.6 + 0.4 * vnoise(cp * 1.7 + time * 1.2));
+          bark += flame(0.45 + 0.4 * speck) * speck * f.b * 0.7;
+        }
+        col = mix(col, bark, cov);
+      }
       // Smoke between here and the back of the hill: the further, the more
       // it greys out, drifting thicker and thinner.
       vec3 veilCol = mix(vec3(0.11, 0.105, 0.105), ember * 0.5, 0.1) * (0.55 + 0.6 * blaze + 0.9 * wide);
@@ -299,11 +323,13 @@
       vec4 ag = textureLod(heat, uv - vec2(0.0, 0.02), 3.0);
       col += fire + (flame(min(ag.r, 0.6)) + treeFlame(min(ag.b, 0.6))) * 0.25;
       // Faint smoke rising off the flames in front, over their tips.
-      vec2 fp = vec2(p.x * aspect * 2.2 + time * 0.03, p.y * 3.0 - time * 0.22);
-      float plume = smoothstep(0.45, 0.8, fbm(fp + 0.8 * vec2(vnoise(fp * 0.6 + time * 0.1), 0.0)));
+      // (Only over flames, fed > 0: elsewhere the mix leaves col as it is.)
       float fed = smoothstep(0.05, 0.45, textureLod(heat, vec2(p.x, max(p.y - 0.1, 0.0)), 5.0).r);
-      vec3 fume = vec3(0.06, 0.055, 0.055) + ember * 0.3 * wide;
-      col = mix(col, fume, plume * fed * 0.4);
+      if (fed > 0.0) {
+        float plume = smoothstep(0.45, 0.8, fumes.g);
+        vec3 fume = vec3(0.06, 0.055, 0.055) + ember * 0.3 * wide;
+        col = mix(col, fume, plume * fed * 0.4);
+      }
       col += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
       o = vec4(col, 1.0);
     }`;
@@ -345,6 +371,10 @@
       this.sim = VizGL.program(gl, VizGL.SCREEN_VS, SIM_FS);
       this.out = VizGL.program(gl, VizGL.SCREEN_VS, OUT_FS);
       this.trees = VizGL.program(gl, VizGL.SCREEN_VS, FOREST_FS);
+      this.fumes = VizGL.program(gl, VizGL.SCREEN_VS, SMOKE_FS);
+      // The picture drawn at the render scale (ifScale) and stretched onto the
+      // screen; the fire's simulation and the sparks stay at the screen's size.
+      this.view = VizGL.scaled(gl);
       this.spark = VizGL.program(gl, SPARK_VS, SPARK_FS);
       this.sparkBuf = VizGL.stream(gl, [[0, 2], [1, 2], [2, 2], [3, 4]], MAX_SPARKS * 6);
       this.bandTex = gl.createTexture();
@@ -365,9 +395,11 @@
       const gl = this.gl;
       this.w = w;
       this.h = h;
-      for (const t of [this.a, this.b, this.forest]) VizGL.freeTarget(gl, t);
+      for (const t of [this.a, this.b, this.forest, this.smoke]) VizGL.freeTarget(gl, t);
       const sw = Math.max(64, Math.round(w / 4));
       const sh = Math.max(36, Math.round(h / 4));
+      this.smoke = VizGL.target(gl, sw, sh);
+      this.view.size(w, h, Visualizer.setting('ifScale'));
       // Mipmapped for the glow, so not clamped to the edge's texel only.
       this.a = VizGL.target(gl, sw, sh);
       this.b = VizGL.target(gl, sw, sh);
@@ -439,12 +471,22 @@
       gl.generateMipmap(gl.TEXTURE_2D);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
 
-      // Onto the screen.
-      VizGL.into(gl, null);
+      // The smoke's noise.
+      VizGL.into(gl, this.smoke);
+      gl.useProgram(this.fumes.p);
+      gl.uniform1f(this.fumes.u.time, this.age);
+      gl.uniform1f(this.fumes.u.aspect, this.w / this.h);
+      VizGL.screen(gl);
+
+      // The picture, at the render scale.
+      this.view.size(this.w, this.h, set('ifScale'));
+      this.view.into();
       gl.useProgram(this.out.p);
       const o = this.out.u;
       VizGL.bind(gl, o.heat, this.a.tex, 0);
       VizGL.bind(gl, o.forest, this.forest.tex, 1);
+      VizGL.bind(gl, o.smokeTex, this.smoke.tex, 2);
+      gl.uniform1f(o.pxScale, this.h / this.view.h);
       const palette = set('ifColor');
       const p = PALETTES[palette] || PALETTES.fire;
       gl.uniform3f(o.lo, ...p[0]);
@@ -455,8 +497,11 @@
       gl.uniform1f(o.blaze, this.blaze);
       gl.uniform1f(o.trees, forest);
       VizGL.screen(gl);
+      gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.a.tex);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      // Onto the screen; the sparks over it there.
+      this.view.present(this.age);
 
       if (set('ifEmbers')) this._sparks(a, dt, palette, p, forest);
     }
@@ -514,11 +559,20 @@
         const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
         return k * k * (3 - 2 * k);
       };
+      // Into col, one for all of them (a few hundred a frame).
+      const col = this._heat || (this._heat = [0, 0, 0]);
       const heatColour = (t) => {
-        if (palette === 'rainbow') return [1, 0.9 - 0.4 * (1 - t), 0.6 - 0.5 * (1 - t)];
-        const real = [0, 1, 2].map((c) => smooth(PALETTES.fire[0][c], PALETTES.fire[1][c], t));
+        if (palette === 'rainbow') {
+          col[0] = 1;
+          col[1] = 0.9 - 0.4 * (1 - t);
+          col[2] = 0.6 - 0.5 * (1 - t);
+          return;
+        }
         const k = smooth(0.55, 0.95, t);
-        return [0, 1, 2].map((c) => real[c] + (smooth(p[0][c], p[1][c], t) - real[c]) * k);
+        for (let c = 0; c < 3; c += 1) {
+          const real = smooth(PALETTES.fire[0][c], PALETTES.fire[1][c], t);
+          col[c] = real + (smooth(p[0][c], p[1][c], t) - real) * k;
+        }
       };
       const d = this.sparkBuf.data;
       let count = 0;
@@ -536,13 +590,13 @@
         // ones as they tumble.
         const temp = e.life ** 0.8;
         const flicker = e.big ? 0.55 + 0.45 * Math.sin(this.age * (5 + e.wob * 2) + e.seed) ** 2 : 0.75 + 0.25 * Math.sin(this.age * 31 + e.seed);
-        const col = heatColour(0.45 + 0.75 * temp);
+        heatColour(0.45 + 0.75 * temp);
         // Under a pixel and a bit, a dot is drawn that size and dimmer, so it
         // stays round instead of a hard little square.
         const r = Math.max(e.size, 0.8);
         let alpha = Math.min(1, temp * 1.6) * flicker * (e.size / r) ** 2 * (e.big ? 1.2 : 1.8);
         // Drawn out along its flight by how far it goes in a 60th of a second.
-        const speed = Math.hypot(e.vx, e.vy) || 1;
+        const speed = Spectrum.hypot(e.vx, e.vy) || 1;
         const half = Math.min(16 * unit, (speed / 60) * 0.5);
         alpha *= r / (r + half * 0.4);
         const ux = e.vx / speed;
@@ -550,7 +604,9 @@
         const along = half + r * 4.5;
         const across = r * 4.5;
         let k = count * 60;
-        for (const [sa, sc] of CORNERS) {
+        for (let c = 0; c < CORNERS.length; c += 1) {
+          const sa = CORNERS[c][0];
+          const sc = CORNERS[c][1];
           d[k] = e.x + ux * along * sa - uy * across * sc;
           d[k + 1] = e.y + uy * along * sa + ux * across * sc;
           d[k + 2] = along * sa;
@@ -565,7 +621,10 @@
         }
         count += 1;
       }
-      this.sparks = this.sparks.filter((e) => e.life > 0 && e.y > -40 && e.x > -40 && e.x < w + 40);
+      // Those still alive and on the screen, kept in place and in order.
+      let kept = 0;
+      for (const e of this.sparks) if (e.life > 0 && e.y > -40 && e.x > -40 && e.x < w + 40) this.sparks[kept++] = e;
+      this.sparks.length = kept;
       if (!count) return;
       const gl = this.gl;
       gl.enable(gl.BLEND);
@@ -593,6 +652,7 @@
       { type: 'choice', key: 'ifLayout', label: 'Bass', choices: [['centre', 'In the middle'], ['across', 'On the left']] },
       { type: 'check', key: 'ifEmbers', label: 'Sparks' },
       { type: 'check', key: 'ifForest', label: 'Forest' },
+      { type: 'choice', key: 'ifScale', label: 'Render scale', choices: VizGL.SCALES },
     ],
   });
 })();

@@ -136,7 +136,7 @@
       if (!a.playing) this.peak = undefined;
       this.owed = Math.min(8, this.owed + dt * rate);
       if (this.owed >= 1 && this.spec) {
-        const db = a.playing ? this.spec.analyse(a.samples) : null;
+        const db = a.playing ? this.spec.analyse(a.samples, a.frames) : null;
         // The scale follows the song: 60 dB down from its loudest of late
         // (sinking 2 dB a second), so a quiet song shows as much as a loud one.
         if (db) {

@@ -110,6 +110,10 @@
       const front = h * 0.9;
       const back = h * 0.14;
       const lines = this.lines;
+      // The colours handed to lines (which copies them): the same arrays every time.
+      const WHITE = [1, 1, 1];
+      const EMBER = [0.35, 0, 0];
+      const heat = [0, 0, 0];
       // From the back to the front; each row's place eases forward between new rows.
       for (let r = Math.min(this.rows.length, count + 1) - 1; r >= 0; r -= 1) {
         const pos = (r + this.offset) / count;   // 0 front, 1 back
@@ -126,12 +130,12 @@
         let rgb;
         if (colors === 'neon') rgb = hsv((0.52 + depth * 0.35 + this.age * 0.01) % 1, 0.8, 1);
         else if (colors === 'custom') rgb = own;
-        else rgb = [1, 1, 1];
+        else rgb = WHITE;
         const thick = 1.6 * unit * (0.6 + 0.4 * scale);
         const alpha = fade * (0.55 + 0.45 * scale);
         // Flat on out to the screen's edges either side, fading away.
         const tail = (xa, ya, xb) => {
-          const col = colors === 'heat' ? [0.35, 0, 0] : rgb;
+          const col = colors === 'heat' ? EMBER : rgb;
           for (let s = 0; s < TAIL; s += 1) {
             const t0 = s / TAIL;
             const t1 = (s + 1) / TAIL;
@@ -152,7 +156,10 @@
             let col = rgb;
             if (colors === 'heat') {
               const t = Math.min(1, (row[i] + row[i - 1]) * 0.9);
-              col = [Math.min(1, 0.35 + t * 1.6), Math.min(1, t * 1.2), Math.min(1, t * t * 1.4)];
+              heat[0] = Math.min(1, 0.35 + t * 1.6);
+              heat[1] = Math.min(1, t * 1.2);
+              heat[2] = Math.min(1, t * t * 1.4);
+              col = heat;
             }
             lines.seg(px, py, x, y, thick, col, alpha);
           }

@@ -29,6 +29,51 @@
     return 2 ** Math.round(Math.log2(sampleRate * seconds));
   }
 
+  /**
+   * Math.hypot(x, y) to the bit, worked out the way V8's builtin does it
+   * (scaled by the larger, then Kahan's sum, which for two terms is the plain
+   * one). The builtin allocates on every call, thousands a frame here.
+   */
+  function hypot(x, y) {
+    const ax = Math.abs(x);
+    const ay = Math.abs(y);
+    if (ax === Infinity || ay === Infinity) return Infinity;
+    if (x !== x || y !== y) return NaN;
+    const max = ay > ax ? ay : ax;
+    if (max === 0) return 0;
+    const nx = ax / max;
+    const ny = ay / max;
+    return Math.sqrt(nx * nx + ny * ny) * max;
+  }
+
+  /**
+   * What analysers of one window size and hop share: the FFT, the window,
+   * and the two frames' spectra, with which samples (and stamp) they are of.
+   * Analysers asked about the same samples with the same stamp (one frame's
+   * VizAudio, Bars and Spectrogram) work them out once.
+   */
+  const banks = new Map();
+  function bankFor(n) {
+    let bank = banks.get(n);
+    if (!bank) {
+      const window = new Float64Array(n);
+      for (let i = 0; i < n; i += 1) window[i] = 0.5 * (1 - Math.cos((TWO_PI * i) / n));
+      bank = {
+        fft: new FFT(n),
+        window,
+        reA: new Float64Array(n),
+        imA: new Float64Array(n),
+        reB: new Float64Array(n),
+        imB: new Float64Array(n),
+        samples: null,
+        hop: 0,
+        stamp: undefined,
+      };
+      banks.set(n, bank);
+    }
+    return bank;
+  }
+
   class FFT {
     constructor(n) {
       this.n = n;
@@ -100,13 +145,9 @@
       // Each bar spans the same fraction of its own frequency.
       this.barRatio = Math.exp(this.logSpan / bars) - 1;
 
-      this.fft = new FFT(this.n);
-      this.window = new Float64Array(this.n);
-      for (let i = 0; i < this.n; i += 1) this.window[i] = 0.5 * (1 - Math.cos((TWO_PI * i) / this.n));
-      this.reA = new Float64Array(this.n);
-      this.imA = new Float64Array(this.n);
-      this.reB = new Float64Array(this.n);
-      this.imB = new Float64Array(this.n);
+      this.bank = bankFor(this.n);
+      this.fft = this.bank.fft;
+      this.window = this.bank.window;
       this.power = new Float64Array(bars);
       this.out = new Float32Array(bars);
       this.kLast = Math.min(this.n / 2 - 1, Math.ceil((maxHz * 1.1) / this.binHz));
@@ -126,22 +167,42 @@
 
     /**
      * Levels in dB for the newest `inputLength` samples of `samples` (full
-     * scale 0 dB: a full-scale sine reads about 0).
+     * scale 0 dB: a full-scale sine reads about 0). stamp: when given, says
+     * these samples are unchanged since another analyser of the same window
+     * and hop was given them with the same stamp, whose spectra are reused.
      */
-    analyse(samples) {
-      const { n, hop, reA, imA, reB, imB } = this;
-      const end = samples.length;
-      const startB = end - n;
-      const startA = startB - hop;
-      for (let i = 0; i < n; i += 1) {
-        const w = this.window[i];
-        reA[i] = (startA + i >= 0 ? samples[startA + i] : 0) * w;
-        imA[i] = 0;
-        reB[i] = samples[startB + i] * w;
-        imB[i] = 0;
+    analyse(samples, stamp) {
+      const { n, hop, bank } = this;
+      const { reA, imA, reB, imB } = bank;
+      if (stamp === undefined || bank.samples !== samples || bank.hop !== hop || bank.stamp !== stamp) {
+        const end = samples.length;
+        const startB = end - n;
+        const startA = startB - hop;
+        // Both frames in one transform, A as the real part and B as the
+        // imaginary (both are real), then told apart: A[k] = (Z[k] +
+        // conj(Z[n-k])) / 2, B[k] = (Z[k] - conj(Z[n-k])) / 2i. Only bins
+        // under n/2 are ever read (all analysers of this size, kLast at most
+        // n/2 - 1), so A goes back in place.
+        for (let i = 0; i < n; i += 1) {
+          const w = this.window[i];
+          reA[i] = (startA + i >= 0 ? samples[startA + i] : 0) * w;
+          imA[i] = samples[startB + i] * w;
+        }
+        this.fft.transform(reA, imA);
+        for (let k = 1; k < n / 2; k += 1) {
+          const zr = reA[k];
+          const zi = imA[k];
+          const nr = reA[n - k];
+          const ni = imA[n - k];
+          reA[k] = (zr + nr) * 0.5;
+          imA[k] = (zi - ni) * 0.5;
+          reB[k] = (zi + ni) * 0.5;
+          imB[k] = (nr - zr) * 0.5;
+        }
+        bank.samples = samples;
+        bank.hop = hop;
+        bank.stamp = stamp;
       }
-      this.fft.transform(reA, imA);
-      this.fft.transform(reB, imB);
 
       const power = this.power;
       power.fill(0);
@@ -150,7 +211,7 @@
       const toBins = n / (TWO_PI * hop);
 
       for (let k = 1; k <= this.kLast; k += 1) {
-        const amp = Math.hypot(reB[k], imB[k]) * this.scale;
+        const amp = hypot(reB[k], imB[k]) * this.scale;
         const p = amp * amp;
         if (p < 1e-12) continue;
 
@@ -199,5 +260,6 @@
     return t <= 0 ? 0 : (t >= 1 ? 1 : t);
   }
 
-  return { Analyser, FFT, windowSize, unit };
+  // hypot also for the visualizers' lines (viz/gl.js), a few thousand a frame.
+  return { Analyser, FFT, windowSize, unit, hypot };
 }));

@@ -16,9 +16,11 @@
 // each pen, black, its own), how many pens, the paper's speed.
 //
 // WebGL (viz/gl.js): the traces are kept as the pens' positions over the last
-// seconds and drawn as lines each frame into a texture of ink; one pass then
-// draws the paper, its grid and holes, the ink on it and the machine, and the
-// pen arms are drawn over it as lines.
+// seconds; the ink is a strip of paper of its own (a texture as wide as the
+// screen and a little, wrapping round as the paper runs), each piece of a
+// trace drawn onto it once as the pen leaves it. One pass then draws the
+// paper, its grid and holes, the ink on it and the machine, and the pen arms
+// are drawn over it as lines.
 
 (() => {
   const RATE = 240;          // the pens' positions kept a second
@@ -48,6 +50,7 @@
     uniform sampler2D ink, labels;
     uniform vec2 res;
     uniform float area, scroll, penX, laneTop, lane, major, wetPx, time;
+    uniform float ringScroll, ringW;    // where the ink's strip is under the screen, and how wide it is
     uniform int pens, paper;
     uniform float leds[${MAX_PENS}], beatLed;
     out vec4 o;
@@ -94,7 +97,7 @@
           col *= 1.0 - 0.15 * smoothstep(2.0, 0.0, abs(hole + 1.0)) * step(0.0, h.y);
         }
         // The ink, darker while wet (just left by the pen).
-        vec3 a = texture(ink, vec2(gl_FragCoord.x / res.x, gl_FragCoord.y / res.y)).rgb;
+        vec3 a = texture(ink, vec2(mod(gl_FragCoord.x + ringScroll, ringW) / ringW, gl_FragCoord.y / res.y)).rgb;
         float wet = exp(-max(0.0, penX - f.x) / wetPx);
         col *= exp(-a * (2.1 + 0.6 * wet));
         // Lit from above left; darker under the machine.
@@ -160,6 +163,10 @@
       this.acc = 0;            // time since the last kept position, in steps
       this.count = 0;          // positions kept so far
       this.at = 0;             // where the next goes
+      this.total = 0;          // positions taken in all (each one's number, for the ink)
+      this.ringScroll = 0;     // the ink strip's x under the screen's left edge
+      this.inked = -1;         // the newest position whose ink is on the strip
+      this.inkKey = '';        // what the strip was drawn for (drawn again when it changes)
       this.pens = 0;
       // Per pen and the marker (the last): its trace, where it is and how fast it moves.
       this.trace = [];
@@ -204,7 +211,11 @@
       this.h = h;
       this.measured = -1;
       VizGL.freeTarget(this.gl, this.ink);
-      this.ink = VizGL.target(this.gl, w, h);
+      // A few columns more than the screen: those going out on the left are
+      // cleared for the paper coming in on the right.
+      this.ringW = w + 4;
+      this.ink = VizGL.target(this.gl, this.ringW, h, { wrap: this.gl.REPEAT });
+      this.inkKey = '';
     }
 
     destroy() {
@@ -328,6 +339,7 @@
       for (let i = 0; i < this.pens; i += 1) this.trace[i][this.at] = this.y[i];
       this.trace[MAX_PENS][this.at] = this.y[MAX_PENS];
       this.at = (this.at + 1) % KEEP;
+      this.total += 1;
       this.count = Math.min(KEEP, this.count + 1);
     }
 
@@ -371,7 +383,10 @@
       }
       this._listen(a, dt);
       const speed = PER_S * H * Math.max(0.5, (set('szSpeed') || 100) / 100);
-      this.scroll = (this.scroll + speed * Math.min(dt, 0.25)) % 1e6;
+      const moved = speed * Math.min(dt, 0.25);
+      this.scroll = (this.scroll + moved) % 1e6;
+      const ringBefore = this.ringScroll;
+      this.ringScroll = (this.ringScroll + moved) % this.ringW;
       this.acc += Math.min(dt, 0.25) * RATE;
       while (this.acc >= 1) {
         this.acc -= 1;
@@ -399,34 +414,78 @@
         return INKS[i % INKS.length];
       };
 
-      // The ink: each trace back from its pen to the paper's left edge.
+      // The ink: the traces as lines between every stride-th position (counted
+      // from the first, so each piece stays the same once drawn), on the strip
+      // at the paper's x. Only the pieces the pens have left since the last
+      // frame go on; all of it again when the pens, their spacing or the inks change.
       const spacing = speed / RATE;
       const stride = Math.max(1, Math.round(1.5 / spacing), Math.ceil(penX / spacing / 2400));
       const width = Math.max(0.8, (H / 1440) * 1.15);
       const lines = this.lines;
-      for (const i of [...Array(pens).keys(), MAX_PENS]) {
-        const tr = this.trace[i];
-        const absorb = ink(i).map((v) => 1 - v);
-        const base = laneY(i);
-        const r = reach(i);
-        let px = penX;
-        let py = base + this.y[i] * r;
-        for (let k = 0; k < this.count; k += stride) {
-          const x = penX - (k + this.acc) * spacing;
-          const y = base + tr[(this.at - 1 - k + KEEP * 2) % KEEP] * r;
-          const slope = Math.abs(y - py) / Math.max(0.01, px - x);
-          const al = Math.max(0.3, 0.9 / (1 + 0.05 * Math.max(0, slope - 1.5)));
-          lines.seg(px, py, x, y, width, absorb, al);
-          px = x;
-          py = y;
-          if (x < -4) break;
-        }
-      }
+      const R = this.ringW;
+      // Where position n is on the screen now, and where its pen was then.
+      const xAt = (n) => penX - (this.total - 1 - n + this.acc) * spacing;
+      const yAt = (i, n) => laneY(i) + this.trace[i][(((this.at - this.total + n) % KEEP) + KEEP) % KEEP] * reach(i);
+      // A piece of ink from screen x0 to x1, onto the strip (twice where it crosses its seam).
+      const put = (x0, y0, x1, y1, rgb, al) => {
+        let a0 = x0 + this.ringScroll;
+        let a1 = x1 + this.ringScroll;
+        const wrap = Math.floor(Math.min(a0, a1) / R) * R;
+        a0 -= wrap;
+        a1 -= wrap;
+        lines.seg(a0, y0, a1, y1, width, rgb, al);
+        if (Math.max(a0, a1) > R - 3) lines.seg(a0 - R, y0, a1 - R, y1, width, rgb, al);
+        if (Math.min(a0, a1) < 3) lines.seg(a0 + R, y0, a1 + R, y1, width, rgb, al);
+      };
+      const piece = (i, n0, n1, absorb) => {
+        const x0 = xAt(n0);
+        const y0 = yAt(i, n0);
+        const x1 = xAt(n1);
+        const y1 = yAt(i, n1);
+        const slope = Math.abs(y1 - y0) / Math.max(0.01, x1 - x0);
+        const al = Math.max(0.3, 0.9 / (1 + 0.05 * Math.max(0, slope - 1.5)));
+        put(x0, y0, x1, y1, absorb, al);
+      };
+      const ids = [...Array(pens).keys(), MAX_PENS];
+      const absorbs = ids.map((i) => ink(i).map((v) => 1 - v));
+      const newest = this.total ? Math.floor((this.total - 1) / stride) * stride : -1;
+      const inkKey = [pens, stride, spacing, set('szInk'), set('szColor'), this.w, this.h].join('|');
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       VizGL.into(gl, this.ink);
       gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
+      if (inkKey !== this.inkKey) {
+        // All of it again, back from the pen to the paper's left edge.
+        this.inkKey = inkKey;
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        const oldest = Math.max(0, this.total - this.count);
+        ids.forEach((i, j) => {
+          for (let n = newest; n - stride >= oldest; n -= stride) {
+            piece(i, n - stride, n, absorbs[j]);
+            if (xAt(n) < -4) break;
+          }
+        });
+      } else {
+        // The paper coming in on the right: cleared (it last showed on the left).
+        gl.enable(gl.SCISSOR_TEST);
+        const from = ringBefore + this.w - 2;
+        const span = Math.min(R, moved + 4);
+        for (const s of [from, from - R, from + R]) {
+          const x0 = Math.max(0, Math.floor(s));
+          const x1 = Math.min(R, Math.ceil(s + span));
+          if (x1 <= x0) continue;
+          gl.scissor(x0, 0, x1 - x0, this.ink.h);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+        }
+        gl.disable(gl.SCISSOR_TEST);
+        // The pieces left since.
+        if (this.inked >= 0) {
+          ids.forEach((i, j) => {
+            for (let n = this.inked + stride; n <= newest; n += stride) piece(i, n - stride, n, absorbs[j]);
+          });
+        }
+      }
+      this.inked = newest;
       lines.draw(this.ink.w, this.ink.h);
 
       // The paper, the ink on it, the machine.
@@ -439,6 +498,8 @@
       gl.uniform2f(u.res, W, this.h);
       gl.uniform1f(u.area, H);
       gl.uniform1f(u.scroll, this.scroll);
+      gl.uniform1f(u.ringScroll, this.ringScroll);
+      gl.uniform1f(u.ringW, R);
       gl.uniform1f(u.penX, penX);
       gl.uniform1f(u.laneTop, top);
       gl.uniform1f(u.lane, lane);
@@ -455,7 +516,15 @@
       const hx = W - HOUSING * H;
       const rod = 0.0022 * H;
       const sh = 0.005 * H;
-      for (const i of [...Array(pens).keys(), MAX_PENS]) {
+      // The ink still wet between the last piece on the strip and the pen (it
+      // moves with the pen, so is drawn here each frame): the colour the ink
+      // gives the paper there.
+      ids.forEach((i, j) => {
+        if (newest < 0) return;
+        const c = absorbs[j].map((v) => 0.96 * Math.exp(-v * 0.9 * 2.7));
+        lines.seg(xAt(newest), yAt(i, newest), penX, laneY(i) + this.y[i] * reach(i), width, c, 0.9);
+      });
+      for (const i of ids) {
         const y = laneY(i) + this.y[i] * reach(i);
         const from = laneY(i);
         lines.seg(penX + sh, y + sh * 1.4, hx, from + sh * 1.4, rod * 2, [0, 0, 0], 0.18);

@@ -126,8 +126,15 @@
       for (let i = 0; i < n; i += 1) {
         let c = 0;
         for (let j = Math.max(0, i - 6); j <= Math.min(n - 1, i + 6); j += 1) if (j !== i) near[c++] = db[j];
-        const around = near.subarray(0, c).sort();
-        const above = db[i] - around[c >> 1];
+        // Sorted in place (a dozen values; a view to sort would be garbage
+        // 72 times a frame): the median is the same however it is sorted.
+        for (let a = 1; a < c; a += 1) {
+          const x = near[a];
+          let b = a - 1;
+          for (; b >= 0 && near[b] > x; b -= 1) near[b + 1] = near[b];
+          near[b + 1] = x;
+        }
+        const above = db[i] - near[c >> 1];
         // Only a peak counts: louder than both neighbours.
         const peak = (i === 0 || db[i] >= db[i - 1]) && (i === n - 1 || db[i] >= db[i + 1]);
         const loud = Math.max(0, Math.min(1, (db[i] - Math.max(-70, loudest - 36)) / 30));
@@ -159,7 +166,8 @@
       let key = -1;
       let minor = false;
       for (let t = 0; t < 12; t += 1) {
-        for (const m of [false, true]) {
+        for (let mode = 0; mode < 2; mode += 1) {
+          const m = mode === 1;
           const r = correlate(this.average, m ? MINOR : MAJOR, t);
           if (r > best) {
             second = best;

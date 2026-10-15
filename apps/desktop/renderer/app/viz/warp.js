@@ -42,13 +42,20 @@
       o = vec4(col, 1.0);
     }`;
 
-  function hsv(h, s, v) {
+  /** hsv into out (the stars' colours: a few thousand a frame, no new arrays). */
+  function hsv(h, s, v, out) {
     const f = (n) => {
       const k = (n + h * 6) % 6;
       return v - v * s * Math.max(0, Math.min(k, 4 - k, 1));
     };
-    return [f(5), f(3), f(1)];
+    out[0] = f(5);
+    out[1] = f(3);
+    out[2] = f(1);
+    return out;
   }
+  const WARM = [1, 0.85, 0.7];
+  const COLD = [0.75, 0.85, 1];
+  const WHITE = [1, 1, 1];
 
   class Warp {
     constructor(canvas) {
@@ -152,7 +159,11 @@
       const nb = bands.length;
       // How long a streak is: the way it came over this long.
       const trail = 0.018 + 0.05 * this.jump;
-      const glows = [];
+      // The glows, drawn after all the stars: x0, y0, x1, y1, width, r, g, b, alpha each.
+      if (!this.glows || this.glows.length < this.stars.length * 9) this.glows = new Float64Array(this.stars.length * 9);
+      const glows = this.glows;
+      let lit = 0;
+      const tone = [0, 0, 0];
       for (const s of this.stars) {
         s.z -= speed * dt;
         if (s.z < NEAR) this._star(s, false);
@@ -170,15 +181,31 @@
         const near = 1 - s.z / FAR;
         const level = bands[Math.min(nb - 1, Math.floor(s.band * nb))] || 0;
         let rgb;
-        if (colors === 'spectrum') rgb = hsv((0.62 - s.band * 0.62 + 1) % 1, 0.65, 1);
-        else if (colors === 'nebula') rgb = hsv(0.55 + s.tone * 0.25, 0.45, 1);
-        else rgb = s.tone < 0.15 ? [1, 0.85, 0.7] : (s.tone < 0.3 ? [0.75, 0.85, 1] : [1, 1, 1]);
+        if (colors === 'spectrum') rgb = hsv((0.62 - s.band * 0.62 + 1) % 1, 0.65, 1, tone);
+        else if (colors === 'nebula') rgb = hsv(0.55 + s.tone * 0.25, 0.45, 1, tone);
+        else rgb = s.tone < 0.15 ? WARM : (s.tone < 0.3 ? COLD : WHITE);
         const bright = Math.min(1.2, near ** 1.5 * (0.5 + 1.4 * level) * (a.playing ? 1 : 0.6) + 0.06);
         const width = Math.max(0.6, s.size * (0.4 + 1.6 * near)) * unit;
         this.lines.seg(x0, y0, x1, y1, width, rgb, bright);
-        if (bright > 0.35) glows.push([x0, y0, x1, y1, width * 3.5, rgb, bright * 0.12]);
+        if (bright > 0.35) {
+          glows[lit] = x0;
+          glows[lit + 1] = y0;
+          glows[lit + 2] = x1;
+          glows[lit + 3] = y1;
+          glows[lit + 4] = width * 3.5;
+          glows[lit + 5] = rgb[0];
+          glows[lit + 6] = rgb[1];
+          glows[lit + 7] = rgb[2];
+          glows[lit + 8] = bright * 0.12;
+          lit += 9;
+        }
       }
-      for (const g of glows) this.lines.seg(...g);
+      for (let k = 0; k < lit; k += 9) {
+        tone[0] = glows[k + 5];
+        tone[1] = glows[k + 6];
+        tone[2] = glows[k + 7];
+        this.lines.seg(glows[k], glows[k + 1], glows[k + 2], glows[k + 3], glows[k + 4], tone, glows[k + 8]);
+      }
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       this.lines.draw(w, h);

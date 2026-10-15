@@ -855,7 +855,19 @@
       let n = 0;
       const cap = (ax, ay, bx, by, ra, rb, ca, cb) => {
         if (n >= MAX_CAPS) return;
-        d.set([ax, ay, bx, by, ra, rb, ca[0], ca[1], ca[2], cb[0], cb[1], cb[2]], n * 12);
+        const k = n * 12;
+        d[k] = ax;
+        d[k + 1] = ay;
+        d[k + 2] = bx;
+        d[k + 3] = by;
+        d[k + 4] = ra;
+        d[k + 5] = rb;
+        d[k + 6] = ca[0];
+        d[k + 7] = ca[1];
+        d[k + 8] = ca[2];
+        d[k + 9] = cb[0];
+        d[k + 10] = cb[1];
+        d[k + 11] = cb[2];
         n += 1;
       };
       // The water's colour at a height (screen heights up), as the shaders have it.
@@ -865,6 +877,15 @@
       };
       const mixc = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
       const scale = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
+      // mixc into out: for the tentacles' pieces (cap copies them), no new arrays.
+      const mixInto = (out, p, q, t) => {
+        out[0] = p[0] + (q[0] - p[0]) * t;
+        out[1] = p[1] + (q[1] - p[1]) * t;
+        out[2] = p[2] + (q[2] - p[2]) * t;
+        return out;
+      };
+      const ca = [0, 0, 0];
+      const cb = [0, 0, 0];
       const sway = a.playing ? 0.07 + 0.06 * a.intensity : 0.05;
       this.tips = [];
       for (const an of this.orange) {
@@ -899,16 +920,16 @@
             const ny = y - Math.cos(ang) * link * t.len;
             const ra = H * 0.05 * (1 - 0.1 * (k / 5));
             const rb = H * 0.05 * (1 - 0.1 * ((k + 1) / 5));
-            cap(x, y, nx, ny, ra, rb, mixc(c0, c1, (k / 5) ** 4), mixc(c0, c1, ((k + 1) / 5) ** 4));
+            cap(x, y, nx, ny, ra, rb, mixInto(ca, c0, c1, (k / 5) ** 4), mixInto(cb, c0, c1, ((k + 1) / 5) ** 4));
             x = nx;
             y = ny;
           }
           if (t.z >= 0.45) this.tips.push([x, y, H * 0.05, lv * (1 - an.fog)]);
         };
-        an.tentacles.filter((t) => t.z < 0.45).forEach(tentacle);
+        for (const t of an.tentacles) if (t.z < 0.45) tentacle(t);
         // Its column: deeper red, flaring a little to the disc.
         cap(bx - ux * H * 0.03, by - uy * H * 0.03, tx, ty, H * 0.11, rTop, fog([0.5, 0.12, 0.06]), fog([0.78, 0.22, 0.08]));
-        an.tentacles.filter((t) => t.z >= 0.45).forEach(tentacle);
+        for (const t of an.tentacles) if (t.z >= 0.45) tentacle(t);
       }
       VizGL.into(gl, this.life);
       gl.clearColor(0, 0, 0, 0);
@@ -1075,7 +1096,7 @@
         const q = chain[i - 1];
         const dx = p.x - q.x;
         const dy = p.y - q.y;
-        const d = Math.hypot(dx, dy) || 1;
+        const d = Spectrum.hypot(dx, dy) || 1;
         p.x = q.x + (dx / d) * len;
         p.y = q.y + (dy / d) * len;
       }
@@ -1211,7 +1232,7 @@
               const pv = chain[Math.max(k - 1, 0)];
               const dx = n.x - pv.x;
               const dy = n.y - pv.y;
-              const d = Math.hypot(dx, dy) || 1;
+              const d = Spectrum.hypot(dx, dy) || 1;
               const off = side * j.R * 0.05 * (1 - k / chain.length * 0.5) * (1 + 0.8 * Math.sin(k * 1.6 + this.age * 2.5 + i + side));
               const x = c.x - (dy / d) * off;
               const y = c.y + (dx / d) * off;

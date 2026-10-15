@@ -163,9 +163,31 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
       o = vec4(l0, l1, l2, 1.0);
     }`;
 
+  // The clouds, rolling slowly, thick above and thinning towards the hills:
+  // how thick times how they are shaded, all the sky needs of them. Soft and
+  // slow, so drawn at half the screen's size and read between its pixels.
+  const CLOUD_FS = VizGL.NOISE + `
+    in vec2 uv;
+    uniform vec2 res;
+    uniform float time;
+    out vec4 o;
+    void main() {
+      vec2 p = vec2(uv.x * res.x / res.y, uv.y);
+      vec2 q = p * vec2(1.6, 2.6) + vec2(time * 0.018, 0.0);
+      float warp = fbm(q * 0.7 + vec2(0.0, time * 0.01));
+      float d = fbm(q + warp * 1.8 + vec2(time * 0.012, -time * 0.004));
+      float band = smoothstep(0.2, 0.75, uv.y);
+      float dens = smoothstep(0.32, 0.78, d) * (0.25 + 0.75 * band);
+      // Its shading only where there is cloud: in the gaps dens is 0 and so is all it adds.
+      float shade = 0.0;
+      if (dens > 0.0) shade = 0.55 + 0.9 * fbm(q * 2.1 - warp);
+      o = vec4(dens * shade, 0.0, 0.0, 1.0);
+    }`;
+
   const SKY_FS = VizGL.NOISE + `
     in vec2 uv;
     uniform sampler2D core;
+    uniform sampler2D clouds;   // CLOUD_FS's
     uniform sampler2D glowA;
     uniform sampler2D glowB;
     uniform sampler2D land;
@@ -217,18 +239,15 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
       vec3 col = mix(vec3(0.028, 0.03, 0.045), vec3(0.012, 0.014, 0.024), smoothstep(0.1, 0.9, uv.y));
 
       // The clouds, rolling slowly, thick above and thinning towards the hills.
-      vec2 q = p * vec2(1.6, 2.6) + vec2(time * 0.018, 0.0);
-      float warp = fbm(q * 0.7 + vec2(0.0, time * 0.01));
-      float d = fbm(q + warp * 1.8 + vec2(time * 0.012, -time * 0.004));
+      // (Their thickness and shading worked out at half the size: CLOUD_FS.)
       float band = smoothstep(0.2, 0.75, uv.y);
-      float dens = smoothstep(0.32, 0.78, d) * (0.25 + 0.75 * band);
-      float shade = 0.55 + 0.9 * fbm(q * 2.1 - warp);
-      col += vec3(0.05, 0.055, 0.075) * dens * shade;
+      float ds = texture(clouds, uv).r;
+      col += vec3(0.05, 0.055, 0.075) * ds;
       // Lit from within: thick cloud catches the light, the gaps less.
       vec3 tint = mix(color, vec3(1.0), 0.55);
-      col += tint * lit * (0.06 + 1.25 * dens * shade);
+      col += tint * lit * (0.06 + 1.25 * ds);
       // The whole sky lighting up.
-      col += tint * flash * (0.05 + 0.5 * dens * shade + 0.12 * band);
+      col += tint * flash * (0.05 + 0.5 * ds + 0.12 * band);
 
       // The land's layers here (far, middle, near).
       vec3 cov = texture(land, uv).rgb;
@@ -325,7 +344,7 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
   /** How long a path is, in pixels. */
   function length(pts) {
     let len = 0;
-    for (let i = 2; i < pts.length; i += 2) len += Math.hypot(pts[i] - pts[i - 2], pts[i + 1] - pts[i - 1]);
+    for (let i = 2; i < pts.length; i += 2) len += Spectrum.hypot(pts[i] - pts[i - 2], pts[i + 1] - pts[i - 1]);
     return len;
   }
 
@@ -336,6 +355,7 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
       this.gl = gl;
       this.bolt = VizGL.program(gl, BOLT_VS, BOLT_FS);
       this.sky = VizGL.program(gl, VizGL.SCREEN_VS, SKY_FS);
+      this.cloud = VizGL.program(gl, VizGL.SCREEN_VS, CLOUD_FS);
       this.land = VizGL.program(gl, VizGL.SCREEN_VS, LAND_FS);
       this.verts = VizGL.stream(gl, [[0, 2], [1, 1], [2, 1]], MAX_VERTS);
       this.bolts = [];
@@ -352,7 +372,8 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
       const gl = this.gl;
       this.w = w;
       this.h = h;
-      for (const t of [this.core, this.qa, this.qb, this.ea, this.eb, this.landT]) VizGL.freeTarget(gl, t);
+      for (const t of [this.core, this.qa, this.qb, this.ea, this.eb, this.landT, this.cloudT]) VizGL.freeTarget(gl, t);
+      this.cloudT = VizGL.target(gl, Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2)));
       // The land, drawn once for this size.
       this.landT = VizGL.target(gl, w, h, { half: false });
       gl.disable(gl.BLEND);
@@ -578,11 +599,19 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
       VizGL.blur(gl, this.core, this.qa, this.qb, 1.5);
       VizGL.blur(gl, this.qb, this.ea, this.eb, 2);
 
-      // 3. The sky, the clouds, the rain and the hills, lit, and the bolts.
+      // 3. The clouds, at half the size.
+      VizGL.into(gl, this.cloudT);
+      gl.useProgram(this.cloud.p);
+      gl.uniform2f(this.cloud.u.res, this.w, this.h);
+      gl.uniform1f(this.cloud.u.time, this.age);
+      VizGL.screen(gl);
+
+      // 4. The sky, the clouds, the rain and the hills, lit, and the bolts.
       const amount = set('ltFlash') ? set('ltFlashAmount') / 100 : 0;
       VizGL.into(gl, null);
       gl.useProgram(this.sky.p);
       const u = this.sky.u;
+      VizGL.bind(gl, u.clouds, this.cloudT.tex, 4);
       VizGL.bind(gl, u.core, this.core.tex, 0);
       VizGL.bind(gl, u.glowA, this.qb.tex, 1);
       VizGL.bind(gl, u.glowB, this.eb.tex, 2);
@@ -613,7 +642,7 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
         const y0 = pts[i * 2 + 1];
         const x1 = pts[i * 2 + 2];
         const y1 = pts[i * 2 + 3];
-        const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+        const len = Spectrum.hypot(x1 - x0, y1 - y0) || 1;
         along += len;
         if (along > upTo) break;
         // Thinner towards the end, and coming out of the cloud at the start.
@@ -623,18 +652,21 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
         const hw = p.width * taper * 2;
         const nx = (-(y1 - y0) / len) * hw;
         const ny = ((x1 - x0) / len) * hw;
-        const v = [
-          [x0 + nx, y0 + ny, 1], [x0 - nx, y0 - ny, -1], [x1 + nx, y1 + ny, 1],
-          [x1 + nx, y1 + ny, 1], [x0 - nx, y0 - ny, -1], [x1 - nx, y1 - ny, -1],
-        ];
-        for (const [x, y, s] of v) {
+        // Its two triangles' corners, straight in (no arrays: hundreds of pieces a frame).
+        const corner = (x, y, s) => {
           const k = count * 4;
           data[k] = x;
           data[k + 1] = y;
           data[k + 2] = a;
           data[k + 3] = s;
           count += 1;
-        }
+        };
+        corner(x0 + nx, y0 + ny, 1);
+        corner(x0 - nx, y0 - ny, -1);
+        corner(x1 + nx, y1 + ny, 1);
+        corner(x1 + nx, y1 + ny, 1);
+        corner(x0 - nx, y0 - ny, -1);
+        corner(x1 - nx, y1 - ny, -1);
       }
       return count;
     }

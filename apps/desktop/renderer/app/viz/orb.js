@@ -99,6 +99,20 @@
       this.age = 0;
       this.pts = new Float32Array(LON * LAT * 3);   // screen x, y and depth 0..1 (1 front)
       this.belt = new Float32Array(LAT);
+      // The grid's points on the unit sphere (x, y, z), the same every frame.
+      this.unit = new Float64Array(LON * LAT * 3);
+      for (let j = 0; j < LAT; j += 1) {
+        const phi = (j / (LAT - 1)) * Math.PI;
+        const sp = Math.sin(phi);
+        const cp = Math.cos(phi);
+        for (let i = 0; i < LON; i += 1) {
+          const th = (i / LON) * Math.PI * 2;
+          const k = (j * LON + i) * 3;
+          this.unit[k] = sp * Math.cos(th);
+          this.unit[k + 1] = cp;
+          this.unit[k + 2] = sp * Math.sin(th);
+        }
+      }
       this.ring = [];
       for (let i = 0; i < RING; i += 1) {
         const band = Math.random() ** 1.5;
@@ -128,7 +142,15 @@
     /** A round dot of light at x, y (pixels), `radius` its core. */
     _dot(x, y, radius, rgb, a) {
       if (this.dotCount >= LON * LAT + RING) return;
-      this.dotStream.data.set([x, y, rgb[0], rgb[1], rgb[2], a, radius], this.dotCount * 7);
+      const d = this.dotStream.data;
+      const k = this.dotCount * 7;
+      d[k] = x;
+      d[k + 1] = y;
+      d[k + 2] = rgb[0];
+      d[k + 3] = rgb[1];
+      d[k + 4] = rgb[2];
+      d[k + 5] = a;
+      d[k + 6] = radius;
       this.dotCount += 1;
     }
 
@@ -185,15 +207,13 @@
         this.belt[j] += (v - this.belt[j]) * (1 - Math.exp(-dt / 0.06));
       }
       const pts = this.pts;
+      const unitPts = this.unit;
       for (let j = 0; j < LAT; j += 1) {
-        const phi = (j / (LAT - 1)) * Math.PI;
-        const sp = Math.sin(phi);
-        const cp = Math.cos(phi);
         for (let i = 0; i < LON; i += 1) {
-          const th = (i / LON) * Math.PI * 2;
-          const x = sp * Math.cos(th);
-          const z = sp * Math.sin(th);
-          const y = cp;
+          const u = (j * LON + i) * 3;
+          const x = unitPts[u];
+          const y = unitPts[u + 1];
+          const z = unitPts[u + 2];
           const r = 1 + 0.55 * this.belt[j] * (0.55 + 0.45 * wobble(x, y, z, t)) + 0.04 * wobble(x * 2, y * 2, z * 2, t * 1.5);
           project(x * r, y * r, z * r, pts, (j * LON + i) * 3);
         }
@@ -206,11 +226,14 @@
         const c = VizGL.rgb(set('obColor'));
         pal = [c, c.map((v) => (v * 0.55 + 0.45) * 0.85)];
       }
-      const colour = (j, depth) => {
+      // A belt's colour (the same for all its points: worked out once a belt).
+      const rgb = [0, 0, 0];
+      const colour = (j) => {
         const x = j / (LAT - 1);
         if (palette === 'rainbow') return hsv((x * 0.8 + t * 0.03) % 1, 0.7, 1);
         const m = Math.abs(x - 0.5) * 2;
-        return [0, 1, 2].map((c) => pal[0][c] + (pal[1][c] - pal[0][c]) * m);
+        for (let c = 0; c < 3; c += 1) rgb[c] = pal[0][c] + (pal[1][c] - pal[0][c]) * m;
+        return rgb;
       };
       const lines = this.lines;
       const unit = h / 1080;
@@ -218,21 +241,21 @@
       for (let j = 0; j < LAT; j += 1) {
         // Towards the poles the grid crowds together: there each point counts less.
         const thin = Math.sin((j / (LAT - 1)) * Math.PI) ** 0.8;
+        const col = colour(j);
         for (let i = 0; i < LON; i += 1) {
           if (!wire && thin < 0.35 && i % 3) continue;
           const k = (j * LON + i) * 3;
           const depth = pts[k + 2];
           const bright = (0.12 + 0.88 * depth * depth) * (wire ? 0.4 + 0.6 * thin : Math.max(0.35, thin));
-          const rgb = colour(j, depth);
           if (wire) {
             const kr = (j * LON + (i + 1) % LON) * 3;
-            lines.seg(pts[k], pts[k + 1], pts[kr], pts[kr + 1], 0.9 * unit, rgb, bright * 0.5);
+            lines.seg(pts[k], pts[k + 1], pts[kr], pts[kr + 1], 0.9 * unit, col, bright * 0.5);
             if (j < LAT - 1) {
               const kd = ((j + 1) * LON + i) * 3;
-              lines.seg(pts[k], pts[k + 1], pts[kd], pts[kd + 1], 0.9 * unit, rgb, bright * 0.5);
+              lines.seg(pts[k], pts[k + 1], pts[kd], pts[kd + 1], 0.9 * unit, col, bright * 0.5);
             }
           } else {
-            this._dot(pts[k], pts[k + 1], (1.2 + 1.6 * depth) * unit * (1 + this.belt[j]), rgb, bright);
+            this._dot(pts[k], pts[k + 1], (1.2 + 1.6 * depth) * unit * (1 + this.belt[j]), col, bright);
           }
         }
       }

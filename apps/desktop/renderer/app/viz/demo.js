@@ -47,6 +47,12 @@
     return out;
   }
 
+  /** Where x falls in the 1024-step sine table. A whole number within 32 bits wraps by its low bits, the same as the modulo. */
+  function step(x) {
+    const n = Math.floor(x * 162.97);
+    return (n | 0) === n ? n & 1023 : (n % 1024 + 1024) % 1024;
+  }
+
   const GLYPH = 16;
 
   /** A crisp 1-bit font: each glyph drawn once in a 16 x 16 cell and read back, on or off. */
@@ -109,13 +115,17 @@
       this.low.height = this.lh;
       this.image = this.lctx.createImageData(this.lw, this.lh);
       this.pixels = new Uint32Array(this.image.data.buffer);
+      // The plasma's waves along x and along x + y, and dx² per column: once a frame, not per pixel.
+      this.waveX = new Float32Array(this.lw);
+      this.waveXY = new Float32Array(this.lw + this.lh);
+      this.dx2 = new Float64Array(this.lw);
       this.scan = null;
     }
 
     destroy() {}
 
     _sinAt(x) {
-      return this.sin[(Math.floor(x * 162.97) % 1024 + 1024) % 1024];
+      return this.sin[step(x)];
     }
 
     /** What the scroller says: the song playing, or Flow. */
@@ -168,19 +178,29 @@
         // The plasma: four waves summed, its colours cycling.
         const px = this.pixels;
         const colors = this.colors;
+        const sin = this.sin;
+        const { waveX, waveXY, dx2 } = this;
         const t = this.t;
         const cx = lw / 2 + this._sinAt(t * 0.3) * lw * 0.3;
         const cy = lh / 2 + this._sinAt(t * 0.23 + 1) * lh * 0.3;
         const cycle = this.cycle;
         const zoom = 1 + 0.25 * a.bass;
+        // Only the rings round (cx, cy) need working out per pixel.
+        for (let x = 0; x < lw; x += 1) {
+          waveX[x] = this._sinAt((x * 0.06) / zoom + t);
+          const dx = x - cx;
+          dx2[x] = dx * dx;
+        }
+        for (let s = 0; s < lw + lh - 1; s += 1) waveXY[s] = this._sinAt((s * 0.035) / zoom + t * 0.5);
+        const ring = t * 1.3;
         for (let y = 0; y < lh; y += 1) {
           const wy = this._sinAt((y * 0.045) / zoom - t * 0.7);
+          const dy = y - cy;
+          const dy2 = dy * dy;
+          const row = y * lw;
           for (let x = 0; x < lw; x += 1) {
-            const dx = x - cx;
-            const dy = y - cy;
-            const v = this._sinAt((x * 0.06) / zoom + t) + wy + this._sinAt(((x + y) * 0.035) / zoom + t * 0.5)
-              + this._sinAt((Math.sqrt(dx * dx + dy * dy) * 0.07) / zoom - t * 1.3);
-            px[y * lw + x] = colors[(Math.floor((v + 4) * 32) + cycle) & 255];
+            const v = waveX[x] + wy + waveXY[x + y] + sin[step((Math.sqrt(dx2[x] + dy2) * 0.07) / zoom - ring)];
+            px[row + x] = colors[(Math.floor((v + 4) * 32) + cycle) & 255];
           }
         }
         ctx.putImageData(this.image, 0, 0);
@@ -205,7 +225,7 @@
 
       // The sine scroller.
       if (set('dmScroller')) {
-        a.notes(); // the key, for the text
+        a.notes(1 / 15); // the key, for the text: an 8 s average, 15 times a second is plenty
         const text = this._message();
         const cell = GLYPH;
         const speed = 60 + 50 * a.level;

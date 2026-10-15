@@ -10,6 +10,11 @@ const paths = require('./src/paths');
 // Before the app is ready, or Chromium has already opened its files in the
 // default (Roaming) location.
 app.setPath('userData', paths.userDataDir());
+// Room for the visualizers' shaders in the GPU's program cache (6 MB by
+// default, about what a few of the big ones fill): going through many in
+// one session (Random), the first ones were pushed out again by the last and
+// compiled again from nothing when they came round.
+app.commandLine.appendSwitch('gpu-program-cache-size-kb', '32768');
 
 const settings = require('./src/settings');
 const cookieJar = require('./src/cookieJar');

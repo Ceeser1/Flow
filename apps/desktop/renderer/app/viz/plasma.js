@@ -20,6 +20,9 @@
 (() => {
   const MAX = 20;
   const PTS = 21;   // a tendril's 41 points, two to a texel
+  // Its 40 pieces in 5 runs of 8 (4 texels), each run's box in a texel after
+  // the points: a pixel skips a run already further off than the nearest piece.
+  const RUNS = 5;
   const PALETTES = {
     plasma: [[1.0, 0.35, 0.85], [0.55, 0.3, 1.0]],
     blue: [[0.35, 0.7, 1.0], [0.2, 0.35, 1.0]],
@@ -34,7 +37,7 @@
     uniform bool full;              // the whole screen, no globe
     uniform vec4 tips[${MAX}];      // x, y (on the globe, -1..1; past the screen's edge when full), depth (-1 behind .. 1 in front), strength
     uniform vec3 cols[${MAX}];
-    uniform sampler2D pts;          // row i: tendril i's 41 points, two to a texel
+    uniform sampler2D pts;          // row i: tendril i's 41 points, two to a texel, then its runs' boxes (min x, y, max x, y)
     uniform vec3 inner;
     uniform int count;
     out vec4 o;
@@ -68,10 +71,16 @@
           if (segDist(q, vec2(0.0), e) > 0.27 * length(e) + 0.4) continue;
           float seed = float(i) * 7.31;
           float d = 1e3;
-          for (int k = 0; k < ${PTS - 1}; k++) {
-            vec4 ab = texelFetch(pts, ivec2(k, i), 0);
-            vec2 c = texelFetch(pts, ivec2(k + 1, i), 0).xy;
-            d = min(d, min(segDist(q, ab.xy, ab.zw), segDist(q, ab.zw, c)));
+          for (int run = 0; run < ${RUNS}; run++) {
+            // A run whose box is further than d holds nothing nearer (1e-4
+            // to spare for rounding): the nearest stays the same without it.
+            vec4 box = texelFetch(pts, ivec2(${PTS} + run, i), 0);
+            if (length(max(max(box.xy - q, q - box.zw), 0.0)) - 1e-4 > d) continue;
+            for (int k = run * 4; k < run * 4 + 4; k++) {
+              vec4 ab = texelFetch(pts, ivec2(k, i), 0);
+              vec2 c = texelFetch(pts, ivec2(k + 1, i), 0).xy;
+              d = min(d, min(segDist(q, ab.xy, ab.zw), segDist(q, ab.zw, c)));
+            }
           }
           float bright = tip.w * (0.55 + 0.45 * (tip.z * 0.5 + 0.5));
           float fl = 1.0 - flicker * 0.5 * vnoise(vec2(time * 40.0, seed));
@@ -123,7 +132,7 @@
       this.prog = VizGL.program(gl, VizGL.SCREEN_VS, FS);
       this.ptsTex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, this.ptsTex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, PTS, MAX, 0, gl.RGBA, gl.FLOAT, null);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, PTS + RUNS, MAX, 0, gl.RGBA, gl.FLOAT, null);
       for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST);
       this.tendrils = Array.from({ length: MAX }, (_, i) => ({ d: onSphere(), drift: onSphere(), on: 0, hue: i / MAX }));
       this.touch = 0;
@@ -164,7 +173,7 @@
 
       const tips = new Float32Array(MAX * 4);
       const cols = new Float32Array(MAX * 3);
-      const pts = new Float32Array(MAX * PTS * 4);
+      const pts = new Float32Array(MAX * (PTS + RUNS) * 4);
       const full = set('pgShape') === 'full';
       // On the whole screen: how far out its edges lie (in globe radii).
       const hx = (0.5 * this.w) / this.h / 0.36;
@@ -209,8 +218,25 @@
           const wob = Math.sin(f * 5 + ph * 3.1 + i * 1.7) * 0.6 + Math.sin(f * 10.5 - ph * 4.7 + i * 2.9) * 0.3
             + Math.sin(f * 16 + ph * 11 + i * 5.3) * 0.1 * (0.4 + jitter);
           const off = wob * amp * Math.sin(Math.PI * f);
-          pts[(i * PTS) * 4 + k * 2] = ex * f + nx * off;
-          pts[(i * PTS) * 4 + k * 2 + 1] = ey * f + ny * off;
+          pts[(i * (PTS + RUNS)) * 4 + k * 2] = ex * f + nx * off;
+          pts[(i * (PTS + RUNS)) * 4 + k * 2 + 1] = ey * f + ny * off;
+        }
+        // Each run's box, round its 9 points as stored (32-bit).
+        for (let run = 0; run < RUNS; run += 1) {
+          const row = i * (PTS + RUNS) * 4;
+          let x0 = Infinity;
+          let y0 = Infinity;
+          let x1 = -Infinity;
+          let y1 = -Infinity;
+          for (let k = run * 8; k <= run * 8 + 8; k += 1) {
+            const x = pts[row + k * 2];
+            const y = pts[row + k * 2 + 1];
+            x0 = Math.min(x0, x);
+            y0 = Math.min(y0, y);
+            x1 = Math.max(x1, x);
+            y1 = Math.max(y1, y);
+          }
+          pts.set([x0, y0, x1, y1], row + (PTS + run) * 4);
         }
         const c = pal ? pal[i % 2] : hsv((t.hue + this.age * 0.03) % 1, 0.7, 1);
         cols.set(c, i * 3);
@@ -231,7 +257,7 @@
       gl.uniform4fv(u.tips, tips);
       gl.uniform3fv(u.cols, cols);
       gl.bindTexture(gl.TEXTURE_2D, this.ptsTex);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, PTS, MAX, gl.RGBA, gl.FLOAT, pts);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, PTS + RUNS, MAX, gl.RGBA, gl.FLOAT, pts);
       VizGL.bind(gl, u.pts, this.ptsTex, 0);
       gl.uniform3f(u.inner, inner[0], inner[1], inner[2]);
       gl.uniform1i(u.count, MAX);

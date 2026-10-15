@@ -201,14 +201,28 @@
     }
 
     size(w, h) {
-      const gl = this.gl;
       this.w = w;
       this.h = h;
+      this.scale = 0;
+      this._scale();
+    }
+
+    /**
+     * The ray pass's targets, for the screen's size and the render scale
+     * (bhScale): half the screen's size at 100% (every pixel steps a long
+     * way), less below. The stars are drawn after it at the full size, so
+     * they stay as many and as sharp.
+     */
+    _scale() {
+      const scale = (Number(Visualizer.setting('bhScale')) || 100) / 100;
+      if (scale === this.scale) return;
+      this.scale = scale;
+      const gl = this.gl;
+      const { w, h } = this;
       for (const t of [this.t, this.bent, this.b1, this.b2]) VizGL.freeTarget(gl, t);
-      // Half the screen's size: every pixel steps a long way. The ray pass
-      // draws into both: the picture, and where the stars are bent to.
-      const hw = Math.max(1, Math.round(w / 2));
-      const hh = Math.max(1, Math.round(h / 2));
+      // The ray pass draws into both: the picture, and where the stars are bent to.
+      const hw = Math.max(1, Math.round((w * scale) / 2));
+      const hh = Math.max(1, Math.round((h * scale) / 2));
       this.t = VizGL.target(gl, hw, hh);
       this.bent = VizGL.target(gl, hw, hh);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.t.fb);
@@ -229,6 +243,7 @@
       const gl = this.gl;
       const set = (k) => Visualizer.setting(k);
       this.age += dt;
+      this._scale();
       const music = a.playing ? 1 : 0.15;
       this.spin += dt * 0.25 * (set('bhSpin') / 100) * (a.playing ? a.pace * (0.7 + 0.6 * a.level) : 0.15);
       // The eye: circling slowly at the chosen height, nearer when the music swells.
@@ -303,6 +318,7 @@
       { type: 'choice', key: 'bhColors', label: 'Colours', choices: [['warm', 'Warm'], ['blue', 'Blue'], ['neon', 'Neon']] },
       { type: 'choice', key: 'bhView', label: 'View', choices: [['edge', 'Edge on'], ['slant', 'Slanted'], ['above', 'From above']] },
       { type: 'slider', key: 'bhSpin', label: 'Swirling', min: 0, max: 300, step: 5 },
+      { type: 'choice', key: 'bhScale', label: 'Render scale', choices: VizGL.SCALES },
     ],
   });
 })();

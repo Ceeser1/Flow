@@ -15,11 +15,8 @@
 //             that hang a moment and then drop. Its cogwheel: how many bars
 //             (16-128), their colours (fire, ice, lime, a rainbow), solid or
 //             in LED steps, the caps, a mirror floor. (The oscilloscope it
-//             had is Scope's, viz/scope.js.)
-//   Waveform  like the equalizer behind the pages (equalizer.js), mirrored
-//             about the middle of the screen and glowing. Its cogwheel: the
-//             colours (the equalizer's schemes), distinct bars with a
-//             thin gap between or one smooth wave, and the shine round it.
+//             had is Scope's, viz/scope.js; Waveform, the equalizer
+//             glowing, is viz/waveform.js.)
 //   Random    each category (VIZ_CATEGORIES) has one ('random-<category>'),
 //             one of that category's, a different one than last time if it
 //             can; with vizRandomEach (Settings) another one with each song.
@@ -28,16 +25,15 @@
 // folding away with a click on its heading (vizCollapsed); Up and Down go
 // through them in that order.
 //
-// Both read the player's sound where the equalizer does, before the volume.
+// All read the player's sound where the equalizer does, before the volume.
 // Bars runs its own short analysis (about 46 ms) so they jump the way
-// Winamp's did; Waveform the equalizer's longer one, so it breathes like it.
+// Winamp's did.
 
 // The sign on each category's Random tile in Settings.
 const VIZ_RANDOM_GLYPH = '<img class="viz-tile__icon" src="../images/shuffle.png" alt="" />';
 
 const VISUALIZERS = [
   { id: 'bars', name: 'Bars', ready: true, desc: 'Spectrum bars with falling peaks, in the manner of Winamp', glyph: Icons.speaker, image: '../images/viz-bars.jpg' },
-  { id: 'waveform', name: 'Waveform', ready: true, desc: 'The equalizer, glowing out from the middle of the screen', glyph: Icons.pulse, image: '../images/viz-waveform.jpg' },
 ];
 
 // The categories in Settings, each's visualizers in their order there (and
@@ -107,23 +103,6 @@ const Visualizer = {
   PEAK_GRAVITY: 2.2,   // full heights per second², once the hold is over
   TOP: 0.9,            // a full bar reaches this share of the screen
 
-  // Waveform: the equalizer's look, a little bigger. Distances in css pixels.
-  WAVE_PITCH: 7,       // Bars: a bar this far from the next,
-  WAVE_BAR: 5,         // this wide (a thin gap between)
-  WAVE_BAR_BLUR: 0.6,  // and only this softened, so the gaps stay
-  WAVE_STEP: 4,        // Wave: a point of the outline this far from the next,
-  WAVE_SMOOTH: 3,      // smoothed over about this many points each way
-  WAVE_FLOOR_DB: -58,
-  WAVE_CEIL_DB: -8,
-  WAVE_REACH: 0.32,    // a full bar reaches this share of the screen, each way
-  WAVE_SHINE: 1.8,     // the shine reaches this much further (at 50% spread;
-  WAVE_SHINE_BLUR: 40, // nothing further and less blurred at 0%, twice at 100%)
-  WAVE_SHINE_ALPHA: 0.6,
-  WAVE_CORE_BLUR: 3,
-  WAVE_ATTACK_MS: 30,
-  WAVE_RELEASE_MS: 360,
-  RAINBOW_MS: 15000,
-
   // An own colour's presets (the swatch after a visualizer's colours): the first the default.
   OWN_PRESETS: ['#3484f4', '#ebebeb', '#ed1d1d', '#25d041', '#f9dc1f', '#aa55e7'],
 
@@ -192,7 +171,6 @@ const Visualizer = {
       this.stage.appendChild(h('p.viz-full__note', 'The visualizer needs Web Audio, which could not be started on this computer.'));
     }
     if (kind === 'bars') this.stage.appendChild(this._barsPanel());
-    if (kind === 'waveform') this.stage.appendChild(this._wavePanel());
     const def = this.scenes[kind];
     if (def && def.options) this.stage.appendChild(this._cfgPanel(`${def.name} settings`, def.options));
     if (def && def.click) this.canvas.addEventListener('click', () => this.scene && def.click(this.scene));
@@ -210,7 +188,6 @@ const Visualizer = {
       }
     }
     if (kind === 'bars') this._startBars();
-    else if (kind === 'waveform') this._startWave();
     this._resize = new ResizeObserver(() => this._size());
     this._resize.observe(this.canvas);
     this._size();
@@ -241,8 +218,6 @@ const Visualizer = {
     if (this.stage) this.stage.remove();
     this.stage = null;
     this.canvas = null;
-    this.scratch = null;
-    this.glow = null;
   },
 
   /** All of them in Settings' order: the categories', then any in none of them. */
@@ -418,18 +393,15 @@ const Visualizer = {
   _size() {
     const c = this.canvas;
     if (!c) return;
-    // Waveform is blurred twice a frame: at css pixels, which is sharp enough
-    // for light and much cheaper on a large screen.
+    // Bars and the sharp ones at the screen's own pixels; the rest at css
+    // pixels (or their own resolution), sharp enough for light and much
+    // cheaper on a large screen.
     const def = this.scenes[this.kind];
     const r = this.kind === 'bars' || (def && def.sharp) ? window.devicePixelRatio || 1 : (def && def.resolution) || 1;
     const w = Math.max(1, Math.round(c.clientWidth * r));
     const hgt = Math.max(1, Math.round(c.clientHeight * r));
-    for (const x of [c, this.scratch, this.glow]) {
-      if (!x) continue;
-      if (x.width !== w) x.width = w;
-      if (x.height !== hgt) x.height = hgt;
-    }
-    if (this.kind === 'waveform') this._layoutWave();
+    if (c.width !== w) c.width = w;
+    if (c.height !== hgt) c.height = hgt;
     if (this.scene && this.scene.size) this.scene.size(w, hgt);
   },
 
@@ -453,8 +425,7 @@ const Visualizer = {
     VizAudio.update(this.samples, dt, now);
     if (this.scene) {
       this.scene.frame(VizAudio, dt, now);
-    } else if (this.kind === 'waveform') this._drawWave(dt);
-    else this._drawBars(dt, now);
+    } else this._drawBars(dt, now);
     this.raf = requestAnimationFrame((t) => this._frame(t));
   },
 
@@ -529,7 +500,7 @@ const Visualizer = {
     const w = c.width;
     const hgt = c.height;
     this._background(ctx, w, hgt);
-    const db = Player.isPlaying ? this.spec.analyse(this.samples) : null;
+    const db = Player.isPlaying ? this.spec.analyse(this.samples, VizAudio.frames) : null;
     const n = this.barCount;
     const mirror = !!set.brMirror;
     // With the mirror the floor stands higher, and the bars are seen again below it.
@@ -604,179 +575,6 @@ const Visualizer = {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
       ctx.fillRect(0, floor, w, Math.max(1, Math.round(hgt / 900)));
     }
-  },
-
-  // ---- Waveform ----
-  //
-  // Drawn like the equalizer: sharp bars onto a scratch canvas, faded towards
-  // their tips, then that onto the screen twice, once blurred wide and
-  // stretched out from the middle for the shine and once only softened.
-
-  _startWave() {
-    this.scratch = document.createElement('canvas');
-    this.glow = document.createElement('canvas');
-    this.spec = null;
-    this.levels = new Float32Array(0);
-    this.shift = 0;
-  },
-
-  /** Waveform's cogwheel. */
-  _wavePanel() {
-    return this._cfgPanel('Waveform settings', [
-      {
-        type: 'choice',
-        key: 'wfColors',
-        label: 'Color',
-        choices: [['rainbow', 'Rainbow'], ['spectrum', 'Spectrum'], ['greyscale', 'Greyscale']],
-        color: { value: 'custom', key: 'wfColor', presets: this.OWN_PRESETS },
-      },
-      { type: 'choice', key: 'wfStyle', label: 'Style', choices: [['bars', 'Bars'], ['wave', 'Wave']] },
-      { type: 'check', key: 'wfShine', label: 'Shine', amount: { key: 'wfShineSpread', min: 0, max: 100, step: 5 } },
-    ]);
-  },
-
-  /** As many bars (or points of the wave) as fit across, the analysis to match. */
-  _layoutWave() {
-    this.waveStyle = this.setting('wfStyle');
-    const pitch = this.waveStyle === 'wave' ? this.WAVE_STEP : this.WAVE_PITCH;
-    const bars = Math.max(16, Math.floor(this.canvas.width / pitch));
-    if (this.spec && this.spec.bars === bars) return;
-    this.spec = new Spectrum.Analyser({ sampleRate: Equalizer.ctx.sampleRate, bars });
-    this.levels = new Float32Array(bars);
-    this.waveShown = new Float32Array(bars);
-  },
-
-  _drawWave(dt) {
-    if (this.setting('wfStyle') !== this.waveStyle) this._layoutWave();
-    const c = this.canvas;
-    const out = c.getContext('2d');
-    const w = c.width;
-    const hgt = c.height;
-    const levels = this.levels;
-    const n = levels.length;
-    const ms = dt * 1000;
-    const fall = Math.exp(-ms / this.WAVE_RELEASE_MS);
-    const rise = 1 - Math.exp(-ms / this.WAVE_ATTACK_MS);
-    this.shift = (this.shift + ms / this.RAINBOW_MS) % 1;
-    const wave = this.waveStyle === 'wave';
-
-    if (Player.isPlaying && this.spec) {
-      const db = this.spec.analyse(this.samples);
-      for (let i = 0; i < n; i += 1) {
-        const target = Spectrum.unit(db[i], this.WAVE_FLOOR_DB, this.WAVE_CEIL_DB);
-        levels[i] = target >= levels[i]
-          ? levels[i] + (target - levels[i]) * rise
-          : target + (levels[i] - target) * fall;
-      }
-    } else {
-      for (let i = 0; i < n; i += 1) levels[i] *= fall;
-    }
-    // Bars: each its own. Wave: smoothed out over its neighbours (a bell
-    // curve), so it is one shape.
-    const shown = wave ? this._smoothWave(levels) : levels;
-
-    out.globalAlpha = 1;
-    out.fillStyle = '#000';
-    out.fillRect(0, 0, w, hgt);
-
-    // 1. Sharp, in the colours chosen, mirrored about the middle; a thin line
-    // where it is quiet.
-    const cy = hgt / 2;
-    const reach = hgt * this.WAVE_REACH;
-    const sc = this.scratch.getContext('2d');
-    sc.globalCompositeOperation = 'source-over';
-    sc.clearRect(0, 0, w, hgt);
-    const scheme = this.setting('wfColors');
-    const solid = scheme === 'custom' ? this.setting('wfColor') : Palette.solid[scheme] || null;
-    const colour = (i, v) => solid || (scheme === 'rainbow' ? Palette.rainbow(i / n - this.shift) : Palette.by(scheme, v));
-    if (wave) {
-      // Coloured along it: a stop every so often, by its height there.
-      const fill = sc.createLinearGradient(0, 0, w, 0);
-      const stops = 48;
-      for (let k = 0; k <= stops; k += 1) {
-        const i = Math.min(n - 1, Math.round((k / stops) * (n - 1)));
-        fill.addColorStop(k / stops, colour(i, shown[i]));
-      }
-      sc.fillStyle = fill;
-      // Through the middles between its points, curving at each.
-      const half = (i) => Math.max(1, shown[i] * reach);
-      const x = (i) => ((i + 0.5) / n) * w;
-      sc.beginPath();
-      for (const side of [-1, 1]) {
-        const from = side < 0 ? 0 : n - 1;
-        const to = side < 0 ? n - 1 : 0;
-        const dir = side < 0 ? 1 : -1;
-        sc.lineTo(side < 0 ? 0 : w, cy + side * half(from));
-        for (let i = from; i !== to; i += dir) {
-          sc.quadraticCurveTo(x(i), cy + side * half(i), (x(i) + x(i + dir)) / 2, cy + side * (half(i) + half(i + dir)) / 2);
-        }
-        sc.lineTo(side < 0 ? w : 0, cy + side * half(to));
-      }
-      sc.closePath();
-      sc.fill();
-    } else {
-      if (solid) sc.fillStyle = solid;
-      const offset = (w - n * this.WAVE_PITCH) / 2 + (this.WAVE_PITCH - this.WAVE_BAR) / 2;
-      for (let i = 0; i < n; i += 1) {
-        const v = levels[i];
-        const half = Math.max(1, v * reach);
-        if (!solid) sc.fillStyle = colour(i, v);
-        // On whole pixels, so the gaps stay sharp.
-        sc.fillRect(Math.round(offset + i * this.WAVE_PITCH), cy - half, this.WAVE_BAR, half * 2);
-      }
-    }
-
-    // 2. Faded towards the tips, so it reads as light rather than as blocks.
-    sc.globalCompositeOperation = 'destination-in';
-    const fade = sc.createLinearGradient(0, cy - reach, 0, cy + reach);
-    fade.addColorStop(0, 'rgba(0,0,0,0.3)');
-    fade.addColorStop(0.5, 'rgba(0,0,0,1)');
-    fade.addColorStop(1, 'rgba(0,0,0,0.3)');
-    sc.fillStyle = fade;
-    sc.fillRect(0, 0, w, hgt);
-    sc.globalCompositeOperation = 'source-over';
-
-    // 3. The shine, stretched out from the middle both ways (unless turned off).
-    if (this.setting('wfShine')) {
-      const spread = this.setting('wfShineSpread') / 50;
-      const stretch = 1 + (this.WAVE_SHINE - 1) * spread;
-      const gl = this.glow.getContext('2d');
-      gl.clearRect(0, 0, w, hgt);
-      gl.filter = `blur(${this.WAVE_SHINE_BLUR * (0.4 + 0.6 * spread)}px)`;
-      gl.drawImage(this.scratch, 0, cy - cy * stretch, w, hgt * stretch);
-      gl.filter = 'none';
-      out.globalAlpha = this.WAVE_SHINE_ALPHA;
-      out.drawImage(this.glow, 0, 0);
-    }
-
-    // 4. The bars (or the wave), only softened.
-    out.globalAlpha = 1;
-    out.filter = `blur(${wave ? this.WAVE_CORE_BLUR : this.WAVE_BAR_BLUR}px)`;
-    out.drawImage(this.scratch, 0, 0);
-    out.filter = 'none';
-  },
-
-  /** `levels` smoothed with a bell curve WAVE_SMOOTH points wide, into this.waveShown. */
-  _smoothWave(levels) {
-    const n = levels.length;
-    const reach = this.WAVE_SMOOTH * 3;
-    if (!this.waveKernel || this.waveKernel.length !== reach + 1) {
-      this.waveKernel = Float32Array.from({ length: reach + 1 }, (_, k) => Math.exp(-(k * k) / (2 * this.WAVE_SMOOTH ** 2)));
-    }
-    const kern = this.waveKernel;
-    for (let i = 0; i < n; i += 1) {
-      let sum = 0;
-      let weight = 0;
-      for (let k = -reach; k <= reach; k += 1) {
-        const j = i + k;
-        if (j < 0 || j >= n) continue;
-        const g = kern[Math.abs(k)];
-        sum += levels[j] * g;
-        weight += g;
-      }
-      this.waveShown[i] = sum / weight;
-    }
-    return this.waveShown;
   },
 
   /**

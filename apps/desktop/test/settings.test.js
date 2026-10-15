@@ -266,6 +266,17 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ fnGravity: 117 }).fnGravity, 115);
   assert.equal(d.fnRipples, true);
   assert.equal(d.fnBursts, undefined);
+  // The render scales: 75% by default; Disco's put to 75% once also where
+  // 100% was saved, after that left as chosen.
+  for (const key of ['dcScale', 'lhScale', 'ntScale', 'bhScale', 'ifScale']) {
+    assert.equal(d[key], '75');
+    assert.equal(settings.clean({ [key]: '50', dcScale75: true })[key], '50');
+    assert.equal(settings.clean({ [key]: '60', dcScale75: true })[key], '75');
+  }
+  assert.equal(settings.clean({ dcScale: '100' }).dcScale, '75');
+  assert.equal(settings.clean({ dcScale: '50' }).dcScale75, true);
+  assert.equal(settings.clean({ dcScale: '100', dcScale75: true }).dcScale, '100');
+  assert.equal(settings.clean(settings.clean({ dcScale: '100' })).dcScale, '75');
   // Seismograph: green grid paper, a colour for each of 8 pens, the paper at 100%.
   assert.equal(d.szPaper, 'green');
   assert.equal(settings.clean({ szPaper: 'pink' }).szPaper, 'green');
