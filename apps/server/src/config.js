@@ -4,8 +4,16 @@
 // apps show, the music folder, the password, the profiles (their names and
 // PINs; what is in them is in library.json), whether the apps may find it on
 // the network by themselves, how far it can be reached (its level, public
-// address and trusted proxies), where new songs go in the music folder, and
-// the devices signed in.
+// address and trusted proxies), where new songs go in the music folder, the
+// rules its admins set, and the devices signed in.
+//
+// Administration (3.5): a profile can be an admin, and one of them the master
+// admin. The first profile a server ever has becomes an admin by itself (on a
+// server from before, the oldest one, once: adminSeeded); more are made on
+// the command line (flow-server admin), or in an app by the master. The
+// master is made only on the command line or by install.sh; its PIN follows
+// the password's rules (@flow/core/password), since it can change the
+// password from an app.
 //
 //   home   FLOW_SERVER_HOME, else ~/.local/share/flow-server on Linux
 //          (XDG_DATA_HOME when set) and %LOCALAPPDATA%\Flow\server on Windows.
@@ -21,6 +29,37 @@ const { parseLevel, isStrongPassword } = require('@flow/core/password');
 
 // An app's install id, as it sends it.
 const CLIENT_ID = /^[\w-]{8,64}$/;
+const MAX_PROFILE_NAME = 40;
+// The addresses a profile was seen at that are kept, newest first.
+const MAX_IPS = 100;
+
+/** An IP address as kept: lower case, without IPv6's ::ffff: in front of IPv4; '' for anything else. */
+function cleanIp(v) {
+  const a = String(v || '').trim().toLowerCase().replace(/^::ffff:/, '');
+  return /^[0-9a-f.:]{2,45}$/.test(a) ? a : '';
+}
+
+/** [{ ip, device, at }], newest first: one entry per address and device. */
+function cleanIps(list) {
+  const out = [];
+  const seen = new Set();
+  for (const e of Array.isArray(list) ? list : []) {
+    const ip = cleanIp(e && e.ip);
+    if (!ip) continue;
+    const device = String(e.device || '').slice(0, 80);
+    const key = `${ip} ${device}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ip, device, at: Number(e.at) || 0 });
+  }
+  return out.sort((a, b) => b.at - a.at).slice(0, MAX_IPS);
+}
+
+/** A PIN's hash as kept; `strong`: it was good enough for the internet (only known for PINs set since 3.5). */
+function cleanPin(v) {
+  if (!v || typeof v !== 'object' || !v.salt || !v.hash) return null;
+  return { salt: String(v.salt), hash: String(v.hash), strong: v.strong === true };
+}
 
 function defaultHome() {
   if (process.env.FLOW_SERVER_HOME) return process.env.FLOW_SERVER_HOME;
@@ -44,7 +83,31 @@ function clean(raw) {
   for (const p of Array.isArray(r.profiles) ? r.profiles : []) {
     if (!p || !/^[\w-]{1,64}$/.test(String(p.id || '')) || !String(p.name || '').trim()) continue;
     if (profiles.some((x) => x.id === p.id)) continue;
-    profiles.push({ id: String(p.id), name: String(p.name).trim().slice(0, 40), createdAt: Number(p.createdAt) || Date.now(), pin: secret(p.pin) });
+    // One master only: the first one named.
+    const master = p.master === true && !profiles.some((x) => x.master);
+    profiles.push({
+      id: String(p.id),
+      name: String(p.name).trim().slice(0, MAX_PROFILE_NAME),
+      createdAt: Number(p.createdAt) || Date.now(),
+      pin: cleanPin(p.pin),
+      admin: master || p.admin === true,
+      master,
+      // Signing in to it is refused; its playlists, stats and songs stay.
+      disabled: !master && p.disabled === true,
+      // Where it was made ('' for profiles from before 3.5), and the addresses
+      // and devices it signed in or connected from since.
+      createdIp: cleanIp(p.createdIp),
+      ips: cleanIps(p.ips),
+      // Its last sign-in, sign-out or connection ending; 0: not since 3.5.
+      lastSeenAt: Number(p.lastSeenAt) || 0,
+    });
+  }
+  // The first profile ever, or on a server from before 3.5 the oldest one,
+  // becomes an admin. Once: an admin taken away later is not made again.
+  let adminSeeded = r.adminSeeded === true;
+  if (!adminSeeded && profiles.length) {
+    if (!profiles.some((p) => p.admin)) profiles.reduce((a, b) => (b.createdAt < a.createdAt ? b : a)).admin = true;
+    adminSeeded = true;
   }
   const profileIds = new Set(profiles.map((p) => p.id));
   return {
@@ -88,6 +151,12 @@ function clean(raw) {
     // flow-server tag-songs asked for the songs from before to be written
     // (library.js checkTagRequest), until the running server takes it.
     tagSongs: r.tagSongs === true,
+    // The admins' rules: who may make profiles ('admins': an admin, or anyone
+    // while there is none yet), and who may delete a song for everyone
+    // ('owner': the profile that added it, and the admins).
+    profileCreation: r.profileCreation === 'admins' ? 'admins' : 'anyone',
+    songDelete: r.songDelete === 'owner' ? 'owner' : 'anyone',
+    adminSeeded,
     profiles,
     tokens: (Array.isArray(r.tokens) ? r.tokens : [])
       .filter((t) => t && t.hash)
@@ -191,4 +260,31 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
-module.exports = { open, defaultHome, hashPassword, passwordEntry, checkPassword, hashToken, DEFAULT_PORT, CLIENT_ID };
+/** A profile's PIN as kept, or null for none. */
+function pinEntry(pin) {
+  const p = String(pin || '');
+  return p ? { ...hashPassword(p), strong: isStrongPassword(p) } : null;
+}
+
+/**
+ * A profile name cleaned up, or an Error saying why it cannot be used.
+ * `exceptId`: the profile being renamed.
+ */
+function checkProfileName(profiles, name, exceptId = null) {
+  const clean = String(name || '').replace(/\s+/g, ' ').trim();
+  const fail = (status, message) => Object.assign(new Error(message), { status });
+  if (!clean) throw fail(400, 'Please enter a name for the profile.');
+  if (clean.length > MAX_PROFILE_NAME) throw fail(400, `Profile names can be at most ${MAX_PROFILE_NAME} characters.`);
+  if (['none', 'default', 'default / shared', '+ new'].includes(clean.toLowerCase())) throw fail(400, `"${clean}" cannot be a profile's name.`);
+  const clash = profiles.find((p) => p.id !== exceptId && p.name.toLowerCase() === clean.toLowerCase());
+  if (clash) throw fail(409, `A profile called "${clash.name}" already exists.`);
+  return clean;
+}
+
+/** A new profile's id. */
+const newProfileId = () => crypto.randomBytes(6).toString('hex');
+
+module.exports = {
+  open, defaultHome, hashPassword, passwordEntry, pinEntry, checkPassword, hashToken, checkProfileName, newProfileId, cleanIp, cleanIps,
+  DEFAULT_PORT, CLIENT_ID, MAX_IPS,
+};

@@ -23,6 +23,16 @@ Usage:
                                         every signed-in device has to enter it again
   flow-server clear-password            let anyone on the network in again (levels 1 and 2 only)
   flow-server devices                   the devices signed in, and to which profile
+  flow-server profiles                  the profiles: admins, PINs, when made and last seen
+  flow-server profiles add <name> [--admin | --master]
+                                        a new profile; asks its PIN (FLOW_PROFILE_PIN gives it)
+  flow-server admin grant <name>        make a profile an admin: it gets Administration in the
+                                        apps' Settings (profiles, IPs, trash, server rules...)
+  flow-server admin revoke <name>       no longer an admin
+  flow-server admin master <name>       make a profile the master admin (one per server), who can
+                                        also change the server password and make admins in the
+                                        apps. Asks for its PIN, which follows the password's rules.
+                                        --create makes the profile when there is none of that name
   flow-server info                      the server's settings, one key=value a line (for install.sh)
   flow-server tag-songs [--dry-run]     write the songs' flowid and cover into their files, for the
                                         songs from before 2.9.1 (new ones get them by themselves):
@@ -95,8 +105,11 @@ function parseArgs(argv) {
     } else if (a === '--trusted-proxy') out.trustedProxies = String(value()).split(',').map((s) => s.trim()).filter(Boolean);
     else if (a === '--connect-to') out.connectTo = value();
     else if (a === '--dry-run') out.dryRun = true;
+    else if (a === '--admin') out.admin = true;
+    else if (a === '--master') out.master = true;
+    else if (a === '--create') out.create = true;
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}. See flow-server --help.`);
-    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'doctor', 'info', 'tag-songs'].includes(a)) out.command = a;
+    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'profiles', 'admin', 'doctor', 'info', 'tag-songs'].includes(a)) out.command = a;
     else out.rest.push(a);
   }
   return out;
@@ -172,6 +185,101 @@ function tagSongs(config, dryRun) {
     + '(its log says when it is done). A running server starts within a few seconds; a stopped one when it starts again.');
 }
 
+/** A profile by its name (any case), or an Error naming the command that lists them. */
+function profileNamed(profiles, name) {
+  const want = String(name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!want) throw new Error('Which profile? Give its name, like: flow-server admin grant "Anna"');
+  const p = profiles.find((x) => x.name.toLowerCase() === want);
+  if (!p) throw new Error(`There is no profile called "${name}". flow-server profiles lists them.`);
+  return p;
+}
+
+/**
+ * A PIN typed twice (or FLOW_PROFILE_PIN). The master admin's must follow
+ * the password's rules at the server's level; another may be left empty.
+ */
+async function askPin(name, level, master) {
+  let pin = process.env.FLOW_PROFILE_PIN || '';
+  if (!pin) {
+    if (!process.stdin.isTTY) throw new Error('No terminal to ask the PIN in: give it as FLOW_PROFILE_PIN.');
+    if (master) {
+      console.log(level >= PUBLIC_LEVEL
+        ? 'The master admin\'s PIN can change the server password, so it needs what the password needs here: at least 8 characters with a lower-case letter, an upper-case letter and a number.'
+        : 'The master admin\'s PIN can change the server password, so it needs at least 4 characters.');
+    }
+    pin = await askHidden(master ? `PIN for ${name}: ` : `PIN for ${name} (Enter for none): `);
+    if (pin || master) {
+      const again = await askHidden('Once more: ');
+      if (pin !== again) throw new Error('The two did not match. Nothing was changed.');
+    }
+  }
+  if (master) {
+    const problem = passwordProblem(pin, level, 'master admin\'s PIN');
+    if (problem) throw new Error(`${problem} Nothing was changed.`);
+  }
+  return pin;
+}
+
+const seenText = (ms) => (ms ? new Date(ms).toLocaleString() : 'never');
+
+/** flow-server profiles [add <name>]. */
+async function profilesCommand(config, args, level) {
+  const cfg = config.get();
+  if (args.rest[0] === 'add') {
+    const name = configMod.checkProfileName(cfg.profiles, args.rest.slice(1).join(' '));
+    const pin = await askPin(name, level, !!args.master);
+    const profile = {
+      id: configMod.newProfileId(), name, createdAt: Date.now(), pin: configMod.pinEntry(pin), admin: !!(args.admin || args.master), master: false,
+    };
+    const profiles = [...config.get().profiles, profile];
+    config.set({ profiles: args.master ? profiles.map((p) => ({ ...p, master: p.id === profile.id })) : profiles });
+    const role = args.master ? ' as the master admin' : args.admin ? ' as an admin' : '';
+    console.log(`Profile "${name}" made${role}. The apps see it the next time they look at the profiles.`);
+    return;
+  }
+  if (args.rest.length) throw new Error(`Unknown: flow-server profiles ${args.rest.join(' ')}. See flow-server --help.`);
+  if (!cfg.profiles.length) {
+    console.log('No profiles yet. The first one made (in an app\'s Settings, or flow-server profiles add) becomes an admin.');
+    return;
+  }
+  for (const p of cfg.profiles) {
+    const marks = [p.master ? 'master admin' : p.admin ? 'admin' : '', p.disabled ? 'disabled' : '', p.pin ? 'PIN' : 'no PIN'].filter(Boolean);
+    console.log(`${p.name}  (${marks.join(', ')})  made ${new Date(p.createdAt).toLocaleString()}${p.createdIp ? ` from ${p.createdIp}` : ''}, last seen ${seenText(p.lastSeenAt)}`);
+  }
+  const master = cfg.profiles.find((p) => p.master);
+  if (!master) console.log('\nNo master admin. Make one with: flow-server admin master <name>');
+  else if (level >= PUBLIC_LEVEL && !(master.pin && master.pin.strong)) {
+    console.log(`\nThe master admin's PIN is too weak for a server on the internet, so it cannot change the password in the apps. A new one: flow-server admin master "${master.name}"`);
+  }
+}
+
+/** flow-server admin grant|revoke|master <name>. */
+async function adminCommand(config, args, level) {
+  const [what, ...nameParts] = args.rest;
+  if (!['grant', 'revoke', 'master'].includes(what)) throw new Error('flow-server admin grant, revoke or master, then the profile\'s name. See flow-server --help.');
+  const name = nameParts.join(' ');
+  if (what === 'master' && args.create && !config.get().profiles.some((p) => p.name.toLowerCase() === name.replace(/\s+/g, ' ').trim().toLowerCase())) {
+    await profilesCommand(config, { ...args, rest: ['add', name], master: true }, level);
+    return;
+  }
+  const target = profileNamed(config.get().profiles, name);
+  const change = (fn) => config.set({ profiles: config.get().profiles.map((p) => fn(p)) });
+  if (what === 'grant') {
+    change((p) => (p.id === target.id ? { ...p, admin: true } : p));
+    console.log(`${target.name} is an admin now: Administration shows in the apps' Settings while signed in to it.`);
+  } else if (what === 'revoke') {
+    if (target.master) throw new Error(`${target.name} is the master admin. Make another profile the master first: flow-server admin master <name>`);
+    change((p) => (p.id === target.id ? { ...p, admin: false } : p));
+    console.log(`${target.name} is no admin any more.`);
+  } else {
+    const pin = await askPin(target.name, level, true);
+    change((p) => (p.id === target.id
+      ? { ...p, admin: true, master: true, disabled: false, pin: configMod.pinEntry(pin) }
+      : { ...p, master: false }));
+    console.log(`${target.name} is the master admin now, with the PIN just given.`);
+  }
+}
+
 function stamp() {
   return new Date().toTimeString().slice(0, 8);
 }
@@ -240,11 +348,20 @@ async function main() {
     console.log([`level=${cfg.level || ''}`, `password=${password}`, `port=${cfg.port}`, `public_url=${cfg.publicUrl}`,
       `trusted_proxies=${cfg.trustedProxies.join(',')}`, `discovery=${cfg.discovery ? 1 : 0}`, `music=${config.musicDir}`, `home=${config.home}`,
       `downloads=${cfg.downloads === null ? '' : (cfg.downloads ? 1 : 0)}`, `ytdlp=${tools.ytdlp() || ''}`,
-      `separate_folders=${cfg.separateFolders ? 1 : 0}`, `keep_folders=${cfg.keepFolders ? 1 : 0}`].join('\n'));
+      `separate_folders=${cfg.separateFolders ? 1 : 0}`, `keep_folders=${cfg.keepFolders ? 1 : 0}`,
+      `master=${(cfg.profiles.find((p) => p.master) || {}).name || ''}`, `profiles=${cfg.profiles.length}`].join('\n'));
     return;
   }
   if (args.command === 'tag-songs') {
     tagSongs(config, args.dryRun);
+    return;
+  }
+  if (args.command === 'profiles') {
+    await profilesCommand(config, args, level);
+    return;
+  }
+  if (args.command === 'admin') {
+    await adminCommand(config, args, level);
     return;
   }
   if (args.command === 'devices') {

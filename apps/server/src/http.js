@@ -103,7 +103,9 @@ const { AUDIO_EXTS } = require('@flow/core/formats');
 const { isPrivateIp, isTailscaleAddress } = require('@flow/core/address');
 const { PUBLIC_LEVEL } = require('@flow/core/password');
 const { DEFAULT_OWNER, DEFAULT_NAME } = require('@flow/core/profiles');
-const { checkPassword, hashPassword, hashToken, CLIENT_ID } = require('./config');
+const {
+  checkPassword, pinEntry, hashToken, checkProfileName: checkName, newProfileId, CLIENT_ID,
+} = require('./config');
 const { DownloadError } = require('./downloads');
 const cover = require('@flow/core/cover');
 const tools = require('./tools');
@@ -113,7 +115,6 @@ const { createVorbis } = require('./vorbis');
 const PROTOCOL = 1;
 // What this server can do beyond protocol 1, for apps that know to ask.
 const FEATURES = ['profiles'];
-const MAX_PROFILE_NAME = 40;
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;
@@ -465,14 +466,27 @@ function createHttpServer({
     return entry;
   }
 
+  /**
+   * The server's profiles. One the command line made (flow-server profiles
+   * add, install.sh) gets its part of the library here, the first time it is
+   * looked for: the library is the running server's to write.
+   */
+  function allProfiles() {
+    const list = config.get().profiles;
+    const have = library.profileIds();
+    for (const p of list) if (!have.includes(p.id)) library.createProfile(p.id);
+    return list;
+  }
+
   /** The profile a request is signed in to, or null. */
   function profileOf(entry) {
     if (!entry || !entry.profileId) return null;
-    const p = config.get().profiles.find((x) => x.id === entry.profileId);
-    return p && library.profileIds().includes(p.id) ? p : null;
+    return allProfiles().find((x) => x.id === entry.profileId) || null;
   }
 
-  const publicProfile = (p) => (p ? { id: p.id, name: p.name, pin: !!p.pin } : null);
+  const publicProfile = (p) => (p ? {
+    id: p.id, name: p.name, pin: !!p.pin, createdAt: p.createdAt, admin: !!p.admin, master: !!p.master,
+  } : null);
 
   /** The app's install id from a request body (or the token it carries on from), or ''. */
   function clientIdOf(body, entry) {
@@ -499,13 +513,11 @@ function createHttpServer({
   }
 
   function checkProfileName(name, exceptId = null) {
-    const clean = String(name || '').replace(/\s+/g, ' ').trim();
-    if (!clean) throw new HttpError(400, 'Please enter a name for the profile.');
-    if (clean.length > MAX_PROFILE_NAME) throw new HttpError(400, `Profile names can be at most ${MAX_PROFILE_NAME} characters.`);
-    if (['none', 'default', 'default / shared', '+ new'].includes(clean.toLowerCase())) throw new HttpError(400, `"${clean}" cannot be a profile's name.`);
-    const clash = config.get().profiles.find((p) => p.id !== exceptId && p.name.toLowerCase() === clean.toLowerCase());
-    if (clash) throw new HttpError(409, `A profile called "${clash.name}" already exists.`);
-    return clean;
+    try {
+      return checkName(config.get().profiles, name, exceptId);
+    } catch (err) {
+      throw new HttpError(err.status || 400, err.message);
+    }
   }
 
   function setToken(entry, patch) {
@@ -519,24 +531,26 @@ function createHttpServer({
     const current = profileOf(entry);
     if (action === 'list') {
       return sendJson(res, 200, {
-        profiles: config.get().profiles.filter((p) => library.profileIds().includes(p.id)).map(publicProfile),
+        profiles: allProfiles().map(publicProfile),
         current: current ? current.id : null,
       });
     }
     if (action === 'create') {
       const name = checkProfileName(body.name);
       const pin = String(body.pin || '');
-      const id = crypto.randomBytes(6).toString('hex');
-      const profile = { id, name, createdAt: Date.now(), pin: pin ? hashPassword(pin) : null };
+      const id = newProfileId();
+      const profile = { id, name, createdAt: Date.now(), pin: pinEntry(pin) };
       config.set({ profiles: [...config.get().profiles, profile] });
       library.createProfile(id);
       log(`Profile made: ${name} (${device})`);
-      return sendJson(res, 200, { token: issueToken(device, id, entry, clientIdOf(body, entry)), profile: publicProfile(profile) });
+      // As kept: the first one is an admin (config.js).
+      const made = config.get().profiles.find((p) => p.id === id);
+      return sendJson(res, 200, { token: issueToken(device, id, entry, clientIdOf(body, entry)), profile: publicProfile(made) });
     }
     if (action === 'login') {
       throttle.check(ip);
-      const profile = config.get().profiles.find((p) => p.id === String(body.profileId || ''));
-      if (!profile || !library.profileIds().includes(profile.id)) throw new HttpError(404, 'That profile no longer exists.');
+      const profile = allProfiles().find((p) => p.id === String(body.profileId || ''));
+      if (!profile) throw new HttpError(404, 'That profile no longer exists.');
       if (profile.pin && !checkPassword(profile.pin, String(body.pin || ''))) {
         throttle.fail(ip);
         log(`Wrong PIN for profile ${profile.name} from ${ip}`);

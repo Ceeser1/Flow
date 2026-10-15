@@ -522,6 +522,32 @@ else
   fi
 fi
 
+step "Master admin"
+MASTER=$(info_get master)
+if [ -n "$MASTER" ]; then
+  say "$MASTER is the master admin. Another one later: node $REPO/apps/server/src/main.js admin master <name>"
+else
+  say "The master admin is the one profile that can change the server password and make other"
+  say "profiles admins from inside the apps (Settings, Administration). Its PIN follows the"
+  say "password's rules. Admins see the profiles, their IPs, the trash and the server's rules."
+  if [ -t 0 ] && [ "$YES" != 1 ] && ask "Create a master-admin profile now?"; then
+    printf "Its name (a profile's name that exists already makes that one the master): "
+    read -r MASTER_NAME || MASTER_NAME=""
+    if [ -n "$MASTER_NAME" ]; then
+      TRIES=1
+      until flow admin master "$MASTER_NAME" --create --level "$LEVEL"; do
+        if [ "$TRIES" -ge 3 ]; then say "Not made; later: node $REPO/apps/server/src/main.js admin master <name> --create"; break; fi
+        TRIES=$((TRIES + 1))
+        say "Try again:"
+      done
+    else
+      say "None. Later: node $REPO/apps/server/src/main.js admin master <name> --create"
+    fi
+  else
+    say "None for now. Later: node $REPO/apps/server/src/main.js admin master <name> --create"
+  fi
+fi
+
 TS_IP=""
 if [ "$LEVEL" = 2 ]; then
   step "Tailscale (reach the server away from home)"
