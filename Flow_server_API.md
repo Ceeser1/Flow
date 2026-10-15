@@ -109,7 +109,7 @@ Open to anyone (only the refusals above apply).
 {
   "app": "flow-server",
   "protocol": 1,
-  "features": ["profiles", "download", "search", "sessions", "trim"],
+  "features": ["profiles", "admin", "download", "search", "sessions", "trim"],
   "version": "3.3.3",
   "id": "<server id>",
   "name": "Flow Server",
@@ -120,7 +120,8 @@ Open to anyone (only the refusals above apply).
 }
 ```
 
-- `features`: `profiles` always; `download` when the server can download
+- `features`: `profiles` always; `admin` from 3.5 (the
+  [Administration](#administration) routes); `download` when the server can download
   songs itself (yt-dlp and ffmpeg there, not turned off), and with it
   `search` (searching by a song's name; older servers lack it); `sessions` for
   Active Sessions; `trim` when ffmpeg is there.
@@ -157,10 +158,18 @@ Query: `since=<rev>` and `as=<profile id>` (both optional).
 - Otherwise 200:
 
 ```json
-{ "rev": 412, "library": { ... }, "profile": { "id": "9f3a1c0b7e2d", "name": "Sam", "pin": false } }
+{
+  "rev": 412,
+  "library": { ... },
+  "profile": { "id": "9f3a1c0b7e2d", "name": "Sam", "pin": false, "createdAt": 1760270000000, "admin": false, "master": false },
+  "rules": { "createProfiles": true, "songDelete": "anyone" }
+}
 ```
 
-`profile` is null without one. `library`, as the signed-in profile sees it:
+`profile` is null without one. `rules` (3.5): the admins' rules as they touch
+this caller: whether it may make profiles, and `songDelete` `"owner"` when
+only who added a song (and the admins) may delete it for everyone.
+`library`, as the signed-in profile sees it:
 
 | Field | |
 |---|---|
@@ -169,6 +178,7 @@ Query: `since=<rev>` and `as=<profile id>` (both optional).
 | `sharedPlaylists` | other profiles' shared playlists, read-only: `{ id, name, createdAt, entries, ownerId, ownerName }` |
 | `follows` | ids of the shared playlists this profile follows |
 | `playlistListened` | seconds listened per list: `{ [playlistId \| "all" \| "favourites" \| "smart:..."]: seconds }` |
+| `listening` | when and what this profile listened to (3.5, for the Statistics): `{ days: { "YYYY-MM-DD": seconds }, grid: [168 seconds, Monday 0-1 o'clock first], songMonths: { "YYYY-MM": { songId: seconds } }, run, longest }`; `run` / `longest`: the current and the longest listening session `{ start, end, seconds }` (songs with gaps of at most 10 minutes) |
 | `profileNames` | `{ [profileId]: name }`, for the songs' `addedBy` (`"default"`: Default / Shared) |
 
 - `stats`: `{ plays, stops, skips, sessions, listened, lastPlayedAt }`.
@@ -223,12 +233,12 @@ Send up to 5000 at once:
 | `addSongToPlaylists` | `songId`, `playlistIds` | one song into several playlists |
 | `addSongsToPlaylist` | `playlistId`, `songIds` | several songs into one playlist |
 | `removeFromPlaylist` | `playlistId`, `songId` | |
-| `deleteSong` | `songId` | for everyone; the file goes to `.flow-trash` for 30 days |
+| `deleteSong` | `songId` | for everyone; the file goes to `.flow-trash` for 30 days, the song with it (an admin can restore it). With the rule `songDelete: "owner"` only the profile that added it and the admins may (`ok: false` with the reason otherwise; `deletePlaylist` then keeps those songs) |
 | `editSong` | `songId`, `artist`, `title`, `mix` | new names (title required); the file is renamed and its tags rewritten |
 | `setFavourite` | `songId`, `on` | |
 | `setLoudness` | `songId`, `loudness` | the measured loudness, for Equalize volume |
 | `setDuration` | `songId`, `duration` | only when the server doesn't know the length (`skipped: "known"` otherwise) |
-| `recordListen` | `songId`, `listened`, `duration`, `contextId?` | a listen: `listened` seconds heard of `duration`; counted into the profile's stats |
+| `recordListen` | `songId`, `listened`, `duration`, `contextId?`, `tz?` | a listen: `listened` seconds heard of `duration`; counted into the profile's stats and `listening`. `tz`: the app's `Date.getTimezoneOffset()`, for the day and hour it was heard (the server's own without it) |
 
 ## Songs
 
@@ -318,9 +328,9 @@ the token from `/api/login` first.
 
 | Route | Body | Answer |
 |---|---|---|
-| `GET /api/profiles` | | `{ profiles: [{ id, name, pin }], current }` (`pin`: whether it has one; `current`: this token's profile id or null) |
-| `POST /api/profiles` | `{ name, pin?, device?, client? }` | a new profile, signed in: `{ token, profile }`. 409 for a name taken |
-| `POST /api/profiles/login` | `{ profileId, pin?, device?, client? }` | `{ token, profile }`. 403 wrong PIN (waits as for the password), 404 gone |
+| `GET /api/profiles` | | `{ profiles: [{ id, name, pin, createdAt, admin, master }], current, createProfiles }` (`pin`: whether it has one; `current`: this token's profile id or null; `createProfiles`: whether this caller may make one) |
+| `POST /api/profiles` | `{ name, pin?, device?, client? }` | a new profile, signed in: `{ token, profile }`. 409 for a name taken, 403 when only admins may make profiles (the first one on a server always may) |
+| `POST /api/profiles/login` | `{ profileId, pin?, device?, client? }` | `{ token, profile }`. 403 wrong PIN (waits as for the password) or a disabled profile, 404 gone |
 | `POST /api/profiles/logout` | | `{}`: this token is for no profile again |
 | `POST /api/profiles/rename` | `{ name }` | `{ profile }` |
 | `POST /api/profiles/delete` | | `{}`: deletes the signed-in profile with its playlists, favourites and stats (the songs stay) |
@@ -328,6 +338,39 @@ the token from `/api/login` first.
 The `token` from signing in to a profile replaces the old one: use it from
 then on. Profile names are at most 40 characters; rename and delete answer
 409 without a profile signed in.
+
+The first profile a server ever has is an admin (on a server from before
+3.5, its oldest profile, once). `master`: the one master admin, made on the
+server only (`flow-server admin master <name>`, or the installer).
+
+## Administration
+
+From 3.5 (`admin` in `/api/hello`'s features), for a token signed in to an
+admin profile; 403 for anyone else. Routes marked *master* only for the
+master admin. Nobody changes their own profile or the master's here.
+
+| Route | Body | Answer |
+|---|---|---|
+| `GET /api/admin/server` | | `{ name, version, startedAt, songs, profiles, musicBytes, trashBytes, disk: { free, size }, ytdlp, ffmpeg, downloads, level, password, master }` |
+| `GET /api/admin/profiles` | | `{ profiles: [{ id, name, createdAt, lastSeen, addedSongs, listens, seconds, admin, master, disabled, pin, devices }], me }`. `lastSeen`: `"now"` while an app of it is connected, else ms (0: never). `listens`: listens of 30 seconds or more; `seconds`: time listened |
+| `POST /api/admin/profiles` | `{ name, pin? }` | a profile for someone else; the admin stays signed in to its own: `{ profile }` |
+| `GET /api/admin/profiles/<id>/ips` | | `{ createdIp, ips: [{ ip, device, at }] }`: where it was made (`""` before 3.5) and the newest 100 addresses and devices it signed in or connected from |
+| `POST /api/admin/profiles/<id>/delete` | `{ songs }` | deletes it; `songs: true` also every song it added, for everyone (to the trash): `{ deletedSongs }` |
+| `POST /api/admin/profiles/<id>/pin` | | its PIN taken away |
+| `POST /api/admin/profiles/<id>/signout` | | its devices are signed out of it (they stay on the server): `{ devices }` |
+| `POST /api/admin/profiles/<id>/disable` | `{ disabled }` | signing in to it refused (its devices signed out of it), or allowed again |
+| `POST /api/admin/profiles/<id>/admin` | `{ admin }` | *master*: an admin made or taken back |
+| `GET /api/admin/signins` | | `{ failures: [{ at, kind: "pin" \| "password", profileId, profileName, ip, device }] }`, the newest 500 |
+| `POST /api/admin/signins/clear` | | |
+| `GET /api/admin/downloads` | | every profile's server download: `{ batches: [{ key, profileId, profileName, state, name, url, createdAt, songs, saved, open, failed }] }` |
+| `POST /api/admin/downloads/cancel` | `{ key }` | that download cancelled |
+| `GET /api/admin/sessions` | | every Active Session: `{ sessions: [...] }` as `/api/sessions` lists them, with `shared` |
+| `POST /api/admin/sessions/end` | `{ id }` | its members are out (told `left`); a host still playing has a session of its own again |
+| `GET /api/admin/trash` | | `{ items: [{ name, at, size, title, artist, by, restorable }], bytes }` |
+| `POST /api/admin/trash/restore` | `{ name }` | back as it was (`restorable`: its id, names, stats, favourites and playlist places): `{ songId, rev }`; else as a new song: `{ scanned, rev }` |
+| `POST /api/admin/trash/empty` | | every file in it gone for good: `{ deleted }` |
+| `GET` / `POST /api/admin/rules` | `{ profileCreation?: "anyone" \| "admins", songDelete?: "anyone" \| "owner" }` | the rules: `{ profileCreation, songDelete }` |
+| `POST /api/admin/password` | `{ current, password }` or `{ current, remove: true }` | *master*: the server password changed (or taken away, levels 1 and 2 only). Every device is signed out; the master's own gets `{ token }`. 403 for a wrong `current`, and at levels 3 and 4 while the master's PIN is weaker than the password rules |
 
 ## Live channel
 

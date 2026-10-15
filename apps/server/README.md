@@ -339,7 +339,9 @@ What the password has to be depends on the server's level (`--level`, set by
 At level 3 or 4 `clear-password` is refused, and without a strong password the
 server lets nobody from outside past `/api/hello`. Going up sets both at once:
 `flow-server set-password --level 3`. Profile PINs have no rules; they only
-pick a profile once a device is past the server password.
+pick a profile once a device is past the server password. Except the master
+admin's (see Administration below), which follows the password's rules,
+since it can change the password from an app.
 
 **The home network needs no password at level 3 and 4**, only the internet
 does. The server counts a caller as home when it has a private address
@@ -414,6 +416,36 @@ deleted from an app's Settings; each can have a PIN of its own.
 - With a server password, a device signs in to the server first, then
   to a profile. The profiles' names are only shown to devices past the first.
 
+## Administration
+
+An admin profile gets Administration as the last category of the apps'
+Settings: the server at a glance, every profile (when made, last seen, the
+songs it added, time listened, the IP addresses and devices it came from),
+the failed logins (wrong PINs and passwords), every profile's server
+downloads and the Active Sessions, the trash (deleted songs come back as
+they were, playlists and stats included), and the rules: who may make
+profiles, and who may delete songs for everyone. An admin can take a PIN
+away (forgotten), log a profile out everywhere, disable it, or delete it,
+with or without every song it added.
+
+The first profile a server ever has is an admin by itself; on a server from
+before 3.5 its oldest profile, once. One profile can be the master admin,
+who can also change the server password and make admins in the apps. The
+master is made on the server only, by the installer or:
+
+```sh
+node apps/server/src/main.js profiles                     # the profiles: admins, PINs, made, last seen
+node apps/server/src/main.js admin master "Anna"          # Anna the master admin (asks a new PIN for her)
+node apps/server/src/main.js admin master "Anna" --create # the same, making the profile when there is none
+node apps/server/src/main.js admin grant "Ben"            # Ben an admin
+node apps/server/src/main.js admin revoke "Ben"           # no longer
+node apps/server/src/main.js profiles add "Carla"         # a new profile (asks its PIN)
+```
+
+`FLOW_PROFILE_PIN` gives the PIN without asking. The failed logins are kept
+in `failed-signins.json`, deleted songs in `trash.json` (both in the
+server's home), next to `server.json`.
+
 ## Active Sessions
 
 Devices connected to the server can listen together (see Flow's README).
@@ -480,10 +512,11 @@ report changes.
 | `GET /api/time` | `{ time }`: the server's clock, for playing in step |
 | `GET /api/sessions?client=<id>` | `{ sessions, mine, request }`: the sessions listed, this app's own place, its open request to join |
 | `POST /api/sessions` | `{ client, type, ... }` with `type`: `state { state }` (the host's playback), `join { sessionId, mode: 'remote' or 'here' }`, `cancelJoin`, `answer { requestId, accept }`, `control { action, ... }`, `mode { mode }`, `leave` |
-| `GET /api/profiles` | `{ profiles: [{ id, name, pin }], current }` |
-| `POST /api/profiles` | `{ name, pin, device }`: a new profile, signed in → `{ token, profile }` |
+| `GET /api/profiles` | `{ profiles: [{ id, name, pin, createdAt, admin, master }], current, createProfiles }` |
+| `POST /api/profiles` | `{ name, pin, device }`: a new profile, signed in → `{ token, profile }`; 403 when only admins may make profiles |
 | `POST /api/profiles/login` | `{ profileId, pin, device }` → `{ token, profile }` |
 | `POST /api/profiles/logout`, `/rename` `{ name }`, `/delete` | the signed-in profile |
+| `/api/admin/...` | Administration, for an admin profile (see [Flow_server_API.md](../../Flow_server_API.md#administration)) |
 | `GET /api/downloads` | the profile's download batch: `{ batch }`, `null` when there is none |
 | `POST /api/downloads` | `{ url, kind: 'song' or 'list', options: { alwaysMp3, quality, keepMp3 }, cookies }` (`cookies`: a Netscape cookie file's text, optional; only the link's site's lines are kept, and the batch says `cookies: true`): a new batch, read in the background (`state: 'listing'`, then `'ready'` or `'failed'` with `error`); 409 with one open already |
 | `DELETE /api/downloads` | cancel the whole batch: downloads stopped, files gone |

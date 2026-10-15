@@ -105,8 +105,9 @@ function createRemote(env) {
   // an older Flow may lack what this one reads (2.7 dropped song.cover), and
   // the server answers "nothing new" while its revision is the same: a copy of
   // another format is shown at start but fetched whole again. Raise it whenever
-  // the songs or playlists gain a field the server sends (3: addedBy, profileNames).
-  const CACHE_FORMAT = 3;
+  // the songs or playlists gain a field the server sends (3: addedBy, profileNames;
+  // 4: listening, 3.5).
+  const CACHE_FORMAT = 4;
 
   function emptySync(serverId = '') {
     return {

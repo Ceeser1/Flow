@@ -51,6 +51,10 @@ systemd (Raspberry Pi OS, Debian, Ubuntu). Run the commands on that machine.
      `Linkin Park - In the End.mp3`.
    - **Find the server on the network:** yes.
    - **Password:** optional at levels 1 and 2.
+   - **Master admin:** yes, with your name and a PIN. That profile gets
+     Administration in the apps' Settings (the profiles, their IPs, the
+     trash, the server's rules) and can change the server password from
+     there. Its PIN follows the password's rules.
    - **Tailscale** (level 2): open the link it prints and sign in.
 
    Ignore the `git pull` hint it prints at the end; step 8 is how to update.
@@ -81,6 +85,8 @@ systemd (Raspberry Pi OS, Debian, Ubuntu). Run the commands on that machine.
 **Useful commands**
 ```sh
 node ~/Flow/apps/server/src/main.js set-password   # set or change the password
+node ~/Flow/apps/server/src/main.js profiles       # the profiles, which are admins
+node ~/Flow/apps/server/src/main.js admin master "Your name" --create   # the master admin
 journalctl -u flow-server -f                       # live log
 sh ~/Flow/apps/server/install.sh --level 2         # change the level
 sh ~/Flow/apps/server/install.sh --uninstall       # remove the service (library and music stay)
