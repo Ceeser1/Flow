@@ -349,7 +349,7 @@ test('profiles over the network: make, sign in with a PIN, rename, sign out, del
     assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'sessions']);
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
     await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
-    assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null });
+    assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null, createProfiles: true });
 
     const anna = await post(base, '/api/profiles', { name: '  Anna ', pin: '1234', device: 'pc' });
     assert.equal(anna.status, 200);

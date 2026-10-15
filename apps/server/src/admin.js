@@ -8,6 +8,8 @@
 //                                            { id, name, createdAt, lastSeen ('now' or ms, 0: never),
 //                                              addedSongs, listens (30 s or more), seconds,
 //                                              admin, master, disabled, pin, devices }
+//   POST /api/admin/profiles { name, pin }   a new profile for someone else (the admin stays
+//                                            signed in to its own): { profile }
 //   GET  /api/admin/profiles/:id/ips         { createdIp, ips: [{ ip, device, at }] }
 //   POST /api/admin/profiles/:id/delete { songs }   the profile, with its playlists; songs:
 //                                            also every song it added, for everyone (to the
@@ -54,13 +56,13 @@ const OVERVIEW_EVERY = 10 * 60 * 1000;
 
 /**
  * deps: { config, library, downloads, live, sessions, activity, tools,
- * version, startedAt, throttle, issueToken, log, HttpError, sendJson,
- * readJsonBody, allProfiles }. Returns route(req, res, p, me),
+ * version, startedAt, throttle, issueToken, createProfile(name, pin, { ip,
+ * device }), log, HttpError, sendJson, readJsonBody, allProfiles }. Returns route(req, res, p, me),
  * which answers (404 for a path it does not know); `me` is the admin asking.
  */
 function createAdminRoutes({
   config, library, downloads, live, sessions = null, activity, tools = null, version = '', startedAt = Date.now(),
-  throttle = null, issueToken = null, log, HttpError, sendJson, readJsonBody, allProfiles,
+  throttle = null, issueToken = null, createProfile = null, log, HttpError, sendJson, readJsonBody, allProfiles,
 }) {
   let slow = { at: 0, musicBytes: 0, ytdlp: '' };
   let slowRun = null;
@@ -278,6 +280,12 @@ function createAdminRoutes({
       const online = onlineIds();
       const { tokens } = config.get();
       return sendJson(res, 200, { profiles: allProfiles().map((x) => row(x, online, tokens)), me: me.id });
+    }
+    if (p === '/api/admin/profiles' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const made = createProfile(body.name, body.pin, ctx);
+      log(`${me.name} made profile ${made.name}`);
+      return sendJson(res, 200, { profile: { id: made.id, name: made.name } });
     }
     const m = /^\/api\/admin\/profiles\/([\w-]{1,64})\/(ips|delete|pin|signout|disable|admin)$/.exec(p);
     if (!m) throw new HttpError(404, 'Nothing here.');

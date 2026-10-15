@@ -285,6 +285,21 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     });
   }
 
+  /**
+   * Why `profileId` (null: the Default / Shared) may not delete `song` for
+   * everyone, or ''. Only with the admins' rule songDelete 'owner': then the
+   * profile that added it and the admins may; a song nobody added (put in
+   * by hand, from before) or whose profile is gone, anyone.
+   */
+  function deleteRefusal(song, profileId, admin) {
+    if (!song || admin || config.get().songDelete !== 'owner') return '';
+    const by = song.addedBy;
+    if (!by || by === (profileId || prof.DEFAULT_OWNER)) return '';
+    const owner = by === prof.DEFAULT_OWNER ? prof.DEFAULT_NAME : (config.get().profiles.find((p) => p.id === by) || {}).name;
+    if (!owner) return '';
+    return `"${song.title || 'This song'}" was added by ${owner}. On this server only ${owner} or an admin can delete it.`;
+  }
+
   /** A profile's numbers for the admins (profiles.js ownerSummary). */
   function summary(profileId) {
     return prof.ownerSummary(data, profiles, profileId);
@@ -298,7 +313,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     const ids = data.songs.filter((s) => s.addedBy === profileId).map((s) => s.id);
     if (!ids.length) return 0;
     const at = Date.now();
-    const { results } = runCommands(ids.map((songId, i) => ({ cid: `admin-${at}-${i}`, at, type: 'deleteSong', songId })), null, { by });
+    const { results } = runCommands(ids.map((songId, i) => ({ cid: `admin-${at}-${i}`, at, type: 'deleteSong', songId })), null, { by, admin: true });
     return results.filter((r) => r.ok && !r.skipped).length;
   }
 
@@ -314,7 +329,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
    * { cid, ok, skipped?, value?, error? }. A song renamed gets its file renamed
    * to match; a deleted one's file goes to the trash.
    */
-  function runCommands(commands, profileId = null, { by = null } = {}) {
+  function runCommands(commands, profileId = null, { by = null, admin = false } = {}) {
     checkProfile(profileId);
     // Who deleted what goes to the trash with it: the profile (an admin
     // deleting another's songs says so).
@@ -326,7 +341,10 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     let applied = 0;
     let remembered = 0;
     let others = null;
-    const ctx = { keepSongs: () => others || (others = prof.songsOfOthers(data, profiles, profileId)) };
+    const ctx = {
+      keepSongs: () => others || (others = prof.songsOfOthers(data, profiles, profileId)),
+      deleteRefusal: (song) => deleteRefusal(song, profileId, admin),
+    };
     const apply = (d) => {
       for (const c of list) {
         const cid = String((c && c.cid) || '');

@@ -510,12 +510,27 @@ function createHttpServer({
     startedAt,
     throttle,
     issueToken,
+    createProfile: (name, pin, { entry, ip }) => makeProfile(name, pin, { ip, device: entry ? entry.device : ip }),
     log,
     HttpError,
     sendJson,
     readJsonBody,
     allProfiles,
   });
+
+  /**
+   * The admins' rules as they touch the app asking (`profile` signed in to, or
+   * null): whether it may make profiles, and whether songs others added are
+   * theirs to delete.
+   */
+  function rulesFor(profile) {
+    const cfg = config.get();
+    const admin = !!(profile && profile.admin);
+    return {
+      createProfiles: admin || cfg.profileCreation !== 'admins' || !cfg.profiles.length,
+      songDelete: admin ? 'anyone' : cfg.songDelete,
+    };
+  }
 
   const publicProfile = (p) => (p ? {
     id: p.id, name: p.name, pin: !!p.pin, createdAt: p.createdAt, admin: !!p.admin, master: !!p.master,
@@ -558,6 +573,17 @@ function createHttpServer({
     config.set({ tokens: cfg.tokens.map((t) => (t.hash === entry.hash ? { ...t, ...patch } : t)) });
   }
 
+  /** A new profile, as kept (the first one is an admin: config.js). */
+  function makeProfile(rawName, rawPin, { ip, device }) {
+    const name = checkProfileName(rawName);
+    const id = newProfileId();
+    config.set({ profiles: [...config.get().profiles, { id, name, createdAt: Date.now(), pin: pinEntry(String(rawPin || '')) }] });
+    library.createProfile(id);
+    log(`Profile made: ${name} (${device})`);
+    note.created(id, { ip, device });
+    return config.get().profiles.find((p) => p.id === id);
+  }
+
   async function profiles(req, res, entry, action, { ip }) {
     const body = req.method === 'POST' ? await readJsonBody(req) : {};
     const device = String(body.device || (entry && entry.device) || ip).slice(0, 80);
@@ -566,20 +592,13 @@ function createHttpServer({
       return sendJson(res, 200, {
         profiles: allProfiles().map(publicProfile),
         current: current ? current.id : null,
+        createProfiles: rulesFor(current).createProfiles,
       });
     }
     if (action === 'create') {
-      const name = checkProfileName(body.name);
-      const pin = String(body.pin || '');
-      const id = newProfileId();
-      const profile = { id, name, createdAt: Date.now(), pin: pinEntry(pin) };
-      config.set({ profiles: [...config.get().profiles, profile] });
-      library.createProfile(id);
-      log(`Profile made: ${name} (${device})`);
-      note.created(id, { ip, device });
-      // As kept: the first one is an admin (config.js).
-      const made = config.get().profiles.find((p) => p.id === id);
-      return sendJson(res, 200, { token: issueToken(device, id, entry, clientIdOf(body, entry)), profile: publicProfile(made) });
+      if (!rulesFor(current).createProfiles) throw new HttpError(403, 'On this server only an admin can make new profiles.');
+      const made = makeProfile(body.name, body.pin, { ip, device });
+      return sendJson(res, 200, { token: issueToken(device, made.id, entry, clientIdOf(body, entry)), profile: publicProfile(made) });
     }
     if (action === 'login') {
       throttle.check(ip);
@@ -803,14 +822,16 @@ function createHttpServer({
         res.end();
         return;
       }
-      return sendJson(res, 200, { rev: library.rev, library: library.snapshot(profileId), profile: publicProfile(profile) });
+      return sendJson(res, 200, {
+        rev: library.rev, library: library.snapshot(profileId), profile: publicProfile(profile), rules: rulesFor(profile),
+      });
     }
     if (is('GET', /^\/api\/live$/)) return openLive(req, res, url, client, entry);
     if (is('GET', /^\/api\/time$/)) return sendJson(res, 200, { time: Date.now() });
     if (p === '/api/sessions' && (req.method === 'GET' || req.method === 'POST')) return sessionRoute(req, res, url, entry);
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
-      return sendJson(res, 200, library.runCommands(body.commands, profileId));
+      return sendJson(res, 200, library.runCommands(body.commands, profileId, { admin: !!(profile && profile.admin) }));
     }
     if (p.startsWith('/api/admin/')) {
       const me = profileOf(entry);

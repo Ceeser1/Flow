@@ -430,3 +430,59 @@ test('the master admin changes the server password; everyone else signs in again
     assert.match(r.json.error, /PIN/);
   });
 });
+
+test('the rule "only who added a song deletes it"', async () => {
+  await withServer(async ({ base, server }) => {
+    const { tAnna, tBen, songId } = await annaAndBen(base);
+    const annas = (await upload(base, 'up2', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 }, tAnna)).json.id;
+    const nobodys = (await upload(base, 'up3', { title: 'Angel', artist: 'Massive Attack', format: 'mp3', duration: 380 })).json.id;
+    server.library.data.songs.find((s) => s.id === nobodys).addedBy = '';
+    assert.equal((await get(base, '/api/library', tBen)).json.rules.songDelete, 'anyone');
+    await post(base, '/api/admin/rules', { songDelete: 'owner' }, tAnna);
+    assert.equal((await get(base, '/api/library', tBen)).json.rules.songDelete, 'owner');
+    assert.equal((await get(base, '/api/library', tAnna)).json.rules.songDelete, 'anyone', 'an admin may');
+
+    // Ben's list with Anna's song and his own, deleted with its songs: his go, hers stays.
+    await commands(base, [
+      { type: 'createPlaylist', playlistId: 'pb', name: 'Mix' },
+      { type: 'addSongsToPlaylist', playlistId: 'pb', songIds: [annas, songId] },
+    ], tBen);
+    let r = await commands(base, [{ type: 'deleteSong', songId: annas }], tBen);
+    assert.equal(r.json.results[0].ok, false);
+    assert.match(r.json.results[0].error, /added by Anna/);
+    r = await commands(base, [{ type: 'deletePlaylist', playlistId: 'pb', deleteSongs: true }], tBen);
+    assert.deepEqual(r.json.results[0].deletedSongs, [songId]);
+    const ids = server.library.data.songs.map((s) => s.id);
+    assert.ok(ids.includes(annas) && !ids.includes(songId));
+    // A song nobody added (put in by hand): anyone. An admin: any song.
+    assert.equal((await commands(base, [{ type: 'deleteSong', songId: nobodys }], tBen)).json.results[0].ok, true);
+    const bensSecond = (await upload(base, 'up4', { title: 'Roads', artist: 'Portishead', format: 'mp3', duration: 300 }, tBen)).json.id;
+    assert.equal((await commands(base, [{ type: 'deleteSong', songId: bensSecond }], tAnna)).json.results[0].ok, true);
+  });
+});
+
+test('the rule "only admins make profiles"', async () => {
+  await withServer(async ({ base, server }) => {
+    server.config.set({ profileCreation: 'admins' });
+    // A server with no profile yet: the first one can always be made.
+    assert.equal((await get(base, '/api/profiles')).json.createProfiles, true);
+    server.config.set({ profileCreation: 'anyone' });
+    const { tAnna, tBen } = await annaAndBen(base);
+    server.config.set({ profileCreation: 'admins' });
+    assert.equal((await get(base, '/api/profiles', tBen)).json.createProfiles, false);
+    assert.equal((await get(base, '/api/profiles')).json.createProfiles, false, 'no profile signed in');
+    const refused = await post(base, '/api/profiles', { name: 'Carla', device: 'Laptop' }, tBen);
+    assert.equal(refused.status, 403);
+    assert.match(refused.json.error, /only an admin/);
+    assert.equal((await post(base, '/api/profiles', { name: 'Carla', device: 'Laptop' })).status, 403);
+    // An admin makes one for someone else and stays signed in as itself.
+    const made = await post(base, '/api/admin/profiles', { name: 'Carla', pin: '4321' }, tAnna);
+    assert.equal(made.status, 200);
+    assert.equal(made.json.profile.name, 'Carla');
+    assert.equal((await get(base, '/api/library', tAnna)).json.profile.name, 'Anna');
+    const carla = server.config.get().profiles.find((p) => p.name === 'Carla');
+    assert.ok(carla.pin && server.library.profileIds().includes(carla.id));
+    assert.equal(carla.createdIp, '127.0.0.1');
+    assert.equal((await post(base, '/api/admin/profiles', { name: 'carla' }, tAnna)).status, 409);
+  });
+});

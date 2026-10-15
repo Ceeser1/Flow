@@ -21,7 +21,9 @@
 //
 // `ctx` is what only the server knows. keepSongs(): the song ids another
 // profile still has in a playlist or its favourites, so "delete the playlist
-// and its songs" keeps those. An app's preview has no ctx: it takes the
+// and its songs" keeps those. deleteRefusal(song): why this profile may not
+// delete the song for everyone ('' when it may; the admins' rule "only who
+// added a song deletes it"). An app's preview has no ctx: it takes the
 // playlist away and leaves the songs to the server's answer.
 
 const model = require('./libraryModel');
@@ -92,7 +94,9 @@ const TYPES = {
       const id = str(c.playlistId);
       if (!model.playlistById(d, id)) return { skipped: 'gone' };
       // deleteSongs: the songs in no other playlist (of anyone) go too.
-      const lone = c.deleteSongs && ctx.keepSongs ? model.songsOnlyIn(d, id, ctx.keepSongs()) : [];
+      const lone = (c.deleteSongs && ctx.keepSongs ? model.songsOnlyIn(d, id, ctx.keepSongs()) : [])
+        // Songs another profile added stay when only that one may delete them.
+        .filter((sid) => !ctx.deleteRefusal || !ctx.deleteRefusal(model.songById(d, sid)));
       model.deletePlaylist(d, id);
       return { value: lone.map((sid) => model.removeSong(d, sid, false)) };
     },
@@ -132,8 +136,11 @@ const TYPES = {
   },
   deleteSong: {
     keys: () => [],
-    run(d, c) {
-      if (!model.songById(d, str(c.songId))) return { skipped: 'gone' };
+    run(d, c, fresh, ctx) {
+      const s = model.songById(d, str(c.songId));
+      if (!s) return { skipped: 'gone' };
+      const refused = ctx.deleteRefusal ? ctx.deleteRefusal(s) : '';
+      if (refused) throw new Error(refused);
       return { value: model.removeSong(d, str(c.songId), false) };
     },
   },
