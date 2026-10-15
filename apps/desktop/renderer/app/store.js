@@ -22,6 +22,8 @@ const Store = {
   // Which app this window is in ('desktop', 'android', 'ios'), its layout ('desktop',
   // 'mobile') and what it can do (@flow/core/client/caps).
   platform: 'desktop',
+  // The computer's OS (Node's process.platform): file names such as yt-dlp.exe.
+  os: 'win32',
   uiMode: 'desktop',
   caps: {},
   version: '',

@@ -1,6 +1,6 @@
 {
   "name": "flow",
-  "version": "3.3.5",
+  "version": "3.3.6",
   "description": "Music player for songs downloaded from YouTube, SoundCloud, Vimeo and more",
   "main": "main.js",
   "private": true,
@@ -8,7 +8,8 @@
     "start": "electron .",
     "test": "node --test",
     "icon": "electron scripts/make-icon.js",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "dist:linux": "electron-builder --linux"
   },
   "dependencies": {
     "@flow/core": "*"
@@ -51,6 +52,29 @@
       "target": "nsis",
       "icon": "build/icon.ico",
       "signAndEditExecutable": true
+    },
+    "linux": {
+      "target": [
+        "deb",
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Audio",
+      "maintainer": "Ceeser",
+      "extraResources": [
+        {
+          "from": "tools",
+          "to": "tools",
+          "filter": [
+            "ffmpeg",
+            "ffprobe"
+          ]
+        },
+        {
+          "from": "build/icon.png",
+          "to": "icon.png"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

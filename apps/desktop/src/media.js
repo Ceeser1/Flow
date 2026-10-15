@@ -15,7 +15,7 @@ module.exports = createMedia({
   ffprobe: tools.findFfprobe,
   ytdlp: tools.findYtDlp,
   cacheDir: paths.cacheDir,
-  missing: (name) => `${name}.exe was not found. Please reinstall Flow.`,
+  missing: (name) => `${tools.exe(name)} was not found. Please reinstall Flow.`,
   // Settings, Media Management: the browser's cookies for every yt-dlp run.
   ytdlpArgs: () => cookieJar.ytdlpArgs(settings.get('useCookies') ? settings.get('cookiesBrowser') : ''),
 });

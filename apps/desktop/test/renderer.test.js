@@ -18,8 +18,18 @@ test('clock and date formats', () => {
 test('file URLs match Node\'s own', () => {
   for (const p of ['C:\\Users\\A B\\Music\\FlowPlayer\\x #1 (Remix) 100%.mp3',
     'D:\\Müsik\\Björk - Jóga.opus', 'C:\\a\\it\'s [live]!.flac']) {
-    assert.equal(Util.fileUrl(p), pathToFileURL(p).href);
+    assert.equal(Util.fileUrl(p), pathToFileURL(p, { windows: true }).href);
   }
+});
+
+test('file URLs for Linux paths', () => {
+  // Hard-coded: Node's pathToFileURL follows the OS the test runs on.
+  assert.equal(Util.fileUrl('/home/a b/Music/FlowPlayer/x #1 (Remix) 100%.mp3'),
+    'file:///home/a%20b/Music/FlowPlayer/x%20%231%20(Remix)%20100%25.mp3');
+  assert.equal(Util.fileUrl('/mnt/Müsik/Björk - Jóga.opus'), 'file:///mnt/M%C3%BCsik/Bj%C3%B6rk%20-%20J%C3%B3ga.opus');
+  // \ is part of a Linux file name, not a folder.
+  assert.equal(Util.fileUrl('/home/a/AC\\DC - Thunder.mp3'), 'file:///home/a/AC%5CDC%20-%20Thunder.mp3');
+  assert.equal(Util.fileUrl('/home/a/Covers/local/abc.jpg'), 'file:///home/a/Covers/local/abc.jpg');
 });
 
 test('sort cycles asc, desc, off', () => {

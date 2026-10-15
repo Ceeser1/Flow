@@ -59,12 +59,17 @@
     return total;
   }
 
-  /** file:/// URL for a Windows path, the same as Node's pathToFileURL. */
+  /** file:/// URL for a path, the same as Node's pathToFileURL. */
   function fileUrl(filePath) {
-    const p = String(filePath || '').replace(/\\/g, '/');
+    const raw = String(filePath || '');
+    // Only a Windows path (C:\... or \\server\share) uses \ between folders:
+    // elsewhere \ is a character a file name may have.
+    const win = /^([A-Za-z]:|\\\\)/.test(raw);
+    const p = win ? raw.replace(/\\/g, '/') : raw;
     // The phone serves its files itself (Capacitor), at addresses of its own.
     if (typeof window !== 'undefined' && window.flow && window.flow.fileUrl) return window.flow.fileUrl(p);
     const enc = (seg) => encodeURIComponent(seg);
+    if (!win) return 'file://' + (p.startsWith('/') ? '' : '/') + p.split('/').map(enc).join('/');
     if (p.startsWith('//')) {
       const [host, ...rest] = p.slice(2).split('/');
       return 'file://' + host + '/' + rest.map(enc).join('/');

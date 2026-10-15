@@ -7,12 +7,17 @@ const { app } = require('electron');
 // Everything Flow keeps for itself lives under %LOCALAPPDATA%\Flow.
 // Local rather than Roaming (Electron's default), because Chromium's own cache
 // lands in userData too and a domain profile would try to sync all of it.
+// Elsewhere it is $XDG_DATA_HOME/Flow (~/.local/share/Flow).
 // FLOW_HOME and FLOW_MUSIC point both somewhere else, for trying the
 // app out without touching the real library.
 function rootDir() {
   if (process.env.FLOW_HOME) return process.env.FLOW_HOME;
-  const local = process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local');
-  return path.join(local, 'Flow');
+  if (process.platform === 'win32') {
+    const local = process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local');
+    return path.join(local, 'Flow');
+  }
+  const data = process.env.XDG_DATA_HOME || path.join(app.getPath('home'), '.local', 'share');
+  return path.join(data, 'Flow');
 }
 
 function ensure(dir) {
@@ -28,7 +33,7 @@ const userDataDir = () => path.join(rootDir(), 'data');
 const libraryFile = () => path.join(ensure(rootDir()), 'library.json');
 const settingsFile = () => path.join(ensure(rootDir()), 'settings.json');
 const cacheDir = () => ensure(path.join(rootDir(), 'cache'));
-// Where yt-dlp.exe goes (Flow does not ship it), somewhere yt-dlp -U may write.
+// Where yt-dlp(.exe) goes (Flow does not ship it), somewhere yt-dlp -U may write.
 const localToolsDir = () => ensure(path.join(rootDir(), 'tools'));
 
 // The folder chosen in Settings, once there is one (main.js hands it over at
@@ -68,10 +73,13 @@ function bundledToolsDir() {
     : path.join(__dirname, '..', 'tools');
 }
 
+// The window's and notifications' icon: icon.ico on Windows, icon.png
+// elsewhere.
 function appIconPath() {
+  const name = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
   const file = app.isPackaged
-    ? path.join(process.resourcesPath, 'icon.ico')
-    : path.join(__dirname, '..', 'build', 'icon.ico');
+    ? path.join(process.resourcesPath, name)
+    : path.join(__dirname, '..', 'build', name);
   return fs.existsSync(file) ? file : null;
 }
 

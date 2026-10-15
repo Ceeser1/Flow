@@ -99,7 +99,7 @@ const Covers = {
     const dir = Store.server.on && !local ? this.dirs.server : this.dirs.local;
     if (!dir) return '';
     const again = this._tries + (this._arrived.get(song.id) || 0);
-    return `${Util.fileUrl(`${dir}\\${song.id}.jpg`)}?v=${encodeURIComponent(song.cover)}${again ? `&r=${again}` : ''}`;
+    return `${Util.fileUrl(`${dir}/${song.id}.jpg`)}?v=${encodeURIComponent(song.cover)}${again ? `&r=${again}` : ''}`;
   },
 
   /** The note that stands in for a cover. */

@@ -16,13 +16,18 @@ const DownloadsHelp = {
     return Store.can('downloadHere') && !!(Store.tools && Store.tools.ytDlp);
   },
 
+  /** yt-dlp's file name on this computer. */
+  get file() {
+    return Store.os === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+  },
+
   open() {
     const computer = Store.can('downloadHere');
     const box = h('input', { type: 'checkbox' });
     const missing = h('p.error-hint', { hidden: true });
     const how = computer
       ? h('div.downloads-help__how', { hidden: true },
-        h('p.modal__text', 'Download yt-dlp.exe yourself from its latest release at GitHub and put it into Flow\'s tools folder.'),
+        h('p.modal__text', `Download ${this.file} yourself from its latest release at GitHub and put it into Flow's tools folder.`),
         h('button.btn', { type: 'button', onclick: () => window.flow.openToolsFolder().catch((err) => toast(err.message, 'error')) }, 'Open Tools Folder'))
       : h('div.downloads-help__how', { hidden: true },
         h('p.modal__text', 'On the phone your Flow Server downloads the songs. Install yt-dlp on the server yourself (its installer says which file), then connect to it in Settings, Flow Server.'));
@@ -65,7 +70,7 @@ const DownloadsHelp = {
         toast('yt-dlp found: Add Songs downloads from links now.', 'success');
         return true;
       }
-      missing.textContent = 'yt-dlp.exe was not found in Flow\'s tools folder.';
+      missing.textContent = `${this.file} was not found in Flow's tools folder.`;
     } else {
       if (ServerImport.available) return true;
       missing.textContent = 'No Flow Server that downloads songs is connected.';

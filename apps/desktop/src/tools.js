@@ -21,17 +21,20 @@ function bundled(exeName) {
   return onPath(exeName);
 }
 
-const findFfmpeg = () => bundled('ffmpeg.exe');
-const findFfprobe = () => bundled('ffprobe.exe');
+/** A tool's file name: ffmpeg.exe on Windows, plain ffmpeg elsewhere. */
+const exe = (name) => (process.platform === 'win32' ? `${name}.exe` : name);
+
+const findFfmpeg = () => bundled(exe('ffmpeg'));
+const findFfprobe = () => bundled(exe('ffprobe'));
 
 // yt-dlp is not shipped with Flow: whoever wants to download puts it into
 // Flow's tools folder (%LOCALAPPDATA%\Flow\tools) themselves; Add Songs'
 // "Downloads?" says how.
 function localYtDlp() {
-  return path.join(paths.localToolsDir(), 'yt-dlp.exe');
+  return path.join(paths.localToolsDir(), exe('yt-dlp'));
 }
 
-/** yt-dlp.exe in Flow's tools folder, or null. */
+/** yt-dlp(.exe) in Flow's tools folder, or null. */
 function findYtDlp() {
   const local = localYtDlp();
   return fs.existsSync(local) ? local : null;
@@ -73,7 +76,7 @@ function status() {
   };
 }
 
-/** Flow's tools folder, where yt-dlp.exe goes. */
+/** Flow's tools folder, where yt-dlp(.exe) goes. */
 const toolsDir = () => paths.localToolsDir();
 
-module.exports = { findFfmpeg, findFfprobe, findYtDlp, refreshYtDlp, status, toolsDir };
+module.exports = { exe, findFfmpeg, findFfprobe, findYtDlp, refreshYtDlp, status, toolsDir };

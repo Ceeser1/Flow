@@ -193,6 +193,7 @@ function iconDataUrl() {
 
 handle('app:init', () => ({
   platform: 'desktop',
+  os: process.platform,
   uiMode: MOBILE_UI ? 'mobile' : 'desktop',
   caps: MOBILE_UI ? caps.ANDROID : caps.DESKTOP,
   library: currentLibrary(),
@@ -314,7 +315,7 @@ handle('shell:showSong', (songId) => {
   else shell.openPath(paths.musicDir());
 });
 handle('shell:openMusicFolder', () => shell.openPath(paths.musicDir()));
-// "Downloads?" on Add Songs: where yt-dlp.exe goes, and whether it is there now.
+// "Downloads?" on Add Songs: where yt-dlp(.exe) goes, and whether it is there now.
 handle('tools:openFolder', () => shell.openPath(tools.toolsDir()));
 handle('tools:status', () => tools.status());
 
