@@ -307,3 +307,126 @@ test('only the master admin makes admins', async () => {
     assert.equal((await post(base, `/api/admin/profiles/${annaId}/admin`, { admin: false }, tAnna)).status, 409, 'the master stays one');
   });
 });
+
+test('the overview, the rules and the failed sign-ins', async () => {
+  await withServer(async ({ base, server }) => {
+    const { tAnna, tBen } = await annaAndBen(base);
+    const o = (await get(base, '/api/admin/server', tAnna)).json;
+    assert.equal(o.songs, 1);
+    assert.equal(o.profiles, 2);
+    assert.equal(o.musicBytes, FAKE_MP3.length);
+    assert.equal(o.trashBytes, 0);
+    assert.equal(o.password, false);
+    assert.equal(o.master, '');
+    assert.ok(o.startedAt > 0 && typeof o.version === 'string');
+    assert.equal((await get(base, '/api/admin/server', tBen)).status, 403);
+
+    assert.deepEqual((await get(base, '/api/admin/rules', tAnna)).json, { profileCreation: 'anyone', songDelete: 'anyone' });
+    assert.deepEqual((await post(base, '/api/admin/rules', { songDelete: 'owner' }, tAnna)).json, { profileCreation: 'anyone', songDelete: 'owner' });
+    assert.equal(server.config.get().songDelete, 'owner');
+
+    assert.deepEqual((await get(base, '/api/admin/signins', tAnna)).json, { failures: [] });
+    const benId = (await get(base, '/api/admin/profiles', tAnna)).json.profiles[1].id;
+    await post(base, '/api/profiles/login', { profileId: benId, pin: '0', device: 'X' });
+    assert.equal((await get(base, '/api/admin/signins', tAnna)).json.failures.length, 1);
+    await post(base, '/api/admin/signins/clear', {}, tAnna);
+    assert.equal((await get(base, '/api/admin/signins', tAnna)).json.failures.length, 0);
+
+    assert.deepEqual((await get(base, '/api/admin/downloads', tAnna)).json, { batches: [] });
+    assert.equal((await post(base, '/api/admin/downloads/cancel', { key: 'nope' }, tAnna)).status, 404);
+    assert.deepEqual((await get(base, '/api/admin/sessions', tAnna)).json, { sessions: [] });
+    assert.equal((await post(base, '/api/admin/sessions/end', { id: 'nope' }, tAnna)).status, 404);
+  });
+});
+
+test('a deleted song comes back from the trash as it was', async () => {
+  await withServer(async ({ base, server, dirs }) => {
+    const { tAnna, tBen, songId } = await annaAndBen(base);
+    const other = await upload(base, 'up2', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 }, tAnna);
+    // Anna has it second in her playlist and as a favourite; Ben listened to it (annaAndBen).
+    await commands(base, [
+      { type: 'createPlaylist', playlistId: 'pa', name: 'Night' },
+      { type: 'addSongsToPlaylist', playlistId: 'pa', songIds: [other.json.id, songId] },
+      { type: 'setFavourite', songId, on: true },
+    ], tAnna);
+    await commands(base, [{ type: 'deleteSong', songId }], tBen);
+    assert.equal(server.library.data.songs.some((s) => s.id === songId), false);
+
+    let trash = (await get(base, '/api/admin/trash', tAnna)).json;
+    assert.equal(trash.items.length, 1);
+    assert.deepEqual([trash.items[0].title, trash.items[0].artist, trash.items[0].by, trash.items[0].restorable], ['Glory Box', 'Portishead', 'Ben', true]);
+    assert.equal(trash.bytes, FAKE_MP3.length);
+
+    const back = await post(base, '/api/admin/trash/restore', { name: trash.items[0].name }, tAnna);
+    assert.equal(back.json.songId, songId);
+    const lib = (await get(base, '/api/library', tAnna)).json.library;
+    assert.deepEqual(lib.playlists.find((p) => p.id === 'pa').entries.map((e) => e.songId), [other.json.id, songId], 'in its place');
+    assert.ok(lib.songs.find((s) => s.id === songId).favouriteAt, 'still a favourite');
+    const bens = (await get(base, '/api/library', tBen)).json.library.songs.find((s) => s.id === songId);
+    assert.equal(bens.stats.listened, 300, 'the listens kept');
+    assert.ok(fs.existsSync(path.join(dirs.music, bens.file)));
+    trash = (await get(base, '/api/admin/trash', tAnna)).json;
+    assert.equal(trash.items.length, 0);
+    assert.equal((await post(base, '/api/admin/trash/restore', { name: 'gone.mp3' }, tAnna)).status, 404);
+    assert.equal((await post(base, '/api/admin/trash/restore', { name: '../x' }, tAnna)).status, 404);
+  });
+});
+
+test('a file in the trash from before comes back as a new song; Empty trash; 30 days from the deleting', async () => {
+  await withServer(async ({ base, server, dirs }) => {
+    const { tAnna, tBen, songId } = await annaAndBen(base);
+    const bin = path.join(dirs.music, '.flow-trash');
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, '1700000000000-Old Song.mp3'), FAKE_MP3);
+    let trash = (await get(base, '/api/admin/trash', tAnna)).json;
+    assert.deepEqual(trash.items.map((t) => [t.title, t.restorable]), [['Old Song.mp3', false]]);
+    const back = await post(base, '/api/admin/trash/restore', { name: '1700000000000-Old Song.mp3' }, tAnna);
+    assert.equal(back.json.scanned.added, 1);
+    assert.ok(fs.existsSync(path.join(dirs.music, 'Old Song.mp3')));
+
+    // A song whose file is a year old still waits 30 days once deleted.
+    const file = server.library.data.songs.find((s) => s.id === songId).file;
+    const yearAgo = new Date(Date.now() - 365 * 24 * 3600 * 1000);
+    fs.utimesSync(file, yearAgo, yearAgo);
+    await commands(base, [{ type: 'deleteSong', songId }], tBen);
+    server.library.emptyTrash();
+    assert.equal(fs.readdirSync(bin).length, 1, 'kept');
+    assert.equal((await post(base, '/api/admin/trash/empty', {}, tAnna)).json.deleted, 1);
+    assert.deepEqual(fs.readdirSync(bin), []);
+    trash = (await get(base, '/api/admin/trash', tAnna)).json;
+    assert.deepEqual(trash, { items: [], bytes: 0 });
+  });
+});
+
+test('the master admin changes the server password; everyone else signs in again', async () => {
+  await withServer(async ({ base, server }) => {
+    const { tAnna, tBen } = await annaAndBen(base);
+    const annaId = (await get(base, '/api/admin/profiles', tAnna)).json.me;
+    assert.equal((await post(base, '/api/admin/password', { password: 'abcd' }, tAnna)).status, 403, 'no master');
+    server.config.set({ profiles: server.config.get().profiles.map((p) => (p.id === annaId ? { ...p, master: true } : p)) });
+    assert.equal((await post(base, '/api/admin/password', { password: 'ab' }, tAnna)).status, 400, 'too short');
+    let r = await post(base, '/api/admin/password', { password: 'first' }, tAnna);
+    assert.equal(r.status, 200);
+    const tNew = r.json.token;
+    assert.ok(tNew);
+    assert.equal((await get(base, '/api/library', tBen)).status, 401, 'Ben enters it again');
+    assert.equal((await get(base, '/api/library', tNew)).json.profile.id, annaId, 'Anna carries on');
+    assert.equal((await post(base, '/api/login', { password: 'first', device: 'Phone' })).status, 200);
+
+    r = await post(base, '/api/admin/password', { current: 'wrong', password: 'second' }, tNew);
+    assert.equal(r.status, 403);
+    assert.equal(server.activity.failures()[0].kind, 'password');
+    await tick(1100); // the wait after a wrong try
+    r = await post(base, '/api/admin/password', { current: 'first', remove: true }, tNew);
+    assert.equal(r.status, 200);
+    assert.equal(server.config.get().password, null);
+
+    // At level 3 the master's PIN must be strong first.
+    server.config.set({ level: 3, password: configMod.passwordEntry('Strong123'), tokens: [] });
+    const signedIn = (await post(base, '/api/login', { password: 'Strong123', device: 'PC' })).json.token;
+    const t3 = (await post(base, '/api/profiles/login', { profileId: annaId, device: 'PC' }, signedIn)).json.token;
+    r = await post(base, '/api/admin/password', { current: 'Strong123', password: 'Better456x' }, t3);
+    assert.equal(r.status, 403);
+    assert.match(r.json.error, /PIN/);
+  });
+});

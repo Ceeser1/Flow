@@ -785,6 +785,32 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     }
   }
 
+  /**
+   * Every profile's batch, for the admins: { key, profileId (null: no
+   * profile's), state, name, url, createdAt, songs, saved, open, failed }.
+   */
+  function all() {
+    return [...batches.values()].map((b) => ({
+      key: b.key,
+      profileId: b.key === keyOf(null) ? null : b.key,
+      state: b.state,
+      name: (b.source && b.source.name) || '',
+      url: (b.source && b.source.url) || '',
+      createdAt: b.createdAt,
+      songs: b.items.length,
+      saved: b.items.filter((it) => it.state === 'saved').length,
+      open: b.items.filter((it) => OPEN.has(it.state)).length,
+      failed: b.items.filter((it) => it.state === 'failed').length,
+    }));
+  }
+
+  /** An admin's cancel of any profile's batch (by its key). False: there was none. */
+  function cancelKey(key) {
+    if (!batches.has(key)) return false;
+    drop(key, 'cancelled by an admin');
+    return true;
+  }
+
   /** A profile deleted: its batch goes with it. */
   function dropProfile(profileId) {
     if (batches.has(keyOf(profileId))) drop(keyOf(profileId));
@@ -809,6 +835,8 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     finish,
     expire,
     dropProfile,
+    all,
+    cancelKey,
     stop() {
       stopped = true;
       for (const group of listing.values()) group.cancel();

@@ -499,7 +499,22 @@ function createHttpServer({
 
   // The admins' routes (admin.js), and deleting a profile, which they share.
   const admin = createAdminRoutes({
-    config, library, downloads, live, activity: activity || { lastSeen: (p) => p.lastSeenAt || 0 }, log, HttpError, sendJson, readJsonBody, allProfiles,
+    config,
+    library,
+    downloads,
+    live,
+    sessions,
+    activity: activity || { lastSeen: (p) => p.lastSeenAt || 0, failed() {}, failures: () => [], clearFailures() {} },
+    tools,
+    version,
+    startedAt,
+    throttle,
+    issueToken,
+    log,
+    HttpError,
+    sendJson,
+    readJsonBody,
+    allProfiles,
   });
 
   const publicProfile = (p) => (p ? {
@@ -800,7 +815,7 @@ function createHttpServer({
     if (p.startsWith('/api/admin/')) {
       const me = profileOf(entry);
       if (!me || !me.admin) throw new HttpError(403, 'Only an admin profile can do this.');
-      return admin.route(req, res, p, me);
+      return admin.route(req, res, p, me, { entry, ip: client.ip });
     }
     const pm = /^\/api\/profiles(?:\/(login|logout|rename|delete))?$/.exec(p);
     if (pm && (req.method === 'POST' || (req.method === 'GET' && !pm[1]))) {

@@ -10,7 +10,8 @@
 //   seen     the ids of the latest commands, so one sent twice counts once.
 //
 // A deleted song's file is not gone at once: it goes to .flow-trash in the
-// music folder for 30 days, in case an app deleted it by mistake.
+// music folder for 30 days, in case an app deleted it by mistake, and the
+// song with it (trash.js), so an admin can put it back as it was.
 //
 // A song trimmed in an app (trimSong) has its file cut here; the uncut file
 // goes to the trash too. song.cut says which trim it is, so the apps' copies
@@ -33,6 +34,7 @@ const model = require('@flow/core/libraryModel');
 const { applyCommand } = require('@flow/core/commands');
 const prof = require('@flow/core/profiles');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
+const { createTrash } = require('./trash');
 const { parseTitle } = require('@flow/core/titleParser');
 const { sourceKeyFromUrl, songFileStem, isNameOnlyList, splitSongPath } = require('@flow/core/text');
 const { AUDIO_EXTS, planFor, ffmpegArgsFor, clampQuality } = require('@flow/core/formats');
@@ -43,7 +45,6 @@ const tools = require('./tools');
 
 const SEEN_KEEP = 5000;
 const TOUCHED_KEEP_MS = 180 * 24 * 60 * 60 * 1000;
-const TRASH_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 // A file younger than this may still be being copied in.
 const SETTLE_MS = 2000;
 const COVER_PAUSE_MS = 1000;
@@ -101,7 +102,7 @@ function songsToTag(data) {
 function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietMs = CONVERT_QUIET_MS } = {}) {
   const musicDir = config.musicDir;
   const covers = cover.createCoverStore(path.join(config.home, 'covers'));
-  const trashDir = path.join(musicDir, '.flow-trash');
+  const trash = createTrash({ dir: path.join(musicDir, '.flow-trash'), indexFile: path.join(config.home, 'trash.json'), log });
   const raw = readJson(config.libraryFile);
   let data = model.sanitize(raw);
   const profiles = prof.sanitizeProfiles(data, raw && raw.profiles);
@@ -157,33 +158,88 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     return candidate;
   }
 
-  function toTrash(file) {
-    try {
-      if (!fs.existsSync(file)) return;
-      fs.mkdirSync(trashDir, { recursive: true });
-      const dest = path.join(trashDir, `${Date.now()}-${path.basename(file)}`);
-      fs.renameSync(file, dest);
-    } catch (err) {
-      log(`Could not move ${file} to the trash: ${err.message}`);
-    }
+  /** A file to the trash; `record`: its song as it was (captureSong, with `by`), to be put back. */
+  function toTrash(file, record = null) {
+    trash.put(file, record);
   }
 
-  function emptyTrash() {
-    let names = [];
-    try {
-      names = fs.readdirSync(trashDir);
-    } catch {
-      return;
-    }
-    const cutoff = Date.now() - TRASH_KEEP_MS;
-    for (const name of names) {
-      const full = path.join(trashDir, name);
-      try {
-        if (fs.statSync(full).mtimeMs < cutoff) fs.rmSync(full, { force: true });
-      } catch {
-        // Gone already.
+  /** The trash's files older than 30 days go for good; `all`: every one (an admin's Empty trash). */
+  function emptyTrash(all = false) {
+    return trash.empty(all);
+  }
+
+  /**
+   * A song as it is everywhere, kept with its file in the trash: its entry,
+   * each profile's stats and favourite of it, and the playlists it is in
+   * (where in them). Null when there is no such song.
+   */
+  function captureSong(id) {
+    const song = model.songById(data, id);
+    if (!song) return null;
+    const lists = [];
+    const look = (owner, playlists) => {
+      for (const pl of playlists) {
+        const index = pl.entries.findIndex((e) => e.songId === id);
+        if (index >= 0) lists.push({ owner, playlistId: pl.id, addedAt: pl.entries[index].addedAt, index });
       }
+    };
+    look(prof.DEFAULT_OWNER, data.playlists);
+    const own = {};
+    for (const [pid, p] of Object.entries(profiles)) {
+      look(pid, p.playlists);
+      if (p.songs[id]) own[pid] = JSON.parse(JSON.stringify(p.songs[id]));
     }
+    return { song: JSON.parse(JSON.stringify(song)), own, lists };
+  }
+
+  /** What is in the trash, newest first (trash.js list), and whether each can come back as it was. */
+  function trashList() {
+    return trash.list().map((t) => ({ ...t, restorable: !!t.song && !model.songById(data, t.song.id) }));
+  }
+
+  /**
+   * Puts a file from the trash back. One whose song was kept comes back as
+   * that song: its id, names, stats, favourites and places in the playlists
+   * that still exist (its cover is looked for again). Any other (deleted
+   * before 3.5, an uncut file, or its song is back already) comes back as a
+   * new song, found by the folder scan. Resolves { songId } or { scanned }.
+   */
+  async function restoreFromTrash(name) {
+    const t = trash.get(name);
+    if (!t) throw new Error('That file is no longer in the trash.');
+    const e = t.entry;
+    if (e && e.song && !model.songById(data, e.song.id)) {
+      const old = String(e.song.file || '');
+      const ext = (path.extname(old) || path.extname(t.originalName)).slice(1);
+      const before = path.dirname(old);
+      const inside = old && !path.relative(musicDir, before).startsWith('..') && fs.existsSync(before);
+      const dest = uniquePath(path.basename(old || t.originalName, `.${ext}`), ext, null, inside ? before : musicDir);
+      fs.renameSync(t.file, dest);
+      trash.forget(name);
+      const [song] = model.sanitize({ songs: [{ ...e.song, file: dest, cover: null }] }).songs;
+      mutate((d) => {
+        d.songs.push(song);
+        const putBack = (playlists, l) => {
+          const pl = playlists.find((x) => x.id === l.playlistId);
+          if (!pl || pl.entries.some((x) => x.songId === song.id)) return;
+          pl.entries.splice(Math.min(Number(l.index) || 0, pl.entries.length), 0, { songId: song.id, addedAt: Number(l.addedAt) || Date.now() });
+        };
+        for (const l of e.lists || []) {
+          if (l.owner === prof.DEFAULT_OWNER) putBack(d.playlists, l);
+          else if (profiles[l.owner]) putBack(profiles[l.owner].playlists, l);
+        }
+        for (const [pid, own] of Object.entries(e.own || {})) if (profiles[pid]) profiles[pid].songs[song.id] = own;
+      });
+      log(`Put back from the trash: ${path.basename(dest)}`);
+      queueCovers();
+      return { songId: song.id };
+    }
+    const ext = path.extname(t.originalName).slice(1);
+    const dest = uniquePath(path.basename(t.originalName, `.${ext}`), ext, null, musicDir);
+    fs.renameSync(t.file, dest);
+    trash.forget(name);
+    log(`Put back from the trash as a new song: ${path.basename(dest)}`);
+    return { scanned: await scan({ complete: [dest] }) };
   }
 
   // ---- what the apps see ----
@@ -238,11 +294,11 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
    * Deletes every song a profile added, for everyone (an admin deleting the
    * profile with its songs): their files go to the trash. Resolves how many.
    */
-  function deleteSongsOf(profileId) {
+  function deleteSongsOf(profileId, by = null) {
     const ids = data.songs.filter((s) => s.addedBy === profileId).map((s) => s.id);
     if (!ids.length) return 0;
     const at = Date.now();
-    const { results } = runCommands(ids.map((songId, i) => ({ cid: `admin-${at}-${i}`, at, type: 'deleteSong', songId })));
+    const { results } = runCommands(ids.map((songId, i) => ({ cid: `admin-${at}-${i}`, at, type: 'deleteSong', songId })), null, { by });
     return results.filter((r) => r.ok && !r.skipped).length;
   }
 
@@ -258,10 +314,13 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
    * { cid, ok, skipped?, value?, error? }. A song renamed gets its file renamed
    * to match; a deleted one's file goes to the trash.
    */
-  function runCommands(commands, profileId = null) {
+  function runCommands(commands, profileId = null, { by = null } = {}) {
     checkProfile(profileId);
+    // Who deleted what goes to the trash with it: the profile (an admin
+    // deleting another's songs says so).
+    const deletedBy = by || profileId || prof.DEFAULT_OWNER;
     const results = [];
-    const trash = [];
+    const toBin = [];
     const retags = [];
     const list = (Array.isArray(commands) ? commands : []).slice(0, 5000);
     let applied = 0;
@@ -277,10 +336,18 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
         }
         try {
           if (!c || !ALLOWED.has(c.type)) throw new Error(`Unknown command "${String(c && c.type)}".`);
+          // The songs about to be deleted, as they are everywhere, for the trash.
+          let kept = [];
+          if (c.type === 'deleteSong') kept = [captureSong(String(c.songId || ''))];
+          else if (c.type === 'deletePlaylist' && c.deleteSongs) {
+            const pl = model.playlistById(d, String(c.playlistId || ''));
+            kept = pl ? pl.entries.map((e) => captureSong(e.songId)) : [];
+          }
+          const keptOf = (id) => kept.find((k) => k && k.song.id === id) || null;
           const r = applyCommand(d, c, state.touched, profileId, ctx);
-          if (!r.skipped && c.type === 'deleteSong') trash.push(r.value.file);
+          if (!r.skipped && c.type === 'deleteSong') toBin.push({ file: r.value.file, record: keptOf(r.value.id) });
           const gone = !r.skipped && c.type === 'deletePlaylist' ? r.value : [];
-          for (const s of gone) trash.push(s.file);
+          for (const s of gone) toBin.push({ file: s.file, record: keptOf(s.id) });
           if (!r.skipped && c.type === 'editSong') {
             const song = r.value;
             const ext = path.extname(song.file).slice(1).toLowerCase();
@@ -318,7 +385,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     // refused must not make every app fetch the library again for nothing.
     if (applied) mutate((d) => prof.absorb(d, profiles, profileId, v));
     else if (remembered) save();
-    for (const f of trash) toTrash(f);
+    for (const t of toBin) toTrash(t.file, t.record && { ...t.record, by: deletedBy });
     for (const id of retags) queueRetag(id);
     return { rev: state.rev, results };
   }
@@ -513,8 +580,10 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
    * moved there keep their id (their playlists, cover and stats). The
    * folder itself missing (an unplugged drive) drops nothing.
    */
-  async function scan() {
+  async function scan({ complete = [] } = {}) {
     if (!fs.existsSync(musicDir)) return { added: 0, removed: 0, moved: 0 };
+    // Files known to be whole (one put back from the trash) need not settle first.
+    const whole = new Set(complete.map((f) => path.resolve(f)));
     const known = new Set(data.songs.map((s) => s.file));
     const ignored = new Set(data.ignoredFiles);
     const fresh = [];
@@ -523,7 +592,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       if (known.has(file) || ignored.has(file.toLowerCase())) continue;
       try {
         const st = fs.statSync(file);
-        if (Date.now() - st.mtimeMs < SETTLE_MS) {
+        if (Date.now() - st.mtimeMs < SETTLE_MS && !whole.has(path.resolve(file))) {
           unsettled += 1;
           continue;
         }
@@ -1062,6 +1131,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     coverCounts,
     covers,
     emptyTrash,
+    trashList,
+    restoreFromTrash,
     onChange: (fn) => listeners.push(fn),
     /** Stops the background work: resolves once what was running has ended. */
     stop() {
