@@ -111,10 +111,12 @@ const cover = require('@flow/core/cover');
 const tools = require('./tools');
 const { SessionError } = require('./sessions');
 const { createVorbis } = require('./vorbis');
+const { createAdminRoutes } = require('./admin');
 
 const PROTOCOL = 1;
 // What this server can do beyond protocol 1, for apps that know to ask.
-const FEATURES = ['profiles'];
+// admin: /api/admin for admin profiles (admin.js).
+const FEATURES = ['profiles', 'admin'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;
@@ -488,11 +490,17 @@ function createHttpServer({
     return list;
   }
 
-  /** The profile a request is signed in to, or null. */
+  /** The profile a request is signed in to, or null. A disabled one counts as none. */
   function profileOf(entry) {
     if (!entry || !entry.profileId) return null;
-    return allProfiles().find((x) => x.id === entry.profileId) || null;
+    const p = allProfiles().find((x) => x.id === entry.profileId);
+    return p && !p.disabled ? p : null;
   }
+
+  // The admins' routes (admin.js), and deleting a profile, which they share.
+  const admin = createAdminRoutes({
+    config, library, downloads, live, activity: activity || { lastSeen: (p) => p.lastSeenAt || 0 }, log, HttpError, sendJson, readJsonBody, allProfiles,
+  });
 
   const publicProfile = (p) => (p ? {
     id: p.id, name: p.name, pin: !!p.pin, createdAt: p.createdAt, admin: !!p.admin, master: !!p.master,
@@ -562,6 +570,7 @@ function createHttpServer({
       throttle.check(ip);
       const profile = allProfiles().find((p) => p.id === String(body.profileId || ''));
       if (!profile) throw new HttpError(404, 'That profile no longer exists.');
+      if (profile.disabled) throw new HttpError(403, `The profile "${profile.name}" has been disabled by an admin.`);
       if (profile.pin && !checkPassword(profile.pin, String(body.pin || ''))) {
         throttle.fail(ip);
         log(`Wrong PIN for profile ${profile.name} from ${ip}`);
@@ -588,13 +597,7 @@ function createHttpServer({
       return sendJson(res, 200, { profile: publicProfile({ ...current, name }) });
     }
     if (action === 'delete') {
-      if (downloads) downloads.dropProfile(current.id);
-      library.deleteProfile(current.id);
-      const cfg = config.get();
-      config.set({
-        profiles: cfg.profiles.filter((p) => p.id !== current.id),
-        tokens: cfg.tokens.map((t) => (t.profileId === current.id ? { ...t, profileId: null } : t)),
-      });
+      admin.removeProfile(current);
       log(`Profile deleted: ${current.name}`);
       return sendJson(res, 200, {});
     }
@@ -793,6 +796,11 @@ function createHttpServer({
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
       return sendJson(res, 200, library.runCommands(body.commands, profileId));
+    }
+    if (p.startsWith('/api/admin/')) {
+      const me = profileOf(entry);
+      if (!me || !me.admin) throw new HttpError(403, 'Only an admin profile can do this.');
+      return admin.route(req, res, p, me);
     }
     const pm = /^\/api\/profiles(?:\/(login|logout|rename|delete))?$/.exec(p);
     if (pm && (req.method === 'POST' || (req.method === 'GET' && !pm[1]))) {

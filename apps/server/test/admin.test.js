@@ -203,3 +203,107 @@ test('wrong PINs and wrong passwords are kept for the admins, newest first', asy
     assert.deepEqual(server.activity.failures(), []);
   });
 });
+
+const FAKE_MP3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(997, 7)]);
+
+async function upload(base, id, meta, token) {
+  const r = await fetch(`${base}/api/songs/${id}?meta=${encodeURIComponent(JSON.stringify(meta))}`, {
+    method: 'PUT', body: FAKE_MP3, headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  return { status: r.status, json: await r.json() };
+}
+
+async function commands(base, list, token) {
+  return post(base, '/api/commands', { commands: list.map((c, i) => ({ cid: `t-${Date.now()}-${i}`, at: Date.now(), ...c })) }, token);
+}
+
+/** Anna (the first: an admin) and Ben, each signed in, Ben with a song he added and listened to. */
+async function annaAndBen(base) {
+  const anna = await post(base, '/api/profiles', { name: 'Anna', device: 'PC' });
+  const ben = await post(base, '/api/profiles', { name: 'Ben', pin: '1234', device: 'Phone' });
+  const song = await upload(base, 'up1', { title: 'Glory Box', artist: 'Portishead', format: 'mp3', duration: 300 }, ben.json.token);
+  await commands(base, [{ type: 'recordListen', songId: song.json.id, listened: 300, duration: 300 }], ben.json.token);
+  return { anna, ben, songId: song.json.id, tAnna: anna.json.token, tBen: ben.json.token, benId: ben.json.profile.id };
+}
+
+test('only admins get the admins\' routes; the list has every profile\'s numbers', async () => {
+  await withServer(async ({ base }) => {
+    const { tAnna, tBen, benId, anna } = await annaAndBen(base);
+    assert.equal((await get(base, '/api/admin/profiles')).status, 403, 'no profile');
+    assert.equal((await get(base, '/api/admin/profiles', tBen)).status, 403, 'no admin');
+    assert.ok((await get(base, '/api/hello')).json.features.includes('admin'));
+    const r = await get(base, '/api/admin/profiles', tAnna);
+    assert.equal(r.status, 200);
+    assert.equal(r.json.me, anna.json.profile.id);
+    const ben = r.json.profiles.find((p) => p.id === benId);
+    assert.deepEqual(
+      { ...ben, createdAt: 0, lastSeen: 0 },
+      { id: benId, name: 'Ben', createdAt: 0, lastSeen: 0, addedSongs: 1, listens: 1, seconds: 300, admin: false, master: false, disabled: false, pin: true, devices: 1 },
+    );
+    assert.ok(ben.lastSeen > 0);
+    const ips = await get(base, `/api/admin/profiles/${benId}/ips`, tAnna);
+    assert.deepEqual([ips.json.createdIp, ips.json.ips.map((e) => e.device)], ['127.0.0.1', ['Phone']]);
+    assert.equal((await get(base, '/api/admin/profiles/nobody/ips', tAnna)).status, 404);
+    assert.equal((await get(base, '/api/admin/nothing', tAnna)).status, 404);
+  });
+});
+
+test('an admin takes a PIN away, signs a profile out, disables it and enables it again', async () => {
+  await withServer(async ({ base, server }) => {
+    const { tAnna, tBen, benId } = await annaAndBen(base);
+    assert.equal((await post(base, `/api/admin/profiles/${benId}/pin`, {}, tAnna)).status, 200);
+    assert.equal(profileIn(server, benId).pin, null);
+    assert.equal((await post(base, '/api/profiles/login', { profileId: benId, device: 'Tablet' })).status, 200, 'no PIN needed now');
+
+    const out = await post(base, `/api/admin/profiles/${benId}/signout`, {}, tAnna);
+    assert.equal(out.json.devices, 2);
+    assert.equal((await get(base, '/api/library', tBen)).json.profile, null, 'still on the server, no longer Ben');
+
+    await post(base, `/api/admin/profiles/${benId}/disable`, { disabled: true }, tAnna);
+    const refused = await post(base, '/api/profiles/login', { profileId: benId, device: 'Phone' });
+    assert.equal(refused.status, 403);
+    assert.match(refused.json.error, /disabled/);
+    await post(base, `/api/admin/profiles/${benId}/disable`, { disabled: false }, tAnna);
+    assert.equal((await post(base, '/api/profiles/login', { profileId: benId, device: 'Phone' })).status, 200);
+
+    // Not one's own profile, nor the master's.
+    const annaId = (await get(base, '/api/admin/profiles', tAnna)).json.me;
+    assert.equal((await post(base, `/api/admin/profiles/${annaId}/disable`, { disabled: true }, tAnna)).status, 409);
+    server.config.set({ profiles: server.config.get().profiles.map((p) => (p.id === benId ? { ...p, master: true } : p)) });
+    assert.equal((await post(base, `/api/admin/profiles/${benId}/signout`, {}, tAnna)).status, 403);
+  });
+});
+
+test('deleting a profile, with or without the songs it added', async () => {
+  await withServer(async ({ base, server, dirs }) => {
+    const { tAnna, benId, songId } = await annaAndBen(base);
+    const carla = await post(base, '/api/profiles', { name: 'Carla', device: 'Laptop' });
+    const carlaSong = await upload(base, 'up2', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 }, carla.json.token);
+
+    // Ben with his song: gone for everyone, its file in the trash.
+    const gone = await post(base, `/api/admin/profiles/${benId}/delete`, { songs: true }, tAnna);
+    assert.equal(gone.json.deletedSongs, 1);
+    assert.equal(profileIn(server, benId), undefined);
+    assert.ok(!server.library.profileIds().includes(benId));
+    assert.equal(server.library.data.songs.some((s) => s.id === songId), false);
+    assert.equal(fs.readdirSync(path.join(dirs.music, '.flow-trash')).length, 1);
+
+    // Carla without hers: the song stays.
+    const kept = await post(base, `/api/admin/profiles/${carla.json.profile.id}/delete`, { songs: false }, tAnna);
+    assert.equal(kept.json.deletedSongs, 0);
+    assert.ok(server.library.data.songs.some((s) => s.id === carlaSong.json.id));
+    assert.equal((await get(base, '/api/library', carla.json.token)).json.profile, null);
+  });
+});
+
+test('only the master admin makes admins', async () => {
+  await withServer(async ({ base, server }) => {
+    const { tAnna, tBen, benId } = await annaAndBen(base);
+    assert.equal((await post(base, `/api/admin/profiles/${benId}/admin`, { admin: true }, tAnna)).status, 403, 'Anna is no master');
+    const annaId = (await get(base, '/api/admin/profiles', tAnna)).json.me;
+    server.config.set({ profiles: server.config.get().profiles.map((p) => (p.id === annaId ? { ...p, master: true } : p)) });
+    assert.equal((await post(base, `/api/admin/profiles/${benId}/admin`, { admin: true }, tAnna)).status, 200);
+    assert.equal((await get(base, '/api/admin/profiles', tBen)).status, 200, 'Ben is an admin now');
+    assert.equal((await post(base, `/api/admin/profiles/${annaId}/admin`, { admin: false }, tAnna)).status, 409, 'the master stays one');
+  });
+});

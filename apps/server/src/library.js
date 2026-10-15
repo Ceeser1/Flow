@@ -229,6 +229,23 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     });
   }
 
+  /** A profile's numbers for the admins (profiles.js ownerSummary). */
+  function summary(profileId) {
+    return prof.ownerSummary(data, profiles, profileId);
+  }
+
+  /**
+   * Deletes every song a profile added, for everyone (an admin deleting the
+   * profile with its songs): their files go to the trash. Resolves how many.
+   */
+  function deleteSongsOf(profileId) {
+    const ids = data.songs.filter((s) => s.addedBy === profileId).map((s) => s.id);
+    if (!ids.length) return 0;
+    const at = Date.now();
+    const { results } = runCommands(ids.map((songId, i) => ({ cid: `admin-${at}-${i}`, at, type: 'deleteSong', songId })));
+    return results.filter((r) => r.ok && !r.skipped).length;
+  }
+
   function songFile(id) {
     const s = model.songById(data, id);
     return s ? s.file : null;
@@ -1024,6 +1041,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     touch: () => mutate(() => {}),
     createProfile,
     deleteProfile,
+    summary,
+    deleteSongsOf,
     runCommands,
     trimSong,
     songPeaks,
