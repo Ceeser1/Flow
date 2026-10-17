@@ -65,7 +65,9 @@ function createActivity({ config, now = Date.now }) {
 
     /**
      * A profile signed in to, or one of its apps connected (`quiet`: only
-     * written when it was not noted a moment ago from the same place).
+     * written when it was not noted a moment ago from the same place). The
+     * moment is the place's own time, not lastSeenAt: an app closing sets
+     * that, so an app started again within a minute was never written.
      */
     seen(profileId, { ip, device }, quiet = false) {
       const at = now();
@@ -73,7 +75,7 @@ function createActivity({ config, now = Date.now }) {
         const clean = cleanIp(ip);
         const top = p.ips[0];
         const same = !clean || (top && top.ip === clean && top.device === String(device || '').slice(0, 80));
-        if (quiet && same && at - p.lastSeenAt < SEEN_EVERY) return null;
+        if (quiet && same && at - (top ? top.at : p.lastSeenAt) < SEEN_EVERY) return null;
         return { ips: same && top ? [{ ...top, at }, ...p.ips.slice(1)] : withIp(p, ip, device, at), lastSeenAt: at };
       });
     },

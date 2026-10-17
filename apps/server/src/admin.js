@@ -24,7 +24,7 @@
 //                                            profiles, musicBytes, trashBytes, disk { free, size },
 //                                            ytdlp (its version, '' none), ffmpeg, downloads, level,
 //                                            password, master }
-//   GET  /api/admin/trash                    { items: [{ name, at, size, title, artist, by,
+//   GET  /api/admin/trash                    { items: [{ name, at, size, title, artist, by, addedBy,
 //                                            restorable }], bytes }
 //   POST /api/admin/trash/restore { name }   back as it was (restorable), else as a new song
 //   POST /api/admin/trash/empty              every file in it gone for good: { deleted }
@@ -188,6 +188,7 @@ function createAdminRoutes({
         title: t.song ? t.song.title : t.originalName,
         artist: t.song ? t.song.artist : '',
         by: t.by === 'default' ? 'Default / Shared' : nameOf(t.by),
+        addedBy: t.song && t.song.addedBy ? nameOf(t.song.addedBy) : '',
         restorable: t.restorable,
       }));
       return sendJson(res, 200, { items, bytes: items.reduce((n, t) => n + t.size, 0) });

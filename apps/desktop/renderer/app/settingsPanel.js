@@ -935,7 +935,8 @@ const SettingsPanel = {
   /**
    * "Profile": signed in to one of the server's profiles, or to none. Not
    * signed in: the server's profiles and "+ New" (which turns into a box for
-   * the new one's name), a PIN, and Login or Create. Signed in: who, with
+   * the new one's name; not there while only admins make profiles), a PIN,
+   * and Login or Create. Signed in: who, with
    * Rename (the name turns into a box with a tick), Delete and Logout.
    */
   _profileRow() {
@@ -957,7 +958,10 @@ const SettingsPanel = {
     const st = Store.server;
     const p = this._prof;
     const ready = !!(st.on && st.state === 'online' && st.profilesSupported && Array.isArray(st.profiles));
-    const key = JSON.stringify([ready, st.on, st.state, st.profilesSupported, st.profile, st.profiles, p.mode, p.picked, p.busy]);
+    // "Only admins make profiles": no "+ New" while not signed in to an admin.
+    const mayCreate = !(st.rules && st.rules.createProfiles === false);
+    if (!mayCreate && p.mode === 'new') p.mode = 'pick';
+    const key = JSON.stringify([ready, st.on, st.state, st.profilesSupported, st.profile, st.profiles, mayCreate, p.mode, p.picked, p.busy]);
     if (!force && key === p.key) return;
     p.key = key;
     clear(node);
@@ -970,7 +974,7 @@ const SettingsPanel = {
       return;
     }
     if (st.profile) this._drawSignedIn(node, st.profile);
-    else this._drawSignIn(node, st.profiles);
+    else this._drawSignIn(node, st.profiles, mayCreate);
   },
 
   _drawSignedIn(node, profile) {
@@ -1024,7 +1028,7 @@ const SettingsPanel = {
     );
   },
 
-  _drawSignIn(node, profiles) {
+  _drawSignIn(node, profiles, mayCreate) {
     const p = this._prof;
     if (p.picked && !profiles.some((x) => x.id === p.picked)) p.picked = '';
     const picked = profiles.find((x) => x.id === p.picked) || null;
@@ -1047,7 +1051,7 @@ const SettingsPanel = {
       nameInput = h('select.select.profile-select', { disabled: p.busy },
         h('option', { value: '' }, 'Default / Shared'),
         ...profiles.map((x) => h('option', { value: x.id }, x.name)),
-        h('option', { value: '+new' }, '+ New'));
+        mayCreate ? h('option', { value: '+new' }, '+ New') : null);
       nameInput.value = p.picked;
       nameInput.addEventListener('change', () => {
         if (nameInput.value === '+new') {

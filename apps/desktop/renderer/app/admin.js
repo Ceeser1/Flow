@@ -8,6 +8,9 @@
 // admin.js) through window.flow.admin, fetched when Settings opens, after
 // every change made here, and with Refresh.
 
+// The lists (profiles, failed logins, downloads, sessions, trash) show this many rows, then scroll.
+const ROWS = 5;
+
 const Admin = {
   _node: null,
   _data: null,
@@ -42,6 +45,40 @@ const Admin = {
     this.draw();
   },
 
+  /**
+   * `node` scrolls once it holds more than ROWS of `rows()` (measured, since a
+   * long title wraps): it shows exactly that many. Measured again whenever
+   * its size changes, so also when a hidden screen (the phone's) opens.
+   */
+  _scrollRows(node, rows) {
+    node.classList.add('admin__scroll');
+    const fit = () => {
+      const list = rows();
+      if (list.length <= ROWS) {
+        node.style.maxHeight = '';
+        return;
+      }
+      const first = list[0].getBoundingClientRect();
+      if (!first.height) return;
+      const top = node.getBoundingClientRect().top - node.scrollTop;
+      node.style.maxHeight = `${Math.ceil(list[ROWS].getBoundingClientRect().top - top)}px`;
+    };
+    // Next frame: a height set inside the observer's call would be observed again at once.
+    new ResizeObserver(() => requestAnimationFrame(fit)).observe(node);
+    return node;
+  },
+
+  /** A line's parts with a centred dot between them (the font's · sits low). */
+  _parts(parts) {
+    return parts.filter(Boolean).flatMap((p, i) => (i ? [h('span.admin__dot'), p] : [p]));
+  },
+
+  /** A list of items, scrolling past ROWS. */
+  _list(items) {
+    const list = h('ul.admin__list', ...items);
+    return this._scrollRows(list, () => list.children);
+  },
+
   _drawNote(text) {
     clear(this._node).append(h('p.settings__note', text));
   },
@@ -56,9 +93,10 @@ const Admin = {
     await this.load();
   },
 
+  /** `danger`: true for a red button, or a button kind ('light-red'). */
   async _confirm(title, message, label, danger = false) {
     return !!(await confirmDialog({
-      title, message, confirmLabel: label, danger,
+      title, message, confirmLabel: label, danger: danger === true, kind: typeof danger === 'string' ? danger : '',
     }));
   },
 
@@ -95,7 +133,7 @@ const Admin = {
 
   _overview(o) {
     if (o.error) return this._failed(o);
-    const disk = o.disk ? `${fmtBytes(o.disk.free)} free of ${fmtBytes(o.disk.size)}` : 'unknown';
+    const disk = o.disk && o.disk.size > 0 ? this._disk(o.disk) : 'unknown';
     const pairs = [
       ['Server', `${o.name} (version ${o.version})`],
       ['Running since', Util.fmtDate(o.startedAt)],
@@ -112,6 +150,16 @@ const Admin = {
       ['Master admin', o.master || 'none (set on the server: flow-server admin master <name>)'],
     ];
     return h('dl.admin__facts', ...pairs.flatMap(([k, v]) => [h('dt', k), h('dd', v)]));
+  },
+
+  /** The disk as a bar and "40.0 GB / 64.0 GB used": blue, then yellow from 50 %, orange 75, light red 90, deep red 95. */
+  _disk({ free, size }) {
+    const used = Math.max(0, size - free);
+    const pct = Math.min(100, (used / size) * 100);
+    const level = pct >= 95 ? 'crit' : pct >= 90 ? 'high' : pct >= 75 ? 'warn' : pct >= 50 ? 'mid' : 'ok';
+    return h('span.admin__disk', { title: `${Math.round(pct)} % used, ${fmtBytes(free)} free` },
+      h(`span.admin__diskbar.admin__diskbar--${level}`, h('span.admin__diskfill', { style: `width: ${pct.toFixed(1)}%` })),
+      `${fmtBytes(used)} / ${fmtBytes(size)} used`);
   },
 
   // ---- Profiles ----
@@ -188,7 +236,7 @@ const Admin = {
       rowKey: (p) => p.id,
       rowClass: (p) => (p.disabled ? 'admin__row--off' : ''),
     });
-    return table;
+    return this._scrollRows(h('div', table), () => table.tBodies[0] ? table.tBodies[0].rows : []);
   },
 
   _cell(p, key, meId) {
@@ -199,16 +247,9 @@ const Admin = {
     return Util.fmtListened(p.seconds);
   },
 
-  /** The PC's buttons: IP, the other actions (⋯), Delete. */
+  /** The PC's one button (⋯): every action for the profile in a window. */
   _actions(p, meId) {
-    const locked = p.id === meId || p.master;
-    const ip = h('button.btn.btn--small', { type: 'button', title: 'Where this profile was made and logged in from', onclick: () => this._showIps(p) }, 'IP');
-    const more = iconButton('act.act--grey', Icons.more, 'More', () => this._moreDialog(p, meId));
-    const del = iconButton('act.act--red', Icons.x, 'Delete Profile', () => this._delete(p));
-    del.disabled = locked;
-    more.disabled = locked && !(Store.server.master && !p.master);
-    if (locked) del.title = p.master ? 'The master admin can only be changed on the server' : 'Your own profile is deleted under Flow Server';
-    return h('div.actions', ip, more, del);
+    return h('div.actions', iconButton('act.act--grey', Icons.more, 'Actions', () => this._moreDialog(p, meId)));
   },
 
   /** The phone's list: each profile's name, opening with a tap onto its numbers and buttons. */
@@ -234,13 +275,17 @@ const Admin = {
       const facts = h('dl.admin__facts',
         ...columns.filter((c) => c.key !== 'name').flatMap((c) => [h('dt', c.label), h('dd', this._cell(p, c.key, meId))]),
         h('dt', 'Logged in on'), h('dd', Util.plural(p.devices, 'device')));
-      const buttons = h('div.admin__pactions', ...this._buttons(p, meId));
+      const buttons = this._buttons(p, meId);
       return h('div.admin__prow.admin__prow--open' + (p.disabled ? '.admin__row--off' : ''), name, facts, buttons);
     });
-    return h('div.admin__plist', head, ...items);
+    const scroll = h('div', ...items);
+    return h('div.admin__plist', head, this._scrollRows(scroll, () => scroll.children));
   },
 
-  /** Every action for a profile as buttons (the phone's opened row, the PC's ⋯). */
+  /**
+   * Every action for a profile as buttons in two rows (the phone's opened
+   * row, the PC's ⋯): what it did and its PIN, then what it is.
+   */
   _buttons(p, meId, after = null) {
     const locked = p.id === meId || p.master;
     const btn = (label, onclick, extra = '') => h('button.btn.btn--small' + extra, {
@@ -250,14 +295,17 @@ const Admin = {
         onclick();
       },
     }, label);
-    return [
-      btn('IP', () => this._showIps(p)),
-      !locked && p.pin ? btn('Remove PIN', () => this._removePin(p)) : null,
+    const first = [
+      btn('Connection History', () => this._showIps(p)),
+      !locked && p.pin ? btn('Reset PIN', () => this._removePin(p)) : null,
       !locked && p.devices ? btn('Log out everywhere', () => this._signOut(p)) : null,
+    ].filter(Boolean);
+    const second = [
+      Store.server.master && !p.master ? btn(p.admin ? 'Revoke Admin' : 'Make Admin', () => this._setAdmin(p)) : null,
       !locked ? btn(p.disabled ? 'Enable' : 'Disable', () => this._disable(p)) : null,
-      Store.server.master && !p.master ? btn(p.admin ? 'Take back admin' : 'Make admin', () => this._setAdmin(p)) : null,
       !locked ? btn('Delete Profile', () => this._delete(p), '.btn--danger') : null,
     ].filter(Boolean);
+    return h('div.admin__pgroups', h('div.admin__pactions', ...first), second.length ? h('div.admin__pactions', ...second) : null);
   },
 
   _moreDialog(p, meId) {
@@ -265,7 +313,7 @@ const Admin = {
     handle = Modal.open({
       title: p.name,
       className: 'modal--small',
-      body: [h('div.admin__pactions', ...this._buttons(p, meId, () => handle.close()))],
+      body: [this._buttons(p, meId, () => handle.close())],
       buttons: [{ label: 'Close' }],
     });
   },
@@ -275,13 +323,13 @@ const Admin = {
     if (!r) return;
     const rows = r.ips.map((e) => h('tr', h('td', e.ip), h('td', e.device || ''), h('td', Util.fmtDate(e.at))));
     Modal.open({
-      title: `${p.name}: IP addresses`,
+      title: `${p.name}: Connection History`,
       className: 'modal--admin-ips',
       body: [
         h('p.modal__text', 'Made from: ', h('strong', r.createdIp || 'not recorded (made before Flow 3.5)')),
         rows.length
           ? h('table.admin__ips', h('thead', h('tr', h('th', 'IP'), h('th', 'Device'), h('th', 'Last time'))), h('tbody', ...rows))
-          : h('p.settings__note', 'No logins recorded yet.'),
+          : h('p.settings__note', 'No connections recorded yet.'),
         h('p.settings__note', `The newest ${r.ips.length} of up to 100.`),
       ],
       buttons: [{ label: 'Close', kind: 'primary' }],
@@ -305,7 +353,7 @@ const Admin = {
   },
 
   async _removePin(p) {
-    if (!(await this._confirm('Remove PIN', `Take the PIN away from ${p.name}? Anyone can then log in to it, and set a new one by making it again.`, 'Remove PIN'))) return;
+    if (!(await this._confirm('Reset PIN', `Reset the PIN of ${p.name}? It then has none: anyone can log in to it, and set a new one by making it again.`, 'Reset PIN'))) return;
     await this._do(() => window.flow.admin(`profiles/${p.id}/pin`, {}), `${p.name} has no PIN now`);
   },
 
@@ -324,8 +372,8 @@ const Admin = {
     const on = !p.admin;
     const message = on
       ? `Make ${p.name} an admin? It can then see and change everything here except the server password.`
-      : `Take admin back from ${p.name}?`;
-    if (!(await this._confirm(on ? 'Make admin' : 'Take back admin', message, on ? 'Make admin' : 'Take back'))) return;
+      : `Revoke admin from ${p.name}? It then no longer sees Administration.`;
+    if (!(await this._confirm(on ? 'Make Admin' : 'Revoke Admin', message, on ? 'Make Admin' : 'Revoke', on ? false : 'light-red'))) return;
     await this._do(() => window.flow.admin(`profiles/${p.id}/admin`, { admin: on }), on ? `${p.name} is an admin now` : `${p.name} is no admin any more`);
   },
 
@@ -362,7 +410,7 @@ const Admin = {
     const shown = r.failures.slice(0, 100);
     const rows = shown.map((f) => h('li.admin__item',
       h('span.admin__item-main', f.kind === 'pin' ? `Wrong PIN for ${f.profileName || 'a deleted profile'}` : 'Wrong server password'),
-      h('span.admin__item-sub', [Util.fmtDate(f.at), f.ip, f.device].filter(Boolean).join(' · '))));
+      h('span.admin__item-sub', ...this._parts([Util.fmtDate(f.at), f.ip, f.device]))));
     const more = r.failures.length > shown.length ? h('p.settings__note', `The newest ${shown.length} of ${r.failures.length}.`) : null;
     const clearBtn = h('button.btn.btn--small', {
       type: 'button',
@@ -370,7 +418,7 @@ const Admin = {
         if (await this._confirm('Clear the list', 'Forget every failed login?', 'Clear')) await this._do(() => window.flow.admin('signins/clear', {}));
       },
     }, 'Clear the list');
-    return h('div', h('ul.admin__list', ...rows), more, h('div.admin__bar', clearBtn));
+    return h('div', this._list(rows), more, h('div.admin__bar', clearBtn));
   },
 
   // ---- Server downloads and Active Sessions ----
@@ -378,11 +426,11 @@ const Admin = {
   _downloads(r) {
     if (r.error) return this._failed(r);
     if (!r.batches.length) return h('p.settings__note', 'No server downloads running.');
-    return h('ul.admin__list', ...r.batches.map((b) => h('li.admin__item.admin__item--row',
+    return this._list(r.batches.map((b) => h('li.admin__item.admin__item--row',
       h('span.admin__item-text',
         h('span.admin__item-main', `${b.profileName}: ${b.name || b.url || 'a download'}`),
-        h('span.admin__item-sub', b.state === 'listing' ? 'Reading the link...'
-          : `${b.saved} of ${b.songs} saved, ${b.open} still open${b.failed ? `, ${b.failed} failed` : ''} · since ${Util.fmtDate(b.createdAt)}`)),
+        h('span.admin__item-sub', ...(b.state === 'listing' ? ['Reading the link...']
+          : this._parts([`${b.saved} of ${b.songs} saved, ${b.open} still open${b.failed ? `, ${b.failed} failed` : ''}`, `since ${Util.fmtDate(b.createdAt)}`])))),
       h('button.btn.btn--small', {
         type: 'button',
         onclick: async () => {
@@ -395,15 +443,15 @@ const Admin = {
   _sessions(r) {
     if (r.error) return this._failed(r);
     if (!r.sessions.length) return h('p.settings__note', 'Nothing is playing on the server right now.');
-    return h('ul.admin__list', ...r.sessions.map((s) => h('li.admin__item.admin__item--row',
+    return this._list(r.sessions.map((s) => h('li.admin__item.admin__item--row',
       h('span.admin__item-text',
         h('span.admin__item-main', s.name),
-        h('span.admin__item-sub', [
+        h('span.admin__item-sub', ...this._parts([
           s.song ? Util.songLine(s.song) : 'nothing playing',
           s.playing ? 'playing' : 'paused',
           Util.plural(s.listeners, 'listener'),
           s.shared ? '' : 'not shared',
-        ].filter(Boolean).join(' · '))),
+        ]))),
       s.listeners ? h('button.btn.btn--small', {
         type: 'button',
         onclick: async () => {
@@ -421,8 +469,7 @@ const Admin = {
     const rows = r.items.map((t) => h('li.admin__item.admin__item--row',
       h('span.admin__item-text',
         h('span.admin__item-main', t.artist ? `${t.title} - ${t.artist}` : t.title),
-        h('span.admin__item-sub', [`Deleted ${Util.fmtDate(t.at)}`, t.by ? `by ${t.by}` : '', fmtBytes(t.size),
-          t.restorable ? '' : 'comes back as a new song'].filter(Boolean).join(' · '))),
+        h('span.admin__item-sub', ...this._parts([t.by ? `Deleted by ${t.by}` : 'Deleted', Util.fmtDate(t.at), t.addedBy ? `Added by ${t.addedBy}` : '']))),
       h('button.btn.btn--small', {
         type: 'button',
         onclick: () => this._do(() => window.flow.admin('trash/restore', { name: t.name }), `"${t.title}" is back`),
@@ -435,7 +482,7 @@ const Admin = {
       },
     }, 'Empty trash');
     return h('div', h('p.settings__note', `${Util.plural(r.items.length, 'file')}, ${fmtBytes(r.bytes)}. Each one is deleted for good 30 days after it was deleted.`),
-      h('ul.admin__list', ...rows), h('div.admin__bar', empty));
+      this._list(rows), h('div.admin__bar', empty));
   },
 
   // ---- Server rules ----

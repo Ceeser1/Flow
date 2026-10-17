@@ -10,6 +10,7 @@ const os = require('os');
 const path = require('path');
 const { startServer } = require('../src/server');
 const configMod = require('../src/config');
+const { createActivity } = require('../src/activity');
 
 process.env.FLOW_SERVER_FFMPEG = 'off';
 
@@ -183,6 +184,32 @@ test('where a profile was made, the addresses it came from, and when it was last
   });
 });
 
+test('an app closed and started again a moment later is in the connection history again', () => {
+  const dirs = tempDirs();
+  try {
+    const config = configMod.open({ home: dirs.home, music: dirs.music });
+    let clock = 1_000_000;
+    const activity = createActivity({ config, now: () => clock });
+    config.set({ profiles: [{ id: 'anna1', name: 'Anna', createdAt: clock }] });
+    activity.seen('anna1', { ip: '192.168.0.5', device: 'PC' });
+    const at = () => config.get().profiles[0].ips[0].at;
+    assert.equal(at(), clock);
+    // Its live channel a moment later: not written again.
+    clock += 1000;
+    activity.seen('anna1', { ip: '192.168.0.5', device: 'PC' }, true);
+    assert.equal(at(), clock - 1000);
+    // Twenty minutes on, the app is closed (last seen then) and started again 5 seconds later.
+    clock += 20 * 60 * 1000;
+    activity.left('anna1');
+    clock += 5000;
+    activity.seen('anna1', { ip: '192.168.0.5', device: 'PC' }, true);
+    assert.equal(at(), clock);
+    assert.equal(config.get().profiles[0].ips.length, 1, 'the same place: its time moves');
+  } finally {
+    fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
 test('wrong PINs and wrong passwords are kept for the admins, newest first', async () => {
   await withServer(async ({ base, server, dirs }) => {
     const anna = await post(base, '/api/profiles', { name: 'Anna', pin: '1234', device: 'PC' });
@@ -354,7 +381,7 @@ test('a deleted song comes back from the trash as it was', async () => {
 
     let trash = (await get(base, '/api/admin/trash', tAnna)).json;
     assert.equal(trash.items.length, 1);
-    assert.deepEqual([trash.items[0].title, trash.items[0].artist, trash.items[0].by, trash.items[0].restorable], ['Glory Box', 'Portishead', 'Ben', true]);
+    assert.deepEqual([trash.items[0].title, trash.items[0].artist, trash.items[0].by, trash.items[0].addedBy, trash.items[0].restorable], ['Glory Box', 'Portishead', 'Ben', 'Ben', true]);
     assert.equal(trash.bytes, FAKE_MP3.length);
 
     const back = await post(base, '/api/admin/trash/restore', { name: trash.items[0].name }, tAnna);

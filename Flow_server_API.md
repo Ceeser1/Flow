@@ -366,7 +366,7 @@ master admin. Nobody changes their own profile or the master's here.
 | `POST /api/admin/downloads/cancel` | `{ key }` | that download cancelled |
 | `GET /api/admin/sessions` | | every Active Session: `{ sessions: [...] }` as `/api/sessions` lists them, with `shared` |
 | `POST /api/admin/sessions/end` | `{ id }` | its members are out (told `left`); a host still playing has a session of its own again |
-| `GET /api/admin/trash` | | `{ items: [{ name, at, size, title, artist, by, restorable }], bytes }` |
+| `GET /api/admin/trash` | | `{ items: [{ name, at, size, title, artist, by, addedBy, restorable }], bytes }` (`by`: who deleted it, `addedBy`: who added it; names, empty when not known) |
 | `POST /api/admin/trash/restore` | `{ name }` | back as it was (`restorable`: its id, names, stats, favourites and playlist places): `{ songId, rev }`; else as a new song: `{ scanned, rev }` |
 | `POST /api/admin/trash/empty` | | every file in it gone for good: `{ deleted }` |
 | `GET` / `POST /api/admin/rules` | `{ profileCreation?: "anyone" \| "admins", songDelete?: "anyone" \| "owner" }` | the rules: `{ profileCreation, songDelete }` |

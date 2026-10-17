@@ -95,7 +95,7 @@ const Modal = {
  * Asks a yes/no question. With `checkbox` it also asks that; resolves
  * { checked } on yes and null on no.
  */
-function confirmDialog({ title, message, confirmLabel = 'OK', danger = false, checkbox = null }) {
+function confirmDialog({ title, message, confirmLabel = 'OK', danger = false, kind = '', checkbox = null }) {
   return new Promise((resolve) => {
     let box = null;
     const body = [h('p.modal__text', message)];
@@ -112,7 +112,7 @@ function confirmDialog({ title, message, confirmLabel = 'OK', danger = false, ch
         { label: 'Cancel' },
         {
           label: confirmLabel,
-          kind: danger ? 'danger' : 'primary',
+          kind: kind || (danger ? 'danger' : 'primary'),
           onClick: () => {
             answer = { checked: box ? box.checked : false };
           },
