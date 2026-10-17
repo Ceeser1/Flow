@@ -31,7 +31,7 @@ Usage:
   flow-server admin revoke <name>       no longer an admin
   flow-server admin master <name>       make a profile the master admin (one per server), who can
                                         also change the server password and make admins in the
-                                        apps. Asks for its PIN, which follows the password's rules.
+                                        apps. Asks for its PIN: at least 4 characters, a strong one recommended.
                                         --create makes the profile when there is none of that name
   flow-server info                      the server's settings, one key=value a line (for install.sh)
   flow-server tag-songs [--dry-run]     write the songs' flowid and cover into their files, for the
@@ -195,17 +195,16 @@ function profileNamed(profiles, name) {
 }
 
 /**
- * A PIN typed twice (or FLOW_PROFILE_PIN). The master admin's must follow
- * the password's rules at the server's level; another may be left empty.
+ * A PIN typed twice (or FLOW_PROFILE_PIN). The master admin's needs at least
+ * 4 characters (a strong one only recommended); another may be left empty.
  */
 async function askPin(name, level, master) {
   let pin = process.env.FLOW_PROFILE_PIN || '';
   if (!pin) {
     if (!process.stdin.isTTY) throw new Error('No terminal to ask the PIN in: give it as FLOW_PROFILE_PIN.');
     if (master) {
-      console.log(level >= PUBLIC_LEVEL
-        ? 'The master admin\'s PIN can change the server password, so it needs what the password needs here: at least 8 characters with a lower-case letter, an upper-case letter and a number.'
-        : 'The master admin\'s PIN can change the server password, so it needs at least 4 characters.');
+      console.log('The master admin can change the server password. It\'s recommended to give the master-admin a strong password as its \'pin\' to log into that profile.');
+      console.log('At least 4 characters.');
     }
     pin = await askHidden(master ? `PIN for ${name}: ` : `PIN for ${name} (Enter for none): `);
     if (pin || master) {
@@ -214,7 +213,7 @@ async function askPin(name, level, master) {
     }
   }
   if (master) {
-    const problem = passwordProblem(pin, level, 'master admin\'s PIN');
+    const problem = passwordProblem(pin, 1, 'master admin\'s PIN');
     if (problem) throw new Error(`${problem} Nothing was changed.`);
   }
   return pin;
@@ -249,7 +248,7 @@ async function profilesCommand(config, args, level) {
   const master = cfg.profiles.find((p) => p.master);
   if (!master) console.log('\nNo master admin. Make one with: flow-server admin master <name>');
   else if (level >= PUBLIC_LEVEL && !(master.pin && master.pin.strong)) {
-    console.log(`\nThe master admin's PIN is too weak for a server on the internet, so it cannot change the password in the apps. A new one: flow-server admin master "${master.name}"`);
+    console.log(`\nRecommended: a strong password as the master admin's PIN, since it can change the server password. A new one: flow-server admin master "${master.name}"`);
   }
 }
 

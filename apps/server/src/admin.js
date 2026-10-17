@@ -249,10 +249,6 @@ function createAdminRoutes({
     if (!me.master) throw new HttpError(403, 'Only the master admin can change the server password.');
     const cfg = config.get();
     const level = cfg.level || 1;
-    if (level >= PUBLIC_LEVEL && !(me.pin && me.pin.strong)) {
-      throw new HttpError(403, 'This server can be reached from the internet, so the master admin\'s PIN has to be as strong as the password first. '
-        + `On the server: flow-server admin master "${me.name}"`);
-    }
     if (throttle) throttle.check(ip);
     if (cfg.password && !checkPassword(cfg.password, String(body.current || ''))) {
       if (throttle) throttle.fail(ip);

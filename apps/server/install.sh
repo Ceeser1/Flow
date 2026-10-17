@@ -528,8 +528,9 @@ if [ -n "$MASTER" ]; then
   say "$MASTER is the master admin. Another one later: node $REPO/apps/server/src/main.js admin master <name>"
 else
   say "The master admin is the one profile that can change the server password and make other"
-  say "profiles admins from inside the apps (Settings, Administration). Its PIN follows the"
-  say "password's rules. Admins see the profiles, their IPs, the trash and the server's rules."
+  say "profiles admins from inside the apps (Settings, Administration). Its PIN needs at least"
+  say "4 characters; a strong password is recommended. Admins see the profiles, their IPs, the"
+  say "trash and the server's rules."
   if [ -t 0 ] && [ "$YES" != 1 ] && ask "Create a master-admin profile now?"; then
     printf "Its name (a profile's name that exists already makes that one the master): "
     read -r MASTER_NAME || MASTER_NAME=""

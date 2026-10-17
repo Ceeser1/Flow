@@ -370,7 +370,7 @@ master admin. Nobody changes their own profile or the master's here.
 | `POST /api/admin/trash/restore` | `{ name }` | back as it was (`restorable`: its id, names, stats, favourites and playlist places): `{ songId, rev }`; else as a new song: `{ scanned, rev }` |
 | `POST /api/admin/trash/empty` | | every file in it gone for good: `{ deleted }` |
 | `GET` / `POST /api/admin/rules` | `{ profileCreation?: "anyone" \| "admins", songDelete?: "anyone" \| "owner" }` | the rules: `{ profileCreation, songDelete }` |
-| `POST /api/admin/password` | `{ current, password }` or `{ current, remove: true }` | *master*: the server password changed (or taken away, levels 1 and 2 only). Every device is signed out; the master's own gets `{ token }`. 403 for a wrong `current`, and at levels 3 and 4 while the master's PIN is weaker than the password rules |
+| `POST /api/admin/password` | `{ current, password }` or `{ current, remove: true }` | *master*: the server password changed (or taken away, levels 1 and 2 only). Every device is signed out; the master's own gets `{ token }`. 403 for a wrong `current` |
 
 ## Live channel
 

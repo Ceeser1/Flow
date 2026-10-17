@@ -339,9 +339,9 @@ What the password has to be depends on the server's level (`--level`, set by
 At level 3 or 4 `clear-password` is refused, and without a strong password the
 server lets nobody from outside past `/api/hello`. Going up sets both at once:
 `flow-server set-password --level 3`. Profile PINs have no rules; they only
-pick a profile once a device is past the server password. Except the master
-admin's (see Administration below), which follows the password's rules,
-since it can change the password from an app.
+pick a profile once a device is past the server password. The master
+admin's (see Administration below) needs at least 4 characters; since it can
+change the password from an app, a strong password as its PIN is recommended.
 
 **The home network needs no password at level 3 and 4**, only the internet
 does. The server counts a caller as home when it has a private address

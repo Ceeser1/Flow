@@ -421,13 +421,14 @@ test('the master admin changes the server password; everyone else signs in again
     assert.equal(r.status, 200);
     assert.equal(server.config.get().password, null);
 
-    // At level 3 the master's PIN must be strong first.
+    // At level 3 a weak master PIN may change it too (a strong one is only
+    // recommended), but the new password follows the internet's rules.
     server.config.set({ level: 3, password: configMod.passwordEntry('Strong123'), tokens: [] });
     const signedIn = (await post(base, '/api/login', { password: 'Strong123', device: 'PC' })).json.token;
     const t3 = (await post(base, '/api/profiles/login', { profileId: annaId, device: 'PC' }, signedIn)).json.token;
+    assert.equal((await post(base, '/api/admin/password', { current: 'Strong123', password: 'weak' }, t3)).status, 400);
     r = await post(base, '/api/admin/password', { current: 'Strong123', password: 'Better456x' }, t3);
-    assert.equal(r.status, 403);
-    assert.match(r.json.error, /PIN/);
+    assert.equal(r.status, 200);
   });
 });
 

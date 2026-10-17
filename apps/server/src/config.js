@@ -11,8 +11,8 @@
 // admin. The first profile a server ever has becomes an admin by itself (on a
 // server from before, the oldest one, once: adminSeeded); more are made on
 // the command line (flow-server admin), or in an app by the master. The
-// master is made only on the command line or by install.sh; its PIN follows
-// the password's rules (@flow/core/password), since it can change the
+// master is made only on the command line or by install.sh; its PIN needs at
+// least 4 characters, a strong one recommended since it can change the
 // password from an app.
 //
 //   home   FLOW_SERVER_HOME, else ~/.local/share/flow-server on Linux
