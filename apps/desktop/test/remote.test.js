@@ -215,9 +215,12 @@ test('a Flow Server as the library, step by step', async (t) => {
     await assert.rejects(remote.changeServerPassword({ password: 'abcd' }), /master/);
 
     // The master: the password changed, this app carries on with its new token and keeps the password.
+    // Made the master on the server (flow-server admin master) while signed in:
+    // the library is unchanged, so the profiles list (fetched on every
+    // connect) is what tells this app.
     one.server.config.set({ profiles: one.server.config.get().profiles.map((p) => (p.id === night.id ? { ...p, master: true } : p)) });
-    await remote.logoutProfile();
-    await remote.loginProfile(night.id, '');
+    assert.equal(remote.status().master, false);
+    await remote.loadProfiles();
     assert.equal(remote.status().master, true);
     const before = remote.status().token;
     await remote.changeServerPassword({ password: 'abcd' });

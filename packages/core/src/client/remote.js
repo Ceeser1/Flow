@@ -1914,6 +1914,7 @@ function createRemote(env) {
       await flush();
       await call('/api/rescan', { method: 'POST', timeout: 120000 }).catch(() => {});
       await refresh().catch(() => {});
+      await loadProfiles().catch(() => {});
       await followServer();
       status.lastSync = Date.now();
       return { sent: count, queued: sync.queue.length };
@@ -2506,6 +2507,14 @@ function createRemote(env) {
     if (changed) {
       saveSync();
       afterServerChange();
+    }
+    // The signed-in profile as the list has it: made admin or master on the
+    // server (flow-server admin) changes no library, so refresh() can answer
+    // 204 and keep the copy from before.
+    const mineNow = sync.profile && list.find((p) => p.id === sync.profile.id);
+    if (mineNow && ['name', 'pin', 'admin', 'master'].some((k) => mineNow[k] !== sync.profile[k])) {
+      sync.profile = { ...mineNow, createdAt: mineNow.createdAt || sync.profile.createdAt };
+      saveSync();
     }
     emitStatus();
     return list;
