@@ -65,6 +65,18 @@ const Admin = {
     };
     // Next frame: a height set inside the observer's call would be observed again at once.
     new ResizeObserver(() => requestAnimationFrame(fit)).observe(node);
+    // A touch screen scrolls the list only from its middle half: a swipe on
+    // its outer quarters scrolls the page (the list cannot scroll for that touch).
+    // Not passive: Android then waits for this before it picks what the swipe scrolls.
+    node.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const r = node.getBoundingClientRect();
+      const x = (e.touches[0].clientX - r.left) / r.width;
+      node.classList.toggle('admin__scroll--page', x < 0.25 || x > 0.75);
+    }, { passive: false });
+    const lift = (e) => { if (!e.touches.length) node.classList.remove('admin__scroll--page'); };
+    node.addEventListener('touchend', lift);
+    node.addEventListener('touchcancel', lift);
     return node;
   },
 

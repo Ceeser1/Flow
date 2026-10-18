@@ -3019,6 +3019,8 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 /* A list that scrolls past 5 rows: on a darker ground of its own, so its rows read as one list. */
 .admin__scroll { overflow-y: auto; overscroll-behavior: contain; background: rgba(0, 0, 0, 0.24); border-radius: 8px; }
 .admin__list.admin__scroll { padding: 0 10px; }
+/* Touched on an outer quarter: the swipe scrolls the page instead (admin.js). */
+.admin__scroll.admin__scroll--page { overflow-y: hidden; overscroll-behavior: auto; }
 /* The table's header stays put over its rows: as dark, but solid. */
 .admin__scroll .table th { background: #19191c; }
 .admin__dot { display: inline-block; width: 3px; height: 3px; margin: 0 6px; border-radius: 50%; background: currentColor; vertical-align: middle; }
