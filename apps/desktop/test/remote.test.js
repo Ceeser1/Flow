@@ -195,6 +195,13 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.ok(list.some((p) => p.name === 'Evening Listener'));
     const renamed = await remote.renameProfile('Night Listener');
     assert.equal(renamed.name, 'Night Listener');
+    // A PIN of its own: renaming then needs it; taken away again for the steps below.
+    assert.equal((await remote.changePin('', '4321')).pin, true);
+    assert.equal(remote.status().profile.pin, true);
+    await assert.rejects(remote.renameProfile('Late Listener'), /Enter the current PIN/);
+    await new Promise((r) => setTimeout(r, 1100)); // the wait after a wrong try
+    assert.equal((await remote.renameProfile('Night Listener', '4321')).name, 'Night Listener');
+    assert.equal((await remote.changePin('4321', '')).pin, false);
     await remote.logoutProfile();
     assert.equal(remote.status().profile, null);
     assert.ok(!model.playlistById(remote.view(), 'mine1'));

@@ -109,7 +109,7 @@ Open to anyone (only the refusals above apply).
 {
   "app": "flow-server",
   "protocol": 1,
-  "features": ["profiles", "admin", "download", "search", "sessions", "trim"],
+  "features": ["profiles", "admin", "pin", "download", "search", "sessions", "trim"],
   "version": "3.3.3",
   "id": "<server id>",
   "name": "Flow Server",
@@ -121,7 +121,8 @@ Open to anyone (only the refusals above apply).
 ```
 
 - `features`: `profiles` always; `admin` from 3.5 (the
-  [Administration](#administration) routes); `download` when the server can download
+  [Administration](#administration) routes); `pin` from 3.5.1 (a profile
+  changes its own PIN, `POST /api/profiles/pin`); `download` when the server can download
   songs itself (yt-dlp and ffmpeg there, not turned off), and with it
   `search` (searching by a song's name; older servers lack it); `sessions` for
   Active Sessions; `trim` when ffmpeg is there.
@@ -332,11 +333,12 @@ the token from `/api/login` first.
 | `POST /api/profiles` | `{ name, pin?, device?, client? }` | a new profile, signed in: `{ token, profile }`. 409 for a name taken, 403 when only admins may make profiles (the first one on a server always may) |
 | `POST /api/profiles/login` | `{ profileId, pin?, device?, client? }` | `{ token, profile }`. 403 wrong PIN (waits as for the password) or a disabled profile, 404 gone |
 | `POST /api/profiles/logout` | | `{}`: this token is for no profile again |
-| `POST /api/profiles/rename` | `{ name }` | `{ profile }` |
+| `POST /api/profiles/rename` | `{ name, pin? }` | `{ profile }`. From 3.5.1 `pin` is the profile's current PIN: 403 when it has one and that is wrong or missing (waits as for the password) |
+| `POST /api/profiles/pin` | `{ pin?, newPin }` | from 3.5.1 (`pin` in the features): `{ profile }`. `pin`: the current one, checked as for rename; `newPin`: the new one, `""` for none. The master admin's needs at least 4 characters (400). Other devices signed in to it stay signed in |
 | `POST /api/profiles/delete` | | `{}`: deletes the signed-in profile with its playlists, favourites and stats (the songs stay) |
 
 The `token` from signing in to a profile replaces the old one: use it from
-then on. Profile names are at most 40 characters; rename and delete answer
+then on. Profile names are at most 40 characters; rename, pin and delete answer
 409 without a profile signed in.
 
 The first profile a server ever has is an admin (on a server from before

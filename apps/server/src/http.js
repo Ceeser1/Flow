@@ -62,7 +62,9 @@
 //   POST /api/profiles { name, pin, device }        a new profile, signed in: { token, profile }
 //   POST /api/profiles/login { profileId, pin, device }                  { token, profile }
 //   POST /api/profiles/logout                       back to no profile
-//   POST /api/profiles/rename { name }              the signed-in profile
+//   POST /api/profiles/rename { name, pin }         the signed-in profile (pin: its current one)
+//   POST /api/profiles/pin { pin, newPin }          its PIN changed ("" for none; the master
+//                                      admin's needs 4 characters); only with the "pin" feature
 //   POST /api/profiles/delete                       the signed-in profile, with its playlists
 //
 // With a password set, every other route needs the token from /api/login:
@@ -101,7 +103,7 @@ const path = require('path');
 const { URL } = require('url');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const { isPrivateIp, isTailscaleAddress } = require('@flow/core/address');
-const { PUBLIC_LEVEL } = require('@flow/core/password');
+const { PUBLIC_LEVEL, passwordProblem } = require('@flow/core/password');
 const { DEFAULT_OWNER, DEFAULT_NAME } = require('@flow/core/profiles');
 const {
   checkPassword, pinEntry, hashToken, checkProfileName: checkName, newProfileId, CLIENT_ID,
@@ -116,7 +118,7 @@ const { createAdminRoutes } = require('./admin');
 const PROTOCOL = 1;
 // What this server can do beyond protocol 1, for apps that know to ask.
 // admin: /api/admin for admin profiles (admin.js).
-const FEATURES = ['profiles', 'admin'];
+const FEATURES = ['profiles', 'admin', 'pin'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;
@@ -622,6 +624,26 @@ function createHttpServer({
       return sendJson(res, 200, {});
     }
     if (!current) throw new HttpError(409, 'Log in to a profile first.');
+    // Its own name and PIN change only with its current PIN.
+    if (action === 'rename' || action === 'pin') {
+      throttle.check(ip);
+      if (current.pin && !checkPassword(current.pin, String(body.pin || ''))) {
+        throttle.fail(ip);
+        log(`Wrong PIN for profile ${current.name} from ${ip}`);
+        note.failed('pin', { profile: current, ip, device });
+        throw new HttpError(403, body.pin ? 'Wrong current PIN.' : 'Enter the current PIN.');
+      }
+      throttle.ok(ip);
+    }
+    if (action === 'pin') {
+      const pin = String(body.newPin || '');
+      // The master admin's PIN as on the command line: at least 4 characters at every level.
+      const problem = current.master ? passwordProblem(pin, 1, 'master admin\'s PIN') : '';
+      if (problem) throw new HttpError(400, problem);
+      config.set({ profiles: config.get().profiles.map((p) => (p.id === current.id ? { ...p, pin: pinEntry(pin) } : p)) });
+      log(pin ? `Profile ${current.name} changed its PIN` : `Profile ${current.name} removed its PIN`);
+      return sendJson(res, 200, { profile: publicProfile({ ...current, pin: !!pin }) });
+    }
     if (action === 'rename') {
       const name = checkProfileName(body.name, current.id);
       config.set({ profiles: config.get().profiles.map((p) => (p.id === current.id ? { ...p, name } : p)) });
@@ -838,7 +860,7 @@ function createHttpServer({
       if (!me || !me.admin) throw new HttpError(403, 'Only an admin profile can do this.');
       return admin.route(req, res, p, me, { entry, ip: client.ip });
     }
-    const pm = /^\/api\/profiles(?:\/(login|logout|rename|delete))?$/.exec(p);
+    const pm = /^\/api\/profiles(?:\/(login|logout|rename|pin|delete))?$/.exec(p);
     if (pm && (req.method === 'POST' || (req.method === 'GET' && !pm[1]))) {
       return profiles(req, res, entry, pm[1] || (req.method === 'GET' ? 'list' : 'create'), client);
     }

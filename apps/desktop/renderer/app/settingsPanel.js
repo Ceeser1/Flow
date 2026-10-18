@@ -934,14 +934,21 @@ const SettingsPanel = {
 
   /**
    * "Profile": signed in to one of the server's profiles, or to none. Not
-   * signed in: the server's profiles and "+ New" (which turns into a box for
-   * the new one's name; not there while only admins make profiles), a PIN,
-   * and Login or Create. Signed in: who, with
-   * Rename (the name turns into a box with a tick), Delete and Logout.
+   * signed in: the server's profiles and "+ New" (which opens the Create new
+   * Profile window; not there while only admins make profiles), a PIN, and
+   * Login. Signed in: who, Logout, and ⋯, which slides open Edit Name, Change
+   * PIN and Delete Profile; the first two ask in a window, with the current PIN.
    */
   _profileRow() {
-    this._prof = { mode: 'pick', picked: '', busy: false, key: '' };
+    this._prof = { picked: '', busy: false, key: '', more: false };
     this._profileNode = h('div.settings__control.profile-control');
+    // A press anywhere else slides the ⋯ menu shut (listened for once, not per opening).
+    if (!this._moreOutside) {
+      this._moreOutside = true;
+      document.addEventListener('pointerdown', (e) => {
+        if (this._prof.more && !this._profileNode.contains(e.target)) this._showProfileMore(false);
+      });
+    }
     return this._row({
       label: 'Profile',
       desc: 'Everyone shares the songs; each profile has its own playlists, favourites and listening stats.',
@@ -960,11 +967,11 @@ const SettingsPanel = {
     const ready = !!(st.on && st.state === 'online' && st.profilesSupported && Array.isArray(st.profiles));
     // "Only admins make profiles": no "+ New" while not signed in to an admin.
     const mayCreate = !(st.rules && st.rules.createProfiles === false);
-    if (!mayCreate && p.mode === 'new') p.mode = 'pick';
-    const key = JSON.stringify([ready, st.on, st.state, st.profilesSupported, st.profile, st.profiles, mayCreate, p.mode, p.picked, p.busy]);
+    const key = JSON.stringify([ready, st.on, st.state, st.profilesSupported, st.profile, st.profiles, mayCreate, p.picked, p.busy]);
     if (!force && key === p.key) return;
     p.key = key;
     clear(node);
+    if (!ready || !st.profile) p.more = false;
     if (!ready) {
       let text = '';
       if (st.profile) text = `Logged in as ${st.profile.name}`;
@@ -979,106 +986,127 @@ const SettingsPanel = {
 
   _drawSignedIn(node, profile) {
     const p = this._prof;
-    if (p.mode === 'rename') {
-      const input = h('input.input.settings__input.settings__input--short', {
-        type: 'text', value: profile.name, maxLength: 40, spellcheck: false, autocomplete: 'off', disabled: p.busy,
-      });
-      const save = () => this._profileDo(async () => {
-        const renamed = await window.flow.profileRename(input.value);
-        p.mode = 'pick';
-        toast(`Profile renamed to "${renamed.name}"`, 'success');
-      });
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') save();
-        if (e.key === 'Escape') {
-          e.stopPropagation();
-          p.mode = 'pick';
-          this._drawProfile(true);
-        }
-      });
-      node.append(
-        h('span.settings__caption', 'Logged in as'),
-        input,
-        h('button.btn.btn--small.profile-tick', { type: 'button', title: 'Save the name', disabled: p.busy, onclick: save }, '✓'),
-      );
-      requestAnimationFrame(() => {
-        input.focus();
-        input.select();
-      });
-      return;
-    }
-    const btn = (label, onclick) => h('button.btn.btn--small', { type: 'button', disabled: p.busy, onclick }, label);
+    const btn = (label, onclick, extra = '') => h('button.btn.btn--small' + extra, { type: 'button', disabled: p.busy, onclick }, label);
+    // Each slides the menu shut, then asks.
+    const item = (label, fn, extra) => btn(label, () => {
+      this._showProfileMore(false);
+      fn();
+    }, extra);
+    this._profileMore = h('div.profile-more',
+      item('Edit Name', () => this._editProfileName(profile)),
+      item('Change PIN', () => this._changeProfilePin(profile)),
+      item('Delete Profile', () => this._deleteProfile(profile), '.btn--danger'));
     // Square, as in a song's More menu.
-    const icon = (cls, glyph, title, onclick) => {
-      const b = iconButton(cls, glyph, title, onclick);
-      b.disabled = p.busy;
-      return b;
-    };
+    this._profileMoreBtn = iconButton('act.act--grey', Icons.more, 'More', () => this._showProfileMore(!p.more));
+    this._profileMoreBtn.disabled = p.busy;
     node.append(
       h('span.profile-who', 'Logged in as ', h('strong', profile.name)),
-      icon('act.act--grey', Icons.pencil, 'Rename', () => {
-        p.mode = 'rename';
-        this._drawProfile(true);
-      }),
-      icon('act.act--red', Icons.x, 'Delete', () => this._deleteProfile(profile)),
       btn('Logout', () => this._profileDo(async () => {
         await window.flow.profileLogout();
         toast(`Logged out of "${profile.name}"`, 'info');
       })),
+      this._profileMoreBtn,
+      this._profileMore,
     );
+    this._showProfileMore(p.more && !p.busy);
+  },
+
+  /** Slides the ⋯ menu open or shut (no redraw, so it is seen sliding). */
+  _showProfileMore(open) {
+    this._prof.more = open;
+    const menu = this._profileMore;
+    if (!menu || !menu.isConnected) return;
+    menu.classList.toggle('profile-more--open', open);
+    // Shut: its buttons are out of reach of Tab too.
+    menu.inert = !open;
+    this._profileMoreBtn.classList.toggle('act--open', open);
+    this._profileMoreBtn.setAttribute('aria-expanded', String(open));
+  },
+
+  /** The current PIN box: none to type while the profile has none. */
+  _currentPinField(profile) {
+    return {
+      key: 'pin', label: 'Current PIN', type: 'password', disabled: !profile.pin, placeholder: profile.pin ? '' : 'No PIN set',
+    };
+  },
+
+  _editProfileName(profile) {
+    return formDialog({
+      title: 'Change Profile Name',
+      confirmLabel: 'Submit',
+      fields: [
+        this._currentPinField(profile),
+        { key: 'name', label: 'New Name', value: profile.name, maxLength: 40 },
+      ],
+      submit: async ({ pin, name }) => {
+        const renamed = await window.flow.profileRename(name, pin);
+        toast(`Profile renamed to "${renamed.name}"`, 'success');
+      },
+    });
+  },
+
+  _changeProfilePin(profile) {
+    return formDialog({
+      title: 'Change PIN',
+      confirmLabel: 'Submit',
+      fields: [
+        this._currentPinField(profile),
+        { key: 'newPin', label: 'Your PIN', type: 'password', placeholder: profile.master ? 'At least 4 characters' : 'Leave empty for none' },
+        { key: 'confirm', label: 'Confirm PIN', type: 'password' },
+      ],
+      submit: async ({ pin, newPin, confirm }) => {
+        if (newPin !== confirm) throw new Error('The two PINs are not the same.');
+        if (!newPin && !profile.pin) throw new Error('Enter a PIN.');
+        const now = await window.flow.profilePin(pin, newPin);
+        toast(now.pin ? 'Your PIN was changed' : 'Your profile has no PIN now', 'success');
+      },
+    });
+  },
+
+  _newProfileDialog() {
+    return formDialog({
+      title: 'Create new Profile',
+      confirmLabel: 'Create',
+      fields: [
+        { key: 'name', label: 'Profile Name', maxLength: 40 },
+        { key: 'pin', label: 'Your PIN', type: 'password', placeholder: 'Optional' },
+        { key: 'confirm', label: 'Confirm PIN', type: 'password' },
+      ],
+      submit: async ({ name, pin, confirm }) => {
+        if (pin !== confirm) throw new Error('The two PINs are not the same.');
+        const made = await window.flow.profileCreate(name, pin);
+        toast(`Profile "${made.name}" made. Logged in as ${made.name}.`, 'success');
+      },
+    });
   },
 
   _drawSignIn(node, profiles, mayCreate) {
     const p = this._prof;
     if (p.picked && !profiles.some((x) => x.id === p.picked)) p.picked = '';
     const picked = profiles.find((x) => x.id === p.picked) || null;
-    const creating = p.mode === 'new';
-    let nameInput = null;
-    if (creating) {
-      nameInput = h('input.input.settings__input.settings__input--short', {
-        type: 'text', placeholder: 'New profile name', maxLength: 40, spellcheck: false, autocomplete: 'off', disabled: p.busy,
-      });
-      nameInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') go();
-        if (e.key === 'Escape') {
-          e.stopPropagation();
-          p.mode = 'pick';
-          this._drawProfile(true);
-        }
-      });
-      requestAnimationFrame(() => nameInput.focus());
-    } else {
-      nameInput = h('select.select.profile-select', { disabled: p.busy },
-        h('option', { value: '' }, 'Default / Shared'),
-        ...profiles.map((x) => h('option', { value: x.id }, x.name)),
-        mayCreate ? h('option', { value: '+new' }, '+ New') : null);
-      nameInput.value = p.picked;
-      nameInput.addEventListener('change', () => {
-        if (nameInput.value === '+new') {
-          p.mode = 'new';
-          p.picked = '';
-        } else {
-          p.picked = nameInput.value;
-        }
-        this._drawProfile(true);
-      });
-    }
-    const needsPin = creating || (picked && picked.pin);
+    const select = h('select.select.profile-select', { disabled: p.busy },
+      h('option', { value: '' }, 'Default / Shared'),
+      ...profiles.map((x) => h('option', { value: x.id }, x.name)),
+      mayCreate ? h('option', { value: '+new' }, '+ New') : null);
+    select.value = p.picked;
+    select.addEventListener('change', () => {
+      if (select.value === '+new') {
+        // Back to what was picked; the new one is asked for in a window.
+        select.value = p.picked;
+        this._newProfileDialog();
+        return;
+      }
+      p.picked = select.value;
+      this._drawProfile(true);
+    });
     const pin = h('input.input.settings__input.profile-pin', {
       type: 'password',
-      placeholder: creating ? 'PIN (optional)' : picked && !picked.pin ? 'No PIN' : 'PIN',
+      placeholder: picked && !picked.pin ? 'No PIN' : 'PIN',
       autocomplete: 'new-password',
       spellcheck: false,
-      disabled: p.busy || !needsPin,
+      disabled: p.busy || !(picked && picked.pin),
     });
     const go = () => {
-      if (creating) {
-        return this._profileDo(async () => {
-          const made = await window.flow.profileCreate(nameInput.value, pin.value);
-          p.mode = 'pick';
-          toast(`Profile "${made.name}" made. Logged in as ${made.name}.`, 'success');
-        });
-      }
       if (!picked) return undefined;
       return this._profileDo(async () => {
         const now = await window.flow.profileLogin(picked.id, pin.value);
@@ -1088,9 +1116,9 @@ const SettingsPanel = {
     pin.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') go();
     });
-    node.append(nameInput, pin,
-      h('button.btn.btn--small', { type: 'button', disabled: p.busy || (!creating && !picked), onclick: go }, creating ? 'Create' : 'Login'));
-    if (picked && picked.pin && !creating) requestAnimationFrame(() => pin.focus());
+    node.append(select, pin,
+      h('button.btn.btn--small', { type: 'button', disabled: p.busy || !picked, onclick: go }, 'Login'));
+    if (picked && picked.pin) requestAnimationFrame(() => pin.focus());
   },
 
   /** One profile action: the row waits for it, and says what went wrong. */
@@ -1109,7 +1137,7 @@ const SettingsPanel = {
 
   async _deleteProfile(profile) {
     const answer = await confirmDialog({
-      title: 'Delete profile',
+      title: 'Delete Profile',
       message: `Delete the profile "${profile.name}"? All its playlists, favourites and listening stats will be gone, `
         + 'on every device. The songs stay for everyone.',
       confirmLabel: 'Delete',

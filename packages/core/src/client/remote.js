@@ -201,7 +201,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -555,10 +555,11 @@ function createRemote(env) {
         const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
+        const pin = Array.isArray(hello.features) && hello.features.includes('pin');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         if (via === 'home') fillRemote(hello);
@@ -2586,10 +2587,26 @@ function createRemote(env) {
     return switchProfile(undefined, null);
   }
 
-  async function renameProfile(name) {
+  /** `pin`: the profile's current one (servers from before 3.5.1 do not ask for it). */
+  async function renameProfile(name, pin = '') {
     requireProfiles();
-    const r = await call('/api/profiles/rename', { method: 'POST', json: { name } });
+    const r = await call('/api/profiles/rename', { method: 'POST', json: { name, pin: String(pin || '') } });
     sync.profile = cleanProfile(r.profile);
+    saveSync();
+    await loadProfiles().catch(() => {});
+    emitStatus();
+    return sync.profile;
+  }
+
+  /** The signed-in profile's PIN changed from `pin` to `newPin` ('': none). */
+  async function changePin(pin, newPin) {
+    requireProfiles();
+    if (!conn.pin) throw new Error('This Flow Server is too old to change a PIN. Update it first.');
+    if (!currentProfile()) throw new Error('Log in to a profile first.');
+    const r = await call('/api/profiles/pin', { method: 'POST', json: { pin: String(pin || ''), newPin: String(newPin || '') } });
+    sync.profile = cleanProfile({ ...sync.profile, ...r.profile });
+    // The next start signs in with the new one (restoreProfile).
+    sync.profilePin = sync.profile.pin ? encrypt(String(newPin)) : '';
     saveSync();
     await loadProfiles().catch(() => {});
     emitStatus();
@@ -2667,7 +2684,7 @@ function createRemote(env) {
     coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
     trimSong, trimmedHere, songPeaks, newCutId,
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
-    loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, deleteProfile,
+    loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
     admin, changeServerPassword,
   };
 }

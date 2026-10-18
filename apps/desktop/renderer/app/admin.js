@@ -353,7 +353,7 @@ const Admin = {
   },
 
   async _removePin(p) {
-    if (!(await this._confirm('Reset PIN', `Reset the PIN of ${p.name}? It then has none: anyone can log in to it, and set a new one by making it again.`, 'Reset PIN'))) return;
+    if (!(await this._confirm('Reset PIN', `Reset the PIN of ${p.name}? It then has none: anyone can log in to it, and set a new one in Settings under Profile with Change PIN.`, 'Reset PIN'))) return;
     await this._do(() => window.flow.admin(`profiles/${p.id}/pin`, {}), `${p.name} has no PIN now`);
   },
 

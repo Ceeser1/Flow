@@ -84,7 +84,8 @@ contextBridge.exposeInMainWorld('flow', {
   profileLogin: (profileId, pin) => call('server:profileLogin', { profileId, pin }),
   profileCreate: (name, pin) => call('server:profileCreate', { name, pin }),
   profileLogout: () => call('server:profileLogout'),
-  profileRename: (name) => call('server:profileRename', name),
+  profileRename: (name, pin) => call('server:profileRename', { name, pin }),
+  profilePin: (pin, newPin) => call('server:profilePin', { pin, newPin }),
   profileDelete: () => call('server:profileDelete'),
   // Administration (3.5): an admins' route, and the master's password change.
   admin: (route, body) => call('server:admin', { route, body }),

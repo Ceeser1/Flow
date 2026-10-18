@@ -346,7 +346,7 @@ async function get(base, route, token) {
 
 test('profiles over the network: make, sign in with a PIN, rename, sign out, delete', async () => {
   await withServer(async ({ base }) => {
-    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'sessions']);
+    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'sessions']);
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
     await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
     assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null, createProfiles: true });
@@ -401,6 +401,48 @@ test('profiles over the network: make, sign in with a PIN, rename, sign out, del
     assert.equal(lib.json.profile, null);
     assert.equal(lib.json.library.songs.length, 1);
     assert.deepEqual((await get(base, '/api/profiles')).json.profiles.map((p) => p.name), ['Anna']);
+  });
+});
+
+test('a profile changes its own name and PIN only with its current PIN', async () => {
+  await withServer(async ({ base, server }) => {
+    const anna = (await post(base, '/api/profiles', { name: 'Anna', pin: '1234', device: 'pc' })).json;
+    // The wait after a wrong try, twice as long after the second in a row.
+    const wait = (s = 1) => new Promise((r) => setTimeout(r, s * 1000 + 100));
+    assert.equal((await get(base, '/api/hello')).json.features.includes('pin'), true);
+
+    let r = await post(base, '/api/profiles/rename', { name: 'Anna B' }, anna.token);
+    assert.equal(r.status, 403);
+    assert.equal(r.json.error, 'Enter the current PIN.');
+    await wait();
+    r = await post(base, '/api/profiles/rename', { name: 'Anna B', pin: '9999' }, anna.token);
+    assert.equal(r.json.error, 'Wrong current PIN.');
+    await wait(2);
+    assert.equal((await post(base, '/api/profiles/rename', { name: 'Anna B', pin: '1234' }, anna.token)).json.profile.name, 'Anna B');
+
+    // A new PIN: the old one no longer signs in, the new one does.
+    assert.equal((await post(base, '/api/profiles/pin', { pin: '9999', newPin: '5678' }, anna.token)).status, 403);
+    await wait();
+    r = await post(base, '/api/profiles/pin', { pin: '1234', newPin: '5678' }, anna.token);
+    assert.equal(r.status, 200);
+    assert.equal(r.json.profile.pin, true);
+    assert.equal((await post(base, '/api/profiles/login', { profileId: anna.profile.id, pin: '1234', device: 'tablet' })).status, 403);
+    await wait();
+    assert.equal((await post(base, '/api/profiles/login', { profileId: anna.profile.id, pin: '5678', device: 'tablet' })).status, 200);
+
+    // None at all, then one again without a current PIN to give.
+    r = await post(base, '/api/profiles/pin', { pin: '5678', newPin: '' }, anna.token);
+    assert.equal(r.json.profile.pin, false);
+    assert.equal((await get(base, '/api/profiles')).json.profiles[0].pin, false);
+    assert.equal((await post(base, '/api/profiles/pin', { newPin: '24680' }, anna.token)).json.profile.pin, true);
+
+    // The master admin's needs 4 characters.
+    server.config.set({ profiles: server.config.get().profiles.map((p) => ({ ...p, master: true })) });
+    r = await post(base, '/api/profiles/pin', { pin: '24680', newPin: '12' }, anna.token);
+    assert.equal(r.status, 400);
+    assert.match(r.json.error, /at least 4 characters/);
+    assert.equal((await post(base, '/api/profiles/pin', { pin: '24680', newPin: '' }, anna.token)).status, 400);
+    assert.equal((await post(base, '/api/profiles/pin', { newPin: '1234' })).status, 409, 'no profile signed in');
   });
 });
 

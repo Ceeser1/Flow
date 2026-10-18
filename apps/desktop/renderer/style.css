@@ -2925,13 +2925,23 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 .server-chip--offline .server-chip__dot { background: #6a6a74; }
 
 .settings__input { width: 220px; height: 30px; }
-.settings__input--short { width: 140px; }
 .profile-control { flex-wrap: wrap; justify-content: flex-end; }
 .profile-select { width: 140px; }
 .profile-pin { width: 120px; }
 .profile-who { color: var(--text-dim); }
 .profile-who strong { color: var(--text); font-weight: 600; }
-.profile-tick { min-width: 30px; }
+/* The ⋯ beside Logout slides Edit Name, Change PIN and Delete Profile out
+   sideways; shut, it takes no room (nor the row's gap before it). */
+.profile-more {
+  display: flex;
+  gap: 8px;
+  max-width: 0;
+  margin-left: -8px;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-width 0.25s ease, margin-left 0.25s ease, opacity 0.2s ease;
+}
+.profile-more--open { max-width: 360px; margin-left: 0; opacity: 1; }
 .server-state { margin-top: 6px; padding-left: 23px; }
 .server-state:empty { display: none; }
 .server-state--online { color: var(--green); }
