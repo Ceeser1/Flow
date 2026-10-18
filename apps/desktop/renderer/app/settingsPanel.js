@@ -200,6 +200,8 @@ const SettingsPanel = {
       onClose: () => {
         this.modal = null;
         this._refresh = [];
+        // The profile's ⋯ tray, should Escape have closed Settings under it.
+        if (SongActions.tray && SongActions.tray.classList.contains('act-tray--settings')) SongActions.close();
       },
     });
     if (mobile) {
@@ -936,19 +938,12 @@ const SettingsPanel = {
    * "Profile": signed in to one of the server's profiles, or to none. Not
    * signed in: the server's profiles and "+ New" (which opens the Create new
    * Profile window; not there while only admins make profiles), a PIN, and
-   * Login. Signed in: who, Logout, and ⋯, which slides open Edit Name, Change
+   * Login. Signed in: who, Logout, and ⋯, whose tray holds Edit Name, Change
    * PIN and Delete Profile; the first two ask in a window, with the current PIN.
    */
   _profileRow() {
-    this._prof = { picked: '', busy: false, key: '', more: false };
+    this._prof = { picked: '', busy: false, key: '' };
     this._profileNode = h('div.settings__control.profile-control');
-    // A press anywhere else slides the ⋯ menu shut (listened for once, not per opening).
-    if (!this._moreOutside) {
-      this._moreOutside = true;
-      document.addEventListener('pointerdown', (e) => {
-        if (this._prof.more && !this._profileNode.contains(e.target)) this._showProfileMore(false);
-      });
-    }
     return this._row({
       label: 'Profile',
       desc: 'Everyone shares the songs; each profile has its own playlists, favourites and listening stats.',
@@ -970,8 +965,9 @@ const SettingsPanel = {
     const key = JSON.stringify([ready, st.on, st.state, st.profilesSupported, st.profile, st.profiles, mayCreate, p.picked, p.busy]);
     if (!force && key === p.key) return;
     p.key = key;
+    // The ⋯ tray belongs to the row about to be drawn anew.
+    if (SongActions.anchor && node.contains(SongActions.anchor)) SongActions.close();
     clear(node);
-    if (!ready || !st.profile) p.more = false;
     if (!ready) {
       let text = '';
       if (st.profile) text = `Logged in as ${st.profile.name}`;
@@ -987,40 +983,28 @@ const SettingsPanel = {
   _drawSignedIn(node, profile) {
     const p = this._prof;
     const btn = (label, onclick, extra = '') => h('button.btn.btn--small' + extra, { type: 'button', disabled: p.busy, onclick }, label);
-    // Each slides the menu shut, then asks.
-    const item = (label, fn, extra) => btn(label, () => {
-      this._showProfileMore(false);
-      fn();
-    }, extra);
-    this._profileMore = h('div.profile-more',
-      item('Edit Name', () => this._editProfileName(profile)),
-      item('Change PIN', () => this._changeProfilePin(profile)),
-      item('Delete Profile', () => this._deleteProfile(profile), '.btn--danger'));
-    // Square, as in a song's More menu.
-    this._profileMoreBtn = iconButton('act.act--grey', Icons.more, 'More', () => this._showProfileMore(!p.more));
-    this._profileMoreBtn.disabled = p.busy;
+    // Square, as in a song's More menu, and like it slides its tray out to the
+    // left over the row (closed by any of its buttons, or a click elsewhere).
+    const more = iconButton('act.act--grey', Icons.more, 'More', () => {
+      if (SongActions.anchor === more) {
+        SongActions.close();
+        return;
+      }
+      SongActions.open(more, [
+        btn('Edit Name', () => this._editProfileName(profile)),
+        btn('Change PIN', () => this._changeProfilePin(profile)),
+        btn('Delete Profile', () => this._deleteProfile(profile), '.btn--danger'),
+      ], 'act-tray--settings');
+    });
+    more.disabled = p.busy;
     node.append(
       h('span.profile-who', 'Logged in as ', h('strong', profile.name)),
       btn('Logout', () => this._profileDo(async () => {
         await window.flow.profileLogout();
         toast(`Logged out of "${profile.name}"`, 'info');
       })),
-      this._profileMoreBtn,
-      this._profileMore,
+      more,
     );
-    this._showProfileMore(p.more && !p.busy);
-  },
-
-  /** Slides the ⋯ menu open or shut (no redraw, so it is seen sliding). */
-  _showProfileMore(open) {
-    this._prof.more = open;
-    const menu = this._profileMore;
-    if (!menu || !menu.isConnected) return;
-    menu.classList.toggle('profile-more--open', open);
-    // Shut: its buttons are out of reach of Tab too.
-    menu.inert = !open;
-    this._profileMoreBtn.classList.toggle('act--open', open);
-    this._profileMoreBtn.setAttribute('aria-expanded', String(open));
   },
 
   /** The current PIN box: none to type while the profile has none. */

@@ -1504,6 +1504,8 @@ div.import__frame-head { cursor: default; }
 }
 
 .act-tray--in { transform: none; opacity: 1; }
+/* Opened from Settings (the profile's ⋯): over its window. */
+.act-tray--settings { z-index: 55; }
 
 /* "Add to playlists" beside the tray: your playlists with a box each, and Apply.
    Ten rows show; more scroll. Looks like Settings (the app's own background at
@@ -2930,18 +2932,6 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 .profile-pin { width: 120px; }
 .profile-who { color: var(--text-dim); }
 .profile-who strong { color: var(--text); font-weight: 600; }
-/* The ⋯ beside Logout slides Edit Name, Change PIN and Delete Profile out
-   sideways; shut, it takes no room (nor the row's gap before it). */
-.profile-more {
-  display: flex;
-  gap: 8px;
-  max-width: 0;
-  margin-left: -8px;
-  overflow: hidden;
-  opacity: 0;
-  transition: max-width 0.25s ease, margin-left 0.25s ease, opacity 0.2s ease;
-}
-.profile-more--open { max-width: 360px; margin-left: 0; opacity: 1; }
 .server-state { margin-top: 6px; padding-left: 23px; }
 .server-state:empty { display: none; }
 .server-state--online { color: var(--green); }

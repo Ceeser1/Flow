@@ -49,9 +49,10 @@ const SongActions = {
     return h('div.actions', ...shown, btn);
   },
 
-  open(anchor, buttons) {
+  /** `className`: another class for the tray (act-tray--settings: over the Settings window). */
+  open(anchor, buttons, className = '') {
     this.close();
-    const tray = h('div.act-tray', { role: 'menu' }, ...buttons);
+    const tray = h('div.act-tray' + (className ? '.' + className : ''), { role: 'menu' }, ...buttons);
     // Any of its buttons does its thing and closes it.
     tray.addEventListener('click', (e) => {
       const button = e.target.closest('button');
