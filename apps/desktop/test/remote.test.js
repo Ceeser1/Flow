@@ -183,7 +183,9 @@ test('a Flow Server as the library, step by step', async (t) => {
 
   await t.test('profiles: made, signed in to, its own playlists, signed out', async () => {
     assert.equal(remote.status().profilesSupported, true);
-    const made = await remote.createProfile('Evening Listener', '');
+    // The server's first profile becomes its admin, so it needs a PIN.
+    await assert.rejects(remote.createProfile('Evening Listener', ''), /needs a PIN/);
+    const made = await remote.createProfile('Evening Listener', '2468');
     assert.equal(made.name, 'Evening Listener');
     assert.equal(remote.status().profile.name, 'Evening Listener');
     const token = remote.status().token;
@@ -193,15 +195,16 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.ok(!(await serverLibrary(one.base)).playlists.some((p) => p.id === 'mine1'));
     const list = await remote.loadProfiles();
     assert.ok(list.some((p) => p.name === 'Evening Listener'));
-    const renamed = await remote.renameProfile('Night Listener');
-    assert.equal(renamed.name, 'Night Listener');
-    // A PIN of its own: renaming then needs it; taken away again for the steps below.
-    assert.equal((await remote.changePin('', '4321')).pin, true);
-    assert.equal(remote.status().profile.pin, true);
-    await assert.rejects(remote.renameProfile('Late Listener'), /Enter the current PIN/);
+    // Renaming needs the PIN; a new PIN is the one asked for then. An admin keeps one.
+    await assert.rejects(remote.renameProfile('Night Listener'), /Enter the current PIN/);
     await new Promise((r) => setTimeout(r, 1100)); // the wait after a wrong try
+    assert.equal((await remote.renameProfile('Night Listener', '2468')).name, 'Night Listener');
+    assert.equal((await remote.changePin('2468', '4321')).pin, true);
+    assert.equal(remote.status().profile.pin, true);
+    await assert.rejects(remote.renameProfile('Late Listener', '2468'), /Wrong current PIN/);
+    await new Promise((r) => setTimeout(r, 1100));
     assert.equal((await remote.renameProfile('Night Listener', '4321')).name, 'Night Listener');
-    assert.equal((await remote.changePin('4321', '')).pin, false);
+    await assert.rejects(remote.changePin('4321', ''), /An admin profile needs a PIN/);
     await remote.logoutProfile();
     assert.equal(remote.status().profile, null);
     assert.ok(!model.playlistById(remote.view(), 'mine1'));
@@ -209,7 +212,7 @@ test('a Flow Server as the library, step by step', async (t) => {
 
   await t.test('Administration: an admin profile, the rules, the master changing the password', async () => {
     const night = (await remote.loadProfiles()).find((p) => p.name === 'Night Listener');
-    await remote.loginProfile(night.id, '');
+    await remote.loginProfile(night.id, '4321');
     // The first profile on the server: an admin.
     assert.equal(remote.status().admin, true);
     assert.equal(remote.status().master, false);

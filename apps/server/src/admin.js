@@ -14,7 +14,7 @@
 //   POST /api/admin/profiles/:id/delete { songs }   the profile, with its playlists; songs:
 //                                            also every song it added, for everyone (to the
 //                                            trash): { deletedSongs }
-//   POST /api/admin/profiles/:id/pin         its PIN taken away (forgotten): {}
+//   POST /api/admin/profiles/:id/pin         its PIN taken away (forgotten), and admin with it: { revokedAdmin }
 //   POST /api/admin/profiles/:id/signout     its devices signed out of it: { devices }
 //   POST /api/admin/profiles/:id/disable { disabled }   signing in to it refused (its devices
 //                                            signed out of it), or allowed again
@@ -298,6 +298,7 @@ function createAdminRoutes({
     if (what === 'admin') {
       if (!me.master) throw new HttpError(403, 'Only the master admin can make admins.');
       if (target.master) throw new HttpError(409, 'The master admin is always an admin.');
+      if (body.admin && !target.pin) throw new HttpError(409, `${target.name} has no PIN: only a profile with a PIN can be an admin.`);
       setProfile(id, { admin: !!body.admin });
       log(`${me.name} ${body.admin ? 'made' : 'took back'} admin: ${target.name}`);
       return sendJson(res, 200, {});
@@ -310,9 +311,11 @@ function createAdminRoutes({
       return sendJson(res, 200, { deletedSongs });
     }
     if (what === 'pin') {
-      setProfile(id, { pin: null });
-      log(`${me.name} took away the PIN of ${target.name}`);
-      return sendJson(res, 200, {});
+      // A profile without a PIN is no admin: anyone could log in to it.
+      const revokedAdmin = !!target.admin;
+      setProfile(id, { pin: null, admin: false });
+      log(`${me.name} took away the PIN of ${target.name}${revokedAdmin ? ', and with it admin' : ''}`);
+      return sendJson(res, 200, { revokedAdmin });
     }
     if (what === 'signout') {
       const devices = signOut(id);

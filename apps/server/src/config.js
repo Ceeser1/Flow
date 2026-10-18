@@ -104,9 +104,13 @@ function clean(raw) {
   }
   // The first profile ever, or on a server from before 3.5 the oldest one,
   // becomes an admin. Once: an admin taken away later is not made again.
+  // Only a profile with a PIN is an admin (the first one needs one); on a
+  // server from before whose profiles all have none, the first to get one.
   let adminSeeded = r.adminSeeded === true;
-  if (!adminSeeded && profiles.length) {
-    if (!profiles.some((p) => p.admin)) profiles.reduce((a, b) => (b.createdAt < a.createdAt ? b : a)).admin = true;
+  const withPin = profiles.filter((p) => p.pin);
+  if (!adminSeeded && profiles.some((p) => p.admin)) adminSeeded = true;
+  else if (!adminSeeded && withPin.length) {
+    withPin.reduce((a, b) => (b.createdAt < a.createdAt ? b : a)).admin = true;
     adminSeeded = true;
   }
   const profileIds = new Set(profiles.map((p) => p.id));

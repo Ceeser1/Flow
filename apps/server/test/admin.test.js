@@ -52,26 +52,40 @@ function oldConfig(home, raw) {
   return configMod.open({ home, music: path.join(home, '..', 'music') });
 }
 
-test('a server from before 3.5: its oldest profile becomes an admin, once', () => {
+test('a server from before 3.5: its oldest profile with a PIN becomes an admin, once', () => {
   const dirs = tempDirs();
   try {
+    const pin = configMod.pinEntry('1234');
     const c = oldConfig(dirs.home, {
       profiles: [
-        { id: 'ben', name: 'Ben', createdAt: 300 },
-        { id: 'anna', name: 'Anna', createdAt: 100 },
-        { id: 'carla', name: 'Carla', createdAt: 200 },
+        { id: 'ben', name: 'Ben', createdAt: 300, pin },
+        { id: 'dora', name: 'Dora', createdAt: 50 },
+        { id: 'anna', name: 'Anna', createdAt: 100, pin },
+        { id: 'carla', name: 'Carla', createdAt: 200, pin },
       ],
     });
-    assert.deepEqual(c.get().profiles.map((p) => [p.id, p.admin]), [['ben', false], ['anna', true], ['carla', false]]);
+    assert.deepEqual(c.get().profiles.map((p) => [p.id, p.admin]), [['ben', false], ['dora', false], ['anna', true], ['carla', false]]);
     assert.equal(c.get().adminSeeded, true);
     assert.equal(c.get().profiles.find((p) => p.id === 'anna').lastSeenAt, 0);
     assert.equal(c.get().profiles.find((p) => p.id === 'anna').createdIp, '');
     // Taken away: not made again.
     c.set({ profiles: c.get().profiles.map((p) => ({ ...p, admin: false })) });
     const again = configMod.open({ home: dirs.home, music: dirs.music });
-    assert.deepEqual(again.get().profiles.map((p) => p.admin), [false, false, false]);
+    assert.deepEqual(again.get().profiles.map((p) => p.admin), [false, false, false, false]);
   } finally {
     fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
+  // None with a PIN: no admin yet; the first to get one becomes it.
+  const dirs2 = tempDirs();
+  try {
+    const c = oldConfig(dirs2.home, { profiles: [{ id: 'anna', name: 'Anna', createdAt: 100 }, { id: 'ben', name: 'Ben', createdAt: 200 }] });
+    assert.deepEqual(c.get().profiles.map((p) => p.admin), [false, false]);
+    assert.equal(c.get().adminSeeded, false);
+    c.set({ profiles: c.get().profiles.map((p) => (p.id === 'ben' ? { ...p, pin: configMod.pinEntry('1234') } : p)) });
+    assert.deepEqual(c.get().profiles.map((p) => p.admin), [false, true]);
+    assert.equal(c.get().adminSeeded, true);
+  } finally {
+    fs.rmSync(dirs2.root, { recursive: true, force: true });
   }
 });
 
@@ -105,6 +119,10 @@ test('one master, who is an admin and cannot be disabled; addresses kept newest 
 
 test('the first profile made in an app is an admin; the apps are told who is', async () => {
   await withServer(async ({ base }) => {
+    // It becomes the admin, so not without a PIN.
+    const none = await post(base, '/api/profiles', { name: 'Anna', device: 'pc' });
+    assert.equal(none.status, 400);
+    assert.match(none.json.error, /needs a PIN/);
     const anna = await post(base, '/api/profiles', { name: 'Anna', pin: '1234', device: 'pc' });
     assert.equal(anna.json.profile.admin, true);
     assert.equal(anna.json.profile.master, false);
@@ -118,7 +136,7 @@ test('the first profile made in an app is an admin; the apps are told who is', a
 
 test('a profile made on the command line gets its part of the library from the running server', async () => {
   await withServer(async ({ base, server, dirs }) => {
-    await post(base, '/api/profiles', { name: 'Anna', device: 'pc' });
+    await post(base, '/api/profiles', { name: 'Anna', pin: '1111', device: 'pc' });
     // What flow-server admin master Ben --create does: server.json only.
     const cli = configMod.open({ home: dirs.home, music: dirs.music });
     const ben = {
@@ -246,7 +264,7 @@ async function commands(base, list, token) {
 
 /** Anna (the first: an admin) and Ben, each signed in, Ben with a song he added and listened to. */
 async function annaAndBen(base) {
-  const anna = await post(base, '/api/profiles', { name: 'Anna', device: 'PC' });
+  const anna = await post(base, '/api/profiles', { name: 'Anna', pin: '1111', device: 'PC' });
   const ben = await post(base, '/api/profiles', { name: 'Ben', pin: '1234', device: 'Phone' });
   const song = await upload(base, 'up1', { title: 'Glory Box', artist: 'Portishead', format: 'mp3', duration: 300 }, ben.json.token);
   await commands(base, [{ type: 'recordListen', songId: song.json.id, listened: 300, duration: 300 }], ben.json.token);
@@ -332,6 +350,16 @@ test('only the master admin makes admins', async () => {
     assert.equal((await post(base, `/api/admin/profiles/${benId}/admin`, { admin: true }, tAnna)).status, 200);
     assert.equal((await get(base, '/api/admin/profiles', tBen)).status, 200, 'Ben is an admin now');
     assert.equal((await post(base, `/api/admin/profiles/${annaId}/admin`, { admin: false }, tAnna)).status, 409, 'the master stays one');
+
+    // A PIN taken away takes admin with it, and a profile without one is made no admin.
+    const reset = await post(base, `/api/admin/profiles/${benId}/pin`, {}, tAnna);
+    assert.equal(reset.json.revokedAdmin, true);
+    assert.equal(profileIn(server, benId).admin, false);
+    assert.equal(profileIn(server, benId).pin, null);
+    const refused = await post(base, `/api/admin/profiles/${benId}/admin`, { admin: true }, tAnna);
+    assert.equal(refused.status, 409);
+    assert.match(refused.json.error, /no PIN/);
+    assert.equal((await post(base, `/api/admin/profiles/${benId}/pin`, {}, tAnna)).json.revokedAdmin, false);
   });
 });
 
@@ -452,7 +480,7 @@ test('the master admin changes the server password; everyone else signs in again
     // recommended), but the new password follows the internet's rules.
     server.config.set({ level: 3, password: configMod.passwordEntry('Strong123'), tokens: [] });
     const signedIn = (await post(base, '/api/login', { password: 'Strong123', device: 'PC' })).json.token;
-    const t3 = (await post(base, '/api/profiles/login', { profileId: annaId, device: 'PC' }, signedIn)).json.token;
+    const t3 = (await post(base, '/api/profiles/login', { profileId: annaId, pin: '1111', device: 'PC' }, signedIn)).json.token;
     assert.equal((await post(base, '/api/admin/password', { current: 'Strong123', password: 'weak' }, t3)).status, 400);
     r = await post(base, '/api/admin/password', { current: 'Strong123', password: 'Better456x' }, t3);
     assert.equal(r.status, 200);

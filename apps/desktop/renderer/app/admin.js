@@ -301,8 +301,14 @@ const Admin = {
       !locked && p.pin ? btn('Reset PIN', () => this._removePin(p)) : null,
       !locked && p.devices ? btn('Log out everywhere', () => this._signOut(p)) : null,
     ].filter(Boolean);
+    // Only a profile with a PIN can be made an admin: greyed out, saying why.
+    const makeAdmin = Store.server.master && !p.master ? btn(p.admin ? 'Revoke Admin' : 'Make Admin', () => this._setAdmin(p)) : null;
+    if (makeAdmin && !p.admin && !p.pin) {
+      makeAdmin.disabled = true;
+      makeAdmin.title = 'Only a profile with a PIN can be an admin.';
+    }
     const second = [
-      Store.server.master && !p.master ? btn(p.admin ? 'Revoke Admin' : 'Make Admin', () => this._setAdmin(p)) : null,
+      makeAdmin,
       !locked ? btn(p.disabled ? 'Enable' : 'Disable', () => this._disable(p)) : null,
       !locked ? btn('Delete Profile', () => this._delete(p), '.btn--danger') : null,
     ].filter(Boolean);
@@ -354,8 +360,10 @@ const Admin = {
   },
 
   async _removePin(p) {
-    if (!(await this._confirm('Reset PIN', `Reset the PIN of ${p.name}? It then has none: anyone can log in to it, and set a new one in Settings under Profile with Change PIN.`, 'Reset PIN'))) return;
-    await this._do(() => window.flow.admin(`profiles/${p.id}/pin`, {}), `${p.name} has no PIN now`);
+    // A profile without a PIN cannot be an admin: the server takes that away too.
+    const admin = p.admin ? ` ${p.name} is an admin: admin will be revoked too, since a profile without a PIN cannot be an admin.` : '';
+    if (!(await this._confirm('Reset PIN', `Reset the PIN of ${p.name}? It then has none: anyone can log in to it, and set a new one in Settings under Profile with Change PIN.${admin}`, 'Reset PIN'))) return;
+    await this._do(() => window.flow.admin(`profiles/${p.id}/pin`, {}), p.admin ? `${p.name} has no PIN now and is no admin any more` : `${p.name} has no PIN now`);
   },
 
   async _signOut(p) {

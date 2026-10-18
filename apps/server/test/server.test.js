@@ -248,7 +248,7 @@ test('two apps on machines of the same name keep their own tokens', async () => 
     assert.ok(await ok(a2));
     assert.ok(await ok(b));
     // A profile signed in to keeps the app's id.
-    const r = await (await fetch(`${base}/api/profiles`, { method: 'POST', headers: { Authorization: `Bearer ${b}` }, body: JSON.stringify({ name: 'Anna', device: 'PC' }) })).json();
+    const r = await (await fetch(`${base}/api/profiles`, { method: 'POST', headers: { Authorization: `Bearer ${b}` }, body: JSON.stringify({ name: 'Anna', pin: '1111', device: 'PC' }) })).json();
     assert.ok(await ok(r.token));
     assert.ok(await ok(a2));
     assert.deepEqual(server.config.get().tokens.map((t) => t.client).sort(), ['client-aaaaaaaa', 'client-bbbbbbbb']);
@@ -430,14 +430,21 @@ test('a profile changes its own name and PIN only with its current PIN', async (
     await wait();
     assert.equal((await post(base, '/api/profiles/login', { profileId: anna.profile.id, pin: '5678', device: 'tablet' })).status, 200);
 
-    // None at all, then one again without a current PIN to give.
+    // Anna is the first profile, so an admin: she keeps a PIN.
     r = await post(base, '/api/profiles/pin', { pin: '5678', newPin: '' }, anna.token);
+    assert.equal(r.status, 400);
+    assert.equal(r.json.error, 'An admin profile needs a PIN.');
+    assert.equal((await post(base, '/api/profiles/pin', { pin: '5678', newPin: '24680' }, anna.token)).json.profile.pin, true);
+
+    // Anyone else: none at all, then one again without a current PIN to give.
+    const ben = (await post(base, '/api/profiles', { name: 'Ben', pin: '1357', device: 'phone' })).json;
+    r = await post(base, '/api/profiles/pin', { pin: '1357', newPin: '' }, ben.token);
     assert.equal(r.json.profile.pin, false);
-    assert.equal((await get(base, '/api/profiles')).json.profiles[0].pin, false);
-    assert.equal((await post(base, '/api/profiles/pin', { newPin: '24680' }, anna.token)).json.profile.pin, true);
+    assert.equal((await get(base, '/api/profiles')).json.profiles.find((p) => p.name === 'Ben').pin, false);
+    assert.equal((await post(base, '/api/profiles/pin', { newPin: '8642' }, ben.token)).json.profile.pin, true);
 
     // The master admin's needs 4 characters.
-    server.config.set({ profiles: server.config.get().profiles.map((p) => ({ ...p, master: true })) });
+    server.config.set({ profiles: server.config.get().profiles.map((p) => ({ ...p, master: p.name === 'Anna B' })) });
     r = await post(base, '/api/profiles/pin', { pin: '24680', newPin: '12' }, anna.token);
     assert.equal(r.status, 400);
     assert.match(r.json.error, /at least 4 characters/);
@@ -451,7 +458,7 @@ test('with a server password, profiles are behind it', async () => {
     assert.equal((await get(base, '/api/profiles')).status, 401);
     assert.equal((await post(base, '/api/profiles', { name: 'Anna' })).status, 401);
     const { token } = (await post(base, '/api/login', { password: 'secret', device: 'pc' })).json;
-    const anna = await post(base, '/api/profiles', { name: 'Anna', device: 'pc' }, token);
+    const anna = await post(base, '/api/profiles', { name: 'Anna', pin: '1111', device: 'pc' }, token);
     assert.equal(anna.status, 200);
     // The new token lets in as well; the old one was replaced.
     assert.equal((await get(base, '/api/library', anna.json.token)).json.profile.name, 'Anna');
@@ -585,7 +592,7 @@ test('at level 3 and 4 a session ends, and only the password starts a new one', 
       const { token } = await (await signIn(base)).json();
       await stay(base, token, 23 * HOUR + 40 * MIN);
       const made = await fetch(`${base}/api/profiles`, {
-        method: 'POST', headers: { ...json, Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: 'Anna', device: 'pc' }),
+        method: 'POST', headers: { ...json, Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: 'Anna', pin: '1111', device: 'pc' }),
       });
       assert.equal(made.status, 200);
       const profileToken = (await made.json()).token;
@@ -894,7 +901,7 @@ test('an asker gets only so many answers a minute', async () => {
 test('playlists shared by a profile reach the others, with the owner\'s name, and follows are kept', async () => {
   await withServer(async ({ base, server }) => {
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
-    const anna = (await post(base, '/api/profiles', { name: 'Anna', device: 'pc' })).json;
+    const anna = (await post(base, '/api/profiles', { name: 'Anna', pin: '1111', device: 'pc' })).json;
     const ben = (await post(base, '/api/profiles', { name: 'Ben', device: 'phone' })).json;
     const as = (t) => ({ Authorization: `Bearer ${t}` });
     await command(base, [
@@ -920,7 +927,7 @@ test('playlists shared by a profile reach the others, with the owner\'s name, an
 
     // A rename reaches the others: the revision moves on.
     const rev = server.library.rev;
-    await post(base, '/api/profiles/rename', { name: 'Anna B' }, anna.token);
+    await post(base, '/api/profiles/rename', { name: 'Anna B', pin: '1111' }, anna.token);
     assert.ok(server.library.rev > rev);
     lib = (await get(base, '/api/library', ben.token)).json.library;
     assert.equal(lib.sharedPlaylists[0].ownerName, 'Anna B');
@@ -935,7 +942,7 @@ test('playlists shared by a profile reach the others, with the owner\'s name, an
 test('a song remembers the profile that uploaded it, and the library names the profiles', async () => {
   await withServer(async ({ base, dirs, server }) => {
     await upload(base, 's0', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3' });
-    const anna = (await post(base, '/api/profiles', { name: 'Anna', device: 'pc' })).json;
+    const anna = (await post(base, '/api/profiles', { name: 'Anna', pin: '1111', device: 'pc' })).json;
     const ben = (await post(base, '/api/profiles', { name: 'Ben', device: 'phone' })).json;
     const as = (t) => ({ Authorization: `Bearer ${t}` });
     await upload(base, 's1', { title: 'Roads', artist: 'Portishead', format: 'mp3' }, FAKE_MP3, as(anna.token));
@@ -959,7 +966,7 @@ test('a song remembers the profile that uploaded it, and the library names the p
     // Kept over a restart of the library file, and a rename reaches the names.
     const saved = JSON.parse(fs.readFileSync(server.library.file || path.join(server.config.home, 'library.json'), 'utf8'));
     assert.equal(saved.songs.find((s) => s.id === 's1').addedBy, anna.profile.id);
-    await post(base, '/api/profiles/rename', { name: 'Anna B' }, anna.token);
+    await post(base, '/api/profiles/rename', { name: 'Anna B', pin: '1111' }, anna.token);
     assert.equal((await get(base, '/api/library', ben.token)).json.library.profileNames[anna.profile.id], 'Anna B');
 
     // Only the uploader trims a song, the Default / Shared too; nobody's songs

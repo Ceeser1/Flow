@@ -266,7 +266,7 @@ test('after a restart the batch is still there, and a cut-off download starts ov
 
 test('a batch nobody looks at expires, and each profile sees only its own', needsFfmpeg, async () => {
   await withServer(async ({ base, server }) => {
-    const profile = async (name) => (await api(base, 'POST', '/api/profiles', { name, device: name })).json.token;
+    const profile = async (name) => (await api(base, 'POST', '/api/profiles', { name, pin: '1111', device: name })).json.token;
     const a = { Authorization: `Bearer ${await profile('Anna')}` };
     const b = { Authorization: `Bearer ${await profile('Ben')}` };
     await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/a1', kind: 'song' }, a);

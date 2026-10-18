@@ -27,7 +27,8 @@ Usage:
   flow-server profiles add <name> [--admin | --master]
                                         a new profile; asks its PIN (FLOW_PROFILE_PIN gives it)
   flow-server admin grant <name>        make a profile an admin: it gets Administration in the
-                                        apps' Settings (profiles, IPs, trash, server rules...)
+                                        apps' Settings (profiles, IPs, trash, server rules...).
+                                        Only a profile with a PIN can be an admin
   flow-server admin revoke <name>       no longer an admin
   flow-server admin master <name>       make a profile the master admin (one per server), who can
                                         also change the server password and make admins in the
@@ -196,9 +197,10 @@ function profileNamed(profiles, name) {
 
 /**
  * A PIN typed twice (or FLOW_PROFILE_PIN). The master admin's needs at least
- * 4 characters (a strong one only recommended); another may be left empty.
+ * 4 characters (a strong one only recommended); an admin's (`required`) cannot
+ * be left empty, another can.
  */
-async function askPin(name, level, master) {
+async function askPin(name, level, master, required = master) {
   let pin = process.env.FLOW_PROFILE_PIN || '';
   if (!pin) {
     if (!process.stdin.isTTY) throw new Error('No terminal to ask the PIN in: give it as FLOW_PROFILE_PIN.');
@@ -206,8 +208,8 @@ async function askPin(name, level, master) {
       console.log('The master admin can change the server password. It\'s recommended to give the master-admin a strong password as its \'pin\' to log into that profile.');
       console.log('At least 4 characters.');
     }
-    pin = await askHidden(master ? `PIN for ${name}: ` : `PIN for ${name} (Enter for none): `);
-    if (pin || master) {
+    pin = await askHidden(required ? `PIN for ${name}: ` : `PIN for ${name} (Enter for none): `);
+    if (pin || required) {
       const again = await askHidden('Once more: ');
       if (pin !== again) throw new Error('The two did not match. Nothing was changed.');
     }
@@ -216,6 +218,7 @@ async function askPin(name, level, master) {
     const problem = passwordProblem(pin, 1, 'master admin\'s PIN');
     if (problem) throw new Error(`${problem} Nothing was changed.`);
   }
+  if (required && !pin) throw new Error(`${name} becomes an admin, so it needs a PIN. Nothing was changed.`);
   return pin;
 }
 
@@ -226,7 +229,9 @@ async function profilesCommand(config, args, level) {
   const cfg = config.get();
   if (args.rest[0] === 'add') {
     const name = configMod.checkProfileName(cfg.profiles, args.rest.slice(1).join(' '));
-    const pin = await askPin(name, level, !!args.master);
+    // An admin needs a PIN, and the first profile becomes one.
+    const first = !cfg.profiles.length && !cfg.adminSeeded;
+    const pin = await askPin(name, level, !!args.master, !!(args.master || args.admin || first));
     const profile = {
       id: configMod.newProfileId(), name, createdAt: Date.now(), pin: configMod.pinEntry(pin), admin: !!(args.admin || args.master), master: false,
     };
@@ -264,6 +269,7 @@ async function adminCommand(config, args, level) {
   const target = profileNamed(config.get().profiles, name);
   const change = (fn) => config.set({ profiles: config.get().profiles.map((p) => fn(p)) });
   if (what === 'grant') {
+    if (!target.pin) throw new Error(`${target.name} has no PIN: only a profile with a PIN can be an admin. Nothing was changed.`);
     change((p) => (p.id === target.id ? { ...p, admin: true } : p));
     console.log(`${target.name} is an admin now: Administration shows in the apps' Settings while signed in to it.`);
   } else if (what === 'revoke') {

@@ -1030,16 +1030,21 @@ const SettingsPanel = {
   },
 
   _changeProfilePin(profile) {
+    // An admin keeps a PIN (only a profile with one is an admin); the master's has 4 characters.
+    let hint = 'Leave empty for none';
+    if (profile.master) hint = 'At least 4 characters';
+    else if (profile.admin) hint = 'An admin needs one';
     return formDialog({
       title: 'Change PIN',
       confirmLabel: 'Submit',
       fields: [
         this._currentPinField(profile),
-        { key: 'newPin', label: 'New PIN', type: 'password', placeholder: profile.master ? 'At least 4 characters' : 'Leave empty for none' },
+        { key: 'newPin', label: 'New PIN', type: 'password', placeholder: hint },
         { key: 'confirm', label: 'Confirm new PIN', type: 'password' },
       ],
       submit: async ({ pin, newPin, confirm }) => {
         if (newPin !== confirm) throw new Error('The two PINs are not the same.');
+        if (!newPin && profile.admin) throw new Error('An admin profile needs a PIN.');
         if (!newPin && !profile.pin) throw new Error('Enter a PIN.');
         const now = await window.flow.profilePin(pin, newPin);
         toast(now.pin ? 'Your PIN was changed' : 'Your profile has no PIN now', 'success');
@@ -1048,16 +1053,19 @@ const SettingsPanel = {
   },
 
   _newProfileDialog() {
+    // The server's first profile becomes its admin, so it needs a PIN.
+    const first = !(Store.server.profiles || []).length;
     return formDialog({
       title: 'Create new Profile',
       confirmLabel: 'Create',
       fields: [
         { key: 'name', label: 'Profile Name', maxLength: 40 },
-        { key: 'pin', label: 'Your PIN', type: 'password', placeholder: 'Optional' },
+        { key: 'pin', label: 'Your PIN', type: 'password', placeholder: first ? 'Needed: the first profile becomes the admin' : 'Optional' },
         { key: 'confirm', label: 'Confirm PIN', type: 'password' },
       ],
       submit: async ({ name, pin, confirm }) => {
         if (pin !== confirm) throw new Error('The two PINs are not the same.');
+        if (first && !pin) throw new Error('The first profile becomes this server\'s admin, so it needs a PIN.');
         const made = await window.flow.profileCreate(name, pin);
         toast(`Profile "${made.name}" made. Logged in as ${made.name}.`, 'success');
       },

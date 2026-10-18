@@ -64,7 +64,9 @@
 //   POST /api/profiles/logout                       back to no profile
 //   POST /api/profiles/rename { name, pin }         the signed-in profile (pin: its current one)
 //   POST /api/profiles/pin { pin, newPin }          its PIN changed ("" for none; the master
-//                                      admin's needs 4 characters); only with the "pin" feature
+//                                      admin's needs 4 characters, an admin's cannot be none);
+//                                      only with the "pin" feature. The first profile needs a PIN
+//                                      (it becomes the admin), and only a profile with one is an admin.
 //   POST /api/profiles/delete                       the signed-in profile, with its playlists
 //
 // With a password set, every other route needs the token from /api/login:
@@ -578,6 +580,8 @@ function createHttpServer({
   /** A new profile, as kept (the first one is an admin: config.js). */
   function makeProfile(rawName, rawPin, { ip, device }) {
     const name = checkProfileName(rawName);
+    const cfg = config.get();
+    if (!cfg.profiles.length && !cfg.adminSeeded && !rawPin) throw new HttpError(400, 'The first profile becomes this server\'s admin, so it needs a PIN.');
     const id = newProfileId();
     config.set({ profiles: [...config.get().profiles, { id, name, createdAt: Date.now(), pin: pinEntry(String(rawPin || '')) }] });
     library.createProfile(id);
@@ -640,6 +644,7 @@ function createHttpServer({
       // The master admin's PIN as on the command line: at least 4 characters at every level.
       const problem = current.master ? passwordProblem(pin, 1, 'master admin\'s PIN') : '';
       if (problem) throw new HttpError(400, problem);
+      if (current.admin && !pin) throw new HttpError(400, 'An admin profile needs a PIN.');
       config.set({ profiles: config.get().profiles.map((p) => (p.id === current.id ? { ...p, pin: pinEntry(pin) } : p)) });
       log(pin ? `Profile ${current.name} changed its PIN` : `Profile ${current.name} removed its PIN`);
       return sendJson(res, 200, { profile: publicProfile({ ...current, pin: !!pin }) });

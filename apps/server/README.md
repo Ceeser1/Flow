@@ -428,8 +428,10 @@ profiles, and who may delete songs for everyone. An admin can take a PIN
 away (forgotten), log a profile out everywhere, disable it, or delete it,
 with or without every song it added.
 
-The first profile a server ever has is an admin by itself; on a server from
-before 3.5 its oldest profile, once. One profile can be the master admin,
+The first profile a server ever has is an admin by itself, so it needs a
+PIN; on a server from before 3.5 its oldest profile with a PIN, once. Only a
+profile with a PIN can be an admin: resetting an admin's PIN takes admin
+away too. One profile can be the master admin,
 who can also change the server password and make admins in the apps. The
 master is made on the server only, by the installer or:
 
@@ -437,7 +439,7 @@ master is made on the server only, by the installer or:
 node apps/server/src/main.js profiles                     # the profiles: admins, PINs, made, last seen
 node apps/server/src/main.js admin master "Anna"          # Anna the master admin (asks a new PIN for her)
 node apps/server/src/main.js admin master "Anna" --create # the same, making the profile when there is none
-node apps/server/src/main.js admin grant "Ben"            # Ben an admin
+node apps/server/src/main.js admin grant "Ben"            # Ben an admin (he needs a PIN)
 node apps/server/src/main.js admin revoke "Ben"           # no longer
 node apps/server/src/main.js profiles add "Carla"         # a new profile (asks its PIN)
 ```

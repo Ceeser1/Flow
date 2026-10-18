@@ -342,7 +342,9 @@ then on. Profile names are at most 40 characters; rename, pin and delete answer
 409 without a profile signed in.
 
 The first profile a server ever has is an admin (on a server from before
-3.5, its oldest profile, once). `master`: the one master admin, made on the
+3.5, its oldest profile, once), so from 3.5.1 it needs a PIN: `POST
+/api/profiles` answers 400 without one. Only a profile with a PIN is an admin:
+an admin cannot remove its own (400), and one whose PIN is reset loses admin. `master`: the one master admin, made on the
 server only (`flow-server admin master <name>`, or the installer).
 
 ## Administration
@@ -358,10 +360,10 @@ master admin. Nobody changes their own profile or the master's here.
 | `POST /api/admin/profiles` | `{ name, pin? }` | a profile for someone else; the admin stays signed in to its own: `{ profile }` |
 | `GET /api/admin/profiles/<id>/ips` | | `{ createdIp, ips: [{ ip, device, at }] }`: where it was made (`""` before 3.5) and the newest 100 addresses and devices it signed in or connected from |
 | `POST /api/admin/profiles/<id>/delete` | `{ songs }` | deletes it; `songs: true` also every song it added, for everyone (to the trash): `{ deletedSongs }` |
-| `POST /api/admin/profiles/<id>/pin` | | its PIN taken away |
+| `POST /api/admin/profiles/<id>/pin` | | its PIN taken away, and admin with it: `{ revokedAdmin }` |
 | `POST /api/admin/profiles/<id>/signout` | | its devices are signed out of it (they stay on the server): `{ devices }` |
 | `POST /api/admin/profiles/<id>/disable` | `{ disabled }` | signing in to it refused (its devices signed out of it), or allowed again |
-| `POST /api/admin/profiles/<id>/admin` | `{ admin }` | *master*: an admin made or taken back |
+| `POST /api/admin/profiles/<id>/admin` | `{ admin }` | *master*: an admin made or taken back; 409 to make one of a profile without a PIN |
 | `GET /api/admin/signins` | | `{ failures: [{ at, kind: "pin" \| "password", profileId, profileName, ip, device }] }`, the newest 500 |
 | `POST /api/admin/signins/clear` | | |
 | `GET /api/admin/downloads` | | every profile's server download: `{ batches: [{ key, profileId, profileName, state, name, url, createdAt, songs, saved, open, failed }] }` |
