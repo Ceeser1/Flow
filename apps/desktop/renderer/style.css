@@ -3016,8 +3016,11 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 .admin__badge--nopin { background: rgba(224, 176, 112, 0.16); color: var(--amber); }
 
 .admin__list { list-style: none; margin: 0; padding: 0; }
-.admin__scroll { overflow-y: auto; overscroll-behavior: contain; }
-.admin__scroll .table th { background: var(--panel); }
+/* A list that scrolls past 5 rows: on a darker ground of its own, so its rows read as one list. */
+.admin__scroll { overflow-y: auto; overscroll-behavior: contain; background: rgba(0, 0, 0, 0.24); border-radius: 8px; }
+.admin__list.admin__scroll { padding: 0 10px; }
+/* The table's header stays put over its rows: as dark, but solid. */
+.admin__scroll .table th { background: #19191c; }
 .admin__dot { display: inline-block; width: 3px; height: 3px; margin: 0 6px; border-radius: 50%; background: currentColor; vertical-align: middle; }
 .admin__item { display: flex; flex-direction: column; gap: 2px; padding: 7px 0; border-bottom: 1px solid #2c2c33; font-size: 12px; }
 .admin__item:last-child { border-bottom: none; }

@@ -1035,8 +1035,8 @@ const SettingsPanel = {
       confirmLabel: 'Submit',
       fields: [
         this._currentPinField(profile),
-        { key: 'newPin', label: 'Your PIN', type: 'password', placeholder: profile.master ? 'At least 4 characters' : 'Leave empty for none' },
-        { key: 'confirm', label: 'Confirm PIN', type: 'password' },
+        { key: 'newPin', label: 'New PIN', type: 'password', placeholder: profile.master ? 'At least 4 characters' : 'Leave empty for none' },
+        { key: 'confirm', label: 'Confirm new PIN', type: 'password' },
       ],
       submit: async ({ pin, newPin, confirm }) => {
         if (newPin !== confirm) throw new Error('The two PINs are not the same.');

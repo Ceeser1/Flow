@@ -108,7 +108,8 @@ const Admin = {
     const top = h('div.admin__top',
       me && !me.pin ? h('p.admin__warn', 'Your profile has no PIN: anyone who can reach this server can log in to it and use Administration.') : null,
       h('button.btn.btn--small', { type: 'button', onclick: () => this.load() }, 'Refresh'));
-    clear(this._node).append(
+    // append() writes a null as the text "null": the master's block is left out instead.
+    clear(this._node).append(...[
       top,
       this._block('Overview', this._overview(d.server)),
       this._block('Profiles', this._profiles(d.profiles, mobile)),
@@ -118,7 +119,7 @@ const Admin = {
       this._block('Trash', this._trash(d.trash)),
       this._block('Server rules', this._rules(d.rules)),
       Store.server.master ? this._block('Server password', this._password(d.server)) : null,
-    );
+    ].filter(Boolean));
   },
 
   _block(title, ...body) {

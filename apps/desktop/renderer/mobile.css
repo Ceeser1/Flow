@@ -929,7 +929,9 @@ body.mobile .queue__row--held { background: var(--glass-hi); }
 /* ===== Settings: Administration on the phone: each profile opens with a tap ===== */
 
 body.mobile .admin__plist { display: flex; flex-direction: column; margin-top: 8px; }
+body.mobile .admin__plist > .admin__scroll { padding: 0 10px; }
 body.mobile .admin__prow { border-bottom: 1px solid #34343c; }
+body.mobile .admin__prow:last-child { border-bottom: none; }
 body.mobile .admin__pname {
   display: flex;
   align-items: center;
