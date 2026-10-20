@@ -76,7 +76,7 @@ test('cleaning drops what does not belong; a copy is independent', () => {
     longest: { start: 10, end: 20, seconds: 7 },
   });
   assert.deepEqual(clean, {
-    days: { '2026-10-15': 30 }, grid: [], songMonths: { '2026-10': { s1: 10 } }, run: null, longest: { start: 10, end: 20, seconds: 7 },
+    days: { '2026-10-15': 30 }, grid: [], songMonths: { '2026-10': { s1: 10 } }, run: null, late: null, longest: { start: 10, end: 20, seconds: 7 },
   });
   assert.deepEqual(L.cleanListening(null), L.emptyListening());
   const copy = L.copyListening(clean);
@@ -136,4 +136,68 @@ test('each profile keeps its own listening; ownerSummary adds up its numbers', (
   assert.deepEqual(prof.ownerSummary(data, profiles, 'anna'), { addedSongs: 1, listens: 1, seconds: 320 });
   assert.deepEqual(prof.ownerSummary(data, profiles, 'ben'), { addedSongs: 0, listens: 0, seconds: 0 });
   assert.deepEqual(prof.ownerSummary(data, profiles, prof.DEFAULT_OWNER), { addedSongs: 1, listens: 3, seconds: 900 });
+});
+
+test('an evening sent late, in order, is one session', () => {
+  const d = {};
+  const now = Date.parse('2026-10-16T12:00:00Z');
+  L.recordListening(d, 's1', 300, now, 0);
+  const evening = Date.parse('2026-10-15T20:00:00Z');
+  for (let i = 0; i < 6; i += 1) L.recordListening(d, 's2', 300, evening + i * 5 * MIN, 0);
+  assert.equal(d.listening.run.end, now, 'the current one stays');
+  assert.equal(d.listening.late.seconds, 1800);
+  assert.equal(d.listening.longest.seconds, 1800);
+  // An even older one apart from both: a new late one.
+  L.recordListening(d, 's2', 100, evening - 5 * 3600 * 1000, 0);
+  assert.equal(d.listening.late.seconds, 100);
+  assert.equal(d.listening.longest.seconds, 1800);
+  assert.deepEqual(L.cleanListening(JSON.parse(JSON.stringify(d.listening))).late, d.listening.late);
+});
+
+test('the Statistics totals: time, listens of 30 s or more, months in the app\'s time zone', () => {
+  const d = m.sanitize({ songs: [{ id: 's1', file: 'a.mp3', duration: 240 }] });
+  assert.deepEqual(d.statistics, L.emptyStatistics(), 'not started: a library from before 3.6');
+  m.recordListen(d, 's1', { listened: 3, duration: 240, at: at('2026-10-15T10:00:00Z'), tz: 0 });
+  assert.equal(d.statistics.seconds, 0, 'under 5 seconds counts nowhere');
+  m.recordListen(d, 's1', { listened: 20, duration: 240, at: at('2026-10-15T10:00:00Z'), tz: 0 });
+  assert.equal(d.statistics.since, at('2026-10-15T10:00:00Z'), 'started by its first listen');
+  assert.deepEqual([d.statistics.seconds, d.statistics.listens], [20, 0]);
+  m.recordListen(d, 's1', { listened: 30, duration: 240, at: at('2026-10-15T10:05:00Z'), tz: 0 });
+  assert.deepEqual([d.statistics.seconds, d.statistics.listens], [50, 1]);
+  // An hour over midnight into November, two hours east of UTC.
+  m.recordListen(d, 's1', { listened: 240, duration: 240, at: at('2026-10-31T22:02:00Z'), tz: -120 });
+  assert.deepEqual(d.statistics.months, { '2026-10': 170, '2026-11': 120 });
+  assert.equal(d.statistics.listens, 2);
+  assert.deepEqual(m.sanitize(JSON.parse(JSON.stringify(d))).statistics, d.statistics);
+  // Deleting the song does not lower them.
+  m.removeSong(d, 's1');
+  assert.equal(d.statistics.seconds, 290);
+  assert.deepEqual(L.cleanStatistics({ since: -1, seconds: 'x', listens: 2.7, months: { '2026-1': 5, '2026-02': 9 } }), {
+    since: 0, seconds: 0, listens: 2, months: { '2026-02': 9 },
+  });
+  const copy = L.copyStatistics(d.statistics);
+  copy.months['2026-10'] = 1;
+  assert.equal(d.statistics.months['2026-10'], 170);
+});
+
+test('each profile keeps its own Statistics; startStatistics starts every owner once', () => {
+  const data = m.sanitize({ songs: [{ id: 's1', file: 'a.mp3', duration: 300 }] });
+  const profiles = prof.sanitizeProfiles(data, { anna: { listening: { days: { '2026-10-01': 50 } } } });
+  assert.equal(profiles.anna.statistics.since, 0);
+  const t0 = at('2026-10-20T12:00:00Z');
+  assert.equal(prof.startStatistics(data, profiles, t0), true);
+  assert.equal(data.statistics.since, t0);
+  assert.equal(profiles.anna.statistics.since, t0);
+  assert.deepEqual(profiles.anna.listening.days, { '2026-10-01': 50 }, '3.5 data is kept');
+  assert.equal(prof.startStatistics(data, profiles, t0 + 1), false, 'only once');
+  prof.addProfile(data, profiles, 'ben', undefined, t0 + 5);
+  assert.equal(profiles.ben.statistics.since, t0 + 5);
+  const v = prof.view(data, profiles, 'anna');
+  applyCommand(v, { type: 'recordListen', songId: 's1', listened: 300, duration: 300, at: t0 + MIN, tz: 0 });
+  prof.absorb(data, profiles, 'anna', v);
+  assert.deepEqual([profiles.anna.statistics.seconds, profiles.anna.statistics.listens], [300, 1]);
+  assert.equal(profiles.ben.statistics.seconds, 0);
+  assert.equal(data.statistics.seconds, 0, 'the core leaves the Default to the server');
+  assert.deepEqual(prof.sanitizeProfiles(data, JSON.parse(JSON.stringify(profiles))).anna.statistics, profiles.anna.statistics);
+  assert.deepEqual(prof.view(data, profiles, null).statistics, data.statistics);
 });

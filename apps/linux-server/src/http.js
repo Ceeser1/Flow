@@ -120,7 +120,7 @@ const { createAdminRoutes } = require('./admin');
 const PROTOCOL = 1;
 // What this server can do beyond protocol 1, for apps that know to ask.
 // admin: /api/admin for admin profiles (admin.js).
-const FEATURES = ['profiles', 'admin', 'pin'];
+const FEATURES = ['profiles', 'admin', 'pin', 'statistics'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;

@@ -167,6 +167,7 @@ function createAdminRoutes({
         name: cfg.name,
         version,
         startedAt,
+        createdAt: cfg.createdAt,
         songs: library.data.songs.length,
         profiles: cfg.profiles.length,
         musicBytes,

@@ -32,6 +32,8 @@
 //                    unfollowing a shared list deletes it.
 //   listening        when and what this profile listened to (listening.js), for
 //                    the Statistics; per profile, like the songs' stats
+//   statistics       this profile's Statistics totals (listening.js): time
+//                    heard, listens, per month; never lowered by deleting songs
 //   sharedPlaylists  the other profiles' shared playlists, for reading:
 //                    { id, name, createdAt, entries, ownerId, ownerName }
 //   profileNames     { [profileId]: name } of the server's profiles (and the
@@ -43,7 +45,9 @@
 // Every mutation throws an Error whose message is fit to show the user.
 
 const { comparableUrl } = require('./text');
-const { emptyListening, cleanListening, recordListening } = require('./listening');
+const {
+  emptyListening, cleanListening, recordListening, emptyStatistics, cleanStatistics, recordStatistics,
+} = require('./listening');
 
 const ALL_SONGS_ID = 'all';
 const ALL_SONGS_NAME = 'All Songs';
@@ -77,7 +81,7 @@ function cleanStats(raw) {
 }
 
 function emptyLibrary() {
-  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, listening: emptyListening(), profileNames: {} };
+  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {} };
 }
 
 /** { listId: seconds }: only sensible ids and positive numbers stay. */
@@ -190,6 +194,7 @@ function sanitize(raw) {
   data.follows = cleanIds(raw.follows);
   data.playlistListened = cleanListened(raw.playlistListened);
   data.listening = cleanListening(raw.listening);
+  data.statistics = cleanStatistics(raw.statistics);
   data.profileNames = cleanNames(raw.profileNames);
   const seenShared = new Set();
   for (const p of Array.isArray(raw.sharedPlaylists) ? raw.sharedPlaylists : []) {
@@ -444,6 +449,7 @@ function recordListen(data, songId, { listened, duration, at = Date.now(), conte
   s.stats = st;
   addListenedTo(data, contextId, songId, heard);
   recordListening(data, songId, heard, at, tz);
+  recordStatistics(data, heard, at, tz);
   return kind;
 }
 

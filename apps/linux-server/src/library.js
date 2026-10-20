@@ -23,6 +23,12 @@
 // the server as MP3" choice (meta.convert, from a phone). The jobs are kept in
 // <home>/convert-queue.json, so a restart carries on.
 //
+// The Statistics (3.6): each owner's totals (@flow/core/listening) start at 0
+// the first time the server runs 3.6. A profile's listen counts for the
+// Default / Shared too, the server's total, unless the app was a Jam member
+// (recordListen's jamMember): in a Jam only the host's listen counts there,
+// once for the song played. A Jam member on the Default counts nowhere.
+//
 // Covers (@flow/core/cover) live in <home>/covers/<song id>.jpg, outside the
 // music folder; song.cover is the file's version. A song's cover goes with
 // the song. Songs without one get one in the background, one at a time.
@@ -114,6 +120,13 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   };
   const seen = new Set(state.seen);
   const listeners = [];
+  const startedStatistics = prof.startStatistics(data, profiles);
+  // When the server was set up, for the Default's Statistics: on one from
+  // before 3.6, when its oldest song came.
+  if (!config.get().createdAt) {
+    const oldest = data.songs.reduce((min, s) => Math.min(min, s.addedAt || Infinity), Infinity);
+    config.set({ createdAt: Number.isFinite(oldest) ? oldest : Date.now() });
+  }
 
   function save() {
     writeJsonAtomic(config.libraryFile, { ...data, profiles });
@@ -139,6 +152,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     for (const l of listeners) l(state.rev);
     return result;
   }
+  if (startedStatistics) save();
 
   // ---- files ----
 
@@ -337,6 +351,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     const results = [];
     const toBin = [];
     const retags = [];
+    // Listens of a profile that count for the Default too.
+    const forDefault = [];
     const list = (Array.isArray(commands) ? commands : []).slice(0, 5000);
     let applied = 0;
     let remembered = 0;
@@ -354,6 +370,15 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
         }
         try {
           if (!c || !ALLOWED.has(c.type)) throw new Error(`Unknown command "${String(c && c.type)}".`);
+          if (c.type === 'recordListen' && c.jamMember && !profileId) {
+            results.push({ cid, ok: true, skipped: 'jam' });
+            if (cid) {
+              seen.add(cid);
+              state.seen.push(cid);
+              remembered += 1;
+            }
+            continue;
+          }
           // The songs about to be deleted, as they are everywhere, for the trash.
           let kept = [];
           if (c.type === 'deleteSong') kept = [captureSong(String(c.songId || ''))];
@@ -363,6 +388,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
           }
           const keptOf = (id) => kept.find((k) => k && k.song.id === id) || null;
           const r = applyCommand(d, c, state.touched, profileId, ctx);
+          if (profileId && c.type === 'recordListen' && !c.jamMember && !r.skipped && r.value) forDefault.push(c);
           if (!r.skipped && c.type === 'deleteSong') toBin.push({ file: r.value.file, record: keptOf(r.value.id) });
           const gone = !r.skipped && c.type === 'deletePlaylist' ? r.value : [];
           for (const s of gone) toBin.push({ file: s.file, record: keptOf(s.id) });
@@ -401,7 +427,15 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     apply(v);
     // Only a change moves the revision on: commands that were all skipped or
     // refused must not make every app fetch the library again for nothing.
-    if (applied) mutate((d) => prof.absorb(d, profiles, profileId, v));
+    if (applied) {
+      mutate((d) => {
+        prof.absorb(d, profiles, profileId, v);
+        for (const c of forDefault) {
+          if (!model.songById(d, String(c.songId))) continue;
+          model.recordListen(d, String(c.songId), { listened: c.listened, duration: c.duration, at: Number(c.at) || Date.now(), tz: c.tz });
+        }
+      });
+    }
     else if (remembered) save();
     for (const t of toBin) toTrash(t.file, t.record && { ...t.record, by: deletedBy });
     for (const id of retags) queueRetag(id);

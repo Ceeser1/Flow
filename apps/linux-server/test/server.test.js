@@ -346,7 +346,7 @@ async function get(base, route, token) {
 
 test('profiles over the network: make, sign in with a PIN, rename, sign out, delete', async () => {
   await withServer(async ({ base }) => {
-    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'sessions']);
+    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'sessions']);
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
     await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
     assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null, createProfiles: true });
@@ -1027,4 +1027,64 @@ test('a playlist deleted with its songs keeps those another playlist or profile 
     assert.deepEqual(lib.songs.map((s) => s.id).sort(), ['s3', 's4', 's5']);
     assert.equal(fs.readdirSync(path.join(dirs.music, '.flow-trash')).length, 2);
   });
+});
+
+test('Statistics: start at 0 on the first 3.6 run; a profile listen counts for the Default too, a Jam member one not', async () => {
+  const dirs = tempDirs();
+  // A library from 3.5: song stats and listening, no Statistics yet.
+  fs.mkdirSync(dirs.home, { recursive: true });
+  fs.mkdirSync(dirs.music, { recursive: true });
+  fs.writeFileSync(path.join(dirs.music, 'a.mp3'), FAKE_MP3);
+  fs.writeFileSync(path.join(dirs.home, 'library.json'), JSON.stringify({
+    songs: [{
+      id: 's1', file: path.join(dirs.music, 'a.mp3'), title: 'Unfinished Sympathy', artist: 'Massive Attack', duration: 300, format: 'mp3', addedAt: 1000, stats: { plays: 4, listened: 1200 },
+    }],
+    listening: { days: { '2026-10-01': 1200 } },
+  }));
+  const before = Date.now();
+  const server = await startServer({ home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1', discoveryPort: null });
+  try {
+    const base = `http://127.0.0.1:${server.port}`;
+    const lib = server.library;
+    assert.ok(lib.data.statistics.since >= before, 'the Default starts now');
+    assert.deepEqual([lib.data.statistics.seconds, lib.data.statistics.listens], [0, 0]);
+    assert.equal(lib.data.songs[0].stats.plays, 4, 'the play counts of the songs are kept');
+    assert.equal(server.config.get().createdAt, 1000, 'set up when its oldest song came');
+    assert.ok((await get(base, '/api/hello')).json.features.includes('statistics'));
+
+    const anna = (await post(base, '/api/profiles', { name: 'Anna', pin: '1111', device: 'pc' })).json;
+    const ben = (await post(base, '/api/profiles', { name: 'Ben', device: 'phone' })).json;
+    const as = (t) => ({ Authorization: `Bearer ${t}` });
+    const at = Date.now();
+    await command(base, [{ cid: 'l1', at, type: 'recordListen', songId: 's1', listened: 300, duration: 300, tz: 0 }], as(anna.token));
+    // Ben listened along in Anna's Jam: his own only.
+    await command(base, [{ cid: 'l2', at, type: 'recordListen', songId: 's1', listened: 300, duration: 300, tz: 0, jamMember: true }], as(ben.token));
+    // A Jam member on the Default counts nowhere; the Default's own listen counts once.
+    const member = await command(base, [{ cid: 'l3', at, type: 'recordListen', songId: 's1', listened: 300, duration: 300, jamMember: true }]);
+    assert.equal(member.results[0].skipped, 'jam');
+    await command(base, [{ cid: 'l4', at, type: 'recordListen', songId: 's1', listened: 40, duration: 300 }]);
+
+    const stats = (token) => lib.snapshot(token).statistics;
+    assert.deepEqual([stats(anna.profile.id).seconds, stats(anna.profile.id).listens], [300, 1]);
+    assert.deepEqual([stats(ben.profile.id).seconds, stats(ben.profile.id).listens], [300, 1]);
+    assert.deepEqual([stats(null).seconds, stats(null).listens], [340, 2], 'Anna and its own');
+    assert.equal(lib.data.songs[0].stats.plays, 5, 'the Default Most Played hears Anna too');
+    assert.equal((await get(base, '/api/library', anna.token)).json.library.statistics.seconds, 300);
+
+    // Deleting the song lowers nothing.
+    await command(base, [{ cid: 'd1', at: Date.now(), type: 'deleteSong', songId: 's1' }], as(anna.token));
+    assert.equal(stats(anna.profile.id).seconds, 300);
+    assert.equal(stats(null).seconds, 340);
+  } finally {
+    await server.close();
+  }
+  // Kept over a restart, and not started again.
+  const again = await startServer({ home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1', discoveryPort: null });
+  try {
+    assert.equal(again.library.data.statistics.seconds, 340);
+    assert.ok(again.library.data.statistics.since < Date.now());
+  } finally {
+    await again.close();
+    fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
 });

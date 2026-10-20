@@ -12,7 +12,18 @@
 //               the months it was heard in
 //   run         the listening session going on last: songs heard with gaps of
 //               at most RUN_GAP between them { start, end, seconds }, or null
+//   late        the session of listens arriving after newer ones (an app that
+//               was offline sends its evening later), the same shape, or null
 //   longest     the longest such session so far, the same shape, or null
+//
+// Next to it each owner keeps its Statistics totals (3.6), which only ever
+// grow: deleting songs does not lower them, unlike the songs' stats.
+//
+//   statistics  { since, seconds, listens, months }: since when it counts (ms;
+//               0: not started, a library from before 3.6: the Flow Server
+//               starts every owner at 0 when it first runs 3.6), seconds
+//               heard, listens of 30 seconds or more, and seconds heard per
+//               month { 'YYYY-MM': seconds }
 //
 // Dates and hours are the app's own: a listen carries its time zone offset
 // (Date.getTimezoneOffset(), minutes), and one without (an app from before
@@ -28,8 +39,30 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH = /^\d{4}-\d{2}$/;
 const SONG_ID = /^[\w-]{1,64}$/;
 
+// A listen this long or longer is one for the Statistics' Listened songs.
+const LISTEN_SECONDS = 30;
+
+function emptyStatistics(since = 0) {
+  return { since: Number(since) || 0, seconds: 0, listens: 0, months: {} };
+}
+
+function cleanStatistics(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  return {
+    since: Math.max(0, Number(r.since) || 0),
+    seconds: Math.max(0, Number(r.seconds) || 0),
+    listens: Math.max(0, Math.floor(Number(r.listens) || 0)),
+    months: cleanSeconds(r.months, (k) => MONTH.test(k)),
+  };
+}
+
+function copyStatistics(st) {
+  const src = st || emptyStatistics();
+  return { ...src, months: { ...(src.months || {}) } };
+}
+
 function emptyListening() {
-  return { days: {}, grid: [], songMonths: {}, run: null, longest: null };
+  return { days: {}, grid: [], songMonths: {}, run: null, late: null, longest: null };
 }
 
 /** Seconds kept to a tenth: enough, and short in the library file. */
@@ -72,6 +105,7 @@ function cleanListening(raw) {
     grid,
     songMonths,
     run: cleanRun(r.run),
+    late: cleanRun(r.late),
     longest: cleanRun(r.longest),
   };
 }
@@ -86,6 +120,7 @@ function copyListening(l) {
     grid: (src.grid || []).slice(),
     songMonths,
     run: src.run ? { ...src.run } : null,
+    late: src.late ? { ...src.late } : null,
     longest: src.longest ? { ...src.longest } : null,
   };
 }
@@ -130,20 +165,51 @@ function recordListening(data, songId, seconds, at = Date.now(), tz = null) {
   }
 
   // The session: this listen joins the last one when it is close enough to
-  // it; a later one starts a new session; an older one arriving late (an app
-  // that was offline) apart from it only counts as a session of its own.
-  const r = l.run;
-  let current;
-  if (r && start <= r.end + RUN_GAP && end >= r.start - RUN_GAP) {
+  // it, else the late one (an app that was offline sends its listens after
+  // newer ones, in their order); a newer one starts a new session, an older
+  // one apart from both a new late one.
+  const near = (r) => r && start <= r.end + RUN_GAP && end >= r.start - RUN_GAP;
+  const grow = (r) => {
     r.start = Math.min(r.start, start);
     r.end = Math.max(r.end, end);
     r.seconds = tenth(r.seconds + secs);
-    current = r;
-  } else {
+    return r;
+  };
+  let current;
+  if (near(l.run)) current = grow(l.run);
+  else if (near(l.late)) current = grow(l.late);
+  else {
     current = { start, end, seconds: tenth(secs) };
-    if (!r || end > r.end) l.run = current;
+    if (!l.run || end > l.run.end) l.run = current;
+    else l.late = current;
   }
   if (!l.longest || current.seconds > l.longest.seconds) l.longest = { ...current };
+}
+
+/**
+ * Counts `seconds` heard, ending at `at` (ms), into `data.statistics`: the
+ * time, a listen when 30 seconds or more, and the seconds by month in the
+ * app's time zone (`tz`, as recordListening), split where a month ends.
+ */
+function recordStatistics(data, seconds, at = Date.now(), tz = null) {
+  const secs = Number(seconds);
+  const end = Number(at) || Date.now();
+  if (!(secs > 0)) return;
+  if (!data.statistics || typeof data.statistics !== 'object') data.statistics = emptyStatistics();
+  const st = data.statistics;
+  if (!st.since) st.since = end;
+  st.seconds = tenth(st.seconds + secs);
+  if (secs >= LISTEN_SECONDS) st.listens += 1;
+  const offset = (cleanTz(tz) ?? new Date(end).getTimezoneOffset()) * 60000;
+  let t = end - secs * 1000;
+  while (t < end) {
+    const local = new Date(t - offset);
+    const monthEnd = Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 1) + offset;
+    const piece = (Math.min(end, monthEnd) - t) / 1000;
+    const month = `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}`;
+    st.months[month] = tenth((st.months[month] || 0) + piece);
+    t = monthEnd;
+  }
 }
 
 /**
@@ -164,4 +230,5 @@ function listenTotals(statsList) {
 
 module.exports = {
   emptyListening, cleanListening, copyListening, recordListening, listenTotals, cleanTz, RUN_GAP,
+  emptyStatistics, cleanStatistics, copyStatistics, recordStatistics, LISTEN_SECONDS,
 };

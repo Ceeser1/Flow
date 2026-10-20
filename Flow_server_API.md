@@ -109,7 +109,7 @@ Open to anyone (only the refusals above apply).
 {
   "app": "flow-server",
   "protocol": 1,
-  "features": ["profiles", "admin", "pin", "download", "search", "sessions", "trim"],
+  "features": ["profiles", "admin", "pin", "statistics", "download", "search", "sessions", "trim"],
   "version": "3.3.3",
   "id": "<server id>",
   "name": "Flow Server",
@@ -122,7 +122,9 @@ Open to anyone (only the refusals above apply).
 
 - `features`: `profiles` always; `admin` from 3.5 (the
   [Administration](#administration) routes); `pin` from 3.5.1 (a profile
-  changes its own PIN, `POST /api/profiles/pin`); `download` when the server can download
+  changes its own PIN, `POST /api/profiles/pin`); `statistics` from 3.6 (the
+  library's `statistics` totals; an app shows the server as outdated
+  without it); `download` when the server can download
   songs itself (yt-dlp and ffmpeg there, not turned off), and with it
   `search` (searching by a song's name; older servers lack it); `sessions` for
   Active Sessions; `trim` when ffmpeg is there.
@@ -179,7 +181,8 @@ only who added a song (and the admins) may delete it for everyone.
 | `sharedPlaylists` | other profiles' shared playlists, read-only: `{ id, name, createdAt, entries, ownerId, ownerName }` |
 | `follows` | ids of the shared playlists this profile follows |
 | `playlistListened` | seconds listened per list: `{ [playlistId \| "all" \| "favourites" \| "smart:..."]: seconds }` |
-| `listening` | when and what this profile listened to (3.5, for the Statistics): `{ days: { "YYYY-MM-DD": seconds }, grid: [168 seconds, Monday 0-1 o'clock first], songMonths: { "YYYY-MM": { songId: seconds } }, run, longest }`; `run` / `longest`: the current and the longest listening session `{ start, end, seconds }` (songs with gaps of at most 10 minutes) |
+| `listening` | when and what this profile listened to (3.5, for the Statistics): `{ days: { "YYYY-MM-DD": seconds }, grid: [168 seconds, Monday 0-1 o'clock first], songMonths: { "YYYY-MM": { songId: seconds } }, run, late, longest }`; `run` / `longest`: the current and the longest listening session `{ start, end, seconds }` (songs with gaps of at most 10 minutes), `late`: the session of listens that arrived after newer ones (an app that was offline) |
+| `statistics` | this profile's Statistics totals (3.6): `{ since, seconds, listens, months: { "YYYY-MM": seconds } }`. `since`: when they started (the server's first run of 3.6, or when the profile was made); `listens`: listens of 30 seconds or more. They only grow: deleting songs does not lower them |
 | `profileNames` | `{ [profileId]: name }`, for the songs' `addedBy` (`"default"`: Default / Shared) |
 
 - `stats`: `{ plays, stops, skips, sessions, listened, lastPlayedAt }`.
@@ -239,7 +242,7 @@ Send up to 5000 at once:
 | `setFavourite` | `songId`, `on` | |
 | `setLoudness` | `songId`, `loudness` | the measured loudness, for Equalize volume |
 | `setDuration` | `songId`, `duration` | only when the server doesn't know the length (`skipped: "known"` otherwise) |
-| `recordListen` | `songId`, `listened`, `duration`, `contextId?`, `tz?` | a listen: `listened` seconds heard of `duration`; counted into the profile's stats and `listening`. `tz`: the app's `Date.getTimezoneOffset()`, for the day and hour it was heard (the server's own without it) |
+| `recordListen` | `songId`, `listened`, `duration`, `contextId?`, `tz?`, `jamMember?` | a listen: `listened` seconds heard of `duration`; counted into the profile's stats, `listening` and `statistics`. `tz`: the app's `Date.getTimezoneOffset()`, for the day and hour it was heard (the server's own without it). From a profile it counts for the Default / Shared too (its stats and `statistics`), unless `jamMember: true` (3.6: the app was a member of a Jam, whose host's listen counts there); a Jam member on the Default counts nowhere (`skipped: "jam"`) |
 
 ## Songs
 
@@ -355,7 +358,7 @@ master admin. Nobody changes their own profile or the master's here.
 
 | Route | Body | Answer |
 |---|---|---|
-| `GET /api/admin/server` | | `{ name, version, startedAt, songs, profiles, musicBytes, trashBytes, disk: { free, size }, ytdlp, ffmpeg, downloads, level, password, master }` |
+| `GET /api/admin/server` | | `{ name, version, startedAt, createdAt, songs, profiles, musicBytes, trashBytes, disk: { free, size }, ytdlp, ffmpeg, downloads, level, password, master }` |
 | `GET /api/admin/profiles` | | `{ profiles: [{ id, name, createdAt, lastSeen, addedSongs, listens, seconds, admin, master, disabled, pin, devices }], me }`. `lastSeen`: `"now"` while an app of it is connected, else ms (0: never). `listens`: listens of 30 seconds or more; `seconds`: time listened |
 | `POST /api/admin/profiles` | `{ name, pin? }` | a profile for someone else; the admin stays signed in to its own: `{ profile }` |
 | `GET /api/admin/profiles/<id>/ips` | | `{ createdIp, ips: [{ ip, device, at }] }`: where it was made (`""` before 3.5) and the newest 100 addresses and devices it signed in or connected from |

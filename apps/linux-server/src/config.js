@@ -119,6 +119,9 @@ function clean(raw) {
     // and a different one when the same address now leads elsewhere.
     id: /^[0-9a-f]{16,64}$/.test(String(r.id || '')) ? String(r.id) : crypto.randomBytes(12).toString('hex'),
     port: port > 0 && port < 65536 ? port : DEFAULT_PORT,
+    // When the server was set up (ms; the Default / Shared's Statistics). 0
+    // until the library sets it (3.6; on a server from before, its oldest song).
+    createdAt: Math.max(0, Number(r.createdAt) || 0),
     name: String(r.name || os.hostname() || 'Flow Server').slice(0, 60),
     musicDir: typeof r.musicDir === 'string' ? r.musicDir : '',
     // Answering the apps' search on the local network (discovery.js): off
