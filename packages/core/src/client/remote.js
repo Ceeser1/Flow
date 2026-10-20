@@ -131,6 +131,8 @@ function createRemote(env) {
     return {
       // addresses: where this server answered ({ home, remote }) and its password (encrypted), for Switch server.
       serverId, serverName: '', addresses: { home: '', remote: '', secret: '' }, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, held: null, offline: [], offlineKeep: {}, fetched: {}, kept: {}, profilePin: '', remoteFilled: false, homeFilled: false,
+      // Logged out while the server could not be reached: it is told at the next connection.
+      logoutPending: false,
     };
   }
 
@@ -621,6 +623,17 @@ function createRemote(env) {
    */
   async function restoreProfile(base, token) {
     const was = sync.profile;
+    if (!was && sync.logoutPending) {
+      try {
+        const r = await request(base, '/api/profiles/logout', { method: 'POST', json: {}, token, timeout: 15000 });
+        if (r.status < 500) {
+          sync.logoutPending = false;
+          saveSync();
+        }
+      } catch {
+        // Told at the next connection.
+      }
+    }
     if (!was) return token;
     try {
       const list = await request(base, '/api/profiles', { token, timeout: 15000 });
@@ -2890,6 +2903,7 @@ function createRemote(env) {
       startLive();
     }
     sync.profile = cleanProfile(profile);
+    sync.logoutPending = false;
     // Kept encrypted, so the next start can sign in to it again (restoreProfile).
     sync.profilePin = sync.profile && sync.profile.pin ? encrypt(pin) : '';
     sync.sent = [];
@@ -2920,6 +2934,20 @@ function createRemote(env) {
   }
 
   async function logoutProfile() {
+    // Away from the server: from now on without the profile here, and the
+    // server hears it at the next connection (restoreProfile). What of the
+    // profile still waits to go up waits for its next login.
+    if (active() && status.state !== 'online' && sync.profile) {
+      sync.profile = null;
+      sync.profilePin = '';
+      sync.logoutPending = true;
+      cache = { ...cache, rev: -1, profile: '' };
+      saveSync();
+      saveCache();
+      refreshView();
+      emitStatus();
+      return null;
+    }
     requireProfiles();
     await sendWaiting();
     await call('/api/profiles/logout', { method: 'POST', json: {} });

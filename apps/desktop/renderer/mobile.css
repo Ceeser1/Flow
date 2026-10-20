@@ -928,6 +928,14 @@ body.mobile .queue__row--held { background: var(--glass-hi); }
 
 /* ===== Settings: Administration on the phone: each profile opens with a tap ===== */
 
+body.mobile .stats__hint,
+body.mobile .stats__facts,
+body.mobile .stats__trow { font-size: 13px; }
+body.mobile .stats__trow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; min-height: 44px; }
+body.mobile .stats__trow .btn--small { height: 34px; padding: 0 12px; font-size: 13px; }
+body.mobile .stats__current { flex-wrap: wrap; }
+body.mobile .stats__month { width: 44px; font-size: 12px; }
+body.mobile .stats__barbox { height: 120px; }
 body.mobile .admin__plist { display: flex; flex-direction: column; margin-top: 8px; }
 body.mobile .admin__plist > .admin__scroll { padding: 0 10px; }
 body.mobile .admin__prow { border-bottom: 1px solid #34343c; }

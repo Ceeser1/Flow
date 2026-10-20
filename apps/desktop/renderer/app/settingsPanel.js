@@ -53,6 +53,7 @@ const SettingsPanel = {
     });
     Store.onLibrary(() => {
       if (!this.modal) return;
+      Stats.soon();
       this._drawMeasured();
       this._drawCovers();
       this._drawStorage();
@@ -60,6 +61,7 @@ const SettingsPanel = {
     Store.onServer(() => {
       if (this.modal) this._drawServer();
       if (this.modal) this._drawAdmin();
+      if (this.modal) Stats.soon();
       if (this.modal && this._jamNote) this._jamNote();
     });
     Output.onChange(() => {
@@ -184,6 +186,9 @@ const SettingsPanel = {
 
       ...(Store.can('batteryHelp') ? this._appRows() : []),
 
+      // Whose listens count, and the numbers (stats.js); Administration stays last.
+      ...Stats.rows(),
+
       // Last, and only while an admin profile is logged in (_drawAdmin).
       ...Admin.rows(),
     ]));
@@ -220,6 +225,7 @@ const SettingsPanel = {
     this._drawStorage();
     this._drawServer();
     this._drawAdmin(true);
+    Stats.load();
     // Profiles made or renamed on other devices since.
     if (Store.server.on && Store.server.state === 'online') window.flow.profiles().catch(() => {});
   },

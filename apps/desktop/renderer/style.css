@@ -2968,6 +2968,71 @@ body.mobile .switch-where { text-align: left; }
 .viz-cat__note { margin-left: 4px; font-size: 12px; font-weight: 400; color: var(--text-dim); }
 .viz-picker[hidden] { display: none; }
 
+/* ===== Settings: Statistics (stats.js) ===== */
+
+.stats { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 10px; }
+.stats__block { padding: 10px 0 12px; border-bottom: 1px solid #34343c; }
+.stats__block:last-child { border-bottom: none; }
+.stats__head { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-bright); overflow-wrap: anywhere; }
+.stats__sub { margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.stats__hints { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.stats__hint { margin: 0; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.stats__hint--green { color: var(--green); }
+.stats__hint--amber { color: var(--amber); }
+.stats__hint--grey { color: var(--text-dim); }
+.stats__current { display: flex; align-items: center; justify-content: flex-start; gap: 8px; }
+
+/* All tracked Profiles: Server, Profile, Action; a row picked shows its numbers. */
+.stats__table { display: flex; flex-direction: column; }
+.stats__trow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 88px;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-bottom: 1px solid #2c2c33;
+  border-left: 2px solid transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+.stats__tbody .stats__trow:last-child { border-bottom: none; }
+.stats__trow:hover { background: rgba(255, 255, 255, 0.04); }
+.stats__trow--on { background: rgba(90, 140, 220, 0.14); border-left-color: var(--accent); }
+.stats__trow--on:hover { background: rgba(90, 140, 220, 0.18); }
+.stats__trow--head { min-height: 28px; border-bottom: none; color: var(--text-dim); font-weight: 600; cursor: default; }
+.stats__trow--head:hover { background: none; }
+.stats__tcell { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.stats__tcell .cell-title { overflow: hidden; text-overflow: ellipsis; }
+.stats__tact { justify-content: flex-end; }
+.stats__facts { margin-top: 2px; }
+
+/* Activity: a bar per month, the current one at the right, older ones scrolled to. */
+.stats__scroll {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 6px 0;
+  background: rgba(0, 0, 0, 0.24);
+  border-radius: 8px;
+}
+.stats__month {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 76px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.stats__hours { height: 14px; font-variant-numeric: tabular-nums; color: var(--text); }
+.stats__barbox { display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 140px; }
+.stats__bar { width: 56%; min-height: 1px; border-radius: 3px 3px 0 0; background: var(--accent); }
+.stats__mname { white-space: nowrap; }
+.stats__year { height: 12px; font-size: 10px; }
+
 /* ===== Settings: Administration (admin.js), for an admin profile ===== */
 
 .admin { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 10px; }
