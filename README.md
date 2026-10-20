@@ -589,7 +589,7 @@ npm test        # every package's tests: no network; the parts that need ffmpeg 
                 # with apps/desktop/tools/ (or ffmpeg on the PATH), else are skipped
 npm run icon    # every app's icons (desktop, Android, iPhone) from icons/flow.png
                 # (the white wave on its blue square)
-npm run dist    # build the installer into apps/desktop/dist/
+npm run dist    # build the installer into apps/desktop/dist/ (it installs to Program Files\Flow, for every user)
 npm run dist:windows-server   # the Flow Server's Windows installer, into apps/windows-server/dist/
 ```
 
