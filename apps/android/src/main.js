@@ -13,6 +13,7 @@
 
 const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
+const { createPrivateStats } = require('@flow/core/client/privateStats');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const {
@@ -56,7 +57,15 @@ function start() {
   settings.load();
   library.load();
   remote = createRemote(env);
-  const actions = createActions({ remote, library, files: env.files });
+  // The Statistics of everything heard on this phone (privateStats.js).
+  const privateStats = createPrivateStats({
+    jsonFiles: env.jsonFiles,
+    deviceId: () => settings.clientId(),
+    onChange: (data) => emit('stats:private', data),
+  });
+  const actions = createActions({
+    remote, library, files: env.files, privateStats,
+  });
 
   function coverDirs() {
     return { local: covers.dirOf(covers.LOCAL), server: remote ? remote.coverDir() : '' };
@@ -178,7 +187,11 @@ function start() {
     trimSong: call((songId, start, end) => actions.trimSong({ songId, start, end })),
     serverSongPeaks: call((songId) => remote.songPeaks(songId)),
     setFavourite: call((songId, isOn) => actions.setFavourite({ songId, on: isOn })),
-    recordListen: call((songId, listened, duration, contextId) => actions.recordListen({ songId, listened, duration, contextId })),
+    privateStatistics: call(() => privateStats.get()),
+    onPrivateStatistics: on('stats:private'),
+    recordListen: call((songId, listened, duration, contextId, jamMember) => actions.recordListen({
+      songId, listened, duration, contextId, jamMember: !!jamMember,
+    })),
     findBySource: call((url, key) => actions.findBySource({ url, key })),
     findByMeta: call((meta) => actions.findByMeta(meta)),
     rescan: call(() => library.scan()),
@@ -201,7 +214,11 @@ function start() {
     pickLocalFolder: call(() => local.pick(true)),
     listLocal: call((picked) => local.listLocal(picked)),
     prepareLocal: call((items, opts, run) => local.prepareLocal(items, run)),
-    finishImport: call((job, run) => local.finish(job, (p) => emit('import:progress', { ...p, run }))),
+    finishImport: call(async (job, run) => {
+      const summary = await local.finish(job, (p) => emit('import:progress', { ...p, run }));
+      privateStats.added(summary && summary.songIds ? summary.songIds.length : 0);
+      return summary;
+    }),
     setImportPending: call(nothing),
     cancelImport: call(() => local.cancel()),
     onImportProgress: on('import:progress'),
@@ -244,7 +261,12 @@ function start() {
     changeServerPassword: call((args) => remote.changeServerPassword(args || {})),
     onServerStatus: on('server:status'),
     // No browser cookies on the phone to share with the server.
-    serverDownloads: call((action, args = {}) => remote.serverDownloads(action, { ...args })),
+    serverDownloads: call(async (action, args = {}) => {
+      const result = await remote.serverDownloads(action, { ...args });
+      // A song saved on the server from here is one this phone added.
+      if (action === 'finish' && result && result.song) privateStats.added(1);
+      return result;
+    }),
     cookieBrowsers: call(() => []),
     onServerNotice: on('server:notice'),
     sessions: call((body) => remote.sessions(body || null)),

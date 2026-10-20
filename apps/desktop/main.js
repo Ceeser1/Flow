@@ -31,6 +31,7 @@ const { createTagger } = require('./src/tagger');
 const remote = require('./src/remote');
 const env = require('./src/env');
 const { createActions } = require('@flow/core/client/actions');
+const { createPrivateStats } = require('@flow/core/client/privateStats');
 const sponsorblock = require('@flow/core/sponsorblock');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
@@ -47,11 +48,18 @@ const loudnessFiller = loudness.createFiller(library, model, () => settings.get(
 const coverFiller = covers.createFiller({ skip: (id) => remote.active() && remote.isServerCopy(id) });
 // New songs' files get their flowid and cover (tagger.js).
 const tagger = createTagger({ skip: (id) => remote.active() && remote.isServerCopy(id) });
+// The Statistics of everything heard on this device (privateStats.js).
+const privateStats = createPrivateStats({
+  jsonFiles: env.jsonFiles,
+  deviceId: () => settings.clientId(),
+  onChange: (data) => sendToWindow('stats:private', data),
+});
 // What the window changes in the library; a Local Files song's file is
 // renamed and cut here (the uncut one to the Recycle Bin).
 const actions = createActions({
   remote,
   library,
+  privateStats,
   files: env.files,
   retag: (song, meta) => exporter.retagSong(song, meta),
   trim: (song, start, end) => exporter.trimSong(song, start, end, { keep: true }),
@@ -268,6 +276,7 @@ handle('library:editSong', (arg) => actions.editSong(arg));
 handle('library:trimSong', (arg) => actions.trimSong(arg));
 handle('library:setFavourite', (arg) => actions.setFavourite(arg));
 handle('library:recordListen', (arg) => actions.recordListen(arg));
+handle('stats:private', () => privateStats.get());
 handle('library:findBySource', (arg) => actions.findBySource(arg));
 handle('library:findByMeta', (meta) => actions.findByMeta(meta));
 handle('library:rescan', () => library.scan());
@@ -317,7 +326,10 @@ handle('server:sessions', (body) => remote.sessions(body || null));
 handle('server:downloads', async ({ action, ...args }) => {
   const browser = settings.get('useCookies') && settings.get('shareCookies') ? settings.get('cookiesBrowser') : '';
   if (action === 'create' && args.url && browser) args.cookies = await cookieJar.siteCookies(args.url, browser);
-  return remote.serverDownloads(action, args);
+  const result = await remote.serverDownloads(action, args);
+  // A song saved on the server from here is one this device added.
+  if (action === 'finish' && result && result.song) privateStats.added(1);
+  return result;
 });
 // The browsers the cookies can come from (Settings, Media Management).
 handle('cookies:browsers', () => cookieJar.browsers());
@@ -525,7 +537,10 @@ let importSaves = 0;
 handle('import:finish', ({ job, run }) => {
   importSaves += 1;
   const onProgress = (p) => sendToWindow('import:progress', { ...p, run });
-  const saving = importSaving.then(() => finishImport(job, onProgress));
+  const saving = importSaving.then(() => finishImport(job, onProgress)).then((summary) => {
+    privateStats.added(summary && summary.songIds ? summary.songIds.length : 0);
+    return summary;
+  });
   importSaving = saving.catch(() => {});
   return saving.finally(() => {
     importSaves -= 1;
@@ -717,6 +732,7 @@ handle('song:finish', (job) => library.quietly(async () => {
     const lists = (job.playlistIds || []).filter((id) => model.playlistById(d, id));
     model.addSongToPlaylists(d, song.id, lists, song.addedAt);
   });
+  privateStats.added(1);
   // Its cover, found while it was trimmed (or once it is found).
   covers.adoptStaged(job.cachePath, song.id).catch(() => {});
   // With a server it goes up now, into the server playlists picked for it.

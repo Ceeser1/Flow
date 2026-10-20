@@ -33,7 +33,11 @@ contextBridge.exposeInMainWorld('flow', {
   serverSongPeaks: (songId) => call('server:songPeaks', songId),
   songAudio: (songId) => call('audio:song', songId),
   setFavourite: (songId, on) => call('library:setFavourite', { songId, on }),
-  recordListen: (songId, listened, duration, contextId) => call('library:recordListen', { songId, listened, duration, contextId }),
+  privateStatistics: () => call('stats:private'),
+  onPrivateStatistics: (fn) => ipcRenderer.on('stats:private', (_e, data) => fn(data)),
+  recordListen: (songId, listened, duration, contextId, jamMember) => call('library:recordListen', {
+    songId, listened, duration, contextId, jamMember: !!jamMember,
+  }),
   findBySource: (url, key) => call('library:findBySource', { url, key }),
   findByMeta: (meta) => call('library:findByMeta', meta),
   rescan: () => call('library:rescan'),

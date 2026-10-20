@@ -10,12 +10,13 @@
 // names into the file and the file renamed), trim(song, start, end) ->
 // { duration } (the file cut, the uncut one kept aside). An app that cannot
 // leaves them out: the names then change in the library only, and a Local
-// Files song cannot be trimmed.
+// Files song cannot be trimmed. privateStats (privateStats.js): every listen
+// heard here counts there too, whatever library it was from.
 
 const model = require('../libraryModel');
 
 function createActions({
-  remote, library, files, retag = null, trim = null,
+  remote, library, files, retag = null, trim = null, privateStats = null,
 }) {
   /** The library the window works with: the server's, or Local Files. */
   function currentLibrary() {
@@ -168,15 +169,19 @@ function createActions({
     change((d) => model.setFavourite(d, songId, !!on), 'setFavourite', { songId, on: !!on });
   }
 
+  // jamMember: heard as a member of a Jam, whose host's listen is the one the
+  // server's Default / Shared counts; the profile signed in here still counts it.
   function recordListen({
-    songId, listened, duration, contextId,
+    songId, listened, duration, contextId, jamMember = false,
   }) {
     // The song may have been deleted while it played; nothing to count then.
-    if (!model.songById(currentLibrary(), songId)) return null;
+    const song = model.songById(currentLibrary(), songId);
+    if (!song) return null;
     // The day and hour it was heard are this device's (listening.js).
     const tz = new Date().getTimezoneOffset();
+    if (privateStats) privateStats.recordListen({ song, listened, duration, tz });
     return change((d) => model.recordListen(d, songId, { listened, duration, contextId, tz }), 'recordListen', {
-      songId, listened, duration, contextId, tz,
+      songId, listened, duration, contextId, tz, ...(jamMember ? { jamMember: true } : {}),
     });
   }
 

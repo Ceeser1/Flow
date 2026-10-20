@@ -1225,8 +1225,12 @@ const Player = {
 
   // ---- listening statistics ----
 
+  // A song started while playing along with a Jam's host is a Jam member's
+  // listen: the server's Default / Shared counts the host's one only.
   _startSession(songId, listened = 0) {
-    this.session = { songId, listened: Math.max(0, listened || 0), lastT: null };
+    this.session = {
+      songId, listened: Math.max(0, listened || 0), lastT: null, jamMember: !!this.remote,
+    };
   },
 
   /** Adds the time played since the last update, while actually playing. */
@@ -1251,11 +1255,11 @@ const Player = {
   _endSession() {
     const s = this.session;
     this.session = null;
-    if (s) this._recordListen(s.songId, s.listened, this.contextId, s.duration);
+    if (s) this._recordListen(s.songId, s.listened, this.contextId, s.duration, s.jamMember);
   },
 
   /** Counts `listened` seconds of a song; `played`: its length as played, when the library has none. */
-  _recordListen(songId, listened, contextId, played = 0) {
+  _recordListen(songId, listened, contextId, played = 0, jamMember = false) {
     // Under 5 seconds counts as nothing (the same limit as MIN_LISTEN_SECONDS in libraryModel.js).
     if (!(listened >= 5)) return;
     const song = Store.song(songId);
@@ -1264,7 +1268,7 @@ const Player = {
     // (one queued from elsewhere is not).
     const list = contextId ? Store.playlist(contextId) : null;
     const inList = !!list && list.entries.some((e) => e.songId === songId);
-    window.flow.recordListen(songId, listened, duration, inList ? contextId : null).catch(() => {});
+    window.flow.recordListen(songId, listened, duration, inList ? contextId : null, jamMember).catch(() => {});
   },
 
   _sessionToKeep() {
