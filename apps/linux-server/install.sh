@@ -37,10 +37,14 @@
 # Without a terminal, FLOW_SERVER_PASSWORD gives the password level 3 needs and
 # DUCKDNS_TOKEN the token for a DuckDNS name.
 #
-# Safe to run again: it updates the service and leaves the rest as it is. Run
-# it with a lower level to close what a higher one opened.
+# Safe to run again. Run in a terminal without options on a machine where it
+# is installed already, it asks first: 1 only update (everything stays as set
+# up, like --yes), 2 reinstall (the questions again; Enter keeps each answer
+# as it is), 3 uninstall. Run it with a lower level to close what a higher one
+# opened.
 
 set -eu
+ARGC=$#
 
 SERVICE=flow-server
 UNIT="/etc/systemd/system/$SERVICE.service"
@@ -82,7 +86,7 @@ while [ $# -gt 0 ]; do
     --url) [ $# -ge 2 ] || die "--url needs an https:// address."; URL="$2"; shift ;;
     --proxy) [ $# -ge 2 ] || die "--proxy needs nginx, apache, caddy, cloudflared or other."; PROXY="$2"; shift ;;
     --proxy-at) [ $# -ge 2 ] || die "--proxy-at needs an IP address."; PROXY_AT="$2"; shift ;;
-    -h|--help) sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option $1. See --help." ;;
   esac
   shift
@@ -107,6 +111,20 @@ ask_no() {
   case "$answer" in y|Y|yes|Yes|YES) return 0 ;; *) return 1 ;; esac
 }
 
+# A yes/no question whose Enter (and --yes) keeps what was chosen before: $2
+# is 1 or 0, empty for a new server (then yes).
+ask_prev() {
+  def=${2:-1}
+  if [ "$YES" = 1 ] || [ ! -t 0 ]; then [ "$def" = 1 ]; return; fi
+  if [ "$def" = 1 ]; then printf '%s [Y/n] ' "$1"; else printf '%s [y/N] ' "$1"; fi
+  read -r answer || answer=""
+  case "$answer" in
+    y|Y|yes|Yes|YES) return 0 ;;
+    n|N|no|No|NO) return 1 ;;
+    *) [ "$def" = 1 ] ;;
+  esac
+}
+
 have() { command -v "$1" >/dev/null 2>&1; }
 
 SUDO=""
@@ -117,6 +135,24 @@ fi
 
 [ "$(uname -s)" = "Linux" ] || die "This installs a service on Linux. On Windows, use the Flow Server installer (apps/windows-server). On macOS, run: node apps/linux-server/src/main.js"
 have systemctl && [ -d /run/systemd/system ] || die "This needs systemd. Without it, run: node apps/linux-server/src/main.js"
+
+# Installed already, run in a terminal without options: what to do.
+if [ -f "$UNIT" ] && [ "$ARGC" = 0 ] && [ -t 0 ]; then
+  step "The Flow Server is installed already"
+  say "  1  Only update: everything stays as it is set up; the service is renewed and restarted"
+  say "  2  Reinstall (change config): the questions again; Enter keeps each answer as it is"
+  say "  3  Uninstall: remove the service (the library and the music stay)"
+  while :; do
+    printf 'Choice [1]: '
+    read -r answer || answer=""
+    case "$answer" in
+      ""|1) YES=1; say "Only update."; break ;;
+      2) say "Reinstall."; break ;;
+      3) UNINSTALL=1; break ;;
+      *) say "1, 2 or 3, please." ;;
+    esac
+  done
+fi
 
 if [ "$UNINSTALL" = 1 ]; then
   step "Removing the service"
@@ -219,6 +255,8 @@ port_owner() { $SUDO ss -ltnpH "sport = :$1" 2>/dev/null | sed -n 's/.*users:(("
 is_private() { printf '%s' "$1" | grep -Eq '^(10\.|127\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.)'; }
 INFO=$(flow info) || die "The server's settings could not be read (see above)."
 CUR_LEVEL=$(info_get level)
+# What was chosen before, for a server set up before; empty for a new one.
+prev() { [ -z "$CUR_LEVEL" ] || info_get "$1"; }
 CUR_PASSWORD=$(info_get password)
 PORT_NOW=${PORT:-$(info_get port)}
 PORT_NOW=${PORT_NOW:-7878}
@@ -279,7 +317,7 @@ if [ "$DOWNLOADS" = ask ]; then
     # Unattended: as chosen before, else no (nothing is fetched unasked).
     DOWNLOADS=$(info_get downloads)
     [ "$DOWNLOADS" = 1 ] || DOWNLOADS=0
-  elif ask "Let the server download songs?"; then
+  elif ask_prev "Let the server download songs?" "$(prev downloads)"; then
     DOWNLOADS=1
   else
     DOWNLOADS=0
@@ -305,7 +343,7 @@ say "already stay where they are."
 if [ "$SEPARATE" = ask ]; then
   if [ "$YES" = 1 ] || [ ! -t 0 ]; then
     SEPARATE=$(info_get separate_folders)
-  elif ask "Use separate folders for uploads and downloads?"; then
+  elif ask_prev "Use separate folders for uploads and downloads?" "$(prev separate_folders)"; then
     SEPARATE=1
   else
     SEPARATE=0
@@ -321,7 +359,7 @@ say "\"Linkin Park - In the End.mp3\"."
 if [ "$KEEP" = ask ]; then
   if [ "$YES" = 1 ] || [ ! -t 0 ]; then
     KEEP=$(info_get keep_folders)
-  elif ask "Keep uploaded folder structures?"; then
+  elif ask_prev "Keep uploaded folder structures?" "$(prev keep_folders)"; then
     KEEP=1
   else
     KEEP=0
@@ -470,7 +508,10 @@ say "no Home address sends a small UDP question and the server answers with its 
 say "It tells them what /api/hello already tells anyone on the network, never the password or the library,"
 say "and only devices on private addresses get an answer. It opens UDP 7878 for your home network."
 if [ "$DISCOVERY" = ask ]; then
-  if ask "Turn it on?"; then DISCOVERY=1; else DISCOVERY=0; fi
+  # As before; a new server: on with --yes, off without a terminal.
+  PREV=$(prev discovery)
+  if [ -z "$PREV" ] && [ "$YES" != 1 ] && [ ! -t 0 ]; then PREV=0; fi
+  if ask_prev "Turn it on?" "$PREV"; then DISCOVERY=1; else DISCOVERY=0; fi
 fi
 if [ "$DISCOVERY" = 1 ]; then say "On."; else say "Off. The address is typed into Flow (--discovery on the server turns it on later)."; fi
 
@@ -828,9 +869,19 @@ if [ "$LEVEL" = 4 ]; then
     *) die "--proxy is nginx, apache, caddy, cloudflared or other." ;;
   esac
 
-  if [ -z "$PROXY_AT" ] && [ -t 0 ] && [ "$YES" != 1 ] && ! ask "Does it run on this machine?"; then
-    printf 'Its IP address (as this machine sees it): '
-    read -r PROXY_AT || PROXY_AT=""
+  # Where it was before: a proxy elsewhere is the one the server trusts.
+  CUR_PROXY_AT=""
+  [ "${CUR_LEVEL:-0}" = 4 ] && CUR_PROXY_AT=$(info_get trusted_proxies | cut -d, -f1)
+  if [ -z "$PROXY_AT" ]; then
+    if [ -t 0 ] && [ "$YES" != 1 ]; then
+      if ! ask_prev "Does it run on this machine?" "$([ -n "$CUR_PROXY_AT" ] && echo 0 || echo 1)"; then
+        printf 'Its IP address (as this machine sees it)%s: ' "${CUR_PROXY_AT:+ [$CUR_PROXY_AT]}"
+        read -r PROXY_AT || PROXY_AT=""
+        PROXY_AT=${PROXY_AT:-$CUR_PROXY_AT}
+      fi
+    else
+      PROXY_AT=$CUR_PROXY_AT
+    fi
   fi
   if [ -n "$PROXY_AT" ]; then
     printf '%s' "$PROXY_AT" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || die "\"$PROXY_AT\" is not an IPv4 address."
@@ -1101,6 +1152,6 @@ elif [ "$LEVEL" = 1 ] && [ "${CUR_LEVEL:-1}" != 1 ]; then
 fi
 [ "$DOWNLOADS" = 1 ] && say "Downloads: on. In Flow, Add Songs offers \"Download (Server)\" while connected to this server."
 say ""
-say "Update later:  cd $REPO && git pull && sudo systemctl restart $SERVICE"
+say "Update later:  cd $REPO && git pull && sh apps/linux-server/install.sh (then 1, Only update)"
 say "Password:      node $REPO/apps/linux-server/src/main.js set-password"
 say "Other level:   sh $REPO/apps/linux-server/install.sh --level N"

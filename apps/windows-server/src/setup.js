@@ -25,7 +25,9 @@
 //   --discovery, --no-discovery, --downloads, --no-downloads,
 //   --separate-folders, --no-separate-folders, --keep-folders, --no-keep-folders
 //                    as install.sh's (asked when left out)
-//   --from-installer an update keeps everything without asking; the window waits for Enter
+//   --from-installer the window waits for Enter at the end
+//   --only-update    the installer's Only update: a server set up before stays as
+//                    it is, no questions (one never set up is asked)
 //   --pause          the window waits for Enter at the end
 //
 // Without a terminal, FLOW_SERVER_PASSWORD gives the password level 4 needs.
@@ -83,6 +85,16 @@ async function ask(question) {
   if (opts.yes) return true;
   if (!tty()) return false;
   return !/^n(o)?$/i.test(await line(`${question} [Y/n] `));
+}
+
+/** A yes/no question whose Enter keeps what was chosen before (`prev`; yes for a new server). */
+async function askPrev(question, prev) {
+  const def = prev === undefined ? true : prev;
+  if (opts.yes || !tty()) return def;
+  const answer = await line(`${question} ${def ? '[Y/n]' : '[y/N]'} `);
+  if (/^y(es)?$/i.test(answer)) return true;
+  if (/^n(o)?$/i.test(answer)) return false;
+  return def;
 }
 
 /** The same, where Enter (and --yes) means no. */
@@ -312,21 +324,14 @@ async function setup() {
   fs.mkdirSync(HOME, { recursive: true });
   let cur = info();
   const curLevel = Number(cur.level) || 0;
-  // An update from the installer, of a server set up before: as it was,
-  // unless asked to change it (n); the questions then start from what it is.
-  if (opts.fromInstaller && curLevel && taskExists() && !opts.yes) {
-    step('Updating the Flow Server');
-    say(`  Level:      ${curLevel}${curLevel === 2 ? ', home network and Tailscale' : curLevel === 4 ? `, the internet at ${cur.public_url}` : ', home network only'}`);
-    say(`  Music:      ${cur.music}`);
-    say(`  Downloads:  ${cur.downloads === '1' ? 'on' : 'off'}`);
-    say(`  Discovery:  ${cur.discovery === '1' ? 'on' : 'off'}`);
-    say(`  Password:   ${cur.password === 'none' ? 'none' : 'set'}`);
-    say(`  Master admin: ${cur.master || 'none'}`);
-    if (await ask('Keep this setup?')) {
-      opts.yes = true;
-      say('Kept. Flow Server Settings in the Start menu changes it later.');
-    }
+  // The installer's Only update, of a server set up before: as it was, no
+  // questions. (One never set up gets them.)
+  if (opts.onlyUpdate && curLevel && taskExists()) {
+    opts.yes = true;
+    say('Only update: everything stays as it is set up. Flow Server Settings in the Start menu changes it.');
   }
+  // What was chosen before, for a server set up before; undefined for a new one.
+  const prev = (key) => (curLevel ? cur[key] === '1' : undefined);
   const port = opts.port || Number(cur.port) || 7878;
 
   step('Where should the server be reachable from?');
@@ -371,7 +376,7 @@ async function setup() {
   let downloads = opts.downloads;
   if (downloads === 'ask') {
     if (!asking()) downloads = cur.downloads === '1';
-    else downloads = await ask('Let the server download songs?');
+    else downloads = await askPrev('Let the server download songs?', prev('downloads'));
   }
   // As on Linux: whoever wants it reads the legal note and installs yt-dlp
   // themselves; declining the note leaves downloads off. One already there needs no note.
@@ -389,7 +394,7 @@ async function setup() {
   say('own (Uploads and Downloads), or all go straight into the music folder. Songs there');
   say('already stay where they are.');
   let separate = opts.separate;
-  if (separate === 'ask') separate = asking() ? await ask('Use separate folders for uploads and downloads?') : cur.separate_folders === '1';
+  if (separate === 'ask') separate = asking() ? await askPrev('Use separate folders for uploads and downloads?', prev('separate_folders')) : cur.separate_folders === '1';
   say(separate ? 'Yes: Uploads and Downloads.' : 'No: straight into the music folder.');
   say('');
   say('An upload can keep the folders it is in on the PC or phone: a song in');
@@ -397,7 +402,7 @@ async function setup() {
   say(`Linkin Park\\Hybrid Theory\\In the End.mp3 here${separate ? ' (inside Uploads)' : ''}. Without, it is saved as`);
   say('"Linkin Park - In the End.mp3".');
   let keep = opts.keep;
-  if (keep === 'ask') keep = asking() ? await ask('Keep uploaded folder structures?') : cur.keep_folders === '1';
+  if (keep === 'ask') keep = asking() ? await askPrev('Keep uploaded folder structures?', prev('keep_folders')) : cur.keep_folders === '1';
   say(keep ? 'Yes.' : 'No.');
 
   step('ffmpeg');
@@ -460,7 +465,10 @@ async function setup() {
   say('It tells them what /api/hello already tells anyone on the network, never the password or the library,');
   say('and only devices on private addresses get an answer. It opens UDP 7878 for your home network.');
   let discovery = opts.discovery;
-  if (discovery === 'ask') discovery = opts.yes ? cur.discovery === '1' || !curLevel : await ask('Turn it on?');
+  if (discovery === 'ask') {
+    // As before; a new server: on with --yes, off without a terminal.
+    discovery = await askPrev('Turn it on?', curLevel || opts.yes || tty() ? prev('discovery') : false);
+  }
   say(discovery ? 'On.' : 'Off. The address is typed into Flow.');
 
   if (level === 4) {
@@ -571,9 +579,12 @@ async function setup() {
     }
     proxy = proxy || 'other';
     const proxyName = { nginx: 'nginx', apache: 'Apache', caddy: 'Caddy', cloudflared: 'Cloudflare Tunnel', other: 'your web server or tunnel' }[proxy];
+    // Where it was before: a proxy elsewhere is the one the server trusts.
+    const curProxyAt = curLevel === 4 ? (cur.trusted_proxies || '').split(',')[0] : '';
     proxyAt = opts.proxyAt;
-    if (!proxyAt && asking() && !(await ask('Does it run on this PC?'))) {
-      proxyAt = await line('Its IP address (as this PC sees it): ');
+    if (!proxyAt && !asking()) proxyAt = curProxyAt;
+    else if (!proxyAt && !(await askPrev('Does it run on this PC?', !curProxyAt))) {
+      proxyAt = (await line(`Its IP address (as this PC sees it)${curProxyAt ? ` [${curProxyAt}]` : ''}: `)) || curProxyAt;
       if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(proxyAt)) die(`"${proxyAt}" is not an IPv4 address.`);
     }
     proxyHere = !proxyAt;

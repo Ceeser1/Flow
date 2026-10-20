@@ -66,6 +66,8 @@ test('the options, as install.sh has them; level 3 is for Linux', () => {
   assert.strictEqual(o.keep, true);
   assert.strictEqual(win.parseArgs(['stop', '--pause']).command, 'stop');
   assert.strictEqual(win.parseArgs(['--uninstall']).command, 'uninstall');
+  assert.strictEqual(win.parseArgs(['--from-installer', '--only-update']).onlyUpdate, true);
+  assert.strictEqual(win.parseArgs([]).onlyUpdate, false);
   assert.throws(() => win.parseArgs(['--level', '3']), /Linux/);
   assert.throws(() => win.parseArgs(['--level', '5']), /1, 2 or 4/);
   assert.throws(() => win.parseArgs(['--proxy', 'iis']), /nginx/);

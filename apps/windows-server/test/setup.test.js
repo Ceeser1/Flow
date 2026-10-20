@@ -90,6 +90,15 @@ ${log()}`);
     assert.match(commands(), /add rule name=Flow Server \(discovery\) .*protocol=UDP localport=7878 remoteip=LocalSubnet /);
     assert.strictEqual((await up()).password, true);
 
+    // The installer's Only update: everything as it was, the proxy elsewhere too.
+    out = setup(['--from-installer', '--only-update']);
+    assert.match(out, /Only update: everything stays/);
+    assert.strictEqual(config().level, 4);
+    assert.strictEqual(config().publicUrl, 'https://music.example.com');
+    assert.deepStrictEqual(config().trustedProxies, ['203.0.113.9']);
+    assert.strictEqual(config().discovery, true);
+    await up();
+
     // Back to 1: no internet address, no proxy.
     setup(['--yes', '--level', '1']);
     assert.strictEqual(config().publicUrl, '');

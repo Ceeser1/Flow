@@ -80,9 +80,11 @@ whether uploads keep their folders; see above), offers
 ffmpeg otherwise, asks whether the apps may find the server on the network by
 themselves (see below), offers a password, installs Tailscale at level 2, writes and starts the
 `flow-server` service (also at boot), and opens the port in ufw or firewalld
-for the home network, and at level 2 for Tailscale. Run it again any time; it
-only updates, and Enter keeps the level chosen before. A lower level closes
-what a higher one opened. Later: `git pull && sudo systemctl restart flow-server`.
+for the home network, and at level 2 for Tailscale. Run it again any time: once installed, it first offers 1 Only update
+(everything stays as it is set up; the service is renewed and restarted), 2
+Reinstall (the questions again; Enter keeps each answer as it is) and 3
+Uninstall. A lower level closes what a higher one opened. To update: `git
+pull`, then `sh apps/linux-server/install.sh` and 1.
 
 ### Level 3: the internet, with Caddy
 

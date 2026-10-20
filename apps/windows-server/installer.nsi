@@ -2,12 +2,15 @@
 ; makensis with VERSION, STAGE (the staged folder), OUTFILE and ICON. The
 ; files go to Program Files\Flow Server; then setup.js asks how the server is
 ; to be set up, in a window of its own, and registers the task that starts it
-; with Windows. An update keeps the setup and only restarts the server.
+; with Windows. Over an installed one it first offers Only update (the setup
+; stays, the server restarts), Reinstall (the questions again, Enter keeping
+; each answer) and Uninstall.
 
 Unicode true
 !include MUI2.nsh
 !include LogicLib.nsh
 !include x64.nsh
+!include nsDialogs.nsh
 
 !define APP "Flow Server"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP}"
@@ -35,10 +38,19 @@ VIAddVersionKey "LegalCopyright" "MIT License"
 
 !define MUI_WELCOMEPAGE_TITLE "${APP} ${VERSION}"
 !define MUI_WELCOMEPAGE_TEXT "The Flow Server keeps your music library on this PC and streams it to the Flow apps on your phone and other computers.$\r$\n$\r$\nAfter copying its files, a window asks how far the server should be reachable (home network, Tailscale, or the internet through your own web server), where the music folder is, and a few more things. The server then starts with Windows, before anyone signs in.$\r$\n$\r$\nInstall it from the Windows account it should run as."
+; 0 a new install, 1 only update, 2 reinstall (change config)
+Var Mode
+Var RadioUpdate
+Var RadioReinstall
+Var RadioUninstall
+
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipWhenInstalled
 !insertmacro MUI_PAGE_WELCOME
+Page custom ModePage ModeLeave
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipWhenInstalled
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_TITLE "${APP} is installed"
+!define MUI_FINISHPAGE_TITLE "${APP} is ready"
 !define MUI_FINISHPAGE_TEXT "Flow Server Settings in the Start menu changes how it is set up. Start, Stop and Restart Flow Server, its log and its command line are there too."
 !insertmacro MUI_PAGE_FINISH
 
@@ -53,6 +65,67 @@ Function .onInit
     Abort
   ${EndIf}
   SetRegView 64
+  ReadRegStr $0 HKLM "Software\${APP}" "InstallDir"
+  ${If} $0 != ""
+    StrCpy $INSTDIR $0
+  ${EndIf}
+  StrCpy $Mode 0
+  ${If} ${FileExists} "$INSTDIR\app\windows\setup.js"
+    StrCpy $Mode 1
+  ${EndIf}
+FunctionEnd
+
+; Installed already: no welcome, and the folder stays where it is.
+Function SkipWhenInstalled
+  ${If} $Mode != 0
+    Abort
+  ${EndIf}
+FunctionEnd
+
+Function ModePage
+  ${If} $Mode == 0
+    Abort
+  ${EndIf}
+  !insertmacro MUI_HEADER_TEXT "${APP} is installed already" "What should happen with the Flow Server in $INSTDIR?"
+  nsDialogs::Create 1018
+  Pop $0
+  ${NSD_CreateRadioButton} 0 0 100% 12u "Only update"
+  Pop $RadioUpdate
+  ${NSD_CreateLabel} 12u 13u -12u 20u "Everything stays as it is set up. The server is updated and restarted."
+  Pop $0
+  ${NSD_CreateRadioButton} 0 38u 100% 12u "Reinstall (change config)"
+  Pop $RadioReinstall
+  ${NSD_CreateLabel} 12u 51u -12u 20u "The setup questions again, in a window of their own. Enter keeps each answer as it is."
+  Pop $0
+  ${NSD_CreateRadioButton} 0 76u 100% 12u "Uninstall"
+  Pop $RadioUninstall
+  ${NSD_CreateLabel} 12u 89u -12u 20u "Removes the server, its task and its firewall rules. The library and the music stay."
+  Pop $0
+  ${If} $Mode == 2
+    ${NSD_Check} $RadioReinstall
+  ${Else}
+    ${NSD_Check} $RadioUpdate
+  ${EndIf}
+  nsDialogs::Show
+FunctionEnd
+
+Function ModeLeave
+  ${NSD_GetState} $RadioUninstall $0
+  ${If} $0 == ${BST_CHECKED}
+    HideWindow
+    ExecWait '"$INSTDIR\Uninstall Flow Server.exe" _?=$INSTDIR' $1
+    ${If} $1 == 0
+      Delete "$INSTDIR\Uninstall Flow Server.exe"
+      RMDir "$INSTDIR"
+    ${EndIf}
+    Quit
+  ${EndIf}
+  ${NSD_GetState} $RadioReinstall $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $Mode 2
+  ${Else}
+    StrCpy $Mode 1
+  ${EndIf}
 FunctionEnd
 
 Function un.onInit
@@ -106,7 +179,11 @@ Section "Flow Server"
   ${If} ${Silent}
     ExecWait '${SETUP} --from-installer --yes' $0
   ${Else}
-    ExecWait '${SETUP} --from-installer' $0
+    ${If} $Mode == 1
+      ExecWait '${SETUP} --from-installer --only-update' $0
+    ${Else}
+      ExecWait '${SETUP} --from-installer' $0
+    ${EndIf}
   ${EndIf}
   ${If} $0 != 0
     DetailPrint "The setup did not finish."

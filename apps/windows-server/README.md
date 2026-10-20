@@ -43,10 +43,10 @@ Then it registers the **Flow Server** task and opens Windows Firewall for it:
 At the end the window shows the addresses to enter in Flow (Settings,
 Streaming, Download and Synchronization).
 
-Installing a newer version over it shows how the server is set up and asks
-"Keep this setup?": Enter keeps everything and only restarts the server, `n`
-goes through the questions with the current answers as defaults (`/S` keeps
-it without asking). The library (`%LOCALAPPDATA%\Flow\server`) and the
+Run over an installed server, the installer first offers three choices:
+**Only update** (everything stays as it is set up; the server is updated and
+restarted), **Reinstall (change config)** (the questions again; Enter keeps
+each answer as it is) and **Uninstall**. `/S` only updates. The library (`%LOCALAPPDATA%\Flow\server`) and the
 music are never touched by the installer, and stay when it is uninstalled.
 
 ## The Start menu

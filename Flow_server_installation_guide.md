@@ -60,7 +60,7 @@ questions and needs nothing installed first (see `apps/windows-server/README.md`
      there. Its PIN follows the password's rules.
    - **Tailscale** (level 2): open the link it prints and sign in.
 
-   Ignore the `git pull` hint it prints at the end; step 8 is how to update.
+   Its hint at the end says how to update with git; with the tarball, see step 8.
 
 5. **Check that it runs.** It should say `active (running)`; the log shows the
    addresses for the apps.
@@ -78,12 +78,17 @@ questions and needs nothing installed first (see `apps/windows-server/README.md`
    level 2, install Tailscale on the device, sign in to the same account and
    connect once at home; Flow then fills in Remote Server by itself.
 
-8. **Update later** by unpacking the new tarball over `~/Flow` and restarting.
-   The library (`~/.local/share/flow-server`) and the songs are not touched.
+8. **Update later** by unpacking the new tarball over `~/Flow` and running the
+   installer again: it asks what to do, and 1 (Only update, the default) keeps
+   everything as it is set up. 2 goes through the questions again (Enter keeps
+   each answer), 3 uninstalls. The library (`~/.local/share/flow-server`) and
+   the songs are not touched.
    ```sh
    tar xzf ~/flow-server-X.Y.Z.tar.gz -C ~/Flow --strip-components=1
-   sudo systemctl restart flow-server
+   sh ~/Flow/apps/linux-server/install.sh
    ```
+   Coming from 3.5.1 or older, the server was in `apps/server`: after this
+   update, `rm -r ~/Flow/apps/server` removes the old copy.
 
 **Useful commands**
 ```sh
