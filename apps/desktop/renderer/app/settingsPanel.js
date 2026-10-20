@@ -937,52 +937,66 @@ const SettingsPanel = {
   // ---- Switch server ----
 
   /**
-   * "Switch server": the other servers used on this device, each with Switch
-   * (connects to it with the address it answered at, its password and its
-   * profile) and ✕ (no longer offered). Only while there is one.
+   * "Switch server": a dropdown of the servers used on this device, the one
+   * in use picked. Picking another only shows where it was reached and as
+   * whom; Switch then connects to it (with that address, its password and its
+   * profile), and ✕ forgets it.
    */
   _switchRow() {
-    this._switch = { busy: '', key: '' };
-    this._switchNode = h('div.switch-servers');
+    this._switch = { picked: '', busy: '', key: '' };
+    this._switchNode = h('div.settings__control.switch-control');
     const row = this._row({
       label: 'Switch server',
-      desc: 'Servers used on this device before. Each keeps its downloads, waiting changes, profile and password for when you come back.',
+      desc: 'Servers used on this device. Each keeps its downloads, waiting changes, profile and password for when you come back. '
+        + 'Pick one and press Switch.',
       sub: true,
       when: () => Store.settings.serverOn,
-      show: () => this._otherServers().length > 0,
+      show: () => this._knownServers().length > 0,
       right: this._switchNode,
     });
     this._switchRowEl = row;
     return row;
   },
 
-  _otherServers() {
-    return (Store.server.servers || []).filter((x) => !x.current);
+  _knownServers() {
+    return Store.server.servers || [];
   },
 
-  /** Drawn afresh only when the list (or a switch under way) changed. */
-  _drawSwitch() {
+  /** Drawn afresh only when the list, the pick or a switch under way changed. */
+  _drawSwitch(force = false) {
     const node = this._switchNode;
     if (!node) return;
-    const list = this._otherServers();
+    const list = this._knownServers();
     if (this._switchRowEl) this._switchRowEl.hidden = !list.length;
     const p = this._switch;
-    const key = JSON.stringify([list, p.busy, Store.settings.serverOn]);
-    if (key === p.key) return;
+    const current = list.find((x) => x.current);
+    // Back to the one in use once the picked one is gone or became it.
+    if (!list.some((x) => x.id === p.picked) || (current && current.id === p.picked)) p.picked = current ? current.id : '';
+    const key = JSON.stringify([list, p.picked, p.busy, Store.settings.serverOn]);
+    if (!force && key === p.key) return;
     p.key = key;
     clear(node);
+    if (!list.length) return;
     const off = !Store.settings.serverOn;
-    for (const s of list) {
-      const busy = p.busy === s.id;
-      node.append(h('div.switch-servers__row',
-        h('div.switch-servers__info',
-          h('span.switch-servers__name', s.name),
-          h('span.settings__note', [s.address, s.profile ? `as ${s.profile}` : ''].filter(Boolean).join(' · '))),
-        h('button.btn.btn--small', {
-          type: 'button', disabled: off || !!p.busy, onclick: () => this._switchTo(s),
-        }, busy ? 'Connecting...' : 'Switch'),
-        iconButton('act.act--grey', Icons.x, `Forget "${s.name}"`, () => this._forgetServer(s))));
-    }
+    const picked = list.find((x) => x.id === p.picked) || list[0];
+    const other = !picked.current;
+    const select = h('select.select.switch-select', { disabled: off || !!p.busy },
+      ...list.map((x) => h('option', { value: x.id }, x.current ? `${x.name} (in use)` : x.name)));
+    select.value = picked.id;
+    select.addEventListener('change', () => {
+      p.picked = select.value;
+      this._drawSwitch(true);
+    });
+    const forget = iconButton('act.act--grey', Icons.x, `Forget "${picked.name}"`, () => this._forgetServer(picked));
+    forget.disabled = off || !!p.busy || !other;
+    node.append(
+      h('span.settings__note.switch-where', [picked.address, picked.profile ? `as ${picked.profile}` : ''].filter(Boolean).join(' · ')),
+      select,
+      h('button.btn.btn--small', {
+        type: 'button', disabled: off || !!p.busy || !other, onclick: () => this._switchTo(picked),
+      }, p.busy ? 'Connecting...' : 'Switch'),
+      forget,
+    );
   },
 
   async _switchTo(s) {
@@ -993,6 +1007,8 @@ const SettingsPanel = {
       return true;
     });
     this._switch.busy = '';
+    // Not switched: the one in use is picked again.
+    if (!ok) this._switch.picked = '';
     this._drawSwitch();
     if (ok) toast(`Switching to "${s.name}"`, 'success');
   },

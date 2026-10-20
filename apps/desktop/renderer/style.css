@@ -2938,14 +2938,14 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 .server-state--error { color: var(--red); }
 .server-state > div + div { color: var(--text-dim); }
 
-/* Settings' Switch server: one line per server used before. */
-.switch-servers { display: flex; flex-direction: column; gap: 6px; min-width: 0; width: 100%; max-width: 420px; }
-.switch-servers__row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.switch-servers__info { display: flex; flex-direction: column; min-width: 0; flex: 1; text-align: right; }
-.switch-servers__name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.switch-servers__info .settings__note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body.mobile .switch-servers { max-width: none; }
-body.mobile .switch-servers__info { text-align: left; }
+/* Settings' Switch server: the servers in a dropdown, Switch and ✕. */
+.switch-control { flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+.switch-select { width: 180px; max-width: 100%; }
+.switch-where { flex-basis: 100%; text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.switch-where:empty { display: none; }
+body.mobile .switch-control { justify-content: flex-start; }
+body.mobile .switch-select { flex: 1; width: auto; }
+body.mobile .switch-where { text-align: left; }
 
 /* Playing with the screen off (backgroundHelp.js): the phone's. */
 .bg-help__status { margin: 4px 0 10px; padding-left: 10px; border-left: 3px solid var(--red); line-height: 1.5; }
