@@ -402,7 +402,7 @@ function createHttpServer({
     // 4, or set up by hand) gets nothing.
     const { level } = config.get();
     if (client.outside && level && level < PUBLIC_LEVEL) {
-      return `This Flow Server is set to level ${level}, not reachable from the internet. On the server, choose level 3 or 4 (sh apps/server/install.sh) to use it from outside.`;
+      return `This Flow Server is set to level ${level}, not reachable from the internet. On the server, choose level 3 or 4 with install.sh (on Windows: level 4 in Flow Server Settings) to use it from outside.`;
     }
     return '';
   }

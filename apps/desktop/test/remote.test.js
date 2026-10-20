@@ -18,8 +18,8 @@ process.env.FLOW_MUSIC = path.join(scratch, 'music');
 // The fake songs below are no real audio: ffprobe would call them broken.
 process.env.FLOW_SERVER_FFMPEG = 'off';
 
-const { startServer } = require('../../server/src/server');
-const configMod = require('../../server/src/config');
+const { startServer } = require('../../linux-server/src/server');
+const configMod = require('../../linux-server/src/config');
 const model = require('@flow/core/libraryModel');
 const settings = require('../src/settings');
 const library = require('../src/library');

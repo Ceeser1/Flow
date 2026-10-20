@@ -2679,7 +2679,7 @@ function createRemote(env) {
 
   // ---- downloads by the server ("Download (Server)" on Add Songs) ----
   //
-  // The server keeps one batch per profile (apps/server/src/downloads.js) and
+  // The server keeps one batch per profile (apps/linux-server/src/downloads.js) and
   // the window polls it while Add Songs is open. None of it goes through Local
   // Files: a song finished there is the server's at once, like any other.
 

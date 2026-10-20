@@ -1,0 +1,22 @@
+{
+  "name": "flow-windows-server",
+  "version": "3.5.2",
+  "description": "The Flow Server's installer for Windows: the server, the Node.js it runs on, its setup and a task that starts it with Windows",
+  "private": true,
+  "scripts": {
+    "setup": "node src/setup.js",
+    "test": "node --test",
+    "dist": "node build.js"
+  },
+  "dependencies": {
+    "@flow/core": "*"
+  },
+  "devDependencies": {
+    "app-builder-lib": "25.1.8"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Ceeser",
+  "license": "MIT"
+}

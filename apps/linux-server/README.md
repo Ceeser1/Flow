@@ -5,6 +5,10 @@ Windows PC) and streams it to the Flow apps. It uses `@flow/core` for the
 library, so it and the apps agree on every rule. It needs Node 18 or newer and
 has no other dependencies.
 
+This folder holds the server itself and its Linux installer (`install.sh`). On
+Windows, the Flow Server installer in `apps/windows-server` sets up the same
+server with the Node.js it runs on; see its README.
+
 The apps have full control: they send each change (a song renamed or deleted, a
 playlist made) to the server as a command, and a change made while the server
 could not be reached is sent once it can. When two changes clash, the later one
@@ -15,7 +19,7 @@ wins, and a delete always wins over an edit.
 ```sh
 npm run server            # from the repo root
 # or
-node apps/server/src/main.js --music ~/flow-music
+node apps/linux-server/src/main.js --music ~/flow-music
 ```
 
 On start it prints the addresses to enter in Flow (Settings → Streaming,
@@ -52,7 +56,7 @@ A song deleted from an app is not gone at once. Its file moves to
 
 ```sh
 git clone <the repo> ~/Flow && cd ~/Flow
-sh apps/server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --downloads, --no-downloads, --separate-folders, --keep-folders (and --no-...), --uninstall
+sh apps/linux-server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --downloads, --no-downloads, --separate-folders, --keep-folders (and --no-...), --uninstall
 ```
 
 Works on any Linux with systemd and Node 18 or newer (a Raspberry Pi, a home
@@ -313,9 +317,9 @@ on a private network, never to one that came through a proxy.
 ## Password
 
 ```sh
-node apps/server/src/main.js set-password        # asks for it
-node apps/server/src/main.js clear-password
-node apps/server/src/main.js devices             # who has signed in (two of one name: their app's id too)
+node apps/linux-server/src/main.js set-password        # asks for it
+node apps/linux-server/src/main.js clear-password
+node apps/linux-server/src/main.js devices             # who has signed in (two of one name: their app's id too)
 ```
 
 Without one, anyone who can reach the server can use it, which is fine on a
@@ -371,7 +375,7 @@ The server also guards against a proxy set up by hand, at any level:
 ## Checking a server from outside: doctor
 
 ```sh
-node apps/server/src/main.js doctor https://music.example.com
+node apps/linux-server/src/main.js doctor https://music.example.com
 ```
 
 Checks the server the way the apps reach it, through whatever is in front of
@@ -436,12 +440,12 @@ who can also change the server password and make admins in the apps. The
 master is made on the server only, by the installer or:
 
 ```sh
-node apps/server/src/main.js profiles                     # the profiles: admins, PINs, made, last seen
-node apps/server/src/main.js admin master "Anna"          # Anna the master admin (asks a new PIN for her)
-node apps/server/src/main.js admin master "Anna" --create # the same, making the profile when there is none
-node apps/server/src/main.js admin grant "Ben"            # Ben an admin (he needs a PIN)
-node apps/server/src/main.js admin revoke "Ben"           # no longer
-node apps/server/src/main.js profiles add "Carla"         # a new profile (asks its PIN)
+node apps/linux-server/src/main.js profiles                     # the profiles: admins, PINs, made, last seen
+node apps/linux-server/src/main.js admin master "Anna"          # Anna the master admin (asks a new PIN for her)
+node apps/linux-server/src/main.js admin master "Anna" --create # the same, making the profile when there is none
+node apps/linux-server/src/main.js admin grant "Ben"            # Ben an admin (he needs a PIN)
+node apps/linux-server/src/main.js admin revoke "Ben"           # no longer
+node apps/linux-server/src/main.js profiles add "Carla"         # a new profile (asks its PIN)
 ```
 
 `FLOW_PROFILE_PIN` gives the PIN without asking. The failed logins are kept
@@ -482,6 +486,7 @@ pauses and skips from other devices arrive late or not at all.
 | downloads not finished yet | `staging/` in there, a folder per profile | the same |
 | covers | `covers/` in there, `<song id>.jpg` | the same |
 | music | `~/flow-music` | `~/flow-music` |
+| log | `journalctl -u flow-server` | `flow-server.log` in the library folder |
 
 `FLOW_SERVER_HOME` and `FLOW_SERVER_MUSIC` point them elsewhere.
 
@@ -490,7 +495,7 @@ pauses and skips from other devices arrive late or not at all.
 WSL 2 runs a real Linux, so the server behaves there as it will on a Pi.
 Windows reaches it on `localhost:7878`. Other devices (a phone) can't, because
 WSL 2 sits behind its own network; for those, run the server on Windows itself
-or forward the port with `netsh interface portproxy`. Keep the music on the
+(the installer in `apps/windows-server`) or forward the port with `netsh interface portproxy`. Keep the music on the
 Linux side (`~/flow-music`), not under `/mnt/c`, which is slow and doesn't
 report changes.
 

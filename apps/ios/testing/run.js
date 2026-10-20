@@ -139,7 +139,7 @@ async function startServer(out) {
   // The server takes files that have not changed for a moment.
   await sleep(2500);
   const logFd = fs.openSync(path.join(out, 'server.log'), 'a');
-  const child = spawn(process.execPath, [path.join(ROOT, 'apps', 'server', 'src', 'main.js'),
+  const child = spawn(process.execPath, [path.join(ROOT, 'apps', 'linux-server', 'src', 'main.js'),
     '--discovery', '--name', 'Flow CI', '--music', music, '--home', path.join(base, 'home'), '--port', String(SERVER_PORT)], {
     stdio: ['ignore', logFd, logFd],
     env: { ...process.env, FLOW_SERVER_YTDLP: 'off' },

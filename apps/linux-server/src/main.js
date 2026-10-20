@@ -180,7 +180,7 @@ function tagSongs(config, dryRun) {
       + '(a song whose cover is still being looked for: once it is found). Nothing was changed.');
     return;
   }
-  if (!tools.ffmpeg()) throw new Error('Writing tags needs ffmpeg, which this machine does not have (install.sh offers it). Nothing was changed.');
+  if (!tools.ffmpeg()) throw new Error('Writing tags needs ffmpeg, which this machine does not have (install.sh offers it; the Windows server comes with it). Nothing was changed.');
   config.set({ tagSongs: true });
   console.log(`${todo.length} ${todo.length === 1 ? 'file gets' : 'files get'} the song's flowid and cover, written by the server one at a time in the background `
     + '(its log says when it is done). A running server starts within a few seconds; a stopped one when it starts again.');
@@ -340,7 +340,7 @@ async function main() {
   if (args.command === 'clear-password') {
     if (level >= PUBLIC_LEVEL) {
       throw new Error(`This server is at level ${level}, reachable from the internet, so it keeps a password. `
-        + 'Set a new one with flow-server set-password, or lower the level first (sh apps/server/install.sh).');
+        + 'Set a new one with flow-server set-password, or lower the level first (install.sh, or Flow Server Settings on Windows).');
     }
     config.set({ password: null, tokens: [] });
     console.log('No password any more: anyone who can reach the server can use it.');
@@ -391,14 +391,14 @@ async function main() {
   console.log(`  New songs: ${placed.length ? placed.join('; ') : 'straight into the music folder, as "Artist - Title"'}`);
   console.log(cfg.level
     ? `  Level:    ${cfg.level}, ${LEVEL_NAMES[cfg.level]}${cfg.level >= PUBLIC_LEVEL && cfg.publicUrl ? ` at ${cfg.publicUrl}` : ''}`
-    : '  Level:    not chosen (install.sh asks, or --level)');
+    : '  Level:    not chosen (install.sh or Flow Server Settings asks, or --level)');
   console.log(`  Password: ${cfg.password ? 'yes' : 'none (flow-server set-password to add one)'}`);
   if (cfg.level >= PUBLIC_LEVEL && !(cfg.password && cfg.password.strong)) {
     console.log(`  WARNING:  reachable from the internet without a strong password, so it lets no one in. Set one: flow-server set-password`);
   }
   console.log(`  ffmpeg:   ${tools.ffmpeg() ? 'found' : 'not found (optional: song lengths, tags and loudness for songs added by hand; needed for downloads)'}`);
-  if (cfg.downloads === false) console.log('  Downloads: off (flow-server --downloads, or install.sh, turns them on)');
-  else if (!tools.ytdlp()) console.log('  yt-dlp:   not found (optional: the server downloads songs itself; install.sh offers it)');
+  if (cfg.downloads === false) console.log('  Downloads: off (flow-server --downloads, install.sh or Flow Server Settings turns them on)');
+  else if (!tools.ytdlp()) console.log('  yt-dlp:   not found (optional: the server downloads songs itself; install.sh or Flow Server Settings says how)');
   else if (!tools.canDownload()) console.log('  yt-dlp:   found, but downloads also need ffmpeg');
   else {
     console.log('  yt-dlp:   found, the apps can let the server download songs (Download (Server))');

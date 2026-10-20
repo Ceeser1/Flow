@@ -8,7 +8,7 @@
 #   3  and the internet, with Caddy set up by this script
 #   4  and the internet, through your own web server or tunnel
 #
-#   sh apps/server/install.sh [options]      from the cloned repo, as your own user
+#   sh apps/linux-server/install.sh [options]      from the cloned repo, as your own user
 #
 #   --level N        the level (default: the one chosen before; asked when there is a terminal)
 #   --music DIR      the music folder (default: what the server remembers, else ~/flow-music)
@@ -115,8 +115,8 @@ if [ "$(id -u)" -ne 0 ]; then
   SUDO="sudo"
 fi
 
-[ "$(uname -s)" = "Linux" ] || die "This installs a service on Linux. On Windows or macOS, run: node apps/server/src/main.js"
-have systemctl && [ -d /run/systemd/system ] || die "This needs systemd. Without it, run: node apps/server/src/main.js"
+[ "$(uname -s)" = "Linux" ] || die "This installs a service on Linux. On Windows, use the Flow Server installer (apps/windows-server). On macOS, run: node apps/linux-server/src/main.js"
+have systemctl && [ -d /run/systemd/system ] || die "This needs systemd. Without it, run: node apps/linux-server/src/main.js"
 
 if [ "$UNINSTALL" = 1 ]; then
   step "Removing the service"
@@ -133,7 +133,7 @@ fi
 case "$MUSIC" in ""|/*) ;; *) MUSIC="$PWD/$MUSIC" ;; esac
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
-[ -f "$REPO/apps/server/src/main.js" ] || die "Run this from a clone of the Flow repo."
+[ -f "$REPO/apps/linux-server/src/main.js" ] || die "Run this from a clone of the Flow repo."
 RUN_USER=${SUDO_USER:-$(id -un)}
 RUN_HOME=$(getent passwd "$RUN_USER" 2>/dev/null | cut -d: -f6)
 RUN_HOME=${RUN_HOME:-$HOME}
@@ -194,18 +194,18 @@ fi
 # settings are in that user's home).
 flow() {
   if [ "$(id -un)" = "$RUN_USER" ]; then
-    "$NODE" "$REPO/apps/server/src/main.js" "$@"
+    "$NODE" "$REPO/apps/linux-server/src/main.js" "$@"
   elif have runuser; then
-    runuser -u "$RUN_USER" -- env -u XDG_DATA_HOME HOME="$RUN_HOME" "$NODE" "$REPO/apps/server/src/main.js" "$@"
+    runuser -u "$RUN_USER" -- env -u XDG_DATA_HOME HOME="$RUN_HOME" "$NODE" "$REPO/apps/linux-server/src/main.js" "$@"
   else
-    sudo -u "$RUN_USER" env -u XDG_DATA_HOME HOME="$RUN_HOME" "$NODE" "$REPO/apps/server/src/main.js" "$@"
+    sudo -u "$RUN_USER" env -u XDG_DATA_HOME HOME="$RUN_HOME" "$NODE" "$REPO/apps/linux-server/src/main.js" "$@"
   fi
 }
 info_get() { printf '%s\n' "$INFO" | sed -n "s/^$1=//p"; }
 
 # For level 3.
 CADDYFILE=/etc/caddy/Caddyfile
-SETUP="$REPO/apps/server/src/setup.js"
+SETUP="$REPO/apps/linux-server/src/setup.js"
 DUCK_DIR=/etc/flow-server
 DUCK_UNIT=/etc/systemd/system/flow-duckdns
 # yt-dlp where it is to be installed for Flow (it then updates itself once a day).
@@ -263,7 +263,7 @@ if [ "$LEVEL" = 3 ]; then
   for p in 80 443; do
     OWNER=$(port_owner "$p")
     if [ -n "$OWNER" ] && [ "$OWNER" != caddy ]; then
-      die "Port $p is in use by $OWNER. Caddy needs 80 and 443 for itself. With a web server of your own, that is level 4: sh $REPO/apps/server/install.sh --level 4"
+      die "Port $p is in use by $OWNER. Caddy needs 80 and 443 for itself. With a web server of your own, that is level 4: sh $REPO/apps/linux-server/install.sh --level 4"
     fi
   done
   say "Ports 80 and 443 are free for Caddy."
@@ -481,7 +481,7 @@ if [ "$LEVEL" -ge 3 ]; then
   NEW_PASSWORD=1
   if [ "$CUR_PASSWORD" = strong ] && [ -z "${FLOW_SERVER_PASSWORD:-}" ] && ! ask_no "A strong password is set already. Choose a new one?"; then NEW_PASSWORD=0; fi
   if [ "$NEW_PASSWORD" = 0 ]; then
-    say "Kept. Change it later with: node $REPO/apps/server/src/main.js set-password"
+    say "Kept. Change it later with: node $REPO/apps/linux-server/src/main.js set-password"
   else
     say "The server will be reachable from the internet, so it needs a strong password: at least"
     say "8 characters, with a lower-case letter, an upper-case letter and a number."
@@ -502,7 +502,7 @@ if [ "$LEVEL" -ge 3 ]; then
 else
   step "Password (optional at level $LEVEL)"
   if [ "$CUR_PASSWORD" != none ]; then
-    say "Set already. Change it later with: node $REPO/apps/server/src/main.js set-password"
+    say "Set already. Change it later with: node $REPO/apps/linux-server/src/main.js set-password"
   else
     if [ "$LEVEL" = 2 ]; then
       say "Without one, anyone on your home network or your tailnet can use the server."
@@ -512,12 +512,12 @@ else
     if ask_no "Set a password now (4 or more characters)?"; then
       TRIES=1
       until flow set-password --level "$LEVEL"; do
-        if [ "$TRIES" -ge 3 ]; then say "Not set; later: node $REPO/apps/server/src/main.js set-password"; break; fi
+        if [ "$TRIES" -ge 3 ]; then say "Not set; later: node $REPO/apps/linux-server/src/main.js set-password"; break; fi
         TRIES=$((TRIES + 1))
         say "Try again:"
       done
     else
-      say "None. Later: node $REPO/apps/server/src/main.js set-password"
+      say "None. Later: node $REPO/apps/linux-server/src/main.js set-password"
     fi
   fi
 fi
@@ -525,7 +525,7 @@ fi
 step "Master admin"
 MASTER=$(info_get master)
 if [ -n "$MASTER" ]; then
-  say "$MASTER is the master admin. Another one later: node $REPO/apps/server/src/main.js admin master <name>"
+  say "$MASTER is the master admin. Another one later: node $REPO/apps/linux-server/src/main.js admin master <name>"
 else
   say "The master admin is the one profile that can change the server password and make other"
   say "profiles admins from inside the apps (Settings, Administration). Its PIN needs at least"
@@ -537,15 +537,15 @@ else
     if [ -n "$MASTER_NAME" ]; then
       TRIES=1
       until flow admin master "$MASTER_NAME" --create --level "$LEVEL"; do
-        if [ "$TRIES" -ge 3 ]; then say "Not made; later: node $REPO/apps/server/src/main.js admin master <name> --create"; break; fi
+        if [ "$TRIES" -ge 3 ]; then say "Not made; later: node $REPO/apps/linux-server/src/main.js admin master <name> --create"; break; fi
         TRIES=$((TRIES + 1))
         say "Try again:"
       done
     else
-      say "None. Later: node $REPO/apps/server/src/main.js admin master <name> --create"
+      say "None. Later: node $REPO/apps/linux-server/src/main.js admin master <name> --create"
     fi
   else
-    say "None for now. Later: node $REPO/apps/server/src/main.js admin master <name> --create"
+    say "None for now. Later: node $REPO/apps/linux-server/src/main.js admin master <name> --create"
   fi
 fi
 
@@ -927,7 +927,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=$RUN_USER
-WorkingDirectory=$REPO/apps/server
+WorkingDirectory=$REPO/apps/linux-server
 ExecStart=$NODE src/main.js$ARGS
 Restart=on-failure
 RestartSec=5
@@ -1031,7 +1031,7 @@ if [ "$LEVEL" = 3 ]; then
     say "  connections can't reach you. Ask the provider for a public IPv4, or use level 2 (Tailscale)."
     say "- $DOMAIN doesn't point here (see \"Checking the name\")."
     say "Caddy keeps trying by itself. Fix it and run this again, or check with:"
-    say "  node $REPO/apps/server/src/main.js doctor https://$DOMAIN"
+    say "  node $REPO/apps/linux-server/src/main.js doctor https://$DOMAIN"
   fi
   if [ "$CERT_OK" = 1 ]; then
     step "Checking it the way the apps will"
@@ -1046,7 +1046,7 @@ if [ "$LEVEL" = 3 ]; then
     fi
     say "For the outside view (port 443 on the router, above all), run this from a machine outside"
     say "your home network, like a laptop on a phone's hotspot:"
-    say "  node apps/server/src/main.js doctor https://$DOMAIN"
+    say "  node apps/linux-server/src/main.js doctor https://$DOMAIN"
   fi
 fi
 
@@ -1066,11 +1066,11 @@ if [ "$LEVEL" = 4 ]; then
   else
     say ""
     say "Fix what failed with the snippet above (\"What to add to $PROXY_NAME\"), then check again:"
-    say "  node $REPO/apps/server/src/main.js doctor $DOCTOR_VIA $URL"
+    say "  node $REPO/apps/linux-server/src/main.js doctor $DOCTOR_VIA $URL"
   fi
   say "For the outside view (the router above all), run this from a machine outside your home"
   say "network, like a laptop on a phone's hotspot:"
-  say "  node apps/server/src/main.js doctor $URL"
+  say "  node apps/linux-server/src/main.js doctor $URL"
 fi
 
 step "Done"
@@ -1102,5 +1102,5 @@ fi
 [ "$DOWNLOADS" = 1 ] && say "Downloads: on. In Flow, Add Songs offers \"Download (Server)\" while connected to this server."
 say ""
 say "Update later:  cd $REPO && git pull && sudo systemctl restart $SERVICE"
-say "Password:      node $REPO/apps/server/src/main.js set-password"
-say "Other level:   sh $REPO/apps/server/install.sh --level N"
+say "Password:      node $REPO/apps/linux-server/src/main.js set-password"
+say "Other level:   sh $REPO/apps/linux-server/install.sh --level N"

@@ -401,7 +401,8 @@ files that are already in .mp3 format" unticked, MP3s as well.
 ### A Flow Server
 
 With **Use a Flow Server** on, the library lives on a
-Flow Server (`apps/server`, e.g. on a Raspberry Pi) and Flow is its remote
+Flow Server (`apps/linux-server` on a Raspberry Pi or another Linux machine,
+`apps/windows-server` on a Windows PC) and Flow is its remote
 control with a cache:
 
 - Songs play straight from the server, seeking included. The name under
@@ -446,7 +447,7 @@ control with a cache:
   names, Flow asks: **Use these names** (the server's song is renamed),
   **Keep the server's**, or **Upload as a new song**; "Do the same for the
   other songs of this upload" answers for the rest.
-- `apps/server/install.sh` sets the server up as a service on any Linux
+- `apps/linux-server/install.sh` sets the server up as a service on any Linux
   with systemd, and asks how far it should be reachable (see the server's
   README):
   1. the home network only;
@@ -462,6 +463,10 @@ control with a cache:
   Levels 3 and 4 need a strong password, and connecting at home fills the
   Remote box with the server's `https://` address. `flow-server doctor
   <address>` checks a server the way the apps reach it.
+- On Windows, `Flow Server Setup <version>.exe` (`apps/windows-server`)
+  installs the server with the Node.js it runs on and ffmpeg, asks the same
+  questions (levels 1, 2 and 4; level 3 is Linux only), and starts it with
+  Windows, before anyone signs in. See its README.
 - Profiles: everyone shares the songs, and each profile has its own
   playlists, favourites and listening stats. A new profile starts
   with a copy of the Default / Shared playlists (what is used while no profile
@@ -584,6 +589,7 @@ npm test        # every package's tests: no network; the parts that need ffmpeg 
 npm run icon    # every app's icons (desktop, Android, iPhone) from icons/flow.png
                 # (the white wave on its blue square)
 npm run dist    # build the installer into apps/desktop/dist/
+npm run dist:windows-server   # the Flow Server's Windows installer, into apps/windows-server/dist/
 ```
 
 The root folder is an npm workspace, so the commands work from there. The
@@ -609,12 +615,13 @@ sets it, and with it set Electron starts as plain Node.
 ## Layout
 
 ```
-packages/core/   shared by every Flow app: plain Node, no Electron
-apps/desktop/    the Electron app (Windows now, Linux from the same code)
-apps/server/     Flow Server: hosts a library for the apps (see its README)
-apps/android/    the Android app (v3.0, a Flow Server client; see its README)
-apps/ios/        the iPhone app (the Android app's page in Swift; see its README)
-icons/           Flow's icon, the source of every app's (npm run icon)
+packages/core/        shared by every Flow app: plain Node, no Electron
+apps/desktop/         the Electron app (Windows now, Linux from the same code)
+apps/linux-server/    Flow Server: hosts a library for the apps, and its Linux installer (see its README)
+apps/windows-server/  the Flow Server's installer for Windows (see its README)
+apps/android/         the Android app (v3.0, a Flow Server client; see its README)
+apps/ios/             the iPhone app (the Android app's page in Swift; see its README)
+icons/                Flow's icon, the source of every app's (npm run icon)
 ```
 
 `packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,

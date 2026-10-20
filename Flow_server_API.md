@@ -2,7 +2,7 @@
 
 Everything a Flow Server answers, and how to call it. The Flow apps use
 exactly these routes; a script, a test tool or another client can use them
-the same way. The code is in `apps/server/src/http.js` (routes),
+the same way. The code is in `apps/linux-server/src/http.js` (routes),
 `sessions.js`, `downloads.js`, `live.js` and `packages/core/src/commands.js`.
 
 Contents: [Basics](#basics) · [Signing in](#signing-in) ·

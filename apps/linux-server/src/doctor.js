@@ -261,7 +261,7 @@ async function runDoctor(address, opts = {}) {
   if (!hello.password) add('fail', 'The server has no password. From the internet it lets no one in without one: flow-server set-password --level 3');
   add('ok', (hello.features || []).includes('download')
     ? 'It can download songs itself (Download (Server) in the apps).'
-    : 'It does not download songs itself (optional: that needs yt-dlp and ffmpeg on the server; install.sh offers them).');
+    : 'It does not download songs itself (optional: that needs yt-dlp and ffmpeg on the server; install.sh or Flow Server Settings sets it up).');
 
   let check = null;
   try {

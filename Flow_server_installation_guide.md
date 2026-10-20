@@ -3,6 +3,9 @@
 Turns `flow-server-3.3.3.tar.gz` into a Flow Server on a Linux machine with
 systemd (Raspberry Pi OS, Debian, Ubuntu). Run the commands on that machine.
 
+On a Windows PC, run `Flow Server Setup <version>.exe` instead: it asks the same
+questions and needs nothing installed first (see `apps/windows-server/README.md`).
+
 1. **Install Node.js, ffmpeg and curl.** `node -v` must show v18 or newer.
    ```sh
    sudo apt update && sudo apt install -y nodejs ffmpeg curl
@@ -29,12 +32,12 @@ systemd (Raspberry Pi OS, Debian, Ubuntu). Run the commands on that machine.
 
 4. **Run the installer** as your normal user (not with `sudo`):
    ```sh
-   cd ~/Flow && sh apps/server/install.sh
+   cd ~/Flow && sh apps/linux-server/install.sh
    ```
    Answer its questions:
    - **Level:** `1` = home network only, `2` = also on the go through
      Tailscale (recommended). Levels 3 and 4 put the server on the internet;
-     see `apps/server/README.md` first.
+     see `apps/linux-server/README.md` first.
    - **Downloads by the server:** optional. With yes, install yt-dlp in a
      second terminal when it asks, using the file name it prints
      (`yt-dlp_linux_aarch64` on a 64-bit Pi), then press Enter:
@@ -84,10 +87,10 @@ systemd (Raspberry Pi OS, Debian, Ubuntu). Run the commands on that machine.
 
 **Useful commands**
 ```sh
-node ~/Flow/apps/server/src/main.js set-password   # set or change the password
-node ~/Flow/apps/server/src/main.js profiles       # the profiles, which are admins
-node ~/Flow/apps/server/src/main.js admin master "Your name" --create   # the master admin
+node ~/Flow/apps/linux-server/src/main.js set-password   # set or change the password
+node ~/Flow/apps/linux-server/src/main.js profiles       # the profiles, which are admins
+node ~/Flow/apps/linux-server/src/main.js admin master "Your name" --create   # the master admin
 journalctl -u flow-server -f                       # live log
-sh ~/Flow/apps/server/install.sh --level 2         # change the level
-sh ~/Flow/apps/server/install.sh --uninstall       # remove the service (library and music stay)
+sh ~/Flow/apps/linux-server/install.sh --level 2         # change the level
+sh ~/Flow/apps/linux-server/install.sh --uninstall       # remove the service (library and music stay)
 ```
