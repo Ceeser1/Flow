@@ -179,7 +179,7 @@ module.exports = {
     serverIds: coverServerIds,
     removeServer: (id) => fs.rmSync(path.join(paths.coversDir(), id), { recursive: true, force: true }),
   },
-  // The client's own files (server-library.json, server-sync.json, server-trims.json).
+  // The client's own files (server-library.json, server-sync.json, server-others.json).
   jsonFiles: {
     read: (name) => readJson(rootFile(name)),
     write: (name, value) => writeJsonAtomic(rootFile(name), value),

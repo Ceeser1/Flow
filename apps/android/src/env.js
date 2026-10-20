@@ -75,7 +75,7 @@ function createEnv({ tellCovers }) {
     settings,
     library,
     covers,
-    // The client's own files (server-library.json, server-sync.json, server-trims.json).
+    // The client's own files (server-library.json, server-sync.json, server-others.json).
     jsonFiles: {
       read: (name) => readJson(file(name)),
       write: (name, value) => writeJson(file(name), value),

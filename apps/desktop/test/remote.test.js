@@ -27,6 +27,7 @@ const remote = require('../src/remote');
 
 const FAKE_MP3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(1997, 7)]);
 const servers = [];
+let second = null; // the server with a password, from its step on
 
 async function serve({ password } = {}) {
   const dirs = { home: path.join(scratch, `server${servers.length}`, 'home'), music: path.join(scratch, `server${servers.length}`, 'music') };
@@ -53,6 +54,8 @@ const serverLibrary = async (base, token) => (await (await fetch(`${base}/api/li
 })).json()).library;
 
 const asked = [];
+const questions = [];
+let answerUpload = true;
 const notices = [];
 const live = [];
 
@@ -77,9 +80,10 @@ test('a Flow Server as the library, step by step', async (t) => {
 
   settings.set({ serverOn: true, serverHome: one.address });
   remote.init({
-    confirmUpload: async ({ count }) => {
-      asked.push(count);
-      return true;
+    confirmUpload: async (q) => {
+      asked.push(q.count);
+      questions.push(q);
+      return answerUpload;
     },
     onNotice: (text, kind) => notices.push([kind, text]),
     onLive: (e) => live.push(e.type),
@@ -359,6 +363,61 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.deepEqual(sent, [{ alwaysMp3: true, quality: 160, keepMp3: true }]);
     env.convertUploads = false;
     settings.set({ alwaysMp3: false });
+    two.server.library.addUploaded = add;
+    second = two;
+  });
+
+  await t.test('switching between two servers: each keeps its marks, songs from the other are asked about, a file both use stays', async () => {
+    const two = second;
+    const token = () => remote.status().token;
+    const switchTo = async (s, what) => {
+      settings.set({ serverHome: s.address });
+      remote.reconfigure({ serverHome: s.address });
+      await until(() => remote.status().state === 'online' && remote.status().address === s.address, what);
+    };
+    const meta = { title: 'Unfinished Sympathy', artist: 'Massive Attack', format: 'mp3', duration: 308 };
+    const put = await fetch(`${two.base}/api/songs/unfin1?meta=${encodeURIComponent(JSON.stringify(meta))}`, {
+      method: 'PUT', body: FAKE_MP3, headers: { Authorization: `Bearer ${token()}` },
+    });
+    assert.equal(put.status, 200);
+    await remote.syncNow();
+    await remote.setOffline(model.ALL_SONGS_ID, true);
+    await until(() => remote.localFileOf('unfin1'), 'the second server\'s song');
+    const unfinFile = remote.localFileOf('unfin1');
+
+    // To the first server: its own marks (none), and the song that came meanwhile asked about.
+    questions.length = 0;
+    await switchTo(one, 'the first server again');
+    assert.ok(notices.some(([, text]) => /^Back with/.test(text)));
+    assert.deepEqual(remote.status().offline, []);
+    await until(() => questions.length === 1, 'the question about the new song');
+    assert.deepEqual({ ...questions[0], name: undefined }, {
+      count: 1, fromOthers: 1, returning: true, name: undefined,
+    });
+    await until(async () => (await serverLibrary(one.base)).songs.some((s) => s.title === 'Unfinished Sympathy'), 'the upload to the first server');
+    await remote.setOffline(model.ALL_SONGS_ID, true);
+    await until(() => remote.localFileOf('glory1'), 'the first server\'s songs');
+    const gloryFile = remote.localFileOf('glory1');
+
+    // Back to the second: All Songs is still marked there; the first one's copies are not uploaded when declined.
+    answerUpload = false;
+    questions.length = 0;
+    await switchTo(two, 'the second server again');
+    assert.deepEqual(remote.status().offline, [model.ALL_SONGS_ID]);
+    assert.equal(remote.localFileOf('unfin1'), unfinFile);
+    await until(() => questions.length === 1, 'the question about the first server\'s songs');
+    assert.equal(questions[0].returning, true);
+    assert.equal(questions[0].fromOthers, questions[0].count);
+    await remote.syncNow().catch(() => {});
+    assert.ok(!(await serverLibrary(two.base, token())).songs.some((s) => s.title === 'Glory Box'));
+
+    // Unmarked here: its copy is still the first server's song, so the file stays; the first one's copies stay too.
+    await remote.setOffline(model.ALL_SONGS_ID, false);
+    assert.equal(remote.localFileOf('unfin1'), null);
+    assert.ok(fs.existsSync(unfinFile));
+    assert.ok(library.get().songs.some((s) => s.file === unfinFile));
+    assert.ok(fs.existsSync(gloryFile));
+    answerUpload = true;
   });
 
   await t.test('switched off: no server, the window shows Local Files', async () => {

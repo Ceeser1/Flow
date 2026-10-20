@@ -43,8 +43,16 @@
 // the queue like an upload); a copy here is cut at once, so it is the same
 // trim (song.cut). A copy whose cut is not the server's (trimmed on another
 // device, or a trim the server did not take) is replaced by the server's
-// file. A trim made for a server waits for that server: switching to another
-// one parks it (server-trims.json) until the first is back.
+// file.
+//
+// Several servers (3.6): switching to another server parks all of the above
+// for the one left (server-others.json, by server id): its marks for
+// download, its ties to the songs here, the changes still waiting for it, the
+// profile signed in to. Back with it, they are as they were. Songs that came
+// here meanwhile (downloaded from the other one, or added) are held back like
+// the songs here before a new server, until the user says they may go up;
+// songs gone meanwhile are only forgotten, never deleted on it. A file that
+// another server's songs are tied to is never deleted for this one.
 //
 // Covers: every song's comes down in the background into Covers\<server id>
 // (covers.js), and stays there across restarts and server switches; one
@@ -99,7 +107,9 @@ function createRemote(env) {
 
   const CACHE_FILE = 'server-library.json';
   const SYNC_FILE = 'server-sync.json';
-  const PARKED_FILE = 'server-trims.json';
+  const OTHERS_FILE = 'server-others.json';
+  // Before 3.6 only the trims waiting for a server were parked, here.
+  const OLD_TRIMS_FILE = 'server-trims.json';
 
   // The shape of the library copy kept in server-library.json. A copy saved by
   // an older Flow may lack what this one reads (2.7 dropped song.cover), and
@@ -111,7 +121,7 @@ function createRemote(env) {
 
   function emptySync(serverId = '') {
     return {
-      serverId, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, held: null, offline: [], offlineKeep: {}, fetched: {}, kept: {}, profilePin: '', remoteFilled: false, homeFilled: false,
+      serverId, serverName: '', token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, held: null, offline: [], offlineKeep: {}, fetched: {}, kept: {}, profilePin: '', remoteFilled: false, homeFilled: false,
     };
   }
 
@@ -123,15 +133,54 @@ function createRemote(env) {
     };
   }
 
-  function loadSync() {
-    const raw = jsonFiles.read(SYNC_FILE);
+  /** server-sync.json's shape, or a parked server's (server-others.json). */
+  function cleanSync(raw) {
     const s = { ...emptySync(), ...(raw && typeof raw === 'object' ? raw : {}) };
     for (const key of ['queue', 'sent', 'offline']) if (!Array.isArray(s[key])) s[key] = [];
     for (const key of ['songMap', 'listMap', 'fetched', 'kept', 'offlineKeep']) if (!s[key] || typeof s[key] !== 'object') s[key] = {};
     s.profile = cleanProfile(s.profile);
     s.held = Array.isArray(s.held) ? s.held.map(String) : null;
     if (s.snapshot && (typeof s.snapshot !== 'object' || !s.snapshot.songs || !s.snapshot.lists)) s.snapshot = null;
+    s.serverId = String(s.serverId || '');
+    s.serverName = String(s.serverName || '');
     return s;
+  }
+
+  function loadSync() {
+    return cleanSync(jsonFiles.read(SYNC_FILE));
+  }
+
+  // The servers parked (server-others.json): { [server id]: { sync, at } }.
+  let others = null;
+
+  function loadOthers() {
+    if (others) return others;
+    const raw = jsonFiles.read(OTHERS_FILE);
+    others = {};
+    if (raw && typeof raw === 'object') {
+      for (const [id, entry] of Object.entries(raw)) {
+        if (entry && typeof entry === 'object' && entry.sync) others[id] = { sync: cleanSync({ ...entry.sync, serverId: id }), at: Number(entry.at) || 0 };
+      }
+    }
+    return others;
+  }
+
+  function saveOthers() {
+    try {
+      jsonFiles.write(OTHERS_FILE, loadOthers());
+    } catch {
+      // Kept in memory; the next save tries again.
+    }
+  }
+
+  /** A song here that another server's songs are tied to (its copy, or uploaded from here): its file stays. */
+  function usedElsewhere(lid) {
+    return Object.entries(loadOthers()).some(([id, o]) => id !== sync.serverId && o.sync.songMap[lid]);
+  }
+
+  /** A song here downloaded from another server. */
+  function copyFromElsewhere(lid) {
+    return Object.entries(loadOthers()).some(([id, o]) => id !== sync.serverId && o.sync.fetched[lid]);
   }
 
   function loadCache() {
@@ -392,31 +441,74 @@ function createRemote(env) {
   let lastHomeTry = 0;
   let generation = 0; // bumped on every reconfigure: late answers of an old connection are ignored
 
-  /** A different server than the one the copy and the queue belong to: start over. */
+  /**
+   * A different server than the one the copy and the queue belong to: the one
+   * left is parked, and this one's own comes back (or starts afresh).
+   */
   function adoptServer(id) {
     if (sync.serverId === id) return;
     const hadOther = !!sync.serverId;
-    // Trims still waiting wait for their own server; this one's come back.
-    const parked = jsonFiles.read(PARKED_FILE) || {};
-    const waitingTrims = sync.queue.filter((c) => c.type === 'trimSong');
-    if (sync.serverId && waitingTrims.length) parked[sync.serverId] = [...(parked[sync.serverId] || []), ...waitingTrims];
-    const back = Array.isArray(parked[id]) ? parked[id] : [];
+    const parked = loadOthers();
+    if (sync.serverId) parked[sync.serverId] = { sync, at: Date.now() };
+    const back = parked[id];
     delete parked[id];
-    try {
-      jsonFiles.write(PARKED_FILE, parked);
-    } catch {
-      // Only the parked trims.
-    }
     // A look at Local Files asked for while with the old server would treat
     // every song here as new to this one, and send them all without asking.
     clearTimeout(autoSyncTimer);
-    // The Home address was found (or not) before there was a server to belong to.
-    sync = { ...emptySync(id), homeFilled: sync.homeFilled };
-    sync.queue.push(...back);
+    // The addresses were filled in (or not) for the settings, whichever server.
+    const filled = { homeFilled: sync.homeFilled, remoteFilled: sync.remoteFilled };
+    sync = { ...(back ? back.sync : emptySync(id)), ...filled, serverId: id };
+    // Trims parked by a Flow from before 3.6.
+    const oldTrims = jsonFiles.read(OLD_TRIMS_FILE);
+    if (oldTrims && Array.isArray(oldTrims[id])) {
+      sync.queue.push(...oldTrims[id]);
+      delete oldTrims[id];
+      try {
+        jsonFiles.write(OLD_TRIMS_FILE, oldTrims);
+      } catch {
+        // Taken again next time; a trim sent twice is skipped by the server.
+      }
+    }
+    if (back) heldSinceAway = holdAwayChanges();
     cache = { serverId: id, rev: -1, library: null, profile: '' };
+    saveOthers();
     saveSync();
     saveCache();
-    if (hadOther) hooks.onNotice('This is a different Flow Server than before. Your Local Files will be synchronized with it.', 'info');
+    if (back) hooks.onNotice(`Back with "${back.sync.serverName || 'this Flow Server'}": its playlists marked for download and its waiting changes are as you left them.`, 'info');
+    else if (hadOther) hooks.onNotice('This is a different Flow Server than before. Your Local Files will be synchronized with it.', 'info');
+  }
+
+  // Songs held back on coming back to a server (holdAwayChanges): asked about once connected.
+  let heldSinceAway = 0;
+
+  /**
+   * Back with a parked server: what happened in Local Files while another one
+   * was in use is not taken as changes for this one. Songs that came meanwhile
+   * are held back (asked about, like the songs here before a new server);
+   * songs and playlists gone meanwhile are only forgotten. Resolves how many
+   * songs it held back.
+   */
+  function holdAwayChanges() {
+    if (!sync.snapshot) return 0;
+    const local = library.get();
+    const localIds = new Set(local.songs.map((s) => s.id));
+    const listIds = new Set(local.playlists.map((p) => p.id));
+    for (const lid of Object.keys(sync.snapshot.songs)) {
+      if (localIds.has(lid)) continue;
+      delete sync.snapshot.songs[lid];
+      delete sync.songMap[lid];
+      delete sync.fetched[lid];
+      sync.queue = sync.queue.filter((c) => !(c.type === 'upload' && c.localId === lid));
+    }
+    for (const lpid of Object.keys(sync.snapshot.lists)) {
+      if (listIds.has(lpid)) continue;
+      delete sync.snapshot.lists[lpid];
+      delete sync.listMap[lpid];
+    }
+    const held = new Set(sync.held || []);
+    const came = local.songs.filter((s) => !sync.snapshot.songs[s.id] && !held.has(s.id) && !sync.songMap[s.id]).map((s) => s.id);
+    if (came.length) sync.held = [...held, ...came];
+    return came.length;
   }
 
   async function login(base) {
@@ -528,6 +620,10 @@ function createRemote(env) {
           continue;
         }
         adoptServer(String(hello.id || base));
+        if (sync.serverName !== String(hello.name || 'Flow Server')) {
+          sync.serverName = String(hello.name || 'Flow Server');
+          saveSync();
+        }
         // Without a password the token only says which profile this is. Where
         // there is one, Flow signs in with it at every start: only a token got
         // in this run counts, never the one kept from the last.
@@ -1241,6 +1337,14 @@ function createRemote(env) {
       delete sync.snapshot.songs[lid];
       for (const l of Object.values(sync.snapshot.lists)) l.entries = l.entries.filter((id) => id !== lid);
     }
+    // Another server's songs are tied to it: this one lets go, the song stays
+    // here (still in the snapshot, so it is not taken for a new song to send).
+    if (song && usedElsewhere(lid)) {
+      if (sync.held) sync.held = sync.held.filter((id) => id !== lid);
+      if (sync.snapshot) sync.snapshot.songs[lid] = before.snap || snapOfSong(song);
+      saveSync();
+      return true;
+    }
     saveSync();
     if (!song) return true;
     let removed = false;
@@ -1856,15 +1960,19 @@ function createRemote(env) {
    * user's OK. Declined, they stay here (only "Synchronize now" asks again);
    * songs added or downloaded afterwards go up as usual.
    */
-  function askHeld() {
+  function askHeld({ returning = false } = {}) {
     if (asking) return asking;
     asking = (async () => {
       queueLocalChanges(); // drops the held songs that are gone
       const count = (sync.held || []).length;
       if (!count) return;
+      // How many of them are copies downloaded from other servers.
+      const fromOthers = sync.held.filter(copyFromElsewhere).length;
       let yes = false;
       try {
-        yes = !!(await hooks.confirmUpload({ count, name: conn.name }));
+        yes = !!(await hooks.confirmUpload({
+          count, name: conn.name, fromOthers, returning,
+        }));
       } catch {
         yes = false;
       }
@@ -1893,6 +2001,10 @@ function createRemote(env) {
     flushSoon();
     afterServerChange();
     if (first) askHeld();
+    else if (heldSinceAway) {
+      heldSinceAway = 0;
+      askHeld({ returning: true });
+    }
   }
 
   let autoSyncTimer = null;

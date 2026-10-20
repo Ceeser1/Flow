@@ -740,12 +740,22 @@ app.whenReady().then(() => {
     onSettings: (patch) => sendToWindow('settings:changed', patch),
     // The live channel's events (Active Sessions).
     onLive: (ev) => sendToWindow('server:live', ev),
-    confirmUpload: async ({ count, name }) => {
+    // fromOthers: how many are copies downloaded from other servers; returning:
+    // songs that came here while another server was in use.
+    confirmUpload: async ({
+      count, name, fromOthers = 0, returning = false,
+    }) => {
+      const songs = count === 1 ? 'song' : 'songs';
+      const others = fromOthers ? `${fromOthers === count ? (count === 1 ? 'It was' : 'All of them were') : `${fromOthers} of them were`} downloaded from another Flow Server. ` : '';
       const { response } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
         type: 'question',
         title: 'Flow',
-        message: `Upload your ${count} Local Files ${count === 1 ? 'song' : 'songs'} to "${name}"?`,
-        detail: 'This is a Flow Server you have not used before. If you are not sure it is yours, choose Not now: your songs stay on this computer, and Synchronize now in Settings uploads them later.',
+        message: returning
+          ? `Upload the ${count} ${songs} that came to Local Files while you used another Flow Server to "${name}"?`
+          : `Upload your ${count} Local Files ${songs} to "${name}"?`,
+        detail: returning
+          ? `${others}Choose Not now to keep them on this computer only; Synchronize now in Settings uploads them later.`
+          : `This is a Flow Server you have not used before. ${others}If you are not sure it is yours, choose Not now: your songs stay on this computer, and Synchronize now in Settings uploads them later.`,
         buttons: ['Upload', 'Not now'],
         defaultId: 1,
         cancelId: 1,

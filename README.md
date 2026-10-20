@@ -473,8 +473,15 @@ control with a cache:
   takes its cover along, and a song downloaded from the server takes the
   server's.
 - Last seen library and waiting changes: `server-library.json` and
-  `server-sync.json` in `%LOCALAPPDATA%\Flow`. A different server at the same
-  address starts both afresh.
+  `server-sync.json` in `%LOCALAPPDATA%\Flow`.
+- Switching to another server keeps what belongs to the one left
+  (`server-others.json`): its playlists marked for download, the changes
+  still waiting for it and the profile logged in to are as they were when
+  you come back. Songs that came to Local Files meanwhile (downloaded from the
+  other server, or added) are not uploaded to it by themselves: Flow asks
+  first, as it does for a server used the first time, and says how many were
+  downloaded from another server. A song file another server still uses is
+  never deleted for this one (a playlist unmarked, a song deleted there).
 
 ### Active Sessions
 
