@@ -312,11 +312,20 @@ async function setup() {
   fs.mkdirSync(HOME, { recursive: true });
   let cur = info();
   const curLevel = Number(cur.level) || 0;
-  // An update from the installer, of a server set up before: as it was, no questions.
-  if (opts.fromInstaller && curLevel && taskExists()) {
-    opts.yes = true;
-    say('Updating the Flow Server: everything stays as it was set up. Flow Server Settings in the');
-    say('Start menu changes it.');
+  // An update from the installer, of a server set up before: as it was,
+  // unless asked to change it (n); the questions then start from what it is.
+  if (opts.fromInstaller && curLevel && taskExists() && !opts.yes) {
+    step('Updating the Flow Server');
+    say(`  Level:      ${curLevel}${curLevel === 2 ? ', home network and Tailscale' : curLevel === 4 ? `, the internet at ${cur.public_url}` : ', home network only'}`);
+    say(`  Music:      ${cur.music}`);
+    say(`  Downloads:  ${cur.downloads === '1' ? 'on' : 'off'}`);
+    say(`  Discovery:  ${cur.discovery === '1' ? 'on' : 'off'}`);
+    say(`  Password:   ${cur.password === 'none' ? 'none' : 'set'}`);
+    say(`  Master admin: ${cur.master || 'none'}`);
+    if (await ask('Keep this setup?')) {
+      opts.yes = true;
+      say('Kept. Flow Server Settings in the Start menu changes it later.');
+    }
   }
   const port = opts.port || Number(cur.port) || 7878;
 
