@@ -487,6 +487,12 @@ control with a cache:
   first, as it does for a server used the first time, and says how many were
   downloaded from another server. A song file another server still uses is
   never deleted for this one (a playlist unmarked, a song deleted there).
+- **Switch server** (Settings > Flow Server, once a second server was used):
+  the other servers used on this device, with the address each answered at.
+  **Switch** connects to one with that address, its password and its profile;
+  one that does not answer leaves the server in use as it is. ✕ forgets one
+  (what waited to go to it is dropped; its songs here stay, under Downloaded
+  Songs).
 
 ### Active Sessions
 

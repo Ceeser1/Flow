@@ -81,6 +81,8 @@ contextBridge.exposeInMainWorld('flow', {
   downloadServerSong: (songId) => call('server:downloadSong', songId),
   removeServerDownload: (songId) => call('server:removeDownload', songId),
   removeDeviceSong: (songId) => call('server:removeDeviceSong', songId),
+  switchServer: (id) => call('server:switch', id),
+  forgetServer: (id) => call('server:forget', id),
   profiles: () => call('server:profiles'),
   profileLogin: (profileId, pin) => call('server:profileLogin', { profileId, pin }),
   profileCreate: (name, pin) => call('server:profileCreate', { name, pin }),

@@ -123,7 +123,8 @@ function createRemote(env) {
 
   function emptySync(serverId = '') {
     return {
-      serverId, serverName: '', token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, held: null, offline: [], offlineKeep: {}, fetched: {}, kept: {}, profilePin: '', remoteFilled: false, homeFilled: false,
+      // addresses: where this server answered ({ home, remote }) and its password (encrypted), for Switch server.
+      serverId, serverName: '', addresses: { home: '', remote: '', secret: '' }, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, held: null, offline: [], offlineKeep: {}, fetched: {}, kept: {}, profilePin: '', remoteFilled: false, homeFilled: false,
     };
   }
 
@@ -145,6 +146,8 @@ function createRemote(env) {
     if (s.snapshot && (typeof s.snapshot !== 'object' || !s.snapshot.songs || !s.snapshot.lists)) s.snapshot = null;
     s.serverId = String(s.serverId || '');
     s.serverName = String(s.serverName || '');
+    const a = s.addresses && typeof s.addresses === 'object' ? s.addresses : {};
+    s.addresses = { home: String(a.home || ''), remote: String(a.remote || ''), secret: String(a.secret || '') };
     return s;
   }
 
@@ -352,6 +355,8 @@ function createRemote(env) {
       // Server time minus this machine's, roughly (from the live channel's greeting).
       timeOffset: live.offset,
       clientId: clientId(),
+      // Settings' Switch server: the servers used on this device (knownServers).
+      servers: knownServers(),
     };
   }
 
@@ -683,6 +688,7 @@ function createRemote(env) {
           base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin,
         });
         if (via === 'remote') lastHomeTry = Date.now();
+        rememberAddress(via, address, hello.password);
         if (via === 'home') fillRemote(hello);
         retryStep = 0;
         setState('online');
@@ -713,6 +719,20 @@ function createRemote(env) {
       connecting = null;
     });
     return connecting;
+  }
+
+  /**
+   * Connected: the address that answered is this server's (Home or Remote),
+   * and so is the password in use when it asks for one. Switch server goes
+   * back to it with these.
+   */
+  function rememberAddress(via, address, needsPassword) {
+    const a = sync.addresses;
+    const secret = needsPassword ? String(settings.get('serverSecret') || '') : '';
+    if (a[via] === address && a.secret === secret) return;
+    a[via] = address;
+    a.secret = secret;
+    saveSync();
   }
 
   /** The https address a server says it has on the internet, or ''. */
@@ -747,6 +767,7 @@ function createRemote(env) {
     if (!address) return;
     settings.set({ serverRemote: address });
     sync.remoteFilled = true;
+    sync.addresses.remote = address;
     saveSync();
     hooks.onSettings({ serverRemote: address });
     hooks.onNotice(notice, 'info');
@@ -2352,6 +2373,76 @@ function createRemote(env) {
   }
 
   /** The server password typed in Settings; kept encrypted. */
+  // ---- Switch server (3.5.2) ----
+
+  /**
+   * The servers used on this device, for Settings' Switch server: the one in
+   * use first, then the others, the last used first. address: its Remote
+   * address, else its Home one.
+   */
+  function knownServers() {
+    const row = (s, current, at) => ({
+      id: s.serverId,
+      name: s.serverName || 'Flow Server',
+      address: s.addresses.remote || s.addresses.home,
+      profile: s.profile ? s.profile.name : '',
+      current,
+      at,
+    });
+    const list = Object.values(loadOthers())
+      .filter((o) => o.sync.serverId && o.sync.serverId !== sync.serverId && (o.sync.addresses.home || o.sync.addresses.remote))
+      .sort((a, b) => b.at - a.at)
+      .map((o) => row(o.sync, false, o.at));
+    return sync.serverId ? [row(sync, true, Date.now()), ...list] : list;
+  }
+
+  /**
+   * Switch server: to a server used before, with the addresses it answered at
+   * and its password; signed in to its profile again as when it was left.
+   * Asked first whether it answers: one that does not leaves this one in use.
+   */
+  async function switchServer(id) {
+    const entry = loadOthers()[id];
+    if (!entry || id === sync.serverId) throw new Error('Flow has not used that server on this device.');
+    const a = entry.sync.addresses;
+    const name = entry.sync.serverName || 'Flow Server';
+    let found = false;
+    for (const address of [a.home, a.remote].filter(Boolean)) {
+      try {
+        const r = await request(baseUrl(address), '/api/hello', { timeout: address === a.home ? 2500 : 8000 });
+        if (r.json && r.json.app === 'flow-server' && String(r.json.id) === id) {
+          found = true;
+          break;
+        }
+      } catch {
+        // Tried the next.
+      }
+    }
+    if (!found) {
+      throw new Error(`"${name}" cannot be reached right now${status.state === 'online' ? `, so Flow stays with "${conn.name}"` : ''}.`);
+    }
+    await sendWaiting();
+    // No Home address of its own: the search for one would find this home's server instead.
+    if (!a.home) sync.homeFilled = true;
+    const patch = {
+      serverOn: true, serverHome: a.home, serverRemote: a.remote, serverHomeOn: !!a.home || settings.get('serverHomeOn') !== false, serverRemoteOn: !!a.remote || settings.get('serverRemoteOn') !== false,
+    };
+    settings.set({ ...patch, serverSecret: a.secret });
+    hooks.onSettings(patch);
+    reconfigure({ ...patch, serverSecret: true });
+    return { name };
+  }
+
+  /** Switch server's ✕: a server no longer offered (what it left here stays, as songs on this device). */
+  function forgetServer(id) {
+    const parked = loadOthers();
+    if (!parked[id]) return;
+    delete parked[id];
+    saveOthers();
+    emitStatus();
+    refreshView();
+  }
+
   function setSecret(text) {
     settings.set({ serverSecret: encrypt(String(text || '')) });
     reconfigure({ serverSecret: true });
@@ -2872,7 +2963,7 @@ function createRemote(env) {
     init, active, reconfigure, setSecret, stop, adoptToken,
     coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
     trimSong, trimmedHere, songPeaks, newCutId,
-    status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
+    status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, switchServer, forgetServer, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
     admin, changeServerPassword,
   };

@@ -229,6 +229,8 @@ function start() {
     downloadServerSong: call((songId) => remote.downloadSong(songId)),
     removeServerDownload: call((songId) => remote.removeDownload(songId)),
     removeDeviceSong: call((songId) => remote.removeDeviceSong(songId)),
+    switchServer: call((id) => remote.switchServer(id)),
+    forgetServer: call((id) => remote.forgetServer(id)),
     /** Settings > Media Management > Song Storage's Remove: every download (as remote.removeAllDownloads). */
     removeAllDownloads: call(() => remote.removeAllDownloads()),
     profiles: call(() => remote.loadProfiles()),

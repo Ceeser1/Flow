@@ -697,6 +697,7 @@ const SettingsPanel = {
         when: on,
         right: this._secretField(on),
       }),
+      this._switchRow(),
       this._row({
         key: 'serverMetered',
         label: 'Allow downloads on mobile internet',
@@ -930,6 +931,82 @@ const SettingsPanel = {
     }
     if (this._syncSecret) this._syncSecret();
     this._drawProfile();
+    this._drawSwitch();
+  },
+
+  // ---- Switch server ----
+
+  /**
+   * "Switch server": the other servers used on this device, each with Switch
+   * (connects to it with the address it answered at, its password and its
+   * profile) and ✕ (no longer offered). Only while there is one.
+   */
+  _switchRow() {
+    this._switch = { busy: '', key: '' };
+    this._switchNode = h('div.switch-servers');
+    const row = this._row({
+      label: 'Switch server',
+      desc: 'Servers used on this device before. Each keeps its downloads, waiting changes, profile and password for when you come back.',
+      sub: true,
+      when: () => Store.settings.serverOn,
+      show: () => this._otherServers().length > 0,
+      right: this._switchNode,
+    });
+    this._switchRowEl = row;
+    return row;
+  },
+
+  _otherServers() {
+    return (Store.server.servers || []).filter((x) => !x.current);
+  },
+
+  /** Drawn afresh only when the list (or a switch under way) changed. */
+  _drawSwitch() {
+    const node = this._switchNode;
+    if (!node) return;
+    const list = this._otherServers();
+    if (this._switchRowEl) this._switchRowEl.hidden = !list.length;
+    const p = this._switch;
+    const key = JSON.stringify([list, p.busy, Store.settings.serverOn]);
+    if (key === p.key) return;
+    p.key = key;
+    clear(node);
+    const off = !Store.settings.serverOn;
+    for (const s of list) {
+      const busy = p.busy === s.id;
+      node.append(h('div.switch-servers__row',
+        h('div.switch-servers__info',
+          h('span.switch-servers__name', s.name),
+          h('span.settings__note', [s.address, s.profile ? `as ${s.profile}` : ''].filter(Boolean).join(' · '))),
+        h('button.btn.btn--small', {
+          type: 'button', disabled: off || !!p.busy, onclick: () => this._switchTo(s),
+        }, busy ? 'Connecting...' : 'Switch'),
+        iconButton('act.act--grey', Icons.x, `Forget "${s.name}"`, () => this._forgetServer(s))));
+    }
+  },
+
+  async _switchTo(s) {
+    this._switch.busy = s.id;
+    this._drawSwitch();
+    const ok = await attempt(async () => {
+      await window.flow.switchServer(s.id);
+      return true;
+    });
+    this._switch.busy = '';
+    this._drawSwitch();
+    if (ok) toast(`Switching to "${s.name}"`, 'success');
+  },
+
+  async _forgetServer(s) {
+    const ok = await confirmDialog({
+      title: 'Forget server',
+      message: `Forget "${s.name}" on ${Store.here}? It is no longer offered here, and what was waiting to go to it is dropped. `
+        + 'Songs downloaded from it stay (under Downloaded Songs); the server and your profile on it are not touched.',
+      confirmLabel: 'Forget',
+      danger: true,
+    });
+    if (!ok) return;
+    await attempt(() => window.flow.forgetServer(s.id));
   },
 
   // ---- Profiles ----

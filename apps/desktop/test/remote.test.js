@@ -440,6 +440,41 @@ test('a Flow Server as the library, step by step', async (t) => {
     answerUpload = true;
   });
 
+  await t.test('Switch server: the servers used before, switched to with their password, one away stays away, forgotten', async () => {
+    const two = second;
+    let list = remote.status().servers;
+    assert.equal(list.length, 2);
+    assert.equal(list[0].current, true);
+    assert.equal(list[0].address, two.address);
+    const other = list[1];
+    assert.equal(other.address, one.address);
+    await assert.rejects(remote.switchServer(list[0].id), /has not used that server/);
+
+    await remote.switchServer(other.id);
+    await until(() => remote.status().state === 'online' && remote.status().address === one.address, 'the first server');
+    assert.equal(settings.get('serverHome'), one.address);
+    assert.deepEqual(remote.status().offline, [model.ALL_SONGS_ID], 'its own mark');
+    // The second one's password is forgotten in the box, and still known to Switch server.
+    remote.setSecret('');
+    await until(() => remote.status().state === 'online' && !remote.status().hasSecret, 'online without a password');
+    const back = remote.status().servers.find((x) => !x.current);
+    await remote.switchServer(back.id);
+    await until(() => remote.status().state === 'online' && remote.status().address === two.address, 'the second server, with its password');
+    assert.equal(remote.status().hasSecret, true);
+
+    // A server that does not answer: this one stays in use.
+    await one.server.close();
+    servers.splice(servers.indexOf(one.server), 1);
+    const away = remote.status().servers.find((x) => !x.current);
+    await assert.rejects(remote.switchServer(away.id), /cannot be reached right now, so Flow stays with/);
+    assert.equal(remote.status().state, 'online');
+    assert.equal(remote.status().address, two.address);
+
+    remote.forgetServer(away.id);
+    list = remote.status().servers;
+    assert.deepEqual(list.map((x) => x.current), [true]);
+  });
+
   await t.test('switched off: no server, the window shows Local Files', async () => {
     settings.set({ serverOn: false });
     remote.reconfigure({ serverOn: false });
