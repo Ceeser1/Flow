@@ -422,6 +422,17 @@ deleted from an app's Settings; each can have a PIN of its own.
 - With a server password, a device signs in to the server first, then
   to a profile. The profiles' names are only shown to devices past the first.
 
+## Statistics
+
+From 3.6 each profile, and the Default / Shared, keeps totals for the apps'
+Statistics: time listened, listens of 30 seconds or more, and the time by
+month. They only grow (deleting songs does not lower them) and start at 0
+the first time the server runs 3.6; the songs' play counts (Most Played and
+the other smart lists) stay as they were. A profile's listen counts for the
+Default / Shared too, so it holds the whole server's listening; in a Jam
+only the host's listen counts there, the members' only for their own
+profiles. Apps older than 3.6 still count, but say nothing of Jams.
+
 ## Administration
 
 An admin profile gets Administration as the last category of the apps'

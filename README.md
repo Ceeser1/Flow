@@ -345,6 +345,30 @@ The cog at the bottom left of the menu. Every change counts at once.
     drifting to the right one screen width every 15 seconds), Greyscale (dark
     grey when low, whiter the taller the bar), or White, Red,
     Green, Yellow, Blue, Purple or Black.
+- **Statistics** (from 3.6; above Administration)
+  - **Current Profile**: whose listens count now, and why. Logged in to a
+    profile on the server connected, that profile (green); away from the
+    server, the profile last logged in to, its listens waiting to go up
+    (amber); not logged in, or without a server, the app's own **Private**
+    profile (grey). With **Logout** (also away from the server, which hears
+    of it at the next connection) and, while connected, the profile's More
+    (Edit Name, Change PIN, Delete Profile). A server older than 3.6 is
+    said to need an update.
+  - **All tracked Profiles**: every profile used in this app, by server, and
+    Private. Click one to see its statistics. **Remove** forgets a profile's
+    statistics here, with its listens not sent yet; the server keeps its
+    own, and logging in to it again brings them back. Not for the profile in
+    use, nor Private.
+  - **Your Statistics for ...**: when it was made, the songs it added, the
+    songs listened to (30 seconds or more), the time listened (days, hours,
+    minutes) and Activity: the hours of each month, back to the month it was
+    made. The numbers only grow: deleting songs does not lower them.
+    Statistics start at 0 with 3.6.
+  - Private counts everything heard in this app, whatever server or profile,
+    also in a Jam, and is never sent anywhere. Its added songs are the songs
+    this device downloaded, imported or saved through Download (Server). A
+    profile's listen also counts for the server's Default / Shared; in a Jam
+    only the host's listen counts there.
 
 ### How Artist, Title and Mix are guessed
 
