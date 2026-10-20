@@ -836,7 +836,7 @@ function createRemote(env) {
       if (status.state !== 'online' || !sync.queue.some(mine)) return;
       existingChoice = null;
       const uploads = sync.queue.filter((c) => c.type === 'upload' && mine(c)).length;
-      const canTransfer = uploads ? await transfersAllowed() : true;
+      let canTransfer = uploads ? await transfersAllowed() : true;
       const blocked = new Set();
       let uploadNo = 0;
       let trimsWaiting = 0;
@@ -869,6 +869,8 @@ function createRemote(env) {
           if (status.state !== 'online') break;
           if (!mine(c)) continue;
           if (c.type === 'upload') {
+            // Asked again before each song: the setting or the network may change midway.
+            if (canTransfer && uploadNo) canTransfer = await transfersAllowed();
             if (!canTransfer) {
               blocked.add(c.songId);
               continue;
@@ -1030,9 +1032,9 @@ function createRemote(env) {
       const there = sid && model.songById(v, sid);
       if (there && (there.cut || '') !== (s.cut || '') && s.file && files.exists(s.file)) stale.push({ lid: s.id, there });
     }
-    if (!stale.length || !(await transfersAllowed())) return;
+    if (!stale.length) return;
     for (const { lid, there } of stale) {
-      if (status.state !== 'online' || !active()) break;
+      if (status.state !== 'online' || !active() || !(await transfersAllowed())) break;
       const label = [there.artist, there.title].filter(Boolean).join(' - ');
       status.transfer = `Downloading the trimmed song: ${label}`;
       emitStatus();
@@ -1575,6 +1577,8 @@ function createRemote(env) {
 
   // ---- playlists marked for download ----
 
+  const DOWNLOADS_WAIT = ' to be downloaded until the connection is not metered.';
+
   /** Every song of the marked playlists without a copy here comes down. */
   async function downloadOffline() {
     if (status.state !== 'online' || !sync.offline.length) return;
@@ -1595,15 +1599,22 @@ function createRemote(env) {
         if (s && !sync.queue.some((c) => c.type === 'upload' && c.songId === s.id)) want.push(s);
       }
     }
-    if (!want.length) return;
-    if (!(await transfersAllowed())) {
-      status.note = `${want.length} ${want.length === 1 ? 'song waits' : 'songs wait'} to be downloaded until the connection is not metered.`;
+    if (status.note.endsWith(DOWNLOADS_WAIT)) status.note = '';
+    if (!want.length) {
       emitStatus();
       return;
     }
     let number = 0;
     for (const s of want) {
       if (status.state !== 'online' || !active()) break;
+      // Asked again before each song: the setting or the network may change midway.
+      if (!(await transfersAllowed())) {
+        const left = want.length - number;
+        status.transfer = '';
+        status.note = `${left} ${left === 1 ? 'song waits' : 'songs wait'}${DOWNLOADS_WAIT}`;
+        emitStatus();
+        return;
+      }
       number += 1;
       const label = [s.artist, s.title].filter(Boolean).join(' - ');
       status.transfer = `Downloading ${number} of ${want.length}: ${label}`;
@@ -2173,7 +2184,12 @@ function createRemote(env) {
     // A changed or removed password ends the sign-in made with the old one.
     if (keys.includes('serverSecret')) runToken = '';
     if (keys.includes('serverAutoSync') && settings.get('serverAutoSync') && status.state === 'online') queueLocalChanges();
-    if (keys.includes('serverMetered')) flushSoon();
+    if (keys.includes('serverMetered')) {
+      // Uploads, and the marked playlists' songs and covers, go or wait by the new setting
+      // (after a look already running, which stops at its next song when no longer allowed).
+      flushSoon();
+      Promise.resolve(following).catch(() => {}).then(() => afterServerChange());
+    }
     if (!needsReconnect) {
       emitStatus();
       return;

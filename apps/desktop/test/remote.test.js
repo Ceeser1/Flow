@@ -283,6 +283,51 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.equal(remote.localFileOf('tear1'), null);
   });
 
+  await t.test('away on a metered connection: marked songs wait, come down once allowed, and stop when no longer', async () => {
+    const network = require('../src/network');
+    const isMetered = network.isMetered;
+    network.isMetered = async () => true;
+    settings.set({ serverHomeOn: false, serverRemote: one.address, serverMetered: false });
+    remote.reconfigure({ serverHomeOn: false, serverRemote: one.address });
+    await until(() => remote.status().state === 'online' && remote.status().via === 'remote', 'online away from home');
+    const onServer = () => remote.view().songs.filter((s) => s.id !== 'roads1').map((s) => s.id);
+    const here = () => onServer().filter((id) => remote.localFileOf(id));
+    const all = onServer();
+    assert.ok(all.length >= 2, 'songs to come down');
+
+    // Not allowed: nothing comes down, and the window says why.
+    await remote.setOffline(model.ALL_SONGS_ID, true);
+    await until(() => /wait to be downloaded until the connection is not metered/.test(remote.status().note), 'the waiting note');
+    assert.deepEqual(here(), []);
+
+    // Allowed, then taken back after the first song: the rest waits again.
+    let takeBack = true;
+    library.onChange(() => {
+      if (!takeBack || !here().length) return;
+      takeBack = false;
+      settings.set({ serverMetered: false });
+      remote.reconfigure({ serverMetered: false });
+    });
+    settings.set({ serverMetered: true });
+    remote.reconfigure({ serverMetered: true });
+    const left = all.length - 1;
+    await until(() => remote.status().note.startsWith(`${left} ${left === 1 ? 'song waits' : 'songs wait'} to be downloaded`), 'the rest waiting');
+    assert.equal(here().length, 1);
+
+    // Allowed again: the rest comes down, and the note goes.
+    settings.set({ serverMetered: true });
+    remote.reconfigure({ serverMetered: true });
+    await until(() => here().length === all.length, 'the rest of the songs');
+    await until(() => remote.status().note === '', 'the note gone');
+
+    await remote.setOffline(model.ALL_SONGS_ID, false);
+    await remote.removeAllDownloads();
+    network.isMetered = isMetered;
+    settings.set({ serverHomeOn: true, serverRemote: '', serverMetered: false });
+    remote.reconfigure({ serverHomeOn: true, serverRemote: '' });
+    await until(() => remote.status().state === 'online' && remote.status().via === 'home', 'home again');
+  });
+
   await t.test('a server with a password: asked for, refused when wrong, then the songs here go up there too', async () => {
     const two = await serve({ password: 'Secret123' });
     // As a phone: its uploads carry Settings' MP3 choice for the server to convert by.
