@@ -1416,10 +1416,11 @@ const Player = {
       $(id).setAttribute('aria-pressed', String(on));
       $(id).title = `${label}: ${on ? 'on' : 'off'}`;
     }
-    // Only for a song of this library (not one newer on a session's host).
+    // Only for a song of this library (not one newer on a session's host, nor
+    // one of Downloaded Songs that is not the server's: it only plays).
     const fav = !!known && !!known.favouriteAt;
-    $('btnAddToPlaylist').disabled = !known;
-    $('btnFavourite').disabled = !known;
+    $('btnAddToPlaylist').disabled = !known || !!known.isDevice;
+    $('btnFavourite').disabled = !known || !!known.isDevice;
     $('btnFavourite').classList.toggle('sq-btn--fav-on', fav);
     $('btnFavourite').setAttribute('aria-pressed', String(fav));
     $('btnFavourite').title = fav ? 'Unfavourite' : 'Favourite';

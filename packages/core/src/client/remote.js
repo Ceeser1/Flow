@@ -96,6 +96,8 @@ function createRemote(env) {
   const audioPath = (id) => `/api/songs/${encodeURIComponent(id)}/audio${env.audioQuery ? `?${env.audioQuery}` : ''}`;
   // "All Songs from <profile>": the songs one profile added (song.addedBy).
   const FROM = 'from:';
+  // A song here that is not this server's (Downloaded Songs): 'device:' + its Local Files id.
+  const DEVICE = 'device:';
   const PROTOCOL = 1;
   const POLL_MS = 10000;
   // While on the remote address, how often home is tried again.
@@ -407,13 +409,36 @@ function createRemote(env) {
       }
     }
     const copies = localCopies();
+    const shown = new Set();
     for (const s of d.songs) {
       const copy = copies.get(s.id);
       s.file = copy ? copy.file : '';
+      if (copy) shown.add(copy.id);
     }
+    d.deviceSongs = deviceSongs(shown);
     d.ignoredFiles = [];
     view = d;
     return d;
+  }
+
+  /**
+   * Downloaded Songs (3.6): the songs here that are not this server's (copies
+   * of another server's, songs not uploaded), as songs of their own with ids
+   * of their own (DEVICE + the Local Files id). servers: the other servers
+   * they are on, by name (none: the file here is the only copy).
+   */
+  function deviceSongs(shown) {
+    const on = new Map();
+    for (const [id, o] of Object.entries(loadOthers())) {
+      if (id === sync.serverId) continue;
+      for (const lid of Object.keys(o.sync.songMap)) {
+        if (!on.has(lid)) on.set(lid, []);
+        on.get(lid).push(o.sync.serverName || 'Flow Server');
+      }
+    }
+    return library.get().songs.filter((s) => !shown.has(s.id)).map((s) => ({
+      ...JSON.parse(JSON.stringify(s)), id: DEVICE + s.id, localId: s.id, isDevice: true, servers: on.get(s.id) || [],
+    }));
   }
 
   let viewTimer = null;
@@ -2497,10 +2522,46 @@ function createRemote(env) {
     return { removed, inUse };
   }
 
-  /** The local copy of a server song, if there is one. */
+  /** The local copy of a server song (or a song of Downloaded Songs' own), if there is one. */
   function localFileOf(songId) {
-    const copy = localCopies().get(songId);
+    const id = String(songId || '');
+    const copy = id.startsWith(DEVICE) ? model.songById(library.get(), id.slice(DEVICE.length)) : localCopies().get(id);
     return copy && files.exists(copy.file) ? copy.file : null;
+  }
+
+  /**
+   * Downloaded Songs' Delete from this device, for a song that is not this
+   * server's (DEVICE + its Local Files id): its file goes, and so do the
+   * other servers' ties to it (on them it stays).
+   */
+  async function removeDeviceSong(songId) {
+    const id = String(songId || '');
+    if (!id.startsWith(DEVICE)) throw new Error('That song is not one of this device\'s own.');
+    const lid = id.slice(DEVICE.length);
+    const song = model.songById(library.get(), lid);
+    if (!song) return;
+    if (sync.songMap[lid]) throw new Error('That song is on this server: delete it from here with its Download button.');
+    let gone = false;
+    await library.quietly(async () => {
+      try {
+        files.rm(song.file, { force: true });
+      } catch {
+        return;
+      }
+      library.mutate((d) => model.removeSong(d, lid, false));
+      gone = true;
+    });
+    if (!gone) throw new Error('The song\'s file is in use (playing?). Try again once it has stopped.');
+    for (const o of Object.values(loadOthers())) {
+      delete o.sync.songMap[lid];
+      delete o.sync.fetched[lid];
+      if (o.sync.held) o.sync.held = o.sync.held.filter((x) => x !== lid);
+    }
+    saveOthers();
+    if (sync.held) sync.held = sync.held.filter((x) => x !== lid);
+    if (sync.snapshot) delete sync.snapshot.songs[lid];
+    saveSync();
+    refreshView();
   }
 
   /**
@@ -2811,7 +2872,7 @@ function createRemote(env) {
     init, active, reconfigure, setSecret, stop, adoptToken,
     coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
     trimSong, trimmedHere, songPeaks, newCutId,
-    status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
+    status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
     admin, changeServerPassword,
   };

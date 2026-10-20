@@ -295,6 +295,8 @@ handle('audio:song', async (songId) => {
   }
 });
 handle('server:removeDownload', (songId) => remote.removeDownload(songId));
+// Downloaded Songs: a song here that is not the server's, deleted from this computer.
+handle('server:removeDeviceSong', (songId) => remote.removeDeviceSong(songId));
 handle('server:profiles', () => remote.loadProfiles());
 handle('server:profileLogin', ({ profileId, pin }) => remote.loginProfile(profileId, pin));
 handle('server:profileCreate', ({ name, pin }) => remote.createProfile(name, pin));

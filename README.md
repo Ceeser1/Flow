@@ -421,6 +421,11 @@ control with a cache:
   profile is signed in. A playlist another profile shares has it too
   once you follow it; unfollowing removes its downloaded songs, except those
   another downloaded playlist or All Songs still holds.
+- **Downloaded Songs**, first under All Songs in the menu: every song with a
+  file on this device, the server's and the rest (copies downloaded from
+  another Flow Server, songs not uploaded). Those that are not on this server
+  only play, and can be deleted from this device (More); Flow says when one
+  is on no server at all, so its file here is the only copy.
 - **Download (Server)**: when the server downloads songs itself (`install.sh`
   asks; it needs yt-dlp and ffmpeg there), Add Songs has it next to
   **Download (Client)**. The server reads the link and downloads the songs in

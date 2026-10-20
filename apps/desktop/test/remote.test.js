@@ -417,6 +417,26 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.ok(fs.existsSync(unfinFile));
     assert.ok(library.get().songs.some((s) => s.file === unfinFile));
     assert.ok(fs.existsSync(gloryFile));
+
+    // Downloaded Songs: the songs here that are not this server's, with ids of their own and the servers they are on.
+    const device = await until(() => {
+      const list = remote.view().deviceSongs;
+      return list.some((s) => s.file === unfinFile) && list;
+    }, 'the songs in Downloaded Songs');
+    const unfin = device.find((s) => s.file === unfinFile);
+    const glory = device.find((s) => s.file === gloryFile);
+    assert.ok(unfin && glory);
+    assert.match(glory.id, /^device:/);
+    assert.equal(glory.isDevice, true);
+    assert.equal(glory.servers.length, 1);
+    assert.equal(unfin.servers.length, 1);
+    assert.ok(!device.some((s) => s.file === roadsFile), 'a song of this server is in its All Songs');
+    assert.equal(remote.localFileOf(glory.id), gloryFile);
+    // Deleted from here: the file goes, the first server no longer counts it as here.
+    await assert.rejects(remote.removeDeviceSong('roads1'), /not one of this device/);
+    await remote.removeDeviceSong(glory.id);
+    assert.equal(fs.existsSync(gloryFile), false);
+    await until(() => !remote.view().deviceSongs.some((s) => s.id === glory.id), 'the song gone from Downloaded Songs');
     answerUpload = true;
   });
 

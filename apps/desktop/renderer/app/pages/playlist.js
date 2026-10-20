@@ -174,7 +174,7 @@ const PlaylistPage = {
   _drawShare() {
     const p = Store.playlist(this.id);
     const btn = $('plShare');
-    const mine = !!p && !p.isAll && !p.isFrom && !p.isFavourites && !p.isSmart && !p.isShared;
+    const mine = !!p && !p.isAll && !p.isFrom && !p.isFavourites && !p.isSmart && !p.isShared && !p.isDevice;
     const can = !!p && Store.canShare() && (mine || p.isShared);
     btn.hidden = !can;
     if (!can) return;
@@ -198,7 +198,7 @@ const PlaylistPage = {
     const btn = $('plOffline');
     const note = $('plOfflineNote');
     // A playlist another profile shares can be downloaded once it is followed.
-    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && (!p.isShared || Store.isFollowing(p.id));
+    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && !p.isDevice && (!p.isShared || Store.isFollowing(p.id));
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;
@@ -237,8 +237,9 @@ const PlaylistPage = {
       if (this.id === 'all') $('plEmptyText').textContent = 'No songs yet. Download your first one on the Add Songs page.';
       else if (favourites) $('plEmptyText').textContent = 'No favourites yet. Click the star on any song to add it here.';
       else if (smart) $('plEmptyText').textContent = 'Nothing here yet. This list fills itself as you listen to the songs in your playlists.';
+      else if (p.isDevice) $('plEmptyText').textContent = `No songs on ${Store.here} yet. A song's or a playlist's Download keeps it here.`;
       else $('plEmptyText').textContent = 'This playlist is empty.';
-      $('plEmptyAction').hidden = smart || favourites || !!p.isShared;
+      $('plEmptyAction').hidden = smart || favourites || !!p.isShared || !!p.isDevice;
       $('plEmptyAction').textContent = this.id === 'all' ? 'Add Songs' : 'Add songs from All Songs';
     }
     $('plFiltered').textContent = view.filter && !empty ? `Showing ${rows.length} of ${count}` : '';
@@ -286,8 +287,15 @@ const PlaylistPage = {
   _touchRows(pickTarget, pickSet, smartList) {
     const listId = this.id;
     const p = Store.playlist(listId);
-    const readOnly = !!(p && p.isShared);
-    const actions = [
+    const readOnly = !!(p && (p.isShared || p.isDevice));
+    // Downloaded Songs: queued, or deleted from this device; nothing else (some only play).
+    const actions = p && p.isDevice ? [
+      { icon: Icons.plus, label: 'Add to Queue', short: 'Queue', run: (rows) => {
+        for (const r of rows) Player.addToQueue(r.song.id);
+        toast(`${Util.plural(rows.length, 'song')} added to the queue`, 'success');
+      } },
+      { icon: Icons.x, label: `Delete from ${Store.here}`, short: 'Delete', kind: 'danger', run: (rows) => this.deleteFromDevice(rows.map((r) => r.song)) },
+    ] : [
       { icon: Icons.plus, label: 'Add to Queue', short: 'Queue', run: (rows) => {
         for (const r of rows) Player.addToQueue(r.song.id);
         toast(`${Util.plural(rows.length, 'song')} added to the queue`, 'success');
@@ -307,7 +315,9 @@ const PlaylistPage = {
     ];
     // With a Flow Server: the chosen songs kept on the phone too.
     const offline = Store.server.on && Store.can('offline');
-    if (offline) {
+    if (p && p.isDevice) {
+      // Its actions are all there.
+    } else if (offline) {
       actions.push({ icon: Icons.download, label: 'Download', short: 'Download', run: (rows) => {
         // Choosing ends at once; the songs come down one after another.
         this.downloadSongs(rows.map((r) => r.song));
@@ -414,8 +424,13 @@ const PlaylistPage = {
   /** More's buttons for a song (on the phone, its action sheet). */
   _moreButtons(song) {
     const listId = this.id;
-    // A playlist another profile shares can only be changed by its owner.
-    const readOnly = !!(Store.playlist(listId) || {}).isShared;
+    // A song here that is not the server's (Downloaded Songs) only plays, and can be deleted from here.
+    if (song.isDevice) {
+      return [iconButton('act.act--red', Icons.x, `Delete from ${Store.here}`, () => this.deleteFromDevice([song]))];
+    }
+    // A playlist another profile shares can only be changed by its owner; Downloaded Songs by nobody.
+    const list = Store.playlist(listId) || {};
+    const readOnly = !!(list.isShared || list.isDevice);
     const buttons = [
       this._favButton(song),
       // With a Flow Server the songs are streamed, and one can be kept here too.
@@ -537,6 +552,40 @@ const PlaylistPage = {
   /** Edit Song (songEdit.js): its names and its trim, saved by the dialog itself. */
   edit(song) {
     return editSongDialog(song);
+  },
+
+  /**
+   * Downloaded Songs' Delete from this device: the file here goes, the song
+   * stays on the servers it is on. One that is on none is asked about apart:
+   * its file here is the only copy.
+   */
+  async deleteFromDevice(songs) {
+    const only = songs.filter((s) => s.isDevice && !(s.servers || []).length);
+    const one = songs.length === 1 ? `"${Util.songLine(songs[0])}"` : Util.plural(songs.length, 'song');
+    const ok = await confirmDialog({
+      title: `Delete from ${Store.here}`,
+      message: `Delete ${one} from ${Store.here}? ${songs.length === 1 ? 'It stays' : 'They stay'} on the Flow Servers that have ${songs.length === 1 ? 'it' : 'them'}.`
+        + (only.length ? ` ${only.length === songs.length ? (songs.length === 1 ? 'This song is' : 'These songs are') : `${Util.plural(only.length, 'song')} of them ${only.length === 1 ? 'is' : 'are'}`} on no Flow Server: ${only.length === 1 ? 'its file here is the only copy' : 'their files here are the only copies'} and will be gone for good.` : ''),
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return false;
+    let deleted = 0;
+    for (const song of songs) {
+      const token = Player.release(song.id);
+      const done = await attempt(async () => {
+        if (song.isDevice) await window.flow.removeDeviceSong(song.id);
+        else await window.flow.removeServerDownload(song.id);
+        return true;
+      });
+      if (done) deleted += 1;
+      else {
+        Player.resume(token);
+        break;
+      }
+    }
+    if (deleted) toast(`Deleted ${Util.plural(deleted, 'song')} from ${Store.here}`, 'success');
+    return true;
   },
 
   /** The phone's chosen songs: deleted together, after one question. */

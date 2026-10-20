@@ -228,6 +228,7 @@ function start() {
     setOffline: call((playlistId, isOn) => remote.setOffline(playlistId, !!isOn)),
     downloadServerSong: call((songId) => remote.downloadSong(songId)),
     removeServerDownload: call((songId) => remote.removeDownload(songId)),
+    removeDeviceSong: call((songId) => remote.removeDeviceSong(songId)),
     /** Settings > Media Management > Song Storage's Remove: every download (as remote.removeAllDownloads). */
     removeAllDownloads: call(() => remote.removeAllDownloads()),
     profiles: call(() => remote.loadProfiles()),
