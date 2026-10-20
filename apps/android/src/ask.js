@@ -27,6 +27,7 @@ async function upload({
       : `Upload the ${songs} on this phone to "${name}"? This is a Flow Server you have not used before.${others} `
         + 'If you are not sure it is yours, choose Not now: your songs stay on this phone, and Synchronize now in Settings uploads them later.',
     confirmLabel: 'Upload',
+    cancelLabel: 'Not now',
   });
   return !!answer;
 }

@@ -95,7 +95,9 @@ const Modal = {
  * Asks a yes/no question. With `checkbox` it also asks that; resolves
  * { checked } on yes and null on no.
  */
-function confirmDialog({ title, message, confirmLabel = 'OK', danger = false, kind = '', checkbox = null }) {
+function confirmDialog({
+  title, message, confirmLabel = 'OK', cancelLabel = 'Cancel', danger = false, kind = '', checkbox = null,
+}) {
   return new Promise((resolve) => {
     let box = null;
     const body = [h('p.modal__text', message)];
@@ -109,7 +111,7 @@ function confirmDialog({ title, message, confirmLabel = 'OK', danger = false, ki
       body,
       className: 'modal--small',
       buttons: [
-        { label: 'Cancel' },
+        { label: cancelLabel },
         {
           label: confirmLabel,
           kind: kind || (danger ? 'danger' : 'primary'),
