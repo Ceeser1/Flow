@@ -87,7 +87,7 @@ questions and needs nothing installed first (see `apps/windows-server/README.md`
    tar xzf ~/flow-server-X.Y.Z.tar.gz -C ~/Flow --strip-components=1
    sh ~/Flow/apps/linux-server/install.sh
    ```
-   Coming from 3.5.1 or older, the server was in `apps/server`: after this
+   Coming from 3.5.2 or older, the server was in `apps/server`: after this
    update, `rm -r ~/Flow/apps/server` removes the old copy.
 
 **Useful commands**
