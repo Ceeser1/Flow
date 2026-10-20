@@ -58,6 +58,11 @@
 // (covers.js), and stays there across restarts and server switches; one
 // goes when its song is gone from that server.
 //
+// Statistics (3.6): each profile signed in to here keeps a row in
+// tracked-profiles.json (trackedProfiles.js) with its Statistics as the
+// window last saw them, listens still waiting to go up included. Removing
+// one also drops what of it still waits to go up.
+//
 // Profiles: people sharing the server's songs, each with their own
 // playlists, favourites and stats (@flow/core/profiles). Signing in to one
 // gives a token that says which; the server answers with that profile's
@@ -77,6 +82,7 @@ const { applyCommand } = require('../commands');
 const { songFileStem } = require('../text');
 const { serverBaseUrl: baseUrl, isTailscaleAddress } = require('../address');
 const { OfflineError, AuthError, randomHex } = require('./common');
+const { createTrackedProfiles } = require('./trackedProfiles');
 
 /**
  * The client of one app. `env`: settings, library (Local Files), covers,
@@ -118,8 +124,8 @@ function createRemote(env) {
   // the server answers "nothing new" while its revision is the same: a copy of
   // another format is shown at start but fetched whole again. Raise it whenever
   // the songs or playlists gain a field the server sends (3: addedBy, profileNames;
-  // 4: listening, 3.5).
-  const CACHE_FORMAT = 4;
+  // 4: listening, 3.5; 5: statistics, 3.6).
+  const CACHE_FORMAT = 5;
 
   function emptySync(serverId = '') {
     return {
@@ -255,7 +261,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -300,6 +306,8 @@ function createRemote(env) {
     askExisting: async () => ({ choice: 'keep', all: false }),
   };
   let view = null;
+  // The Statistics' tracked profiles (track(), removeTracked()).
+  const tracked = createTrackedProfiles({ jsonFiles });
 
   /** The addresses to try: an empty one, or one switched off in Settings, is none. */
   function addresses(s = settings.all()) {
@@ -357,6 +365,12 @@ function createRemote(env) {
       clientId: clientId(),
       // Settings' Switch server: the servers used on this device (knownServers).
       servers: knownServers(),
+      // The Statistics: the server in use (also while away from it), whether
+      // it keeps them (3.6), and every profile tracked here.
+      serverId: sync.serverId,
+      serverName: sync.serverName,
+      statistics: status.state === 'online' && conn.statistics,
+      tracked: tracked.list(),
     };
   }
 
@@ -423,7 +437,51 @@ function createRemote(env) {
     d.deviceSongs = deviceSongs(shown);
     d.ignoredFiles = [];
     view = d;
+    track(d);
     return d;
+  }
+
+  // ---- the Statistics' tracked profiles ----
+
+  /** The profile signed in to gets its row brought up to date from the window's library `d`. */
+  function track(d) {
+    const p = sync.profile;
+    if (!p || !sync.serverId || !cache.library || cache.serverId !== sync.serverId || cache.profile !== p.id) return;
+    const online = status.state === 'online';
+    const row = {
+      serverId: sync.serverId,
+      serverName: sync.serverName || conn.name,
+      profileId: p.id,
+      profileName: p.name,
+      createdAt: p.createdAt,
+      statistics: d.statistics,
+      addedSongs: d.songs.filter((s) => s.addedBy === p.id).length,
+    };
+    // Whether it keeps Statistics is only known while connected.
+    if (online) row.supported = !!conn.statistics;
+    if (tracked.update(row, { online })) emitStatus();
+  }
+
+  /**
+   * Removes a tracked profile, with what of it still waits to go up to its
+   * server (listens, playlist changes; not uploads or a song's shared
+   * changes). Not the one signed in to.
+   */
+  function removeTracked(serverId, profileId) {
+    if (serverId === sync.serverId && profileId === currentProfile()) throw new Error('The profile in use cannot be removed. Log out of it first.');
+    const ours = (c) => (c.profile || '') === profileId && c.type !== 'upload' && !SHARED_TYPES.has(c.type);
+    if (serverId === sync.serverId) {
+      sync.queue = sync.queue.filter((c) => !ours(c));
+      saveSync();
+    } else {
+      const o = loadOthers()[serverId];
+      if (o) {
+        o.sync.queue = o.sync.queue.filter((c) => !ours(c));
+        saveOthers();
+      }
+    }
+    tracked.remove(serverId, profileId);
+    emitStatus();
   }
 
   /**
@@ -682,10 +740,11 @@ function createRemote(env) {
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
         const pin = Array.isArray(hello.features) && hello.features.includes('pin');
+        const statistics = Array.isArray(hello.features) && hello.features.includes('statistics');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -2965,7 +3024,7 @@ function createRemote(env) {
     trimSong, trimmedHere, songPeaks, newCutId,
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, switchServer, forgetServer, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
-    admin, changeServerPassword,
+    admin, changeServerPassword, removeTracked,
   };
 }
 

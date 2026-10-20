@@ -189,6 +189,7 @@ function start() {
     setFavourite: call((songId, isOn) => actions.setFavourite({ songId, on: isOn })),
     privateStatistics: call(() => privateStats.get()),
     onPrivateStatistics: on('stats:private'),
+    removeTrackedProfile: call((serverId, profileId) => remote.removeTracked(serverId, profileId)),
     recordListen: call((songId, listened, duration, contextId, jamMember) => actions.recordListen({
       songId, listened, duration, contextId, jamMember: !!jamMember,
     })),

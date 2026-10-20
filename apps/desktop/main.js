@@ -277,6 +277,7 @@ handle('library:trimSong', (arg) => actions.trimSong(arg));
 handle('library:setFavourite', (arg) => actions.setFavourite(arg));
 handle('library:recordListen', (arg) => actions.recordListen(arg));
 handle('stats:private', () => privateStats.get());
+handle('stats:removeTracked', ({ serverId, profileId }) => remote.removeTracked(serverId, profileId));
 handle('library:findBySource', (arg) => actions.findBySource(arg));
 handle('library:findByMeta', (meta) => actions.findByMeta(meta));
 handle('library:rescan', () => library.scan());

@@ -214,6 +214,31 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.ok(!model.playlistById(remote.view(), 'mine1'));
   });
 
+  await t.test('Statistics: the profile signed in to is tracked with its listens, kept after logout until removed', async () => {
+    const night = (await remote.loadProfiles()).find((p) => p.name === 'Night Listener');
+    await remote.loginProfile(night.id, '4321');
+    assert.equal(remote.status().statistics, true);
+    remote.command('recordListen', {
+      songId: 'roads1', listened: 120, duration: 305, tz: 0,
+    });
+    // Shown at once, before the server has it.
+    const row = await until(() => remote.status().tracked.find((r) => r.profileId === night.id && r.statistics.seconds === 120), 'the tracked row');
+    assert.equal(row.profileName, 'Night Listener');
+    assert.equal(row.serverId, remote.status().serverId);
+    assert.equal(row.serverName, remote.status().serverName);
+    assert.equal(row.supported, true);
+    assert.equal(row.statistics.listens, 1);
+    assert.ok(row.statistics.since > 0);
+    await until(async () => (await serverLibrary(one.base, remote.status().token)).statistics.seconds === 120, 'the listen on the server');
+    assert.throws(() => remote.removeTracked(row.serverId, night.id), /in use/);
+    await remote.logoutProfile();
+    // The Default heard it too; it gets no row of its own.
+    assert.equal(remote.view().statistics.seconds, 120);
+    assert.deepEqual(remote.status().tracked.map((r) => r.profileId), [night.id]);
+    remote.removeTracked(row.serverId, night.id);
+    assert.deepEqual(remote.status().tracked, []);
+  });
+
   await t.test('Administration: an admin profile, the rules, the master changing the password', async () => {
     const night = (await remote.loadProfiles()).find((p) => p.name === 'Night Listener');
     await remote.loginProfile(night.id, '4321');

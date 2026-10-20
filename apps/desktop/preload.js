@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('flow', {
   setFavourite: (songId, on) => call('library:setFavourite', { songId, on }),
   privateStatistics: () => call('stats:private'),
   onPrivateStatistics: (fn) => ipcRenderer.on('stats:private', (_e, data) => fn(data)),
+  removeTrackedProfile: (serverId, profileId) => call('stats:removeTracked', { serverId, profileId }),
   recordListen: (songId, listened, duration, contextId, jamMember) => call('library:recordListen', {
     songId, listened, duration, contextId, jamMember: !!jamMember,
   }),

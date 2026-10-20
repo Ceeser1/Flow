@@ -91,3 +91,30 @@ test('a listen counts for Private wherever it was; a Jam member says so to the s
   assert.equal(actions.recordListen({ songId: 'gone', listened: 60, duration: 200 }), null);
   assert.equal(privateStats.get().seconds, 260);
 });
+
+test('tracked profiles: one row per server and profile, the one online last first, removed by hand', () => {
+  const { createTrackedProfiles, FILE: TRACKED } = require('../src/client/trackedProfiles');
+  const jsonFiles = memoryFiles();
+  const t = createTrackedProfiles({ jsonFiles });
+  const stats = (seconds) => ({ since: 5, seconds, listens: 1, months: { '2026-10': seconds } });
+  const row = (serverId, profileId, seconds) => ({
+    serverId, serverName: `Server ${serverId}`, profileId, profileName: `P ${profileId}`, createdAt: 3, statistics: stats(seconds), addedSongs: 2, supported: true,
+  });
+  assert.equal(t.update(row('aaa111', 'anna', 100), { online: true, now: 1000 }), true);
+  assert.equal(t.update(row('bbb222', 'ben', 50), { online: true, now: 2000 }), true);
+  assert.deepEqual(t.list().map((r) => r.profileId), ['ben', 'anna']);
+  // Nothing new: not written again; offline numbers do not move it up.
+  assert.equal(t.update(row('bbb222', 'ben', 50), { online: true, now: 2500 }), false);
+  assert.equal(t.update(row('aaa111', 'anna', 160), { now: 3000 }), true);
+  assert.deepEqual(t.list().map((r) => [r.profileId, r.statistics.seconds, r.connectedAt]), [['ben', 50, 2000], ['anna', 160, 1000]]);
+  assert.equal(t.update({ ...row('x', 'bad id!', 1) }), false);
+  // Read back by a new start.
+  const again = createTrackedProfiles({ jsonFiles });
+  assert.deepEqual(again.list(), t.list());
+  assert.equal(again.remove('aaa111', 'anna'), true);
+  assert.equal(again.remove('aaa111', 'anna'), false);
+  assert.deepEqual(jsonFiles.files[TRACKED].rows.map((r) => r.profileId), ['ben']);
+  // A copy: changing it changes nothing kept.
+  again.list()[0].statistics.months['2026-10'] = 0;
+  assert.equal(again.list()[0].statistics.months['2026-10'], 50);
+});
