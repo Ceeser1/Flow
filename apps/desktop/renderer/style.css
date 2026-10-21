@@ -2984,7 +2984,14 @@ body.mobile .switch-where { text-align: left; }
 .stats__block { padding: 10px 0 12px; border-bottom: 1px solid #34343c; }
 .stats__block:last-child { border-bottom: none; }
 .stats__head { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-bright); overflow-wrap: anywhere; }
-.stats__sub { margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+/* Activity's heading, Monthly / Daily on its right. */
+.stats__ahead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 8px; }
+.stats__ahead .stats__head { margin: 0; }
+.stats__modes { display: flex; flex: none; border: 1px solid #4a4a55; border-radius: 6px; overflow: hidden; }
+.stats__mode { height: 24px; padding: 0 10px; border: none; background: transparent; color: var(--text-dim); font: inherit; font-size: 12px; cursor: pointer; }
+.stats__mode + .stats__mode { border-left: 1px solid #4a4a55; }
+.stats__mode:hover:not(.stats__mode--on) { background: rgba(255, 255, 255, 0.05); color: var(--text-bright); }
+.stats__mode--on { background: var(--accent); color: #fff; cursor: default; }
 .stats__hints { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
 .stats__hint { margin: 0; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
 .stats__hint--green { color: var(--green); }
@@ -3021,7 +3028,8 @@ body.mobile .switch-where { text-align: left; }
 .stats__name + .act { width: 24px; height: 24px; }
 .stats__name + .act .icon { width: 13px; height: 13px; }
 .stats__tact { justify-content: flex-end; }
-.stats__facts { margin-top: 2px; }
+/* Two halves: the streaks and sessions start at the middle. */
+.stats__facts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 16px; margin-top: 2px; }
 
 /* Activity: a bar per month, the current one at the right, older ones scrolled to. */
 .stats__scroll {
@@ -3046,8 +3054,26 @@ body.mobile .switch-where { text-align: left; }
 .stats__hours { height: 14px; font-variant-numeric: tabular-nums; color: var(--text); }
 .stats__barbox { display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 140px; }
 .stats__bar { width: 56%; min-height: 1px; border-radius: 3px 3px 0 0; background: var(--accent); }
+.stats__bar--flat { border-radius: 0; }
 .stats__mname { white-space: nowrap; }
-.stats__year { height: 12px; font-size: 10px; }
+/* The lines: the numbers in a column on the left, each line from its
+   number's middle to the right, over the bars' 140px (the scroll's 6px
+   padding, the hours' 14px and the 4px gap above them). The bars scroll
+   right of the numbers, over the lines. */
+.stats__graph { position: relative; display: flex; padding-left: 52px; background: rgba(0, 0, 0, 0.24); border-radius: 8px; }
+.stats__graph .stats__scroll { position: relative; flex: 1; min-width: 0; background: none; border-radius: 0; }
+.stats__graph .stats__barbox { height: 156px; }
+.stats__grid { position: absolute; left: 0; right: 0; top: 24px; height: 156px; pointer-events: none; }
+/* A year's total after its December (the current year's after this month), its bar full. */
+.stats__bar--year { background: var(--red); }
+.stats__month--year .stats__mname { color: var(--text); font-weight: 600; }
+/* A month in Monthly opens its days. */
+.stats__month--open { cursor: pointer; }
+.stats__month--open:hover .stats__bar { filter: brightness(1.25); }
+.stats__month--open:hover .stats__mname { color: var(--text-bright); }
+.stats__gline { position: absolute; left: 0; right: 8px; display: flex; align-items: center; transform: translateY(50%); }
+.stats__gnum { flex: none; width: 52px; padding-right: 6px; text-align: right; font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.stats__grule { flex: 1; height: 1px; background: rgba(255, 255, 255, 0.09); }
 
 /* ===== Settings: Administration (admin.js), for an admin profile ===== */
 

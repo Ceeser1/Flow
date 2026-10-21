@@ -359,10 +359,14 @@ The cog at the bottom left of the menu. Every change counts at once.
     statistics here, with its listens not sent yet; the server keeps its
     own, and logging in to it again brings them back. Not for the profile in
     use, nor Private.
-  - **Your Statistics for ...**: when it was made, the songs it added, the
-    songs listened to (30 seconds or more), the time listened (days, hours,
-    minutes) and Activity: the hours of each month, back to the month it was
-    made. The numbers only grow: deleting songs does not lower them.
+  - **Statistics for profile: ... at server ...**: when it was made, the
+    songs it added, the songs listened to (30 seconds or more), the time
+    listened (days, hours, minutes); the current and the highest streak of
+    days with listening, and the longest session (songs with at most 10
+    minutes between them) this month and ever. Activity: the hours of each
+    month from January of the year it was made, each year's total after it
+    (Monthly), or of each day of one month with its total (Daily: the
+    current month, or the month clicked in Monthly). The numbers only grow: deleting songs does not lower them.
     Statistics start at 0 with 3.6.
   - Private counts everything heard in this app, whatever server or profile,
     also in a Jam, and is never sent anywhere. Its added songs are the songs
