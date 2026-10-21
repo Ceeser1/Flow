@@ -301,6 +301,10 @@ button, input, select { font: inherit; color: inherit; }
 
 .menu__playing { color: var(--green); }
 .menu__playing .icon { width: 15px; height: 15px; }
+.menu__sub-icon { display: inline-flex; flex: none; margin-right: -2px; color: var(--text-dim); }
+.menu__sub-icon .icon { width: 15px; height: 15px; }
+.menu__sub:hover .menu__sub-icon { color: var(--text-bright); }
+.menu__sub--active .menu__sub-icon { color: var(--accent); }
 
 /* ===== buttons and inputs ===== */
 
@@ -3010,16 +3014,16 @@ body.mobile .switch-where { text-align: left; }
 .stats__trow--head:hover { background: none; }
 .stats__tcell { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
 .stats__tcell .cell-title { overflow: hidden; text-overflow: ellipsis; }
-.stats__tact { justify-content: flex-end; }
-.stats__facts { margin-top: 2px; }
-
-/* Activity: a bar per month, the current one at the right, older ones scrolled to. */
 .stats__own { color: var(--text-dim); }
 .stats__rename { width: 24px; height: 24px; }
 .stats__rename .icon { width: 13px; height: 13px; }
 .stats__name { flex: 1; min-width: 0; width: 100%; }
 .stats__name + .act { width: 24px; height: 24px; }
 .stats__name + .act .icon { width: 13px; height: 13px; }
+.stats__tact { justify-content: flex-end; }
+.stats__facts { margin-top: 2px; }
+
+/* Activity: a bar per month, the current one at the right, older ones scrolled to. */
 .stats__scroll {
   display: flex;
   flex-direction: row-reverse;

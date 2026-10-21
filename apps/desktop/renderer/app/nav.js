@@ -163,6 +163,8 @@ const Nav = {
         title: p.name,
         onclick: () => this.openPlaylist(p.id),
       },
+      // Downloaded Songs has its icon before its name.
+      p.isDevice ? h('span.menu__sub-icon', { html: listIcon(p) }) : null,
       h('span.menu__sub-name', p.menuName || p.name),
       playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null);
     };
