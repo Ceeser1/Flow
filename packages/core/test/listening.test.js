@@ -173,11 +173,38 @@ test('the Statistics totals: time, listens of 30 s or more, months in the app\'s
   m.removeSong(d, 's1');
   assert.equal(d.statistics.seconds, 290);
   assert.deepEqual(L.cleanStatistics({ since: -1, seconds: 'x', listens: 2.7, months: { '2026-1': 5, '2026-02': 9 } }), {
-    since: 0, seconds: 0, listens: 2, months: { '2026-02': 9 },
+    since: 0, seconds: 0, listens: 2, months: { '2026-02': 9 }, days: {}, sessions: {}, run: null, late: null, longest: null,
   });
   const copy = L.copyStatistics(d.statistics);
   copy.months['2026-10'] = 1;
+  copy.days['2026-10-15'] = 1;
+  copy.longest.seconds = 1;
   assert.equal(d.statistics.months['2026-10'], 170);
+  assert.equal(d.statistics.days['2026-10-15'], 50);
+  assert.equal(d.statistics.longest.seconds, 240);
+});
+
+test('the Statistics by day, and the longest session of each month and ever', () => {
+  const d = m.sanitize({ songs: [{ id: 's1', file: 'a.mp3', duration: 600 }] });
+  const listen = (listened, when, tz = 0) => m.recordListen(d, 's1', { listened, duration: 600, at: at(when), tz });
+  listen(300, '2026-10-14T20:00:00Z');
+  listen(600, '2026-10-14T20:10:00Z');
+  // Over midnight two hours east of UTC: 22:05 UTC is 00:05 on the 15th.
+  listen(600, '2026-10-14T22:05:00Z', -120);
+  assert.deepEqual(d.statistics.days, { '2026-10-14': 1200, '2026-10-15': 300 });
+  // A gap of more than ten minutes starts a new session.
+  assert.deepEqual([d.statistics.run.seconds, d.statistics.longest.seconds], [600, 900]);
+  assert.deepEqual(d.statistics.sessions, { '2026-10': { start: at('2026-10-14T19:55:00Z'), end: at('2026-10-14T20:10:00Z'), seconds: 900 } });
+  // A session going into November counts there whole.
+  listen(600, '2026-11-01T00:05:00Z');
+  listen(600, '2026-11-01T00:15:00Z');
+  assert.deepEqual(Object.entries(d.statistics.sessions).map(([k, v]) => [k, v.seconds]), [['2026-10', 900], ['2026-11', 1200]]);
+  assert.equal(d.statistics.longest.seconds, 1200);
+  assert.deepEqual(m.sanitize(JSON.parse(JSON.stringify(d))).statistics, d.statistics);
+  // A library from 3.6.0 without them: counted from now on.
+  const old = m.sanitize({ songs: [{ id: 's1', file: 'a.mp3', duration: 600 }], statistics: { since: 5, seconds: 90, listens: 1, months: { '2026-10': 90 } } });
+  m.recordListen(old, 's1', { listened: 60, duration: 600, at: at('2026-10-20T12:00:00Z'), tz: 0 });
+  assert.deepEqual([old.statistics.days, old.statistics.sessions['2026-10'].seconds, old.statistics.seconds], [{ '2026-10-20': 60 }, 60, 150]);
 });
 
 test('each profile keeps its own Statistics; startStatistics starts every owner once', () => {

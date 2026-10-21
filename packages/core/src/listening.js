@@ -19,11 +19,15 @@
 // Next to it each owner keeps its Statistics totals (3.6), which only ever
 // grow: deleting songs does not lower them, unlike the songs' stats.
 //
-//   statistics  { since, seconds, listens, months }: since when it counts (ms;
-//               0: not started, a library from before 3.6: the Flow Server
-//               starts every owner at 0 when it first runs 3.6), seconds
-//               heard, listens of 30 seconds or more, and seconds heard per
-//               month { 'YYYY-MM': seconds }
+//   statistics  { since, seconds, listens, months, days, sessions, run, late,
+//               longest }: since when it counts (ms; 0: not started, a
+//               library from before 3.6: the Flow Server starts every owner
+//               at 0 when it first runs 3.6), seconds heard, listens of 30
+//               seconds or more, seconds heard per month { 'YYYY-MM': seconds }
+//               and per day { 'YYYY-MM-DD': seconds }, the longest session
+//               of each month (by the month it ended in) { 'YYYY-MM':
+//               { start, end, seconds } },
+//               and run / late / longest as above
 //
 // Dates and hours are the app's own: a listen carries its time zone offset
 // (Date.getTimezoneOffset(), minutes), and one without (an app from before
@@ -43,7 +47,9 @@ const SONG_ID = /^[\w-]{1,64}$/;
 const LISTEN_SECONDS = 30;
 
 function emptyStatistics(since = 0) {
-  return { since: Number(since) || 0, seconds: 0, listens: 0, months: {} };
+  return {
+    since: Number(since) || 0, seconds: 0, listens: 0, months: {}, days: {}, sessions: {}, run: null, late: null, longest: null,
+  };
 }
 
 function cleanStatistics(raw) {
@@ -53,12 +59,25 @@ function cleanStatistics(raw) {
     seconds: Math.max(0, Number(r.seconds) || 0),
     listens: Math.max(0, Math.floor(Number(r.listens) || 0)),
     months: cleanSeconds(r.months, (k) => MONTH.test(k)),
+    days: cleanSeconds(r.days, (k) => DAY.test(k)),
+    sessions: cleanSessions(r.sessions),
+    run: cleanRun(r.run),
+    late: cleanRun(r.late),
+    longest: cleanRun(r.longest),
   };
 }
 
 function copyStatistics(st) {
   const src = st || emptyStatistics();
-  return { ...src, months: { ...(src.months || {}) } };
+  return {
+    ...src,
+    months: { ...(src.months || {}) },
+    days: { ...(src.days || {}) },
+    sessions: Object.fromEntries(Object.entries(src.sessions || {}).map(([k, v]) => [k, { ...v }])),
+    run: src.run ? { ...src.run } : null,
+    late: src.late ? { ...src.late } : null,
+    longest: src.longest ? { ...src.longest } : null,
+  };
 }
 
 function emptyListening() {
@@ -85,6 +104,17 @@ function cleanRun(raw) {
   const seconds = Number(raw.seconds);
   if (!(start > 0) || !(end >= start) || !(seconds > 0)) return null;
   return { start, end, seconds };
+}
+
+/** The statistics' longest session of each month: { 'YYYY-MM': run }. */
+function cleanSessions(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [month, run] of Object.entries(raw)) {
+    const r = cleanRun(run);
+    if (MONTH.test(month) && r) out[month] = r;
+  }
+  return out;
 }
 
 /** Repairs anything a hand edit or an older version could have left behind. */
@@ -164,10 +194,18 @@ function recordListening(data, songId, seconds, at = Date.now(), tz = null) {
     t = hourEnd;
   }
 
-  // The session: this listen joins the last one when it is close enough to
-  // it, else the late one (an app that was offline sends its listens after
-  // newer ones, in their order); a newer one starts a new session, an older
-  // one apart from both a new late one.
+  joinSession(l, start, end, secs);
+}
+
+/**
+ * The session a listen from `start` to `end` (ms, `secs` heard) belongs to,
+ * in `l`'s run / late / longest (listening's or statistics'): it joins the
+ * last one when it is close enough to it, else the late one (an app that was
+ * offline sends its listens after newer ones, in their order); a newer one
+ * starts a new session, an older one apart from both a new late one.
+ * Answers the session it is in now.
+ */
+function joinSession(l, start, end, secs) {
   const near = (r) => r && start <= r.end + RUN_GAP && end >= r.start - RUN_GAP;
   const grow = (r) => {
     r.start = Math.min(r.start, start);
@@ -184,12 +222,14 @@ function recordListening(data, songId, seconds, at = Date.now(), tz = null) {
     else l.late = current;
   }
   if (!l.longest || current.seconds > l.longest.seconds) l.longest = { ...current };
+  return current;
 }
 
 /**
  * Counts `seconds` heard, ending at `at` (ms), into `data.statistics`: the
- * time, a listen when 30 seconds or more, and the seconds by month in the
- * app's time zone (`tz`, as recordListening), split where a month ends.
+ * time, a listen when 30 seconds or more, the seconds by month and by day in
+ * the app's time zone (`tz`, as recordListening), split where a day ends,
+ * and the session it is part of.
  */
 function recordStatistics(data, seconds, at = Date.now(), tz = null) {
   const secs = Number(seconds);
@@ -200,16 +240,25 @@ function recordStatistics(data, seconds, at = Date.now(), tz = null) {
   if (!st.since) st.since = end;
   st.seconds = tenth(st.seconds + secs);
   if (secs >= LISTEN_SECONDS) st.listens += 1;
+  if (!st.days) st.days = {};
+  if (!st.sessions) st.sessions = {};
   const offset = (cleanTz(tz) ?? new Date(end).getTimezoneOffset()) * 60000;
-  let t = end - secs * 1000;
+  const start = end - secs * 1000;
+  let t = start;
   while (t < end) {
     const local = new Date(t - offset);
-    const monthEnd = Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 1) + offset;
-    const piece = (Math.min(end, monthEnd) - t) / 1000;
-    const month = `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}`;
+    const dayEnd = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + 1) + offset;
+    const piece = (Math.min(end, dayEnd) - t) / 1000;
+    const day = `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`;
+    const month = day.slice(0, 7);
     st.months[month] = tenth((st.months[month] || 0) + piece);
-    t = monthEnd;
+    st.days[day] = tenth((st.days[day] || 0) + piece);
+    t = dayEnd;
   }
+  const session = joinSession(st, start, end, secs);
+  const last = new Date(session.end - offset);
+  const month = `${last.getUTCFullYear()}-${pad(last.getUTCMonth() + 1)}`;
+  if (!(st.sessions[month] && st.sessions[month].seconds >= session.seconds)) st.sessions[month] = { ...session };
 }
 
 /**

@@ -19,7 +19,7 @@
 //   connectedAt  the last time the app was online with it: the list's order
 //   seenAt       the last time the row changed
 
-const { cleanStatistics } = require('../listening');
+const { cleanStatistics, copyStatistics } = require('../listening');
 
 const FILE = 'tracked-profiles.json';
 const ID = /^[\w-]{1,64}$/;
@@ -72,7 +72,7 @@ function createTrackedProfiles({ jsonFiles }) {
   /** Every row, the one online last first. */
   function list() {
     return Object.values(load())
-      .map((r) => ({ ...r, statistics: { ...r.statistics, months: { ...r.statistics.months } } }))
+      .map((r) => ({ ...r, statistics: copyStatistics(r.statistics) }))
       .sort((a, b) => b.connectedAt - a.connectedAt || b.seenAt - a.seenAt);
   }
 

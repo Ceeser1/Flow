@@ -5,11 +5,12 @@
 // not, in a Jam). Kept in private-statistics.json beside the app's other
 // files; never sent anywhere. Shared by the Flow apps; no Node.
 //
-//   { device, since, seconds, listens, months, added, songs }
+//   { device, since, seconds, listens, months, days, sessions, run, late,
+//     longest, added, songs }
 //
 //   device   this install's id (settings.clientId), fixed once written
 //   since    when Private started (ms): its "Created at"
-//   seconds, listens, months   as a library owner's statistics (listening.js)
+//   seconds ... longest   as a library owner's statistics (listening.js)
 //   added    songs this device put into Flow: downloaded, imported, saved
 //            (a song's Finish), approved from a Download (Server); not songs
 //            found by scanning a folder
@@ -17,7 +18,9 @@
 //            heard of each song, by its names when it was heard (a song's id
 //            differs between the servers and Local Files)
 
-const { cleanStatistics, recordStatistics, LISTEN_SECONDS } = require('../listening');
+const {
+  cleanStatistics, copyStatistics, recordStatistics, LISTEN_SECONDS,
+} = require('../listening');
 
 const FILE = 'private-statistics.json';
 // The same limit as libraryModel.recordListen: shorter counts as nothing.
@@ -52,6 +55,11 @@ function cleanPrivate(raw, now = Date.now()) {
     seconds: st.seconds,
     listens: st.listens,
     months: st.months,
+    days: st.days,
+    sessions: st.sessions,
+    run: st.run,
+    late: st.late,
+    longest: st.longest,
     added: Math.max(0, Math.floor(Number(r.added) || 0)),
     songs: cleanSongs(r.songs),
   };
@@ -86,7 +94,7 @@ function createPrivateStats({ jsonFiles, deviceId = () => '', onChange = () => {
   /** A copy, for the window. */
   function get() {
     const d = load();
-    return { ...d, months: { ...d.months }, songs: { ...d.songs } };
+    return { ...d, ...copyStatistics(d), songs: { ...d.songs } };
   }
 
   /**
