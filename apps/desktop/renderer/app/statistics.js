@@ -148,12 +148,14 @@
 
   /**
    * What the Current Profile says: [{ kind, text }], kind 'green', 'amber'
-   * or 'grey'. The server's name while connected; the last one's while not.
+   * or 'grey'. The server's name while connected; the last one's while not;
+   * the one given it on this device (names: Settings' serverNames) first.
    */
-  function hints(st) {
+  function hints(st, names) {
     const s = st || {};
     const online = s.on && s.state === 'online';
-    const name = (online && s.name) || s.serverName || s.name || 'the Flow Server';
+    const real = (online && s.name) || s.serverName || s.name;
+    const name = real ? Util.serverName(names, s.serverId, real).name : 'the Flow Server';
     const own = 'using your App\'s private profile';
     const out = [];
     if (s.on && s.profile) {

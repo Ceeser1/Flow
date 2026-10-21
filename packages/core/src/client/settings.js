@@ -424,6 +424,9 @@ const DEFAULTS = {
   // Songs added to or removed from the Local Files folder by hand go to the
   // server by themselves; otherwise only with "Synchronize now".
   serverAutoSync: true,
+  // The names given to Flow Servers on this device (Settings' Switch server
+  // and Statistics), by server id: shown instead of the server's own.
+  serverNames: {},
   // This install of Flow, as the server tells devices apart (made at the
   // first connection; remote.js). Two PCs of the same name are two devices.
   clientId: '',
@@ -509,6 +512,11 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 300 && Number.isFinite(Number(v)))
     .slice(0, 50)
     .map(([k, v]) => [k, Math.round(Math.max(0, Math.min(1000, Number(v))))]));
+  const names = s.serverNames && typeof s.serverNames === 'object' && !Array.isArray(s.serverNames) ? s.serverNames : {};
+  s.serverNames = Object.fromEntries(Object.entries(names)
+    .map(([k, v]) => [k, typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, 80) : ''])
+    .filter(([k, v]) => k && k.length <= 100 && v)
+    .slice(0, 100));
   for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
     'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75']) s[key] = s[key] === true;
   if (!s.dcScale75) {

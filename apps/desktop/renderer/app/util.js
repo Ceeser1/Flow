@@ -173,8 +173,22 @@
     return 'just now';
   }
 
+  /**
+   * A Flow Server's name as this device shows it: the one given it here
+   * (Settings' serverNames, by server id), else its own. label: the given
+   * one with its own after it, "Pi Upstairs (Pi)".
+   */
+  function serverName(names, id, own) {
+    const original = String(own || 'Flow Server');
+    const given = id && names && typeof names[id] === 'string' ? names[id].trim() : '';
+    const renamed = !!given && given !== original;
+    return {
+      name: renamed ? given : original, original, renamed, label: renamed ? `${given} (${original})` : original,
+    };
+  }
+
   return {
     fmtClock, fmtDate, fmtDay, fmtListened, fmtTimeOfDay, fmtPrecise, parsePrecise, fileUrl,
-    compareValues, cycleSort, sortRows, fold, matches, songLine, plural, fmtAgo,
+    compareValues, cycleSort, sortRows, fold, matches, songLine, plural, fmtAgo, serverName,
   };
 }));

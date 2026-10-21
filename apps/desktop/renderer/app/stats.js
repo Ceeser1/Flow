@@ -6,6 +6,7 @@
 // profile used on this app and its Private Statistics, one picked to show,
 // each but the one in use removable. Your Statistics for ...: the picked
 // one's numbers and its Activity, a bar per month back to when it was made.
+// A server's pencil names it on this device, as Switch server's does.
 // The numbers come from statistics.js; drawn when Settings opens, and again
 // a moment after the status or the Private Statistics change (every listen
 // changes them).
@@ -13,6 +14,7 @@
 const Stats = {
   _node: null,
   _picked: null, // the source shown (statistics.js ids); null: the one in use
+  _editing: null, // the row whose server is being named (its id)
   _private: null, // window.flow.privateStatistics()
   _timer: null,
   _busy: false,
@@ -22,6 +24,7 @@ const Stats = {
   rows() {
     this._node = h('div.stats');
     this._picked = null;
+    this._editing = null;
     return [h('h3.settings__section', 'Statistics'), this._node];
   },
 
@@ -52,8 +55,10 @@ const Stats = {
     }, 500);
   },
 
-  draw() {
+  draw(force = false) {
     if (!this._node || !this._node.isConnected) return;
+    // Not while a server's name is typed: drawn again when it is done.
+    if (this._editing && !force) return;
     const mobile = document.body.classList.contains('mobile');
     const st = Store.server;
     const list = Statistics.sources(st, this._private);
@@ -83,7 +88,7 @@ const Stats = {
   // ---- Current Profile ----
 
   _hints(st) {
-    return h('div.stats__hints', ...Statistics.hints(st).map((x) => h(`p.stats__hint.stats__hint--${x.kind}`, x.text)));
+    return h('div.stats__hints', ...Statistics.hints(st, Store.settings.serverNames).map((x) => h(`p.stats__hint.stats__hint--${x.kind}`, x.text)));
   },
 
   _currentRow(st, current) {
@@ -158,7 +163,7 @@ const Stats = {
           this.draw();
         },
       },
-      h('span.stats__tcell', x.id === Statistics.PRIVATE ? (mobile ? 'This app' : 'This app, every server') : x.server),
+      x.id === Statistics.PRIVATE ? h('span.stats__tcell', mobile ? 'This app' : 'This app, every server') : this._serverCell(x),
       h('span.stats__tcell', h('span.cell-title', x.profile), x.current ? h('span.admin__badge.admin__badge--you', 'in use') : null),
       h('span.stats__tcell.stats__tact', remove));
       return row;
@@ -167,10 +172,33 @@ const Stats = {
     return h('div.stats__table', head, Admin._scrollRows(body, () => body.children));
   },
 
+  /** The server's name as given on this device, its own in brackets, and the pencil (or the box and its tick). */
+  _serverCell(x) {
+    const name = Util.serverName(Store.settings.serverNames, x.serverId, x.server);
+    if (this._editing === x.id) {
+      const { input, tick } = SettingsPanel._nameBox(name, (text) => {
+        this._editing = null;
+        if (text !== null) SettingsPanel._renameServer(x.serverId, x.server, text);
+        this.draw();
+      }, 'stats__name');
+      return h('span.stats__tcell', input, tick);
+    }
+    const edit = iconButton('act.act--grey.stats__rename', Icons.pencil, `Rename "${name.name}" on ${Store.here}`, (e) => {
+      e.stopPropagation();
+      this._editing = x.id;
+      this.draw(true);
+    });
+    edit.disabled = this._busy;
+    return h('span.stats__tcell',
+      h('span.cell-title', name.name),
+      name.renamed ? h('span.stats__own', `(${name.original})`) : null,
+      edit);
+  },
+
   async _remove(x) {
     const answer = await confirmDialog({
       title: 'Remove tracked Profile',
-      message: `Remove "${x.profile}" on ${x.server} from this app? Its statistics kept here are deleted, with its listens `
+      message: `Remove "${x.profile}" on ${Util.serverName(Store.settings.serverNames, x.serverId, x.server).name} from this app? Its statistics kept here are deleted, with its listens `
         + 'not sent to the server yet, and it is no longer kept up to date. What the server has stays: logging in to it '
         + 'again brings its statistics back.',
       confirmLabel: 'Remove',

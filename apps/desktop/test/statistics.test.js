@@ -26,6 +26,21 @@ test('the hint says whose listens count now, and when the server is too old', ()
   assert.match(old[1], /^amber: Living Room is older than Flow 3\.6/);
 });
 
+test('a server named on this device shows that name, its own in brackets', () => {
+  const Util = require('../renderer/app/util');
+  assert.deepEqual(Util.serverName({ s1: 'Upstairs' }, 's1', 'Pi'), {
+    name: 'Upstairs', original: 'Pi', renamed: true, label: 'Upstairs (Pi)',
+  });
+  assert.equal(Util.serverName({ s1: 'Upstairs' }, 's2', 'Pi').label, 'Pi');
+  // Its own name given again is no name of its own.
+  assert.equal(Util.serverName({ s1: 'Pi' }, 's1', 'Pi').renamed, false);
+  assert.equal(Util.serverName(undefined, 's1', '').name, 'Flow Server');
+  const st = {
+    on: true, state: 'online', name: 'Pi', serverId: 's1', serverName: 'Pi', statistics: true, profile,
+  };
+  assert.equal(Statistics.hints(st, { s1: 'Upstairs' })[0].text, 'Connected to Upstairs - Using the connected profile of this server');
+});
+
 test('the profiles to pick from: tracked ones, the one in use marked, Private last', () => {
   const tracked = [
     {

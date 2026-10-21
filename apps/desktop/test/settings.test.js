@@ -316,4 +316,8 @@ test('the server settings are kept tidy', () => {
   const off = settings.clean({ serverHomeOn: false, serverRemoteOn: false });
   assert.equal(off.serverHomeOn, false);
   assert.equal(off.serverRemoteOn, false);
+  // The names given to servers here: tidied, empty ones dropped.
+  assert.deepEqual(s.serverNames, {});
+  assert.deepEqual(settings.clean({ serverNames: { s1: '  Pi   Upstairs ', s2: '', s3: 5, '': 'x' } }).serverNames, { s1: 'Pi Upstairs' });
+  assert.deepEqual(settings.clean({ serverNames: ['Pi'] }).serverNames, {});
 });

@@ -2938,13 +2938,19 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 .server-state--error { color: var(--red); }
 .server-state > div + div { color: var(--text-dim); }
 
-/* Settings' Switch server: the servers in a dropdown, Switch and ✕. */
+/* Settings' Switch server: the servers in a dropdown, the pencil, Switch and ✕.
+   The address line takes the whole width without widening the column (width
+   0, at least 100%): the description beside it keeps its room. */
 .switch-control { flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
-.switch-select { width: 180px; max-width: 100%; }
-.switch-where { flex-basis: 100%; text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.switch-select { width: auto; min-width: 180px; max-width: 280px; }
+.switch-where { flex: none; width: 0; min-width: 100%; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A Flow Server's name typed (Switch server, Statistics). */
+.server-name { height: 28px; padding: 0 8px; font-size: 12px; }
+.switch-name { width: 130px; }
 .switch-where:empty { display: none; }
 body.mobile .switch-control { justify-content: flex-start; }
-body.mobile .switch-select { flex: 1; width: auto; }
+body.mobile .switch-select { flex: 1; width: auto; min-width: 0; max-width: none; }
+body.mobile .switch-name { width: 120px; }
 body.mobile .switch-where { text-align: left; }
 
 /* Playing with the screen off (backgroundHelp.js): the phone's. */
@@ -3008,6 +3014,12 @@ body.mobile .switch-where { text-align: left; }
 .stats__facts { margin-top: 2px; }
 
 /* Activity: a bar per month, the current one at the right, older ones scrolled to. */
+.stats__own { color: var(--text-dim); }
+.stats__rename { width: 24px; height: 24px; }
+.stats__rename .icon { width: 13px; height: 13px; }
+.stats__name { flex: 1; min-width: 0; width: 100%; }
+.stats__name + .act { width: 24px; height: 24px; }
+.stats__name + .act .icon { width: 13px; height: 13px; }
 .stats__scroll {
   display: flex;
   flex-direction: row-reverse;

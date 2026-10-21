@@ -946,10 +946,11 @@ const SettingsPanel = {
    * "Switch server": a dropdown of the servers used on this device, the one
    * in use picked. Picking another only shows where it was reached and as
    * whom; Switch then connects to it (with that address, its password and its
-   * profile), and ✕ forgets it.
+   * profile), and ✕ forgets it. The pencil names the picked one on this
+   * device: Switch becomes the box for it and the pencil a tick.
    */
   _switchRow() {
-    this._switch = { picked: '', busy: '', key: '' };
+    this._switch = { picked: '', busy: '', key: '', editing: '' };
     this._switchNode = h('div.settings__control.switch-control');
     const row = this._row({
       label: 'Switch server',
@@ -978,7 +979,10 @@ const SettingsPanel = {
     const current = list.find((x) => x.current);
     // Back to the one in use once the picked one is gone or became it.
     if (!list.some((x) => x.id === p.picked) || (current && current.id === p.picked)) p.picked = current ? current.id : '';
-    const key = JSON.stringify([list, p.picked, p.busy, Store.settings.serverOn]);
+    // A name being typed is not lost to a status update.
+    if (p.editing && !force) return;
+    const names = Store.settings.serverNames || {};
+    const key = JSON.stringify([list, p.picked, p.busy, Store.settings.serverOn, names]);
     if (!force && key === p.key) return;
     p.key = key;
     clear(node);
@@ -986,23 +990,98 @@ const SettingsPanel = {
     const off = !Store.settings.serverOn;
     const picked = list.find((x) => x.id === p.picked) || list[0];
     const other = !picked.current;
-    const select = h('select.select.switch-select', { disabled: off || !!p.busy },
-      ...list.map((x) => h('option', { value: x.id }, x.current ? `${x.name} (in use)` : x.name)));
+    const named = (x) => Util.serverName(names, x.id, x.name);
+    const select = h('select.select.switch-select', { disabled: off || !!p.busy || !!p.editing },
+      ...list.map((x) => h('option', { value: x.id }, x.current ? `${named(x).label} - in use` : named(x).label)));
     select.value = picked.id;
     select.addEventListener('change', () => {
       p.picked = select.value;
       this._drawSwitch(true);
     });
-    const forget = iconButton('act.act--grey', Icons.x, `Forget "${picked.name}"`, () => this._forgetServer(picked));
-    forget.disabled = off || !!p.busy || !other;
+    const forget = iconButton('act.act--grey', Icons.x, `Forget "${named(picked).name}"`, () => this._forgetServer(picked));
+    forget.disabled = off || !!p.busy || !other || !!p.editing;
+    let edit;
+    let action;
+    if (p.editing) {
+      const done = (text) => {
+        p.editing = '';
+        if (text !== null) this._renameServer(picked.id, picked.name, text);
+        this._drawSwitch(true);
+      };
+      ({ input: action, tick: edit } = this._nameBox(named(picked), done, 'switch-name'));
+    } else {
+      edit = iconButton('act.act--grey', Icons.pencil, `Rename "${named(picked).name}" on ${Store.here}`, () => {
+        p.editing = picked.id;
+        this._drawSwitch(true);
+      });
+      edit.disabled = off || !!p.busy;
+      action = h('button.btn.btn--small', {
+        type: 'button', disabled: off || !!p.busy || !other, onclick: () => this._switchTo(picked),
+      }, p.busy ? 'Connecting...' : 'Switch');
+    }
     node.append(
       h('span.settings__note.switch-where', [picked.address, picked.profile ? `as ${picked.profile}` : ''].filter(Boolean).join(' · ')),
       select,
-      h('button.btn.btn--small', {
-        type: 'button', disabled: off || !!p.busy || !other, onclick: () => this._switchTo(picked),
-      }, p.busy ? 'Connecting...' : 'Switch'),
+      edit,
+      action,
       forget,
     );
+  },
+
+  /**
+   * The box a Flow Server is named in (Switch server, Statistics) and its
+   * tick: Enter, the tick or leaving the box keeps the name, Escape keeps
+   * the old one. done(text), or done(null) for Escape; once.
+   */
+  _nameBox(name, done, cls) {
+    const input = h(`input.input.server-name.${cls}`, {
+      type: 'text', maxLength: 80, spellcheck: false, value: name.name, placeholder: name.original, 'aria-label': `Name for "${name.original}"`,
+      // Escape is the box's (Keys leaves Settings open).
+      dataset: { ownEscape: '' },
+    });
+    let over = false;
+    const finish = (text) => {
+      if (over) return;
+      over = true;
+      done(text);
+    };
+    input.addEventListener('keydown', (e) => {
+      // Only the box's: a row it sits in does not react to them.
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        finish(input.value);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(null);
+      }
+    });
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('blur', () => finish(input.value));
+    const tick = iconButton('act.act--green', Icons.check, 'Keep the name', (e) => {
+      e.stopPropagation();
+      finish(input.value);
+    });
+    requestAnimationFrame(() => {
+      input.focus();
+      input.select();
+    });
+    return { input, tick };
+  },
+
+  /**
+   * Names a Flow Server on this device (empty, or its own name: its own
+   * again). Switch server and Statistics both show it.
+   */
+  _renameServer(id, own, text) {
+    const names = { ...(Store.settings.serverNames || {}) };
+    const name = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!name || name === own) delete names[id];
+    else names[id] = name;
+    Store.saveSettings({ serverNames: names });
+    // A box open in the other place stays as it is (drawn when it is done).
+    if (!this._switch || !this._switch.editing) this._drawSwitch(true);
+    Stats.draw();
   },
 
   async _switchTo(s) {
@@ -1016,13 +1095,13 @@ const SettingsPanel = {
     // Not switched: the one in use is picked again.
     if (!ok) this._switch.picked = '';
     this._drawSwitch();
-    if (ok) toast(`Switching to "${s.name}"`, 'success');
+    if (ok) toast(`Switching to "${Util.serverName(Store.settings.serverNames, s.id, s.name).name}"`, 'success');
   },
 
   async _forgetServer(s) {
     const ok = await confirmDialog({
       title: 'Forget server',
-      message: `Forget "${s.name}" on ${Store.here}? It is no longer offered here, and what was waiting to go to it is dropped. `
+      message: `Forget "${Util.serverName(Store.settings.serverNames, s.id, s.name).name}" on ${Store.here}? It is no longer offered here, and what was waiting to go to it is dropped. `
         + 'Songs downloaded from it stay (under Downloaded Songs); the server and your profile on it are not touched.',
       confirmLabel: 'Forget',
       danger: true,
