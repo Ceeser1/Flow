@@ -4,6 +4,7 @@
 // together. main.js starts one from the command line; the tests start their
 // own on a free port.
 
+const path = require('path');
 const configMod = require('./config');
 const { createLibrary } = require('./library');
 const { createHttpServer, PROTOCOL } = require('./http');
@@ -12,6 +13,7 @@ const { createLive } = require('./live');
 const { createSessions } = require('./sessions');
 const { createActivity } = require('./activity');
 const { createBackups } = require('./backups');
+const { createLyricsStore } = require('./lyrics');
 const model = require('@flow/core/libraryModel');
 const tools = require('./tools');
 const tailscaleMod = require('./tailscale');
@@ -24,13 +26,14 @@ const TAG_CHECK_MS = 5000;
 const TRASH_MS = 24 * 60 * 60 * 1000;
 
 /**
- * opts: { home, music, port, host, log, detectTailscale, discoveryPort, livePingMs, coverDeps, convertQuietMs, lookupInfo }.
+ * opts: { home, music, port, host, log, detectTailscale, discoveryPort, livePingMs, coverDeps, convertQuietMs, lookupInfo, lookupLyrics }.
  * Resolves { port, config, library, tailscale, close }. discoveryPort: the UDP
  * port the apps' search is answered on (null: not at all; left out: the
  * default port if the server's settings say so).
  * Port 0 picks a free one. coverDeps: fakes for finding covers (library.js).
  * lookupInfo: how albums and genres are looked up (songInfo.lookupInfo; left
- * out: they are not).
+ * out: they are not). lookupLyrics: how a song's lyrics are looked up (left
+ * out: LRCLIB's, @flow/core/lyrics).
  */
 async function startServer(opts = {}) {
   const log = opts.log || (() => {});
@@ -58,8 +61,10 @@ async function startServer(opts = {}) {
   const activity = createActivity({ config });
   // The library's data once a week, the last 6 kept (never the songs' files).
   const backups = createBackups({ config, library, log });
+  // The songs' lyrics from LRCLIB, kept once looked up.
+  const lyrics = createLyricsStore({ dir: path.join(config.home, 'lyrics'), lookup: opts.lookupLyrics, log });
   const server = createHttpServer({
-    config, library, version, log, tailscale: () => tailscale, downloads, live, sessions, activity, backups,
+    config, library, version, log, tailscale: () => tailscale, downloads, live, sessions, activity, backups, lyrics,
   });
 
   const port = opts.port !== undefined ? opts.port : config.get().port;
@@ -86,6 +91,7 @@ async function startServer(opts = {}) {
   library.checkTagRequest();
   backups.checkRequest();
   backups.weekly();
+  lyrics.sweep(new Set(library.data.songs.map((s) => s.id)));
   const timers = [
     setInterval(() => library.scan().catch(() => {}), RESCAN_MS),
     setInterval(() => library.emptyTrash(), TRASH_MS),

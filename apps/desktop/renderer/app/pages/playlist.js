@@ -65,6 +65,8 @@ const PlaylistPage = {
     };
     // An imported playlist's Update (4.0): its source read again (AddPage.updatePlaylist).
     $('plUpdate').onclick = () => AddPage.updatePlaylist(Store.playlist(this.id));
+    // The phone's row of buttons has no room left: it goes beside Share.
+    if (Store.uiMode === 'mobile') $('plShare').before($('plUpdate'));
     $('plShare').onclick = () => {
       const p = Store.playlist(this.id);
       if (!p) return;

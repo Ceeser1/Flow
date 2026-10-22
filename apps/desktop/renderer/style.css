@@ -1865,6 +1865,8 @@ div.import__frame-head { cursor: default; }
 .queue-btn:hover { color: var(--text-bright); border-color: #50505a; background: var(--glass-hi); }
 .queue-btn__img { width: 14px; height: 14px; display: block; opacity: 0.75; }
 .queue-btn:hover .queue-btn__img { opacity: 1; }
+.queue-btn .icon { width: 14px; height: 14px; opacity: 0.75; }
+.queue-btn:hover .icon { opacity: 1; }
 
 /* A sleep timer running: "Time Left" in the middle of the line, title left
    and "from" with Queue right, each cut short rather than running under it. */
@@ -2453,6 +2455,45 @@ div.import__frame-head { cursor: default; }
 .queue__dur { color: var(--text-dim); font-variant-numeric: tabular-nums; flex: none; }
 .queue__remove { visibility: hidden; }
 .queue__row:hover .queue__remove { visibility: visible; }
+
+/* ---- the Lyrics drawer (lyrics.js) ---- */
+
+.modal--lyrics { width: min(520px, 100%); background: rgba(28, 28, 32, 0.92); }
+.lyrics { display: flex; flex-direction: column; gap: 12px; }
+.lyrics__song { font-size: 13px; color: var(--text-dim); }
+.lyrics__note { color: var(--text-dim); padding: 12px 0; }
+.lyrics__lines { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 35vh; }
+.lyrics__line {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #8d8d98;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin: 0 -6px;
+  transition: color 0.25s;
+}
+.lyrics__line--timed { cursor: pointer; }
+.lyrics__line--timed:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.lyrics__line--pause { color: #5c5c66; }
+.lyrics__line--now,
+.lyrics__line--now:hover { color: #fff; text-shadow: 0 0 18px rgba(255, 255, 255, 0.25); }
+.lyrics__source { font-size: 11px; color: var(--text-dim); margin-top: -30vh; }
+
+/* The line being sung and the next, over a full-screen visualizer; clear of the player bar. */
+.viz-lyrics {
+  position: absolute;
+  left: 50%;
+  bottom: 150px;
+  z-index: 2;
+  width: min(90vw, 1200px);
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.9);
+}
+.viz-lyrics__now { font-size: clamp(22px, 2.6vw, 42px); font-weight: 700; color: #fff; min-height: 1.3em; }
+.viz-lyrics__next { font-size: clamp(15px, 1.6vw, 24px); font-weight: 600; color: rgba(255, 255, 255, 0.55); margin-top: 6px; min-height: 1.3em; }
 
 /* ---- the Music Visualizer, full screen (visualizer.js) ---- */
 

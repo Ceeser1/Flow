@@ -102,6 +102,20 @@ const SettingsPanel = {
         label: 'Show listening trends',
         desc: 'If disabled, your listening trend category will be hidden in the menu and the search.',
       }),
+      this._row({
+        key: 'lyricsOn',
+        label: 'Show lyrics',
+        desc: Store.phone
+          ? 'Below the buttons of the screen of the playing song, the line being sung lit. They come from LRCLIB (lrclib.net), through your Flow Server for its songs.'
+          : 'The Lyrics button next to Queue shows the lyrics of the playing song, the line being sung lit. They come from LRCLIB (lrclib.net), through your Flow Server for its songs.',
+      }),
+      Store.can('effects') ? this._row({
+        key: 'vizLyrics',
+        label: 'Show the lines in full-screen visualizers',
+        desc: 'The line being sung and the next one at the bottom of a full-screen visualizer, for songs whose lyrics have their times.',
+        sub: true,
+        when: () => Store.settings.lyricsOn !== false,
+      }) : null,
       // The phone's lists have no columns.
       Store.phone ? null : this._row({
         label: 'Show filterable columns for Songs',
@@ -617,7 +631,7 @@ const SettingsPanel = {
       name.textContent = n;
     }).catch(() => {});
     draw();
-    if (!this._outputWatched) {
+    if (!this._outputWatched && window.flow.onOutputChange) {
       this._outputWatched = true;
       window.flow.onOutputChange(() => this._refreshAll());
     }

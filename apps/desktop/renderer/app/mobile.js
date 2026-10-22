@@ -47,6 +47,7 @@ const Mobile = {
     this._orient();
     Store.onLibrary(() => this._drawTitle());
     $('pages').addEventListener('scroll', () => this._drawTitle(), { passive: true });
+    window.addEventListener('resize', () => this.fitLyrics());
     // The phone's Back (button or gesture); with nothing left to close, Flow goes to the background.
     if (window.flow.onBack) {
       window.flow.onBack(() => {
@@ -127,6 +128,8 @@ const Mobile = {
       h('div.mp__buttons', ...take('btnPrev', 'btnBack10', 'btnPlay', 'btnFwd10', 'btnNext')),
       h('div.mp__extras', ...take('btnShuffle', 'btnRepeat', 'btnFavourite', 'btnAddToPlaylist', 'btnSleep', 'btnVisualizer', 'btnOutput')),
       $('volWrap'),
+      // The lyrics (lyrics.js), scrolled down to below the buttons.
+      h('div.mp__lyrics.np-lyrics', { id: 'npLyrics', hidden: true }),
     ];
     clear(bar);
     bar.append(...parts);
@@ -156,6 +159,26 @@ const Mobile = {
     bar.classList.add('mp--open');
     document.body.classList.add('player-open');
     this._orient();
+    this.fitLyrics();
+  },
+
+  /**
+   * Now Playing with lyrics below its buttons: the cover keeps the size it
+   * has on a screen without them, so they are scrolled down to. Measured
+   * again when they come or go, when Now Playing opens and when the screen
+   * turns or changes size.
+   */
+  fitLyrics() {
+    const bar = $('player');
+    const frame = $('npLyrics');
+    if (!this.on || !frame) return;
+    bar.classList.remove('mp--lyrics');
+    bar.style.removeProperty('--np-cover');
+    if (frame.hidden || !bar.classList.contains('mp--open')) return;
+    const cover = parseFloat(getComputedStyle(bar).gridTemplateRows.split(' ')[1]);
+    if (!(cover > 0)) return;
+    bar.style.setProperty('--np-cover', `${cover}px`);
+    bar.classList.add('mp--lyrics');
   },
 
   collapsePlayer() {
@@ -167,7 +190,10 @@ const Mobile = {
     bar.style.transform = '';
     bar.classList.add('mp--leaving');
     document.body.classList.remove('player-open');
-    this._leaving = setTimeout(() => bar.classList.remove('mp--open', 'mp--leaving', 'mp--pulled'), this.SLIDE_MS);
+    this._leaving = setTimeout(() => {
+      bar.classList.remove('mp--open', 'mp--leaving', 'mp--pulled', 'mp--lyrics');
+      bar.scrollTop = 0;
+    }, this.SLIDE_MS);
     this._orient();
   },
 

@@ -14,6 +14,7 @@
 const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
 const { createPrivateStats } = require('@flow/core/client/privateStats');
+const { createLyricsClient } = require('@flow/core/client/lyrics');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const {
@@ -65,6 +66,11 @@ function start() {
   });
   const actions = createActions({
     remote, library, files: env.files, privateStats,
+  });
+  // A song's lyrics (4.0): the server's, else LRCLIB's through the page's
+  // fetch, which cannot name Flow as its User-Agent.
+  const lyricsClient = createLyricsClient({
+    remote, library, jsonFiles: env.jsonFiles, fetch: (...args) => fetch(...args), agent: false,
   });
 
   function coverDirs() {
@@ -274,6 +280,7 @@ function start() {
     onServerLive: on('server:live'),
     onSettingsChanged: on('settings:changed'),
     finishSong: notHere('Saving a download on the phone'),
+    lyrics: call((songId) => lyricsClient.get(songId)),
     wantCovers: call((ids) => {
       if (remote.active()) remote.wantCovers(ids);
     }),

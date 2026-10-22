@@ -25,6 +25,9 @@
 //                                      cannot play Ogg Vorbis: the iPhone) such a
 //                                      song as Ogg Opus, converted once (vorbis.js)
 //   GET  /api/songs/:id/peaks          { peaks }: its waveform, for an app's trim
+//   GET  /api/songs/:id/lyrics         { lyrics: { found, synced, plain, instrumental } }
+//                                      (only with the "lyrics" feature; lyrics.js), 502
+//                                      when LRCLIB cannot be reached
 //   POST /api/songs/:id/trim { start, end, base, cut }
 //                                      its file cut (only when /api/hello lists
 //                                      the "trim" feature): { song, rev } or
@@ -341,6 +344,7 @@ const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
 
 function createHttpServer({
   config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null, activity = null, backups = null,
+  lyrics = null,
 }) {
   const throttle = createThrottle();
   // What is noted about the profiles for the admins (activity.js); left out by tests that need none.
@@ -805,7 +809,7 @@ function createHttpServer({
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
       const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search'] : []), ...(live ? ['sessions'] : []),
-        ...(tools.ffmpeg() ? ['trim'] : [])];
+        ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
       };
@@ -885,6 +889,18 @@ function createHttpServer({
       const peaks = await library.songPeaks(m[1]);
       if (!peaks) throw new HttpError(404, 'That song is not on the server.');
       return sendJson(res, 200, { peaks });
+    }
+    m = /^\/api\/songs\/([\w-]{1,64})\/lyrics$/.exec(p);
+    if (m && lyrics && is('GET', /./)) {
+      const song = library.data.songs.find((s) => s.id === m[1]);
+      if (!song) throw new HttpError(404, 'That song is not on the server.');
+      let found;
+      try {
+        found = await lyrics.get(song);
+      } catch {
+        throw new HttpError(502, 'LRCLIB (lrclib.net), where the lyrics come from, cannot be reached right now.');
+      }
+      return sendJson(res, 200, { lyrics: found });
     }
     m = /^\/api\/songs\/([\w-]{1,64})\/trim$/.exec(p);
     if (m && req.method === 'POST') {

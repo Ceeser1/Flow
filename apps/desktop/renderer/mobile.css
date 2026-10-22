@@ -345,6 +345,44 @@ body.mobile .mp--open #btnQueue {
 body.mobile .mp--open #btnQueue span { display: none; }
 body.mobile .mp--open #btnQueue .queue-btn__img { width: 22px; height: 22px; opacity: 0.72; }
 
+/* The lyrics below the buttons (lyrics.js), scrolled down to: the cover keeps
+   its height without them (Mobile.fitLyrics), the screen scrolls. */
+body.mobile .mp:not(.mp--open) .mp__lyrics,
+body.mobile .mp--open:not(.mp--lyrics) .mp__lyrics { display: none !important; }
+body.mobile .player.mp--open.mp--lyrics {
+  grid-template-rows: auto var(--np-cover) auto auto auto auto auto auto auto auto;
+  grid-template-areas:
+    "collapse from ."
+    "cover cover cover"
+    "text text queue"
+    "session session session"
+    "track track track"
+    "times times times"
+    "buttons buttons buttons"
+    "extras extras extras"
+    "vol vol vol"
+    "lyrics lyrics lyrics";
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+body.mobile .mp--open .np-lyrics {
+  grid-area: lyrics;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 28px;
+  padding: 14px 16px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+}
+body.mobile .np-lyrics__head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 700; color: var(--text-dim); }
+body.mobile .np-lyrics__expand { font-size: 14px; }
+body.mobile .np-lyrics__lines { display: flex; flex-direction: column; gap: 6px; }
+body.mobile .np-lyrics__line { font-size: 19px; font-weight: 600; line-height: 1.35; color: #8d8d98; }
+body.mobile .np-lyrics__line--pause { color: #5c5c66; }
+body.mobile .np-lyrics__line--now { color: #fff; }
+body.mobile .modal--lyrics { width: 100%; background: var(--bg); }
+
 /* Only while controlling another device's volume: the phone's own is its buttons. */
 body.mobile .mp--open #volWrap { grid-area: vol; display: none; }
 body.mobile .mp--open.player--remote #volWrap:not([hidden]) { display: flex; width: auto; gap: 10px; }
@@ -671,6 +709,9 @@ body.mobile .pl-head__row .toggle,
 body.mobile .pl-head__row .btn--play { height: 44px; border-radius: 22px; font-size: 15px; }
 /* Download: only its icon, golden while the playlist is kept on the phone. */
 body.mobile #plOffline, body.mobile #plUpdate { width: 44px; padding: 0; justify-content: center; }
+/* Update sits beside Share, in the title's row (playlist.js). */
+body.mobile .pl-head__titlerow #plUpdate { margin-left: auto; flex: none; height: 44px; }
+body.mobile .pl-head__titlerow #plUpdate + #plShare { margin-left: -6px; }
 body.mobile #plOffline .icon, body.mobile #plUpdate .icon { width: 20px; height: 20px; }
 body.mobile #plOffline.toggle--on { color: #f5be3c; border-color: rgba(245, 190, 60, 0.5); background: rgba(245, 190, 60, 0.16); }
 body.mobile #plPlay { margin-left: auto; padding: 0 24px 0 20px; }

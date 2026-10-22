@@ -111,6 +111,8 @@ contextBridge.exposeInMainWorld('flow', {
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),
   finishSong: (job) => call('song:finish', job),
   lookupInfo: (song) => call('song:lookupInfo', song),
+  // A song's lyrics (4.0): { found, synced: [{ t, text }] | null, plain, instrumental }.
+  lyrics: (songId) => call('song:lyrics', songId),
   // Covers: files in Music\FlowPlayer\Covers (Store.coverSrc).
   wantCovers: (ids) => call('covers:want', ids),
   coverStats: () => call('covers:stats'),

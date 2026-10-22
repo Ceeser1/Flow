@@ -369,6 +369,10 @@ const DEFAULTS = {
   normalize: true,
   // The menu's Your listening trend entry and its lists.
   showTrend: true,
+  // Lyrics (4.0): the player's Lyrics and the phone's below Now Playing, and
+  // the line playing over a full-screen visualizer.
+  lyricsOn: true,
+  vizLyrics: true,
   // The song lists' optional columns (All Songs, the playlists), each one
   // sortable and searched: Mix as before 3.6.3, Album, Genre and Info
   // (subGenre) when asked.
@@ -538,7 +542,7 @@ function clean(raw) {
   delete s.flashTriggers;
   delete s.flashRange;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'colMix', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'lyricsOn', 'vizLyrics', 'colMix', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;

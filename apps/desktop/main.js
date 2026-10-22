@@ -38,6 +38,7 @@ const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
 const { createBackupStore, mergeRestore } = require('@flow/core/backup');
+const { createLyricsClient } = require('@flow/core/client/lyrics');
 
 let mainWindow = null;
 let downloadToken = null;
@@ -253,6 +254,10 @@ handle('covers:clear', () => remote.clearCoverCache());
 // Add Songs: a song's cover as soon as it is downloaded, before it is saved.
 covers.onStaged((info) => sendToWindow('covers:staged', info));
 handle('covers:staged', (cachePath) => covers.stagedCover(String(cachePath || '')));
+
+// A song's lyrics (4.0): the server's for its songs, LRCLIB's for the others.
+const lyricsClient = createLyricsClient({ remote, library, jsonFiles: env.jsonFiles });
+handle('song:lyrics', (songId) => lyricsClient.get(songId));
 
 // Backups (4.0, @flow/core/backup): library.json's data once a week, the
 // last 6 kept in Flow's folder (backups), never the songs' files.

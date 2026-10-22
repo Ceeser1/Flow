@@ -263,7 +263,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -769,10 +769,11 @@ function createRemote(env) {
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
         const pin = Array.isArray(hello.features) && hello.features.includes('pin');
         const statistics = Array.isArray(hello.features) && hello.features.includes('statistics');
+        const lyrics = Array.isArray(hello.features) && hello.features.includes('lyrics');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics, lyrics,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -1243,6 +1244,21 @@ function createRemote(env) {
   }
 
   /** A server song's waveform (the server draws it). */
+  /**
+   * A server song's lyrics, as the server keeps them (4.0): { found, synced,
+   * plain, instrumental }. Null when the server cannot say (out of reach, or
+   * from before lyrics): the app then looks them up itself.
+   */
+  async function songLyrics(songId) {
+    if (!active() || status.state !== 'online' || !conn.lyrics) return null;
+    try {
+      return (await call(`/api/songs/${encodeURIComponent(songId)}/lyrics`, { timeout: 30000 })).lyrics || null;
+    } catch (err) {
+      if (err instanceof OfflineError) return null;
+      throw err;
+    }
+  }
+
   async function songPeaks(songId) {
     if (!active() || status.state !== 'online') throw new Error('The server cannot be reached.');
     return (await call(`/api/songs/${encodeURIComponent(songId)}/peaks`, { timeout: 120000 })).peaks;
@@ -3130,7 +3146,7 @@ function createRemote(env) {
   return {
     init, active, reconfigure, setSecret, stop, adoptToken,
     coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
-    trimSong, trimmedHere, songPeaks, newCutId,
+    trimSong, trimmedHere, songPeaks, songLyrics, newCutId,
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, switchServer, forgetServer, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
     admin, changeServerPassword, removeTracked,
