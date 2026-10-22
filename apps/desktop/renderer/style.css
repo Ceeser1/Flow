@@ -2456,6 +2456,19 @@ div.import__frame-head { cursor: default; }
 .queue__remove { visibility: hidden; }
 .queue__row:hover .queue__remove { visibility: visible; }
 
+/* ---- a smart playlist's rules (rulesEditor.js) ---- */
+
+.modal--rules { width: min(680px, 100%); }
+.rules__match { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; }
+.rules__list { display: flex; flex-direction: column; gap: 8px; }
+.rules__row { display: grid; grid-template-columns: 1.1fr 1.1fr 1.3fr auto; gap: 8px; align-items: center; }
+.rules__row .select, .rules__row .input { width: 100%; min-width: 0; }
+.rules__add { align-self: flex-start; margin: 10px 0 4px; }
+.rules__end { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; }
+.rules__field { display: flex; align-items: center; gap: 8px; }
+.rules__limit { width: 90px; }
+.rules__count { margin-top: 14px; font-weight: 600; color: var(--text-bright); }
+
 /* ---- the Lyrics drawer (lyrics.js) ---- */
 
 .modal--lyrics { width: min(520px, 100%); background: rgba(28, 28, 32, 0.92); }

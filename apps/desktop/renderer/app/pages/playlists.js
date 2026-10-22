@@ -15,6 +15,14 @@ const PlaylistsPage = {
   init() {
     const box = $('newPlaylistName');
     $('newPlaylistBtn').onclick = () => this.create();
+    // A smart playlist (4.0): named in the box or in its rules' popup.
+    $('newSmartBtn').onclick = async () => {
+      const p = await RulesEditor.open({ name: $('newPlaylistName').value });
+      if (!p) return;
+      $('newPlaylistName').value = '';
+      toast(`Smart playlist "${p.name}" created`, 'success');
+      this._whenListed(p.id, () => Nav.openPlaylist(p.id));
+    };
     box.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this.create();
     });
@@ -31,6 +39,13 @@ const PlaylistsPage = {
     Store.onServer(() => {
       if (Nav.page === 'playlists') this.render();
     });
+    this._drawSmartButton();
+    Store.onServer(() => this._drawSmartButton());
+  },
+
+  /** Smart playlists: here, or on a Flow Server that keeps their rules (4.0). */
+  _drawSmartButton() {
+    $('newSmartBtn').hidden = !!Store.server.on && !Store.server.smartPlaylists;
   },
 
   show() {
@@ -207,7 +222,10 @@ const PlaylistsPage = {
   _moreButtons(p) {
     if (p.isFavourites) return null;
     return [
-      iconButton('act.act--green', Icons.plus, 'Add Songs', () => Nav.openPlaylist('all', { pickFor: p.id })),
+      // A smart playlist's songs come from its rules.
+      p.isRuled
+        ? iconButton('act.act--green', Icons.pulse, 'Edit Rules', () => RulesEditor.open({ playlist: Store.playlist(p.id) }))
+        : iconButton('act.act--green', Icons.plus, 'Add Songs', () => Nav.openPlaylist('all', { pickFor: p.id })),
       iconButton('act.act--grey', Icons.pencil, 'Rename', () => {
         if (document.body.classList.contains('mobile')) {
           this.renameDialog(p);
@@ -238,10 +256,11 @@ const PlaylistsPage = {
       message: `Do you really want to delete the playlist "${p.name}"?`,
       confirmLabel: 'Delete',
       danger: true,
-      checkbox: { label: 'Also delete all songs that exist only in this playlist', checked: false },
+      // A smart playlist's songs are other lists' and the library's.
+      checkbox: p.isRuled ? null : { label: 'Also delete all songs that exist only in this playlist', checked: false },
     });
     if (!answer) return;
-    const withSongs = !!answer.checked;
+    const withSongs = !p.isRuled && !!answer.checked;
     await attempt(async () => {
       const r = await window.flow.deletePlaylist(p.id, withSongs);
       let text = `Playlist "${p.name}" deleted`;

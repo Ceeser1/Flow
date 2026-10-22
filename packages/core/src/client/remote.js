@@ -124,8 +124,9 @@ function createRemote(env) {
   // the server answers "nothing new" while its revision is the same: a copy of
   // another format is shown at start but fetched whole again. Raise it whenever
   // the songs or playlists gain a field the server sends (3: addedBy, profileNames;
-  // 4: listening, 3.5; 5: statistics, 3.6; 6: album, genre, subGenre, infoLooked, 3.6.3).
-  const CACHE_FORMAT = 6;
+  // 4: listening, 3.5; 5: statistics, 3.6; 6: album, genre, subGenre, infoLooked, 3.6.3;
+  // 7: a playlist's rules, 4.0).
+  const CACHE_FORMAT = 7;
 
   function emptySync(serverId = '') {
     return {
@@ -263,7 +264,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, smartPlaylists: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -372,6 +373,9 @@ function createRemote(env) {
       serverId: sync.serverId,
       serverName: sync.serverName,
       statistics: status.state === 'online' && conn.statistics,
+      // Smart playlists (4.0): a server from before keeps no rules. Known while
+      // it was reached once (the setting is kept while away from it).
+      smartPlaylists: !!conn.smartPlaylists,
       tracked: tracked.list(),
     };
   }
@@ -770,10 +774,11 @@ function createRemote(env) {
         const pin = Array.isArray(hello.features) && hello.features.includes('pin');
         const statistics = Array.isArray(hello.features) && hello.features.includes('statistics');
         const lyrics = Array.isArray(hello.features) && hello.features.includes('lyrics');
+        const smartPlaylists = Array.isArray(hello.features) && hello.features.includes('smartPlaylists');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics, lyrics,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics, lyrics, smartPlaylists,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);

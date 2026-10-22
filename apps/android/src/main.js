@@ -181,6 +181,8 @@ function start() {
     onFolderScanned: nothing,
 
     createPlaylist: call((name) => actions.createPlaylist(name)),
+    createSmartPlaylist: call((name, rules) => actions.createSmartPlaylist({ name, rules })),
+    setPlaylistRules: call((id, rules) => actions.setPlaylistRules({ id, rules })),
     renamePlaylist: call((id, name) => actions.renamePlaylist({ id, name })),
     deletePlaylist: call((id, deleteSongs = false) => actions.deletePlaylist({ id, deleteSongs })),
     setPlaylistShared: call((id, shared) => actions.setPlaylistShared({ id, shared })),

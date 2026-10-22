@@ -381,7 +381,7 @@ function pickPlaylists({ title = 'Add to Playlist', subtitle = '', lockedIds = [
 
     const draw = () => {
       clear(list);
-      const lists = Store.sortedPlaylists();
+      const lists = Store.editablePlaylists();
       if (!lists.length) {
         list.appendChild(h('div.picker__empty', 'No playlists yet. Create one above.'));
         return;

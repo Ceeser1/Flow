@@ -65,8 +65,12 @@ const PlaylistPage = {
     };
     // An imported playlist's Update (4.0): its source read again (AddPage.updatePlaylist).
     $('plUpdate').onclick = () => AddPage.updatePlaylist(Store.playlist(this.id));
+    $('plRules').onclick = () => RulesEditor.open({ playlist: Store.playlist(this.id) });
     // The phone's row of buttons has no room left: it goes beside Share.
-    if (Store.uiMode === 'mobile') $('plShare').before($('plUpdate'));
+    if (Store.uiMode === 'mobile') {
+      $('plShare').before($('plUpdate'));
+      $('plShare').before($('plRules'));
+    }
     $('plShare').onclick = () => {
       const p = Store.playlist(this.id);
       if (!p) return;
@@ -146,8 +150,15 @@ const PlaylistPage = {
     const view = this._view(id);
     let rows = Store.rowsOf(id)
       .filter((r) => Util.matches(view.filter, r.song.title, r.song.artist, r.song.mix, r.song.album, r.song.genre, r.song.subGenre));
-    if (!SmartLists.isSmart(id)) rows = rows.sort((a, b) => b.addedAt - a.addedAt);
+    if (!this._picksItself(id)) rows = rows.sort((a, b) => b.addedAt - a.addedAt);
     return Util.sortRows(rows, view.sort, (r, k) => this._sortValue(r, k));
+  },
+
+  /** A listening trend list or a smart playlist: its songs are picked for it, in its own order, never by hand. */
+  _picksItself(id) {
+    if (SmartLists.isSmart(id)) return true;
+    const p = Store.playlist(id);
+    return !!(p && p.isRuled);
   },
 
   /** The names of your own playlists holding a song, as one text (a listening trend list's From Playlist column). */
@@ -166,7 +177,14 @@ const PlaylistPage = {
     const all = Store.rowsOf(this.id);
     const total = all.reduce((sum, r) => sum + (r.song.duration || 0), 0);
     const by = p.isShared && p.ownerName ? `Shared by ${p.ownerName} · ` : '';
-    $('plMeta').textContent = `${by}${Util.plural(all.length, 'song')} · ${Util.fmtClock(total)}`;
+    $('plMeta').textContent = `${by}${p.isRuled ? 'Smart playlist · ' : ''}${Util.plural(all.length, 'song')} · ${Util.fmtClock(total)}`;
+    $('plMeta').title = p.isRuled ? PlaylistRules.describe(p.rules) : '';
+    $('plRules').hidden = !p.isRuled;
+    if (p.isRuled) {
+      $('plRules').title = `${PlaylistRules.describe(p.rules)}. Click to change the rules.`;
+      $('plRules').innerHTML = Store.uiMode === 'mobile' ? Icons.pulse : `${Icons.pulse}<span>Edit Rules</span>`;
+      $('plRules').setAttribute('aria-label', 'Edit Rules');
+    }
     $('plSearch').placeholder = `Search in ${p.name}`;
 
     const target = this.pickFor ? Store.playlist(this.pickFor) : null;
@@ -187,7 +205,7 @@ const PlaylistPage = {
   _drawShare() {
     const p = Store.playlist(this.id);
     const btn = $('plShare');
-    const mine = !!p && !p.isAll && !p.isFrom && !p.isFavourites && !p.isSmart && !p.isShared && !p.isDevice;
+    const mine = !!p && !p.isAll && !p.isFrom && !p.isFavourites && !p.isSmart && !p.isShared && !p.isDevice && !p.isRuled;
     const can = !!p && Store.canShare() && (mine || p.isShared);
     btn.hidden = !can;
     if (!can) return;
@@ -228,7 +246,7 @@ const PlaylistPage = {
     const btn = $('plOffline');
     const note = $('plOfflineNote');
     // A playlist another profile shares can be downloaded once it is followed.
-    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && !p.isDevice && (!p.isShared || Store.isFollowing(p.id));
+    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && !p.isRuled && !p.isDevice && (!p.isShared || Store.isFollowing(p.id));
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;
@@ -268,8 +286,9 @@ const PlaylistPage = {
       else if (favourites) $('plEmptyText').textContent = 'No favourites yet. Click the star on any song to add it here.';
       else if (smart) $('plEmptyText').textContent = 'Nothing here yet. This list fills itself as you listen to the songs in your playlists.';
       else if (p.isDevice) $('plEmptyText').textContent = `No songs on ${Store.here} yet. A song's or a playlist's Download keeps it here.`;
+      else if (p.isRuled) $('plEmptyText').textContent = 'No song matches its rules yet. Edit Rules changes them.';
       else $('plEmptyText').textContent = 'This playlist is empty.';
-      $('plEmptyAction').hidden = smart || favourites || !!p.isShared || !!p.isDevice;
+      $('plEmptyAction').hidden = smart || favourites || !!p.isShared || !!p.isDevice || !!p.isRuled;
       $('plEmptyAction').textContent = this.id === 'all' ? 'Add Songs' : 'Add songs from All Songs';
     }
     $('plFiltered').textContent = view.filter && !empty ? `Showing ${rows.length} of ${count}` : '';
@@ -496,13 +515,13 @@ const PlaylistPage = {
     ];
     if (Store.isAllSongs(listId)) {
       buttons.push(iconButton('act.act--red', Icons.x, 'Delete Song', () => this.deleteSong(song)));
-    } else if (SmartLists.isSmart(listId)) {
+    } else if (this._picksItself(listId)) {
       buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist(s)', () => this.removeFromLists(song)));
     } else if (listId !== FAVOURITES_ID && !readOnly) {
       buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist', () => this.removeFromList(song)));
     }
     // All Songs and the listening trend lists: put the song into playlists from here, the leftmost button.
-    if (Store.isAllSongs(listId) || SmartLists.isSmart(listId)) buttons.unshift(SongActions.playlistButton(song));
+    if (Store.isAllSongs(listId) || this._picksItself(listId)) buttons.unshift(SongActions.playlistButton(song));
     return buttons;
   },
 

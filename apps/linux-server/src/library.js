@@ -65,7 +65,7 @@ const UPLOADS_DIR = 'Uploads';
 const DOWNLOADS_DIR = 'Downloads';
 // Commands an app may send. addSong is only ever the app's own preview of an
 // upload; the upload itself adds the song here.
-const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource',
+const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource', 'setPlaylistRules',
   'addSongToPlaylists', 'addSongsToPlaylist', 'removeFromPlaylist', 'deleteSong', 'editSong',
   'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist']);
 

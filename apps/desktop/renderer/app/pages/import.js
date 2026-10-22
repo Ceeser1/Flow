@@ -556,7 +556,7 @@ const ImportPanel = {
     const target = this._updateTarget();
     if (target) return target;
     const name = this._finalName().toLowerCase();
-    return Store.library.playlists.find((p) => p.name.toLowerCase() === name) || null;
+    return Store.library.playlists.find((p) => !p.isRuled && p.name.toLowerCase() === name) || null;
   },
 
   /** Local files (see optionalList) only make a playlist when "Create new Playlist" is ticked. */

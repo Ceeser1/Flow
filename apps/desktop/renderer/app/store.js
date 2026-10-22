@@ -40,9 +40,15 @@ const Store = {
     this.library = lib;
     // The songs here that are not the server's (Downloaded Songs) can be played and queued too.
     this.songsById = new Map([...lib.songs, ...(lib.deviceSongs || [])].map((s) => [s.id, s]));
-    this.smart = SmartLists.compute(lib.songs, lib.playlists);
+    // Smart playlists (4.0): their songs are the ones their rules pick, now.
+    for (const p of lib.playlists) {
+      if (!p.rules) continue;
+      p.entries = PlaylistRules.evaluate(lib.songs, p.rules).map((s) => ({ songId: s.id, addedAt: s.addedAt }));
+      p.isRuled = true;
+    }
+    this.smart = SmartLists.compute(lib.songs, lib.playlists.filter((p) => !p.isRuled));
     this.holding = new Map();
-    for (const p of this.sortedPlaylists()) {
+    for (const p of this.editablePlaylists()) {
       for (const e of p.entries) {
         if (!this.holding.has(e.songId)) this.holding.set(e.songId, []);
         this.holding.get(e.songId).push({ id: p.id, name: p.name });
@@ -266,6 +272,11 @@ const Store = {
   /** User playlists by name, A to Z. */
   sortedPlaylists() {
     return this.library.playlists.slice().sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
+  /** The ones songs can be put into by hand: not the smart ones (their rules pick their songs). */
+  editablePlaylists() {
+    return this.sortedPlaylists().filter((p) => !p.isRuled);
   },
 
   /** Songs of a playlist as rows: the song plus when it was added to this list. */

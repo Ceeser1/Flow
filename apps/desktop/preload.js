@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('flow', {
   onFolderScanned: (fn) => ipcRenderer.on('library:scanned', (_e, result) => fn(result)),
 
   createPlaylist: (name) => call('library:createPlaylist', name),
+  // Smart playlists (4.0): rules { match, conditions, sort, limit } (libraryModel cleanRules).
+  createSmartPlaylist: (name, rules) => call('library:createSmartPlaylist', { name, rules }),
+  setPlaylistRules: (id, rules) => call('library:setPlaylistRules', { id, rules }),
   renamePlaylist: (id, name) => call('library:renamePlaylist', { id, name }),
   deletePlaylist: (id, deleteSongs = false) => call('library:deletePlaylist', { id, deleteSongs }),
   setPlaylistShared: (id, shared) => call('library:setPlaylistShared', { id, shared }),

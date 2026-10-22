@@ -273,6 +273,8 @@
             <input id="newPlaylistName" class="input input--big" type="text" maxlength="80"
                    placeholder="Name" autocomplete="off" />
             <button id="newPlaylistBtn" class="btn btn--primary btn--big" type="button">Add new playlist</button>
+            <button id="newSmartBtn" class="btn btn--big" type="button"
+                    title="A playlist that fills itself with the songs matching its rules">Smart playlist</button>
           </div>
           <div id="newPlaylistError" class="form-error"></div>
         </div>
@@ -340,6 +342,7 @@
             <button id="plOffline" class="toggle" type="button" aria-pressed="false" hidden
                     title="Keep this playlist's songs on this computer, to play without the server"></button>
             <span id="plOfflineNote" class="pl-meta" hidden></span>
+            <button id="plRules" class="toggle" type="button" hidden title="Change the rules that pick this playlist's songs"></button>
             <button id="plUpdate" class="toggle" type="button" hidden
                     title="Download the songs added to this playlist's source since it was imported"></button>
           </div>
@@ -447,6 +450,7 @@
 <script src="app/queue.js"></script>
 <script src="app/smartLists.js"></script>
 <script src="app/autoDj.js"></script>
+<script src="app/playlistRules.js"></script>
 <script src="app/statistics.js"></script>
 <script src="app/icons.js"></script>
 <script src="app/dom.js"></script>
@@ -456,6 +460,7 @@
 <script src="app/touchList.js"></script>
 <script src="app/trim.js"></script>
 <script src="app/songEdit.js"></script>
+<script src="app/rulesEditor.js"></script>
 <script src="app/spectrum.js"></script>
 <script src="app/tempo.js"></script>
 <script src="app/notes.js"></script>

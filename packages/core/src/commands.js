@@ -51,6 +51,7 @@ const TYPES = {
       // becomes "Chill (2)" rather than getting lost.
       const p = model.createPlaylist(d, model.freePlaylistName(d, c.name), id, c.at);
       if (c.source) model.setPlaylistSource(d, id, c.source);
+      if (c.rules) model.setPlaylistRules(d, id, c.rules);
       return { value: p.id };
     },
   },
@@ -106,6 +107,14 @@ const TYPES = {
     run(d, c) {
       if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
       model.setPlaylistSource(d, str(c.playlistId), c.source);
+      return {};
+    },
+  },
+  setPlaylistRules: {
+    keys: (c) => [`p:${c.playlistId}:rules`],
+    run(d, c) {
+      if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
+      model.setPlaylistRules(d, str(c.playlistId), c.rules || null);
       return {};
     },
   },

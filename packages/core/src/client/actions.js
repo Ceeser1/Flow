@@ -36,6 +36,28 @@ function createActions({
     return model.playlistById(remote.view(), id);
   }
 
+  /** A smart playlist (4.0): its songs are the ones its rules pick (playlistRules.js in the window). */
+  function createSmartPlaylist({ name, rules }) {
+    const clean = model.cleanRules(rules);
+    if (!clean) throw new Error('A smart playlist needs its rules.');
+    if (!remote.active()) {
+      return library.mutate((d) => {
+        const p = model.createPlaylist(d, name, library.newId());
+        return model.setPlaylistRules(d, p.id, clean);
+      });
+    }
+    const name2 = model.checkPlaylistName(remote.view(), name);
+    const id = library.newId();
+    remote.command('createPlaylist', { playlistId: id, name: name2, rules: clean });
+    return model.playlistById(remote.view(), id);
+  }
+
+  function setPlaylistRules({ id, rules }) {
+    const clean = model.cleanRules(rules);
+    if (!clean) throw new Error('A smart playlist needs its rules.');
+    return change((d) => model.setPlaylistRules(d, id, clean), 'setPlaylistRules', { playlistId: id, rules: clean });
+  }
+
   function renamePlaylist({ id, name }) {
     return change((d) => model.renamePlaylist(d, id, name), 'renamePlaylist', { playlistId: id, name });
   }
@@ -194,6 +216,8 @@ function createActions({
   return {
     currentLibrary,
     createPlaylist,
+    createSmartPlaylist,
+    setPlaylistRules,
     renamePlaylist,
     deletePlaylist,
     setPlaylistShared,

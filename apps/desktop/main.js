@@ -316,6 +316,8 @@ ipcMain.on('settings:setSync', (event, patch) => {
 // Each change goes to the Local Files library, or with a server to the
 // server as a command (@flow/core/client/actions, shared with the Android app).
 handle('library:createPlaylist', (name) => actions.createPlaylist(name));
+handle('library:createSmartPlaylist', (arg) => actions.createSmartPlaylist(arg));
+handle('library:setPlaylistRules', (arg) => actions.setPlaylistRules(arg));
 handle('library:renamePlaylist', (arg) => actions.renamePlaylist(arg));
 handle('library:deletePlaylist', (arg) => actions.deletePlaylist(arg));
 handle('library:setPlaylistShared', (arg) => actions.setPlaylistShared(arg));

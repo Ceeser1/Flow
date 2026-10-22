@@ -708,11 +708,13 @@ body.mobile .pl-meta { flex: 1 1 100%; font-size: 14px; }
 body.mobile .pl-head__row .toggle,
 body.mobile .pl-head__row .btn--play { height: 44px; border-radius: 22px; font-size: 15px; }
 /* Download: only its icon, golden while the playlist is kept on the phone. */
-body.mobile #plOffline, body.mobile #plUpdate { width: 44px; padding: 0; justify-content: center; }
+body.mobile #plOffline, body.mobile #plUpdate, body.mobile #plRules { width: 44px; padding: 0; justify-content: center; }
 /* Update sits beside Share, in the title's row (playlist.js). */
-body.mobile .pl-head__titlerow #plUpdate { margin-left: auto; flex: none; height: 44px; }
-body.mobile .pl-head__titlerow #plUpdate + #plShare { margin-left: -6px; }
-body.mobile #plOffline .icon, body.mobile #plUpdate .icon { width: 20px; height: 20px; }
+body.mobile .pl-head__titlerow #plUpdate,
+body.mobile .pl-head__titlerow #plRules { margin-left: auto; flex: none; height: 44px; }
+body.mobile .pl-head__titlerow #plUpdate + #plRules,
+body.mobile .pl-head__titlerow :is(#plUpdate, #plRules) + #plShare { margin-left: -6px; }
+body.mobile #plOffline .icon, body.mobile #plUpdate .icon, body.mobile #plRules .icon { width: 20px; height: 20px; }
 body.mobile #plOffline.toggle--on { color: #f5be3c; border-color: rgba(245, 190, 60, 0.5); background: rgba(245, 190, 60, 0.16); }
 body.mobile #plPlay { margin-left: auto; padding: 0 24px 0 20px; }
 body.mobile .pl-search-row { flex-wrap: wrap; gap: 6px; }
@@ -1013,3 +1015,8 @@ body.mobile .admin__rule { font-size: 13px; }
 body.mobile .admin__rule { flex-direction: column; align-items: stretch; gap: 6px; }
 body.mobile .admin__form { max-width: none; }
 body.mobile .modal--admin-ips { width: auto; }
+
+/* A smart playlist's rules: field and comparison on one line, the value under them. */
+body.mobile .rules__row { grid-template-columns: 1fr 1fr auto; }
+body.mobile .rules__row > :nth-child(3) { grid-column: 1 / 3; grid-row: 2; }
+body.mobile .rules__row > :nth-child(4) { grid-column: 3; grid-row: 1; }

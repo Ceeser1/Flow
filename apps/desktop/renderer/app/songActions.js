@@ -96,7 +96,7 @@ const SongActions = {
       this.pickerAnchor = null;
       if (again || !above) return;
     }
-    const lists = Store.sortedPlaylists();
+    const lists = Store.editablePlaylists();
     const had = new Set(lists.filter((p) => p.entries.some((e) => e.songId === song.id)).map((p) => p.id));
     const boxes = new Map();
     const rows = lists.map((p) => {
@@ -134,7 +134,7 @@ const SongActions = {
 
   /** The phone's Add to Playlists: the same list with boxes, as a sheet with Apply. */
   _pickPlaylistsSheet(song) {
-    const lists = Store.sortedPlaylists();
+    const lists = Store.editablePlaylists();
     const had = new Set(lists.filter((p) => p.entries.some((e) => e.songId === song.id)).map((p) => p.id));
     const boxes = new Map();
     const rows = lists.map((p) => {
