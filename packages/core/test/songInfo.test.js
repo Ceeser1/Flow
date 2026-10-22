@@ -1,7 +1,8 @@
 'use strict';
 
-// Albums and genres: Apple's search results matched to a song, the filler
-// that looks up a library's songs, and how the library keeps what it finds.
+// Albums and genres: Apple's and Discogs' search results matched to a song,
+// the filler that looks up a library's songs, and how the library keeps what
+// it finds.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -60,11 +61,94 @@ test('a lookup asks Apple by artist and title and fails when Apple cannot be rea
     asked = url;
     return { ok: true, json: async () => ({ results: READY }) };
   };
-  const got = await info.lookupInfo({ artist: 'Marc Korn', title: 'Ready or Not', duration: 156 }, { fetch });
+  const got = await info.lookupApple({ artist: 'Marc Korn', title: 'Ready or Not', duration: 156 }, { fetch });
   assert.deepEqual(got, { album: 'Ready Or Not', genre: 'Dance' });
   assert.match(asked, /^https:\/\/itunes\.apple\.com\/search\?.*entity=song.*term=Marc%20Korn%20Ready%20or%20Not$/);
-  assert.deepEqual(await info.lookupInfo({ artist: 'X', title: 'Nothing' }, { fetch }), { album: '', genre: '' });
-  await assert.rejects(info.lookupInfo({ title: 'X' }, { fetch: async () => ({ ok: false, status: 503 }) }), /503/);
+  assert.deepEqual(await info.lookupApple({ artist: 'X', title: 'Nothing' }, { fetch }), { album: '', genre: '' });
+  await assert.rejects(info.lookupApple({ title: 'X' }, { fetch: async () => ({ ok: false, status: 503 }) }), /503/);
+});
+
+const disc = (title, format, genre, style, id) => ({
+  type: 'master', title, format, genre, style, resource_url: `https://api.discogs.com/masters/${id}`,
+});
+// Discogs' masters holding "Numb" by Linkin Park, 2026-10-22 (some of them).
+const NUMB_DISCOGS = [
+  disc('Linkin Park - From The "Live In Texas" Album', ['CDr', 'Promo'], ['Rock'], ['Alternative Rock', 'Nu Metal'], 587114),
+  disc('Linkin Park - Numb', ['CD', 'Single'], ['Rock'], ['Alternative Rock', 'Nu Metal'], 74535),
+  disc('Linkin Park - Papercuts', ['File', 'AAC', 'Compilation'], ['Rock'], ['Alternative Rock', 'Nu Metal'], 1),
+  disc('Linkin Park - Road To Revolution: Live At Milton Keynes', ['CD', 'Album', 'DVD'], ['Rock'], ['Alternative Rock', 'Nu Metal'], 2),
+  disc('Linkin Park - Meteora', ['CD', 'Album', 'Enhanced'], ['Rock'], ['Nu Metal'], 3),
+  disc('Various - Rock Hits 2003', ['CD', 'Compilation'], ['Rock'], ['Pop Rock'], 4),
+];
+
+test('Discogs\' result for a song: an artist in common, the album as it came out over singles, live takes and compilations', () => {
+  assert.equal(info.pickDiscogs({ artist: 'Linkin Park', title: 'Numb' }, NUMB_DISCOGS).title, 'Linkin Park - Meteora');
+  assert.equal(info.pickDiscogs({ artist: 'Linkin Park', title: 'Numb' }, NUMB_DISCOGS.slice(0, 3)).title, 'Linkin Park - Numb');
+  // Discogs' "Broiler (2)": the second artist of that name, still Broiler.
+  assert.ok(info.scoreDiscogs({ artist: 'Broiler, Tessa Odden' }, disc('Broiler (2) - The Beginning', ['Album'], [], [], 5)) > 0);
+  assert.equal(info.pickDiscogs({ artist: 'Moby', title: 'Numb' }, NUMB_DISCOGS), null);
+  // A sampler of many is never the song's.
+  assert.equal(info.pickDiscogs({ artist: 'Linkin Park', title: 'Numb' }, NUMB_DISCOGS.slice(5)), null);
+});
+
+test('a Discogs lookup: masters first, else releases; the first style is the Info; the album only from a tracklist holding the song', async () => {
+  const asked = [];
+  const answers = {
+    master: { results: [] },
+    release: { results: [disc('Headhunterz - Dragonborn', ['File', 'MP3', 'Single'], ['Electronic'], ['Hardstyle', 'Euphoric Hardstyle'], 865172)] },
+    'masters/865172': { title: 'Dragonborn', tracklist: [{ title: 'Dragonborn', duration: '5:35' }] },
+  };
+  const fetch = async (url, init) => {
+    asked.push(url);
+    assert.match(init.headers['User-Agent'], /^Flow /);
+    const key = url.includes('/database/search') ? new URL(url).searchParams.get('type') : url.replace('https://api.discogs.com/', '');
+    return { ok: true, json: async () => answers[key] };
+  };
+  const song = { artist: 'Headhunterz', title: 'Dragonborn' };
+  assert.deepEqual(await info.lookupDiscogs(song, { fetch, gapMs: 0 }), { album: 'Dragonborn', genre: 'Electronic', subGenre: 'Hardstyle' });
+  assert.equal(asked.length, 3);
+  assert.match(asked[0], /\/database\/search\?type=master&.*track=Dragonborn&artist=Headhunterz$/);
+  // An album known: the tracklist is not asked for.
+  asked.length = 0;
+  assert.deepEqual(await info.lookupDiscogs({ ...song, album: 'Mine' }, { fetch, gapMs: 0 }), { album: '', genre: 'Electronic', subGenre: 'Hardstyle' });
+  assert.equal(asked.length, 2);
+  // A tracklist without the song: no album, the rest still.
+  answers['masters/865172'].tracklist = [{ title: 'Other Song' }];
+  assert.equal((await info.lookupDiscogs(song, { fetch, gapMs: 0 })).album, '');
+  // The first artist of several is asked for.
+  asked.length = 0;
+  await info.lookupDiscogs({ artist: 'Headhunterz, Krewella', title: 'United Kids of the World', album: 'X' }, { fetch, gapMs: 0 });
+  assert.match(asked[0], /&artist=Headhunterz$/);
+  await assert.rejects(info.lookupDiscogs(song, { fetch: async () => ({ ok: false, status: 429 }), gapMs: 0 }), /429/);
+});
+
+test('a song\'s lookup: Apple for album and genre, Discogs for what is still empty, failures only thrown when nothing came or strict', async () => {
+  const calls = [];
+  const apple = async (s) => {
+    calls.push(`apple ${s.title}`);
+    return { album: 'Meteora', genre: '' };
+  };
+  const discogs = async (s) => {
+    calls.push(`discogs ${s.album}`);
+    return { album: 'Other', genre: 'Rock', subGenre: 'Nu Metal' };
+  };
+  assert.deepEqual(await info.lookupInfo({ artist: 'Linkin Park', title: 'Numb' }, { apple, discogs }),
+    { album: 'Meteora', genre: 'Rock', subGenre: 'Nu Metal' });
+  // Discogs is told the album Apple found, so it does not look for one.
+  assert.deepEqual(calls, ['apple Numb', 'discogs Meteora']);
+  // Album and genre known: Discogs alone, for the Info; all known: nobody.
+  calls.length = 0;
+  assert.equal((await info.lookupInfo({ title: 'Numb', album: 'A', genre: 'G' }, { apple, discogs })).subGenre, 'Nu Metal');
+  await info.lookupInfo({ title: 'Numb', album: 'A', genre: 'G', subGenre: 'Mine' }, { apple, discogs });
+  assert.deepEqual(calls, ['discogs A']);
+  const down = async () => {
+    throw new Error('down');
+  };
+  // One down: what the other found, unless strict (the filler tries again later).
+  assert.equal((await info.lookupInfo({ title: 'Numb' }, { apple: down, discogs })).genre, 'Rock');
+  assert.equal((await info.lookupInfo({ title: 'Numb' }, { apple, discogs: down })).album, 'Meteora');
+  await assert.rejects(info.lookupInfo({ title: 'Numb' }, { apple, discogs: down, strict: true }), /down/);
+  await assert.rejects(info.lookupInfo({ title: 'Numb' }, { apple: down, discogs: down }), /down/);
 });
 
 test('the filler looks up each song once, keeps what a song has, and tries one Apple missed again later', async () => {
@@ -73,27 +157,53 @@ test('the filler looks up each song once, keeps what a song has, and tries one A
   m.addSong(d, { id: 'b', file: 'b.mp3', title: 'Unknown Song', artist: 'Nobody' });
   m.addSong(d, { id: 'c', file: 'c.mp3', title: 'Tagged', artist: 'Someone', album: 'From The File', genre: 'Techno' });
   m.addSong(d, { id: 'd', file: 'd.mp3', title: 'Offline', artist: 'Someone' });
+  m.addSong(d, { id: 'e', file: 'e.mp3', title: 'Known', artist: 'Someone', album: 'A', genre: 'G', subGenre: 'I' });
   const asked = [];
+  const options = [];
   const filler = info.createInfoFiller({
     nextSong: (tried) => d.songs.find((s) => !s.infoLooked && !tried.has(s.id)) || null,
     save: (found) => {
       for (const f of found) m.setInfo(d, f.id, f);
     },
-    lookup: async (s) => {
+    lookup: async (s, opts) => {
       asked.push(s.id);
+      options.push(opts);
       if (s.id === 'd') throw new Error('offline');
+      if (s.id === 'c') return { album: 'Other', genre: 'Other', subGenre: 'Hard Techno' };
       return s.id === 'a' ? { album: 'Ready Or Not', genre: 'Dance' } : { album: '', genre: '' };
     },
     pauseMs: 0,
   });
   await filler.run();
-  assert.deepEqual(asked, ['a', 'b', 'd']);
+  // c has album and genre from its file, but no Info; e has all three.
+  assert.deepEqual(asked, ['a', 'b', 'c', 'd']);
+  assert.ok(options.every((o) => o.strict === true));
   const get = (id) => m.songById(d, id);
   assert.deepEqual([get('a').album, get('a').genre, get('a').infoLooked], ['Ready Or Not', 'Dance', true]);
   // Nothing found: the title is the album.
   assert.deepEqual([get('b').album, get('b').genre, get('b').infoLooked], ['Unknown Song', '', true]);
-  assert.deepEqual([get('c').album, get('c').genre, get('c').infoLooked], ['From The File', 'Techno', true]);
+  assert.deepEqual([get('c').album, get('c').genre, get('c').subGenre, get('c').infoLooked], ['From The File', 'Techno', 'Hard Techno', true]);
   assert.equal(get('d').infoLooked, false);
+  assert.equal(get('e').infoLooked, true);
+});
+
+test('a library looked up before Discogs: its songs missing anything are looked up once more', () => {
+  const d = m.sanitize({
+    songs: [
+      { id: 'a', file: 'a', title: 'A', album: 'A', genre: 'Pop', infoLooked: true },
+      { id: 'b', file: 'b', title: 'B', album: 'B', genre: 'Pop', subGenre: 'Dance-pop', infoLooked: true },
+      { id: 'c', file: 'c', title: 'C' },
+    ],
+  });
+  assert.equal(d.infoRound, 0);
+  assert.equal(m.startInfoRound(d), true);
+  assert.deepEqual(d.songs.map((s) => s.infoLooked), [false, true, false]);
+  assert.equal(m.sanitize(JSON.parse(JSON.stringify(d))).infoRound, 2);
+  // Once only, and a new library is looked up the new way from the start.
+  d.songs[1].infoLooked = true;
+  assert.equal(m.startInfoRound(d), false);
+  assert.equal(m.startInfoRound(m.emptyLibrary()), false);
+  assert.equal(m.startInfoRound(m.sanitize(null)), false);
 });
 
 test('the library: an album set by hand or looked for, empty means the title', () => {
@@ -156,7 +266,7 @@ test('album and genre go into a saved file\'s tags and come out of a file\'s', (
   assert.equal(metaFromFile('C:/Music/A - B.mp3', { title: 'B', grouping: ' Melodic ' }).subGenre, 'Melodic');
 });
 
-test('a downloaded song\'s album and genre: the list\'s, else its page\'s, else Apple\'s', async () => {
+test('a downloaded song\'s album and genre: the list\'s, else its page\'s, else the lookup\'s', async () => {
   const { createLister } = require('../src/listing');
   const asked = [];
   const lister = createLister({
@@ -164,17 +274,19 @@ test('a downloaded song\'s album and genre: the list\'s, else its page\'s, else 
     library: () => m.emptyLibrary(),
     lookupInfo: async (s) => {
       asked.push(s.title);
-      return { album: 'From Apple', genre: 'Dance' };
+      return { album: 'From Apple', genre: 'Dance', subGenre: 'Euro House' };
     },
   });
   // A Spotify album's song: its album; the genre from Apple.
   const probed = { duration: 200, guess: { album: 'From The Page', genre: '' } };
   assert.deepEqual(await lister.withInfo({ artist: 'A', title: 'One', mix: '', album: 'From Spotify' }, probed),
-    { artist: 'A', title: 'One', mix: '', album: 'From Spotify', genre: 'Dance', subGenre: '' });
-  // Both on the page (SoundCloud's genre, YouTube Music's album): Apple is not asked.
+    { artist: 'A', title: 'One', mix: '', album: 'From Spotify', genre: 'Dance', subGenre: 'Euro House' });
+  // Both on the page (SoundCloud's genre, YouTube Music's album): asked for the Info only, the page's stay.
   assert.deepEqual(await lister.withInfo({ artist: 'A', title: 'Two', mix: '' }, { duration: 1, guess: { album: 'Page', genre: 'Rock' } }),
-    { artist: 'A', title: 'Two', mix: '', album: 'Page', genre: 'Rock', subGenre: '' });
-  assert.deepEqual(asked, ['One']);
+    { artist: 'A', title: 'Two', mix: '', album: 'Page', genre: 'Rock', subGenre: 'Euro House' });
+  // All three known: nobody is asked.
+  await lister.withInfo({ artist: 'A', title: 'Six', album: 'X', genre: 'Y', subGenre: 'Z' }, { guess: {} });
+  assert.deepEqual(asked, ['One', 'Two']);
   // A sub-genre given (the box above the frames) stays; one from the page fills an empty one.
   assert.equal((await lister.withInfo({ title: 'Four', subGenre: 'Melodic' }, { guess: { subGenre: 'Raw' } })).subGenre, 'Melodic');
   assert.equal((await lister.withInfo({ title: 'Five' }, { guess: { subGenre: 'Raw' } })).subGenre, 'Raw');

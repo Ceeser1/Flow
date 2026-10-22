@@ -610,16 +610,17 @@ function createLister({ media, library, lookupInfo = null }) {
   /**
    * A downloaded song's names with its album and genre: the list's own (a
    * Spotify album's, Deezer's, Amazon's), else the upload's page's (YouTube
-   * Music's, Bandcamp's, SoundCloud's), else Apple's search. Never fails:
-   * what cannot be found stays empty.
+   * Music's, Bandcamp's, SoundCloud's), else Apple's search, then Discogs'
+   * for what is still empty (the Info). Never fails: what cannot be found
+   * stays empty.
    */
   async function withInfo(meta, probed) {
     let out = fillInfo(meta, probed.guess);
-    if (lookupInfo && (!out.album || !out.genre)) {
+    if (lookupInfo && (!out.album || !out.genre || !out.subGenre)) {
       try {
         out = fillInfo(out, await lookupInfo({ ...out, duration: probed.duration }));
       } catch {
-        // Apple could not be asked: the song is saved without them.
+        // Neither could be asked: the song is saved without them.
       }
     }
     return out;

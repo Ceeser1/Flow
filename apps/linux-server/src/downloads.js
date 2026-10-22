@@ -408,7 +408,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         item.meta = { artist: probed.guess.artist || '', title: probed.guess.title || probed.title, mix: probed.guess.mix || '' };
         item.artistFromChannel = !!probed.guess.artistFromChannel;
       }
-      // Its album and genre: the list's, the page's, else Apple's (listing.withInfo).
+      // Its album, genre and Info: the list's, the page's, else Apple's, then Discogs' (listing.withInfo).
       item.meta = await lister.withInfo(item.meta, probed);
       if (!alive()) {
         removeQuietly(file.path);

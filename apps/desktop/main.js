@@ -47,9 +47,9 @@ const loudnessFiller = loudness.createFiller(library, model, () => settings.get(
 // Finds covers for Local Files songs in the background; copies of a server's
 // songs get the server's.
 const coverFiller = covers.createFiller({ skip: (id) => remote.active() && remote.isServerCopy(id) });
-// Looks up the album and genre of Local Files songs never looked up (from
-// before 3.6.3, put into the folder by hand); copies of a server's songs get
-// the server's.
+// Looks up the album, genre and Info of Local Files songs never looked up
+// (from before 3.6.3, put into the folder by hand, before Discogs for what
+// is still empty); copies of a server's songs get the server's.
 const infoFiller = createInfoFiller({
   nextSong: (tried) => library.get().songs.find((s) => !s.infoLooked && !tried.has(s.id)
     && !(remote.active() && remote.isServerCopy(s.id))) || null,
@@ -738,7 +738,7 @@ function sponsorSegments(key, url) {
 }
 handle('sponsor:segments', ({ key, url }) => sponsorSegments(key, url));
 
-// One song's album and genre from Apple's search, for Add Songs' editor.
+// One song's album, genre and Info from Apple's and Discogs' search, for Add Songs' editor.
 handle('song:lookupInfo', (song) => lookupInfo(song || {}));
 
 handle('song:finish', (job) => library.quietly(async () => {
@@ -856,6 +856,8 @@ app.whenReady().then(() => {
   covers.watchLocal();
   library.onChange(() => tagger.run());
   tagger.run();
+  // Songs looked up before Discogs: once more for what is still empty.
+  if (model.startInfoRound(library.get())) library.save();
   setTimeout(() => {
     library.scan().catch(() => {}).then(() => {
       loudnessFiller.run();

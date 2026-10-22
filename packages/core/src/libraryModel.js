@@ -7,13 +7,14 @@
 //   song      { id, file, title, artist, mix, album, genre, subGenre,
 //               infoLooked, duration, format, sourceUrl, sourceKey, sourcePlaylistUrl,
 //               addedAt, addedBy, stats, favouriteAt, loudness, cover }
-//   album and genre come from the song's source, its file's tags or Apple's
-//   search (songInfo.js); infoLooked is true once they were looked for. A
+//   album and genre come from the song's source, its file's tags, Apple's
+//   or Discogs' search (songInfo.js); infoLooked is true once they were
+//   looked for (infoRound: how, see startInfoRound). A
 //   song looked for without an album has its title as its album (most
 //   songs that only came out as a single are their own album). subGenre
 //   (shown as Info) is a free line of the user's: "Melodic", "from
-//   Bravo Hits 2012", rarely found anywhere (a page's second genre, a file's
-//   grouping tag).
+//   Bravo Hits 2012", else Discogs' style of the song, a page's second genre
+//   or a file's grouping tag.
 //   cover is the version of the song's cover file (cover.js), '-' when it
 //   was looked for and none found, null when not looked for yet. Only the
 //   app or server that keeps the covers sets it (setCover); no command can.
@@ -87,8 +88,11 @@ function cleanStats(raw) {
   };
 }
 
+// How the songs are looked up: 1 Apple's search (3.6.3), 2 then Discogs' (3.6.4).
+const INFO_ROUND = 2;
+
 function emptyLibrary() {
-  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {} };
+  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {}, infoRound: INFO_ROUND };
 }
 
 /** { listId: seconds }: only sensible ids and positive numbers stay. */
@@ -207,6 +211,7 @@ function sanitize(raw) {
   data.listening = cleanListening(raw.listening);
   data.statistics = cleanStatistics(raw.statistics);
   data.profileNames = cleanNames(raw.profileNames);
+  data.infoRound = Math.max(0, Math.floor(Number(raw.infoRound) || 0));
   const seenShared = new Set();
   for (const p of Array.isArray(raw.sharedPlaylists) ? raw.sharedPlaylists : []) {
     if (!p || !p.id || seenShared.has(p.id) || seenLists.has(p.id)) continue;
@@ -392,6 +397,19 @@ function updateSong(data, id, patch) {
   if (patch.loudness !== undefined) s.loudness = cleanLoudness(patch.loudness);
   if (patch.cut !== undefined) s.cut = cleanCut(patch.cut);
   return s;
+}
+
+/**
+ * A library looked up an older way: its songs missing an album, genre or
+ * Info are looked up again (Discogs' search fills what Apple's left empty).
+ * True when anything changed, to be saved; whoever runs the lookups calls it
+ * once after loading.
+ */
+function startInfoRound(data) {
+  if (data.infoRound >= INFO_ROUND) return false;
+  for (const s of data.songs) if (s.infoLooked && !(s.album && s.genre && s.subGenre)) s.infoLooked = false;
+  data.infoRound = INFO_ROUND;
+  return true;
 }
 
 /**
@@ -597,7 +615,7 @@ module.exports = {
   emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
-  addSong, updateSong, setInfo, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
+  addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta, sameSongIn, sameNames,
 };

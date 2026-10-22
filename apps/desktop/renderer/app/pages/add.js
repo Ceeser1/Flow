@@ -193,17 +193,22 @@ const AddPage = {
   },
 
   /**
-   * A song downloaded on its own: the album and genre its page did not name,
-   * from Apple's search, into the boxes still empty (one typed into stays).
+   * A song downloaded on its own: the album, genre and Info its page did not
+   * name, from Apple's and Discogs' search, into the boxes still empty (one
+   * typed into stays).
    */
   async _lookupInfo() {
     const m = this.media;
     if (!window.flow.lookupInfo || this.embedded || !m) return;
-    if ($('edAlbum').value.trim() && $('edGenre').value.trim()) return;
+    const album = $('edAlbum').value.trim();
+    const genre = $('edGenre').value.trim();
+    const subGenre = $('edSubGenre').value.trim();
+    if (album && genre && subGenre) return;
     let found;
     try {
       found = await window.flow.lookupInfo({
         artist: $('edArtist').value.trim(), title: $('edTitle').value.trim(), mix: $('edMix').value.trim(), duration: m.duration,
+        album, genre, subGenre,
       });
     } catch {
       return;
@@ -211,6 +216,7 @@ const AddPage = {
     if (this.media !== m || this.embedded || !found) return;
     if (found.album && !$('edAlbum').value.trim()) $('edAlbum').value = found.album;
     if (found.genre && !$('edGenre').value.trim()) $('edGenre').value = found.genre;
+    if (found.subGenre && !$('edSubGenre').value.trim()) $('edSubGenre').value = found.subGenre;
   },
 
   /**

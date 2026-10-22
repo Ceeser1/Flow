@@ -123,6 +123,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   const seen = new Set(state.seen);
   const listeners = [];
   const startedStatistics = prof.startStatistics(data, profiles);
+  // Songs looked up before Discogs: once more for what is still empty.
+  const newInfoRound = lookupInfo ? model.startInfoRound(data) : false;
   // When the server was set up, for the Default's Statistics: on one from
   // before 3.6, when its oldest song came.
   if (!config.get().createdAt) {
@@ -154,7 +156,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     for (const l of listeners) l(state.rev);
     return result;
   }
-  if (startedStatistics) save();
+  if (startedStatistics || newInfoRound) save();
 
   // ---- files ----
 
@@ -831,9 +833,10 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     });
   }
 
-  // The albums and genres of songs never looked up (from before 3.6.3, put
-  // into the folder by hand, an older app's uploads): Apple's search, a few
-  // seconds apart, written ten at a time.
+  // The albums, genres and Info of songs never looked up (from before 3.6.3,
+  // put into the folder by hand, an older app's uploads): Apple's search,
+  // then Discogs' for what is still empty, a few seconds apart, written ten
+  // at a time.
   const infoFiller = createInfoFiller({
     nextSong: (tried) => (lookupInfo ? data.songs.find((s) => !s.infoLooked && !tried.has(s.id)) || null : null),
     save: (found) => mutate((d) => {
