@@ -9,7 +9,7 @@
     "test": "node --test",
     "icon": "electron scripts/make-icon.js",
     "dist": "electron-builder --win nsis",
-    "dist:linux": "electron-builder --linux -c.extraMetadata.homepage=https://github.com/Ceeser1/Flow"
+    "dist:linux": "electron-builder --linux -c.directories.output=../linux-client/dist -c.extraMetadata.homepage=https://github.com/Ceeser1/Flow"
   },
   "dependencies": {
     "@flow/core": "*"

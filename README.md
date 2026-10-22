@@ -670,7 +670,7 @@ npm run icon    # every app's icons (desktop, Android, iPhone) from icons/flow.p
                 # (the white wave on its blue square)
 npm run dist    # build the installer into apps/desktop/dist/ (it installs to Program Files\Flow, for every user)
 npm run dist:windows-server   # the Flow Server's Windows installer, into apps/windows-server/dist/
-npm run dist:linux            # on Linux: the deb and the AppImage, into apps/desktop/dist/
+npm run dist:linux            # on Linux: the deb and the AppImage, into apps/linux-client/dist/
 ```
 
 `npm run dist:linux` runs on Linux only. From Windows, build in WSL in a copy
