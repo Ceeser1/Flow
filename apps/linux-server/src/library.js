@@ -48,6 +48,7 @@ const cover = require('@flow/core/cover');
 const { createMedia } = require('@flow/core/media');
 const { flowIdText, parseFlowId, ID_EXTS } = require('@flow/core/tags');
 const { createInfoFiller } = require('@flow/core/songInfo');
+const { mergeRestore } = require('@flow/core/backup');
 const tools = require('./tools');
 
 const SEEN_KEEP = 5000;
@@ -258,6 +259,62 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     trash.forget(name);
     log(`Put back from the trash as a new song: ${path.basename(dest)}`);
     return { scanned: await scan({ complete: [dest] }) };
+  }
+
+  // ---- backups (4.0, backup.js) ----
+
+  /** What a backup keeps of the library: library.json as it is saved. */
+  function backupData() {
+    return JSON.parse(JSON.stringify({ ...data, profiles }));
+  }
+
+  /**
+   * A backup's library put back over this one (backup.js mergeRestore): its
+   * songs, playlists, favourites and stats. A song deleted since whose file
+   * is still in the trash comes back with it; songs that came since stay.
+   * Each profile in the backup gets its part back, those made since keep
+   * theirs. Returns { songs, back, missing, kept }.
+   */
+  function restoreBackup(raw) {
+    const saved = model.sanitize(raw);
+    // Newest first: a song deleted twice comes back as it was last.
+    const inTrash = new Map();
+    for (const t of trash.list()) if (t.song && !inTrash.has(t.song.id)) inTrash.set(t.song.id, t);
+    const takeBack = (song) => {
+      const t = inTrash.get(song.id);
+      const got = t && trash.get(t.name);
+      if (!got) return '';
+      const ext = (path.extname(song.file) || path.extname(got.originalName)).slice(1);
+      const before = path.dirname(song.file);
+      const inside = !path.relative(musicDir, before).startsWith('..') && fs.existsSync(before);
+      const dest = uniquePath(path.basename(song.file || got.originalName, `.${ext}`), ext, null, inside ? before : musicDir);
+      try {
+        fs.renameSync(got.file, dest);
+      } catch {
+        return '';
+      }
+      trash.forget(t.name);
+      return dest;
+    };
+    const { data: merged, counts } = mergeRestore(data, saved, { takeBack });
+    // Songs named otherwise again get their files' tags written anew.
+    const NAMES = ['title', 'artist', 'mix', 'album', 'genre', 'subGenre'];
+    const renamed = merged.songs.filter((s) => {
+      const c = model.songById(data, s.id);
+      return c && NAMES.some((k) => c[k] !== s[k]);
+    }).map((s) => s.id);
+    const parts = prof.sanitizeProfiles(merged, raw && raw.profiles);
+    mutate(() => {
+      data = merged;
+      for (const [id, part] of Object.entries(parts)) profiles[id] = part;
+      // The parts kept (profiles made since) lose songs the backup has not.
+      for (const [id, part] of Object.entries(profiles)) if (!parts[id]) profiles[id] = prof.sanitizeProfiles(data, { [id]: part })[id];
+    });
+    log(`Backup restored: ${counts.songs} songs (${counts.back} back from the trash, ${counts.kept} kept from since, ${counts.missing} without their files)`);
+    for (const id of renamed) queueRetag(id);
+    queueCovers();
+    infoFiller.run();
+    return counts;
   }
 
   // ---- what the apps see ----
@@ -1216,6 +1273,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     emptyTrash,
     trashList,
     restoreFromTrash,
+    backupData,
+    restoreBackup,
     onChange: (fn) => listeners.push(fn),
     /** Stops the background work: resolves once what was running has ended. */
     stop() {

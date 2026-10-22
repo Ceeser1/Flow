@@ -757,6 +757,7 @@ const SettingsPanel = {
       h('h3.settings__section', 'Media Management'),
       Store.can('musicFolder') ? this._savedSongsRow() : this._storageRow(),
       this._coversRow(),
+      Store.can('backups') ? this._backupsRow() : null,
       this._row({
         key: 'serverMetered',
         label: 'Allow downloads on mobile internet',
@@ -1415,6 +1416,61 @@ const SettingsPanel = {
       h('div.settings__label.settings__label--plain', 'Cover Cache'),
       h('div.settings__desc', 'Covers are found by the client or server, synchronized automatically.'));
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._coversNode, this._clearCovers)));
+  },
+
+  /**
+   * Backups of this computer's library (4.0): made once a week, the last 6
+   * kept; one picked is put back. A Flow Server backs up its own library
+   * (Administration).
+   */
+  _backupsRow() {
+    const pick = h('select.select');
+    const restore = h('button.btn.btn--small', {
+      type: 'button',
+      onclick: () => attempt(async () => {
+        const b = this._backupList.find((x) => x.name === pick.value);
+        if (!b) return;
+        const ok = await confirmDialog({
+          title: 'Restore backup',
+          message: `Put Local Files back as they were on ${Util.fmtDate(b.createdAt)}? Song names, playlists, favourites and stats `
+            + 'go back to how they were then; songs added since stay, songs whose files are gone stay out. What is there now is backed up first.',
+          confirmLabel: 'Restore',
+          kind: 'light-red',
+        });
+        if (!ok) return;
+        const r = await window.flow.restoreBackup(b.name);
+        toast(`Backup restored: ${Util.plural(r.songs, 'song')}${r.missing ? `, ${r.missing} without their files left out` : ''}`, 'success');
+        this._drawBackups();
+      }),
+    }, 'Restore');
+    const make = h('button.btn.btn--small', {
+      type: 'button',
+      onclick: () => attempt(async () => {
+        await window.flow.makeBackup();
+        toast('Backup made', 'success');
+        this._drawBackups();
+      }),
+    }, 'Back up now');
+    this._backupList = [];
+    this._backupPick = pick;
+    this._backupRestore = restore;
+    this._drawBackups();
+    const left = h('div.settings__left',
+      h('div.settings__label.settings__label--plain', 'Backups'),
+      h('div.settings__desc', 'The song names, playlists, favourites and stats of Local Files are backed up every week, '
+        + 'the last 6 kept. Never the song files themselves.'));
+    return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', pick, restore, make)));
+  },
+
+  async _drawBackups() {
+    const list = await window.flow.backups().catch(() => []);
+    const why = { weekly: '', manual: ' (by hand)', restore: ' (before a restore)' };
+    this._backupList = list;
+    clear(this._backupPick).append(...(list.length
+      ? list.map((b) => h('option', { value: b.name }, `${Util.fmtDate(b.createdAt)}${why[b.reason] || ''}`))
+      : [h('option', { value: '' }, 'No backups yet')]));
+    this._backupPick.disabled = !list.length;
+    this._backupRestore.disabled = !list.length;
   },
 
   /** The phone's songs and their room; Remove downloads deletes the server's songs kept here. */

@@ -34,6 +34,8 @@ const DESKTOP = {
   batteryHelp: false,
   // Ogg Vorbis plays; without, a Flow Server sends such a song as Opus (audio ?vorbis=0).
   vorbis: true,
+  // Its own library.json backed up once a week (Settings > Media Management).
+  backups: true,
 };
 
 const ANDROID = {
@@ -53,6 +55,7 @@ const ANDROID = {
   measureLoudness: false,
   batteryHelp: true,
   vorbis: true,
+  backups: false,
 };
 
 // The iPhone: as the Android phone, without what iOS has no need or room for.

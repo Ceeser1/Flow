@@ -340,7 +340,7 @@ function bareIp(value) {
 const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
 
 function createHttpServer({
-  config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null, activity = null,
+  config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null, activity = null, backups = null,
 }) {
   const throttle = createThrottle();
   // What is noted about the profiles for the admins (activity.js); left out by tests that need none.
@@ -508,6 +508,7 @@ function createHttpServer({
     downloads,
     live,
     sessions,
+    backups,
     activity: activity || { lastSeen: (p) => p.lastSeenAt || 0, failed() {}, failures: () => [], clearFailures() {} },
     tools,
     version,

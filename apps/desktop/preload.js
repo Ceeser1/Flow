@@ -119,4 +119,8 @@ contextBridge.exposeInMainWorld('flow', {
   // Add Songs: the cover of a song downloaded but not saved yet ({ file, version } or null).
   stagedCover: (cachePath) => call('covers:staged', cachePath),
   onCoverStaged: (fn) => ipcRenderer.on('covers:staged', (_e, info) => fn(info)),
+  // Backups of this computer's library.json (4.0): the list, one now, one put back.
+  backups: () => call('backups:list'),
+  makeBackup: () => call('backups:make'),
+  restoreBackup: (name) => call('backups:restore', name),
 });

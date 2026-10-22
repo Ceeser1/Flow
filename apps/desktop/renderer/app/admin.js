@@ -3,8 +3,8 @@
 // Settings' last category, for an admin profile on a Flow Server (3.5): the
 // server at a glance, its profiles (a sortable table; on the phone each opens
 // with a tap), the failed sign-ins, every profile's server downloads and the
-// Active Sessions, the trash, the admins' rules, and for the master admin the
-// server password. Everything comes from the server's /api/admin (its
+// Active Sessions, the trash, the backups (4.0; restored by the master admin
+// only), the admins' rules, and for the master admin the server password. Everything comes from the server's /api/admin (its
 // admin.js) through window.flow.admin, fetched when Settings opens, after
 // every change made here, and with Refresh.
 
@@ -33,11 +33,11 @@ const Admin = {
     if (!this._data) this._drawNote('Loading...');
     const get = (route) => window.flow.admin(route).catch((err) => ({ error: (err && err.message) || String(err) }));
     try {
-      const [server, profiles, signins, downloads, sessions, trash, rules] = await Promise.all([
-        get('server'), get('profiles'), get('signins'), get('downloads'), get('sessions'), get('trash'), get('rules'),
+      const [server, profiles, signins, downloads, sessions, trash, backups, rules] = await Promise.all([
+        get('server'), get('profiles'), get('signins'), get('downloads'), get('sessions'), get('trash'), get('backups'), get('rules'),
       ]);
       this._data = {
-        server, profiles, signins, downloads, sessions, trash, rules,
+        server, profiles, signins, downloads, sessions, trash, backups, rules,
       };
     } finally {
       this._loading = false;
@@ -129,6 +129,7 @@ const Admin = {
       this._block('Server downloads', this._downloads(d.downloads)),
       this._block('Active Sessions', this._sessions(d.sessions)),
       this._block('Trash', this._trash(d.trash)),
+      this._block('Backups', this._backups(d.backups)),
       this._block('Server rules', this._rules(d.rules)),
       Store.server.master ? this._block('Server password', this._password(d.server)) : null,
     ].filter(Boolean));
@@ -504,6 +505,37 @@ const Admin = {
     }, 'Empty trash');
     return h('div', h('p.settings__note', `${Util.plural(r.items.length, 'file')}, ${fmtBytes(r.bytes)}. Each one is deleted for good 30 days after it was deleted.`),
       this._list(rows), h('div.admin__bar', empty));
+  },
+
+  // ---- Backups ----
+
+  _backups(r) {
+    // A server from before 4.0 has none.
+    if (r.error) return /nothing here/i.test(r.error) ? h('p.settings__note', 'This Flow Server makes no backups yet. Update it first.') : this._failed(r);
+    const master = Store.server.master;
+    const why = { weekly: 'Weekly', manual: 'Made by hand', restore: 'Made before a restore' };
+    const rows = r.backups.map((b) => h('li.admin__item.admin__item--row',
+      h('span.admin__item-text',
+        h('span.admin__item-main', Util.fmtDate(b.createdAt)),
+        h('span.admin__item-sub', ...this._parts([why[b.reason] || '', Util.plural(b.songs, 'song'), Util.plural(b.playlists, 'playlist'),
+          Util.plural(b.profiles, 'profile'), fmtBytes(b.size)]))),
+      master ? h('button.btn.btn--small', {
+        type: 'button',
+        onclick: async () => {
+          if (!(await this._confirm('Restore backup', `Put the library back as it was on ${Util.fmtDate(b.createdAt)}? `
+            + 'Song names, playlists, favourites, stats and profiles go back to how they were then; songs added since stay. '
+            + 'What is there now is backed up first.', 'Restore', 'light-red'))) return;
+          await this._do(() => window.flow.admin('backups/restore', { name: b.name }), 'Backup restored');
+        },
+      }, 'Restore') : null));
+    const make = h('button.btn.btn--small', {
+      type: 'button',
+      onclick: () => this._do(() => window.flow.admin('backups/make', {}), 'Backup made'),
+    }, 'Back up now');
+    const note = `The server backs up its library's data every week and keeps the last ${r.keep}: song names, playlists, favourites, `
+      + `stats and profiles, never the song files.${master ? '' : ' Only the master admin can restore one.'}`;
+    return h('div', h('p.settings__note', note),
+      r.backups.length ? this._list(rows) : h('p.settings__note', 'No backups yet.'), h('div.admin__bar', make));
   },
 
   // ---- Server rules ----

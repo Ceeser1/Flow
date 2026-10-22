@@ -26,6 +26,7 @@ const path = require('path');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { DEFAULT_PORT } = require('@flow/core/address');
 const { parseLevel, isStrongPassword } = require('@flow/core/password');
+const { isName: isBackupName } = require('@flow/core/backup');
 
 // An app's install id, as it sends it.
 const CLIENT_ID = /^[\w-]{8,64}$/;
@@ -158,6 +159,9 @@ function clean(raw) {
     // flow-server tag-songs asked for the songs from before to be written
     // (library.js checkTagRequest), until the running server takes it.
     tagSongs: r.tagSongs === true,
+    // flow-server restore asked for this backup (backups.js) to be put back,
+    // until the running server takes it.
+    restoreRequest: isBackupName(r.restoreRequest) ? r.restoreRequest : '',
     // The admins' rules: who may make profiles ('admins': an admin, or anyone
     // while there is none yet), and who may delete a song for everyone
     // ('owner': the profile that added it, and the admins).

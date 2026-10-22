@@ -3,6 +3,7 @@
 
 // flow-server from the command line. See ../README.md.
 
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
@@ -11,6 +12,8 @@ const { startServer } = require('./server');
 const { runDoctor } = require('./doctor');
 const tools = require('./tools');
 const { songsToTag } = require('./library');
+const backups = require('./backups');
+const { unpack, fileName, KEEP } = require('@flow/core/backup');
 const model = require('@flow/core/libraryModel');
 const { readJson } = require('@flow/core/jsonFile');
 const { lookupInfo } = require('@flow/core/songInfo');
@@ -40,6 +43,14 @@ Usage:
                                         songs from before 2.9.1 (new ones get them by themselves):
                                         the running server does it, one file at a time, carrying on
                                         after a restart. --dry-run lists the files and changes nothing.
+  flow-server backup                    back up the library's data now: songs' names, playlists,
+                                        favourites, stats and the profiles (never the songs' files,
+                                        the password or the devices). The server makes one a week
+                                        by itself and keeps the last 6, in <home>/backups
+  flow-server backups                   the backups there, newest first
+  flow-server restore <name | file>     put a backup back: the running server does it within a few
+                                        seconds (a stopped one when it starts), after backing up
+                                        what is there now. Songs that came since stay
   flow-server doctor <address>          check a server from where the apps use it, through
                                         its proxy: https, certificate, uploads, seeking...
                                         Run it from outside your home network too. Asks for
@@ -111,7 +122,7 @@ function parseArgs(argv) {
     else if (a === '--master') out.master = true;
     else if (a === '--create') out.create = true;
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}. See flow-server --help.`);
-    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'profiles', 'admin', 'doctor', 'info', 'tag-songs'].includes(a)) out.command = a;
+    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'profiles', 'admin', 'doctor', 'info', 'tag-songs', 'backup', 'backups', 'restore'].includes(a)) out.command = a;
     else out.rest.push(a);
   }
   return out;
@@ -185,6 +196,50 @@ function tagSongs(config, dryRun) {
   config.set({ tagSongs: true });
   console.log(`${todo.length} ${todo.length === 1 ? 'file gets' : 'files get'} the song's flowid and cover, written by the server one at a time in the background `
     + '(its log says when it is done). A running server starts within a few seconds; a stopped one when it starts again.');
+}
+
+/** flow-server backup, backups and restore (backups.js). */
+function backupCommand(config, args) {
+  const store = backups.storeFor(config, () => {
+    const raw = readJson(config.libraryFile) || {};
+    const cfg = config.get();
+    return { server: { id: cfg.id, name: cfg.name }, library: raw, profiles: cfg.profiles.map(backups.profileEntry) };
+  }, () => {});
+  const line = (b) => `${b.name}  ${new Date(b.createdAt).toLocaleString()}  ${b.songs} songs, ${b.playlists} playlists, `
+    + `${b.profiles} profiles  (${b.reason === 'restore' ? 'made before a restore' : b.reason})`;
+  if (args.command === 'backup') {
+    const b = store.make('manual');
+    console.log(`Backed up: ${path.join(store.dir, b.name)}`);
+    console.log(`  ${b.songs} songs, ${b.playlists} playlists, ${b.profiles} profiles. The last ${KEEP} backups are kept.`);
+    return;
+  }
+  if (args.command === 'backups') {
+    const list = store.list();
+    if (!list.length) console.log(`No backups yet in ${store.dir}. The server makes one a week by itself; flow-server backup makes one now.`);
+    for (const b of list) console.log(line(b));
+    return;
+  }
+  const want = String(args.rest[0] || '');
+  if (!want) throw new Error('Which backup? flow-server backups lists them; a file of one works too.');
+  let name = path.basename(want);
+  if (!store.list().some((b) => b.name === name)) {
+    // A backup file from elsewhere: checked, and copied in with the others.
+    let doc;
+    try {
+      doc = unpack(fs.readFileSync(want));
+    } catch (err) {
+      throw new Error(err.code === 'ENOENT' ? `There is no backup called ${want}. flow-server backups lists them.` : err.message);
+    }
+    if (doc.kind !== 'server') throw new Error('That is a backup of a Flow app, not of a Flow Server.');
+    if (!backups.isName(name)) name = fileName(Number(doc.createdAt) || Date.now());
+    fs.mkdirSync(store.dir, { recursive: true });
+    fs.copyFileSync(want, path.join(store.dir, name));
+  }
+  const b = store.list().find((x) => x.name === name);
+  config.set({ restoreRequest: name });
+  console.log(`Restoring ${line(b)}`);
+  console.log('A running server puts it back within a few seconds (its log says when), a stopped one when it starts again. '
+    + 'What is there now is backed up first, so flow-server restore can go back to it.');
 }
 
 /** A profile by its name (any case), or an Error naming the command that lists them. */
@@ -360,6 +415,10 @@ async function main() {
   }
   if (args.command === 'tag-songs') {
     tagSongs(config, args.dryRun);
+    return;
+  }
+  if (['backup', 'backups', 'restore'].includes(args.command)) {
+    backupCommand(config, args);
     return;
   }
   if (args.command === 'profiles') {

@@ -37,6 +37,7 @@ const { lookupInfo, createInfoFiller } = require('@flow/core/songInfo');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
+const { createBackupStore, mergeRestore } = require('@flow/core/backup');
 
 let mainWindow = null;
 let downloadToken = null;
@@ -252,6 +253,41 @@ handle('covers:clear', () => remote.clearCoverCache());
 // Add Songs: a song's cover as soon as it is downloaded, before it is saved.
 covers.onStaged((info) => sendToWindow('covers:staged', info));
 handle('covers:staged', (cachePath) => covers.stagedCover(String(cachePath || '')));
+
+// Backups (4.0, @flow/core/backup): library.json's data once a week, the
+// last 6 kept in Flow's folder (backups), never the songs' files.
+const backups = createBackupStore({
+  dir: path.join(paths.rootDir(), 'backups'),
+  kind: 'app',
+  collect: () => ({ library: JSON.parse(JSON.stringify(library.get())) }),
+});
+// Looked at when the app starts and every 6 hours while it runs.
+const BACKUP_CHECK_MS = 6 * 60 * 60 * 1000;
+handle('backups:list', () => backups.list());
+handle('backups:make', () => backups.make('manual'));
+/**
+ * A backup put back (a backup of now made first): the songs' names,
+ * playlists, favourites and stats as they were; songs whose files are gone
+ * stay out, songs added since stay in.
+ */
+handle('backups:restore', (name) => library.quietly(async () => {
+  const doc = backups.read(String(name || ''));
+  if (doc.kind !== 'app') throw new Error('That is a backup of a Flow Server, not of this app.');
+  backups.make('restore', String(name));
+  const counts = library.mutate((d) => {
+    const { data, counts: c } = mergeRestore(d, model.sanitize(doc.library));
+    for (const k of Object.keys(d)) delete d[k];
+    Object.assign(d, model.sanitize(data));
+    return c;
+  });
+  setTimeout(() => {
+    library.scan().catch(() => {});
+    coverFiller.run();
+    infoFiller.run();
+    loudnessFiller.run();
+  }, 0);
+  return counts;
+}));
 
 handle('settings:set', (patch) => {
   // The password only ever arrives through server:setSecret, to be encrypted.
@@ -863,9 +899,12 @@ app.whenReady().then(() => {
       loudnessFiller.run();
       coverFiller.run();
       infoFiller.run();
+      // After the scan: a first start's backup holds the songs found.
+      backups.weekly();
     });
     library.watch();
     tools.refreshYtDlp();
+    setInterval(() => backups.weekly(), BACKUP_CHECK_MS);
   }, 1500);
 });
 

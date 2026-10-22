@@ -11,6 +11,7 @@ const { createDownloads } = require('./downloads');
 const { createLive } = require('./live');
 const { createSessions } = require('./sessions');
 const { createActivity } = require('./activity');
+const { createBackups } = require('./backups');
 const model = require('@flow/core/libraryModel');
 const tools = require('./tools');
 const tailscaleMod = require('./tailscale');
@@ -55,8 +56,10 @@ async function startServer(opts = {}) {
   const sessions = createSessions({ live, library: sessionLibrary(library), log });
   // What the admins see of the profiles: addresses, last seen, failed sign-ins.
   const activity = createActivity({ config });
+  // The library's data once a week, the last 6 kept (never the songs' files).
+  const backups = createBackups({ config, library, log });
   const server = createHttpServer({
-    config, library, version, log, tailscale: () => tailscale, downloads, live, sessions, activity,
+    config, library, version, log, tailscale: () => tailscale, downloads, live, sessions, activity, backups,
   });
 
   const port = opts.port !== undefined ? opts.port : config.get().port;
@@ -81,6 +84,8 @@ async function startServer(opts = {}) {
   library.queueCovers();
   library.queueInfo();
   library.checkTagRequest();
+  backups.checkRequest();
+  backups.weekly();
   const timers = [
     setInterval(() => library.scan().catch(() => {}), RESCAN_MS),
     setInterval(() => library.emptyTrash(), TRASH_MS),
@@ -88,6 +93,8 @@ async function startServer(opts = {}) {
     setInterval(lookForTailscale, RESCAN_MS),
     // flow-server tag-songs, run beside it, asks through server.json.
     setInterval(() => library.checkTagRequest(), TAG_CHECK_MS),
+    // So does flow-server restore.
+    setInterval(() => backups.checkRequest(), TAG_CHECK_MS),
   ];
 
   return {
@@ -98,12 +105,14 @@ async function startServer(opts = {}) {
     live,
     sessions,
     activity,
+    backups,
     tailscale: () => tailscale,
     discovery: () => discovery,
     close() {
       if (discovery) discovery.close();
       for (const t of timers) clearInterval(t);
       downloads.stop();
+      backups.stop();
       sessions.stop();
       live.close();
       // Its ffmpeg runs still going end first: they hold files in the music folder.
