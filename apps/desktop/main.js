@@ -33,6 +33,7 @@ const env = require('./src/env');
 const { createActions } = require('@flow/core/client/actions');
 const { createPrivateStats } = require('@flow/core/client/privateStats');
 const sponsorblock = require('@flow/core/sponsorblock');
+const { lookupInfo, createInfoFiller } = require('@flow/core/songInfo');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
@@ -46,6 +47,16 @@ const loudnessFiller = loudness.createFiller(library, model, () => settings.get(
 // Finds covers for Local Files songs in the background; copies of a server's
 // songs get the server's.
 const coverFiller = covers.createFiller({ skip: (id) => remote.active() && remote.isServerCopy(id) });
+// Looks up the album and genre of Local Files songs never looked up (from
+// before 3.6.3, put into the folder by hand); copies of a server's songs get
+// the server's.
+const infoFiller = createInfoFiller({
+  nextSong: (tried) => library.get().songs.find((s) => !s.infoLooked && !tried.has(s.id)
+    && !(remote.active() && remote.isServerCopy(s.id))) || null,
+  save: (found) => library.mutate((d) => {
+    for (const f of found) if (model.songById(d, f.id)) model.setInfo(d, f.id, f);
+  }),
+});
 // New songs' files get their flowid and cover (tagger.js).
 const tagger = createTagger({ skip: (id) => remote.active() && remote.isServerCopy(id) });
 // The Statistics of everything heard on this device (privateStats.js).
@@ -547,6 +558,7 @@ handle('import:finish', ({ job, run }) => {
     importSaves -= 1;
     loudnessFiller.run();
     coverFiller.run();
+    infoFiller.run();
   });
 });
 
@@ -726,11 +738,17 @@ function sponsorSegments(key, url) {
 }
 handle('sponsor:segments', ({ key, url }) => sponsorSegments(key, url));
 
+// One song's album and genre from Apple's search, for Add Songs' editor.
+handle('song:lookupInfo', (song) => lookupInfo(song || {}));
+
 handle('song:finish', (job) => library.quietly(async () => {
   const meta = {
     artist: String(job.artist || '').trim(),
     title: String(job.title || '').trim(),
     mix: String(job.mix || '').trim(),
+    album: String(job.album || '').trim(),
+    genre: String(job.genre || '').trim(),
+    subGenre: String(job.subGenre || '').trim(),
   };
   if (!meta.title) throw new Error('Please enter a title.');
   const saved = await exporter.saveSong({
@@ -741,6 +759,8 @@ handle('song:finish', (job) => library.quietly(async () => {
     id: library.newId(),
     file: saved.file,
     ...meta,
+    // Its editor looked them up; an empty album is the title.
+    infoLooked: true,
     duration: saved.duration,
     format: saved.format,
     sourceUrl: String(job.sourceUrl || ''),
@@ -762,6 +782,7 @@ handle('song:finish', (job) => library.quietly(async () => {
   fs.rmSync(job.cachePath, { force: true });
   loudnessFiller.run();
   coverFiller.run();
+  infoFiller.run();
   return song;
 }));
 
@@ -829,6 +850,7 @@ app.whenReady().then(() => {
     if (result.added) {
       loudnessFiller.run();
       coverFiller.run();
+      infoFiller.run();
     }
   });
   covers.watchLocal();
@@ -838,6 +860,7 @@ app.whenReady().then(() => {
     library.scan().catch(() => {}).then(() => {
       loudnessFiller.run();
       coverFiller.run();
+      infoFiller.run();
     });
     library.watch();
     tools.refreshYtDlp();
@@ -851,6 +874,7 @@ app.on('window-all-closed', async () => {
   library.unwatch();
   loudnessFiller.stop();
   coverFiller.stop();
+  infoFiller.stop();
   tagger.stop();
   if (importToken) importToken.cancel();
   if (searchToken) searchToken.cancel();

@@ -49,11 +49,15 @@ const SongDetails = {
   },
 
   _head(song) {
-    const meta = [song.artist, song.mix, Util.fmtClock(song.duration)].filter(Boolean).join('  ·  ');
+    const meta = [song.artist, Util.fmtClock(song.duration)].filter(Boolean).join('  ·  ');
+    // Under them its Album, Mix, Genre and Info, each named, "-" for one it has not.
+    const tag = (label, value) => h('span.details__tag', h('span.details__tag-label', label), value || '-');
     return h('section.details__section.details__head',
       Covers.el(song, 'big'),
       h('h3.details__title', { title: song.title }, song.title),
-      h('div.details__meta', meta));
+      h('div.details__meta', meta),
+      h('div.details__tags',
+        tag('Album', song.album), tag('Mix', song.mix), tag('Genre', song.genre), tag('Info', song.subGenre)));
   },
 
   _playlists(song, shown) {

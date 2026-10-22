@@ -41,6 +41,7 @@ const { MP3_QUALITIES } = require('@flow/core/formats');
 const { isPrivateIp } = require('@flow/core/address');
 const { coverVersion } = require('@flow/core/cover');
 const { MAX_QUERY } = require('@flow/core/songSearch');
+const { albumFor } = require('@flow/core/libraryModel');
 
 const MAX_ITEMS = 500;
 const ITEM_TIMEOUT = 20 * 60 * 1000;
@@ -134,7 +135,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     missing: (name) => `This server has no ${name}, so it cannot download.`,
     lowPriority: true,
   });
-  const lister = createLister({ media, library: () => library.data });
+  const lister = createLister({ media, library: () => library.data, lookupInfo: library.lookupInfo || null });
 
   const batches = new Map();    // profile key -> batch (as batch.json holds it)
   const progress = new Map();   // `${key}/${index}` -> { frac, text } of the song downloading
@@ -236,7 +237,14 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       duration: Number(it.duration) || 0,
       url: String(it.url || ''),
       key: String(it.key || ''),
-      meta: it.meta && it.meta.title ? { artist: it.meta.artist || '', title: it.meta.title, mix: it.meta.mix || '' } : null,
+      meta: it.meta && it.meta.title ? {
+        artist: it.meta.artist || '',
+        title: it.meta.title,
+        mix: it.meta.mix || '',
+        album: it.meta.album || '',
+        genre: it.meta.genre || '',
+        subGenre: it.meta.subGenre || '',
+      } : null,
       artistFromChannel: false,
       existing: it.existing || null,
       state,
@@ -251,7 +259,9 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     listing.set(batch.key, group);
     const knownArtists = [...new Set(library.data.songs.map((s) => s.artist).filter(Boolean))];
     const onProgress = (p) => {
-      const text = p.text || (p.phase === 'matching' ? `Looking up the songs on YouTube: ${p.done} of ${p.total}` : '');
+      const text = p.text || (p.phase === 'matching'
+        ? `Looking up the songs on YouTube: ${p.done} of ${p.total}${p.known ? ` · ${p.known} already in the library` : ''}`
+        : '');
       progress.set(`${batch.key}/list`, { frac: p.total ? p.done / p.total : null, text });
     };
     try {
@@ -397,6 +407,12 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       if (!item.meta) {
         item.meta = { artist: probed.guess.artist || '', title: probed.guess.title || probed.title, mix: probed.guess.mix || '' };
         item.artistFromChannel = !!probed.guess.artistFromChannel;
+      }
+      // Its album and genre: the list's, the page's, else Apple's (listing.withInfo).
+      item.meta = await lister.withInfo(item.meta, probed);
+      if (!alive()) {
+        removeQuietly(file.path);
+        return;
       }
       item.sourceUrl = probed.url;
       item.sourceKey = probed.key;
@@ -679,7 +695,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   /**
    * "Finish this song": cut [start, end] out into the music folder with the
    * names in `meta`, add it to the library and into the playlists, at its
-   * place in the source. body: { meta: { artist, title, mix }, start, end,
+   * place in the source. body: { meta: { artist, title, mix, album, genre, subGenre }, start, end,
    * playlistIds, playlist: { name, mergeInto } | null, existing: [index] }.
    * `playlist` asks for the batch's own playlist (made by the first song
    * finished, then reused); `existing` adds library songs of the list to the
@@ -697,6 +713,12 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       mix: cleanText(body.meta && body.meta.mix),
     };
     if (!meta.title) throw new DownloadError(400, 'Please enter a title.');
+    // An app from before albums sends neither: the ones found here. Left
+    // empty, the album is the title.
+    const sent = (key) => (body.meta && body.meta[key] !== undefined ? body.meta[key] : (item.meta || {})[key]);
+    meta.album = albumFor(sent('album'), meta.title);
+    meta.genre = cleanText(sent('genre'));
+    meta.subGenre = cleanText(sent('subGenre'));
     const start = Math.max(0, Number(body.start) || 0);
     const end = Math.min(item.duration || Infinity, Number(body.end) || item.duration || 0);
     if (!(end > start)) throw new DownloadError(400, 'The cut is empty.');
@@ -726,7 +748,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         cachePath: src, start, end, duration: item.duration, ...meta, sourceUrl: item.sourceUrl || item.url,
       }, tmp);
       const songMeta = {
-        ...meta, format: ext, duration: saved.duration, sourceUrl: item.sourceUrl || item.url, sourceKey: item.sourceKey || item.key,
+        ...meta, infoLooked: true, format: ext, duration: saved.duration, sourceUrl: item.sourceUrl || item.url, sourceKey: item.sourceKey || item.key,
         sourcePlaylistUrl: batch.single ? '' : batch.source.url,
       };
       // Saved meanwhile by another app (an upload of the same source): that one is used.

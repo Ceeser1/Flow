@@ -17,6 +17,7 @@ const { songFileStem } = require('@flow/core/text');
 const settings = require('./settings');
 const covers = require('./covers');
 const { tagArgs, flowIdText } = require('@flow/core/tags');
+const { albumFor } = require('@flow/core/libraryModel');
 
 function samePath(a, b) {
   return !!a && !!b && path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
@@ -39,15 +40,17 @@ function uniquePath(stem, ext, current = null) {
 
 /**
  * Cuts [start, end] out of the cached download into the music folder, with
- * tags. Resolves { file, duration, format }.
+ * tags (an empty album is the title, as the library keeps it). Resolves
+ * { file, duration, format }.
  */
 function saveSong(job) {
   const ext = path.extname(job.cachePath).slice(1).toLowerCase();
-  return media.cutSong(job, uniquePath(songFileStem(job.artist, job.title, job.mix), ext));
+  return media.cutSong({ ...job, album: albumFor(job.album, job.title) },
+    uniquePath(songFileStem(job.artist, job.title, job.mix), ext));
 }
 
 /**
- * New artist / title / mix for a saved song: the file is renamed to match and
+ * New artist / title / mix (album, genre, sub-genre) for a saved song: the file is renamed to match and
  * its tags written anew (media.rewriteTags: the other tags stay, the song's
  * flowid and cover go in). Resolves { file, written }: the new path, and
  * whether the tags were written. If ffmpeg cannot write them the file is
@@ -60,7 +63,14 @@ async function retagSong(song, meta) {
   try {
     const picture = song.cover && song.cover !== '-' ? covers.localStore().read(song.id) : null;
     const ok = await media.rewriteTags(song.file, tmp, {
-      meta: { ...meta, sourceUrl: song.sourceUrl },
+      meta: {
+        ...meta,
+        // Not sent (an app from before albums): the song's own.
+        album: meta.album !== undefined ? albumFor(meta.album, meta.title) : song.album,
+        genre: meta.genre !== undefined ? meta.genre : song.genre,
+        subGenre: meta.subGenre !== undefined ? meta.subGenre : song.subGenre,
+        sourceUrl: song.sourceUrl,
+      },
       flowId: flowIdText(settings.clientId(), song.id),
       picture,
     });

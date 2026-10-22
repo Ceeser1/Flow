@@ -130,7 +130,10 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
             status: 'ready',
             media: { path: r.path, duration: r.duration, format: r.format, local: true },
             song: {
-              url: '', key: '', title: found.title, meta: { artist: found.artist, title: found.title, mix: found.mix }, artistFromChannel: false, originalPath: it.path,
+              url: '', key: '', title: found.title, meta: {
+                artist: found.artist, title: found.title, mix: found.mix, album: found.album, genre: found.genre, subGenre: found.subGenre,
+              },
+              artistFromChannel: false, originalPath: it.path,
             },
           }, run);
           if (r.cover) onStaged(staged.get(r.path));
@@ -229,6 +232,11 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
             artist: meta.artist || '',
             title: meta.title || 'Untitled',
             mix: meta.mix || '',
+            // What its tags or the boxes say; what it lacks the server looks up once it is there.
+            album: meta.album || '',
+            genre: meta.genre || '',
+            subGenre: meta.subGenre || '',
+            infoLooked: !!(meta.album && meta.genre),
             duration: Number(e.duration) || 0,
             format,
             sourceUrl: e.sourceUrl || '',

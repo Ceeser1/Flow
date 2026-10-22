@@ -100,6 +100,10 @@ const PlaylistPage = {
     Player.onChange(() => {
       if (Nav.page === 'playlist') this._drawPlayState();
     });
+    // Settings' "Show filterable columns for Songs".
+    Store.onSettings((patch) => {
+      if (Nav.page === 'playlist' && ['colMix', 'colAlbum', 'colGenre', 'colSubGenre'].some((k) => k in patch)) this.renderTable();
+    });
   },
 
   _view(id) {
@@ -120,6 +124,9 @@ const PlaylistPage = {
     if (key === 'title') return s.title;
     if (key === 'artist') return s.artist;
     if (key === 'mix') return s.mix;
+    if (key === 'album') return s.album || '';
+    if (key === 'genre') return s.genre || '';
+    if (key === 'subGenre') return s.subGenre || '';
     if (key === 'from') return this._from(s);
     if (key === 'duration') return s.duration || 0;
     if (key === 'added') return row.addedAt;
@@ -133,7 +140,7 @@ const PlaylistPage = {
   rowsFor(id) {
     const view = this._view(id);
     let rows = Store.rowsOf(id)
-      .filter((r) => Util.matches(view.filter, r.song.title, r.song.artist, r.song.mix));
+      .filter((r) => Util.matches(view.filter, r.song.title, r.song.artist, r.song.mix, r.song.album, r.song.genre, r.song.subGenre));
     if (!SmartLists.isSmart(id)) rows = rows.sort((a, b) => b.addedAt - a.addedAt);
     return Util.sortRows(rows, view.sort, (r, k) => this._sortValue(r, k));
   },
@@ -250,7 +257,8 @@ const PlaylistPage = {
 
     // A listening trend list also says which of your playlists each song is from.
     const smartList = !!p.isSmart;
-    $('plTable').classList.toggle('table--from', smartList);
+    const extra = this._extraColumns(smartList);
+    this._shareColumns(extra.map((c) => c.key));
     renderTable($('plTable'), {
       rows,
       sort: view.sort,
@@ -263,13 +271,7 @@ const PlaylistPage = {
       columns: [
         { key: 'title', label: 'Title', cls: 'col-title', render: (r) => this._title(r.song), onClick: (r) => this._playFromTitle(r.song) },
         { key: 'artist', label: 'Artist', cls: 'col-artist', render: (r) => h('span', { title: r.song.artist }, r.song.artist) },
-        { key: 'mix', label: 'Mix', cls: 'col-mix', render: (r) => h('span.muted-text', { title: r.song.mix }, r.song.mix) },
-        ...(smartList ? [{
-          key: 'from',
-          label: 'From Playlist',
-          cls: 'col-from',
-          render: (r) => h('span.muted-text', { title: this._from(r.song) }, this._from(r.song)),
-        }] : []),
+        ...extra,
         { key: 'duration', label: 'Duration', cls: 'col-num', render: (r) => Util.fmtClock(r.song.duration) },
         { key: 'added', label: 'Added', cls: 'col-date', render: (r) => Util.fmtDate(r.addedAt) },
         { key: 'actions', label: 'Actions', sortable: false, cls: 'col-actions', render: (r) => this._actions(r, pickTarget, pickSet) },
@@ -353,7 +355,38 @@ const PlaylistPage = {
   },
 
   /**
-   * The width left for Title, Artist and Mix, which the stylesheet splits.
+   * The columns between Artist and Duration: Album, Mix, Genre and Info as
+   * Settings shows them, and a listening trend list's From Playlist.
+   */
+  _extraColumns(smartList) {
+    const set = Store.settings;
+    const muted = (text) => h('span.muted-text', { title: text }, text);
+    return [
+      set.colAlbum && { key: 'album', label: 'Album', cls: 'col-album', render: (r) => muted(r.song.album || '') },
+      set.colMix !== false && { key: 'mix', label: 'Mix', cls: 'col-mix', render: (r) => muted(r.song.mix) },
+      set.colGenre && { key: 'genre', label: 'Genre', cls: 'col-genre', render: (r) => muted(r.song.genre || '') },
+      set.colSubGenre && { key: 'subGenre', label: 'Info', cls: 'col-subgenre', render: (r) => muted(r.song.subGenre || '') },
+      smartList && { key: 'from', label: 'From Playlist', cls: 'col-from', render: (r) => muted(this._from(r.song)) },
+    ].filter(Boolean);
+  },
+
+  /**
+   * Each column's share of the width left (the stylesheet's --w-<column>):
+   * Title 45, Artist 35, Album 25, Mix 20, Genre 15, Info 15, From Playlist 22 of
+   * what the columns shown add up to, so every one shown makes the others
+   * a little narrower. Title takes what is left.
+   */
+  _shareColumns(keys) {
+    const weights = {
+      title: 45, artist: 35, album: 25, mix: 20, genre: 15, subGenre: 15, from: 22,
+    };
+    const shown = ['title', 'artist', ...keys];
+    const total = shown.reduce((sum, k) => sum + weights[k], 0);
+    for (const k of shown) if (k !== 'title') $('plTable').style.setProperty(`--w-${k}`, String(weights[k] / total));
+  },
+
+  /**
+   * The width left for Title, Artist and the columns beside them, which the stylesheet splits.
    * Measured on the wrapper, which is as wide as the page allows: the table
    * itself never gets narrower than its columns, so after the window shrank
    * (maximized, then back) it would still report the old width, and Title,

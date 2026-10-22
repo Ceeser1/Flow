@@ -43,17 +43,19 @@ async function resolveShortLink(ref) {
 }
 
 /**
- * A Deezer song as { title, artists, duration, playable }. Always playable:
- * Deezer marks songs it may not play itself (readable: false, often only in
- * some countries), but the song is looked up on YouTube all the same.
+ * A Deezer song as { title, artists, album, duration, playable }. Always
+ * playable: Deezer marks songs it may not play itself (readable: false,
+ * often only in some countries), but the song is looked up on YouTube all
+ * the same. An album's songs carry no album of their own: `albumName`.
  */
-function trackOf(t, albumArtist = '') {
+function trackOf(t, albumArtist = '', albumName = '') {
   const names = Array.isArray(t.contributors) && t.contributors.length
     ? t.contributors.map((c) => c && c.name)
     : [t.artist && t.artist.name || albumArtist];
   return {
     title: String(t.title || t.title_short || '').trim(),
     artists: [...new Set(names.map((n) => String(n || '').trim()).filter(Boolean))].join(', '),
+    album: String((t.album && t.album.title) || albumName || '').trim(),
     duration: Number(t.duration) || 0,
     playable: true,
   };
@@ -93,6 +95,7 @@ async function fetchDeezer(ref, isCancelled = () => false) {
     return { name: `${t.artists} - ${t.title}`, url, tracks: [t] };
   }
   const albumArtist = ref.type === 'album' && info.artist ? String(info.artist.name || '') : '';
+  const albumName = ref.type === 'album' ? String(info.title || '') : '';
   const total = Number(info.nb_tracks) || 0;
   const raw = (info.tracks && Array.isArray(info.tracks.data)) ? [...info.tracks.data] : [];
   // The first songs come along; the rest a page at a time.
@@ -102,7 +105,7 @@ async function fetchDeezer(ref, isCancelled = () => false) {
     if (!data.length) break;
     raw.push(...data);
   }
-  const tracks = raw.filter(Boolean).map((t) => trackOf(t, albumArtist)).filter((t) => t.title);
+  const tracks = raw.filter(Boolean).map((t) => trackOf(t, albumArtist, albumName)).filter((t) => t.title);
   if (!tracks.length) throw new Error('This Deezer list has no songs that can be read.');
   return { name: String(info.title || 'Deezer playlist'), url, tracks };
 }

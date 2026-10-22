@@ -27,6 +27,7 @@ const otherSites = require('./otherSites');
 const songSearch = require('./songSearch');
 const { parseTitle, cleanUploader } = require('./titleParser');
 const { normalizeListUrl, sourceKey } = require('./text');
+const { fillInfo } = require('./songInfo');
 
 const SEARCH_RESULTS = 5;
 const SEARCH_PARALLEL = 4;
@@ -183,9 +184,11 @@ async function eachItem(items, group, onProgress, fetchOne) {
 
 /**
  * media: what createMedia() made; library(): the library data songs are
- * looked up in (the server passes the profile's view).
+ * looked up in (the server passes the profile's view); lookupInfo: the
+ * album and genre of a song its source does not name (songInfo.lookupInfo),
+ * or null for none.
  */
-function createLister({ media, library }) {
+function createLister({ media, library, lookupInfo = null }) {
   /** A yt-dlp playlist (YouTube, SoundCloud, Bandcamp ...) as checklist items. */
   async function listWithYtDlp(url, group, onProgress) {
     onProgress({ phase: 'listing', text: 'Reading the playlist...' });
@@ -520,7 +523,7 @@ function createLister({ media, library }) {
     const tracks = page.tracks;
     const data = library();
     const items = tracks.map((t, index) => {
-      const meta = parseTitle(`${t.artists} - ${t.title}`);
+      const meta = { ...parseTitle(`${t.artists} - ${t.title}`), album: String(t.album || ''), genre: '', subGenre: '' };
       return {
         index,
         title: [t.artists, t.title].filter(Boolean).join(' - '),
@@ -541,7 +544,9 @@ function createLister({ media, library }) {
     for (const it of items) if (it.status === 'pending' && it.existing) it.status = 'ok';
     let done = 0;
     const total = todo.length;
-    onProgress({ phase: 'matching', done, total });
+    // Songs found in the library so far: by name before, by upload during the search.
+    const known = () => items.filter((it) => it.existing).length;
+    onProgress({ phase: 'matching', done, total, known: known() });
 
     const next = () => todo.shift();
     const worker = async () => {
@@ -571,7 +576,7 @@ function createLister({ media, library }) {
           }
         }
         done += 1;
-        onProgress({ phase: 'matching', done, total, title: it.title });
+        onProgress({ phase: 'matching', done, total, known: known(), title: it.title });
       }
     };
     await Promise.all(Array.from({ length: SEARCH_PARALLEL }, worker));
@@ -603,10 +608,29 @@ function createLister({ media, library }) {
   }
 
   /**
+   * A downloaded song's names with its album and genre: the list's own (a
+   * Spotify album's, Deezer's, Amazon's), else the upload's page's (YouTube
+   * Music's, Bandcamp's, SoundCloud's), else Apple's search. Never fails:
+   * what cannot be found stays empty.
+   */
+  async function withInfo(meta, probed) {
+    let out = fillInfo(meta, probed.guess);
+    if (lookupInfo && (!out.album || !out.genre)) {
+      try {
+        out = fillInfo(out, await lookupInfo({ ...out, duration: probed.duration }));
+      } catch {
+        // Apple could not be asked: the song is saved without them.
+      }
+    }
+    return out;
+  }
+
+  /**
    * Downloads the chosen new songs into the cache, one after another.
    * items: [{ index, title, url, meta? }]; a ready song comes with
-   * song { url, key, title, meta, artistFromChannel } for saving it later, and
-   * an upload the library already has is reported as 'library' (see eachItem).
+   * song { url, key, title, meta, artistFromChannel } for saving it later
+   * (meta with its album and genre, see withInfo), and an upload the library
+   * already has is reported as 'library' (see eachItem).
    */
   function download(items, opts, group, onProgress, { knownArtists = [] } = {}) {
     return eachItem(items, group, onProgress, async (it, report) => {
@@ -617,13 +641,14 @@ function createLister({ media, library }) {
       const file = await withSub(group, (t) => media.download(probed, opts,
         (stage, frac, text) => report(frac, text), t));
       const fromSource = it.meta && it.meta.title;
+      const meta = await withInfo(fromSource ? it.meta : { artist: probed.guess.artist, title: probed.guess.title, mix: probed.guess.mix }, probed);
       return {
         media: file,
         song: {
           url: probed.url,
           key: probed.key,
           title: probed.title,
-          meta: fromSource ? it.meta : { artist: probed.guess.artist, title: probed.guess.title, mix: probed.guess.mix },
+          meta,
           artistFromChannel: !fromSource && !!probed.guess.artistFromChannel,
           // For its cover (@flow/core/cover): a Spotify (Deezer, Amazon) song's upload was
           // found by a search already (YouTube Music's, or another site's).
@@ -634,7 +659,9 @@ function createLister({ media, library }) {
     });
   }
 
-  return { list, download, search, listWithYtDlp, listSpotify, listDeezer, listAmazonMusic, matchOnYouTube, findSong };
+  return {
+    list, download, search, withInfo, listWithYtDlp, listSpotify, listDeezer, listAmazonMusic, matchOnYouTube, findSong,
+  };
 }
 
 module.exports = {

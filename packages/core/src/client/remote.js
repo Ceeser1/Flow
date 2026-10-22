@@ -124,8 +124,8 @@ function createRemote(env) {
   // the server answers "nothing new" while its revision is the same: a copy of
   // another format is shown at start but fetched whole again. Raise it whenever
   // the songs or playlists gain a field the server sends (3: addedBy, profileNames;
-  // 4: listening, 3.5; 5: statistics, 3.6).
-  const CACHE_FORMAT = 5;
+  // 4: listening, 3.5; 5: statistics, 3.6; 6: album, genre, subGenre, infoLooked, 3.6.3).
+  const CACHE_FORMAT = 6;
 
   function emptySync(serverId = '') {
     return {
@@ -1361,6 +1361,10 @@ function createRemote(env) {
       title: local.title,
       artist: local.artist,
       mix: local.mix,
+      album: local.album,
+      genre: local.genre,
+      subGenre: local.subGenre,
+      infoLooked: local.infoLooked,
       duration: local.duration,
       format: local.format || files.extname(local.file).slice(1).toLowerCase(),
       sourceUrl: local.sourceUrl,
@@ -1424,7 +1428,11 @@ function createRemote(env) {
     // An upload shows as addSong until the library catches up; one the server
     // already had (existing) shows as that song straight away.
     if (r.json.existing) sync.sent.pop();
-    if (apply) sync.queue.push(newCommand('editSong', { songId: serverId, title: local.title, artist: local.artist, mix: local.mix }));
+    if (apply) {
+      sync.queue.push(newCommand('editSong', {
+        songId: serverId, title: local.title, artist: local.artist, mix: local.mix, album: local.album, genre: local.genre, subGenre: local.subGenre,
+      }));
+    }
     saveSync();
     if (!r.json.existing) await uploadCover(local, serverId);
     if (!settings.get('serverKeepFiles') && !neededOffline(serverId)) {
@@ -1448,7 +1456,26 @@ function createRemote(env) {
   // ---- Local Files and the server ----
 
   function snapOfSong(s) {
-    return { title: s.title, artist: s.artist, mix: s.mix, fav: !!s.favouriteAt, loudness: s.loudness };
+    return {
+      title: s.title,
+      artist: s.artist,
+      mix: s.mix,
+      album: s.album || '',
+      genre: s.genre || '',
+      subGenre: s.subGenre || '',
+      fav: !!s.favouriteAt,
+      loudness: s.loudness,
+    };
+  }
+
+  /**
+   * A song's album, genre and sub-genre as they were at the last
+   * synchronization. A snapshot from before albums (3.6.2 and older) knows
+   * none: they count as unchanged, so nothing empty goes up over the server's.
+   */
+  function sameInfo(was, s) {
+    return was.album === undefined || ((s.album || '') === was.album && (s.genre || '') === (was.genre || '')
+      && (s.subGenre || '') === (was.subGenre || ''));
   }
 
   function snapOfList(p) {
@@ -1540,8 +1567,15 @@ function createRemote(env) {
       const sid = sync.songMap[s.id];
       if (!sid || !model.songById(v, sid)) continue;
       const now = snapOfSong(s);
-      if (now.title !== was.title || now.artist !== was.artist || now.mix !== was.mix) {
-        q('editSong', { songId: sid, title: s.title, artist: s.artist, mix: s.mix });
+      if (now.title !== was.title || now.artist !== was.artist || now.mix !== was.mix || !sameInfo(was, s)) {
+        q('editSong', {
+          songId: sid,
+          title: s.title,
+          artist: s.artist,
+          mix: s.mix,
+          // An old snapshot's song sends its names only (see sameInfo).
+          ...(was.album === undefined ? {} : { album: s.album, genre: s.genre, subGenre: s.subGenre }),
+        });
         count += 1;
       }
       if (now.fav !== was.fav) {
@@ -1744,11 +1778,18 @@ function createRemote(env) {
         const was = snap && snap.songs[s.id];
         const there = sid && model.songById(v, sid);
         if (!there || !was) continue;
-        const unchangedHere = s.title === was.title && s.artist === was.artist && s.mix === was.mix && !!s.favouriteAt === was.fav;
+        const unchangedHere = s.title === was.title && s.artist === was.artist && s.mix === was.mix && !!s.favouriteAt === was.fav
+          && sameInfo(was, s);
         if (!unchangedHere) continue;
         const patch = {};
         if (there.title !== s.title || there.artist !== s.artist || there.mix !== s.mix) {
           Object.assign(patch, { title: there.title, artist: there.artist, mix: there.mix });
+        }
+        if ((there.album || '') !== (s.album || '') || (there.genre || '') !== (s.genre || '')
+          || (there.subGenre || '') !== (s.subGenre || '') || !!there.infoLooked !== !!s.infoLooked) {
+          Object.assign(patch, {
+            album: there.album || '', genre: there.genre || '', subGenre: there.subGenre || '', infoLooked: !!there.infoLooked,
+          });
         }
         if (!!there.favouriteAt !== !!s.favouriteAt) patch.favouriteAt = there.favouriteAt;
         if (there.loudness !== null && s.loudness === null) patch.loudness = there.loudness;
@@ -1897,6 +1938,10 @@ function createRemote(env) {
           title: s.title,
           artist: s.artist,
           mix: s.mix,
+          album: s.album,
+          genre: s.genre,
+          subGenre: s.subGenre,
+          infoLooked: s.infoLooked,
           duration: s.duration,
           format: ext,
           sourceUrl: s.sourceUrl,

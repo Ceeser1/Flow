@@ -26,8 +26,9 @@ function isSpotifyTrackUrl(text) {
 }
 
 /**
- * The embed page's data: { name, type, tracks: [{ title, artists, duration,
- * playable }] }, duration in seconds.
+ * The embed page's data: { name, type, tracks: [{ title, artists, album,
+ * duration, playable }] }, duration in seconds. Only an album's page names
+ * the album (its own name); a playlist's songs come without one.
  */
 function parseEmbedPage(html) {
   const m = /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/.exec(String(html || ''));
@@ -41,12 +42,15 @@ function parseEmbedPage(html) {
   if (!entity || !Array.isArray(entity.trackList)) {
     throw new Error('This Spotify link has no songs that can be read. Is the playlist public?');
   }
+  const name = String(entity.name || entity.title || 'Spotify playlist');
+  const album = String(entity.type || '').toLowerCase() === 'album' ? name.trim() : '';
   return {
-    name: String(entity.name || entity.title || 'Spotify playlist'),
+    name,
     type: String(entity.type || ''),
     tracks: entity.trackList.map((t) => ({
       title: String(t.title || '').trim(),
       artists: String(t.subtitle || '').replace(/\s*,\s*/g, ', ').trim(),
+      album,
       duration: (Number(t.duration) || 0) / 1000,
       playable: t.isPlayable !== false,
     })).filter((t) => t.title),

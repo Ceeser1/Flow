@@ -23,16 +23,20 @@ const TAG_CHECK_MS = 5000;
 const TRASH_MS = 24 * 60 * 60 * 1000;
 
 /**
- * opts: { home, music, port, host, log, detectTailscale, discoveryPort, livePingMs, coverDeps, convertQuietMs }.
+ * opts: { home, music, port, host, log, detectTailscale, discoveryPort, livePingMs, coverDeps, convertQuietMs, lookupInfo }.
  * Resolves { port, config, library, tailscale, close }. discoveryPort: the UDP
  * port the apps' search is answered on (null: not at all; left out: the
  * default port if the server's settings say so).
  * Port 0 picks a free one. coverDeps: fakes for finding covers (library.js).
+ * lookupInfo: how albums and genres are looked up (songInfo.lookupInfo; left
+ * out: they are not).
  */
 async function startServer(opts = {}) {
   const log = opts.log || (() => {});
   const config = configMod.open({ home: opts.home, music: opts.music });
-  const library = createLibrary(config, log, { coverDeps: opts.coverDeps || null, convertQuietMs: opts.convertQuietMs });
+  const library = createLibrary(config, log, {
+    coverDeps: opts.coverDeps || null, convertQuietMs: opts.convertQuietMs, lookupInfo: opts.lookupInfo || null,
+  });
   // The Tailscale address, looked for again now and then: Tailscale may come
   // up after the server does when the machine boots.
   const detectTailscale = opts.detectTailscale || tailscaleMod.detect;
@@ -75,6 +79,7 @@ async function startServer(opts = {}) {
   await library.scan().catch((err) => log(`Scan failed: ${err.message}`));
   library.queueLoudness();
   library.queueCovers();
+  library.queueInfo();
   library.checkTagRequest();
   const timers = [
     setInterval(() => library.scan().catch(() => {}), RESCAN_MS),

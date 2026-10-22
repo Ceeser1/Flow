@@ -413,7 +413,9 @@ function createMedia({
    * cut FLAC is the one exception, encoded again as FLAC: lossless all the
    * same). Resolves { file, duration, format }.
    */
-  async function cutSong({ cachePath, start, end, duration, artist, title, mix, sourceUrl }, dest, cancelToken = null) {
+  async function cutSong({
+    cachePath, start, end, duration, artist, title, mix, album, genre, subGenre, sourceUrl,
+  }, dest, cancelToken = null) {
     const ext = path.extname(cachePath).slice(1).toLowerCase();
     const cut = [];
     if (start > EDGE) cut.push('-ss', start.toFixed(3));
@@ -423,7 +425,9 @@ function createMedia({
     const codec = cut.length && ext === 'flac' ? ['-c:a', 'flac', '-compression_level', '5'] : ['-c', 'copy'];
     try {
       await runFfmpeg([...cut, '-i', cachePath, '-map', '0:a:0', ...codec,
-        ...tagArgs({ artist, title, mix, sourceUrl }, ext), dest], end - start, null, cancelToken);
+        ...tagArgs({
+          artist, title, mix, album, genre, subGenre, sourceUrl,
+        }, ext), dest], end - start, null, cancelToken);
     } catch (err) {
       removeQuietly(dest);
       throw err;
@@ -547,8 +551,9 @@ function createMedia({
   /**
    * A saved song's tags written anew (see tags.js): into `out`, a file
    * beside it that the caller then puts in its place. The audio is copied
-   * untouched and the file keeps the tags it has (album, year ...), with
-   * meta's names ({ title, artist, mix, sourceUrl }) and flowId over them.
+   * untouched and the file keeps the tags it has (year, track ...), with
+   * meta's names ({ title, artist, mix, album, genre, subGenre, sourceUrl })
+   * and flowId over them.
    * picture: the cover to put in (a JPEG); null keeps the file's own.
    * Runs at low priority. Resolves true when written.
    */

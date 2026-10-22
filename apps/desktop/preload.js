@@ -110,6 +110,7 @@ contextBridge.exposeInMainWorld('flow', {
   onServerLive: (fn) => ipcRenderer.on('server:live', (_e, ev) => fn(ev)),
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),
   finishSong: (job) => call('song:finish', job),
+  lookupInfo: (song) => call('song:lookupInfo', song),
   // Covers: files in Music\FlowPlayer\Covers (Store.coverSrc).
   wantCovers: (ids) => call('covers:want', ids),
   coverStats: () => call('covers:stats'),

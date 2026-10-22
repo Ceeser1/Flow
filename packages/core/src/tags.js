@@ -10,6 +10,10 @@ function tagArgs(meta, ext) {
     '-metadata', `artist=${meta.artist || ''}`];
   if (ext !== 'wav') {
     if (meta.mix) args.push('-metadata', `mix=${meta.mix}`);
+    if (meta.album) args.push('-metadata', `album=${meta.album}`);
+    if (meta.genre) args.push('-metadata', `genre=${meta.genre}`);
+    // Info (subGenre): the grouping tag, which players show next to the genre.
+    if (meta.subGenre) args.push('-metadata', `grouping=${meta.subGenre}`);
     if (meta.sourceUrl) args.push('-metadata', `comment=${meta.sourceUrl}`);
   }
   if (ext === 'mp3') args.push('-id3v2_version', '3', '-write_id3v1', '0');
@@ -62,11 +66,14 @@ const DROPPED = new Set(['encoder', 'major_brand', 'minor_version', 'compatible_
 const NAMES = ['title', 'artist', 'mix'];
 
 /**
- * The tags a file is written with: the ones it has (album, year, track ...)
- * with the names of `meta` over them, and its source (comment) and flowid
- * when it gives them. Keys lower-case.
+ * The tags a file is written with: the ones it has (year, track ...) with
+ * the names of `meta` over them, and its album, genre, sub-genre (grouping),
+ * source (comment) and flowid when it gives them (an album or genre it
+ * lacks: the file's own stays). Keys lower-case.
  */
-function mergedTags(existing, { title = '', artist = '', mix = '', sourceUrl = '', flowId = '' }) {
+function mergedTags(existing, {
+  title = '', artist = '', mix = '', album = '', genre = '', subGenre = '', sourceUrl = '', flowId = '',
+}) {
   const out = {};
   for (const [k, v] of Object.entries(existing || {})) {
     const key = k.toLowerCase();
@@ -76,6 +83,9 @@ function mergedTags(existing, { title = '', artist = '', mix = '', sourceUrl = '
   out.title = title;
   out.artist = artist;
   if (mix) out.mix = mix;
+  if (album) out.album = album;
+  if (genre) out.genre = genre;
+  if (subGenre) out.grouping = subGenre;
   if (sourceUrl) out.comment = sourceUrl;
   if (flowId) out.flowid = flowId;
   return out;

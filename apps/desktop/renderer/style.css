@@ -502,17 +502,25 @@ button, input, select { font: inherit; color: inherit; }
   display: flex;
   flex-direction: column;
   height: 100%;
+  container-type: inline-size;
 }
 
-/* The phone's All / Playlists / Songs / Artists row (mobile.css). */
+/* The phone's All / Playlists / Songs / Artists ... row (mobile.css). */
 .search-filter { display: none; }
 
+/* Seven columns, each as wide as when the page held three (Playlists 1,
+   Songs 1.4, Artists 1 of the width) and never narrower than 260px (Songs
+   360px): the row scrolls sideways, its scrollbar at the bottom. */
 .results {
+  --col: max(260px, (100cqw - 28px) / 3.4);
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 1.4fr 1fr;
+  grid-template-columns: var(--col) max(360px, (100cqw - 28px) * 1.4 / 3.4) repeat(5, var(--col));
   gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
 }
 
 .results__col {
@@ -594,6 +602,8 @@ button, input, select { font: inherit; color: inherit; }
 .result--song .act .icon { width: 16px; height: 16px; }
 .result--song .result__text { flex: 1; }
 .result__avatar { border-radius: 50%; font-weight: 700; color: var(--text-bright); background: #44506a; }
+/* A mix, genre or info: its first letter on a square, unlike an artist's round one. */
+.result__avatar--name { border-radius: 6px; background: #3f5a52; }
 
 .result__text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
 
@@ -682,6 +692,7 @@ progress {
 /* A song downloaded on its own: its cover first, as tall as a field with its label. */
 .meta-grid--cover { grid-template-columns: auto 1fr 1.3fr 1fr; }
 .cover--editor { width: 58px; height: 58px; align-self: end; border-radius: 6px; }
+.meta-grid--cover .cover--editor { grid-row: span 2; align-self: start; margin-top: 18px; }
 
 .trim-head {
   display: flex;
@@ -1022,11 +1033,13 @@ progress {
   margin-bottom: 12px;
   border: 1px solid rgba(224, 176, 112, 0.35);
   border-radius: 6px;
-  background: rgba(224, 176, 112, 0.07);
+  background: var(--well);
 }
 
 .import__warning { display: flex; gap: 10px; align-items: flex-start; line-height: 1.5; }
 .import__warning .check { margin-top: 4px; }
+/* As wide as the box, so the known songs' scrollbar sits at its right edge. */
+.import__warn-body { flex: 1; min-width: 0; }
 
 .import__warn-icon {
   flex: none;
@@ -1085,6 +1098,25 @@ progress {
 .import__sub { color: var(--text-dim); font-size: 12px; margin-top: 1px; }
 .import__sub--bad { color: var(--red); }
 .import__summary { padding: 8px 12px 4px; }
+/* What a ready song is saved with, under its state. */
+.import__info { color: var(--grey); }
+
+/* Above the frames: one Album and one Genre for every new song without one. */
+.import__bulk {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--well);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.import__bulk-text { color: var(--text-bright); }
+.import__bulk-row { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.import__bulk-field { display: flex; align-items: center; gap: 8px; flex: 1 1 280px; min-width: 0; }
+.import__bulk-label { flex: none; min-width: 48px; }
+.import__bulk-input { flex: 1; min-width: 0; height: 30px; }
+.import__bulk-note { font-size: 12px; }
 .import__summary .import__sub { font-size: 13px; cursor: default; }
 .import__link { font-size: 12px; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .import__dur { flex: none; color: var(--grey); font-variant-numeric: tabular-nums; }
@@ -1410,19 +1442,23 @@ div.import__frame-head { cursor: default; }
 .sessions-mine__volume { flex-basis: 100%; }
 
 /* A song list: Duration, Added and Actions are fixed (84 + 130 + 116), and
-   what is left is split Title 45%, Artist 35%, Mix 20%. Chromium drops a
-   calc() that mixes % and px on a table column, so playlist.js measures the
-   table and hands the rest over in px as --rest. Title takes the remainder.
+   what is left is split between Title, Artist and the columns Settings
+   shows (Album, Mix, Genre, Info; a listening trend list's From Playlist): each
+   gets its share of the rest as --w-<column> (playlist.js), Title takes the
+   remainder. Chromium drops a calc() that mixes % and px on a table column,
+   so playlist.js measures the table and hands the rest over in px as --rest.
    Actions holds three buttons: Add to Queue, Play and More (songActions.js). */
 .table--songs { --fixed: 330px; }
 .table--songs .col-num { width: 84px; }
 .table--songs .col-actions { width: 116px; }
-.table--songs .col-artist { width: calc(var(--rest, 600px) * 0.35); }
-.table--songs .col-mix { width: calc(var(--rest, 600px) * 0.2); }
-/* A listening trend list has From Playlist too: Artist 25%, Mix 15%, From 22%, Title the rest. */
-.table--from .col-artist { width: calc(var(--rest, 600px) * 0.25); }
-.table--from .col-mix { width: calc(var(--rest, 600px) * 0.15); }
-.table--from .col-from { width: calc(var(--rest, 600px) * 0.22); }
+.table--songs .col-artist { width: calc(var(--rest, 600px) * var(--w-artist, 0.35)); }
+.table--songs .col-mix { width: calc(var(--rest, 600px) * var(--w-mix, 0.2)); }
+.table--songs .col-album { width: calc(var(--rest, 600px) * var(--w-album, 0.2)); }
+.table--songs .col-genre { width: calc(var(--rest, 600px) * var(--w-genre, 0.12)); }
+.table--songs .col-subgenre { width: calc(var(--rest, 600px) * var(--w-subGenre, 0.12)); }
+.table--songs .col-from { width: calc(var(--rest, 600px) * var(--w-from, 0.22)); }
+
+.settings__ticks { display: flex; flex-wrap: wrap; gap: 6px 18px; }
 
 .link-cell {
   display: inline-flex;
@@ -2771,6 +2807,17 @@ div.import__frame-head { cursor: default; }
 }
 
 .details__meta { color: var(--grey); user-select: text; }
+.details__tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 18px;
+  margin-top: 8px;
+  color: var(--text-bright);
+  user-select: text;
+}
+.details__tag { min-width: 0; overflow-wrap: anywhere; }
+.details__tag-label { color: var(--text-dim); margin-right: 6px; }
 
 /* The cover centred above the title, a third of the popup wide; the names
    under it centred with it. */

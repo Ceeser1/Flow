@@ -119,8 +119,8 @@ test('picked files: listed, prepared with their names and picture, a broken one 
   assert.deepEqual(summary, { ready: 2, fromLibrary: 0, failed: 1, cancelled: false });
   // Names from the tags, else from the file's name.
   assert.deepEqual(ready.map((e) => e.song.meta), [
-    { artist: 'Moby', title: 'Porcelain', mix: '' },
-    { artist: 'Massive Attack', title: 'Teardrop', mix: '' },
+    { artist: 'Moby', title: 'Porcelain', mix: '', album: '', genre: '', subGenre: '' },
+    { artist: 'Massive Attack', title: 'Teardrop', mix: '', album: '', genre: '', subGenre: '' },
   ]);
   assert.ok(ready.every((e) => e.run === 7 && e.media.local && e.media.path.startsWith(`${CACHE}/local-`)));
   assert.equal(ready[0].media.duration, 241.5);

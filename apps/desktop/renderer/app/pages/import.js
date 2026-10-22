@@ -57,6 +57,13 @@ const SOURCE_NAMES = {
   search: 'Search', youtube: 'YouTube', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', spotify: 'Spotify', deezer: 'Deezer', 'amazon music': 'Amazon Music', vimeo: 'Vimeo', local: 'Local files',
 };
 
+// The box above the frames: each field's name and the editor's box for it.
+const BULK = {
+  album: { label: 'Album', box: 'edAlbum' },
+  genre: { label: 'Genre', box: 'edGenre' },
+  subGenre: { label: 'Info', box: 'edSubGenre' },
+};
+
 const ImportPanel = {
   state: 'idle',
   listing: null,
@@ -81,6 +88,8 @@ const ImportPanel = {
   _chain: null,           // the "Finish this song" saves, one after another
   server: null,           // a download on the server: { id, single } of its batch
   retry: null,            // failed songs tried again: { indexes, sending, done, failedAgain }
+  bulkInfo: { album: '', genre: '', subGenre: '' }, // given to every new song without one (_drawBulk)
+  _bulkEl: null,
 
   /** A list is being read or imported: single-link downloads wait. */
   get busy() {
@@ -272,6 +281,8 @@ const ImportPanel = {
     this.server = null;
     this.retry = null;
     this.moveOriginals = false;
+    this.bulkInfo = { album: '', genre: '', subGenre: '' };
+    this._bulkEl = null;
     this._resetName('');
     this._setState('idle');
     this._setPending();
@@ -727,7 +738,7 @@ const ImportPanel = {
       }
       rows.push(h('div.import__warning',
         h('span.import__warn-icon', '!'),
-        h('div',
+        h('div.import__warn-body',
           h('div', `${Util.plural(known.length, 'song')} ${known.length === 1 ? 'is' : 'are'} already in your library `
             + 'and will not be downloaded again. Ticked ones are added to the playlist:'),
           list)));
@@ -752,11 +763,15 @@ const ImportPanel = {
     }
     // The frames. The open one keeps its editor: it is moved, not redrawn.
     // Clearing the list took the editor out of the document with the old
-    // frame, so it is put back by reference.
+    // frame, so it is put back by reference. So is the Album and Genre box
+    // above them, with what is typed into it.
+    const typing = this._bulkEl && this._bulkEl.contains(document.activeElement) ? document.activeElement : null;
     const frag = document.createDocumentFragment();
+    if (this.included.some((it) => !it.existingId)) frag.appendChild(this._drawBulk());
     frag.appendChild(h('div.import__summary', { id: 'importFailSummary', hidden: true }));
     for (const it of this.included) frag.appendChild(this._frame(it));
     list.appendChild(frag);
+    if (typing) typing.focus();
     this._drawFailSummary();
     if (this.openIndex !== null && AddPage.embedded) {
       const body = list.querySelector(`[data-index="${this.openIndex}"] .import__frame-body`);
@@ -768,6 +783,86 @@ const ImportPanel = {
         this._closeEditor(true);
       }
     }
+  },
+
+  /**
+   * Above the frames: one Album, Genre and Info for every new
+   * song of the import that has none, each with its Apply (clickable once something is
+   * typed). Songs still downloading get them as they arrive (_giveBulk).
+   * Made once per import and kept, so a redraw keeps what is typed.
+   */
+  _drawBulk() {
+    if (this._bulkEl) return this._bulkEl;
+    const field = (key, label, placeholder) => {
+      const input = h('input.input.import__bulk-input', {
+        type: 'text', maxLength: 150, spellcheck: false, placeholder, 'aria-label': label,
+      });
+      const apply = h('button.btn.btn--small.btn--light-green', { type: 'button', disabled: true }, 'Apply');
+      input.addEventListener('input', () => {
+        apply.disabled = !input.value.trim();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && input.value.trim()) {
+          e.preventDefault();
+          apply.click();
+        }
+      });
+      apply.onclick = () => this._applyBulk(key, input.value);
+      return h('label.import__bulk-field', h('span.import__bulk-label', `${label}:`), input, apply);
+    };
+    this._bulkEl = h('div.import__bulk',
+      h('div.import__bulk-text', 'You can set custom Album, Genre and Info for ALL new songs at once here if you want, if they miss them:'),
+      h('div.import__bulk-row',
+        field('album', BULK.album.label, 'Album-title'),
+        field('genre', BULK.genre.label, 'Hardstyle'),
+        field('subGenre', BULK.subGenre.label, 'Sub-Genre, CD, Year, ...')),
+      h('div.import__bulk-note.muted-text',
+        'Some song albums can be found, genre rarely. If you leave Album empty it gets filled automatically by the song title.'));
+    return this._bulkEl;
+  },
+
+  /** A new song's empty album, genre or info from the box above the frames, once its names are there. */
+  _giveBulk(it) {
+    if (!it.meta || it.existingId) return false;
+    let given = false;
+    for (const key of Object.keys(BULK)) {
+      if (this.bulkInfo[key] && !String(it.meta[key] || '').trim()) {
+        it.meta = { ...it.meta, [key]: this.bulkInfo[key] };
+        given = true;
+      }
+    }
+    return given;
+  },
+
+  /** Apply in the box above the frames: every new song without an album (genre, info) gets this one. */
+  _applyBulk(key, value) {
+    const v = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!v || this.state === 'saving') return;
+    this.bulkInfo[key] = v;
+    // The open frame's box: closing it reads the names back from there.
+    let given = 0;
+    if (this.openIndex !== null) {
+      const box = $(BULK[key].box);
+      if (box && !box.value.trim()) {
+        box.value = v;
+        given += 1;
+      }
+    }
+    const open = (it) => !it.existingId && !['saving', 'saved', 'discarded', 'failed', 'cancelled'].includes(it.state);
+    let coming = 0;
+    for (const it of this.included) {
+      if (!open(it) || it.index === this.openIndex) continue;
+      if (it.state !== 'ready') {
+        coming += 1;
+        continue;
+      }
+      if (this._giveBulk(it)) {
+        given += 1;
+        this._redrawFrame(it, false);
+      }
+    }
+    toast(`${BULK[key].label} "${v}" given to ${Util.plural(given, 'song')} without one`
+      + (coming ? `; the ${Util.plural(coming, 'song')} still coming get it too` : ''), 'success');
   },
 
   /**
@@ -892,6 +987,12 @@ const ImportPanel = {
         + `${Util.fmtClock(it.trim.end - it.trim.start)} of ${Util.fmtClock(it.media.duration)}`;
     } else sub = open ? '' : this._wholeOnly() ? 'tap to rename' : `${Store.uiMode === 'mobile' ? 'tap' : 'click'} to trim or rename`;
 
+    // What it will be saved with: the album and genre found (or given), or
+    // that there are none, and its info when it has some.
+    const info = st === 'ready' && it.meta
+      ? [it.meta.album ? `Album: ${it.meta.album}` : 'no album (the title then)', it.meta.genre ? `Genre: ${it.meta.genre}` : 'no genre',
+        it.meta.subGenre && `Info: ${it.meta.subGenre}`].filter(Boolean).join(' · ')
+      : '';
     const length = st === 'ready'
       ? Util.fmtClock(it.trim ? it.trim.end - it.trim.start : it.media.duration)
       : (it.duration ? Util.fmtClock(it.duration) : '');
@@ -911,7 +1012,8 @@ const ImportPanel = {
     this._cover(it),
     h('span.import__text',
       h('span.import__title', { title: name }, name),
-      sub ? h('span.import__sub' + (subBad ? '.import__sub--bad' : ''), sub) : null),
+      sub ? h('span.import__sub' + (subBad ? '.import__sub--bad' : ''), sub) : null,
+      info ? h('span.import__sub.import__info', { title: info }, info) : null),
     it.trim ? h('span.import__flag.import__flag--trim', 'trimmed') : null,
     retry ? h('button.btn.btn--small.btn--light-green', { type: 'button', onclick: () => this.retryFailed([it.index]) }, 'Try again') : null,
     h('span.import__dur', length),
@@ -1437,6 +1539,7 @@ const ImportPanel = {
       };
       it.song = { title: x.title, url: x.url, key: '' };
       it.meta = x.meta && x.meta.title ? { ...x.meta } : { artist: '', title: x.title, mix: '' };
+      this._giveBulk(it);
       it.artistFromChannel = !!x.artistFromChannel;
     }
     return it;
@@ -1604,7 +1707,8 @@ const ImportPanel = {
       AddPage._progress({
         title: 'Looking up the songs...',
         frac: p.total ? p.done / p.total : null,
-        status: `${p.done} of ${p.total}${p.title ? `   ${p.title}` : ''}`,
+        status: [`${p.done} of ${p.total}`, p.known && `${p.known} already in your library`, p.title]
+          .filter(Boolean).join(' · '),
       });
     } else if (p.phase === 'item' && this.state === 'downloading') {
       const it = this.included.find((x) => x.index === p.index);
@@ -1615,6 +1719,7 @@ const ImportPanel = {
         it.media = p.media;
         it.song = p.song;
         it.meta = p.song.meta && p.song.meta.title ? { ...p.song.meta } : { artist: '', title: p.song.title, mix: '' };
+        this._giveBulk(it);
         it.artistFromChannel = p.song.artistFromChannel;
         this._setPending();
       }

@@ -151,6 +151,10 @@ const TYPES = {
       if (!model.songById(d, str(c.songId))) return { skipped: 'gone' };
       const meta = { artist: str(c.artist).trim(), title: str(c.title).trim(), mix: str(c.mix).trim() };
       if (!meta.title) throw new Error('Please enter a title.');
+      // Apps from before albums and genres send neither: the song keeps its own.
+      if (c.album !== undefined) meta.album = str(c.album);
+      if (c.genre !== undefined) meta.genre = str(c.genre);
+      if (c.subGenre !== undefined) meta.subGenre = str(c.subGenre);
       return { value: model.updateSong(d, str(c.songId), meta) };
     },
   },

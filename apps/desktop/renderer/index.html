@@ -52,14 +52,18 @@
         <div class="search-box search-box--big">
           <span id="searchIcon" class="search-box__icon"></span>
           <input id="searchInput" class="search-box__input" type="search"
-                 placeholder="Search playlists, songs and artists" autocomplete="off" spellcheck="false" />
+                 placeholder="Search playlists, songs, artists, albums, mixes, genres and info" autocomplete="off" spellcheck="false" />
         </div>
-        <!-- Phone only: show one part of the results instead of all three under each other. -->
+        <!-- Phone only: show one part of the results instead of all seven under each other. -->
         <div id="searchFilter" class="search-filter">
           <button class="search-filter__btn search-filter__btn--on" type="button" data-part="all">All</button>
           <button class="search-filter__btn" type="button" data-part="playlists">Playlists</button>
           <button class="search-filter__btn" type="button" data-part="songs">Songs</button>
           <button class="search-filter__btn" type="button" data-part="artists">Artists</button>
+          <button class="search-filter__btn" type="button" data-part="albums">Albums</button>
+          <button class="search-filter__btn" type="button" data-part="mixes">Mixes</button>
+          <button class="search-filter__btn" type="button" data-part="genres">Genres</button>
+          <button class="search-filter__btn" type="button" data-part="info">Info</button>
         </div>
         <div id="searchResults" class="results">
           <div class="results__col" data-part="playlists">
@@ -73,6 +77,22 @@
           <div class="results__col" data-part="artists">
             <h2 class="results__head">Artists <span id="searchArtistsCount" class="count"></span></h2>
             <div id="searchArtists" class="results__list"></div>
+          </div>
+          <div class="results__col" data-part="albums">
+            <h2 class="results__head">Albums <span id="searchAlbumsCount" class="count"></span></h2>
+            <div id="searchAlbums" class="results__list"></div>
+          </div>
+          <div class="results__col" data-part="mixes">
+            <h2 class="results__head">Mixes <span id="searchMixesCount" class="count"></span></h2>
+            <div id="searchMixes" class="results__list"></div>
+          </div>
+          <div class="results__col" data-part="genres">
+            <h2 class="results__head">Genres <span id="searchGenresCount" class="count"></span></h2>
+            <div id="searchGenres" class="results__list"></div>
+          </div>
+          <div class="results__col" data-part="info">
+            <h2 class="results__head">Info <span id="searchInfoCount" class="count"></span></h2>
+            <div id="searchInfo" class="results__list"></div>
           </div>
         </div>
       </section>
@@ -160,9 +180,17 @@
               <input id="edArtist" class="input" type="text" spellcheck="false" maxlength="150" /></label>
             <label class="form-row"><span class="form-label">Title</span>
               <input id="edTitle" class="input" type="text" spellcheck="false" maxlength="150" /></label>
+            <label class="form-row"><span class="form-label">Album</span>
+              <input id="edAlbum" class="input" type="text" spellcheck="false" maxlength="150"
+                     placeholder="Empty: the title" /></label>
             <label class="form-row"><span class="form-label">Mix</span>
               <input id="edMix" class="input" type="text" spellcheck="false" maxlength="150"
                      placeholder="e.g. Extended Mix, Live" /></label>
+            <label class="form-row"><span class="form-label">Genre</span>
+              <input id="edGenre" class="input" type="text" spellcheck="false" maxlength="150" /></label>
+            <label class="form-row"><span class="form-label">Info</span>
+              <input id="edSubGenre" class="input" type="text" spellcheck="false" maxlength="150"
+                     placeholder="Sub-Genre, CD, Year, ..." /></label>
           </div>
           <div id="edError" class="form-error"></div>
 
