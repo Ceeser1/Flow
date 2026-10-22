@@ -88,7 +88,7 @@ function cleanStats(raw) {
   };
 }
 
-// How the songs are looked up: 1 Apple's search (3.6.3), 2 then Discogs' (3.6.4).
+// How the songs are looked up: 1 Apple's search, 2 then Discogs' (both 3.6.3).
 const INFO_ROUND = 2;
 
 function emptyLibrary() {
