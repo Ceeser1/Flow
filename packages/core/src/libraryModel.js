@@ -511,6 +511,36 @@ function findByMeta(data, { artist, title, mix }, exceptId = null) {
     && norm(s.artist) === a && norm(s.title) === t && norm(s.mix) === m) || null;
 }
 
+/**
+ * What a Flow Server takes for the same song on upload (its existingFor,
+ * without the id): the same source, else the same artist, title and mix at
+ * the same length (within 2 s). Looked up in `songs`, indexed once: the
+ * function returned gives the song for a song (or its meta), or null.
+ */
+function sameSongIn(songs) {
+  const byKey = new Map();
+  const byUrl = new Map();
+  const byName = new Map();
+  const nameOf = (s) => `${norm(s.artist)}
+${norm(s.title)}
+${norm(s.mix)}`;
+  const put = (map, key, s) => {
+    if (key && !map.has(key)) map.set(key, s);
+  };
+  for (const s of songs) {
+    put(byKey, s.sourceKey, s);
+    put(byUrl, s.sourceUrl ? comparableUrl(s.sourceUrl) : null, s);
+    if (norm(s.title)) put(byName, nameOf(s), s);
+  }
+  return (meta) => {
+    const hit = (meta.sourceKey && byKey.get(meta.sourceKey)) || (meta.sourceUrl && byUrl.get(comparableUrl(meta.sourceUrl)));
+    if (hit) return hit;
+    const named = norm(meta.title) ? byName.get(nameOf(meta)) : null;
+    const d = Number(meta.duration) || 0;
+    return named && (!d || !named.duration || Math.abs(named.duration - d) < 2) ? named : null;
+  };
+}
+
 /** Whether two songs (or { artist, title, mix }) have the same names, ignoring case and spaces. */
 function sameNames(a, b) {
   return norm(a && a.artist) === norm(b && b.artist) && norm(a && a.title) === norm(b && b.title)
@@ -524,5 +554,5 @@ module.exports = {
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
   addSong, updateSong, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
-  findBySource, findByMeta, sameNames,
+  findBySource, findByMeta, sameSongIn, sameNames,
 };

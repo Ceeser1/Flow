@@ -394,13 +394,28 @@ function createRemote(env) {
 
   // ---- the library the window sees ----
 
-  /** The server id of a local song, and the local copy of a server song. */
-  function localCopies() {
+  /**
+   * The local copy of each server song in `data` (by its id): the song here
+   * tied to it, else one tied to none of this server's songs that the server
+   * takes for the same song (as on upload: the same source, or the same names
+   * at the same length) and that is cut alike. Such a one (held back while
+   * the server has it already, a copy of another server's) only counts, plays
+   * and is deleted here as its copy: nothing goes up or comes down for it.
+   */
+  function localCopies(data = getView()) {
     const local = library.get();
     const byServer = new Map();
+    const loose = [];
     for (const s of local.songs) {
       const sid = sync.songMap[s.id];
-      if (sid && !byServer.has(sid)) byServer.set(sid, s);
+      if (!sid) loose.push(s);
+      else if (!byServer.has(sid)) byServer.set(sid, s);
+    }
+    if (!loose.length) return byServer;
+    const same = model.sameSongIn(data.songs.filter((x) => !byServer.has(x.id)));
+    for (const s of loose) {
+      const hit = same(s);
+      if (hit && !byServer.has(hit.id) && (hit.cut || '') === (s.cut || '')) byServer.set(hit.id, s);
     }
     return byServer;
   }
@@ -429,7 +444,7 @@ function createRemote(env) {
         // The server will say what was wrong with it.
       }
     }
-    const copies = localCopies();
+    const copies = localCopies(d);
     const shown = new Set();
     for (const s of d.songs) {
       const copy = copies.get(s.id);
@@ -1805,7 +1820,7 @@ function createRemote(env) {
   async function downloadOffline() {
     if (status.state !== 'online' || !sync.offline.length) return;
     const v = getView();
-    const copies = localCopies();
+    const copies = localCopies(v);
     const want = [];
     const seen = new Set();
     for (const pid of sync.offline) {
@@ -2571,6 +2586,8 @@ function createRemote(env) {
 
   /** Deleting a song: from the server, and its copy here. */
   async function deleteSong(songId, deleteFile) {
+    // A copy here only taken for it (not tied to it): its file goes when asked.
+    const loose = deleteFile && !Object.values(sync.songMap).includes(songId) && localCopies().get(songId);
     let onlyWaiting = false;
     for (const [lid, sid] of Object.entries(sync.songMap)) {
       if (sid !== songId) continue;
@@ -2581,6 +2598,8 @@ function createRemote(env) {
       }
       await forgetLocal(lid, { deleteFile: deleteFile || !!sync.fetched[lid] });
     }
+    // In use (playing): it stays.
+    if (loose) await deleteHere(loose).catch(() => {});
     if (onlyWaiting) {
       // It never reached the server; what was queued for it has nothing to act on.
       sync.queue = sync.queue.filter((c) => c.songId !== songId);
@@ -2637,7 +2656,9 @@ function createRemote(env) {
   async function removeDownload(songId) {
     if (!active()) throw new Error('Tick "Use a Flow Server" first.');
     const lids = Object.entries(sync.songMap).filter(([, sid]) => sid === songId).map(([lid]) => lid);
-    if (!lids.length) {
+    // A copy here only taken for it (not tied to it): its file goes, as from Downloaded Songs.
+    const loose = !lids.length && localCopies().get(songId);
+    if (!lids.length && !loose) {
       delete sync.kept[songId];
       saveSync();
       return;
@@ -2650,6 +2671,15 @@ function createRemote(env) {
     }
     delete sync.kept[songId];
     saveSync();
+    if (loose) {
+      try {
+        await deleteHere(loose);
+      } catch (err) {
+        sync.kept[songId] = true;
+        saveSync();
+        throw err;
+      }
+    }
     for (const lid of lids) {
       if (!(await forgetLocal(lid, { deleteFile: true }))) {
         sync.kept[songId] = true;
@@ -2704,6 +2734,13 @@ function createRemote(env) {
     const song = model.songById(library.get(), lid);
     if (!song) return;
     if (sync.songMap[lid]) throw new Error('That song is on this server: delete it from here with its Download button.');
+    await deleteHere(song);
+    refreshView();
+  }
+
+  /** A Local Files song not tied to this server: its file goes, and so do the other servers' ties to it. */
+  async function deleteHere(song) {
+    const lid = song.id;
     let gone = false;
     await library.quietly(async () => {
       try {
@@ -2724,7 +2761,6 @@ function createRemote(env) {
     if (sync.held) sync.held = sync.held.filter((x) => x !== lid);
     if (sync.snapshot) delete sync.snapshot.songs[lid];
     saveSync();
-    refreshView();
   }
 
   /**

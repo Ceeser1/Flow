@@ -436,9 +436,11 @@ test('a Flow Server as the library, step by step', async (t) => {
     await remote.syncNow().catch(() => {});
     assert.ok(!(await serverLibrary(two.base, token())).songs.some((s) => s.title === 'Glory Box'));
 
-    // Unmarked here: its copy is still the first server's song, so the file stays; the first one's copies stay too.
+    // Unmarked here: its copy is still the first server's song, so the file stays (and still counts
+    // as this server's song here, the same one); the first one's copies stay too.
     await remote.setOffline(model.ALL_SONGS_ID, false);
-    assert.equal(remote.localFileOf('unfin1'), null);
+    assert.equal(remote.localFileOf('unfin1'), unfinFile);
+    assert.equal(model.songById(remote.view(), 'unfin1').file, unfinFile);
     assert.ok(fs.existsSync(unfinFile));
     assert.ok(library.get().songs.some((s) => s.file === unfinFile));
     assert.ok(fs.existsSync(gloryFile));
@@ -446,22 +448,33 @@ test('a Flow Server as the library, step by step', async (t) => {
     // Downloaded Songs: the songs here that are not this server's, with ids of their own and the servers they are on.
     const device = await until(() => {
       const list = remote.view().deviceSongs;
-      return list.some((s) => s.file === unfinFile) && list;
+      return list.some((s) => s.file === gloryFile) && list;
     }, 'the songs in Downloaded Songs');
-    const unfin = device.find((s) => s.file === unfinFile);
     const glory = device.find((s) => s.file === gloryFile);
-    assert.ok(unfin && glory);
     assert.match(glory.id, /^device:/);
     assert.equal(glory.isDevice, true);
     assert.equal(glory.servers.length, 1);
-    assert.equal(unfin.servers.length, 1);
     assert.ok(!device.some((s) => s.file === roadsFile), 'a song of this server is in its All Songs');
+    assert.ok(!device.some((s) => s.file === unfinFile), 'this server\'s song, here as the first one\'s copy');
     assert.equal(remote.localFileOf(glory.id), gloryFile);
-    // Deleted from here: the file goes, the first server no longer counts it as here.
     await assert.rejects(remote.removeDeviceSong('roads1'), /not one of this device/);
-    await remote.removeDeviceSong(glory.id);
+
+    // The same song reaches this server from elsewhere: the file held back here counts as its copy, nothing goes up.
+    const gloryMeta = { title: 'Glory Box', artist: 'Portishead', format: 'mp3', duration: 301 };
+    const put2 = await fetch(`${two.base}/api/songs/glory2?meta=${encodeURIComponent(JSON.stringify(gloryMeta))}`, {
+      method: 'PUT', body: FAKE_MP3, headers: { Authorization: `Bearer ${token()}` },
+    });
+    assert.equal(put2.status, 200);
+    await remote.syncNow().catch(() => {});
+    await until(() => remote.localFileOf('glory2') === gloryFile, 'the copy here counted');
+    assert.equal(model.songById(remote.view(), 'glory2').file, gloryFile);
+    assert.ok(!remote.view().deviceSongs.some((s) => s.file === gloryFile));
+    assert.equal((await serverLibrary(two.base, token())).songs.filter((s) => s.title === 'Glory Box').length, 1);
+    // Deleted from here: the file goes, the first server no longer counts it as here; this one keeps its song.
+    await remote.removeDownload('glory2');
     assert.equal(fs.existsSync(gloryFile), false);
-    await until(() => !remote.view().deviceSongs.some((s) => s.id === glory.id), 'the song gone from Downloaded Songs');
+    assert.equal(remote.localFileOf('glory2'), null);
+    assert.ok(model.songById(remote.view(), 'glory2'));
     answerUpload = true;
   });
 
