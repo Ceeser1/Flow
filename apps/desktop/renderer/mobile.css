@@ -12,10 +12,8 @@ body.mobile {
   overscroll-behavior: none;
 }
 
-/* No clouds, equalizer or screen flash on the phone (yet). */
-body.mobile .ambient-canvas,
-body.mobile .eq-canvas,
-body.mobile .flash-canvas { display: none; }
+/* No equalizer on the phone: the page does not hear the music (the player is native). */
+body.mobile .eq-canvas { display: none; }
 
 body.mobile ::-webkit-scrollbar { width: 0; height: 0; }
 
@@ -220,7 +218,7 @@ body.mobile .player.mp--open {
   grid-template-areas:
     "collapse from ."
     "cover cover cover"
-    "text text text"
+    "text text queue"
     "session session session"
     "track track track"
     "times times times"
@@ -327,11 +325,15 @@ body.mobile .mp--open .mp__extras {
   padding: 8px 4px 0;
 }
 body.mobile .mp--open .sq-btn { width: 48px; height: 48px; border-radius: 12px; }
-body.mobile .mp--open .sq-btn__img { width: 22px; height: 22px; }
+body.mobile .mp--open .sq-btn__img,
+body.mobile .mp--open .sq-btn .icon { width: 22px; height: 22px; }
 body.mobile .mp--open .sleep-btn { width: 48px; height: 48px; border-radius: 12px; }
 body.mobile .mp--open .sleep-btn .icon { width: 22px; height: 22px; }
-/* The Queue: the fourth of the row, its picture only. */
+/* The Queue: right of the title and artist, its picture only. */
 body.mobile .mp--open #btnQueue {
+  grid-area: queue;
+  align-self: center;
+  margin: 12px -12px 0 0;
   width: 48px;
   height: 48px;
   justify-content: center;
@@ -522,6 +524,7 @@ body.mobile .mrow > .act {
 }
 body.mobile .mrow > .act { width: 40px; height: 40px; margin-right: 4px; border-radius: 10px; }
 body.mobile .mrow > .act--green { background: rgba(120, 200, 140, 0.14); color: var(--green); }
+body.mobile .mrow > .act--orange { background: rgba(240, 150, 60, 0.16); color: #f0963c; }
 body.mobile .mrow .icon { width: 20px; height: 20px; }
 
 /* Choosing: a tick in front of each row, filled on the chosen ones. */
@@ -625,8 +628,26 @@ body.mobile .section-head__btn { min-height: 44px; }
 
 /* Search: one column, Playlists, Songs and Artists under each other. */
 body.mobile .page--search { height: auto; }
-body.mobile .search-box--big { height: 48px; }
+body.mobile .search-box--big { height: 48px; margin-bottom: 14px; }
 body.mobile .results { display: block; }
+/* All, Playlists, Songs, Artists: only the chosen part is shown. */
+body.mobile .search-filter { display: flex; gap: 8px; }
+body.mobile .search-filter__btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 40px;
+  padding: 0 6px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  color: var(--grey);
+  font-size: 14px;
+  white-space: nowrap;
+}
+body.mobile .search-filter__btn--on { background: var(--accent); border-color: var(--accent); color: #fff; }
+body.mobile .results[data-only="playlists"] .results__col:not([data-part="playlists"]),
+body.mobile .results[data-only="songs"] .results__col:not([data-part="songs"]),
+body.mobile .results[data-only="artists"] .results__col:not([data-part="artists"]) { display: none; }
 body.mobile .results__col { margin-top: 14px; overflow: visible; }
 body.mobile .results__list { overflow: visible; padding: 4px; }
 body.mobile .result { min-height: 56px; gap: 12px; }
@@ -727,8 +748,13 @@ body.mobile .settings__row:has(+ .settings__row--sub:not([hidden]), + [hidden] +
 body.mobile .settings__row--sub:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden]))::after { top: 23px; }
 body.mobile .settings__right { justify-content: flex-start; }
 body.mobile .settings__right:empty { display: none; }
+/* Under a tick box the value lines up with the name and its text, as on the PC,
+   so it stays right of the line down to the sub-settings. */
+body.mobile .settings__row:has(> .settings__left > .check) > .settings__right { padding-left: 23px; }
 body.mobile .settings__label { font-size: 15px; }
 body.mobile .settings__desc { font-size: 13px; }
+/* A note at the top of a category, above its rows. */
+body.mobile .settings__intro { padding: 12px 0 2px; }
 body.mobile .settings__slider { flex: 1; width: auto; }
 body.mobile .settings__right .settings__control { flex: 1; }
 body.mobile .settings__right select,
@@ -899,3 +925,46 @@ body.mobile .queue__row { min-height: 52px; }
 body.mobile .queue__grab { touch-action: none; align-self: stretch; align-items: center; width: 32px; }
 body.mobile .queue__row[data-part] .queue__grab img { opacity: 0.45; }
 body.mobile .queue__row--held { background: var(--glass-hi); }
+
+/* ===== Settings: Administration on the phone: each profile opens with a tap ===== */
+
+body.mobile .stats__facts,
+body.mobile .stats__trow { font-size: 13px; }
+body.mobile .stats__trow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; min-height: 44px; }
+body.mobile .stats__trow .btn--small { height: 34px; padding: 0 12px; font-size: 13px; }
+body.mobile .stats__month { width: 44px; font-size: 12px; }
+/* The numbers as one list, the labels lined up. */
+body.mobile .stats__facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; }
+body.mobile .stats__facts > dl { display: contents; }
+body.mobile .stats__mode { height: 32px; padding: 0 14px; font-size: 13px; }
+/* The bars and the lines over them: as high as each other (style.css's 156px on the PC). */
+body.mobile .stats__graph .stats__barbox,
+body.mobile .stats__grid { height: 136px; }
+body.mobile .admin__plist { display: flex; flex-direction: column; margin-top: 8px; }
+body.mobile .admin__plist > .admin__scroll { padding: 0 10px; }
+body.mobile .admin__prow { border-bottom: 1px solid #34343c; }
+body.mobile .admin__prow:last-child { border-bottom: none; }
+body.mobile .admin__pname {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 2px;
+  background: none;
+  border: none;
+  color: var(--text-bright);
+  font-size: 15px;
+  text-align: left;
+}
+body.mobile .admin__pname:active { background: rgba(255, 255, 255, 0.05); }
+body.mobile .admin__prow--open .admin__facts { padding: 2px 2px 10px; font-size: 13px; }
+body.mobile .admin__prow--open .admin__pgroups { padding: 0 2px 12px; }
+body.mobile .admin__pactions .btn--small { height: 34px; padding: 0 12px; font-size: 13px; }
+body.mobile .admin__item,
+body.mobile .admin__facts,
+body.mobile .admin__rule { font-size: 13px; }
+body.mobile .admin__rule { flex-direction: column; align-items: stretch; gap: 6px; }
+body.mobile .admin__form { max-width: none; }
+body.mobile .modal--admin-ips { width: auto; }

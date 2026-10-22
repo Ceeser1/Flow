@@ -15,8 +15,16 @@ const SearchPage = {
         e.stopPropagation();
       }
     });
+    // Phone: All, Playlists, Songs or Artists, so the artists are not three
+    // long lists down. The PC shows its three columns side by side and hides the row.
+    for (const btn of $('searchFilter').children) {
+      btn.addEventListener('click', () => this._showPart(btn.dataset.part));
+    }
     Store.onLibrary(() => {
       if (Nav.page === 'search') this.render();
+    });
+    Store.onSettings((patch) => {
+      if ('showTrend' in patch && Nav.page === 'search') this.render();
     });
     Player.onChange(() => {
       if (Nav.page === 'search') this._markPlaying();
@@ -33,9 +41,10 @@ const SearchPage = {
   render() {
     const q = $('searchInput').value;
 
-    // Playlists
+    // Playlists, the listening trend lists only while they are shown (Settings)
+    const trend = Store.settings.showTrend !== false;
     const lists = [...Store.builtInPlaylists(), ...Store.sortedPlaylists()]
-      .filter((p) => Util.matches(q, p.name));
+      .filter((p) => (trend || !SmartLists.isSmart(p.id)) && Util.matches(q, p.name));
     this._fill('searchPlaylists', 'searchPlaylistsCount', lists, (p) => h('button.result', {
       type: 'button',
       onclick: () => Nav.openPlaylist(p.id),
@@ -104,6 +113,14 @@ const SearchPage = {
     h('span.result__text',
       h('span.result__title', a.name),
       h('span.result__meta', Util.plural(a.count, 'song')))));
+  },
+
+  _showPart(part) {
+    for (const btn of $('searchFilter').children) {
+      btn.classList.toggle('search-filter__btn--on', btn.dataset.part === part);
+    }
+    $('searchResults').dataset.only = part;
+    $('pages').scrollTop = 0;
   },
 
   // Long lists are cut off: nobody scrolls through 5000 buttons, they type more.

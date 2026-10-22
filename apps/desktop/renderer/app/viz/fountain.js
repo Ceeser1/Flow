@@ -59,7 +59,8 @@
       // A town's glow beyond the hills.
       col += vec3(0.05, 0.032, 0.03) * exp(-(p.y - wl) * 14.0);
       col += starField(p * res) * smoothstep(wl + 0.08, wl + 0.3, p.y);
-      float b = bank(p.x);
+      // The bank reaches wl + 0.068 at most (fbm under 0.97, the trees 0.013): above that, no need to ask.
+      float b = p.y < wl + 0.068 ? bank(p.x) : wl;
       if (p.y < b) {
         col = vec3(0.007, 0.008, 0.013) + ambient * 0.012;
         // Lit windows, here and there.
@@ -102,6 +103,8 @@
           float ry = rx * 0.3;
           vec2 q = vec2((uv.x - R.x) * aspect / rx, (d - ry * 0.6) / ry);
           float e = length(q);
+          // Outside the ring's band its env below is 0: nothing to add.
+          if (e >= 1.04 || e <= 0.15) continue;
           // The crests: about five across the ring's width, sharp enough to see however small.
           float k = min(30.0, 0.5 * ry * res.y);
           float env = smoothstep(1.04, 0.97, e) * smoothstep(0.15, 0.55, e) * exp(-clamp(1.0 - e, 0.0, 1.0) * 1.6);
@@ -124,9 +127,10 @@
         col = vec3(0.004, 0.008, 0.016) + refl;
         // The crests catch the lamps.
         col += ripc * 0.06 + ambient * max(0.0, slope) * 0.08;
-        // Each jet's lamp under the water, glowing at its foot.
+        // Each jet's lamp under the water, glowing at its foot (deeper than
+        // 0.044 under the line its glow is below exp(-16): nothing to see).
         for (int i = 0; i < ${MAX_JETS}; i++) {
-          if (i >= n) break;
+          if (i >= n || d >= 0.044) break;
           float dx = (uv.x - jx[i]) * aspect;
           float spread = 0.004 + 0.008 * jl[i];
           col += jc[i] * jl[i] * 0.35 * exp(-dx * dx / (spread * spread) - d * d / 0.00012);
@@ -189,6 +193,13 @@
   /** About normal, mean 0 and spread 1. */
   const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
 
+  /**
+   * A drop: kind 0 a jet's, 1 a burst's (its own gravity g and terminal
+   * speed vt, fell: how long it has been falling), 2 spray. All made here, in
+   * one shape, so the loop over thousands of them stays fast.
+   */
+  const drop = (j, kind, top, x, y, vx, vy, w, burst = null, g = 0, vt = 0) => ({ j, kind, top, x, y, vx, vy, w, burst, g, vt, fell: 0 });
+
   class Fountain {
     constructor(canvas) {
       const gl = VizGL.context(canvas);
@@ -218,6 +229,7 @@
       this.age = 0;
       this.lastBurst = -1;
       this.ambient = [0, 0, 0];
+      this.uni = { jx: new Float32Array(MAX_JETS), jl: new Float32Array(MAX_JETS), jc: new Float32Array(MAX_JETS * 3), rips: new Float32Array(MAX_RIPPLES * 4) };
       this.w = 1;
       this.h = 1;
     }
@@ -271,6 +283,83 @@
           rgb: [1, 1, 1],
         });
       }
+    }
+
+    /**
+     * Moves the drops on (those landing make foam, spray and rings) and adds
+     * each one's streak. Out of frame() so that it is optimized on its own,
+     * lines.seg inlined: thousands of calls a frame no longer box their
+     * numbers on the way in.
+     */
+    _moveDrops(dt, g, WL, maxH, unit, dim, STREAK, set) {
+      const { drops, jets, mist, foam, lines } = this;
+      let alive = 0;
+      for (let i = 0; i < drops.length; i += 1) {
+        const d = drops[i];
+        // Falling, a burst's spray slows towards its terminal speed.
+        const gg = d.g || g;
+        if (d.vt && d.vy > 0) d.vy += gg * dt * Math.max(0, 1 - (d.vy / d.vt) ** 2);
+        else d.vy += gg * dt;
+        if (d.kind === 1 && d.vy > 0) d.fell += dt;
+        d.x += d.vx * dt;
+        d.y += d.vy * dt;
+        const jet = jets[d.j];
+        if (!jet) continue;
+        if (!d.top && d.vy >= 0) {
+          d.top = true;
+          // Where the water turns, a loud jet leaves mist hanging.
+          const chance = d.kind === 1 ? 0.12 : d.kind === 0 && jet.level > 0.55 ? 0.05 * jet.level : 0;
+          if (Math.random() < chance && mist.length < MAX_MIST) {
+            mist.push({
+              j: d.j, x: d.x, y: d.y,
+              vx: gauss() * unit * 12, vy: -unit * (4 + 8 * Math.random()),
+              r: unit * (20 + 34 * Math.random()), life: 1, fade: 1 / (2.2 + 2 * Math.random()),
+            });
+          }
+        }
+        if (d.vy > 0 && d.y >= WL) {
+          const bin = Math.max(0, Math.min(FOAM_BINS - 1, Math.floor((d.x / this.w) * FOAM_BINS)));
+          // A burst coming down rings the water: once as it starts, again with the bulk of it.
+          const b = d.burst;
+          if (b) {
+            b.landed += 1;
+            // Only a burst gone most of the way up.
+            if (set('fnRipples') && b.high >= 0.85 && (b.landed === 1 || b.landed === Math.round(b.count * 0.5))) {
+              this.ripples.push({ x: b.x, age: 0, high: Math.min(1, b.landed === 1 ? b.high : b.high * 0.75), j: b.j });
+              if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
+            }
+          }
+          if (d.kind !== 2) {
+            foam[bin] = Math.min(2, foam[bin] + (d.kind === 1 ? 0.06 : 0.025));
+            if (Math.random() < 0.22 && drops.length < MAX_DROPS) {
+              drops.push(drop(d.j, 2, true, d.x, WL - unit, gauss() * unit * 40, -unit * (50 + 110 * Math.random()), unit * 1.1));
+            }
+          }
+          continue;
+        }
+        drops[alive++] = d;
+        // Lit from below: brightest near the lamp.
+        const lit = jet.lamp * (0.35 + 0.65 * Math.exp(-(WL - d.y) / (0.8 * maxH)));
+        // Falling as bright as rising: the lamps light the water both ways.
+        const alpha = (d.kind === 2 ? 0.3 : 0.4) * lit * (d.fell ? Math.max(0, 1 - dim * d.fell) : 1);
+        // Its streak, where it was a moment ago; never shorter than a drop,
+        // or one hanging at the top (all but still) would vanish.
+        let sx = d.vx * STREAK;
+        let sy = d.vy * STREAK;
+        const len = Spectrum.hypot(sx, sy);
+        const least = d.w * 2;
+        if (len < least) {
+          if (len > 1e-3) {
+            sx *= least / len;
+            sy *= least / len;
+          } else {
+            sx = 0;
+            sy = -least;
+          }
+        }
+        lines.seg(d.x - sx, d.y - sy, d.x, d.y, d.w, jet.rgb, alpha);
+      }
+      drops.length = alive;
     }
 
     frame(a, dt) {
@@ -342,14 +431,7 @@
         while (jet.owed >= 1) {
           jet.owed -= 1;
           if (drops.length >= MAX_DROPS) continue;
-          const d = {
-            j, kind: 0, top: false,
-            x: jet.x + gauss() * unit * 0.8,
-            y: WL - unit,
-            vx: gauss() * unit * (6 + 22 * jet.level),
-            vy: -v0 * (1 + gauss() * 0.02),
-            w: width,
-          };
+          const d = drop(j, 0, false, jet.x + gauss() * unit * 0.8, WL - unit, gauss() * unit * (6 + 22 * jet.level), -v0 * (1 + gauss() * 0.02), width);
           // Born somewhere within this frame, so the stream has no gaps (and,
           // as the step below still moves it on, from a frame back, or the
           // first frame's stretch above the water stays empty).
@@ -382,15 +464,8 @@
           if (jet.slot > 1) continue;
           jet.flash = 1;
           for (let i = 0; i < 34 && drops.length < MAX_DROPS; i += 1) {
-            const d = {
-              j, kind: 1, top: false, burst,
-              g: gb, vt: v0 * 0.5,
-              x: jet.x + gauss() * unit * 3,
-              y: WL - unit,
-              vx: gauss() * unit * 38 * Math.sqrt(gb / g),
-              vy: -v0 * (0.88 + 0.12 * Math.random()),
-              w: unit * (2.5 + 2 * Math.random()),
-            };
+            const d = drop(j, 1, false, jet.x + gauss() * unit * 3, WL - unit, gauss() * unit * 38 * Math.sqrt(gb / g),
+              -v0 * (0.88 + 0.12 * Math.random()), unit * (2.5 + 2 * Math.random()), burst, gb, v0 * 0.5);
             // A gush over a tenth of a second, not one lump (from a frame back, as the jets').
             const f = Math.random() * 0.1 - dt;
             d.x += d.vx * f;
@@ -424,76 +499,7 @@
       const gFull = g * 0.35;
       const fullFall = Math.acosh(Math.exp(2 * 0.88)) * 0.5 * Math.sqrt(2 * gFull * maxH) / gFull;
       const dim = 0.5 / fullFall;
-      let alive = 0;
-      for (let i = 0; i < drops.length; i += 1) {
-        const d = drops[i];
-        // Falling, a burst's spray slows towards its terminal speed.
-        const gg = d.g || g;
-        if (d.vt && d.vy > 0) d.vy += gg * dt * Math.max(0, 1 - (d.vy / d.vt) ** 2);
-        else d.vy += gg * dt;
-        if (d.kind === 1 && d.vy > 0) d.fell = (d.fell || 0) + dt;
-        d.x += d.vx * dt;
-        d.y += d.vy * dt;
-        const jet = jets[d.j];
-        if (!jet) continue;
-        if (!d.top && d.vy >= 0) {
-          d.top = true;
-          // Where the water turns, a loud jet leaves mist hanging.
-          const chance = d.kind === 1 ? 0.12 : d.kind === 0 && jet.level > 0.55 ? 0.05 * jet.level : 0;
-          if (Math.random() < chance && mist.length < MAX_MIST) {
-            mist.push({
-              j: d.j, x: d.x, y: d.y,
-              vx: gauss() * unit * 12, vy: -unit * (4 + 8 * Math.random()),
-              r: unit * (20 + 34 * Math.random()), life: 1, fade: 1 / (2.2 + 2 * Math.random()),
-            });
-          }
-        }
-        if (d.vy > 0 && d.y >= WL) {
-          const bin = Math.max(0, Math.min(FOAM_BINS - 1, Math.floor((d.x / this.w) * FOAM_BINS)));
-          // A burst coming down rings the water: once as it starts, again with the bulk of it.
-          const b = d.burst;
-          if (b) {
-            b.landed += 1;
-            // Only a burst gone most of the way up.
-            if (set('fnRipples') && b.high >= 0.85 && (b.landed === 1 || b.landed === Math.round(b.count * 0.5))) {
-              this.ripples.push({ x: b.x, age: 0, high: Math.min(1, b.landed === 1 ? b.high : b.high * 0.75), j: b.j });
-              if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
-            }
-          }
-          if (d.kind !== 2) {
-            foam[bin] = Math.min(2, foam[bin] + (d.kind === 1 ? 0.06 : 0.025));
-            if (Math.random() < 0.22 && drops.length < MAX_DROPS) {
-              drops.push({
-                j: d.j, kind: 2, top: true, x: d.x, y: WL - unit,
-                vx: gauss() * unit * 40, vy: -unit * (50 + 110 * Math.random()), w: unit * 1.1,
-              });
-            }
-          }
-          continue;
-        }
-        drops[alive++] = d;
-        // Lit from below: brightest near the lamp.
-        const lit = jet.lamp * (0.35 + 0.65 * Math.exp(-(WL - d.y) / (0.8 * maxH)));
-        // Falling as bright as rising: the lamps light the water both ways.
-        const alpha = (d.kind === 2 ? 0.3 : 0.4) * lit * (d.fell ? Math.max(0, 1 - dim * d.fell) : 1);
-        // Its streak, where it was a moment ago; never shorter than a drop,
-        // or one hanging at the top (all but still) would vanish.
-        let sx = d.vx * STREAK;
-        let sy = d.vy * STREAK;
-        const len = Math.hypot(sx, sy);
-        const least = d.w * 2;
-        if (len < least) {
-          if (len > 1e-3) {
-            sx *= least / len;
-            sy *= least / len;
-          } else {
-            sx = 0;
-            sy = -least;
-          }
-        }
-        lines.seg(d.x - sx, d.y - sy, d.x, d.y, d.w, jet.rgb, alpha);
-      }
-      drops.length = alive;
+      this._moveDrops(dt, g, WL, maxH, unit, dim, STREAK, set);
 
       const gl = this.gl;
       gl.disable(gl.BLEND);
@@ -516,7 +522,14 @@
         m.y += m.vy * dt;
         m.r += unit * 10 * dt;
         const jet = jets[m.j] || jets[0];
-        md.set([m.x, m.y, m.r * 2.4, jet.rgb[0], jet.rgb[1], jet.rgb[2], 0.05 * Math.sin(Math.PI * m.life) * Math.min(1, jet.lamp)], kept * 7);
+        const k = kept * 7;
+        md[k] = m.x;
+        md[k + 1] = m.y;
+        md[k + 2] = m.r * 2.4;
+        md[k + 3] = jet.rgb[0];
+        md[k + 4] = jet.rgb[1];
+        md[k + 5] = jet.rgb[2];
+        md[k + 6] = 0.05 * Math.sin(Math.PI * m.life) * Math.min(1, jet.lamp);
         mist[kept++] = m;
       }
       mist.length = kept;
@@ -567,19 +580,29 @@
       this.stars.use(u, 5);
       gl.uniform3f(u.ambient, ...this.ambient);
       gl.uniform1i(u.n, jets.length);
-      const jx = new Float32Array(MAX_JETS);
-      const jl = new Float32Array(MAX_JETS);
-      const jc = new Float32Array(MAX_JETS * 3);
-      jets.forEach((jet, i) => {
+      const { jx, jl, jc, rips } = this.uni;
+      jx.fill(0);
+      jl.fill(0);
+      jc.fill(0);
+      for (let i = 0; i < jets.length; i += 1) {
+        const jet = jets[i];
         jx[i] = jet.x / this.w;
         jl[i] = jet.lamp;
-        jc.set(jet.rgb, i * 3);
-      });
+        jc[i * 3] = jet.rgb[0];
+        jc[i * 3 + 1] = jet.rgb[1];
+        jc[i * 3 + 2] = jet.rgb[2];
+      }
       gl.uniform1fv(u.jx, jx);
       gl.uniform1fv(u.jl, jl);
       gl.uniform3fv(u.jc, jc);
-      const rips = new Float32Array(MAX_RIPPLES * 4);
-      this.ripples.forEach((r, i) => rips.set([r.x, r.age, r.high, Math.min(r.j, jets.length - 1)], i * 4));
+      rips.fill(0);
+      for (let i = 0; i < this.ripples.length; i += 1) {
+        const r = this.ripples[i];
+        rips[i * 4] = r.x;
+        rips[i * 4 + 1] = r.age;
+        rips[i * 4 + 2] = r.high;
+        rips[i * 4 + 3] = Math.min(r.j, jets.length - 1);
+      }
       gl.uniform1i(u.nr, this.ripples.length);
       gl.uniform4fv(u.rips, rips);
       VizGL.screen(gl);

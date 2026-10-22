@@ -23,6 +23,11 @@
   const PRESETS = ['#5dff7a', '#ffb347', '#6ec8ff', '#ffffff', '#ff5ef0', '#ff4d4d'];
   const MAX_VERTS = 120000;
 
+  /** A Catmull-Rom curve through a1 and a2 (a0, a3 the points either side) at t (t2, t3 its square and cube). */
+  function catmull(a0, a1, a2, a3, t, t2, t3) {
+    return 0.5 * (2 * a1 + (-a0 + a2) * t + (2 * a0 - 5 * a1 + 4 * a2 - a3) * t2 + (-a0 + 3 * a1 - 3 * a2 + a3) * t3);
+  }
+
   const FADE_FS = `
     in vec2 uv;
     uniform sampler2D prev;
@@ -178,28 +183,31 @@
       // A gentle low pass (about 4 kHz) takes the hiss's fuzz off the figure.
       const lo = this._smooth(L, n - count - 8, n, 'l');
       const ro = this._smooth(R, n - count - 8, n, 'r');
-      const at = (i) => {
-        const l = lo[i - (n - count - 8)];
-        const r = ro[i - (n - count - 8)];
-        // Turned, the sum reaches further: halved, so it fits as XY does.
-        return gonio ? [(r - l) * 0.5, (l + r) * 0.5] : [l, r];
-      };
+      const base = n - count - 8;
+      // Sample i's point (nothing made per sample: thousands a frame).
+      // Turned, the sum reaches further: halved, so it fits as XY does.
+      const atX = (i) => (gonio ? (ro[i - base] - lo[i - base]) * 0.5 : lo[i - base]);
+      const atY = (i) => (gonio ? (lo[i - base] + ro[i - base]) * 0.5 : ro[i - base]);
       for (let i = n - count; i < n - 1; i += 1) {
-        const p0 = at(i - 1);
-        const p1 = at(i);
-        const p2 = at(i + 1);
-        const p3 = at(Math.min(n - 1, i + 2));
+        const i3 = Math.min(n - 1, i + 2);
+        const x0 = atX(i - 1);
+        const x1 = atX(i);
+        const x2 = atX(i + 1);
+        const x3 = atX(i3);
+        const y0 = atY(i - 1);
+        const y1 = atY(i);
+        const y2 = atY(i + 1);
+        const y3 = atY(i3);
         for (let s = 0; s < 2; s += 1) {
           const t = s / 2;
           const t2 = t * t;
           const t3 = t2 * t;
-          const f = (a0, a1, a2, a3) => 0.5 * (2 * a1 + (-a0 + a2) * t + (2 * a0 - 5 * a1 + 4 * a2 - a3) * t2 + (-a0 + 3 * a1 - 3 * a2 + a3) * t3);
-          const vx = f(p0[0], p1[0], p2[0], p3[0]);
-          const vy = f(p0[1], p1[1], p2[1], p3[1]);
+          const vx = catmull(x0, x1, x2, x3, t, t2, t3);
+          const vy = catmull(y0, y1, y2, y3, t, t2, t3);
           const x = cx + vx * side;
           const y = cy - vy * side;
           if (px !== null) {
-            const len = Math.hypot(x - px, y - py);
+            const len = Spectrum.hypot(x - px, y - py);
             // Slow: bright; fast: faint, as the beam's light spreads over its way.
             const bright = Math.min(1.2, 1.6 / (1 + len / (2.5 * unit)));
             this.lines.seg(px, py, x, y, width, white, bright * 0.38);
@@ -261,7 +269,7 @@
           y = cy + Math.sin(ang) * r;
         }
         if (px !== null) {
-          const len = Math.hypot(x - px, y - py);
+          const len = Spectrum.hypot(x - px, y - py);
           this.lines.seg(px, py, x, y, 1.3 * unit, white, Math.min(1, 1.4 / (1 + len / (6 * unit))) * 0.45);
         }
         px = x;

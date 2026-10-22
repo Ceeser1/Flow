@@ -135,7 +135,25 @@ function songFileStem(artist, title, mix) {
   return safeFilename(stem);
 }
 
+// A kept folder structure goes this many folders deep at most (the scans go 16).
+const MAX_FOLDERS = 12;
+
+/**
+ * A file's place in a music folder, as an app sends it ("Linkin Park/Hybrid
+ * Theory/In the End.mp3"), made safe to save under another folder: each part
+ * a safe file name (safeFilename: no "..", no hidden ".flow-" folders, nothing
+ * Windows or Linux refuses), at most MAX_FOLDERS folders. Answers { folders,
+ * name } (the name without its extension; '' when there is none), or null.
+ */
+function splitSongPath(text) {
+  const parts = String(text || '').split(/[\\/]+/).map((p) => p.trim()).filter((p) => p && !/^\.+$/.test(p));
+  if (!parts.length) return null;
+  const last = parts.pop().replace(/\.[a-z0-9]{1,5}$/i, '');
+  const clean = (p) => (p.replace(/^\.+/, '').trim() ? safeFilename(p, 100) : '');
+  return { folders: parts.map(clean).filter(Boolean).slice(0, MAX_FOLDERS), name: clean(last) };
+}
+
 module.exports = {
   parseYouTubeId, normalizeUrl, normalizeListUrl, sourceKey, sourceKeyFromUrl, comparableUrl,
-  safeFilename, songFileStem, isNameOnlyList,
+  safeFilename, songFileStem, isNameOnlyList, splitSongPath,
 };

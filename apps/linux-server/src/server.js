@@ -10,6 +10,7 @@ const { createHttpServer, PROTOCOL } = require('./http');
 const { createDownloads } = require('./downloads');
 const { createLive } = require('./live');
 const { createSessions } = require('./sessions');
+const { createActivity } = require('./activity');
 const model = require('@flow/core/libraryModel');
 const tools = require('./tools');
 const tailscaleMod = require('./tailscale');
@@ -22,7 +23,7 @@ const TAG_CHECK_MS = 5000;
 const TRASH_MS = 24 * 60 * 60 * 1000;
 
 /**
- * opts: { home, music, port, host, log, detectTailscale, discoveryPort, livePingMs, coverDeps }.
+ * opts: { home, music, port, host, log, detectTailscale, discoveryPort, livePingMs, coverDeps, convertQuietMs }.
  * Resolves { port, config, library, tailscale, close }. discoveryPort: the UDP
  * port the apps' search is answered on (null: not at all; left out: the
  * default port if the server's settings say so).
@@ -31,7 +32,7 @@ const TRASH_MS = 24 * 60 * 60 * 1000;
 async function startServer(opts = {}) {
   const log = opts.log || (() => {});
   const config = configMod.open({ home: opts.home, music: opts.music });
-  const library = createLibrary(config, log, { coverDeps: opts.coverDeps || null });
+  const library = createLibrary(config, log, { coverDeps: opts.coverDeps || null, convertQuietMs: opts.convertQuietMs });
   // The Tailscale address, looked for again now and then: Tailscale may come
   // up after the server does when the machine boots.
   const detectTailscale = opts.detectTailscale || tailscaleMod.detect;
@@ -48,8 +49,10 @@ async function startServer(opts = {}) {
   // The apps' live channels (the Active Sessions); nothing about them outlives a restart.
   const live = createLive({ log, pingMs: opts.livePingMs });
   const sessions = createSessions({ live, library: sessionLibrary(library), log });
+  // What the admins see of the profiles: addresses, last seen, failed sign-ins.
+  const activity = createActivity({ config });
   const server = createHttpServer({
-    config, library, version, log, tailscale: () => tailscale, downloads, live, sessions,
+    config, library, version, log, tailscale: () => tailscale, downloads, live, sessions, activity,
   });
 
   const port = opts.port !== undefined ? opts.port : config.get().port;
@@ -89,6 +92,7 @@ async function startServer(opts = {}) {
     downloads,
     live,
     sessions,
+    activity,
     tailscale: () => tailscale,
     discovery: () => discovery,
     close() {

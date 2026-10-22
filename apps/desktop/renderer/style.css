@@ -88,17 +88,6 @@ button, input, select { font: inherit; color: inherit; }
 
 /* Positioned and sized by equalizer.js: from above the reach of its shine
    down to the bottom of the window. */
-.flash-canvas {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 40; /* over the whole window, under dialogs (50) and toasts (60) */
-  pointer-events: none;
-  opacity: 0;
-  will-change: opacity;
-}
-
 .eq-canvas {
   position: absolute;
   left: 0;
@@ -312,6 +301,10 @@ button, input, select { font: inherit; color: inherit; }
 
 .menu__playing { color: var(--green); }
 .menu__playing .icon { width: 15px; height: 15px; }
+.menu__sub-icon { display: inline-flex; flex: none; margin-right: -2px; color: var(--text-dim); }
+.menu__sub-icon .icon { width: 15px; height: 15px; }
+.menu__sub:hover .menu__sub-icon { color: var(--text-bright); }
+.menu__sub--active .menu__sub-icon { color: var(--accent); }
 
 /* ===== buttons and inputs ===== */
 
@@ -510,6 +503,9 @@ button, input, select { font: inherit; color: inherit; }
   flex-direction: column;
   height: 100%;
 }
+
+/* The phone's All / Playlists / Songs / Artists row (mobile.css). */
+.search-filter { display: none; }
 
 .results {
   flex: 1;
@@ -1473,6 +1469,9 @@ div.import__frame-head { cursor: default; }
 .act--grey { background: rgba(184, 184, 192, 0.12); color: var(--grey); }
 .act--grey:hover { background: rgba(184, 184, 192, 0.24); border-color: rgba(184, 184, 192, 0.35); }
 .act--done { background: rgba(120, 200, 140, 0.06); color: rgba(120, 200, 140, 0.55); cursor: default; }
+/* Adding songs to a playlist: a song just added, taken out again. */
+.act--orange { background: rgba(240, 150, 60, 0.16); color: #f0963c; }
+.act--orange:hover { background: rgba(240, 150, 60, 0.3); border-color: rgba(240, 150, 60, 0.45); }
 /* Favourite: an empty green star, filled gold once it is one. Download: light
    grey (like Song Details) while the song is only on the server, gold once it
    is here too. */
@@ -1509,6 +1508,8 @@ div.import__frame-head { cursor: default; }
 }
 
 .act-tray--in { transform: none; opacity: 1; }
+/* Opened from Settings (the profile's ⋯): over its window. */
+.act-tray--settings { z-index: 55; }
 
 /* "Add to playlists" beside the tray: your playlists with a box each, and Apply.
    Ten rows show; more scroll. Looks like Settings (the app's own background at
@@ -1529,6 +1530,8 @@ div.import__frame-head { cursor: default; }
 }
 
 .pl-picker__title { margin: 0; font-size: 17px; font-weight: 600; color: var(--text-bright); }
+/* Opened from the player: which song it is about. */
+.pl-picker__song { margin-top: -4px; color: var(--text-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-picker__list { max-height: 340px; overflow-y: auto; }
 
 .pl-picker__row {
@@ -1972,6 +1975,10 @@ div.import__frame-head { cursor: default; }
 
 .sq-btn:hover { opacity: 1; background: var(--glass-hi); }
 .sq-btn__img { width: 17px; height: 17px; display: block; pointer-events: none; }
+.sq-btn .icon { width: 17px; height: 17px; pointer-events: none; }
+.sq-btn:disabled { opacity: 0.3; background: none; cursor: default; }
+/* Favourite: the golden star once the song is one (as on a song's row). */
+.sq-btn--fav-on { opacity: 1; color: #f5be3c; }
 .sq-btn--on {
   opacity: 1;
   background: rgba(120, 200, 140, 0.2);
@@ -2065,6 +2072,13 @@ div.import__frame-head { cursor: default; }
   .sq-btn,
   .sleep-btn { width: 28px; height: 28px; }
   .player__extras { gap: 4px; }
+}
+/* The narrowest windows: the five buttons left of the main ones still beside them. */
+@media (max-width: 1040px) {
+  .player__buttons { gap: 4px; }
+  .sq-btn,
+  .sleep-btn { width: 26px; height: 26px; }
+  .player__extras { gap: 2px; }
 }
 
 /* ===== popups ===== */
@@ -2917,18 +2931,31 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 .server-chip--offline .server-chip__dot { background: #6a6a74; }
 
 .settings__input { width: 220px; height: 30px; }
-.settings__input--short { width: 140px; }
 .profile-control { flex-wrap: wrap; justify-content: flex-end; }
 .profile-select { width: 140px; }
 .profile-pin { width: 120px; }
 .profile-who { color: var(--text-dim); }
 .profile-who strong { color: var(--text); font-weight: 600; }
-.profile-tick { min-width: 30px; }
 .server-state { margin-top: 6px; padding-left: 23px; }
 .server-state:empty { display: none; }
 .server-state--online { color: var(--green); }
 .server-state--error { color: var(--red); }
 .server-state > div + div { color: var(--text-dim); }
+
+/* Settings' Switch server: the servers in a dropdown, the pencil, Switch and ✕.
+   The address line takes the whole width without widening the column (width
+   0, at least 100%): the description beside it keeps its room. */
+.switch-control { flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+.switch-select { width: auto; min-width: 180px; max-width: 280px; }
+.switch-where { flex: none; width: 0; min-width: 100%; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A Flow Server's name typed (Switch server, Statistics). */
+.server-name { height: 28px; padding: 0 8px; font-size: 12px; }
+.switch-name { width: 130px; }
+.switch-where:empty { display: none; }
+body.mobile .switch-control { justify-content: flex-start; }
+body.mobile .switch-select { flex: 1; width: auto; min-width: 0; max-width: none; }
+body.mobile .switch-name { width: 120px; }
+body.mobile .switch-where { text-align: left; }
 
 /* Playing with the screen off (backgroundHelp.js): the phone's. */
 .bg-help__status { margin: 4px 0 10px; padding-left: 10px; border-left: 3px solid var(--red); line-height: 1.5; }
@@ -2950,3 +2977,181 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 .viz-cat:hover { color: var(--text-bright); }
 .viz-cat__note { margin-left: 4px; font-size: 12px; font-weight: 400; color: var(--text-dim); }
 .viz-picker[hidden] { display: none; }
+
+/* ===== Settings: Statistics (stats.js) ===== */
+
+.stats { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 10px; }
+.stats__block { padding: 10px 0 12px; border-bottom: 1px solid #34343c; }
+.stats__block:last-child { border-bottom: none; }
+.stats__head { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-bright); overflow-wrap: anywhere; }
+/* Activity's heading, Monthly / Daily on its right. */
+.stats__ahead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 8px; }
+.stats__ahead .stats__head { margin: 0; }
+.stats__modes { display: flex; flex: none; border: 1px solid #4a4a55; border-radius: 6px; overflow: hidden; }
+.stats__mode { height: 24px; padding: 0 10px; border: none; background: transparent; color: var(--text-dim); font: inherit; font-size: 12px; cursor: pointer; }
+.stats__mode + .stats__mode { border-left: 1px solid #4a4a55; }
+.stats__mode:hover:not(.stats__mode--on) { background: rgba(255, 255, 255, 0.05); color: var(--text-bright); }
+.stats__mode--on { background: var(--accent); color: #fff; cursor: default; }
+
+/* All tracked Profiles: Server, Profile, Action; a row picked shows its numbers. */
+.stats__table { display: flex; flex-direction: column; }
+.stats__trow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 88px;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-bottom: 1px solid #2c2c33;
+  border-left: 2px solid transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+.stats__tbody .stats__trow:last-child { border-bottom: none; }
+.stats__trow:hover { background: rgba(255, 255, 255, 0.04); }
+.stats__trow--on { background: rgba(90, 140, 220, 0.14); border-left-color: var(--accent); }
+.stats__trow--on:hover { background: rgba(90, 140, 220, 0.18); }
+.stats__trow--head { min-height: 28px; border-bottom: none; color: var(--text-dim); font-weight: 600; cursor: default; }
+.stats__trow--head:hover { background: none; }
+.stats__tcell { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.stats__tcell .cell-title { overflow: hidden; text-overflow: ellipsis; }
+.stats__own { color: var(--text-dim); }
+.stats__rename { width: 24px; height: 24px; }
+.stats__rename .icon { width: 13px; height: 13px; }
+.stats__name { flex: 1; min-width: 0; width: 100%; }
+.stats__name + .act { width: 24px; height: 24px; }
+.stats__name + .act .icon { width: 13px; height: 13px; }
+.stats__tact { justify-content: flex-end; }
+/* Two halves: the streaks and sessions start at the middle. */
+.stats__facts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 16px; margin-top: 2px; }
+
+/* Activity: a bar per month, the current one at the right, older ones scrolled to. */
+.stats__scroll {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 6px 0;
+  background: rgba(0, 0, 0, 0.24);
+  border-radius: 8px;
+}
+.stats__month {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 76px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.stats__hours { height: 14px; font-variant-numeric: tabular-nums; color: var(--text); }
+.stats__barbox { display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 140px; }
+.stats__bar { width: 56%; min-height: 1px; border-radius: 3px 3px 0 0; background: var(--accent); }
+.stats__bar--flat { border-radius: 0; }
+.stats__mname { white-space: nowrap; }
+/* The lines: the numbers in a column on the left, each line from its
+   number's middle to the right, over the bars' 140px (the scroll's 6px
+   padding, the hours' 14px and the 4px gap above them). The bars scroll
+   right of the numbers, over the lines. */
+.stats__graph { position: relative; display: flex; padding-left: 52px; background: rgba(0, 0, 0, 0.24); border-radius: 8px; }
+.stats__graph .stats__scroll { position: relative; flex: 1; min-width: 0; background: none; border-radius: 0; }
+.stats__graph .stats__barbox { height: 156px; }
+.stats__grid { position: absolute; left: 0; right: 0; top: 24px; height: 156px; pointer-events: none; }
+/* A year's total after its December (the current year's after this month), its bar full. */
+.stats__bar--year { background: var(--red); }
+.stats__month--year .stats__mname { color: var(--text); font-weight: 600; }
+/* A month in Monthly opens its days. */
+.stats__month--open { cursor: pointer; }
+.stats__month--open:hover .stats__bar { filter: brightness(1.25); }
+.stats__month--open:hover .stats__mname { color: var(--text-bright); }
+.stats__gline { position: absolute; left: 0; right: 8px; display: flex; align-items: center; transform: translateY(50%); }
+.stats__gnum { flex: none; width: 52px; padding-right: 6px; text-align: right; font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.stats__grule { flex: 1; height: 1px; background: rgba(255, 255, 255, 0.09); }
+
+/* ===== Settings: Administration (admin.js), for an admin profile ===== */
+
+.admin { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 10px; }
+.admin__top { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.admin__warn { flex: 1; margin: 0; color: var(--amber); font-size: 12px; line-height: 1.45; }
+.admin__block { padding: 10px 0 12px; border-bottom: 1px solid #34343c; }
+.admin__head { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-bright); }
+.admin__bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.admin__bar .admin__search { flex: 1; }
+.admin__facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 12px;
+}
+.admin__facts dt { color: var(--text-dim); }
+.admin__facts dd { margin: 0; color: var(--text); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.admin__disk { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.admin__diskbar { flex: none; width: 120px; height: 8px; border-radius: 4px; background: var(--glass-btn); overflow: hidden; }
+.admin__diskfill { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.admin__diskbar--mid .admin__diskfill { background: #e0c850; }
+.admin__diskbar--warn .admin__diskfill { background: #e8913c; }
+.admin__diskbar--high .admin__diskfill { background: #e87070; }
+.admin__diskbar--crit .admin__diskfill { background: #c42828; }
+
+.admin__table { margin-top: 8px; }
+.admin__table td { height: 36px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.admin__col-name { width: auto; }
+.admin__col-date { width: 76px; }
+.admin__col-seen { width: 112px; }
+.admin__col-num { width: 70px; }
+.admin__col-time { width: 112px; }
+.admin__col-actions { width: 112px; }
+.admin__col-actions .th-plain { justify-content: flex-end; }
+.admin__col-actions .actions { justify-content: flex-end; }
+.admin__row--off td:not(.admin__col-actions),
+.admin__row--off .admin__pname { opacity: 0.55; }
+.admin .act:disabled { opacity: 0.3; cursor: default; }
+.admin__name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.admin__name .cell-title { overflow: hidden; text-overflow: ellipsis; }
+.admin__badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--glass-btn);
+  color: var(--text-dim);
+}
+.admin__badge--master,
+.admin__badge--admin { background: rgba(90, 140, 220, 0.22); color: #b3cdf4; }
+.admin__badge--you { background: rgba(120, 200, 140, 0.18); color: var(--green); }
+.admin__badge--off { background: rgba(220, 120, 120, 0.18); color: var(--red); }
+.admin__badge--nopin { background: rgba(224, 176, 112, 0.16); color: var(--amber); }
+
+.admin__list { list-style: none; margin: 0; padding: 0; }
+/* A list that scrolls past 5 rows: on a darker ground of its own, so its rows read as one list. */
+.admin__scroll { overflow-y: auto; overscroll-behavior: contain; background: rgba(0, 0, 0, 0.24); border-radius: 8px; }
+.admin__list.admin__scroll { padding: 0 10px; }
+/* Touched on an outer quarter: the swipe scrolls the page instead (admin.js),
+   and both outer quarters light up a faint green while the finger is down. */
+.admin__scroll.admin__scroll--page {
+  overflow-y: hidden;
+  overscroll-behavior: auto;
+  background-image: linear-gradient(to right, rgba(120, 200, 140, 0.14) 25%, transparent 25%, transparent 75%, rgba(120, 200, 140, 0.14) 75%);
+}
+/* The table's header stays put over its rows: as dark, but solid. */
+.admin__scroll .table th { background: #19191c; }
+.admin__dot { display: inline-block; width: 3px; height: 3px; margin: 0 6px; border-radius: 50%; background: currentColor; vertical-align: middle; }
+.admin__item { display: flex; flex-direction: column; gap: 2px; padding: 7px 0; border-bottom: 1px solid #2c2c33; font-size: 12px; }
+.admin__item:last-child { border-bottom: none; }
+.admin__item--row { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+.admin__item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.admin__item-main { color: var(--text); overflow-wrap: anywhere; }
+.admin__item-sub { color: var(--text-dim); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+.admin__rules { display: flex; flex-direction: column; gap: 8px; }
+.admin__rule { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 12px; }
+.admin__form { display: flex; flex-direction: column; gap: 8px; max-width: 320px; }
+.admin__pgroups { display: flex; flex-direction: column; gap: 8px; }
+.admin__pactions { display: flex; flex-wrap: wrap; gap: 8px; }
+.modal--admin-ips { width: 520px; }
+.admin__ips { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.admin__ips th { text-align: left; color: var(--text-dim); font-weight: 600; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
+.admin__ips td { padding: 4px 8px 4px 0; border-bottom: 1px solid #2c2c33; user-select: text; overflow-wrap: anywhere; }

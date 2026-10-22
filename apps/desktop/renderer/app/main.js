@@ -12,6 +12,7 @@
     return;
   }
   Store.platform = init.platform || 'desktop';
+  Store.os = init.os || 'win32';
   Store.uiMode = init.uiMode || 'desktop';
   Store.caps = init.caps || {};
   Store.version = init.version || '';
@@ -30,7 +31,6 @@
   Output.init();
   Session.init();
   Ambient.init();
-  ScreenFlash.init();
   Nav.init();
   SearchPage.init();
   AddPage.init();

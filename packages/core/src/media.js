@@ -86,13 +86,13 @@ function ytDlpError(stderrTail) {
   if (/Private video|This video is private/i.test(text)) return 'This video is private.';
   if (/Video unavailable|not available/i.test(text)) return 'This video is not available.';
   if (/Sign in to confirm your age/i.test(text)) {
-    return 'This video is age restricted and needs a signed-in account (Settings, Website Downloads: browser cookies).';
+    return 'This video is age restricted and needs a signed-in account (Settings, Media Management: browser session-cookies).';
   }
   if (/The page needs to be reloaded/i.test(text)) {
     return 'YouTube turned down the signed-in visit ("the page needs to be reloaded"). Open youtube.com in the browser once, or turn browser cookies off in Settings.';
   }
   if (/Sign in to confirm you.re not a bot/i.test(text)) {
-    return 'YouTube wants a signed-in visitor right now ("confirm you\'re not a bot"). Settings, Website Downloads: browser cookies.';
+    return 'YouTube wants a signed-in visitor right now ("confirm you\'re not a bot"). Settings, Media Management: browser session-cookies.';
   }
   // Browser cookies (--cookies-from-browser, or a server's cookie file).
   const noDb = /could not find (\w+) cookies database/i.exec(text);

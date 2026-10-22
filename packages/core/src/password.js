@@ -14,7 +14,9 @@
 // it, so it is required (of the internet; the home network is let in without
 // it) and has at least 8 characters with a lower-case
 // letter, an upper-case letter and a digit. Profile PINs are not this: they
-// only pick a profile on a server already signed in to.
+// only pick a profile on a server already signed in to. Except the master
+// admin's (3.5), which can change the password from an app: it follows the
+// same rules.
 
 const LEVELS = [1, 2, 3, 4];
 const PUBLIC_LEVEL = 3;
@@ -40,12 +42,15 @@ function isStrongPassword(password) {
   return p.length >= MIN_PUBLIC && /[a-z]/.test(p) && /[A-Z]/.test(p) && /[0-9]/.test(p);
 }
 
-/** Why `password` can't be the server's password at `level`, or '' when it can. */
-function passwordProblem(password, level = 1) {
+/**
+ * Why `password` can't be the server's password at `level`, or '' when it
+ * can. `what` names it in the answer (the master admin's PIN).
+ */
+function passwordProblem(password, level = 1, what = 'password') {
   const p = String(password || '');
-  if (!p.trim()) return 'The password cannot be empty.';
+  if (!p.trim()) return `The ${what} cannot be empty.`;
   if ((parseLevel(level) || 1) < PUBLIC_LEVEL) {
-    return p.length >= MIN_PIN ? '' : `A password needs at least ${MIN_PIN} characters.`;
+    return p.length >= MIN_PIN ? '' : `A ${what} needs at least ${MIN_PIN} characters.`;
   }
   const missing = [];
   if (p.length < MIN_PUBLIC) missing.push(`at least ${MIN_PUBLIC} characters`);
@@ -54,7 +59,7 @@ function passwordProblem(password, level = 1) {
   if (!/[0-9]/.test(p)) missing.push('a number');
   if (!missing.length) return '';
   const list = missing.length > 1 ? `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}` : missing[0];
-  return `A server reachable from the internet needs a password with ${list}.`;
+  return `A server reachable from the internet needs a ${what} with ${list}.`;
 }
 
 module.exports = { LEVELS, PUBLIC_LEVEL, LEVEL_NAMES, parseLevel, isStrongPassword, passwordProblem };

@@ -266,7 +266,7 @@ test('after a restart the batch is still there, and a cut-off download starts ov
 
 test('a batch nobody looks at expires, and each profile sees only its own', needsFfmpeg, async () => {
   await withServer(async ({ base, server }) => {
-    const profile = async (name) => (await api(base, 'POST', '/api/profiles', { name, device: name })).json.token;
+    const profile = async (name) => (await api(base, 'POST', '/api/profiles', { name, pin: '1111', device: name })).json.token;
     const a = { Authorization: `Bearer ${await profile('Anna')}` };
     const b = { Authorization: `Bearer ${await profile('Ben')}` };
     await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/a1', kind: 'song' }, a);
@@ -469,5 +469,18 @@ test('several uploads picked from a search are one batch, ready at once, saved i
     assert.deepEqual(lib.songs.map((s) => s.title), ['Song a']);
     assert.equal(lib.songs[0].sourcePlaylistUrl || '', '');
     assert.equal(lib.playlists.length, 0);
+    assert.equal(lib.songs[0].file, 'Daft Punk - Song a.wav');
+  });
+});
+
+test('with separate folders a song the server downloads goes into Downloads/', needsFfmpeg, async () => {
+  await withServer(async ({ server, base }) => {
+    server.config.set({ separateFolders: true, keepFolders: true });
+    await api(base, 'POST', '/api/downloads', { items: [{ url: 'https://fake.test/v/a', title: 'Song a', duration: 3 }], name: 'x' });
+    await allSettled(base);
+    const f = await api(base, 'POST', '/api/downloads/items/0/finish', { meta: { artist: 'Daft Punk', title: 'Song a', mix: '' }, start: 0, end: 3, playlist: null });
+    assert.equal(f.status, 200);
+    const lib = (await api(base, 'GET', '/api/library')).json.library;
+    assert.equal(lib.songs[0].file, 'Downloads/Daft Punk - Song a.wav');
   });
 });

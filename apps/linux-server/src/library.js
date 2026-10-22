@@ -10,11 +10,24 @@
 //   seen     the ids of the latest commands, so one sent twice counts once.
 //
 // A deleted song's file is not gone at once: it goes to .flow-trash in the
-// music folder for 30 days, in case an app deleted it by mistake.
+// music folder for 30 days, in case an app deleted it by mistake, and the
+// song with it (trash.js), so an admin can put it back as it was.
 //
 // A song trimmed in an app (trimSong) has its file cut here; the uncut file
 // goes to the trash too. song.cut says which trim it is, so the apps' copies
 // of the uncut file are replaced.
+//
+// An app's upload is taken in as it comes and converted afterwards, in the
+// background once no upload has come in for a while (a whole batch first):
+// Ogg Vorbis always into MP3, and everything by the app's "Upload songs to
+// the server as MP3" choice (meta.convert, from a phone). The jobs are kept in
+// <home>/convert-queue.json, so a restart carries on.
+//
+// The Statistics (3.6): each owner's totals (@flow/core/listening) start at 0
+// the first time the server runs 3.6. A profile's listen counts for the
+// Default / Shared too, the server's total, unless the app was a Jam member
+// (recordListen's jamMember): in a Jam only the host's listen counts there,
+// once for the song played. A Jam member on the Default counts nowhere.
 //
 // Covers (@flow/core/cover) live in <home>/covers/<song id>.jpg, outside the
 // music folder; song.cover is the file's version. A song's cover goes with
@@ -27,9 +40,10 @@ const model = require('@flow/core/libraryModel');
 const { applyCommand } = require('@flow/core/commands');
 const prof = require('@flow/core/profiles');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
+const { createTrash } = require('./trash');
 const { parseTitle } = require('@flow/core/titleParser');
-const { sourceKeyFromUrl, songFileStem, isNameOnlyList } = require('@flow/core/text');
-const { AUDIO_EXTS } = require('@flow/core/formats');
+const { sourceKeyFromUrl, songFileStem, isNameOnlyList, splitSongPath } = require('@flow/core/text');
+const { AUDIO_EXTS, planFor, ffmpegArgsFor, clampQuality } = require('@flow/core/formats');
 const cover = require('@flow/core/cover');
 const { createMedia } = require('@flow/core/media');
 const { flowIdText, parseFlowId, ID_EXTS } = require('@flow/core/tags');
@@ -37,10 +51,16 @@ const tools = require('./tools');
 
 const SEEN_KEEP = 5000;
 const TOUCHED_KEEP_MS = 180 * 24 * 60 * 60 * 1000;
-const TRASH_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 // A file younger than this may still be being copied in.
 const SETTLE_MS = 2000;
 const COVER_PAUSE_MS = 1000;
+// Uploads are converted once none has come in for this long.
+const CONVERT_QUIET_MS = 15000;
+// How many folders deep the music folder is looked through.
+const SCAN_DEPTH = 16;
+// With separate folders (server.json separateFolders): the apps' uploads, the server's downloads.
+const UPLOADS_DIR = 'Uploads';
+const DOWNLOADS_DIR = 'Downloads';
 // Commands an app may send. addSong is only ever the app's own preview of an
 // upload; the upload itself adds the song here.
 const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource',
@@ -63,7 +83,7 @@ function listAudioFiles(dir, depth = 0) {
     if (e.name.startsWith('.flow-')) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      if (depth < 4) out.push(...listAudioFiles(full, depth + 1));
+      if (depth < SCAN_DEPTH) out.push(...listAudioFiles(full, depth + 1));
     } else if (AUDIO_EXTS.includes(path.extname(e.name).toLowerCase())) {
       out.push(full);
     }
@@ -85,10 +105,10 @@ function songsToTag(data) {
  * ({ fetchImage, readInfo, searchMusic }; the tests' fakes). Left out: the
  * real ones.
  */
-function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
+function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietMs = CONVERT_QUIET_MS } = {}) {
   const musicDir = config.musicDir;
   const covers = cover.createCoverStore(path.join(config.home, 'covers'));
-  const trashDir = path.join(musicDir, '.flow-trash');
+  const trash = createTrash({ dir: path.join(musicDir, '.flow-trash'), indexFile: path.join(config.home, 'trash.json'), log });
   const raw = readJson(config.libraryFile);
   let data = model.sanitize(raw);
   const profiles = prof.sanitizeProfiles(data, raw && raw.profiles);
@@ -100,6 +120,13 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
   };
   const seen = new Set(state.seen);
   const listeners = [];
+  const startedStatistics = prof.startStatistics(data, profiles);
+  // When the server was set up, for the Default's Statistics: on one from
+  // before 3.6, when its oldest song came.
+  if (!config.get().createdAt) {
+    const oldest = data.songs.reduce((min, s) => Math.min(min, s.addedAt || Infinity), Infinity);
+    config.set({ createdAt: Number.isFinite(oldest) ? oldest : Date.now() });
+  }
 
   function save() {
     writeJsonAtomic(config.libraryFile, { ...data, profiles });
@@ -125,6 +152,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     for (const l of listeners) l(state.rev);
     return result;
   }
+  if (startedStatistics) save();
 
   // ---- files ----
 
@@ -133,9 +161,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     return rel.startsWith('..') ? path.basename(file) : rel.split(path.sep).join('/');
   }
 
-  /** A free path for "stem.ext" in the music folder, or beside `current`, which may keep its name. */
-  function uniquePath(stem, ext, current = null) {
-    const dir = current ? path.dirname(current) : musicDir;
+  /** A free path for "stem.ext" in `dir` (the music folder), or beside `current`, which may keep its name. */
+  function uniquePath(stem, ext, current = null, dir = musicDir) {
+    if (current) dir = path.dirname(current);
     const same = (a, b) => !!b && path.resolve(a) === path.resolve(b);
     let candidate = path.join(dir, `${stem}.${ext}`);
     for (let n = 2; fs.existsSync(candidate) && !same(candidate, current); n += 1) {
@@ -144,33 +172,88 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     return candidate;
   }
 
-  function toTrash(file) {
-    try {
-      if (!fs.existsSync(file)) return;
-      fs.mkdirSync(trashDir, { recursive: true });
-      const dest = path.join(trashDir, `${Date.now()}-${path.basename(file)}`);
-      fs.renameSync(file, dest);
-    } catch (err) {
-      log(`Could not move ${file} to the trash: ${err.message}`);
-    }
+  /** A file to the trash; `record`: its song as it was (captureSong, with `by`), to be put back. */
+  function toTrash(file, record = null) {
+    trash.put(file, record);
   }
 
-  function emptyTrash() {
-    let names = [];
-    try {
-      names = fs.readdirSync(trashDir);
-    } catch {
-      return;
-    }
-    const cutoff = Date.now() - TRASH_KEEP_MS;
-    for (const name of names) {
-      const full = path.join(trashDir, name);
-      try {
-        if (fs.statSync(full).mtimeMs < cutoff) fs.rmSync(full, { force: true });
-      } catch {
-        // Gone already.
+  /** The trash's files older than 30 days go for good; `all`: every one (an admin's Empty trash). */
+  function emptyTrash(all = false) {
+    return trash.empty(all);
+  }
+
+  /**
+   * A song as it is everywhere, kept with its file in the trash: its entry,
+   * each profile's stats and favourite of it, and the playlists it is in
+   * (where in them). Null when there is no such song.
+   */
+  function captureSong(id) {
+    const song = model.songById(data, id);
+    if (!song) return null;
+    const lists = [];
+    const look = (owner, playlists) => {
+      for (const pl of playlists) {
+        const index = pl.entries.findIndex((e) => e.songId === id);
+        if (index >= 0) lists.push({ owner, playlistId: pl.id, addedAt: pl.entries[index].addedAt, index });
       }
+    };
+    look(prof.DEFAULT_OWNER, data.playlists);
+    const own = {};
+    for (const [pid, p] of Object.entries(profiles)) {
+      look(pid, p.playlists);
+      if (p.songs[id]) own[pid] = JSON.parse(JSON.stringify(p.songs[id]));
     }
+    return { song: JSON.parse(JSON.stringify(song)), own, lists };
+  }
+
+  /** What is in the trash, newest first (trash.js list), and whether each can come back as it was. */
+  function trashList() {
+    return trash.list().map((t) => ({ ...t, restorable: !!t.song && !model.songById(data, t.song.id) }));
+  }
+
+  /**
+   * Puts a file from the trash back. One whose song was kept comes back as
+   * that song: its id, names, stats, favourites and places in the playlists
+   * that still exist (its cover is looked for again). Any other (deleted
+   * before 3.5, an uncut file, or its song is back already) comes back as a
+   * new song, found by the folder scan. Resolves { songId } or { scanned }.
+   */
+  async function restoreFromTrash(name) {
+    const t = trash.get(name);
+    if (!t) throw new Error('That file is no longer in the trash.');
+    const e = t.entry;
+    if (e && e.song && !model.songById(data, e.song.id)) {
+      const old = String(e.song.file || '');
+      const ext = (path.extname(old) || path.extname(t.originalName)).slice(1);
+      const before = path.dirname(old);
+      const inside = old && !path.relative(musicDir, before).startsWith('..') && fs.existsSync(before);
+      const dest = uniquePath(path.basename(old || t.originalName, `.${ext}`), ext, null, inside ? before : musicDir);
+      fs.renameSync(t.file, dest);
+      trash.forget(name);
+      const [song] = model.sanitize({ songs: [{ ...e.song, file: dest, cover: null }] }).songs;
+      mutate((d) => {
+        d.songs.push(song);
+        const putBack = (playlists, l) => {
+          const pl = playlists.find((x) => x.id === l.playlistId);
+          if (!pl || pl.entries.some((x) => x.songId === song.id)) return;
+          pl.entries.splice(Math.min(Number(l.index) || 0, pl.entries.length), 0, { songId: song.id, addedAt: Number(l.addedAt) || Date.now() });
+        };
+        for (const l of e.lists || []) {
+          if (l.owner === prof.DEFAULT_OWNER) putBack(d.playlists, l);
+          else if (profiles[l.owner]) putBack(profiles[l.owner].playlists, l);
+        }
+        for (const [pid, own] of Object.entries(e.own || {})) if (profiles[pid]) profiles[pid].songs[song.id] = own;
+      });
+      log(`Put back from the trash: ${path.basename(dest)}`);
+      queueCovers();
+      return { songId: song.id };
+    }
+    const ext = path.extname(t.originalName).slice(1);
+    const dest = uniquePath(path.basename(t.originalName, `.${ext}`), ext, null, musicDir);
+    fs.renameSync(t.file, dest);
+    trash.forget(name);
+    log(`Put back from the trash as a new song: ${path.basename(dest)}`);
+    return { scanned: await scan({ complete: [dest] }) };
   }
 
   // ---- what the apps see ----
@@ -216,6 +299,38 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     });
   }
 
+  /**
+   * Why `profileId` (null: the Default / Shared) may not delete `song` for
+   * everyone, or ''. Only with the admins' rule songDelete 'owner': then the
+   * profile that added it and the admins may; a song nobody added (put in
+   * by hand, from before) or whose profile is gone, anyone.
+   */
+  function deleteRefusal(song, profileId, admin) {
+    if (!song || admin || config.get().songDelete !== 'owner') return '';
+    const by = song.addedBy;
+    if (!by || by === (profileId || prof.DEFAULT_OWNER)) return '';
+    const owner = by === prof.DEFAULT_OWNER ? prof.DEFAULT_NAME : (config.get().profiles.find((p) => p.id === by) || {}).name;
+    if (!owner) return '';
+    return `"${song.title || 'This song'}" was added by ${owner}. On this server only ${owner} or an admin can delete it.`;
+  }
+
+  /** A profile's numbers for the admins (profiles.js ownerSummary). */
+  function summary(profileId) {
+    return prof.ownerSummary(data, profiles, profileId);
+  }
+
+  /**
+   * Deletes every song a profile added, for everyone (an admin deleting the
+   * profile with its songs): their files go to the trash. Resolves how many.
+   */
+  function deleteSongsOf(profileId, by = null) {
+    const ids = data.songs.filter((s) => s.addedBy === profileId).map((s) => s.id);
+    if (!ids.length) return 0;
+    const at = Date.now();
+    const { results } = runCommands(ids.map((songId, i) => ({ cid: `admin-${at}-${i}`, at, type: 'deleteSong', songId })), null, { by, admin: true });
+    return results.filter((r) => r.ok && !r.skipped).length;
+  }
+
   function songFile(id) {
     const s = model.songById(data, id);
     return s ? s.file : null;
@@ -228,16 +343,24 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
    * { cid, ok, skipped?, value?, error? }. A song renamed gets its file renamed
    * to match; a deleted one's file goes to the trash.
    */
-  function runCommands(commands, profileId = null) {
+  function runCommands(commands, profileId = null, { by = null, admin = false } = {}) {
     checkProfile(profileId);
+    // Who deleted what goes to the trash with it: the profile (an admin
+    // deleting another's songs says so).
+    const deletedBy = by || profileId || prof.DEFAULT_OWNER;
     const results = [];
-    const trash = [];
+    const toBin = [];
     const retags = [];
+    // Listens of a profile that count for the Default too.
+    const forDefault = [];
     const list = (Array.isArray(commands) ? commands : []).slice(0, 5000);
     let applied = 0;
     let remembered = 0;
     let others = null;
-    const ctx = { keepSongs: () => others || (others = prof.songsOfOthers(data, profiles, profileId)) };
+    const ctx = {
+      keepSongs: () => others || (others = prof.songsOfOthers(data, profiles, profileId)),
+      deleteRefusal: (song) => deleteRefusal(song, profileId, admin),
+    };
     const apply = (d) => {
       for (const c of list) {
         const cid = String((c && c.cid) || '');
@@ -247,10 +370,28 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
         }
         try {
           if (!c || !ALLOWED.has(c.type)) throw new Error(`Unknown command "${String(c && c.type)}".`);
+          if (c.type === 'recordListen' && c.jamMember && !profileId) {
+            results.push({ cid, ok: true, skipped: 'jam' });
+            if (cid) {
+              seen.add(cid);
+              state.seen.push(cid);
+              remembered += 1;
+            }
+            continue;
+          }
+          // The songs about to be deleted, as they are everywhere, for the trash.
+          let kept = [];
+          if (c.type === 'deleteSong') kept = [captureSong(String(c.songId || ''))];
+          else if (c.type === 'deletePlaylist' && c.deleteSongs) {
+            const pl = model.playlistById(d, String(c.playlistId || ''));
+            kept = pl ? pl.entries.map((e) => captureSong(e.songId)) : [];
+          }
+          const keptOf = (id) => kept.find((k) => k && k.song.id === id) || null;
           const r = applyCommand(d, c, state.touched, profileId, ctx);
-          if (!r.skipped && c.type === 'deleteSong') trash.push(r.value.file);
+          if (profileId && c.type === 'recordListen' && !c.jamMember && !r.skipped && r.value) forDefault.push(c);
+          if (!r.skipped && c.type === 'deleteSong') toBin.push({ file: r.value.file, record: keptOf(r.value.id) });
           const gone = !r.skipped && c.type === 'deletePlaylist' ? r.value : [];
-          for (const s of gone) trash.push(s.file);
+          for (const s of gone) toBin.push({ file: s.file, record: keptOf(s.id) });
           if (!r.skipped && c.type === 'editSong') {
             const song = r.value;
             const ext = path.extname(song.file).slice(1).toLowerCase();
@@ -286,9 +427,17 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     apply(v);
     // Only a change moves the revision on: commands that were all skipped or
     // refused must not make every app fetch the library again for nothing.
-    if (applied) mutate((d) => prof.absorb(d, profiles, profileId, v));
+    if (applied) {
+      mutate((d) => {
+        prof.absorb(d, profiles, profileId, v);
+        for (const c of forDefault) {
+          if (!model.songById(d, String(c.songId))) continue;
+          model.recordListen(d, String(c.songId), { listened: c.listened, duration: c.duration, at: Number(c.at) || Date.now(), tz: c.tz });
+        }
+      });
+    }
     else if (remembered) save();
-    for (const f of trash) toTrash(f);
+    for (const t of toBin) toTrash(t.file, t.record && { ...t.record, by: deletedBy });
     for (const id of retags) queueRetag(id);
     return { rev: state.rev, results };
   }
@@ -350,19 +499,40 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
   }
 
   /**
+   * Where a new song's file goes: "Artist - Title (Mix).ext" in the music
+   * folder, or with separate folders in Uploads/ (`from` 'upload', an app's)
+   * or Downloads/ (the server's). With keepFolders an upload keeps its place
+   * in the app's music folder (meta.path), folders and file name, inside that.
+   */
+  function placeFor(meta, ext, from) {
+    const cfg = config.get();
+    let dir = cfg.separateFolders ? path.join(musicDir, from === 'download' ? DOWNLOADS_DIR : UPLOADS_DIR) : musicDir;
+    let stem = songFileStem(meta.artist, meta.title, meta.mix);
+    const kept = from === 'upload' && cfg.keepFolders ? splitSongPath(meta.path) : null;
+    if (kept) {
+      dir = path.join(dir, ...kept.folders);
+      if (kept.name) stem = kept.name;
+    }
+    fs.mkdirSync(dir, { recursive: true });
+    return uniquePath(stem, ext, null, dir);
+  }
+
+  /**
    * Takes in an uploaded file (already written to `tmp` inside the music
    * folder) as a song. The id is the app's own when it is free, so the app's
    * playlists keep pointing at it. Its favourite and stats are those of the
    * profile it came from, and so are the playlists it goes into, at
    * `playlistAt` (else the time it was added). That profile is who added it.
+   * `from`: 'upload' (an app's) or 'download' (the server's own), for where
+   * its file goes (placeFor).
    */
-  function addUploaded(tmp, requestedId, meta, playlistIds, profileId = null, { playlistAt } = {}) {
+  function addUploaded(tmp, requestedId, meta, playlistIds, profileId = null, { playlistAt, from = 'upload' } = {}) {
     checkProfile(profileId);
     const ext = String(meta.format || path.extname(tmp).slice(1)).toLowerCase();
     const title = String(meta.title || '').trim() || 'Untitled';
     const artist = String(meta.artist || '').trim();
     const mix = String(meta.mix || '').trim();
-    const dest = uniquePath(songFileStem(artist, title, mix), ext);
+    const dest = placeFor({ ...meta, title, artist, mix }, ext, from);
     fs.renameSync(tmp, dest);
     const id = requestedId && !model.songById(data, requestedId) ? requestedId : newId();
     const song = {
@@ -394,6 +564,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
       prof.absorb(d, profiles, profileId, v);
     });
     if (song.loudness === null || song.loudness === undefined) queueLoudness();
+    if (from === 'upload') queueConvert(id, meta.convert);
     // The app's cover comes right after (PUT .../cover); the search waits a moment for it.
     setTimeout(queueCovers, 5000).unref();
     return model.songById(data, id);
@@ -461,8 +632,10 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
    * moved there keep their id (their playlists, cover and stats). The
    * folder itself missing (an unplugged drive) drops nothing.
    */
-  async function scan() {
+  async function scan({ complete = [] } = {}) {
     if (!fs.existsSync(musicDir)) return { added: 0, removed: 0, moved: 0 };
+    // Files known to be whole (one put back from the trash) need not settle first.
+    const whole = new Set(complete.map((f) => path.resolve(f)));
     const known = new Set(data.songs.map((s) => s.file));
     const ignored = new Set(data.ignoredFiles);
     const fresh = [];
@@ -471,7 +644,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
       if (known.has(file) || ignored.has(file.toLowerCase())) continue;
       try {
         const st = fs.statSync(file);
-        if (Date.now() - st.mtimeMs < SETTLE_MS) {
+        if (Date.now() - st.mtimeMs < SETTLE_MS && !whole.has(path.resolve(file))) {
           unsettled += 1;
           continue;
         }
@@ -793,6 +966,140 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     return { song: model.songById(data, id) };
   }
 
+  // ---- uploads converted ----
+
+  const convertFile = path.join(config.home, 'convert-queue.json');
+  const cleanConvert = (c) => (c && typeof c === 'object'
+    ? { alwaysMp3: c.alwaysMp3 === true, quality: clampQuality(c.quality), keepMp3: c.keepMp3 !== false }
+    : null);
+  // [{ id, opts }]: opts the app's choice, or null (an app that sends none: only Vorbis is converted).
+  const savedJobs = readJson(convertFile);
+  let convertQueue = (Array.isArray(savedJobs) ? savedJobs : [])
+    .filter((j) => j && typeof j.id === 'string')
+    .map((j) => ({ id: j.id, opts: cleanConvert(j.opts) }));
+  let uploadsActive = 0;
+  let lastUpload = 0;
+  let convertTimer = null;
+  let converting = false;
+  let convertRun = Promise.resolve();
+  // Left from before a restart: on with them once the library is up.
+  setImmediate(() => scheduleConvert());
+
+  function saveConvertQueue() {
+    try {
+      if (convertQueue.length) writeJsonAtomic(convertFile, convertQueue);
+      else fs.rmSync(convertFile, { force: true });
+    } catch (err) {
+      log(`Could not save the uploads still to convert: ${err.message}`);
+    }
+  }
+
+  /** An upload's file coming in (http.js): the conversions wait until the batch is in. */
+  function uploadStarted() {
+    uploadsActive += 1;
+    lastUpload = Date.now();
+  }
+
+  function uploadEnded() {
+    uploadsActive = Math.max(0, uploadsActive - 1);
+    lastUpload = Date.now();
+    scheduleConvert();
+  }
+
+  /**
+   * An uploaded song to look at once the batch is in. Only an MP3 choice or
+   * an Ogg file can come to anything (an MP3 kept, an M4A or FLAC without
+   * the choice: nothing to do).
+   */
+  function queueConvert(id, convert) {
+    const opts = cleanConvert(convert);
+    const s = model.songById(data, id);
+    if (!s || (!(opts && opts.alwaysMp3) && !['ogg', 'oga'].includes(String(s.format).toLowerCase()))) return;
+    convertQueue = convertQueue.filter((j) => j.id !== id);
+    convertQueue.push({ id, opts });
+    saveConvertQueue();
+    scheduleConvert();
+  }
+
+  function scheduleConvert() {
+    if (!convertQueue.length || converting || stopped) return;
+    clearTimeout(convertTimer);
+    const wait = Math.max(0, lastUpload + convertQuietMs - Date.now());
+    convertTimer = setTimeout(() => {
+      if (uploadsActive) return; // the one coming in reschedules when it ends
+      if (Date.now() - lastUpload < convertQuietMs) scheduleConvert();
+      else convertRun = convertWork().catch((err) => log(`Converting uploads: ${err.message}`));
+    }, wait);
+    convertTimer.unref();
+  }
+
+  async function convertWork() {
+    if (converting || stopped) return;
+    converting = true;
+    try {
+      // A new batch coming in meanwhile goes in first: the rest waits for it.
+      while (!stopped && convertQueue.length && !uploadsActive) {
+        const job = convertQueue[0];
+        const run = trims.then(() => convertNow(job));
+        trims = run.catch(() => {});
+        try {
+          await run;
+        } catch (err) {
+          const s = model.songById(data, job.id);
+          log(`Could not convert ${s ? [s.artist, s.title].filter(Boolean).join(' - ') : job.id}: ${err.message}`);
+        }
+        if (stopped) break;
+        convertQueue = convertQueue.filter((j) => j !== job);
+        saveConvertQueue();
+      }
+    } finally {
+      converting = false;
+      if (!stopped) scheduleConvert();
+    }
+  }
+
+  /**
+   * One uploaded song's file into MP3 when the plan says so (formats.planFor,
+   * as for a download), put beside the old one, which goes to the trash.
+   * Its flowid and cover are written into the new file afterwards.
+   */
+  async function convertNow({ id, opts }) {
+    const s = model.songById(data, id);
+    if (!s || !fs.existsSync(s.file) || !tools.ffmpeg()) return;
+    const info = await media.probeAudio(s.file);
+    if (!info.codec) return;
+    const plan = planFor(info, opts || {});
+    if (plan.action !== 'mp3' || stopped) return;
+    const file = s.file;
+    const gen = genOf(id);
+    const out = path.join(path.dirname(file), `.flow-convert-${crypto.randomBytes(6).toString('hex')}.mp3`);
+    let dest;
+    let duration;
+    try {
+      await media.runFfmpeg(['-i', file, ...ffmpegArgsFor(plan), out], info.duration || s.duration || 0, null);
+      const final = await media.probeAudio(out);
+      if (!final.codec) throw new Error('the converted file has no audio in it');
+      duration = final.duration || s.duration;
+      // Deleted, renamed or cut meanwhile: left as it is now.
+      const now = model.songById(data, id);
+      if (stopped || !now || now.file !== file || genOf(id) !== gen) return;
+      dest = uniquePath(path.basename(file, path.extname(file)), 'mp3', null, path.dirname(file));
+      fs.renameSync(out, dest);
+      fileGen.set(id, gen + 1);
+      toTrash(file);
+    } finally {
+      fs.rmSync(out, { force: true });
+    }
+    mutate((d) => {
+      if (!model.songById(d, id)) return;
+      model.updateSong(d, id, { file: dest, format: 'mp3', duration });
+      if (model.songById(d, id).tagged !== null) model.setTagged(d, id, '');
+    });
+    tagFailed.delete(id);
+    queueRetag(id);
+    log(`Converted: ${[s.artist, s.title].filter(Boolean).join(' - ')} (${plan.source} to ${plan.target})`);
+  }
+
   /** A song's waveform (media.peaksFor), the last few kept by song and cut. */
   const peakCache = new Map();
   async function songPeaks(id) {
@@ -855,11 +1162,15 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     touch: () => mutate(() => {}),
     createProfile,
     deleteProfile,
+    summary,
+    deleteSongsOf,
     runCommands,
     trimSong,
     songPeaks,
     existingFor,
     addUploaded,
+    uploadStarted,
+    uploadEnded,
     importPlaylist,
     addToPlaylists,
     scan,
@@ -872,11 +1183,14 @@ function createLibrary(config, log = () => {}, { coverDeps = null } = {}) {
     coverCounts,
     covers,
     emptyTrash,
+    trashList,
+    restoreFromTrash,
     onChange: (fn) => listeners.push(fn),
     /** Stops the background work: resolves once what was running has ended. */
     stop() {
       stopped = true;
-      return Promise.all([workRun, coverRun]).then(() => {});
+      clearTimeout(convertTimer);
+      return Promise.all([workRun, coverRun, convertRun]).then(() => {});
     },
   };
 }

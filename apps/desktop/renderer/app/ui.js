@@ -95,7 +95,9 @@ const Modal = {
  * Asks a yes/no question. With `checkbox` it also asks that; resolves
  * { checked } on yes and null on no.
  */
-function confirmDialog({ title, message, confirmLabel = 'OK', danger = false, checkbox = null }) {
+function confirmDialog({
+  title, message, confirmLabel = 'OK', cancelLabel = 'Cancel', danger = false, kind = '', checkbox = null,
+}) {
   return new Promise((resolve) => {
     let box = null;
     const body = [h('p.modal__text', message)];
@@ -109,10 +111,10 @@ function confirmDialog({ title, message, confirmLabel = 'OK', danger = false, ch
       body,
       className: 'modal--small',
       buttons: [
-        { label: 'Cancel' },
+        { label: cancelLabel },
         {
           label: confirmLabel,
-          kind: danger ? 'danger' : 'primary',
+          kind: kind || (danger ? 'danger' : 'primary'),
           onClick: () => {
             answer = { checked: box ? box.checked : false };
           },
@@ -179,6 +181,68 @@ function promptDialog({ title, value = '', confirmLabel = 'OK', maxLength = 150 
         handle.close();
       }
     });
+  });
+}
+
+/**
+ * A small form: `fields` are [{ key, label, type = 'text', value, placeholder,
+ * maxLength, disabled }], each a labelled box. `submit(values)` runs on the
+ * confirm button (or Enter); what it throws is shown in the popup, which stays
+ * open, else it closes. Resolves what submit returned, or null when cancelled.
+ */
+function formDialog({ title, fields, confirmLabel = 'Submit', submit }) {
+  return new Promise((resolve) => {
+    const error = h('div.form-error');
+    const boxes = {};
+    const rows = fields.map((f) => {
+      const box = h('input.input', {
+        type: f.type || 'text',
+        value: f.value || '',
+        placeholder: f.placeholder || '',
+        maxLength: f.maxLength || 150,
+        autocomplete: f.type === 'password' ? 'new-password' : 'off',
+        disabled: !!f.disabled,
+      });
+      // Set here: h() leaves out props that are false.
+      box.spellcheck = false;
+      boxes[f.key] = box;
+      return h('label.form-row', h('span.form-label', f.label), box);
+    });
+    let answer = null;
+    const handle = Modal.open({
+      title,
+      className: 'modal--small.modal--form',
+      body: [...rows, error],
+      focus: 'input:not(:disabled)',
+      buttons: [
+        { label: 'Cancel' },
+        {
+          label: confirmLabel,
+          kind: 'primary',
+          onClick: async () => {
+            error.textContent = '';
+            const values = Object.fromEntries(Object.entries(boxes).map(([k, box]) => [k, box.value]));
+            try {
+              answer = await submit(values);
+              return true;
+            } catch (err) {
+              error.textContent = (err && err.message) || String(err);
+              return false;
+            }
+          },
+        },
+      ],
+      onClose: () => resolve(answer),
+    });
+    const confirm = handle.el.querySelector('.modal__footer .btn--primary');
+    for (const box of Object.values(boxes)) {
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !confirm.disabled) confirm.click();
+      });
+    }
+    // A box filled in already: ready to be typed over.
+    const first = handle.el.querySelector('input:not(:disabled)');
+    if (first && first.value) setTimeout(() => first.select(), 0);
   });
 }
 

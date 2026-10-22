@@ -3,6 +3,9 @@
 Turns `flow-server-3.3.3.tar.gz` into a Flow Server on a Linux machine with
 systemd (Raspberry Pi OS, Debian, Ubuntu). Run the commands on that machine.
 
+On a Windows PC, run `Flow Server Setup <version>.exe` instead: it asks the same
+questions and needs nothing installed first (see `apps/windows-server/README.md`).
+
 1. **Install Node.js, ffmpeg and curl.** `node -v` must show v18 or newer.
    ```sh
    sudo apt update && sudo apt install -y nodejs ffmpeg curl
@@ -29,12 +32,12 @@ systemd (Raspberry Pi OS, Debian, Ubuntu). Run the commands on that machine.
 
 4. **Run the installer** as your normal user (not with `sudo`):
    ```sh
-   cd ~/Flow && sh apps/server/install.sh
+   cd ~/Flow && sh apps/linux-server/install.sh
    ```
    Answer its questions:
    - **Level:** `1` = home network only, `2` = also on the go through
      Tailscale (recommended). Levels 3 and 4 put the server on the internet;
-     see `apps/server/README.md` first.
+     see `apps/linux-server/README.md` first.
    - **Downloads by the server:** optional. With yes, install yt-dlp in a
      second terminal when it asks, using the file name it prints
      (`yt-dlp_linux_aarch64` on a 64-bit Pi), then press Enter:
@@ -42,11 +45,22 @@ systemd (Raspberry Pi OS, Debian, Ubuntu). Run the commands on that machine.
      wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64
      sudo mv yt-dlp_linux_aarch64 /usr/local/bin/yt-dlp && sudo chmod +x /usr/local/bin/yt-dlp
      ```
+   - **Separate folders for uploads and downloads:** yes puts songs the apps
+     upload into `Uploads/` and songs the server downloads into `Downloads/`
+     inside the music folder.
+   - **Keep uploaded folder structures:** yes saves a song the PC has in
+     `Music/FlowPlayer/Linkin Park/Hybrid Theory/In the End.mp3` as
+     `Linkin Park/Hybrid Theory/In the End.mp3` on the server; no saves it as
+     `Linkin Park - In the End.mp3`.
    - **Find the server on the network:** yes.
    - **Password:** optional at levels 1 and 2.
+   - **Master admin:** yes, with your name and a PIN. That profile gets
+     Administration in the apps' Settings (the profiles, their IPs, the
+     trash, the server's rules) and can change the server password from
+     there. Its PIN follows the password's rules.
    - **Tailscale** (level 2): open the link it prints and sign in.
 
-   Ignore the `git pull` hint it prints at the end; step 8 is how to update.
+   Its hint at the end says how to update with git; with the tarball, see step 8.
 
 5. **Check that it runs.** It should say `active (running)`; the log shows the
    addresses for the apps.
@@ -64,17 +78,24 @@ systemd (Raspberry Pi OS, Debian, Ubuntu). Run the commands on that machine.
    level 2, install Tailscale on the device, sign in to the same account and
    connect once at home; Flow then fills in Remote Server by itself.
 
-8. **Update later** by unpacking the new tarball over `~/Flow` and restarting.
-   The library (`~/.local/share/flow-server`) and the songs are not touched.
+8. **Update later** by unpacking the new tarball over `~/Flow` and running the
+   installer again: it asks what to do, and 1 (Only update, the default) keeps
+   everything as it is set up. 2 goes through the questions again (Enter keeps
+   each answer), 3 uninstalls. The library (`~/.local/share/flow-server`) and
+   the songs are not touched.
    ```sh
    tar xzf ~/flow-server-X.Y.Z.tar.gz -C ~/Flow --strip-components=1
-   sudo systemctl restart flow-server
+   sh ~/Flow/apps/linux-server/install.sh
    ```
+   Coming from 3.5.2 or older, the server was in `apps/server`: after this
+   update, `rm -r ~/Flow/apps/server` removes the old copy.
 
 **Useful commands**
 ```sh
-node ~/Flow/apps/server/src/main.js set-password   # set or change the password
+node ~/Flow/apps/linux-server/src/main.js set-password   # set or change the password
+node ~/Flow/apps/linux-server/src/main.js profiles       # the profiles, which are admins
+node ~/Flow/apps/linux-server/src/main.js admin master "Your name" --create   # the master admin
 journalctl -u flow-server -f                       # live log
-sh ~/Flow/apps/server/install.sh --level 2         # change the level
-sh ~/Flow/apps/server/install.sh --uninstall       # remove the service (library and music stay)
+sh ~/Flow/apps/linux-server/install.sh --level 2         # change the level
+sh ~/Flow/apps/linux-server/install.sh --uninstall       # remove the service (library and music stay)
 ```

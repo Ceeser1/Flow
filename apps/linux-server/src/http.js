@@ -18,6 +18,9 @@
 //                                      names come back (an app asks when they
 //                                      differ); meta.onExisting "new" takes it
 //                                      as a song of its own all the same
+//                                      (meta.convert { alwaysMp3, quality, keepMp3 }:
+//                                      the app's MP3 choice; Ogg Vorbis becomes MP3
+//                                      regardless, in the background after the batch)
 //   GET  /api/songs/:id/audio          the song's file; with ?vorbis=0 (an app that
 //                                      cannot play Ogg Vorbis: the iPhone) such a
 //                                      song as Ogg Opus, converted once (vorbis.js)
@@ -59,7 +62,11 @@
 //   POST /api/profiles { name, pin, device }        a new profile, signed in: { token, profile }
 //   POST /api/profiles/login { profileId, pin, device }                  { token, profile }
 //   POST /api/profiles/logout                       back to no profile
-//   POST /api/profiles/rename { name }              the signed-in profile
+//   POST /api/profiles/rename { name, pin }         the signed-in profile (pin: its current one)
+//   POST /api/profiles/pin { pin, newPin }          its PIN changed ("" for none; the master
+//                                      admin's needs 4 characters, an admin's cannot be none);
+//                                      only with the "pin" feature. The first profile needs a PIN
+//                                      (it becomes the admin), and only a profile with one is an admin.
 //   POST /api/profiles/delete                       the signed-in profile, with its playlists
 //
 // With a password set, every other route needs the token from /api/login:
@@ -98,19 +105,22 @@ const path = require('path');
 const { URL } = require('url');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const { isPrivateIp, isTailscaleAddress } = require('@flow/core/address');
-const { PUBLIC_LEVEL } = require('@flow/core/password');
+const { PUBLIC_LEVEL, passwordProblem } = require('@flow/core/password');
 const { DEFAULT_OWNER, DEFAULT_NAME } = require('@flow/core/profiles');
-const { checkPassword, hashPassword, hashToken, CLIENT_ID } = require('./config');
+const {
+  checkPassword, pinEntry, hashToken, checkProfileName: checkName, newProfileId, CLIENT_ID,
+} = require('./config');
 const { DownloadError } = require('./downloads');
 const cover = require('@flow/core/cover');
 const tools = require('./tools');
 const { SessionError } = require('./sessions');
 const { createVorbis } = require('./vorbis');
+const { createAdminRoutes } = require('./admin');
 
 const PROTOCOL = 1;
 // What this server can do beyond protocol 1, for apps that know to ask.
-const FEATURES = ['profiles'];
-const MAX_PROFILE_NAME = 40;
+// admin: /api/admin for admin profiles (admin.js).
+const FEATURES = ['profiles', 'admin', 'pin', 'statistics'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;
@@ -330,9 +340,19 @@ function bareIp(value) {
 const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
 
 function createHttpServer({
-  config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null,
+  config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null, activity = null,
 }) {
   const throttle = createThrottle();
+  // What is noted about the profiles for the admins (activity.js); left out by tests that need none.
+  const note = activity || {
+    created() {}, seen() {}, left() {}, failed() {},
+  };
+  // An app gone from its live channel was last seen then.
+  if (live) {
+    live.onClose((client, info) => {
+      if (info && info.profileId) note.left(info.profileId);
+    });
+  }
   const vorbis = createVorbis({ home: () => config.home, ffmpeg: tools.ffmpeg, log });
   // Sessions of levels 3 and 4 do not outlive the server's run.
   const startedAt = Date.now();
@@ -382,7 +402,7 @@ function createHttpServer({
     // 4, or set up by hand) gets nothing.
     const { level } = config.get();
     if (client.outside && level && level < PUBLIC_LEVEL) {
-      return `This Flow Server is set to level ${level}, not reachable from the internet. On the server, choose level 3 or 4 (sh apps/server/install.sh) to use it from outside.`;
+      return `This Flow Server is set to level ${level}, not reachable from the internet. On the server, choose level 3 or 4 with install.sh (on Windows: level 4 in Flow Server Settings) to use it from outside.`;
     }
     return '';
   }
@@ -462,14 +482,63 @@ function createHttpServer({
     return entry;
   }
 
-  /** The profile a request is signed in to, or null. */
-  function profileOf(entry) {
-    if (!entry || !entry.profileId) return null;
-    const p = config.get().profiles.find((x) => x.id === entry.profileId);
-    return p && library.profileIds().includes(p.id) ? p : null;
+  /**
+   * The server's profiles. One the command line made (flow-server profiles
+   * add, install.sh) gets its part of the library here, the first time it is
+   * looked for: the library is the running server's to write.
+   */
+  function allProfiles() {
+    const list = config.get().profiles;
+    const have = library.profileIds();
+    for (const p of list) if (!have.includes(p.id)) library.createProfile(p.id);
+    return list;
   }
 
-  const publicProfile = (p) => (p ? { id: p.id, name: p.name, pin: !!p.pin } : null);
+  /** The profile a request is signed in to, or null. A disabled one counts as none. */
+  function profileOf(entry) {
+    if (!entry || !entry.profileId) return null;
+    const p = allProfiles().find((x) => x.id === entry.profileId);
+    return p && !p.disabled ? p : null;
+  }
+
+  // The admins' routes (admin.js), and deleting a profile, which they share.
+  const admin = createAdminRoutes({
+    config,
+    library,
+    downloads,
+    live,
+    sessions,
+    activity: activity || { lastSeen: (p) => p.lastSeenAt || 0, failed() {}, failures: () => [], clearFailures() {} },
+    tools,
+    version,
+    startedAt,
+    throttle,
+    issueToken,
+    createProfile: (name, pin, { entry, ip }) => makeProfile(name, pin, { ip, device: entry ? entry.device : ip }),
+    log,
+    HttpError,
+    sendJson,
+    readJsonBody,
+    allProfiles,
+  });
+
+  /**
+   * The admins' rules as they touch the app asking (`profile` signed in to, or
+   * null): whether it may make profiles, and whether songs others added are
+   * theirs to delete.
+   */
+  function rulesFor(profile) {
+    const cfg = config.get();
+    const admin = !!(profile && profile.admin);
+    return {
+      createProfiles: admin || cfg.profileCreation !== 'admins' || !cfg.profiles.length,
+      songDelete: admin ? 'anyone' : cfg.songDelete,
+    };
+  }
+
+  const publicProfile = (p) => (p ? {
+    id: p.id, name: p.name, pin: !!p.pin, createdAt: p.createdAt, admin: !!p.admin, master: !!p.master,
+  } : null);
 
   /** The app's install id from a request body (or the token it carries on from), or ''. */
   function clientIdOf(body, entry) {
@@ -496,18 +565,29 @@ function createHttpServer({
   }
 
   function checkProfileName(name, exceptId = null) {
-    const clean = String(name || '').replace(/\s+/g, ' ').trim();
-    if (!clean) throw new HttpError(400, 'Please enter a name for the profile.');
-    if (clean.length > MAX_PROFILE_NAME) throw new HttpError(400, `Profile names can be at most ${MAX_PROFILE_NAME} characters.`);
-    if (['none', 'default', 'default / shared', '+ new'].includes(clean.toLowerCase())) throw new HttpError(400, `"${clean}" cannot be a profile's name.`);
-    const clash = config.get().profiles.find((p) => p.id !== exceptId && p.name.toLowerCase() === clean.toLowerCase());
-    if (clash) throw new HttpError(409, `A profile called "${clash.name}" already exists.`);
-    return clean;
+    try {
+      return checkName(config.get().profiles, name, exceptId);
+    } catch (err) {
+      throw new HttpError(err.status || 400, err.message);
+    }
   }
 
   function setToken(entry, patch) {
     const cfg = config.get();
     config.set({ tokens: cfg.tokens.map((t) => (t.hash === entry.hash ? { ...t, ...patch } : t)) });
+  }
+
+  /** A new profile, as kept (the first one is an admin: config.js). */
+  function makeProfile(rawName, rawPin, { ip, device }) {
+    const name = checkProfileName(rawName);
+    const cfg = config.get();
+    if (!cfg.profiles.length && !cfg.adminSeeded && !rawPin) throw new HttpError(400, 'The first profile becomes this server\'s admin, so it needs a PIN.');
+    const id = newProfileId();
+    config.set({ profiles: [...config.get().profiles, { id, name, createdAt: Date.now(), pin: pinEntry(String(rawPin || '')) }] });
+    library.createProfile(id);
+    log(`Profile made: ${name} (${device})`);
+    note.created(id, { ip, device });
+    return config.get().profiles.find((p) => p.id === id);
   }
 
   async function profiles(req, res, entry, action, { ip }) {
@@ -516,38 +596,59 @@ function createHttpServer({
     const current = profileOf(entry);
     if (action === 'list') {
       return sendJson(res, 200, {
-        profiles: config.get().profiles.filter((p) => library.profileIds().includes(p.id)).map(publicProfile),
+        profiles: allProfiles().map(publicProfile),
         current: current ? current.id : null,
+        createProfiles: rulesFor(current).createProfiles,
       });
     }
     if (action === 'create') {
-      const name = checkProfileName(body.name);
-      const pin = String(body.pin || '');
-      const id = crypto.randomBytes(6).toString('hex');
-      const profile = { id, name, createdAt: Date.now(), pin: pin ? hashPassword(pin) : null };
-      config.set({ profiles: [...config.get().profiles, profile] });
-      library.createProfile(id);
-      log(`Profile made: ${name} (${device})`);
-      return sendJson(res, 200, { token: issueToken(device, id, entry, clientIdOf(body, entry)), profile: publicProfile(profile) });
+      if (!rulesFor(current).createProfiles) throw new HttpError(403, 'On this server only an admin can make new profiles.');
+      const made = makeProfile(body.name, body.pin, { ip, device });
+      return sendJson(res, 200, { token: issueToken(device, made.id, entry, clientIdOf(body, entry)), profile: publicProfile(made) });
     }
     if (action === 'login') {
       throttle.check(ip);
-      const profile = config.get().profiles.find((p) => p.id === String(body.profileId || ''));
-      if (!profile || !library.profileIds().includes(profile.id)) throw new HttpError(404, 'That profile no longer exists.');
+      const profile = allProfiles().find((p) => p.id === String(body.profileId || ''));
+      if (!profile) throw new HttpError(404, 'That profile no longer exists.');
+      if (profile.disabled) throw new HttpError(403, `The profile "${profile.name}" has been disabled by an admin.`);
       if (profile.pin && !checkPassword(profile.pin, String(body.pin || ''))) {
         throttle.fail(ip);
         log(`Wrong PIN for profile ${profile.name} from ${ip}`);
+        note.failed('pin', { profile, ip, device });
         throw new HttpError(403, 'Wrong PIN for this profile.');
       }
       throttle.ok(ip);
       log(`Signed in: ${device} as ${profile.name}`);
+      note.seen(profile.id, { ip, device });
       return sendJson(res, 200, { token: issueToken(device, profile.id, entry, clientIdOf(body, entry)), profile: publicProfile(profile) });
     }
     if (action === 'logout') {
+      if (current) note.left(current.id);
       if (entry) setToken(entry, { profileId: null });
       return sendJson(res, 200, {});
     }
     if (!current) throw new HttpError(409, 'Log in to a profile first.');
+    // Its own name and PIN change only with its current PIN.
+    if (action === 'rename' || action === 'pin') {
+      throttle.check(ip);
+      if (current.pin && !checkPassword(current.pin, String(body.pin || ''))) {
+        throttle.fail(ip);
+        log(`Wrong PIN for profile ${current.name} from ${ip}`);
+        note.failed('pin', { profile: current, ip, device });
+        throw new HttpError(403, body.pin ? 'Wrong current PIN.' : 'Enter the current PIN.');
+      }
+      throttle.ok(ip);
+    }
+    if (action === 'pin') {
+      const pin = String(body.newPin || '');
+      // The master admin's PIN as on the command line: at least 4 characters at every level.
+      const problem = current.master ? passwordProblem(pin, 1, 'master admin\'s PIN') : '';
+      if (problem) throw new HttpError(400, problem);
+      if (current.admin && !pin) throw new HttpError(400, 'An admin profile needs a PIN.');
+      config.set({ profiles: config.get().profiles.map((p) => (p.id === current.id ? { ...p, pin: pinEntry(pin) } : p)) });
+      log(pin ? `Profile ${current.name} changed its PIN` : `Profile ${current.name} removed its PIN`);
+      return sendJson(res, 200, { profile: publicProfile({ ...current, pin: !!pin }) });
+    }
     if (action === 'rename') {
       const name = checkProfileName(body.name, current.id);
       config.set({ profiles: config.get().profiles.map((p) => (p.id === current.id ? { ...p, name } : p)) });
@@ -557,13 +658,7 @@ function createHttpServer({
       return sendJson(res, 200, { profile: publicProfile({ ...current, name }) });
     }
     if (action === 'delete') {
-      if (downloads) downloads.dropProfile(current.id);
-      library.deleteProfile(current.id);
-      const cfg = config.get();
-      config.set({
-        profiles: cfg.profiles.filter((p) => p.id !== current.id),
-        tokens: cfg.tokens.map((t) => (t.profileId === current.id ? { ...t, profileId: null } : t)),
-      });
+      admin.removeProfile(current);
       log(`Profile deleted: ${current.name}`);
       return sendJson(res, 200, {});
     }
@@ -582,6 +677,7 @@ function createHttpServer({
     if (!checkPassword(cfg.password, String(body.password || ''))) {
       throttle.fail(ip);
       log(`Wrong password from ${ip}`);
+      note.failed('password', { ip, device: String(body.device || '').slice(0, 80) });
       throw new HttpError(401, 'Wrong password.');
     }
     throttle.ok(ip);
@@ -649,7 +745,14 @@ function createHttpServer({
       req.on('end', () => sendJson(res, 200, known(existing)));
       return;
     }
-    const tmp = await receiveFile(req, ext);
+    // The batch's conversions wait until its files are in (library.js).
+    library.uploadStarted();
+    let tmp;
+    try {
+      tmp = await receiveFile(req, ext);
+    } finally {
+      library.uploadEnded();
+    }
     const again = asNew ? null : library.existingFor(id, meta);
     if (again) {
       fs.rmSync(tmp, { force: true });
@@ -746,16 +849,23 @@ function createHttpServer({
         res.end();
         return;
       }
-      return sendJson(res, 200, { rev: library.rev, library: library.snapshot(profileId), profile: publicProfile(profile) });
+      return sendJson(res, 200, {
+        rev: library.rev, library: library.snapshot(profileId), profile: publicProfile(profile), rules: rulesFor(profile),
+      });
     }
     if (is('GET', /^\/api\/live$/)) return openLive(req, res, url, client, entry);
     if (is('GET', /^\/api\/time$/)) return sendJson(res, 200, { time: Date.now() });
     if (p === '/api/sessions' && (req.method === 'GET' || req.method === 'POST')) return sessionRoute(req, res, url, entry);
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
-      return sendJson(res, 200, library.runCommands(body.commands, profileId));
+      return sendJson(res, 200, library.runCommands(body.commands, profileId, { admin: !!(profile && profile.admin) }));
     }
-    const pm = /^\/api\/profiles(?:\/(login|logout|rename|delete))?$/.exec(p);
+    if (p.startsWith('/api/admin/')) {
+      const me = profileOf(entry);
+      if (!me || !me.admin) throw new HttpError(403, 'Only an admin profile can do this.');
+      return admin.route(req, res, p, me, { entry, ip: client.ip });
+    }
+    const pm = /^\/api\/profiles(?:\/(login|logout|rename|pin|delete))?$/.exec(p);
     if (pm && (req.method === 'POST' || (req.method === 'GET' && !pm[1]))) {
       return profiles(req, res, entry, pm[1] || (req.method === 'GET' ? 'list' : 'create'), client);
     }
@@ -813,8 +923,22 @@ function createHttpServer({
       const p = profileOf(e);
       return { profileId: p ? p.id : null, profileName: p ? p.name : '', device, ip: client.ip };
     };
+    const first = describe(entry);
+    if (first.profileId) note.seen(first.profileId, { ip: client.ip, device }, true);
+    // The profile can change under an open channel (signed out of it): the
+    // one left was last seen then.
+    let was = first.profileId;
+    const check = () => {
+      const now = describe(authorize(token, client));
+      if (now.profileId !== was) {
+        if (was) note.left(was);
+        if (now.profileId) note.seen(now.profileId, { ip: client.ip, device }, true);
+        was = now.profileId;
+      }
+      return now;
+    };
     live.open(req, res, {
-      client: id, ...describe(entry), probe: url.searchParams.get('probe') === '1', check: () => describe(authorize(token, client)),
+      client: id, ...first, probe: url.searchParams.get('probe') === '1', check,
     });
   }
 

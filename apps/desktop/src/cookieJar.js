@@ -1,6 +1,6 @@
 'use strict';
 
-// Browser cookies for downloads (Settings, Website Downloads): which browsers
+// Browser cookies for downloads (Settings, Media Management): which browsers
 // this computer has, and, to share with a Flow Server, the cookies of one
 // link's site. yt-dlp reads the browser itself (--cookies-from-browser) and
 // writes what it read to a file in the cache; only the site's lines are kept
@@ -16,24 +16,46 @@ const { runProcess } = require('@flow/core/processRunner');
 const { ytDlpError } = require('@flow/core/media');
 const { BROWSERS, cookieSite, cookiesFor } = require('@flow/core/cookies');
 
-const LOCAL = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-const ROAMING = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+// Where each browser keeps its profiles (a list where it can be in more than
+// one place); a browser missing here is not offered.
+function where() {
+  if (process.platform === 'win32') {
+    const LOCAL = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    const ROAMING = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+    return {
+      firefox: path.join(ROAMING, 'Mozilla', 'Firefox', 'Profiles'),
+      chrome: path.join(LOCAL, 'Google', 'Chrome', 'User Data'),
+      edge: path.join(LOCAL, 'Microsoft', 'Edge', 'User Data'),
+      brave: path.join(LOCAL, 'BraveSoftware', 'Brave-Browser', 'User Data'),
+      opera: path.join(ROAMING, 'Opera Software', 'Opera Stable'),
+      vivaldi: path.join(LOCAL, 'Vivaldi', 'User Data'),
+      chromium: path.join(LOCAL, 'Chromium', 'User Data'),
+      whale: path.join(LOCAL, 'Naver', 'Naver Whale', 'User Data'),
+    };
+  }
+  if (process.platform === 'linux') {
+    const home = os.homedir();
+    const config = process.env.XDG_CONFIG_HOME || path.join(home, '.config');
+    return {
+      // The snap's Firefox (Ubuntu's own) keeps its profiles in the snap's folder.
+      firefox: [path.join(home, '.mozilla', 'firefox'), path.join(home, 'snap', 'firefox', 'common', '.mozilla', 'firefox')],
+      chrome: path.join(config, 'google-chrome'),
+      edge: path.join(config, 'microsoft-edge'),
+      brave: path.join(config, 'BraveSoftware', 'Brave-Browser'),
+      opera: path.join(config, 'opera'),
+      vivaldi: path.join(config, 'vivaldi'),
+      chromium: path.join(config, 'chromium'),
+      whale: path.join(config, 'naver-whale'),
+    };
+  }
+  return {};
+}
 
-// Where each browser keeps its profiles on Windows.
-const WHERE = {
-  firefox: path.join(ROAMING, 'Mozilla', 'Firefox', 'Profiles'),
-  chrome: path.join(LOCAL, 'Google', 'Chrome', 'User Data'),
-  edge: path.join(LOCAL, 'Microsoft', 'Edge', 'User Data'),
-  brave: path.join(LOCAL, 'BraveSoftware', 'Brave-Browser', 'User Data'),
-  opera: path.join(ROAMING, 'Opera Software', 'Opera Stable'),
-  vivaldi: path.join(LOCAL, 'Vivaldi', 'User Data'),
-  chromium: path.join(LOCAL, 'Chromium', 'User Data'),
-  whale: path.join(LOCAL, 'Naver', 'Naver Whale', 'User Data'),
-};
+const WHERE = where();
 
-/** The browsers yt-dlp can read on Windows: [{ id, name, found }]. */
+/** The browsers yt-dlp can read on this computer: [{ id, name, found }]. */
 function browsers() {
-  return BROWSERS.filter((b) => WHERE[b.id]).map((b) => ({ ...b, found: fs.existsSync(WHERE[b.id]) }));
+  return BROWSERS.filter((b) => WHERE[b.id]).map((b) => ({ ...b, found: [].concat(WHERE[b.id]).some((dir) => fs.existsSync(dir)) }));
 }
 
 /** The arguments every yt-dlp run here gets for the browser chosen ('' off). */
@@ -50,7 +72,7 @@ async function siteCookies(url, browser) {
   const site = cookieSite(url);
   if (!site || !WHERE[browser]) return '';
   const exe = tools.findYtDlp();
-  if (!exe) throw new Error('yt-dlp.exe was not found. Please reinstall Flow.');
+  if (!exe) throw new Error(`${tools.exe('yt-dlp')} was not found. Please reinstall Flow.`);
   fs.mkdirSync(paths.cacheDir(), { recursive: true });
   const file = path.join(paths.cacheDir(), `cookies-${crypto.randomBytes(6).toString('hex')}.txt`);
   try {

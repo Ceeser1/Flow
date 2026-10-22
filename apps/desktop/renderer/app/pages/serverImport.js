@@ -3,7 +3,7 @@
 // "Download (Server)" on Add Songs. With a Flow Server that downloads songs
 // itself (its hello lists the "download" feature), the link goes to the
 // server, which reads it and downloads the songs in the background
-// (apps/server/src/downloads.js), one batch per profile. ImportPanel shows
+// (apps/linux-server/src/downloads.js), one batch per profile. ImportPanel shows
 // that batch in its frames (its server mode); this keeps it in step:
 //
 //   - the batch is fetched when the server connects or the profile changes,

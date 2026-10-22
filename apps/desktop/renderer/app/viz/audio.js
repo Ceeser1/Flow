@@ -117,6 +117,8 @@ const VizAudio = {
   _clock: null,        // the audio clock then (seconds)
   _notes: null,
   _notesAt: -1,
+  _notesNow: -1e9,     // when they were last worked out (ms), for notes(every)
+  _now: 0,
   _dt: 0.016,
   // The tempo counts from SURE on; pace eases over PACE_MS, lock over LOCK_MS.
   SURE: 0.35,
@@ -173,6 +175,7 @@ const VizAudio = {
   /** samples: the analyser's newest (Visualizer reads them); dt in seconds, now in ms. */
   update(samples, dt, now) {
     this.frames += 1;
+    this._now = now;
     this.samples = samples;
     const playing = Player.isPlaying && !!this._spec;
     this.playing = playing;
@@ -186,7 +189,9 @@ const VizAudio = {
     prev.set(bands);
     if (playing) {
       this.time += dt;
-      const db = this._spec.analyse(samples);
+      // Stamped with the frame: Bars and Spectrogram, analysing the same
+      // samples this frame with the same window, reuse its spectra.
+      const db = this._spec.analyse(samples, this.frames);
       for (let i = 0; i < n; i += 1) bands[i] = Spectrum.unit(db[i] + (this.TILT_DB * i) / (n - 1), this.FLOOR_DB, this.CEIL_DB);
     } else {
       for (let i = 0; i < n; i += 1) bands[i] *= fall;
@@ -324,13 +329,25 @@ const VizAudio = {
     return kick + (this.surge(surge) - kick) * this.lock;
   },
 
-  /** The notes this frame (notes.js): level per semitone, chroma, key. Worked out on the first call a frame. */
-  notes() {
+  /**
+   * The notes this frame (notes.js): level per semitone, chroma, key. Worked
+   * out on the first call a frame; with `every` (seconds) at most that often,
+   * the time since counted for the key (for one that only wants the key).
+   */
+  notes(every = 0) {
     if (!this._notes) this._notes = new Notes({ sampleRate: Equalizer.ctx ? Equalizer.ctx.sampleRate : 48000 });
     if (this._notesAt !== this.frames) {
+      let dt = this._dt;
+      if (every > 0) {
+        const since = (this._now - this._notesNow) / 1000;
+        if (since >= 0 && since < every) return this._notes;
+        // After a gap (the first call, a stall) one frame's time, as without `every`.
+        if (since >= 0 && since <= every * 4) dt = since;
+      }
       this._notesAt = this.frames;
+      this._notesNow = this._now;
       const ok = this.playing && this.samples.length >= this._notes.inputLength;
-      this._notes.analyse(ok ? this.samples : null, this._dt);
+      this._notes.analyse(ok ? this.samples : null, dt);
     }
     return this._notes;
   },

@@ -4,11 +4,13 @@
 //
 // The rule is that no song is ever converted from one lossy format into
 // another unless the user asks for it with "Always convert to MP3":
-//   - Opus, AAC, MP3, Vorbis, FLAC and PCM WAV play as they are. At most the
+//   - Opus, AAC, MP3, FLAC and PCM WAV play as they are. At most the
 //     audio is lifted out of its container (.webm -> .opus, .mp4 -> .m4a),
 //     which copies the stream and costs no quality.
 //   - Lossless formats the player cannot handle well (AIFF, ALAC, WavPack...)
 //     become FLAC, which is still lossless.
+//   - Ogg Vorbis becomes MP3 at 192 kbit/s (or the quality "Always convert to
+//     MP3" asks for): the iPhone cannot play it, and an MP3 plays everywhere.
 //   - Anything else becomes MP3 at the chosen quality.
 
 const MP3_QUALITIES = [64, 96, 128, 160, 192, 224, 256, 320];
@@ -93,6 +95,9 @@ function planFor(probe, opts = {}) {
     return { action: 'copy', ext: 'mp3', source, target: 'MP3' };
   }
   if (opts.alwaysMp3) return mp3;
+  if (codec === 'vorbis') {
+    return { action: 'mp3', ext: 'mp3', source, target: `MP3 ${DEFAULT_MP3_QUALITY} kbit/s`, bitrate: DEFAULT_MP3_QUALITY };
+  }
 
   if (KEEP[codec]) return { action: 'copy', ext: KEEP[codec].ext, source, target: KEEP[codec].name };
   if (isPcm(codec)) {

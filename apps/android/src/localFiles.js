@@ -5,14 +5,17 @@
 // without ffmpeg. Picked with Android's picker (FlowNative.pickAudio), each
 // file is copied into the import folder with its names and picture read by Android
 // (FlowNative.importAudio), and "Finish all" moves it into Flow's Music
-// folder and Local Files. Nothing is converted or cut on the phone: a file
-// Android cannot play is refused, and a song is saved whole (caps.localTrim).
+// folder and Local Files. Songs of a picked folder keep their folders and
+// file names there (Linkin Park/Meteora/Numb.mp3), so a Flow Server that keeps
+// uploads' folders gets them so too; single files are named "Artist - Title".
+// Nothing is converted or cut on the phone: a file Android cannot play is
+// refused, and a song is saved whole (caps.localTrim).
 // With a Flow Server the songs saved go up to it as on the desktop
 // (remote.pushImport), when transfers are allowed (serverMetered).
 
 const model = require('@flow/core/libraryModel');
 const { metaFromFile } = require('@flow/core/fileMeta');
-const { songFileStem } = require('@flow/core/text');
+const { songFileStem, splitSongPath } = require('@flow/core/text');
 const { randomHex } = require('@flow/core/client/common');
 
 /**
@@ -29,6 +32,10 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
   let pickNo = 0;
   // A file prepared in the import folder -> its picture beside it ({ cachePath, file, version }).
   const staged = new Map();
+  // A picked folder's file (its uri), then the file prepared from it -> its
+  // place in that folder ("Linkin Park/Meteora/Numb.mp3"), kept in the Music folder.
+  const placeOfPick = new Map();
+  const placeOfStaged = new Map();
   // The running task (listing, preparing): cancelled by cancelImport.
   let task = null;
 
@@ -67,6 +74,7 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
       if (p.folder) name = p.name || 'Folder';
       if (p.truncated) truncated = 'files';
       for (const f of p.items) {
+        if (p.folder) placeOfPick.set(f.uri, [f.folder, f.name].filter(Boolean).join('/'));
         items.push({
           index: items.length, title: f.name, duration: 0, path: f.uri, url: '', key: '', status: 'ok', note: '', existing: null,
         });
@@ -114,6 +122,7 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
             continue;
           }
           if (r.cover) staged.set(r.path, { cachePath: r.path, file: `${stem}.jpg`, version: randomHex(4) });
+          if (placeOfPick.has(it.path)) placeOfStaged.set(r.path, placeOfPick.get(it.path));
           summary.ready += 1;
           progress({
             phase: 'item',
@@ -152,6 +161,7 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
     if (!p.startsWith(`${stageDir}/`)) return;
     const s = staged.get(p);
     staged.delete(p);
+    placeOfStaged.delete(p);
     for (const f of [p, s && s.file]) {
       try {
         if (f && fs.exists(f)) fs.remove(f);
@@ -202,7 +212,10 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
         const cachePath = String(e.cachePath || '');
         if (!cachePath.startsWith(`${stageDir}/`) || !fs.exists(cachePath)) throw new Error('Its file is gone.');
         const format = path.extname(cachePath).slice(1).toLowerCase();
-        const dest = exporter.uniquePath(songFileStem(meta.artist || '', meta.title || 'Untitled', meta.mix || ''), format);
+        const place = splitSongPath(placeOfStaged.get(cachePath));
+        placeOfStaged.delete(cachePath);
+        const stem = (place && place.name) || songFileStem(meta.artist || '', meta.title || 'Untitled', meta.mix || '');
+        const dest = exporter.uniquePath(stem, format, place ? place.folders : []);
         fs.mkdir(path.dirname(dest));
         fs.rename(cachePath, dest);
         const id = library.newId();

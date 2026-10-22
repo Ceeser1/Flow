@@ -23,6 +23,17 @@ Usage:
                                         every signed-in device has to enter it again
   flow-server clear-password            let anyone on the network in again (levels 1 and 2 only)
   flow-server devices                   the devices signed in, and to which profile
+  flow-server profiles                  the profiles: admins, PINs, when made and last seen
+  flow-server profiles add <name> [--admin | --master]
+                                        a new profile; asks its PIN (FLOW_PROFILE_PIN gives it)
+  flow-server admin grant <name>        make a profile an admin: it gets Administration in the
+                                        apps' Settings (profiles, IPs, trash, server rules...).
+                                        Only a profile with a PIN can be an admin
+  flow-server admin revoke <name>       no longer an admin
+  flow-server admin master <name>       make a profile the master admin (one per server), who can
+                                        also change the server password and make admins in the
+                                        apps. Asks for its PIN: at least 4 characters, a strong one recommended.
+                                        --create makes the profile when there is none of that name
   flow-server info                      the server's settings, one key=value a line (for install.sh)
   flow-server tag-songs [--dry-run]     write the songs' flowid and cover into their files, for the
                                         songs from before 2.9.1 (new ones get them by themselves):
@@ -45,6 +56,12 @@ Options:
   --downloads     let the apps have the server download songs (needs yt-dlp and ffmpeg;
                   remembered; install.sh asks)
   --no-downloads  never download songs, even with yt-dlp on the machine
+  --separate-folders     new songs into Uploads/ (the apps') and Downloads/ (the server's)
+                  inside the music folder (remembered; install.sh asks)
+  --no-separate-folders  new songs straight into the music folder (the default)
+  --keep-folders  an upload keeps its folders and file name from the app's music folder,
+                  like Linkin Park/Hybrid Theory/In the End.mp3 (remembered; install.sh asks)
+  --no-keep-folders      uploads are saved as "Artist - Title" (the default)
   --level <n>     how far the server can be reached (remembered; install.sh sets it):
                     1 ${LEVEL_NAMES[1]}, 2 ${LEVEL_NAMES[2]},
                     3 ${LEVEL_NAMES[3]}, 4 ${LEVEL_NAMES[4]}
@@ -76,6 +93,10 @@ function parseArgs(argv) {
     else if (a === '--no-discovery') out.discovery = false;
     else if (a === '--downloads') out.downloads = true;
     else if (a === '--no-downloads') out.downloads = false;
+    else if (a === '--separate-folders') out.separateFolders = true;
+    else if (a === '--no-separate-folders') out.separateFolders = false;
+    else if (a === '--keep-folders') out.keepFolders = true;
+    else if (a === '--no-keep-folders') out.keepFolders = false;
     else if (a === '--level') {
       out.level = parseLevel(value());
       if (!out.level) throw new Error('--level is 1, 2, 3 or 4.');
@@ -85,8 +106,11 @@ function parseArgs(argv) {
     } else if (a === '--trusted-proxy') out.trustedProxies = String(value()).split(',').map((s) => s.trim()).filter(Boolean);
     else if (a === '--connect-to') out.connectTo = value();
     else if (a === '--dry-run') out.dryRun = true;
+    else if (a === '--admin') out.admin = true;
+    else if (a === '--master') out.master = true;
+    else if (a === '--create') out.create = true;
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}. See flow-server --help.`);
-    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'doctor', 'info', 'tag-songs'].includes(a)) out.command = a;
+    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'profiles', 'admin', 'doctor', 'info', 'tag-songs'].includes(a)) out.command = a;
     else out.rest.push(a);
   }
   return out;
@@ -156,10 +180,109 @@ function tagSongs(config, dryRun) {
       + '(a song whose cover is still being looked for: once it is found). Nothing was changed.');
     return;
   }
-  if (!tools.ffmpeg()) throw new Error('Writing tags needs ffmpeg, which this machine does not have (install.sh offers it). Nothing was changed.');
+  if (!tools.ffmpeg()) throw new Error('Writing tags needs ffmpeg, which this machine does not have (install.sh offers it; the Windows server comes with it). Nothing was changed.');
   config.set({ tagSongs: true });
   console.log(`${todo.length} ${todo.length === 1 ? 'file gets' : 'files get'} the song's flowid and cover, written by the server one at a time in the background `
     + '(its log says when it is done). A running server starts within a few seconds; a stopped one when it starts again.');
+}
+
+/** A profile by its name (any case), or an Error naming the command that lists them. */
+function profileNamed(profiles, name) {
+  const want = String(name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!want) throw new Error('Which profile? Give its name, like: flow-server admin grant "Anna"');
+  const p = profiles.find((x) => x.name.toLowerCase() === want);
+  if (!p) throw new Error(`There is no profile called "${name}". flow-server profiles lists them.`);
+  return p;
+}
+
+/**
+ * A PIN typed twice (or FLOW_PROFILE_PIN). The master admin's needs at least
+ * 4 characters (a strong one only recommended); an admin's (`required`) cannot
+ * be left empty, another can.
+ */
+async function askPin(name, level, master, required = master) {
+  let pin = process.env.FLOW_PROFILE_PIN || '';
+  if (!pin) {
+    if (!process.stdin.isTTY) throw new Error('No terminal to ask the PIN in: give it as FLOW_PROFILE_PIN.');
+    if (master) {
+      console.log('The master admin can change the server password. It\'s recommended to give the master-admin a strong password as its \'pin\' to log into that profile.');
+      console.log('At least 4 characters.');
+    }
+    pin = await askHidden(required ? `PIN for ${name}: ` : `PIN for ${name} (Enter for none): `);
+    if (pin || required) {
+      const again = await askHidden('Once more: ');
+      if (pin !== again) throw new Error('The two did not match. Nothing was changed.');
+    }
+  }
+  if (master) {
+    const problem = passwordProblem(pin, 1, 'master admin\'s PIN');
+    if (problem) throw new Error(`${problem} Nothing was changed.`);
+  }
+  if (required && !pin) throw new Error(`${name} becomes an admin, so it needs a PIN. Nothing was changed.`);
+  return pin;
+}
+
+const seenText = (ms) => (ms ? new Date(ms).toLocaleString() : 'never');
+
+/** flow-server profiles [add <name>]. */
+async function profilesCommand(config, args, level) {
+  const cfg = config.get();
+  if (args.rest[0] === 'add') {
+    const name = configMod.checkProfileName(cfg.profiles, args.rest.slice(1).join(' '));
+    // An admin needs a PIN, and the first profile becomes one.
+    const first = !cfg.profiles.length && !cfg.adminSeeded;
+    const pin = await askPin(name, level, !!args.master, !!(args.master || args.admin || first));
+    const profile = {
+      id: configMod.newProfileId(), name, createdAt: Date.now(), pin: configMod.pinEntry(pin), admin: !!(args.admin || args.master), master: false,
+    };
+    const profiles = [...config.get().profiles, profile];
+    config.set({ profiles: args.master ? profiles.map((p) => ({ ...p, master: p.id === profile.id })) : profiles });
+    const role = args.master ? ' as the master admin' : args.admin ? ' as an admin' : '';
+    console.log(`Profile "${name}" made${role}. The apps see it the next time they look at the profiles.`);
+    return;
+  }
+  if (args.rest.length) throw new Error(`Unknown: flow-server profiles ${args.rest.join(' ')}. See flow-server --help.`);
+  if (!cfg.profiles.length) {
+    console.log('No profiles yet. The first one made (in an app\'s Settings, or flow-server profiles add) becomes an admin.');
+    return;
+  }
+  for (const p of cfg.profiles) {
+    const marks = [p.master ? 'master admin' : p.admin ? 'admin' : '', p.disabled ? 'disabled' : '', p.pin ? 'PIN' : 'no PIN'].filter(Boolean);
+    console.log(`${p.name}  (${marks.join(', ')})  made ${new Date(p.createdAt).toLocaleString()}${p.createdIp ? ` from ${p.createdIp}` : ''}, last seen ${seenText(p.lastSeenAt)}`);
+  }
+  const master = cfg.profiles.find((p) => p.master);
+  if (!master) console.log('\nNo master admin. Make one with: flow-server admin master <name>');
+  else if (level >= PUBLIC_LEVEL && !(master.pin && master.pin.strong)) {
+    console.log(`\nRecommended: a strong password as the master admin's PIN, since it can change the server password. A new one: flow-server admin master "${master.name}"`);
+  }
+}
+
+/** flow-server admin grant|revoke|master <name>. */
+async function adminCommand(config, args, level) {
+  const [what, ...nameParts] = args.rest;
+  if (!['grant', 'revoke', 'master'].includes(what)) throw new Error('flow-server admin grant, revoke or master, then the profile\'s name. See flow-server --help.');
+  const name = nameParts.join(' ');
+  if (what === 'master' && args.create && !config.get().profiles.some((p) => p.name.toLowerCase() === name.replace(/\s+/g, ' ').trim().toLowerCase())) {
+    await profilesCommand(config, { ...args, rest: ['add', name], master: true }, level);
+    return;
+  }
+  const target = profileNamed(config.get().profiles, name);
+  const change = (fn) => config.set({ profiles: config.get().profiles.map((p) => fn(p)) });
+  if (what === 'grant') {
+    if (!target.pin) throw new Error(`${target.name} has no PIN: only a profile with a PIN can be an admin. Nothing was changed.`);
+    change((p) => (p.id === target.id ? { ...p, admin: true } : p));
+    console.log(`${target.name} is an admin now: Administration shows in the apps' Settings while signed in to it.`);
+  } else if (what === 'revoke') {
+    if (target.master) throw new Error(`${target.name} is the master admin. Make another profile the master first: flow-server admin master <name>`);
+    change((p) => (p.id === target.id ? { ...p, admin: false } : p));
+    console.log(`${target.name} is no admin any more.`);
+  } else {
+    const pin = await askPin(target.name, level, true);
+    change((p) => (p.id === target.id
+      ? { ...p, admin: true, master: true, disabled: false, pin: configMod.pinEntry(pin) }
+      : { ...p, master: false }));
+    console.log(`${target.name} is the master admin now, with the PIN just given.`);
+  }
 }
 
 function stamp() {
@@ -184,6 +307,8 @@ async function main() {
   if (args.name) patch.name = args.name;
   if (args.discovery !== undefined) patch.discovery = args.discovery;
   if (args.downloads !== undefined) patch.downloads = args.downloads;
+  if (args.separateFolders !== undefined) patch.separateFolders = args.separateFolders;
+  if (args.keepFolders !== undefined) patch.keepFolders = args.keepFolders;
   if (args.level) patch.level = args.level;
   if (args.publicUrl !== undefined) patch.publicUrl = args.publicUrl;
   if (args.trustedProxies) patch.trustedProxies = args.trustedProxies;
@@ -215,7 +340,7 @@ async function main() {
   if (args.command === 'clear-password') {
     if (level >= PUBLIC_LEVEL) {
       throw new Error(`This server is at level ${level}, reachable from the internet, so it keeps a password. `
-        + 'Set a new one with flow-server set-password, or lower the level first (sh apps/server/install.sh).');
+        + 'Set a new one with flow-server set-password, or lower the level first (install.sh, or Flow Server Settings on Windows).');
     }
     config.set({ password: null, tokens: [] });
     console.log('No password any more: anyone who can reach the server can use it.');
@@ -227,11 +352,21 @@ async function main() {
     const password = !cfg.password ? 'none' : cfg.password.strong ? 'strong' : 'pin';
     console.log([`level=${cfg.level || ''}`, `password=${password}`, `port=${cfg.port}`, `public_url=${cfg.publicUrl}`,
       `trusted_proxies=${cfg.trustedProxies.join(',')}`, `discovery=${cfg.discovery ? 1 : 0}`, `music=${config.musicDir}`, `home=${config.home}`,
-      `downloads=${cfg.downloads === null ? '' : (cfg.downloads ? 1 : 0)}`, `ytdlp=${tools.ytdlp() || ''}`].join('\n'));
+      `downloads=${cfg.downloads === null ? '' : (cfg.downloads ? 1 : 0)}`, `ytdlp=${tools.ytdlp() || ''}`,
+      `separate_folders=${cfg.separateFolders ? 1 : 0}`, `keep_folders=${cfg.keepFolders ? 1 : 0}`,
+      `master=${(cfg.profiles.find((p) => p.master) || {}).name || ''}`, `profiles=${cfg.profiles.length}`].join('\n'));
     return;
   }
   if (args.command === 'tag-songs') {
     tagSongs(config, args.dryRun);
+    return;
+  }
+  if (args.command === 'profiles') {
+    await profilesCommand(config, args, level);
+    return;
+  }
+  if (args.command === 'admin') {
+    await adminCommand(config, args, level);
     return;
   }
   if (args.command === 'devices') {
@@ -252,16 +387,18 @@ async function main() {
   console.log(`Flow Server "${cfg.name}" is running.`);
   console.log(`  Music:    ${server.library.musicDir} (${server.library.data.songs.length} songs)`);
   console.log(`  Library:  ${server.config.home}`);
+  const placed = [cfg.separateFolders && 'uploads into Uploads/, downloads into Downloads/', cfg.keepFolders && 'uploads keep their folders'].filter(Boolean);
+  console.log(`  New songs: ${placed.length ? placed.join('; ') : 'straight into the music folder, as "Artist - Title"'}`);
   console.log(cfg.level
     ? `  Level:    ${cfg.level}, ${LEVEL_NAMES[cfg.level]}${cfg.level >= PUBLIC_LEVEL && cfg.publicUrl ? ` at ${cfg.publicUrl}` : ''}`
-    : '  Level:    not chosen (install.sh asks, or --level)');
+    : '  Level:    not chosen (install.sh or Flow Server Settings asks, or --level)');
   console.log(`  Password: ${cfg.password ? 'yes' : 'none (flow-server set-password to add one)'}`);
   if (cfg.level >= PUBLIC_LEVEL && !(cfg.password && cfg.password.strong)) {
     console.log(`  WARNING:  reachable from the internet without a strong password, so it lets no one in. Set one: flow-server set-password`);
   }
   console.log(`  ffmpeg:   ${tools.ffmpeg() ? 'found' : 'not found (optional: song lengths, tags and loudness for songs added by hand; needed for downloads)'}`);
-  if (cfg.downloads === false) console.log('  Downloads: off (flow-server --downloads, or install.sh, turns them on)');
-  else if (!tools.ytdlp()) console.log('  yt-dlp:   not found (optional: the server downloads songs itself; install.sh offers it)');
+  if (cfg.downloads === false) console.log('  Downloads: off (flow-server --downloads, install.sh or Flow Server Settings turns them on)');
+  else if (!tools.ytdlp()) console.log('  yt-dlp:   not found (optional: the server downloads songs itself; install.sh or Flow Server Settings says how)');
   else if (!tools.canDownload()) console.log('  yt-dlp:   found, but downloads also need ffmpeg');
   else {
     console.log('  yt-dlp:   found, the apps can let the server download songs (Download (Server))');

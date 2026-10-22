@@ -1,6 +1,6 @@
 'use strict';
 
-// Active Sessions in the window (the server's side: apps/server/src/sessions.js).
+// Active Sessions in the window (the server's side: apps/linux-server/src/sessions.js).
 //
 // While this app plays something on a server with Active Sessions, it is a
 // session's host: what it plays (song, place, list, queue, Repeat, Shuffle)

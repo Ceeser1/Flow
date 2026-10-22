@@ -163,15 +163,19 @@ const Nav = {
         title: p.name,
         onclick: () => this.openPlaylist(p.id),
       },
+      // Downloaded Songs has its icon before its name.
+      p.isDevice ? h('span.menu__sub-icon', { html: listIcon(p) }) : null,
       h('span.menu__sub-name', p.menuName || p.name),
       playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null);
     };
 
-    // All Songs: with a Flow Server, under it the songs each profile added
-    // ("from ..."); the arrow only while there are any.
-    const froms = Store.fromPlaylists();
+    // All Songs: with a Flow Server, under it Downloaded Songs (every song on
+    // this device) and the songs each profile added ("from ..."); the arrow
+    // only while there are any.
+    const device = Store.devicePlaylist();
+    const froms = [...(device ? [device] : []), ...Store.fromPlaylists()];
     const allOpen = this._open('allSongsMenuOpen');
-    this._drawArrow('allSongsMenuOpen', allOpen, 'who added the songs');
+    this._drawArrow('allSongsMenuOpen', allOpen, 'Downloaded Songs and who added the songs');
     this._arrows.allSongsMenuOpen.hidden = !froms.length;
     $('menuAllSongsList').hidden = !froms.length || !allOpen;
     const allList = clear($('menuAllSongsList'));

@@ -9,7 +9,6 @@ const plan = (codec, formatName, opts) => planFor({ codec, formatName, bitRate: 
 test('lossy formats that play are copied into their own container', () => {
   assert.deepEqual([plan('opus', 'webm').action, plan('opus', 'webm').ext], ['copy', 'opus']);
   assert.deepEqual([plan('aac', 'mov,mp4,m4a').action, plan('aac', 'mov,mp4,m4a').ext], ['copy', 'm4a']);
-  assert.equal(plan('vorbis', 'ogg').ext, 'ogg');
   assert.equal(plan('mp3', 'mp3').ext, 'mp3');
   assert.equal(plan('flac', 'flac').ext, 'flac');
 });
@@ -35,6 +34,14 @@ test('Always convert to MP3 converts everything except MP3 itself', () => {
   assert.equal(plan('pcm_s16le', 'wav', opts).action, 'mp3');
   assert.equal(plan('flac', 'flac', opts).action, 'mp3');
   assert.equal(plan('mp3', 'mp3', opts).action, 'copy');
+});
+
+test('Ogg Vorbis becomes MP3 at 192, or at the quality Always convert asks for', () => {
+  const p = plan('vorbis', 'ogg', { quality: 128 });
+  assert.deepEqual([p.action, p.ext, p.bitrate], ['mp3', 'mp3', 192]);
+  assert.equal(plan('vorbis', 'ogg', { alwaysMp3: true, quality: 320 }).bitrate, 320);
+  assert.equal(plan('vorbis', 'ogg', { alwaysMp3: true, quality: 128 }).bitrate, 128);
+  assert.equal(plan('opus', 'ogg').action, 'copy');
 });
 
 test('quality outside the list falls back to 192', () => {

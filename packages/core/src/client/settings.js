@@ -80,12 +80,14 @@ const VIZ_OPTIONS = {
   // Inferno: the flames' colours, their height (percent; ifFlameHeight's 100%
   // is twice the old ifHeight's, so a value saved on that scale is left
   // behind), the bass in the middle or on the left, the embers, the burning
-  // forest on the hill behind.
+  // forest on the hill behind, the render scale (percent of the screen's
+  // pixels across, as Disco's).
   ifColor: ['choice', 'fire', ['fire', 'blue', 'green', 'purple', 'rainbow']],
   ifFlameHeight: ['range', 100, 25, 150, 5],
   ifLayout: ['choice', 'centre', ['centre', 'across']],
   ifEmbers: ['bool', true],
   ifForest: ['bool', true],
+  ifScale: ['choice', '75', ['100', '75', '50']],
   // Ridges: white, neon, heat or its own colour (rdOwnColor); how many lines;
   // how fast they flow (percent); the spectrum or the waveform.
   rdColor: ['choice', 'white', ['white', 'neon', 'heat', 'custom']],
@@ -200,7 +202,7 @@ const VIZ_OPTIONS = {
   dcCamera: ['bool', true],
   dcSwivel: ['range', 100, 0, 500, 5],
   dcSwingRange: ['range', 100, 50, 250, 5],
-  dcScale: ['choice', '100', ['100', '75', '50']],
+  dcScale: ['choice', '75', ['100', '75', '50']],
   // Stained Glass: the window (a rose, a pointed arch, the whole screen),
   // the glass's colours (the cover's, or warm, cold or rainbow glass), how
   // many panes across, the shafts of light, the torches beside the window.
@@ -210,10 +212,11 @@ const VIZ_OPTIONS = {
   sgRays: ['bool', true],
   sgTorches: ['bool', true],
   // Black Hole: the colours, the view (edge on, slanted, from above), how
-  // fast the gas swirls (percent).
+  // fast the gas swirls (percent), the render scale.
   bhColors: ['choice', 'warm', ['warm', 'blue', 'neon']],
   bhView: ['choice', 'edge', ['edge', 'slant', 'above']],
   bhSpin: ['range', 100, 0, 300, 5],
+  bhScale: ['choice', '75', ['100', '75', '50']],
   // Deep Sea: the jellyfish's colours, how many, the light from above, the fish.
   dsColors: ['choice', 'aurora', ['aurora', 'ember', 'ice', 'rainbow']],
   dsCount: ['range', 9, 3, 16, 1],
@@ -255,12 +258,14 @@ const VIZ_OPTIONS = {
   mbColors: ['choice', 'notes', ['notes', 'fire', 'ice', 'rainbow']],
   mbView: ['choice', 'whole', ['whole', 'close']],
   mbMorph: ['range', 100, 0, 200, 5],
-  // Lighthouse: the weather (clear, cloudy, a storm with rain), a ship passing.
+  // Lighthouse: the weather (clear, cloudy, a storm with rain), a ship passing, the render scale.
   lhWeather: ['choice', 'cloudy', ['clear', 'cloudy', 'storm']],
   lhShip: ['bool', true],
-  // Night Train: the weather (clear, rain on the glass, snow), the cup of tea.
+  lhScale: ['choice', '75', ['100', '75', '50']],
+  // Night Train: the weather (clear, rain on the glass, snow), the cup of tea, the render scale.
   ntWeather: ['choice', 'clear', ['clear', 'rain', 'snow']],
   ntCup: ['bool', true],
+  ntScale: ['choice', '75', ['100', '75', '50']],
   // Vinyl: the turntable (wood, black, silver), the grooves' colours (the
   // music's, silver, or their own, vnColor).
   vnPlinth: ['choice', 'wood', ['wood', 'black', 'silver']],
@@ -381,11 +386,6 @@ const DEFAULTS = {
   eqShine: true,
   eqShineSpread: 50,
   eqColors: 'rainbow',
-  // The window's edges flashing white on bass peaks: off unless chosen, how
-  // readily it triggers, and how strong and far in the flash reaches (percent).
-  flashOn: false,
-  flashTriggers: 33,
-  flashRange: 10,
 
   // The fullscreen Music Visualizer the player bar's button opens (VISUALIZERS).
   visualizer: 'bars',
@@ -424,6 +424,9 @@ const DEFAULTS = {
   // Songs added to or removed from the Local Files folder by hand go to the
   // server by themselves; otherwise only with "Synchronize now".
   serverAutoSync: true,
+  // The names given to Flow Servers on this device (Settings' Switch server
+  // and Statistics), by server id: shown instead of the server's own.
+  serverNames: {},
   // This install of Flow, as the server tells devices apart (made at the
   // first connection; remote.js). Two PCs of the same name are two devices.
   clientId: '',
@@ -448,6 +451,14 @@ const DEFAULTS = {
   // ---- the phone's own ----
   // The help about playing with the screen off has shown by itself once.
   batteryHelpShown: false,
+  // The clouds came to the phones in 3.3.5 switched off (they cost battery),
+  // also where cloudsOn: true was saved before: done once (cloudsOffOnce).
+  cloudsPhoneOff: false,
+
+  // ---- done once ----
+  // Disco's render scale became 75% by default (3.4.0): put there once also
+  // where 100% was saved before, when that was the default.
+  dcScale75: false,
 };
 
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
@@ -501,11 +512,24 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 300 && Number.isFinite(Number(v)))
     .slice(0, 50)
     .map(([k, v]) => [k, Math.round(Math.max(0, Math.min(1000, Number(v))))]));
-  for (const key of ['flashOn', 'serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
-    'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown']) s[key] = s[key] === true;
+  const names = s.serverNames && typeof s.serverNames === 'object' && !Array.isArray(s.serverNames) ? s.serverNames : {};
+  s.serverNames = Object.fromEntries(Object.entries(names)
+    .map(([k, v]) => [k, typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, 80) : ''])
+    .filter(([k, v]) => k && k.length <= 100 && v)
+    .slice(0, 100));
+  for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
+    'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75']) s[key] = s[key] === true;
+  if (!s.dcScale75) {
+    s.dcScale = '75';
+    s.dcScale75 = true;
+  }
   // The phone's update check is gone: what it saved goes too.
   delete s.updateFound;
   delete s.updateNoPrompt;
+  // Screen Flash is gone too.
+  delete s.flashOn;
+  delete s.flashTriggers;
+  delete s.flashRange;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
@@ -514,7 +538,7 @@ function clean(raw) {
   }
   const fade = Math.round(Number(s.crossfadeSeconds) * 10) / 10;
   s.crossfadeSeconds = Number.isFinite(fade) ? Math.min(10, Math.max(0.1, fade)) : DEFAULTS.crossfadeSeconds;
-  for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'eqHeight', 'eqVisibility', 'eqShineSpread', 'flashTriggers', 'flashRange']) {
+  for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'eqHeight', 'eqVisibility', 'eqShineSpread']) {
     s[key] = percent(s[key], DEFAULTS[key]);
   }
   if (!EQ_COLORS.includes(s.eqColors)) s.eqColors = DEFAULTS.eqColors;
@@ -554,6 +578,16 @@ function clean(raw) {
     }
   }
   return s;
+}
+
+/**
+ * The phones' saved settings as read: the clouds switched off the first time
+ * (a new install, or one from before they came to the phone), after that as
+ * the user leaves them.
+ */
+function cloudsOffOnce(raw) {
+  const s = raw && typeof raw === 'object' ? raw : {};
+  return s.cloudsPhoneOff === true ? s : { ...s, cloudsOn: false, cloudsPhoneOff: true };
 }
 
 /** read(): the saved settings, or null. write(settings): saves them. */
@@ -600,4 +634,4 @@ function createSettings({ read, write }) {
   return { load, all, get, set, clientId };
 }
 
-module.exports = { createSettings, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, VISUALIZERS, VIZ_OPTIONS };
+module.exports = { createSettings, cloudsOffOnce, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, VISUALIZERS, VIZ_OPTIONS };

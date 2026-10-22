@@ -9,7 +9,7 @@
 //             no profile, called "Default / Shared": its playlists,
 //             favourites and stats are what an app sees while no profile is
 //             signed in.
-//   profiles  { [profileId]: { playlists: [...], songs: { [songId]: { stats, favouriteAt } }, follows: [playlistId], playlistListened: {...} } }
+//   profiles  { [profileId]: { playlists: [...], songs: { [songId]: { stats, favouriteAt } }, follows: [playlistId], playlistListened: {...}, listening, statistics } }
 //
 // Playlists can be shared (playlist.shared): the other profiles, and the
 // Default, then see them read-only in their view (sharedPlaylists) and can
@@ -25,6 +25,9 @@
 
 const crypto = require('crypto');
 const model = require('./libraryModel');
+const {
+  emptyListening, copyListening, listenTotals, emptyStatistics, copyStatistics,
+} = require('./listening');
 
 const randomId = () => crypto.randomBytes(6).toString('hex');
 
@@ -41,8 +44,10 @@ function cleanProfile(data, raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   // sanitize() already knows how playlists must look and drops entries for
   // songs that are not there.
-  const { playlists, follows, playlistListened } = model.sanitize({
-    songs: data.songs, playlists: r.playlists, follows: r.follows, playlistListened: r.playlistListened,
+  const {
+    playlists, follows, playlistListened, listening, statistics,
+  } = model.sanitize({
+    songs: data.songs, playlists: r.playlists, follows: r.follows, playlistListened: r.playlistListened, listening: r.listening, statistics: r.statistics,
   });
   const known = new Set(data.songs.map((s) => s.id));
   const songs = {};
@@ -53,7 +58,9 @@ function cleanProfile(data, raw) {
     const kept = { stats: clean.stats, favouriteAt: clean.favouriteAt };
     if (hasOwn(kept)) songs[id] = kept;
   }
-  return { playlists, songs, follows, playlistListened };
+  return {
+    playlists, songs, follows, playlistListened, listening, statistics,
+  };
 }
 
 /** Every profile's part, repaired. `data` must be sanitized already. */
@@ -101,8 +108,10 @@ function sharedFor(data, profiles, names, viewerId) {
  */
 function view(data, profiles, profileId, names = {}) {
   const sharedPlaylists = sharedFor(data, profiles, names, profileId || null);
-  if (!profileId) return { ...data, follows: (data.follows || []).slice(), sharedPlaylists };
-  const p = profiles[profileId] || { playlists: [], songs: {}, follows: [], playlistListened: {} };
+  if (!profileId) return { ...data, follows: (data.follows || []).slice(), statistics: copyStatistics(data.statistics), sharedPlaylists };
+  const p = profiles[profileId] || {
+    playlists: [], songs: {}, follows: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(),
+  };
   return {
     ...data,
     songs: data.songs.map((s) => {
@@ -112,6 +121,8 @@ function view(data, profiles, profileId, names = {}) {
     playlists: p.playlists,
     follows: (p.follows || []).slice(),
     playlistListened: { ...(p.playlistListened || {}) },
+    listening: copyListening(p.listening),
+    statistics: copyStatistics(p.statistics),
     sharedPlaylists,
   };
 }
@@ -129,6 +140,8 @@ function absorb(data, profiles, profileId, v) {
     data.ignoredFiles = v.ignoredFiles;
     data.follows = v.follows;
     data.playlistListened = v.playlistListened || {};
+    data.listening = v.listening || emptyListening();
+    data.statistics = v.statistics || emptyStatistics();
     prune(data, profiles);
     return;
   }
@@ -149,7 +162,10 @@ function absorb(data, profiles, profileId, v) {
   }
   data.songs = songs;
   data.ignoredFiles = v.ignoredFiles;
-  profiles[profileId] = { playlists: v.playlists, songs: own, follows: v.follows, playlistListened: v.playlistListened || {} };
+  profiles[profileId] = {
+    playlists: v.playlists, songs: own, follows: v.follows, playlistListened: v.playlistListened || {}, listening: v.listening || emptyListening(),
+    statistics: v.statistics || emptyStatistics(),
+  };
   prune(data, profiles);
 }
 
@@ -188,9 +204,9 @@ function prune(data, profiles) {
 /**
  * Makes a profile with a copy of the Default / Shared playlists: the same
  * songs in the same order, under new ids, not shared. Favourites and stats
- * start empty. `newId()` makes the ids.
+ * start empty, its Statistics at `now`. `newId()` makes the ids.
  */
-function addProfile(data, profiles, profileId, newId = randomId) {
+function addProfile(data, profiles, profileId, newId = randomId, now = Date.now()) {
   if (profiles[profileId]) return;
   const playlists = data.playlists.map((p) => ({
     ...p,
@@ -199,7 +215,24 @@ function addProfile(data, profiles, profileId, newId = randomId) {
     source: p.source ? { ...p.source } : null,
     shared: false,
   }));
-  profiles[profileId] = { playlists, songs: {}, follows: [], playlistListened: {} };
+  profiles[profileId] = {
+    playlists, songs: {}, follows: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(now),
+  };
+}
+
+/**
+ * The Statistics start (3.6): every owner whose totals have not started yet
+ * (a library from before 3.6) starts at 0 now. What 3.5 recorded (the songs'
+ * stats, `listening`) is kept but not counted. Answers whether any started.
+ */
+function startStatistics(data, profiles, now = Date.now()) {
+  let started = false;
+  for (const owner of [data, ...Object.values(profiles)]) {
+    if (owner.statistics && owner.statistics.since) continue;
+    owner.statistics = emptyStatistics(now);
+    started = true;
+  }
+  return started;
 }
 
 /** Deletes a profile's playlists, favourites and stats. The songs stay. */
@@ -229,4 +262,16 @@ function songsOfOthers(data, profiles, profileId) {
   return ids;
 }
 
-module.exports = { songsOfOthers, sanitizeProfiles, view, absorb, prune, addProfile, removeProfile, sharedFor, DEFAULT_OWNER, DEFAULT_NAME };
+/**
+ * One owner's numbers for the server's Administration: the songs it added,
+ * and its listens of 30 seconds or more and seconds heard (listenTotals).
+ * `ownerId`: a profile, or DEFAULT_OWNER for the Default / Shared.
+ */
+function ownerSummary(data, profiles, ownerId) {
+  const stats = ownerId === DEFAULT_OWNER
+    ? data.songs.map((s) => s.stats)
+    : Object.values((profiles[ownerId] || {}).songs || {}).map((e) => e.stats);
+  return { addedSongs: data.songs.filter((s) => s.addedBy === ownerId).length, ...listenTotals(stats) };
+}
+
+module.exports = { ownerSummary, startStatistics, songsOfOthers, sanitizeProfiles, view, absorb, prune, addProfile, removeProfile, sharedFor, DEFAULT_OWNER, DEFAULT_NAME };

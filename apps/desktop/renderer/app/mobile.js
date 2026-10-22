@@ -119,11 +119,13 @@ const Mobile = {
       $('playerFrom'),
       $('playerCover'),
       h('div.mp__text', $('playerTitle'), h('div.mp__sub', { id: 'playerSub' })),
+      // Now Playing's Queue: right of the title and artist.
+      $('btnQueue'),
       h('div.mp__session', ...take('playerSession', 'playerHere', 'playerLeave', 'sleepLeft')),
       $('playerTrack'),
       h('div.mp__times', $('playerTime')),
       h('div.mp__buttons', ...take('btnPrev', 'btnBack10', 'btnPlay', 'btnFwd10', 'btnNext')),
-      h('div.mp__extras', ...take('btnShuffle', 'btnRepeat', 'btnSleep', 'btnVisualizer', 'btnOutput', 'btnQueue')),
+      h('div.mp__extras', ...take('btnShuffle', 'btnRepeat', 'btnFavourite', 'btnAddToPlaylist', 'btnSleep', 'btnVisualizer', 'btnOutput')),
       $('volWrap'),
     ];
     clear(bar);

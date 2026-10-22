@@ -6,7 +6,7 @@
 // Android Keystore, the phone's name. Settings, the Local Files library and
 // the client's own files are JSON files in the app's storage.
 
-const { createSettings } = require('@flow/core/client/settings');
+const { createSettings, cloudsOffOnce } = require('@flow/core/client/settings');
 const { createLocalLibrary } = require('@flow/core/client/localLibrary');
 const {
   platform, fs, path, plugin, info, secrets, isMetered,
@@ -51,7 +51,7 @@ function createEnv({ tellCovers }) {
   const cacheDir = phone.cache;
 
   const settings = createSettings({
-    read: () => readJson(file('settings.json')),
+    read: () => cloudsOffOnce(readJson(file('settings.json'))),
     write: (value) => writeJson(file('settings.json'), value),
   });
 
@@ -75,7 +75,7 @@ function createEnv({ tellCovers }) {
     settings,
     library,
     covers,
-    // The client's own files (server-library.json, server-sync.json, server-trims.json).
+    // The client's own files (server-library.json, server-sync.json, server-others.json).
     jsonFiles: {
       read: (name) => readJson(file(name)),
       write: (name, value) => writeJson(file(name), value),
@@ -102,9 +102,11 @@ function createEnv({ tellCovers }) {
     },
     paths: { musicDir: () => musicDir, cacheDir: () => cacheDir },
     exporter: {
-      uniquePath(stem, ext) {
-        let dest = path.join(musicDir, `${stem}.${ext}`);
-        for (let n = 2; fs.exists(dest); n += 1) dest = path.join(musicDir, `${stem} (${n}).${ext}`);
+      // folders: where in the Music folder (a picked folder's own, localFiles.js); none: at its top.
+      uniquePath(stem, ext, folders = []) {
+        const dir = path.join(musicDir, ...folders);
+        let dest = path.join(dir, `${stem}.${ext}`);
+        for (let n = 2; fs.exists(dest); n += 1) dest = path.join(dir, `${stem} (${n}).${ext}`);
         return dest;
       },
       // A server's song is cut by the server; the phone cuts no files itself.
@@ -117,6 +119,8 @@ function createEnv({ tellCovers }) {
     device: { name: () => phone.device || (platform === 'ios' ? 'iPhone' : 'Android') },
     // iOS plays no Ogg Vorbis: a Flow Server sends such a song as Opus (caps.vorbis).
     audioQuery: platform === 'ios' ? 'vorbis=0' : '',
+    // No ffmpeg here: the server converts uploads by Settings' "Upload songs to the server as MP3".
+    convertUploads: true,
     discovery: {
       async find() {
         const r = await plugin.discover({ timeout: 2500, sends: 3 });

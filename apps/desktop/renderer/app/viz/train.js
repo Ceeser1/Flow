@@ -29,6 +29,8 @@
     uniform vec2 res;
     uniform float time, dist, speed, bob, beat, ripple, rain, snow, cup, beats;
     uniform vec2 moon;          // its phase: the line between day and night (-1 full, 1 new), the lit side
+    uniform int zero;           // 0: in a loop's bound, so the compiler keeps it a loop
+    uniform float starH;        // the screen's height in pixels (render scale): the stars are the screen's
     out vec4 o;
 
     const float HOR = 0.46;     // the horizon, in window space
@@ -128,7 +130,7 @@
       // The sky: dark blue, the stars, the moon.
       float up = w.y - HOR;
       col = mix(vec3(0.07, 0.08, 0.13), vec3(0.012, 0.016, 0.045), smoothstep(0.0, 0.5, up)) * (1.0 - 0.45 * rain);
-      col += starField(w * res.y + vec2(dist * 2.0, 0.0)) * smoothstep(0.0, 0.15, up) * (1.0 - 0.8 * rain);
+      col += starField(w * starH + vec2(dist * 2.0, 0.0)) * smoothstep(0.0, 0.15, up) * (1.0 - 0.8 * rain);
       // The moon (round in screen heights, not window space): solid, its
       // dark part almost black against the sky, grey seas on it; how much of
       // it is lit is new each time it opens, its glow as bright as that.
@@ -402,24 +404,39 @@
 
       vec3 col;
       if (wd < 0.0) {
-        col = land(w);
-        // The glass: the compartment faintly mirrored in it.
-        col += vec3(0.05, 0.035, 0.02) * smoothstep(0.6, 0.0, length(s - vec2(0.3, 0.95))) * 0.5;
-        col += vec3(0.02, 0.018, 0.015) * smoothstep(0.02, 0.0, abs(s.x - s.y * 0.6 + 0.2)) * 0.6;
-        // Rain on it: drops slid back by the wind of the speed, and their trails.
+        // Rain on the glass: drops slid back by the wind of the speed, and their trails.
+        float drop = 0.0, trail = 0.0, rim = 0.0, glint = 0.0;
+        vec2 dq = vec2(0.0);
         if (rain > 0.0) {
           vec2 rp = vec2(s.x * 11.0 + time * (0.6 + speed * 0.25), s.y * 8.0 + time * 0.4);
           vec2 g = floor(rp);
           vec2 f = fract(rp) - 0.5;
           vec2 c = vec2(hash12(g + 1.0), hash12(g + 2.0)) - 0.5;
           float r = 0.08 + 0.12 * hash12(g + 4.0);
-          float drop = smoothstep(r, r * 0.6, length((f - c * 0.6) * vec2(1.0, 1.3))) * step(0.45, hash12(g + 7.0));
-          float trail = smoothstep(0.03, 0.0, abs(f.y - c.y * 0.6)) * step(f.x, c.x * 0.6) * step(0.45, hash12(g + 7.0)) * 0.4;
+          drop = smoothstep(r, r * 0.6, length((f - c * 0.6) * vec2(1.0, 1.3))) * step(0.45, hash12(g + 7.0));
+          trail = smoothstep(0.03, 0.0, abs(f.y - c.y * 0.6)) * step(f.x, c.x * 0.6) * step(0.45, hash12(g + 7.0)) * 0.4;
           // Each drop a little lens: the land in it upside down, a glint, a dark rim.
-          vec2 dq = (f - c * 0.6) * vec2(1.0, 1.3) / r;
-          float rim = smoothstep(0.6, 1.0, length(dq)) * drop;
-          float glint = exp(-dot(dq - vec2(-0.3, 0.35), dq - vec2(-0.3, 0.35)) * 25.0) * drop;
-          col = mix(col, land(w - dq * 0.05) * 1.4 + vec3(0.03, 0.035, 0.045), drop * rain * 0.85) * (1.0 - 0.5 * rim * rain);
+          dq = (f - c * 0.6) * vec2(1.0, 1.3) / r;
+          rim = smoothstep(0.6, 1.0, length(dq)) * drop;
+          glint = exp(-dot(dq - vec2(-0.3, 0.35), dq - vec2(-0.3, 0.35)) * 25.0) * drop;
+        }
+        // The land, and in a drop once more through its lens (elsewhere the
+        // drop's share is 0): in one loop, so the shader holds one land(),
+        // which is big (two made it take seconds to compile).
+        vec3 here = vec3(0.0), lens = vec3(0.0);
+        int looks = drop * rain * 0.85 > 0.0 ? 2 : 1;
+        for (int k = 0; k < 2 + zero; k++) {
+          if (k >= looks) break;
+          vec3 l = land(k == 0 ? w : w - dq * 0.05);
+          if (k == 0) here = l;
+          else lens = l;
+        }
+        col = here;
+        // The glass: the compartment faintly mirrored in it.
+        col += vec3(0.05, 0.035, 0.02) * smoothstep(0.6, 0.0, length(s - vec2(0.3, 0.95))) * 0.5;
+        col += vec3(0.02, 0.018, 0.015) * smoothstep(0.02, 0.0, abs(s.x - s.y * 0.6 + 0.2)) * 0.6;
+        if (rain > 0.0) {
+          col = mix(col, lens * 1.4 + vec3(0.03, 0.035, 0.045), drop * rain * 0.85) * (1.0 - 0.5 * rim * rain);
           col += (vec3(0.04, 0.045, 0.06) * trail + vec3(0.8, 0.85, 0.9) * glint) * rain;
         }
         // The edge of the glass a little darker.
@@ -539,6 +556,8 @@
       this.gl = gl;
       this.prog = VizGL.program(gl, VizGL.SCREEN_VS, FS);
       this.stars = VizGL.starLayer(gl);
+      // Drawn at the render scale (ntScale), stretched onto the screen.
+      this.view = VizGL.scaled(gl);
       this.age = 0;
       this.dist = Math.random() * 1000;
       this.speed = 0;
@@ -552,8 +571,17 @@
     }
 
     size(w, h) {
-      this.w = w;
-      this.h = h;
+      this.fullW = w;
+      this.fullH = h;
+      this._scale();
+    }
+
+    /** The size drawn at, for the screen's and the render scale. */
+    _scale() {
+      if (!this.fullW) return;
+      this.view.size(this.fullW, this.fullH, Visualizer.setting('ntScale'));
+      this.w = this.view.w;
+      this.h = this.view.h;
     }
 
     destroy() {
@@ -564,6 +592,7 @@
       const gl = this.gl;
       const set = (k) => Visualizer.setting(k);
       this.age += dt;
+      this._scale();
       // A pole on each beat while the beat is clear; otherwise by the music's push.
       const speed = a.playing
         ? (a.lock > 0.5 && a.bpm ? (POLES * a.bpm) / 60 : POLES * 2 * (0.8 + 0.4 * a.intensity)) * (a.lock > 0.5 ? 1 : a.motion(0.15, 0.4))
@@ -587,13 +616,17 @@
       // asks: x across from the middle plus the way come, y up the window
       // in screen heights), from just under the horizon up, a little past
       // where the rocking and the raindrops' bending reach.
-      const low = Math.floor(0.44 * this.h);
-      this.stars.draw(this.dist * 2 - this.w / 2 - 24, low, this.w + 48, 1.08 * this.h - low, this.age, 0);
+      // At the screen's own size, however large the rest is drawn.
+      const fw = this.fullW;
+      const fh = this.fullH;
+      const low = Math.floor(0.44 * fh);
+      this.stars.draw(this.dist * 2 - fw / 2 - 24, low, fw + 48, 1.08 * fh - low, this.age, 0);
       gl.disable(gl.BLEND);
-      VizGL.into(gl, null);
+      this.view.into();
       gl.useProgram(this.prog.p);
       const u = this.prog.u;
       gl.uniform2f(u.res, this.w, this.h);
+      gl.uniform1f(u.starH, fh);
       this.stars.use(u, 0);
       gl.uniform2f(u.moon, ...this.moon);
       gl.uniform1f(u.time, this.age);
@@ -607,6 +640,7 @@
       gl.uniform1f(u.snow, this.snow);
       gl.uniform1f(u.cup, set('ntCup') ? 1 : 0);
       VizGL.screen(gl);
+      this.view.present(this.age);
     }
   }
 
@@ -621,6 +655,7 @@
     options: [
       { type: 'choice', key: 'ntWeather', label: 'Weather', choices: [['clear', 'Clear'], ['rain', 'Rain'], ['snow', 'Snow']] },
       { type: 'check', key: 'ntCup', label: 'A cup of tea' },
+      { type: 'choice', key: 'ntScale', label: 'Render scale', choices: VizGL.SCALES },
     ],
   });
 })();

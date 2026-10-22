@@ -33,6 +33,8 @@ const Keys = {
       Visualizer.close();
       return;
     }
+    // A box that takes Escape itself (a server's name typed in Settings) keeps its window open.
+    if (e.key === 'Escape' && e.target.dataset && 'ownEscape' in e.target.dataset) return;
     const top = Visualizer.shown ? over : Modal.top();
     if (e.key === 'Escape' && top) {
       e.preventDefault();

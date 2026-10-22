@@ -25,7 +25,7 @@
     <button id="menuAdd" class="menu__item" type="button"></button>
     <!-- Every song; under it, with a Flow Server, the songs each profile added. -->
     <button id="menuAllSongs" class="menu__item" type="button"></button>
-    <nav id="menuAllSongsList" class="menu__subs" aria-label="All Songs by who added them" hidden></nav>
+    <nav id="menuAllSongsList" class="menu__subs" aria-label="Downloaded Songs, and All Songs by who added them" hidden></nav>
     <button id="menuPlaylists" class="menu__item" type="button"></button>
     <nav id="menuPlaylistList" class="menu__subs" aria-label="Playlists"></nav>
     <!-- Below the playlists; only while at least one shared playlist is followed. -->
@@ -54,16 +54,23 @@
           <input id="searchInput" class="search-box__input" type="search"
                  placeholder="Search playlists, songs and artists" autocomplete="off" spellcheck="false" />
         </div>
-        <div class="results">
-          <div class="results__col">
+        <!-- Phone only: show one part of the results instead of all three under each other. -->
+        <div id="searchFilter" class="search-filter">
+          <button class="search-filter__btn search-filter__btn--on" type="button" data-part="all">All</button>
+          <button class="search-filter__btn" type="button" data-part="playlists">Playlists</button>
+          <button class="search-filter__btn" type="button" data-part="songs">Songs</button>
+          <button class="search-filter__btn" type="button" data-part="artists">Artists</button>
+        </div>
+        <div id="searchResults" class="results">
+          <div class="results__col" data-part="playlists">
             <h2 class="results__head">Playlists <span id="searchPlaylistsCount" class="count"></span></h2>
             <div id="searchPlaylists" class="results__list"></div>
           </div>
-          <div class="results__col">
+          <div class="results__col" data-part="songs">
             <h2 class="results__head">Songs <span id="searchSongsCount" class="count"></span></h2>
             <div id="searchSongs" class="results__list"></div>
           </div>
-          <div class="results__col">
+          <div class="results__col" data-part="artists">
             <h2 class="results__head">Artists <span id="searchArtistsCount" class="count"></span></h2>
             <div id="searchArtists" class="results__list"></div>
           </div>
@@ -308,7 +315,7 @@
           </div>
         </div>
         <div id="plPickBanner" class="pick-banner" hidden>
-          <span>Adding songs to <strong id="plPickName"></strong>: click <strong>+</strong> on a song to add it.</span>
+          <span>Adding songs to <strong id="plPickName"></strong>: click <strong>+</strong> on a song to add it, <strong>X</strong> to take it out again.</span>
           <button id="plPickDone" class="btn btn--primary" type="button">Done</button>
         </div>
         <div class="pl-search-row">
@@ -367,7 +374,11 @@
             <button id="btnRepeat" class="sq-btn" type="button" aria-pressed="false" title="Repeat this song">
               <img class="sq-btn__img" src="../images/repeat.png" alt="" /></button>
             <button id="btnVisualizer" class="sq-btn" type="button" title="Visualizer">
-              <img class="sq-btn__img" src="../images/visualizer.png" alt="" /></button>          </div>
+              <img class="sq-btn__img" src="../images/visualizer.png" alt="" /></button>
+            <!-- The song playing into playlists, and as a favourite (player.js). -->
+            <button id="btnAddToPlaylist" class="sq-btn" type="button" title="Add to Playlists"></button>
+            <button id="btnFavourite" class="sq-btn" type="button" aria-pressed="false" title="Favourite"></button>
+          </div>
         </div>
         <div class="player__buttons">
           <button id="btnPrev" class="round-btn" type="button" title="Previous song"></button>
@@ -394,8 +405,6 @@
   </main>
 </div>
 
-<!-- Screen Flash: white from the window's edges on bass hits (flash.js). -->
-<canvas id="flashCanvas" class="flash-canvas" aria-hidden="true"></canvas>
 <div id="modalRoot"></div>
 <div id="toasts" class="toasts"></div>
 <audio id="mainAudio" preload="auto"></audio>
@@ -406,6 +415,7 @@
 <script src="app/util.js"></script>
 <script src="app/queue.js"></script>
 <script src="app/smartLists.js"></script>
+<script src="app/statistics.js"></script>
 <script src="app/icons.js"></script>
 <script src="app/dom.js"></script>
 <script src="app/store.js"></script>
@@ -420,7 +430,6 @@
 <script src="app/equalizer.js"></script>
 <script src="app/ambient.js"></script>
 <script src="app/landscape.js"></script>
-<script src="app/flash.js"></script>
 <script src="app/seekCheck.js"></script>
 <script src="app/audioEngine.js"></script>
 <script src="app/player.js"></script>
@@ -431,6 +440,7 @@
 <script src="app/viz/audio.js"></script>
 <script src="app/viz/gl.js"></script>
 <script src="app/viz/cover.js"></script>
+<script src="app/viz/waveform.js"></script>
 <script src="app/viz/synthwave.js"></script>
 <script src="app/viz/lightning.js"></script>
 <script src="app/viz/kaleidoscope.js"></script>
@@ -491,6 +501,8 @@
 <script src="app/pages/playlist.js"></script>
 <script src="app/details.js"></script>
 <script src="app/settingsPanel.js"></script>
+<script src="app/admin.js"></script>
+<script src="app/stats.js"></script>
 <script src="app/serverChip.js"></script>
 <script src="app/keys.js"></script>
 <script src="app/mobile.js"></script>

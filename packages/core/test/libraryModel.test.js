@@ -82,6 +82,21 @@ test('duplicates by artist, title and mix ignoring case', () => {
   assert.equal(m.sameNames({ artist: 'Air', title: 'Playground Love' }, { artist: 'Air', title: 'Playground Love', mix: 'Live' }), false);
 });
 
+test('the same song as a Flow Server takes it on upload: the source, else the names at the same length', () => {
+  const songs = [
+    { id: 'a', sourceKey: 'youtube:abcdefghijk', title: 'Kryptonite', artist: '3 Doors Down', duration: 234 },
+    { id: 'b', sourceUrl: 'https://maramba1.bandcamp.com/track/new-home-185', title: 'New Home', artist: 'Marambá', duration: 417 },
+    { id: 'c', title: 'Hand to Hand', artist: 'Ceeser', mix: 'Female', duration: 229.7 },
+  ];
+  const same = m.sameSongIn(songs);
+  assert.equal(same({ sourceKey: 'youtube:abcdefghijk', title: 'Other name' }).id, 'a');
+  assert.equal(same({ sourceUrl: 'https://maramba1.bandcamp.com/track/new-home-185/' }).id, 'b');
+  assert.equal(same({ title: 'hand to hand', artist: 'ceeser ', mix: 'female', duration: 230.5 }).id, 'c');
+  assert.equal(same({ title: 'Hand to Hand', artist: 'Ceeser', mix: 'Female', duration: 240 }), null);
+  assert.equal(same({ title: 'Hand to Hand', artist: 'Ceeser', duration: 229.7 }), null);
+  assert.equal(same({ sourceKey: 'youtube:zzzzzzzzzzz', title: '' }), null);
+});
+
 test('sanitize drops broken entries and duplicate songs in a list', () => {
   const data = m.sanitize({
     songs: [song('s1'), song('s1'), { id: 'x' }],

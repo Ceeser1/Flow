@@ -632,6 +632,22 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
     });
   }
 
+  /** Every session, shared or not, for the admins (as list() has them, with whether it is shared). */
+  function all() {
+    return [...sessions.values()].map((s) => ({ ...summary(s), shared: !(s.state && !s.state.shared) }));
+  }
+
+  /**
+   * An admin ends a session: its members are out (told it ended). A host
+   * still playing has a session of its own again as it goes on.
+   */
+  function endById(id) {
+    const s = sessions.get(String(id || ''));
+    if (!s) return false;
+    end(s, 'admin');
+    return true;
+  }
+
   function stop() {
     clock.clearTimeout(listTimer);
     for (const s of sessions.values()) clock.clearTimeout(s.idleTimer);
@@ -641,7 +657,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
   }
 
   return {
-    handle, view, list, players, controlSession, controlPlayer, stop,
+    handle, view, list, all, endById, players, controlSession, controlPlayer, stop,
   };
 }
 

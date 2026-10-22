@@ -8,7 +8,7 @@
 #   3  and the internet, with Caddy set up by this script
 #   4  and the internet, through your own web server or tunnel
 #
-#   sh apps/server/install.sh [options]      from the cloned repo, as your own user
+#   sh apps/linux-server/install.sh [options]      from the cloned repo, as your own user
 #
 #   --level N        the level (default: the one chosen before; asked when there is a terminal)
 #   --music DIR      the music folder (default: what the server remembers, else ~/flow-music)
@@ -25,15 +25,26 @@
 #   --downloads      let the server download songs itself (installs ffmpeg and Deno;
 #                    yt-dlp you install yourself, after its legal note)
 #   --no-downloads   don't (asked when left out; without a terminal: as before, else no)
+#   --separate-folders     new songs into Uploads/ (sent by the apps) and Downloads/ (the
+#                    server's own) inside the music folder
+#   --no-separate-folders  straight into the music folder (asked when left out; without a
+#                    terminal: as before)
+#   --keep-folders   an upload keeps its folders and file name from the app's music folder
+#   --no-keep-folders      uploads are saved as "Artist - Title" (asked when left out;
+#                    without a terminal: as before)
 #   --uninstall      remove the service (the library and the music stay)
 #
 # Without a terminal, FLOW_SERVER_PASSWORD gives the password level 3 needs and
 # DUCKDNS_TOKEN the token for a DuckDNS name.
 #
-# Safe to run again: it updates the service and leaves the rest as it is. Run
-# it with a lower level to close what a higher one opened.
+# Safe to run again. Run in a terminal without options on a machine where it
+# is installed already, it asks first: 1 only update (everything stays as set
+# up, like --yes), 2 reinstall (the questions again; Enter keeps each answer
+# as it is), 3 uninstall. Run it with a lower level to close what a higher one
+# opened.
 
 set -eu
+ARGC=$#
 
 SERVICE=flow-server
 UNIT="/etc/systemd/system/$SERVICE.service"
@@ -48,6 +59,8 @@ YES=0
 TAILSCALE=1
 DISCOVERY=ask
 DOWNLOADS=ask
+SEPARATE=ask
+KEEP=ask
 UNINSTALL=0
 
 say() { printf '%s\n' "$*"; }
@@ -65,11 +78,15 @@ while [ $# -gt 0 ]; do
     --no-discovery) DISCOVERY=0 ;;
     --downloads) DOWNLOADS=1 ;;
     --no-downloads) DOWNLOADS=0 ;;
+    --separate-folders) SEPARATE=1 ;;
+    --no-separate-folders) SEPARATE=0 ;;
+    --keep-folders) KEEP=1 ;;
+    --no-keep-folders) KEEP=0 ;;
     --uninstall) UNINSTALL=1 ;;
     --url) [ $# -ge 2 ] || die "--url needs an https:// address."; URL="$2"; shift ;;
     --proxy) [ $# -ge 2 ] || die "--proxy needs nginx, apache, caddy, cloudflared or other."; PROXY="$2"; shift ;;
     --proxy-at) [ $# -ge 2 ] || die "--proxy-at needs an IP address."; PROXY_AT="$2"; shift ;;
-    -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option $1. See --help." ;;
   esac
   shift
@@ -94,6 +111,20 @@ ask_no() {
   case "$answer" in y|Y|yes|Yes|YES) return 0 ;; *) return 1 ;; esac
 }
 
+# A yes/no question whose Enter (and --yes) keeps what was chosen before: $2
+# is 1 or 0, empty for a new server (then yes).
+ask_prev() {
+  def=${2:-1}
+  if [ "$YES" = 1 ] || [ ! -t 0 ]; then [ "$def" = 1 ]; return; fi
+  if [ "$def" = 1 ]; then printf '%s [Y/n] ' "$1"; else printf '%s [y/N] ' "$1"; fi
+  read -r answer || answer=""
+  case "$answer" in
+    y|Y|yes|Yes|YES) return 0 ;;
+    n|N|no|No|NO) return 1 ;;
+    *) [ "$def" = 1 ] ;;
+  esac
+}
+
 have() { command -v "$1" >/dev/null 2>&1; }
 
 SUDO=""
@@ -102,8 +133,26 @@ if [ "$(id -u)" -ne 0 ]; then
   SUDO="sudo"
 fi
 
-[ "$(uname -s)" = "Linux" ] || die "This installs a service on Linux. On Windows or macOS, run: node apps/server/src/main.js"
-have systemctl && [ -d /run/systemd/system ] || die "This needs systemd. Without it, run: node apps/server/src/main.js"
+[ "$(uname -s)" = "Linux" ] || die "This installs a service on Linux. On Windows, use the Flow Server installer (apps/windows-server). On macOS, run: node apps/linux-server/src/main.js"
+have systemctl && [ -d /run/systemd/system ] || die "This needs systemd. Without it, run: node apps/linux-server/src/main.js"
+
+# Installed already, run in a terminal without options: what to do.
+if [ -f "$UNIT" ] && [ "$ARGC" = 0 ] && [ -t 0 ]; then
+  step "The Flow Server is installed already"
+  say "  1  Only update: everything stays as it is set up; the service is renewed and restarted"
+  say "  2  Reinstall (change config): the questions again; Enter keeps each answer as it is"
+  say "  3  Uninstall: remove the service (the library and the music stay)"
+  while :; do
+    printf 'Choice [1]: '
+    read -r answer || answer=""
+    case "$answer" in
+      ""|1) YES=1; say "Only update."; break ;;
+      2) say "Reinstall."; break ;;
+      3) UNINSTALL=1; break ;;
+      *) say "1, 2 or 3, please." ;;
+    esac
+  done
+fi
 
 if [ "$UNINSTALL" = 1 ]; then
   step "Removing the service"
@@ -120,7 +169,7 @@ fi
 case "$MUSIC" in ""|/*) ;; *) MUSIC="$PWD/$MUSIC" ;; esac
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
-[ -f "$REPO/apps/server/src/main.js" ] || die "Run this from a clone of the Flow repo."
+[ -f "$REPO/apps/linux-server/src/main.js" ] || die "Run this from a clone of the Flow repo."
 RUN_USER=${SUDO_USER:-$(id -un)}
 RUN_HOME=$(getent passwd "$RUN_USER" 2>/dev/null | cut -d: -f6)
 RUN_HOME=${RUN_HOME:-$HOME}
@@ -181,18 +230,18 @@ fi
 # settings are in that user's home).
 flow() {
   if [ "$(id -un)" = "$RUN_USER" ]; then
-    "$NODE" "$REPO/apps/server/src/main.js" "$@"
+    "$NODE" "$REPO/apps/linux-server/src/main.js" "$@"
   elif have runuser; then
-    runuser -u "$RUN_USER" -- env -u XDG_DATA_HOME HOME="$RUN_HOME" "$NODE" "$REPO/apps/server/src/main.js" "$@"
+    runuser -u "$RUN_USER" -- env -u XDG_DATA_HOME HOME="$RUN_HOME" "$NODE" "$REPO/apps/linux-server/src/main.js" "$@"
   else
-    sudo -u "$RUN_USER" env -u XDG_DATA_HOME HOME="$RUN_HOME" "$NODE" "$REPO/apps/server/src/main.js" "$@"
+    sudo -u "$RUN_USER" env -u XDG_DATA_HOME HOME="$RUN_HOME" "$NODE" "$REPO/apps/linux-server/src/main.js" "$@"
   fi
 }
 info_get() { printf '%s\n' "$INFO" | sed -n "s/^$1=//p"; }
 
 # For level 3.
 CADDYFILE=/etc/caddy/Caddyfile
-SETUP="$REPO/apps/server/src/setup.js"
+SETUP="$REPO/apps/linux-server/src/setup.js"
 DUCK_DIR=/etc/flow-server
 DUCK_UNIT=/etc/systemd/system/flow-duckdns
 # yt-dlp where it is to be installed for Flow (it then updates itself once a day).
@@ -206,6 +255,8 @@ port_owner() { $SUDO ss -ltnpH "sport = :$1" 2>/dev/null | sed -n 's/.*users:(("
 is_private() { printf '%s' "$1" | grep -Eq '^(10\.|127\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.)'; }
 INFO=$(flow info) || die "The server's settings could not be read (see above)."
 CUR_LEVEL=$(info_get level)
+# What was chosen before, for a server set up before; empty for a new one.
+prev() { [ -z "$CUR_LEVEL" ] || info_get "$1"; }
 CUR_PASSWORD=$(info_get password)
 PORT_NOW=${PORT:-$(info_get port)}
 PORT_NOW=${PORT_NOW:-7878}
@@ -250,7 +301,7 @@ if [ "$LEVEL" = 3 ]; then
   for p in 80 443; do
     OWNER=$(port_owner "$p")
     if [ -n "$OWNER" ] && [ "$OWNER" != caddy ]; then
-      die "Port $p is in use by $OWNER. Caddy needs 80 and 443 for itself. With a web server of your own, that is level 4: sh $REPO/apps/server/install.sh --level 4"
+      die "Port $p is in use by $OWNER. Caddy needs 80 and 443 for itself. With a web server of your own, that is level 4: sh $REPO/apps/linux-server/install.sh --level 4"
     fi
   done
   say "Ports 80 and 443 are free for Caddy."
@@ -266,7 +317,7 @@ if [ "$DOWNLOADS" = ask ]; then
     # Unattended: as chosen before, else no (nothing is fetched unasked).
     DOWNLOADS=$(info_get downloads)
     [ "$DOWNLOADS" = 1 ] || DOWNLOADS=0
-  elif ask "Let the server download songs?"; then
+  elif ask_prev "Let the server download songs?" "$(prev downloads)"; then
     DOWNLOADS=1
   else
     DOWNLOADS=0
@@ -284,6 +335,38 @@ if [ "$DOWNLOADS" = 1 ] && ! have yt-dlp && [ "$YES" != 1 ] && [ -t 0 ]; then
   ask_no "I understand and want to proceed" || DOWNLOADS=0
 fi
 if [ "$DOWNLOADS" = 1 ]; then say "Yes."; else say "No (run this again with --downloads to turn it on later)."; fi
+
+step "Where should new songs go in the music folder?"
+say "Songs the apps upload and songs the server downloads can each get a folder of their"
+say "own (Uploads and Downloads), or all go straight into the music folder. Songs there"
+say "already stay where they are."
+if [ "$SEPARATE" = ask ]; then
+  if [ "$YES" = 1 ] || [ ! -t 0 ]; then
+    SEPARATE=$(info_get separate_folders)
+  elif ask_prev "Use separate folders for uploads and downloads?" "$(prev separate_folders)"; then
+    SEPARATE=1
+  else
+    SEPARATE=0
+  fi
+fi
+[ "$SEPARATE" = 1 ] || SEPARATE=0
+if [ "$SEPARATE" = 1 ]; then say "Yes: Uploads and Downloads."; else say "No: straight into the music folder."; fi
+say ""
+say "An upload can keep the folders it is in on the PC or phone: a song in"
+say "Music/FlowPlayer/Linkin Park/Hybrid Theory/In the End.mp3 is saved as"
+say "Linkin Park/Hybrid Theory/In the End.mp3 here$([ "$SEPARATE" = 1 ] && printf ' (inside Uploads)'). Without, it is saved as"
+say "\"Linkin Park - In the End.mp3\"."
+if [ "$KEEP" = ask ]; then
+  if [ "$YES" = 1 ] || [ ! -t 0 ]; then
+    KEEP=$(info_get keep_folders)
+  elif ask_prev "Keep uploaded folder structures?" "$(prev keep_folders)"; then
+    KEEP=1
+  else
+    KEEP=0
+  fi
+fi
+[ "$KEEP" = 1 ] || KEEP=0
+if [ "$KEEP" = 1 ]; then say "Yes."; else say "No."; fi
 
 if [ "$DOWNLOADS" = 1 ]; then step "ffmpeg (needed for downloads)"; else step "ffmpeg (optional)"; fi
 if have ffmpeg; then
@@ -425,7 +508,10 @@ say "no Home address sends a small UDP question and the server answers with its 
 say "It tells them what /api/hello already tells anyone on the network, never the password or the library,"
 say "and only devices on private addresses get an answer. It opens UDP 7878 for your home network."
 if [ "$DISCOVERY" = ask ]; then
-  if ask "Turn it on?"; then DISCOVERY=1; else DISCOVERY=0; fi
+  # As before; a new server: on with --yes, off without a terminal.
+  PREV=$(prev discovery)
+  if [ -z "$PREV" ] && [ "$YES" != 1 ] && [ ! -t 0 ]; then PREV=0; fi
+  if ask_prev "Turn it on?" "$PREV"; then DISCOVERY=1; else DISCOVERY=0; fi
 fi
 if [ "$DISCOVERY" = 1 ]; then say "On."; else say "Off. The address is typed into Flow (--discovery on the server turns it on later)."; fi
 
@@ -436,7 +522,7 @@ if [ "$LEVEL" -ge 3 ]; then
   NEW_PASSWORD=1
   if [ "$CUR_PASSWORD" = strong ] && [ -z "${FLOW_SERVER_PASSWORD:-}" ] && ! ask_no "A strong password is set already. Choose a new one?"; then NEW_PASSWORD=0; fi
   if [ "$NEW_PASSWORD" = 0 ]; then
-    say "Kept. Change it later with: node $REPO/apps/server/src/main.js set-password"
+    say "Kept. Change it later with: node $REPO/apps/linux-server/src/main.js set-password"
   else
     say "The server will be reachable from the internet, so it needs a strong password: at least"
     say "8 characters, with a lower-case letter, an upper-case letter and a number."
@@ -457,7 +543,7 @@ if [ "$LEVEL" -ge 3 ]; then
 else
   step "Password (optional at level $LEVEL)"
   if [ "$CUR_PASSWORD" != none ]; then
-    say "Set already. Change it later with: node $REPO/apps/server/src/main.js set-password"
+    say "Set already. Change it later with: node $REPO/apps/linux-server/src/main.js set-password"
   else
     if [ "$LEVEL" = 2 ]; then
       say "Without one, anyone on your home network or your tailnet can use the server."
@@ -467,13 +553,40 @@ else
     if ask_no "Set a password now (4 or more characters)?"; then
       TRIES=1
       until flow set-password --level "$LEVEL"; do
-        if [ "$TRIES" -ge 3 ]; then say "Not set; later: node $REPO/apps/server/src/main.js set-password"; break; fi
+        if [ "$TRIES" -ge 3 ]; then say "Not set; later: node $REPO/apps/linux-server/src/main.js set-password"; break; fi
         TRIES=$((TRIES + 1))
         say "Try again:"
       done
     else
-      say "None. Later: node $REPO/apps/server/src/main.js set-password"
+      say "None. Later: node $REPO/apps/linux-server/src/main.js set-password"
     fi
+  fi
+fi
+
+step "Master admin"
+MASTER=$(info_get master)
+if [ -n "$MASTER" ]; then
+  say "$MASTER is the master admin. Another one later: node $REPO/apps/linux-server/src/main.js admin master <name>"
+else
+  say "The master admin is the one profile that can change the server password and make other"
+  say "profiles admins from inside the apps (Settings, Administration). Its PIN needs at least"
+  say "4 characters; a strong password is recommended. Admins see the profiles, their IPs, the"
+  say "trash and the server's rules."
+  if [ -t 0 ] && [ "$YES" != 1 ] && ask "Create a master-admin profile now?"; then
+    printf "Its name (a profile's name that exists already makes that one the master): "
+    read -r MASTER_NAME || MASTER_NAME=""
+    if [ -n "$MASTER_NAME" ]; then
+      TRIES=1
+      until flow admin master "$MASTER_NAME" --create --level "$LEVEL"; do
+        if [ "$TRIES" -ge 3 ]; then say "Not made; later: node $REPO/apps/linux-server/src/main.js admin master <name> --create"; break; fi
+        TRIES=$((TRIES + 1))
+        say "Try again:"
+      done
+    else
+      say "None. Later: node $REPO/apps/linux-server/src/main.js admin master <name> --create"
+    fi
+  else
+    say "None for now. Later: node $REPO/apps/linux-server/src/main.js admin master <name> --create"
   fi
 fi
 
@@ -756,9 +869,19 @@ if [ "$LEVEL" = 4 ]; then
     *) die "--proxy is nginx, apache, caddy, cloudflared or other." ;;
   esac
 
-  if [ -z "$PROXY_AT" ] && [ -t 0 ] && [ "$YES" != 1 ] && ! ask "Does it run on this machine?"; then
-    printf 'Its IP address (as this machine sees it): '
-    read -r PROXY_AT || PROXY_AT=""
+  # Where it was before: a proxy elsewhere is the one the server trusts.
+  CUR_PROXY_AT=""
+  [ "${CUR_LEVEL:-0}" = 4 ] && CUR_PROXY_AT=$(info_get trusted_proxies | cut -d, -f1)
+  if [ -z "$PROXY_AT" ]; then
+    if [ -t 0 ] && [ "$YES" != 1 ]; then
+      if ! ask_prev "Does it run on this machine?" "$([ -n "$CUR_PROXY_AT" ] && echo 0 || echo 1)"; then
+        printf 'Its IP address (as this machine sees it)%s: ' "${CUR_PROXY_AT:+ [$CUR_PROXY_AT]}"
+        read -r PROXY_AT || PROXY_AT=""
+        PROXY_AT=${PROXY_AT:-$CUR_PROXY_AT}
+      fi
+    else
+      PROXY_AT=$CUR_PROXY_AT
+    fi
   fi
   if [ -n "$PROXY_AT" ]; then
     printf '%s' "$PROXY_AT" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || die "\"$PROXY_AT\" is not an IPv4 address."
@@ -841,6 +964,8 @@ ARGS=" --level $LEVEL"
 [ "$LEVEL" = 4 ] && [ -n "$PROXY_AT" ] && ARGS="$ARGS --trusted-proxy $PROXY_AT"
 if [ "$DISCOVERY" = 1 ]; then ARGS="$ARGS --discovery"; else ARGS="$ARGS --no-discovery"; fi
 if [ "$DOWNLOADS" = 1 ]; then ARGS="$ARGS --downloads"; else ARGS="$ARGS --no-downloads"; fi
+if [ "$SEPARATE" = 1 ]; then ARGS="$ARGS --separate-folders"; else ARGS="$ARGS --no-separate-folders"; fi
+if [ "$KEEP" = 1 ]; then ARGS="$ARGS --keep-folders"; else ARGS="$ARGS --no-keep-folders"; fi
 [ -n "$MUSIC" ] && ARGS="$ARGS --music $MUSIC"
 [ -n "$PORT" ] && ARGS="$ARGS --port $PORT"
 TMP=$(mktemp)
@@ -853,7 +978,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=$RUN_USER
-WorkingDirectory=$REPO/apps/server
+WorkingDirectory=$REPO/apps/linux-server
 ExecStart=$NODE src/main.js$ARGS
 Restart=on-failure
 RestartSec=5
@@ -957,7 +1082,7 @@ if [ "$LEVEL" = 3 ]; then
     say "  connections can't reach you. Ask the provider for a public IPv4, or use level 2 (Tailscale)."
     say "- $DOMAIN doesn't point here (see \"Checking the name\")."
     say "Caddy keeps trying by itself. Fix it and run this again, or check with:"
-    say "  node $REPO/apps/server/src/main.js doctor https://$DOMAIN"
+    say "  node $REPO/apps/linux-server/src/main.js doctor https://$DOMAIN"
   fi
   if [ "$CERT_OK" = 1 ]; then
     step "Checking it the way the apps will"
@@ -972,7 +1097,7 @@ if [ "$LEVEL" = 3 ]; then
     fi
     say "For the outside view (port 443 on the router, above all), run this from a machine outside"
     say "your home network, like a laptop on a phone's hotspot:"
-    say "  node apps/server/src/main.js doctor https://$DOMAIN"
+    say "  node apps/linux-server/src/main.js doctor https://$DOMAIN"
   fi
 fi
 
@@ -992,11 +1117,11 @@ if [ "$LEVEL" = 4 ]; then
   else
     say ""
     say "Fix what failed with the snippet above (\"What to add to $PROXY_NAME\"), then check again:"
-    say "  node $REPO/apps/server/src/main.js doctor $DOCTOR_VIA $URL"
+    say "  node $REPO/apps/linux-server/src/main.js doctor $DOCTOR_VIA $URL"
   fi
   say "For the outside view (the router above all), run this from a machine outside your home"
   say "network, like a laptop on a phone's hotspot:"
-  say "  node apps/server/src/main.js doctor $URL"
+  say "  node apps/linux-server/src/main.js doctor $URL"
 fi
 
 step "Done"
@@ -1027,6 +1152,6 @@ elif [ "$LEVEL" = 1 ] && [ "${CUR_LEVEL:-1}" != 1 ]; then
 fi
 [ "$DOWNLOADS" = 1 ] && say "Downloads: on. In Flow, Add Songs offers \"Download (Server)\" while connected to this server."
 say ""
-say "Update later:  cd $REPO && git pull && sudo systemctl restart $SERVICE"
-say "Password:      node $REPO/apps/server/src/main.js set-password"
-say "Other level:   sh $REPO/apps/server/install.sh --level N"
+say "Update later:  cd $REPO && git pull && sh apps/linux-server/install.sh (then 1, Only update)"
+say "Password:      node $REPO/apps/linux-server/src/main.js set-password"
+say "Other level:   sh $REPO/apps/linux-server/install.sh --level N"

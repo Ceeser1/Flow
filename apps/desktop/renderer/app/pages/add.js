@@ -101,7 +101,7 @@ const AddPage = {
     return this.phase === 'ready' && !!this.media;
   },
 
-  /** How downloads are converted, from Settings > Website Downloads. */
+  /** How downloads are converted, from Settings > Media Management. */
   downloadOptions() {
     const s = Store.settings;
     return { alwaysMp3: !!s.alwaysMp3, quality: Number(s.mp3Quality), keepMp3: s.keepMp3 !== false };

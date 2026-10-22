@@ -162,9 +162,54 @@
       o2 = vec4(bend, starsShow, 1.0);
     }`;
 
+  // The bright stars' big cells round what the screen shows of the sky, for
+  // this frame: two texels a cell, (where, m, 1 if it holds one) and its
+  // colour, each as STAR_CELLS' brightStar() has it (starTab).
+  const TAB = { margin: 512 };   // sky pixels past the screen's edges it reaches
+  const TAB_FS = VizGL.NOISE + VizGL.STAR_CELLS + `
+    uniform vec2 tabFrom;   // its first cell
+    uniform float time;
+    out vec4 o;
+    void main() {
+      ivec2 t = ivec2(gl_FragCoord.xy);
+      vec2 g = tabFrom + vec2(float(t.x / 2), float(t.y));
+      vec2 c;
+      float m;
+      vec3 col;
+      bool on = brightStar(g, time, c, m, col);
+      o = t.x % 2 == 0 ? vec4(c, m, on ? 1.0 : 0.0) : vec4(col, 0.0);
+    }`;
+
   const SHOW_FS = VizGL.NOISE + VizGL.STAR_CELLS + VizGL.STARS + `
     in vec2 uv;
     uniform sampler2D scene, glow, bent;
+    uniform highp sampler2D starTab;
+    uniform vec2 tabFrom;
+    uniform ivec2 tabCells;
+
+    // starField(), its bright stars read from the table where it reaches
+    // (summed in the same order); further out (rays bent far round) worked
+    // out as ever.
+    vec3 stars(vec2 px, float time, float boom) {
+      vec2 sp = px + starShift;
+      ivec2 t0 = ivec2(floor(sp / STAR_BIG) - tabFrom) - 1;
+      if (any(lessThan(t0, ivec2(0))) || any(greaterThanEqual(t0 + 2, tabCells))) return starField(px, time, boom);
+      vec3 sum = vec3(0.0);
+      vec2 c;
+      vec3 col;
+      if (faintStar(floor(sp / STAR_CELL), time, c, col)) sum += col * faintGlow(sp - c);
+      for (int j = 0; j <= 2; j++) {
+        for (int i = 0; i <= 2; i++) {
+          vec4 a = texelFetch(starTab, ivec2((t0.x + i) * 2, t0.y + j), 0);
+          if (a.w == 0.0) continue;
+          col = texelFetch(starTab, ivec2((t0.x + i) * 2 + 1, t0.y + j), 0).rgb;
+          float m = a.z;
+          vec2 d = sp - a.xy;
+          sum += col * (brightGlow(d, m) + brightSpike(d, m, boom) + brightSpike(d.yx, m, boom));
+        }
+      }
+      return sum;
+    }
     uniform vec2 res;
     uniform float time, boom, orbit;
     out vec4 o;
@@ -175,7 +220,7 @@
       vec3 b = texture(bent, uv).xyz;
       vec2 sc = (uv - 0.5) * vec2(res.x / res.y, 1.0);
       vec2 px = (sc + b.xy / 0.95) * res.y + res * 0.5 + vec2(orbit / 0.95 * res.y, 0.0);
-      if (b.z > 0.0) c += starField(px, time, boom) * b.z;
+      if (b.z > 0.0) c += stars(px, time, boom) * b.z;
       c = 1.0 - exp(-c * 1.2);
       c = pow(c, vec3(0.95));
       c += (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0;
@@ -190,6 +235,9 @@
       this.gl = gl;
       this.scene = VizGL.program(gl, VizGL.SCREEN_VS, SCENE_FS);
       this.show = VizGL.program(gl, VizGL.SCREEN_VS, SHOW_FS);
+      this.tabP = VizGL.program(gl, VizGL.SCREEN_VS, TAB_FS);
+      gl.getExtension('EXT_color_buffer_float');
+      this.tab = null;
       this.age = 0;
       this.spin = 0;
       this.orbit = Math.random() * Math.PI * 2;
@@ -201,14 +249,28 @@
     }
 
     size(w, h) {
-      const gl = this.gl;
       this.w = w;
       this.h = h;
+      this.scale = 0;
+      this._scale();
+    }
+
+    /**
+     * The ray pass's targets, for the screen's size and the render scale
+     * (bhScale): half the screen's size at 100% (every pixel steps a long
+     * way), less below. The stars are drawn after it at the full size, so
+     * they stay as many and as sharp.
+     */
+    _scale() {
+      const scale = (Number(Visualizer.setting('bhScale')) || 100) / 100;
+      if (scale === this.scale) return;
+      this.scale = scale;
+      const gl = this.gl;
+      const { w, h } = this;
       for (const t of [this.t, this.bent, this.b1, this.b2]) VizGL.freeTarget(gl, t);
-      // Half the screen's size: every pixel steps a long way. The ray pass
-      // draws into both: the picture, and where the stars are bent to.
-      const hw = Math.max(1, Math.round(w / 2));
-      const hh = Math.max(1, Math.round(h / 2));
+      // The ray pass draws into both: the picture, and where the stars are bent to.
+      const hw = Math.max(1, Math.round((w * scale) / 2));
+      const hh = Math.max(1, Math.round((h * scale) / 2));
       this.t = VizGL.target(gl, hw, hh);
       this.bent = VizGL.target(gl, hw, hh);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.t.fb);
@@ -225,10 +287,46 @@
       VizGL.lose(this.gl);
     }
 
+    /**
+     * This frame's table of the bright stars' big cells (TAB_FS) over the
+     * sky the screen shows unbent, as far as TAB.margin past its edges: the
+     * show pass then reads them rather than working each out again for
+     * every pixel near it.
+     */
+    _starTable() {
+      const gl = this.gl;
+      const BIG = 40;   // STAR_CELLS' STAR_BIG
+      const x = Math.floor((this.starShift[0] + (this.orbit / 0.95) * this.h - TAB.margin) / BIG);
+      const y = Math.floor((this.starShift[1] - TAB.margin) / BIG);
+      const cols = Math.ceil((this.w + 2 * TAB.margin) / BIG) + 2;
+      const rows = Math.ceil((this.h + 2 * TAB.margin) / BIG) + 2;
+      let t = this.tab;
+      if (!t || t.cols !== cols || t.rows !== rows) {
+        if (t) VizGL.freeTarget(gl, t);
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, cols * 2, rows, 0, gl.RGBA, gl.FLOAT, null);
+        for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST);
+        const fb = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        t = this.tab = { tex, fb, w: cols * 2, h: rows, cols, rows };
+      }
+      t.x = x;
+      t.y = y;
+      VizGL.into(gl, t);
+      gl.useProgram(this.tabP.p);
+      gl.uniform2f(this.tabP.u.tabFrom, x, y);
+      gl.uniform1f(this.tabP.u.time, this.age);
+      VizGL.screen(gl);
+      return t;
+    }
+
     frame(a, dt) {
       const gl = this.gl;
       const set = (k) => Visualizer.setting(k);
       this.age += dt;
+      this._scale();
       const music = a.playing ? 1 : 0.15;
       this.spin += dt * 0.25 * (set('bhSpin') / 100) * (a.playing ? a.pace * (0.7 + 0.6 * a.level) : 0.15);
       // The eye: circling slowly at the chosen height, nearer when the music swells.
@@ -277,8 +375,12 @@
       // Twice, narrow: one wide pass leaves ghosts of each star round it.
       VizGL.blur(gl, this.t, this.b1, this.b2, 1);
       VizGL.blur(gl, this.b2, this.b1, this.b2, 1.5);
+      const tab = this._starTable();
       VizGL.into(gl, null);
       gl.useProgram(this.show.p);
+      VizGL.bind(gl, this.show.u.starTab, tab.tex, 3);
+      gl.uniform2f(this.show.u.tabFrom, tab.x, tab.y);
+      gl.uniform2i(this.show.u.tabCells, tab.cols, tab.rows);
       VizGL.bind(gl, this.show.u.scene, this.t.tex, 0);
       VizGL.bind(gl, this.show.u.glow, this.b2.tex, 1);
       VizGL.bind(gl, this.show.u.bent, this.bent.tex, 2);
@@ -303,6 +405,7 @@
       { type: 'choice', key: 'bhColors', label: 'Colours', choices: [['warm', 'Warm'], ['blue', 'Blue'], ['neon', 'Neon']] },
       { type: 'choice', key: 'bhView', label: 'View', choices: [['edge', 'Edge on'], ['slant', 'Slanted'], ['above', 'From above']] },
       { type: 'slider', key: 'bhSpin', label: 'Swirling', min: 0, max: 300, step: 5 },
+      { type: 'choice', key: 'bhScale', label: 'Render scale', choices: VizGL.SCALES },
     ],
   });
 })();

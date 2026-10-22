@@ -69,32 +69,32 @@
     const t = Math.max(1.5, w * 0.17);
     const gap = t * 0.18;
     const slant = 0.1;
-    const P = {
-      a: [[0, 0], [w, 0]], g: [[0, h / 2], [w, h / 2]], d: [[0, h], [w, h]],
-      f: [[0, 0], [0, h / 2]], b: [[w, 0], [w, h / 2]], e: [[0, h / 2], [0, h]], c: [[w, h / 2], [w, h]],
+    // A corner of a segment, slanted (no arrays: a dozen digits a frame).
+    const to = (px, py, first) => {
+      const sx = x + px + (h - py) * slant;
+      const sy = y + py;
+      if (first) g.moveTo(sx, sy);
+      else g.lineTo(sx, sy);
     };
     g.beginPath();
-    for (const s of on) {
-      const [[x0, y0], [x1, y1]] = P[s];
-      const len = Math.hypot(x1 - x0, y1 - y0);
+    for (let k = 0; k < on.length; k += 1) {
+      const s = on[k];
+      // Its two ends.
+      const x0 = s === 'b' || s === 'c' ? w : 0;
+      const x1 = s === 'f' || s === 'e' ? 0 : w;
+      const y0 = s === 'a' || s === 'f' || s === 'b' ? 0 : s === 'd' ? h : h / 2;
+      const y1 = s === 'a' ? 0 : s === 'g' || s === 'f' || s === 'b' ? h / 2 : h;
+      const len = Spectrum.hypot(x1 - x0, y1 - y0);
       const ux = (x1 - x0) / len;
       const uy = (y1 - y0) / len;
       const nx = -uy * t / 2;
       const ny = ux * t / 2;
-      const pts = [
-        [x0 + ux * gap, y0 + uy * gap],
-        [x0 + ux * (gap + t / 2) + nx, y0 + uy * (gap + t / 2) + ny],
-        [x1 - ux * (gap + t / 2) + nx, y1 - uy * (gap + t / 2) + ny],
-        [x1 - ux * gap, y1 - uy * gap],
-        [x1 - ux * (gap + t / 2) - nx, y1 - uy * (gap + t / 2) - ny],
-        [x0 + ux * (gap + t / 2) - nx, y0 + uy * (gap + t / 2) - ny],
-      ];
-      pts.forEach(([px, py], i) => {
-        const sx = x + px + (h - py) * slant;
-        const sy = y + py;
-        if (i) g.lineTo(sx, sy);
-        else g.moveTo(sx, sy);
-      });
+      to(x0 + ux * gap, y0 + uy * gap, true);
+      to(x0 + ux * (gap + t / 2) + nx, y0 + uy * (gap + t / 2) + ny, false);
+      to(x1 - ux * (gap + t / 2) + nx, y1 - uy * (gap + t / 2) + ny, false);
+      to(x1 - ux * gap, y1 - uy * gap, false);
+      to(x1 - ux * (gap + t / 2) - nx, y1 - uy * (gap + t / 2) - ny, false);
+      to(x0 + ux * (gap + t / 2) - nx, y0 + uy * (gap + t / 2) - ny, false);
       g.closePath();
     }
     g.fill();

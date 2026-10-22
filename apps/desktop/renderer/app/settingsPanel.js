@@ -53,12 +53,15 @@ const SettingsPanel = {
     });
     Store.onLibrary(() => {
       if (!this.modal) return;
+      Stats.soon();
       this._drawMeasured();
       this._drawCovers();
       this._drawStorage();
     });
     Store.onServer(() => {
       if (this.modal) this._drawServer();
+      if (this.modal) this._drawAdmin();
+      if (this.modal) Stats.soon();
       if (this.modal && this._jamNote) this._jamNote();
     });
     Output.onChange(() => {
@@ -97,78 +100,33 @@ const SettingsPanel = {
       this._row({
         key: 'showTrend',
         label: 'Show listening trends',
-        desc: 'If disabled, your listening trend category will be hidden in the menu.',
+        desc: 'If disabled, your listening trend category will be hidden in the menu and the search.',
       }),
-      Store.can('musicFolder') ? this._savedSongsRow() : null,
-      this._coversRow(),
 
       ...this._serverRows(),
 
       ...this._jamRows(),
 
-      // yt-dlp runs on this device (not on the phone, where the server downloads).
-      ...(Store.can('downloadHere') ? [
-      h('h3.settings__section', 'Website Downloads'),
-      this._row({
-        key: 'useCookies',
-        label: 'Download using browser cookies from',
-        desc: 'Downloads may be blocked by age restrictions or sites may only serve content to signed-in users. '
-          + 'Pick your browser to use session cookies (no login data) to bypass restrictions. Firefox works best. '
-          + 'Chrome, Edge, Brave may lock cookies on Windows.',
-        right: this._cookieBrowser(),
-      }),
-      this._row({
-        key: 'shareCookies',
-        label: 'Share session cookies with the server for downloads',
-        desc: 'Download (Server) gets the cookies of the link\'s site only (all of YouTube for a YouTube link), '
-          + 'for that one download, and deletes them with it. Over a plain http address at home they travel unencrypted.',
-        sub: true,
-        when: () => Store.settings.useCookies,
-        show: () => Store.settings.serverOn,
-      }),
-      this._row({
-        key: 'sponsorBlock',
-        label: 'Use Sponsorblock for Youtube',
-        desc: 'Shows sponsored segments as yellow in the trim.',
-      }),
-      this._row({
-        key: 'sponsorBlockIntros',
-        label: 'Try to detect intros/outros, marked red in the trim',
-        desc: 'A music video\'s non-music parts (talk, skits, credits) count as these too.',
-        sub: true,
-        when: () => Store.settings.sponsorBlock,
-      }),
-      this._row({
-        key: 'alwaysMp3',
-        label: 'Always convert downloads into MP3',
-        desc: 'Otherwise songs are kept in the format they come in.',
-        right: this._mp3Quality(),
-      }),
-      this._row({
-        key: 'keepMp3',
-        label: 'Ignore files that are already in .mp3 format',
-        desc: 'Leaves MP3s as they are instead of encoding them again at the quality above.',
-        sub: true,
-        when: () => Store.settings.alwaysMp3,
-      }),
-      ] : []),
+      ...this._mediaRows(),
 
-      ...(Store.can('effects') ? [
-      h('h3.settings__section', 'Visual Effects'),
+      // The clouds everywhere; what listens to the music (their bass, the
+      // equalizer, the visualizers) only where the page hears it (effects).
+      h('h3.settings__section', 'App Visuals'),
+      Store.phone ? h('div.settings__desc.settings__intro', 'Using background visuals for the app will drain your battery a bit faster than without.') : null,
       this._row({
         key: 'cloudsOn',
         label: 'Enable Background Clouds',
         desc: 'Slowly drifting clouds of colour behind the pages.',
         right: this._slider({ key: 'cloudsIntensity', label: 'Intensity', when: () => Store.settings.cloudsOn }),
       }),
-      this._row({
+      Store.can('effects') ? this._row({
         key: 'cloudsBass',
         label: 'React to Bass',
         desc: 'The clouds swell and brighten on kicks and bass notes.',
         sub: true,
         when: () => Store.settings.cloudsOn,
         right: this._slider({ key: 'cloudsBassAmount', label: 'Strength', when: () => Store.settings.cloudsOn && Store.settings.cloudsBass }),
-      }),
+      }) : null,
       this._row({
         label: 'Clouds color scheme',
         desc: 'Rainbow gives each cloud a random color as it comes.',
@@ -183,6 +141,8 @@ const SettingsPanel = {
         when: () => Store.settings.cloudsOn,
         right: this._slider({ key: 'cloudsAmount', label: 'Amount', min: 0, max: 100, step: 10, when: () => Store.settings.cloudsOn }),
       }),
+
+      ...(Store.can('effects') ? [
       this._row({
         key: 'eqOn',
         label: 'Enable Equalizer',
@@ -211,19 +171,6 @@ const SettingsPanel = {
         when: () => Store.settings.eqOn,
         right: this._select({ key: 'eqColors', options: EQ_SCHEMES, when: () => Store.settings.eqOn }),
       }),
-      this._row({
-        key: 'flashOn',
-        label: 'Screen Flash',
-        desc: 'The window\'s edges glow white from kick and bass peaks.',
-        right: this._slider({ key: 'flashTriggers', label: 'Triggers', when: () => Store.settings.flashOn }),
-      }),
-      this._row({
-        label: 'Flash range',
-        desc: 'How far the edge flash and its fade-out reach, and how bright it starts at the edges.',
-        sub: true,
-        when: () => Store.settings.flashOn,
-        right: this._slider({ key: 'flashRange', name: 'Flash range', when: () => Store.settings.flashOn }),
-      }),
 
       h('h3.settings__section', 'Music Visualizer'),
       this._visualizerRow([
@@ -238,6 +185,12 @@ const SettingsPanel = {
       ] : []),
 
       ...(Store.can('batteryHelp') ? this._appRows() : []),
+
+      // Whose listens count, and the numbers (stats.js); Administration stays last.
+      ...Stats.rows(),
+
+      // Last, and only while an admin profile is logged in (_drawAdmin).
+      ...Admin.rows(),
     ]));
 
     // The phone's Settings comes in from the left, where the drawer it is
@@ -252,6 +205,8 @@ const SettingsPanel = {
       onClose: () => {
         this.modal = null;
         this._refresh = [];
+        // The profile's ⋯ tray, should Escape have closed Settings under it.
+        if (SongActions.tray && SongActions.tray.classList.contains('act-tray--settings')) SongActions.close();
       },
     });
     if (mobile) {
@@ -269,6 +224,8 @@ const SettingsPanel = {
     this._drawCovers();
     this._drawStorage();
     this._drawServer();
+    this._drawAdmin(true);
+    Stats.load();
     // Profiles made or renamed on other devices since.
     if (Store.server.on && Store.server.state === 'online') window.flow.profiles().catch(() => {});
   },
@@ -382,6 +339,27 @@ const SettingsPanel = {
     if (body) body.scrollTop = 0;
   },
 
+  /**
+   * Administration is there only while an admin profile is logged in: shown
+   * or hidden as that changes, and fetched when it shows (or `force`).
+   */
+  _drawAdmin(force = false) {
+    const on = !!Store.server.admin;
+    const was = this._adminOn;
+    this._adminOn = on;
+    const title = 'Administration';
+    if (document.body.classList.contains('mobile')) {
+      const btn = [...this._screenList.querySelectorAll('.settings__category')].find((x) => x.textContent === title);
+      if (btn) btn.hidden = !on;
+      if (!on && this._screen === title) this._openScreen(null);
+    } else {
+      const head = [...this.modal.el.querySelectorAll('.settings__section')].find((n) => n.textContent.trim() === title);
+      const group = head && head.closest('.settings__group');
+      if (group) group.hidden = !on;
+    }
+    if (on && (force || !was)) Admin.load();
+  },
+
   /** The phone's Back while Settings is open: from a category to the list. False on the list. */
   back() {
     if (!this.modal || !this._screen) return false;
@@ -389,15 +367,11 @@ const SettingsPanel = {
     return true;
   },
 
-  /**
-   * The phone app's own: its version, the songs kept on the phone, and help
-   * for playing on with the screen off.
-   */
+  /** The Android app's own: its version, and help for playing on with the screen off. */
   _appRows() {
     return [
       h('h3.settings__section', 'App'),
       this._row({ label: 'Version', desc: `Flow ${Store.version || ''}`.trim() }),
-      this._storageRow(),
       Store.can('batteryHelp') ? this._row({
         label: 'Playing with the screen off',
         desc: 'How to keep the phone from stopping Flow in the background.',
@@ -425,7 +399,11 @@ const SettingsPanel = {
       const on = when ? !!when() : true;
       if (show) row.hidden = !show();
       row.classList.toggle('settings__row--off', !on);
-      if (box) box.disabled = !on;
+      if (box) {
+        box.disabled = !on;
+        // Ticked by Flow too (Switch server ticks Use a Flow Server).
+        box.checked = !!Store.settings[key];
+      }
       // Its own box unticked: the value beside it does nothing either.
       row.classList.toggle('settings__row--unset', !!box && !box.checked);
     });
@@ -689,7 +667,8 @@ const SettingsPanel = {
 
   /**
    * The Flow Server rows: on/off with its state, the two addresses (home
-   * first, then remote), the password, and what goes up and down when.
+   * first, then remote), the password and the profile under it, then Switch
+   * server on its own.
    */
   _serverRows() {
     const on = () => Store.settings.serverOn;
@@ -697,15 +676,14 @@ const SettingsPanel = {
     const main = this._row({
       key: 'serverOn',
       label: 'Use a Flow Server',
-      desc: 'Use the library on a Flow Server (a Raspberry Pi, another PC). Songs play straight from it, and '
-        + 'changes made here go to it. Turned on, your Local Files are uploaded to the server.',
+      desc: 'Use the library on a Flow Server. Songs can be streamed from it and changes made here go to it. '
+        + 'When turned on, your local files get uploaded to the server as well.',
     });
     main.querySelector('.settings__left').appendChild(this._serverNode);
     this._syncBtn = h('button.btn.btn--small', { type: 'button', onclick: () => this._syncNow() }, 'Synchronize now');
     const rows = [
       h('h3.settings__section', 'Flow Server'),
       main,
-      this._profileRow(),
       this._row({
         key: 'serverHomeOn',
         label: 'Home Server in WiFi/LAN',
@@ -724,39 +702,103 @@ const SettingsPanel = {
       }),
       this._row({
         label: 'Server Password (if the server is password protected)',
-        desc: `Entered once; Flow keeps it encrypted ${Store.phone ? 'on this phone' : 'for your Windows account'}. Empty the box to forget it.`,
+        desc: 'Flow keeps it encrypted on your device.',
         sub: true,
         when: on,
         right: this._secretField(on),
       }),
+      this._profileRow(),
+      this._switchRow(),
+    ];
+    return rows;
+  },
+
+  // ---- Media Management ----
+
+  /**
+   * Where the songs and covers are kept, what goes up to a Flow Server, and
+   * how downloads are made. The browser-cookie and SponsorBlock rows only
+   * where yt-dlp runs (the phone's Download (Server) still takes its MP3 choice).
+   */
+  _mediaRows() {
+    const server = () => Store.settings.serverOn;
+    const here = Store.can('downloadHere');
+    const sync = this._row({
+      key: 'serverAutoSync',
+      label: 'Synchronize local changes',
+      desc: 'Songs added to or removed from local files go to the server by themselves. '
+        + 'If disabled, only the button will sync local changes.',
+      when: server,
+      right: this._syncBtn,
+    });
+    // The button beside the box works whether or not the box is ticked.
+    sync.classList.add('settings__row--keep');
+    return [
+      h('h3.settings__section', 'Media Management'),
+      Store.can('musicFolder') ? this._savedSongsRow() : this._storageRow(),
+      this._coversRow(),
       this._row({
         key: 'serverMetered',
-        label: 'Always Download & Synchronize on mobile internet/metered connections',
-        desc: 'Away from home, songs only go up and come down on connections that are not metered, unless ticked. '
-          + 'Streaming works either way, and at home nothing is held back.',
-        sub: true,
-        when: on,
+        label: 'Allow downloads on mobile internet',
+        desc: 'If the app detects a metered connection/mobile internet, it will not download marked-to-download songs '
+          + 'from the Flow Server if it\'s not allowed. Streaming songs always works.',
+        when: server,
         show: () => !!Store.settings.serverRemote && Store.settings.serverRemoteOn !== false,
       }),
       this._row({
         key: 'serverKeepFiles',
-        label: 'Keep downloaded files after sync with the server',
-        desc: 'If disabled, downloaded songs will be removed locally once they are uploaded to the server '
-          + '(except if they are marked to download).',
-        when: on,
+        label: 'Keep local files after server upload',
+        desc: 'If disabled, your local songs will be removed after they got uploaded to the server, '
+          + 'unless you have these songs marked to be downloaded.',
+        when: server,
+      }),
+      sync,
+      here ? this._row({
+        key: 'useCookies',
+        label: 'Use browser session-cookies for downloading',
+        desc: 'Downloads may be blocked by age restrictions or sites may only serve content to signed-in users. '
+          + 'Pick your browser to use its session cookies so such websites can know you are allowed to find/see '
+          + 'what you are looking for.',
+        right: this._cookieBrowser(),
+      }) : null,
+      here ? this._row({
+        key: 'shareCookies',
+        label: 'Share session cookies with the server',
+        desc: 'When enabled the Download (Server) button will pass -only the required- session cookies to the '
+          + 'Flow Server for this action.',
+        sub: true,
+        when: () => Store.settings.useCookies,
+        show: server,
+      }) : null,
+      here ? this._row({
+        key: 'sponsorBlock',
+        label: 'Use Sponsorblock for Youtube',
+        desc: 'Shows sponsored segments as yellow in the trim.',
+      }) : null,
+      here ? this._row({
+        key: 'sponsorBlockIntros',
+        label: 'Try to detect intros/outros, marked red in the trim',
+        desc: 'A music video\'s non-music parts (talk, skits, credits) count as these too.',
+        sub: true,
+        when: () => Store.settings.sponsorBlock,
+      }) : null,
+      // A phone converts nothing itself: the server does, for its uploads and Download (Server).
+      this._row({
+        key: 'alwaysMp3',
+        label: here ? 'Always convert downloads into MP3' : 'Upload songs to the server as MP3',
+        desc: here ? 'Otherwise songs are kept in the format they come in.'
+          : 'Songs you upload from your phone to the server using local files or using the Download (Server) button '
+            + 'get converted into MP3 at the chosen quality by the server if enabled. Songs downloaded to this phone are not changed.',
+        right: this._mp3Quality(),
       }),
       this._row({
-        key: 'serverAutoSync',
-        label: 'Synchronize local changes',
-        desc: 'Songs added to or removed from local files go to the server by themselves. '
-          + 'If disabled, only the button will sync local changes.',
-        when: on,
-        right: this._syncBtn,
+        key: 'keepMp3',
+        label: 'Ignore files that are already in .mp3 format',
+        desc: 'Leaves MP3s as they are instead of encoding them again at the quality above.',
+        sub: true,
+        when: () => Store.settings.alwaysMp3,
       }),
     ];
-    // The button beside the box works whether or not the box is ticked.
-    rows[rows.length - 1].classList.add('settings__row--keep');
-    return rows;
   },
 
   // ---- Jam session ----
@@ -899,22 +941,200 @@ const SettingsPanel = {
     }
     if (this._syncSecret) this._syncSecret();
     this._drawProfile();
+    this._drawSwitch();
+  },
+
+  // ---- Switch server ----
+
+  /**
+   * "Switch server": a dropdown of the servers used on this device, the one
+   * in use picked. Picking another only shows where it was reached and as
+   * whom; Switch then connects to it (with that address, its password and its
+   * profile), and ✕ forgets it. The pencil names the picked one on this
+   * device: Switch becomes the box for it and the pencil a tick. Its own row,
+   * usable with Use a Flow Server unticked: Switch ticks it (for the one last
+   * in use too).
+   */
+  _switchRow() {
+    this._switch = { picked: '', busy: '', key: '', editing: '' };
+    this._switchNode = h('div.settings__control.switch-control');
+    const row = this._row({
+      label: 'Switch server',
+      desc: 'Servers used on this device. Each keeps its downloads, waiting changes, profile and password for when you come back. '
+        + 'Pick one and press Switch.',
+      show: () => this._knownServers().length > 0,
+      right: this._switchNode,
+    });
+    this._switchRowEl = row;
+    return row;
+  },
+
+  _knownServers() {
+    return Store.server.servers || [];
+  },
+
+  /** Drawn afresh only when the list, the pick or a switch under way changed. */
+  _drawSwitch(force = false) {
+    const node = this._switchNode;
+    if (!node) return;
+    const list = this._knownServers();
+    if (this._switchRowEl) this._switchRowEl.hidden = !list.length;
+    const p = this._switch;
+    const current = list.find((x) => x.current);
+    // Back to the one in use once the picked one is gone or became it.
+    if (!list.some((x) => x.id === p.picked) || (current && current.id === p.picked)) p.picked = current ? current.id : '';
+    // A name being typed is not lost to a status update.
+    if (p.editing && !force) return;
+    const names = Store.settings.serverNames || {};
+    const key = JSON.stringify([list, p.picked, p.busy, Store.settings.serverOn, names]);
+    if (!force && key === p.key) return;
+    p.key = key;
+    clear(node);
+    if (!list.length) return;
+    const off = !Store.settings.serverOn;
+    const picked = list.find((x) => x.id === p.picked) || list[0];
+    const other = !picked.current;
+    const named = (x) => Util.serverName(names, x.id, x.name);
+    const select = h('select.select.switch-select', { disabled: !!p.busy || !!p.editing },
+      ...list.map((x) => h('option', { value: x.id }, x.current ? `${named(x).label} - in use` : named(x).label)));
+    select.value = picked.id;
+    select.addEventListener('change', () => {
+      p.picked = select.value;
+      this._drawSwitch(true);
+    });
+    const forget = iconButton('act.act--grey', Icons.x, `Forget "${named(picked).name}"`, () => this._forgetServer(picked));
+    forget.disabled = !!p.busy || !other || !!p.editing;
+    let edit;
+    let action;
+    if (p.editing) {
+      const done = (text) => {
+        p.editing = '';
+        if (text !== null) this._renameServer(picked.id, picked.name, text);
+        this._drawSwitch(true);
+      };
+      ({ input: action, tick: edit } = this._nameBox(named(picked), done, 'switch-name'));
+    } else {
+      edit = iconButton('act.act--grey', Icons.pencil, `Rename "${named(picked).name}" on ${Store.here}`, () => {
+        p.editing = picked.id;
+        this._drawSwitch(true);
+      });
+      edit.disabled = !!p.busy;
+      action = h('button.btn.btn--small', {
+        type: 'button', disabled: !!p.busy || !(other || off), onclick: () => this._switchTo(picked),
+      }, p.busy ? 'Connecting...' : 'Switch');
+    }
+    node.append(
+      h('span.settings__note.switch-where', [picked.address, picked.profile ? `as ${picked.profile}` : ''].filter(Boolean).join(' · ')),
+      select,
+      edit,
+      action,
+      forget,
+    );
+  },
+
+  /**
+   * The box a Flow Server is named in (Switch server, Statistics) and its
+   * tick: Enter, the tick or leaving the box keeps the name, Escape keeps
+   * the old one. done(text), or done(null) for Escape; once.
+   */
+  _nameBox(name, done, cls) {
+    const input = h(`input.input.server-name.${cls}`, {
+      type: 'text', maxLength: 80, spellcheck: false, value: name.name, placeholder: name.original, 'aria-label': `Name for "${name.original}"`,
+      // Escape is the box's (Keys leaves Settings open).
+      dataset: { ownEscape: '' },
+    });
+    let over = false;
+    const finish = (text) => {
+      if (over) return;
+      over = true;
+      done(text);
+    };
+    input.addEventListener('keydown', (e) => {
+      // Only the box's: a row it sits in does not react to them.
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        finish(input.value);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(null);
+      }
+    });
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('blur', () => finish(input.value));
+    const tick = iconButton('act.act--green', Icons.check, 'Keep the name', (e) => {
+      e.stopPropagation();
+      finish(input.value);
+    });
+    requestAnimationFrame(() => {
+      input.focus();
+      input.select();
+    });
+    return { input, tick };
+  },
+
+  /**
+   * Names a Flow Server on this device (empty, or its own name: its own
+   * again). Switch server and Statistics both show it.
+   */
+  _renameServer(id, own, text) {
+    const names = { ...(Store.settings.serverNames || {}) };
+    const name = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!name || name === own) delete names[id];
+    else names[id] = name;
+    Store.saveSettings({ serverNames: names });
+    // A box open in the other place stays as it is (drawn when it is done).
+    if (!this._switch || !this._switch.editing) this._drawSwitch(true);
+    Stats.draw();
+  },
+
+  async _switchTo(s) {
+    // The one last in use, Use a Flow Server unticked: ticking it is all.
+    if (s.current) {
+      Store.saveSettings({ serverOn: true });
+      this._refreshAll();
+      return;
+    }
+    this._switch.busy = s.id;
+    this._drawSwitch();
+    const ok = await attempt(async () => {
+      await window.flow.switchServer(s.id);
+      return true;
+    });
+    this._switch.busy = '';
+    // Not switched: the one in use is picked again.
+    if (!ok) this._switch.picked = '';
+    this._drawSwitch();
+    if (ok) toast(`Switching to "${Util.serverName(Store.settings.serverNames, s.id, s.name).name}"`, 'success');
+  },
+
+  async _forgetServer(s) {
+    const ok = await confirmDialog({
+      title: 'Forget server',
+      message: `Forget "${Util.serverName(Store.settings.serverNames, s.id, s.name).name}" on ${Store.here}? It is no longer offered here, and what was waiting to go to it is dropped. `
+        + 'Songs downloaded from it stay (under Downloaded Songs); the server and your profile on it are not touched.',
+      confirmLabel: 'Forget',
+      danger: true,
+    });
+    if (!ok) return;
+    await attempt(() => window.flow.forgetServer(s.id));
   },
 
   // ---- Profiles ----
 
   /**
    * "Profile": signed in to one of the server's profiles, or to none. Not
-   * signed in: the server's profiles and "+ New" (which turns into a box for
-   * the new one's name), a PIN, and Login or Create. Signed in: who, with
-   * Rename (the name turns into a box with a tick), Delete and Logout.
+   * signed in: the server's profiles and "+ New" (which opens the Create new
+   * Profile window; not there while only admins make profiles), a PIN, and
+   * Login. Signed in: who, Logout, and ⋯, whose tray holds Edit Name, Change
+   * PIN and Delete Profile; the first two ask in a window, with the current PIN.
    */
   _profileRow() {
-    this._prof = { mode: 'pick', picked: '', busy: false, key: '' };
+    this._prof = { picked: '', busy: false, key: '' };
     this._profileNode = h('div.settings__control.profile-control');
     return this._row({
       label: 'Profile',
-      desc: 'Everyone shares the songs; each profile has its own playlists, favourites and listening stats.',
+      desc: 'Each profile has its own playlists, favourites and stats. Uploaded songs are shared.',
       sub: true,
       when: () => Store.settings.serverOn,
       right: this._profileNode,
@@ -928,9 +1148,13 @@ const SettingsPanel = {
     const st = Store.server;
     const p = this._prof;
     const ready = !!(st.on && st.state === 'online' && st.profilesSupported && Array.isArray(st.profiles));
-    const key = JSON.stringify([ready, st.on, st.state, st.profilesSupported, st.profile, st.profiles, p.mode, p.picked, p.busy]);
+    // "Only admins make profiles": no "+ New" while not signed in to an admin.
+    const mayCreate = !(st.rules && st.rules.createProfiles === false);
+    const key = JSON.stringify([ready, st.on, st.state, st.profilesSupported, st.profile, st.profiles, mayCreate, p.picked, p.busy]);
     if (!force && key === p.key) return;
     p.key = key;
+    // The ⋯ tray belongs to the row about to be drawn anew.
+    if (SongActions.anchor && node.contains(SongActions.anchor)) SongActions.close();
     clear(node);
     if (!ready) {
       let text = '';
@@ -938,114 +1162,141 @@ const SettingsPanel = {
       else if (st.on && st.state === 'online' && !st.profilesSupported) text = 'Update the Flow Server to use profiles.';
       else if (st.on) text = 'Available while connected to the server.';
       node.append(h('span.settings__note', text));
+      // Logout works away from the server too (it is told at the next connection).
+      if (st.on && st.profile) node.append(this._logoutButton(st.profile));
       return;
     }
     if (st.profile) this._drawSignedIn(node, st.profile);
-    else this._drawSignIn(node, st.profiles);
+    else this._drawSignIn(node, st.profiles, mayCreate);
   },
 
   _drawSignedIn(node, profile) {
     const p = this._prof;
-    if (p.mode === 'rename') {
-      const input = h('input.input.settings__input.settings__input--short', {
-        type: 'text', value: profile.name, maxLength: 40, spellcheck: false, autocomplete: 'off', disabled: p.busy,
-      });
-      const save = () => this._profileDo(async () => {
-        const renamed = await window.flow.profileRename(input.value);
-        p.mode = 'pick';
-        toast(`Profile renamed to "${renamed.name}"`, 'success');
-      });
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') save();
-        if (e.key === 'Escape') {
-          e.stopPropagation();
-          p.mode = 'pick';
-          this._drawProfile(true);
-        }
-      });
-      node.append(
-        h('span.settings__caption', 'Logged in as'),
-        input,
-        h('button.btn.btn--small.profile-tick', { type: 'button', title: 'Save the name', disabled: p.busy, onclick: save }, '✓'),
-      );
-      requestAnimationFrame(() => {
-        input.focus();
-        input.select();
-      });
-      return;
-    }
-    const btn = (label, onclick) => h('button.btn.btn--small', { type: 'button', disabled: p.busy, onclick }, label);
-    // Square, as in a song's More menu.
-    const icon = (cls, glyph, title, onclick) => {
-      const b = iconButton(cls, glyph, title, onclick);
-      b.disabled = p.busy;
-      return b;
-    };
+    const btn = (label, onclick, extra = '') => h('button.btn.btn--small' + extra, { type: 'button', disabled: p.busy, onclick }, label);
+    // Square, as in a song's More menu, and like it slides its tray out to the
+    // left over the row (closed by any of its buttons, or a click elsewhere).
+    const more = iconButton('act.act--grey', Icons.more, 'More', () => {
+      if (SongActions.anchor === more) {
+        SongActions.close();
+        return;
+      }
+      SongActions.open(more, [
+        btn('Edit Name', () => this._editProfileName(profile)),
+        btn('Change PIN', () => this._changeProfilePin(profile)),
+        btn('Delete Profile', () => this._deleteProfile(profile), '.btn--danger'),
+      ], 'act-tray--settings');
+    });
+    more.disabled = p.busy;
     node.append(
       h('span.profile-who', 'Logged in as ', h('strong', profile.name)),
-      icon('act.act--grey', Icons.pencil, 'Rename', () => {
-        p.mode = 'rename';
-        this._drawProfile(true);
-      }),
-      icon('act.act--red', Icons.x, 'Delete', () => this._deleteProfile(profile)),
-      btn('Logout', () => this._profileDo(async () => {
-        await window.flow.profileLogout();
-        toast(`Logged out of "${profile.name}"`, 'info');
-      })),
+      this._logoutButton(profile),
+      more,
     );
   },
 
-  _drawSignIn(node, profiles) {
+  _logoutButton(profile) {
+    return h('button.btn.btn--small', {
+      type: 'button',
+      disabled: this._prof.busy,
+      onclick: () => this._profileDo(async () => {
+        await window.flow.profileLogout();
+        toast(`Logged out of "${profile.name}"`, 'info');
+      }),
+    }, 'Logout');
+  },
+
+  /** The current PIN box: none to type while the profile has none. */
+  _currentPinField(profile) {
+    return {
+      key: 'pin', label: 'Current PIN', type: 'password', disabled: !profile.pin, placeholder: profile.pin ? '' : 'No PIN set',
+    };
+  },
+
+  _editProfileName(profile) {
+    return formDialog({
+      title: 'Change Profile Name',
+      confirmLabel: 'Submit',
+      fields: [
+        this._currentPinField(profile),
+        { key: 'name', label: 'New Name', value: profile.name, maxLength: 40 },
+      ],
+      submit: async ({ pin, name }) => {
+        const renamed = await window.flow.profileRename(name, pin);
+        toast(`Profile renamed to "${renamed.name}"`, 'success');
+      },
+    });
+  },
+
+  _changeProfilePin(profile) {
+    // An admin keeps a PIN (only a profile with one is an admin); the master's has 4 characters.
+    let hint = 'Leave empty for none';
+    if (profile.master) hint = 'At least 4 characters';
+    else if (profile.admin) hint = 'An admin needs one';
+    return formDialog({
+      title: 'Change PIN',
+      confirmLabel: 'Submit',
+      fields: [
+        this._currentPinField(profile),
+        { key: 'newPin', label: 'New PIN', type: 'password', placeholder: hint },
+        { key: 'confirm', label: 'Confirm new PIN', type: 'password' },
+      ],
+      submit: async ({ pin, newPin, confirm }) => {
+        if (newPin !== confirm) throw new Error('The two PINs are not the same.');
+        if (!newPin && profile.admin) throw new Error('An admin profile needs a PIN.');
+        if (!newPin && !profile.pin) throw new Error('Enter a PIN.');
+        const now = await window.flow.profilePin(pin, newPin);
+        toast(now.pin ? 'Your PIN was changed' : 'Your profile has no PIN now', 'success');
+      },
+    });
+  },
+
+  _newProfileDialog() {
+    // The server's first profile becomes its admin, so it needs a PIN.
+    const first = !(Store.server.profiles || []).length;
+    return formDialog({
+      title: 'Create new Profile',
+      confirmLabel: 'Create',
+      fields: [
+        { key: 'name', label: 'Profile Name', maxLength: 40 },
+        { key: 'pin', label: 'Your PIN', type: 'password', placeholder: first ? 'Needed: the first profile becomes the admin' : 'Optional' },
+        { key: 'confirm', label: 'Confirm PIN', type: 'password' },
+      ],
+      submit: async ({ name, pin, confirm }) => {
+        if (pin !== confirm) throw new Error('The two PINs are not the same.');
+        if (first && !pin) throw new Error('The first profile becomes this server\'s admin, so it needs a PIN.');
+        const made = await window.flow.profileCreate(name, pin);
+        toast(`Profile "${made.name}" made. Logged in as ${made.name}.`, 'success');
+      },
+    });
+  },
+
+  _drawSignIn(node, profiles, mayCreate) {
     const p = this._prof;
     if (p.picked && !profiles.some((x) => x.id === p.picked)) p.picked = '';
     const picked = profiles.find((x) => x.id === p.picked) || null;
-    const creating = p.mode === 'new';
-    let nameInput = null;
-    if (creating) {
-      nameInput = h('input.input.settings__input.settings__input--short', {
-        type: 'text', placeholder: 'New profile name', maxLength: 40, spellcheck: false, autocomplete: 'off', disabled: p.busy,
-      });
-      nameInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') go();
-        if (e.key === 'Escape') {
-          e.stopPropagation();
-          p.mode = 'pick';
-          this._drawProfile(true);
-        }
-      });
-      requestAnimationFrame(() => nameInput.focus());
-    } else {
-      nameInput = h('select.select.profile-select', { disabled: p.busy },
-        h('option', { value: '' }, 'Default / Shared'),
-        ...profiles.map((x) => h('option', { value: x.id }, x.name)),
-        h('option', { value: '+new' }, '+ New'));
-      nameInput.value = p.picked;
-      nameInput.addEventListener('change', () => {
-        if (nameInput.value === '+new') {
-          p.mode = 'new';
-          p.picked = '';
-        } else {
-          p.picked = nameInput.value;
-        }
-        this._drawProfile(true);
-      });
-    }
-    const needsPin = creating || (picked && picked.pin);
+    const select = h('select.select.profile-select', { disabled: p.busy },
+      h('option', { value: '' }, 'Default / Shared'),
+      ...profiles.map((x) => h('option', { value: x.id }, x.name)),
+      mayCreate ? h('option', { value: '+new' }, '+ New') : null);
+    select.value = p.picked;
+    select.addEventListener('change', () => {
+      if (select.value === '+new') {
+        // Back to what was picked; the new one is asked for in a window.
+        select.value = p.picked;
+        this._newProfileDialog();
+        return;
+      }
+      p.picked = select.value;
+      this._drawProfile(true);
+    });
     const pin = h('input.input.settings__input.profile-pin', {
       type: 'password',
-      placeholder: creating ? 'PIN (optional)' : picked && !picked.pin ? 'No PIN' : 'PIN',
+      placeholder: picked && !picked.pin ? 'No PIN' : 'PIN',
       autocomplete: 'new-password',
       spellcheck: false,
-      disabled: p.busy || !needsPin,
+      disabled: p.busy || !(picked && picked.pin),
     });
     const go = () => {
-      if (creating) {
-        return this._profileDo(async () => {
-          const made = await window.flow.profileCreate(nameInput.value, pin.value);
-          p.mode = 'pick';
-          toast(`Profile "${made.name}" made. Logged in as ${made.name}.`, 'success');
-        });
-      }
       if (!picked) return undefined;
       return this._profileDo(async () => {
         const now = await window.flow.profileLogin(picked.id, pin.value);
@@ -1055,9 +1306,9 @@ const SettingsPanel = {
     pin.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') go();
     });
-    node.append(nameInput, pin,
-      h('button.btn.btn--small', { type: 'button', disabled: p.busy || (!creating && !picked), onclick: go }, creating ? 'Create' : 'Login'));
-    if (picked && picked.pin && !creating) requestAnimationFrame(() => pin.focus());
+    node.append(select, pin,
+      h('button.btn.btn--small', { type: 'button', disabled: p.busy || !picked, onclick: go }, 'Login'));
+    if (picked && picked.pin) requestAnimationFrame(() => pin.focus());
   },
 
   /** One profile action: the row waits for it, and says what went wrong. */
@@ -1076,7 +1327,7 @@ const SettingsPanel = {
 
   async _deleteProfile(profile) {
     const answer = await confirmDialog({
-      title: 'Delete profile',
+      title: 'Delete Profile',
       message: `Delete the profile "${profile.name}"? All its playlists, favourites and listening stats will be gone, `
         + 'on every device. The songs stay for everyone.',
       confirmLabel: 'Delete',
@@ -1141,8 +1392,8 @@ const SettingsPanel = {
       }),
     }, 'Clear cover cache');
     const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', 'Covers'),
-      h('div.settings__desc', 'Covers are found by the client or server.'));
+      h('div.settings__label.settings__label--plain', 'Cover Cache'),
+      h('div.settings__desc', 'Covers are found by the client or server, synchronized automatically.'));
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._coversNode, this._clearCovers)));
   },
 
@@ -1154,7 +1405,7 @@ const SettingsPanel = {
       onclick: () => this._removeAllDownloads(),
     }, 'Remove downloads');
     const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', 'Storage'),
+      h('div.settings__label.settings__label--plain', 'Song Storage'),
       h('div.settings__desc', 'The songs kept on this phone, and how much room they take. Remove downloads deletes '
         + 'the Flow Server\'s songs kept here and unmarks every playlist\'s Download; they still play from the server.'));
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._storageNode, this._removeDownloads)));

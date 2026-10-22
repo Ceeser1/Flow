@@ -10,6 +10,11 @@ const paths = require('./src/paths');
 // Before the app is ready, or Chromium has already opened its files in the
 // default (Roaming) location.
 app.setPath('userData', paths.userDataDir());
+// Room for the visualizers' shaders in the GPU's program cache (6 MB by
+// default, about what a few of the big ones fill): going through many in
+// one session (Random), the first ones were pushed out again by the last and
+// compiled again from nothing when they came round.
+app.commandLine.appendSwitch('gpu-program-cache-size-kb', '32768');
 
 const settings = require('./src/settings');
 const cookieJar = require('./src/cookieJar');
@@ -26,6 +31,7 @@ const { createTagger } = require('./src/tagger');
 const remote = require('./src/remote');
 const env = require('./src/env');
 const { createActions } = require('@flow/core/client/actions');
+const { createPrivateStats } = require('@flow/core/client/privateStats');
 const sponsorblock = require('@flow/core/sponsorblock');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
@@ -42,11 +48,18 @@ const loudnessFiller = loudness.createFiller(library, model, () => settings.get(
 const coverFiller = covers.createFiller({ skip: (id) => remote.active() && remote.isServerCopy(id) });
 // New songs' files get their flowid and cover (tagger.js).
 const tagger = createTagger({ skip: (id) => remote.active() && remote.isServerCopy(id) });
+// The Statistics of everything heard on this device (privateStats.js).
+const privateStats = createPrivateStats({
+  jsonFiles: env.jsonFiles,
+  deviceId: () => settings.clientId(),
+  onChange: (data) => sendToWindow('stats:private', data),
+});
 // What the window changes in the library; a Local Files song's file is
 // renamed and cut here (the uncut one to the Recycle Bin).
 const actions = createActions({
   remote,
   library,
+  privateStats,
   files: env.files,
   retag: (song, meta) => exporter.retagSong(song, meta),
   trim: (song, start, end) => exporter.trimSong(song, start, end, { keep: true }),
@@ -193,6 +206,7 @@ function iconDataUrl() {
 
 handle('app:init', () => ({
   platform: 'desktop',
+  os: process.platform,
   uiMode: MOBILE_UI ? 'mobile' : 'desktop',
   caps: MOBILE_UI ? caps.ANDROID : caps.DESKTOP,
   library: currentLibrary(),
@@ -262,6 +276,8 @@ handle('library:editSong', (arg) => actions.editSong(arg));
 handle('library:trimSong', (arg) => actions.trimSong(arg));
 handle('library:setFavourite', (arg) => actions.setFavourite(arg));
 handle('library:recordListen', (arg) => actions.recordListen(arg));
+handle('stats:private', () => privateStats.get());
+handle('stats:removeTracked', ({ serverId, profileId }) => remote.removeTracked(serverId, profileId));
 handle('library:findBySource', (arg) => actions.findBySource(arg));
 handle('library:findByMeta', (meta) => actions.findByMeta(meta));
 handle('library:rescan', () => library.scan());
@@ -289,12 +305,20 @@ handle('audio:song', async (songId) => {
   }
 });
 handle('server:removeDownload', (songId) => remote.removeDownload(songId));
+// Downloaded Songs: a song here that is not the server's, deleted from this computer.
+handle('server:removeDeviceSong', (songId) => remote.removeDeviceSong(songId));
+// Settings' Switch server: to a server used before, or one forgotten.
+handle('server:switch', (id) => remote.switchServer(id));
+handle('server:forget', (id) => remote.forgetServer(id));
 handle('server:profiles', () => remote.loadProfiles());
 handle('server:profileLogin', ({ profileId, pin }) => remote.loginProfile(profileId, pin));
 handle('server:profileCreate', ({ name, pin }) => remote.createProfile(name, pin));
 handle('server:profileLogout', () => remote.logoutProfile());
-handle('server:profileRename', (name) => remote.renameProfile(name));
+handle('server:profileRename', ({ name, pin }) => remote.renameProfile(name, pin));
+handle('server:profilePin', ({ pin, newPin }) => remote.changePin(pin, newPin));
 handle('server:profileDelete', () => remote.deleteProfile());
+handle('server:admin', ({ route, body }) => remote.admin(route, body));
+handle('server:changePassword', (args) => remote.changeServerPassword(args || {}));
 // Active Sessions: a POST body, or nothing for the list.
 handle('server:sessions', (body) => remote.sessions(body || null));
 // Downloads by the server: they stay there, so closing the app asks nothing.
@@ -303,9 +327,12 @@ handle('server:sessions', (body) => remote.sessions(body || null));
 handle('server:downloads', async ({ action, ...args }) => {
   const browser = settings.get('useCookies') && settings.get('shareCookies') ? settings.get('cookiesBrowser') : '';
   if (action === 'create' && args.url && browser) args.cookies = await cookieJar.siteCookies(args.url, browser);
-  return remote.serverDownloads(action, args);
+  const result = await remote.serverDownloads(action, args);
+  // A song saved on the server from here is one this device added.
+  if (action === 'finish' && result && result.song) privateStats.added(1);
+  return result;
 });
-// The browsers the cookies can come from (Settings, Website Downloads).
+// The browsers the cookies can come from (Settings, Media Management).
 handle('cookies:browsers', () => cookieJar.browsers());
 
 handle('shell:showSong', (songId) => {
@@ -314,7 +341,7 @@ handle('shell:showSong', (songId) => {
   else shell.openPath(paths.musicDir());
 });
 handle('shell:openMusicFolder', () => shell.openPath(paths.musicDir()));
-// "Downloads?" on Add Songs: where yt-dlp.exe goes, and whether it is there now.
+// "Downloads?" on Add Songs: where yt-dlp(.exe) goes, and whether it is there now.
 handle('tools:openFolder', () => shell.openPath(tools.toolsDir()));
 handle('tools:status', () => tools.status());
 
@@ -511,7 +538,10 @@ let importSaves = 0;
 handle('import:finish', ({ job, run }) => {
   importSaves += 1;
   const onProgress = (p) => sendToWindow('import:progress', { ...p, run });
-  const saving = importSaving.then(() => finishImport(job, onProgress));
+  const saving = importSaving.then(() => finishImport(job, onProgress)).then((summary) => {
+    privateStats.added(summary && summary.songIds ? summary.songIds.length : 0);
+    return summary;
+  });
   importSaving = saving.catch(() => {});
   return saving.finally(() => {
     importSaves -= 1;
@@ -703,6 +733,7 @@ handle('song:finish', (job) => library.quietly(async () => {
     const lists = (job.playlistIds || []).filter((id) => model.playlistById(d, id));
     model.addSongToPlaylists(d, song.id, lists, song.addedAt);
   });
+  privateStats.added(1);
   // Its cover, found while it was trimmed (or once it is found).
   covers.adoptStaged(job.cachePath, song.id).catch(() => {});
   // With a server it goes up now, into the server playlists picked for it.
@@ -731,12 +762,22 @@ app.whenReady().then(() => {
     onSettings: (patch) => sendToWindow('settings:changed', patch),
     // The live channel's events (Active Sessions).
     onLive: (ev) => sendToWindow('server:live', ev),
-    confirmUpload: async ({ count, name }) => {
+    // fromOthers: how many are copies downloaded from other servers; returning:
+    // songs that came here while another server was in use.
+    confirmUpload: async ({
+      count, name, fromOthers = 0, returning = false,
+    }) => {
+      const songs = count === 1 ? 'song' : 'songs';
+      const others = fromOthers ? `${fromOthers === count ? (count === 1 ? 'It was' : 'All of them were') : `${fromOthers} of them were`} downloaded from another Flow Server. ` : '';
       const { response } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
         type: 'question',
         title: 'Flow',
-        message: `Upload your ${count} Local Files ${count === 1 ? 'song' : 'songs'} to "${name}"?`,
-        detail: 'This is a Flow Server you have not used before. If you are not sure it is yours, choose Not now: your songs stay on this computer, and Synchronize now in Settings uploads them later.',
+        message: returning
+          ? `Upload the ${count} ${songs} that came to Local Files while you used another Flow Server to "${name}"?`
+          : `Upload your ${count} Local Files ${songs} to "${name}"?`,
+        detail: returning
+          ? `${others}Choose Not now to keep them on this computer only; Synchronize now in Settings uploads them later.`
+          : `This is a Flow Server you have not used before. ${others}If you are not sure it is yours, choose Not now: your songs stay on this computer, and Synchronize now in Settings uploads them later.`,
         buttons: ['Upload', 'Not now'],
         defaultId: 1,
         cancelId: 1,

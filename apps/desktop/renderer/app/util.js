@@ -28,6 +28,19 @@
       + `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   }
 
+  /** dd.mm.yy, the day of a moment. */
+  function fmtDay(ms) {
+    if (!ms) return '';
+    const d = new Date(ms);
+    return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${pad2(d.getFullYear() % 100)}`;
+  }
+
+  /** dd:hh:mm, time listened: 2 days, 3 hours and 5 minutes is 02:03:05. */
+  function fmtListened(seconds) {
+    const minutes = Math.floor(Math.max(0, Number(seconds) || 0) / 60);
+    return `${pad2(Math.floor(minutes / 1440))}:${pad2(Math.floor(minutes / 60) % 24)}:${pad2(minutes % 60)}`;
+  }
+
   /** 23:45, the clock time of a moment. */
   function fmtTimeOfDay(ms) {
     const d = new Date(ms);
@@ -59,12 +72,17 @@
     return total;
   }
 
-  /** file:/// URL for a Windows path, the same as Node's pathToFileURL. */
+  /** file:/// URL for a path, the same as Node's pathToFileURL. */
   function fileUrl(filePath) {
-    const p = String(filePath || '').replace(/\\/g, '/');
+    const raw = String(filePath || '');
+    // Only a Windows path (C:\... or \\server\share) uses \ between folders:
+    // elsewhere \ is a character a file name may have.
+    const win = /^([A-Za-z]:|\\\\)/.test(raw);
+    const p = win ? raw.replace(/\\/g, '/') : raw;
     // The phone serves its files itself (Capacitor), at addresses of its own.
     if (typeof window !== 'undefined' && window.flow && window.flow.fileUrl) return window.flow.fileUrl(p);
     const enc = (seg) => encodeURIComponent(seg);
+    if (!win) return 'file://' + (p.startsWith('/') ? '' : '/') + p.split('/').map(enc).join('/');
     if (p.startsWith('//')) {
       const [host, ...rest] = p.slice(2).split('/');
       return 'file://' + host + '/' + rest.map(enc).join('/');
@@ -155,8 +173,22 @@
     return 'just now';
   }
 
+  /**
+   * A Flow Server's name as this device shows it: the one given it here
+   * (Settings' serverNames, by server id), else its own. label: the given
+   * one with its own after it, "Pi Upstairs (Pi)".
+   */
+  function serverName(names, id, own) {
+    const original = String(own || 'Flow Server');
+    const given = id && names && typeof names[id] === 'string' ? names[id].trim() : '';
+    const renamed = !!given && given !== original;
+    return {
+      name: renamed ? given : original, original, renamed, label: renamed ? `${given} (${original})` : original,
+    };
+  }
+
   return {
-    fmtClock, fmtDate, fmtTimeOfDay, fmtPrecise, parsePrecise, fileUrl,
-    compareValues, cycleSort, sortRows, fold, matches, songLine, plural, fmtAgo,
+    fmtClock, fmtDate, fmtDay, fmtListened, fmtTimeOfDay, fmtPrecise, parsePrecise, fileUrl,
+    compareValues, cycleSort, sortRows, fold, matches, songLine, plural, fmtAgo, serverName,
   };
 }));

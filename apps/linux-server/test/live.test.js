@@ -83,7 +83,7 @@ test('with a password: only a signed-in app, only its own channel, and it ends w
 
 test('pings keep the channel open, and the profile signed in to is known', async () => {
   await withServer(async ({ server, base }) => {
-    const made = await (await fetch(`${base}/api/profiles`, { method: 'POST', body: JSON.stringify({ name: 'Anna', device: 'PC', client: 'app-one-1234' }) })).json();
+    const made = await (await fetch(`${base}/api/profiles`, { method: 'POST', body: JSON.stringify({ name: 'Anna', pin: '1111', device: 'PC', client: 'app-one-1234' }) })).json();
     const live = await connect(base, 'app-one-1234', { token: made.token });
     await live.next('hello');
     const [c] = server.live.clients();

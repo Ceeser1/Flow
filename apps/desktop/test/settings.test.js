@@ -118,9 +118,6 @@ test('settings are kept within their ranges', () => {
   assert.equal(s.cloudsIntensity, 1);
   assert.equal(s.eqHeight, 100);
   assert.equal(s.eqVisibility, 50);
-  assert.equal(s.flashOn, false);
-  assert.equal(s.flashTriggers, 33);
-  assert.equal(s.flashRange, 10);
   assert.equal(s.eqShineSpread, 70);
   assert.equal(s.eqColors, 'rainbow');
   // Not built yet: the default instead.
@@ -269,6 +266,17 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ fnGravity: 117 }).fnGravity, 115);
   assert.equal(d.fnRipples, true);
   assert.equal(d.fnBursts, undefined);
+  // The render scales: 75% by default; Disco's put to 75% once also where
+  // 100% was saved, after that left as chosen.
+  for (const key of ['dcScale', 'lhScale', 'ntScale', 'bhScale', 'ifScale']) {
+    assert.equal(d[key], '75');
+    assert.equal(settings.clean({ [key]: '50', dcScale75: true })[key], '50');
+    assert.equal(settings.clean({ [key]: '60', dcScale75: true })[key], '75');
+  }
+  assert.equal(settings.clean({ dcScale: '100' }).dcScale, '75');
+  assert.equal(settings.clean({ dcScale: '50' }).dcScale75, true);
+  assert.equal(settings.clean({ dcScale: '100', dcScale75: true }).dcScale, '100');
+  assert.equal(settings.clean(settings.clean({ dcScale: '100' })).dcScale, '75');
   // Seismograph: green grid paper, a colour for each of 8 pens, the paper at 100%.
   assert.equal(d.szPaper, 'green');
   assert.equal(settings.clean({ szPaper: 'pink' }).szPaper, 'green');
@@ -308,4 +316,8 @@ test('the server settings are kept tidy', () => {
   const off = settings.clean({ serverHomeOn: false, serverRemoteOn: false });
   assert.equal(off.serverHomeOn, false);
   assert.equal(off.serverRemoteOn, false);
+  // The names given to servers here: tidied, empty ones dropped.
+  assert.deepEqual(s.serverNames, {});
+  assert.deepEqual(settings.clean({ serverNames: { s1: '  Pi   Upstairs ', s2: '', s3: 5, '': 'x' } }).serverNames, { s1: 'Pi Upstairs' });
+  assert.deepEqual(settings.clean({ serverNames: ['Pi'] }).serverNames, {});
 });

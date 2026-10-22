@@ -4,7 +4,7 @@
 // cannot (Store.can), instead of asking which app it runs in.
 
 const DESKTOP = {
-  // yt-dlp runs here: Add Songs' Download, the Website Downloads settings.
+  // yt-dlp runs here: Add Songs' Download, Media Management's browser cookies and SponsorBlock.
   downloadHere: true,
   // A choice of where the music comes out, in Flow.
   outputDevices: true,
@@ -14,7 +14,7 @@ const DESKTOP = {
   shutdown: true,
   // Local Files is a folder the user sees: open it, move it, show a song in it.
   musicFolder: true,
-  // Screen flash, the visualizers, the clouds and the equalizer.
+  // The page hears the music: the visualizers, the equalizer, the clouds' React to Bass.
   effects: true,
   // Keyboard shortcuts, and the hints that name them.
   keyboard: true,

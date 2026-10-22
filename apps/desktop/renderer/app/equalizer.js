@@ -25,6 +25,10 @@
 // blurred and stretched far upwards for the shine, and once blurred for the
 // bars themselves. Last, the whole picture is faded out towards the top of the
 // canvas, so the shine ends in full transparency instead of at an edge.
+//
+// With WebGL 2 (and float targets) the same picture is made there instead,
+// far cheaper than the canvas's blur filters (see _webgl): the shine blurred
+// at a quarter size, the bars' softening at half size.
 
 const Equalizer = {
   ctx: null,
@@ -43,7 +47,6 @@ const Equalizer = {
   lastFrame: 0,
   geom: null,
   bass: 0,             // 0..1, the kick band right now, unsmoothed (ambient.js)
-  feel: 0,             // 0..1, the bars up to FEEL_HZ right now, averaged (flash.js)
   feelBars: 0,         // how many bars that is
   rainbowShift: 0,     // 0..1, how far Rainbow has drifted; held while nothing plays
   bassWeights: null,   // per bar, how much it counts towards `bass` (BASS_*)
@@ -77,15 +80,13 @@ const Equalizer = {
   // which turns the flicker of single frames into a slow breathing.
   ATTACK_MS: 30,
   RELEASE_MS: 480,
-  // The bass level the clouds' pulse and Screen Flash react to: the bars
+  // The bass level the clouds' pulse reacts to: the bars
   // weighted by how close they are to BASS_PEAK_HZ, where a kick drum punches,
   // falling in a straight line to nothing at BASS_LOW_HZ (sub rumble and the
   // long tails of kicks) and at BASS_HIGH_HZ (bass lines, snare, voices).
   BASS_LOW_HZ: 20,
   BASS_PEAK_HZ: 70,
   BASS_HIGH_HZ: 120,
-  // Screen Flash only looks at the bass felt more than heard: up to FEEL_HZ.
-  FEEL_HZ: 80,
   RAINBOW_MS: 15000,   // Rainbow drifts one screen width to the right in this long
 
   /** Wires the player's elements through Web Audio. False when that failed. */
@@ -140,6 +141,7 @@ const Equalizer = {
     }
 
     this.canvas = $('eqCanvas');
+    this.gl = this._webgl();
     this.scratch = document.createElement('canvas');
     this.glow = document.createElement('canvas'); // the shine, before it joins the bars
     this._layout();
@@ -267,8 +269,6 @@ const Equalizer = {
     const bars = Math.max(16, Math.floor(width / this.PITCH));
     if (this.ctx && (!this.spec || this.spec.bars !== bars)) {
       this.spec = new Spectrum.Analyser({ sampleRate: this.ctx.sampleRate, bars });
-      this.feelBars = 0;
-      while (this.feelBars < bars && this.spec.barHz(this.feelBars) <= this.FEEL_HZ) this.feelBars += 1;
       this.bassWeights = new Float32Array(bars);
       for (let i = 0; i < bars; i += 1) {
         const hz = this.spec.barHz(i);
@@ -310,11 +310,7 @@ const Equalizer = {
         bass += w * Spectrum.unit(db[i], this.FLOOR_DB, this.CEIL_DB);
         weight += w;
       }
-      let feel = 0;
-      for (let i = 0; i < this.feelBars; i += 1) feel += Spectrum.unit(db[i], this.FLOOR_DB, this.CEIL_DB);
       this.bass = weight ? bass / weight : 0;
-      this.feel = this.feelBars ? feel / this.feelBars : 0;
-      ScreenFlash.follow(this.feel, dt);
       for (let i = 0; i < levels.length; i += 1) {
         // Each bar leans a little on its neighbours, so single bars do not
         // jump out on their own.
@@ -328,8 +324,6 @@ const Equalizer = {
       }
     } else {
       this.bass = 0;
-      this.feel = 0;
-      ScreenFlash.follow(0, dt);
       for (let i = 0; i < levels.length; i += 1) levels[i] *= fall;
     }
 
@@ -341,14 +335,350 @@ const Equalizer = {
       this.raf = requestAnimationFrame((t) => this._frame(t));
     } else {
       levels.fill(0);
-      ScreenFlash.reset();
       this._draw();
     }
+  },
+
+  /**
+   * The equalizer in WebGL 2, or null (then the canvas draws it). draw(p)
+   * with what _draw works out (null: nothing to show). The same picture as
+   * the canvas's, made the cheap way: the bars (each pixel covered as far as
+   * the bar covers it, as the canvas's edges are) faded towards their tips;
+   * the shine drawn straight into a quarter-size target, stretched upwards,
+   * and blurred there (a gaussian of a quarter the width, the same blur on
+   * the screen); the bars' own softening blurred at half size; then one pass
+   * laying the bars over the shine, the shine's fade, the fade towards the
+   * top and a speckle of a 255th against steps.
+   */
+  _webgl() {
+    let gl = null;
+    try {
+      gl = this.canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false });
+    } catch {
+      gl = null;
+    }
+    if (!gl) return null;
+    if (!gl.getExtension('EXT_color_buffer_float')) {
+      // No float target: back to the canvas (a fresh one, this one being WebGL's now).
+      const fresh = this.canvas.cloneNode(false);
+      this.canvas.replaceWith(fresh);
+      this.canvas = fresh;
+      return null;
+    }
+    const shader = (type, src) => {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, `#version 300 es
+precision highp float;
+${src}`);
+      gl.compileShader(sh);
+      return sh;
+    };
+    const program = (vs, fs) => {
+      const p = gl.createProgram();
+      gl.attachShader(p, shader(gl.VERTEX_SHADER, vs));
+      gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(`equalizer: ${gl.getProgramInfoLog(p)}`);
+      const u = {};
+      const count = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+      for (let i = 0; i < count; i += 1) {
+        const name = gl.getActiveUniform(p, i).name;
+        u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, name);
+      }
+      return { p, u };
+    };
+    const SCREEN_VS = `
+      out vec2 uv;
+      void main() {
+        vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+        uv = p;
+        gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+      }`;
+    let bars;
+    let blur;
+    let show;
+    try {
+      // A bar: its rectangle on the canvas (css pixels, y down), drawn into a
+      // target at k of that size, stretched about cy by stretch.
+      bars = program(`
+        layout(location = 0) in vec4 rect;      // left, right, top, bottom
+        layout(location = 1) in vec3 colour;
+        uniform vec2 size;                      // the target's, in its pixels
+        uniform float k, cy, stretch;
+        flat out vec4 box;                      // the rectangle in the target's pixels
+        flat out vec3 col;
+        void main() {
+          int v = gl_VertexID;
+          vec2 corner = vec2(v == 1 || v == 4 || v == 5 ? 1.0 : 0.0, v == 2 || v == 3 || v == 5 ? 1.0 : 0.0);
+          box = vec4(rect.xy * k, (cy + (rect.zw - cy) * stretch) * k);
+          col = colour;
+          // A pixel round it, for its edges' partly covered pixels.
+          vec2 p = vec2(mix(box.x - 1.0, box.y + 1.0, corner.x), mix(box.z - 1.0, box.w + 1.0, corner.y));
+          gl_Position = vec4(p.x / size.x * 2.0 - 1.0, 1.0 - p.y / size.y * 2.0, 0.0, 1.0);
+        }`, `
+        flat in vec4 box;
+        flat in vec3 col;
+        uniform vec2 size;
+        uniform float k, cy, stretch;
+        uniform vec2 fade;                      // the tips' fade: from, to (css pixels): 0.25 at from, 1 halfway, 0.5 at to
+        out vec4 o;
+        void main() {
+          vec2 p = vec2(gl_FragCoord.x, size.y - gl_FragCoord.y);
+          float cx = clamp(min(p.x + 0.5, box.y) - max(p.x - 0.5, box.x), 0.0, 1.0);
+          float cyv = clamp(min(p.y + 0.5, box.w) - max(p.y - 0.5, box.z), 0.0, 1.0);
+          // Where this is on the bars before stretching, for the fade.
+          float y = cy + (p.y / k - cy) / stretch;
+          float t = clamp((y - fade.x) / (fade.y - fade.x), 0.0, 1.0);
+          float f = t < 0.5 ? mix(0.25, 1.0, t * 2.0) : mix(1.0, 0.5, t * 2.0 - 1.0);
+          float a = cx * cyv * f;
+          o = vec4(col * a, a);
+        }`);
+      // A gaussian along step (one texel of the source), sigma texels; what
+      // lies past the edges counts as nothing, as the canvas has it.
+      blur = program(SCREEN_VS, `
+        in vec2 uv;
+        uniform sampler2D src;
+        uniform vec2 step;
+        uniform float sigma;
+        uniform int reach;
+        out vec4 o;
+        void main() {
+          vec4 sum = vec4(0.0);
+          float total = 0.0;
+          for (int i = -reach; i <= reach; i++) {
+            float w = exp(-float(i * i) / (2.0 * sigma * sigma));
+            vec2 at = uv + step * float(i);
+            total += w;
+            if (at.x >= 0.0 && at.x <= 1.0 && at.y >= 0.0 && at.y <= 1.0) sum += texture(src, at) * w;
+          }
+          o = sum / total;
+        }`);
+      show = program(SCREEN_VS, `
+        in vec2 uv;
+        uniform sampler2D shine, core;
+        uniform vec2 res;                       // the canvas, in its pixels
+        uniform float cy, shineAlpha, power;    // power 0: no fade of the shine
+        out vec4 o;
+        float hash12(vec2 p) {
+          vec3 p3 = fract(vec3(p.xyx) * .1031);
+          p3 += dot(p3, p3.yzx + 33.33);
+          return fract((p3.x + p3.y) * p3.z);
+        }
+        void main() {
+          float y = (1.0 - uv.y) * res.y;       // down from the top
+          vec4 s = texture(shine, uv) * shineAlpha;
+          if (power > 0.0) {
+            // The shine's fade: 12 steps from the top down to the line, 4 on below it.
+            float m;
+            if (y <= cy) {
+              float t = y / cy * 12.0;
+              float i = min(floor(t), 11.0);
+              m = mix(pow(i / 12.0, power), pow((i + 1.0) / 12.0, power), t - i);
+            } else {
+              float t = (y - cy) / (res.y - cy) * 4.0;
+              float i = min(floor(t), 3.0);
+              m = mix(pow(1.0 - i / 4.0, power), pow(1.0 - (i + 1.0) / 4.0, power), t - i);
+            }
+            s *= m;
+          }
+          vec4 c = texture(core, uv);
+          vec4 col = c + s * (1.0 - c.a);
+          // Everything fades to nothing towards the top.
+          float t = clamp(y / cy, 0.0, 1.0);
+          col *= t < 0.45 ? mix(0.0, 0.35, t / 0.45) : mix(0.35, 1.0, (t - 0.45) / 0.55);
+          if (col.a > 0.0) {
+            col += (hash12(gl_FragCoord.xy) - 0.5) / 255.0;
+            col.a = clamp(col.a, 0.0, 1.0);
+            col.rgb = clamp(col.rgb, 0.0, col.a);
+          }
+          o = col;
+        }`);
+    } catch (err) {
+      console.warn(err);
+      return null;
+    }
+    const most = 4096;
+    const data = new Float32Array(most * 7);
+    const vao = gl.createVertexArray();
+    const buf = gl.createBuffer();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, data.byteLength, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 28, 0);
+    gl.vertexAttribDivisor(0, 1);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 28, 16);
+    gl.vertexAttribDivisor(1, 1);
+    gl.bindVertexArray(null);
+    const targets = {};
+    const target = (name, w, h) => {
+      let t = targets[name];
+      if (t && t.w === w && t.h === h) return t;
+      if (t) {
+        gl.deleteTexture(t.tex);
+        gl.deleteFramebuffer(t.fb);
+      }
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      t = { tex, fb, w, h };
+      targets[name] = t;
+      return t;
+    };
+    const into = (t) => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, t ? t.fb : null);
+      gl.viewport(0, 0, t ? t.w : gl.drawingBufferWidth, t ? t.h : gl.drawingBufferHeight);
+    };
+    const clear = () => {
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    };
+    // The bars into t (k of the canvas's size), stretched about cy.
+    const drawBars = (p, t, k, stretch) => {
+      into(t);
+      clear();
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.useProgram(bars.p);
+      gl.uniform2f(bars.u.size, t.w, t.h);
+      gl.uniform1f(bars.u.k, k);
+      gl.uniform1f(bars.u.cy, p.cy);
+      gl.uniform1f(bars.u.stretch, stretch);
+      gl.uniform2f(bars.u.fade, p.fadeFrom, p.fadeTo);
+      gl.bindVertexArray(vao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, p.n);
+      gl.bindVertexArray(null);
+      gl.disable(gl.BLEND);
+    };
+    // src blurred both ways into dst, through tmp (all one size), sigma in its texels.
+    const blurBoth = (src, tmp, dst, sigma) => {
+      gl.useProgram(blur.p);
+      gl.uniform1f(blur.u.sigma, sigma);
+      gl.uniform1i(blur.u.reach, Math.max(1, Math.ceil(sigma * 3)));
+      gl.activeTexture(gl.TEXTURE0);
+      gl.uniform1i(blur.u.src, 0);
+      into(tmp);
+      gl.bindTexture(gl.TEXTURE_2D, src.tex);
+      gl.uniform2f(blur.u.step, 1 / src.w, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      into(dst);
+      gl.bindTexture(gl.TEXTURE_2D, tmp.tex);
+      gl.uniform2f(blur.u.step, 0, 1 / tmp.h);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    };
+    return {
+      data,
+      most,
+      /** p: null (nothing) or { w, h, n bars in data, cy, fadeFrom, fadeTo, shine, shineSigma, shineAlpha, power, coreSigma }. */
+      draw: (p) => {
+        into(null);
+        clear();
+        if (!p) return;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, data, 0, p.n * 7);
+        // The bars, softened: at half size.
+        const hw = Math.max(1, Math.round(p.w / 2));
+        const hh = Math.max(1, Math.round(p.h / 2));
+        const coreA = target('coreA', hw, hh);
+        const coreB = target('coreB', hw, hh);
+        drawBars(p, coreA, 0.5, 1);
+        blurBoth(coreA, coreB, coreA, p.coreSigma / 2);
+        // The shine: stretched up, at a quarter size, blurred.
+        const qw = Math.max(1, Math.round(p.w / 4));
+        const qh = Math.max(1, Math.round(p.h / 4));
+        const shineA = target('shineA', qw, qh);
+        const shineB = target('shineB', qw, qh);
+        if (p.shine > 0) {
+          drawBars(p, shineA, 0.25, p.shine);
+          blurBoth(shineA, shineB, shineA, p.shineSigma / 4);
+        } else {
+          into(shineA);
+          clear();
+        }
+        into(null);
+        gl.useProgram(show.p);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, shineA.tex);
+        gl.uniform1i(show.u.shine, 0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, coreA.tex);
+        gl.uniform1i(show.u.core, 1);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.uniform2f(show.u.res, p.w, p.h);
+        gl.uniform1f(show.u.cy, p.cy);
+        gl.uniform1f(show.u.shineAlpha, p.shine > 0 ? p.shineAlpha : 0);
+        gl.uniform1f(show.u.power, p.power);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      },
+    };
+  },
+
+  /**
+   * What the WebGL path draws now, as _draw's canvas steps have it: the
+   * bars into gl.data (left, right, top, bottom in the canvas's pixels; r, g,
+   * b), the shine's stretch, blur, strength and fade, the bars' blur; null
+   * when there is nothing to show.
+   */
+  _glPicture() {
+    const g = this.geom;
+    if (Store.settings.eqOn === false || Visualizer.shown) return null;
+    const levels = this.levels;
+    const s = this.SCALE;
+    const data = this.gl.data;
+    const offset = (g.width - levels.length * this.PITCH) / 2;
+    const scheme = Store.settings.eqColors || 'rainbow';
+    const solid = Palette.solid[scheme] || null;
+    let n = 0;
+    for (let i = 0; i < levels.length && n < this.gl.most; i += 1) {
+      const v = levels[i];
+      if (v <= 0.004) continue;
+      const h = v * g.reach;
+      const rgb = Palette.rgb(solid || (scheme === 'rainbow' ? Palette.rainbow(i / levels.length - this.rainbowShift) : Palette.by(scheme, v)));
+      const k = n * 7;
+      data[k] = (offset + i * this.PITCH) * s;
+      data[k + 1] = (offset + i * this.PITCH + this.BAR) * s;
+      data[k + 2] = (g.center - h) * s;
+      data[k + 3] = (g.center + h) * s;
+      data[k + 4] = rgb[0];
+      data[k + 5] = rgb[1];
+      data[k + 6] = rgb[2];
+      n += 1;
+    }
+    if (!n) return null;
+    const spread = (g.shine - 1) / (this.SHINE - 1);
+    const vis = (Store.settings.eqVisibility || 50) / 100;
+    const above = Math.max(0, vis - 0.5) * 2;
+    const boost = vis >= 0.5 ? 1 + (this.SHINE_BOOST - 1) * above : 0.6 + 0.8 * vis;
+    return {
+      w: this.canvas.width,
+      h: this.canvas.height,
+      n,
+      cy: g.center * s,
+      fadeFrom: (g.center - g.reach) * s,
+      fadeTo: (g.center + g.reach) * s,
+      shine: g.shine,
+      shineSigma: Number((this.SHINE_BLUR * (0.4 + 0.6 * spread) * s).toFixed(1)),
+      shineAlpha: Math.min(1, this.SHINE_ALPHA * boost),
+      power: above > 0 ? this.SHINE_FALLOFF * above : 0,
+      coreSigma: this.CORE_BLUR * s,
+    };
   },
 
   _draw() {
     const g = this.geom;
     if (!g || !this.canvas) return;
+    if (this.gl) {
+      this.gl.draw(this._glPicture());
+      return;
+    }
     const s = this.SCALE;
     const out = this.canvas.getContext('2d');
     out.setTransform(1, 0, 0, 1, 0, 0);
@@ -503,6 +833,20 @@ const Palette = {
     }
     const i = Math.round((x - Math.floor(x)) * 360) % 360;
     return this.rainbowCache[i];
+  },
+
+  /** A colour of these as the canvas paints it: r, g, b 0..1 (worked out once each). */
+  rgbCache: new Map(),
+  rgb(css) {
+    let c = this.rgbCache.get(css);
+    if (!c) {
+      this.probe = this.probe || document.createElement('canvas').getContext('2d');
+      this.probe.fillStyle = css;
+      const hex = this.probe.fillStyle;
+      c = /^#[0-9a-f]{6}$/i.test(hex) ? [1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16) / 255) : [1, 1, 1];
+      this.rgbCache.set(css, c);
+    }
+    return c;
   },
 
   // The one-colour schemes.

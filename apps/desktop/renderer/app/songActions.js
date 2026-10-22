@@ -10,13 +10,15 @@
 const SongActions = {
   tray: null,
   anchor: null,
-  picker: null, // the "Add to Playlists" popup beside the tray
+  picker: null, // the "Add to Playlists" popup beside the tray (or above the player's button)
+  pickerAnchor: null, // the player's button it opened from
 
   init() {
     const outside = (e) => {
-      if (!this.tray) return;
-      if (this.tray.contains(e.target) || (this.anchor && this.anchor.contains(e.target))) return;
+      if (!this.tray && !this.picker) return;
+      if ((this.tray && this.tray.contains(e.target)) || (this.anchor && this.anchor.contains(e.target))) return;
       if (this.picker && this.picker.contains(e.target)) return;
+      if (this.pickerAnchor && this.pickerAnchor.contains(e.target)) return;
       this.close();
     };
     document.addEventListener('pointerdown', outside, true);
@@ -27,13 +29,15 @@ const SongActions = {
     }, true);
     window.addEventListener('resize', () => this.close());
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.tray && !Modal.top()) {
+      if (e.key === 'Escape' && (this.tray || this.picker) && !Modal.top()) {
         e.stopPropagation();
         this.close();
       }
     }, true);
-    // The row may be redrawn or gone.
-    Store.onLibrary(() => this.close());
+    // The row may be redrawn or gone. The player's popup holds its song itself.
+    Store.onLibrary(() => {
+      if (!this.pickerAnchor) this.close();
+    });
   },
 
   /** The cell: `shown` buttons, then More holding `more` (built when opened). */
@@ -45,9 +49,10 @@ const SongActions = {
     return h('div.actions', ...shown, btn);
   },
 
-  open(anchor, buttons) {
+  /** `className`: another class for the tray (act-tray--settings: over the Settings window). */
+  open(anchor, buttons, className = '') {
     this.close();
-    const tray = h('div.act-tray', { role: 'menu' }, ...buttons);
+    const tray = h('div.act-tray' + (className ? '.' + className : ''), { role: 'menu' }, ...buttons);
     // Any of its buttons does its thing and closes it.
     tray.addEventListener('click', (e) => {
       const button = e.target.closest('button');
@@ -80,13 +85,16 @@ const SongActions = {
    * Apply below, ten rows high before it scrolls. Apply puts the song into
    * the newly ticked playlists and takes it out of the newly unticked ones,
    * then closes the popup and the tray; so does a click anywhere else.
+   * `above`: opened from the player's button, over it and naming the song.
    */
-  pickPlaylists(anchor, song) {
+  pickPlaylists(anchor, song, { above = false } = {}) {
     if (document.body.classList.contains('mobile')) return this._pickPlaylistsSheet(song);
     if (this.picker) {
+      const again = this.pickerAnchor === anchor;
       this.picker.remove();
       this.picker = null;
-      return;
+      this.pickerAnchor = null;
+      if (again || !above) return;
     }
     const lists = Store.sortedPlaylists();
     const had = new Set(lists.filter((p) => p.entries.some((e) => e.songId === song.id)).map((p) => p.id));
@@ -103,15 +111,25 @@ const SongActions = {
     }, 'Apply');
     const picker = h('div.pl-picker', { role: 'dialog', 'aria-label': 'Add to Playlists' },
       h('div.pl-picker__title', 'Add to Playlists'),
+      above ? h('div.pl-picker__song', { title: Util.songLine(song) }, Util.songLine(song)) : null,
       h('div.pl-picker__list', ...(rows.length ? rows : [h('div.pl-picker__empty', 'No playlists yet.')])),
       apply);
     document.body.appendChild(picker);
+    this.picker = picker;
+    if (above) {
+      // Over the player's button, from its left edge (kept in the window).
+      const r = anchor.getBoundingClientRect();
+      const width = picker.getBoundingClientRect().width;
+      picker.style.left = `${Math.max(8, Math.min(Math.round(r.left), window.innerWidth - width - 8))}px`;
+      picker.style.bottom = `${Math.round(window.innerHeight - r.top + 8)}px`;
+      this.pickerAnchor = anchor;
+      return;
+    }
     // Left of the tray, its top level with the tray's.
     const t = this.tray ? this.tray.getBoundingClientRect() : anchor.getBoundingClientRect();
     picker.style.right = `${Math.round(window.innerWidth - t.left + 6)}px`;
     const height = picker.getBoundingClientRect().height;
     picker.style.top = `${Math.max(8, Math.min(Math.round(t.top), window.innerHeight - height - 8))}px`;
-    this.picker = picker;
   },
 
   /** The phone's Add to Playlists: the same list with boxes, as a sheet with Apply. */
@@ -157,6 +175,7 @@ const SongActions = {
   close() {
     if (this.picker) this.picker.remove();
     this.picker = null;
+    this.pickerAnchor = null;
     if (this.tray) this.tray.remove();
     if (this.anchor) {
       this.anchor.classList.remove('act--open');

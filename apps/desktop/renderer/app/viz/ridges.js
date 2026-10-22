@@ -81,6 +81,46 @@
       return out;
     }
 
+    // A row's two parts, each a method of its own (rather than in frame(),
+    // or a closure made for every row) so that lines' seg and tri are
+    // inlined into them: their numbers then go in without being boxed.
+
+    /** A row's tail from (xa, ya) flat out to xb, fading away. */
+    _tail(xa, ya, xb, thick, col, alpha) {
+      const lines = this.lines;
+      for (let s = 0; s < TAIL; s += 1) {
+        const t0 = s / TAIL;
+        const t1 = (s + 1) / TAIL;
+        lines.seg(xa + (xb - xa) * t0, ya, xa + (xb - xa) * t1, ya, thick, col, alpha * (1 - t0) ** 2, alpha * (1 - t1) ** 2);
+      }
+    }
+
+    /** A row's line, the band below it hiding the rows behind; heat: the colour to fill by the level (Heat), else rgb. */
+    _line(row, x0, y0, width, amp, unit, thick, alpha, rgb, heat) {
+      const lines = this.lines;
+      let px = 0;
+      let py = 0;
+      for (let i = 0; i < POINTS; i += 1) {
+        const x = x0 + (i / (POINTS - 1)) * width;
+        const y = y0 - row[i] * amp;
+        if (i) {
+          lines.tri(px, py, x, y, px, y0 + 3 * unit, BLACK, 1);
+          lines.tri(x, y, x, y0 + 3 * unit, px, y0 + 3 * unit, BLACK, 1);
+          let col = rgb;
+          if (heat) {
+            const t = Math.min(1, (row[i] + row[i - 1]) * 0.9);
+            heat[0] = Math.min(1, 0.35 + t * 1.6);
+            heat[1] = Math.min(1, t * 1.2);
+            heat[2] = Math.min(1, t * t * 1.4);
+            col = heat;
+          }
+          lines.seg(px, py, x, y, thick, col, alpha);
+        }
+        px = x;
+        py = y;
+      }
+    }
+
     frame(a, dt) {
       this.age += dt;
       const set = (k) => Visualizer.setting(k);
@@ -110,6 +150,10 @@
       const front = h * 0.9;
       const back = h * 0.14;
       const lines = this.lines;
+      // The colours handed to lines (which copies them): the same arrays every time.
+      const WHITE = [1, 1, 1];
+      const EMBER = [0.35, 0, 0];
+      const heat = [0, 0, 0];
       // From the back to the front; each row's place eases forward between new rows.
       for (let r = Math.min(this.rows.length, count + 1) - 1; r >= 0; r -= 1) {
         const pos = (r + this.offset) / count;   // 0 front, 1 back
@@ -126,39 +170,14 @@
         let rgb;
         if (colors === 'neon') rgb = hsv((0.52 + depth * 0.35 + this.age * 0.01) % 1, 0.8, 1);
         else if (colors === 'custom') rgb = own;
-        else rgb = [1, 1, 1];
+        else rgb = WHITE;
         const thick = 1.6 * unit * (0.6 + 0.4 * scale);
         const alpha = fade * (0.55 + 0.45 * scale);
         // Flat on out to the screen's edges either side, fading away.
-        const tail = (xa, ya, xb) => {
-          const col = colors === 'heat' ? [0.35, 0, 0] : rgb;
-          for (let s = 0; s < TAIL; s += 1) {
-            const t0 = s / TAIL;
-            const t1 = (s + 1) / TAIL;
-            lines.seg(xa + (xb - xa) * t0, ya, xa + (xb - xa) * t1, ya, thick, col, alpha * (1 - t0) ** 2, alpha * (1 - t1) ** 2);
-          }
-        };
-        tail(x0, y0 - row[0] * amp, 0);
-        tail(x0 + width, y0 - row[POINTS - 1] * amp, w);
-        let px = 0;
-        let py = 0;
-        for (let i = 0; i < POINTS; i += 1) {
-          const x = x0 + (i / (POINTS - 1)) * width;
-          const y = y0 - row[i] * amp;
-          if (i) {
-            // The band below the line hides the rows behind.
-            lines.tri(px, py, x, y, px, y0 + 3 * unit, BLACK, 1);
-            lines.tri(x, y, x, y0 + 3 * unit, px, y0 + 3 * unit, BLACK, 1);
-            let col = rgb;
-            if (colors === 'heat') {
-              const t = Math.min(1, (row[i] + row[i - 1]) * 0.9);
-              col = [Math.min(1, 0.35 + t * 1.6), Math.min(1, t * 1.2), Math.min(1, t * t * 1.4)];
-            }
-            lines.seg(px, py, x, y, thick, col, alpha);
-          }
-          px = x;
-          py = y;
-        }
+        const tailCol = colors === 'heat' ? EMBER : rgb;
+        this._tail(x0, y0 - row[0] * amp, 0, thick, tailCol, alpha);
+        this._tail(x0 + width, y0 - row[POINTS - 1] * amp, w, thick, tailCol, alpha);
+        this._line(row, x0, y0, width, amp, unit, thick, alpha, rgb, colors === 'heat' ? heat : null);
       }
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);

@@ -26,6 +26,14 @@
 // invisible pixel by pixel, but a canvas drawn smaller and stretched turns the
 // speckles into a grid. The equalizer's canvas lies on top of this one.
 //
+// With WebGL 2 (and float targets) they are drawn there instead: the same
+// puffs, laid over each other the same way, into a quarter-size picture of
+// half floats, then stretched over the screen with a speckle of its own at
+// each of the screen's pixels (the clouds are so soft that the quarter size
+// loses nothing, and the speckle hides the steps as Chromium's does). Drawn
+// at full size by the canvas, the puffs' wide gradients were most of the
+// app's GPU work.
+//
 // Settings: in Rainbow each cloud takes a random colour every time it comes
 // back; a solid scheme gives them all that one. The amount at 50% is the
 // first half of CLOUDS (the look as designed), 100% all of them, 0% none.
@@ -102,6 +110,7 @@ const Ambient = {
     });
     this._makeFalloff();
     this._makePuffs();
+    this.gl = this._webgl();
     // Each start somewhere else along the paths.
     this.time = Math.random() * 600;
     this._layout();
@@ -110,6 +119,200 @@ const Ambient = {
     Store.onSettings((patch) => {
       if (['cloudsOn', 'cloudsIntensity', 'cloudsColors', 'cloudsAmount'].some((k) => k in patch)) this._draw();
     });
+  },
+
+  /**
+   * The clouds in WebGL 2, or null (then the canvas draws them): size(w, h)
+   * when the canvas changes, draw(n) the first n of puffData (none: the
+   * plain background). Each puff a square round it (instanced), its colour
+   * at its strength times falloff (the same steps, read between them as
+   * the canvas's gradient does) laid over what is there, as the canvas lays
+   * it; into a quarter-size half-float target, then stretched onto the
+   * screen with a speckle of a 255th at each pixel.
+   */
+  _webgl() {
+    let gl = null;
+    try {
+      gl = this.canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false });
+    } catch {
+      gl = null;
+    }
+    if (!gl) return null;
+    if (!gl.getExtension('EXT_color_buffer_float')) {
+      // No float target: back to the canvas (a fresh one, this one being WebGL's now).
+      const fresh = this.canvas.cloneNode(false);
+      this.canvas.replaceWith(fresh);
+      this.canvas = fresh;
+      return null;
+    }
+    const shader = (type, src) => {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, `#version 300 es
+precision highp float;
+${src}`);
+      gl.compileShader(sh);
+      return sh;
+    };
+    const program = (vs, fs) => {
+      const p = gl.createProgram();
+      gl.attachShader(p, shader(gl.VERTEX_SHADER, vs));
+      gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(`clouds: ${gl.getProgramInfoLog(p)}`);
+      return p;
+    };
+    const STOPS = this.STOPS;
+    let puffProg;
+    let showProg;
+    try {
+      puffProg = program(`
+        layout(location = 0) in vec4 puff;     // x, y, reach (pixels, y down), strength
+        layout(location = 1) in vec3 colour;
+        uniform vec2 res;
+        out vec2 at;                           // where in the puff, in reaches
+        flat out vec4 col;
+        void main() {
+          int k = gl_VertexID;
+          vec2 corner = vec2(k == 1 || k == 4 || k == 5 ? 1.0 : -1.0, k == 2 || k == 3 || k == 5 ? 1.0 : -1.0);
+          at = corner;
+          col = vec4(colour, puff.w);
+          vec2 p = puff.xy + corner * puff.z;
+          gl_Position = vec4(p.x / res.x * 2.0 - 1.0, 1.0 - p.y / res.y * 2.0, 0.0, 1.0);
+        }`, `
+        in vec2 at;
+        flat in vec4 col;
+        uniform float falloff[${STOPS + 1}];
+        out vec4 o;
+        void main() {
+          float k = min(length(at), 1.0) * ${STOPS}.0;
+          int i = min(int(k), ${STOPS - 1});
+          float v = mix(falloff[i], falloff[i + 1], k - float(i));
+          o = vec4(col.rgb, col.a * v);
+        }`);
+      showProg = program(`
+        out vec2 uv;
+        void main() {
+          vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+          uv = p;
+          gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+        }`, `
+        in vec2 uv;
+        uniform sampler2D clouds;
+        uniform vec2 part;                     // how much of the target the screen covers (from its top left)
+        out vec4 o;
+        float hash12(vec2 p) {
+          vec3 p3 = fract(vec3(p.xyx) * .1031);
+          p3 += dot(p3, p3.yzx + 33.33);
+          return fract((p3.x + p3.y) * p3.z);
+        }
+        void main() {
+          vec3 c = texture(clouds, vec2(uv.x * part.x, 1.0 - (1.0 - uv.y) * part.y)).rgb;
+          o = vec4(c + (hash12(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+        }`);
+    } catch (err) {
+      console.warn(err);
+      return null;
+    }
+    const u = {
+      res: gl.getUniformLocation(puffProg, 'res'),
+      falloff: gl.getUniformLocation(puffProg, 'falloff[0]'),
+      clouds: gl.getUniformLocation(showProg, 'clouds'),
+      part: gl.getUniformLocation(showProg, 'part'),
+    };
+    gl.useProgram(puffProg);
+    gl.uniform1fv(u.falloff, this.falloff.map(([, v]) => v));
+    // The puffs, one instance each: x, y, reach, strength, r, g, b.
+    const data = new Float32Array(this.CLOUDS.length * this.PUFFS * 7);
+    const vao = gl.createVertexArray();
+    const buf = gl.createBuffer();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, data.byteLength, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 28, 0);
+    gl.vertexAttribDivisor(0, 1);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 28, 16);
+    gl.vertexAttribDivisor(1, 1);
+    gl.bindVertexArray(null);
+    // The background as the canvas has it, 0..1.
+    const probe = document.createElement('canvas').getContext('2d');
+    probe.fillStyle = this.background;
+    const hex = probe.fillStyle;
+    const bg = /^#[0-9a-f]{6}$/i.test(hex) ? [1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16) / 255) : [30 / 255, 30 / 255, 34 / 255];
+    let target = null;
+    let w = 1;
+    let h = 1;
+    return {
+      size: (cw, ch) => {
+        w = cw;
+        h = ch;
+        const tw = Math.max(1, Math.ceil(cw / 4));
+        const th = Math.max(1, Math.ceil(ch / 4));
+        if (target && target.w === tw && target.h === th) return;
+        if (target) {
+          gl.deleteTexture(target.tex);
+          gl.deleteFramebuffer(target.fb);
+        }
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, tw, th, 0, gl.RGBA, gl.HALF_FLOAT, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        const fb = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        target = { tex, fb, w: tw, h: th };
+      },
+      draw: (n) => {
+        if (!target) return;
+        if (!n) {
+          // The plain background, straight onto the screen.
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+          gl.clearColor(bg[0], bg[1], bg[2], 1);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          return;
+        }
+        const P = this.puffData;
+        for (let k = 0; k < n; k += 1) {
+          const q = k * 7;
+          data[q] = P[q];
+          data[q + 1] = P[q + 1];
+          data[q + 2] = P[q + 2];
+          data[q + 3] = P[q + 6];
+          data[q + 4] = P[q + 3];
+          data[q + 5] = P[q + 4];
+          data[q + 6] = P[q + 5];
+        }
+        gl.bindFramebuffer(gl.FRAMEBUFFER, target.fb);
+        gl.viewport(0, 0, target.w, target.h);
+        gl.clearColor(bg[0], bg[1], bg[2], 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.enable(gl.BLEND);
+        gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+        gl.useProgram(puffProg);
+        // The quarter-size target covers the pixels the screen's would (4 a texel).
+        gl.uniform2f(u.res, target.w * 4, target.h * 4);
+        gl.bindVertexArray(vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, data, 0, n * 7);
+        gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n);
+        gl.bindVertexArray(null);
+        gl.disable(gl.BLEND);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+        gl.useProgram(showProg);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, target.tex);
+        gl.uniform1i(u.clouds, 0);
+        gl.uniform2f(u.part, w / (target.w * 4), h / (target.h * 4));
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      },
+    };
   },
 
   /**
@@ -164,6 +367,7 @@ const Ambient = {
     const h = Math.max(1, content.clientHeight);
     if (this.canvas.width !== w) this.canvas.width = w;
     if (this.canvas.height !== h) this.canvas.height = h;
+    if (this.gl) this.gl.size(w, h);
     this._draw();
   },
 
@@ -201,14 +405,37 @@ const Ambient = {
   _draw() {
     const c = this.canvas;
     if (!c) return;
-    const out = c.getContext('2d');
-    const w = c.width;
-    const h = c.height;
-    out.fillStyle = this.background;
-    out.fillRect(0, 0, w, h);
     const s = Store.settings;
-    if (s.cloudsOn === false) return;
+    const puffs = s.cloudsOn === false ? 0 : this._puffs(c.width, c.height);
+    if (this.gl) {
+      this.gl.draw(puffs);
+      return;
+    }
+    const out = c.getContext('2d');
+    out.fillStyle = this.background;
+    out.fillRect(0, 0, c.width, c.height);
+    const P = this.puffData;
+    for (let k = 0; k < puffs; k += 1) {
+      const q = k * 7;
+      const px = P[q];
+      const py = P[q + 1];
+      const reach = P[q + 2];
+      const colour = this.puffColour[k];
+      const strength = P[q + 6];
+      const grad = out.createRadialGradient(px, py, 0, px, py, reach);
+      for (const [d, v] of this.falloff) grad.addColorStop(d, colour + (strength * v).toFixed(4) + ')');
+      out.fillStyle = grad;
+      out.fillRect(px - reach, py - reach, reach * 2, reach * 2);
+    }
+  },
 
+  /**
+   * The puffs to draw now, in the order they are laid on, into puffData
+   * (x, y, reach in pixels, r, g, b 0..1, strength; 7 floats each) and
+   * puffColour (the canvas's 'hsla(h, s%, l%, ' each). Returns how many.
+   */
+  _puffs(w, h) {
+    const s = Store.settings;
     const t = this.time;
     const tau = 2 * Math.PI;
     const side = Math.max(w, h);
@@ -222,6 +449,12 @@ const Ambient = {
     const solid = this.SOLID[s.cloudsColors] || null;
     const amount = Number.isFinite(s.cloudsAmount) ? s.cloudsAmount : 50;
     const count = Math.round((this.CLOUDS.length * amount) / 100);
+    if (!this.puffData) {
+      this.puffData = new Float64Array(this.CLOUDS.length * this.PUFFS * 7);
+      this.puffColour = [];
+    }
+    const P = this.puffData;
+    let n = 0;
 
     this.CLOUDS.forEach((cl, i) => {
       if (i >= count) return;
@@ -241,21 +474,44 @@ const Ambient = {
       const y = at(cl.y, i * 2.3 + 1) * h;
       // Growing as it comes, shrinking as it goes.
       const r = cl.size * side * swell * (0.7 + 0.3 * here);
-      const colour = solid
-        ? `hsla(${solid[0]}, ${solid[1]}%, ${solid[2]}%, `
-        : `hsla(${(cl.hue + cl.hueSwing * Math.sin((tau * t) / 211 + i)).toFixed(1)}, ${cl.sat}%, ${cl.light}%, `;
+      const hue = solid ? solid[0] : Number((cl.hue + cl.hueSwing * Math.sin((tau * t) / 211 + i)).toFixed(1));
+      const sat = solid ? solid[1] : cl.sat;
+      const light = solid ? solid[2] : cl.light;
+      const colour = `hsla(${solid ? hue : hue.toFixed(1)}, ${sat}%, ${light}%, `;
+      const rgb = this._rgb(hue, sat, light);
       const strength = Math.min(1, this.PUFF_ALPHA * intensity * here * brighter);
 
       for (const p of cl.puffs) {
         const a = (tau * t) / p.period + p.phase;
-        const px = x + (p.dx + p.wander * Math.sin(a)) * r;
-        const py = y + (p.dy + p.wander * 0.6 * Math.cos(a * 0.83)) * r;
-        const reach = p.r * r * (1 + 0.3 * Math.sin(a * 1.37 + 1)) * this.REACH;
-        const grad = out.createRadialGradient(px, py, 0, px, py, reach);
-        for (const [d, v] of this.falloff) grad.addColorStop(d, colour + (strength * v).toFixed(4) + ')');
-        out.fillStyle = grad;
-        out.fillRect(px - reach, py - reach, reach * 2, reach * 2);
+        const q = n * 7;
+        P[q] = x + (p.dx + p.wander * Math.sin(a)) * r;
+        P[q + 1] = y + (p.dy + p.wander * 0.6 * Math.cos(a * 0.83)) * r;
+        P[q + 2] = p.r * r * (1 + 0.3 * Math.sin(a * 1.37 + 1)) * this.REACH;
+        P[q + 3] = rgb[0];
+        P[q + 4] = rgb[1];
+        P[q + 5] = rgb[2];
+        P[q + 6] = strength;
+        this.puffColour[n] = colour;
+        n += 1;
       }
     });
+    return n;
   },
+
+  /** hsl (degrees, percent) as the canvas takes it: r, g, b in whole 255ths, as 0..1. */
+  _rgb(h, s, l) {
+    const sat = s / 100;
+    const lig = l / 100;
+    const f = (k0) => {
+      const k = (k0 + h / 30) % 12;
+      const a = sat * Math.min(lig, 1 - lig);
+      return Math.round(255 * (lig - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))) / 255;
+    };
+    this._rgbOut = this._rgbOut || [0, 0, 0];
+    this._rgbOut[0] = f(0);
+    this._rgbOut[1] = f(8);
+    this._rgbOut[2] = f(4);
+    return this._rgbOut;
+  },
+
 };

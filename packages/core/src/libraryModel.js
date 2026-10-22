@@ -30,6 +30,10 @@
 //                    was the one playing: { [playlistId | 'all' | 'favourites' | 'smart:...']: seconds }.
 //                    Per profile, also for a shared list (the owner's is not shared);
 //                    unfollowing a shared list deletes it.
+//   listening        when and what this profile listened to (listening.js), for
+//                    the Statistics; per profile, like the songs' stats
+//   statistics       this profile's Statistics totals (listening.js): time
+//                    heard, listens, per month; never lowered by deleting songs
 //   sharedPlaylists  the other profiles' shared playlists, for reading:
 //                    { id, name, createdAt, entries, ownerId, ownerName }
 //   profileNames     { [profileId]: name } of the server's profiles (and the
@@ -41,6 +45,9 @@
 // Every mutation throws an Error whose message is fit to show the user.
 
 const { comparableUrl } = require('./text');
+const {
+  emptyListening, cleanListening, recordListening, emptyStatistics, cleanStatistics, recordStatistics,
+} = require('./listening');
 
 const ALL_SONGS_ID = 'all';
 const ALL_SONGS_NAME = 'All Songs';
@@ -74,7 +81,7 @@ function cleanStats(raw) {
 }
 
 function emptyLibrary() {
-  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, profileNames: {} };
+  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {} };
 }
 
 /** { listId: seconds }: only sensible ids and positive numbers stay. */
@@ -186,6 +193,8 @@ function sanitize(raw) {
   }
   data.follows = cleanIds(raw.follows);
   data.playlistListened = cleanListened(raw.playlistListened);
+  data.listening = cleanListening(raw.listening);
+  data.statistics = cleanStatistics(raw.statistics);
   data.profileNames = cleanNames(raw.profileNames);
   const seenShared = new Set();
   for (const p of Array.isArray(raw.sharedPlaylists) ? raw.sharedPlaylists : []) {
@@ -418,9 +427,10 @@ function addListenedTo(data, listId, songId, seconds) {
 /**
  * Counts one listen of a song: `listened` seconds heard before it changed,
  * out of `duration`. Returns what it was counted as ('play', 'stop', 'skip'),
- * or null when it was too short to count.
+ * or null when it was too short to count. `tz`: the app's time zone offset
+ * (Date.getTimezoneOffset()), for when it was heard (listening.js).
  */
-function recordListen(data, songId, { listened, duration, at = Date.now(), contextId = null }) {
+function recordListen(data, songId, { listened, duration, at = Date.now(), contextId = null, tz = null }) {
   const s = requireSong(data, songId);
   const total = Number(duration) || s.duration || 0;
   const heard = Math.min(Math.max(0, Number(listened) || 0), total || Infinity);
@@ -438,6 +448,8 @@ function recordListen(data, songId, { listened, duration, at = Date.now(), conte
   st.lastPlayedAt = at;
   s.stats = st;
   addListenedTo(data, contextId, songId, heard);
+  recordListening(data, songId, heard, at, tz);
+  recordStatistics(data, heard, at, tz);
   return kind;
 }
 
@@ -499,6 +511,36 @@ function findByMeta(data, { artist, title, mix }, exceptId = null) {
     && norm(s.artist) === a && norm(s.title) === t && norm(s.mix) === m) || null;
 }
 
+/**
+ * What a Flow Server takes for the same song on upload (its existingFor,
+ * without the id): the same source, else the same artist, title and mix at
+ * the same length (within 2 s). Looked up in `songs`, indexed once: the
+ * function returned gives the song for a song (or its meta), or null.
+ */
+function sameSongIn(songs) {
+  const byKey = new Map();
+  const byUrl = new Map();
+  const byName = new Map();
+  const nameOf = (s) => `${norm(s.artist)}
+${norm(s.title)}
+${norm(s.mix)}`;
+  const put = (map, key, s) => {
+    if (key && !map.has(key)) map.set(key, s);
+  };
+  for (const s of songs) {
+    put(byKey, s.sourceKey, s);
+    put(byUrl, s.sourceUrl ? comparableUrl(s.sourceUrl) : null, s);
+    if (norm(s.title)) put(byName, nameOf(s), s);
+  }
+  return (meta) => {
+    const hit = (meta.sourceKey && byKey.get(meta.sourceKey)) || (meta.sourceUrl && byUrl.get(comparableUrl(meta.sourceUrl)));
+    if (hit) return hit;
+    const named = norm(meta.title) ? byName.get(nameOf(meta)) : null;
+    const d = Number(meta.duration) || 0;
+    return named && (!d || !named.duration || Math.abs(named.duration - d) < 2) ? named : null;
+  };
+}
+
 /** Whether two songs (or { artist, title, mix }) have the same names, ignoring case and spaces. */
 function sameNames(a, b) {
   return norm(a && a.artist) === norm(b && b.artist) && norm(a && a.title) === norm(b && b.title)
@@ -512,5 +554,5 @@ module.exports = {
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
   addSong, updateSong, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
-  findBySource, findByMeta, sameNames,
+  findBySource, findByMeta, sameSongIn, sameNames,
 };

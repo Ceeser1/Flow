@@ -5,6 +5,10 @@ Windows PC) and streams it to the Flow apps. It uses `@flow/core` for the
 library, so it and the apps agree on every rule. It needs Node 18 or newer and
 has no other dependencies.
 
+This folder holds the server itself and its Linux installer (`install.sh`). On
+Windows, the Flow Server installer in `apps/windows-server` sets up the same
+server with the Node.js it runs on; see its README.
+
 The apps have full control: they send each change (a song renamed or deleted, a
 playlist made) to the server as a command, and a change made while the server
 could not be reached is sent once it can. When two changes clash, the later one
@@ -15,7 +19,7 @@ wins, and a delete always wins over an edit.
 ```sh
 npm run server            # from the repo root
 # or
-node apps/server/src/main.js --music ~/flow-music
+node apps/linux-server/src/main.js --music ~/flow-music
 ```
 
 On start it prints the addresses to enter in Flow (Settings → Streaming,
@@ -27,7 +31,23 @@ stick): the server looks through the folder every five minutes, and at once when
 an app asks it to synchronize. A song renamed or moved there by hand stays the
 same song (its playlists, cover and statistics): found by the `flowid` tag in
 its file (see Covers), else by its format and length. A copy of a song is a
-song of its own.
+song of its own. The server looks through sub-folders up to 16 deep.
+
+Where new songs go is chosen when installing (`install.sh` asks; also
+`--separate-folders` and `--keep-folders`, remembered). Songs there already
+stay where they are.
+
+- **Separate folders for uploads and downloads:** songs the apps upload go
+  into `Uploads/`, songs the server downloads into `Downloads/`. Without,
+  both go straight into the music folder.
+- **Keep uploaded folder structures:** an upload keeps its folders and file
+  name from the app's music folder. A song the PC has in
+  `Music/FlowPlayer/Linkin Park/Hybrid Theory/In the End.mp3` is saved as
+  `Linkin Park/Hybrid Theory/In the End.mp3` (inside `Uploads/` with separate
+  folders). A phone sends the folders of a folder it picked in Add Songs;
+  single files have none. Without, an upload is saved as
+  `Linkin Park - In the End.mp3`. A song renamed in an app later is renamed
+  in its folder.
 
 A song deleted from an app is not gone at once. Its file moves to
 `.flow-trash` in the music folder and is removed after 30 days.
@@ -36,7 +56,7 @@ A song deleted from an app is not gone at once. Its file moves to
 
 ```sh
 git clone <the repo> ~/Flow && cd ~/Flow
-sh apps/server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --downloads, --no-downloads, --uninstall
+sh apps/linux-server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --downloads, --no-downloads, --separate-folders, --keep-folders (and --no-...), --uninstall
 ```
 
 Works on any Linux with systemd and Node 18 or newer (a Raspberry Pi, a home
@@ -54,13 +74,17 @@ Levels 3 and 4 need a strong password (see below).
 
 Then it links `@flow/core` (there is no npm needed), asks whether the server
 should download songs itself (and if so shows the legal note, installs ffmpeg
-and Deno for it and waits while you install yt-dlp; see [Downloads by the server](#downloads-by-the-server-optional)), offers
+and Deno for it and waits while you install yt-dlp; see [Downloads by the server](#downloads-by-the-server-optional)),
+asks where new songs go (separate folders for uploads and downloads, and
+whether uploads keep their folders; see above), offers
 ffmpeg otherwise, asks whether the apps may find the server on the network by
 themselves (see below), offers a password, installs Tailscale at level 2, writes and starts the
 `flow-server` service (also at boot), and opens the port in ufw or firewalld
-for the home network, and at level 2 for Tailscale. Run it again any time; it
-only updates, and Enter keeps the level chosen before. A lower level closes
-what a higher one opened. Later: `git pull && sudo systemctl restart flow-server`.
+for the home network, and at level 2 for Tailscale. Run it again any time: once installed, it first offers 1 Only update
+(everything stays as it is set up; the service is renewed and restarted), 2
+Reinstall (the questions again; Enter keeps each answer as it is) and 3
+Uninstall. A lower level closes what a higher one opened. To update: `git
+pull`, then `sh apps/linux-server/install.sh` and 1.
 
 ### Level 3: the internet, with Caddy
 
@@ -207,7 +231,7 @@ own, and a long playlist keeps downloading when the app is closed.
   songs a batch, one download at a time (`downloadJobs` in `server.json`, up
   to 3), 20 minutes a song, and none when the disk has less than 500 MB free.
   Age-restricted videos and sites that want a signed-in visitor need cookies:
-  with "Share session cookies with the server for downloads" in Flow's
+  with "Share session cookies with the server" in Flow's
   settings the app sends the cookies of the link's site (only those) with the
   download; they are kept in its folder in `staging/`, readable only by the
   server, used for that download alone and deleted with it. Without them
@@ -295,9 +319,9 @@ on a private network, never to one that came through a proxy.
 ## Password
 
 ```sh
-node apps/server/src/main.js set-password        # asks for it
-node apps/server/src/main.js clear-password
-node apps/server/src/main.js devices             # who has signed in (two of one name: their app's id too)
+node apps/linux-server/src/main.js set-password        # asks for it
+node apps/linux-server/src/main.js clear-password
+node apps/linux-server/src/main.js devices             # who has signed in (two of one name: their app's id too)
 ```
 
 Without one, anyone who can reach the server can use it, which is fine on a
@@ -321,7 +345,9 @@ What the password has to be depends on the server's level (`--level`, set by
 At level 3 or 4 `clear-password` is refused, and without a strong password the
 server lets nobody from outside past `/api/hello`. Going up sets both at once:
 `flow-server set-password --level 3`. Profile PINs have no rules; they only
-pick a profile once a device is past the server password.
+pick a profile once a device is past the server password. The master
+admin's (see Administration below) needs at least 4 characters; since it can
+change the password from an app, a strong password as its PIN is recommended.
 
 **The home network needs no password at level 3 and 4**, only the internet
 does. The server counts a caller as home when it has a private address
@@ -351,7 +377,7 @@ The server also guards against a proxy set up by hand, at any level:
 ## Checking a server from outside: doctor
 
 ```sh
-node apps/server/src/main.js doctor https://music.example.com
+node apps/linux-server/src/main.js doctor https://music.example.com
 ```
 
 Checks the server the way the apps reach it, through whatever is in front of
@@ -396,6 +422,49 @@ deleted from an app's Settings; each can have a PIN of its own.
 - With a server password, a device signs in to the server first, then
   to a profile. The profiles' names are only shown to devices past the first.
 
+## Statistics
+
+From 3.6 each profile, and the Default / Shared, keeps totals for the apps'
+Statistics: time listened, listens of 30 seconds or more, and the time by
+month. They only grow (deleting songs does not lower them) and start at 0
+the first time the server runs 3.6; the songs' play counts (Most Played and
+the other smart lists) stay as they were. A profile's listen counts for the
+Default / Shared too, so it holds the whole server's listening; in a Jam
+only the host's listen counts there, the members' only for their own
+profiles. Apps older than 3.6 still count, but say nothing of Jams.
+
+## Administration
+
+An admin profile gets Administration as the last category of the apps'
+Settings: the server at a glance, every profile (when made, last seen, the
+songs it added, time listened, the IP addresses and devices it came from),
+the failed logins (wrong PINs and passwords), every profile's server
+downloads and the Active Sessions, the trash (deleted songs come back as
+they were, playlists and stats included), and the rules: who may make
+profiles, and who may delete songs for everyone. An admin can take a PIN
+away (forgotten), log a profile out everywhere, disable it, or delete it,
+with or without every song it added.
+
+The first profile a server ever has is an admin by itself, so it needs a
+PIN; on a server from before 3.5 its oldest profile with a PIN, once. Only a
+profile with a PIN can be an admin: resetting an admin's PIN takes admin
+away too. One profile can be the master admin,
+who can also change the server password and make admins in the apps. The
+master is made on the server only, by the installer or:
+
+```sh
+node apps/linux-server/src/main.js profiles                     # the profiles: admins, PINs, made, last seen
+node apps/linux-server/src/main.js admin master "Anna"          # Anna the master admin (asks a new PIN for her)
+node apps/linux-server/src/main.js admin master "Anna" --create # the same, making the profile when there is none
+node apps/linux-server/src/main.js admin grant "Ben"            # Ben an admin (he needs a PIN)
+node apps/linux-server/src/main.js admin revoke "Ben"           # no longer
+node apps/linux-server/src/main.js profiles add "Carla"         # a new profile (asks its PIN)
+```
+
+`FLOW_PROFILE_PIN` gives the PIN without asking. The failed logins are kept
+in `failed-signins.json`, deleted songs in `trash.json` (both in the
+server's home), next to `server.json`.
+
 ## Active Sessions
 
 Devices connected to the server can listen together (see Flow's README).
@@ -430,6 +499,7 @@ pauses and skips from other devices arrive late or not at all.
 | downloads not finished yet | `staging/` in there, a folder per profile | the same |
 | covers | `covers/` in there, `<song id>.jpg` | the same |
 | music | `~/flow-music` | `~/flow-music` |
+| log | `journalctl -u flow-server` | `flow-server.log` in the library folder |
 
 `FLOW_SERVER_HOME` and `FLOW_SERVER_MUSIC` point them elsewhere.
 
@@ -438,7 +508,7 @@ pauses and skips from other devices arrive late or not at all.
 WSL 2 runs a real Linux, so the server behaves there as it will on a Pi.
 Windows reaches it on `localhost:7878`. Other devices (a phone) can't, because
 WSL 2 sits behind its own network; for those, run the server on Windows itself
-or forward the port with `netsh interface portproxy`. Keep the music on the
+(the installer in `apps/windows-server`) or forward the port with `netsh interface portproxy`. Keep the music on the
 Linux side (`~/flow-music`), not under `/mnt/c`, which is slow and doesn't
 report changes.
 
@@ -451,7 +521,7 @@ report changes.
 | `POST /api/login` | `{ password, device, client }` → `{ token }` (`client`: the app's install id; one token per app, so two PCs of the same name don't sign each other out) |
 | `GET /api/library?since=<rev>&as=<profile>` | `{ rev, library, profile }`, or 204 when nothing changed for that profile; the library has the profile's `follows` and the others' `sharedPlaylists` |
 | `POST /api/commands` | `{ commands }` → `{ rev, results }` (see `@flow/core/commands`); `deletePlaylist` with `deleteSongs: true` also deletes the songs no playlist or favourite of any profile has, listed in its result's `deletedSongs` |
-| `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file → `{ existing, id, rev }`. A song the server has already (same source, or same names and length) is not taken: `existing` with its `names` (`{ artist, title, mix }`), and the app asks when they differ from its own; `meta.onExisting: "new"` takes it as a song of its own |
+| `PUT /api/songs/<id>?meta=<json>` | upload a song; the body is the file → `{ existing, id, rev }`. A song the server has already (same source, or same names and length) is not taken: `existing` with its `names` (`{ artist, title, mix }`), and the app asks when they differ from its own; `meta.onExisting: "new"` takes it as a song of its own; `meta.convert` (`{ alwaysMp3, quality, keepMp3 }`) has it converted into MP3 in the background once the batch is in, Ogg Vorbis always |
 | `GET /api/songs/<id>/audio` | the song's file, with Range for seeking; `?vorbis=0` (an app that cannot play Ogg Vorbis): such a song as Ogg Opus (with ffmpeg) |
 | `GET /api/songs/<id>/peaks` | `{ peaks }`: the song's waveform, for an app's Edit trim (needs ffmpeg) |
 | `POST /api/songs/<id>/trim` | `{ start, end, base, cut }` (only when `/api/hello` lists `trim`, i.e. with ffmpeg): the song's file cut to `start`..`end` seconds, the uncut file to the trash → `{ song, rev }`; `cut` is the trim's id (`song.cut`), `base` the cut it was made from. `{ skipped: 'repeat' }` when it is in already, `'changed'` when the song was trimmed by another app since (not applied), `'gone'` when deleted |
@@ -462,10 +532,11 @@ report changes.
 | `GET /api/time` | `{ time }`: the server's clock, for playing in step |
 | `GET /api/sessions?client=<id>` | `{ sessions, mine, request }`: the sessions listed, this app's own place, its open request to join |
 | `POST /api/sessions` | `{ client, type, ... }` with `type`: `state { state }` (the host's playback), `join { sessionId, mode: 'remote' or 'here' }`, `cancelJoin`, `answer { requestId, accept }`, `control { action, ... }`, `mode { mode }`, `leave` |
-| `GET /api/profiles` | `{ profiles: [{ id, name, pin }], current }` |
-| `POST /api/profiles` | `{ name, pin, device }`: a new profile, signed in → `{ token, profile }` |
+| `GET /api/profiles` | `{ profiles: [{ id, name, pin, createdAt, admin, master }], current, createProfiles }` |
+| `POST /api/profiles` | `{ name, pin, device }`: a new profile, signed in → `{ token, profile }`; 403 when only admins may make profiles |
 | `POST /api/profiles/login` | `{ profileId, pin, device }` → `{ token, profile }` |
 | `POST /api/profiles/logout`, `/rename` `{ name }`, `/delete` | the signed-in profile |
+| `/api/admin/...` | Administration, for an admin profile (see [Flow_server_API.md](../../Flow_server_API.md#administration)) |
 | `GET /api/downloads` | the profile's download batch: `{ batch }`, `null` when there is none |
 | `POST /api/downloads` | `{ url, kind: 'song' or 'list', options: { alwaysMp3, quality, keepMp3 }, cookies }` (`cookies`: a Netscape cookie file's text, optional; only the link's site's lines are kept, and the batch says `cookies: true`): a new batch, read in the background (`state: 'listing'`, then `'ready'` or `'failed'` with `error`); 409 with one open already |
 | `DELETE /api/downloads` | cancel the whole batch: downloads stopped, files gone |

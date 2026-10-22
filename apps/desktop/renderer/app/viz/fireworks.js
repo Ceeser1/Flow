@@ -269,6 +269,37 @@
       }
     }
 
+    /**
+     * The sparks moved on and drawn, crossettes splitting into born. A
+     * method of its own, so that lines.dot is inlined here and its numbers
+     * go in unboxed.
+     */
+    _moveSparks(dt, unit, born) {
+      const lines = this.lines;
+      for (const s of this.sparks) {
+        const k = Math.exp(-s.drag * dt);
+        s.vx *= k;
+        s.vy = s.vy * k + s.g * dt;
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        const before = s.life;
+        s.life -= s.fade * dt;
+        if (s.split && before > s.split && s.life <= s.split) {
+          // A crossette splits into four.
+          for (let i = 0; i < 4; i += 1) {
+            const ang = (i / 4) * Math.PI * 2 + Math.random();
+            const v = 90 * unit;
+            born.push({ ...s, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, split: 0, life: s.life, fade: 1.1 });
+          }
+          s.life = 0;
+          continue;
+        }
+        let alpha = Math.max(0, s.life) ** 0.7 * 0.7;
+        if (s.twinkle) alpha *= 0.4 + 0.6 * Math.abs(Math.sin(this.age * 30 + s.x));
+        lines.dot(s.x, s.y, s.size * (0.8 + 0.6 * s.life), s.rgb, alpha);
+      }
+    }
+
     frame(a, dt) {
       this.age += dt;
       this._listen(a, dt);
@@ -293,28 +324,7 @@
 
       // The sparks.
       const born = [];
-      for (const s of this.sparks) {
-        const k = Math.exp(-s.drag * dt);
-        s.vx *= k;
-        s.vy = s.vy * k + s.g * dt;
-        s.x += s.vx * dt;
-        s.y += s.vy * dt;
-        const before = s.life;
-        s.life -= s.fade * dt;
-        if (s.split && before > s.split && s.life <= s.split) {
-          // A crossette splits into four.
-          for (let i = 0; i < 4; i += 1) {
-            const ang = (i / 4) * Math.PI * 2 + Math.random();
-            const v = 90 * unit;
-            born.push({ ...s, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, split: 0, life: s.life, fade: 1.1 });
-          }
-          s.life = 0;
-          continue;
-        }
-        let alpha = Math.max(0, s.life) ** 0.7 * 0.7;
-        if (s.twinkle) alpha *= 0.4 + 0.6 * Math.abs(Math.sin(this.age * 30 + s.x));
-        lines.dot(s.x, s.y, s.size * (0.8 + 0.6 * s.life), s.rgb, alpha);
-      }
+      this._moveSparks(dt, unit, born);
       this.sparks = this.sparks.filter((s) => s.life > 0 && s.y < this.h + 20);
       for (const s of born) if (this.sparks.length < MAX_SPARKS) this.sparks.push(s);
       this.flash *= Math.exp(-dt * 5);

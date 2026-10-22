@@ -96,10 +96,12 @@ const Covers = {
   /** The cover file of a song as a file:// address, or '' when it has none. */
   src(song, { local = false } = {}) {
     if (!song || !song.cover || song.cover === '-') return '';
-    const dir = Store.server.on && !local ? this.dirs.server : this.dirs.local;
+    // A song of Downloaded Songs that is not the server's has its cover in Local Files', by its id there.
+    const dir = Store.server.on && !local && !song.isDevice ? this.dirs.server : this.dirs.local;
     if (!dir) return '';
+    const id = song.isDevice ? song.localId : song.id;
     const again = this._tries + (this._arrived.get(song.id) || 0);
-    return `${Util.fileUrl(`${dir}\\${song.id}.jpg`)}?v=${encodeURIComponent(song.cover)}${again ? `&r=${again}` : ''}`;
+    return `${Util.fileUrl(`${dir}/${id}.jpg`)}?v=${encodeURIComponent(song.cover)}${again ? `&r=${again}` : ''}`;
   },
 
   /** The note that stands in for a cover. */

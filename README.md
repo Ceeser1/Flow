@@ -251,21 +251,9 @@ The cog at the bottom left of the menu. Every change counts at once.
     of songs turned up. Each song is measured once in the background (EBU R128,
     well under a second a song) and the result kept in the library.
   - **Show listening trends** (on): off hides Your listening trend from the
-    menu (a trend list open then goes back to All Songs).
-  - **Local Files**: its Location, how many songs and how much room they take. Open shows
-    the folder in Explorer. Change picks another folder and moves every song
-    file there, subfolders and all (a name already taken there gets a number);
-    playlists and statistics stay. Not while a download or import runs.
-  - **Covers**: how many covers this computer keeps and how much room they
-    take (with a Flow Server: the servers' covers kept here). With a server
-    also **Clear cover cache**, which deletes those; the covers of the server
-    connected come down again.
+    menu and its lists from Search (a trend list open then goes back to All Songs).
 - **Flow Server**: **Use a Flow Server** (off). See
   [A Flow Server](#a-flow-server) below.
-  - **Profile**: which of the server's profiles this is. Not logged in, pick
-    one (or **+ New** to make one, with a PIN if wanted) and **Login** or
-    **Create**; logged in, **Rename**, **Delete** (its playlists, favourites
-    and stats, on every device) and **Logout**. Only while connected.
   - **Home Server in WiFi/LAN** and **Remote Server**: addresses, tried in
     that order (`192.168.0.63:7878`, a domain, or a full `https://` link).
     Each has a tick box before it (on by default): untick Home to connect
@@ -277,20 +265,17 @@ The cog at the bottom left of the menu. Every change counts at once.
     internet (level 3 or 4), connecting at home fills the Remote box with its
     Tailscale or `https://` address the same way.
   - **Server Password (if the server is password protected)**: entered once, kept
-    encrypted for the Windows account; empty the box to forget it.
-  - **Always Download & Synchronize on mobile internet/metered connections**
-    (off; only shown with a Remote address): away from home, songs only go
-    up and come down on connections Windows does not call metered, unless
-    ticked. Streaming and changes go either way, and at home nothing waits.
-  - **Keep downloaded files after sync with the server** (on; not under Use
-    a Flow Server but greyed out without it, like the next one): songs
-    downloaded here stay in Local Files once uploaded. Unticked, each is
-    removed here after its upload (unless a playlist marked for download
-    holds it); songs uploaded before are left alone.
-  - **Synchronize local changes** (on) and **Synchronize now**: songs added
-    to or removed from Local Files by hand, and changes made while the
-    server was off, go to the server by themselves; unticked, only with
-    Synchronize now. Songs downloaded in Flow always go up (once the first upload to that server was agreed to or declined).
+    encrypted on the device; empty the box to forget it.
+  - **Profile**: which of the server's profiles this is. Not logged in, pick
+    one (or **+ New** to make one, with a PIN if wanted) and **Login** or
+    **Create**; logged in, **Logout** and More (Edit Name, Change PIN,
+    Delete Profile: its playlists, favourites and stats, on every device).
+    Only while connected, except **Logout**, which also works away from the
+    server (it hears of it at the next connection).
+- **Switch server** (only once a server was used; not under Use a Flow
+  Server): see [Switch server](#a-flow-server) below. It works with Use a
+  Flow Server unticked too: **Switch** ticks it (for the server last in use
+  as well).
 - **Jam session** (only with a Flow Server; the heading says "(requires a Flow server
   connection)" while there is none). See [Active Sessions](#active-sessions).
   - **Share your jam session on the server** (on): other devices on the same
@@ -301,21 +286,42 @@ The cog at the bottom left of the menu. Every change counts at once.
   - **Devices in my Active Session may change my volume** (off).
   - **Output delay (Sync speakers at Jams)** (off), as in the output button's
     menu (see [Active Sessions](#active-sessions)).
-- **Website Downloads**
-  - **Download using browser cookies from** (off) and a browser (those found
+- **Media Management**
+  - **Local Files**: its Location, how many songs and how much room they take. Open shows
+    the folder in Explorer. Change picks another folder and moves every song
+    file there, subfolders and all (a name already taken there gets a number);
+    playlists and statistics stay. Not while a download or import runs.
+  - **Song Storage** (the phones, instead of Local Files): the songs kept on
+    the phone and their room; **Remove downloads** deletes the Flow Server's
+    songs kept there and unmarks every playlist's Download.
+  - **Cover Cache**: how many covers this device keeps and how much room they
+    take (with a Flow Server: the servers' covers kept here). With a server
+    also **Clear cover cache**, which deletes those; the covers of the server
+    connected come down again.
+  - **Allow downloads on mobile internet**
+    (off; greyed out without a Flow Server, only shown with a Remote address):
+    away from home, songs only go up and come down on connections Windows (or
+    the phone) calls not metered, unless ticked. Streaming and changes go
+    either way, and at home nothing waits.
+  - **Keep local files after server upload** (on; greyed out without a Flow
+    Server, like the next one): songs downloaded here stay in Local Files once
+    uploaded. Unticked, each is removed here after its upload (unless a
+    playlist marked for download holds it); songs uploaded before are left alone.
+  - **Synchronize local changes** (on) and **Synchronize now**: songs added
+    to or removed from Local Files by hand, and changes made while the
+    server was off, go to the server by themselves; unticked, only with
+    Synchronize now. Songs downloaded in Flow always go up (once the first upload to that server was agreed to or declined).
+  - **Use browser session-cookies for downloading** (off; PC only) and a browser (those found
     on this computer): yt-dlp reads that browser's cookies, so age-restricted
     videos and sites that want a signed-in visitor download too, as far as
     you are signed in there. Firefox works best; Chrome, Edge and Brave lock
     their cookies on Windows, and an error says so. Under it, with a Flow
-    Server, **Share session cookies with the server for downloads** (off):
+    Server, **Share session cookies with the server** (off):
     Download (Server) then gets the cookies of the link's site only (all of
     YouTube for a YouTube or Spotify link), for that one download, kept
     readable only by the server and deleted with the download. On a plain
     http Home address they cross the home network unencrypted.
-  - **Always convert all downloads into MP3** (off) at 64 to 320 kbit/s
-    (192), and under it **Ignore files that are already in .mp3 format** (on):
-    unticked, MP3s are encoded again at the chosen quality too.
-  - **Use Sponsorblock for Youtube** (off): the trim editor colours what
+  - **Use Sponsorblock for Youtube** (off; PC only): the trim editor colours what
     [SponsorBlock](https://sponsor.ajay.app)'s viewers marked in a YouTube
     video, from start to end: sponsors, plugs of the channel's own things and
     "like and subscribe" yellow. Under it **Try to detect intros/outros,
@@ -323,14 +329,22 @@ The cog at the bottom left of the menu. Every change counts at once.
     non-music parts (talk, skits, credits) red. Only colours, the cut stays
     yours; a video nobody marked, or a SponsorBlock that cannot be reached
     (6 s at most), just shows no colours.
-- **Visuals**
+  - **Always convert all downloads into MP3** (off) at 64 to 320 kbit/s
+    (192), and under it **Ignore files that are already in .mp3 format** (on):
+    unticked, MP3s are encoded again at the chosen quality too.
+    On a phone it is called **Upload songs to the server as MP3**: songs the
+    phone uploads (its own files) and Download (Server) are saved on the
+    server as MP3 at that quality, converted by the server in the background
+    once the batch is uploaded. Songs downloaded to the phone are not changed.
+- **App Visuals** (the phones: the clouds without React to Bass, as the page does not hear the music there,
+  off until turned on, with a note that they drain the battery a bit faster)
   - **Background Clouds** (on), Intensity 1 to 100% (50), and **React to
     Bass** (on), Reaction 1 to 100% (33; 25 is the look as designed, 100
     four times that). **Clouds color scheme**: Rainbow (each cloud a random
     colour every time it comes back) or White, Red, Green, Yellow, Blue,
     Purple or Black. **Clouds amount** 0 to 100% in steps of 10 (50: six
     clouds; 100 twelve, 0 none).
-  - **Equalizer** (on), Height 1 to 100% (50: the loudest bars reach a third
+  - **Equalizer** (on; PC only), Height 1 to 100% (50: the loudest bars reach a third
     of the page), **Visibility** 1 to 100% (50: 100 is fully opaque; above 50
     the shine also starts brighter at the bars and fades out faster),
     **Outer Shine** (on), Spread 1 to 100% (50), and the colour scheme:
@@ -338,19 +352,26 @@ The cog at the bottom left of the menu. Every change counts at once.
     drifting to the right one screen width every 15 seconds), Greyscale (dark
     grey when low, whiter the taller the bar), or White, Red,
     Green, Yellow, Blue, Purple or Black.
-  - **Screen Flash** (off): on each punch of the bass felt more than heard
-    (20 to 80 Hz: a sudden jump of that level above the dip before it) the
-    window glows white from its edges inwards, at once, fading over a few
-    tenths of a second. **Triggers** 1 to 100% (80): how small a punch still
-    counts (a share of the biggest of the last two seconds) and how soon
-    another flash may follow (5 s / Triggers%: 50 ms at 100%, 100 ms at 50%).
-    On 150 BPM hardstyle about 50% flashes on every kick, 80% on the
-    off-beat bass too (4 to 5 a second). **Flash range** 1 to 100%
-    (33): the flash starts that bright at the edges and fades to nothing that
-    share of the window's width in, from every edge alike. Flashing more than
-    three times a second can set off photosensitive epilepsy; on dense music
-    high Triggers can do that. At 1% only a few pixels at the edges, at 50% white edges and a
-    centre hardly touched, at 100% about a quarter white in the middle.
+- **Statistics** (from 3.6; above Administration)
+  - **All tracked Profiles**: every profile used in this app, by server, and
+    Private. Click one to see its statistics. **Remove** forgets a profile's
+    statistics here, with its listens not sent yet; the server keeps its
+    own, and logging in to it again brings them back. Not for the profile in
+    use, nor Private.
+  - **Statistics for profile: ... at server ...**: when it was made, the
+    songs it added, the songs listened to (30 seconds or more), the time
+    listened (days, hours, minutes); the current and the highest streak of
+    days with listening, and the longest session (songs with at most 10
+    minutes between them) this month and ever. Activity: the hours of each
+    month from January of the year it was made, each year's total after it
+    (Monthly), or of each day of one month with its total (Daily: the
+    current month, or the month clicked in Monthly). The numbers only grow: deleting songs does not lower them.
+    Statistics start at 0 with 3.6.
+  - Private counts everything heard in this app, whatever server or profile,
+    also in a Jam, and is never sent anywhere. Its added songs are the songs
+    this device downloaded, imported or saved through Download (Server). A
+    profile's listen also counts for the server's Default / Shared; in a Jam
+    only the host's listen counts there.
 
 ### How Artist, Title and Mix are guessed
 
@@ -388,13 +409,15 @@ says so next to the Artist box, so you know to check it.
 
 ### Which format a song is saved in
 
-No song is converted from one lossy format to another unless you ask:
+No song is converted from one lossy format to another unless you ask, except
+Ogg Vorbis, which the iPhone cannot play:
 
 | Source                        | Saved as                                    |
 |-------------------------------|---------------------------------------------|
 | Opus (YouTube, SoundCloud)    | `.opus`, untouched                          |
 | AAC (SoundCloud, Vimeo)       | `.m4a`, untouched                           |
-| MP3, Vorbis, FLAC, WAV        | as they are                                 |
+| MP3, FLAC, WAV                | as they are                                 |
+| Ogg Vorbis                    | `.mp3` at 192 kbit/s (or the quality below) |
 | AIFF, ALAC, other lossless    | `.flac`, still lossless                     |
 | anything else                 | `.mp3` at the quality chosen in Settings    |
 
@@ -405,7 +428,8 @@ files that are already in .mp3 format" unticked, MP3s as well.
 ### A Flow Server
 
 With **Use a Flow Server** on, the library lives on a
-Flow Server (`apps/server`, e.g. on a Raspberry Pi) and Flow is its remote
+Flow Server (`apps/linux-server` on a Raspberry Pi or another Linux machine,
+`apps/windows-server` on a Windows PC) and Flow is its remote
 control with a cache:
 
 - Songs play straight from the server, seeking included. The name under
@@ -425,6 +449,16 @@ control with a cache:
   profile is signed in. A playlist another profile shares has it too
   once you follow it; unfollowing removes its downloaded songs, except those
   another downloaded playlist or All Songs still holds.
+- **Downloaded Songs**, first under All Songs in the menu: every song with a
+  file on this device, the server's and the rest (copies downloaded from
+  another Flow Server, songs not uploaded). Those that are not on this server
+  only play, and can be deleted from this device (More); Flow says when one
+  is on no server at all, so its file here is the only copy. A file here that
+  the server has as well (the same source, or the same names at the same
+  length, as an upload would find it) counts as that server song's copy even
+  when it never went up through this device (held back with "Not now", say):
+  it shows as on this computer, plays from here and its Download button
+  deletes it; nothing goes up or comes down for it.
 - **Download (Server)**: when the server downloads songs itself (`install.sh`
   asks; it needs yt-dlp and ffmpeg there), Add Songs has it next to
   **Download (Client)**. The server reads the link and downloads the songs in
@@ -445,7 +479,7 @@ control with a cache:
   names, Flow asks: **Use these names** (the server's song is renamed),
   **Keep the server's**, or **Upload as a new song**; "Do the same for the
   other songs of this upload" answers for the rest.
-- `apps/server/install.sh` sets the server up as a service on any Linux
+- `apps/linux-server/install.sh` sets the server up as a service on any Linux
   with systemd, and asks how far it should be reachable (see the server's
   README):
   1. the home network only;
@@ -461,6 +495,10 @@ control with a cache:
   Levels 3 and 4 need a strong password, and connecting at home fills the
   Remote box with the server's `https://` address. `flow-server doctor
   <address>` checks a server the way the apps reach it.
+- On Windows, `Flow Server Setup <version>.exe` (`apps/windows-server`)
+  installs the server with the Node.js it runs on and ffmpeg, asks the same
+  questions (levels 1, 2 and 4; level 3 is Linux only), and starts it with
+  Windows, before anyone signs in. See its README.
 - Profiles: everyone shares the songs, and each profile has its own
   playlists, favourites and listening stats. A new profile starts
   with a copy of the Default / Shared playlists (what is used while no profile
@@ -477,8 +515,23 @@ control with a cache:
   takes its cover along, and a song downloaded from the server takes the
   server's.
 - Last seen library and waiting changes: `server-library.json` and
-  `server-sync.json` in `%LOCALAPPDATA%\Flow`. A different server at the same
-  address starts both afresh.
+  `server-sync.json` in `%LOCALAPPDATA%\Flow`.
+- Switching to another server keeps what belongs to the one left
+  (`server-others.json`): its playlists marked for download, the changes
+  still waiting for it and the profile logged in to are as they were when
+  you come back. Songs that came to Local Files meanwhile (downloaded from the
+  other server, or added) are not uploaded to it by themselves: Flow asks
+  first, as it does for a server used the first time, and says how many were
+  downloaded from another server. A song file another server still uses is
+  never deleted for this one (a playlist unmarked, a song deleted there).
+- **Switch server** (Settings > Flow Server): a dropdown of the servers used
+  on this device, the one in use picked. Picking another shows the address it
+  answered at and the profile; nothing happens until **Switch**, which
+  connects to it with that address, its password and its profile; one that
+  does not answer leaves the server in use as it is. With Use a Flow Server
+  unticked, Switch ticks it. ✕ forgets the picked one
+  (what waited to go to it is dropped; its songs here stay, under Downloaded
+  Songs).
 
 ### Active Sessions
 
@@ -569,7 +622,8 @@ npm test        # every package's tests: no network; the parts that need ffmpeg 
                 # with apps/desktop/tools/ (or ffmpeg on the PATH), else are skipped
 npm run icon    # every app's icons (desktop, Android, iPhone) from icons/flow.png
                 # (the white wave on its blue square)
-npm run dist    # build the installer into apps/desktop/dist/
+npm run dist    # build the installer into apps/desktop/dist/ (it installs to Program Files\Flow, for every user)
+npm run dist:windows-server   # the Flow Server's Windows installer, into apps/windows-server/dist/
 ```
 
 The root folder is an npm workspace, so the commands work from there. The
@@ -595,12 +649,13 @@ sets it, and with it set Electron starts as plain Node.
 ## Layout
 
 ```
-packages/core/   shared by every Flow app: plain Node, no Electron
-apps/desktop/    the Electron app (Windows now, Linux from the same code)
-apps/server/     Flow Server: hosts a library for the apps (see its README)
-apps/android/    the Android app (v3.0, a Flow Server client; see its README)
-apps/ios/        the iPhone app (the Android app's page in Swift; see its README)
-icons/           Flow's icon, the source of every app's (npm run icon)
+packages/core/        shared by every Flow app: plain Node, no Electron
+apps/desktop/         the Electron app (Windows now, Linux from the same code)
+apps/linux-server/    Flow Server: hosts a library for the apps, and its Linux installer (see its README)
+apps/windows-server/  the Flow Server's installer for Windows (see its README)
+apps/android/         the Android app (v3.0, a Flow Server client; see its README)
+apps/ios/             the iPhone app (the Android app's page in Swift; see its README)
+icons/                Flow's icon, the source of every app's (npm run icon)
 ```
 
 `packages/core/src/` holds `formats.js`, `text.js`, `titleParser.js`,

@@ -199,6 +199,62 @@ const VizGL = {
     gl.viewport(0, 0, t ? t.w : gl.drawingBufferWidth, t ? t.h : gl.drawingBufferHeight);
   },
 
+  /**
+   * A picture drawn at a render scale (percent of the screen's pixels
+   * across, as Disco's dcScale): into a target that size, then stretched onto
+   * the screen; at 100% straight onto the screen as ever. size(w, h,
+   * percent) whenever the screen or the setting changes (true when the size
+   * drawn at changed); into() in place of VizGL.into(gl, null); present()
+   * once the picture is done (nothing at 100%). w, h: the size drawn at.
+   */
+  scaled(gl) {
+    const prog = this.program(gl, this.SCREEN_VS, this.NOISE + `
+      in vec2 uv;
+      uniform sampler2D src;
+      uniform float time;
+      out vec4 o;
+      void main() {
+        // A little noise again at the screen's own pixels: the picture's was
+        // stretched with it.
+        o = vec4(texture(src, uv).rgb + (hash12(gl_FragCoord.xy + time) - 0.5) / 255.0, 1.0);
+      }`);
+    const s = {
+      t: null, w: 1, h: 1, fullW: 0, fullH: 0, pct: 0,
+      size: (w, h, percent) => {
+        const pct = Math.max(25, Math.min(100, Number(percent) || 100));
+        if (w === s.fullW && h === s.fullH && pct === s.pct) return false;
+        s.fullW = w;
+        s.fullH = h;
+        s.pct = pct;
+        this.freeTarget(gl, s.t);
+        s.t = null;
+        s.w = w;
+        s.h = h;
+        if (pct < 100) {
+          s.w = Math.max(1, Math.round((w * pct) / 100));
+          s.h = Math.max(1, Math.round((h * pct) / 100));
+          s.t = this.target(gl, s.w, s.h);
+        }
+        return true;
+      },
+      into: () => this.into(gl, s.t),
+      present: (time = 0) => {
+        if (!s.t) return;
+        gl.disable(gl.BLEND);
+        this.into(gl, null);
+        gl.useProgram(prog.p);
+        this.bind(gl, prog.u.src, s.t.tex, 0);
+        gl.uniform1f(prog.u.time, time);
+        this.screen(gl);
+      },
+      free: () => this.freeTarget(gl, s.t),
+    };
+    return s;
+  },
+
+  /** The choices of a render scale setting, for a visualizer's cogwheel. */
+  SCALES: [['100', '100%'], ['75', '75%'], ['50', '50%']],
+
   /** Binds texture tex to unit `unit` and points the sampler uniform at it. */
   bind(gl, loc, tex, unit = 0) {
     gl.activeTexture(gl.TEXTURE0 + unit);
@@ -343,48 +399,76 @@ const VizGL = {
     }
     const stream = this.stream(gl, [[0, 2], [1, 4], [2, 1]], capacity);
     const d = stream.data;
+    // One vertex at k: its place, colour, alpha and side (s, across it).
+    // Nothing made per call: Ridges and Seismograph add thousands a frame.
+    const vertex = (k, x, y, r, g, b, al, s) => {
+      d[k] = x;
+      d[k + 1] = y;
+      d[k + 2] = r;
+      d[k + 3] = g;
+      d[k + 4] = b;
+      d[k + 5] = al;
+      d[k + 6] = s;
+    };
+    // seg's and tri's numbers on their way in: they themselves are small
+    // enough to be inlined where they are called, and hand them over in here
+    // rather than as arguments, which would each be boxed (thousands a frame).
+    const arg = new Float64Array(8);
+    const segFrom = (rgb) => {
+      const x0 = arg[0];
+      const y0 = arg[1];
+      const x1 = arg[2];
+      const y1 = arg[3];
+      const width = arg[4];
+      const a = arg[5];
+      const a1 = arg[6];
+      const r = rgb[0];
+      const g = rgb[1];
+      const b = rgb[2];
+      if (l.count > capacity - 6) return;
+      const len = Spectrum.hypot(x1 - x0, y1 - y0) || 1;
+      const nx = (-(y1 - y0) / len) * width;
+      const ny = ((x1 - x0) / len) * width;
+      const k = l.count * 7;
+      vertex(k, x0 + nx, y0 + ny, r, g, b, a, 1);
+      vertex(k + 7, x0 - nx, y0 - ny, r, g, b, a, -1);
+      vertex(k + 14, x1 + nx, y1 + ny, r, g, b, a1, 1);
+      vertex(k + 21, x1 + nx, y1 + ny, r, g, b, a1, 1);
+      vertex(k + 28, x0 - nx, y0 - ny, r, g, b, a, -1);
+      vertex(k + 35, x1 - nx, y1 - ny, r, g, b, a1, -1);
+      l.count += 6;
+    };
+    const triFrom = (rgb) => {
+      if (l.count > capacity - 3) return;
+      const k = l.count * 7;
+      const a = arg[6];
+      vertex(k, arg[0], arg[1], rgb[0], rgb[1], rgb[2], a, 0);
+      vertex(k + 7, arg[2], arg[3], rgb[0], rgb[1], rgb[2], a, 0);
+      vertex(k + 14, arg[4], arg[5], rgb[0], rgb[1], rgb[2], a, 0);
+      l.count += 3;
+    };
     const l = {
       count: 0,
       seg(x0, y0, x1, y1, width, rgb, a, a1 = a) {
-        const [r, g, b] = rgb;
-        if (l.count > capacity - 6) return;
-        const len = Math.hypot(x1 - x0, y1 - y0) || 1;
-        const nx = (-(y1 - y0) / len) * width;
-        const ny = ((x1 - x0) / len) * width;
-        let k = l.count * 7;
-        const put = (x, y, s, al) => {
-          d[k] = x;
-          d[k + 1] = y;
-          d[k + 2] = r;
-          d[k + 3] = g;
-          d[k + 4] = b;
-          d[k + 5] = al;
-          d[k + 6] = s;
-          k += 7;
-        };
-        put(x0 + nx, y0 + ny, 1, a);
-        put(x0 - nx, y0 - ny, -1, a);
-        put(x1 + nx, y1 + ny, 1, a1);
-        put(x1 + nx, y1 + ny, 1, a1);
-        put(x0 - nx, y0 - ny, -1, a);
-        put(x1 - nx, y1 - ny, -1, a1);
-        l.count += 6;
+        arg[0] = x0;
+        arg[1] = y0;
+        arg[2] = x1;
+        arg[3] = y1;
+        arg[4] = width;
+        arg[5] = a;
+        arg[6] = a1;
+        segFrom(rgb);
       },
       /** A solid triangle (no falloff), drawn in its place among the lines. */
       tri(x0, y0, x1, y1, x2, y2, rgb, a) {
-        if (l.count > capacity - 3) return;
-        let k = l.count * 7;
-        for (const [x, y] of [[x0, y0], [x1, y1], [x2, y2]]) {
-          d[k] = x;
-          d[k + 1] = y;
-          d[k + 2] = rgb[0];
-          d[k + 3] = rgb[1];
-          d[k + 4] = rgb[2];
-          d[k + 5] = a;
-          d[k + 6] = 0;
-          k += 7;
-        }
-        l.count += 3;
+        arg[0] = x0;
+        arg[1] = y0;
+        arg[2] = x1;
+        arg[3] = y1;
+        arg[4] = x2;
+        arg[5] = y2;
+        arg[6] = a;
+        triFrom(rgb);
       },
       /** A round dot: a short segment as long as it is wide. */
       dot(x, y, radius, rgb, a) {
@@ -435,6 +519,12 @@ const VizGL = {
     const shift = this.starShift();
     let target = null;
     let view = [0, 0, 1, 1];
+    // The faint stars in their own cells, the bright ones shining into the
+    // cells round theirs: salt and over as faintStar's and brightStar's test.
+    const layers = [
+      { bright: 0, cell: 5, past: 0, corners: 6, salt: 11.3, over: 0.955 },
+      { bright: 1, cell: 40, past: 1, corners: 18, salt: 23.9, over: 0.8 },
+    ].map((l) => this._starCells(gl, l));
     return {
       draw(x, y, w, h, time, boom) {
         w = Math.max(1, Math.ceil(w));
@@ -449,26 +539,25 @@ const VizGL = {
         gl.clear(gl.COLOR_BUFFER_BIT);
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE);
-        gl.bindVertexArray(null);
         gl.useProgram(prog.p);
         const u = prog.u;
         gl.uniform2f(u.origin, x, y);
         gl.uniform2f(u.size, w, h);
-        gl.uniform2f(u.starShift, ...shift);
+        gl.uniform2f(u.starShift, shift[0], shift[1]);
         gl.uniform1f(u.time, time);
         gl.uniform1f(u.boom, boom);
-        // The cells under it: the faint ones in their own, the bright ones
-        // shining into the cells round theirs.
-        for (const [bright, cell, past, corners] of [[0, 5, 0, 6], [1, 40, 1, 18]]) {
-          const fx = Math.floor((x + shift[0]) / cell) - past;
-          const fy = Math.floor((y + shift[1]) / cell) - past;
-          const cols = Math.floor((x + w + shift[0]) / cell) + past - fx + 1;
-          const rows = Math.floor((y + h + shift[1]) / cell) + past - fy + 1;
-          gl.uniform2f(u.first, fx, fy);
-          gl.uniform1i(u.cols, cols);
-          gl.uniform1i(u.bright, bright);
-          gl.drawArraysInstanced(gl.TRIANGLES, 0, corners, cols * rows);
+        // The cells under it: only those that may hold a star (most hold
+        // none), in the order all of them would come, row by row.
+        for (const l of layers) {
+          const fx = Math.floor((x + shift[0]) / l.cell) - l.past;
+          const fy = Math.floor((y + shift[1]) / l.cell) - l.past;
+          const cols = Math.floor((x + w + shift[0]) / l.cell) + l.past - fx + 1;
+          const rows = Math.floor((y + h + shift[1]) / l.cell) + l.past - fy + 1;
+          l.show(fx, fy, cols, rows);
+          gl.uniform1i(u.bright, l.bright);
+          gl.drawArraysInstanced(gl.TRIANGLES, 0, l.corners, l.count);
         }
+        gl.bindVertexArray(null);
         gl.disable(gl.BLEND);
       },
       use(u, unit) {
@@ -478,6 +567,111 @@ const VizGL = {
       },
     };
   },
+
+  /**
+   * One layer of a starLayer's cells (l: its cell size, salt and threshold):
+   * the cells that may hold a star, as an instanced attribute (location 0),
+   * so the thousands that hold none are not drawn at all. Adds to l
+   * show(fx, fy, cols, rows), which brings the list to those cells (row by
+   * row, in the order every cell came when all were drawn, as the blending
+   * adds them up in that order) and leaves its vertex array bound, and
+   * count. Whether a cell may hold one is worked out as the shader does
+   * (hash12 in 32-bit floats) with room to spare, since a GPU may round its
+   * sums a little differently: some cells too many, never one too few. The
+   * shader still decides. A moving sky (Night Train's) brings new columns in
+   * and they are added as it comes to them.
+   */
+  _starCells(gl, l) {
+    const vao = gl.createVertexArray();
+    const buf = gl.createBuffer();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribDivisor(0, 1);
+    gl.bindVertexArray(null);
+    // On an RTX 2070 Super the GPU's hash strays from this one by 0.008 at
+    // most (33 million cells): room for other GPUs to round differently.
+    const MARGIN = 0.05;
+    const salt = Math.fround(l.salt);
+    const maybe = (gx, gy) => {
+      const h = this._hash12(Math.fround(gx + salt), Math.fround(gy + salt));
+      return h > l.over - MARGIN || h < MARGIN;
+    };
+    let rows = [];   // per row of cells, the columns from lo to hi that may hold one, rising
+    let top = null;
+    let lo = 0;
+    let hi = 0;
+    let shown = '';
+    let data = new Float32Array(0);
+    l.count = 0;
+    l.show = (fx, fy, cols, count) => {
+      if (fy !== top || count !== rows.length || fx < lo || fx > hi) {
+        top = fy;
+        rows = Array.from({ length: count }, () => []);
+        lo = fx;
+        hi = fx;
+        shown = '';
+      }
+      const end = fx + cols;
+      if (end > hi) {
+        // A few columns ahead, so a moving sky does not come back every frame.
+        const to = Math.max(end, hi + 16);
+        for (let r = 0; r < count; r += 1) {
+          const list = rows[r];
+          for (let gx = hi; gx < to; gx += 1) if (maybe(gx, fy + r)) list.push(gx);
+        }
+        hi = to;
+      }
+      if (fx - lo > 256) {
+        rows = rows.map((list) => list.filter((gx) => gx >= fx));
+        lo = fx;
+      }
+      const key = `${fx},${cols}`;
+      if (key !== shown) {
+        shown = key;
+        if (data.length < cols * count * 2) data = new Float32Array(cols * count * 2);
+        let n = 0;
+        for (let r = 0; r < count; r += 1) {
+          const list = rows[r];
+          for (let i = 0; i < list.length; i += 1) {
+            const gx = list[i];
+            if (gx < fx || gx >= end) continue;
+            data[n] = gx;
+            data[n + 1] = fy + r;
+            n += 2;
+          }
+        }
+        l.count = n / 2;
+        if (n) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+          gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW, 0, n);
+        }
+      }
+      gl.bindVertexArray(vao);
+    };
+    return l;
+  },
+
+  /** NOISE's hash12 as a shader works it out, in 32-bit floats (but for how a GPU may round its dot product). */
+  _hash12(px, py) {
+    const f = Math.fround;
+    const A = this._HASH_A;
+    const K = this._HASH_K;
+    let x = f(px * A);
+    x = f(x - Math.floor(x));
+    let y = f(py * A);
+    y = f(y - Math.floor(y));
+    let z = x;
+    const d = f(f(f(x * f(y + K)) + f(y * f(z + K))) + f(z * f(x + K)));
+    x = f(x + d);
+    y = f(y + d);
+    z = f(z + d);
+    const h = f(f(x + y) * z);
+    return f(h - Math.floor(h));
+  },
+  _HASH_A: Math.fround(0.1031),
+  _HASH_K: Math.fround(33.33),
 
   // Shared shader code: hashes and noise.
   NOISE: `
@@ -601,14 +795,14 @@ const VizGL = {
     }`,
 
   // The starLayer's stars, each drawn as small squares round it: one
-  // instance a cell (the program's bright: the big cells), most of them
-  // empty (drawn as nothing). A bright star is a square as far as its glow
+  // instance a cell that may hold one (the program's bright: the big
+  // cells), some of them empty after all (drawn as nothing). A bright star is a square as far as its glow
   // reaches and, the brightest, a bar each way for its spikes (outside the
   // square); a faint one a square within its own cell, a bright one within
   // the cells round its own, as far as STARS looks.
   STAR_LAYER_VS: `
-    uniform vec2 origin, size, starShift, first;
-    uniform int cols;
+    layout(location = 0) in vec2 cell;   // which cell (starLayer's list: those that may hold a star)
+    uniform vec2 origin, size, starShift;
     uniform bool bright;
     uniform float time, boom;
     out vec2 d;
@@ -616,7 +810,7 @@ const VizGL = {
     flat out vec3 shape;   // 0 faint, 1 the square, 2-3 a bar; m; the square's half width
     const float FAINT = 0.0015;   // what is not drawn
     void main() {
-      vec2 g = first + vec2(float(gl_InstanceID % cols), float(gl_InstanceID / cols));
+      vec2 g = cell;
       int part = gl_VertexID / 6;
       int k = gl_VertexID % 6;
       vec2 corner = vec2(k == 1 || k == 4 || k == 5 ? 1.0 : 0.0, k == 2 || k == 3 || k == 5 ? 1.0 : 0.0);

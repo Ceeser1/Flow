@@ -18,8 +18,8 @@ process.env.FLOW_MUSIC = path.join(scratch, 'music');
 // The fake songs below are no real audio: ffprobe would call them broken.
 process.env.FLOW_SERVER_FFMPEG = 'off';
 
-const { startServer } = require('../../server/src/server');
-const configMod = require('../../server/src/config');
+const { startServer } = require('../../linux-server/src/server');
+const configMod = require('../../linux-server/src/config');
 const model = require('@flow/core/libraryModel');
 const settings = require('../src/settings');
 const library = require('../src/library');
@@ -27,6 +27,7 @@ const remote = require('../src/remote');
 
 const FAKE_MP3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(1997, 7)]);
 const servers = [];
+let second = null; // the server with a password, from its step on
 
 async function serve({ password } = {}) {
   const dirs = { home: path.join(scratch, `server${servers.length}`, 'home'), music: path.join(scratch, `server${servers.length}`, 'music') };
@@ -53,6 +54,8 @@ const serverLibrary = async (base, token) => (await (await fetch(`${base}/api/li
 })).json()).library;
 
 const asked = [];
+const questions = [];
+let answerUpload = true;
 const notices = [];
 const live = [];
 
@@ -64,10 +67,12 @@ test.after(async () => {
 
 test('a Flow Server as the library, step by step', async (t) => {
   const one = await serve();
+  // The server keeps an upload's folders from the app's music folder.
+  one.server.config.set({ keepFolders: true });
   library.load();
-  // A song in Local Files from before there was a server.
-  const roadsFile = path.join(process.env.FLOW_MUSIC, 'Portishead - Roads.mp3');
-  fs.mkdirSync(process.env.FLOW_MUSIC, { recursive: true });
+  // A song in Local Files from before there was a server, in a folder of its own.
+  const roadsFile = path.join(process.env.FLOW_MUSIC, 'Portishead', 'Dummy', 'Roads.mp3');
+  fs.mkdirSync(path.dirname(roadsFile), { recursive: true });
   fs.writeFileSync(roadsFile, FAKE_MP3);
   library.mutate((d) => model.addSong(d, {
     id: 'roads1', file: roadsFile, title: 'Roads', artist: 'Portishead', mix: '', duration: 305, format: 'mp3', addedAt: Date.now(),
@@ -75,9 +80,10 @@ test('a Flow Server as the library, step by step', async (t) => {
 
   settings.set({ serverOn: true, serverHome: one.address });
   remote.init({
-    confirmUpload: async ({ count }) => {
-      asked.push(count);
-      return true;
+    confirmUpload: async (q) => {
+      asked.push(q.count);
+      questions.push(q);
+      return answerUpload;
     },
     onNotice: (text, kind) => notices.push([kind, text]),
     onLive: (e) => live.push(e.type),
@@ -91,7 +97,8 @@ test('a Flow Server as the library, step by step', async (t) => {
     const there = (await serverLibrary(one.base)).songs[0];
     assert.equal(there.id, 'roads1');
     assert.equal(there.title, 'Roads');
-    // Kept here (Keep downloaded files), and the window plays it from here.
+    assert.equal(there.file, 'Portishead/Dummy/Roads.mp3');
+    // Kept here (Keep local files after server upload), and the window plays it from here.
     await until(() => remote.view().songs.length === 1, 'the view');
     assert.equal(remote.localFileOf('roads1'), roadsFile);
     assert.equal(remote.status().queued, 0);
@@ -180,7 +187,9 @@ test('a Flow Server as the library, step by step', async (t) => {
 
   await t.test('profiles: made, signed in to, its own playlists, signed out', async () => {
     assert.equal(remote.status().profilesSupported, true);
-    const made = await remote.createProfile('Evening Listener', '');
+    // The server's first profile becomes its admin, so it needs a PIN.
+    await assert.rejects(remote.createProfile('Evening Listener', ''), /needs a PIN/);
+    const made = await remote.createProfile('Evening Listener', '2468');
     assert.equal(made.name, 'Evening Listener');
     assert.equal(remote.status().profile.name, 'Evening Listener');
     const token = remote.status().token;
@@ -190,11 +199,81 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.ok(!(await serverLibrary(one.base)).playlists.some((p) => p.id === 'mine1'));
     const list = await remote.loadProfiles();
     assert.ok(list.some((p) => p.name === 'Evening Listener'));
-    const renamed = await remote.renameProfile('Night Listener');
-    assert.equal(renamed.name, 'Night Listener');
+    // Renaming needs the PIN; a new PIN is the one asked for then. An admin keeps one.
+    await assert.rejects(remote.renameProfile('Night Listener'), /Enter the current PIN/);
+    await new Promise((r) => setTimeout(r, 1100)); // the wait after a wrong try
+    assert.equal((await remote.renameProfile('Night Listener', '2468')).name, 'Night Listener');
+    assert.equal((await remote.changePin('2468', '4321')).pin, true);
+    assert.equal(remote.status().profile.pin, true);
+    await assert.rejects(remote.renameProfile('Late Listener', '2468'), /Wrong current PIN/);
+    await new Promise((r) => setTimeout(r, 1100));
+    assert.equal((await remote.renameProfile('Night Listener', '4321')).name, 'Night Listener');
+    await assert.rejects(remote.changePin('4321', ''), /An admin profile needs a PIN/);
     await remote.logoutProfile();
     assert.equal(remote.status().profile, null);
     assert.ok(!model.playlistById(remote.view(), 'mine1'));
+  });
+
+  await t.test('Statistics: the profile signed in to is tracked with its listens, kept after logout until removed', async () => {
+    const night = (await remote.loadProfiles()).find((p) => p.name === 'Night Listener');
+    await remote.loginProfile(night.id, '4321');
+    assert.equal(remote.status().statistics, true);
+    remote.command('recordListen', {
+      songId: 'roads1', listened: 120, duration: 305, tz: 0,
+    });
+    // Shown at once, before the server has it.
+    const row = await until(() => remote.status().tracked.find((r) => r.profileId === night.id && r.statistics.seconds === 120), 'the tracked row');
+    assert.equal(row.profileName, 'Night Listener');
+    assert.equal(row.serverId, remote.status().serverId);
+    assert.equal(row.serverName, remote.status().serverName);
+    assert.equal(row.supported, true);
+    assert.equal(row.statistics.listens, 1);
+    assert.ok(row.statistics.since > 0);
+    await until(async () => (await serverLibrary(one.base, remote.status().token)).statistics.seconds === 120, 'the listen on the server');
+    assert.throws(() => remote.removeTracked(row.serverId, night.id), /in use/);
+    await remote.logoutProfile();
+    // The Default heard it too; it gets no row of its own.
+    assert.equal(remote.view().statistics.seconds, 120);
+    assert.deepEqual(remote.status().tracked.map((r) => r.profileId), [night.id]);
+    remote.removeTracked(row.serverId, night.id);
+    assert.deepEqual(remote.status().tracked, []);
+  });
+
+  await t.test('Administration: an admin profile, the rules, the master changing the password', async () => {
+    const night = (await remote.loadProfiles()).find((p) => p.name === 'Night Listener');
+    await remote.loginProfile(night.id, '4321');
+    // The first profile on the server: an admin.
+    assert.equal(remote.status().admin, true);
+    assert.equal(remote.status().master, false);
+    const list = await remote.admin('profiles');
+    assert.equal(list.me, night.id);
+    assert.ok(list.profiles.some((p) => p.id === night.id && p.admin));
+    assert.deepEqual(await remote.admin('rules', { songDelete: 'owner' }), { profileCreation: 'anyone', songDelete: 'owner' });
+    assert.equal(remote.status().rules.songDelete, 'anyone', 'an admin may delete any song');
+    await assert.rejects(remote.admin('../hello'), /No such page/);
+    await assert.rejects(remote.changeServerPassword({ password: 'abcd' }), /master/);
+
+    // The master: the password changed, this app carries on with its new token and keeps the password.
+    // Made the master on the server (flow-server admin master) while signed in:
+    // the library is unchanged, so the profiles list (fetched on every
+    // connect) is what tells this app.
+    one.server.config.set({ profiles: one.server.config.get().profiles.map((p) => (p.id === night.id ? { ...p, master: true } : p)) });
+    assert.equal(remote.status().master, false);
+    await remote.loadProfiles();
+    assert.equal(remote.status().master, true);
+    const before = remote.status().token;
+    await remote.changeServerPassword({ password: 'abcd' });
+    assert.notEqual(remote.status().token, before);
+    assert.ok(one.server.config.get().password);
+    assert.equal(remote.status().hasSecret, true);
+    assert.ok((await remote.admin('profiles')).profiles.length >= 1, 'still in');
+    assert.equal((await fetch(`${one.base}/api/library`)).status, 401, 'everyone else needs it');
+    await remote.changeServerPassword({ current: 'abcd', remove: true });
+    assert.equal(one.server.config.get().password, null);
+    await remote.admin('rules', { songDelete: 'anyone' });
+    one.server.config.set({ profiles: one.server.config.get().profiles.map((p) => ({ ...p, master: false })) });
+    await remote.logoutProfile();
+    assert.equal(remote.status().admin, false);
   });
 
   await t.test('the songs one profile added, marked for download: only those, new ones too, unmarked once it is gone', async () => {
@@ -233,8 +312,63 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.equal(remote.localFileOf('tear1'), null);
   });
 
+  await t.test('away on a metered connection: marked songs wait, come down once allowed, and stop when no longer', async () => {
+    const network = require('../src/network');
+    const isMetered = network.isMetered;
+    network.isMetered = async () => true;
+    settings.set({ serverHomeOn: false, serverRemote: one.address, serverMetered: false });
+    remote.reconfigure({ serverHomeOn: false, serverRemote: one.address });
+    await until(() => remote.status().state === 'online' && remote.status().via === 'remote', 'online away from home');
+    const onServer = () => remote.view().songs.filter((s) => s.id !== 'roads1').map((s) => s.id);
+    const here = () => onServer().filter((id) => remote.localFileOf(id));
+    const all = onServer();
+    assert.ok(all.length >= 2, 'songs to come down');
+
+    // Not allowed: nothing comes down, and the window says why.
+    await remote.setOffline(model.ALL_SONGS_ID, true);
+    await until(() => /wait to be downloaded until the connection is not metered/.test(remote.status().note), 'the waiting note');
+    assert.deepEqual(here(), []);
+
+    // Allowed, then taken back after the first song: the rest waits again.
+    let takeBack = true;
+    library.onChange(() => {
+      if (!takeBack || !here().length) return;
+      takeBack = false;
+      settings.set({ serverMetered: false });
+      remote.reconfigure({ serverMetered: false });
+    });
+    settings.set({ serverMetered: true });
+    remote.reconfigure({ serverMetered: true });
+    const left = all.length - 1;
+    await until(() => remote.status().note.startsWith(`${left} ${left === 1 ? 'song waits' : 'songs wait'} to be downloaded`), 'the rest waiting');
+    assert.equal(here().length, 1);
+
+    // Allowed again: the rest comes down, and the note goes.
+    settings.set({ serverMetered: true });
+    remote.reconfigure({ serverMetered: true });
+    await until(() => here().length === all.length, 'the rest of the songs');
+    await until(() => remote.status().note === '', 'the note gone');
+
+    await remote.setOffline(model.ALL_SONGS_ID, false);
+    await remote.removeAllDownloads();
+    network.isMetered = isMetered;
+    settings.set({ serverHomeOn: true, serverRemote: '', serverMetered: false });
+    remote.reconfigure({ serverHomeOn: true, serverRemote: '' });
+    await until(() => remote.status().state === 'online' && remote.status().via === 'home', 'home again');
+  });
+
   await t.test('a server with a password: asked for, refused when wrong, then the songs here go up there too', async () => {
     const two = await serve({ password: 'Secret123' });
+    // As a phone: its uploads carry Settings' MP3 choice for the server to convert by.
+    const env = require('../src/env');
+    env.convertUploads = true;
+    settings.set({ alwaysMp3: true, mp3Quality: 160 });
+    const sent = [];
+    const add = two.server.library.addUploaded;
+    two.server.library.addUploaded = (...args) => {
+      sent.push(args[2].convert);
+      return add(...args);
+    };
     settings.set({ serverHome: two.address });
     remote.reconfigure({ serverHome: two.address });
     await until(() => remote.status().state === 'password', 'the password state');
@@ -251,6 +385,132 @@ test('a Flow Server as the library, step by step', async (t) => {
     const token = remote.status().token;
     await until(async () => (await serverLibrary(two.base, token)).songs.some((s) => s.title === 'Roads'), 'the upload to the second server');
     assert.equal(remote.localFileOf('roads1'), roadsFile);
+    assert.deepEqual(sent, [{ alwaysMp3: true, quality: 160, keepMp3: true }]);
+    env.convertUploads = false;
+    settings.set({ alwaysMp3: false });
+    two.server.library.addUploaded = add;
+    second = two;
+  });
+
+  await t.test('switching between two servers: each keeps its marks, songs from the other are asked about, a file both use stays', async () => {
+    const two = second;
+    const token = () => remote.status().token;
+    const switchTo = async (s, what) => {
+      settings.set({ serverHome: s.address });
+      remote.reconfigure({ serverHome: s.address });
+      await until(() => remote.status().state === 'online' && remote.status().address === s.address, what);
+    };
+    const meta = { title: 'Unfinished Sympathy', artist: 'Massive Attack', format: 'mp3', duration: 308 };
+    const put = await fetch(`${two.base}/api/songs/unfin1?meta=${encodeURIComponent(JSON.stringify(meta))}`, {
+      method: 'PUT', body: FAKE_MP3, headers: { Authorization: `Bearer ${token()}` },
+    });
+    assert.equal(put.status, 200);
+    await remote.syncNow();
+    await remote.setOffline(model.ALL_SONGS_ID, true);
+    await until(() => remote.localFileOf('unfin1'), 'the second server\'s song');
+    const unfinFile = remote.localFileOf('unfin1');
+
+    // To the first server: its own marks (none), and the song that came meanwhile asked about.
+    questions.length = 0;
+    await switchTo(one, 'the first server again');
+    assert.ok(notices.some(([, text]) => /^Back with/.test(text)));
+    assert.deepEqual(remote.status().offline, []);
+    await until(() => questions.length === 1, 'the question about the new song');
+    assert.deepEqual({ ...questions[0], name: undefined }, {
+      count: 1, fromOthers: 1, returning: true, name: undefined,
+    });
+    await until(async () => (await serverLibrary(one.base)).songs.some((s) => s.title === 'Unfinished Sympathy'), 'the upload to the first server');
+    await remote.setOffline(model.ALL_SONGS_ID, true);
+    await until(() => remote.localFileOf('glory1'), 'the first server\'s songs');
+    const gloryFile = remote.localFileOf('glory1');
+
+    // Back to the second: All Songs is still marked there; the first one's copies are not uploaded when declined.
+    answerUpload = false;
+    questions.length = 0;
+    await switchTo(two, 'the second server again');
+    assert.deepEqual(remote.status().offline, [model.ALL_SONGS_ID]);
+    assert.equal(remote.localFileOf('unfin1'), unfinFile);
+    await until(() => questions.length === 1, 'the question about the first server\'s songs');
+    assert.equal(questions[0].returning, true);
+    assert.equal(questions[0].fromOthers, questions[0].count);
+    await remote.syncNow().catch(() => {});
+    assert.ok(!(await serverLibrary(two.base, token())).songs.some((s) => s.title === 'Glory Box'));
+
+    // Unmarked here: its copy is still the first server's song, so the file stays (and still counts
+    // as this server's song here, the same one); the first one's copies stay too.
+    await remote.setOffline(model.ALL_SONGS_ID, false);
+    assert.equal(remote.localFileOf('unfin1'), unfinFile);
+    assert.equal(model.songById(remote.view(), 'unfin1').file, unfinFile);
+    assert.ok(fs.existsSync(unfinFile));
+    assert.ok(library.get().songs.some((s) => s.file === unfinFile));
+    assert.ok(fs.existsSync(gloryFile));
+
+    // Downloaded Songs: the songs here that are not this server's, with ids of their own and the servers they are on.
+    const device = await until(() => {
+      const list = remote.view().deviceSongs;
+      return list.some((s) => s.file === gloryFile) && list;
+    }, 'the songs in Downloaded Songs');
+    const glory = device.find((s) => s.file === gloryFile);
+    assert.match(glory.id, /^device:/);
+    assert.equal(glory.isDevice, true);
+    assert.equal(glory.servers.length, 1);
+    assert.ok(!device.some((s) => s.file === roadsFile), 'a song of this server is in its All Songs');
+    assert.ok(!device.some((s) => s.file === unfinFile), 'this server\'s song, here as the first one\'s copy');
+    assert.equal(remote.localFileOf(glory.id), gloryFile);
+    await assert.rejects(remote.removeDeviceSong('roads1'), /not one of this device/);
+
+    // The same song reaches this server from elsewhere: the file held back here counts as its copy, nothing goes up.
+    const gloryMeta = { title: 'Glory Box', artist: 'Portishead', format: 'mp3', duration: 301 };
+    const put2 = await fetch(`${two.base}/api/songs/glory2?meta=${encodeURIComponent(JSON.stringify(gloryMeta))}`, {
+      method: 'PUT', body: FAKE_MP3, headers: { Authorization: `Bearer ${token()}` },
+    });
+    assert.equal(put2.status, 200);
+    await remote.syncNow().catch(() => {});
+    await until(() => remote.localFileOf('glory2') === gloryFile, 'the copy here counted');
+    assert.equal(model.songById(remote.view(), 'glory2').file, gloryFile);
+    assert.ok(!remote.view().deviceSongs.some((s) => s.file === gloryFile));
+    assert.equal((await serverLibrary(two.base, token())).songs.filter((s) => s.title === 'Glory Box').length, 1);
+    // Deleted from here: the file goes, the first server no longer counts it as here; this one keeps its song.
+    await remote.removeDownload('glory2');
+    assert.equal(fs.existsSync(gloryFile), false);
+    assert.equal(remote.localFileOf('glory2'), null);
+    assert.ok(model.songById(remote.view(), 'glory2'));
+    answerUpload = true;
+  });
+
+  await t.test('Switch server: the servers used before, switched to with their password, one away stays away, forgotten', async () => {
+    const two = second;
+    let list = remote.status().servers;
+    assert.equal(list.length, 2);
+    assert.equal(list[0].current, true);
+    assert.equal(list[0].address, two.address);
+    const other = list[1];
+    assert.equal(other.address, one.address);
+    await assert.rejects(remote.switchServer(list[0].id), /has not used that server/);
+
+    await remote.switchServer(other.id);
+    await until(() => remote.status().state === 'online' && remote.status().address === one.address, 'the first server');
+    assert.equal(settings.get('serverHome'), one.address);
+    assert.deepEqual(remote.status().offline, [model.ALL_SONGS_ID], 'its own mark');
+    // The second one's password is forgotten in the box, and still known to Switch server.
+    remote.setSecret('');
+    await until(() => remote.status().state === 'online' && !remote.status().hasSecret, 'online without a password');
+    const back = remote.status().servers.find((x) => !x.current);
+    await remote.switchServer(back.id);
+    await until(() => remote.status().state === 'online' && remote.status().address === two.address, 'the second server, with its password');
+    assert.equal(remote.status().hasSecret, true);
+
+    // A server that does not answer: this one stays in use.
+    await one.server.close();
+    servers.splice(servers.indexOf(one.server), 1);
+    const away = remote.status().servers.find((x) => !x.current);
+    await assert.rejects(remote.switchServer(away.id), /cannot be reached right now, so Flow stays with/);
+    assert.equal(remote.status().state, 'online');
+    assert.equal(remote.status().address, two.address);
+
+    remote.forgetServer(away.id);
+    list = remote.status().servers;
+    assert.deepEqual(list.map((x) => x.current), [true]);
   });
 
   await t.test('switched off: no server, the window shows Local Files', async () => {

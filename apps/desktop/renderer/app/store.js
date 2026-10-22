@@ -12,6 +12,8 @@ const FAVOURITES_NAME = 'Favourites';
 const FROM_PREFIX = 'from:';
 // The Default / Shared's id as a song's addedBy (@flow/core/profiles DEFAULT_OWNER).
 const DEFAULT_PROFILE = 'default';
+// Downloaded Songs (with a Flow Server): every song with a file on this device.
+const DEVICE_ID = 'device';
 
 const Store = {
   library: { songs: [], playlists: [], ignoredFiles: [] },
@@ -22,6 +24,8 @@ const Store = {
   // Which app this window is in ('desktop', 'android', 'ios'), its layout ('desktop',
   // 'mobile') and what it can do (@flow/core/client/caps).
   platform: 'desktop',
+  // The computer's OS (Node's process.platform): file names such as yt-dlp.exe.
+  os: 'win32',
   uiMode: 'desktop',
   caps: {},
   version: '',
@@ -34,7 +38,8 @@ const Store = {
 
   setLibrary(lib) {
     this.library = lib;
-    this.songsById = new Map(lib.songs.map((s) => [s.id, s]));
+    // The songs here that are not the server's (Downloaded Songs) can be played and queued too.
+    this.songsById = new Map([...lib.songs, ...(lib.deviceSongs || [])].map((s) => [s.id, s]));
     this.smart = SmartLists.compute(lib.songs, lib.playlists);
     this.holding = new Map();
     for (const p of this.sortedPlaylists()) {
@@ -110,6 +115,7 @@ const Store = {
 
   playlist(id) {
     if (id === ALL_SONGS_ID) return this.allSongsPlaylist();
+    if (id === DEVICE_ID) return this.devicePlaylist();
     if (id === FAVOURITES_ID) return this.favouritesPlaylist();
     if (SmartLists.isSmart(id)) return this.smartPlaylist(id);
     if (String(id).startsWith(FROM_PREFIX)) return this.fromPlaylist(id.slice(FROM_PREFIX.length));
@@ -176,6 +182,23 @@ const Store = {
       name: ALL_SONGS_NAME,
       entries: this.library.songs.map((s) => ({ songId: s.id, addedAt: s.addedAt })),
       isAll: true,
+    };
+  },
+
+  /**
+   * Downloaded Songs, first under All Songs while a Flow Server is in use:
+   * every song with a file on this device, the server's (downloaded, or
+   * uploaded from here) and the rest (copies of another server's songs, songs
+   * not uploaded: lib.deviceSongs, which only play). Null without a server.
+   */
+  devicePlaylist() {
+    if (!this.server.on) return null;
+    const songs = [...this.library.songs.filter((s) => s.file), ...(this.library.deviceSongs || [])];
+    return {
+      id: DEVICE_ID,
+      name: 'Downloaded Songs',
+      entries: songs.map((s) => ({ songId: s.id, addedAt: s.addedAt })),
+      isDevice: true,
     };
   },
 

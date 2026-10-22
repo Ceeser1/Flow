@@ -45,6 +45,7 @@
     uniform float time, wave, swell, beamAng, lamp, splash, rain, clouds, haze, roll, rollAmp;
     uniform vec4 ship;          // x, its way (-1 to the left, 1 to the right), kind (0 fishing boat, 1 yacht, 2 container ship), shown (0..1)
     uniform float shipPitch;
+    uniform float pxScale;      // the screen's pixels to one of these (render scale): the stars are the screen's
     out vec4 o;
 
     const float F = 1.5;        // focal length
@@ -142,14 +143,20 @@
       float halo = pow(max(md, 0.0), 300.0) * 0.35 + pow(max(md, 0.0), 20.0) * 0.06;
       float cover = cloudAt(d);
       if (stars) c += starField(px) * (1.0 - cover) * smoothstep(0.0, 0.15, up);
-      // The moon's face, a little mottled.
-      vec3 mface = vec3(1.0, 0.97, 0.88) * (0.85 + 0.15 * vnoise(d.xy * 900.0));
+      // The moon's face, a little mottled (only where it is: elsewhere moon is 0).
+      vec3 mface = vec3(0.0);
+      if (moon > 0.0) mface = vec3(1.0, 0.97, 0.88) * (0.85 + 0.15 * vnoise(d.xy * 900.0));
       c += (mface * moon * 1.6 + vec3(0.6, 0.7, 0.9) * halo) * (1.0 - 0.85 * cover);
-      // Heavier and darker in a storm, but never one flat sheet.
-      float billow = fbm(d.xz / (d.y + 0.08) * 2.2 + vec2(time * 0.03, 5.0));
-      vec3 cl = mix(vec3(0.012, 0.015, 0.022), vec3(0.07, 0.075, 0.09), clamp(billow * 1.6 - 0.35 - clouds * 0.25, 0.0, 1.0));
-      cl += vec3(0.5, 0.55, 0.65) * pow(max(md, 0.0), 40.0) * 0.6 * (1.0 - cover * 0.4);
-      return mix(c, cl, cover * smoothstep(-0.02, 0.06, d.y));
+      // Heavier and darker in a storm, but never one flat sheet (only where
+      // there is cloud: elsewhere the mix leaves c as it is).
+      float w = cover * smoothstep(-0.02, 0.06, d.y);
+      if (w > 0.0) {
+        float billow = fbm(d.xz / (d.y + 0.08) * 2.2 + vec2(time * 0.03, 5.0));
+        vec3 cl = mix(vec3(0.012, 0.015, 0.022), vec3(0.07, 0.075, 0.09), clamp(billow * 1.6 - 0.35 - clouds * 0.25, 0.0, 1.0));
+        cl += vec3(0.5, 0.55, 0.65) * pow(max(md, 0.0), 40.0) * 0.6 * (1.0 - cover * 0.4);
+        c = mix(c, cl, w);
+      }
+      return c;
     }
 
     // How much the beams light the air along the ray d up to tMax, and how
@@ -392,7 +399,7 @@
       float seaT = 1e9;
       float calmT = 1e9;
       if (d.y > 0.0) {
-        col = sky(d, gl_FragCoord.xy, true);
+        col = sky(d, gl_FragCoord.xy * pxScale, true);
       } else {
         // The sea.
         calmT = CAMH / -d.y;
@@ -421,7 +428,9 @@
         col += vec3(0.0, 0.018, 0.022) * big.w * big.w * bigFade * (1.0 - 0.7 * clouds);
         col += sky(rf, vec2(0.0), false) * fres;
         // The moon's path: glints.
-        col += vec3(1.0, 0.95, 0.85) * pow(max(dot(rf, MOONDIR), 0.0), 700.0) * 4.0 * (1.0 - 0.8 * cloudAt(MOONDIR));
+        // (The clouds before the moon asked only where a glint is: elsewhere it is exactly 0.)
+        float mg = pow(max(dot(rf, MOONDIR), 0.0), 700.0);
+        if (mg > 0.0) col += vec3(1.0, 0.95, 0.85) * mg * 4.0 * (1.0 - 0.8 * cloudAt(MOONDIR));
         // The lantern's trembling light on the water.
         vec3 tl = normalize(LANTERN - p);
         col += vec3(1.0, 0.85, 0.55) * pow(max(dot(rf, tl), 0.0), 500.0) * 3.0 * lamp;
@@ -472,8 +481,9 @@
 
       // The rocks and the lighthouse on them.
       float px = 1.0 / res.y;
-      float rt = rockTop(s.x);
       float base = (0.0 - CAMH) / LANTERN.z * F;
+      // (The rocks' top worked out only round them.)
+      float rt = !front && s.y > base - 0.012 && abs(s.x - 0.44) < 0.19 ? rockTop(s.x) : base - 1.0;
       if (!front && s.y < rt && s.y > base - 0.012 && abs(s.x - 0.44) < 0.19) {
         float a = smoothstep(rt, rt - px * 1.5, s.y) * smoothstep(base - 0.012, base - 0.004, s.y);
         float sh = 0.4 + 0.6 * smoothstep(0.03, -0.03, s.x - 0.42) ;
@@ -563,6 +573,8 @@
       this.gl = gl;
       this.prog = VizGL.program(gl, VizGL.SCREEN_VS, FS);
       this.stars = VizGL.starLayer(gl);
+      // Drawn at the render scale (lhScale), stretched onto the screen.
+      this.view = VizGL.scaled(gl);
       this.age = 0;
       this.wave = Math.random() * 100;
       this.ang = Math.random() * Math.PI * 2;
@@ -581,8 +593,17 @@
     }
 
     size(w, h) {
-      this.w = w;
-      this.h = h;
+      this.fullW = w;
+      this.fullH = h;
+      this._scale();
+    }
+
+    /** The size drawn at, for the screen's and the render scale. */
+    _scale() {
+      if (!this.fullW) return;
+      this.view.size(this.fullW, this.fullH, Visualizer.setting('lhScale'));
+      this.w = this.view.w;
+      this.h = this.view.h;
     }
 
     destroy() {
@@ -598,6 +619,7 @@
       const gl = this.gl;
       const set = (k) => Visualizer.setting(k);
       this.age += dt;
+      this._scale();
       const weather = WEATHER[set('lhWeather')] || WEATHER.cloudy;
       // Gliding from one weather to the next.
       if (!this.weather) this.weather = { ...weather };
@@ -654,12 +676,14 @@
       const showShip = set('lhShip') && s.on ? 1 : 0;
       const pitch = kind.rock * Math.sin(this.age * 0.9) * (0.4 + 0.6 * this.swell);
 
-      this.stars.draw(0, 0, this.w, this.h, this.age, a.kick * playing);
+      // The stars at the screen's own size, however large the rest is drawn.
+      this.stars.draw(0, 0, this.fullW, this.fullH, this.age, a.kick * playing);
       gl.disable(gl.BLEND);
-      VizGL.into(gl, null);
+      this.view.into();
       gl.useProgram(this.prog.p);
       const u = this.prog.u;
       gl.uniform2f(u.res, this.w, this.h);
+      gl.uniform1f(u.pxScale, this.fullH / this.h);
       this.stars.use(u, 0);
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.wave, this.wave);
@@ -675,6 +699,7 @@
       gl.uniform4f(u.ship, s.x, s.dir, s.kind, showShip);
       gl.uniform1f(u.shipPitch, pitch);
       VizGL.screen(gl);
+      this.view.present(this.age);
     }
   }
 
@@ -689,6 +714,7 @@
     options: [
       { type: 'choice', key: 'lhWeather', label: 'Weather', choices: [['clear', 'Clear'], ['cloudy', 'Cloudy'], ['storm', 'Storm']] },
       { type: 'check', key: 'lhShip', label: 'Ships passing' },
+      { type: 'choice', key: 'lhScale', label: 'Render scale', choices: VizGL.SCALES },
     ],
   });
 })();

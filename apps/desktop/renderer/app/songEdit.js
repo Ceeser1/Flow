@@ -238,7 +238,7 @@ function songTrimEditor(song, { enabled = true } = {}) {
   }
   if (duration) loadPeaks();
 
-  // SponsorBlock's marked parts, as on Add Songs (Settings, Website Downloads).
+  // SponsorBlock's marked parts, as on Add Songs (Settings, Media Management).
   if (Store.settings.sponsorBlock && (song.sourceKey || song.sourceUrl)) {
     window.flow.sponsorSegments(song.sourceKey || '', song.sourceUrl || '').then((list) => {
       if (gone) return;
