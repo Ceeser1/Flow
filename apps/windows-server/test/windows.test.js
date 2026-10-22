@@ -101,7 +101,7 @@ test('level 4 snippets point at the server, with a path when the address has one
   for (const url of ['http://music.example.com', 'https://localhost', 'music.example.com']) assert.ok(!win.URL_OK.test(url), url);
 });
 
-test('PATH finds node.exe, ffmpeg and yt-dlp first; the log starts again past its size', () => {
+test('PATH finds node.exe, ffmpeg and yt-dlp first; the log starts again past its size', { skip: process.platform !== 'win32' && 'Windows only' }, () => {
   const home = path.join(os.tmpdir(), `flow-win-${process.pid}`);
   const env = win.withTools({ Path: 'C:\\Windows' }, home);
   const dirs = env.Path.split(path.delimiter);

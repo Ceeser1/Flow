@@ -18,7 +18,8 @@ const DownloadsHelp = {
 
   /** yt-dlp's file name on this computer. */
   get file() {
-    return Store.os === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+    if (Store.os === 'win32') return 'yt-dlp.exe';
+    return Store.os === 'linux' ? 'yt-dlp_linux' : 'yt-dlp';
   },
 
   open() {

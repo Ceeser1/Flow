@@ -11,7 +11,7 @@ const { planFor } = require('@flow/core/formats');
 const PlayQueue = require('../renderer/app/queue');
 const { checkTarget, planMoves } = require('@flow/core/relocate');
 const { parseLoudness } = require('../src/loudness');
-const { parseCost } = require('../src/network');
+const { parseCost, parseNmMetered } = require('../src/network');
 const settings = require('../src/settings');
 const m = require('@flow/core/libraryModel');
 
@@ -298,6 +298,13 @@ test('a metered connection is told apart from a free one', () => {
   assert.equal(parseCost('Unrestricted|False|True'), true);
   assert.equal(parseCost('none'), false);
   assert.equal(parseCost(''), false);
+  // NetworkManager on Linux: 1 yes, 3 guessed yes (a phone's hotspot); 2 and 4 no, 0 unknown.
+  assert.equal(parseNmMetered('u 1\n'), true);
+  assert.equal(parseNmMetered('u 3'), true);
+  assert.equal(parseNmMetered('u 2'), false);
+  assert.equal(parseNmMetered('u 4'), false);
+  assert.equal(parseNmMetered('u 0'), false);
+  assert.equal(parseNmMetered(''), false);
 });
 
 test('the server settings are kept tidy', () => {

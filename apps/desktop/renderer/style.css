@@ -39,7 +39,7 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI", -apple-system, Roboto, sans-serif;
+  font-family: "Segoe UI", -apple-system, Roboto, system-ui, Ubuntu, "Noto Sans", sans-serif;
   font-size: 13px;
   user-select: none;
 }

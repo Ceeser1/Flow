@@ -610,7 +610,7 @@ const SettingsPanel = {
     const select = h('select.select');
     const fill = () => {
       clear(select);
-      select.appendChild(h('option', { value: '' }, `Windows default${Output.defaultLabel ? ` (${Output.defaultLabel})` : ''}`));
+      select.appendChild(h('option', { value: '' }, `${Output.defaultName}${Output.defaultLabel ? ` (${Output.defaultLabel})` : ''}`));
       for (const d of Output.devices) select.appendChild(h('option', { value: d.deviceId }, d.label));
       const s = Store.settings;
       const chosen = s.outputDevice ? Output._chosen() : null;

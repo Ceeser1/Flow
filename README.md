@@ -1,6 +1,6 @@
 # Flow
 
-A dark music player for Windows, built on Electron, for songs downloaded from
+A dark music player for Windows and Linux, built on Electron, for songs downloaded from
 YouTube, SoundCloud, Vimeo, Bandcamp and every other site yt-dlp can read.
 Paste a link, trim off the intro and outro, name it, put it in playlists.
 
@@ -212,8 +212,8 @@ its left, as tall as the title and the timeline. Space plays and pauses, Left
 and Right skip 10 seconds (not while typing in a box), and the keyboard's
 media keys and the Windows media overlay work too. The last playlist, song,
 position, shuffle and volume come back on the next start, paused. The button
-beside the volume picks where the music plays ("Play on": Windows' default
-or any output Windows offers, such as headphones or a Bluetooth speaker); a
+beside the volume picks where the music plays ("Play on": Windows' default,
+System default on Linux, or any output the system offers, such as headphones or a Bluetooth speaker); a
 chosen device that is switched off plays on the default until it is back.
 
 While a song plays, an equalizer glows behind the pages: 20 Hz to 4 kHz on a
@@ -300,8 +300,8 @@ The cog at the bottom left of the menu. Every change counts at once.
     connected come down again.
   - **Allow downloads on mobile internet**
     (off; greyed out without a Flow Server, only shown with a Remote address):
-    away from home, songs only go up and come down on connections Windows (or
-    the phone) calls not metered, unless ticked. Streaming and changes go
+    away from home, songs only go up and come down on connections Windows
+    (NetworkManager on Linux, or the phone) calls not metered, unless ticked. Streaming and changes go
     either way, and at home nothing waits.
   - **Keep local files after server upload** (on; greyed out without a Flow
     Server, like the next one): songs downloaded here stay in Local Files once
@@ -594,11 +594,47 @@ listen (who, on hover), and **Join**.
   for the songs in Local Files, and a folder per Flow Server, each cover
   named after its song's id. Files dropped into `Covers` are not songs.
 - Library, settings, the download cache and the tools folder (where
-  `yt-dlp.exe` goes): `%LOCALAPPDATA%\Flow`. The library is `library.json`, with the previous
+  `yt-dlp.exe` goes): `%LOCALAPPDATA%\Flow` (on Linux `~/.local/share/Flow`). The library is `library.json`, with the previous
   version kept as `library.json.bak`.
 
 yt-dlp, once put there, updates itself once a day in the background, since
 YouTube changes often enough to break an old copy.
+
+### On Linux
+
+Flow runs on Linux from the same code, as a `.deb` (Debian, Ubuntu, Mint and
+the rest of that family) or an `.AppImage` (any other 64-bit Linux).
+
+- **deb**: `sudo apt install ./flow_<version>_amd64.deb`. Flow goes to
+  `/opt/Flow`, starts with `flow` or from the app menu, and goes again with
+  `sudo apt remove flow`. On Ubuntu 24.04 and newer it also installs an
+  AppArmor profile (`/etc/apparmor.d/flow`), without which Chromium's sandbox,
+  and so Flow, does not start there; it is removed with Flow.
+- **AppImage**: `chmod +x Flow-<version>.AppImage`, then start it. It needs
+  FUSE 2 (`libfuse2`, called `libfuse2t64` on Ubuntu 24.04 and newer). An
+  AppImage cannot bring an AppArmor profile, so on Ubuntu 24.04 and newer it
+  stops at the start: use the deb there, or start it with `--no-sandbox`.
+
+What differs from Windows:
+
+- Flow's own files are in `~/.local/share/Flow` (`$XDG_DATA_HOME/Flow` when
+  that is set), the songs in `~/Music/FlowPlayer` (the Music folder as the
+  desktop names it).
+- yt-dlp: the file on its release page is `yt-dlp_linux` (plain `yt-dlp`,
+  which needs Python, works too). Put it into `~/.local/share/Flow/tools`;
+  Flow allows it to run by itself.
+- Play on: "System default" is the default output of the sound server
+  (PipeWire or PulseAudio).
+- The sleep timer's shutdown goes to systemd (`shutdown -P +minutes`, called
+  off with `shutdown -c`), which lets the person at the computer power it off
+  without a password. With someone else logged in as well, or without a
+  desktop session at all, the system refuses, and Flow says so and does not
+  start the timer.
+- Metered connections are NetworkManager's say: a connection set to metered
+  in its settings, or a phone's hotspot it recognizes. Without NetworkManager
+  no connection counts as metered.
+- Open local Folder on `/` leaves out the system's folders (`/usr`, `/proc`,
+  `/var` and the like); `/home`, `/media` and `/mnt` are looked through.
 
 ## Development
 
@@ -609,6 +645,16 @@ are over GitHub's 100MB file limit). Put the Windows builds of both there:
 apps/desktop/tools/
   ffmpeg.exe
   ffprobe.exe
+```
+
+For the Linux build, put the Linux builds of both there as well, without an
+extension (static builds, such as BtbN's `ffmpeg-n9.0-latest-linux64-gpl`, which
+run on any Linux from about 2018 on):
+
+```
+apps/desktop/tools/
+  ffmpeg
+  ffprobe
 ```
 
 The installer ships only these two. yt-dlp is not shipped: to download, put
@@ -624,7 +670,14 @@ npm run icon    # every app's icons (desktop, Android, iPhone) from icons/flow.p
                 # (the white wave on its blue square)
 npm run dist    # build the installer into apps/desktop/dist/ (it installs to Program Files\Flow, for every user)
 npm run dist:windows-server   # the Flow Server's Windows installer, into apps/windows-server/dist/
+npm run dist:linux            # on Linux: the deb and the AppImage, into apps/desktop/dist/
 ```
+
+`npm run dist:linux` runs on Linux only. From Windows, build in WSL in a copy
+of the repository on WSL's own disk with its own `npm ci` (the Windows
+`node_modules` holds Windows' Electron). The deb's install and remove scripts
+are `apps/desktop/build/linux/after-install.sh` and `after-remove.sh`:
+electron-builder's own, plus the AppArmor profile.
 
 The root folder is an npm workspace, so the commands work from there. The
 desktop app pins an exact Electron version (electron-builder cannot find a
@@ -650,7 +703,7 @@ sets it, and with it set Electron starts as plain Node.
 
 ```
 packages/core/        shared by every Flow app: plain Node, no Electron
-apps/desktop/         the Electron app (Windows now, Linux from the same code)
+apps/desktop/         the Electron app (Windows and Linux from the same code)
 apps/linux-server/    Flow Server: hosts a library for the apps, and its Linux installer (see its README)
 apps/windows-server/  the Flow Server's installer for Windows (see its README)
 apps/android/         the Android app (v3.0, a Flow Server client; see its README)
@@ -686,8 +739,8 @@ fetched one after another) and `processRunner.js`. Everything below is under `ap
   - `remote.js`: a Flow Server as the library: connecting, the waiting
     changes, uploads, downloads for offline and Local Files synchronization
     (`commands.js` is what each change does), and the server's live channel
-    and clock for Active Sessions; `network.js` asks Windows whether the
-    connection is metered
+    and clock for Active Sessions; `network.js` asks Windows (on Linux
+    NetworkManager) whether the connection is metered
   - `settings.js`: what the app remembers, Settings' choices included
 - `renderer/app/` is the window, one plain script per part, loaded in the order
   `index.html` lists them. `util.js`, `queue.js` and `spectrum.js` are also

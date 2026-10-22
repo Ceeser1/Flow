@@ -47,6 +47,11 @@ const Output = {
     }
   },
 
+  /** The default output's entry: "Windows default" on Windows, "System default" elsewhere. */
+  get defaultName() {
+    return Store.os === 'win32' ? 'Windows default' : 'System default';
+  },
+
   /** The name of the output playing now, as Windows calls it ('' when unknown). */
   label() {
     const d = this.devices.find((x) => x.deviceId === this.current);
@@ -185,7 +190,7 @@ const Output = {
         },
       }, h('span.output-menu__check', { html: on ? Icons.check : '' }), h('span.output-menu__name', label),
       note ? h('span.output-menu__note', note) : null);
-      menu.appendChild(item('', 'Windows default', !Store.settings.outputDevice, this.defaultLabel));
+      menu.appendChild(item('', this.defaultName, !Store.settings.outputDevice, this.defaultLabel));
       for (const d of this.devices) menu.appendChild(item(d.deviceId, d.label, !!chosen && chosen.deviceId === d.deviceId));
       if (Store.settings.outputDevice && !chosen) {
         menu.appendChild(h('div.output-menu__gone', `${Store.settings.outputDeviceLabel || 'The chosen device'} is not there: playing on the default meanwhile.`));

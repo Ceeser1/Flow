@@ -13,7 +13,7 @@ const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-local-'));
 process.env.FLOW_HOME = path.join(scratch, 'home');
 process.env.FLOW_MUSIC = path.join(scratch, 'music');
 
-const { scanFolder } = require('../src/localScan');
+const { scanFolder, skipDir } = require('../src/localScan');
 const importer = require('../src/importer');
 const library = require('../src/library');
 const { runProcess } = require('@flow/core/processRunner');
@@ -46,6 +46,14 @@ test('a folder lists sound and video files only, its own first, and leaves out c
   assert.deepEqual(files.map((f) => path.relative(pick, f)),
     ['a.flac', 'b.mp3', path.join('Album', '01 Song.opus'), path.join('Album', 'clip.mp4')]);
   assert.equal(truncated, false);
+});
+
+test('on Linux the system folders under / are left out, the same names elsewhere are not', () => {
+  for (const dir of ['proc', 'sys', 'usr', 'var', 'snap']) assert.equal(skipDir(dir, `/${dir}`, 'linux'), true, dir);
+  for (const dir of ['home', 'media', 'mnt']) assert.equal(skipDir(dir, `/${dir}`, 'linux'), false, dir);
+  assert.equal(skipDir('usr', '/home/anna/Music/usr', 'linux'), false);
+  assert.equal(skipDir('proc', '/proc', 'win32'), false);
+  assert.equal(skipDir('Windows', 'C:/Windows', 'win32'), true);
 });
 
 test('a folder stops at the limit and says so', async () => {

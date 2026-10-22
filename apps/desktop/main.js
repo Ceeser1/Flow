@@ -597,9 +597,22 @@ handle('import:cancel', () => {
 // /t), so it happens even if Flow is closed or stuck by then; Cancel Timer
 // calls it off again (shutdown /a). Windows' own shutdown closes programs
 // without asking once the time is up.
+//
+// On Linux the same goes through systemd's shutdown (-P +minutes, -c), which
+// logind allows for the user at the screen without a password; it counts in
+// whole minutes, and the timer's times are whole minutes anyway.
+
+function linuxShutdown() {
+  for (const file of ['/usr/sbin/shutdown', '/sbin/shutdown', '/usr/bin/shutdown']) {
+    if (fs.existsSync(file)) return file;
+  }
+  return 'shutdown';
+}
 
 function runShutdown(args) {
-  const exe = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'shutdown.exe');
+  const exe = process.platform === 'win32'
+    ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'shutdown.exe')
+    : linuxShutdown();
   return new Promise((resolve) => {
     execFile(exe, args, { windowsHide: true, timeout: 15000 }, (err, stdout, stderr) => {
       resolve({ ok: !err, text: String(stderr || stdout || (err && err.message) || '').trim() });
@@ -610,6 +623,14 @@ function runShutdown(args) {
 handle('sleep:scheduleShutdown', async (seconds) => {
   const s = Math.round(Number(seconds));
   if (!Number.isFinite(s) || s < 60 || s > 315360000) throw new Error('That is not a time the shutdown can be set to.');
+  if (process.platform !== 'win32') {
+    // A new plan replaces an earlier one here.
+    const r = await runShutdown(['-P', `+${Math.ceil(s / 60)}`, 'Flow sleep timer']);
+    // Its last line says why ("Failed to schedule shutdown: Access denied ...").
+    const why = r.text.split('\n').map((l) => l.trim()).filter(Boolean).pop();
+    if (!r.ok) throw new Error(`The system did not accept the shutdown${why ? `: ${why}` : '.'}`);
+    return;
+  }
   // An earlier plan (a timer set again) would make Windows refuse the new one.
   await runShutdown(['/a']);
   const r = await runShutdown(['/s', '/t', String(s), '/c', 'Flow sleep timer']);
@@ -617,7 +638,7 @@ handle('sleep:scheduleShutdown', async (seconds) => {
 });
 
 handle('sleep:cancelShutdown', async () => {
-  const r = await runShutdown(['/a']);
+  const r = await runShutdown([process.platform === 'win32' ? '/a' : '-c']);
   // "Unable to abort the system shutdown because no shutdown was in progress" is fine too.
   return r.ok;
 });
