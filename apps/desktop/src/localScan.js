@@ -23,8 +23,16 @@ const SKIP_DIRS = new Set([
   '__pycache__', 'site-packages',
 ]);
 
-function skipDir(name) {
+// On Linux the system's own folders right under / ("/" picked as a whole):
+// /home, /media and /mnt, where music is, stay in.
+const LINUX_SYSTEM_DIRS = new Set([
+  '/bin', '/boot', '/dev', '/etc', '/lib', '/lib32', '/lib64', '/libx32', '/lost+found', '/opt', '/proc',
+  '/root', '/run', '/sbin', '/snap', '/srv', '/sys', '/tmp', '/usr', '/var',
+]);
+
+function skipDir(name, full, platform = process.platform) {
   const n = String(name).toLowerCase();
+  if (platform === 'linux' && LINUX_SYSTEM_DIRS.has(full)) return true;
   return n.startsWith('.') || n.startsWith('$') || SKIP_DIRS.has(n);
 }
 
@@ -79,8 +87,8 @@ async function scanFolder(root, { token = {}, onProgress, skip, limit = MAX_FILE
     }
     if (level >= depth) return;
     for (const e of entries) {
-      if (!e.isDirectory() || skipDir(e.name)) continue;
       const sub = path.join(dir, e.name);
+      if (!e.isDirectory() || skipDir(e.name, sub)) continue;
       if (skip && skip(sub)) continue;
       await walk(sub, level + 1);
       if (truncated) return;

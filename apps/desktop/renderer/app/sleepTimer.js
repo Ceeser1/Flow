@@ -109,7 +109,7 @@ const SleepTimer = {
       try {
         await window.flow.cancelShutdown();
       } catch (err) {
-        toast(`The shutdown could not be cancelled: ${err.message}. Run "shutdown /a" to stop it.`, 'error');
+        toast(`The shutdown could not be cancelled: ${err.message}. Run "${Store.os === 'win32' ? 'shutdown /a' : 'shutdown -c'}" to stop it.`, 'error');
         return;
       }
       this._notify('Sleep timer cancelled. Your PC will not shut down.');

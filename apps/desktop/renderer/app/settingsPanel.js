@@ -102,6 +102,12 @@ const SettingsPanel = {
         label: 'Show listening trends',
         desc: 'If disabled, your listening trend category will be hidden in the menu and the search.',
       }),
+      // The phone's lists have no columns.
+      Store.phone ? null : this._row({
+        label: 'Show filterable columns for Songs',
+        desc: 'Extra columns in All Songs and the playlists. Each can be sorted by a click on its heading, and the search finds what is in it.',
+        right: this._columnTicks(),
+      }),
 
       ...this._serverRows(),
 
@@ -410,6 +416,20 @@ const SettingsPanel = {
     return row;
   },
 
+  /** Album, Mix, Genre and Info: which of the song lists' optional columns show. */
+  _columnTicks() {
+    const tick = (key, label) => {
+      const box = h('input', { type: 'checkbox', checked: !!Store.settings[key] });
+      box.addEventListener('change', () => Store.saveSettings({ [key]: box.checked }));
+      this._refresh.push(() => {
+        box.checked = !!Store.settings[key];
+      });
+      return h('label.check', box, h('span', label));
+    };
+    return h('div.settings__ticks',
+      tick('colAlbum', 'Album'), tick('colMix', 'Mix'), tick('colGenre', 'Genre'), tick('colSubGenre', 'Info'));
+  },
+
   /** A slider with its value beside it. Percent 1-100 unless told otherwise. */
   _slider({ key, label = '', name = label, min = 1, max = 100, step = 1, format = (v) => `${Math.round(v)}%`, when }) {
     // `name`: what a screen reader calls it (its label when it shows one).
@@ -610,7 +630,7 @@ const SettingsPanel = {
     const select = h('select.select');
     const fill = () => {
       clear(select);
-      select.appendChild(h('option', { value: '' }, `Windows default${Output.defaultLabel ? ` (${Output.defaultLabel})` : ''}`));
+      select.appendChild(h('option', { value: '' }, `${Output.defaultName}${Output.defaultLabel ? ` (${Output.defaultLabel})` : ''}`));
       for (const d of Output.devices) select.appendChild(h('option', { value: d.deviceId }, d.label));
       const s = Store.settings;
       const chosen = s.outputDevice ? Output._chosen() : null;

@@ -109,7 +109,7 @@ test('yt-dlp track and artist fields win over the title', () => {
     artist: 'Real Artist',
     uploader: 'Some Channel',
   });
-  assert.deepEqual(g, { artist: 'Real Artist', title: 'Real Song', mix: 'VIP Mix', artistFromChannel: false });
+  assert.deepEqual(g, { artist: 'Real Artist', title: 'Real Song', mix: 'VIP Mix', album: '', genre: '', subGenre: '', artistFromChannel: false });
 });
 
 test('YouTube\'s own "Title · Artist" description line is read', () => {
@@ -118,7 +118,7 @@ test('YouTube\'s own "Title · Artist" description line is read', () => {
     uploader: 'HUNTR/X - Topic',
     description: 'Provided to YouTube by Republic Records\n\nGolden · HUNTR/X · EJAE\n\nKPop Demon Hunters',
   });
-  assert.deepEqual(g, { artist: 'HUNTR/X, EJAE', title: 'Golden', mix: '', artistFromChannel: false });
+  assert.deepEqual(g, { artist: 'HUNTR/X, EJAE', title: 'Golden', mix: '', album: '', genre: '', subGenre: '', artistFromChannel: false });
 });
 
 test('several artists are joined', () => {
@@ -128,7 +128,21 @@ test('several artists are joined', () => {
 
 test('SoundCloud style: uploader is the artist when the title has none', () => {
   const g = guessFromInfo({ title: 'Deep Night (Bootleg)', uploader: 'djsomeone' });
-  assert.deepEqual(g, { artist: 'djsomeone', title: 'Deep Night', mix: 'Bootleg', artistFromChannel: true });
+  assert.deepEqual(g, { artist: 'djsomeone', title: 'Deep Night', mix: 'Bootleg', album: '', genre: '', subGenre: '', artistFromChannel: true });
+});
+
+test('the album and genre yt-dlp read off the page come along', () => {
+  // YouTube Music's song: an album; SoundCloud's: the uploader's genre.
+  const music = guessFromInfo({ track: 'Get Lucky', artists: ['Daft Punk'], album: 'Random Access Memories' });
+  assert.equal(music.album, 'Random Access Memories');
+  assert.equal(music.genre, '');
+  const sc = guessFromInfo({ title: 'Deep Night', uploader: 'djsomeone', genres: ['Hip-hop & Rap'] });
+  assert.equal(sc.genre, 'Hip-hop & Rap');
+  assert.equal(guessFromInfo({ title: 'A - B', genre: 'Techno' }).genre, 'Techno');
+  // A second genre is the sub-genre.
+  const two = guessFromInfo({ title: 'A - B', genres: ['Hardstyle', ' Euphoric '] });
+  assert.deepEqual([two.genre, two.subGenre], ['Hardstyle', 'Euphoric']);
+  assert.equal(sc.subGenre, '');
 });
 
 test('an artist found in the title is not marked as the channel\'s', () => {

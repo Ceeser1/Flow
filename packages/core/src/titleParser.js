@@ -358,12 +358,27 @@ function fromAutoDescription(description) {
 }
 
 /**
- * Artist / Title / Mix from yt-dlp's info JSON, plus `artistFromChannel` when
- * the artist is only the channel's name. `opts.knownArtists` is the library's
- * artists.
+ * The album and genre yt-dlp read off the page: YouTube Music's songs and
+ * Bandcamp's have an album, SoundCloud's a genre (the uploader's pick). A
+ * page with a second genre gives it as the sub-genre.
+ */
+function infoFrom(i) {
+  const genres = (Array.isArray(i.genres) ? i.genres : []).map((g) => tidy(String(g || ''))).filter(Boolean);
+  return {
+    album: tidy(String(i.album || '')),
+    genre: genres[0] || tidy(String(i.genre || '')),
+    subGenre: genres[1] || '',
+  };
+}
+
+/**
+ * Artist / Title / Mix (and the album and genre the page gives) from
+ * yt-dlp's info JSON, plus `artistFromChannel` when the artist is only the
+ * channel's name. `opts.knownArtists` is the library's artists.
  */
 function guessFromInfo(info, opts = {}) {
   const i = info || {};
+  const { album, genre, subGenre } = infoFrom(i);
   const uploader = cleanUploader(i.uploader || i.channel || '');
   const auto = fromAutoDescription(i.description);
   const tagArtist = joinArtists(i) || (auto ? auto.artist : '');
@@ -375,6 +390,9 @@ function guessFromInfo(info, opts = {}) {
       artist: withFeat(tagArtist, t.feat || feat),
       title: tidy(t.text) || tidy(track),
       mix: tidy(mixes.join(', ')),
+      album,
+      genre,
+      subGenre,
       artistFromChannel: false,
     };
   }
@@ -390,6 +408,9 @@ function guessFromInfo(info, opts = {}) {
     artist: guess.artist,
     title: guess.title,
     mix: guess.mix,
+    album,
+    genre,
+    subGenre,
     artistFromChannel: guess.artistFrom === 'channel',
   };
 }

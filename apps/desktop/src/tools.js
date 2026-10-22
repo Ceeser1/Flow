@@ -29,15 +29,36 @@ const findFfprobe = () => bundled(exe('ffprobe'));
 
 // yt-dlp is not shipped with Flow: whoever wants to download puts it into
 // Flow's tools folder (%LOCALAPPDATA%\Flow\tools) themselves; Add Songs'
-// "Downloads?" says how.
-function localYtDlp() {
-  return path.join(paths.localToolsDir(), exe('yt-dlp'));
+// "Downloads?" says how. On Linux its release file is yt-dlp_linux (plain
+// yt-dlp, which needs Python, is taken too), and a file downloaded is not yet
+// allowed to run: Flow allows it.
+function ytDlpNames() {
+  return process.platform === 'linux' ? ['yt-dlp', 'yt-dlp_linux'] : [exe('yt-dlp')];
+}
+
+function runnable(file) {
+  if (process.platform === 'win32') return;
+  try {
+    fs.accessSync(file, fs.constants.X_OK);
+  } catch {
+    try {
+      fs.chmodSync(file, 0o755);
+    } catch {
+      // Left as it is: running it says why.
+    }
+  }
 }
 
 /** yt-dlp(.exe) in Flow's tools folder, or null. */
 function findYtDlp() {
-  const local = localYtDlp();
-  return fs.existsSync(local) ? local : null;
+  for (const name of ytDlpNames()) {
+    const local = path.join(paths.localToolsDir(), name);
+    if (fs.existsSync(local)) {
+      runnable(local);
+      return local;
+    }
+  }
+  return null;
 }
 
 function run(exe, args, timeout = 60000) {
@@ -58,8 +79,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 async function refreshYtDlp() {
   try {
-    const local = localYtDlp();
-    if (!fs.existsSync(local)) return;
+    const local = findYtDlp();
+    if (!local) return;
     if (Date.now() - (settings.get('ytDlpCheckedAt') || 0) < DAY_MS) return;
     settings.set({ ytDlpCheckedAt: Date.now() });
     await run(local, ['-U'], 180000);

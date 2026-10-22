@@ -484,3 +484,55 @@ test('with separate folders a song the server downloads goes into Downloads/', n
     assert.equal(lib.songs[0].file, 'Downloads/Daft Punk - Song a.wav');
   });
 });
+
+test('a downloaded song gets its album and genre looked up; one left empty is its title; a song from the folder is looked up later', needsFfmpeg, async () => {
+  const d = dirs();
+  const asked = [];
+  const lookupInfo = async (s) => {
+    asked.push(s.title);
+    return s.title === 'Song a' ? { album: 'Homework', genre: 'House' } : { album: '', genre: 'Techno' };
+  };
+  const server = await startServer({
+    home: d.home, music: d.music, port: 0, host: '127.0.0.1', detectTailscale: async () => null, discoveryPort: null, lookupInfo,
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  try {
+    const pick = (id) => ({ url: `https://fake.test/v/${id}`, title: `Song ${id}`, duration: 3 });
+    await api(base, 'POST', '/api/downloads', { items: [pick('a'), pick('b'), pick('c')], name: 'Picked' });
+    const done = await allSettled(base);
+    // What the apps show in the frames before anything is saved.
+    assert.deepEqual(done.items.map((x) => [x.meta.album, x.meta.genre]), [['Homework', 'House'], ['', 'Techno'], ['', 'Techno']]);
+    const finish = (i, meta) => api(base, 'POST', `/api/downloads/items/${i}/finish`, { meta, start: 0, end: 3, playlist: null });
+    // An app from before albums sends none: the ones found; empty: the title.
+    assert.equal((await finish(0, { artist: 'Daft Punk', title: 'Song a', mix: '' })).status, 200);
+    assert.equal((await finish(1, { artist: 'Daft Punk', title: 'Song b', mix: '', album: '', genre: '' })).status, 200);
+    assert.equal((await finish(2, { artist: 'Daft Punk', title: 'Song c', mix: '', album: 'Given', genre: 'Hardstyle', subGenre: 'Melodic' })).status, 200);
+    let lib = (await api(base, 'GET', '/api/library')).json.library;
+    const info = (title) => {
+      const s = lib.songs.find((x) => x.title === title);
+      return s && [s.album, s.genre, s.subGenre, s.infoLooked];
+    };
+    assert.deepEqual(info('Song a'), ['Homework', 'House', '', true]);
+    assert.deepEqual(info('Song b'), ['Song b', '', '', true]);
+    assert.deepEqual(info('Song c'), ['Given', 'Hardstyle', 'Melodic', true]);
+
+    // A file put into the folder by hand (a WAV: its title tag, no album): looked up in the background.
+    const src = lib.songs.find((x) => x.title === 'Song a').file;
+    const copy = path.join(d.music, 'Someone - Dropped.wav');
+    fs.copyFileSync(path.join(d.music, src), copy);
+    const old = (Date.now() - 60000) / 1000;
+    fs.utimesSync(copy, old, old);
+    asked.length = 0;
+    await api(base, 'POST', '/api/rescan');
+    await waitFor(async () => {
+      lib = (await api(base, 'GET', '/api/library')).json.library;
+      const s = lib.songs.find((x) => x.file === 'Someone - Dropped.wav');
+      return s && s.infoLooked;
+    }, 'the dropped song looked up');
+    assert.deepEqual(asked, ['Song a']);
+    const dropped = lib.songs.find((x) => x.file === 'Someone - Dropped.wav');
+    assert.deepEqual([dropped.album, dropped.genre], ['Homework', 'House']);
+  } finally {
+    await server.close();
+  }
+});

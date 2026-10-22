@@ -274,8 +274,9 @@ function songTrimEditor(song, { enabled = true } = {}) {
 }
 
 /**
- * Edit Song: Artist, Title and Mix, and the trim. Saves itself; resolves
- * true when something was saved.
+ * Edit Song: Artist, Title, Album, Mix, Genre and Info, and the trim. Saves
+ * itself; resolves true when something was saved. An album left empty is
+ * the title.
  */
 function editSongDialog(song, heading = 'Edit Song') {
   return new Promise((resolve) => {
@@ -285,6 +286,9 @@ function editSongDialog(song, heading = 'Edit Song') {
     const artist = field('artist', song.artist);
     const title = field('title', song.title);
     const mix = field('mix', song.mix, 'e.g. Extended Mix, Live');
+    const album = field('album', song.album, 'Empty: the title');
+    const genre = field('genre', song.genre, 'e.g. Hardstyle');
+    const subGenre = field('subGenre', song.subGenre, 'Sub-Genre, CD, Year, ...');
     const row = (label, input) => h('label.settings__row',
       h('div.settings__left', h('div.settings__label.settings__label--plain', label)),
       h('div.settings__right', input));
@@ -312,12 +316,20 @@ function editSongDialog(song, heading = 'Edit Song') {
 
     const save = async () => {
       error.textContent = '';
-      const meta = { artist: artist.value.trim(), title: title.value.trim(), mix: mix.value.trim() };
+      const meta = {
+        artist: artist.value.trim(),
+        title: title.value.trim(),
+        mix: mix.value.trim(),
+        album: album.value.trim(),
+        genre: genre.value.trim(),
+        subGenre: subGenre.value.trim(),
+      };
       if (!meta.title) {
         error.textContent = 'Please enter a title.';
         return false;
       }
-      const renamed = meta.artist !== song.artist || meta.title !== song.title || meta.mix !== song.mix;
+      const renamed = meta.artist !== song.artist || meta.title !== song.title || meta.mix !== song.mix
+        || meta.album !== (song.album || '') || meta.genre !== (song.genre || '') || meta.subGenre !== (song.subGenre || '');
       const cut = trim && trim.cut();
       if (!renamed && !cut) return true;
       if (trim) trim.stop();
@@ -344,7 +356,10 @@ function editSongDialog(song, heading = 'Edit Song') {
         h('h3.settings__section.settings__section--static', 'Song'),
         row('Artist', artist),
         row('Title', title),
+        row('Album', album),
         row('Mix', mix),
+        row('Genre', genre),
+        row('Info', subGenre),
         trim && h('h3.settings__section.settings__section--static.song-edit__trim-head', h('span', 'Trim'), trim.hint, trim.resetBtn),
         othersSong && h('h3.settings__section.settings__section--static', 'Trim'),
         trim && trim.el,
@@ -359,7 +374,7 @@ function editSongDialog(song, heading = 'Edit Song') {
         resolve(saved);
       },
     });
-    for (const f of [artist, title, mix]) {
+    for (const f of [artist, title, album, mix, genre, subGenre]) {
       f.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') modal.el.querySelector('.btn--primary').click();
       });

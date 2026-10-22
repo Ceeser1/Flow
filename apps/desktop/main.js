@@ -33,6 +33,7 @@ const env = require('./src/env');
 const { createActions } = require('@flow/core/client/actions');
 const { createPrivateStats } = require('@flow/core/client/privateStats');
 const sponsorblock = require('@flow/core/sponsorblock');
+const { lookupInfo, createInfoFiller } = require('@flow/core/songInfo');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
@@ -46,6 +47,16 @@ const loudnessFiller = loudness.createFiller(library, model, () => settings.get(
 // Finds covers for Local Files songs in the background; copies of a server's
 // songs get the server's.
 const coverFiller = covers.createFiller({ skip: (id) => remote.active() && remote.isServerCopy(id) });
+// Looks up the album, genre and Info of Local Files songs never looked up
+// (from before 3.6.3, put into the folder by hand, before Discogs for what
+// is still empty); copies of a server's songs get the server's.
+const infoFiller = createInfoFiller({
+  nextSong: (tried) => library.get().songs.find((s) => !s.infoLooked && !tried.has(s.id)
+    && !(remote.active() && remote.isServerCopy(s.id))) || null,
+  save: (found) => library.mutate((d) => {
+    for (const f of found) if (model.songById(d, f.id)) model.setInfo(d, f.id, f);
+  }),
+});
 // New songs' files get their flowid and cover (tagger.js).
 const tagger = createTagger({ skip: (id) => remote.active() && remote.isServerCopy(id) });
 // The Statistics of everything heard on this device (privateStats.js).
@@ -547,6 +558,7 @@ handle('import:finish', ({ job, run }) => {
     importSaves -= 1;
     loudnessFiller.run();
     coverFiller.run();
+    infoFiller.run();
   });
 });
 
@@ -597,9 +609,22 @@ handle('import:cancel', () => {
 // /t), so it happens even if Flow is closed or stuck by then; Cancel Timer
 // calls it off again (shutdown /a). Windows' own shutdown closes programs
 // without asking once the time is up.
+//
+// On Linux the same goes through systemd's shutdown (-P +minutes, -c), which
+// logind allows for the user at the screen without a password; it counts in
+// whole minutes, and the timer's times are whole minutes anyway.
+
+function linuxShutdown() {
+  for (const file of ['/usr/sbin/shutdown', '/sbin/shutdown', '/usr/bin/shutdown']) {
+    if (fs.existsSync(file)) return file;
+  }
+  return 'shutdown';
+}
 
 function runShutdown(args) {
-  const exe = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'shutdown.exe');
+  const exe = process.platform === 'win32'
+    ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'shutdown.exe')
+    : linuxShutdown();
   return new Promise((resolve) => {
     execFile(exe, args, { windowsHide: true, timeout: 15000 }, (err, stdout, stderr) => {
       resolve({ ok: !err, text: String(stderr || stdout || (err && err.message) || '').trim() });
@@ -610,6 +635,14 @@ function runShutdown(args) {
 handle('sleep:scheduleShutdown', async (seconds) => {
   const s = Math.round(Number(seconds));
   if (!Number.isFinite(s) || s < 60 || s > 315360000) throw new Error('That is not a time the shutdown can be set to.');
+  if (process.platform !== 'win32') {
+    // A new plan replaces an earlier one here.
+    const r = await runShutdown(['-P', `+${Math.ceil(s / 60)}`, 'Flow sleep timer']);
+    // Its last line says why ("Failed to schedule shutdown: Access denied ...").
+    const why = r.text.split('\n').map((l) => l.trim()).filter(Boolean).pop();
+    if (!r.ok) throw new Error(`The system did not accept the shutdown${why ? `: ${why}` : '.'}`);
+    return;
+  }
   // An earlier plan (a timer set again) would make Windows refuse the new one.
   await runShutdown(['/a']);
   const r = await runShutdown(['/s', '/t', String(s), '/c', 'Flow sleep timer']);
@@ -617,7 +650,7 @@ handle('sleep:scheduleShutdown', async (seconds) => {
 });
 
 handle('sleep:cancelShutdown', async () => {
-  const r = await runShutdown(['/a']);
+  const r = await runShutdown([process.platform === 'win32' ? '/a' : '-c']);
   // "Unable to abort the system shutdown because no shutdown was in progress" is fine too.
   return r.ok;
 });
@@ -705,11 +738,17 @@ function sponsorSegments(key, url) {
 }
 handle('sponsor:segments', ({ key, url }) => sponsorSegments(key, url));
 
+// One song's album, genre and Info from Apple's and Discogs' search, for Add Songs' editor.
+handle('song:lookupInfo', (song) => lookupInfo(song || {}));
+
 handle('song:finish', (job) => library.quietly(async () => {
   const meta = {
     artist: String(job.artist || '').trim(),
     title: String(job.title || '').trim(),
     mix: String(job.mix || '').trim(),
+    album: String(job.album || '').trim(),
+    genre: String(job.genre || '').trim(),
+    subGenre: String(job.subGenre || '').trim(),
   };
   if (!meta.title) throw new Error('Please enter a title.');
   const saved = await exporter.saveSong({
@@ -720,6 +759,8 @@ handle('song:finish', (job) => library.quietly(async () => {
     id: library.newId(),
     file: saved.file,
     ...meta,
+    // Its editor looked them up; an empty album is the title.
+    infoLooked: true,
     duration: saved.duration,
     format: saved.format,
     sourceUrl: String(job.sourceUrl || ''),
@@ -741,6 +782,7 @@ handle('song:finish', (job) => library.quietly(async () => {
   fs.rmSync(job.cachePath, { force: true });
   loudnessFiller.run();
   coverFiller.run();
+  infoFiller.run();
   return song;
 }));
 
@@ -808,15 +850,19 @@ app.whenReady().then(() => {
     if (result.added) {
       loudnessFiller.run();
       coverFiller.run();
+      infoFiller.run();
     }
   });
   covers.watchLocal();
   library.onChange(() => tagger.run());
   tagger.run();
+  // Songs looked up before Discogs: once more for what is still empty.
+  if (model.startInfoRound(library.get())) library.save();
   setTimeout(() => {
     library.scan().catch(() => {}).then(() => {
       loudnessFiller.run();
       coverFiller.run();
+      infoFiller.run();
     });
     library.watch();
     tools.refreshYtDlp();
@@ -830,6 +876,7 @@ app.on('window-all-closed', async () => {
   library.unwatch();
   loudnessFiller.stop();
   coverFiller.stop();
+  infoFiller.stop();
   tagger.stop();
   if (importToken) importToken.cancel();
   if (searchToken) searchToken.cancel();

@@ -113,10 +113,13 @@ function createActions({
   }
 
   function editSong({
-    songId, artist, title, mix,
+    songId, artist, title, mix, album, genre, subGenre,
   }) {
     const meta = { artist: String(artist || '').trim(), title: String(title || '').trim(), mix: String(mix || '').trim() };
     if (!meta.title) throw new Error('Please enter a title.');
+    if (album !== undefined) meta.album = String(album || '').trim();
+    if (genre !== undefined) meta.genre = String(genre || '').trim();
+    if (subGenre !== undefined) meta.subGenre = String(subGenre || '').trim();
     // The server renames its own file; a copy here follows at the next look.
     if (remote.active()) return remote.command('editSong', { songId, ...meta });
     return library.quietly(async () => {

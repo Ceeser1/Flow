@@ -107,9 +107,9 @@ function trackIdOf(href) {
 }
 
 /**
- * The page's data: { name, type, total, tracks: [{ title, artists, duration,
- * playable, id }] }, duration in seconds, total the song count the page
- * gives (null when it gives none).
+ * The page's data: { name, type, total, tracks: [{ title, artists, album,
+ * duration, playable, id }] }, duration in seconds, total the song count the
+ * page gives (null when it gives none).
  */
 function parseAmazonPage(html) {
   const header = tagsNamed(html, 'music-detail-header').find((a) => a.headline);
@@ -117,18 +117,21 @@ function parseAmazonPage(html) {
     throw new Error('Amazon Music shows nothing at this link. Is the playlist public, and from this country\'s Amazon Music?');
   }
   const pageArtist = cleanArtists(header['primary-text']);
+  const type = String(header.label || '').toLowerCase();
+  // A playlist row names its album; an album's page only once, at the top.
+  const pageAlbum = type === 'album' ? cleanTitle(header.headline) : '';
   const tracks = tagsNamed(html, 'music-image-row|music-text-row')
     .filter((a) => 'data-key' in a && a['primary-text'])
     .map((a) => ({
       title: cleanTitle(a['primary-text']),
       // A playlist row names its artists; an album's or a song's page, once, at the top.
       artists: cleanArtists(a['secondary-text-1']) || pageArtist,
+      album: cleanTitle(a['secondary-text-2']) || pageAlbum,
       duration: parseClock(a.duration),
       playable: !/^true$/i.test(a['aria-disabled'] || ''),
       id: trackIdOf(a['primary-href']),
     }))
     .filter((t) => t.title);
-  const type = String(header.label || '').toLowerCase();
   const count = /^\s*(\d[\d.,]*)\s/.exec(header['tertiary-text'] || '');
   const total = type !== 'song' && count ? Number(count[1].replace(/[.,]/g, '')) : null;
   if (!tracks.length) {

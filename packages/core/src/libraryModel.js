@@ -4,9 +4,17 @@
 // together. Pure (no files, no Electron), pinned by test/libraryModel.test.js.
 // src/library.js owns loading, saving and the files on disk.
 //
-//   song      { id, file, title, artist, mix, duration, format,
-//               sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, addedBy,
-//               stats, favouriteAt, loudness, cover }
+//   song      { id, file, title, artist, mix, album, genre, subGenre,
+//               infoLooked, duration, format, sourceUrl, sourceKey, sourcePlaylistUrl,
+//               addedAt, addedBy, stats, favouriteAt, loudness, cover }
+//   album and genre come from the song's source, its file's tags, Apple's
+//   or Discogs' search (songInfo.js); infoLooked is true once they were
+//   looked for (infoRound: how, see startInfoRound). A
+//   song looked for without an album has its title as its album (most
+//   songs that only came out as a single are their own album). subGenre
+//   (shown as Info) is a free line of the user's: "Melodic", "from
+//   Bravo Hits 2012", else Discogs' style of the song, a page's second genre
+//   or a file's grouping tag.
 //   cover is the version of the song's cover file (cover.js), '-' when it
 //   was looked for and none found, null when not looked for yet. Only the
 //   app or server that keeps the covers sets it (setCover); no command can.
@@ -80,8 +88,11 @@ function cleanStats(raw) {
   };
 }
 
+// How the songs are looked up: 1 Apple's search, 2 then Discogs' (both 3.6.3).
+const INFO_ROUND = 2;
+
 function emptyLibrary() {
-  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {} };
+  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {}, infoRound: INFO_ROUND };
 }
 
 /** { listId: seconds }: only sensible ids and positive numbers stay. */
@@ -155,6 +166,10 @@ function sanitize(raw) {
       title: String(s.title || ''),
       artist: String(s.artist || ''),
       mix: String(s.mix || ''),
+      album: String(s.album || ''),
+      genre: String(s.genre || ''),
+      subGenre: String(s.subGenre || ''),
+      infoLooked: s.infoLooked === true,
       duration: Number(s.duration) || 0,
       format: String(s.format || ''),
       sourceUrl: String(s.sourceUrl || ''),
@@ -196,6 +211,7 @@ function sanitize(raw) {
   data.listening = cleanListening(raw.listening);
   data.statistics = cleanStatistics(raw.statistics);
   data.profileNames = cleanNames(raw.profileNames);
+  data.infoRound = Math.max(0, Math.floor(Number(raw.infoRound) || 0));
   const seenShared = new Set();
   for (const p of Array.isArray(raw.sharedPlaylists) ? raw.sharedPlaylists : []) {
     if (!p || !p.id || seenShared.has(p.id) || seenLists.has(p.id)) continue;
@@ -337,8 +353,22 @@ function songsOnlyIn(data, id, keep = null) {
   return [...lone];
 }
 
+/** An album, genre or sub-genre as kept: one line, at most 150 characters. */
+function cleanInfo(v) {
+  return String(v === null || v === undefined ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 150);
+}
+
+/** The album a song looked for gets: its own, else its title. */
+function albumFor(album, title) {
+  return cleanInfo(album) || cleanInfo(title);
+}
+
 function addSong(data, song) {
   song.stats = cleanStats(song.stats);
+  song.infoLooked = song.infoLooked === true;
+  song.genre = cleanInfo(song.genre);
+  song.subGenre = cleanInfo(song.subGenre);
+  song.album = song.infoLooked ? albumFor(song.album, song.title) : cleanInfo(song.album);
   song.favouriteAt = Number(song.favouriteAt) || null;
   song.sourcePlaylistUrl = String(song.sourcePlaylistUrl || '');
   song.addedBy = String(song.addedBy || '');
@@ -357,8 +387,41 @@ function updateSong(data, id, patch) {
   for (const key of ['title', 'artist', 'mix', 'file', 'duration', 'format']) {
     if (patch[key] !== undefined) s[key] = patch[key];
   }
+  if (patch.genre !== undefined) s.genre = cleanInfo(patch.genre);
+  if (patch.subGenre !== undefined) s.subGenre = cleanInfo(patch.subGenre);
+  // Set by hand, it counts as looked for: an empty one is the title.
+  if (patch.album !== undefined) {
+    s.album = albumFor(patch.album, s.title);
+    s.infoLooked = true;
+  }
   if (patch.loudness !== undefined) s.loudness = cleanLoudness(patch.loudness);
   if (patch.cut !== undefined) s.cut = cleanCut(patch.cut);
+  return s;
+}
+
+/**
+ * A library looked up an older way: its songs missing an album, genre or
+ * Info are looked up again (Discogs' search fills what Apple's left empty).
+ * True when anything changed, to be saved; whoever runs the lookups calls it
+ * once after loading.
+ */
+function startInfoRound(data) {
+  if (data.infoRound >= INFO_ROUND) return false;
+  for (const s of data.songs) if (s.infoLooked && !(s.album && s.genre && s.subGenre)) s.infoLooked = false;
+  data.infoRound = INFO_ROUND;
+  return true;
+}
+
+/**
+ * What looking for a song's album and genre found (songInfo.js): each fills
+ * what the song lacks (a name set by hand stays), and the song is looked for.
+ */
+function setInfo(data, id, { album = '', genre = '', subGenre = '' } = {}) {
+  const s = requireSong(data, id);
+  s.album = albumFor(s.album || album, s.title);
+  s.genre = cleanInfo(s.genre || genre);
+  s.subGenre = cleanInfo(s.subGenre || subGenre);
+  s.infoLooked = true;
   return s;
 }
 
@@ -552,7 +615,7 @@ module.exports = {
   emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
-  addSong, updateSong, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
+  addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta, sameSongIn, sameNames,
 };

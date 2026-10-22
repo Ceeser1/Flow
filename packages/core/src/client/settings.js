@@ -369,6 +369,13 @@ const DEFAULTS = {
   normalize: true,
   // The menu's Your listening trend entry and its lists.
   showTrend: true,
+  // The song lists' optional columns (All Songs, the playlists), each one
+  // sortable and searched: Mix as before 3.6.3, Album, Genre and Info
+  // (subGenre) when asked.
+  colMix: true,
+  colAlbum: false,
+  colGenre: false,
+  colSubGenre: false,
   // The clouds behind the pages, and how they swell with the bass (percent).
   cloudsOn: true,
   cloudsIntensity: 50,
@@ -518,7 +525,7 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 100 && v)
     .slice(0, 100));
   for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
-    'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75']) s[key] = s[key] === true;
+    'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colAlbum', 'colGenre', 'colSubGenre']) s[key] = s[key] === true;
   if (!s.dcScale75) {
     s.dcScale = '75';
     s.dcScale75 = true;
@@ -531,7 +538,7 @@ function clean(raw) {
   delete s.flashTriggers;
   delete s.flashRange;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'colMix', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;

@@ -48,10 +48,16 @@ test('the embed page gives the name and each song', () => {
   const html = `<html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify(data)}</script></html>`;
   const page = spotify.parseEmbedPage(html);
   assert.equal(page.name, 'Today’s Top Hits');
-  assert.deepEqual(page.tracks[0], { title: 'Nicole Kidman', artists: 'ADÉLA', duration: 181.27, playable: true });
+  assert.deepEqual(page.tracks[0], { title: 'Nicole Kidman', artists: 'ADÉLA', album: '', duration: 181.27, playable: true });
   assert.equal(page.tracks[1].artists, 'KAROL G, Judeline, rusowsky');
   assert.equal(page.tracks[1].playable, false);
   assert.throws(() => spotify.parseEmbedPage('<html>nothing</html>'), /changed/);
+  // An album's page: its name is every song's album.
+  const albumData = { props: { pageProps: { state: { data: { entity: {
+    type: 'album', name: 'Discovery', trackList: [{ title: 'One More Time', subtitle: 'Daft Punk', duration: 320000 }],
+  } } } } } };
+  const albumPage = spotify.parseEmbedPage(`<script id="__NEXT_DATA__" type="application/json">${JSON.stringify(albumData)}</script>`);
+  assert.equal(albumPage.tracks[0].album, 'Discovery');
 });
 
 test('the search uses the first artist and the plain title', () => {
@@ -188,6 +194,8 @@ test('Amazon Music\'s page gives the name and each song', () => {
   const page = parseAmazonPage(html);
   assert.equal(page.name, 'Summer & Sun');
   assert.equal(page.total, 3);
+  // A playlist row names the song's album.
+  assert.deepEqual(page.tracks.map((t) => t.album), ['Album', 'Album', 'Album']);
   assert.deepEqual(page.tracks.map((t) => [t.title, t.artists, t.duration, t.id]), [
     ['Hips Don\'t Lie', 'Shakira, Wyclef Jean', 220, 'B0T0'],
     ['Houdini', 'Dua Lipa', 186, 'B0T1'],
@@ -196,7 +204,7 @@ test('Amazon Music\'s page gives the name and each song', () => {
   // An album's rows leave the artist to the top of the page.
   const album = parseAmazonPage('<music-detail-header label="Album" headline="Radical Optimism" primary-text="Dua Lipa" tertiary-text="11 SONGS">'
     + '<music-text-row data-key="x0" primary-text="Houdini" primary-href="/tracks/B0CXY89JD7" secondary-text-2="" duration="03:06">');
-  assert.deepEqual(album.tracks, [{ title: 'Houdini', artists: 'Dua Lipa', duration: 186, playable: true, id: 'B0CXY89JD7' }]);
+  assert.deepEqual(album.tracks, [{ title: 'Houdini', artists: 'Dua Lipa', album: 'Radical Optimism', duration: 186, playable: true, id: 'B0CXY89JD7' }]);
   // The home page, where a link from another country's store leads.
   assert.throws(() => parseAmazonPage('<html><music-app></music-app></html>'), /shows nothing/);
   assert.throws(() => parseAmazonPage('<music-detail-header headline="X" tertiary-text="5 SONGS">'), /changed/);
@@ -304,7 +312,10 @@ test('Deezer links and songs', () => {
   assert.deepEqual(parseDeezerUrl('https://link.deezer.com/s/31abcDEF'), { short: 'https://link.deezer.com/s/31abcDEF' });
   assert.equal(parseDeezerUrl('https://www.deezer.com/en/artist/27'), null);
   assert.deepEqual(trackOf({ title: 'Dai Dai', artist: { name: 'Shakira' }, duration: 223, readable: true }),
-    { title: 'Dai Dai', artists: 'Shakira', duration: 223, playable: true });
+    { title: 'Dai Dai', artists: 'Shakira', album: '', duration: 223, playable: true });
+  // The album: the song's own, or the album's page's for its songs.
+  assert.equal(trackOf({ title: 'X', album: { title: 'Discovery' } }).album, 'Discovery');
+  assert.equal(trackOf({ title: 'X' }, 'Daft Punk', 'Homework').album, 'Homework');
   // A song of its own lists everyone on it; an album's song may lean on the album's artist.
   assert.equal(trackOf({ title: 'X', contributors: [{ name: 'Carlos Vives' }, { name: 'Shakira' }] }).artists, 'Carlos Vives, Shakira');
   assert.equal(trackOf({ title: 'X', readable: false }, 'Daft Punk').artists, 'Daft Punk');

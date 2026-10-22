@@ -47,7 +47,9 @@ function createTagger({ skip = () => false } = {}) {
       await library.quietly(async () => {
         const picture = coverNow && coverNow !== NO_COVER ? covers.localStore().read(s.id) : null;
         ok = await media.rewriteTags(file, out, {
-          meta: { title: s.title, artist: s.artist, mix: s.mix, sourceUrl: s.sourceUrl },
+          meta: {
+            title: s.title, artist: s.artist, mix: s.mix, album: s.album, genre: s.genre, subGenre: s.subGenre, sourceUrl: s.sourceUrl,
+          },
           flowId: flowIdText(settings.clientId(), s.id),
           picture,
         });

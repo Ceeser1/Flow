@@ -47,6 +47,7 @@ const { AUDIO_EXTS, planFor, ffmpegArgsFor, clampQuality } = require('@flow/core
 const cover = require('@flow/core/cover');
 const { createMedia } = require('@flow/core/media');
 const { flowIdText, parseFlowId, ID_EXTS } = require('@flow/core/tags');
+const { createInfoFiller } = require('@flow/core/songInfo');
 const tools = require('./tools');
 
 const SEEN_KEEP = 5000;
@@ -103,9 +104,10 @@ function songsToTag(data) {
 /**
  * coverDeps: what finding covers uses instead of the internet and yt-dlp
  * ({ fetchImage, readInfo, searchMusic }; the tests' fakes). Left out: the
- * real ones.
+ * real ones. lookupInfo: how a song's album and genre are looked up
+ * (songInfo.lookupInfo); left out, they are not (the tests).
  */
-function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietMs = CONVERT_QUIET_MS } = {}) {
+function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietMs = CONVERT_QUIET_MS, lookupInfo = null } = {}) {
   const musicDir = config.musicDir;
   const covers = cover.createCoverStore(path.join(config.home, 'covers'));
   const trash = createTrash({ dir: path.join(musicDir, '.flow-trash'), indexFile: path.join(config.home, 'trash.json'), log });
@@ -121,6 +123,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   const seen = new Set(state.seen);
   const listeners = [];
   const startedStatistics = prof.startStatistics(data, profiles);
+  // Songs looked up before Discogs: once more for what is still empty.
+  const newInfoRound = lookupInfo ? model.startInfoRound(data) : false;
   // When the server was set up, for the Default's Statistics: on one from
   // before 3.6, when its oldest song came.
   if (!config.get().createdAt) {
@@ -152,7 +156,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     for (const l of listeners) l(state.rev);
     return result;
   }
-  if (startedStatistics) save();
+  if (startedStatistics || newInfoRound) save();
 
   // ---- files ----
 
@@ -541,6 +545,11 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       title,
       artist,
       mix,
+      album: String(meta.album || ''),
+      genre: String(meta.genre || ''),
+      subGenre: String(meta.subGenre || ''),
+      // An app's upload from before albums is looked up here.
+      infoLooked: meta.infoLooked === true,
       duration: Number(meta.duration) || 0,
       format: ext,
       sourceUrl: String(meta.sourceUrl || ''),
@@ -567,6 +576,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     if (from === 'upload') queueConvert(id, meta.convert);
     // The app's cover comes right after (PUT .../cover); the search waits a moment for it.
     setTimeout(queueCovers, 5000).unref();
+    if (!song.infoLooked) infoFiller.run();
     return model.songById(data, id);
   }
 
@@ -660,6 +670,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
           title: t.title || fromName.title,
           artist: t.artist || t.album_artist || fromName.artist,
           mix: t.mix || (t.title ? '' : fromName.mix),
+          album: String(t.album || '').trim(),
+          genre: String(t.genre || '').trim(),
+          subGenre: String(t.grouping || '').trim(),
           duration: info.duration,
           format: path.extname(file).slice(1).toLowerCase(),
           sourceUrl,
@@ -706,6 +719,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       log(`Music folder: ${fresh.length} added`);
       queueLoudness();
       queueCovers();
+      infoFiller.run();
     }
     if (moves.length) log(`Music folder: ${moves.length} renamed or moved`);
     if (left.length) log(`Music folder: ${left.length} removed`);
@@ -819,6 +833,19 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     });
   }
 
+  // The albums, genres and Info of songs never looked up (from before 3.6.3,
+  // put into the folder by hand, an older app's uploads): Apple's search,
+  // then Discogs' for what is still empty, a few seconds apart, written ten
+  // at a time.
+  const infoFiller = createInfoFiller({
+    nextSong: (tried) => (lookupInfo ? data.songs.find((s) => !s.infoLooked && !tried.has(s.id)) || null : null),
+    save: (found) => mutate((d) => {
+      for (const f of found) if (model.songById(d, f.id)) model.setInfo(d, f.id, f);
+    }),
+    lookup: lookupInfo || (async () => ({ album: '', genre: '' })),
+    log,
+  });
+
   function queueRetag(id) {
     if (!tools.ffmpeg()) return;
     retagQueue.add(id);
@@ -847,7 +874,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     try {
       const picture = coverNow && coverNow !== cover.NO_COVER ? covers.read(s.id) : null;
       ok = await media.rewriteTags(file, out, {
-        meta: { title: s.title, artist: s.artist, mix: s.mix, sourceUrl: s.sourceUrl },
+        meta: {
+          title: s.title, artist: s.artist, mix: s.mix, album: s.album, genre: s.genre, subGenre: s.subGenre, sourceUrl: s.sourceUrl,
+        },
         flowId: flowIdText(config.get().id, s.id),
         picture,
       });
@@ -1176,6 +1205,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     scan,
     queueLoudness,
     queueCovers,
+    queueInfo: () => infoFiller.run(),
+    lookupInfo,
     checkTagRequest,
     lookForCover,
     coverOf,
@@ -1190,7 +1221,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     stop() {
       stopped = true;
       clearTimeout(convertTimer);
-      return Promise.all([workRun, coverRun, convertRun]).then(() => {});
+      return Promise.all([workRun, coverRun, convertRun, infoFiller.stop()]).then(() => {});
     },
   };
 }

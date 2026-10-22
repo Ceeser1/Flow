@@ -189,6 +189,34 @@ const AddPage = {
     this.media = media;
     this._progress({ title: probed.title, frac: 1, status: media.summary, cancel: false });
     this._openEditor();
+    this._lookupInfo();
+  },
+
+  /**
+   * A song downloaded on its own: the album, genre and Info its page did not
+   * name, from Apple's and Discogs' search, into the boxes still empty (one
+   * typed into stays).
+   */
+  async _lookupInfo() {
+    const m = this.media;
+    if (!window.flow.lookupInfo || this.embedded || !m) return;
+    const album = $('edAlbum').value.trim();
+    const genre = $('edGenre').value.trim();
+    const subGenre = $('edSubGenre').value.trim();
+    if (album && genre && subGenre) return;
+    let found;
+    try {
+      found = await window.flow.lookupInfo({
+        artist: $('edArtist').value.trim(), title: $('edTitle').value.trim(), mix: $('edMix').value.trim(), duration: m.duration,
+        album, genre, subGenre,
+      });
+    } catch {
+      return;
+    }
+    if (this.media !== m || this.embedded || !found) return;
+    if (found.album && !$('edAlbum').value.trim()) $('edAlbum').value = found.album;
+    if (found.genre && !$('edGenre').value.trim()) $('edGenre').value = found.genre;
+    if (found.subGenre && !$('edSubGenre').value.trim()) $('edSubGenre').value = found.subGenre;
   },
 
   /**
@@ -555,7 +583,14 @@ const AddPage = {
     const result = this.media ? {
       start: this.slider.start,
       end: this.slider.end,
-      meta: { artist: $('edArtist').value.trim(), title: $('edTitle').value.trim(), mix: $('edMix').value.trim() },
+      meta: {
+        artist: $('edArtist').value.trim(),
+        title: $('edTitle').value.trim(),
+        mix: $('edMix').value.trim(),
+        album: $('edAlbum').value.trim(),
+        genre: $('edGenre').value.trim(),
+        subGenre: $('edSubGenre').value.trim(),
+      },
     } : null;
     this._stopPreview(true);
     this.media = null;
@@ -575,6 +610,9 @@ const AddPage = {
     $('edArtistHint').hidden = !(guess.artistFromChannel && guess.artist);
     $('edTitle').value = guess.title || (this.probed ? this.probed.title : '');
     $('edMix').value = guess.mix || '';
+    $('edAlbum').value = guess.album || '';
+    $('edGenre').value = guess.genre || '';
+    $('edSubGenre').value = guess.subGenre || '';
     $('edError').textContent = '';
     // Its cover, found right after the download (the note until then). In a
     // playlist's frame the frame shows it.
@@ -779,6 +817,9 @@ const AddPage = {
       artist: $('edArtist').value.trim(),
       title: $('edTitle').value.trim(),
       mix: $('edMix').value.trim(),
+      album: $('edAlbum').value.trim(),
+      genre: $('edGenre').value.trim(),
+      subGenre: $('edSubGenre').value.trim(),
     };
     if (!meta.title) {
       $('edError').textContent = 'Please enter a title.';

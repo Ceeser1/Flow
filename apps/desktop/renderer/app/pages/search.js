@@ -1,7 +1,18 @@
 'use strict';
 
-// Search: one box, three columns. Playlists (the built-in ones included), Songs and
-// Artists whose name holds what was typed. An empty box lists everything.
+// Search: one box, seven columns. Playlists (the built-in ones included),
+// Songs, Artists, Albums, Mixes, Genres and Info whose name holds what was
+// typed (Artists: those of the songs found). An empty box lists everything.
+// The columns keep their width and the row scrolls sideways (mobile.css: one
+// under the other).
+
+// The columns of the songs' names: which song field, its list and count.
+const SEARCH_NAMES = [
+  { key: 'album', list: 'searchAlbums', count: 'searchAlbumsCount' },
+  { key: 'mix', list: 'searchMixes', count: 'searchMixesCount' },
+  { key: 'genre', list: 'searchGenres', count: 'searchGenresCount' },
+  { key: 'subGenre', list: 'searchInfo', count: 'searchInfoCount' },
+];
 
 const SearchPage = {
   init() {
@@ -15,8 +26,8 @@ const SearchPage = {
         e.stopPropagation();
       }
     });
-    // Phone: All, Playlists, Songs or Artists, so the artists are not three
-    // long lists down. The PC shows its three columns side by side and hides the row.
+    // Phone: All, Playlists, Songs, Artists ..., so the artists are not
+    // seven long lists down. The PC shows its columns side by side and hides the row.
     for (const btn of $('searchFilter').children) {
       btn.addEventListener('click', () => this._showPart(btn.dataset.part));
     }
@@ -57,7 +68,7 @@ const SearchPage = {
     // Songs, newest first like All Songs
     const songs = Store.library.songs.slice()
       .sort((a, b) => b.addedAt - a.addedAt)
-      .filter((s) => Util.matches(q, s.title, s.artist, s.mix));
+      .filter((s) => Util.matches(q, s.title, s.artist, s.mix, s.album, s.genre, s.subGenre));
     // A song plays on a click anywhere on it: its cover, its names, Play on
     // the right; [+] before Play adds it to the queue instead. A div rather
     // than a button, as it holds buttons.
@@ -91,20 +102,8 @@ const SearchPage = {
     });
     this._markPlaying();
 
-    // Artists: every artist name once, with how many songs they have
-    const artists = new Map();
-    for (const s of Store.library.songs) {
-      const name = (s.artist || '').trim();
-      if (!name) continue;
-      const key = Util.fold(name);
-      const entry = artists.get(key) || { name, count: 0 };
-      entry.count += 1;
-      artists.set(key, entry);
-    }
-    const artistRows = [...artists.values()]
-      .filter((a) => Util.matches(q, a.name))
-      .sort((a, b) => Util.compareValues(a.name, b.name));
-    this._fill('searchArtists', 'searchArtistsCount', artistRows, (a) => h('button.result', {
+    // Artists: the artists of the songs found, each once, with how many songs they have
+    this._fill('searchArtists', 'searchArtistsCount', this._artists(songs), (a) => h('button.result', {
       type: 'button',
       title: `Show songs by ${a.name}`,
       onclick: () => Nav.openPlaylist('all', { filter: a.name }),
@@ -113,13 +112,81 @@ const SearchPage = {
     h('span.result__text',
       h('span.result__title', a.name),
       h('span.result__meta', Util.plural(a.count, 'song')))));
+
+    // Albums, Mixes, Genres and Info the same way. An album shows
+    // the cover of a song on it, and its artist when all its songs share one.
+    for (const col of SEARCH_NAMES) {
+      this._fill(col.list, col.count, this._names(col.key, q), (n) => h('button.result', {
+        type: 'button',
+        title: `Show the songs with ${n.name}`,
+        onclick: () => Nav.openPlaylist('all', { filter: n.name }),
+      },
+      col.key === 'album' ? Covers.el(n.song, 'result') : h('span.result__icon.result__avatar.result__avatar--name', n.name.slice(0, 1).toUpperCase()),
+      h('span.result__text',
+        h('span.result__title', n.name),
+        h('span.result__meta', [col.key === 'album' && n.artists.size === 1 ? n.song.artist : '', Util.plural(n.count, 'song')]
+          .filter(Boolean).join(' · ')))));
+    }
+  },
+
+  /**
+   * The artists of the songs `found`: a song's artists one by one (its
+   * artist split at the commas, as Flow writes several) and, for a song of
+   * several, all of them together, so "Broiler, Tessa Odden" lists Broiler,
+   * Tessa Odden and the two of them. Each once, by name, with how many songs
+   * of the library are theirs.
+   */
+  _artists(found) {
+    const namesOf = (s) => {
+      const parts = String(s.artist || '').split(',').map((p) => p.trim()).filter(Boolean);
+      return parts.length > 1 ? [...parts, parts.join(', ')] : parts;
+    };
+    const shown = new Set();
+    for (const s of found) for (const name of namesOf(s)) shown.add(Util.fold(name));
+    const artists = new Map();
+    for (const s of Store.library.songs) {
+      // A name twice in one song ("A, A") counts that song once.
+      for (const name of new Map(namesOf(s).map((n) => [Util.fold(n), n])).values()) {
+        const key = Util.fold(name);
+        if (!shown.has(key)) continue;
+        const entry = artists.get(key) || { name, count: 0 };
+        entry.count += 1;
+        artists.set(key, entry);
+      }
+    }
+    return [...artists.values()].sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
+  /**
+   * Every name the songs have in `key` (mix, album ...) once, by
+   * name, with how many songs have it, the first of them and their artists;
+   * only the names holding the query.
+   */
+  _names(key, q) {
+    const names = new Map();
+    for (const s of Store.library.songs) {
+      const name = String(s[key] || '').trim();
+      if (!name) continue;
+      const folded = Util.fold(name);
+      const entry = names.get(folded) || {
+        name, count: 0, song: s, artists: new Set(),
+      };
+      entry.count += 1;
+      entry.artists.add(Util.fold(s.artist));
+      names.set(folded, entry);
+    }
+    return [...names.values()]
+      .filter((n) => Util.matches(q, n.name))
+      .sort((a, b) => Util.compareValues(a.name, b.name));
   },
 
   _showPart(part) {
     for (const btn of $('searchFilter').children) {
       btn.classList.toggle('search-filter__btn--on', btn.dataset.part === part);
     }
-    $('searchResults').dataset.only = part;
+    for (const col of $('searchResults').children) {
+      col.classList.toggle('results__col--off', part !== 'all' && col.dataset.part !== part);
+    }
     $('pages').scrollTop = 0;
   },
 

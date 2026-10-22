@@ -25,8 +25,10 @@ const {
   createLister, groupToken, cancelled, withSub, eachItem, existingInfo, removeQuietly,
 } = require('@flow/core/listing');
 const { scanFolder, MAX_FILES } = require('./localScan');
+const { lookupInfo } = require('@flow/core/songInfo');
 
-const lister = createLister({ media, library: () => library.get() });
+// A downloaded song's album and genre: its list's or page's, else Apple's.
+const lister = createLister({ media, library: () => library.get(), lookupInfo });
 const { list, download, search } = lister;
 
 // ---- importing: download everything, then save it all at once ----
@@ -151,7 +153,9 @@ function prepareLocal(items, opts, group, onProgress) {
         url: found.sourceUrl,
         key: found.sourceKey,
         title: found.title,
-        meta: { artist: found.artist, title: found.title, mix: found.mix },
+        meta: {
+          artist: found.artist, title: found.title, mix: found.mix, album: found.album, genre: found.genre, subGenre: found.subGenre,
+        },
         artistFromChannel: false,
         originalPath: it.path,
       },
@@ -244,6 +248,7 @@ async function finish(job, onProgress) {
         const saved = await exporter.saveSong({
           cachePath: e.cachePath, start: e.start, end: e.end, duration: e.duration,
           artist: meta.artist || '', title: meta.title || 'Untitled', mix: meta.mix || '',
+          album: meta.album || '', genre: meta.genre || '', subGenre: meta.subGenre || '',
           sourceUrl: e.sourceUrl,
         });
         const song = {
@@ -252,6 +257,13 @@ async function finish(job, onProgress) {
           artist: meta.artist || '',
           title: meta.title || 'Untitled',
           mix: meta.mix || '',
+          // Looked for while it downloaded (an empty album is the title). A
+          // local file has what its tags say: what it lacks is looked up in
+          // the background (a folder may hold more than Apple answers at once).
+          album: meta.album || '',
+          genre: meta.genre || '',
+          subGenre: meta.subGenre || '',
+          infoLooked: !job.local || !!(meta.album && meta.genre),
           duration: saved.duration,
           format: saved.format,
           sourceUrl: e.sourceUrl || '',

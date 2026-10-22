@@ -15,8 +15,10 @@ function fileStem(file) {
 }
 
 /**
- * Artist, title, mix and source link of a file, from its tags or else its
- * name. The source link is the one Flow writes into the comment tag.
+ * Artist, title, mix, album, genre, sub-genre and source link of a file,
+ * from its tags or else its name (album, genre and sub-genre, the grouping
+ * tag, only from tags). The source link is the one Flow writes into the
+ * comment tag.
  */
 function metaFromFile(file, tags = {}) {
   const fromName = parseTitle(fileStem(file));
@@ -26,6 +28,9 @@ function metaFromFile(file, tags = {}) {
     title: tags.title || fromName.title,
     artist: tags.artist || tags.album_artist || fromName.artist,
     mix: tags.mix || (tags.title ? '' : fromName.mix),
+    album: String(tags.album || '').trim(),
+    genre: String(tags.genre || '').trim(),
+    subGenre: String(tags.grouping || '').trim(),
     sourceUrl,
     sourceKey: sourceKeyFromUrl(sourceUrl) || '',
   };
