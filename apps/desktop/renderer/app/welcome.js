@@ -7,7 +7,8 @@
 // the server has one) is typed in. Once connected, a server with profiles
 // opens Settings' Flow Server screen to pick one. "Songs on this phone"
 // opens Add Songs' file picker instead; "Not now" leaves an empty Flow;
-// Settings connects later.
+// Settings connects later. "Scan a QR code" connects to a server another
+// app shares (qrShare.js).
 //
 // Only in the phone's layout; the desktop starts with Local Files.
 
@@ -43,6 +44,7 @@ const Welcome = {
       h('label.welcome__label', h('span', 'Server address'), this._address),
       h('label.welcome__label', h('span', 'Password'), this._password),
       this._connectBtn,
+      Store.can('scanQr') ? h('button.btn.welcome__again', { type: 'button', onclick: () => this.scan() }, 'Scan a QR code') : null,
       h('p.welcome__hint', 'The Flow Server shows its address when it starts, and on its page in the browser.'),
       h('button.btn.welcome__again', { type: 'button', onclick: () => this.search() }, 'Look on this network again'),
       h('button.btn.welcome__again', { type: 'button', onclick: () => this.localFiles() }, 'Add songs from this phone'));
@@ -86,6 +88,26 @@ const Welcome = {
       if (pw) await window.flow.setServerSecret(pw);
       await Store.saveSettings({ serverOn: true, serverHome: address });
     });
+  },
+
+  /** Another app's Share, scanned: connected to as when typed in. */
+  async scan() {
+    let text;
+    try {
+      text = await window.flow.scanQr();
+    } catch (err) {
+      if (!err.cancelled) this._draw(err.message, false, true);
+      return;
+    }
+    if (!text) return;
+    this._phase = 'connecting';
+    this._draw('Connecting…', true);
+    try {
+      const { name } = await window.flow.connectLink(text);
+      this._draw(`Connecting to "${name}"…`, true);
+    } catch (err) {
+      this._showForm(err.message, true);
+    }
   },
 
   /** No server: the songs on the phone, picked on Add Songs. */

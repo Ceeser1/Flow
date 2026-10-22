@@ -36,6 +36,8 @@ const DESKTOP = {
   vorbis: true,
   // Its own library.json backed up once a week (Settings > Media Management).
   backups: true,
+  // A server's QR code read with the camera (Settings > Flow Server's Scan): phones only.
+  scanQr: false,
 };
 
 const ANDROID = {
@@ -56,6 +58,7 @@ const ANDROID = {
   batteryHelp: true,
   vorbis: true,
   backups: false,
+  scanQr: true,
 };
 
 // The iPhone: as the Android phone, without what iOS has no need or room for.
@@ -65,6 +68,8 @@ const IOS = {
   batteryHelp: false,
   // iOS has no Vorbis decoder (it plays Ogg Opus).
   vorbis: false,
+  // No scanner on the iPhone yet (4.0 leaves iOS out).
+  scanQr: false,
 };
 
 module.exports = { DESKTOP, ANDROID, IOS };

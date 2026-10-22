@@ -15,6 +15,7 @@ const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
 const { createPrivateStats } = require('@flow/core/client/privateStats');
 const { createLyricsClient } = require('@flow/core/client/lyrics');
+const { encode: encodeQr } = require('@flow/core/qr');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const {
@@ -283,6 +284,19 @@ function start() {
     onSettingsChanged: on('settings:changed'),
     finishSong: notHere('Saving a download on the phone'),
     lyrics: call((songId) => lyricsClient.get(songId)),
+    shareLink: call(() => remote.shareLink()),
+    connectLink: call((text) => remote.connectLink(String(text || ''))),
+    qr: call((text) => encodeQr(String(text || ''))),
+    /** Google's code scanner (no camera permission): the text read, or '' when called off. */
+    scanQr: call(async () => {
+      const r = await plugin.scanQr();
+      if (r && r.cancelled) {
+        const err = new Error('Scan called off');
+        err.cancelled = true;
+        throw err;
+      }
+      return String((r && r.text) || '');
+    }),
     wantCovers: call((ids) => {
       if (remote.active()) remote.wantCovers(ids);
     }),

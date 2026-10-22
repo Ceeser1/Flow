@@ -41,6 +41,10 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -199,6 +203,34 @@ public class FlowNative extends Plugin {
      * (Android 14 and later), else the media output panel, else the Bluetooth
      * settings. Resolves { shown }.
      */
+    /**
+     * Settings' Scan (4.0): a QR code read by Google's code scanner, a screen
+     * of Google Play services, so Flow needs no camera permission. Resolves
+     * { text }, or { cancelled } when the user went back.
+     */
+    @PluginMethod
+    public void scanQr(PluginCall call) {
+        GmsBarcodeScannerOptions options = new GmsBarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .build();
+        GmsBarcodeScanner scanner = GmsBarcodeScanning.getClient(getActivity(), options);
+        scanner.startScan()
+                .addOnSuccessListener((barcode) -> {
+                    JSObject r = new JSObject();
+                    r.put("text", barcode.getRawValue() == null ? "" : barcode.getRawValue());
+                    call.resolve(r);
+                })
+                .addOnCanceledListener(() -> {
+                    JSObject r = new JSObject();
+                    r.put("cancelled", true);
+                    call.resolve(r);
+                })
+                .addOnFailureListener((e) -> {
+                    FlowLog.i("code scanner failed: " + e.getMessage());
+                    call.reject("The QR code scanner could not start (it comes with Google Play services): " + e.getMessage());
+                });
+    }
+
     @PluginMethod
     public void chooseOutput(PluginCall call) {
         getActivity().runOnUiThread(() -> {

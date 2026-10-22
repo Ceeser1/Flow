@@ -2456,6 +2456,14 @@ div.import__frame-head { cursor: default; }
 .queue__remove { visibility: hidden; }
 .queue__row:hover .queue__remove { visibility: visible; }
 
+/* ---- a server shared as a QR code (qrShare.js) ---- */
+
+.share-control { gap: 8px; }
+.modal--qr { width: min(420px, 100%); }
+.qr__frame { display: flex; justify-content: center; margin: 4px 0 12px; }
+.qr__code { width: min(300px, 100%); height: auto; image-rendering: pixelated; border-radius: 8px; }
+.qr__bar { display: flex; justify-content: center; }
+
 /* ---- a smart playlist's rules (rulesEditor.js) ---- */
 
 .modal--rules { width: min(680px, 100%); }

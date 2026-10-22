@@ -713,8 +713,11 @@ const SettingsPanel = {
   _serverRows() {
     const on = () => Store.settings.serverOn;
     this._serverNode = h('div.settings__desc.server-state');
+    // Share (the server in use as a QR code) and, on a phone, Scan in front of it (qrShare.js).
+    this._shareNode = h('div.settings__control.share-control');
     const main = this._row({
       key: 'serverOn',
+      right: this._shareNode,
       label: 'Use a Flow Server',
       desc: 'Use the library on a Flow Server. Songs can be streamed from it and changes made here go to it. '
         + 'When turned on, your local files get uploaded to the server as well.',
@@ -908,6 +911,12 @@ const SettingsPanel = {
     });
     input.addEventListener('change', () => {
       const v = input.value.trim();
+      // A shared server's link (qrShare.js) pasted into an address: connected to.
+      if (/^flow:\/\/connect/i.test(v)) {
+        input.value = Store.settings[key] || '';
+        QrShare.connect(v);
+        return;
+      }
       input.value = v;
       if (v !== (Store.settings[key] || '')) Store.saveSettings({ [key]: v });
     });
@@ -983,6 +992,16 @@ const SettingsPanel = {
     if (this._syncSecret) this._syncSecret();
     this._drawProfile();
     this._drawSwitch();
+    this._drawShare();
+  },
+
+  _drawShare() {
+    if (!this._shareNode) return;
+    const online = Store.server.on && Store.server.state === 'online';
+    clear(this._shareNode).append(...[
+      Store.can('scanQr') ? h('button.btn.btn--small', { type: 'button', title: 'Connect to a Flow Server by its QR code', onclick: () => QrShare.scan() }, 'Scan') : null,
+      online ? h('button.btn.btn--small', { type: 'button', title: 'Show this server as a QR code for another app', onclick: () => QrShare.open() }, 'Share') : null,
+    ].filter(Boolean));
   },
 
   // ---- Switch server ----

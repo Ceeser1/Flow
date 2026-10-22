@@ -259,6 +259,11 @@ handle('covers:staged', (cachePath) => covers.stagedCover(String(cachePath || ''
 const lyricsClient = createLyricsClient({ remote, library, jsonFiles: env.jsonFiles });
 handle('song:lyrics', (songId) => lyricsClient.get(songId));
 
+// Sharing the server by QR code (4.0): the link, a link pasted, and a code's squares.
+handle('server:shareLink', () => remote.shareLink());
+handle('server:connectLink', (text) => remote.connectLink(String(text || '')));
+handle('qr:encode', (text) => require('@flow/core/qr').encode(String(text || '')));
+
 // Backups (4.0, @flow/core/backup): library.json's data once a week, the
 // last 6 kept in Flow's folder (backups), never the songs' files.
 const backups = createBackupStore({

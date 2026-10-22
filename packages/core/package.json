@@ -9,5 +9,8 @@
   "scripts": {
     "test": "node --test"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "jsqr": "^1.4.0"
+  }
 }

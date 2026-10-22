@@ -116,6 +116,11 @@ contextBridge.exposeInMainWorld('flow', {
   lookupInfo: (song) => call('song:lookupInfo', song),
   // A song's lyrics (4.0): { found, synced: [{ t, text }] | null, plain, instrumental }.
   lyrics: (songId) => call('song:lyrics', songId),
+  // Sharing the server by QR code (4.0): { link, code, name }; a flow://connect link
+  // connected to ({ name }); a QR code's squares ({ size, modules }).
+  shareLink: () => call('server:shareLink'),
+  connectLink: (text) => call('server:connectLink', text),
+  qr: (text) => call('qr:encode', text),
   // Covers: files in Music\FlowPlayer\Covers (Store.coverSrc).
   wantCovers: (ids) => call('covers:want', ids),
   coverStats: () => call('covers:stats'),

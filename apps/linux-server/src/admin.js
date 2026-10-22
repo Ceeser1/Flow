@@ -89,7 +89,12 @@ function createAdminRoutes({
       }
       const bin = tools && tools.ytdlp();
       const ytdlp = !bin ? '' : await new Promise((resolve) => {
-        execFile(bin, ['--version'], { timeout: 15000 }, (err, out) => resolve(err ? '?' : String(out).trim().slice(0, 40)));
+        // A file that is no program throws at once: the overview still answers.
+        try {
+          execFile(bin, ['--version'], { timeout: 15000 }, (err, out) => resolve(err ? '?' : String(out).trim().slice(0, 40)));
+        } catch {
+          resolve('?');
+        }
       });
       slow = { at: Date.now(), musicBytes, ytdlp };
       slowRun = null;

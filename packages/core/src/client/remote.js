@@ -82,6 +82,7 @@ const { applyCommand } = require('../commands');
 const { songFileStem } = require('../text');
 const { serverBaseUrl: baseUrl, isTailscaleAddress } = require('../address');
 const { OfflineError, AuthError, randomHex } = require('./common');
+const { makeLink, parseLink } = require('./share');
 const { createTrackedProfiles } = require('./trackedProfiles');
 
 /**
@@ -264,7 +265,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, smartPlaylists: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, smartPlaylists: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -775,10 +776,11 @@ function createRemote(env) {
         const statistics = Array.isArray(hello.features) && hello.features.includes('statistics');
         const lyrics = Array.isArray(hello.features) && hello.features.includes('lyrics');
         const smartPlaylists = Array.isArray(hello.features) && hello.features.includes('smartPlaylists');
+        const pair = Array.isArray(hello.features) && hello.features.includes('pair');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics, lyrics, smartPlaylists,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics, lyrics, smartPlaylists, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -2596,6 +2598,76 @@ function createRemote(env) {
     refreshView();
   }
 
+  // ---- sharing by QR code (4.0, share.js) ----
+
+  /**
+   * The link to this server for another app's QR code scan: its addresses and,
+   * when it has a password, a one-time pairing code for it (the password this
+   * app keeps, handed to the server for 10 minutes). A server from before 4.0,
+   * or a password this app does not know (at home from level 3 on): no code,
+   * the other app is asked for the password.
+   */
+  async function shareLink() {
+    if (!active() || status.state !== 'online') throw new Error('Flow is not connected to its server right now.');
+    const s = settings.all();
+    let code = '';
+    const pw = decrypt(s.serverSecret);
+    if (conn.pair && pw) code = (await call('/api/pair', { method: 'POST', json: { password: pw } })).code || '';
+    let home = s.serverHomeOn !== false && s.serverHome ? s.serverHome : (conn.via === 'home' ? conn.address : '');
+    // The server runs here: the other device reaches it at this machine's address.
+    if (/^(localhost|127\.)/i.test(home)) {
+      const ip = network.lanAddress ? network.lanAddress() : '';
+      home = ip ? home.replace(/^[^:/]+/, ip) : '';
+    }
+    const remote = s.serverRemoteOn !== false ? String(s.serverRemote || '') : '';
+    if (!home && !remote) throw new Error('This server has no address another device could use. Enter its Home address (as the other device reaches it) first.');
+    return {
+      link: makeLink({
+        id: sync.serverId, name: conn.name, home, remote, code,
+      }),
+      code: !!code,
+      name: conn.name,
+    };
+  }
+
+  /**
+   * A link scanned or pasted: its server becomes the one in use, its pairing
+   * code traded for the password first (at its Home address, else Remote).
+   * Resolves { name }.
+   */
+  async function connectLink(text) {
+    const l = parseLink(text);
+    if (!l) throw new Error('That is not a link to a Flow Server.');
+    let password = null;
+    if (l.code) {
+      for (const address of [l.home, l.remote].filter(Boolean)) {
+        let r;
+        try {
+          r = await request(baseUrl(address), '/api/pair/redeem', { method: 'POST', json: { code: l.code }, timeout: address === l.home ? 3000 : 10000 });
+        } catch (err) {
+          if (err instanceof OfflineError) continue;
+          throw err;
+        }
+        if (r.status === 200 && r.json) {
+          password = String(r.json.password || '');
+          break;
+        }
+        throw new Error((r.json && r.json.error) || `"${l.name}" answered ${r.status}.`);
+      }
+      if (password === null) throw new Error(`"${l.name}" cannot be reached from here right now. Try on its home network, or ask for a new QR code.`);
+    }
+    if (sync.serverId && sync.serverId !== l.id) await sendWaiting();
+    // No Home address of its own: the search for one would find this home's server instead.
+    if (!l.home) sync.homeFilled = true;
+    const patch = {
+      serverOn: true, serverHome: l.home, serverRemote: l.remote, serverHomeOn: true, serverRemoteOn: true,
+    };
+    settings.set(password === null ? patch : { ...patch, serverSecret: encrypt(password) });
+    hooks.onSettings(patch);
+    reconfigure({ ...patch, serverSecret: true });
+    return { name: l.name };
+  }
+
   function setSecret(text) {
     settings.set({ serverSecret: encrypt(String(text || '')) });
     reconfigure({ serverSecret: true });
@@ -3154,7 +3226,7 @@ function createRemote(env) {
     trimSong, trimmedHere, songPeaks, songLyrics, newCutId,
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, switchServer, forgetServer, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
-    admin, changeServerPassword, removeTracked,
+    admin, changeServerPassword, removeTracked, shareLink, connectLink,
   };
 }
 

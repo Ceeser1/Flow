@@ -14,6 +14,8 @@ const tools = require('./tools');
 const { songsToTag } = require('./library');
 const backups = require('./backups');
 const { unpack, fileName, KEEP } = require('@flow/core/backup');
+const qr = require('@flow/core/qr');
+const { makeLink } = require('@flow/core/client/share');
 const model = require('@flow/core/libraryModel');
 const { readJson } = require('@flow/core/jsonFile');
 const { lookupInfo } = require('@flow/core/songInfo');
@@ -51,6 +53,10 @@ Usage:
   flow-server restore <name | file>     put a backup back: the running server does it within a few
                                         seconds (a stopped one when it starts), after backing up
                                         what is there now. Songs that came since stay
+  flow-server share                     a QR code for the Flow apps to scan (Settings, Flow Server, Scan):
+                                        the server's addresses and, with a password, a code that lets
+                                        one app in once within 10 minutes. Asks the running server for
+                                        the code and for the password (FLOW_SERVER_PASSWORD gives it)
   flow-server doctor <address>          check a server from where the apps use it, through
                                         its proxy: https, certificate, uploads, seeking...
                                         Run it from outside your home network too. Asks for
@@ -122,7 +128,7 @@ function parseArgs(argv) {
     else if (a === '--master') out.master = true;
     else if (a === '--create') out.create = true;
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}. See flow-server --help.`);
-    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'profiles', 'admin', 'doctor', 'info', 'tag-songs', 'backup', 'backups', 'restore'].includes(a)) out.command = a;
+    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'profiles', 'admin', 'doctor', 'info', 'tag-songs', 'backup', 'backups', 'restore', 'share'].includes(a)) out.command = a;
     else out.rest.push(a);
   }
   return out;
@@ -196,6 +202,46 @@ function tagSongs(config, dryRun) {
   config.set({ tagSongs: true });
   console.log(`${todo.length} ${todo.length === 1 ? 'file gets' : 'files get'} the song's flowid and cover, written by the server one at a time in the background `
     + '(its log says when it is done). A running server starts within a few seconds; a stopped one when it starts again.');
+}
+
+/** flow-server share: the running server's QR code in the terminal (pairing.js, @flow/core/qr). */
+async function shareCommand(config) {
+  const cfg = config.get();
+  const base = `http://127.0.0.1:${cfg.port}`;
+  const ask = async (route, body, token) => {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const r = await fetch(`${base}${route}`, body ? { method: 'POST', headers, body: JSON.stringify(body) } : { headers });
+    return { status: r.status, json: await r.json().catch(() => ({})) };
+  };
+  let hello;
+  try {
+    hello = (await ask('/api/hello')).json;
+  } catch {
+    throw new Error(`The server is not running on port ${cfg.port}: start it first (flow-server share asks it for the code).`);
+  }
+  let code = '';
+  if (cfg.password) {
+    const password = process.env.FLOW_SERVER_PASSWORD || await askHidden('The server password (it goes into no QR code): ');
+    const signedIn = await ask('/api/login', { password, device: 'flow-server share' });
+    if (signedIn.status !== 200) throw new Error(signedIn.json.error || 'The server did not let flow-server share in.');
+    const made = await ask('/api/pair', { password }, signedIn.json.token);
+    if (made.status !== 200) throw new Error(made.json.error || 'The server made no pairing code.');
+    code = made.json.code;
+  }
+  // A home network's address: not a link-local one (169.254, no router answered there).
+  const all = lanAddresses();
+  const lan = all.find((a) => /^(192\.168|10)\./.test(a)) || all.find((a) => /^172\.(1[6-9]|2\d|3[01])\./.test(a)) || all.find((a) => !a.startsWith('169.254.'));
+  const remote = cfg.publicUrl || (hello.tailscale ? `${hello.tailscale.ip}:${cfg.port}` : '');
+  const link = makeLink({
+    id: hello.id, name: hello.name, home: lan ? `${lan}:${cfg.port}` : '', remote, code,
+  });
+  console.log(qr.toTerminal(qr.encode(link)));
+  console.log('');
+  console.log(link);
+  console.log(code
+    ? 'Scan it with Flow on a phone (Settings, Flow Server, Scan) within 10 minutes. It lets one app in, once.'
+    : 'Scan it with Flow on a phone (Settings, Flow Server, Scan).');
 }
 
 /** flow-server backup, backups and restore (backups.js). */
@@ -415,6 +461,10 @@ async function main() {
   }
   if (args.command === 'tag-songs') {
     tagSongs(config, args.dryRun);
+    return;
+  }
+  if (args.command === 'share') {
+    await shareCommand(config);
     return;
   }
   if (['backup', 'backups', 'restore'].includes(args.command)) {

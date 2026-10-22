@@ -203,5 +203,12 @@ module.exports = {
     find: () => discovery.find(),
     addressOf: (found) => discovery.addressOf(found, os.networkInterfaces()),
   },
-  network: { isMetered: () => network.isMetered() },
+  network: {
+    isMetered: () => network.isMetered(),
+    // This computer on the home network (a QR code's Home address when the server runs here).
+    lanAddress() {
+      const all = Object.values(os.networkInterfaces()).flat().filter((a) => a && a.family === 'IPv4' && !a.internal).map((a) => a.address);
+      return all.find((a) => /^(192\.168|10)\./.test(a)) || all.find((a) => /^172\.(1[6-9]|2\d|3[01])\./.test(a)) || '';
+    },
+  },
 };

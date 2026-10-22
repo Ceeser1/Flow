@@ -8,6 +8,10 @@
 //   GET  /api/check                    what the server saw of this request (through
 //                                      a proxy?), for flow-server doctor; open to anyone
 //   POST /api/login   { password, device } -> { token }
+//   POST /api/pair    { password }      a pairing code for a QR code (pairing.js): { code, expiresIn }
+//                                      ('' without a server password); 403 for a wrong password
+//   POST /api/pair/redeem { code }      open to anyone: the password, once: { password }; 404
+//                                      for a code used or too old
 //   GET  /api/library [?since=rev&as=profileId]
 //                                      { rev, library, profile }, or 204 when
 //                                      nothing changed for that profile
@@ -119,12 +123,13 @@ const tools = require('./tools');
 const { SessionError } = require('./sessions');
 const { createVorbis } = require('./vorbis');
 const { createAdminRoutes } = require('./admin');
+const { createPairing, LIFE_MS: PAIR_LIFE_MS } = require('./pairing');
 
 const PROTOCOL = 1;
 // What this server can do beyond protocol 1, for apps that know to ask.
 // admin: /api/admin for admin profiles (admin.js).
-// smartPlaylists: a playlist's rules are kept (4.0).
-const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists'];
+// smartPlaylists: a playlist's rules are kept (4.0). pair: QR codes' pairing codes (4.0).
+const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;
@@ -348,6 +353,8 @@ function createHttpServer({
   lyrics = null,
 }) {
   const throttle = createThrottle();
+  // QR codes' pairing codes, in memory only.
+  const pairing = createPairing();
   // What is noted about the profiles for the admins (activity.js); left out by tests that need none.
   const note = activity || {
     created() {}, seen() {}, left() {}, failed() {},
@@ -671,6 +678,20 @@ function createHttpServer({
     throw new HttpError(404, 'Nothing here.');
   }
 
+  /** A pairing code traded for the password (a QR code scanned); wrong codes wait as wrong passwords do. */
+  async function redeemPairing(req, res, { ip }) {
+    throttle.check(ip);
+    const body = await readJsonBody(req);
+    const password = pairing.redeem(body.code);
+    if (password === null) {
+      throttle.fail(ip);
+      throw new HttpError(404, 'That code was used already or is older than 10 minutes. Ask for a new QR code.');
+    }
+    throttle.ok(ip);
+    log(`A pairing code was used from ${ip}`);
+    sendJson(res, 200, { password });
+  }
+
   async function login(req, res, { ip }) {
     throttle.check(ip);
     const body = await readJsonBody(req);
@@ -838,6 +859,7 @@ function createHttpServer({
     }
     checkExposure(client, false);
     if (is('POST', /^\/api\/login$/)) return login(req, res, client);
+    if (is('POST', /^\/api\/pair\/redeem$/)) return redeemPairing(req, res, client);
 
     if (!p.startsWith('/api/')) throw new HttpError(404, 'Nothing here. This is a Flow Server; open it in the Flow app.');
     const entry = requireAuth(req, url, client);
@@ -861,6 +883,16 @@ function createHttpServer({
     }
     if (is('GET', /^\/api\/live$/)) return openLive(req, res, url, client, entry);
     if (is('GET', /^\/api\/time$/)) return sendJson(res, 200, { time: Date.now() });
+    if (is('POST', /^\/api\/pair$/)) {
+      const body = await readJsonBody(req);
+      const cfg = config.get();
+      if (cfg.password && !checkPassword(cfg.password, String(body.password || ''))) {
+        throw new HttpError(403, `The password this app keeps is not the server's any more. Enter it again in Settings.`);
+      }
+      const code = cfg.password ? pairing.create(String(body.password)) : '';
+      if (code) log(`A pairing code was made for ${entry ? entry.device : client.ip}`);
+      return sendJson(res, 200, { code, expiresIn: Math.round(PAIR_LIFE_MS / 1000) });
+    }
     if (p === '/api/sessions' && (req.method === 'GET' || req.method === 'POST')) return sessionRoute(req, res, url, entry);
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
