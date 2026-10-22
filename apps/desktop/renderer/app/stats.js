@@ -1,10 +1,9 @@
 'use strict';
 
-// Settings' Statistics (3.6), right above Administration. Current Profile:
-// whose listens count now (a hint line saying why), with Logout and the
-// profile's ⋯ as in Flow Server > Profile. All tracked Profiles: every
-// profile used on this app and its Private Statistics, one picked to show,
-// each but the one in use removable. Statistics for profile: the picked
+// Settings' Statistics (3.6), right above Administration. All tracked
+// Profiles: every profile used on this app and its Private Statistics, one
+// picked to show (the one in use at first), each but the one in use
+// removable. Statistics for profile: the picked
 // one's numbers (with its streaks and longest sessions) and its Activity, a
 // bar per month back to when it was made, or per day (Monthly / Daily; a
 // month clicked opens its days).
@@ -72,10 +71,7 @@ const Stats = {
     // or day), also through a redraw; not when it shows something else.
     const old = this._node.querySelector('.stats__scroll');
     const scrolled = old && old.dataset.shows === this._shows() ? old.scrollLeft : 0;
-    // The ⋯ tray belongs to the row about to be drawn anew.
-    if (SongActions.anchor && this._node.contains(SongActions.anchor)) SongActions.close();
     clear(this._node).append(
-      this._block('Current Profile', this._hints(st), this._currentRow(st, current)),
       this._block('All tracked Profiles', this._list(list, shown, mobile)),
       this._block(Statistics.title(shown, Store.settings.serverNames),
         // Two columns side by side; one list on phones.
@@ -94,42 +90,6 @@ const Stats = {
 
   _block(title, ...body) {
     return h('section.stats__block', h('h4.stats__head', title), ...body);
-  },
-
-  // ---- Current Profile ----
-
-  _hints(st) {
-    return h('div.stats__hints', ...Statistics.hints(st, Store.settings.serverNames).map((x) => h(`p.stats__hint.stats__hint--${x.kind}`, x.text)));
-  },
-
-  _currentRow(st, current) {
-    const online = st.on && st.state === 'online';
-    const profile = st.on ? st.profile : null;
-    const btn = (label, onclick, extra = '') => h('button.btn.btn--small' + extra, { type: 'button', disabled: this._busy, onclick }, label);
-    const logout = btn('Logout', () => this._do(async () => {
-      await window.flow.profileLogout();
-      toast(`Logged out of "${profile.name}"`, 'info');
-    }));
-    // Private is no profile to leave.
-    logout.disabled = this._busy || !profile;
-    const parts = [h('span.profile-who', 'Profile - ', h('strong', current.name)), logout];
-    // The same tray as Flow Server > Profile's ⋯: only while the server can be reached.
-    if (profile && online) {
-      const more = iconButton('act.act--grey', Icons.more, 'More', () => {
-        if (SongActions.anchor === more) {
-          SongActions.close();
-          return;
-        }
-        SongActions.open(more, [
-          btn('Edit Name', () => SettingsPanel._editProfileName(profile)),
-          btn('Change PIN', () => SettingsPanel._changeProfilePin(profile)),
-          btn('Delete Profile', () => SettingsPanel._deleteProfile(profile), '.btn--danger'),
-        ], 'act-tray--settings');
-      });
-      more.disabled = this._busy;
-      parts.push(more);
-    }
-    return h('div.stats__current.profile-control', ...parts);
   },
 
   async _do(fn) {

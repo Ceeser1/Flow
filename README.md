@@ -254,10 +254,6 @@ The cog at the bottom left of the menu. Every change counts at once.
     menu and its lists from Search (a trend list open then goes back to All Songs).
 - **Flow Server**: **Use a Flow Server** (off). See
   [A Flow Server](#a-flow-server) below.
-  - **Profile**: which of the server's profiles this is. Not logged in, pick
-    one (or **+ New** to make one, with a PIN if wanted) and **Login** or
-    **Create**; logged in, **Rename**, **Delete** (its playlists, favourites
-    and stats, on every device) and **Logout**. Only while connected.
   - **Home Server in WiFi/LAN** and **Remote Server**: addresses, tried in
     that order (`192.168.0.63:7878`, a domain, or a full `https://` link).
     Each has a tick box before it (on by default): untick Home to connect
@@ -269,11 +265,17 @@ The cog at the bottom left of the menu. Every change counts at once.
     internet (level 3 or 4), connecting at home fills the Remote box with its
     Tailscale or `https://` address the same way.
   - **Server Password (if the server is password protected)**: entered once, kept
-    encrypted for the Windows account; empty the box to forget it.
-  - **Allow downloads on mobile internet**
-    (off; only shown with a Remote address): away from home, songs only go
-    up and come down on connections Windows (or the phone) calls not metered,
-    unless ticked. Streaming and changes go either way, and at home nothing waits.
+    encrypted on the device; empty the box to forget it.
+  - **Profile**: which of the server's profiles this is. Not logged in, pick
+    one (or **+ New** to make one, with a PIN if wanted) and **Login** or
+    **Create**; logged in, **Logout** and More (Edit Name, Change PIN,
+    Delete Profile: its playlists, favourites and stats, on every device).
+    Only while connected, except **Logout**, which also works away from the
+    server (it hears of it at the next connection).
+- **Switch server** (only once a server was used; not under Use a Flow
+  Server): see [Switch server](#a-flow-server) below. It works with Use a
+  Flow Server unticked too: **Switch** ticks it (for the server last in use
+  as well).
 - **Jam session** (only with a Flow Server; the heading says "(requires a Flow server
   connection)" while there is none). See [Active Sessions](#active-sessions).
   - **Share your jam session on the server** (on): other devices on the same
@@ -296,6 +298,11 @@ The cog at the bottom left of the menu. Every change counts at once.
     take (with a Flow Server: the servers' covers kept here). With a server
     also **Clear cover cache**, which deletes those; the covers of the server
     connected come down again.
+  - **Allow downloads on mobile internet**
+    (off; greyed out without a Flow Server, only shown with a Remote address):
+    away from home, songs only go up and come down on connections Windows (or
+    the phone) calls not metered, unless ticked. Streaming and changes go
+    either way, and at home nothing waits.
   - **Keep local files after server upload** (on; greyed out without a Flow
     Server, like the next one): songs downloaded here stay in Local Files once
     uploaded. Unticked, each is removed here after its upload (unless a
@@ -346,14 +353,6 @@ The cog at the bottom left of the menu. Every change counts at once.
     grey when low, whiter the taller the bar), or White, Red,
     Green, Yellow, Blue, Purple or Black.
 - **Statistics** (from 3.6; above Administration)
-  - **Current Profile**: whose listens count now, and why. Logged in to a
-    profile on the server connected, that profile (green); away from the
-    server, the profile last logged in to, its listens waiting to go up
-    (amber); not logged in, or without a server, the app's own **Private**
-    profile (grey). With **Logout** (also away from the server, which hears
-    of it at the next connection) and, while connected, the profile's More
-    (Edit Name, Change PIN, Delete Profile). A server older than 3.6 is
-    said to need an update.
   - **All tracked Profiles**: every profile used in this app, by server, and
     Private. Click one to see its statistics. **Remove** forgets a profile's
     statistics here, with its listens not sent yet; the server keeps its
@@ -454,7 +453,12 @@ control with a cache:
   file on this device, the server's and the rest (copies downloaded from
   another Flow Server, songs not uploaded). Those that are not on this server
   only play, and can be deleted from this device (More); Flow says when one
-  is on no server at all, so its file here is the only copy.
+  is on no server at all, so its file here is the only copy. A file here that
+  the server has as well (the same source, or the same names at the same
+  length, as an upload would find it) counts as that server song's copy even
+  when it never went up through this device (held back with "Not now", say):
+  it shows as on this computer, plays from here and its Download button
+  deletes it; nothing goes up or comes down for it.
 - **Download (Server)**: when the server downloads songs itself (`install.sh`
   asks; it needs yt-dlp and ffmpeg there), Add Songs has it next to
   **Download (Client)**. The server reads the link and downloads the songs in
@@ -524,7 +528,8 @@ control with a cache:
   on this device, the one in use picked. Picking another shows the address it
   answered at and the profile; nothing happens until **Switch**, which
   connects to it with that address, its password and its profile; one that
-  does not answer leaves the server in use as it is. ✕ forgets the picked one
+  does not answer leaves the server in use as it is. With Use a Flow Server
+  unticked, Switch ticks it. ✕ forgets the picked one
   (what waited to go to it is dropped; its songs here stay, under Downloaded
   Songs).
 

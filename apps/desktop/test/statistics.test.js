@@ -1,7 +1,7 @@
 'use strict';
 
-// Settings' Statistics as statistics.js works them out: the hint lines,
-// the profiles to pick from, the numbers and the Activity months.
+// Settings' Statistics as statistics.js works them out: the profiles to
+// pick from, the numbers and the Activity months.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -9,22 +9,6 @@ const Statistics = require('../renderer/app/statistics');
 
 const at = (y, m, d = 15) => new Date(y, m - 1, d, 12).getTime();
 const profile = { id: 'anna1', name: 'Anna', createdAt: at(2026, 3, 2) };
-
-test('the hint says whose listens count now, and when the server is too old', () => {
-  const hint = (st) => Statistics.hints(st).map((x) => `${x.kind}: ${x.text}`);
-  assert.deepEqual(hint({ on: false }), ['grey: Never connected to any server - Using your App\'s private profile']);
-  assert.deepEqual(hint({ on: false, serverId: 's1', serverName: 'Pi' }), ['grey: Not connected to any server - Using your App\'s private profile']);
-  const online = {
-    on: true, state: 'online', name: 'Living Room', serverId: 's1', serverName: 'Living Room', statistics: true,
-  };
-  assert.deepEqual(hint({ ...online, profile }), ['green: Connected to Living Room - Using the connected profile of this server']);
-  assert.deepEqual(hint({ ...online, state: 'offline', profile }), ['amber: Not connected to Living Room - Using last connected profile of this server']);
-  assert.deepEqual(hint(online), ['grey: Connected to Living Room - Not logged in to a profile, using your App\'s private profile']);
-  assert.deepEqual(hint({ ...online, state: 'offline' }), ['grey: Not connected to Living Room - Using your App\'s private profile']);
-  const old = hint({ ...online, profile, statistics: false });
-  assert.equal(old.length, 2);
-  assert.match(old[1], /^amber: Living Room is older than Flow 3\.6/);
-});
 
 test('a server named on this device shows that name, its own in brackets', () => {
   const Util = require('../renderer/app/util');
@@ -35,10 +19,6 @@ test('a server named on this device shows that name, its own in brackets', () =>
   // Its own name given again is no name of its own.
   assert.equal(Util.serverName({ s1: 'Pi' }, 's1', 'Pi').renamed, false);
   assert.equal(Util.serverName(undefined, 's1', '').name, 'Flow Server');
-  const st = {
-    on: true, state: 'online', name: 'Pi', serverId: 's1', serverName: 'Pi', statistics: true, profile,
-  };
-  assert.equal(Statistics.hints(st, { s1: 'Upstairs' })[0].text, 'Connected to Upstairs - Using the connected profile of this server');
 });
 
 test('the profiles to pick from: tracked ones, the one in use marked, Private last', () => {

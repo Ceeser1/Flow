@@ -2992,12 +2992,6 @@ body.mobile .switch-where { text-align: left; }
 .stats__mode + .stats__mode { border-left: 1px solid #4a4a55; }
 .stats__mode:hover:not(.stats__mode--on) { background: rgba(255, 255, 255, 0.05); color: var(--text-bright); }
 .stats__mode--on { background: var(--accent); color: #fff; cursor: default; }
-.stats__hints { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-.stats__hint { margin: 0; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
-.stats__hint--green { color: var(--green); }
-.stats__hint--amber { color: var(--amber); }
-.stats__hint--grey { color: var(--text-dim); }
-.stats__current { display: flex; align-items: center; justify-content: flex-start; gap: 8px; }
 
 /* All tracked Profiles: Server, Profile, Action; a row picked shows its numbers. */
 .stats__table { display: flex; flex-direction: column; }

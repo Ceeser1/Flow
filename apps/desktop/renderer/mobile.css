@@ -928,12 +928,10 @@ body.mobile .queue__row--held { background: var(--glass-hi); }
 
 /* ===== Settings: Administration on the phone: each profile opens with a tap ===== */
 
-body.mobile .stats__hint,
 body.mobile .stats__facts,
 body.mobile .stats__trow { font-size: 13px; }
 body.mobile .stats__trow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; min-height: 44px; }
 body.mobile .stats__trow .btn--small { height: 34px; padding: 0 12px; font-size: 13px; }
-body.mobile .stats__current { flex-wrap: wrap; }
 body.mobile .stats__month { width: 44px; font-size: 12px; }
 /* The numbers as one list, the labels lined up. */
 body.mobile .stats__facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; }

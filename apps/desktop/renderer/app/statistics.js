@@ -308,36 +308,7 @@
     return list;
   }
 
-  /**
-   * What the Current Profile says: [{ kind, text }], kind 'green', 'amber'
-   * or 'grey'. The server's name while connected; the last one's while not;
-   * the one given it on this device (names: Settings' serverNames) first.
-   */
-  function hints(st, names) {
-    const s = st || {};
-    const online = s.on && s.state === 'online';
-    const real = (online && s.name) || s.serverName || s.name;
-    const name = real ? Util.serverName(names, s.serverId, real).name : 'the Flow Server';
-    const own = 'using your App\'s private profile';
-    const out = [];
-    if (s.on && s.profile) {
-      out.push(online
-        ? { kind: 'green', text: `Connected to ${name} - Using the connected profile of this server` }
-        : { kind: 'amber', text: `Not connected to ${name} - Using last connected profile of this server` });
-    } else if (online) {
-      out.push({ kind: 'grey', text: `Connected to ${name} - Not logged in to a profile, ${own}` });
-    } else if (s.serverId) {
-      out.push({ kind: 'grey', text: `Not connected to ${s.on ? name : 'any server'} - ${own[0].toUpperCase()}${own.slice(1)}` });
-    } else {
-      out.push({ kind: 'grey', text: `Never connected to any server - ${own[0].toUpperCase()}${own.slice(1)}` });
-    }
-    if (online && !s.statistics) {
-      out.push({ kind: 'amber', text: `${name} is older than Flow 3.6: its statistics need the latest Flow Server. Update it to count your listens there.` });
-    }
-    return out;
-  }
-
   return {
-    PRIVATE, MONTHS, months, timeline, daily, streaks, scale, title, facts, sources, hints, currentId, privateSource,
+    PRIVATE, MONTHS, months, timeline, daily, streaks, scale, title, facts, sources, currentId, privateSource,
   };
 }));

@@ -399,7 +399,11 @@ const SettingsPanel = {
       const on = when ? !!when() : true;
       if (show) row.hidden = !show();
       row.classList.toggle('settings__row--off', !on);
-      if (box) box.disabled = !on;
+      if (box) {
+        box.disabled = !on;
+        // Ticked by Flow too (Switch server ticks Use a Flow Server).
+        box.checked = !!Store.settings[key];
+      }
       // Its own box unticked: the value beside it does nothing either.
       row.classList.toggle('settings__row--unset', !!box && !box.checked);
     });
@@ -663,7 +667,8 @@ const SettingsPanel = {
 
   /**
    * The Flow Server rows: on/off with its state, the two addresses (home
-   * first, then remote), the password, and what goes up and down when.
+   * first, then remote), the password and the profile under it, then Switch
+   * server on its own.
    */
   _serverRows() {
     const on = () => Store.settings.serverOn;
@@ -671,15 +676,14 @@ const SettingsPanel = {
     const main = this._row({
       key: 'serverOn',
       label: 'Use a Flow Server',
-      desc: 'Use the library on a Flow Server (a Raspberry Pi, another PC). Songs play straight from it, and '
-        + 'changes made here go to it. Turned on, your Local Files are uploaded to the server.',
+      desc: 'Use the library on a Flow Server. Songs can be streamed from it and changes made here go to it. '
+        + 'When turned on, your local files get uploaded to the server as well.',
     });
     main.querySelector('.settings__left').appendChild(this._serverNode);
     this._syncBtn = h('button.btn.btn--small', { type: 'button', onclick: () => this._syncNow() }, 'Synchronize now');
     const rows = [
       h('h3.settings__section', 'Flow Server'),
       main,
-      this._profileRow(),
       this._row({
         key: 'serverHomeOn',
         label: 'Home Server in WiFi/LAN',
@@ -698,21 +702,13 @@ const SettingsPanel = {
       }),
       this._row({
         label: 'Server Password (if the server is password protected)',
-        desc: `Entered once; Flow keeps it encrypted ${Store.phone ? 'on this phone' : 'for your Windows account'}. Empty the box to forget it.`,
+        desc: 'Flow keeps it encrypted on your device.',
         sub: true,
         when: on,
         right: this._secretField(on),
       }),
+      this._profileRow(),
       this._switchRow(),
-      this._row({
-        key: 'serverMetered',
-        label: 'Allow downloads on mobile internet',
-        desc: 'If the app detects a metered connection/mobile internet, it will not download marked-to-download songs '
-          + 'from the Flow Server if it\'s not allowed. Streaming songs always works.',
-        sub: true,
-        when: on,
-        show: () => !!Store.settings.serverRemote && Store.settings.serverRemoteOn !== false,
-      }),
     ];
     return rows;
   },
@@ -741,6 +737,14 @@ const SettingsPanel = {
       h('h3.settings__section', 'Media Management'),
       Store.can('musicFolder') ? this._savedSongsRow() : this._storageRow(),
       this._coversRow(),
+      this._row({
+        key: 'serverMetered',
+        label: 'Allow downloads on mobile internet',
+        desc: 'If the app detects a metered connection/mobile internet, it will not download marked-to-download songs '
+          + 'from the Flow Server if it\'s not allowed. Streaming songs always works.',
+        when: server,
+        show: () => !!Store.settings.serverRemote && Store.settings.serverRemoteOn !== false,
+      }),
       this._row({
         key: 'serverKeepFiles',
         label: 'Keep local files after server upload',
@@ -947,7 +951,9 @@ const SettingsPanel = {
    * in use picked. Picking another only shows where it was reached and as
    * whom; Switch then connects to it (with that address, its password and its
    * profile), and ✕ forgets it. The pencil names the picked one on this
-   * device: Switch becomes the box for it and the pencil a tick.
+   * device: Switch becomes the box for it and the pencil a tick. Its own row,
+   * usable with Use a Flow Server unticked: Switch ticks it (for the one last
+   * in use too).
    */
   _switchRow() {
     this._switch = { picked: '', busy: '', key: '', editing: '' };
@@ -956,8 +962,6 @@ const SettingsPanel = {
       label: 'Switch server',
       desc: 'Servers used on this device. Each keeps its downloads, waiting changes, profile and password for when you come back. '
         + 'Pick one and press Switch.',
-      sub: true,
-      when: () => Store.settings.serverOn,
       show: () => this._knownServers().length > 0,
       right: this._switchNode,
     });
@@ -991,7 +995,7 @@ const SettingsPanel = {
     const picked = list.find((x) => x.id === p.picked) || list[0];
     const other = !picked.current;
     const named = (x) => Util.serverName(names, x.id, x.name);
-    const select = h('select.select.switch-select', { disabled: off || !!p.busy || !!p.editing },
+    const select = h('select.select.switch-select', { disabled: !!p.busy || !!p.editing },
       ...list.map((x) => h('option', { value: x.id }, x.current ? `${named(x).label} - in use` : named(x).label)));
     select.value = picked.id;
     select.addEventListener('change', () => {
@@ -999,7 +1003,7 @@ const SettingsPanel = {
       this._drawSwitch(true);
     });
     const forget = iconButton('act.act--grey', Icons.x, `Forget "${named(picked).name}"`, () => this._forgetServer(picked));
-    forget.disabled = off || !!p.busy || !other || !!p.editing;
+    forget.disabled = !!p.busy || !other || !!p.editing;
     let edit;
     let action;
     if (p.editing) {
@@ -1014,9 +1018,9 @@ const SettingsPanel = {
         p.editing = picked.id;
         this._drawSwitch(true);
       });
-      edit.disabled = off || !!p.busy;
+      edit.disabled = !!p.busy;
       action = h('button.btn.btn--small', {
-        type: 'button', disabled: off || !!p.busy || !other, onclick: () => this._switchTo(picked),
+        type: 'button', disabled: !!p.busy || !(other || off), onclick: () => this._switchTo(picked),
       }, p.busy ? 'Connecting...' : 'Switch');
     }
     node.append(
@@ -1085,6 +1089,12 @@ const SettingsPanel = {
   },
 
   async _switchTo(s) {
+    // The one last in use, Use a Flow Server unticked: ticking it is all.
+    if (s.current) {
+      Store.saveSettings({ serverOn: true });
+      this._refreshAll();
+      return;
+    }
     this._switch.busy = s.id;
     this._drawSwitch();
     const ok = await attempt(async () => {
@@ -1124,7 +1134,7 @@ const SettingsPanel = {
     this._profileNode = h('div.settings__control.profile-control');
     return this._row({
       label: 'Profile',
-      desc: 'Everyone shares the songs; each profile has its own playlists, favourites and listening stats.',
+      desc: 'Each profile has its own playlists, favourites and stats. Uploaded songs are shared.',
       sub: true,
       when: () => Store.settings.serverOn,
       right: this._profileNode,
@@ -1152,6 +1162,8 @@ const SettingsPanel = {
       else if (st.on && st.state === 'online' && !st.profilesSupported) text = 'Update the Flow Server to use profiles.';
       else if (st.on) text = 'Available while connected to the server.';
       node.append(h('span.settings__note', text));
+      // Logout works away from the server too (it is told at the next connection).
+      if (st.on && st.profile) node.append(this._logoutButton(st.profile));
       return;
     }
     if (st.profile) this._drawSignedIn(node, st.profile);
@@ -1177,12 +1189,20 @@ const SettingsPanel = {
     more.disabled = p.busy;
     node.append(
       h('span.profile-who', 'Logged in as ', h('strong', profile.name)),
-      btn('Logout', () => this._profileDo(async () => {
-        await window.flow.profileLogout();
-        toast(`Logged out of "${profile.name}"`, 'info');
-      })),
+      this._logoutButton(profile),
       more,
     );
+  },
+
+  _logoutButton(profile) {
+    return h('button.btn.btn--small', {
+      type: 'button',
+      disabled: this._prof.busy,
+      onclick: () => this._profileDo(async () => {
+        await window.flow.profileLogout();
+        toast(`Logged out of "${profile.name}"`, 'info');
+      }),
+    }, 'Logout');
   },
 
   /** The current PIN box: none to type while the profile has none. */
