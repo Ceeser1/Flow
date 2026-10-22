@@ -103,6 +103,12 @@ const SettingsPanel = {
         desc: 'If disabled, your listening trend category will be hidden in the menu and the search.',
       }),
       this._row({
+        key: 'autoDj',
+        label: 'Continue with similar songs',
+        desc: 'When the list playing has played through, songs like the last ones you heard follow (the same artists, genre, Info '
+          + 'or album, those you listen to most first) instead of the list starting over. The Queue shows them as "Then similar songs".',
+      }),
+      this._row({
         key: 'lyricsOn',
         label: 'Show lyrics',
         desc: Store.phone

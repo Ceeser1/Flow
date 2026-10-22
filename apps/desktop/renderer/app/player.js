@@ -187,6 +187,7 @@ const Player = {
     this.volume = Store.can('volume') ? Store.settings.volume : 1;
     this._applyVolume();
     this.queue.setShuffle(Store.settings.shuffle);
+    this._applyAutoDj();
 
     const e = this.engine;
     e.on('play', () => {
@@ -306,6 +307,11 @@ const Player = {
       if (waiting === this.currentId) this._unreachable(Store.song(waiting));
     });
     Store.onSettings((patch) => {
+      if ('autoDj' in patch) {
+        this._applyAutoDj();
+        if (this.contextId && !this.remote) this.queue.fill(this.idsOf(this.contextId));
+        this._emit();
+      }
       if ('crossfade' in patch || 'crossfadeSeconds' in patch) this._syncUpcoming();
       if (!('normalize' in patch)) return;
       if (this.currentId) this.engine.setGain(this._normGain(this.currentId), true);
@@ -570,6 +576,18 @@ const Player = {
       return;
     }
     this.load(id, this.contextId, { fromQueue: true });
+  },
+
+  /**
+   * Settings' "Continue with similar songs": the queue goes on with songs
+   * like the last ones heard once the list has played through (autoDj.js).
+   */
+  _applyAutoDj() {
+    this.queue.continueWith = Store.settings.autoDj
+      ? (seeds, avoid) => AutoDJ.similar(Store.library.songs, seeds, avoid)
+      : null;
+    // Turned off: the list again, from where it was.
+    if (!this.queue.continueWith) this.queue._leaveDj();
   },
 
   toggleRepeat() {
@@ -1164,6 +1182,7 @@ const Player = {
     if (!this.remote && this.currentId) {
       const ahead = new PlayQueue(this.queue.random, this.queue.limit);
       ahead.restore(this.queue.snapshot());
+      ahead.continueWith = this.queue.continueWith;
       const order = this.contextId ? this.idsOf(this.contextId) : [];
       while (ids.length < this.UPCOMING) {
         const id = ahead.next(order);

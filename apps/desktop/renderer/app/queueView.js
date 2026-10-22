@@ -72,10 +72,19 @@ const QueueView = {
     const listName = Player.listName();
     const auto = q.auto.map((id) => Store.song(id));
     if (listName && auto.some(Boolean)) {
-      box.appendChild(h('div.queue__head',
-        h('span', `Next from ${listName}`),
-        q.shuffle ? h('span.queue__note', 'shuffled') : null));
+      // The list's songs, then those "Continue with similar songs" added.
+      const similar = (i) => q.dj && q.dj.has(q.auto[i]);
+      if (!similar(0)) {
+        box.appendChild(h('div.queue__head',
+          h('span', `Next from ${listName}`),
+          q.shuffle ? h('span.queue__note', 'shuffled') : null));
+      }
+      let headed = false;
       auto.forEach((song, i) => {
+        if (similar(i) && !headed) {
+          headed = true;
+          box.appendChild(h('div.queue__head', h('span', 'Then similar songs')));
+        }
         if (song) box.appendChild(this._row(song, { part: 'auto', index: i }));
       });
     } else if (!manual.some(Boolean)) {

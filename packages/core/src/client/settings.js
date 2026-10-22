@@ -373,6 +373,9 @@ const DEFAULTS = {
   // the line playing over a full-screen visualizer.
   lyricsOn: true,
   vizLyrics: true,
+  // "Continue with similar songs" when the list playing has played through
+  // (4.0, autoDj.js), instead of it starting over.
+  autoDj: false,
   // The song lists' optional columns (All Songs, the playlists), each one
   // sortable and searched: Mix as before 3.6.3, Album, Genre and Info
   // (subGenre) when asked.
