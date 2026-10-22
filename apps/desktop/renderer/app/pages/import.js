@@ -89,6 +89,7 @@ const ImportPanel = {
   server: null,           // a download on the server: { id, single } of its batch
   retry: null,            // failed songs tried again: { indexes, sending, done, failedAgain }
   bulkInfo: { album: '', genre: '', subGenre: '' }, // given to every new song without one (_drawBulk)
+  updating: null,         // a playlist's Update (AddPage.updatePlaylist): { id, name } of the playlist the songs go into
   _bulkEl: null,
 
   /** A list is being read or imported: single-link downloads wait. */
@@ -161,8 +162,12 @@ const ImportPanel = {
       return listing.probed;
     }
     this.listing = listing;
+    // An Update: the songs the playlist has already are no news.
+    const target = this._updateTarget();
+    const inTarget = new Set(target ? target.entries.map((e) => e.songId) : []);
+    for (const it of listing.items) it.inTarget = !!(it.existing && inTarget.has(it.existing.id));
     this.checked = new Set(listing.items.filter((it) => !it.existing && it.status === 'ok').map((it) => it.index));
-    this.keepKnown = new Set(listing.items.filter((it) => it.existing).map((it) => it.index));
+    this.keepKnown = new Set(listing.items.filter((it) => it.existing && !it.inTarget).map((it) => it.index));
     this._resetName(listing.name);
     $('progressPanel').hidden = true;
     this._setState('review');
@@ -283,6 +288,7 @@ const ImportPanel = {
     this.moveOriginals = false;
     this.bulkInfo = { album: '', genre: '', subGenre: '' };
     this._bulkEl = null;
+    this.updating = null;
     this._resetName('');
     this._setState('idle');
     this._setPending();
@@ -534,12 +540,21 @@ const ImportPanel = {
   },
 
   _knownItems() {
-    return this.listing ? this.listing.items.filter((it) => it.existing) : [];
+    return this.listing ? this.listing.items.filter((it) => it.existing && !it.inTarget) : [];
   },
 
-  /** A playlist of the same name, which the songs would be added to (see merge). */
+  /** The playlist an Update goes into, while it exists and the import keeps its name. */
+  _updateTarget() {
+    const u = this.updating;
+    const p = u && Store.playlist(u.id);
+    return p && (!this.name || this._finalName() === u.name) ? p : null;
+  },
+
+  /** A playlist of the same name, which the songs would be added to (see merge); an Update's own. */
   _takenPlaylist() {
     if (!this._makesPlaylist()) return null;
+    const target = this._updateTarget();
+    if (target) return target;
     const name = this._finalName().toLowerCase();
     return Store.library.playlists.find((p) => p.name.toLowerCase() === name) || null;
   },
@@ -554,7 +569,8 @@ const ImportPanel = {
   },
 
   _resetName(name) {
-    this.name = name || '';
+    // An Update keeps the playlist's own name, whatever its source calls itself now.
+    this.name = (this.updating && Store.playlist(this.updating.id) ? this.updating.name : name) || '';
     this.editingName = false;
     this.createList = false;
     this.playlistIds = [];
@@ -710,7 +726,11 @@ const ImportPanel = {
     const box = clear($('importWarnings'));
     const rows = [];
     const taken = this.state === 'saving' || this._saved() ? null : this._takenPlaylist();
-    if (taken) {
+    if (taken && taken === this._updateTarget()) {
+      rows.push(h('div.import__warning',
+        h('span.import__warn-icon', '!'),
+        h('div', `Updating "${taken.name}": the songs it does not have yet are added to it.`)));
+    } else if (taken) {
       const tick = h('input', { type: 'checkbox', checked: this.merge });
       tick.addEventListener('change', () => {
         this.merge = tick.checked;
@@ -753,7 +773,10 @@ const ImportPanel = {
     if (this.state === 'review') {
       const items = this._newItems();
       if (!items.length) {
-        list.appendChild(h('div.import__empty', 'Every song of this list is already in your library (see above).'));
+        const target = this._updateTarget();
+        list.appendChild(h('div.import__empty', target && !this._knownItems().length
+          ? `Nothing new: "${target.name}" has every song of its source already.`
+          : 'Every song of this list is already in your library (see above).'));
         return;
       }
       const frag = document.createDocumentFragment();
@@ -1384,8 +1407,9 @@ const ImportPanel = {
       return;
     }
     const id = summary.playlistId;
-    const head = local ? `Local files added to playlist "${summary.name}"` : `Playlist "${summary.name}" imported`;
-    toast(`${head}: ${parts.join(', ') || 'nothing imported'}`, kind,
+    const update = !!this.updating && id === this.updating.id;
+    const head = local ? `Local files added to playlist "${summary.name}"` : `Playlist "${summary.name}" ${update ? 'updated' : 'imported'}`;
+    toast(`${head}: ${parts.join(', ') || (update ? 'nothing new' : 'nothing imported')}`, kind,
       id ? { label: 'Open playlist', onClick: () => Store.playlist(id) && Nav.openPlaylist(id) } : null);
   },
 
@@ -1583,6 +1607,20 @@ const ImportPanel = {
       const failed = batch.items.find((x) => x.state === 'failed');
       ServerImport.touch();
       window.flow.serverDownloads('cancel').catch(() => {});
+      // An Update: the library's songs its playlist lacks still go into it.
+      const target = this._updateTarget();
+      if (target) {
+        const inList = new Set(target.entries.map((e) => e.songId));
+        const missing = [...new Set(this.included.map((it) => it.existingId).filter((id) => id && !inList.has(id)))];
+        this._reset();
+        if (missing.length) {
+          window.flow.addSongsToPlaylist(target.id, missing)
+            .then(() => toast(`Playlist "${target.name}" updated: ${missing.length} from your library`, 'success'))
+            .catch((err) => toast(err.message, 'error'));
+        } else if (failed) toast(`Nothing could be downloaded: ${failed.error || 'failed'}`, 'error');
+        else toast(`"${target.name}" is up to date: its source has no songs it lacks.`, 'info');
+        return true;
+      }
       this._reset();
       toast(failed ? `Nothing could be downloaded: ${failed.error || 'failed'}` : 'Every song of this link is already in your library.', failed ? 'error' : 'info');
       return true;

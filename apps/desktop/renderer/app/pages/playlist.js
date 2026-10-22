@@ -63,6 +63,8 @@ const PlaylistPage = {
       }
       attempt(() => window.flow.setOffline(this.id, on));
     };
+    // An imported playlist's Update (4.0): its source read again (AddPage.updatePlaylist).
+    $('plUpdate').onclick = () => AddPage.updatePlaylist(Store.playlist(this.id));
     $('plShare').onclick = () => {
       const p = Store.playlist(this.id);
       if (!p) return;
@@ -73,6 +75,7 @@ const PlaylistPage = {
       if (Nav.page === 'playlist') {
         this._drawOffline();
         this._drawShare();
+        this._drawUpdate();
       }
     });
     $('plPickDone').onclick = () => {
@@ -170,6 +173,7 @@ const PlaylistPage = {
 
     this._drawOffline();
     this._drawShare();
+    this._drawUpdate();
     this.renderTable();
   },
 
@@ -192,6 +196,23 @@ const PlaylistPage = {
       ? 'Let the other profiles on this server see this playlist and follow it'
       : `Follow this playlist: it shows in the menu under Followed Playlists`;
     btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span><span>${mine ? 'Share' : 'Following'}</span>`;
+  },
+
+  /**
+   * Update, for a playlist of your own imported from a link (its source):
+   * where something can download (yt-dlp here, or the server's downloads).
+   */
+  _drawUpdate() {
+    const p = Store.playlist(this.id);
+    const can = !!(p && p.source && /^https?:\/\//i.test(p.source.url || '') && !p.isShared && !p.isSmart && !p.isDevice && !p.isFavourites)
+      && ((Store.can('downloadHere') && DownloadsHelp.here) || ServerImport.available);
+    const btn = $('plUpdate');
+    btn.hidden = !can;
+    if (!can) return;
+    btn.title = `Download the songs added to ${p.source.url} since "${p.name}" was imported`;
+    // The phone's is only the icon, as its Download.
+    btn.innerHTML = Store.uiMode === 'mobile' ? Icons.refresh : `${Icons.refresh}<span>Update</span>`;
+    btn.setAttribute('aria-label', 'Update');
   },
 
   /**

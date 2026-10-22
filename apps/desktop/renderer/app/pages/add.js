@@ -127,8 +127,10 @@ const AddPage = {
       return;
     }
     if (!await this._clearForNew()) return;
+    // Another link than the one an Update put into the box: no Update.
+    if (ImportPanel.updating && (pick || url !== ImportPanel.updating.url)) ImportPanel.updating = null;
 
-    let kind = pick ? 'song' : this._linkKind(url);
+    let kind = pick ? 'song' : (ImportPanel.updating ? 'list' : this._linkKind(url));
     if (kind === 'ask') {
       kind = await this._askSongOrList(url);
       if (!kind) return;
@@ -190,6 +192,41 @@ const AddPage = {
     this._progress({ title: probed.title, frac: 1, status: media.summary, cancel: false });
     this._openEditor();
     this._lookupInfo();
+  },
+
+  /**
+   * A playlist's Update (4.0): its source link read again, the songs it has
+   * gained since downloaded into it, the ones in the library already added
+   * to it. Through the server when it downloads, else here; with both, the
+   * link waits in the box for the user's pick.
+   */
+  async updatePlaylist(p) {
+    const url = p && p.source && p.source.url;
+    if (!url) return;
+    const client = Store.can('downloadHere') && DownloadsHelp.here;
+    const server = ServerImport.available;
+    Nav.show('add');
+    if (!client && !server) {
+      DownloadsHelp.open();
+      return;
+    }
+    if (!await this._clearForNew()) return;
+    $('linkInput').value = url;
+    if (client && server) {
+      ImportPanel.updating = { id: p.id, name: p.name, url };
+      toast(`To update "${p.name}", pick Download (Client) or Download (Server).`, 'info');
+      return;
+    }
+    ImportPanel.updating = { id: p.id, name: p.name, url };
+    if (server) {
+      await ServerImport._create({ url, kind: 'list' });
+      return;
+    }
+    const probed = await ImportPanel.open(url);
+    if (probed) {
+      ImportPanel.updating = null;
+      this._showError(`The link of "${p.name}" leads to one song now, not to a playlist.`);
+    }
   },
 
   /**

@@ -21,6 +21,8 @@ const Icons = (() => {
     prev: svg('<path d="M18 5.5v13a1 1 0 0 1-1.5.87L7 13.3v5.2a1 1 0 0 1-2 0v-13a1 1 0 0 1 2 0v5.2l9.5-6.07A1 1 0 0 1 18 5.5z"/>', true),
     next: svg('<path d="M6 5.5v13a1 1 0 0 0 1.5.87L17 13.3v5.2a1 1 0 0 0 2 0v-13a1 1 0 0 0-2 0v5.2L7.5 4.63A1 1 0 0 0 6 5.5z"/>', true),
     plus: svg('<path d="M12 5v14M5 12h14"/>'),
+    // Two arrows round: read again (a playlist's Update).
+    refresh: svg('<path d="M20 11a8 8 0 0 0-14.9-3.9L4 8.5"/><path d="M4 4v4.5h4.5"/><path d="M4 13a8 8 0 0 0 14.9 3.9l1.1-1.4"/><path d="M20 20v-4.5h-4.5"/>'),
     pencil: svg('<path d="M16.5 3.5l4 4L8 20H4v-4z"/><path d="M13.5 6.5l4 4"/>'),
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
     check: svg('<path d="M5 12.5l4.5 4.5L19 7"/>'),
