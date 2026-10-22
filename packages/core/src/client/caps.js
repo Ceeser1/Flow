@@ -38,6 +38,8 @@ const DESKTOP = {
   backups: true,
   // A server's QR code read with the camera (Settings > Flow Server's Scan): phones only.
   scanQr: false,
+  // A guest in Active Sessions of other Flow Servers on the home network (4.0).
+  guests: true,
 };
 
 const ANDROID = {
@@ -59,6 +61,7 @@ const ANDROID = {
   vorbis: true,
   backups: false,
   scanQr: true,
+  guests: true,
 };
 
 // The iPhone: as the Android phone, without what iOS has no need or room for.
@@ -68,8 +71,9 @@ const IOS = {
   batteryHelp: false,
   // iOS has no Vorbis decoder (it plays Ogg Opus).
   vorbis: false,
-  // No scanner on the iPhone yet (4.0 leaves iOS out).
+  // No scanner on the iPhone yet, nor guests (4.0 leaves iOS out).
   scanQr: false,
+  guests: false,
 };
 
 module.exports = { DESKTOP, ANDROID, IOS };

@@ -77,7 +77,9 @@ async function startServer(opts = {}) {
   const wantedDiscoveryPort = opts.discoveryPort !== undefined ? opts.discoveryPort : (config.get().discovery ? DISCOVERY_PORT : null);
   const discovery = wantedDiscoveryPort === null ? null : await startDiscovery({
     port: wantedDiscoveryPort,
-    info: () => ({ id: config.get().id, name: config.get().name, port: server.address().port, protocol: PROTOCOL }),
+    info: () => ({
+      id: config.get().id, name: config.get().name, port: server.address().port, protocol: PROTOCOL, guests: config.get().guests,
+    }),
     log,
   });
 

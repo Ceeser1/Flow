@@ -34,6 +34,12 @@
 // { sessionId, state } (to the members); control (to the host); hostChanged
 // (to the new host); left { sessionId, reason } (to a member that is out).
 //
+// Guests (4.0, guests.js): apps of another Flow Server on the home network
+// join as members do (the host says yes or no), marked as guests with their
+// server's name. A guest is never the host: when the host leaves, the next
+// member of this server takes over, and with none left the session ends
+// ('hostLeft'). A guest cannot start a playlist of this server's.
+//
 // For other controllers (a smart home, later): controlSession() and
 // controlPlayer() take the same actions without being a member, players()
 // lists every app connected (playing or not), and playPlaylist is worked
@@ -153,6 +159,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
     if (!info) throw new SessionError(409, 'This app is not connected to the server\'s live channel right now. Try again in a moment.');
     return {
       client, profileId: info.profileId || null, profileName: info.profileName || '', device: info.device || '', ip: info.ip || '',
+      guest: !!info.guest, serverName: info.guest ? String(info.serverName || '') : '',
     };
   }
 
@@ -184,6 +191,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
 
   const member = (m) => ({
     client: m.client, profileName: m.profileName, device: m.device, mode: m.mode, joinedAt: m.joinedAt,
+    ...(m.guest ? { guest: true, serverName: m.serverName } : {}),
   });
 
   function detail(s) {
@@ -257,6 +265,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
 
   function setState(client, raw, signedIn = null) {
     const me = hostWho(client, signedIn);
+    if (me.guest) throw new SessionError(403, 'A guest from another server cannot host a session here.');
     const st = cleanState(raw);
     let s = sessions.get(memberOf.get(client));
     if (s && hostOf(s).client !== client) throw new SessionError(409, 'Only the session\'s host sends what it plays.');
@@ -312,6 +321,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
   function requestEvent(r) {
     return {
       requestId: r.id, sessionId: r.sessionId, client: r.client, profileName: r.who.profileName, device: r.who.device, ip: r.who.ip, expiresIn: Math.max(0, r.expiresAt - now()),
+      ...(r.who.guest ? { guest: true, serverName: r.who.serverName } : {}),
     };
   }
 
@@ -371,6 +381,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
     const info = live.info(r.client) || {};
     const m = {
       client: r.client, profileId: info.profileId || null, profileName: info.profileName || r.who.profileName, device: info.device || r.who.device, ip: info.ip || r.who.ip, joinedAt: now(), mode: r.mode,
+      guest: !!r.who.guest, serverName: r.who.serverName || '',
     };
     s.members.push(m);
     memberOf.set(r.client, s.id);
@@ -424,6 +435,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
         };
       }
       case 'playPlaylist':
+        if (from.guest) throw new SessionError(403, `A guest plays songs, not this server's playlists.`);
         return resolvePlaylist(from.profileId, a);
       case 'volume':
         if (!s || !s.state || !s.state.allowVolume) throw new SessionError(403, 'The host does not let others change its volume.');
@@ -498,6 +510,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
       memberOf.delete(m.client);
       // Stopped by the host itself: it knows. Paused too long alone: it is told, to start afresh.
       if (reason === 'idle') send(m.client, 'left', { sessionId: s.id, reason: 'idle' });
+      else if (reason === 'hostLeft') send(m.client, 'left', { sessionId: s.id, reason: 'hostLeft' });
       else if (reason !== 'stopped') send(m.client, 'left', { sessionId: s.id, reason: 'ended' });
     }
     for (const r of [...requests.values()]) if (r.sessionId === s.id) cancelRequest(r.id, { toJoiner: { reason: 'ended' }, toHost: false });
@@ -524,9 +537,15 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
       end(s, reason);
       return {};
     }
+    // Only guests left: a guest never hosts, so the session is over.
+    if (i === 0 && !s.members.some((m) => !m.guest)) {
+      end(s, 'hostLeft');
+      return {};
+    }
     if (i === 0) {
-      // The next in line that is connected (one reconnecting comes after).
-      const next = s.members.findIndex((m) => live.has(m.client) && !grace.has(m.client));
+      // The next in line that is connected (one reconnecting comes after), never a guest.
+      let next = s.members.findIndex((m) => !m.guest && live.has(m.client) && !grace.has(m.client));
+      if (next < 0) next = s.members.findIndex((m) => !m.guest);
       if (next > 0) s.members.unshift(s.members.splice(next, 1)[0]);
       const host = hostOf(s);
       host.mode = 'host';
@@ -656,8 +675,11 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
     sessions.clear();
   }
 
+  /** Whether an app is in a session here (a guest may then stream its songs). */
+  const isMember = (client) => sessions.has(memberOf.get(client));
+
   return {
-    handle, view, list, all, endById, players, controlSession, controlPlayer, stop,
+    handle, view, list, all, endById, players, controlSession, controlPlayer, stop, isMember,
   };
 }
 

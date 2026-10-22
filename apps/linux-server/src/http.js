@@ -124,6 +124,7 @@ const { SessionError } = require('./sessions');
 const { createVorbis } = require('./vorbis');
 const { createAdminRoutes } = require('./admin');
 const { createPairing, LIFE_MS: PAIR_LIFE_MS } = require('./pairing');
+const { createGuests } = require('./guests');
 
 const PROTOCOL = 1;
 // What this server can do beyond protocol 1, for apps that know to ask.
@@ -355,6 +356,12 @@ function createHttpServer({
   const throttle = createThrottle();
   // QR codes' pairing codes, in memory only.
   const pairing = createPairing();
+  // Guests from other servers in this one's sessions (guests.js).
+  const guests = live && sessions ? createGuests({
+    config, library, live, sessions, log, helpers: {
+      HttpError, sendJson, sendFile, sendCover, readJsonBody,
+    },
+  }) : null;
   // What is noted about the profiles for the admins (activity.js); left out by tests that need none.
   const note = activity || {
     created() {}, seen() {}, left() {}, failed() {},
@@ -831,7 +838,7 @@ function createHttpServer({
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
       const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search'] : []), ...(live ? ['sessions'] : []),
-        ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics'] : [])];
+        ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
       };
@@ -860,6 +867,11 @@ function createHttpServer({
     checkExposure(client, false);
     if (is('POST', /^\/api\/login$/)) return login(req, res, client);
     if (is('POST', /^\/api\/pair\/redeem$/)) return redeemPairing(req, res, client);
+    // A guest: on the home network (Tailscale is away from home), with its own pass.
+    if (guests && p.startsWith('/api/guest/')) {
+      const home = !client.outside && isPrivateIp(client.ip) && !isTailscaleAddress(client.ip);
+      return guests.route(req, res, p, url, client, home);
+    }
 
     if (!p.startsWith('/api/')) throw new HttpError(404, 'Nothing here. This is a Flow Server; open it in the Flow app.');
     const entry = requireAuth(req, url, client);

@@ -3,7 +3,13 @@
 // Active Sessions: what the devices on this Flow Server play right now, each
 // a session that can be joined (with its host's OK). A main entry in the
 // menu, there only while another device plays or this one has company. The
-// session state itself lives in Session (session.js).
+// session state itself lives in Session (session.js). Below them, "Nearby,
+// on other servers": the sessions of other Flow Servers on this network that
+// take guests (4.0), each joined as a guest, with that server's songs to
+// queue and play along with while in.
+
+// Other servers' sessions are looked for again this often while the page shows.
+const NEARBY_PAGE_MS = 15000;
 
 const SessionsPage = {
   sort: { key: null, dir: null },
@@ -21,6 +27,15 @@ const SessionsPage = {
    */
   show(opts = {}) {
     clearTimeout(this._litTimer);
+    Session.lookNearby();
+    clearInterval(this._nearbyTimer);
+    this._nearbyTimer = setInterval(() => {
+      if (Nav.page !== 'sessions') {
+        clearInterval(this._nearbyTimer);
+        return;
+      }
+      Session.lookNearby();
+    }, NEARBY_PAGE_MS);
     this._lit = opts.sessionId || null;
     this.render();
     if (!this._lit) return;
@@ -118,7 +133,62 @@ const SessionsPage = {
         side: (s) => (this._isOwn(s) ? h('span') : h('div.actions.mrow__side', ...this._actions(s))),
       },
     });
+    this._drawNearby();
     this._tick();
+  },
+
+  /** The sessions of other servers on this network, one block for each server. */
+  _drawNearby() {
+    const box = clear($('sessionsNearby'));
+    const servers = Store.can('guests') ? Session.nearby.filter((n) => n.sessions.length || (Session.guest && Session.guest.serverId === n.id)) : [];
+    box.hidden = !servers.length;
+    if (!servers.length) return;
+    box.append(h('div.section-head', h('h2.section-head__title', 'Nearby, on other servers')),
+      h('p.muted-text', 'Flow Servers on this network that let guests from other servers in. Join as a guest: you can control the '
+        + 'session, queue its server\'s songs and play along. Nothing is counted on that server.'));
+    for (const n of servers) {
+      const list = h('div.nearby__list');
+      for (const s of n.sessions) {
+        list.appendChild(h('div.nearby__row', { dataset: { id: s.id } },
+          h('span.nearby__icon', { html: Icons.sessions }),
+          h('span.nearby__text',
+            h('span.nearby__name', s.name),
+            h('span.nearby__song.muted-text', s.song ? `${s.playing ? '' : 'Paused: '}${s.song.title}${s.song.artist ? ` - ${s.song.artist}` : ''}` : 'Nothing loaded')),
+          h('div.actions', ...this._nearbyActions(s, n))));
+      }
+      if (!n.sessions.length) list.appendChild(h('div.muted-text', 'Nothing plays there right now.'));
+      const joined = Session.guest && Session.guest.serverId === n.id && Session.mine;
+      box.append(h('div.nearby__server',
+        h('div.nearby__head', h('span', `On ${n.name}`),
+          joined && Store.foreign.size ? h('button.btn.btn--small', { type: 'button', onclick: () => Nav.openPlaylist(GUEST_ID) }, `Songs on ${n.name}`) : null),
+        list));
+    }
+  },
+
+  _nearbyActions(s, n) {
+    const here = Session.guest && Session.guest.serverId === n.id;
+    if (here && Session.mine && Session.mine.session.id === s.id) {
+      return [
+        h('span.session-joined', { html: `${Icons.check}<span>Joined</span>` }),
+        h('button.btn.btn--small', { type: 'button', onclick: () => attempt(() => Session.leave()) }, 'Leave'),
+      ];
+    }
+    const req = Session.request;
+    if (req && req.sessionId === s.id) {
+      const left = Math.max(0, Math.ceil((req.expiresAt - Date.now()) / 1000));
+      return [
+        h('span.muted-text', { title: 'The host is asked to let you in' }, `Waiting ${left} s`),
+        h('button.btn.btn--small', { type: 'button', onclick: () => attempt(() => Session.cancelJoin()) }, 'Cancel'),
+      ];
+    }
+    const wait = Session.cooldownLeft(s.id);
+    if (wait) return [h('button.btn.btn--small', { type: 'button', disabled: true, title: 'The host declined' }, `Ask again in ${wait} s`)];
+    if (s.members.length >= 8) return [h('span.muted-text', 'Full')];
+    return [h('button.btn.btn--small.btn--primary', {
+      type: 'button',
+      title: `Ask to join ${s.name} as a guest from your server`,
+      onclick: () => this._join(s, n.id),
+    }, 'Join as guest')];
   },
 
   _actions(s) {
@@ -150,7 +220,7 @@ const SessionsPage = {
     }, 'Join')];
   },
 
-  async _join(s) {
+  async _join(s, serverId = null) {
     // This app's own session with company goes on without it.
     if (Session.isHost && Session.mine.session.members.length > 1) {
       const next = Session.mine.session.members[1];
@@ -161,7 +231,7 @@ const SessionsPage = {
       });
       if (!ok) return;
     }
-    attempt(() => Session.join(s.id));
+    attempt(() => Session.join(s.id, serverId));
   },
 
   async _leave() {
@@ -181,7 +251,7 @@ const SessionsPage = {
   /** This app's own place: in someone's session, or hosting one others listen to. */
   _drawMine() {
     const box = clear($('sessionsMine'));
-    const m = Session.available ? Session.mine : null;
+    const m = Session.available || Session.guest ? Session.mine : null;
     const others = m ? m.session.members.filter((x) => x.client !== Store.server.clientId) : [];
     if (!m || (m.host && !others.length)) {
       box.hidden = true;

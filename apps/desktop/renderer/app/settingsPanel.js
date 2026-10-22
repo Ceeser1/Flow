@@ -868,7 +868,8 @@ const SettingsPanel = {
       this._row({
         key: 'sessionAutoAccept',
         label: 'Accept jam join requests automatically',
-        desc: 'If enabled, you do not get requests from users who want to join your jam, they can just join.',
+        desc: 'If enabled, you do not get requests from users who want to join your jam, they can just join. '
+          + 'Guests from other Flow Servers are still asked about.',
         sub: true,
         when: () => on() && Store.settings.sessionShare,
       }),

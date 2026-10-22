@@ -548,11 +548,18 @@ const Admin = {
       node.addEventListener('change', () => this._do(() => window.flow.admin('rules', { [key]: node.value }), 'Saved'));
       return node;
     };
+    // Guests from other servers (4.0): a server from before has no such rule.
+    const guests = r.guests === undefined ? null : h('input', { type: 'checkbox', checked: !!r.guests });
+    if (guests) guests.addEventListener('change', () => this._do(() => window.flow.admin('rules', { guests: guests.checked }), 'Saved'));
     return h('div.admin__rules',
       h('label.admin__rule', h('span', 'Who may make new profiles'),
         select('profileCreation', [['anyone', 'Everyone'], ['admins', 'Only admins']])),
       h('label.admin__rule', h('span', 'Who may delete songs for everyone'),
-        select('songDelete', [['anyone', 'Everyone'], ['owner', 'Only who added it, and admins']])));
+        select('songDelete', [['anyone', 'Everyone'], ['owner', 'Only who added it, and admins']])),
+      guests ? h('label.check.admin__guests', guests,
+        h('span', 'Allow guests from other servers in the home network',
+          h('span.admin__item-sub', 'Flow apps of another Flow Server on the same network may ask to join this server\'s Active Sessions '
+            + '(the host still says yes or no). In a session they see and queue this server\'s songs; nothing else.'))) : null);
   },
 
   // ---- Server password (master admin) ----

@@ -8,12 +8,16 @@
 
 const http = require('http');
 
-function connect(base, client, { token, device, probe } = {}) {
+// `guest`: a guest's pass (guests.js): its own channel, /api/guest/live?gt=.
+function connect(base, client, {
+  token, device, probe, guest,
+} = {}) {
   return new Promise((resolve, reject) => {
     const q = new URLSearchParams();
     if (client !== null) q.set('client', client);
     if (device) q.set('device', device);
     if (probe) q.set('probe', '1');
+    if (guest) q.set('gt', guest);
     const headers = { Accept: 'text/event-stream' };
     if (token) headers.Authorization = `Bearer ${token}`;
     const events = [];
@@ -30,7 +34,7 @@ function connect(base, client, { token, device, probe } = {}) {
         w.resolve(events[i].data);
       }
     };
-    const req = http.request(`${base}/api/live?${q}`, { headers, agent: false }, (res) => {
+    const req = http.request(`${base}${guest ? '/api/guest/live' : '/api/live'}?${q}`, { headers, agent: false }, (res) => {
       let buffer = '';
       res.setEncoding('utf8');
       res.on('data', (chunk) => {

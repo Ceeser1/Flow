@@ -210,6 +210,19 @@ function createActions({
     });
   }
 
+  /**
+   * A listen as a guest in another server's session (4.0): this device's
+   * Private Statistics and the totals of the profile in use here (Local
+   * Files' without a server). Not the Default / Shared's of a server: those
+   * are the server's own listening.
+   */
+  function recordAwayListen({ song = {}, listened, duration }) {
+    const tz = new Date().getTimezoneOffset();
+    if (privateStats) privateStats.recordListen({ song, listened, duration, tz });
+    if (remote.active() && !remote.status().profile) return null;
+    return change((d) => model.recordAwayListen(d, { listened, duration, tz }), 'recordAwayListen', { listened, duration, tz });
+  }
+
   const findBySource = ({ url, key }) => model.findBySource(currentLibrary(), { url, key });
   const findByMeta = (meta) => model.findByMeta(currentLibrary(), meta);
 
@@ -230,6 +243,7 @@ function createActions({
     trimSong,
     setFavourite,
     recordListen,
+    recordAwayListen,
     findBySource,
     findByMeta,
   };

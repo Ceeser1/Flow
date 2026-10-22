@@ -2456,6 +2456,21 @@ div.import__frame-head { cursor: default; }
 .queue__remove { visibility: hidden; }
 .queue__row:hover .queue__remove { visibility: visible; }
 
+/* ---- Active Sessions of other servers nearby (sessions.js, 4.0) ---- */
+
+.sessions-nearby { margin-top: 28px; }
+.nearby__server { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line, #33333b); border-radius: 10px; background: rgba(255, 255, 255, 0.02); }
+.nearby__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 700; margin-bottom: 8px; }
+.nearby__list { display: flex; flex-direction: column; gap: 4px; }
+.nearby__row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 6px; }
+.nearby__row:hover { background: rgba(255, 255, 255, 0.04); }
+.nearby__icon .icon { width: 16px; height: 16px; opacity: 0.8; }
+.nearby__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.nearby__name { font-weight: 600; }
+.nearby__song { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin__guests { margin-top: 10px; align-items: flex-start; }
+.admin__guests .admin__item-sub { display: block; margin-top: 2px; }
+
 /* ---- a server shared as a QR code (qrShare.js) ---- */
 
 .share-control { gap: 8px; }

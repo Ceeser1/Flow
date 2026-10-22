@@ -7,6 +7,8 @@
 const ALL_SONGS_ID = 'all';
 const ALL_SONGS_NAME = 'All Songs';
 const FAVOURITES_ID = 'favourites';
+// The songs of another server's session this app is a guest in (4.0).
+const GUEST_ID = 'guest:songs';
 const FAVOURITES_NAME = 'Favourites';
 // "All Songs from <profile>": the songs one profile of the Flow Server added.
 const FROM_PREFIX = 'from:';
@@ -34,6 +36,10 @@ const Store = {
   songsById: new Map(),
   smart: {}, // the listening trend lists: id -> song ids, best match first
   holding: new Map(), // song id -> your own playlists ({ id, name }) that hold it, A to Z
+  // A guest in another server's session (4.0): that server's songs, to show,
+  // queue and play along with (Session sets them): id -> song (foreign: true).
+  foreign: new Map(),
+  foreignName: '',
   _listeners: [],
 
   setLibrary(lib) {
@@ -97,6 +103,8 @@ const Store = {
    */
   audioSrc(song) {
     if (!song) return '';
+    // Another server's song (a guest in its session): from there.
+    if (song.foreign) return song.src || '';
     if (song.file) return Util.fileUrl(song.file);
     const st = this.server;
     if (!st.on || !st.base) return '';
@@ -116,7 +124,14 @@ const Store = {
   },
 
   song(id) {
-    return this.songsById.get(id) || null;
+    return this.songsById.get(id) || this.foreign.get(id) || null;
+  },
+
+  /** Another server's songs (a guest in its session), or none (null). */
+  setForeign(songs, name = '') {
+    this.foreign = new Map((songs || []).map((s) => [s.id, { ...s, file: '', foreign: true }]));
+    this.foreignName = name;
+    for (const fn of this._listeners) fn(this.library);
   },
 
   playlist(id) {
@@ -124,6 +139,7 @@ const Store = {
     if (id === DEVICE_ID) return this.devicePlaylist();
     if (id === FAVOURITES_ID) return this.favouritesPlaylist();
     if (SmartLists.isSmart(id)) return this.smartPlaylist(id);
+    if (id === GUEST_ID) return this.guestPlaylist();
     if (String(id).startsWith(FROM_PREFIX)) return this.fromPlaylist(id.slice(FROM_PREFIX.length));
     const own = this.library.playlists.find((p) => p.id === id);
     if (own) return own;
@@ -179,6 +195,17 @@ const Store = {
 
   smartPlaylists() {
     return SmartLists.LISTS.map((l) => this.smartPlaylist(l.id));
+  },
+
+  /** The songs of the server this app is a guest of, shaped like a playlist to play from and queue (null: none). */
+  guestPlaylist() {
+    if (!this.foreign.size) return null;
+    return {
+      id: GUEST_ID,
+      name: `Songs on ${this.foreignName || 'the other server'}`,
+      entries: [...this.foreign.values()].map((s) => ({ songId: s.id, addedAt: 0 })),
+      isGuest: true,
+    };
   },
 
   /** All Songs, shaped like a playlist whose entries were added on download. */
@@ -285,7 +312,7 @@ const Store = {
     if (!p) return [];
     const rows = [];
     for (const e of p.entries) {
-      const song = this.songsById.get(e.songId);
+      const song = this.song(e.songId);
       if (song) rows.push({ song, addedAt: e.addedAt });
     }
     return rows;

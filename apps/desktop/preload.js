@@ -119,6 +119,14 @@ contextBridge.exposeInMainWorld('flow', {
   // Sharing the server by QR code (4.0): { link, code, name }; a flow://connect link
   // connected to ({ name }); a QR code's squares ({ size, modules }).
   shareLink: () => call('server:shareLink'),
+  // Away listens (a guest in another server's session): totals only.
+  recordAwayListen: (song, listened, duration) => call('library:recordAwayListen', { song, listened, duration }),
+  // A guest in another server's session (4.0): look for them, then join,
+  // session ({ body }), leave, songs, status, list.
+  guestLook: () => call('guest:look'),
+  guest: (action, args) => call('guest:call', { action, args }),
+  onGuestLive: (fn) => ipcRenderer.on('guest:live', (_e, ev) => fn(ev)),
+  onGuestChanged: (fn) => ipcRenderer.on('guest:changed', (_e, list) => fn(list)),
   connectLink: (text) => call('server:connectLink', text),
   qr: (text) => call('qr:encode', text),
   // Covers: files in Music\FlowPlayer\Covers (Store.coverSrc).

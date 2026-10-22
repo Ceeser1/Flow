@@ -206,6 +206,15 @@ const Nav = {
     $('menuSessionsList').hidden = !Session.visible || !sessionsOpen;
     const sessionList = clear($('menuSessionsList'));
     if (Session.visible && sessionsOpen) {
+      // A guest in another server's session: that server's songs, to play and queue.
+      const guestList = Store.guestPlaylist();
+      if (Session.guest && guestList) {
+        sessionList.appendChild(h('button.menu__sub', {
+          type: 'button',
+          title: `${guestList.name}: queue them, or start one, in the session`,
+          onclick: () => this.openPlaylist(GUEST_ID),
+        }, h('span.menu__sub-name', guestList.name)));
+      }
       const inId = Session.mine ? Session.mine.session.id : null;
       const sessions = [...Session.list].sort((a, b) => a.name.localeCompare(b.name));
       for (const s of sessions) {

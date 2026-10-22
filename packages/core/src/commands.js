@@ -205,6 +205,13 @@ const TYPES = {
       return { value: model.recordListen(d, str(c.songId), { listened: c.listened, duration: c.duration, at: c.at, contextId: c.contextId ? str(c.contextId) : null, tz: c.tz }) };
     },
   },
+  // A listen to a song of another server's session (4.0): the totals only.
+  recordAwayListen: {
+    keys: () => [],
+    run(d, c) {
+      return { value: model.recordAwayListen(d, { listened: c.listened, duration: c.duration, at: c.at, tz: c.tz }) };
+    },
+  },
   // A song trimmed: only ever applied by the app, to show it at its new
   // length before the server has cut its file (the server cuts it through
   // POST /api/songs/:id/trim). base: the cut it was trimmed from; cut: the

@@ -205,7 +205,7 @@ const PlaylistPage = {
   _drawShare() {
     const p = Store.playlist(this.id);
     const btn = $('plShare');
-    const mine = !!p && !p.isAll && !p.isFrom && !p.isFavourites && !p.isSmart && !p.isShared && !p.isDevice && !p.isRuled;
+    const mine = !!p && !p.isAll && !p.isFrom && !p.isFavourites && !p.isSmart && !p.isShared && !p.isDevice && !p.isRuled && !p.isGuest;
     const can = !!p && Store.canShare() && (mine || p.isShared);
     btn.hidden = !can;
     if (!can) return;
@@ -246,7 +246,7 @@ const PlaylistPage = {
     const btn = $('plOffline');
     const note = $('plOfflineNote');
     // A playlist another profile shares can be downloaded once it is followed.
-    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && !p.isRuled && !p.isDevice && (!p.isShared || Store.isFollowing(p.id));
+    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && !p.isRuled && !p.isDevice && !p.isGuest && (!p.isShared || Store.isFollowing(p.id));
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;
@@ -331,9 +331,15 @@ const PlaylistPage = {
   _touchRows(pickTarget, pickSet, smartList) {
     const listId = this.id;
     const p = Store.playlist(listId);
-    const readOnly = !!(p && (p.isShared || p.isDevice));
+    const readOnly = !!(p && (p.isShared || p.isDevice || p.isGuest));
     // Downloaded Songs: queued, or deleted from this device; nothing else (some only play).
-    const actions = p && p.isDevice ? [
+    // Another server's songs (a guest): queued there.
+    const actions = p && p.isGuest ? [
+      { icon: Icons.plus, label: 'Add to Queue', short: 'Queue', run: (rows) => {
+        for (const r of rows) Player.addToQueue(r.song.id);
+        toast(`${Util.plural(rows.length, 'song')} added to the queue`, 'success');
+      } },
+    ] : p && p.isDevice ? [
       { icon: Icons.plus, label: 'Add to Queue', short: 'Queue', run: (rows) => {
         for (const r of rows) Player.addToQueue(r.song.id);
         toast(`${Util.plural(rows.length, 'song')} added to the queue`, 'success');
@@ -499,6 +505,8 @@ const PlaylistPage = {
   /** More's buttons for a song (on the phone, its action sheet). */
   _moreButtons(song) {
     const listId = this.id;
+    // Another server's song (a guest in its session): it plays and queues there, nothing more.
+    if (song.foreign) return [];
     // A song here that is not the server's (Downloaded Songs) only plays, and can be deleted from here.
     if (song.isDevice) {
       return [iconButton('act.act--red', Icons.x, `Delete from ${Store.here}`, () => this.deleteFromDevice([song]))];

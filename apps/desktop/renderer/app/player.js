@@ -763,7 +763,7 @@ const Player = {
   // ---- remote mode (in another device's session) ----
 
   _serverNow() {
-    return Date.now() + (Store.server.timeOffset || 0);
+    return Date.now() + Session.timeOffset();
   },
 
   _remotePosition() {
@@ -1283,6 +1283,11 @@ const Player = {
     if (!(listened >= 5)) return;
     const song = Store.song(songId);
     const duration = (song && song.duration) || played || 0;
+    // Another server's song (a guest in its session): counted at home, in the totals only.
+    if (song && song.foreign) {
+      window.flow.recordAwayListen({ title: song.title, artist: song.artist }, listened, duration).catch(() => {});
+      return;
+    }
     // The time also counts for the list that was playing, if the song is in it
     // (one queued from elsewhere is not).
     const list = contextId ? Store.playlist(contextId) : null;

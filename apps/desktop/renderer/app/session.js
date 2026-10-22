@@ -16,6 +16,14 @@
 // (Player.mirror, remote mode); leaving keeps the host's song here, paused. When
 // the host before this one leaves, this app carries on: the song at its
 // place, with its list and queue (Player.takeOver), and says so.
+//
+// Guests (4.0, @flow/core/client/guest): the sessions of other Flow Servers
+// on the home network that take guests are looked for now and then (and on
+// the Active Sessions page) and listed apart. Joined as a guest, everything
+// above goes to that server instead (Session._call, its own live channel),
+// its songs are Store.foreign (to see, queue and play along with), its clock
+// is the one played in step with, and this app never hosts there: when its
+// host leaves with nobody of that server left, the session is over.
 
 const Session = {
   HEARTBEAT_MS: 5000,
@@ -41,6 +49,12 @@ const Session = {
   _listeners: [],
   // The host's open join prompts: request id -> { modal, timer }.
   _prompts: new Map(),
+  // A guest in another server's session (or asking to be): { serverId, name, offset } or null.
+  guest: null,
+  // The other servers on the network that take guests: [{ id, name, sessions }].
+  nearby: [],
+  // How often the network is asked for them while Flow runs.
+  NEARBY_MS: 60000,
   /** The output device's name, for the session's name ("Ceeser - Sony GTK"). */
   get outputLabel() {
     // A phone's own speaker is the phone: named after it by the server ("Ceeser - Galaxy A56").
@@ -66,9 +80,29 @@ const Session = {
     return this.list.filter((s) => s.host.client !== Store.server.clientId);
   },
 
-  /** The menu shows Active Sessions while another app plays, or this one has company. */
+  /** The menu shows Active Sessions while another app plays, or this one has company (or a guest's sessions are near). */
   get visible() {
-    return this.available && (this.others().length > 0 || (!!this.mine && this.mine.session.members.length > 1));
+    return (this.available && (this.others().length > 0 || (!!this.mine && this.mine.session.members.length > 1)))
+      || !!this.guest || this.nearby.some((n) => n.sessions.length);
+  },
+
+  /** The server playing in step is reckoned by: the one this app is a guest of, else its own. */
+  timeOffset() {
+    return this.guest ? this.guest.offset || 0 : Store.server.timeOffset || 0;
+  },
+
+  /** A request about this app's place: to the server it is a guest of, else its own. */
+  _call(body) {
+    return this.guest ? window.flow.guest('session', { body }) : window.flow.sessions(body);
+  },
+
+  /** Asks the network for other servers' sessions (guests' caps only). */
+  lookNearby() {
+    if (!Store.can('guests') || !window.flow.guestLook) return Promise.resolve();
+    return window.flow.guestLook().then((list) => {
+      this.nearby = list || [];
+      this._emit();
+    }, () => {});
   },
 
   /** Seconds until this app may ask the host of `sessionId` again (0: now). */
@@ -80,7 +114,8 @@ const Session = {
   },
 
   sessionName(id) {
-    const s = this.list.find((x) => x.id === id) || (this.mine && this.mine.session.id === id ? this.mine.session : null);
+    const s = this.list.find((x) => x.id === id) || (this.mine && this.mine.session.id === id ? this.mine.session : null)
+      || this.nearby.flatMap((n) => n.sessions).find((x) => x.id === id);
     return s ? s.name : 'the session';
   },
 
@@ -94,6 +129,18 @@ const Session = {
 
   init() {
     window.flow.onServerLive((ev) => this._onLive(ev));
+    if (Store.can('guests') && window.flow.onGuestLive) {
+      window.flow.onGuestLive((ev) => this._onGuestLive(ev));
+      window.flow.onGuestChanged((list) => {
+        this.nearby = list || [];
+        this._emit();
+      });
+      // Now and then (not while the window is out of sight), and soon after the start.
+      setTimeout(() => this.lookNearby(), 4000);
+      setInterval(() => {
+        if (document.visibilityState === 'visible' || this.guest) this.lookNearby();
+      }, this.NEARBY_MS);
+    }
     $('playerSession').onclick = () => Nav.show('sessions');
     $('playerLeave').onclick = () => attempt(() => this.leave());
     $('playerHere').onclick = () => this.setHere(!Store.settings.sessionPlayHere);
@@ -172,14 +219,26 @@ const Session = {
 
   // ---- joining, leaving, answering ----
 
-  /** Asks the host of `sessionId` to let this app join. */
-  async join(sessionId) {
+  /** Asks the host of `sessionId` to let this app join; `serverId`: a session of another server (as a guest). */
+  async join(sessionId, serverId = null) {
+    const mode = Store.settings.sessionPlayHere ? 'here' : 'remote';
     try {
-      const r = await window.flow.sessions({ type: 'join', sessionId, mode: Store.settings.sessionPlayHere ? 'here' : 'remote' });
+      let r;
+      if (serverId) {
+        // Out of a session of this app's own server first: a guest is in one at a time.
+        if (this.mine && !this.guest) await this.leave();
+        const server = this.nearby.find((n) => n.id === serverId);
+        this.guest = { serverId, name: server ? server.name : 'the other server', offset: 0, asking: true };
+        r = await window.flow.guest('join', { serverId, sessionId, mode });
+      } else {
+        if (this.guest) await this.leave();
+        r = await window.flow.sessions({ type: 'join', sessionId, mode });
+      }
       this.request = {
-        requestId: r.requestId, sessionId, name: this.sessionName(sessionId), expiresAt: Date.now() + (r.expiresIn || 60000),
+        requestId: r.requestId, sessionId, serverId, name: this.sessionName(sessionId), expiresAt: Date.now() + (r.expiresIn || 60000),
       };
     } catch (err) {
+      if (serverId && this.guest && this.guest.asking) this._guestOut();
       // Declined a moment ago: the server says how long to wait.
       const wait = /again in (\d+) seconds/.exec(err.message);
       if (wait) this.cooldowns.set(sessionId, Date.now() + Number(wait[1]) * 1000);
@@ -193,31 +252,43 @@ const Session = {
   setHere(on) {
     Store.saveSettings({ sessionPlayHere: !!on });
     Player.setHere(!!on);
-    if (this.isMember) window.flow.sessions({ type: 'mode', mode: on ? 'here' : 'remote' }).catch(() => {});
+    if (this.isMember) this._call({ type: 'mode', mode: on ? 'here' : 'remote' }).catch(() => {});
     this._emit();
   },
 
   /** A button pressed here in remote mode, for the host to carry out. */
   control(action, args = {}) {
-    window.flow.sessions({ type: 'control', action, ...args }).catch((err) => toast(err.message, 'error'));
+    this._call({ type: 'control', action, ...args }).catch((err) => toast(err.message, 'error'));
   },
 
   async cancelJoin() {
     this.request = null;
     this._emit();
-    await window.flow.sessions({ type: 'cancelJoin' });
+    await this._call({ type: 'cancelJoin' });
+    if (this.guest && !this.mine) this._guestOut();
   },
 
   /** Out of this app's session. A host hands it over to the next in line and stops playing. */
   async leave() {
     const wasHost = this.isHost;
-    await window.flow.sessions({ type: 'leave' });
+    if (this.guest) await window.flow.guest('leave').catch(() => {});
+    else await window.flow.sessions({ type: 'leave' });
     this._out();
     if (wasHost) Player.pause();
   },
 
+  /** No longer a guest: that server's channel closed, its songs gone from here. */
+  _guestOut() {
+    if (!this.guest) return;
+    this.guest = null;
+    window.flow.guest('leave').catch(() => {});
+    Store.setForeign(null);
+    this._emit();
+  },
+
   _out() {
     if (Player.remote) Player.endRemote();
+    this._guestOut();
     this._keep(null);
     this.mine = null;
     this.sessionId = null;
@@ -244,7 +315,10 @@ const Session = {
   },
 
   _who(from) {
-    return `${(from && from.profileName) || 'Default'} - ${(from && (from.device || from.ip)) || 'another device'}`;
+    const device = (from && (from.device || from.ip)) || 'another device';
+    // A guest from another server says which (and has no profile here: its own, if any).
+    if (from && from.guest) return `${from.profileName ? `${from.profileName} - ` : ''}${device} (from ${from.serverName || 'another Flow Server'})`;
+    return `${(from && from.profileName) || 'Default'} - ${device}`;
   },
 
   /** A Windows notification (and the taskbar button flashing) while the window is not in front. */
@@ -259,13 +333,14 @@ const Session = {
     const who = this._who(r);
     const answer = async (accept) => {
       try {
-        await window.flow.sessions({ type: 'answer', requestId: r.requestId, accept });
+        await this._call({ type: 'answer', requestId: r.requestId, accept });
       } catch (err) {
         toast(err.message, 'error');
       }
     };
-    // Accepted without asking ("joined your session" follows from the server).
-    if (Store.settings.sessionAutoAccept) {
+    // Accepted without asking ("joined your session" follows from the server); a guest from
+    // another server is always asked about.
+    if (Store.settings.sessionAutoAccept && !r.guest) {
       answer(true);
       return;
     }
@@ -275,6 +350,7 @@ const Session = {
       body: [
         h('p.modal__text', `${who} wants to join your session.`),
         h('p.muted-text', 'Once in, they can pause, skip and queue songs that play here.'
+          + (r.guest ? ' They are a guest from another Flow Server on your network: they see your songs while in the session, nothing else.' : '')
           + (r.ip && r.device ? ` Connecting from ${r.ip}.` : '')),
       ],
       buttons: [
@@ -314,7 +390,7 @@ const Session = {
 
   /** The player bar: "In [name]" with Leave in someone's session, "Your session: 2 listening" as a host with company. */
   _drawBar() {
-    const m = this.available ? this.mine : null;
+    const m = this.available || this.guest ? this.mine : null;
     const company = m ? m.session.members.length - 1 : 0;
     const pill = $('playerSession');
     pill.hidden = !m || (m.host && !company);
@@ -329,7 +405,7 @@ const Session = {
       ? `Playing here too, in step with the host${drift}. Click for remote control only`
       : 'Remote control only. Click to play the music on this device too, in step with the host';
     if (pill.hidden) return;
-    const text = m.host ? `Your session: ${company} listening` : `In ${m.session.name}`;
+    const text = m.host ? `Your session: ${company} listening` : `In ${m.session.name}${this.guest ? ` (${this.guest.name})` : ''}`;
     pill.innerHTML = Icons.sessions;
     pill.append(h('span', text));
     pill.title = m.host
@@ -347,6 +423,11 @@ const Session = {
     }
     const wasMember = this.isMember ? this.mine.session : null;
     this.list = Array.isArray(view.sessions) ? view.sessions : [];
+    // A guest elsewhere: this server knows nothing of that session.
+    if (this.guest) {
+      this._emit();
+      return;
+    }
     if (view.mine) {
       this.mine = { session: view.mine.session, host: !!view.mine.host };
       if (view.mine.host) this.sessionId = view.mine.session.id;
@@ -485,6 +566,70 @@ const Session = {
     if (!wasMember) return;
     if (reason === 'dropped') toast(`You are no longer in ${wasMember.name}: the connection to the server was lost.`, 'info');
     else if (reason === 'ended') toast(`${wasMember.name} has ended.`, 'info');
+    else if (reason === 'hostLeft') toast(`${wasMember.name} has ended: its host left, and a guest does not host.`, 'info');
+  },
+
+  /** The live channel of the server this app is a guest of (or asks to be). */
+  _onGuestLive({ type, data }) {
+    if (!this.guest) return;
+    switch (type) {
+      case 'hello':
+        clearTimeout(this._downTimer);
+        return;
+      case 'down':
+        clearTimeout(this._downTimer);
+        if (this.mine) this._downTimer = setTimeout(() => this._lost(), this.LOST_MS);
+        return;
+      case 'end': {
+        const name = this.mine ? this.mine.session.name : this.guest.name;
+        if (Player.remote) Player.endRemote();
+        this.mine = null;
+        this.request = null;
+        this._guestOut();
+        toast(`${name}: the other server no longer lets guests in.`, 'info');
+        return;
+      }
+      case 'joinResult':
+        if (!data.ok) {
+          this._onJoinResult(data);
+          this._guestOut();
+          return;
+        }
+        // Its songs first: what plays there must be known here.
+        this.guest.asking = false;
+        this._guestSongs().then(() => this._onJoinResult(data));
+        return;
+      case 'state':
+        if (this.isMember && data.sessionId === this.mine.session.id) Player.mirror(data.state);
+        return;
+      case 'session':
+        this._onSession(data);
+        return;
+      case 'left':
+        this._onLeft(data);
+        return;
+      default:
+    }
+  },
+
+  /** The songs and clock of the server this app is a guest of. */
+  async _guestSongs() {
+    try {
+      Store.setForeign(await window.flow.guest('songs'), this.guest.name);
+      const st = await window.flow.guest('status');
+      if (st && this.guest) this.guest.offset = st.offset;
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    clearInterval(this._guestClock);
+    this._guestClock = setInterval(async () => {
+      if (!this.guest) {
+        clearInterval(this._guestClock);
+        return;
+      }
+      const st = await window.flow.guest('status').catch(() => null);
+      if (st && this.guest) this.guest.offset = st.offset;
+    }, 30000);
   },
 
   /** The library now has the song a handover left this app to play (for a minute). */
@@ -526,7 +671,7 @@ const Session = {
   /** A state from the server, its position moved on to now (it was read at sampledAt, server time). */
   _stateAtNow(state) {
     if (!state) return null;
-    const serverNow = Date.now() + (Store.server.timeOffset || 0);
+    const serverNow = Date.now() + this.timeOffset();
     const late = state.playing && state.sampledAt ? Math.max(0, (serverNow - state.sampledAt) / 1000) : 0;
     return { ...state, position: (state.position || 0) + late };
   },

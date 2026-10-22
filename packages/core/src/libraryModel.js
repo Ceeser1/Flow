@@ -567,6 +567,19 @@ function recordListen(data, songId, { listened, duration, at = Date.now(), conte
   return kind;
 }
 
+/**
+ * A listen to a song this library does not have (4.0: as a guest in another
+ * server's session): it counts in the totals only (time, listens, the days
+ * and sessions of the Statistics), not for any song.
+ */
+function recordAwayListen(data, { listened, duration, at = Date.now(), tz = null }) {
+  const total = Number(duration) || 0;
+  const heard = Math.min(Math.max(0, Number(listened) || 0), total || Infinity);
+  if (heard < MIN_LISTEN_SECONDS) return null;
+  recordStatistics(data, heard, at, tz);
+  return heard;
+}
+
 /** Adds one song to several playlists. Lists that already hold it are skipped. */
 function addSongToPlaylists(data, songId, playlistIds, now = Date.now()) {
   requireSong(data, songId);
@@ -665,7 +678,7 @@ function sameNames(a, b) {
 module.exports = {
   ALL_SONGS_ID, ALL_SONGS_NAME, MAX_NAME, PLAYED_SHARE, EARLY_SKIP_SECONDS,
   emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
-  createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource, setPlaylistRules, cleanRules,
+  createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource, setPlaylistRules, cleanRules, recordAwayListen,
   RULE_FIELDS, RULE_OPS, RULE_SORTS,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
   addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,

@@ -67,7 +67,7 @@ const DOWNLOADS_DIR = 'Downloads';
 // upload; the upload itself adds the song here.
 const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource', 'setPlaylistRules',
   'addSongToPlaylists', 'addSongsToPlaylist', 'removeFromPlaylist', 'deleteSong', 'editSong',
-  'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist']);
+  'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'recordAwayListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist']);
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');

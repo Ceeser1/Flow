@@ -16,6 +16,7 @@ const { createActions } = require('@flow/core/client/actions');
 const { createPrivateStats } = require('@flow/core/client/privateStats');
 const { createLyricsClient } = require('@flow/core/client/lyrics');
 const { encode: encodeQr } = require('@flow/core/qr');
+const { createGuestLink } = require('@flow/core/client/guest');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const {
@@ -72,6 +73,20 @@ function start() {
   // fetch, which cannot name Flow as its User-Agent.
   const lyricsClient = createLyricsClient({
     remote, library, jsonFiles: env.jsonFiles, fetch: (...args) => fetch(...args), agent: false,
+  });
+  // Being a guest in another server's session on this network (4.0).
+  const guest = createGuestLink({
+    http: env.http,
+    device: env.device,
+    clientId: () => settings.clientId(),
+    discovery: env.discovery,
+    ownServerId: () => (remote.active() ? remote.status().serverId : ''),
+    who: () => {
+      const st = remote.status();
+      return { profileName: st.on && st.profile ? st.profile.name : '', serverName: st.on ? st.serverName || st.name : '' };
+    },
+    onLive: (ev) => emit('guest:live', ev),
+    onChange: () => emit('guest:changed', guest.list()),
   });
 
   function coverDirs() {
@@ -285,6 +300,19 @@ function start() {
     finishSong: notHere('Saving a download on the phone'),
     lyrics: call((songId) => lyricsClient.get(songId)),
     shareLink: call(() => remote.shareLink()),
+    recordAwayListen: call((song, listened, duration) => actions.recordAwayListen({ song, listened, duration })),
+    guestLook: call(() => guest.look()),
+    guest: call((action, args = {}) => {
+      if (action === 'join') return guest.join(args.serverId, args.sessionId, args.mode);
+      if (action === 'session') return guest.session(args.body || {});
+      if (action === 'leave') return guest.leave();
+      if (action === 'songs') return guest.songs();
+      if (action === 'status') return guest.status();
+      if (action === 'list') return guest.list();
+      throw new Error(`Unknown guest action ${action}.`);
+    }),
+    onGuestLive: on('guest:live'),
+    onGuestChanged: on('guest:changed'),
     connectLink: call((text) => remote.connectLink(String(text || ''))),
     qr: call((text) => encodeQr(String(text || ''))),
     /** Google's code scanner (no camera permission): the text read, or '' when called off. */

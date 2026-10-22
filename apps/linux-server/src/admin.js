@@ -35,7 +35,7 @@
 //   GET  /api/admin/signins                  the failed sign-ins, newest first: { failures }
 //   POST /api/admin/signins/clear
 //   GET  /api/admin/rules                    { profileCreation: 'anyone' | 'admins',
-//   POST /api/admin/rules { ... }              songDelete: 'anyone' | 'owner' }
+//   POST /api/admin/rules { ... }              songDelete: 'anyone' | 'owner', guests: true | false }
 //   GET  /api/admin/backups                  { backups: [{ name, createdAt, reason, size, songs,
 //                                            playlists, profiles }], keep }, newest first
 //   POST /api/admin/backups/make             one made now: { backup }
@@ -248,11 +248,12 @@ function createAdminRoutes({
         const patch = {};
         if (body.profileCreation !== undefined) patch.profileCreation = body.profileCreation === 'admins' ? 'admins' : 'anyone';
         if (body.songDelete !== undefined) patch.songDelete = body.songDelete === 'owner' ? 'owner' : 'anyone';
+        if (body.guests !== undefined) patch.guests = body.guests === true;
         config.set(patch);
         log(`${me.name} set the server's rules: ${JSON.stringify(patch)}`);
       } else if (!isGet) throw new HttpError(404, 'Nothing here.');
       const cfg = config.get();
-      return sendJson(res, 200, { profileCreation: cfg.profileCreation, songDelete: cfg.songDelete });
+      return sendJson(res, 200, { profileCreation: cfg.profileCreation, songDelete: cfg.songDelete, guests: cfg.guests });
     }
     if (p === '/api/admin/password' && req.method === 'POST') return changePassword(res, body, me, { entry, ip });
     if (p.startsWith('/api/admin/backups') && backups) return backupRoute(req, res, p, me, body);

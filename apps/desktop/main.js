@@ -39,6 +39,7 @@ const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
 const { createBackupStore, mergeRestore } = require('@flow/core/backup');
 const { createLyricsClient } = require('@flow/core/client/lyrics');
+const { createGuestLink } = require('@flow/core/client/guest');
 
 let mainWindow = null;
 let downloadToken = null;
@@ -259,6 +260,31 @@ handle('covers:staged', (cachePath) => covers.stagedCover(String(cachePath || ''
 const lyricsClient = createLyricsClient({ remote, library, jsonFiles: env.jsonFiles });
 handle('song:lyrics', (songId) => lyricsClient.get(songId));
 
+// Being a guest in another server's session on this network (4.0, @flow/core/client/guest).
+const guest = createGuestLink({
+  http: env.http,
+  device: env.device,
+  clientId: () => settings.clientId(),
+  discovery: env.discovery,
+  ownServerId: () => (remote.active() ? remote.status().serverId : ''),
+  who: () => {
+    const st = remote.status();
+    return { profileName: st.on && st.profile ? st.profile.name : '', serverName: st.on ? st.serverName || st.name : '' };
+  },
+  onLive: (ev) => sendToWindow('guest:live', ev),
+  onChange: () => sendToWindow('guest:changed', guest.list()),
+});
+handle('guest:look', () => guest.look());
+handle('guest:call', ({ action, args = {} }) => {
+  if (action === 'join') return guest.join(args.serverId, args.sessionId, args.mode);
+  if (action === 'session') return guest.session(args.body || {});
+  if (action === 'leave') return guest.leave();
+  if (action === 'songs') return guest.songs();
+  if (action === 'status') return guest.status();
+  if (action === 'list') return guest.list();
+  throw new Error(`Unknown guest action ${action}.`);
+});
+
 // Sharing the server by QR code (4.0): the link, a link pasted, and a code's squares.
 handle('server:shareLink', () => remote.shareLink());
 handle('server:connectLink', (text) => remote.connectLink(String(text || '')));
@@ -335,6 +361,7 @@ handle('library:editSong', (arg) => actions.editSong(arg));
 handle('library:trimSong', (arg) => actions.trimSong(arg));
 handle('library:setFavourite', (arg) => actions.setFavourite(arg));
 handle('library:recordListen', (arg) => actions.recordListen(arg));
+handle('library:recordAwayListen', (arg) => actions.recordAwayListen(arg));
 handle('stats:private', () => privateStats.get());
 handle('stats:removeTracked', ({ serverId, profileId }) => remote.removeTracked(serverId, profileId));
 handle('library:findBySource', (arg) => actions.findBySource(arg));
@@ -923,6 +950,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', async () => {
   // Out of an Active Session first: a host hands it on at once.
   await remote.leaveSession(1500);
+  await guest.leave();
   remote.stop();
   library.unwatch();
   loudnessFiller.stop();
