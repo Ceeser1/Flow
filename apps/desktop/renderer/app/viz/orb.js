@@ -80,9 +80,18 @@
   }
 
   /** A smooth noise in 3D, cheap: sums of sines. */
-  function wobble(x, y, z, t) {
-    return Math.sin(x * 2.1 + t * 0.9) * Math.sin(y * 2.7 - t * 0.7) * Math.sin(z * 1.9 + t * 0.5)
-      + 0.5 * Math.sin(x * 4.3 - t * 1.3 + y * 3.1) * Math.sin(z * 3.7 + t * 1.1);
+  // The surface's wobble at a point x, y, z at time t:
+  //   sin(x * 2.1 + t * 0.9) * sin(y * 2.7 - t * 0.7) * sin(z * 1.9 + t * 0.5)
+  //   + 0.5 * sin(x * 4.3 + y * 3.1 - t * 1.3) * sin(z * 3.7 + t * 1.1),
+  // each sine from its point's part (waves, from q + o) and the frame's
+  // (turns, from o), sine and cosine each: sin(a + b) = sin a cos b + cos a sin b.
+  function wobble(waves, turns, q, o) {
+    const s0 = waves[q + o] * turns[o + 1] + waves[q + o + 1] * turns[o];
+    const s1 = waves[q + o + 2] * turns[o + 3] + waves[q + o + 3] * turns[o + 2];
+    const s2 = waves[q + o + 4] * turns[o + 5] + waves[q + o + 5] * turns[o + 4];
+    const s3 = waves[q + o + 6] * turns[o + 7] + waves[q + o + 7] * turns[o + 6];
+    const s4 = waves[q + o + 8] * turns[o + 9] + waves[q + o + 9] * turns[o + 8];
+    return s0 * s1 * s2 + 0.5 * s3 * s4;
   }
 
   class Orb {
@@ -113,6 +122,23 @@
           this.unit[k + 2] = sp * Math.sin(th);
         }
       }
+      // wobble's angles at each point (twice: as it is asked at the point
+      // and at twice it), their sines and cosines, so a frame only turns
+      // them on by its time: sin(a + b) = sin a cos b + cos a sin b.
+      this.waves = new Float64Array(LON * LAT * 20);
+      for (let p = 0; p < LON * LAT; p += 1) {
+        for (let n = 0; n < 2; n += 1) {
+          const x = this.unit[p * 3] * (n + 1);
+          const y = this.unit[p * 3 + 1] * (n + 1);
+          const z = this.unit[p * 3 + 2] * (n + 1);
+          const angles = [x * 2.1, y * 2.7, z * 1.9, x * 4.3 + y * 3.1, z * 3.7];
+          for (let m = 0; m < 5; m += 1) {
+            this.waves[p * 20 + n * 10 + m * 2] = Math.sin(angles[m]);
+            this.waves[p * 20 + n * 10 + m * 2 + 1] = Math.cos(angles[m]);
+          }
+        }
+      }
+      this.turns = new Float64Array(20);
       this.ring = [];
       for (let i = 0; i < RING; i += 1) {
         const band = Math.random() ** 1.5;
@@ -165,6 +191,29 @@
       this.dotCount = 0;
     }
 
+    /**
+     * Each point pushed out by its belt's swelling and the wobble, then
+     * projected (into pts). A method of its own, so that wobble is inlined
+     * here and its numbers are not boxed on the way out.
+     */
+    _swell(project) {
+      const pts = this.pts;
+      const unitPts = this.unit;
+      const waves = this.waves;
+      const turns = this.turns;
+      for (let j = 0; j < LAT; j += 1) {
+        for (let i = 0; i < LON; i += 1) {
+          const u = (j * LON + i) * 3;
+          const x = unitPts[u];
+          const y = unitPts[u + 1];
+          const z = unitPts[u + 2];
+          const q = (j * LON + i) * 20;
+          const r = 1 + 0.55 * this.belt[j] * (0.55 + 0.45 * wobble(waves, turns, q, 0)) + 0.04 * wobble(waves, turns, q, 10);
+          project(x * r, y * r, z * r, pts, (j * LON + i) * 3);
+        }
+      }
+    }
+
     frame(a, dt) {
       this.age += dt;
       const set = (k) => Visualizer.setting(k);
@@ -207,17 +256,18 @@
         this.belt[j] += (v - this.belt[j]) * (1 - Math.exp(-dt / 0.06));
       }
       const pts = this.pts;
-      const unitPts = this.unit;
-      for (let j = 0; j < LAT; j += 1) {
-        for (let i = 0; i < LON; i += 1) {
-          const u = (j * LON + i) * 3;
-          const x = unitPts[u];
-          const y = unitPts[u + 1];
-          const z = unitPts[u + 2];
-          const r = 1 + 0.55 * this.belt[j] * (0.55 + 0.45 * wobble(x, y, z, t)) + 0.04 * wobble(x * 2, y * 2, z * 2, t * 1.5);
-          project(x * r, y * r, z * r, pts, (j * LON + i) * 3);
+      // The wobble at the point and at twice it (t * 1.5): its waves' time
+      // parts (sine, cosine) for this frame.
+      const turns = this.turns;
+      for (let n = 0; n < 2; n += 1) {
+        const tt = n ? t * 1.5 : t;
+        const by = [tt * 0.9, -tt * 0.7, tt * 0.5, -tt * 1.3, tt * 1.1];
+        for (let m = 0; m < 5; m += 1) {
+          turns[n * 10 + m * 2] = Math.sin(by[m]);
+          turns[n * 10 + m * 2 + 1] = Math.cos(by[m]);
         }
       }
+      this._swell(project);
 
       const palette = set('obColors');
       let pal = PALETTES[palette] || PALETTES.aurora;

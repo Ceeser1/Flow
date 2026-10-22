@@ -124,7 +124,9 @@
           vec3 n = normalAt(p, pix * t * 0.5);
           // A key light above and beside the eye, a fill in the second colour from below.
           vec3 l = normalize(up * 0.8 + rt * 0.5 - fw * 0.4);
-          float diff = max(dot(n, l), 0.0) * shadow(p + n * 0.003, l);
+          // (Turned away from the light, diff is 0 whatever the shadow.)
+          float diff = max(dot(n, l), 0.0);
+          if (diff > 0.0) diff *= shadow(p + n * 0.003, l);
           float fill = max(dot(n, normalize(-up * 0.6 - rt * 0.6 - fw * 0.3)), 0.0);
           float ao = clamp(1.0 - steps / 70.0, 0.0, 1.0);
           ao *= ao;
@@ -171,6 +173,7 @@
       this.look = 0;
       this.glow = 0.3;
       this.bass = 0;
+      this.speed = 0.2;
       // The harmony's colour as a point on the colour circle, so it glides round it.
       this.hx = 1;
       this.hy = 0;
@@ -200,10 +203,15 @@
       this.age += dt;
       const playing = a.playing ? 1 : 0;
       const breathe = set('mbMorph') / 100;
-      // The flight: round it, faster with the music, rising and sinking slowly.
-      const speed = a.playing ? a.motion(0.25, 1.2) : 0.2;
-      this.orbit += dt * 0.07 * speed;
-      this.tilt += dt * 0.05 * speed;
+      // The flight: round it, rising and sinking slowly, at the tempo's pace
+      // (with a clear beat) and a little faster while the kicks drive it.
+      // The speed eases there over about half a second, so the bass speeds
+      // the spin up smoothly rather than shoving it on each kick.
+      const pace = 1 + (a.rush - 1) * a.lock;
+      const want = a.playing ? pace * (1 + 0.8 * a.kick) : 0.2;
+      this.speed += (want - this.speed) * (1 - Math.exp(-dt / 0.5));
+      this.orbit += dt * 0.07 * this.speed;
+      this.tilt += dt * 0.05 * this.speed;
       this.morph += dt * (0.4 + 0.6 * a.intensity) * playing * breathe;
       this.bass += ((a.bass * playing) - this.bass) * Math.min(1, dt * 6);
       const view = VIEWS[set('mbView')] ?? VIEWS.whole;

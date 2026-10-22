@@ -217,7 +217,12 @@
 
         // How far the phase turned beyond what the bin's own centre would
         // turn in `hop` samples says how far off-centre the sound really is.
-        let dphi = Math.atan2(imB[k], reB[k]) - Math.atan2(imA[k], reA[k]) - expectedStep * k;
+        // The angle of B times A's conjugate: the turn from A to B in one atan2.
+        const ar = reA[k];
+        const ai = imA[k];
+        const br = reB[k];
+        const bi = imB[k];
+        let dphi = (ar === 0 && ai === 0 ? Math.atan2(bi, br) : Math.atan2(bi * ar - br * ai, br * ar + bi * ai)) - expectedStep * k;
         dphi -= TWO_PI * Math.round(dphi / TWO_PI);
         let offset = dphi * toBins;
         let spreadBins = this.spread;
@@ -242,9 +247,17 @@
         const lo = Math.max(0, Math.floor(pos) - reach);
         const hi = Math.min(bars - 1, Math.ceil(pos) + reach);
         const inv = 1 / (2 * sigma * sigma);
+        // The gaussian bar by bar without an exp each: from one bar to the
+        // next it is multiplied by exp(-(2d + 1) inv), which itself is
+        // multiplied by exp(-2 inv) each step.
+        const d0 = lo - pos;
+        let g = weight * Math.exp(-d0 * d0 * inv);
+        let q = Math.exp(-(2 * d0 + 1) * inv);
+        const qq = Math.exp(-2 * inv);
         for (let b = lo; b <= hi; b += 1) {
-          const d = b - pos;
-          power[b] += weight * Math.exp(-d * d * inv);
+          power[b] += g;
+          g *= q;
+          q *= qq;
         }
       }
 

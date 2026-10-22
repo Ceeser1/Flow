@@ -71,7 +71,21 @@
           if (segDist(q, vec2(0.0), e) > 0.27 * length(e) + 0.4) continue;
           float seed = float(i) * 7.31;
           float d = 1e3;
+          // The run with the nearest box first, so the others are mostly
+          // ruled out by it (the nearest piece is the same whatever the order).
+          int first = 0;
+          float near = 1e9;
           for (int run = 0; run < ${RUNS}; run++) {
+            vec4 box = texelFetch(pts, ivec2(${PTS} + run, i), 0);
+            float bd = length(max(max(box.xy - q, q - box.zw), 0.0));
+            if (bd < near) { near = bd; first = run; }
+          }
+          // Further than 0.6 from all of it, its light here (exp(-14 d) at
+          // most) is under a tenth of a colour step: left out.
+          if (near > 0.6) continue;
+          for (int n = 0; n < ${RUNS}; n++) {
+            int run = first + n;
+            if (run >= ${RUNS}) run -= ${RUNS};
             // A run whose box is further than d holds nothing nearer (1e-4
             // to spare for rounding): the nearest stays the same without it.
             vec4 box = texelFetch(pts, ivec2(${PTS} + run, i), 0);
@@ -135,6 +149,10 @@
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, PTS + RUNS, MAX, 0, gl.RGBA, gl.FLOAT, null);
       for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST);
       this.tendrils = Array.from({ length: MAX }, (_, i) => ({ d: onSphere(), drift: onSphere(), on: 0, hue: i / MAX }));
+      // What goes to the GPU each frame, all of it written each time.
+      this.tips = new Float32Array(MAX * 4);
+      this.cols = new Float32Array(MAX * 3);
+      this.pts = new Float32Array(MAX * (PTS + RUNS) * 4);
       this.touch = 0;
       this.finger = [0, 0, 1];
       this.glow = 0.5;
@@ -171,9 +189,7 @@
       this.glow += (target - this.glow) * Math.min(1, dt * 8);
       const speed = (a.playing ? 0.6 + 0.8 * a.mid : 0.25) * a.pace;
 
-      const tips = new Float32Array(MAX * 4);
-      const cols = new Float32Array(MAX * 3);
-      const pts = new Float32Array(MAX * (PTS + RUNS) * 4);
+      const { tips, cols, pts } = this;
       const full = set('pgShape') === 'full';
       // On the whole screen: how far out its edges lie (in globe radii).
       const hx = (0.5 * this.w) / this.h / 0.36;
@@ -183,16 +199,23 @@
       this.phase = (this.phase || 0) + dt * (a.playing ? 1 + a.level : 0.4);
       this.tendrils.forEach((t, i) => {
         // Wandering over the sphere: drawn towards a point that moves itself.
+        // (In place: no new arrays each frame.)
         for (let k = 0; k < 3; k += 1) t.drift[k] += (Math.random() - 0.5) * dt * 2;
-        let len = Math.hypot(...t.drift);
-        t.drift = t.drift.map((v) => v / len);
+        let len = Math.hypot(t.drift[0], t.drift[1], t.drift[2]);
+        for (let k = 0; k < 3; k += 1) t.drift[k] /= len;
         const pull = this.touch * (i % 3 === 0 ? 0.25 : 0.9);
-        const goal = t.drift.map((v, k) => v + (this.finger[k] - v) * pull);
-        t.d = t.d.map((v, k) => v + (goal[k] - v) * Math.min(1, dt * speed * (1 + 4 * pull)));
-        len = Math.hypot(...t.d);
-        t.d = t.d.map((v) => v / len);
+        const ease = Math.min(1, dt * speed * (1 + 4 * pull));
+        for (let k = 0; k < 3; k += 1) {
+          const goal = t.drift[k] + (this.finger[k] - t.drift[k]) * pull;
+          t.d[k] += (goal - t.d[k]) * ease;
+        }
+        len = Math.hypot(t.d[0], t.d[1], t.d[2]);
+        for (let k = 0; k < 3; k += 1) t.d[k] /= len;
         t.on += ((i < want ? 1 : 0) - t.on) * Math.min(1, dt * 4);
-        const strength = t.on * this.glow * (1 + this.touch * 0.8);
+        // A faded tendril never quite reaches 0; under 1e-6 it adds less
+        // than a thousandth of a colour step, so it is left out altogether.
+        let strength = t.on * this.glow * (1 + this.touch * 0.8);
+        if (strength < 1e-6) strength = 0;
         // Its tip: on the glass, or (on the whole screen) on out the same
         // way to a little past the screen's edge.
         let ex = t.d[0] * 0.97;
@@ -205,7 +228,10 @@
           ex = dx * reach;
           ey = dy * reach;
         }
-        tips.set([ex, ey, t.d[2], strength], i * 4);
+        tips[i * 4] = ex;
+        tips[i * 4 + 1] = ey;
+        tips[i * 4 + 2] = t.d[2];
+        tips[i * 4 + 3] = strength;
         // Its line: from the middle to the tip, wavering (slow waves, quicker
         // ripples with the highs), still at both ends.
         const span = Math.hypot(ex, ey) || 1;
@@ -236,7 +262,11 @@
             x1 = Math.max(x1, x);
             y1 = Math.max(y1, y);
           }
-          pts.set([x0, y0, x1, y1], row + (PTS + run) * 4);
+          const at = row + (PTS + run) * 4;
+          pts[at] = x0;
+          pts[at + 1] = y0;
+          pts[at + 2] = x1;
+          pts[at + 3] = y1;
         }
         const c = pal ? pal[i % 2] : hsv((t.hue + this.age * 0.03) % 1, 0.7, 1);
         cols.set(c, i * 3);

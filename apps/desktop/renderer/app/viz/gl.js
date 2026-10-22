@@ -410,33 +410,65 @@ const VizGL = {
       d[k + 5] = al;
       d[k + 6] = s;
     };
+    // seg's and tri's numbers on their way in: they themselves are small
+    // enough to be inlined where they are called, and hand them over in here
+    // rather than as arguments, which would each be boxed (thousands a frame).
+    const arg = new Float64Array(8);
+    const segFrom = (rgb) => {
+      const x0 = arg[0];
+      const y0 = arg[1];
+      const x1 = arg[2];
+      const y1 = arg[3];
+      const width = arg[4];
+      const a = arg[5];
+      const a1 = arg[6];
+      const r = rgb[0];
+      const g = rgb[1];
+      const b = rgb[2];
+      if (l.count > capacity - 6) return;
+      const len = Spectrum.hypot(x1 - x0, y1 - y0) || 1;
+      const nx = (-(y1 - y0) / len) * width;
+      const ny = ((x1 - x0) / len) * width;
+      const k = l.count * 7;
+      vertex(k, x0 + nx, y0 + ny, r, g, b, a, 1);
+      vertex(k + 7, x0 - nx, y0 - ny, r, g, b, a, -1);
+      vertex(k + 14, x1 + nx, y1 + ny, r, g, b, a1, 1);
+      vertex(k + 21, x1 + nx, y1 + ny, r, g, b, a1, 1);
+      vertex(k + 28, x0 - nx, y0 - ny, r, g, b, a, -1);
+      vertex(k + 35, x1 - nx, y1 - ny, r, g, b, a1, -1);
+      l.count += 6;
+    };
+    const triFrom = (rgb) => {
+      if (l.count > capacity - 3) return;
+      const k = l.count * 7;
+      const a = arg[6];
+      vertex(k, arg[0], arg[1], rgb[0], rgb[1], rgb[2], a, 0);
+      vertex(k + 7, arg[2], arg[3], rgb[0], rgb[1], rgb[2], a, 0);
+      vertex(k + 14, arg[4], arg[5], rgb[0], rgb[1], rgb[2], a, 0);
+      l.count += 3;
+    };
     const l = {
       count: 0,
       seg(x0, y0, x1, y1, width, rgb, a, a1 = a) {
-        const r = rgb[0];
-        const g = rgb[1];
-        const b = rgb[2];
-        if (l.count > capacity - 6) return;
-        const len = Spectrum.hypot(x1 - x0, y1 - y0) || 1;
-        const nx = (-(y1 - y0) / len) * width;
-        const ny = ((x1 - x0) / len) * width;
-        const k = l.count * 7;
-        vertex(k, x0 + nx, y0 + ny, r, g, b, a, 1);
-        vertex(k + 7, x0 - nx, y0 - ny, r, g, b, a, -1);
-        vertex(k + 14, x1 + nx, y1 + ny, r, g, b, a1, 1);
-        vertex(k + 21, x1 + nx, y1 + ny, r, g, b, a1, 1);
-        vertex(k + 28, x0 - nx, y0 - ny, r, g, b, a, -1);
-        vertex(k + 35, x1 - nx, y1 - ny, r, g, b, a1, -1);
-        l.count += 6;
+        arg[0] = x0;
+        arg[1] = y0;
+        arg[2] = x1;
+        arg[3] = y1;
+        arg[4] = width;
+        arg[5] = a;
+        arg[6] = a1;
+        segFrom(rgb);
       },
       /** A solid triangle (no falloff), drawn in its place among the lines. */
       tri(x0, y0, x1, y1, x2, y2, rgb, a) {
-        if (l.count > capacity - 3) return;
-        const k = l.count * 7;
-        vertex(k, x0, y0, rgb[0], rgb[1], rgb[2], a, 0);
-        vertex(k + 7, x1, y1, rgb[0], rgb[1], rgb[2], a, 0);
-        vertex(k + 14, x2, y2, rgb[0], rgb[1], rgb[2], a, 0);
-        l.count += 3;
+        arg[0] = x0;
+        arg[1] = y0;
+        arg[2] = x1;
+        arg[3] = y1;
+        arg[4] = x2;
+        arg[5] = y2;
+        arg[6] = a;
+        triFrom(rgb);
       },
       /** A round dot: a short segment as long as it is wide. */
       dot(x, y, radius, rgb, a) {

@@ -104,12 +104,16 @@
       o = vec4(c, 1.0);
     }`;
 
-  function hsv(h, s, v) {
+  /** A colour from hue, saturation and value, into out if given (else a new one). */
+  function hsv(h, s, v, out = [0, 0, 0]) {
     const f = (n) => {
       const k = (n + h * 6) % 6;
       return v - v * s * Math.max(0, Math.min(k, 4 - k, 1));
     };
-    return [f(5), f(3), f(1)];
+    out[0] = f(5);
+    out[1] = f(3);
+    out[2] = f(1);
+    return out;
   }
 
   class Kaleidoscope {
@@ -272,7 +276,9 @@
       const loud = Math.min(1, 0.25 + a.level * 1.6);
       const alpha = fade * loud * 0.42 * this.step;
       const lw = (h / 1080) * (1.4 + 1.2 * a.bass);
-      const col = (t) => hsv((this.hue + this.look.base + t) % 1, 0.75, 1);
+      // (Into one array: lines.seg copies it.)
+      const rgb = this._rgb || (this._rgb = [0, 0, 0]);
+      const col = (t) => hsv((this.hue + this.look.base + t) % 1, 0.75, 1, rgb);
       if (kind === 0 || kind === 1) {
         const wave = a.lowWave(WAVE_POINTS);
         const n = wave.length;
@@ -306,7 +312,7 @@
         for (let i = 0; i < n; i += 1) {
           const v = bands[i];
           if (v < 0.05) continue;
-          for (const side of [1, -1]) {
+          for (let side = 1; side >= -1; side -= 2) {
             const ang = Math.PI / 2 + side * ((i + 0.5) / n) * Math.PI;
             const r0 = size * 0.6;
             const r1 = r0 + v * v * h * 0.45;

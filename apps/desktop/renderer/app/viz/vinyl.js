@@ -72,6 +72,10 @@
     // behind; how much of it covers s (x), and its shade (y).
     vec2 tonearm(vec2 s) {
       vec2 dir = normalize(tip - PIVOT);
+      // All of it lies within 0.03 of the line from behind the weight to
+      // past the headshell: further than that and a pixel more, it covers
+      // nothing here (a is 0, as it would come out below).
+      if (seg(s, PIVOT - dir * 0.075, tip + dir * 0.02) - 0.03 > 1.2 / res.y + 1e-4) return vec2(0.0, 1.0);
       vec2 head = tip - dir * 0.012;
       vec2 bend = PIVOT + (head - PIVOT) * 0.82;
       vec2 n = vec2(-dir.y, dir.x);

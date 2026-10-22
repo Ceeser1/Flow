@@ -285,6 +285,83 @@
       }
     }
 
+    /**
+     * Moves the drops on (those landing make foam, spray and rings) and adds
+     * each one's streak. Out of frame() so that it is optimized on its own,
+     * lines.seg inlined: thousands of calls a frame no longer box their
+     * numbers on the way in.
+     */
+    _moveDrops(dt, g, WL, maxH, unit, dim, STREAK, set) {
+      const { drops, jets, mist, foam, lines } = this;
+      let alive = 0;
+      for (let i = 0; i < drops.length; i += 1) {
+        const d = drops[i];
+        // Falling, a burst's spray slows towards its terminal speed.
+        const gg = d.g || g;
+        if (d.vt && d.vy > 0) d.vy += gg * dt * Math.max(0, 1 - (d.vy / d.vt) ** 2);
+        else d.vy += gg * dt;
+        if (d.kind === 1 && d.vy > 0) d.fell += dt;
+        d.x += d.vx * dt;
+        d.y += d.vy * dt;
+        const jet = jets[d.j];
+        if (!jet) continue;
+        if (!d.top && d.vy >= 0) {
+          d.top = true;
+          // Where the water turns, a loud jet leaves mist hanging.
+          const chance = d.kind === 1 ? 0.12 : d.kind === 0 && jet.level > 0.55 ? 0.05 * jet.level : 0;
+          if (Math.random() < chance && mist.length < MAX_MIST) {
+            mist.push({
+              j: d.j, x: d.x, y: d.y,
+              vx: gauss() * unit * 12, vy: -unit * (4 + 8 * Math.random()),
+              r: unit * (20 + 34 * Math.random()), life: 1, fade: 1 / (2.2 + 2 * Math.random()),
+            });
+          }
+        }
+        if (d.vy > 0 && d.y >= WL) {
+          const bin = Math.max(0, Math.min(FOAM_BINS - 1, Math.floor((d.x / this.w) * FOAM_BINS)));
+          // A burst coming down rings the water: once as it starts, again with the bulk of it.
+          const b = d.burst;
+          if (b) {
+            b.landed += 1;
+            // Only a burst gone most of the way up.
+            if (set('fnRipples') && b.high >= 0.85 && (b.landed === 1 || b.landed === Math.round(b.count * 0.5))) {
+              this.ripples.push({ x: b.x, age: 0, high: Math.min(1, b.landed === 1 ? b.high : b.high * 0.75), j: b.j });
+              if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
+            }
+          }
+          if (d.kind !== 2) {
+            foam[bin] = Math.min(2, foam[bin] + (d.kind === 1 ? 0.06 : 0.025));
+            if (Math.random() < 0.22 && drops.length < MAX_DROPS) {
+              drops.push(drop(d.j, 2, true, d.x, WL - unit, gauss() * unit * 40, -unit * (50 + 110 * Math.random()), unit * 1.1));
+            }
+          }
+          continue;
+        }
+        drops[alive++] = d;
+        // Lit from below: brightest near the lamp.
+        const lit = jet.lamp * (0.35 + 0.65 * Math.exp(-(WL - d.y) / (0.8 * maxH)));
+        // Falling as bright as rising: the lamps light the water both ways.
+        const alpha = (d.kind === 2 ? 0.3 : 0.4) * lit * (d.fell ? Math.max(0, 1 - dim * d.fell) : 1);
+        // Its streak, where it was a moment ago; never shorter than a drop,
+        // or one hanging at the top (all but still) would vanish.
+        let sx = d.vx * STREAK;
+        let sy = d.vy * STREAK;
+        const len = Spectrum.hypot(sx, sy);
+        const least = d.w * 2;
+        if (len < least) {
+          if (len > 1e-3) {
+            sx *= least / len;
+            sy *= least / len;
+          } else {
+            sx = 0;
+            sy = -least;
+          }
+        }
+        lines.seg(d.x - sx, d.y - sy, d.x, d.y, d.w, jet.rgb, alpha);
+      }
+      drops.length = alive;
+    }
+
     frame(a, dt) {
       const set = (k) => Visualizer.setting(k);
       this.age += dt;
@@ -422,73 +499,7 @@
       const gFull = g * 0.35;
       const fullFall = Math.acosh(Math.exp(2 * 0.88)) * 0.5 * Math.sqrt(2 * gFull * maxH) / gFull;
       const dim = 0.5 / fullFall;
-      let alive = 0;
-      for (let i = 0; i < drops.length; i += 1) {
-        const d = drops[i];
-        // Falling, a burst's spray slows towards its terminal speed.
-        const gg = d.g || g;
-        if (d.vt && d.vy > 0) d.vy += gg * dt * Math.max(0, 1 - (d.vy / d.vt) ** 2);
-        else d.vy += gg * dt;
-        if (d.kind === 1 && d.vy > 0) d.fell += dt;
-        d.x += d.vx * dt;
-        d.y += d.vy * dt;
-        const jet = jets[d.j];
-        if (!jet) continue;
-        if (!d.top && d.vy >= 0) {
-          d.top = true;
-          // Where the water turns, a loud jet leaves mist hanging.
-          const chance = d.kind === 1 ? 0.12 : d.kind === 0 && jet.level > 0.55 ? 0.05 * jet.level : 0;
-          if (Math.random() < chance && mist.length < MAX_MIST) {
-            mist.push({
-              j: d.j, x: d.x, y: d.y,
-              vx: gauss() * unit * 12, vy: -unit * (4 + 8 * Math.random()),
-              r: unit * (20 + 34 * Math.random()), life: 1, fade: 1 / (2.2 + 2 * Math.random()),
-            });
-          }
-        }
-        if (d.vy > 0 && d.y >= WL) {
-          const bin = Math.max(0, Math.min(FOAM_BINS - 1, Math.floor((d.x / this.w) * FOAM_BINS)));
-          // A burst coming down rings the water: once as it starts, again with the bulk of it.
-          const b = d.burst;
-          if (b) {
-            b.landed += 1;
-            // Only a burst gone most of the way up.
-            if (set('fnRipples') && b.high >= 0.85 && (b.landed === 1 || b.landed === Math.round(b.count * 0.5))) {
-              this.ripples.push({ x: b.x, age: 0, high: Math.min(1, b.landed === 1 ? b.high : b.high * 0.75), j: b.j });
-              if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
-            }
-          }
-          if (d.kind !== 2) {
-            foam[bin] = Math.min(2, foam[bin] + (d.kind === 1 ? 0.06 : 0.025));
-            if (Math.random() < 0.22 && drops.length < MAX_DROPS) {
-              drops.push(drop(d.j, 2, true, d.x, WL - unit, gauss() * unit * 40, -unit * (50 + 110 * Math.random()), unit * 1.1));
-            }
-          }
-          continue;
-        }
-        drops[alive++] = d;
-        // Lit from below: brightest near the lamp.
-        const lit = jet.lamp * (0.35 + 0.65 * Math.exp(-(WL - d.y) / (0.8 * maxH)));
-        // Falling as bright as rising: the lamps light the water both ways.
-        const alpha = (d.kind === 2 ? 0.3 : 0.4) * lit * (d.fell ? Math.max(0, 1 - dim * d.fell) : 1);
-        // Its streak, where it was a moment ago; never shorter than a drop,
-        // or one hanging at the top (all but still) would vanish.
-        let sx = d.vx * STREAK;
-        let sy = d.vy * STREAK;
-        const len = Spectrum.hypot(sx, sy);
-        const least = d.w * 2;
-        if (len < least) {
-          if (len > 1e-3) {
-            sx *= least / len;
-            sy *= least / len;
-          } else {
-            sx = 0;
-            sy = -least;
-          }
-        }
-        lines.seg(d.x - sx, d.y - sy, d.x, d.y, d.w, jet.rgb, alpha);
-      }
-      drops.length = alive;
+      this._moveDrops(dt, g, WL, maxH, unit, dim, STREAK, set);
 
       const gl = this.gl;
       gl.disable(gl.BLEND);
