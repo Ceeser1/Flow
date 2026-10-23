@@ -40,12 +40,21 @@
 // member of this server takes over, and with none left the session ends
 // ('hostLeft'). A guest cannot start a playlist of this server's.
 //
+// A guest's own songs (4.0): its app sends a song it plays or queues here as
+// a session song (PUT /api/guest/songs/:gid, guests.js), kept for this
+// session only in <home>/session-songs/<session id> (gone when the session
+// ends, and at every start). Members see them in the session's `songs`; the
+// controls take their ids like the library's, and members stream them
+// (GET /api/sessions/songs/:gid/audio, a guest through its own route).
+//
 // For other controllers (a smart home, later): controlSession() and
 // controlPlayer() take the same actions without being a member, players()
 // lists every app connected (playing or not), and playPlaylist is worked
 // out here from the library, so a controller needs no library of its own.
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const MAX_MEMBERS = 8;
 const REQUEST_MS = 60 * 1000;
@@ -59,6 +68,11 @@ const CONTROL_WINDOW = 10 * 1000;
 const MAX_IDS = 20000;
 const ID = /^[\w-]{1,64}$/;
 const CLIENT = /^[\w-]{8,64}$/;
+// Session songs: at most this many, this large each, this much together.
+const MAX_SESSION_SONGS = 60;
+const MAX_SONG_BYTES = 300 * 1024 * 1024;
+const MAX_SESSION_BYTES = 3 * 1024 * 1024 * 1024;
+const SONG_EXTS = new Set(['mp3', 'm4a', 'aac', 'ogg', 'opus', 'flac', 'wav', 'webm']);
 
 class SessionError extends Error {
   constructor(status, message, extra = {}) {
@@ -135,9 +149,14 @@ function cleanState(s) {
 
 /**
  * opts: { live (live.js hub), library ({ songExists(id), playlist(profileId,
- * ref) -> { id, name, ids } | null }), clock, log }.
+ * ref) -> { id, name, ids } | null }), clock, log, songDir (where session
+ * songs are kept; none: guests bring none) }.
  */
-function createSessions({ live, library, clock = realClock, log = () => {} }) {
+function createSessions({
+  live, library, clock = realClock, log = () => {}, songDir = null,
+}) {
+  // What a stop left behind goes at the start.
+  if (songDir) fs.rmSync(songDir, { recursive: true, force: true });
   const sessions = new Map(); // id -> session
   const memberOf = new Map(); // client -> session id
   const requests = new Map(); // request id -> { id, sessionId, client, mode, timer, who }
@@ -194,9 +213,20 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
     ...(m.guest ? { guest: true, serverName: m.serverName } : {}),
   });
 
+  /** A session song as members see it. */
+  const songOut = (x) => ({
+    id: x.gid, title: x.title, artist: x.artist, mix: x.mix, duration: x.duration, format: x.format, by: x.byName,
+  });
+
   function detail(s) {
     return {
-      id: s.id, name: nameOf(s), hostClient: hostOf(s).client, members: s.members.map(member), allowVolume: !!(s.state && s.state.allowVolume),
+      id: s.id,
+      name: nameOf(s),
+      hostClient: hostOf(s).client,
+      members: s.members.map(member),
+      allowVolume: !!(s.state && s.state.allowVolume),
+      // The songs guests brought, ready to play.
+      songs: [...s.songs.values()].filter((x) => x.ready).map(songOut),
     };
   }
 
@@ -273,7 +303,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
       // Nothing loaded and no session: nothing to tell anyone.
       if (!st.songId) return { sessionId: null };
       s = {
-        id: newId(), members: [{ ...me, joinedAt: now(), mode: 'host' }], state: null, sampledAt: 0, pausedAt: now(), createdAt: now(), idleTimer: null,
+        id: newId(), members: [{ ...me, joinedAt: now(), mode: 'host' }], state: null, sampledAt: 0, pausedAt: now(), createdAt: now(), idleTimer: null, songs: new Map(),
       };
       sessions.set(s.id, s);
       memberOf.set(client, s.id);
@@ -408,7 +438,8 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
   /** A control as the host gets it, checked; throws for anything else. */
   function cleanControl(action, args, from, s) {
     const a = args || {};
-    const songOk = (id) => typeof id === 'string' && ID.test(id) && library.songExists(id);
+    // The library's songs, and the session's songs once they are all there.
+    const songOk = (id) => typeof id === 'string' && ID.test(id) && (library.songExists(id) || !!(s && s.songs.get(id) && s.songs.get(id).ready));
     switch (action) {
       case 'toggle': case 'play': case 'pause': case 'next': case 'prev': case 'queueClear':
         return {};
@@ -428,7 +459,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
         };
       case 'playSong': {
         if (!songOk(a.songId)) throw new SessionError(404, 'That song is not on the server.');
-        let ids = idList(a.ids).filter((id) => library.songExists(id));
+        let ids = idList(a.ids).filter((id) => songOk(id));
         if (!ids.includes(a.songId)) ids = [a.songId, ...ids];
         return {
           songId: a.songId, ids, contextName: text(a.contextName, 200), contextId: idOrNull(a.contextId),
@@ -505,6 +536,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
   function end(s, reason) {
     if (sessions.get(s.id) !== s) return;
     sessions.delete(s.id);
+    if (songDir && s.songs.size) fs.rmSync(path.join(songDir, s.id), { recursive: true, force: true });
     clock.clearTimeout(s.idleTimer);
     for (const m of s.members) {
       memberOf.delete(m.client);
@@ -668,6 +700,7 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
   }
 
   function stop() {
+    if (songDir) fs.rmSync(songDir, { recursive: true, force: true });
     clock.clearTimeout(listTimer);
     for (const s of sessions.values()) clock.clearTimeout(s.idleTimer);
     for (const r of requests.values()) clock.clearTimeout(r.timer);
@@ -678,8 +711,67 @@ function createSessions({ live, library, clock = realClock, log = () => {} }) {
   /** Whether an app is in a session here (a guest may then stream its songs). */
   const isMember = (client) => sessions.has(memberOf.get(client));
 
+  // ---- songs guests bring ----
+
+  /**
+   * A guest sends one of its songs (`gid`, meta { title, artist, mix,
+   * duration, format }): where to write it, or a SessionError. Its app sends
+   * the bytes; songArrived() makes it playable.
+   */
+  function prepareSong(client, gid, meta) {
+    if (!songDir) throw new SessionError(404, 'This server takes no songs from guests.');
+    const s = sessions.get(memberOf.get(client));
+    if (!s) throw new SessionError(403, 'Join the session first.');
+    const me = s.members.find((m) => m.client === client);
+    if (!ID.test(String(gid || '')) || library.songExists(gid)) throw new SessionError(400, 'That is no id for a song brought along.');
+    const had = s.songs.get(gid);
+    if (had && had.ready) return null;
+    if (s.songs.size >= MAX_SESSION_SONGS) throw new SessionError(409, `This session has its ${MAX_SESSION_SONGS} songs from guests already.`);
+    const format = String((meta && meta.format) || '').toLowerCase();
+    if (!SONG_EXTS.has(format)) throw new SessionError(415, 'That kind of file cannot be played here.');
+    const entry = {
+      gid,
+      title: text(meta.title, 300) || 'Song',
+      artist: text(meta.artist, 300),
+      mix: text(meta.mix, 300),
+      duration: num(meta.duration, 0, 24 * 3600),
+      format,
+      by: client,
+      byName: `${me.profileName ? `${me.profileName} - ` : ''}${me.device || 'a guest'}`,
+      file: path.join(songDir, s.id, `${gid}.${format}`),
+      ready: false,
+      bytes: 0,
+    };
+    s.songs.set(gid, entry);
+    fs.mkdirSync(path.dirname(entry.file), { recursive: true });
+    return { file: entry.file, maxBytes: Math.min(MAX_SONG_BYTES, MAX_SESSION_BYTES - [...s.songs.values()].reduce((n, x) => n + x.bytes, 0)) };
+  }
+
+  /** The bytes are in (`bytes`, or null: they never came): the song plays for every member, or goes. */
+  function songArrived(client, gid, bytes) {
+    const s = sessions.get(memberOf.get(client));
+    const entry = s && s.songs.get(gid);
+    if (!entry || entry.by !== client) return;
+    if (!bytes) {
+      s.songs.delete(gid);
+      fs.rmSync(entry.file, { force: true });
+      return;
+    }
+    entry.bytes = bytes;
+    entry.ready = true;
+    toMembers(s, 'session', { session: detail(s) });
+    log(`Session ${s.id}: ${entry.byName} brought "${entry.title}"`);
+  }
+
+  /** A session song's file for a member of its session, or null. */
+  function songFileFor(client, gid) {
+    const s = sessions.get(memberOf.get(client));
+    const entry = s && s.songs.get(String(gid || ''));
+    return entry && entry.ready ? entry.file : null;
+  }
+
   return {
-    handle, view, list, all, endById, players, controlSession, controlPlayer, stop, isMember,
+    handle, view, list, all, endById, players, controlSession, controlPlayer, stop, isMember, prepareSong, songArrived, songFileFor,
   };
 }
 

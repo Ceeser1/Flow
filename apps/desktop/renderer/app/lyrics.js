@@ -98,7 +98,11 @@ const Lyrics = {
     this.data = null;
     this._drawAll();
     try {
-      const data = this._tidy(await window.flow.lyrics(song.id));
+      // A song of another server's session: looked up by its names.
+      const which = song.foreign ? {
+        id: song.id, title: song.title, artist: song.artist, duration: song.duration,
+      } : song.id;
+      const data = this._tidy(await window.flow.lyrics(which));
       if (seq !== this._seq) return;
       this._cache.set(key, data);
       if (this._cache.size > this.KEEP) this._cache.delete(this._cache.keys().next().value);

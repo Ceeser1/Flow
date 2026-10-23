@@ -258,7 +258,76 @@ const Session = {
 
   /** A button pressed here in remote mode, for the host to carry out. */
   control(action, args = {}) {
+    // A guest's own song (not that server's): sent along first.
+    if (this.guest && (action === 'queueAdd' || action === 'playSong') && this._own(args.songId)) {
+      this._bring(action, args);
+      return;
+    }
     this._call({ type: 'control', action, ...args }).catch((err) => toast(err.message, 'error'));
+  },
+
+  /** A song of this app's own library (a guest's to bring along). */
+  _own(id) {
+    const s = Store.song(id);
+    return !!s && !s.foreign;
+  },
+
+  /** Own songs sent along one at a time (ids it has: songId -> session id). */
+  _brought: new Map(),
+
+  /** One own song into the session; resolves its id there. */
+  async _bringOne(songId) {
+    if (this._brought.has(songId)) return this._brought.get(songId);
+    const song = Store.song(songId);
+    toast(`Sending "${song ? song.title : 'the song'}" to the session...`, 'info');
+    const { gid } = await window.flow.guest('bring', { songId });
+    this._brought.set(songId, gid);
+    return gid;
+  },
+
+  /**
+   * A guest plays or queues its own songs: each goes to the host's server as
+   * a session song first. A list started: its song now, a few after it queued
+   * as they arrive.
+   */
+  async _bring(action, args) {
+    try {
+      const gid = await this._bringOne(args.songId);
+      if (action === 'queueAdd') {
+        await this._call({ type: 'control', action: 'queueAdd', songId: gid });
+        return;
+      }
+      await this._call({ type: 'control', action: 'playSong', songId: gid, ids: [gid], contextName: args.contextName || '' });
+      const ids = Array.isArray(args.ids) ? args.ids : [];
+      const after = ids.slice(ids.indexOf(args.songId) + 1).filter((id) => this._own(id)).slice(0, this.BRING_AHEAD);
+      for (const id of after) {
+        if (!this.guest) return;
+        const next = await this._bringOne(id);
+        // Queued there already (added by hand before): not twice.
+        if (Player.queue.manual.includes(next)) continue;
+        await this._call({ type: 'control', action: 'queueAdd', songId: next });
+      }
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  },
+
+  // A list a guest starts of its own songs: this many after the first go along.
+  BRING_AHEAD: 4,
+
+  /** The songs guests brought into this app's session, playable here from the host's server. */
+  _sessionSongs(session) {
+    const list = (session && session.songs) || [];
+    if (!list.length) {
+      Store.setSessionSongs([]);
+      return;
+    }
+    const st = Store.server;
+    const g = this._guestStream;
+    const src = (id) => (this.guest
+      ? (g ? `${g.stream}${encodeURIComponent(id)}/audio?${g.streamQuery}` : '')
+      : `${st.base}/api/sessions/songs/${encodeURIComponent(id)}/audio?client=${encodeURIComponent(st.clientId)}${st.token ? `&t=${encodeURIComponent(st.token)}` : ''}`);
+    Store.setSessionSongs(list.map((s) => ({ ...s, src: src(s.id) })));
   },
 
   async cancelJoin() {
@@ -281,6 +350,8 @@ const Session = {
   _guestOut() {
     if (!this.guest) return;
     this.guest = null;
+    this._brought.clear();
+    this._guestStream = null;
     window.flow.guest('leave').catch(() => {});
     Store.setForeign(null);
     this._emit();
@@ -289,6 +360,7 @@ const Session = {
   _out() {
     if (Player.remote) Player.endRemote();
     this._guestOut();
+    Store.setSessionSongs([]);
     this._keep(null);
     this.mine = null;
     this.sessionId = null;
@@ -303,6 +375,7 @@ const Session = {
   _becomeMember(session, state) {
     this._keep(null);
     this.mine = { session, host: false };
+    this._sessionSongs(session);
     this.sessionId = null;
     this._published = false;
     clearTimeout(this._heartbeat);
@@ -430,6 +503,7 @@ const Session = {
     }
     if (view.mine) {
       this.mine = { session: view.mine.session, host: !!view.mine.host };
+      this._sessionSongs(view.mine.session);
       if (view.mine.host) this.sessionId = view.mine.session.id;
       else if (view.mine.state) {
         Player.mirror(view.mine.state);
@@ -504,6 +578,7 @@ const Session = {
         return;
       case 'hostChanged': {
         this.mine = { session: data.session, host: true };
+        this._sessionSongs(data.session);
         this.sessionId = data.sessionId;
         this._published = true;
         const state = this._stateAtNow(data.state);
@@ -524,6 +599,7 @@ const Session = {
     const me = Store.server.clientId;
     const host = data.session.hostClient === me;
     this.mine = { session: data.session, host };
+    this._sessionSongs(data.session);
     if (host) this.sessionId = data.session.id;
     if (data.joined && data.joined.client !== me) {
       toast(`${this._who(data.joined)} joined ${host ? 'your session' : 'the session'}.`, 'info');
@@ -617,7 +693,10 @@ const Session = {
     try {
       Store.setForeign(await window.flow.guest('songs'), this.guest.name);
       const st = await window.flow.guest('status');
-      if (st && this.guest) this.guest.offset = st.offset;
+      if (st && this.guest) {
+        this.guest.offset = st.offset;
+        this._guestStream = { stream: st.stream, streamQuery: st.streamQuery };
+      }
     } catch (err) {
       toast(err.message, 'error');
     }

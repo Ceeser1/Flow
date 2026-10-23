@@ -40,6 +40,8 @@ const Store = {
   // queue and play along with (Session sets them): id -> song (foreign: true).
   foreign: new Map(),
   foreignName: '',
+  // The songs guests brought into this app's session (4.0): id -> song (foreign: true).
+  sessionSongs: new Map(),
   _listeners: [],
 
   setLibrary(lib) {
@@ -124,7 +126,16 @@ const Store = {
   },
 
   song(id) {
-    return this.songsById.get(id) || this.foreign.get(id) || null;
+    return this.songsById.get(id) || this.foreign.get(id) || this.sessionSongs.get(id) || null;
+  },
+
+  /** The songs guests brought into this app's session, each with where it streams from. */
+  setSessionSongs(songs) {
+    const key = (songs || []).map((s) => s.id).join(',');
+    if (key === this._sessionSongsKey) return;
+    this._sessionSongsKey = key;
+    this.sessionSongs = new Map((songs || []).map((s) => [s.id, { ...s, file: '', foreign: true, cover: null }]));
+    for (const fn of this._listeners) fn(this.library);
   },
 
   /** Another server's songs (a guest in its session), or none (null). */

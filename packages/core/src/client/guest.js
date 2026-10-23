@@ -268,11 +268,26 @@ function createGuestLink({
     }));
   }
 
-  /** Where this app stands: { serverId, name, offset, live } or null. */
+  /**
+   * One of this app's songs into the session there (4.0): the file `file`
+   * sent as the session song `gid` (meta { title, artist, mix, duration,
+   * format }). Resolves once it plays there.
+   */
+  async function upload(gid, meta, file) {
+    const server = serverOf(current);
+    const q = encodeURIComponent(JSON.stringify(meta));
+    return withPass(server, () => ask(server, `/api/guest/songs/${encodeURIComponent(gid)}?meta=${q}`, { method: 'PUT', file, timeout: 10 * 60 * 1000 }));
+  }
+
+  /**
+   * Where this app stands: { serverId, name, offset, live, stream } or null;
+   * stream: where that server's songs (and the session's) play from, as
+   * `${stream}${id}/audio?gt=...` (streamQuery).
+   */
   function status() {
     const server = current && servers.get(current);
     return server ? {
-      serverId: server.id, name: server.name, offset: live.offset, live: live.up,
+      serverId: server.id, name: server.name, offset: live.offset, live: live.up, stream: `${server.base}/api/guest/songs/`, streamQuery: `gt=${encodeURIComponent(server.token)}`,
     } : null;
   }
 
@@ -282,7 +297,7 @@ function createGuestLink({
   }
 
   return {
-    look, list, join, session, leave, songs, status, stop,
+    look, list, join, session, leave, songs, status, stop, upload,
   };
 }
 

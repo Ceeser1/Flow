@@ -15,14 +15,19 @@
 //   GET  /api/guest/time                  { time }, for playing in step
 //   GET  /api/guest/library               { songs }: this server's songs, to see and queue
 //                                         (while in a session here)
-//   GET  /api/guest/songs/:id/audio       a song's file (Range), while in a session here
+//   GET  /api/guest/songs/:id/audio       a song's file (Range), while in a session here; a
+//                                         song a guest brought (sessions.js) too
 //   GET  /api/guest/songs/:id/cover       its cover
+//   PUT  /api/guest/songs/:gid?meta=      one of the guest's own songs into the session
+//                                         (meta { title, artist, mix, duration, format }):
+//                                         the body is the file; { id }
 //
 // The token comes as "Authorization: Bearer" or ?gt= (an <audio> element
 // cannot send headers). Nothing a guest does is counted here: its listening
 // counts on its own server.
 
 const crypto = require('crypto');
+const fs = require('fs');
 
 const IDLE_MS = 12 * 60 * 60 * 1000;
 const MAX_GUESTS = 50;
@@ -130,11 +135,68 @@ function createGuests({
     if (m && (req.method === 'GET' || req.method === 'HEAD')) {
       requireMember(g);
       if (m[2] === 'cover') return sendCover(req, res, url, library.coverOf(m[1]));
-      const file = library.songFile(m[1]);
+      const file = library.songFile(m[1]) || sessions.songFileFor(g.client, m[1]);
       if (!file) throw new HttpError(404, 'That song is not on this server.');
       return sendFile(req, res, file);
     }
+    const put = /^\/api\/guest\/songs\/([\w-]{1,64})$/.exec(p);
+    if (put && req.method === 'PUT') return receiveSong(req, res, url, g, put[1]);
     throw new HttpError(404, 'Nothing here.');
+  }
+
+  /** One of the guest's songs, written while it comes, playable once it is all there. */
+  async function receiveSong(req, res, url, g, gid) {
+    requireMember(g);
+    let meta = {};
+    try {
+      meta = JSON.parse(url.searchParams.get('meta') || '{}') || {};
+    } catch {
+      throw new HttpError(400, 'The song\'s names are not readable.');
+    }
+    let target;
+    try {
+      target = sessions.prepareSong(g.client, gid, meta);
+    } catch (err) {
+      throw new HttpError(err.status || 400, err.message);
+    }
+    // There already (sent twice).
+    if (!target) {
+      req.resume();
+      return sendJson(res, 200, { id: gid });
+    }
+    const tmp = `${target.file}.part`;
+    const bytes = await new Promise((resolve, reject) => {
+      const out = fs.createWriteStream(tmp);
+      let size = 0;
+      let failed = false;
+      const fail = (err) => {
+        if (failed) return;
+        failed = true;
+        out.destroy();
+        fs.rm(tmp, { force: true }, () => {});
+        reject(err);
+      };
+      req.on('data', (c) => {
+        size += c.length;
+        if (size > target.maxBytes) {
+          fail(new HttpError(413, 'That song is too large to bring along.'));
+          req.destroy();
+        }
+      });
+      req.on('aborted', () => fail(new HttpError(400, 'The song did not arrive whole.')));
+      req.on('error', fail);
+      out.on('error', (err) => fail(new HttpError(507, `The server could not keep the song: ${err.message}`)));
+      out.on('finish', () => {
+        if (!failed) resolve(size);
+      });
+      req.pipe(out);
+    }).catch((err) => {
+      sessions.songArrived(g.client, gid, null);
+      throw err;
+    });
+    fs.renameSync(tmp, target.file);
+    sessions.songArrived(g.client, gid, bytes);
+    return sendJson(res, 200, { id: gid });
   }
 
   /** The admins closed the door: every guest out. */

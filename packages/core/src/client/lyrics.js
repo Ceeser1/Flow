@@ -49,9 +49,15 @@ function createLyricsClient({
     return s ? { song: s, server: false } : null;
   }
 
-  /** { found, synced, plain, instrumental }; rejects when nobody can say. */
+  /**
+   * { found, synced, plain, instrumental }; rejects when nobody can say.
+   * `id`: a song of the library, or { id, title, artist, duration } of one it
+   * has not (another server's, in a session).
+   */
   async function get(id) {
-    const found = songOf(String(id || ''));
+    const found = id && typeof id === 'object'
+      ? { song: { id: String(id.id || ''), title: String(id.title || ''), artist: String(id.artist || ''), duration: Number(id.duration) || 0 }, server: false }
+      : songOf(String(id || ''));
     if (!found) throw new Error('That song is not here any more.');
     const { song, server } = found;
     if (server) {

@@ -309,6 +309,9 @@ class HtmlAudioEngine {
   _check(el) {
     const s = this._seek.get(el);
     if (!s.tap || !Equalizer.ctx) return;
+    // Another server's song (a session's guest): no file of it to match against here.
+    const song = Store.song(s.key);
+    if (song && song.foreign) return;
     const run = (s.checking = (this._checks = (this._checks || 0) + 1));
     const key = s.key;
     // The reference is decoded meanwhile.

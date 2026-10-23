@@ -275,11 +275,34 @@ const guest = createGuestLink({
   onChange: () => sendToWindow('guest:changed', guest.list()),
 });
 handle('guest:look', () => guest.look());
+
+/**
+ * One of this app's songs into the session it is a guest in (4.0): its file
+ * here, else streamed from this app's own server into the cache first, sent
+ * as a session song. Resolves { gid }, the id the session knows it by.
+ */
+async function bringSong(songId) {
+  const song = actions.currentLibrary().songs.find((s) => s.id === songId);
+  if (!song) throw new Error('That song is not in your library.');
+  const audio = remote.active() ? await remote.songAudio(songId) : { file: song.file, temp: false };
+  if (!audio.file || !fs.existsSync(audio.file)) throw new Error(`"${song.title}" has no file to send along.`);
+  const gid = `g-${settings.clientId().slice(0, 12)}-${songId}`.replace(/[^\w-]/g, '').slice(0, 64);
+  const format = (path.extname(song.file || audio.file).slice(1) || song.format || 'mp3').toLowerCase();
+  try {
+    await guest.upload(gid, {
+      title: song.title, artist: song.artist, mix: song.mix, duration: song.duration, format,
+    }, audio.file);
+  } finally {
+    if (audio.temp) fs.rmSync(audio.file, { force: true });
+  }
+  return { gid };
+}
 handle('guest:call', ({ action, args = {} }) => {
   if (action === 'join') return guest.join(args.serverId, args.sessionId, args.mode);
   if (action === 'session') return guest.session(args.body || {});
   if (action === 'leave') return guest.leave();
   if (action === 'songs') return guest.songs();
+  if (action === 'bring') return bringSong(String(args.songId || ''));
   if (action === 'status') return guest.status();
   if (action === 'list') return guest.list();
   throw new Error(`Unknown guest action ${action}.`);

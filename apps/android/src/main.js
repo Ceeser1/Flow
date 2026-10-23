@@ -74,6 +74,34 @@ function start() {
   const lyricsClient = createLyricsClient({
     remote, library, jsonFiles: env.jsonFiles, fetch: (...args) => fetch(...args), agent: false,
   });
+  /**
+   * One of this phone's songs into the session it is a guest in (4.0): its
+   * file here, else the server's audio fetched into the cache first.
+   * Resolves { gid }.
+   */
+  async function bringSong(songId) {
+    const song = actions.currentLibrary().songs.find((s) => s.id === songId);
+    if (!song) throw new Error('That song is not in your library.');
+    const audio = remote.active() ? await remote.songAudio(songId) : { file: song.file, temp: false };
+    if (!audio.file || !fs.exists(audio.file)) throw new Error(`"${song.title}" has no file to send along.`);
+    const gid = `g-${settings.clientId().slice(0, 12)}-${songId}`.replace(/[^\w-]/g, '').slice(0, 64);
+    const ext = (/\.([a-z0-9]+)$/i.exec(song.file || audio.file) || [])[1] || song.format || 'mp3';
+    try {
+      await guest.upload(gid, {
+        title: song.title, artist: song.artist, mix: song.mix, duration: song.duration, format: ext.toLowerCase(),
+      }, audio.file);
+    } finally {
+      if (audio.temp) {
+        try {
+          fs.remove(audio.file);
+        } catch {
+          // Emptied with the cache.
+        }
+      }
+    }
+    return { gid };
+  }
+
   // Being a guest in another server's session on this network (4.0).
   const guest = createGuestLink({
     http: env.http,
@@ -307,6 +335,7 @@ function start() {
       if (action === 'session') return guest.session(args.body || {});
       if (action === 'leave') return guest.leave();
       if (action === 'songs') return guest.songs();
+      if (action === 'bring') return bringSong(String(args.songId || ''));
       if (action === 'status') return guest.status();
       if (action === 'list') return guest.list();
       throw new Error(`Unknown guest action ${action}.`);

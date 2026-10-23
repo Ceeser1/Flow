@@ -46,6 +46,7 @@
 //                                      the app's live channel: events as they
 //                                      happen (live.js), while the app is connected
 //   GET  /api/time                     { time }: the server's clock, for playing in step
+//   GET  /api/sessions/songs/:gid/audio   a song a guest brought into this app's session (sessions.js)
 //   GET  /api/sessions                 { sessions, mine, request }: Active Sessions
 //   POST /api/sessions { type, ... }   taking part in them (sessions.js)
 //
@@ -906,6 +907,14 @@ function createHttpServer({
       return sendJson(res, 200, { code, expiresIn: Math.round(PAIR_LIFE_MS / 1000) });
     }
     if (p === '/api/sessions' && (req.method === 'GET' || req.method === 'POST')) return sessionRoute(req, res, url, entry);
+    const sm = /^\/api\/sessions\/songs\/([\w-]{1,64})\/audio$/.exec(p);
+    if (sm && sessions && (req.method === 'GET' || req.method === 'HEAD')) {
+      // The app's install id: its token's, else the one it names (no password: no token).
+      const appId = (entry && entry.client) || String(url.searchParams.get('client') || '');
+      const file = sessions.songFileFor(appId, sm[1]);
+      if (!file) throw new HttpError(404, 'That song is not in your session.');
+      return sendFile(req, res, file);
+    }
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
       return sendJson(res, 200, library.runCommands(body.commands, profileId, { admin: !!(profile && profile.admin) }));

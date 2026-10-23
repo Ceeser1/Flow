@@ -56,7 +56,10 @@ async function startServer(opts = {}) {
   const downloads = createDownloads({ config, library, tools, log });
   // The apps' live channels (the Active Sessions); nothing about them outlives a restart.
   const live = createLive({ log, pingMs: opts.livePingMs });
-  const sessions = createSessions({ live, library: sessionLibrary(library), log });
+  // Songs guests bring into a session live in <home>/session-songs, for that session only.
+  const sessions = createSessions({
+    live, library: sessionLibrary(library), log, songDir: path.join(config.home, 'session-songs'),
+  });
   // What the admins see of the profiles: addresses, last seen, failed sign-ins.
   const activity = createActivity({ config });
   // The library's data once a week, the last 6 kept (never the songs' files).

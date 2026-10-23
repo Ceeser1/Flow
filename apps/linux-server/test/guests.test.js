@@ -104,6 +104,27 @@ test('a guest from another server: let in by the admins and the host, its songs,
     assert.equal((await call(base, '/api/guest/session', { token: gt, body: { type: 'control', action: 'playPlaylist', name: 'All Songs' } })).status, 403);
     assert.equal((await call(base, '/api/guest/session', { token: gt, body: { type: 'control', action: 'queueAdd', songId: 's2' } })).status, 200);
 
+    // One of the guest's own songs, brought into the session: the members see it, play and queue it.
+    const meta = encodeURIComponent(JSON.stringify({ title: 'Roads', artist: 'Portishead', duration: 300, format: 'mp3' }));
+    const brought = await fetch(`${base}/api/guest/songs/g-guestclient01-r1?meta=${meta}`, { method: 'PUT', body: FAKE_MP3, headers: { Authorization: `Bearer ${gt}` } });
+    assert.equal(brought.status, 200);
+    let told = await host.next('session', 2000);
+    // (The one before told of the guest joining.)
+    while (!told.session.songs.length) told = await host.next('session', 2000);
+    assert.deepEqual(told.session.songs.map((x) => [x.id, x.title, x.by]), [['g-guestclient01-r1', 'Roads', 'Ben - Galaxy']]);
+    assert.equal((await call(base, '/api/guest/session', { token: gt, body: { type: 'control', action: 'queueAdd', songId: 'g-guestclient01-r1' } })).status, 200);
+    assert.equal((await host.next('control', 2000)).args.songId, 's2', 'the queued library song before');
+    assert.equal((await host.next('control', 2000)).args.songId, 'g-guestclient01-r1');
+    const hostHears = await fetch(`${base}/api/sessions/songs/g-guestclient01-r1/audio?client=hostclient01`);
+    assert.equal(hostHears.status, 200);
+    assert.equal((await hostHears.arrayBuffer()).byteLength, FAKE_MP3.length);
+    assert.equal((await fetch(`${base}/api/sessions/songs/g-guestclient01-r1/audio?client=strangerclient`)).status, 404, 'not for apps outside the session');
+    assert.equal((await fetch(`${base}/api/guest/songs/g-guestclient01-r1/audio?gt=${gt}`)).status, 200);
+    const badMeta = encodeURIComponent(JSON.stringify({ title: 'x', format: 'exe' }));
+    assert.equal((await fetch(`${base}/api/guest/songs/g-bad?meta=${badMeta}`, { method: 'PUT', body: FAKE_MP3, headers: { Authorization: `Bearer ${gt}` } })).status, 415);
+    const songDir = path.join(root, 'home', 'session-songs', sessionId);
+    assert.ok(fs.existsSync(path.join(songDir, 'g-guestclient01-r1.mp3')));
+
     // A member of this server joins too; the host leaves: that member hosts, not the guest.
     await call(base, '/api/sessions', { body: { type: 'join', client: 'secondclient1', sessionId, mode: 'remote' } });
     const asked2 = await host.next('joinRequest', 2000);
@@ -116,6 +137,7 @@ test('a guest from another server: let in by the admins and the host, its songs,
     await call(base, '/api/sessions', { body: { type: 'leave', client: 'secondclient1' } });
     const over = await guest.next('left', 2000);
     assert.equal(over.reason, 'hostLeft');
+    assert.ok(!fs.existsSync(songDir), 'the songs brought along went with the session');
     assert.equal((await call(base, '/api/guest/library', { token: gt })).status, 403, 'out of the session: no songs');
 
     // The door closed: the guest's channel ends.
