@@ -167,6 +167,9 @@ const LyricsEdit = {
 
   // Each line's colour, on its row and on its stretch of the waveform: these
   // eight in turn, from the first again after an empty line (music).
+  // The least of the song the waveform shows zoomed in, in seconds.
+  MIN_VIEW: 1,
+
   COLOURS: [[90, 140, 220], [224, 144, 74], [108, 196, 126], [192, 112, 208], [224, 200, 74], [74, 192, 200], [224, 106, 122], [168, 208, 96]],
 
   /**
@@ -397,7 +400,12 @@ const LyricsEdit = {
   /**
    * The player under the lines: the song's waveform (the lines' colours on
    * it, a click or drag moves there), back 5 s, play / pause, on 5 s and
-   * the place to the millisecond. `src`: what an <audio> plays (null: the
+   * the place to the millisecond. The mouse wheel zooms the waveform in and
+   * out at the pointer (the phone: pinching, later), Shift + wheel (or a
+   * sideways scroll) or the scroll bar under it moves along, a double-click
+   * shows the whole song again; playing past the part shown or skipping out
+   * of it moves it along.
+   * `src`: what an <audio> plays (null: the
    * song cannot be reached); `duration`: its length, else the audio's own;
    * `peaks()`: the waveform's peaks (or a promise of them, null for none).
    * Returns { el, mark(marks), stop(), destroy() }.
@@ -411,17 +419,25 @@ const LyricsEdit = {
       type: 'button',
       title: by < 0 ? '5 seconds back' : '5 seconds on',
       html: `<span class="skip-label">${by < 0 ? '-5' : '+5'}</span>`,
-      onclick: () => seek(audio.currentTime + by),
+      onclick: () => seek(audio.currentTime + by, true),
     });
     const clock = h('span.lyrics-edit__clock');
+    const zoomNote = h('span.lyrics-edit__zoom');
+    // Zoomed in: a scroll bar under the waveform, its thumb the part shown.
+    const thumb = h('div.lyrics-edit__scroll-thumb');
+    const scrollbar = h('div.lyrics-edit__scroll', { hidden: true }, thumb);
     const el = h('div.lyrics-edit__player',
       h('div.lyrics-edit__wave-wrap', canvas, playhead, status),
-      h('div.lyrics-edit__transport', skip(-5), playBtn, skip(5), clock));
+      scrollbar,
+      h('div.lyrics-edit__transport', skip(-5), playBtn, skip(5), clock, zoomNote));
 
     let duration = known;
+    // The part of the song the waveform shows, in seconds: all of it, or less zoomed in.
+    let view = { a: 0, b: known };
     let peaks = null;
     let marks = [];
     let lit = null;
+    let lastT = 0;
     let raf = 0;
     let gone = false;
     const audio = new Audio();
@@ -437,13 +453,43 @@ const LyricsEdit = {
 
     const draw = () => {
       if (gone) return;
-      this._drawWave(canvas, peaks, duration, marks);
+      this._drawWave(canvas, peaks, duration, marks, view);
       place();
+    };
+    const shown = () => Math.max(0.001, view.b - view.a);
+    const xToT = (x) => view.a + (x / (canvas.clientWidth || 1)) * shown();
+    const fitLen = (len) => Math.min(duration, Math.max(Math.min(this.MIN_VIEW, duration), len));
+    // Shows `len` seconds from `a` on (kept inside the song).
+    const showView = (a, len) => {
+      const at = Math.max(0, Math.min(duration - len, a));
+      view = { a: at, b: at + len };
+      const zoomed = len < duration - 0.001;
+      zoomNote.textContent = zoomed
+        ? `Zoom ${(duration / len).toFixed(1)}x, Shift + wheel or the bar below moves, double-click: whole song`
+        : 'Mouse wheel on the waveform: zoom in';
+      scrollbar.hidden = !zoomed;
+      if (zoomed) {
+        thumb.style.left = `${(at / duration) * 100}%`;
+        thumb.style.width = `${(len / duration) * 100}%`;
+      }
+      draw();
+    };
+    // Zoomed in, the part shown starting a little before `t` when `t` is outside it.
+    const follow = (t) => {
+      if (!duration || view.b - view.a >= duration - 0.001 || (t >= view.a && t <= view.b)) return false;
+      showView(t - shown() * 0.1, shown());
+      return true;
     };
     // The playhead, the clock and the line sung now (outlined).
     const place = () => {
       const t = audio.currentTime || 0;
-      playhead.style.left = `${duration ? (Math.min(t, duration) / duration) * canvas.clientWidth : 0}px`;
+      // Played past the part shown: it moves along (not when moved away from the playhead by hand).
+      const crossed = lastT >= view.a && lastT <= view.b && t > view.b;
+      lastT = t;
+      if (crossed && follow(t)) return;
+      const inView = !!duration && t >= view.a && t <= view.b;
+      playhead.hidden = !inView;
+      if (inView) playhead.style.left = `${((t - view.a) / shown()) * canvas.clientWidth}px`;
       clock.textContent = `${this.fmt(t)} / ${this.fmt(duration)}`;
       let now = null;
       for (const m of marks) {
@@ -460,10 +506,12 @@ const LyricsEdit = {
       playBtn.innerHTML = audio.paused ? Icons.play : Icons.pause;
       playBtn.title = audio.paused ? 'Play' : 'Pause';
     };
-    const seek = (t) => {
+    // `show`: the part shown moves to the new place if it is outside it (-5 / +5).
+    const seek = (t, show = false) => {
       if (!src) return;
       audio.currentTime = Math.max(0, Math.min(duration || audio.duration || 0, t));
-      place();
+      lastT = audio.currentTime;
+      if (!(show && follow(lastT))) place();
     };
     const tick = () => {
       raf = 0;
@@ -499,7 +547,8 @@ const LyricsEdit = {
     // A click or drag on the waveform moves the song there.
     canvas.addEventListener('pointerdown', (e) => {
       if (!src || !duration) return;
-      const at = (ev) => seek(((ev.clientX - canvas.getBoundingClientRect().left) / (canvas.clientWidth || 1)) * duration);
+      // Within the part shown (a drag past its edge stops there).
+      const at = (ev) => seek(Math.max(view.a, Math.min(view.b, xToT(ev.clientX - canvas.getBoundingClientRect().left))));
       at(e);
       try {
         canvas.setPointerCapture(e.pointerId);
@@ -514,6 +563,50 @@ const LyricsEdit = {
       canvas.addEventListener('pointermove', at);
       canvas.addEventListener('pointerup', up);
       canvas.addEventListener('pointercancel', up);
+    });
+    // The wheel zooms at the pointer: the second under it stays under it.
+    canvas.addEventListener('wheel', (e) => {
+      if (!duration) return;
+      e.preventDefault();
+      const len = shown();
+      const w = canvas.clientWidth || 1;
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        const by = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        showView(view.a + (by / w) * len, len);
+        return;
+      }
+      const x = e.clientX - canvas.getBoundingClientRect().left;
+      const t = xToT(x);
+      const next = fitLen(len * Math.exp(e.deltaY * 0.0025));
+      showView(t - (x / w) * next, next);
+    }, { passive: false });
+    canvas.addEventListener('dblclick', () => {
+      if (duration) showView(0, duration);
+    });
+    // The scroll bar: the thumb dragged, or a click beside it centres the part shown there (and drags on).
+    scrollbar.addEventListener('pointerdown', (e) => {
+      if (!duration) return;
+      e.preventDefault();
+      const w = scrollbar.clientWidth || 1;
+      const left = scrollbar.getBoundingClientRect().left;
+      const len = shown();
+      if (e.target !== thumb) showView(((e.clientX - left) / w) * duration - len / 2, len);
+      const fromX = e.clientX;
+      const fromA = view.a;
+      try {
+        scrollbar.setPointerCapture(e.pointerId);
+      } catch {
+        // A pointer that cannot be held: the click is enough.
+      }
+      const move = (ev) => showView(fromA + ((ev.clientX - fromX) / w) * duration, len);
+      const up = () => {
+        scrollbar.removeEventListener('pointermove', move);
+        scrollbar.removeEventListener('pointerup', up);
+        scrollbar.removeEventListener('pointercancel', up);
+      };
+      scrollbar.addEventListener('pointermove', move);
+      scrollbar.addEventListener('pointerup', up);
+      scrollbar.addEventListener('pointercancel', up);
     });
     const sized = new ResizeObserver(() => draw());
     sized.observe(canvas);
@@ -541,11 +634,11 @@ const LyricsEdit = {
         if (gone || duration || !Number.isFinite(audio.duration)) return;
         duration = audio.duration;
         getPeaks();
-        draw();
+        showView(0, duration);
       }, { once: true });
     }
     drawPlay();
-    place();
+    showView(0, duration);
 
     return {
       el,
@@ -571,8 +664,10 @@ const LyricsEdit = {
    * The waveform (`peaks`: flat min,max pairs) across the canvas, each line's
    * stretch (marks, see _paint) in its colour over a faint band of it, music
    * and the time without lines grey. Without peaks: the bands and a line.
+   * `view` ({ a, b } seconds): the part shown, its times in the corners when
+   * that is not all of it.
    */
-  _drawWave(canvas, peaks, duration, marks) {
+  _drawWave(canvas, peaks, duration, marks, view = { a: 0, b: duration }) {
     const cssW = canvas.clientWidth;
     const cssH = canvas.clientHeight;
     if (!cssW || !cssH) return;
@@ -588,9 +683,10 @@ const LyricsEdit = {
     ctx.clearRect(0, 0, cssW, cssH);
     if (!duration) return;
     const GREY = '#8a8a94';
-    const x = (t) => (Math.min(Math.max(t, 0), duration) / duration) * cssW;
+    const len = Math.max(0.001, view.b - view.a);
+    const x = (t) => ((Math.min(Math.max(t, view.a), view.b) - view.a) / len) * cssW;
     for (const m of marks) {
-      if (!m.rgb) continue;
+      if (!m.rgb || m.end <= view.a || m.t >= view.b) continue;
       ctx.fillStyle = `rgba(${m.rgb}, 0.18)`;
       ctx.fillRect(x(m.t), 0, Math.max(1, x(m.end) - x(m.t)), cssH);
     }
@@ -606,15 +702,17 @@ const LyricsEdit = {
     const mid = cssH / 2;
     const half = mid - 3;
     const buckets = peaks && peaks.length ? peaks.length / 2 : 0;
+    const tAt = (px) => view.a + (px / cssW) * len;
     for (let px = 0; px < cssW; px += 1) {
-      ctx.fillStyle = colourAt(((px + 0.5) / cssW) * duration);
+      ctx.fillStyle = colourAt(tAt(px + 0.5));
       if (!buckets) {
         ctx.fillRect(px, mid - 0.5, 1, 1);
         continue;
       }
-      // Every bucket this column covers, so no peak falls between two.
-      const b0 = Math.min(buckets - 1, Math.floor((px / cssW) * buckets));
-      const b1 = Math.min(buckets - 1, Math.max(b0, Math.floor(((px + 1) / cssW) * buckets) - 1));
+      // Every bucket this column covers, so no peak falls between two (zoomed
+      // far in, one bucket spans several columns).
+      const b0 = Math.min(buckets - 1, Math.floor((tAt(px) / duration) * buckets));
+      const b1 = Math.min(buckets - 1, Math.max(b0, Math.ceil((tAt(px + 1) / duration) * buckets) - 1));
       let lo = 0;
       let hi = 0;
       for (let b = b0; b <= b1; b += 1) {
@@ -623,6 +721,15 @@ const LyricsEdit = {
       }
       const top = mid - Math.min(1, hi) * half;
       ctx.fillRect(px, top, 1, Math.max(1, (mid - Math.max(-1, lo) * half) - top));
+    }
+    if (len < duration - 0.001) {
+      ctx.font = '11px sans-serif';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+      ctx.fillText(this.fmt(view.a), 5, 4);
+      ctx.textAlign = 'right';
+      ctx.fillText(this.fmt(view.b), cssW - 5, 4);
     }
   },
 
