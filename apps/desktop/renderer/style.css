@@ -59,6 +59,17 @@ button, input, select { font: inherit; color: inherit; }
 ::-webkit-scrollbar-thumb:hover { background-color: #50505a; }
 
 .icon { width: 18px; height: 18px; flex: none; display: block; }
+/* The white icons from images/ (icons.js), filled in the text's colour as the line ones; those drawn
+   to their edges are taken in a little to the lines' size. */
+.icon--img { background: currentColor; -webkit-mask: center / contain no-repeat; mask: center / contain no-repeat; }
+.icon--add { -webkit-mask-image: url(../images/add.png); mask-image: url(../images/add.png); -webkit-mask-size: 78%; mask-size: 78%; }
+.icon--add_thin { -webkit-mask-image: url(../images/add_thin.png); mask-image: url(../images/add_thin.png); -webkit-mask-size: 78%; mask-size: 78%; }
+.icon--download { -webkit-mask-image: url(../images/download.png); mask-image: url(../images/download.png); }
+.icon--edit { -webkit-mask-image: url(../images/edit.png); mask-image: url(../images/edit.png); }
+.icon--note { -webkit-mask-image: url(../images/note.png); mask-image: url(../images/note.png); -webkit-mask-size: 82%; mask-size: 82%; }
+.icon--search { -webkit-mask-image: url(../images/search.png); mask-image: url(../images/search.png); -webkit-mask-size: 82%; mask-size: 82%; }
+.icon--share { -webkit-mask-image: url(../images/share.png); mask-image: url(../images/share.png); -webkit-mask-size: 82%; mask-size: 82%; }
+.icon--shuffle { -webkit-mask-image: url(../images/shuffle.png); mask-image: url(../images/shuffle.png); }
 
 /* ===== layout ===== */
 
@@ -1610,6 +1621,9 @@ div.import__frame-head { cursor: default; }
 }
 
 .pl-meta { color: var(--text-dim); font-size: 14px; margin-right: 6px; }
+#plOfflineNote:empty { display: none; }
+/* Share at the row's right end, below Update (the phone orders its own, mobile.css). */
+.pl-head__row #plShare { margin-left: auto; }
 
 .toggle {
   display: inline-flex;
@@ -1638,10 +1652,6 @@ div.import__frame-head { cursor: default; }
 
 .toggle__box .icon { width: 12px; height: 12px; stroke-width: 3; }
 .toggle .icon { width: 16px; height: 16px; }
-/* The white icons from images/: dimmed like the grey text, full on hover or when on. */
-.toggle__img { width: 16px; height: 16px; display: block; opacity: 0.7; }
-.toggle:hover .toggle__img,
-.toggle--on .toggle__img { opacity: 1; }
 
 .toggle--on {
   color: var(--green);
@@ -2472,6 +2482,8 @@ div.import__frame-head { cursor: default; }
 .nearby__song { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin__guests { margin-top: 10px; align-items: flex-start; }
 .admin__guests .admin__item-sub { display: block; margin-top: 2px; }
+.admin__guests--off { opacity: 0.5; cursor: default; }
+.admin__guests-note { color: var(--text-dim); }
 
 /* ---- a server shared as a QR code (qrShare.js) ---- */
 

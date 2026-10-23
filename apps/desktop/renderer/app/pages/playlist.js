@@ -66,16 +66,29 @@ const PlaylistPage = {
     // An imported playlist's Update (4.0): its source read again (AddPage.updatePlaylist).
     $('plUpdate').onclick = () => AddPage.updatePlaylist(Store.playlist(this.id));
     $('plRules').onclick = () => RulesEditor.open({ playlist: Store.playlist(this.id) });
-    // The phone's row of buttons has no room left: it goes beside Share.
-    if (Store.uiMode === 'mobile') {
-      $('plShare').before($('plUpdate'));
-      $('plShare').before($('plRules'));
-    }
-    $('plShare').onclick = () => {
+    // The phone has Update as an icon in the row below the name, with the others (mobile.css orders them).
+    if (Store.uiMode === 'mobile') $('plShare').after($('plUpdate'));
+    $('plShare').onclick = async () => {
       const p = Store.playlist(this.id);
       if (!p) return;
-      if (p.isShared) attempt(() => window.flow.setFollowing(p.id, !Store.isFollowing(p.id)));
-      else attempt(() => window.flow.setPlaylistShared(p.id, !p.shared));
+      if (p.isShared) {
+        attempt(() => window.flow.setFollowing(p.id, !Store.isFollowing(p.id)));
+        return;
+      }
+      // The phone's is only an icon: it asks either way, what it is about to do.
+      if (Store.uiMode === 'mobile') {
+        const ok = await confirmDialog(p.shared ? {
+          title: 'Stop sharing',
+          message: `Do you want to stop sharing your playlist ${p.name}? The other profiles on this server no longer see it.`,
+          confirmLabel: 'Confirm',
+        } : {
+          title: 'Share',
+          message: `Do you want to share your playlist ${p.name} with other profiles on this server?`,
+          confirmLabel: 'Confirm',
+        });
+        if (!ok) return;
+      }
+      attempt(() => window.flow.setPlaylistShared(p.id, !p.shared));
     };
     Store.onServer(() => {
       if (Nav.page === 'playlist') {
@@ -198,7 +211,7 @@ const PlaylistPage = {
   },
 
   /**
-   * Top right of the title: your own playlist gets "Share" (the
+   * In the row below the title, after Download: your own playlist gets "Share" (the
    * other profiles on the server can see and follow it); one another profile
    * shares gets "Follow". Both need a server with profiles.
    */
@@ -215,12 +228,19 @@ const PlaylistPage = {
     btn.title = mine
       ? 'Let the other profiles on this server see this playlist and follow it'
       : `Follow this playlist: it shows in the menu under Followed Playlists`;
-    btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span><span>${mine ? 'Share' : 'Following'}</span>`;
+    if (Store.uiMode === 'mobile') {
+      // Only the icon on the phone, green while shared (or followed).
+      btn.innerHTML = Icons.share;
+      btn.setAttribute('aria-label', mine ? (on ? 'Shared' : 'Share') : (on ? 'Following' : 'Follow'));
+    } else {
+      btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.share}<span>${mine ? 'Share' : 'Following'}</span>`;
+    }
   },
 
   /**
    * Update, for a playlist of your own imported from a link (its source):
-   * where something can download (yt-dlp here, or the server's downloads).
+   * where something can download (yt-dlp here, or the server's downloads). Top right of the
+   * title (the phone's in the row below it).
    */
   _drawUpdate() {
     const p = Store.playlist(this.id);
@@ -590,8 +610,10 @@ const PlaylistPage = {
     $('plPlay').disabled = !p || !Store.rowsOf(this.id).length;
     $('plShuffle').classList.toggle('toggle--on', Player.queue.shuffle);
     $('plShuffle').setAttribute('aria-pressed', String(Player.queue.shuffle));
-    $('plShuffle').innerHTML = `<span class="toggle__box">${Player.queue.shuffle ? Icons.check : ''}</span>`
-      + '<img class="toggle__img" src="../images/shuffle.png" alt="" /><span>Shuffle</span>';
+    // The phone's is only the icon, green while on.
+    $('plShuffle').innerHTML = Store.uiMode === 'mobile' ? Icons.shuffle
+      : `<span class="toggle__box">${Player.queue.shuffle ? Icons.check : ''}</span>${Icons.shuffle}<span>Shuffle</span>`;
+    $('plShuffle').setAttribute('aria-label', 'Shuffle');
 
     for (const tr of document.querySelectorAll('#plTable tbody tr, #plTableList .mrow')) {
       const current = tr.dataset.id === Player.currentId;

@@ -545,7 +545,7 @@ body.mobile .mrow__sub { margin-top: 2px; color: var(--text-dim); font-size: 13.
 body.mobile .mrow.row--current .mrow__title { color: var(--green); }
 /* A song kept on the phone: a small golden arrow before the artist. */
 body.mobile .mrow__mark { display: inline-flex; vertical-align: -2px; margin-right: 4px; color: #f5be3c; }
-body.mobile .mrow__mark svg { width: 14px; height: 14px; }
+body.mobile .mrow__mark .icon { width: 14px; height: 14px; }
 
 body.mobile .mrow__more,
 body.mobile .mrow > .act {
@@ -699,7 +699,9 @@ body.mobile .result__meta { font-size: 13px; }
 body.mobile .result--song .act { width: 40px; height: 40px; }
 body.mobile .result:hover { background: none; }
 
-/* One playlist: the name, then its numbers, then Shuffle and Play side by side. */
+/* One playlist: the name, then its numbers, then Play at the left and the
+   others as icons at the right: Shuffle, Download, Share, Update (playlist.js
+   puts Update into this row), Edit Rules; the download note below them. */
 body.mobile .pl-top { padding: 4px 0 6px; background: none; backdrop-filter: none; }
 body.mobile .pl-head { margin-bottom: 10px; }
 body.mobile .pl-head .page__title { font-size: 26px; white-space: normal; }
@@ -707,16 +709,18 @@ body.mobile .pl-head__row { gap: 10px; }
 body.mobile .pl-meta { flex: 1 1 100%; font-size: 14px; }
 body.mobile .pl-head__row .toggle,
 body.mobile .pl-head__row .btn--play { height: 44px; border-radius: 22px; font-size: 15px; }
-/* Download: only its icon, golden while the playlist is kept on the phone. */
-body.mobile #plOffline, body.mobile #plUpdate, body.mobile #plRules { width: 44px; padding: 0; justify-content: center; }
-/* Update sits beside Share, in the title's row (playlist.js). */
-body.mobile .pl-head__titlerow #plUpdate,
-body.mobile .pl-head__titlerow #plRules { margin-left: auto; flex: none; height: 44px; }
-body.mobile .pl-head__titlerow #plUpdate + #plRules,
-body.mobile .pl-head__titlerow :is(#plUpdate, #plRules) + #plShare { margin-left: -6px; }
-body.mobile #plOffline .icon, body.mobile #plUpdate .icon, body.mobile #plRules .icon { width: 20px; height: 20px; }
+body.mobile #plPlay { order: 1; padding: 0 24px 0 20px; }
+body.mobile #plShuffle { order: 2; margin-left: auto; }
+body.mobile #plOffline { order: 3; }
+body.mobile #plShare { order: 4; margin-left: 0; }
+body.mobile #plUpdate { order: 5; }
+body.mobile #plRules { order: 6; }
+body.mobile #plOfflineNote { order: 7; }
+body.mobile :is(#plShuffle, #plOffline, #plShare, #plUpdate, #plRules) { width: 44px; padding: 0; justify-content: center; flex: none; }
+body.mobile :is(#plShuffle, #plOffline, #plShare, #plUpdate, #plRules) .icon { width: 20px; height: 20px; }
+/* Download golden while the playlist is kept on the phone; Shuffle and Share green while on. */
 body.mobile #plOffline.toggle--on { color: #f5be3c; border-color: rgba(245, 190, 60, 0.5); background: rgba(245, 190, 60, 0.16); }
-body.mobile #plPlay { margin-left: auto; padding: 0 24px 0 20px; }
+body.mobile :is(#plShuffle, #plShare).toggle--on { background: rgba(120, 200, 140, 0.16); }
 body.mobile .pl-search-row { flex-wrap: wrap; gap: 6px; }
 body.mobile .pl-search-row .search-box { flex: 1 1 100%; height: 44px; }
 body.mobile .pick-banner { position: sticky; top: 0; z-index: 3; }

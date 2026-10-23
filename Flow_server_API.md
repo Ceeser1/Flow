@@ -418,7 +418,7 @@ master admin. Nobody changes their own profile or the master's here.
 | `GET /api/admin/trash` | | `{ items: [{ name, at, size, title, artist, by, addedBy, restorable }], bytes }` (`by`: who deleted it, `addedBy`: who added it; names, empty when not known) |
 | `POST /api/admin/trash/restore` | `{ name }` | back as it was (`restorable`: its id, names, stats, favourites and playlist places): `{ songId, rev }`; else as a new song: `{ scanned, rev }` |
 | `POST /api/admin/trash/empty` | | every file in it gone for good: `{ deleted }` |
-| `GET` / `POST /api/admin/rules` | `{ profileCreation?: "anyone" \| "admins", songDelete?: "anyone" \| "owner", guests?: true \| false }` | the rules: `{ profileCreation, songDelete, guests }`. `guests` (4.0): guests from other servers let in; turned off, every guest is out at once |
+| `GET` / `POST /api/admin/rules` | `{ profileCreation?: "anyone" \| "admins", songDelete?: "anyone" \| "owner", guests?: true \| false }` | the rules: `{ profileCreation, songDelete, guests, discovery }`. `guests` (4.0): guests from other servers let in; turned off, every guest is out at once. `discovery` (4.0, read only): whether the server answers the network search, without which no guest finds it |
 | `GET /api/admin/backups` | | 4.0: `{ backups: [{ name, createdAt, reason, size, songs, playlists, profiles }], keep }`, newest first |
 | `POST /api/admin/backups/make` | | one made now: `{ backup }` |
 | `POST /api/admin/backups/restore` | `{ name }` | *master*: the library and the profiles put back as they were (a backup of now made first): `{ songs, back, missing, kept, profiles }` |

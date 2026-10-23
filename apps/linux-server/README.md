@@ -496,8 +496,8 @@ node apps/linux-server/src/main.js profiles add "Carla"         # a new profile 
 in `failed-signins.json`, deleted songs in `trash.json` (both in the
 server's home), next to `server.json`.
 
-From 4.0 the rules also have **Allow guests from other servers in the home
-network** (off until ticked; see Active Sessions below). Unticking it ends
+From 4.0 the rules also have **Allow guests in home network
+sessions/jams** (off until ticked; see Active Sessions below). Unticking it ends
 every guest's place at once.
 
 ## Backups
@@ -554,7 +554,7 @@ A web server or tunnel in front has to pass the live channel on unbuffered
 pauses and skips from other devices arrive late or not at all.
 
 **Guests from other servers** (from 4.0, off until an admin ticks Allow guests
-from other servers in the home network): an app of another Flow Server on the
+in home network sessions/jams): an app of another Flow Server on the
 same home network, or one with no server, finds this server by discovery
 (which has to be on) and may ask to join a session here. The host is asked
 about every guest. A guest is never a profile here: it gets a pass of its own

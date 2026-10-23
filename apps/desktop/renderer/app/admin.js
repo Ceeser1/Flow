@@ -143,7 +143,7 @@ const Admin = {
       this._block('Active Sessions', this._sessions(d.sessions)),
       this._block('Trash', this._trash(d.trash)),
       this._block('Backups', this._backups(d.backups)),
-      this._block('Server rules', this._rules(d.rules)),
+      this._block('Server rules', this._rules(d.rules, d.server.name)),
       Store.server.master ? this._block('Server password', this._password(d.server)) : null,
     ].filter(Boolean));
     for (const fit of this._fits) fit();
@@ -555,7 +555,7 @@ const Admin = {
 
   // ---- Server rules ----
 
-  _rules(r) {
+  _rules(r, serverName) {
     if (r.error) return this._failed(r);
     const select = (key, options) => {
       const node = h('select.select', ...options.map(([v, label]) => h('option', { value: v }, label)));
@@ -566,16 +566,19 @@ const Admin = {
     // Guests from other servers (4.0): a server from before has no such rule.
     const guests = r.guests === undefined ? null : h('input', { type: 'checkbox', checked: !!r.guests });
     if (guests) guests.addEventListener('change', () => this._do(() => window.flow.admin('rules', { guests: guests.checked }), 'Saved'));
+    // Guests find the sessions only through the network search: without it the rule does nothing.
+    const unfound = !!guests && r.discovery === false;
+    if (unfound) guests.disabled = true;
     return h('div.admin__rules',
       h('label.admin__rule', h('span', 'Who may make new profiles'),
         select('profileCreation', [['anyone', 'Everyone'], ['admins', 'Only admins']])),
       h('label.admin__rule', h('span', 'Who may delete songs for everyone'),
         select('songDelete', [['anyone', 'Everyone'], ['owner', 'Only who added it, and admins']])),
-      guests ? h('label.check.admin__guests', guests,
-        h('span', 'Allow guests from other servers in the home network',
-          h('span.admin__item-sub', 'Flow apps of another Flow Server on the same network may ask to join this server\'s Active Sessions '
-            + '(the host still says yes or no). In a session they see and queue this server\'s songs and may bring songs of their own, '
-            + 'kept for that session only; nothing else of this server is open to them.'))) : null);
+      guests ? h(`label.check.admin__guests${unfound ? '.admin__guests--off' : ''}`, guests,
+        h('span', 'Allow guests in home network sessions/jams',
+          unfound ? h('span.admin__guests-note', ` (Server '${serverName || 'this server'}' has UDP discovery disabled)`) : null,
+          h('span.admin__item-sub', 'Allow Flow apps connected to another server while being in this server\'s home network to see '
+            + 'active sessions so they can request to join as guests (no server password or profile/PIN needed, only for this jam session).'))) : null);
   },
 
   // ---- Server password (master admin) ----

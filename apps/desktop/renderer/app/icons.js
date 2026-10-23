@@ -1,31 +1,35 @@
 'use strict';
 
 // Line icons as inline SVG, drawn in currentColor so every button colours its
-// own icon. 24x24 grid, 2px strokes.
+// own icon. 24x24 grid, 2px strokes. The white ones in images/ are masks
+// filled in currentColor the same way (style.css, .icon--img).
 
 const Icons = (() => {
   const svg = (body, fill = false) => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" ${fill
     ? 'fill="currentColor" stroke="none"'
     : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'}>${body}</svg>`;
+  const img = (name) => `<span class="icon icon--img icon--${name}" aria-hidden="true"></span>`;
 
   return {
     cog: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'),
-    search: svg('<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>'),
-    download: svg('<path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/>'),
-    add: svg('<path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/>'),
+    search: img('search'),
+    download: img('download'),
+    add: img('add'),
+    share: img('share'),
+    shuffle: img('shuffle'),
     playlists: svg('<path d="M4 6h12M4 11h12M4 16h7"/><circle cx="17" cy="17" r="3"/><path d="M20 17V6h2"/>'),
     list: svg('<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>'),
-    library: svg('<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>'),
+    library: img('note'),
     play: svg('<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/>', true),
     pause: svg('<rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/>', true),
     prev: svg('<path d="M18 5.5v13a1 1 0 0 1-1.5.87L7 13.3v5.2a1 1 0 0 1-2 0v-13a1 1 0 0 1 2 0v5.2l9.5-6.07A1 1 0 0 1 18 5.5z"/>', true),
     next: svg('<path d="M6 5.5v13a1 1 0 0 0 1.5.87L17 13.3v5.2a1 1 0 0 0 2 0v-13a1 1 0 0 0-2 0v5.2L7.5 4.63A1 1 0 0 0 6 5.5z"/>', true),
-    plus: svg('<path d="M12 5v14M5 12h14"/>'),
+    plus: img('add_thin'),
     // A microphone: the lyrics.
     lyrics: svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'),
     // Two arrows round: read again (a playlist's Update).
     refresh: svg('<path d="M20 11a8 8 0 0 0-14.9-3.9L4 8.5"/><path d="M4 4v4.5h4.5"/><path d="M4 13a8 8 0 0 0 14.9 3.9l1.1-1.4"/><path d="M20 20v-4.5h-4.5"/>'),
-    pencil: svg('<path d="M16.5 3.5l4 4L8 20H4v-4z"/><path d="M13.5 6.5l4 4"/>'),
+    pencil: img('edit'),
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
     check: svg('<path d="M5 12.5l4.5 4.5L19 7"/>'),
     star: svg('<path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.7l5.9-.9z"/>'),
