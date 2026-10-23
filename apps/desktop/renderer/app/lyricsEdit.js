@@ -377,8 +377,10 @@ const LyricsEdit = {
       const rgb = music ? null : this.COLOURS[n % this.COLOURS.length];
       n = music ? 0 : n + 1;
       row.classList.toggle('lyrics-edit__row--music', music);
-      row.style.background = rgb ? `rgba(${rgb}, 0.16)` : '';
-      row.style.boxShadow = rgb ? `inset 3px 0 0 rgb(${rgb})` : '';
+      // Its colour as the waveform has it (style.css .lyrics-edit__row--lit).
+      row.classList.toggle('lyrics-edit__row--lit', !!rgb);
+      if (rgb) row.style.setProperty('--line-rgb', String(rgb));
+      else row.style.removeProperty('--line-rgb');
       const t = this.parse(from.value);
       const end = this.parse(to.value);
       if (Number.isFinite(t)) marks.push({

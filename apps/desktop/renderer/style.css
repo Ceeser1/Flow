@@ -3366,6 +3366,12 @@ body.mobile .switch-where { text-align: left; }
   border-radius: 4px;
 }
 .lyrics-edit__head { font-size: 12px; font-weight: 600; color: var(--text-dim); padding-bottom: 2px; padding-right: 8px; }
+/* A line with words: its colour (lyricsEdit.js COLOURS) as strong as on the
+   waveform, its boxes see-through over it. */
+.lyrics-edit__row--lit { background: rgba(var(--line-rgb), 0.55); box-shadow: inset 4px 0 0 rgb(var(--line-rgb)); }
+.lyrics-edit__row--lit .input { background: rgba(0, 0, 0, 0.3); border-color: rgba(255, 255, 255, 0.14); color: #fff; }
+.lyrics-edit__row--lit .input::placeholder { color: rgba(255, 255, 255, 0.55); }
+.lyrics-edit__row--lit .icon-btn { color: #fff; }
 /* The line sung where the player is. */
 .lyrics-edit__row--now { outline: 1px solid rgba(255, 255, 255, 0.55); outline-offset: -1px; }
 .lyrics-edit__words { position: relative; min-width: 0; }
