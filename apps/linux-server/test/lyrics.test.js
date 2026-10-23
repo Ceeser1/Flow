@@ -146,3 +146,75 @@ test('the filler with LRCLIB out of reach: stops, waits, that song only at the n
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('own lyrics (4.0.1): written in an app, kept for good, taken back to the looked-up ones', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-lyrics-test-'));
+  const asked = [];
+  const server = await startServer({
+    home: path.join(root, 'home'),
+    music: path.join(root, 'music'),
+    port: 0,
+    host: '127.0.0.1',
+    detectTailscale: async () => null,
+    discoveryPort: null,
+    lookupLyrics: async (song) => {
+      asked.push(song.title);
+      return { found: true, synced: null, plain: 'Looked up', instrumental: false };
+    },
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  const call = async (route, method = 'GET', body = undefined) => {
+    const r = await fetch(`${base}${route}`, {
+      method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: r.status, json: await r.json() };
+  };
+  try {
+    assert.ok((await call('/api/hello')).json.features.includes('ownLyrics'));
+    const meta = { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 };
+    await fetch(`${base}/api/songs/ccc333?meta=${encodeURIComponent(JSON.stringify(meta))}`, { method: 'PUT', body: FAKE_MP3 });
+    const lines = [{ t: 61.5, end: 64, text: 'Love, love is a verb' }, { t: 65, end: null, text: 'Love is a doing word' }];
+    const put = await call('/api/songs/ccc333/lyrics', 'PUT', { lines });
+    assert.equal(put.status, 200);
+    assert.equal(put.json.lyrics.source, 'own');
+    assert.deepEqual(put.json.lyrics.synced, [{ t: 61.5, end: 64, text: 'Love, love is a verb' }, { t: 65, text: 'Love is a doing word' }]);
+    // Renamed: still the own ones, nothing looked up.
+    await call('/api/commands', 'POST', { commands: [{ cid: 'r1', at: Date.now(), type: 'editSong', songId: 'ccc333', artist: 'Massive Attack', title: 'Teardrop (Live)' }] });
+    assert.equal((await call('/api/songs/ccc333/lyrics')).json.lyrics.own, true);
+    assert.deepEqual(asked, []);
+    // Only some lines with times: refused.
+    const bad = await call('/api/songs/ccc333/lyrics', 'PUT', { lines: [{ t: 1, text: 'a' }, { t: null, text: 'b' }] });
+    assert.equal(bad.status, 400);
+    assert.match(bad.json.error, /every line/);
+    assert.equal((await call('/api/songs/nope/lyrics', 'PUT', { lines })).status, 404);
+    // Taken away: looked up again.
+    const back = await call('/api/songs/ccc333/lyrics', 'PUT', { lines: null });
+    assert.equal(back.json.lyrics.plain, 'Looked up');
+    assert.deepEqual(asked, ['Teardrop (Live)']);
+  } finally {
+    await server.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a lookup running while lyrics are written keeps the written ones', async () => {
+  const { createLyricsStore } = require('../src/lyrics');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-lyrics-test-'));
+  let answer;
+  const store = createLyricsStore({
+    dir,
+    lookup: () => new Promise((resolve) => {
+      answer = resolve;
+    }),
+  });
+  try {
+    const song = { id: 'a1', title: 'Angel', artist: 'Massive Attack', duration: 380 };
+    const running = store.get(song);
+    await store.put(song, [{ t: null, end: null, text: 'Written' }]);
+    answer({ found: true, synced: null, plain: 'Looked up', instrumental: false });
+    assert.equal((await running).plain, 'Written');
+    assert.equal((await store.get(song)).plain, 'Written');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

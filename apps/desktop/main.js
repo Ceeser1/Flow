@@ -259,6 +259,12 @@ handle('covers:staged', (cachePath) => covers.stagedCover(String(cachePath || ''
 // A song's lyrics (4.0): the server's for its songs, LRCLIB's for the others.
 const lyricsClient = createLyricsClient({ remote, library, jsonFiles: env.jsonFiles });
 handle('song:lyrics', (songId) => lyricsClient.get(songId));
+// Lyrics written or edited here (4.0.1): kept for good, a server's song's on the server.
+handle('song:setLyrics', ({ songId, lines, server }) => lyricsClient.set(songId, lines, { server: !!server }));
+// A song just downloaded (Add Songs), not in the library yet: looked up by its names.
+handle('song:lookupLyrics', (meta) => lyricsClient.lookup(meta));
+// A Local Files song's own lyrics go up to the server after it.
+remote.useOwnLyrics((localId) => lyricsClient.ownLines(localId));
 
 // Being a guest in another server's session on this network (4.0, @flow/core/client/guest).
 const guest = createGuestLink({
@@ -661,7 +667,20 @@ handle('import:finish', ({ job, run }) => {
 });
 
 async function finishImport(job, onProgress) {
-  if (!remote.active()) return importer.finish(job, onProgress);
+  // Lyrics written for a song in Add Songs: kept under its id once saved (before it goes up).
+  const ownLyrics = (summary) => {
+    for (const e of job.entries) {
+      const id = e.lyrics && summary.byPosition && summary.byPosition[e.position];
+      if (!id) continue;
+      try {
+        lyricsClient.keepOwn(id, e.lyrics);
+      } catch {
+        // As in song:finish.
+      }
+    }
+    return summary;
+  };
+  if (!remote.active()) return ownLyrics(await importer.finish(job, onProgress));
   // With a server the songs are saved into Local Files first, as always,
   // then go up. The playlist to add to and the songs already in the
   // library are the server's, which Local Files does not have; only the
@@ -670,7 +689,7 @@ async function finishImport(job, onProgress) {
   const existingIds = job.entries.filter((e) => e.existingId).map((e) => e.existingId);
   const ownList = job.mergeInto && model.playlistById(library.get(), job.mergeInto) ? job.mergeInto : null;
   const localJob = { ...job, mergeInto: ownList, playlistIds: [], entries: job.entries.filter((e) => !e.existingId) };
-  const summary = await importer.finish(localJob, onProgress);
+  const summary = ownLyrics(await importer.finish(localJob, onProgress));
   // The times the library songs get, as the saved ones did (see importer.finish).
   const base = Number(job.base) || Date.now();
   job.entries.forEach((e, i) => {
@@ -873,6 +892,14 @@ handle('song:finish', (job) => library.quietly(async () => {
     model.addSongToPlaylists(d, song.id, lists, song.addedAt);
   });
   privateStats.added(1);
+  // Lyrics written for it in Add Songs, before the upload reads them.
+  if (job.lyrics) {
+    try {
+      lyricsClient.keepOwn(song.id, job.lyrics);
+    } catch {
+      // Only some lines with times: the editor does not let that through.
+    }
+  }
   // Its cover, found while it was trimmed (or once it is found).
   covers.adoptStaged(job.cachePath, song.id).catch(() => {});
   // With a server it goes up now, into the server playlists picked for it.

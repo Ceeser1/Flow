@@ -4,7 +4,8 @@
 // lyrics.ovh) the first time an app asks for a song's, or by the filler
 // before that, then kept in <home>/lyrics/<song id>.json (none found: asked
 // again after a week when an app asks; the song renamed or trimmed: at
-// once). One lookup at a time per song, however many apps ask.
+// once). One lookup at a time per song, however many apps ask. Lyrics
+// written or edited in an app (4.0.1, put) are kept for good instead.
 
 const fs = require('fs');
 const path = require('path');
@@ -33,6 +34,9 @@ function createLyricsStore({
     const run = (async () => {
       try {
         const found = await lookup(song);
+        // Written by hand meanwhile: those stay.
+        const now = readJson(fileOf(song.id));
+        if (now && now.own) return lyrics.clean(now);
         fs.mkdirSync(dir, { recursive: true });
         writeJsonAtomic(fileOf(song.id), lyrics.toKeep(found, song));
         return lyrics.clean(found);
@@ -45,6 +49,25 @@ function createLyricsStore({
     })();
     running.set(song.id, run);
     return run;
+  }
+
+  /**
+   * The song's own lyrics (lyrics.ownLyrics, from an app's lines), kept for
+   * good; null takes them away, and the song's are looked up again. Resolves
+   * them as handed out (get). Throws when only some lines have times.
+   */
+  function put(song, lines) {
+    if (!song || !ID.test(String(song.id))) throw new Error('That song is not on the server.');
+    const own = lyrics.ownLyrics(lines);
+    answered.delete(song.id);
+    failed.delete(song.id);
+    if (!own) {
+      fs.rmSync(fileOf(song.id), { force: true });
+      return get(song).catch(() => ({ ...lyrics.NONE }));
+    }
+    fs.mkdirSync(dir, { recursive: true });
+    writeJsonAtomic(fileOf(song.id), lyrics.toKeep(own, song));
+    return Promise.resolve(lyrics.clean(own));
   }
 
   /** Throws away the lyrics of songs no longer there (`ids`: the songs that are). */
@@ -134,7 +157,9 @@ function createLyricsStore({
     return current;
   }
 
-  return { get, sweep, fill, stop };
+  return {
+    get, put, sweep, fill, stop,
+  };
 }
 
 module.exports = { createLyricsStore };

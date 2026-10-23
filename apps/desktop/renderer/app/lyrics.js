@@ -131,10 +131,19 @@ const Lyrics = {
     this._drawAll();
   },
 
-  /** A pause between two lines is only shown (as a note) when it is a long one. */
+  /**
+   * A pause between two lines is only shown (as a note) when it is a long
+   * one. A line written with its end (4.0.1) is over then: a pause follows
+   * when the next one starts later.
+   */
   _tidy(data) {
     if (!data || !Array.isArray(data.synced)) return data;
-    const lines = data.synced;
+    const lines = [];
+    data.synced.forEach((l, i, all) => {
+      lines.push(l);
+      const next = all[i + 1];
+      if (Number.isFinite(l.end) && l.text.trim() && (!next || next.t > l.end)) lines.push({ t: l.end, text: '' });
+    });
     const synced = lines.filter((l, i) => l.text.trim() || !lines[i + 1] || lines[i + 1].t - l.t >= this.PAUSE);
     return { ...data, synced: synced.length ? synced : null };
   },
@@ -142,6 +151,12 @@ const Lyrics = {
   retry() {
     this._cache.delete(this.key);
     this._follow(true);
+  },
+
+  /** A song's lyrics were written or edited (4.0.1): asked for anew, at once when it is playing. */
+  forget(songId) {
+    for (const key of [...this._cache.keys()]) if (key.startsWith(`${songId}|`)) this._cache.delete(key);
+    if (songId === this.songId) this._follow(true);
   },
 
   /** The line playing at second `t`, or -1 (as @flow/core/lyrics lineAt). */
@@ -253,8 +268,7 @@ const Lyrics = {
     const list = h('div.lyrics__lines');
     this.lines.forEach((text, i) => list.appendChild(this._line(text, i, 'lyrics__line')));
     box.appendChild(list);
-    const from = this.data.source || 'LRCLIB';
-    box.appendChild(h('div.lyrics__source', this.synced ? `Lyrics from ${from}` : `Lyrics from ${from}, without their times for this song`));
+    box.appendChild(h('div.lyrics__source', LyricsEdit.sourceLine(this.data)));
     this._litDrawer(true);
   },
 

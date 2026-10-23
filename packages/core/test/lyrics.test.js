@@ -149,3 +149,74 @@ test('not on LRCLIB: lyrics.ovh\'s words, without times; kept answers from fewer
   assert.equal(lyrics.settled(half, song), false);
   assert.equal(lyrics.clean({ found: true, plain: 'x' }).source, 'LRCLIB', 'kept before sources were named');
 });
+
+test('own lyrics (4.0.1): every line timed or none, ends kept, never looked up again', () => {
+  const own = lyrics.ownLyrics([
+    { t: 20, end: 24.5, text: 'As I wake' },
+    { t: 12.5, end: null, text: ' In my dreams ' },
+    { t: 16, end: 15, text: '' },
+    { t: null, end: null, text: '' },
+  ]);
+  assert.deepEqual(own.synced, [{ t: 12.5, text: 'In my dreams' }, { t: 16, text: '' }, { t: 20, end: 24.5, text: 'As I wake' }]);
+  assert.equal(own.plain, 'In my dreams\n\nAs I wake');
+  assert.equal(own.source, 'own');
+  assert.equal(own.own, true);
+  const words = lyrics.ownLyrics([{ text: '' }, { text: 'Verse one' }, { text: '' }, { text: '' }, { text: '' }, { text: 'Verse two' }]);
+  assert.equal(words.synced, null);
+  assert.equal(words.plain, 'Verse one\n\nVerse two');
+  assert.throws(() => lyrics.ownLyrics([{ t: 1, text: 'a' }, { t: null, text: 'b' }]), /every line/);
+  assert.equal(lyrics.ownLyrics([{ t: 1, text: ' ' }]), null);
+  assert.equal(lyrics.ownLyrics(null), null);
+  const song = { artist: 'Moby', title: 'Porcelain', duration: 241 };
+  const kept = lyrics.toKeep(own, song);
+  const renamed = { ...song, title: 'Porcelain (Live)', duration: 300 };
+  assert.equal(lyrics.stillGood(kept, renamed), true, 'kept, renamed or trimmed');
+  assert.equal(lyrics.settled(kept, renamed), true);
+  const out = lyrics.clean(kept);
+  assert.equal(out.source, 'own');
+  assert.equal(out.own, true);
+  assert.deepEqual(out.synced[2], { t: 20, end: 24.5, text: 'As I wake' });
+  assert.equal(lyrics.clean(lyrics.toKeep({ found: true, plain: 'x', source: 'LRCLIB' }, song)).own, undefined);
+});
+
+test('the app\'s own lyrics: a server song\'s on the server, a local one\'s kept for good', async () => {
+  const files = {};
+  const jsonFiles = { read: (n) => files[n] || null, write: (n, v) => { files[n] = JSON.parse(JSON.stringify(v)); } };
+  const local = { songs: [{ id: 'l1', artist: 'Moby', title: 'Porcelain', duration: 241 }] };
+  const sent = [];
+  const remote = {
+    active: () => true,
+    view: () => ({ songs: [{ id: 's1', artist: 'Moby', title: 'Natural Blues', duration: 250 }], deviceSongs: [] }),
+    songLyrics: async () => null,
+    setSongLyrics: async (id, lines) => {
+      sent.push([id, lines]);
+      return { ...lyrics.ownLyrics(lines) };
+    },
+  };
+  const asked = [];
+  const fetch = fakeFetch({}, asked);
+  const client = createLyricsClient({ remote, library: { get: () => local }, jsonFiles, fetch });
+  const lines = [{ t: 1, end: 2, text: 'In my dreams' }];
+  assert.equal((await client.set('s1', lines)).source, 'own');
+  assert.deepEqual(sent, [['s1', lines]]);
+  await client.set('new1', lines, { server: true });
+  assert.equal(sent[1][0], 'new1', 'a song the server just saved');
+  // Local Files: kept, renamed or not, and given back as lines for the upload.
+  const saved = await client.set('l1', lines);
+  assert.deepEqual(saved.synced, [{ t: 1, end: 2, text: 'In my dreams' }]);
+  local.songs[0].title = 'Porcelain (Live)';
+  assert.equal((await client.get('l1')).own, true);
+  assert.equal(asked.length, 0, 'never looked up');
+  assert.deepEqual(client.ownLines('l1'), [{ t: 1, end: 2, text: 'In my dreams' }]);
+  assert.equal(client.ownLines('nope'), null);
+  // Never let go among the looked-up ones.
+  for (let i = 0; i < 405; i++) files['lyrics.json'][`x${i}`] = { found: false, used: Date.now() + i };
+  client.keepOwn('l2', [{ t: null, end: null, text: 'Words only' }]);
+  assert.ok(files['lyrics.json'].l1.own);
+  assert.deepEqual(client.ownLines('l2'), [{ t: null, end: null, text: 'Words only' }]);
+  // Taken away: looked up again.
+  await client.set('l1', null);
+  assert.equal(files['lyrics.json'].l1.own, undefined);
+  assert.equal(asked.length > 0, true);
+  assert.equal((await client.lookup({ artist: 'Moby', title: 'Porcelain', duration: 241 })).found, false);
+});

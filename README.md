@@ -45,6 +45,15 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   pencil renames it until the first song is saved; or the existing one, if
   ticked), and **Add to Playlist** puts them into other playlists too.
   Whatever order they are finished in, the playlist keeps the source's order.
+  Every downloaded song's lyrics are looked up right away (from 4.0.1, on the
+  PC): its frame says **Lyrics** after the title, green with a tick when some
+  were found, red with a cross when not. An open frame (and the editor of a
+  song downloaded on its own) has **Found lyrics: Show** (each line with its
+  times, from - to) and **Edit Lyrics**, or **Add Lyrics** when none were
+  found: paste the words, one line a row, then give each line its From and
+  To (mm:ss:ms; To may stay empty, until the next line). Leave every time
+  empty to keep the words without times. Lyrics written there go with the
+  song when it is saved, moved along with its cut.
   A song that failed to download has **Try again** in its frame, and the
   bottom line ("47 songs ready · 3 failed") has **Retry failed**, which tries
   them all again and says how far it is and how many failed again.
@@ -160,9 +169,13 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   profile, with a Flow Server that has profiles), last listened, times played,
   average listen duration, and how often it was listened to over 80% of its
   length, under 80%, and skipped in the first 30 seconds.
-  Under "Downloaded from": the Direct Url of the song's page, and for a song
+  Under "Source": the Direct Url of the song's page, and for a song
   that came with a playlist import also that playlist's Url. Both open in the
-  browser.
+  browser. Under "Lyrics" (from 4.0.1): the song's words, without times, and
+  **Edit Lyrics** (or **Add Lyrics** when it has none) to write them, as in
+  Add Songs (on the PC). Lyrics written by hand are kept for good, whatever the
+  song is renamed to; **Remove my lyrics** in the editor gives it the
+  looked-up ones again.
 - **Edit** (the pencil on a row): Artist, Title and Mix, and the song's
   **Trim**: the waveform (from the file here, else drawn by the Flow Server;
   without either the song can still be trimmed by the handles and times),
@@ -241,6 +254,9 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   as a note. A Flow Server looks its songs' lyrics up itself and keeps them;
   this device looks up the rest (Local Files, Downloaded Songs, a server out
   of reach or from before 4.0) and keeps the last 400 in `lyrics.json`.
+  Lyrics written by hand (4.0.1) are kept on the Flow Server for its songs
+  (a server from 4.0.1 on), in `lyrics.json` for the others, and go up with
+  a song when it is uploaded.
 - **Continue with similar songs** (from 4.0, off until ticked in Settings):
   once the list playing has played through (without shuffle its last song,
   with shuffle every song had its turn), songs like the last ones heard follow
@@ -699,7 +715,7 @@ listen (who, on hover), and **Join**.
 - Library, settings, the download cache and the tools folder (where
   `yt-dlp.exe` goes): `%LOCALAPPDATA%\Flow` (on Linux `~/.local/share/Flow`). The library is `library.json`, with the previous
   version kept as `library.json.bak`. Its weekly backups are in `backups`
-  there, one gzipped JSON file each; lyrics looked up here are in
+  there, one gzipped JSON file each; lyrics looked up or written here are in
   `lyrics.json`.
 
 yt-dlp, once put there, updates itself once a day in the background, since

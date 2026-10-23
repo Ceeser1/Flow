@@ -109,7 +109,7 @@ Open to anyone (only the refusals above apply).
 {
   "app": "flow-server",
   "protocol": 1,
-  "features": ["profiles", "admin", "pin", "statistics", "smartPlaylists", "pair", "download", "search", "sessions", "trim", "lyrics", "guests"],
+  "features": ["profiles", "admin", "pin", "statistics", "smartPlaylists", "pair", "download", "search", "sessions", "trim", "lyrics", "ownLyrics", "guests"],
   "version": "4.0.0",
   "id": "<server id>",
   "name": "Flow Server",
@@ -130,6 +130,7 @@ Open to anyone (only the refusals above apply).
   Active Sessions; `trim` when ffmpeg is there. From 4.0: `smartPlaylists`
   (a playlist's `rules` kept, see Commands), `pair` (pairing codes for QR
   codes, see [Pairing](#pairing-qr-codes)), `lyrics` (`GET
+  /api/songs/<id>/lyrics`), from 4.0.1 `ownLyrics` (`PUT
   /api/songs/<id>/lyrics`) and `guests` while an admin lets guests from other
   servers in (see [Guests from other servers](#guests-from-other-servers)).
 - `password`: whether this caller has to sign in.
@@ -365,9 +366,26 @@ a week; the song renamed or trimmed: at once):
 
 `synced` (the lines with their times in seconds) is null when LRCLIB has
 none, or when its length is more than 4 seconds off the song's; `plain` is
-the words without times. `source`: where the words came from, `LRCLIB` or
-`lyrics.ovh` (left out: LRCLIB). 502 when
+the words without times. `source`: where the words came from, `LRCLIB`,
+`lyrics.ovh` (left out: LRCLIB) or `own` (written in an app, below; then
+also `"own": true`, and a line may have its `end`). 502 when
 LRCLIB cannot be reached.
+
+### PUT /api/songs/\<id\>/lyrics
+
+From 4.0.1 (`ownLyrics` in the features). Lyrics written or edited in an
+app, kept for good: never looked up again, whatever the song is renamed to.
+
+```json
+{ "lines": [{ "t": 12.5, "end": 15.2, "text": "In my dreams" }, { "t": 16, "end": null, "text": "..." }] }
+```
+
+`t` and `end` in seconds (`end` null: until the next line). Every line with
+words has its `t`, or none has (then only the words are kept, `synced`
+null); a line without words is a pause. `{ "lines": null }` (or no line
+with words) takes them away: the song's lyrics are looked up again. →
+`{ "lyrics": { ... } }` as GET answers; 400 when only some lines have times,
+404 for a song the server does not have.
 
 ## Profiles
 

@@ -8,8 +8,11 @@
 //
 // What a lookup answers, and what is kept:
 //   { found, synced: [{ t, text }] | null, plain, instrumental, source }
-// source: where the words came from, "LRCLIB" or "lyrics.ovh".
-// synced: each line with the second it starts at. Lines in step with the
+// source: where the words came from, "LRCLIB", "lyrics.ovh", or "own" for
+// lyrics written or edited in Flow (4.0.1, ownLyrics: `own` set, kept for
+// good, never looked up again, whatever the song is renamed to).
+// synced: each line with the second it starts at (an own line also with the
+// second it ends at, `end`, when it was given one). Lines in step with the
 // song only when its length is LRCLIB's within SYNC_SLACK seconds (a song
 // trimmed differently would be out of step): else only the plain text.
 
@@ -25,6 +28,11 @@ const SYNC_SLACK = 4;
 const NOT_FOUND_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
 // Not on LRCLIB with lyrics.ovh out of reach (`partial`): after this long.
 const PARTIAL_RETRY_MS = 60 * 60 * 1000;
+
+// Own lyrics: at most this many lines, each this long, none past this second.
+const OWN_LINES = 1000;
+const OWN_TEXT = 500;
+const OWN_MAX_T = 24 * 60 * 60;
 
 const NONE = Object.freeze({
   found: false, synced: null, plain: '', instrumental: false,
@@ -175,6 +183,40 @@ async function lookupLyrics(song, { fetch: get = globalThis.fetch, timeoutMs = 1
   return NONE;
 }
 
+/**
+ * Lyrics written or edited by hand (4.0.1) as kept: `rows` [{ t, end, text }]
+ * in any order, t and end in seconds or null (none given). Every line with
+ * words has its start time, or none has (then only the words are kept). Null
+ * when no line has words (the song's own lyrics then go: looked up again).
+ * Throws an Error fit to show when only some lines have their times.
+ */
+function ownLyrics(rows) {
+  const time = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null
+    : Math.round(Math.min(OWN_MAX_T, Math.max(0, Number(v))) * 1000) / 1000);
+  const list = (Array.isArray(rows) ? rows : []).slice(0, OWN_LINES).map((r) => ({
+    t: time(r && r.t),
+    end: time(r && r.end),
+    text: String((r && r.text) || '').replace(/[\r\n]+/g, ' ').trim().slice(0, OWN_TEXT),
+  }));
+  const worded = list.filter((r) => r.text);
+  if (!worded.length) return null;
+  const timed = worded.filter((r) => r.t !== null);
+  if (!timed.length) {
+    // Only the words: the empty lines between verses stay, not at either end.
+    const plain = list.map((r) => r.text).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    return {
+      found: true, synced: null, plain, instrumental: false, source: 'own', own: true,
+    };
+  }
+  if (timed.length < worded.length) throw new Error('Give every line with words its "From" time, or leave every time empty.');
+  // An empty line with a time is a pause; one without, nothing.
+  const synced = list.filter((r) => r.t !== null).sort((a, b) => a.t - b.t)
+    .map((r) => (r.end !== null && r.end > r.t ? { t: r.t, end: r.end, text: r.text } : { t: r.t, text: r.text }));
+  return {
+    found: true, synced, plain: synced.map((l) => l.text).join('\n').trim(), instrumental: false, source: 'own', own: true,
+  };
+}
+
 /** What a song's lyrics depend on: looked up again when it changes (renamed, trimmed). */
 function lyricsKey(song) {
   return `${fold(song.artist)}|${fold(song.title)}|${Math.round(Number(song.duration) || 0)}`;
@@ -189,6 +231,7 @@ function toKeep(found, song, now = Date.now()) {
 
 /** A kept answer (toKeep) that still stands for `song`. */
 function stillGood(kept, song, now = Date.now()) {
+  if (kept && kept.own) return true;
   if (!kept || kept.key !== lyricsKey(song)) return false;
   if (kept.found) return true;
   if (!(Number(kept.sources) >= SOURCES)) return false;
@@ -197,6 +240,7 @@ function stillGood(kept, song, now = Date.now()) {
 
 /** A kept answer never to be looked up again while `song` keeps its names: found, or by every source not. */
 function settled(kept, song) {
+  if (kept && kept.own) return true;
   return !!kept && kept.key === lyricsKey(song) && (kept.found || (Number(kept.sources) >= SOURCES && !kept.partial));
 }
 
@@ -204,18 +248,22 @@ function settled(kept, song) {
 function clean(kept) {
   if (!kept || !kept.found) return { ...NONE };
   const synced = Array.isArray(kept.synced)
-    ? kept.synced.filter((l) => l && Number.isFinite(Number(l.t))).map((l) => ({ t: Number(l.t), text: String(l.text || '') }))
+    ? kept.synced.filter((l) => l && Number.isFinite(Number(l.t))).map((l) => (Number(l.end) > Number(l.t)
+      ? { t: Number(l.t), end: Number(l.end), text: String(l.text || '') }
+      : { t: Number(l.t), text: String(l.text || '') }))
     : null;
+  const own = kept.own === true;
   return {
     found: true,
     synced: synced && synced.length ? synced : null,
     plain: String(kept.plain || ''),
     instrumental: kept.instrumental === true,
-    source: kept.source === 'lyrics.ovh' ? 'lyrics.ovh' : 'LRCLIB',
+    source: own ? 'own' : kept.source === 'lyrics.ovh' ? 'lyrics.ovh' : 'LRCLIB',
+    ...(own ? { own } : {}),
   };
 }
 
 module.exports = {
-  parseLrc, lineAt, pick, fromRecord, ovhText, lookupLyrics, lyricsKey, toKeep, stillGood, settled, clean, firstArtist,
+  parseLrc, lineAt, pick, fromRecord, ovhText, lookupLyrics, ownLyrics, lyricsKey, toKeep, stillGood, settled, clean, firstArtist,
   NONE, SOURCES, NOT_FOUND_RETRY_MS, PARTIAL_RETRY_MS,
 };

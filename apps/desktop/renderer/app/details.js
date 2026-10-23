@@ -17,6 +17,8 @@ const SongDetails = {
 
     const body = h('div.details');
     let modal = null;
+    // Its lyrics (4.0.1), fetched once: { state: 'loading' | 'ready' | 'error', data, error }.
+    const lyrics = { state: 'loading', data: null, error: '' };
 
     const draw = () => {
       const song = Store.song(songId);
@@ -29,11 +31,24 @@ const SongDetails = {
       body.appendChild(this._playlists(song, shown));
       body.appendChild(this._stats(song));
       body.appendChild(this._source(song));
+      if (window.flow.lyrics) body.appendChild(this._lyrics(song, lyrics, load));
+    };
+    const load = async () => {
+      lyrics.state = 'loading';
+      draw();
+      try {
+        const data = await window.flow.lyrics(songId);
+        Object.assign(lyrics, { state: 'ready', data, error: '' });
+      } catch (err) {
+        Object.assign(lyrics, { state: 'error', data: null, error: (err && err.message) || 'The lyrics could not be fetched.' });
+      }
+      draw();
     };
 
     const redraw = () => draw();
     Store.onLibrary(redraw);
     draw();
+    if (window.flow.lyrics) load();
     // On the phone a full-screen panel from the right, like the Queue, swiped away to either side.
     modal = Modal.open({
       title: 'Song Details',
@@ -113,10 +128,48 @@ const SongDetails = {
     }, url);
     const row = (label, value) => [h('div.details__label', label), h('div.details__value', value)];
     return h('section.details__section',
-      h('h4.details__heading', 'Downloaded from'),
+      h('h4.details__heading', 'Source'),
       h('div.details__grid',
         ...row('Direct Url', song.sourceUrl ? link(song.sourceUrl) : h('span.muted-text', 'Not known (the file was added to Local Files by hand)')),
         ...(song.sourcePlaylistUrl ? row('Playlist Url', link(song.sourcePlaylistUrl)) : [])));
+  },
+
+  /**
+   * Its lyrics, the words without times (4.0.1), and under them Edit Lyrics
+   * (or Add Lyrics without any): written ones are kept for good, on the
+   * server for a server's song. `reload` fetches them again.
+   */
+  _lyrics(song, lyrics, reload) {
+    const section = h('section.details__section', h('h4.details__heading', 'Lyrics'));
+    if (lyrics.state === 'loading') {
+      section.appendChild(h('div.details__lyrics.details__lyrics--none', 'Looking for the lyrics...'));
+      return section;
+    }
+    if (lyrics.state === 'error') {
+      section.append(h('div.details__lyrics.details__lyrics--none', lyrics.error),
+        h('div.details__row', h('button.btn.btn--small', { type: 'button', onclick: reload }, 'Try again')));
+      return section;
+    }
+    const data = lyrics.data;
+    const words = data && data.found ? String(data.plain || '').trim() : '';
+    section.appendChild(words
+      ? h('div.details__lyrics', words)
+      : h('div.details__lyrics.details__lyrics--none', data && data.instrumental ? 'Instrumental' : 'No lyrics found for this song.'));
+    if (words) section.appendChild(h('div.lyrics__source.details__lyrics-source', LyricsEdit.sourceLine(data)));
+    if (!LyricsEdit.available) return section;
+    const title = LyricsEdit.heading(song);
+    const onSave = async (lines) => {
+      await window.flow.setLyrics(song.id, lines);
+      Lyrics.forget(song.id);
+      toast(lines ? `Lyrics of "${title}" saved` : `Your lyrics of "${title}" removed`, 'success');
+      reload();
+    };
+    section.appendChild(h('div.details__row', words
+      ? h('button.btn.btn--light-green', {
+        type: 'button', onclick: () => LyricsEdit.edit({ title, data, duration: song.duration, onSave }),
+      }, 'Edit Lyrics')
+      : h('button.btn.btn--light-green', { type: 'button', onclick: () => LyricsEdit.add({ title, onSave }) }, 'Add Lyrics')));
+    return section;
   },
 
   _stats(song) {

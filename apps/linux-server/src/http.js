@@ -32,6 +32,12 @@
 //   GET  /api/songs/:id/lyrics         { lyrics: { found, synced, plain, instrumental, source } }
 //                                      (only with the "lyrics" feature; lyrics.js), 502
 //                                      when LRCLIB cannot be reached
+//   PUT  /api/songs/:id/lyrics { lines: [{ t, end, text }] | null }
+//                                      { lyrics }: lyrics written or edited in an
+//                                      app, kept for good (source "own"); null
+//                                      gives the song looked-up ones again
+//                                      (feature "ownLyrics"), 400 when only some
+//                                      lines have times
 //   POST /api/songs/:id/trim { start, end, base, cut }
 //                                      its file cut (only when /api/hello lists
 //                                      the "trim" feature): { song, rev } or
@@ -839,7 +845,7 @@ function createHttpServer({
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
       const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search'] : []), ...(live ? ['sessions'] : []),
-        ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
+        ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics', 'ownLyrics'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
       };
@@ -955,6 +961,19 @@ function createHttpServer({
         throw new HttpError(502, 'LRCLIB (lrclib.net), where the lyrics come from, cannot be reached right now.');
       }
       return sendJson(res, 200, { lyrics: found });
+    }
+    if (m && lyrics && req.method === 'PUT') {
+      const body = await readJsonBody(req);
+      const song = library.data.songs.find((s) => s.id === m[1]);
+      if (!song) throw new HttpError(404, 'That song is not on the server.');
+      let kept;
+      try {
+        kept = await lyrics.put(song, body && Array.isArray(body.lines) ? body.lines : null);
+      } catch (err) {
+        throw new HttpError(400, err.message);
+      }
+      log(`Lyrics of "${[song.artist, song.title].filter(Boolean).join(' - ')}" ${kept.own ? 'edited' : 'taken back to the looked-up ones'}`);
+      return sendJson(res, 200, { lyrics: kept });
     }
     m = /^\/api\/songs\/([\w-]{1,64})\/trim$/.exec(p);
     if (m && req.method === 'POST') {

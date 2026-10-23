@@ -1034,7 +1034,7 @@ const ImportPanel = {
     h('span.import__num', String(it.index + 1)),
     this._cover(it),
     h('span.import__text',
-      h('span.import__title', { title: name }, name),
+      h('span.import__title-row', h('span.import__title', { title: name }, name), this._lyricsBadge(it, st)),
       sub ? h('span.import__sub' + (subBad ? '.import__sub--bad' : ''), sub) : null,
       info ? h('span.import__sub.import__info', { title: info }, info) : null),
     it.trim ? h('span.import__flag.import__flag--trim', 'trimmed') : null,
@@ -1054,6 +1054,25 @@ const ImportPanel = {
           h('button.btn.btn--primary', { type: 'button', title: 'Save this song now', onclick: () => this.finishOne(it.index) }, 'Finish this song'))));
     }
     return frame;
+  },
+
+  /** After a downloaded song's title (4.0.1): whether lyrics were found for it, once looked up. */
+  _lyricsBadge(it, st) {
+    const l = it.lyrics;
+    if (!l || !['ready', 'saving'].includes(st) || !['found', 'none'].includes(l.state)) return null;
+    return LyricsEdit.badge(l.state === 'found');
+  },
+
+  /** A song just downloaded (or prepared): its lyrics looked up by its names, its frame redrawn when known. */
+  _lookLyrics(it) {
+    if (!it.lyrics) it.lyrics = AddPage.newLyrics(() => this._redrawFrame(it, false));
+    if (it.lyrics && it.media && it.meta) AddPage.lookLyrics(it.lyrics, it.meta, it.media.duration);
+  },
+
+  /** Lyrics written for the song in Add Songs, moved to the song as trimmed; null when none were. */
+  _ownLyrics(it) {
+    if (!it.lyrics || !it.lyrics.own) return null;
+    return LyricsEdit.cut(it.lyrics.own, it.trim ? it.trim.start : 0, it.trim ? it.trim.end : it.media.duration);
   },
 
   /**
@@ -1086,6 +1105,7 @@ const ImportPanel = {
       artistFromChannel: it.artistFromChannel,
       sourceKey: it.song ? it.song.key : '',
       sourceUrl: it.song ? it.song.url : '',
+      lyrics: it.lyrics || null,
     });
     body.closest('.import__frame').scrollIntoView({ block: 'nearest' });
   },
@@ -1113,10 +1133,14 @@ const ImportPanel = {
     const it = this.included.find((x) => x.index === this.openIndex);
     const result = AddPage.closeEmbedded();
     this.openIndex = null;
-    if (!keep || !it || !result) return;
-    if (result.meta.title) it.meta = result.meta;
-    const whole = result.start < 0.01 && result.end > it.media.duration - 0.01;
-    it.trim = whole ? null : { start: result.start, end: result.end };
+    if (!it || !result) return;
+    if (keep) {
+      if (result.meta.title) it.meta = result.meta;
+      const whole = result.start < 0.01 && result.end > it.media.duration - 0.01;
+      it.trim = whole ? null : { start: result.start, end: result.end };
+    }
+    // Looked up while renamed in the editor: by the names it keeps.
+    this._lookLyrics(it);
   },
 
   // ---- importing ----
@@ -1232,6 +1256,7 @@ const ImportPanel = {
       sourceUrl: it.song.url,
       sourceKey: it.song.key,
       originalPath: it.song.originalPath || '',
+      lyrics: this._ownLyrics(it),
     };
   },
 
@@ -1565,6 +1590,7 @@ const ImportPanel = {
       it.meta = x.meta && x.meta.title ? { ...x.meta } : { artist: '', title: x.title, mix: '' };
       this._giveBulk(it);
       it.artistFromChannel = !!x.artistFromChannel;
+      this._lookLyrics(it);
     }
     return it;
   },
@@ -1678,6 +1704,12 @@ const ImportPanel = {
       ServerImport.poll();
       return;
     }
+    // Lyrics written for it here go to the song the server saved.
+    const lines = this._ownLyrics(it);
+    if (lines && r.song && r.song.id) {
+      window.flow.setLyrics(r.song.id, lines, true)
+        .catch((err) => toast(`The lyrics of "${Util.songLine(meta)}" could not be saved: ${err.message}`, 'error'));
+    }
     if (this.job !== job) return;
     this._record({
       playlistId: r.playlistId,
@@ -1759,6 +1791,7 @@ const ImportPanel = {
         it.meta = p.song.meta && p.song.meta.title ? { ...p.song.meta } : { artist: '', title: p.song.title, mix: '' };
         this._giveBulk(it);
         it.artistFromChannel = p.song.artistFromChannel;
+        this._lookLyrics(it);
         this._setPending();
       }
       if (p.status === 'library') {

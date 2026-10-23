@@ -116,6 +116,11 @@ contextBridge.exposeInMainWorld('flow', {
   lookupInfo: (song) => call('song:lookupInfo', song),
   // A song's lyrics (4.0): { found, synced: [{ t, text }] | null, plain, instrumental }.
   lyrics: (songId) => call('song:lyrics', songId),
+  // Lyrics written or edited here (4.0.1): lines [{ t, end, text }], or null to
+  // look them up again; server: songId is a server's song just saved there.
+  setLyrics: (songId, lines, server = false) => call('song:setLyrics', { songId, lines, server }),
+  // A song just downloaded, by its names: { artist, title, duration }.
+  lookupLyrics: (meta) => call('song:lookupLyrics', meta),
   // Sharing the server by QR code (4.0): { link, code, name }; a flow://connect link
   // connected to ({ name }); a QR code's squares ({ size, modules }).
   shareLink: () => call('server:shareLink'),

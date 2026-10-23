@@ -265,7 +265,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, smartPlaylists: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, smartPlaylists: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -775,12 +775,13 @@ function createRemote(env) {
         const pin = Array.isArray(hello.features) && hello.features.includes('pin');
         const statistics = Array.isArray(hello.features) && hello.features.includes('statistics');
         const lyrics = Array.isArray(hello.features) && hello.features.includes('lyrics');
+        const ownLyrics = Array.isArray(hello.features) && hello.features.includes('ownLyrics');
         const smartPlaylists = Array.isArray(hello.features) && hello.features.includes('smartPlaylists');
         const pair = Array.isArray(hello.features) && hello.features.includes('pair');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics, lyrics, smartPlaylists, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, smartPlaylists, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -1266,6 +1267,34 @@ function createRemote(env) {
     }
   }
 
+  /**
+   * A server song's own lyrics (4.0.1): `lines` [{ t, end, text }], or null
+   * to give it looked-up ones again. Resolves them as the server keeps them.
+   */
+  async function setSongLyrics(songId, lines) {
+    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached right now.');
+    if (!conn.ownLyrics) throw new Error('This Flow Server is too old to keep lyrics written here: it needs an update.');
+    return (await call(`/api/songs/${encodeURIComponent(songId)}/lyrics`, { method: 'PUT', json: { lines }, timeout: 30000 })).lyrics;
+  }
+
+  // The own lyrics of a Local Files song, sent after it when it goes up (the app's lyrics client).
+  let ownLinesOf = () => null;
+  function useOwnLyrics(fn) {
+    ownLinesOf = fn;
+  }
+
+  /** A Local Files song's own lyrics after it, when it has some. */
+  async function uploadLyrics(local, serverId) {
+    const lines = ownLinesOf(local.id);
+    if (!lines || !conn.ownLyrics) return;
+    try {
+      await call(`/api/songs/${encodeURIComponent(serverId)}/lyrics`, { method: 'PUT', json: { lines }, timeout: 30000 });
+    } catch (err) {
+      if (err instanceof AuthError) throw err;
+      problems.push(`The lyrics of "${[local.artist, local.title].filter(Boolean).join(' - ')}" could not be sent: ${err.message}`);
+    }
+  }
+
   async function songPeaks(songId) {
     if (!active() || status.state !== 'online') throw new Error('The server cannot be reached.');
     return (await call(`/api/songs/${encodeURIComponent(songId)}/peaks`, { timeout: 120000 })).peaks;
@@ -1458,6 +1487,7 @@ function createRemote(env) {
     }
     saveSync();
     if (!r.json.existing) await uploadCover(local, serverId);
+    await uploadLyrics(local, serverId);
     if (!settings.get('serverKeepFiles') && !neededOffline(serverId)) {
       await forgetLocal(cmd.localId, { deleteFile: true });
     }
@@ -3223,7 +3253,7 @@ function createRemote(env) {
   return {
     init, active, reconfigure, setSecret, stop, adoptToken,
     coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
-    trimSong, trimmedHere, songPeaks, songLyrics, newCutId,
+    trimSong, trimmedHere, songPeaks, songLyrics, setSongLyrics, useOwnLyrics, newCutId,
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, switchServer, forgetServer, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
     admin, changeServerPassword, removeTracked, shareLink, connectLink,
