@@ -238,7 +238,8 @@ const Lyrics = {
     const list = h('div.lyrics__lines');
     this.lines.forEach((text, i) => list.appendChild(this._line(text, i, 'lyrics__line')));
     box.appendChild(list);
-    box.appendChild(h('div.lyrics__source', this.synced ? 'Lyrics from LRCLIB' : 'Lyrics from LRCLIB, without their times for this song'));
+    const from = this.data.source || 'LRCLIB';
+    box.appendChild(h('div.lyrics__source', this.synced ? `Lyrics from ${from}` : `Lyrics from ${from}, without their times for this song`));
     this._litDrawer(true);
   },
 

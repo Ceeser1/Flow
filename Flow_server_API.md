@@ -354,16 +354,20 @@ Kept only when the song has no cover yet. → `{ "cover": "<version>", "rev": 41
 ### GET /api/songs/\<id\>/lyrics
 
 From 4.0 (`lyrics` in the features). The song's lyrics, looked up on LRCLIB
-the first time they are asked for and kept (none found: asked again after a
-week; the song renamed or trimmed: at once):
+(a song it does not have: on lyrics.ovh, the words without their times) and
+kept: by the server in the background for every song, one every 5
+seconds, or the first time they are asked for (none found: asked again after
+a week; the song renamed or trimmed: at once):
 
 ```json
-{ "lyrics": { "found": true, "synced": [{ "t": 12.4, "text": "..." }], "plain": "...", "instrumental": false } }
+{ "lyrics": { "found": true, "synced": [{ "t": 12.4, "text": "..." }], "plain": "...", "instrumental": false, "source": "LRCLIB" } }
 ```
 
 `synced` (the lines with their times in seconds) is null when LRCLIB has
 none, or when its length is more than 4 seconds off the song's; `plain` is
-the words without times. 502 when LRCLIB cannot be reached.
+the words without times. `source`: where the words came from, `LRCLIB` or
+`lyrics.ovh` (left out: LRCLIB). 502 when
+LRCLIB cannot be reached.
 
 ## Profiles
 

@@ -229,7 +229,9 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   results has the same title, an artist in common and the closest length;
   its lines keep their times only when its length is the song's within 4
   seconds, else the words show without (another version, or a song trimmed
-  differently). On the PC, **Lyrics** next to Queue opens a drawer with every
+  differently). A song LRCLIB does not have gets its words from
+  [lyrics.ovh](https://lyrics.ovh) (no account or key either), without
+  times. On the PC, **Lyrics** next to Queue opens a drawer with every
   line, the one being sung lit and kept in sight (unless the list was just
   scrolled by hand); a click on a line plays from there. A full-screen
   visualizer shows the line being sung and the next at the bottom. On the

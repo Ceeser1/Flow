@@ -26,14 +26,16 @@ const TAG_CHECK_MS = 5000;
 const TRASH_MS = 24 * 60 * 60 * 1000;
 
 /**
- * opts: { home, music, port, host, log, detectTailscale, discoveryPort, livePingMs, coverDeps, convertQuietMs, lookupInfo, lookupLyrics }.
+ * opts: { home, music, port, host, log, detectTailscale, discoveryPort, livePingMs, coverDeps, convertQuietMs, lookupInfo, lookupLyrics, fillLyrics, lyricsPauseMs }.
  * Resolves { port, config, library, tailscale, close }. discoveryPort: the UDP
  * port the apps' search is answered on (null: not at all; left out: the
  * default port if the server's settings say so).
  * Port 0 picks a free one. coverDeps: fakes for finding covers (library.js).
  * lookupInfo: how albums and genres are looked up (songInfo.lookupInfo; left
  * out: they are not). lookupLyrics: how a song's lyrics are looked up (left
- * out: LRCLIB's, @flow/core/lyrics).
+ * out: LRCLIB's, @flow/core/lyrics). fillLyrics: whether the songs' lyrics are
+ * looked up in the background before anyone asks (left out: they are not);
+ * lyricsPauseMs: that filler's pause between songs.
  */
 async function startServer(opts = {}) {
   const log = opts.log || (() => {});
@@ -64,8 +66,12 @@ async function startServer(opts = {}) {
   const activity = createActivity({ config });
   // The library's data once a week, the last 6 kept (never the songs' files).
   const backups = createBackups({ config, library, log });
-  // The songs' lyrics from LRCLIB, kept once looked up.
-  const lyrics = createLyricsStore({ dir: path.join(config.home, 'lyrics'), lookup: opts.lookupLyrics, log });
+  // The songs' lyrics from LRCLIB, kept once looked up; with fillLyrics,
+  // every song's in the background, one every few seconds.
+  const lyrics = createLyricsStore({
+    dir: path.join(config.home, 'lyrics'), lookup: opts.lookupLyrics, log, pauseMs: opts.lyricsPauseMs,
+  });
+  const fillLyrics = () => (opts.fillLyrics ? lyrics.fill(() => library.data.songs) : null);
   const server = createHttpServer({
     config, library, version, log, tailscale: () => tailscale, downloads, live, sessions, activity, backups, lyrics,
   });
@@ -97,11 +103,14 @@ async function startServer(opts = {}) {
   backups.checkRequest();
   backups.weekly();
   lyrics.sweep(new Set(library.data.songs.map((s) => s.id)));
+  fillLyrics();
+  library.onChange(fillLyrics);
   const timers = [
     setInterval(() => library.scan().catch(() => {}), RESCAN_MS),
     setInterval(() => library.emptyTrash(), TRASH_MS),
     setInterval(() => downloads.expire(), TRASH_MS),
     setInterval(lookForTailscale, RESCAN_MS),
+    setInterval(fillLyrics, RESCAN_MS),
     // flow-server tag-songs, run beside it, asks through server.json.
     setInterval(() => library.checkTagRequest(), TAG_CHECK_MS),
     // So does flow-server restore.
@@ -125,6 +134,7 @@ async function startServer(opts = {}) {
       downloads.stop();
       backups.stop();
       sessions.stop();
+      const lyricsDone = lyrics.stop();
       live.close();
       // Its ffmpeg runs still going end first: they hold files in the music folder.
       const working = library.stop();
@@ -132,7 +142,7 @@ async function startServer(opts = {}) {
         server.close(() => resolve());
         server.closeAllConnections();
       });
-      return Promise.all([working, closed]).then(() => {});
+      return Promise.all([working, closed, lyricsDone]).then(() => {});
     },
   };
 }

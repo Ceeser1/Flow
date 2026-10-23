@@ -29,7 +29,7 @@
 //                                      cannot play Ogg Vorbis: the iPhone) such a
 //                                      song as Ogg Opus, converted once (vorbis.js)
 //   GET  /api/songs/:id/peaks          { peaks }: its waveform, for an app's trim
-//   GET  /api/songs/:id/lyrics         { lyrics: { found, synced, plain, instrumental } }
+//   GET  /api/songs/:id/lyrics         { lyrics: { found, synced, plain, instrumental, source } }
 //                                      (only with the "lyrics" feature; lyrics.js), 502
 //                                      when LRCLIB cannot be reached
 //   POST /api/songs/:id/trim { start, end, base, cut }

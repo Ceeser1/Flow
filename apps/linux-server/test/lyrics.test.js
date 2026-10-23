@@ -68,3 +68,81 @@ test('the lyrics of a song, looked up once, again when it is renamed; LRCLIB out
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the filler: every song\'s lyrics in the background, once each; again when renamed', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-lyrics-test-'));
+  const asked = [];
+  const server = await startServer({
+    home: path.join(root, 'home'),
+    music: path.join(root, 'music'),
+    port: 0,
+    host: '127.0.0.1',
+    detectTailscale: async () => null,
+    discoveryPort: null,
+    fillLyrics: true,
+    lyricsPauseMs: 0,
+    lookupLyrics: async (song) => {
+      asked.push(song.title);
+      return { found: song.title === 'Porcelain', synced: null, plain: song.title === 'Porcelain' ? 'In my dreams' : '', instrumental: false };
+    },
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  const until = async (what) => {
+    for (let i = 0; i < 200 && !what(); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.ok(what());
+  };
+  try {
+    for (const [id, title] of [['aaa111', 'Porcelain'], ['bbb222', 'Teardrop']]) {
+      const meta = { title, artist: title === 'Porcelain' ? 'Moby' : 'Massive Attack', format: 'mp3', duration: 241 };
+      await fetch(`${base}/api/songs/${id}?meta=${encodeURIComponent(JSON.stringify(meta))}`, { method: 'PUT', body: FAKE_MP3 });
+    }
+    await until(() => asked.length >= 2);
+    assert.deepEqual([...asked].sort(), ['Porcelain', 'Teardrop']);
+    // An app asking afterwards gets the kept answer; none found is not asked again either.
+    const r = await (await fetch(`${base}/api/songs/aaa111/lyrics`)).json();
+    assert.equal(r.lyrics.plain, 'In my dreams');
+    await fetch(`${base}/api/commands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commands: [{ cid: 'r1', at: Date.now(), type: 'editSong', songId: 'aaa111', artist: 'Moby', title: 'Natural Blues' }] }),
+    });
+    await until(() => asked.length >= 3);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.deepEqual(asked.slice(2), ['Natural Blues']);
+  } finally {
+    await server.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the filler with LRCLIB out of reach: stops, waits, that song only at the next start', async () => {
+  const { createLyricsStore } = require('../src/lyrics');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-lyrics-test-'));
+  const asked = [];
+  let down = true;
+  const songs = [{ id: 'a1', title: 'Angel', artist: 'Massive Attack' }, { id: 'b2', title: 'Glory Box', artist: 'Portishead' }];
+  const make = (failWaitMs) => createLyricsStore({
+    dir,
+    pauseMs: 0,
+    failWaitMs,
+    lookup: async (song) => {
+      asked.push(song.title);
+      if (down) throw new TypeError('fetch failed');
+      return { found: false, synced: null, plain: '', instrumental: false };
+    },
+  });
+  try {
+    let store = make(60000);
+    await store.fill(() => songs);
+    assert.deepEqual(asked, ['Angel'], 'stopped at the first failure');
+    down = false;
+    await store.fill(() => songs);
+    assert.deepEqual(asked, ['Angel'], 'waits before trying again');
+    store = make(0);
+    await store.fill(() => songs);
+    await store.fill(() => songs);
+    assert.deepEqual(asked, ['Angel', 'Angel', 'Glory Box'], 'a new start asks again, each once');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

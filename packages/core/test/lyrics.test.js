@@ -70,7 +70,7 @@ test('a lookup: LRCLIB\'s search, then the first artist alone', async () => {
   assert.equal(r.found, true);
   assert.equal(r.synced[0].t, 12.5);
   assert.equal(asked.length, 1);
-  assert.equal(asked[0].agent, lyrics.AGENT);
+  assert.equal(asked[0].agent, 'Flow Client');
 
   const searched = {
     'search?track_name=Teardrop&artist_name=Massive Attack': [],
@@ -109,4 +109,43 @@ test('the app\'s lyrics: the server\'s for its songs, its own looked up once and
   const down = createLyricsClient({ remote, library: { get: () => local }, jsonFiles: { read: () => null, write() {} }, fetch: fakeFetch({ down: true }) });
   await assert.rejects(() => down.get('s1'), /could not be looked up/);
   await assert.rejects(() => client.get('nope'), /not here/);
+});
+
+test('not on LRCLIB: lyrics.ovh\'s words, without times; kept answers from fewer sources asked again', async () => {
+  const ovh = (routes, asked = []) => async (url, opts) => {
+    asked.push(url);
+    if (url.startsWith('https://lrclib.net/')) return { ok: true, status: 200, json: async () => [] };
+    if (routes.down) return { ok: false, status: 503, json: async () => ({}) };
+    const body = routes[decodeURIComponent(new URL(url).pathname.replace('/v1/', ''))];
+    return { ok: body !== undefined, status: body === undefined ? 404 : 200, json: async () => body };
+  };
+  const words = { lyrics: 'Paroles de la chanson Numb par Linkin Park\r\n[Chester Bennington]\r\nI\'m tired of being what you want me to be\r\n\r\n\r\n\r\n[Chorus]\r\nI\'ve become so numb' };
+  const asked = [];
+  const r = await lyrics.lookupLyrics({ artist: 'Linkin Park, Jay-Z', title: 'Numb', duration: 185 }, { fetch: ovh({ 'Linkin Park/Numb': words }, asked) });
+  assert.deepEqual(r, {
+    found: true, synced: null, plain: 'I\'m tired of being what you want me to be\n\nI\'ve become so numb', instrumental: false, source: 'lyrics.ovh',
+  });
+  assert.equal(asked.filter((u) => u.includes('lyrics.ovh')).length, 2, 'the whole artist, then the first');
+  assert.equal(lyrics.clean(r).source, 'lyrics.ovh');
+  assert.deepEqual(await lyrics.lookupLyrics({ artist: 'Nobody', title: 'Nothing' }, { fetch: ovh({}) }), lyrics.NONE);
+  const partial = await lyrics.lookupLyrics({ artist: 'Nobody', title: 'Nothing' }, { fetch: ovh({ down: true }) });
+  assert.equal(partial.found, false);
+  assert.equal(partial.partial, true);
+
+  const song = { artist: 'Nobody', title: 'Nothing', duration: 100 };
+  const now = Date.now();
+  const none = lyrics.toKeep(lyrics.NONE, song, now);
+  assert.equal(lyrics.stillGood(none, song, now + 1000), true);
+  assert.equal(lyrics.settled(none, song), true);
+  // From before lyrics.ovh (LRCLIB only): looked up again.
+  const old = { ...lyrics.NONE, key: lyrics.lyricsKey(song), at: now };
+  assert.equal(lyrics.stillGood(old, song, now + 1000), false);
+  assert.equal(lyrics.settled(old, song), false);
+  assert.equal(lyrics.settled({ ...old, found: true, plain: 'x' }, song), true);
+  // lyrics.ovh out of reach: again after an hour, and by the filler at the next start.
+  const half = lyrics.toKeep(partial, song, now);
+  assert.equal(lyrics.stillGood(half, song, now + 1000), true);
+  assert.equal(lyrics.stillGood(half, song, now + lyrics.PARTIAL_RETRY_MS + 1), false);
+  assert.equal(lyrics.settled(half, song), false);
+  assert.equal(lyrics.clean({ found: true, plain: 'x' }).source, 'LRCLIB', 'kept before sources were named');
 });

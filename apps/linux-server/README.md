@@ -283,12 +283,19 @@ copy of every cover, so a server that is off still leaves them with theirs.
 ## Lyrics
 
 From 4.0 the apps show the playing song's lyrics (see Flow's README). For the
-server's songs the server looks them up, the first time an app asks
-(`GET /api/songs/<id>/lyrics`), on [LRCLIB](https://lrclib.net) (its search
-only; no account or key, but the internet), and keeps them in `lyrics/` of
-its home, one file per song. A song nothing was found for is asked about
-again after a week; a song renamed or trimmed at once; a deleted song's
-lyrics go at the next start.
+server's songs the server looks them up on [LRCLIB](https://lrclib.net)
+(its search only; no account or key, but the internet), a song LRCLIB does
+not have on [lyrics.ovh](https://lyrics.ovh) (the words without their
+times, no key either), and keeps them in
+`lyrics/` of its home, one file per song. It does so in the background for
+every song, one every 5 seconds (new songs as they come, the whole library
+after the update to 4.0), and at once for a song an app asks for first
+(`GET /api/songs/<id>/lyrics`). The background lookup asks once a song,
+found or not (songs kept as not found before lyrics.ovh was added: once
+more); with LRCLIB out of reach it tries again after 10 minutes. A
+song nothing was found for is asked about again after a week when an app
+asks; a song renamed or trimmed at once; a deleted song's lyrics go at the
+next start.
 
 ## Finding the server on the network (optional, off by default)
 
@@ -612,7 +619,7 @@ report changes.
 | `POST /api/songs/<id>/trim` | `{ start, end, base, cut }` (only when `/api/hello` lists `trim`, i.e. with ffmpeg): the song's file cut to `start`..`end` seconds, the uncut file to the trash → `{ song, rev }`; `cut` is the trim's id (`song.cut`), `base` the cut it was made from. `{ skipped: 'repeat' }` when it is in already, `'changed'` when the song was trimmed by another app since (not applied), `'gone'` when deleted |
 | `GET /api/songs/<id>/cover?v=<version>` | the song's cover (JPEG), 404 when it has none; `song.cover` in the library is its version (`-`: none found, `null`: not looked at yet), and with the current one in `?v=` it may be cached for good; `ETag` / `If-None-Match` too |
 | `PUT /api/songs/<id>/cover` | an app's cover for a song (a JPEG body, at most 4 MB; made 512 x 512 when it is not) → `{ cover }`; kept only when the song has none yet |
-| `GET /api/songs/<id>/lyrics` | the song's lyrics (4.0, `lyrics` in the features): `{ lyrics: { found, synced, plain, instrumental } }`, `synced` the lines with their times; 502 when LRCLIB cannot be reached |
+| `GET /api/songs/<id>/lyrics` | the song's lyrics (4.0, `lyrics` in the features): `{ lyrics: { found, synced, plain, instrumental, source } }`, `synced` the lines with their times, `source` `LRCLIB` or `lyrics.ovh`; 502 when LRCLIB cannot be reached |
 | `POST /api/pair` | `{ password }` (4.0, `pair`): a one-time pairing code for a QR code → `{ code, expiresIn }` (`''` without a server password); 403 for a wrong password |
 | `POST /api/pair/redeem` | `{ code }` → `{ password }`, once, within 10 minutes (open to anyone); 404 for a code used or too old |
 | `GET /api/sessions/songs/<id>/audio` | a song a guest brought into this app's session (4.0), with Range |

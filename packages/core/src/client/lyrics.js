@@ -3,8 +3,8 @@
 // A song's lyrics for the window (4.0, @flow/core/lyrics). A Flow Server's
 // song: the server's (it looks them up once and keeps them). Every other
 // song (Local Files, Downloaded Songs), and a server's while the server
-// cannot say (out of reach, or from before lyrics): looked up on LRCLIB here
-// and kept in lyrics.json, the last KEEP songs asked for.
+// cannot say (out of reach, or from before lyrics): looked up on LRCLIB (else
+// lyrics.ovh) here and kept in lyrics.json, the last KEEP songs asked for.
 
 const lyrics = require('../lyrics');
 
@@ -80,9 +80,7 @@ function createLyricsClient({
       } finally {
         running.delete(ownId);
       }
-      load()[ownId] = {
-        ...r, key: lyrics.lyricsKey(song), at: Date.now(), used: Date.now(),
-      };
+      load()[ownId] = { ...lyrics.toKeep(r, song), used: Date.now() };
       save();
       return lyrics.clean(r);
     })();

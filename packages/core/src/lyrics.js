@@ -1,22 +1,30 @@
 'use strict';
 
 // A song's lyrics (4.0) from LRCLIB (lrclib.net): free, no key, lines with
-// their times (LRC) for many songs, plain text for more. Asked by a Flow
-// Server for its songs (kept with them, as covers are) and by the apps
-// themselves for songs of their own.
+// their times (LRC) for many songs, plain text for more. A song LRCLIB has
+// not: lyrics.ovh's (api.lyrics.ovh, free, no key), the words without their
+// times. Asked by a Flow Server for its songs (kept with them, as covers
+// are) and by the apps themselves for songs of their own.
 //
 // What a lookup answers, and what is kept:
-//   { found, synced: [{ t, text }] | null, plain, instrumental }
+//   { found, synced: [{ t, text }] | null, plain, instrumental, source }
+// source: where the words came from, "LRCLIB" or "lyrics.ovh".
 // synced: each line with the second it starts at. Lines in step with the
 // song only when its length is LRCLIB's within SYNC_SLACK seconds (a song
 // trimmed differently would be out of step): else only the plain text.
 
+const { agentName } = require('./agent');
+
 const BASE = 'https://lrclib.net/api';
-// LRCLIB asks apps to say who they are.
-const AGENT = 'Flow (+https://github.com/Ceeser1/Flow)';
+const OVH = 'https://api.lyrics.ovh/v1';
+// The sources asked: 1 LRCLIB, 2 then lyrics.ovh. A song none of them had,
+// kept from fewer, is asked again.
+const SOURCES = 2;
 const SYNC_SLACK = 4;
 // A song looked up and not found is asked again after this long.
 const NOT_FOUND_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
+// Not on LRCLIB with lyrics.ovh out of reach (`partial`): after this long.
+const PARTIAL_RETRY_MS = 60 * 60 * 1000;
 
 const NONE = Object.freeze({
   found: false, synced: null, plain: '', instrumental: false,
@@ -72,8 +80,15 @@ function fromRecord(r, duration = 0) {
   const text = plain || (lines.length ? lines.map((l) => l.text).join('\n').trim() : '');
   if (!text && !instrumental) return NONE;
   return {
-    found: true, synced, plain: text, instrumental,
+    found: true, synced, plain: text, instrumental, source: 'LRCLIB',
   };
+}
+
+/** lyrics.ovh's words as shown: no "[Chorus]" or "[Chester Bennington]" lines, no French heading, one empty line at most. */
+function ovhText(text) {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+  if (/^paroles de la chanson .+ par /i.test(lines[0] || '')) lines.shift();
+  return lines.filter((l) => !/^\s*\[[^\]]*\]\s*$/.test(l)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**
@@ -105,8 +120,9 @@ function pick(results, { artist, title, duration = 0 }) {
 }
 
 /**
- * A song's lyrics from LRCLIB: { artist, title, album, duration }. Resolves
- * NONE when there are none; rejects when LRCLIB cannot be reached.
+ * A song's lyrics from LRCLIB, else lyrics.ovh's words: { artist, title,
+ * album, duration }. Resolves NONE when there are none (with `partial` when
+ * lyrics.ovh could not be asked); rejects when LRCLIB cannot be reached.
  * agent: whether to send the User-Agent (a page's fetch cannot).
  */
 async function lookupLyrics(song, { fetch: get = globalThis.fetch, timeoutMs = 15000, agent = true } = {}) {
@@ -118,7 +134,7 @@ async function lookupLyrics(song, { fetch: get = globalThis.fetch, timeoutMs = 1
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v) q.set(k, String(v));
     const res = await get(`${BASE}/${route}?${q}`, {
-      headers: agent ? { 'User-Agent': AGENT, Accept: 'application/json' } : { Accept: 'application/json' },
+      headers: agent ? { 'User-Agent': agentName(), Accept: 'application/json' } : { Accept: 'application/json' },
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (res.status === 404) return null;
@@ -134,6 +150,28 @@ async function lookupLyrics(song, { fetch: get = globalThis.fetch, timeoutMs = 1
     const found = pick(await ask('search', params), { artist, title, duration });
     if (found) return fromRecord(found, duration);
   }
+  // Not on LRCLIB: lyrics.ovh, which needs the artist.
+  if (!artist) return NONE;
+  const names = [artist];
+  if (firstArtist(artist) && firstArtist(artist) !== artist) names.push(firstArtist(artist));
+  try {
+    for (const name of names) {
+      const res = await get(`${OVH}/${encodeURIComponent(name)}/${encodeURIComponent(title)}`, {
+        headers: agent ? { 'User-Agent': agentName(), Accept: 'application/json' } : { Accept: 'application/json' },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (res.status === 404) continue;
+      if (!res.ok) throw new Error(`lyrics.ovh answered ${res.status}.`);
+      const plain = ovhText((await res.json()).lyrics);
+      if (plain) {
+        return {
+          found: true, synced: null, plain, instrumental: false, source: 'lyrics.ovh',
+        };
+      }
+    }
+  } catch {
+    return { ...NONE, partial: true };
+  }
   return NONE;
 }
 
@@ -142,10 +180,24 @@ function lyricsKey(song) {
   return `${fold(song.artist)}|${fold(song.title)}|${Math.round(Number(song.duration) || 0)}`;
 }
 
-/** A kept answer (with { key, at }) that still stands for `song`. */
+/** A lookup's answer as kept for `song`. */
+function toKeep(found, song, now = Date.now()) {
+  return {
+    ...found, key: lyricsKey(song), sources: SOURCES, at: now,
+  };
+}
+
+/** A kept answer (toKeep) that still stands for `song`. */
 function stillGood(kept, song, now = Date.now()) {
   if (!kept || kept.key !== lyricsKey(song)) return false;
-  return kept.found || now - (Number(kept.at) || 0) < NOT_FOUND_RETRY_MS;
+  if (kept.found) return true;
+  if (!(Number(kept.sources) >= SOURCES)) return false;
+  return now - (Number(kept.at) || 0) < (kept.partial ? PARTIAL_RETRY_MS : NOT_FOUND_RETRY_MS);
+}
+
+/** A kept answer never to be looked up again while `song` keeps its names: found, or by every source not. */
+function settled(kept, song) {
+  return !!kept && kept.key === lyricsKey(song) && (kept.found || (Number(kept.sources) >= SOURCES && !kept.partial));
 }
 
 /** A kept answer cleaned up, as handed out. */
@@ -155,10 +207,15 @@ function clean(kept) {
     ? kept.synced.filter((l) => l && Number.isFinite(Number(l.t))).map((l) => ({ t: Number(l.t), text: String(l.text || '') }))
     : null;
   return {
-    found: true, synced: synced && synced.length ? synced : null, plain: String(kept.plain || ''), instrumental: kept.instrumental === true,
+    found: true,
+    synced: synced && synced.length ? synced : null,
+    plain: String(kept.plain || ''),
+    instrumental: kept.instrumental === true,
+    source: kept.source === 'lyrics.ovh' ? 'lyrics.ovh' : 'LRCLIB',
   };
 }
 
 module.exports = {
-  parseLrc, lineAt, pick, fromRecord, lookupLyrics, lyricsKey, stillGood, clean, firstArtist, NONE, AGENT, NOT_FOUND_RETRY_MS,
+  parseLrc, lineAt, pick, fromRecord, ovhText, lookupLyrics, lyricsKey, toKeep, stillGood, settled, clean, firstArtist,
+  NONE, SOURCES, NOT_FOUND_RETRY_MS, PARTIAL_RETRY_MS,
 };

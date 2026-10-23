@@ -19,7 +19,11 @@ const { makeLink } = require('@flow/core/client/share');
 const model = require('@flow/core/libraryModel');
 const { readJson } = require('@flow/core/jsonFile');
 const { lookupInfo } = require('@flow/core/songInfo');
+const { setAgentName } = require('@flow/core/agent');
 const { LEVEL_NAMES, PUBLIC_LEVEL, parseLevel, passwordProblem } = require('@flow/core/password');
+
+// LRCLIB and Discogs are told it is a server asking.
+setAgentName('Flow Server');
 
 const HELP = `Flow Server: hosts a Flow library and streams it to the Flow apps.
 
@@ -492,7 +496,7 @@ async function main() {
   }
 
   const log = (text) => console.log(`${stamp()}  ${text}`);
-  const server = await startServer({ home: args.home, music: args.music, log, lookupInfo });
+  const server = await startServer({ home: args.home, music: args.music, log, lookupInfo, fillLyrics: true });
   const cfg = server.config.get();
   console.log(`Flow Server "${cfg.name}" is running.`);
   console.log(`  Music:    ${server.library.musicDir} (${server.library.data.songs.length} songs)`);
