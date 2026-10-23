@@ -6,7 +6,9 @@
 //    one playing lit and kept in sight (unless the list was just scrolled by
 //    hand), a click on a line plays from there;
 //  - a full-screen visualizer: the line playing and the next at the bottom
-//    (Settings' "In full-screen visualizers too");
+//    (Settings' "In full-screen visualizers too"), moving up a row as the
+//    next is sung; a song starting there without lines with times says so
+//    for a moment instead;
 //  - the phone's Now Playing: below its buttons (scrolled down to), four
 //    lines with the one playing second, and Expand for all of them.
 // Lines are only lit when LRCLIB has their times for this song's length;
@@ -24,8 +26,15 @@ const Lyrics = {
   _seq: 0,
   _drawer: null,       // the drawer while open: { modal, body }
   _vizEl: null,        // the lines over a full-screen visualizer
+  _viz: null,          // what they show: { data, hint, at, now, next } (now, next: their nodes)
+  _vizFrame: 0,
+  _hintFor: null,      // the song started over a full-screen visualizer, its lyrics not known yet
+  _hint: null,         // what it says instead of lines ({ songId, lines }), fading out
   _handScrolled: 0,    // when the drawer's list was last scrolled by hand
   LEAD: 0.2,           // a line is lit this much before its time
+  VIZ_LEAD: 0.2,       // over a visualizer the lines move up this much before (the move's length, style.css)
+  VIZ_SMALL: 0.6,      // the next line's size there, of the line playing
+  VIZ_GAP: 0.15,       // between the two rows there, in em
   PAUSE: 6,            // seconds without words that show as a note
   KEEP: 30,
 
@@ -79,7 +88,12 @@ const Lyrics = {
     this.key = key;
     this.songId = song ? song.id : null;
     this.index = -1;
-    if (newSong) this.expanded = false;
+    if (newSong) {
+      this.expanded = false;
+      // Skipped: the hint of the song before goes at once.
+      this._hint = null;
+      this._hintFor = song && Visualizer.el ? song.id : null;
+    }
     if (!this.on) this.state = 'off';
     else if (!song) this.state = 'idle';
     else if (this._cache.has(key)) {
@@ -165,13 +179,14 @@ const Lyrics = {
   _drawAll() {
     this._drawDrawer();
     this._drawPhone();
+    this._takeHint();
+    this._placeViz();
     this._drawViz();
   },
 
   _drawLine() {
     this._litDrawer();
     this._drawPhone(true);
-    this._drawViz();
   },
 
   /** What to say instead of lines, or '' when there are lines. */
@@ -254,25 +269,122 @@ const Lyrics = {
 
   // ---- over a full-screen visualizer ----
 
+  /** The song started over the visualizer has its lyrics: without lines with times, a hint says so. */
+  _takeHint() {
+    if (!this._hintFor || this._hintFor !== this.songId || this.state === 'loading') return;
+    this._hintFor = null;
+    if (this.state !== 'ready') return;
+    if (!this.lines.some((l) => l.trim())) this._hint = { songId: this.songId, lines: ['(No lyrics for this song)'] };
+    else if (!this.synced) this._hint = { songId: this.songId, lines: ['(No timed lyrics for this song)', '(Open lyrics window for plain text)'] };
+  },
+
   _placeViz() {
-    const want = !!(Visualizer.el && this.on && Store.settings.vizLyrics !== false && this.synced);
+    if (!Visualizer.el) this._hint = null;
+    const want = !!(Visualizer.el && this.on && Store.settings.vizLyrics !== false && (this.synced || this._hint));
     if (want && (!this._vizEl || this._vizEl.parentNode !== Visualizer.el)) {
-      this._vizEl = h('div.viz-lyrics', h('div.viz-lyrics__now'), h('div.viz-lyrics__next'));
+      if (this._vizEl) this._vizEl.remove();
+      this._vizEl = h('div.viz-lyrics');
+      this._viz = null;
       Visualizer.el.appendChild(this._vizEl);
       this._drawViz();
+      cancelAnimationFrame(this._vizFrame);
+      this._vizFrame = requestAnimationFrame(() => this._followViz());
     } else if (!want && this._vizEl) {
       this._vizEl.remove();
       this._vizEl = null;
+      this._viz = null;
+      cancelAnimationFrame(this._vizFrame);
     }
   },
 
+  /** Every frame while shown: the next line moves up the moment it is due (VIZ_LEAD before it is sung). */
+  _followViz() {
+    if (!this._vizEl) return;
+    this._vizFrame = requestAnimationFrame(() => this._followViz());
+    const v = this._viz;
+    const synced = this.synced;
+    if (!v || v.hint || !synced || v.data !== this.data) return;
+    const at = this.lineAt(synced, Player.position + this.VIZ_LEAD);
+    if (at === v.at) return;
+    if (at === v.at + 1) this._moveViz(at);
+    else this._drawViz();
+  },
+
+  /** A line's node over the visualizer: the line playing, or the next (smaller, dimmer). */
+  _vizLine(text, now) {
+    return h(`div.viz-lyrics__line${now ? '.viz-lyrics__line--now' : ''}`, text);
+  },
+
+  /** Places a line `y` px below the row of the line playing (its centre), at `scale`. */
+  _vizPut(node, y, scale) {
+    node.style.transform = `translateY(${y}px) translateY(-50%) scale(${scale})`;
+  },
+
+  /** Where the next line sits below the line playing: half of each, the gap between. */
+  _vizBelow(now, next) {
+    const em = parseFloat(getComputedStyle(this._vizEl).fontSize) || 30;
+    return now.offsetHeight / 2 + this.VIZ_GAP * em + (next.offsetHeight * this.VIZ_SMALL) / 2;
+  },
+
+  /** The two rows drawn anew, as they are now (no move): a new song, a jump, the hint. */
   _drawViz() {
     if (!this._vizEl) return;
     const synced = this.synced || [];
-    const now = synced[this.index];
-    const next = synced[this.index + 1];
-    this._vizEl.children[0].textContent = now ? now.text : '';
-    this._vizEl.children[1].textContent = next ? next.text : '';
+    const at = this._hint ? -1 : this.lineAt(synced, Player.position + this.VIZ_LEAD);
+    const v = this._viz;
+    if (v && v.data === this.data && v.hint === this._hint && v.at === at) return;
+    const now = this._vizLine(synced[at] && !this._hint ? synced[at].text : '', true);
+    let next;
+    if (this._hint) {
+      // In the second row, fading out over 8 s.
+      next = h('div.viz-lyrics__line.viz-lyrics__hint', ...this._hint.lines.map((text) => h('div', text)));
+      next.addEventListener('animationend', () => {
+        if (this._hint && this._hint.songId === this.songId) this._hint = null;
+        this._placeViz();
+        this._drawViz();
+      });
+    } else next = this._vizLine(synced[at + 1] ? synced[at + 1].text : '', false);
+    clear(this._vizEl).append(now, next);
+    // Put in place, not moved there.
+    now.style.transition = 'none';
+    next.style.transition = 'none';
+    this._vizPut(now, 0, 1);
+    this._vizPut(next, this._vizBelow(now, next), this.VIZ_SMALL);
+    next.getBoundingClientRect();
+    now.style.transition = '';
+    next.style.transition = '';
+    this._viz = {
+      data: this.data, hint: this._hint, at, now, next,
+    };
+  },
+
+  /**
+   * On to line `at`: the line sung moves a row up, shrinking and fading out;
+   * the next moves up into its place, growing and turning white; the one
+   * after comes up into the second row.
+   */
+  _moveViz(at) {
+    const v = this._viz;
+    const synced = this.synced;
+    const rise = this._vizBelow(v.now, v.next);
+    const after = this._vizLine(synced[at + 1] ? synced[at + 1].text : '', false);
+    after.style.opacity = '0';
+    this._vizEl.appendChild(after);
+    // Where it comes from, before it moves (the browser takes this as the start).
+    this._vizPut(after, this._vizBelow(v.next, after) + rise, this.VIZ_SMALL);
+    after.getBoundingClientRect();
+    const gone = v.now;
+    gone.classList.remove('viz-lyrics__line--now');
+    gone.style.opacity = '0';
+    this._vizPut(gone, -rise, this.VIZ_SMALL);
+    gone.addEventListener('transitionend', (e) => {
+      if (e.propertyName === 'opacity') gone.remove();
+    });
+    v.next.classList.add('viz-lyrics__line--now');
+    this._vizPut(v.next, 0, 1);
+    after.style.opacity = '';
+    this._vizPut(after, this._vizBelow(v.next, after), this.VIZ_SMALL);
+    Object.assign(v, { at, now: v.next, next: after });
   },
 
   // ---- the phone's Now Playing ----

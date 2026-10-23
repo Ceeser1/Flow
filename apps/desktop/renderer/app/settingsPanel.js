@@ -112,13 +112,13 @@ const SettingsPanel = {
         key: 'lyricsOn',
         label: 'Show lyrics',
         desc: Store.phone
-          ? 'Below the buttons of the screen of the playing song, the line being sung lit. They come from LRCLIB (lrclib.net), through your Flow Server for its songs.'
-          : 'The Lyrics button next to Queue shows the lyrics of the playing song, the line being sung lit. They come from LRCLIB (lrclib.net), through your Flow Server for its songs.',
+          ? 'Below the buttons of the screen of the playing song, the line being sung lit. They come from LRCLIB (lrclib.net), else lyrics.ovh (without their times), through your Flow Server for its songs.'
+          : 'The Lyrics button next to Queue shows the lyrics of the playing song, the line being sung lit. They come from LRCLIB (lrclib.net), else lyrics.ovh (without their times), through your Flow Server for its songs.',
       }),
       Store.can('effects') ? this._row({
         key: 'vizLyrics',
         label: 'Show the lines in full-screen visualizers',
-        desc: 'The line being sung and the next one at the bottom of a full-screen visualizer, for songs whose lyrics have their times.',
+        desc: 'The line being sung and the next one at the bottom of a full-screen visualizer, for songs whose lyrics have their times. A song starting without them says so there for a few seconds.',
         sub: true,
         when: () => Store.settings.lyricsOn !== false,
       }) : null,

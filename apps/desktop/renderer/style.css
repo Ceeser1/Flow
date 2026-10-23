@@ -2534,16 +2534,32 @@ div.import__frame-head { cursor: default; }
 .viz-lyrics {
   position: absolute;
   left: 50%;
-  bottom: 150px;
+  /* The centre of the line playing; the next sits below it (lyrics.js places both). */
+  bottom: calc(150px + 1.5em);
   z-index: 2;
   width: min(90vw, 1200px);
+  height: 0;
   transform: translateX(-50%);
+  font-size: clamp(22px, 2.6vw, 42px);
   text-align: center;
   pointer-events: none;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.9);
 }
-.viz-lyrics__now { font-size: clamp(22px, 2.6vw, 42px); font-weight: 700; color: #fff; min-height: 1.3em; }
-.viz-lyrics__next { font-size: clamp(15px, 1.6vw, 24px); font-weight: 600; color: rgba(255, 255, 255, 0.55); margin-top: 6px; min-height: 1.3em; }
+/* Moving up a row takes 0.2 s, as long as Lyrics.VIZ_LEAD (done as the line is sung). */
+.viz-lyrics__line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: 1.3em;
+  line-height: 1.3;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
+  transition: transform 0.2s ease-out, opacity 0.2s linear, color 0.2s linear;
+}
+.viz-lyrics__line--now { color: #fff; }
+.viz-lyrics__hint { animation: viz-lyrics-hint 8s ease-in forwards; }
+@keyframes viz-lyrics-hint { from { opacity: 1; } to { opacity: 0; } }
 
 /* ---- the Music Visualizer, full screen (visualizer.js) ---- */
 
