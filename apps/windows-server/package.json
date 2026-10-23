@@ -1,6 +1,6 @@
 {
   "name": "flow-windows-server",
-  "version": "3.6.3",
+  "version": "4.0.0",
   "description": "The Flow Server's installer for Windows: the server, the Node.js it runs on, its setup and a task that starts it with Windows",
   "private": true,
   "scripts": {

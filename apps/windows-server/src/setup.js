@@ -464,6 +464,8 @@ async function setup() {
   say('no Home address sends a small UDP question and the server answers with its name and port.');
   say('It tells them what /api/hello already tells anyone on the network, never the password or the library,');
   say('and only devices on private addresses get an answer. It opens UDP 7878 for your home network.');
+  say('It is also how Flow apps of other servers find your Active Sessions, once an admin allows guests');
+  say('from other servers (Administration, Server rules; off until ticked).');
   let discovery = opts.discovery;
   if (discovery === 'ask') {
     // As before; a new server: on with --yes, off without a terminal.

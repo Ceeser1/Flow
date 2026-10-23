@@ -26,7 +26,9 @@ files, a window asks what `install.sh` asks on Linux:
 4. **Where new songs go:** separate Uploads and Downloads folders, and
    whether uploads keep their folders.
 5. **Finding the server on the network**, the **password** (required at
-   level 4) and the **master admin**.
+   level 4) and the **master admin**. Finding the server is also how Flow
+   apps of other servers find its Active Sessions, once an admin allows
+   guests from other servers (Administration; off until ticked).
 
 Then it registers the **Flow Server** task and opens Windows Firewall for it:
 
