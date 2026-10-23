@@ -12,6 +12,11 @@
 //
 // In Add Songs the lyrics belong to the downloaded file (its whole length,
 // as the preview plays it): cut() moves them to the song as trimmed.
+//
+// The editor plays the song under the lines (_player): its waveform with each
+// line's stretch in the line's colour, a click or drag to move, the place to
+// the millisecond. Every song starts with a line of music (no words, a note)
+// until the first line is sung.
 
 const LyricsEdit = {
   /** Whether lyrics can be written here (the desktop for now; the phone's layout comes later). */
@@ -141,19 +146,28 @@ const LyricsEdit = {
     return data.synced ? `Lyrics from ${from}` : `Lyrics from ${from}, without their times for this song`;
   },
 
-  /** Edit Lyrics: the lines of `data` in the editor. */
-  edit({ title, data, duration = 0, onSave }) {
+  /**
+   * Edit Lyrics: the lines of `data` in the editor. `player` ({ src,
+   * duration, peaks }): the song to play under the lines, see _player.
+   */
+  edit({
+    title, data, duration = 0, onSave, player = null,
+  }) {
     return this._editor({
-      title, rows: this.rows(data, duration), own: !!(data && data.own), onSave, heading: 'Edit Lyrics',
+      title, rows: this.rows(data, duration), own: !!(data && data.own), onSave, heading: 'Edit Lyrics', player,
     });
   },
 
   /** Add Lyrics: the words pasted in first, then the editor. */
-  add({ title, onSave }) {
+  add({ title, onSave, player = null }) {
     return this._editor({
-      title, rows: [], own: false, onSave, heading: 'Add Lyrics',
+      title, rows: [], own: false, onSave, heading: 'Add Lyrics', player,
     });
   },
+
+  // Each line's colour, on its row and on its stretch of the waveform: these
+  // eight in turn, from the first again after an empty line (music).
+  COLOURS: [[90, 140, 220], [224, 144, 74], [108, 196, 126], [192, 112, 208], [224, 200, 74], [74, 192, 200], [224, 106, 122], [168, 208, 96]],
 
   /**
    * The editor: a row per line, From - To and the words. `onSave(lines)`
@@ -161,23 +175,35 @@ const LyricsEdit = {
    * throw: the message is shown and the popup stays.
    */
   _editor({
-    title, rows, own, onSave, heading,
+    title, rows, own, onSave, heading, player,
   }) {
     const grid = h('div.lyrics-edit__rows');
     const error = h('div.form-error.lyrics-edit__error');
+    const deck = player ? this._player(player) : null;
+    // Lines coloured again (and the waveform with them) whenever one changes.
+    const ed = {
+      grid,
+      error,
+      changed: () => {
+        const marks = this._paint(grid);
+        if (deck) deck.mark(marks);
+      },
+    };
+    grid.addEventListener('input', ed.changed);
     const paste = h('textarea.input.lyrics-edit__paste', {
       placeholder: 'Paste the lyrics here, one line per row.', spellcheck: 'false', rows: '10',
     });
     const split = h('button.btn.btn--light-green', { type: 'button', onclick: () => fromPaste() }, 'Split into lines');
     const pasteBox = h('div.lyrics-edit__paste-box', paste, h('div.lyrics-edit__paste-foot', split));
     const head = h('div.lyrics-edit__head',
-      h('span', 'From'), h('span'), h('span', 'To'), h('span', 'Lyrics'), h('span'));
+      h('span', 'From'), h('span'), h('span', 'To'), h('span', 'Lyrics'), h('span'), h('span'));
     const addLine = h('button.btn.btn--small', {
       type: 'button',
       html: `${Icons.plus}<span>Add line</span>`,
       onclick: () => {
-        const row = this._row({ t: null, end: null, text: '' }, grid, error);
+        const row = this._row({ t: null, end: null, text: '' }, ed);
         grid.appendChild(row);
+        ed.changed();
         row.querySelector('.lyrics-edit__text').focus();
       },
     });
@@ -185,9 +211,10 @@ const LyricsEdit = {
 
     const showRows = (list) => {
       clear(grid);
-      for (const r of list) grid.appendChild(this._row(r, grid, error));
+      for (const r of this._withIntro(list)) grid.appendChild(this._row(r, ed));
       pasteBox.hidden = list.length > 0;
       table.hidden = list.length === 0;
+      ed.changed();
     };
     // The pasted words, a row a line: empty lines at either end left out, a
     // run of them kept as one (between verses).
@@ -210,7 +237,8 @@ const LyricsEdit = {
 
     const hint = h('div.hint-label.lyrics-edit__hint',
       'Times as mm:ss:ms (minutes, seconds, milliseconds). An empty "To": until the next line. '
-      + 'Leave every time empty to keep the words without times. Enter in a line adds one below it.');
+      + 'Leave every time empty to keep the words without times. + or Enter adds a line after one, '
+      + 'a line without words is music (♪).');
     const buttons = [];
     if (own) {
       buttons.push({
@@ -243,6 +271,7 @@ const LyricsEdit = {
     });
     const save = async (lines) => {
       if (lines === undefined) return false;
+      if (deck) deck.stop();
       try {
         await onSave(lines);
       } catch (err) {
@@ -254,14 +283,36 @@ const LyricsEdit = {
     return Modal.open({
       title: heading,
       className: 'modal--lyrics-edit',
-      body: [h('div.lyrics-show__song', title), hint, pasteBox, table, error],
+      body: [h('div.lyrics-show__song', title), hint, pasteBox, table, error, deck && deck.el],
       buttons,
       focus: rows.length ? '.lyrics-edit__time' : '.lyrics-edit__paste',
+      onClose: () => {
+        if (deck) deck.destroy();
+      },
     });
   },
 
-  /** One line's row: From - To, its words, and x to take it out. */
-  _row(r, grid, error) {
+  /**
+   * `list` with a line of music (♪, no words) first, from 0:00:000 until the
+   * first line with words: the song's start before anyone sings. One already
+   * there starts at 0; none for words from the very start.
+   */
+  _withIntro(list) {
+    if (!list.length) return list;
+    const first = list.find((r) => String(r.text || '').trim() && r.t !== null);
+    const until = first ? first.t : null;
+    if (!String(list[0].text || '').trim()) {
+      return [{ ...list[0], t: 0, end: list[0].end !== null && list[0].end !== undefined ? list[0].end : until }, ...list.slice(1)];
+    }
+    if (list[0].t === 0) return list;
+    return [{ t: 0, end: until, text: '' }, ...list];
+  },
+
+  /**
+   * One line's row: From - To, its words (a note in an empty one: music), +
+   * to add a line after it and x to take it out.
+   */
+  _row(r, ed) {
     const box = (t, label) => h('input.input.lyrics-edit__time', {
       type: 'text', value: this.fmt(t), placeholder: 'mm:ss:ms', spellcheck: 'false', 'aria-label': label,
     });
@@ -270,29 +321,307 @@ const LyricsEdit = {
     const text = h('input.input.lyrics-edit__text', {
       type: 'text', value: r.text, spellcheck: 'false', maxlength: '500', 'aria-label': 'Lyrics',
     });
-    const row = h('div.lyrics-edit__row', from, h('span.lyrics-edit__dash', '-'), to, text);
-    row.appendChild(iconButton('icon-btn.lyrics-edit__remove', Icons.x, 'Take this line out', () => {
-      const next = row.nextElementSibling || row.previousElementSibling;
-      row.remove();
-      if (next) next.querySelector('.lyrics-edit__text').focus();
-    }));
+    const words = h('div.lyrics-edit__words', h('span.lyrics-edit__note', { html: Icons.library, title: 'Music, no words' }), text);
+    const row = h('div.lyrics-edit__row', from, h('span.lyrics-edit__dash', '-'), to, words);
+    // An empty line after this one, filling the time between them when both are known.
+    const addAfter = () => {
+      const t = this.parse(to.value);
+      const nextFrom = row.nextElementSibling && this.parse(row.nextElementSibling.querySelector('.lyrics-edit__time').value);
+      const start = Number.isFinite(t) ? t : null;
+      const added = this._row({
+        t: start, end: start !== null && Number.isFinite(nextFrom) && nextFrom > start ? nextFrom : null, text: '',
+      }, ed);
+      row.after(added);
+      ed.changed();
+      return added;
+    };
+    row.append(
+      iconButton('icon-btn.lyrics-edit__add', Icons.plus, 'Add a line after this one', () => {
+        addAfter().querySelector('.lyrics-edit__text').focus();
+      }),
+      iconButton('icon-btn.lyrics-edit__remove', Icons.x, 'Take this line out', () => {
+        const next = row.nextElementSibling || row.previousElementSibling;
+        row.remove();
+        ed.changed();
+        if (next) next.querySelector('.lyrics-edit__text').focus();
+      }),
+    );
     // A time typed in is shown as mm:ss:ms once left; one that cannot be read is marked.
     for (const b of [from, to]) {
       b.addEventListener('change', () => {
         const v = this.parse(b.value);
         b.classList.toggle('input--bad', Number.isNaN(v));
         if (!Number.isNaN(v)) b.value = this.fmt(v);
-        error.textContent = '';
+        ed.error.textContent = '';
       });
     }
     text.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
-      const added = this._row({ t: null, end: null, text: '' }, grid, error);
-      row.after(added);
-      added.querySelector('.lyrics-edit__time').focus();
+      addAfter().querySelector('.lyrics-edit__time').focus();
     });
     return row;
+  },
+
+  /**
+   * Colours the rows (see COLOURS) and gives the timed ones as marks for the
+   * waveform, by time: [{ t, end, rgb (null: music), row }], a line without a
+   * To lasting until the next one (the last: to the end).
+   */
+  _paint(grid) {
+    const marks = [];
+    let n = 0;
+    for (const row of grid.querySelectorAll('.lyrics-edit__row')) {
+      const [from, to] = row.querySelectorAll('.lyrics-edit__time');
+      const music = !row.querySelector('.lyrics-edit__text').value.trim();
+      const rgb = music ? null : this.COLOURS[n % this.COLOURS.length];
+      n = music ? 0 : n + 1;
+      row.classList.toggle('lyrics-edit__row--music', music);
+      row.style.background = rgb ? `rgba(${rgb}, 0.16)` : '';
+      row.style.boxShadow = rgb ? `inset 3px 0 0 rgb(${rgb})` : '';
+      const t = this.parse(from.value);
+      const end = this.parse(to.value);
+      if (Number.isFinite(t)) marks.push({
+        t, end: Number.isFinite(end) && end > t ? end : null, rgb, row,
+      });
+    }
+    marks.sort((a, b) => a.t - b.t);
+    marks.forEach((m, i) => {
+      if (m.end === null) m.end = marks[i + 1] ? marks[i + 1].t : Infinity;
+    });
+    return marks;
+  },
+
+  /**
+   * The player under the lines: the song's waveform (the lines' colours on
+   * it, a click or drag moves there), back 5 s, play / pause, on 5 s and
+   * the place to the millisecond. `src`: what an <audio> plays (null: the
+   * song cannot be reached); `duration`: its length, else the audio's own;
+   * `peaks()`: the waveform's peaks (or a promise of them, null for none).
+   * Returns { el, mark(marks), stop(), destroy() }.
+   */
+  _player({ src, duration: known = 0, peaks: loadPeaks = null }) {
+    const canvas = h('canvas.lyrics-edit__wave');
+    const playhead = h('div.playhead.playhead--audio');
+    const status = h('div.audio-status.lyrics-edit__wave-status');
+    const playBtn = h('button.round-btn.round-btn--main', { type: 'button', title: 'Play' });
+    const skip = (by) => h('button.round-btn', {
+      type: 'button',
+      title: by < 0 ? '5 seconds back' : '5 seconds on',
+      html: `<span class="skip-label">${by < 0 ? '-5' : '+5'}</span>`,
+      onclick: () => seek(audio.currentTime + by),
+    });
+    const clock = h('span.lyrics-edit__clock');
+    const el = h('div.lyrics-edit__player',
+      h('div.lyrics-edit__wave-wrap', canvas, playhead, status),
+      h('div.lyrics-edit__transport', skip(-5), playBtn, skip(5), clock));
+
+    let duration = known;
+    let peaks = null;
+    let marks = [];
+    let lit = null;
+    let raf = 0;
+    let gone = false;
+    const audio = new Audio();
+    audio.preload = 'metadata';
+    audio.volume = Player.volume;
+    if (src) audio.src = src;
+    for (const b of el.querySelectorAll('button')) b.disabled = !src;
+    const setStatus = (text) => {
+      status.textContent = text;
+      status.hidden = !text;
+    };
+    if (!src) setStatus(`Not on ${Store.here}, and the server cannot be reached: the song cannot be played.`);
+
+    const draw = () => {
+      if (gone) return;
+      this._drawWave(canvas, peaks, duration, marks);
+      place();
+    };
+    // The playhead, the clock and the line sung now (outlined).
+    const place = () => {
+      const t = audio.currentTime || 0;
+      playhead.style.left = `${duration ? (Math.min(t, duration) / duration) * canvas.clientWidth : 0}px`;
+      clock.textContent = `${this.fmt(t)} / ${this.fmt(duration)}`;
+      let now = null;
+      for (const m of marks) {
+        if (m.t > t) break;
+        if (t < m.end) now = m.row;
+      }
+      if (now !== lit) {
+        if (lit) lit.classList.remove('lyrics-edit__row--now');
+        if (now) now.classList.add('lyrics-edit__row--now');
+        lit = now;
+      }
+    };
+    const drawPlay = () => {
+      playBtn.innerHTML = audio.paused ? Icons.play : Icons.pause;
+      playBtn.title = audio.paused ? 'Play' : 'Pause';
+    };
+    const seek = (t) => {
+      if (!src) return;
+      audio.currentTime = Math.max(0, Math.min(duration || audio.duration || 0, t));
+      place();
+    };
+    const tick = () => {
+      raf = 0;
+      if (gone) return;
+      place();
+      if (!audio.paused) raf = requestAnimationFrame(tick);
+    };
+    const stop = () => {
+      if (!audio.paused) audio.pause();
+    };
+
+    AudioFocus.register('lyricsEdit', stop);
+    playBtn.onclick = () => {
+      if (!audio.paused) {
+        audio.pause();
+        return;
+      }
+      audio.play().catch(() => {});
+    };
+    audio.addEventListener('play', () => {
+      AudioFocus.claim('lyricsEdit');
+      drawPlay();
+      if (!raf) raf = requestAnimationFrame(tick);
+    });
+    audio.addEventListener('pause', drawPlay);
+    audio.addEventListener('ended', drawPlay);
+    audio.addEventListener('seeked', place);
+    const onVolume = (v) => {
+      audio.volume = v;
+    };
+    Player.onVolume(onVolume);
+
+    // A click or drag on the waveform moves the song there.
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!src || !duration) return;
+      const at = (ev) => seek(((ev.clientX - canvas.getBoundingClientRect().left) / (canvas.clientWidth || 1)) * duration);
+      at(e);
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        // Not a pointer that can be held (gone already): the click is enough.
+      }
+      const up = () => {
+        canvas.removeEventListener('pointermove', at);
+        canvas.removeEventListener('pointerup', up);
+        canvas.removeEventListener('pointercancel', up);
+      };
+      canvas.addEventListener('pointermove', at);
+      canvas.addEventListener('pointerup', up);
+      canvas.addEventListener('pointercancel', up);
+    });
+    const sized = new ResizeObserver(() => draw());
+    sized.observe(canvas);
+
+    const getPeaks = () => {
+      if (!loadPeaks || !duration) {
+        if (src) setStatus('');
+        return;
+      }
+      setStatus('Drawing waveform...');
+      Promise.resolve().then(loadPeaks).then((got) => {
+        if (gone) return;
+        peaks = got || null;
+        setStatus(peaks ? '' : 'No waveform for this song, but it can still be played.');
+        draw();
+      }, () => {
+        if (!gone) setStatus('Could not draw the waveform, but the song can still be played.');
+      });
+    };
+    // The song's length: as given, else the audio's own.
+    if (duration || !src) getPeaks();
+    else {
+      setStatus('Reading the song...');
+      audio.addEventListener('loadedmetadata', () => {
+        if (gone || duration || !Number.isFinite(audio.duration)) return;
+        duration = audio.duration;
+        getPeaks();
+        draw();
+      }, { once: true });
+    }
+    drawPlay();
+    place();
+
+    return {
+      el,
+      mark(list) {
+        marks = list;
+        draw();
+      },
+      stop,
+      destroy() {
+        gone = true;
+        stop();
+        cancelAnimationFrame(raf);
+        sized.disconnect();
+        audio.removeAttribute('src');
+        audio.load();
+        Player._volumeListeners = (Player._volumeListeners || []).filter((fn) => fn !== onVolume);
+        AudioFocus.register('lyricsEdit', () => {});
+      },
+    };
+  },
+
+  /**
+   * The waveform (`peaks`: flat min,max pairs) across the canvas, each line's
+   * stretch (marks, see _paint) in its colour over a faint band of it, music
+   * and the time without lines grey. Without peaks: the bands and a line.
+   */
+  _drawWave(canvas, peaks, duration, marks) {
+    const cssW = canvas.clientWidth;
+    const cssH = canvas.clientHeight;
+    if (!cssW || !cssH) return;
+    const dpr = window.devicePixelRatio || 1;
+    const wantW = Math.round(cssW * dpr);
+    const wantH = Math.round(cssH * dpr);
+    if (canvas.width !== wantW || canvas.height !== wantH) {
+      canvas.width = wantW;
+      canvas.height = wantH;
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    if (!duration) return;
+    const GREY = '#8a8a94';
+    const x = (t) => (Math.min(Math.max(t, 0), duration) / duration) * cssW;
+    for (const m of marks) {
+      if (!m.rgb) continue;
+      ctx.fillStyle = `rgba(${m.rgb}, 0.18)`;
+      ctx.fillRect(x(m.t), 0, Math.max(1, x(m.end) - x(m.t)), cssH);
+    }
+    // The colour at second `t`: the last line begun by then, if it still lasts.
+    const colourAt = (t) => {
+      let rgb = null;
+      for (const m of marks) {
+        if (m.t > t) break;
+        if (t < m.end) rgb = m.rgb;
+      }
+      return rgb ? `rgb(${rgb})` : GREY;
+    };
+    const mid = cssH / 2;
+    const half = mid - 3;
+    const buckets = peaks && peaks.length ? peaks.length / 2 : 0;
+    for (let px = 0; px < cssW; px += 1) {
+      ctx.fillStyle = colourAt(((px + 0.5) / cssW) * duration);
+      if (!buckets) {
+        ctx.fillRect(px, mid - 0.5, 1, 1);
+        continue;
+      }
+      // Every bucket this column covers, so no peak falls between two.
+      const b0 = Math.min(buckets - 1, Math.floor((px / cssW) * buckets));
+      const b1 = Math.min(buckets - 1, Math.max(b0, Math.floor(((px + 1) / cssW) * buckets) - 1));
+      let lo = 0;
+      let hi = 0;
+      for (let b = b0; b <= b1; b += 1) {
+        if (peaks[b * 2] < lo) lo = peaks[b * 2];
+        if (peaks[b * 2 + 1] > hi) hi = peaks[b * 2 + 1];
+      }
+      const top = mid - Math.min(1, hi) * half;
+      ctx.fillRect(px, top, 1, Math.max(1, (mid - Math.max(-1, lo) * half) - top));
+    }
   },
 
   /** The editor's rows as lines, or undefined (with the reason shown) when a time is wrong. */

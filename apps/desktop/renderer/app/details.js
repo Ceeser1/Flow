@@ -164,11 +164,28 @@ const SongDetails = {
       toast(lines ? `Lyrics of "${title}" saved` : `Your lyrics of "${title}" removed`, 'success');
       reload();
     };
+    // The editor plays the song as the player would, its waveform as Edit Song draws it.
+    const player = {
+      src: Store.audioSrc(song),
+      duration: song.duration,
+      peaks: async () => {
+        for (const job of songPeakJobs(song, song.duration)) {
+          try {
+            return await job();
+          } catch {
+            // The next way, if there is one.
+          }
+        }
+        return null;
+      },
+    };
     section.appendChild(h('div.details__row', words
       ? h('button.btn.btn--light-green', {
-        type: 'button', onclick: () => LyricsEdit.edit({ title, data, duration: song.duration, onSave }),
+        type: 'button', onclick: () => LyricsEdit.edit({
+          title, data, duration: song.duration, onSave, player,
+        }),
       }, 'Edit Lyrics')
-      : h('button.btn.btn--light-green', { type: 'button', onclick: () => LyricsEdit.add({ title, onSave }) }, 'Add Lyrics')));
+      : h('button.btn.btn--light-green', { type: 'button', onclick: () => LyricsEdit.add({ title, onSave, player }) }, 'Add Lyrics')));
     return section;
   },
 

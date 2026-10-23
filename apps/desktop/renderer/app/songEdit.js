@@ -18,6 +18,22 @@
 // Handles closer than this to either end count as not moved (media.js EDGE).
 const TRIM_EDGE = 0.02;
 
+/**
+ * The ways to a library song's waveform peaks, the best first: where the
+ * song's own file is cut (the desktop), from that file; where the server cuts
+ * it (the phone), from the server's while it can be reached. Each a function
+ * giving a promise; none when neither is there.
+ */
+function songPeakJobs(song, duration) {
+  const st = Store.server;
+  const online = st.on && st.state === 'online';
+  const jobs = [];
+  if (song.file) jobs.push(() => window.flow.peaks(song.file, duration));
+  if (online) jobs.push(() => window.flow.serverSongPeaks(song.id));
+  if (!Store.can('localTrim')) jobs.reverse();
+  return jobs;
+}
+
 /** The trim editor for one song: { el, hint, resetBtn, cut(), stop(), destroy() }. */
 function songTrimEditor(song, { enabled = true } = {}) {
   const canvas = h('canvas.audio-canvas');
@@ -209,14 +225,7 @@ function songTrimEditor(song, { enabled = true } = {}) {
 
   async function loadPeaks() {
     if (!duration) return;
-    const st = Store.server;
-    const online = st.on && st.state === 'online';
-    // Where the song's own file is cut (the desktop), from that file; where the
-    // server cuts it (the phone), from the server's while it can be reached.
-    const jobs = [];
-    if (song.file) jobs.push(() => window.flow.peaks(song.file, duration));
-    if (online) jobs.push(() => window.flow.serverSongPeaks(song.id));
-    if (!Store.can('localTrim')) jobs.reverse();
+    const jobs = songPeakJobs(song, duration);
     if (!jobs.length) {
       setStatus(`No waveform: the song is not on ${Store.here} and the server cannot be reached. It can still be trimmed.`);
       return;

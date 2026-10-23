@@ -700,7 +700,9 @@ const AddPage = {
     $('waveStatus').textContent = 'Drawing waveform...';
     requestAnimationFrame(() => this._redraw());
     try {
-      const peaks = m.peaks ? await m.peaks() : await window.flow.peaks(m.path, m.duration);
+      // Kept with the song: the lyrics editor's waveform waits for the same one.
+      m.peaksRun = m.peaks ? m.peaks() : window.flow.peaks(m.path, m.duration);
+      const peaks = await m.peaksRun;
       if (this.media !== m) return;
       this.peaks = peaks;
       $('waveStatus').hidden = true;
@@ -776,6 +778,13 @@ const AddPage = {
     const duration = this.media.duration;
     const btn = (label, onclick, kind = '') => h(`button.btn.btn--small${kind}`, { type: 'button', onclick }, label);
     const heading = () => LyricsEdit.heading(this._names());
+    // The editor plays the whole downloaded file, as the preview does.
+    const m = this.media;
+    const player = {
+      src: m.src ? m.src() : Util.fileUrl(m.path),
+      duration,
+      peaks: () => (m === this.media && this.peaks) || m.peaksRun || (m.peaks ? m.peaks() : window.flow.peaks(m.path, m.duration)),
+    };
     // Written by hand: kept with the song; none (null) gives it the looked-up ones again.
     const onSave = (lines) => {
       const data = lines ? LyricsEdit.toData(lines) : null;
@@ -807,9 +816,9 @@ const AddPage = {
     if (!LyricsEdit.available) return;
     if (found) {
       box.append(btn('Edit Lyrics', () => LyricsEdit.edit({
-        title: heading(), data: e.data, duration, onSave,
+        title: heading(), data: e.data, duration, onSave, player,
       }), '.btn--light-green'));
-    } else box.append(btn('Add Lyrics', () => LyricsEdit.add({ title: heading(), onSave }), '.btn--light-green'));
+    } else box.append(btn('Add Lyrics', () => LyricsEdit.add({ title: heading(), onSave, player }), '.btn--light-green'));
   },
 
   /** SponsorBlock's parts of the song in the editor, as the settings want them. */

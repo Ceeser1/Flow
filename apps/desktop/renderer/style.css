@@ -3345,27 +3345,53 @@ body.mobile .switch-where { text-align: left; }
 .lyrics-show__source { font-size: 11px; color: var(--text-dim); padding-top: 10px; }
 
 /* Edit and Add: From - To and the words, a row a line. */
-.modal--lyrics-edit { width: min(860px, 100%); height: 85vh; }
+.modal--lyrics-edit { width: min(900px, 100%); height: 90vh; }
+/* The lines scroll on their own; the player stays at the bottom. */
+.modal--lyrics-edit .modal__body { overflow: hidden; }
 .lyrics-edit__hint { flex: none; padding-bottom: 10px; white-space: normal; }
 .lyrics-edit__paste-box { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
 .lyrics-edit__paste { height: auto; flex: 1; min-height: 200px; padding: 8px 10px; resize: none; font: inherit; line-height: 1.5; }
 .lyrics-edit__paste-box[hidden],
 .lyrics-edit__table[hidden] { display: none; }
 .lyrics-edit__paste-foot { display: flex; justify-content: flex-end; }
-.lyrics-edit__table { display: flex; flex-direction: column; gap: 4px; }
+.lyrics-edit__table { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; }
+.lyrics-edit__rows { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; min-height: 0; padding-right: 4px; }
 .lyrics-edit__head,
 .lyrics-edit__row {
   display: grid;
-  grid-template-columns: 104px 10px 104px minmax(0, 1fr) 28px;
+  grid-template-columns: 104px 10px 104px minmax(0, 1fr) 28px 28px;
   align-items: center;
   gap: 6px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 4px;
 }
-.lyrics-edit__head { font-size: 12px; font-weight: 600; color: var(--text-dim); padding-bottom: 2px; }
+.lyrics-edit__head { font-size: 12px; font-weight: 600; color: var(--text-dim); padding-bottom: 2px; padding-right: 8px; }
+/* The line sung where the player is. */
+.lyrics-edit__row--now { outline: 1px solid rgba(255, 255, 255, 0.55); outline-offset: -1px; }
+.lyrics-edit__words { position: relative; min-width: 0; }
+.lyrics-edit__words .lyrics-edit__text { width: 100%; }
+/* A line without words: music, a note in its box. */
+.lyrics-edit__note { display: none; position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--text-dim); pointer-events: none; }
+.lyrics-edit__note .icon { width: 16px; height: 16px; }
+.lyrics-edit__row--music .lyrics-edit__note { display: inline-flex; }
+.lyrics-edit__row--music .lyrics-edit__text { padding-left: 32px; }
 .lyrics-edit__time { height: 28px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
 .lyrics-edit__text { height: 28px; }
 .lyrics-edit__dash { color: var(--text-dim); text-align: center; }
+.lyrics-edit__add,
 .lyrics-edit__remove { width: 28px; height: 28px; }
+.lyrics-edit__add .icon { width: 14px; height: 14px; }
 .lyrics-edit__foot { padding-top: 6px; }
+.lyrics-edit__error { flex: none; }
+/* The player: the waveform, then -5 s, play, +5 s and the place. */
+.lyrics-edit__player { flex: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.lyrics-edit__wave-wrap { position: relative; height: 84px; }
+.lyrics-edit__wave { display: block; width: 100%; height: 84px; background: rgba(0, 0, 0, 0.33); border-radius: 4px; cursor: pointer; touch-action: none; }
+.lyrics-edit__wave-status { font-size: 14px; }
+.lyrics-edit__wave-status[hidden] { display: none; }
+.lyrics-edit__transport { display: flex; align-items: center; gap: 10px; padding-top: 8px; }
+.lyrics-edit__transport .round-btn--main { width: 40px; height: 40px; }
+.lyrics-edit__clock { margin-left: 6px; font-variant-numeric: tabular-nums; color: var(--text-bright); font-size: 15px; }
 .input--bad, .input--bad:focus { border-color: var(--red); }
 
 /* Song Details: the song's words without times, and Edit / Add Lyrics under them. */
