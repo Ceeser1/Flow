@@ -145,7 +145,8 @@ const SessionsPage = {
     if (!servers.length) return;
     box.append(h('div.section-head', h('h2.section-head__title', 'Nearby, on other servers')),
       h('p.muted-text', 'Flow Servers on this network that let guests from other servers in. Join as a guest: you can control the '
-        + 'session, queue its server\'s songs and play along. Nothing is counted on that server.'));
+        + 'session, queue its server\'s songs and your own, and play along. Your songs stay there for that session only, '
+        + 'and nothing is counted on that server.'));
     for (const n of servers) {
       const list = h('div.nearby__list');
       for (const s of n.sessions) {

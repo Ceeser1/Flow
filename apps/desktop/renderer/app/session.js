@@ -423,7 +423,7 @@ const Session = {
       body: [
         h('p.modal__text', `${who} wants to join your session.`),
         h('p.muted-text', 'Once in, they can pause, skip and queue songs that play here.'
-          + (r.guest ? ' They are a guest from another Flow Server on your network: they see your songs while in the session, nothing else.' : '')
+          + (r.guest ? ' They are a guest from another Flow Server on your network: while in the session they see your songs and may bring their own, deleted when it ends; nothing else.' : '')
           + (r.ip && r.device ? ` Connecting from ${r.ip}.` : '')),
       ],
       buttons: [

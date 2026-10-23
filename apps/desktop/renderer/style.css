@@ -2324,6 +2324,8 @@ div.import__frame-head { cursor: default; }
   display: flex;
   flex-direction: column;
 }
+/* Given the focus only to keep it from jumping (Administration's draw). */
+.modal__body:focus { outline: none; }
 
 .modal__text { margin: 4px 0 8px; line-height: 1.5; user-select: text; }
 .modal__subtitle { margin: 0 0 12px; color: var(--text-dim); user-select: text; }

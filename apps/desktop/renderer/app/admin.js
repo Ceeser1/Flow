@@ -18,6 +18,7 @@ const Admin = {
   _sort: { key: 'name', dir: 'asc' },
   _query: '',
   _opened: new Set(), // the phone's profiles opened with a tap
+  _fits: [], // the scrolling lists' measuring, run as draw() puts them in
 
   /** The category: its heading and the node it is drawn into. */
   rows() {
@@ -65,6 +66,8 @@ const Admin = {
     };
     // Next frame: a height set inside the observer's call would be observed again at once.
     new ResizeObserver(() => requestAnimationFrame(fit)).observe(node);
+    // And once as draw() puts it in, before it is painted: else it shows its full length for a frame.
+    this._fits.push(fit);
     // A touch screen scrolls the list only from its middle half: a swipe on
     // its outer quarters scrolls the page (the list cannot scroll for that touch).
     // Not passive: Android then waits for this before it picks what the swipe scrolls.
@@ -120,6 +123,16 @@ const Admin = {
     const top = h('div.admin__top',
       me && !me.pin ? h('p.admin__warn', 'Your profile has no PIN: anyone who can reach this server can log in to it and use Administration.') : null,
       h('button.btn.btn--small', { type: 'button', onclick: () => this.load() }, 'Refresh'));
+    // Drawn afresh after every change, in the same place: the phone's WebView
+    // scrolls Settings to the top when the focused control (a rule's select
+    // just picked) is taken out, so the focus leaves it first without scrolling.
+    const scroller = this._node.closest('.modal__body');
+    const scrolled = scroller ? scroller.scrollTop : 0;
+    if (scroller && this._node.contains(document.activeElement)) {
+      scroller.tabIndex = -1;
+      scroller.focus({ preventScroll: true });
+    }
+    this._fits = [];
     // append() writes a null as the text "null": the master's block is left out instead.
     clear(this._node).append(...[
       top,
@@ -133,6 +146,8 @@ const Admin = {
       this._block('Server rules', this._rules(d.rules)),
       Store.server.master ? this._block('Server password', this._password(d.server)) : null,
     ].filter(Boolean));
+    for (const fit of this._fits) fit();
+    if (scroller) scroller.scrollTop = scrolled;
   },
 
   _block(title, ...body) {
@@ -559,7 +574,8 @@ const Admin = {
       guests ? h('label.check.admin__guests', guests,
         h('span', 'Allow guests from other servers in the home network',
           h('span.admin__item-sub', 'Flow apps of another Flow Server on the same network may ask to join this server\'s Active Sessions '
-            + '(the host still says yes or no). In a session they see and queue this server\'s songs; nothing else.'))) : null);
+            + '(the host still says yes or no). In a session they see and queue this server\'s songs and may bring songs of their own, '
+            + 'kept for that session only; nothing else of this server is open to them.'))) : null);
   },
 
   // ---- Server password (master admin) ----
