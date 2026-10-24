@@ -543,6 +543,8 @@ body.mobile .mrow__sub { overflow: hidden; text-overflow: ellipsis; white-space:
 body.mobile .mrow__title { color: var(--text-bright); font-size: 16px; }
 body.mobile .mrow__sub { margin-top: 2px; color: var(--text-dim); font-size: 13.5px; }
 body.mobile .mrow.row--current .mrow__title { color: var(--green); }
+body.mobile .mrow.row--current { background: rgba(120, 200, 140, 0.12); }
+body.mobile .mrow.row--current:active { background: rgba(120, 200, 140, 0.18); }
 /* A song kept on the phone: a small golden arrow before the artist. */
 body.mobile .mrow__mark { display: inline-flex; vertical-align: -2px; margin-right: 4px; color: #f5be3c; }
 body.mobile .mrow__mark .icon { width: 14px; height: 14px; }

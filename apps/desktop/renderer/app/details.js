@@ -129,7 +129,7 @@ const SongDetails = {
     const row = (label, value) => [h('div.details__label', label), h('div.details__value', value)];
     return h('section.details__section',
       h('h4.details__heading', 'Source'),
-      h('div.details__grid',
+      h('div.details__grid.details__grid--source',
         ...row('Direct Url', song.sourceUrl ? link(song.sourceUrl) : h('span.muted-text', 'Not known (the file was added to Local Files by hand)')),
         ...(song.sourcePlaylistUrl ? row('Playlist Url', link(song.sourcePlaylistUrl)) : [])));
   },
@@ -140,7 +140,10 @@ const SongDetails = {
    * server for a server's song. `reload` fetches them again.
    */
   _lyrics(song, lyrics, reload) {
-    const section = h('section.details__section', h('h4.details__heading', 'Lyrics'));
+    // The heading says where the words came from; Edit (or Add) at its right.
+    const name = h('span', 'Lyrics');
+    const heading = h('h4.details__heading.details__heading--split', name);
+    const section = h('section.details__section', heading);
     if (lyrics.state === 'loading') {
       section.appendChild(h('div.details__lyrics.details__lyrics--none', LyricsEdit.spinner(), 'Looking for the lyrics...'));
       return section;
@@ -152,10 +155,13 @@ const SongDetails = {
     }
     const data = lyrics.data;
     const words = data && data.found ? String(data.plain || '').trim() : '';
+    if (words) {
+      const from = data.own ? 'written in Flow' : `from ${data.source || 'LRCLIB'}`;
+      name.appendChild(h('span.details__heading-note', ` (${from}, ${data.synced ? 'with times' : 'without times'})`));
+    }
     section.appendChild(words
       ? h('div.details__lyrics', words)
       : h('div.details__lyrics.details__lyrics--none', data && data.instrumental ? 'Instrumental' : 'No lyrics found for this song.'));
-    if (words) section.appendChild(h('div.lyrics__source.details__lyrics-source', LyricsEdit.sourceLine(data)));
     if (!LyricsEdit.available) return section;
     const title = LyricsEdit.heading(song);
     const onSave = async (lines) => {
@@ -179,13 +185,16 @@ const SongDetails = {
         return null;
       },
     };
-    section.appendChild(h('div.details__row', words
-      ? h('button.btn.btn--light-green', {
-        type: 'button', onclick: () => LyricsEdit.edit({
+    heading.appendChild(words
+      ? h('button.btn.btn--small.btn--light-green', {
+        type: 'button',
+        onclick: () => LyricsEdit.edit({
           title, data, duration: song.duration, onSave, player,
         }),
       }, 'Edit Lyrics')
-      : h('button.btn.btn--light-green', { type: 'button', onclick: () => LyricsEdit.add({ title, onSave, player }) }, 'Add Lyrics')));
+      : h('button.btn.btn--small.btn--light-green', {
+        type: 'button', onclick: () => LyricsEdit.add({ title, onSave, player }),
+      }, 'Add Lyrics'));
     return section;
   },
 

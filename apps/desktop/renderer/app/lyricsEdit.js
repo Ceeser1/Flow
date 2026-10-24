@@ -162,7 +162,7 @@ const LyricsEdit = {
     title, data, duration = 0, onSave, player = null,
   }) {
     return this._editor({
-      title, rows: this.rows(data, duration), own: !!(data && data.own), onSave, heading: 'Edit Lyrics', player,
+      title, rows: this.rows(data, duration), own: !!(data && data.own), onSave, heading: 'Edit Lyrics', player, duration,
     });
   },
 
@@ -186,11 +186,26 @@ const LyricsEdit = {
    * throw: the message is shown and the popup stays.
    */
   _editor({
-    title, rows, own, onSave, heading, player,
+    title, rows, own, onSave, heading, player, duration = 0,
   }) {
     const grid = h('div.lyrics-edit__rows');
     const error = h('div.form-error.lyrics-edit__error');
-    const deck = player ? this._player(player) : null;
+    // Insert Time: the place played into the first empty To (and so the next line's From).
+    const insertTime = (t) => {
+      const to = [...grid.querySelectorAll('.lyrics-edit__row')]
+        .map((row) => row.querySelectorAll('.lyrics-edit__time')[1])
+        .find((b) => !b.value.trim());
+      if (!to) {
+        error.textContent = grid.firstElementChild ? 'Every line has its To already.' : 'Split the lyrics into lines first.';
+        return;
+      }
+      error.textContent = '';
+      to.value = this.fmt(t);
+      to.classList.remove('input--bad');
+      to.dispatchEvent(new Event('input', { bubbles: true }));
+      to.closest('.lyrics-edit__row').scrollIntoView({ block: 'nearest' });
+    };
+    const deck = player ? this._player({ ...player, insertTime }) : null;
     // Lines coloured again (and the waveform with them) whenever one changes.
     const ed = {
       grid,
@@ -212,13 +227,31 @@ const LyricsEdit = {
       type: 'button',
       html: `${Icons.plus}<span>Add line</span>`,
       onclick: () => {
-        const row = this._row({ t: null, end: null, text: '' }, ed);
+        // Starting where the last line ends.
+        const last = grid.lastElementChild;
+        const t = last ? this.parse(last.querySelectorAll('.lyrics-edit__time')[1].value) : null;
+        const row = this._row({ t: Number.isFinite(t) ? t : null, end: null, text: '' }, ed);
         grid.appendChild(row);
         ed.changed();
         row.querySelector('.lyrics-edit__text').focus();
       },
     });
-    const table = h('div.lyrics-edit__table', head, grid, h('div.lyrics-edit__foot', addLine));
+    // Every line earlier or later by the time given (lyrics that start too soon or too late).
+    const by = h('input.input.lyrics-edit__shift-by', {
+      type: 'text', placeholder: '00:000', spellcheck: 'false', 'aria-label': 'Time to add or subtract (ss:ms)',
+    });
+    const shiftBtn = (label, sign) => h('button.btn.btn--small', {
+      type: 'button',
+      onclick: () => {
+        const err = this._shift(grid, sign * this.parse(by.value), (deck && deck.duration()) || duration);
+        error.textContent = err;
+        by.classList.toggle('input--bad', !!err && !(this.parse(by.value) > 0));
+        if (!err) ed.changed();
+      },
+    }, label);
+    const shift = h('div.lyrics-edit__shift',
+      h('span', 'Add/Subtract time to all lines:'), by, shiftBtn('Add', 1), shiftBtn('Sub', -1));
+    const table = h('div.lyrics-edit__table', head, grid, h('div.lyrics-edit__foot', addLine, shift));
 
     const showRows = (list) => {
       clear(grid);
@@ -247,7 +280,9 @@ const LyricsEdit = {
     showRows(rows);
 
     const hint = h('div.hint-label.lyrics-edit__hint',
-      'Times as mm:ss:ms (minutes, seconds, milliseconds). An empty "To": until the next line. '
+      'Times as mm:ss:ms (minutes, seconds, milliseconds); drag one left or right to change it. '
+      + 'A line\'s To is the next line\'s From. Insert Time puts the place played into the first empty To. '
+      + 'Saving fills an empty time from the line beside it, and the last To with the song\'s end. '
       + 'Leave every time empty to keep the words without times. + or Enter adds a line after one, '
       + 'a line without words is music (♪).');
     const buttons = [];
@@ -277,6 +312,8 @@ const LyricsEdit = {
           fromPaste();
           return false;
         }
+        this._fill(grid, (deck && deck.duration()) || duration);
+        ed.changed();
         return save(this._read(grid, error));
       },
     });
@@ -351,6 +388,12 @@ const LyricsEdit = {
         addAfter().querySelector('.lyrics-edit__text').focus();
       }),
       iconButton('icon-btn.lyrics-edit__remove', Icons.x, 'Take this line out', () => {
+        // A From without a To goes on to the next line when that has no From.
+        const after = row.nextElementSibling && row.nextElementSibling.querySelector('.lyrics-edit__time');
+        if (after && !after.value.trim() && !to.value.trim() && Number.isFinite(this.parse(from.value))) {
+          after.value = this.fmt(this.parse(from.value));
+          after.classList.remove('input--bad');
+        }
         const next = row.nextElementSibling || row.previousElementSibling;
         row.remove();
         ed.changed();
@@ -366,12 +409,130 @@ const LyricsEdit = {
         ed.error.textContent = '';
       });
     }
+    // A line's To is the next line's From and the other way round: one typed
+    // (or inserted) is copied over as it is read.
+    const link = (b, other) => b.addEventListener('input', () => {
+      const v = this.parse(b.value);
+      const box = other();
+      if (!box || !Number.isFinite(v)) return;
+      box.value = this.fmt(v);
+      box.classList.remove('input--bad');
+    });
+    const prevTo = () => row.previousElementSibling && row.previousElementSibling.querySelectorAll('.lyrics-edit__time')[1];
+    link(from, prevTo);
+    link(to, () => row.nextElementSibling && row.nextElementSibling.querySelector('.lyrics-edit__time'));
+    // Dragged while empty: a From from the line above's To, a To from its own From.
+    const known = (b) => (b && Number.isFinite(this.parse(b.value)) ? this.parse(b.value) : 0);
+    this._scrub(from, () => known(prevTo()));
+    this._scrub(to, () => known(from));
     text.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
       addAfter().querySelector('.lyrics-edit__time').focus();
     });
     return row;
+  },
+
+  /**
+   * A time box dragged left or right: its time less or more (10 ms a pixel,
+   * Shift 1 ms), the box linked to it (see _row) moving with it. A click
+   * without a drag edits it, all of it selected; while it is being edited the
+   * mouse selects its text as usual. `start()`: the time to drag from when
+   * it is empty.
+   */
+  _scrub(b, start) {
+    b.title = 'Click to type, drag left or right to change (Shift: finer)';
+    // Its selected text is not dragged away (a drag while typing selects).
+    b.addEventListener('dragstart', (e) => e.preventDefault());
+    b.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || document.activeElement === b) return;
+      e.preventDefault();
+      const v = this.parse(b.value);
+      let t = Number.isFinite(v) ? v : start();
+      let x = e.clientX;
+      let dragged = false;
+      const move = (ev) => {
+        if (!dragged && Math.abs(ev.clientX - e.clientX) < 4) return;
+        dragged = true;
+        document.body.classList.add('lyrics-edit--scrubbing');
+        t = Math.max(0, t + (ev.clientX - x) * (ev.shiftKey ? 0.001 : 0.01));
+        x = ev.clientX;
+        b.value = this.fmt(t);
+        b.classList.remove('input--bad');
+        b.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      const up = () => {
+        window.removeEventListener('mousemove', move);
+        window.removeEventListener('mouseup', up);
+        document.body.classList.remove('lyrics-edit--scrubbing');
+        if (dragged) return;
+        b.focus();
+        b.select();
+      };
+      window.addEventListener('mousemove', move);
+      window.addEventListener('mouseup', up);
+    });
+  },
+
+  /**
+   * Every line's From and To moved by `by` seconds (less than 0: earlier).
+   * The opening line of music keeps starting at 0, and a To past the song's
+   * end (`duration`, when known) stops there. Returns the reason nothing was
+   * moved ('' when they were): no time given, the last line would start
+   * after the song's end, or the first line would end before 0.
+   */
+  _shift(grid, by, duration) {
+    if (!Number.isFinite(by) || by === 0) return 'Write the time to add or subtract as ss:ms, e.g. 01:500.';
+    const rows = [...grid.querySelectorAll('.lyrics-edit__row')];
+    const times = rows.flatMap((row) => [...row.querySelectorAll('.lyrics-edit__time')].map((b, k) => ({
+      b, k, t: this.parse(b.value), row,
+    }))).filter((x) => Number.isFinite(x.t));
+    const froms = times.filter((x) => x.k === 0).map((x) => x.t);
+    const tos = times.filter((x) => x.k === 1).map((x) => x.t);
+    if (!froms.length && !tos.length) return 'The lines have no times to move.';
+    // ss:ms as typed (mm:ss:ms from a minute on).
+    const amount = Math.abs(by) < 60 ? this.fmt(Math.abs(by)).slice(3) : this.fmt(Math.abs(by));
+    if (by > 0 && duration && froms.length && Math.max(...froms) + by > duration) {
+      return `Adding ${amount} would start the last line after the end of the song (${this.fmt(duration)}).`;
+    }
+    if (by < 0 && tos.length && Math.min(...tos) + by < 0) {
+      return `Subtracting ${amount} would end the first line before the start of the song.`;
+    }
+    const intro = rows[0] && !rows[0].querySelector('.lyrics-edit__text').value.trim() ? rows[0] : null;
+    for (const x of times) {
+      if (x.k === 0 && x.row === intro && x.t === 0) continue;
+      // A To at the song's end stays there (the closing music).
+      if (x.k === 1 && duration && Math.abs(x.t - duration) < 0.001) continue;
+      let t = Math.max(0, x.t + by);
+      if (x.k === 1 && duration) t = Math.min(duration, t);
+      x.b.value = this.fmt(t);
+      x.b.classList.remove('input--bad');
+    }
+    // Words from the very start now: no opening music (see _withIntro).
+    if (intro && rows.length > 1 && this.parse(intro.querySelectorAll('.lyrics-edit__time')[1].value) === 0) intro.remove();
+    return '';
+  },
+
+  /**
+   * Before saving: an empty From takes the To of the line above, an empty To
+   * the From of the line below, and the last line's To the song's end
+   * (`duration`, when known and after its From).
+   */
+  _fill(grid, duration) {
+    const boxes = [...grid.querySelectorAll('.lyrics-edit__row')].map((row) => row.querySelectorAll('.lyrics-edit__time'));
+    const time = (b) => this.parse(b.value);
+    const set = (b, t) => {
+      b.value = this.fmt(t);
+      b.classList.remove('input--bad');
+    };
+    boxes.forEach(([from], i) => {
+      if (i && !from.value.trim() && Number.isFinite(time(boxes[i - 1][1]))) set(from, time(boxes[i - 1][1]));
+    });
+    boxes.forEach(([, to], i) => {
+      if (boxes[i + 1] && !to.value.trim() && Number.isFinite(time(boxes[i + 1][0]))) set(to, time(boxes[i + 1][0]));
+    });
+    const last = boxes[boxes.length - 1];
+    if (last && !last[1].value.trim() && Number.isFinite(time(last[0])) && duration > time(last[0])) set(last[1], duration);
   },
 
   /**
@@ -415,10 +576,14 @@ const LyricsEdit = {
    * of it moves it along.
    * `src`: what an <audio> plays (null: the
    * song cannot be reached); `duration`: its length, else the audio's own;
-   * `peaks()`: the waveform's peaks (or a promise of them, null for none).
+   * `peaks()`: the waveform's peaks (or a promise of them, null for none);
+   * `insertTime(t)`: Insert Time before the place, given the place played.
+   * Playback Speed after it: 20% to 120% (pitch kept).
    * Returns { el, mark(marks), stop(), destroy() }.
    */
-  _player({ src, duration: known = 0, peaks: loadPeaks = null }) {
+  _player({
+    src, duration: known = 0, peaks: loadPeaks = null, insertTime = null,
+  }) {
     const canvas = h('canvas.lyrics-edit__wave');
     const playhead = h('div.playhead.playhead--audio');
     const status = h('div.audio-status.lyrics-edit__wave-status');
@@ -429,7 +594,16 @@ const LyricsEdit = {
       html: `<span class="skip-label">${by < 0 ? '-5' : '+5'}</span>`,
       onclick: () => seek(audio.currentTime + by, true),
     });
+    const insert = insertTime && h('button.btn.btn--small.lyrics-edit__insert', {
+      type: 'button',
+      title: 'The place played into the first empty To',
+      onclick: () => insertTime(audio.currentTime || 0),
+    }, 'Insert Time');
     const clock = h('span.lyrics-edit__clock');
+    const speed = h('input.volume-slider.lyrics-edit__speed', {
+      type: 'range', min: 20, max: 120, step: 20, value: 100, 'aria-label': 'Playback speed',
+    });
+    const speedValue = h('span.lyrics-edit__speed-value');
     const zoomNote = h('span.lyrics-edit__zoom');
     // Zoomed in: a scroll bar under the waveform, its thumb the part shown.
     const thumb = h('div.lyrics-edit__scroll-thumb');
@@ -437,7 +611,8 @@ const LyricsEdit = {
     const el = h('div.lyrics-edit__player',
       h('div.lyrics-edit__wave-wrap', canvas, playhead, status),
       scrollbar,
-      h('div.lyrics-edit__transport', skip(-5), playBtn, skip(5), clock, zoomNote));
+      h('div.lyrics-edit__transport', skip(-5), playBtn, skip(5), insert, clock,
+        h('label.lyrics-edit__speed-box', h('span', 'Playback Speed:'), speed, speedValue), zoomNote));
 
     let duration = known;
     // The part of the song the waveform shows, in seconds: all of it, or less zoomed in.
@@ -453,6 +628,16 @@ const LyricsEdit = {
     audio.volume = Player.volume;
     if (src) audio.src = src;
     for (const b of el.querySelectorAll('button')) b.disabled = !src;
+    speed.disabled = !src;
+    const drawSpeed = () => {
+      const v = Number(speed.value);
+      speedValue.textContent = `${v}%`;
+      speed.style.setProperty('--fill', `${((v - 20) / 100) * 100}%`);
+      audio.defaultPlaybackRate = v / 100;
+      audio.playbackRate = v / 100;
+    };
+    speed.addEventListener('input', drawSpeed);
+    drawSpeed();
     const setStatus = (text) => {
       status.textContent = text;
       status.hidden = !text;
@@ -472,9 +657,9 @@ const LyricsEdit = {
       const at = Math.max(0, Math.min(duration - len, a));
       view = { a: at, b: at + len };
       const zoomed = len < duration - 0.001;
-      zoomNote.textContent = zoomed
-        ? `Zoom ${(duration / len).toFixed(1)}x, Shift + wheel or the bar below moves, double-click: whole song`
-        : 'Mouse wheel on the waveform: zoom in';
+      // Short (the transport row is full); how to move and go back in its tooltip.
+      zoomNote.textContent = zoomed ? `Zoom ${(duration / len).toFixed(1)}x` : 'Use mouse wheel to zoom';
+      zoomNote.title = zoomed ? 'Shift + wheel or the bar below moves along, a double-click shows the whole song' : '';
       scrollbar.hidden = !zoomed;
       if (zoomed) {
         thumb.style.left = `${(at / duration) * 100}%`;
@@ -650,6 +835,8 @@ const LyricsEdit = {
 
     return {
       el,
+      /** The song's length as known now (the audio's own once read). */
+      duration: () => duration,
       mark(list) {
         marks = list;
         draw();
