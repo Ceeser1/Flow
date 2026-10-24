@@ -39,18 +39,33 @@ test('the curve eases from point to point, flat at each one', () => {
   assert.equal(SoundEq.at([], 1000), 0);
 });
 
-test('Standard is flat, Bass Boost lifts 20 to 300 Hz and nothing above', () => {
+test('Standard is flat, Bass Boost lifts up to 250 Hz with its peak at 80 Hz', () => {
   assert.deepEqual(SoundEq.presetGains('standard', 16), new Array(16).fill(0));
   const fs = SoundEq.freqs(16);
   const bass = SoundEq.presetGains('bass', 16);
+  assert.equal(bass[0], 4);
   fs.forEach((f, i) => {
-    if (f <= 100) assert.equal(bass[i], 6);
-    else if (f < 300) assert.ok(bass[i] > 0 && bass[i] < 6);
+    if (f < 250) assert.ok(bass[i] > 0 && bass[i] <= 6);
     else assert.equal(bass[i], 0);
+    // Rising up to 80 Hz, falling after it.
+    if (i > 0 && f <= 80) assert.ok(bass[i] >= bass[i - 1]);
+    if (i > 0 && fs[i - 1] >= 80) assert.ok(bass[i] <= bass[i - 1]);
   });
+  assert.equal(SoundEq.at(SoundEq.PRESETS.bass.points, 80), 6);
   // Any number of bands: the same curve.
-  assert.equal(SoundEq.presetGains('bass', 48)[0], 6);
+  assert.equal(SoundEq.presetGains('bass', 48)[0], 4);
   assert.equal(SoundEq.presetGains('bass', 8)[7], 0);
+});
+
+test('Subtle holds the bass down, Intimate is a wave with its top at 500 Hz', () => {
+  const subtle = SoundEq.PRESETS.subtle.points;
+  for (const hz of [20, 50, 80, 150]) assert.ok(SoundEq.at(subtle, hz) < 0);
+  const intimate = SoundEq.PRESETS.intimate.points;
+  assert.equal(SoundEq.at(intimate, 20), -6);
+  assert.equal(SoundEq.at(intimate, 500), 6);
+  assert.equal(SoundEq.at(intimate, 20000), -3);
+  assert.ok(SoundEq.at(intimate, 100) > -6 && SoundEq.at(intimate, 100) < 6);
+  assert.ok(SoundEq.at(intimate, 4000) > -3 && SoundEq.at(intimate, 4000) < 6);
 });
 
 test('the settings give the gains shown: a preset, or Custom spread over the bands', () => {

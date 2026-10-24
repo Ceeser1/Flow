@@ -393,7 +393,7 @@ const SettingsPanel = {
 
   /**
    * The sound equalizer (soundEq.js): Bands (8 to 48 points from 20 Hz to
-   * 20 kHz), Pre-Defined (the ready-made curves, and Custom: the user's own),
+   * 20 kHz), Sound Equalizer (the ready-made curves, and Custom: the user's own),
    * then the curve itself. A point is dragged up or down (Shift: finer) or put
    * back to 0 dB with a double-click; the keys pick one (Left, Right) and move
    * it (Up, Down). Moving a point makes the curve Custom.
@@ -430,7 +430,7 @@ const SettingsPanel = {
       base = null;
     });
 
-    const preset = h('select.select', { 'aria-label': 'Pre-Defined' });
+    const preset = h('select.select', { 'aria-label': 'Sound Equalizer' });
     for (const id of SoundEq.CHOICES) preset.appendChild(h('option', { value: id }, id === 'custom' ? 'Custom' : SoundEq.PRESETS[id].name));
     preset.addEventListener('change', () => {
       const patch = { soundEqPreset: preset.value };
@@ -648,7 +648,7 @@ const SettingsPanel = {
         right: h('div.settings__control', bands, bandsValue),
       }),
       this._row({
-        label: 'Pre-Defined',
+        label: 'Sound Equalizer',
         desc: 'A ready-made curve, or Custom: your own points. Moving a point makes the curve shown your Custom one.',
         right: preset,
       }),

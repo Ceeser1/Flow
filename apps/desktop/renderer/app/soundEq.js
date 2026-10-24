@@ -31,12 +31,12 @@
   // [Hz, dB] points, eased between as the bands are; nothing given is 0 dB.
   const PRESETS = {
     standard: { name: 'Standard', points: [] },
-    // The low end, 20 to 300 Hz, lifted: fully up to 100 Hz.
-    bass: { name: 'Bass Boost', points: [[20, 6], [100, 6], [300, 0]] },
-    // A light lift at both ends.
-    subtle: { name: 'Subtle', points: [[20, 2], [80, 1.5], [250, 0], [1000, -0.5], [3000, 0.5], [8000, 1.5], [20000, 2]] },
-    // Warm low mids, the voice close, soft highs.
-    intimate: { name: 'Intimate', points: [[20, -1], [60, 0], [250, 2], [1000, 1.5], [2500, 2.5], [5000, 0.5], [10000, -1.5], [20000, -3]] },
+    // The low end lifted: already up at 20 Hz, the peak at 80 Hz, back to 0 by 250 Hz.
+    bass: { name: 'Bass Boost', points: [[20, 4], [80, 6], [250, 0]] },
+    // The bass held down a little, a light lift at the top.
+    subtle: { name: 'Subtle', points: [[20, -2], [80, -1.5], [250, -0.5], [1000, -0.5], [3000, 0.5], [8000, 1.5], [20000, 2]] },
+    // A wave: the low end down, the middle (500 Hz) up, the highs a little down.
+    intimate: { name: 'Intimate', points: [[20, -6], [500, 6], [20000, -3]] },
   };
   const CHOICES = [...Object.keys(PRESETS), 'custom'];
 
