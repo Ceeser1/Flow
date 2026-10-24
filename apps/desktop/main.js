@@ -39,6 +39,8 @@ const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
 const { createBackupStore, mergeRestore } = require('@flow/core/backup');
 const { createLyricsClient } = require('@flow/core/client/lyrics');
+const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
+const { solveChallenge } = require('./src/lrclibChallenge');
 const { createGuestLink } = require('@flow/core/client/guest');
 
 let mainWindow = null;
@@ -256,9 +258,31 @@ handle('covers:clear', () => remote.clearCoverCache());
 covers.onStaged((info) => sendToWindow('covers:staged', info));
 handle('covers:staged', (cachePath) => covers.stagedCover(String(cachePath || '')));
 
-// A song's lyrics (4.0): the server's for its songs, LRCLIB's for the others.
-const lyricsClient = createLyricsClient({ remote, library, jsonFiles: env.jsonFiles });
+// A song's lyrics (4.0): the server's for its songs, LRCLIB's for the others,
+// kept in the Lyrics folder (4.0.1); with Settings' "Fetch/Sync Lyrics" off
+// only what is kept there.
+const lyricsClient = createLyricsClient({
+  remote,
+  library,
+  folder: createLyricsFolder(env.lyricsFiles),
+  jsonFiles: env.jsonFiles,
+  fetchOn: () => settings.get('lyricsOn') !== false,
+  syncEveryMs: 15 * 60 * 1000,
+  // Copies of a server's songs have the server's lyrics.
+  skip: (id) => remote.active() && remote.isServerCopy(id),
+  onChange: () => sendToWindow('lyrics:changed'),
+});
+// Every Local Files song's lyrics looked up in the background (4.0.1): soon
+// after a change of the library, and once the window is up (startup).
+library.onChange(() => lyricsClient.fillSoon());
 handle('song:lyrics', (songId) => lyricsClient.get(songId));
+// Settings' Lyrics cache: { count, none, bytes, left }; cleared but for those written here for Local Files songs.
+handle('lyrics:stats', () => lyricsClient.stats());
+handle('lyrics:clear', () => lyricsClient.clear());
+// Lyrics picked by hand from LRCLIB's search (4.0.1).
+handle('lyrics:search', (params) => lyricsClient.search(params));
+// Lyrics written in Flow published on LRCLIB (4.0.1): its challenge solved in a worker thread.
+handle('lyrics:publish', (meta) => lyricsClient.publish(meta, solveChallenge));
 // Lyrics written or edited here (4.0.1): kept for good, a server's song's on the server.
 handle('song:setLyrics', ({ songId, lines, server }) => lyricsClient.set(songId, lines, { server: !!server }));
 // A song just downloaded (Add Songs), not in the library yet: looked up by its names.
@@ -362,6 +386,10 @@ handle('settings:set', (patch) => {
   const next = settings.set(clean);
   if (clean.normalize === true) loudnessFiller.run();
   remote.reconfigure(clean);
+  if (clean.lyricsOn === true) {
+    lyricsClient.sync();
+    lyricsClient.fill();
+  }
   if (remote.active() !== wasRemote) {
     sendToWindow('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
     sendToWindow('library:changed', currentLibrary());
@@ -523,6 +551,7 @@ handle('folder:move', async (dir) => {
       sendToWindow('folder:progress', { done, total, name });
     });
     covers.moveFolder(oldDir, result.dir);
+    covers.moveFolder(oldDir, result.dir, paths.LYRICS);
     settings.set({ musicDir: result.dir });
     sendToWindow('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
     return result;
@@ -988,6 +1017,7 @@ app.whenReady().then(() => {
       loudnessFiller.run();
       coverFiller.run();
       infoFiller.run();
+      lyricsClient.fill();
       // After the scan: a first start's backup holds the songs found.
       backups.weekly();
     });

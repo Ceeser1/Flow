@@ -15,6 +15,9 @@
 // second it ends at, `end`, when it was given one). Lines in step with the
 // song only when its length is LRCLIB's within SYNC_SLACK seconds (a song
 // trimmed differently would be out of step): else only the plain text.
+//
+// Also LRCLIB's search for picking lyrics by hand (searchLyrics) and
+// publishing lyrics written in Flow there (publishLyrics, 4.0.1).
 
 const { agentName } = require('./agent');
 
@@ -35,6 +38,9 @@ const PARTIAL_RETRY_MS = 60 * 60 * 1000;
 // search through now and then and keeps the answer once it has given it.
 // The tests set unitMs to 0.
 const RETRY = { gaps: [3, 3, 6, 6, 6, 9, 9, 9], unitMs: 1000 };
+// A busy LRCLIB (429, 503) may say how many seconds to wait (Retry-After):
+// that long before the next try when it is longer, at most this long.
+const RETRY_AFTER_MAX = 60;
 
 // Own lyrics: at most this many lines, each this long, none past this second.
 const OWN_LINES = 1000;
@@ -62,6 +68,17 @@ function parseLrc(text) {
   }
   return out.sort((a, b) => a.t - b.t);
 }
+
+/** LRCLIB's answer `res` that is not ok as an Error, with `retryAfter` (seconds) when it is busy and says how long. */
+function lrclibError(res) {
+  const busy = res.status === 429 || res.status === 503;
+  const err = new Error(busy ? 'LRCLIB is busy right now. Try again in a moment.' : `LRCLIB answered ${res.status}.`);
+  const after = busy && res.headers && typeof res.headers.get === 'function' ? res.headers.get('retry-after') : null;
+  if (after !== null && after !== '' && Number(after) >= 0) err.retryAfter = Math.min(RETRY_AFTER_MAX, Number(after));
+  return err;
+}
+
+const headersFor = (agent) => (agent ? { 'User-Agent': agentName(), Accept: 'application/json' } : { Accept: 'application/json' });
 
 /** The line playing at second `t` (its index), or -1 before the first. */
 function lineAt(lines, t) {
@@ -139,20 +156,23 @@ function pick(results, { artist, title, duration = 0 }) {
  * album, duration }. Resolves NONE when there are none (with `partial` when
  * lyrics.ovh could not be asked); rejects when LRCLIB cannot be reached.
  * Either tried again (RETRY, nine tries over 51 s) until one answers in
- * full. tries: fewer. agent: whether to send the User-Agent (a page's fetch
+ * full (or after the Retry-After a busy LRCLIB names, when that is longer).
+ * tries: fewer. agent: whether to send the User-Agent (a page's fetch
  * cannot).
  */
 async function lookupLyrics(song, opts = {}) {
   const tries = Math.min(opts.tries || Infinity, RETRY.gaps.length + 1);
   for (let n = 1; ; n++) {
     const start = Date.now();
+    let after = 0;
     try {
       const r = await lookupOnce(song, opts);
       if (!r.partial || n >= tries) return r;
     } catch (err) {
       if (n >= tries) throw err;
+      after = Number(err && err.retryAfter) || 0;
     }
-    const wait = start + RETRY.gaps[n - 1] * RETRY.unitMs - Date.now();
+    const wait = Math.max(start + RETRY.gaps[n - 1] * RETRY.unitMs - Date.now(), after * RETRY.unitMs);
     await new Promise((resolve) => setTimeout(resolve, Math.max(0, wait)));
   }
 }
@@ -166,12 +186,9 @@ async function lookupOnce(song, { fetch: get = globalThis.fetch, timeoutMs = 100
   const ask = async (route, params) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v) q.set(k, String(v));
-    const res = await get(`${BASE}/${route}?${q}`, {
-      headers: agent ? { 'User-Agent': agentName(), Accept: 'application/json' } : { Accept: 'application/json' },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    const res = await get(`${BASE}/${route}?${q}`, { headers: headersFor(agent), signal: AbortSignal.timeout(timeoutMs) });
     if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`LRCLIB answered ${res.status}.`);
+    if (!res.ok) throw lrclibError(res);
     return res.json();
   };
   // Only LRCLIB's search: its /get asks other sites for a song it does not
@@ -190,8 +207,7 @@ async function lookupOnce(song, { fetch: get = globalThis.fetch, timeoutMs = 100
   try {
     for (const name of names) {
       const res = await get(`${OVH}/${encodeURIComponent(name)}/${encodeURIComponent(title)}`, {
-        headers: agent ? { 'User-Agent': agentName(), Accept: 'application/json' } : { Accept: 'application/json' },
-        signal: AbortSignal.timeout(timeoutMs),
+        headers: headersFor(agent), signal: AbortSignal.timeout(timeoutMs),
       });
       if (res.status === 404) continue;
       if (!res.ok) throw new Error(`lyrics.ovh answered ${res.status}.`);
@@ -242,6 +258,126 @@ function ownLyrics(rows) {
   };
 }
 
+// ---- picking by hand and publishing (4.0.1) ----
+
+/**
+ * LRCLIB's search, for lyrics picked by hand: `q` (any words), else `title`
+ * with `artist` and `album`. Up to 20 records with words, those with times
+ * first, then those closest to `duration` (seconds, 0: unknown):
+ * [{ id, title, artist, album, duration, instrumental, synced, plain }],
+ * synced [{ t, text }] or null. Rejects when LRCLIB cannot be reached or is
+ * busy (one try: the user is waiting).
+ */
+async function searchLyrics({
+  q = '', title = '', artist = '', album = '', duration = 0,
+} = {}, { fetch: get = globalThis.fetch, timeoutMs = 15000, agent = true } = {}) {
+  const params = new URLSearchParams();
+  if (String(q).trim()) params.set('q', String(q).trim());
+  else {
+    if (!String(title).trim()) return [];
+    params.set('track_name', String(title).trim());
+    if (String(artist).trim()) params.set('artist_name', String(artist).trim());
+    if (String(album).trim()) params.set('album_name', String(album).trim());
+  }
+  let res;
+  try {
+    res = await get(`${BASE}/search?${params}`, { headers: headersFor(agent), signal: AbortSignal.timeout(timeoutMs) });
+  } catch {
+    throw new Error('LRCLIB cannot be reached right now.');
+  }
+  if (!res.ok) throw lrclibError(res);
+  const list = await res.json();
+  const gap = (r) => (duration > 0 && r.duration > 0 ? Math.abs(r.duration - duration) : 0);
+  return (Array.isArray(list) ? list : [])
+    .filter((r) => r && (String(r.plainLyrics || '').trim() || String(r.syncedLyrics || '').trim()))
+    .map((r) => {
+      const lines = parseLrc(r.syncedLyrics);
+      return {
+        id: Number(r.id) || 0,
+        title: String(r.trackName || r.name || ''),
+        artist: String(r.artistName || ''),
+        album: String(r.albumName || ''),
+        duration: Number(r.duration) || 0,
+        instrumental: r.instrumental === true,
+        synced: lines.length ? lines : null,
+        plain: String(r.plainLyrics || '').trim() || lines.map((l) => l.text).join('\n').trim(),
+      };
+    })
+    .sort((a, b) => (b.synced ? 1 : 0) - (a.synced ? 1 : 0) || gap(a) - gap(b))
+    .slice(0, 20);
+}
+
+/**
+ * Lines with times (ownLyrics' synced) as LRC, "[mm:ss.xx] words": a line
+ * with an end before the next starts (or the last line) is followed by an
+ * empty line at its end, so players stop showing it there.
+ */
+function toLrc(synced) {
+  const p = (n) => String(n).padStart(2, '0');
+  const stamp = (t) => {
+    const cs = Math.round(Math.max(0, Number(t) || 0) * 100);
+    return `[${p(Math.floor(cs / 6000))}:${p(Math.floor(cs / 100) % 60)}.${p(cs % 100)}]`;
+  };
+  const out = [];
+  (synced || []).forEach((l, i, all) => {
+    out.push(l.text ? `${stamp(l.t)} ${l.text}` : stamp(l.t));
+    const next = all[i + 1];
+    if (l.text && Number.isFinite(l.end) && (!next || next.t > l.end + 0.005)) out.push(stamp(l.end));
+  });
+  return out.join('\n');
+}
+
+/**
+ * Publishes lyrics written in Flow on LRCLIB, for everyone (it keeps them for
+ * good): { title, artist, album, duration (seconds), lines } with lines as
+ * ownLyrics takes them. LRCLIB asks for a proof of work first: a challenge
+ * ({ prefix, target }) that `solve(prefix, target)` answers with a nonce
+ * (sha256(prefix + nonce) <= target), which can take a while. Rejects with a
+ * message fit to show.
+ */
+async function publishLyrics({
+  title, artist, album, duration, lines,
+}, {
+  fetch: get = globalThis.fetch, agent = true, solve, timeoutMs = 30000,
+} = {}) {
+  const need = [[title, 'title'], [artist, 'artist'], [album, 'album']].find(([v]) => !String(v || '').trim());
+  if (need) throw new Error(`LRCLIB needs the song's ${need[1]}.`);
+  const own = ownLyrics(lines);
+  if (!own) throw new Error('Write the lyrics first.');
+  const seconds = Math.round(Number(duration) || 0);
+  if (!(seconds > 0)) throw new Error('LRCLIB needs the song\'s length.');
+  const post = async (route, body, headers = {}) => {
+    let res;
+    try {
+      res = await get(`${BASE}/${route}`, {
+        method: 'POST',
+        headers: { ...headersFor(agent), ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch {
+      throw new Error('LRCLIB cannot be reached right now.');
+    }
+    if (res.ok) return res.json().catch(() => null);
+    const said = await res.json().catch(() => null);
+    if (res.status === 429 || res.status === 503 || !said || !said.message) throw lrclibError(res);
+    throw new Error(`LRCLIB did not take them: ${said.message}`);
+  };
+  const challenge = await post('request-challenge');
+  if (!challenge || !challenge.prefix || !/^[0-9a-f]+$/i.test(String(challenge.target || ''))) {
+    throw new Error('LRCLIB sent a challenge Flow cannot read.');
+  }
+  const nonce = await solve(String(challenge.prefix), String(challenge.target));
+  await post('publish', {
+    trackName: String(title).trim(),
+    artistName: String(artist).trim(),
+    albumName: String(album).trim(),
+    duration: seconds,
+    plainLyrics: own.plain.replace(/\n{3,}/g, '\n\n').trim(),
+    ...(own.synced ? { syncedLyrics: toLrc(own.synced) } : {}),
+  }, { 'X-Publish-Token': `${challenge.prefix}:${nonce}` });
+}
+
 /** What a song's lyrics depend on: looked up again when it changes (renamed, trimmed). */
 function lyricsKey(song) {
   return `${fold(song.artist)}|${fold(song.title)}|${Math.round(Number(song.duration) || 0)}`;
@@ -290,5 +426,6 @@ function clean(kept) {
 
 module.exports = {
   parseLrc, lineAt, pick, fromRecord, ovhText, lookupLyrics, RETRY, ownLyrics, lyricsKey, toKeep, stillGood, settled, clean, firstArtist,
+  searchLyrics, toLrc, publishLyrics,
   NONE, SOURCES, NOT_FOUND_RETRY_MS, PARTIAL_RETRY_MS,
 };

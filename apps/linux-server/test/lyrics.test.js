@@ -219,3 +219,51 @@ test('a lookup running while lyrics are written keeps the written ones', async (
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('the apps\' copies (4.0.1): the stamps of the songs with lyrics kept, then those lyrics', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-lyrics-test-'));
+  const server = await startServer({
+    home: path.join(root, 'home'),
+    music: path.join(root, 'music'),
+    port: 0,
+    host: '127.0.0.1',
+    detectTailscale: async () => null,
+    discoveryPort: null,
+    lookupLyrics: async (song) => ({ found: song.title === 'Porcelain', synced: null, plain: song.title === 'Porcelain' ? 'In my dreams' : '', instrumental: false }),
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  const call = async (route, method = 'GET', body = undefined) => {
+    const r = await fetch(`${base}${route}`, {
+      method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: r.status, json: await r.json() };
+  };
+  try {
+    assert.ok((await call('/api/hello')).json.features.includes('lyricsSync'));
+    for (const [id, title] of [['aaa111', 'Porcelain'], ['bbb222', 'Teardrop'], ['ccc333', 'Angel']]) {
+      const meta = { title, artist: 'Moby', format: 'mp3', duration: 241 };
+      await fetch(`${base}/api/songs/${id}?meta=${encodeURIComponent(JSON.stringify(meta))}`, { method: 'PUT', body: FAKE_MP3 });
+    }
+    assert.deepEqual((await call('/api/lyrics')).json.songs, {}, 'none kept yet');
+    await call('/api/songs/aaa111/lyrics');
+    await call('/api/songs/bbb222/lyrics');
+    const first = (await call('/api/lyrics')).json.songs;
+    assert.deepEqual(Object.keys(first).sort(), ['aaa111', 'bbb222'], 'found or not, not the one never asked for');
+    const got = (await call('/api/lyrics', 'POST', { ids: ['aaa111', 'bbb222', 'ccc333', 'nope'] })).json.lyrics;
+    assert.deepEqual(Object.keys(got).sort(), ['aaa111', 'bbb222']);
+    assert.equal(got.aaa111.plain, 'In my dreams');
+    assert.equal(got.aaa111.v, first.aaa111);
+    assert.equal(got.bbb222.found, false);
+    // Written in an app: a new stamp. Renamed: left out until looked up again.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await call('/api/songs/aaa111/lyrics', 'PUT', { lines: [{ t: null, end: null, text: 'Written' }] });
+    await call('/api/commands', 'POST', { commands: [{ cid: 'r1', at: Date.now(), type: 'editSong', songId: 'bbb222', artist: 'Moby', title: 'Teardrop (Live)' }] });
+    const next = (await call('/api/lyrics')).json.songs;
+    assert.notEqual(next.aaa111, first.aaa111);
+    assert.equal(next.bbb222, undefined);
+    assert.equal((await call('/api/lyrics', 'POST', { ids: ['aaa111'] })).json.lyrics.aaa111.own, true);
+  } finally {
+    await server.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

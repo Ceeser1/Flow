@@ -15,6 +15,7 @@ const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
 const { createPrivateStats } = require('@flow/core/client/privateStats');
 const { createLyricsClient } = require('@flow/core/client/lyrics');
+const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
 const { encode: encodeQr } = require('@flow/core/qr');
 const { createGuestLink } = require('@flow/core/client/guest');
 const caps = require('@flow/core/client/caps');
@@ -70,9 +71,20 @@ function start() {
     remote, library, files: env.files, privateStats,
   });
   // A song's lyrics (4.0): the server's, else LRCLIB's through the page's
-  // fetch, which cannot name Flow as its User-Agent.
+  // fetch, which cannot name Flow as its User-Agent; kept in the Lyrics
+  // folder (4.0.1), only that with Settings' "Fetch/Sync Lyrics" off.
   const lyricsClient = createLyricsClient({
-    remote, library, jsonFiles: env.jsonFiles, fetch: (...args) => fetch(...args), agent: false,
+    remote,
+    library,
+    folder: createLyricsFolder(env.lyricsFiles),
+    jsonFiles: env.jsonFiles,
+    fetchOn: () => settings.get('lyricsOn') !== false,
+    syncEveryMs: 15 * 60 * 1000,
+    // Copies of a server's songs have the server's lyrics.
+    skip: (id) => remote.active() && remote.isServerCopy(id),
+    onChange: () => emit('lyrics:changed'),
+    fetch: (...args) => fetch(...args),
+    agent: false,
   });
   /**
    * One of this phone's songs into the session it is a guest in (4.0): its
@@ -124,6 +136,9 @@ function start() {
   library.onChange((data) => {
     if (!remote.active()) emit('library:changed', data);
   });
+  // Every Local Files song's lyrics in the background (4.0.1): now, and soon after a change.
+  library.onChange(() => lyricsClient.fillSoon());
+  lyricsClient.fillSoon();
 
   remote.init({
     onView: (view) => emit('library:changed', view),
@@ -211,6 +226,10 @@ function start() {
       const wasRemote = remote.active();
       const next = settings.set(clean);
       remote.reconfigure(clean);
+      if (clean.lyricsOn === true) {
+        lyricsClient.sync();
+        lyricsClient.fill();
+      }
       if (remote.active() !== wasRemote) {
         emit('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
         emit('library:changed', actions.currentLibrary());
@@ -327,6 +346,9 @@ function start() {
     onSettingsChanged: on('settings:changed'),
     finishSong: notHere('Saving a download on the phone'),
     lyrics: call((songId) => lyricsClient.get(songId)),
+    lyricsStats: call(() => lyricsClient.stats()),
+    clearLyricsCache: call(() => lyricsClient.clear()),
+    onLyricsChanged: on('lyrics:changed'),
     shareLink: call(() => remote.shareLink()),
     recordAwayListen: call((song, listened, duration) => actions.recordAwayListen({ song, listened, duration })),
     guestLook: call(() => guest.look()),

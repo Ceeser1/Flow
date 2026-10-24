@@ -5,7 +5,8 @@
 // before that, then kept in <home>/lyrics/<song id>.json (none found: asked
 // again after a week when an app asks; the song renamed or trimmed: at
 // once). One lookup at a time per song, however many apps ask. Lyrics
-// written or edited in an app (4.0.1, put) are kept for good instead.
+// written or edited in an app (4.0.1, put) are kept for good instead. The
+// apps keep copies of them (4.0.1, index and many: GET / POST /api/lyrics).
 
 const fs = require('fs');
 const path = require('path');
@@ -68,6 +69,51 @@ function createLyricsStore({
     fs.mkdirSync(dir, { recursive: true });
     writeJsonAtomic(fileOf(song.id), lyrics.toKeep(own, song));
     return Promise.resolve(lyrics.clean(own));
+  }
+
+  // For the apps' copies (index, many): each file's stamp (its size and time)
+  // and what it was kept for, read once a stamp.
+  const seen = new Map();
+
+  /** The answer kept for `song` that still stands for its names (or own), with its stamp; null without one. */
+  function keptFor(song) {
+    if (!song || !ID.test(String(song.id))) return null;
+    let st;
+    try {
+      st = fs.statSync(fileOf(song.id));
+    } catch {
+      return null;
+    }
+    const stamp = `${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}`;
+    let s = seen.get(song.id);
+    if (!s || s.stamp !== stamp) {
+      const kept = readJson(fileOf(song.id));
+      if (!kept) return null;
+      s = { stamp, key: kept.key, own: kept.own === true };
+      seen.set(song.id, s);
+    }
+    return s.own || s.key === lyrics.lyricsKey(song) ? s : null;
+  }
+
+  /** `songs`' answers kept, by id: their stamps, which change when the answer does (an app keeps copies). */
+  function index(songs) {
+    const out = {};
+    for (const song of songs) {
+      const s = keptFor(song);
+      if (s) out[song.id] = s.stamp;
+    }
+    return out;
+  }
+
+  /** `songs`' answers kept, by id, as get hands them out, each with its stamp (v); those without one left out. */
+  function many(songs) {
+    const out = {};
+    for (const song of songs) {
+      const s = keptFor(song);
+      const kept = s && readJson(fileOf(song.id));
+      if (kept) out[song.id] = { ...lyrics.clean(kept), v: s.stamp };
+    }
+    return out;
   }
 
   /** Throws away the lyrics of songs no longer there (`ids`: the songs that are). */
@@ -158,7 +204,7 @@ function createLyricsStore({
   }
 
   return {
-    get, put, sweep, fill, stop,
+    get, put, index, many, sweep, fill, stop,
   };
 }
 

@@ -121,6 +121,15 @@ contextBridge.exposeInMainWorld('flow', {
   setLyrics: (songId, lines, server = false) => call('song:setLyrics', { songId, lines, server }),
   // A song just downloaded, by its names: { artist, title, duration }.
   lookupLyrics: (meta) => call('song:lookupLyrics', meta),
+  // Settings' Lyrics cache (4.0.1): { count, none, bytes, left }; Clear lyrics cache resolves them after.
+  lyricsStats: () => call('lyrics:stats'),
+  clearLyricsCache: () => call('lyrics:clear'),
+  // Lyrics kept, or the background lookups moved on (4.0.1).
+  onLyricsChanged: (fn) => ipcRenderer.on('lyrics:changed', () => fn()),
+  // LRCLIB (4.0.1): its search ({ q } or { title, artist, album, duration }),
+  // and lyrics written here published there ({ title, artist, album, duration, lines }).
+  searchLyrics: (params) => call('lyrics:search', params),
+  publishLyrics: (meta) => call('lyrics:publish', meta),
   // Sharing the server by QR code (4.0): { link, code, name }; a flow://connect link
   // connected to ({ name }); a QR code's squares ({ size, modules }).
   shareLink: () => call('server:shareLink'),

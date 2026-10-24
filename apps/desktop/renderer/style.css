@@ -1885,6 +1885,14 @@ div.import__frame-head { cursor: default; }
 .queue-btn:hover .queue-btn__img { opacity: 1; }
 .queue-btn .icon { width: 14px; height: 14px; opacity: 0.75; }
 .queue-btn:hover .icon { opacity: 1; }
+/* In the Lyrics button's place when the song playing has none (lyrics.js). */
+.player__no-lyrics {
+  flex: none;
+  padding: 0 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
 
 /* A sleep timer running: "Time Left" in the middle of the line, title left
    and "from" with Queue right, each cut short rather than running under it. */
@@ -2212,6 +2220,10 @@ div.import__frame-head { cursor: default; }
 .song-edit__hint.hint--active { color: var(--accent); }
 .song-edit__trim-head .btn { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .song-edit__note { margin-top: 10px; }
+/* Lyrics: what it has, then Edit Lyrics and Show in Song Details. */
+.song-edit__lyrics-right { align-items: center; gap: 12px; }
+.song-edit__lyrics { display: inline-flex; align-items: center; color: var(--text); }
+.song-edit__lyrics-btns { display: flex; gap: 8px; }
 /* A server that cannot trim: the editor shows the song but takes no cut. */
 .song-trim--off { opacity: 0.45; pointer-events: none; }
 
@@ -2286,6 +2298,9 @@ div.import__frame-head { cursor: default; }
 
 .settings__row--off .settings__left,
 .settings__row--off .settings__right,
+/* Greyed out with its button still bright (Lyrics Cache). */
+.settings__row--dim .settings__left,
+.settings__row--dim .settings__note,
 .settings__row--unset:not(.settings__row--keep) .settings__right { opacity: 0.45; }
 
 .settings__left { min-width: 0; }
@@ -2356,6 +2371,8 @@ div.import__frame-head { cursor: default; }
   padding: 12px 16px 16px;
   border-top: 1px solid var(--line);
 }
+/* Buttons given align: 'left' (ui.js) at the left, the others staying right. */
+.modal__footer .modal__left + .btn:not(.modal__left) { margin-left: auto; }
 
 .picker__create { display: flex; gap: 8px; }
 .picker__create .input { flex: 1; }
@@ -3365,6 +3382,47 @@ body.mobile .switch-where { text-align: left; }
 /* The lines scroll on their own; the player stays at the bottom. */
 .modal--lyrics-edit .modal__body { overflow: hidden; }
 .lyrics-edit__hint { flex: none; padding-bottom: 10px; white-space: normal; }
+/* The song's names, Search LRCLIB at the right. */
+.lyrics-edit__top { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.lyrics-edit__top .btn { flex: none; margin-top: -3px; }
+
+/* Search LRCLIB: the results at the left, the one picked's lines at the right. */
+.modal--lyrics-search { width: min(900px, 100%); height: 80vh; }
+.modal--lyrics-search .modal__body { display: flex; flex-direction: column; overflow: hidden; }
+.lyrics-search__bar { flex: none; display: flex; gap: 8px; }
+.lyrics-search__q { flex: 1; }
+.lyrics-search__note { flex: none; font-size: 12px; color: var(--text-dim); padding: 6px 0; min-height: 26px; }
+.lyrics-search__panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.lyrics-search__list,
+.lyrics-search__preview { overflow-y: auto; min-height: 0; border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.lyrics-search__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.lyrics-search__item:hover { background: var(--glass-hi); }
+.lyrics-search__item--on,
+.lyrics-search__item--on:hover { background: rgba(90, 140, 220, 0.3); }
+.lyrics-search__name { font-weight: 600; color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lyrics-search__meta { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-dim); }
+.lyrics-search__kind { flex: none; padding: 0 6px; border-radius: 8px; border: 1px solid var(--line); }
+.lyrics-search__kind--timed { color: #8fdc9b; border-color: rgba(108, 196, 126, 0.5); }
+.lyrics-search__empty { color: var(--text-dim); padding: 8px; display: flex; align-items: center; gap: 8px; }
+
+/* Publish to LRCLIB: what goes, under which names. */
+.modal--lyrics-publish { width: min(520px, 100%); }
+.lyrics-publish__text { margin: 0 0 12px; color: var(--text-dim); line-height: 1.5; }
+.lyrics-publish__field { display: grid; grid-template-columns: 70px minmax(0, 1fr); align-items: center; gap: 10px; margin-bottom: 8px; }
+.lyrics-publish__field > span:first-child { color: var(--text-dim); }
+.lyrics-publish__value { color: var(--text); }
+.lyrics-publish__status { display: flex; align-items: center; gap: 8px; color: var(--text-dim); min-height: 20px; }
 .lyrics-edit__paste-box { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
 .lyrics-edit__paste { height: auto; flex: 1; min-height: 200px; padding: 8px 10px; resize: none; font: inherit; line-height: 1.5; }
 .lyrics-edit__paste-box[hidden],

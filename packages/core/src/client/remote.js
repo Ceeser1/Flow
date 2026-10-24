@@ -265,7 +265,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, smartPlaylists: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -776,12 +776,13 @@ function createRemote(env) {
         const statistics = Array.isArray(hello.features) && hello.features.includes('statistics');
         const lyrics = Array.isArray(hello.features) && hello.features.includes('lyrics');
         const ownLyrics = Array.isArray(hello.features) && hello.features.includes('ownLyrics');
+        const lyricsSync = Array.isArray(hello.features) && hello.features.includes('lyricsSync');
         const smartPlaylists = Array.isArray(hello.features) && hello.features.includes('smartPlaylists');
         const pair = Array.isArray(hello.features) && hello.features.includes('pair');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, smartPlaylists, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -1294,6 +1295,35 @@ function createRemote(env) {
       if (err instanceof AuthError) throw err;
       problems.push(`The lyrics of "${[local.artist, local.title].filter(Boolean).join(' - ')}" could not be sent: ${err.message}`);
     }
+  }
+
+  // The app's lyrics client keeps copies of the server's (4.0.1): told when its library changed.
+  let lyricsSyncHook = () => {};
+  function useLyricsSync(fn) {
+    lyricsSyncHook = fn;
+  }
+
+  /**
+   * The server's songs with lyrics kept and their stamps, for copies kept
+   * here: { serverId, songs: { id: stamp } }; null when it cannot say
+   * (offline, or from before copies).
+   */
+  async function lyricsIndex() {
+    if (!active() || status.state !== 'online' || !conn.lyricsSync || !sync.serverId) return null;
+    const serverId = sync.serverId;
+    const r = await call('/api/lyrics', { timeout: 60000 });
+    return serverId === sync.serverId ? { serverId, songs: (r && r.songs) || {} } : null;
+  }
+
+  /** The lyrics of up to 200 of the server's songs: { id: { ...lyrics, v } }, those it keeps. */
+  async function lyricsOf(ids) {
+    if (!active() || status.state !== 'online' || !conn.lyricsSync) return {};
+    return (await call('/api/lyrics', { method: 'POST', json: { ids }, timeout: 60000 })).lyrics || {};
+  }
+
+  /** This server's id, '' without one. */
+  function serverId() {
+    return active() && sync.serverId ? sync.serverId : '';
   }
 
   async function songPeaks(songId) {
@@ -1812,6 +1842,7 @@ function createRemote(env) {
     if (status.state !== 'online' || !cache.library) return;
     followServer().catch(() => {});
     coverSync().catch(() => {});
+    lyricsSyncHook();
   }
 
   let following = null;
@@ -2182,6 +2213,12 @@ function createRemote(env) {
   /** A Local Files song that is a copy of one of the server's (its cover comes from there). */
   function isServerCopy(lid) {
     return !!sync.fetched[lid];
+  }
+
+  /** The Local Files song a server's song came from or went to (uploaded, or downloaded here), or ''. */
+  function localOf(serverSongId) {
+    for (const [lid, sid] of Object.entries(sync.songMap || {})) if (sid === serverSongId) return lid;
+    return '';
   }
 
   // ---- synchronizing ----
@@ -3253,8 +3290,8 @@ function createRemote(env) {
 
   return {
     init, active, reconfigure, setSecret, stop, adoptToken,
-    coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
-    trimSong, trimmedHere, songPeaks, songLyrics, setSongLyrics, useOwnLyrics, newCutId,
+    coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy, localOf,
+    trimSong, trimmedHere, songPeaks, songLyrics, setSongLyrics, useOwnLyrics, useLyricsSync, lyricsIndex, lyricsOf, serverId, newCutId,
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, switchServer, forgetServer, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
     admin, changeServerPassword, removeTracked, shareLink, connectLink,

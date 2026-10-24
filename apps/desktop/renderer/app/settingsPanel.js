@@ -56,6 +56,7 @@ const SettingsPanel = {
       Stats.soon();
       this._drawMeasured();
       this._drawCovers();
+      this._drawLyrics();
       this._drawStorage();
     });
     Store.onServer(() => {
@@ -64,6 +65,12 @@ const SettingsPanel = {
       if (this.modal) Stats.soon();
       if (this.modal && this._jamNote) this._jamNote();
     });
+    // Lyrics kept, or the background lookups moved on (4.0.1).
+    if (window.flow.onLyricsChanged) {
+      window.flow.onLyricsChanged(() => {
+        if (this.modal) this._drawLyrics();
+      });
+    }
     Output.onChange(() => {
       if (this.modal && this._outputFill) this._outputFill();
       if (this.modal && this._delayFill) this._delayFill();
@@ -108,20 +115,6 @@ const SettingsPanel = {
         desc: 'When the list playing has played through, songs like the last ones you heard follow (the same artists, genre, Info '
           + 'or album, those you listen to most first) instead of the list starting over. The Queue shows them as "Then similar songs".',
       }),
-      this._row({
-        key: 'lyricsOn',
-        label: 'Show lyrics',
-        desc: Store.phone
-          ? 'Below the buttons of the screen of the playing song, the line being sung lit. They come from LRCLIB (lrclib.net), else lyrics.ovh (without their times), through your Flow Server for its songs.'
-          : 'The Lyrics button next to Queue shows the lyrics of the playing song, the line being sung lit. They come from LRCLIB (lrclib.net), else lyrics.ovh (without their times), through your Flow Server for its songs.',
-      }),
-      Store.can('effects') ? this._row({
-        key: 'vizLyrics',
-        label: 'Show the lines in full-screen visualizers',
-        desc: 'The line being sung and the next one at the bottom of a full-screen visualizer, for songs whose lyrics have their times. A song starting without them says so there for a few seconds.',
-        sub: true,
-        when: () => Store.settings.lyricsOn !== false,
-      }) : null,
       // The phone's lists have no columns.
       Store.phone ? null : this._row({
         label: 'Show filterable columns for Songs',
@@ -202,11 +195,11 @@ const SettingsPanel = {
       this._visualizerRow([
         ...this._frameRateRows(),
         this._row({
-          key: 'vizRandomEach',
-          label: 'Random for every new song',
-          desc: 'When a new song starts playing a new random visualizer from the selected category is chosen. Keeps full screen.',
-          when: () => Store.settings.visualizer.startsWith('random'),
+          key: 'vizLyrics',
+          label: 'Show Lyrics in visualizers',
+          desc: 'The line being sung and the next one at the bottom of a full-screen visualizer, for songs whose lyrics have their times. A song starting without them says so there for a few seconds.',
         }),
+        this._randomEachRow(),
       ]),
       ] : []),
 
@@ -248,6 +241,7 @@ const SettingsPanel = {
     this._drawStats();
     this._drawMeasured();
     this._drawCovers();
+    this._drawLyrics();
     this._drawStorage();
     this._drawServer();
     this._drawAdmin(true);
@@ -628,6 +622,22 @@ const SettingsPanel = {
     ];
   },
 
+  /** Random for every new song: greyed out, it says what it needs. */
+  _randomEachRow() {
+    const random = () => Store.settings.visualizer.startsWith('random');
+    const row = this._row({
+      key: 'vizRandomEach',
+      label: 'Random for every new song',
+      desc: 'When a new song starts playing a new random visualizer from the selected category is chosen. Keeps full screen.',
+      when: random,
+    });
+    const name = row.querySelector('.settings__label span');
+    this._refresh.push(() => {
+      name.textContent = random() ? 'Random for every new song' : "Random for every new song (requires 'Random' in any category)";
+    });
+    return row;
+  },
+
   /** The browser the cookies come from: those found on this computer first. */
   /** The outputs Windows offers (output.js). */
   /** The phone's: where the music comes out now, and a button to its own chooser. */
@@ -780,6 +790,12 @@ const SettingsPanel = {
       h('h3.settings__section', 'Media Management'),
       Store.can('musicFolder') ? this._savedSongsRow() : this._storageRow(),
       this._coversRow(),
+      this._row({
+        key: 'lyricsOn',
+        label: 'Fetch/Sync Lyrics',
+        desc: 'If enabled, songs get their lyrics looked up, saved and synchronized if connected to a server.',
+      }),
+      this._lyricsRow(),
       Store.can('backups') ? this._backupsRow() : null,
       this._row({
         key: 'serverMetered',
@@ -1456,6 +1472,46 @@ const SettingsPanel = {
       h('div.settings__label.settings__label--plain', 'Cover Cache'),
       h('div.settings__desc', 'Covers are found by the client or server, synchronized automatically.'));
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._coversNode, this._clearCovers)));
+  },
+
+  /**
+   * Lyrics (4.0.1): how many the Lyrics folder keeps and the room they take,
+   * under Fetch/Sync Lyrics. Clearing leaves those written in Flow for Local
+   * Files songs; a server's come down again.
+   */
+  _lyricsRow() {
+    this._lyricsNode = h('span.settings__note');
+    const clearBtn = h('button.btn.btn--small', {
+      type: 'button',
+      title: 'Delete the lyrics kept here, except those written in Flow for Local Files songs. Those of a server come down again.',
+      onclick: () => attempt(async () => {
+        await window.flow.clearLyricsCache();
+        toast('Lyrics cache cleared', 'success');
+        Lyrics.forgetAll();
+        this._drawLyrics();
+      }),
+    }, 'Clear lyrics cache');
+    const left = h('div.settings__left',
+      h('div.settings__label.settings__label--plain', 'Lyrics Cache'),
+      h('div.settings__desc', 'Lyrics are found by the client or server, or manually added using Flow. '
+        + 'Synchronized automatically if "Fetch/Sync Lyrics" is enabled.'));
+    const row = h('div.settings__row.settings__row--sub', left, h('div.settings__right', h('div.settings__control', this._lyricsNode, clearBtn)));
+    // Greyed out under Fetch/Sync Lyrics unticked, Clear lyrics cache still there to click.
+    this._refresh.push(() => row.classList.toggle('settings__row--dim', Store.settings.lyricsOn === false));
+    return row;
+  },
+
+  async _drawLyrics() {
+    if (!this._lyricsNode) return;
+    try {
+      const st = await window.flow.lyricsStats();
+      if (!this._lyricsNode) return;
+      // How many, the room they take, and while every song's are looked up, how many still are.
+      this._lyricsNode.textContent = `${st.count} lyrics · ${fmtBytes(st.bytes)}${st.left ? ` · looking up ${st.left} more` : ''}`;
+      this._lyricsNode.title = st.none ? `No lyrics found for ${Util.plural(st.none, 'song')}` : '';
+    } catch {
+      this._lyricsNode.textContent = '';
+    }
   },
 
   /**

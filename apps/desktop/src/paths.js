@@ -65,6 +65,11 @@ function musicDir() {
 const COVERS = 'Covers';
 const coversDir = () => path.join(musicDir(), COVERS);
 
+// Lyrics (@flow/core/client/lyricsFolder): Music\FlowPlayer\Lyrics, beside
+// Covers and laid out as it is. They move with the music folder too.
+const LYRICS = 'Lyrics';
+const lyricsDir = () => path.join(musicDir(), LYRICS);
+
 // Bundled tools: under resources\tools in an installed build, tools\ beside
 // the project in development.
 function bundledToolsDir() {
@@ -85,5 +90,5 @@ function appIconPath() {
 
 module.exports = {
   rootDir, userDataDir, libraryFile, settingsFile, cacheDir,
-  localToolsDir, musicDir, setMusicDir, coversDir, COVERS, bundledToolsDir, appIconPath, ensure,
+  localToolsDir, musicDir, setMusicDir, coversDir, COVERS, lyricsDir, LYRICS, bundledToolsDir, appIconPath, ensure,
 };

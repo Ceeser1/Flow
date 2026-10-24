@@ -79,6 +79,25 @@ function createEnv({ tellCovers }) {
     jsonFiles: {
       read: (name) => readJson(file(name)),
       write: (name, value) => writeJson(file(name), value),
+      remove: (name) => {
+        try {
+          fs.remove(file(name));
+        } catch {
+          // Not there.
+        }
+      },
+    },
+    // The Lyrics folder beside Covers (@flow/core/client/lyricsFolder).
+    lyricsFiles: {
+      dir: () => file('Lyrics'),
+      join: path.join,
+      fs: {
+        readText: (p) => fs.readText(p),
+        writeText: (p, text) => fs.writeText(p, text),
+        list: (p) => fs.list(p),
+        remove: (p, opts) => fs.remove(p, opts),
+        mkdir: (p) => fs.mkdir(p),
+      },
     },
     files: {
       exists: (p) => fs.exists(p),

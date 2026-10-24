@@ -377,10 +377,11 @@ function copyToServer(localId, serverId, serverSongId) {
 /**
  * Moves the Covers folder along with the songs (library.relocate): a rename,
  * or across drives a copy and a delete. Never throws: covers can be found again.
+ * `name`: another of Flow's folders there moved the same way (Lyrics).
  */
-function moveFolder(oldMusicDir, newMusicDir) {
-  const from = path.join(oldMusicDir, paths.COVERS);
-  const to = path.join(newMusicDir, paths.COVERS);
+function moveFolder(oldMusicDir, newMusicDir, name = paths.COVERS) {
+  const from = path.join(oldMusicDir, name);
+  const to = path.join(newMusicDir, name);
   if (!fs.existsSync(from)) return;
   try {
     if (!fs.existsSync(to)) {

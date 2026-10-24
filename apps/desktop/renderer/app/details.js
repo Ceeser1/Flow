@@ -135,9 +135,9 @@ const SongDetails = {
   },
 
   /**
-   * Its lyrics, the words without times (4.0.1), and under them Edit Lyrics
-   * (or Add Lyrics without any): written ones are kept for good, on the
-   * server for a server's song. `reload` fetches them again.
+   * Its lyrics, the words without times (4.0.1), with Edit Lyrics (or Add
+   * Lyrics without any) at the heading's right: written ones are kept for
+   * good, on the server for a server's song. `reload` fetches them again.
    */
   _lyrics(song, lyrics, reload) {
     // The heading says where the words came from; Edit (or Add) at its right.
@@ -163,38 +163,9 @@ const SongDetails = {
       ? h('div.details__lyrics', words)
       : h('div.details__lyrics.details__lyrics--none', data && data.instrumental ? 'Instrumental' : 'No lyrics found for this song.'));
     if (!LyricsEdit.available) return section;
-    const title = LyricsEdit.heading(song);
-    const onSave = async (lines) => {
-      await window.flow.setLyrics(song.id, lines);
-      Lyrics.forget(song.id);
-      toast(lines ? `Lyrics of "${title}" saved` : `Your lyrics of "${title}" removed`, 'success');
-      reload();
-    };
-    // The editor plays the song as the player would, its waveform as Edit Song draws it.
-    const player = {
-      src: Store.audioSrc(song),
-      duration: song.duration,
-      peaks: async () => {
-        for (const job of songPeakJobs(song, song.duration)) {
-          try {
-            return await job();
-          } catch {
-            // The next way, if there is one.
-          }
-        }
-        return null;
-      },
-    };
-    heading.appendChild(words
-      ? h('button.btn.btn--small.btn--light-green', {
-        type: 'button',
-        onclick: () => LyricsEdit.edit({
-          title, data, duration: song.duration, onSave, player,
-        }),
-      }, 'Edit Lyrics')
-      : h('button.btn.btn--small.btn--light-green', {
-        type: 'button', onclick: () => LyricsEdit.add({ title, onSave, player }),
-      }, 'Add Lyrics'));
+    heading.appendChild(h('button.btn.btn--small.btn--light-green', {
+      type: 'button', onclick: () => LyricsEdit.openFor(song, data, reload),
+    }, words ? 'Edit Lyrics' : 'Add Lyrics'));
     return section;
   },
 

@@ -175,7 +175,16 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   **Edit Lyrics** (or **Add Lyrics** when it has none) to write them, as in
   Add Songs (on the PC). Lyrics written by hand are kept for good, whatever the
   song is renamed to; **Remove my lyrics** in the editor gives it the
-  looked-up ones again.
+  looked-up ones again. In the editor, **Search LRCLIB** (top right) lists
+  LRCLIB's lyrics for the song (by its names, or by any words typed in), those
+  with times first, each with its album, length and how far that is from the
+  song's; one picked shows its lines, and **Use these lyrics** puts them in
+  the editor, kept as the song's own once saved. **Publish to LRCLIB**
+  (bottom left) gives the lines in the editor to everyone on
+  [LRCLIB](https://lrclib.net), under the title, artist and album shown
+  (LRCLIB needs an album) and the song's length: after a confirmation, as
+  LRCLIB keeps them for good. LRCLIB asks for a proof of work first, which
+  Flow works out in the background (seconds, up to a minute).
 - **Edit** (the pencil on a row): Artist, Title and Mix, and the song's
   **Trim**: the waveform (from the file here, else drawn by the Flow Server;
   without either the song can still be trimmed by the handles and times),
@@ -237,14 +246,15 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   it deletes no songs. With a Flow Server the rules are kept there (a server
   from before 4.0 has no Smart playlist button), and each app works out the
   songs from its own library and stats.
-- **Lyrics** (from 4.0, Show lyrics in Settings): the playing song's lyrics
+- **Lyrics** (from 4.0, Fetch/Sync Lyrics in Settings): the playing song's lyrics
   from [LRCLIB](https://lrclib.net) (no account or key). The best of its
   results has the same title, an artist in common and the closest length;
   its lines keep their times only when its length is the song's within 4
   seconds, else the words show without (another version, or a song trimmed
   differently). A song LRCLIB does not have gets its words from
   [lyrics.ovh](https://lyrics.ovh) (no account or key either), without
-  times. On the PC, **Lyrics** next to Queue opens a drawer with every
+  times. On the PC, **Lyrics** next to Queue (shown while the song has
+  lyrics, **(No Lyrics)** in its place otherwise) opens a drawer with every
   line, the one being sung lit and kept in sight (unless the list was just
   scrolled by hand); a click on a line plays from there. A full-screen
   visualizer shows the line being sung and the next at the bottom. On the
@@ -252,11 +262,15 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   buttons has four lines with the one being sung second, and **Expand** grows
   it to every line. Short pauses between lines are left out, long ones show
   as a note. A Flow Server looks its songs' lyrics up itself and keeps them;
-  this device looks up the rest (Local Files, Downloaded Songs, a server out
-  of reach or from before 4.0) and keeps the last 400 in `lyrics.json`.
-  Lyrics written by hand (4.0.1) are kept on the Flow Server for its songs
-  (a server from 4.0.1 on), in `lyrics.json` for the others, and go up with
-  a song when it is uploaded.
+  this device keeps copies of them (from 4.0.1) and looks up the rest (Local
+  Files, Downloaded Songs, a server out of reach or from before 4.0), all in
+  the `Lyrics` folder beside `Covers`. From 4.0.1 the songs of Local Files
+  get theirs in the background too, one every 2 seconds (as a Flow Server
+  does for its own), each once; LRCLIB out of reach, the rest 10 minutes
+  later. A busy LRCLIB that says how long to wait (Retry-After) is waited for
+  that long, up to a minute, before the next try. Lyrics written by hand (4.0.1) are
+  kept on the Flow Server for its songs (a server from 4.0.1 on), in
+  `Lyrics` for the others, and go up with a song when it is uploaded.
 - **Continue with similar songs** (from 4.0, off until ticked in Settings):
   once the list playing has played through (without shuffle its last song,
   with shuffle every song had its turn), songs like the last ones heard follow
@@ -324,8 +338,6 @@ The cog at the bottom left of the menu. Every change counts at once.
     menu and its lists from Search (a trend list open then goes back to All Songs).
   - **Continue with similar songs** (off): see
     [Continue with similar songs](#using-it) above.
-  - **Show lyrics** (on), and under it **Show the lines in full-screen
-    visualizers** (on; PC only): see [Lyrics](#using-it) above.
 - **Flow Server**: **Use a Flow Server** (off). See
   [A Flow Server](#a-flow-server) below.
   - **Home Server in WiFi/LAN** and **Remote Server**: addresses, tried in
@@ -394,6 +406,17 @@ The cog at the bottom left of the menu. Every change counts at once.
     take (with a Flow Server: the servers' covers kept here). With a server
     also **Clear cover cache**, which deletes those; the covers of the server
     connected come down again.
+  - **Fetch/Sync Lyrics** (on): songs get their lyrics looked up, kept and,
+    with a Flow Server (from 4.0.1), synchronized: every lyrics the server
+    keeps comes down in the background, those changed since again. Off,
+    nothing is looked up or synchronized and nothing new is kept; lyrics kept
+    here still show, and so do the server's for the song playing (those
+    written on it included).
+    - **Lyrics Cache**: how many lyrics this device keeps and how much room
+      they take (while the songs' lyrics are looked up in the background, how
+      many are still to come; the songs none were found for in its tooltip),
+      and **Clear lyrics cache**, which deletes them all but those
+      written in Flow for Local Files songs; a server's come down again.
   - **Allow downloads on mobile internet**
     (off; greyed out without a Flow Server, only shown with a Remote address):
     away from home, songs only go up and come down on connections Windows
@@ -712,11 +735,12 @@ listen (who, on hover), and **Join**.
 - Covers: `Covers` in that folder (moved along when it changes): `local`
   for the songs in Local Files, and a folder per Flow Server, each cover
   named after its song's id. Files dropped into `Covers` are not songs.
+- Lyrics: `Lyrics` in that folder, laid out as `Covers` (moved along too), a
+  JSON file per song (`<id>.none.json` when none were found).
 - Library, settings, the download cache and the tools folder (where
   `yt-dlp.exe` goes): `%LOCALAPPDATA%\Flow` (on Linux `~/.local/share/Flow`). The library is `library.json`, with the previous
   version kept as `library.json.bak`. Its weekly backups are in `backups`
-  there, one gzipped JSON file each; lyrics looked up or written here are in
-  `lyrics.json`.
+  there, one gzipped JSON file each.
 
 yt-dlp, once put there, updates itself once a day in the background, since
 YouTube changes often enough to break an old copy.

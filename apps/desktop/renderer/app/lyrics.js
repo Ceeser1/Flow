@@ -1,8 +1,10 @@
 'use strict';
 
 // Lyrics (4.0): the playing song's, from its Flow Server or from LRCLIB
-// (window.flow.lyrics), while Settings' "Show lyrics" is on. Three places:
-//  - the player bar's Lyrics: a drawer beside the page with every line, the
+// (window.flow.lyrics); with Settings' "Fetch/Sync Lyrics" off only those
+// kept in the Lyrics folder (4.0.1). Three places:
+//  - the player bar's Lyrics, shown while the song has lyrics ("(No Lyrics)"
+//    in its place otherwise): a drawer beside the page with every line, the
 //    one playing lit and kept in sight (unless the list was just scrolled by
 //    hand), a click on a line plays from there;
 //  - a full-screen visualizer: the line playing and the next at the bottom
@@ -17,7 +19,7 @@
 const Lyrics = {
   songId: null,
   key: null,          // what the lyrics shown are of (song, names, length)
-  state: 'off',        // off (Settings), idle (nothing playing), loading, ready, error
+  state: 'idle',       // idle (nothing playing), loading, ready, error
   data: null,          // { found, synced: [{ t, text }] | null, plain, instrumental }
   error: '',
   index: -1,           // the line playing (lines with times only)
@@ -38,10 +40,6 @@ const Lyrics = {
   PAUSE: 6,            // seconds without words that show as a note
   KEEP: 30,
 
-  get on() {
-    return Store.settings.lyricsOn !== false;
-  },
-
   /** Lines with times, or null. */
   get synced() {
     return this.state === 'ready' && this.data && this.data.found ? this.data.synced : null;
@@ -58,10 +56,10 @@ const Lyrics = {
     Player.onChange(() => this._follow());
     Store.onLibrary(() => this._follow());
     Store.onSettings((patch) => {
-      if ('lyricsOn' in patch || 'vizLyrics' in patch) {
-        this._follow(true);
-        this._drawButton();
-      }
+      // Fetch/Sync Lyrics turned on: looked up now; off: only those kept. Asked
+      // after the setting has reached the app (Store sends it after this).
+      if ('lyricsOn' in patch) setTimeout(() => this.forgetAll());
+      if ('vizLyrics' in patch) this._placeViz();
     });
     // The phone has its lyrics below Now Playing instead (Mobile leaves the button out).
     const btn = $('btnLyrics');
@@ -74,14 +72,23 @@ const Lyrics = {
     this._follow();
   },
 
+  /**
+   * Lyrics while the song playing has some (or they could not be fetched:
+   * Try again is in the drawer), "(No Lyrics)" when it has none; nothing
+   * while nothing plays. Looking them up leaves it as it was.
+   */
   _drawButton() {
-    if ($('btnLyrics')) $('btnLyrics').hidden = !this.on;
-    if (!this.on && this._drawer) this._drawer.modal.close();
+    const btn = $('btnLyrics');
+    const none = $('noLyrics');
+    if (!btn || this.state === 'loading') return;
+    const has = this.state === 'error' || (this.state === 'ready' && this.lines.some((l) => l.trim()));
+    btn.hidden = !has;
+    if (none) none.hidden = has || this.state === 'idle';
   },
 
   /** The song playing changed (or was renamed, or Settings): its lyrics fetched. */
   _follow(force = false) {
-    const song = this.on && Player.currentId ? Store.song(Player.currentId) : null;
+    const song = Player.currentId ? Store.song(Player.currentId) : null;
     const key = song ? `${song.id}|${song.artist}|${song.title}|${Math.round(song.duration || 0)}` : '';
     if (key === this.key && !force) return;
     const newSong = !song || song.id !== this.songId;
@@ -94,8 +101,7 @@ const Lyrics = {
       this._hint = null;
       this._hintFor = song && Visualizer.el ? song.id : null;
     }
-    if (!this.on) this.state = 'off';
-    else if (!song) this.state = 'idle';
+    if (!song) this.state = 'idle';
     else if (this._cache.has(key)) {
       this.state = 'ready';
       this.data = this._cache.get(key);
@@ -159,6 +165,12 @@ const Lyrics = {
     if (songId === this.songId) this._follow(true);
   },
 
+  /** Every song's asked for anew (Fetch/Sync Lyrics, Clear lyrics cache), the playing one's at once. */
+  forgetAll() {
+    this._cache.clear();
+    this._follow(true);
+  },
+
   /** The line playing at second `t`, or -1 (as @flow/core/lyrics lineAt). */
   lineAt(lines, t) {
     if (!lines || !lines.length || !(t >= lines[0].t)) return -1;
@@ -192,6 +204,7 @@ const Lyrics = {
   },
 
   _drawAll() {
+    this._drawButton();
     this._drawDrawer();
     this._drawPhone();
     this._takeHint();
@@ -294,7 +307,7 @@ const Lyrics = {
 
   _placeViz() {
     if (!Visualizer.el) this._hint = null;
-    const want = !!(Visualizer.el && this.on && Store.settings.vizLyrics !== false && (this.synced || this._hint));
+    const want = !!(Visualizer.el && Store.settings.vizLyrics !== false && (this.synced || this._hint));
     if (want && (!this._vizEl || this._vizEl.parentNode !== Visualizer.el)) {
       if (this._vizEl) this._vizEl.remove();
       this._vizEl = h('div.viz-lyrics');
@@ -408,7 +421,7 @@ const Lyrics = {
     const frame = $('npLyrics');
     if (!frame) return;
     const lines = this.lines;
-    const show = this.on && !this._note() && lines.length > 0;
+    const show = !this._note() && lines.length > 0;
     if (frame.hidden === show) {
       frame.hidden = !show;
       Mobile.fitLyrics();

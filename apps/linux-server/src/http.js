@@ -29,7 +29,7 @@
 //                                      cannot play Ogg Vorbis: the iPhone) such a
 //                                      song as Ogg Opus, converted once (vorbis.js)
 //   GET  /api/songs/:id/peaks          { peaks }: its waveform, for an app's trim
-//   GET  /api/songs/:id/lyrics         { lyrics: { found, synced, plain, instrumental, source } }
+//   GET  /api/songs/:id/lyrics         { lyrics: { found, synced, plain, instrumental, source, v } }
 //                                      (only with the "lyrics" feature; lyrics.js), 502
 //                                      when LRCLIB cannot be reached
 //   PUT  /api/songs/:id/lyrics { lines: [{ t, end, text }] | null }
@@ -38,6 +38,12 @@
 //                                      gives the song looked-up ones again
 //                                      (feature "ownLyrics"), 400 when only some
 //                                      lines have times
+//   GET  /api/lyrics                   { songs: { <song id>: stamp } }: the songs
+//                                      with lyrics kept (found or not), the stamp
+//                                      changing with them (feature "lyricsSync":
+//                                      the apps keep copies)
+//   POST /api/lyrics { ids }           { lyrics: { <song id>: { ...lyrics, v } } }:
+//                                      those of up to 200 songs, v their stamp
 //   POST /api/songs/:id/trim { start, end, base, cut }
 //                                      its file cut (only when /api/hello lists
 //                                      the "trim" feature): { song, rev } or
@@ -846,7 +852,7 @@ function createHttpServer({
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
       const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search'] : []), ...(live ? ['sessions'] : []),
-        ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics', 'ownLyrics'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
+        ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics', 'ownLyrics', 'lyricsSync'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
       };
@@ -951,6 +957,12 @@ function createHttpServer({
       if (!peaks) throw new HttpError(404, 'That song is not on the server.');
       return sendJson(res, 200, { peaks });
     }
+    if (lyrics && is('GET', /^\/api\/lyrics$/)) return sendJson(res, 200, { songs: lyrics.index(library.data.songs) });
+    if (lyrics && is('POST', /^\/api\/lyrics$/)) {
+      const body = await readJsonBody(req);
+      const ids = new Set((Array.isArray(body && body.ids) ? body.ids : []).slice(0, 200).map(String));
+      return sendJson(res, 200, { lyrics: lyrics.many(library.data.songs.filter((s) => ids.has(s.id))) });
+    }
     m = /^\/api\/songs\/([\w-]{1,64})\/lyrics$/.exec(p);
     if (m && lyrics && is('GET', /./)) {
       const song = library.data.songs.find((s) => s.id === m[1]);
@@ -963,7 +975,8 @@ function createHttpServer({
       } catch {
         found = { ...NO_LYRICS };
       }
-      return sendJson(res, 200, { lyrics: found });
+      // Its stamp (v), for an app's copy (GET /api/lyrics).
+      return sendJson(res, 200, { lyrics: { ...found, v: lyrics.index([song])[song.id] || '' } });
     }
     if (m && lyrics && req.method === 'PUT') {
       const body = await readJsonBody(req);
@@ -976,7 +989,7 @@ function createHttpServer({
         throw new HttpError(400, err.message);
       }
       log(`Lyrics of "${[song.artist, song.title].filter(Boolean).join(' - ')}" ${kept.own ? 'edited' : 'taken back to the looked-up ones'}`);
-      return sendJson(res, 200, { lyrics: kept });
+      return sendJson(res, 200, { lyrics: { ...kept, v: lyrics.index([song])[song.id] || '' } });
     }
     m = /^\/api\/songs\/([\w-]{1,64})\/trim$/.exec(p);
     if (m && req.method === 'POST') {

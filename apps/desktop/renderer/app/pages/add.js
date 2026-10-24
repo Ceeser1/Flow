@@ -814,11 +814,17 @@ const AddPage = {
       box.append(h('span.ed-lyrics__label', 'No lyrics found'));
     }
     if (!LyricsEdit.available) return;
+    // For LRCLIB: the names in the boxes now, and the downloaded file's length (the lines are on it).
+    const song = () => ({ ...this._names(), album: $('edAlbum').value.trim(), duration });
     if (found) {
       box.append(btn('Edit Lyrics', () => LyricsEdit.edit({
-        title: heading(), data: e.data, duration, onSave, player,
+        title: heading(), data: e.data, duration, onSave, player, song,
       }), '.btn--light-green'));
-    } else box.append(btn('Add Lyrics', () => LyricsEdit.add({ title: heading(), onSave, player }), '.btn--light-green'));
+    } else {
+      box.append(btn('Add Lyrics', () => LyricsEdit.add({
+        title: heading(), onSave, player, song,
+      }), '.btn--light-green'));
+    }
   },
 
   /** SponsorBlock's parts of the song in the editor, as the settings want them. */
