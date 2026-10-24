@@ -544,6 +544,23 @@ handle('local:pickFolder', async () => {
   return r.canceled || !r.filePaths.length ? null : r.filePaths;
 });
 
+// ---- a visualizer's picture (Halo's cover and background) ----
+//
+// Kept in Flow's own folder as <name>-<stamp>.jpg, a new name each time (no
+// stale copy shown), the one before deleted.
+
+handle('viz:savePicture', ({ name, bytes } = {}) => {
+  if (!/^[a-z][\w-]{0,40}$/i.test(String(name || ''))) throw new Error('Not a picture name.');
+  if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > 30e6) throw new Error('Not a picture.');
+  const dir = paths.ensure(path.join(paths.rootDir(), 'Visualizer'));
+  for (const old of fs.readdirSync(dir)) {
+    if (old.startsWith(`${name}-`) && old.endsWith('.jpg')) fs.rmSync(path.join(dir, old), { force: true });
+  }
+  const file = path.join(dir, `${name}-${Date.now().toString(36)}.jpg`);
+  fs.writeFileSync(file, bytes);
+  return file;
+});
+
 let moving = false;
 handle('folder:move', async (dir) => {
   refuseDuringImport();

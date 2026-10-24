@@ -10,7 +10,8 @@ const { randomBase64Url } = require('./common');
 
 // The visualizers' own settings (their cogwheels, apps/desktop/renderer/app/
 // viz/), by what they may be: ['color', default] a '#rrggbb'; ['bool',
-// default]; ['range', default, min, max, step]; ['choice', default, values].
+// default]; ['range', default, min, max, step]; ['choice', default, values];
+// ['file', ''] a picture's path, picked in the cogwheel.
 // Each visualizer's start with its own letters.
 const VIZ_OPTIONS = {
   // Opened as Random, another one with each song.
@@ -57,13 +58,25 @@ const VIZ_OPTIONS = {
   ksEvery: ['range', 30, 10, 120, 5],
   ksTrails: ['range', 100, 25, 200, 5],
   // Halo: the round cover turning, the spectrum as bars, a line or dots, the
-  // colours (the cover's, rainbow, by the notes, warm white), the sparks, the
-  // cover blurred behind, the title.
+  // colours (the cover's, rainbow, by the notes, or one of its own; Warm
+  // white became that), the sparks (and how many, percent; 10% the amount
+  // there always were), the background (the cover blurred, or a
+  // picture picked), the title. The cover in the middle is the song's or a
+  // picture picked, wiggling and pulsing; the pictures are copies Flow keeps
+  // (hlCoverFile, hlBackFile).
   hlSpin: ['bool', true],
   hlStyle: ['choice', 'bars', ['bars', 'line', 'dots']],
-  hlColors: ['choice', 'cover', ['cover', 'rainbow', 'notes', 'white']],
+  hlColors: ['choice', 'cover', ['cover', 'rainbow', 'notes', 'custom']],
+  hlColor: ['color', '#3484f4'],
+  hlCover: ['choice', 'original', ['original', 'pick']],
+  hlCoverFile: ['file', ''],
+  hlWiggle: ['bool', true],
+  hlPulse: ['bool', true],
   hlParticles: ['bool', true],
+  hlSparkAmount: ['range', 100, 0, 200, 5],
   hlBackground: ['bool', true],
+  hlBack: ['choice', 'cover', ['cover', 'pick']],
+  hlBackFile: ['file', ''],
   hlTitle: ['bool', true],
   // Scope: XY, goniometer, wave or polar; the phosphor's colour; how long
   // it glows on (percent); the grid.
@@ -581,9 +594,15 @@ function clean(raw) {
     s.obColor = ORB_SOLID[s.obColors];
     s.obColors = 'custom';
   }
+  // Halo's Warm white became a colour of its own.
+  if (s.hlColors === 'white') {
+    s.hlColor = '#ffbd80';
+    s.hlColors = 'custom';
+  }
   for (const [key, [kind, def, a, b, step]] of Object.entries(VIZ_OPTIONS)) {
     const v = s[key];
-    if (kind === 'color') s[key] = /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v).toLowerCase() : def;
+    if (kind === 'file') s[key] = typeof v === 'string' && v.length <= 1000 ? v : def;
+    else if (kind === 'color') s[key] = /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v).toLowerCase() : def;
     else if (kind === 'bool') s[key] = typeof v === 'boolean' ? v : def;
     else if (kind === 'choice') s[key] = a.includes(v) ? v : def;
     else {

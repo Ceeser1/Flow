@@ -437,12 +437,23 @@ const LyricsEdit = {
       }
       return true;
     };
+    // Escape, a click beside it or the phone's Back with lines changed (pasted,
+    // typed, timed, added or taken out): asked first, so the work is not lost.
+    const state = () => JSON.stringify([paste.value, [...grid.querySelectorAll('input, textarea')].map((b) => b.value)]);
+    const opened = state();
     return Modal.open({
       title: heading,
       className: 'modal--lyrics-edit',
       body: [h('div.lyrics-edit__top', h('div.lyrics-show__song', title), search), hint, pasteBox, table, error, deck && deck.el],
       buttons,
       focus: rows.length ? '.lyrics-edit__time' : '.lyrics-edit__paste',
+      confirmDismiss: async () => state() === opened || !!(await confirmDialog({
+        title: 'Undo changes?',
+        message: 'Do you really want to undo recent changes?',
+        confirmLabel: 'Undo changes',
+        cancelLabel: 'Keep editing',
+        danger: true,
+      })),
       onClose: () => {
         if (deck) deck.destroy();
       },
@@ -842,7 +853,8 @@ const LyricsEdit = {
    * song cannot be reached); `duration`: its length, else the audio's own;
    * `peaks()`: the waveform's peaks (or a promise of them, null for none);
    * `insertTime(t)`: Insert Time before the place, given the place played.
-   * Playback Speed after it: 20% to 120% (pitch kept).
+   * Playback Speed after it: 20% to 120%; Pitch after that: Match (with the
+   * speed, as a tape) or Real (kept, which stutters at slow speeds).
    * Returns { el, mark(marks), stop(), destroy() }.
    */
   _player({
@@ -868,6 +880,16 @@ const LyricsEdit = {
       type: 'range', min: 20, max: 120, step: 20, value: 100, 'aria-label': 'Playback speed',
     });
     const speedValue = h('span.lyrics-edit__speed-value');
+    let realPitch = true;
+    const pitchBtn = (text, isReal) => h('button.btn.btn--small', {
+      type: 'button',
+      onclick: () => {
+        realPitch = isReal;
+        drawPitch();
+      },
+    }, text);
+    const slowed = pitchBtn('Match', false);
+    const real = pitchBtn('Real', true);
     const zoomNote = h('span.lyrics-edit__zoom');
     // Zoomed in: a scroll bar under the waveform, its thumb the part shown.
     const thumb = h('div.lyrics-edit__scroll-thumb');
@@ -876,7 +898,9 @@ const LyricsEdit = {
       h('div.lyrics-edit__wave-wrap', canvas, playhead, status),
       scrollbar,
       h('div.lyrics-edit__transport', skip(-5), playBtn, skip(5), insert, clock,
-        h('label.lyrics-edit__speed-box', h('span', 'Playback Speed:'), speed, speedValue), zoomNote));
+        h('label.lyrics-edit__speed-box', h('span', 'Playback Speed:'), speed, speedValue),
+        h('div.lyrics-edit__speed-box', h('span', 'Pitch:'),
+          h('div.lyrics-edit__pitch', { role: 'group', 'aria-label': 'Pitch' }, slowed, real)), zoomNote));
 
     let duration = known;
     // The part of the song the waveform shows, in seconds: all of it, or less zoomed in.
@@ -900,8 +924,16 @@ const LyricsEdit = {
       audio.defaultPlaybackRate = v / 100;
       audio.playbackRate = v / 100;
     };
+    const drawPitch = () => {
+      slowed.classList.toggle('lyrics-edit__pitch--on', !realPitch);
+      real.classList.toggle('lyrics-edit__pitch--on', realPitch);
+      slowed.setAttribute('aria-pressed', String(!realPitch));
+      real.setAttribute('aria-pressed', String(realPitch));
+      audio.preservesPitch = realPitch;
+    };
     speed.addEventListener('input', drawSpeed);
     drawSpeed();
+    drawPitch();
     const setStatus = (text) => {
       status.textContent = text;
       status.hidden = !text;
@@ -947,7 +979,7 @@ const LyricsEdit = {
       const inView = !!duration && t >= view.a && t <= view.b;
       playhead.hidden = !inView;
       if (inView) playhead.style.left = `${((t - view.a) / shown()) * canvas.clientWidth}px`;
-      clock.textContent = `${this.fmt(t)} / ${this.fmt(duration)}`;
+      clock.textContent = this.fmt(t);
       let now = null;
       for (const m of marks) {
         if (m.t > t) break;

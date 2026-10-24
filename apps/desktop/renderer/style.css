@@ -2790,7 +2790,8 @@ div.import__frame-head { cursor: default; }
   opacity: 0;
   transition: max-width 0.35s ease, opacity 0.25s, padding 0.35s;
 }
-.viz-cfg--open .viz-cfg__body { max-width: 1400px; padding: 0 28px 0 6px; opacity: 1; }
+/* As wide as the window allows, clear of the close button at the right. */
+.viz-cfg--open .viz-cfg__body { max-width: calc(100vw - 220px); padding: 0 28px 0 6px; opacity: 1; }
 .viz-cfg__item { display: flex; align-items: center; gap: 10px; }
 .viz-cfg__swatch {
   width: 30px;
@@ -2915,12 +2916,12 @@ div.import__frame-head { cursor: default; }
 }
 .viz-pick__preset:hover { border-color: #fff; }
 
-/* Halo's title and artist, under the cover; faded in with each song. */
+/* Halo's title and artist, at the top (the lyrics are at the bottom); faded in with each song. */
 .viz-halo {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 11%;
+  top: 28px;
   text-align: center;
   color: #fff;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
@@ -2929,7 +2930,7 @@ div.import__frame-head { cursor: default; }
 }
 .viz-halo--in { animation: viz-halo-in 1.2s ease forwards; }
 @keyframes viz-halo-in {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(-12px); }
   to { opacity: 1; transform: none; }
 }
 .viz-halo__title { font-size: clamp(22px, 3.2vh, 44px); font-weight: 600; letter-spacing: 0.01em; }
@@ -3580,6 +3581,10 @@ body.mobile .switch-where { text-align: left; }
 .lyrics-edit__speed { width: 100px; }
 .lyrics-edit__speed:disabled { opacity: 0.5; cursor: default; }
 .lyrics-edit__speed-value { width: 38px; font-variant-numeric: tabular-nums; color: var(--text); }
+.lyrics-edit__pitch { display: inline-flex; }
+.lyrics-edit__pitch .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.lyrics-edit__pitch .btn:last-child { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.lyrics-edit__pitch .btn.lyrics-edit__pitch--on { background: var(--accent); color: #fff; font-weight: 600; }
 .lyrics-edit__transport .round-btn--main { width: 40px; height: 40px; }
 .lyrics-edit__clock { margin-left: 6px; font-variant-numeric: tabular-nums; color: var(--text-bright); font-size: 15px; }
 .lyrics-edit__zoom { margin-left: auto; font-size: 12px; color: var(--text-dim); text-align: right; }

@@ -283,6 +283,20 @@ function start() {
     cancelSearch: call(nothing),
     downloadImport: notHere('Importing on the phone'),
     pickLocalFiles: call(() => local.pick(false)),
+    // A visualizer's picture (as the desktop's viz:savePicture), in Flow's files.
+    saveVizPicture: call((name, bytes) => {
+      if (!/^[a-z][\w-]{0,40}$/i.test(String(name || ''))) throw new Error('Not a picture name.');
+      if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > 30e6) throw new Error('Not a picture.');
+      const dir = path.join(info().files, 'Visualizer');
+      if (fs.exists(dir)) {
+        for (const old of fs.list(dir)) if (old.name.startsWith(`${name}-`) && old.name.endsWith('.jpg')) fs.remove(path.join(dir, old.name));
+      } else {
+        fs.mkdir(dir);
+      }
+      const file = path.join(dir, `${name}-${Date.now().toString(36)}.jpg`);
+      fs.writeBytes(file, bytes);
+      return file;
+    }),
     pickLocalFolder: call(() => local.pick(true)),
     listLocal: call((picked) => local.listLocal(picked)),
     prepareLocal: call((items, opts, run) => local.prepareLocal(items, run)),

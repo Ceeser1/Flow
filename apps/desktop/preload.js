@@ -64,6 +64,8 @@ contextBridge.exposeInMainWorld('flow', {
   cancelSearch: () => call('search:cancel'),
   downloadImport: (items, opts, run) => call('import:download', { items, opts, run }),
   pickLocalFiles: () => call('local:pickFiles'),
+  // A visualizer's picture picked in its cogwheel (a JPEG's bytes): kept, its path back.
+  saveVizPicture: (name, bytes) => call('viz:savePicture', { name, bytes }),
   pickLocalFolder: () => call('local:pickFolder'),
   listLocal: (picked, run) => call('import:listLocal', { picked, run }),
   prepareLocal: (items, opts, run) => call('import:download', { items, opts, local: true, run }),

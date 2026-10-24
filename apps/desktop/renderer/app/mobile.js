@@ -488,7 +488,7 @@ const Mobile = {
     const top = Modal.top();
     if (top && top === SettingsPanel.modal && SettingsPanel.back()) return true;
     if (top) {
-      if (!top.sticky) top.close();
+      top.dismiss();
       return true;
     }
     if (this.playerOpen) {

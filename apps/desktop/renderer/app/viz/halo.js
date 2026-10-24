@@ -1,17 +1,22 @@
 'use strict';
 
-// Halo: the song's cover in the middle, the spectrum standing out around it
+// Halo: the song's cover in the middle (its dark parts see-through, black
+// not there at all), the spectrum standing out around it
 // (bass at the top, higher towards the bottom, both sides alike), pulsing on
 // the kicks, sparks thrown off it, and behind it all the cover again, blurred
 // and dark, turning slowly. Its colours are the cover's own: the two most
 // colourful hues in it (a cover without colour, or none, takes one from the
-// song). A song without a cover gets a record instead. Under it the title
-// and the artist.
+// song). A song without a cover gets a record instead. At the top the title
+// and the artist (the lyrics, when shown, are under it all).
 //
 // Its cogwheel: the round cover turning (like a record) or not; the
 // spectrum as bars with falling caps, as a line, or as dots; the colours
-// (the cover's, a rainbow round the circle, by the chord sounding, warm
-// white); the sparks; the cover behind; the title.
+// (the cover's, a rainbow round the circle, by the chord sounding, one of
+// its own); the cover (the song's, or a picture picked, cut square), and it
+// wiggling (rocking left and right, pushed further by the beats) and
+// pulsing (growing on the kicks, at most to the spectrum's inner edge); the
+// sparks (and how many: 100% ten times what 10% was); the background (the cover blurred, or a picture picked, filling
+// the screen as it is, darkened); the title.
 //
 // WebGL (viz/gl.js): the background and the cover are passes over the whole
 // screen reading the cover's texture (its mipmaps blur the background), the
@@ -19,7 +24,7 @@
 
 (() => {
   const BARS = 64;          // each side
-  const SPARKS = 420;
+  const SPARKS = 420;       // at most, at 10% (the amount they had before it could be set)
   const MIN_HZ = 40;
   const MAX_HZ = 12000;
 
@@ -51,11 +56,29 @@
       o = vec4(c, 1.0);
     }`;
 
+  // A picture picked for the background: filling the screen (its middle, not
+  // stretched), darkened at the edges, a little nearer on the kicks.
+  const PIC_FS = `
+    in vec2 uv;
+    uniform sampler2D pic;
+    uniform vec2 res, size;
+    uniform float zoom, dim, on;
+    out vec4 o;
+    void main() {
+      vec2 s = res / size;
+      vec2 q = (uv - 0.5) * (s / max(s.x, s.y)) / zoom;
+      vec3 c = texture(pic, vec2(q.x, -q.y) + 0.5).rgb * dim;
+      vec2 v = uv - 0.5;
+      v.x *= res.x / res.y;
+      c *= 1.0 - 0.5 * smoothstep(0.4, 1.0, length(v));
+      o = vec4(c, on);
+    }`;
+
   const COVER_FS = `
     in vec2 uv;
     uniform sampler2D cover;
     uniform vec2 res, center;
-    uniform float radius, angle, ring;
+    uniform float radius, angle, ring, shade;
     uniform vec3 ringColor;
     out vec4 o;
 
@@ -68,18 +91,21 @@
       float inside = 1.0 - smoothstep(1.0 - edge, 1.0, d);
       vec2 q = mat2(cos(angle), -sin(angle), sin(angle), cos(angle)) * p;
       vec3 c = texture(cover, vec2(q.x, -q.y) * 0.5 + 0.5).rgb;
+      // Its dark parts see through: as solid as its strongest channel on a
+      // log scale over its 255 steps (0 not there at all, 1 an eighth, 15
+      // half, 64 three quarters), its colour laid over what is behind as light.
+      float solid = log(1.0 + 255.0 * max(c.r, max(c.g, c.b))) / log(256.0);
       // A rim of light just outside, brighter on the kicks, and a soft shadow under it.
       float out1 = max(0.0, d - 1.0);
       float glow = ring * exp(-out1 * 40.0) * (1.0 - inside);
-      float shadow = 0.55 * exp(-out1 * 7.0) * (1.0 - inside);
+      float shadow = shade * exp(-out1 * 7.0) * (1.0 - inside);
       vec3 col = c * inside + ringColor * glow;
-      float a = clamp(inside + glow + shadow, 0.0, 1.0);
+      float a = clamp(inside * solid + glow + shadow, 0.0, 1.0);
       o = vec4(col, a);
     }`;
 
   const hsv = VizCover.hsv;
   const wrap = (x) => ((x % 1) + 1) % 1;
-  const WARM = [hsv(0.08, 0.5, 1), hsv(0.11, 0.12, 1)];
 
   class Halo {
     constructor(canvas) {
@@ -88,12 +114,21 @@
       this.gl = gl;
       this.bg = VizGL.program(gl, VizGL.SCREEN_VS, BG_FS);
       this.disc = VizGL.program(gl, VizGL.SCREEN_VS, COVER_FS);
+      this.picBg = VizGL.program(gl, VizGL.SCREEN_VS, PIC_FS);
       this.lines = VizGL.lines(gl, 40000);
       this.cover = new VizCover(gl, { standIn: 'record' });
+      // The pictures picked for the cover and the background.
+      this.coverPic = new VizCover.Picture(gl);
+      this.backPic = new VizCover.Picture(gl);
       this.colors = this.cover.colors;
       this.coverOn = 0;        // the cover behind fading in, 0..1
+      this.picOn = 0;          // the picture behind over it, 0..1
       this.angle = 0;
       this.turn = 0;
+      this.wiggle = 0;         // the beats' push on the rocking (radians) and its speed
+      this.wiggleV = 0;
+      this.rock = 0;           // the steady rocking, faded in and out with the box
+      this.grow = 0;           // the cover pulsing, 0..1 of the way to the spectrum
       this.levels = new Float32Array(BARS);
       this.caps = new Float32Array(BARS);
       this.capFall = new Float32Array(BARS);
@@ -149,21 +184,29 @@
       const gl = this.gl;
       const w = this.w;
       const h = this.h;
+      // The cover shown: the picture picked, once loaded, else the song's.
+      this.coverPic.want(set.hlCover === 'pick' ? set.hlCoverFile : '');
+      this.backPic.want(set.hlBack === 'pick' ? set.hlBackFile : '');
+      const pic = this.coverPic.loaded ? this.coverPic : null;
+      const coverTex = pic ? pic.tex : this.cover.tex;
       // The two colours: the cover's (gliding to a new song's), the chord's,
-      // warm white, or turning slowly through the rainbow.
+      // one of its own (and a paler one), or turning slowly through the rainbow.
       const mode = set.hlColors;
-      let target = this.cover.colors;
+      let target = (pic && pic.colors) || this.cover.colors;
       if (mode === 'notes') {
         const chord = a.playing ? a.noteHue() : null;
         if (chord) this.chordHue = this.chordHue === undefined ? chord.hue : this.chordHue + ((((chord.hue - this.chordHue + 1.5) % 1) - 0.5) * Math.min(1, dt * 3 * chord.strength));
         const hue = this.chordHue === undefined ? 0.6 : this.chordHue;
         target = [hsv(wrap(hue), 0.75, 1), hsv(wrap(hue + 0.1), 0.6, 1)];
-      } else if (mode === 'white') target = WARM;
-      else if (mode === 'rainbow') target = [hsv(wrap(this.age * 0.03), 0.8, 1), hsv(wrap(this.age * 0.03 + 0.2), 0.8, 1)];
+      } else if (mode === 'custom') {
+        const own = VizGL.rgb(Visualizer.setting('hlColor'));
+        target = [own, own.map((v) => Math.min(1, v * 0.6 + 0.4))];
+      } else if (mode === 'rainbow') target = [hsv(wrap(this.age * 0.03), 0.8, 1), hsv(wrap(this.age * 0.03 + 0.2), 0.8, 1)];
       const k = 1 - Math.exp(-dt / 0.6);
       this.colors = this.colors.map((c, i) => c.map((v, j) => v + (target[i][j] - v) * k));
       const [c1, c2] = this.colors;
-      this.coverOn += ((set.hlBackground && this.cover.loaded ? 1 : 0) - this.coverOn) * k;
+      this.coverOn += ((set.hlBackground && (pic || this.cover.loaded) ? 1 : 0) - this.coverOn) * k;
+      this.picOn += ((set.hlBackground && this.backPic.loaded ? 1 : 0) - this.picOn) * k;
 
       const cx = w / 2;
       const cy = h * 0.46;
@@ -171,20 +214,51 @@
       if (set.hlSpin) this.angle += dt * (0.25 + 0.6 * a.bass);
       else this.angle *= Math.exp(-dt * 3);
       this.turn += dt * 0.02;
+      // Wiggle: rocking left and right (0.1 rad, every 2.5 s), and each beat
+      // pushes it further the way it is going, springing back.
+      const t = Math.min(dt, 0.05);
+      const wiggle = !!set.hlWiggle;
+      this.rock += ((wiggle ? 1 : 0) - this.rock) * (1 - Math.exp(-dt * 3));
+      const phase = this.age * ((2 * Math.PI) / 2.5);
+      if (wiggle && a.onset) this.wiggleV += Math.sign(Math.cos(phase) || 1) * (0.8 + 1.6 * a.onsetPower);
+      this.wiggleV += (-60 * this.wiggle - 7 * this.wiggleV) * t;
+      this.wiggle = Math.max(-0.35, Math.min(0.35, this.wiggle + this.wiggleV * t));
+      const tilt = this.rock * 0.1 * Math.sin(phase) + this.wiggle;
+      // Pulsing: the cover grows on the kicks, up to the spectrum's inner
+      // edge (R * 1.12) and no further, its rim just inside it.
+      this.grow = Math.max(set.hlPulse ? Math.min(1, a.kick * 1.3) : 0, this.grow - dt * 2.5);
+      const coverR = R * (1 + 0.1 * this.grow);
 
-      // 1. Behind: the cover blurred and dark (or near black in its colour).
+      // 1. Behind: the cover blurred and dark (or near black in its colour),
+      // and the picture picked over it (alone once it is fully there).
       gl.disable(gl.BLEND);
       VizGL.into(gl, null);
-      gl.useProgram(this.bg.p);
-      let u = this.bg.u;
-      VizGL.bind(gl, u.cover, this.cover.tex, 0);
-      gl.uniform2f(u.res, w, h);
-      gl.uniform1f(u.zoom, 1.25 + 0.04 * a.kick);
-      gl.uniform1f(u.turn, this.turn);
-      gl.uniform1f(u.dim, 0.32 + 0.12 * a.kick);
-      gl.uniform1f(u.on, this.coverOn);
-      gl.uniform3f(u.tint, c1[0], c1[1], c1[2]);
-      VizGL.screen(gl);
+      let u;
+      if (this.picOn < 0.999) {
+        gl.useProgram(this.bg.p);
+        u = this.bg.u;
+        VizGL.bind(gl, u.cover, coverTex, 0);
+        gl.uniform2f(u.res, w, h);
+        gl.uniform1f(u.zoom, 1.25 + 0.04 * a.kick);
+        gl.uniform1f(u.turn, this.turn);
+        gl.uniform1f(u.dim, 0.32 + 0.12 * a.kick);
+        gl.uniform1f(u.on, this.coverOn);
+        gl.uniform3f(u.tint, c1[0], c1[1], c1[2]);
+        VizGL.screen(gl);
+      }
+      if (this.picOn > 0.001) {
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.useProgram(this.picBg.p);
+        u = this.picBg.u;
+        VizGL.bind(gl, u.pic, this.backPic.tex, 0);
+        gl.uniform2f(u.res, w, h);
+        gl.uniform2f(u.size, this.backPic.width, this.backPic.height);
+        gl.uniform1f(u.zoom, 1.02 + 0.03 * a.kick);
+        gl.uniform1f(u.dim, 0.55 + 0.1 * a.kick);
+        gl.uniform1f(u.on, this.picOn);
+        VizGL.screen(gl);
+      }
 
       // 2. The sparks and the spectrum, added as light.
       gl.enable(gl.BLEND);
@@ -198,11 +272,13 @@
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.useProgram(this.disc.p);
       u = this.disc.u;
-      VizGL.bind(gl, u.cover, this.cover.tex, 0);
+      VizGL.bind(gl, u.cover, coverTex, 0);
       gl.uniform2f(u.res, w, h);
       gl.uniform2f(u.center, cx, h - cy);
-      gl.uniform1f(u.radius, R);
-      gl.uniform1f(u.angle, this.angle);
+      gl.uniform1f(u.radius, coverR);
+      gl.uniform1f(u.angle, this.angle + tilt);
+      // Its shadow fainter as it nears the spectrum, not darkening the bars.
+      gl.uniform1f(u.shade, 0.55 * (1 - 0.7 * this.grow));
       gl.uniform1f(u.ring, 0.35 + 0.9 * a.kick);
       gl.uniform3f(u.ringColor, c1[0], c1[1], c1[2]);
       VizGL.screen(gl);
@@ -294,9 +370,11 @@
     _sparks(a, dt, cx, cy, R, c1, c2, rainbow) {
       const unit = this.h / 1080;
       // New ones from the rim, many more on the kicks.
-      const born = (8 + 160 * a.kick * a.kick + (a.onset ? 40 * a.onsetPower : 0)) * dt * (a.playing ? 1 : 0.3);
+      // The amount: 10% as many as there always were, 100% ten times that.
+      const amount = (Store.settings.hlSparkAmount || 0) / 10;
+      const born = (8 + 160 * a.kick * a.kick + (a.onset ? 40 * a.onsetPower : 0)) * dt * (a.playing ? 1 : 0.3) * amount;
       this._owed = (this._owed || 0) + born;
-      while (this._owed >= 1 && this.sparks.length < SPARKS) {
+      while (this._owed >= 1 && this.sparks.length < SPARKS * amount) {
         this._owed -= 1;
         const ang = Math.random() * Math.PI * 2;
         this.sparks.push({ ang, r: R * (1.1 + Math.random() * 0.15), v: (60 + Math.random() * 140) * unit, size: (1 + Math.random() * 2) * unit, c: Math.random() });
@@ -327,9 +405,37 @@
     options: [
       { type: 'check', key: 'hlSpin', label: 'Spin' },
       { type: 'choice', key: 'hlStyle', label: 'Spectrum', choices: [['bars', 'Bars'], ['line', 'Line'], ['dots', 'Dots']] },
-      { type: 'choice', key: 'hlColors', label: 'Color', choices: [['cover', 'Cover'], ['rainbow', 'Rainbow'], ['notes', 'By the notes'], ['white', 'Warm white']] },
-      { type: 'check', key: 'hlParticles', label: 'Sparks' },
-      { type: 'check', key: 'hlBackground', label: 'Cover behind' },
+      {
+        type: 'choice',
+        key: 'hlColors',
+        label: 'Color',
+        choices: [['cover', 'Cover'], ['rainbow', 'Rainbow'], ['notes', 'By the notes']],
+        color: { value: 'custom', key: 'hlColor', presets: Visualizer.OWN_PRESETS },
+      },
+      {
+        type: 'choice',
+        key: 'hlCover',
+        label: 'Cover',
+        choices: [['original', 'Original'], ['pick', 'Pick']],
+        pick: { value: 'pick', key: 'hlCoverFile', name: 'halo-cover', square: true, max: 1024 },
+        group: [
+          { type: 'check', key: 'hlWiggle', label: 'Wiggle' },
+          { type: 'check', key: 'hlPulse', label: 'Pulsing' },
+        ],
+      },
+      { type: 'check', key: 'hlParticles', label: 'Sparks', amount: { key: 'hlSparkAmount', min: 0, max: 200, step: 5 } },
+      {
+        type: 'check',
+        key: 'hlBackground',
+        label: 'Background',
+        group: [{
+          type: 'choice',
+          key: 'hlBack',
+          label: '',
+          choices: [['cover', 'Cover'], ['pick', 'Pick']],
+          pick: { value: 'pick', key: 'hlBackFile', name: 'halo-background', max: 3840 },
+        }],
+      },
       { type: 'check', key: 'hlTitle', label: 'Song title' },
     ],
   });
