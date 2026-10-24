@@ -380,6 +380,12 @@ const DEFAULTS = {
   crossfadeSeconds: 3,
   // Every song brought to the same loudness, measured once per song.
   normalize: true,
+  // The sound equalizer (Settings > Equalizer, the desktop's soundEq.js): how
+  // many bands (points from 20 Hz to 20 kHz), the curve chosen (Standard is
+  // flat), and the user's own points for Custom (dB, -12 to 12; none yet: []).
+  soundEqBands: 16,
+  soundEqPreset: 'standard',
+  soundEqCustom: [],
   // The menu's Your listening trend entry and its lists.
   showTrend: true,
   // Lyrics (4.0): the player's Lyrics and the phone's below Now Playing, and
@@ -488,6 +494,7 @@ const DEFAULTS = {
   dcScale75: false,
 };
 
+const SOUND_EQ_PRESETS = ['standard', 'bass', 'subtle', 'intimate', 'custom'];
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random-<category>' picks one of a
@@ -563,6 +570,13 @@ function clean(raw) {
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;
   }
+  const bands = Math.round(Number(s.soundEqBands));
+  s.soundEqBands = Number.isFinite(bands) ? Math.min(48, Math.max(8, bands)) : DEFAULTS.soundEqBands;
+  if (!SOUND_EQ_PRESETS.includes(s.soundEqPreset)) s.soundEqPreset = DEFAULTS.soundEqPreset;
+  const own = Array.isArray(s.soundEqCustom) ? s.soundEqCustom.map(Number) : [];
+  s.soundEqCustom = own.length >= 8 && own.length <= 48 && own.every(Number.isFinite)
+    ? own.map((db) => Math.round(Math.min(12, Math.max(-12, db)) * 10) / 10)
+    : [];
   const fade = Math.round(Number(s.crossfadeSeconds) * 10) / 10;
   s.crossfadeSeconds = Number.isFinite(fade) ? Math.min(10, Math.max(0.1, fade)) : DEFAULTS.crossfadeSeconds;
   for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'eqHeight', 'eqVisibility', 'eqShineSpread']) {

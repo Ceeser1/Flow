@@ -23,7 +23,7 @@ const Modal = {
   }) {
     const closeBtn = iconButton('modal__close', Icons.x, 'Close', () => handle.close());
     const footer = h('div.modal__footer');
-    const box = h('div.modal' + (className ? '.' + className : ''), { role: 'dialog', 'aria-modal': 'true' },
+    const box = h('div.modal' + (className ? '.' + className : ''), { role: 'dialog', 'aria-modal': 'true', tabIndex: -1 },
       h('div.modal__head', h('h2.modal__title', title), closeBtn),
       h('div.modal__body', body),
       footer);

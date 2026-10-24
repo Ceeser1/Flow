@@ -308,6 +308,24 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ ifForest: 'no' }).ifForest, true);
 });
 
+test('the sound equalizer: 16 flat bands by default, 8 to 48, Custom points within 12 dB', () => {
+  const d = settings.clean({});
+  assert.equal(d.soundEqBands, 16);
+  assert.equal(d.soundEqPreset, 'standard');
+  assert.deepEqual(d.soundEqCustom, []);
+  assert.equal(settings.clean({ soundEqBands: 4 }).soundEqBands, 8);
+  assert.equal(settings.clean({ soundEqBands: 60 }).soundEqBands, 48);
+  assert.equal(settings.clean({ soundEqBands: '20.4' }).soundEqBands, 20);
+  assert.equal(settings.clean({ soundEqBands: 'many' }).soundEqBands, 16);
+  assert.equal(settings.clean({ soundEqPreset: 'bass' }).soundEqPreset, 'bass');
+  assert.equal(settings.clean({ soundEqPreset: 'loud' }).soundEqPreset, 'standard');
+  const own = [20, -20, 1.234, 0, 0, 0, 0, '3'];
+  assert.deepEqual(settings.clean({ soundEqCustom: own }).soundEqCustom, [12, -12, 1.2, 0, 0, 0, 0, 3]);
+  assert.deepEqual(settings.clean({ soundEqCustom: [1, 2, 3] }).soundEqCustom, []);
+  assert.deepEqual(settings.clean({ soundEqCustom: new Array(8).fill('x') }).soundEqCustom, []);
+  assert.deepEqual(settings.clean({ soundEqCustom: 'loud' }).soundEqCustom, []);
+});
+
 test('a metered connection is told apart from a free one', () => {
   assert.equal(parseCost('Unrestricted|False|False\r\n'), false);
   assert.equal(parseCost('Fixed|False|False'), true);

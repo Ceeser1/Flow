@@ -12,7 +12,13 @@ const Keys = {
     // A focused button would also take Space as a click on release.
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space' && !isTypingTarget(e.target) && (!Modal.top() || (Visualizer.shown && !Modal.top().el.closest('.modal-backdrop--over')))) e.preventDefault();
+      if (e.code === 'Space' && this._closing(e.target)) e.preventDefault();
     }, true);
+  },
+
+  /** A window's X or one of its buttons at the bottom (each closes it): Space never presses them. */
+  _closing(el) {
+    return !!(Modal.top() && el && el.closest && el.closest('.modal__close, .modal__footer > .btn'));
   },
 
   _target() {
@@ -39,6 +45,14 @@ const Keys = {
     if (e.key === 'Escape' && top) {
       e.preventDefault();
       top.dismiss();
+      return;
+    }
+    // Space on a window's closing button (focused when it opened): the window
+    // stays, the focus going to the window itself.
+    if (e.code === 'Space' && this._closing(e.target)) {
+      e.preventDefault();
+      const win = e.target.closest('.modal');
+      if (win) win.focus();
       return;
     }
     if (top) return;

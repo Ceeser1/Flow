@@ -40,6 +40,8 @@ const DESKTOP = {
   scanQr: false,
   // A guest in Active Sessions of other Flow Servers on the home network (4.0).
   guests: true,
+  // Settings' Equalizer shapes the sound (Web Audio); the phone plays natively.
+  soundEq: true,
 };
 
 const ANDROID = {
@@ -62,6 +64,7 @@ const ANDROID = {
   backups: false,
   scanQr: true,
   guests: true,
+  soundEq: false,
 };
 
 // The iPhone: as the Android phone, without what iOS has no need or room for.

@@ -122,6 +122,8 @@ const SettingsPanel = {
         right: this._columnTicks(),
       }),
 
+      ...(Store.can('soundEq') ? this._soundEqRows() : []),
+
       ...this._serverRows(),
 
       ...this._jamRows(),
@@ -164,7 +166,7 @@ const SettingsPanel = {
       ...(Store.can('effects') ? [
       this._row({
         key: 'eqOn',
-        label: 'Enable Equalizer',
+        label: 'Enable Background Equalizer',
         desc: 'The music\'s frequencies glowing up from the player bar.',
         right: this._slider({ key: 'eqHeight', label: 'Height', when: () => Store.settings.eqOn }),
       }),
@@ -385,6 +387,273 @@ const SettingsPanel = {
     if (!this.modal || !this._screen) return false;
     this._openScreen(null);
     return true;
+  },
+
+  // ---- Equalizer ----
+
+  /**
+   * The sound equalizer (soundEq.js): Bands (8 to 48 points from 20 Hz to
+   * 20 kHz), Pre-Defined (the ready-made curves, and Custom: the user's own),
+   * then the curve itself. A point is dragged up or down (Shift: finer) or put
+   * back to 0 dB with a double-click; the keys pick one (Left, Right) and move
+   * it (Up, Down). Moving a point makes the curve Custom.
+   */
+  _soundEqRows() {
+    const shown = () => SoundEq.gainsOf(Store.settings);
+    const custom = (gains) => ({ soundEqPreset: 'custom', soundEqCustom: gains });
+    const round = (db) => Math.round(Math.max(-SoundEq.MAX_DB, Math.min(SoundEq.MAX_DB, db)) * 10) / 10;
+
+    const { MIN_BANDS, MAX_BANDS } = SoundEq;
+    const bands = h('input.volume-slider.settings__slider', {
+      type: 'range', min: MIN_BANDS, max: MAX_BANDS, step: 1, value: Store.settings.soundEqBands, 'aria-label': 'Audio bands',
+    });
+    const bandsValue = h('span.settings__value');
+    const drawBands = () => {
+      const v = Number(bands.value);
+      bandsValue.textContent = String(v);
+      bands.style.setProperty('--fill', `${((v - MIN_BANDS) / (MAX_BANDS - MIN_BANDS)) * 100}%`);
+    };
+    // Custom's points spread over the new number from those it had when the slider was taken.
+    let base = null;
+    const bandsPatch = () => {
+      const n = Number(bands.value);
+      if (Store.settings.soundEqPreset !== 'custom') return { soundEqBands: n };
+      if (!base) base = shown();
+      return { soundEqBands: n, soundEqCustom: SoundEq.resample(base, n) };
+    };
+    bands.addEventListener('input', () => {
+      drawBands();
+      Store.previewSettings(bandsPatch());
+    });
+    bands.addEventListener('change', () => {
+      Store.saveSettings(bandsPatch());
+      base = null;
+    });
+
+    const preset = h('select.select', { 'aria-label': 'Pre-Defined' });
+    for (const id of SoundEq.CHOICES) preset.appendChild(h('option', { value: id }, id === 'custom' ? 'Custom' : SoundEq.PRESETS[id].name));
+    preset.addEventListener('change', () => {
+      const patch = { soundEqPreset: preset.value };
+      // Custom the first time: the curve shown until then, to change from.
+      if (preset.value === 'custom' && !Store.settings.soundEqCustom.length) patch.soundEqCustom = shown();
+      Store.saveSettings(patch);
+    });
+
+    const canvas = h('canvas.sound-eq__canvas', {
+      tabIndex: 0, 'aria-label': 'Equalizer curve: Left and Right pick a band, Up and Down raise or lower it',
+    });
+    const readout = h('span.sound-eq__readout');
+    const graph = h('div.sound-eq', canvas,
+      h('div.sound-eq__info', readout, h('span', 'Drag a point up or down (Shift: finer). A double-click puts it back to 0 dB.')));
+
+    // Room for the dB at the left and the Hz under it.
+    const PAD = { l: 38, r: 14, t: 10, b: 22 };
+    const LOG = Math.log(SoundEq.HIGH_HZ / SoundEq.LOW_HZ);
+    const area = () => ({ x0: PAD.l, x1: canvas.clientWidth - PAD.r, y0: PAD.t, y1: canvas.clientHeight - PAD.b });
+    const xOf = (b, hz) => b.x0 + (Math.log(hz / SoundEq.LOW_HZ) / LOG) * (b.x1 - b.x0);
+    const hzOf = (b, x) => SoundEq.LOW_HZ * Math.exp(((x - b.x0) / (b.x1 - b.x0)) * LOG);
+    const yOf = (b, db) => b.y0 + ((SoundEq.MAX_DB - db) / (2 * SoundEq.MAX_DB)) * (b.y1 - b.y0);
+    const dbOf = (b, y) => SoundEq.MAX_DB - ((y - b.y0) / (b.y1 - b.y0)) * 2 * SoundEq.MAX_DB;
+    const fmtHz = (hz) => (hz >= 1000 ? `${(hz / 1000).toFixed(hz >= 10000 ? 1 : 2).replace(/\.?0+$/, '')} kHz` : `${Math.round(hz)} Hz`);
+    const fmtDb = (db) => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
+    let hot = -1;      // the point under the pointer, or picked with the keys
+    let drag = null;   // { i, gains, dy, moved } while one is dragged
+
+    const draw = () => {
+      const w = canvas.clientWidth;
+      const ht = canvas.clientHeight;
+      if (!w || !ht) return;
+      const dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(ht * dpr)) {
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(ht * dpr);
+      }
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, ht);
+      const css = getComputedStyle(document.body);
+      const accent = css.getPropertyValue('--accent').trim() || '#5a8cdc';
+      const b = area();
+      const gains = drag ? drag.gains : shown();
+      if (hot >= gains.length) hot = -1;
+      const fs = SoundEq.freqs(gains.length);
+      const pts = SoundEq.pointsOf(gains);
+      const line = (x0, y0, x1, y1) => {
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      };
+
+      ctx.font = `11px ${css.fontFamily}`;
+      ctx.fillStyle = css.getPropertyValue('--text-dim').trim() || '#8a8a94';
+      ctx.lineWidth = 1;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      for (const db of [12, 6, 0, -6, -12]) {
+        const y = Math.round(yOf(b, db)) + 0.5;
+        ctx.strokeStyle = db === 0 ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.08)';
+        line(b.x0, y, b.x1, y);
+        ctx.fillText(`${db > 0 ? '+' : ''}${db}`, b.x0 - 8, y);
+      }
+      ctx.textBaseline = 'top';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      for (const hz of [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]) {
+        const x = Math.round(xOf(b, hz)) + 0.5;
+        line(x, b.y0, x, b.y1);
+        ctx.textAlign = hz === 20 ? 'left' : hz === 20000 ? 'right' : 'center';
+        ctx.fillText(hz >= 1000 ? `${hz / 1000}k` : String(hz), x, b.y1 + 6);
+      }
+
+      // The curve, eased from point to point, filled to 0 dB.
+      const curve = [];
+      for (let x = b.x0; x < b.x1; x += 1) curve.push([x, yOf(b, SoundEq.at(pts, hzOf(b, x)))]);
+      curve.push([b.x1, yOf(b, gains[gains.length - 1])]);
+      const zero = yOf(b, 0);
+      ctx.beginPath();
+      ctx.moveTo(b.x0, zero);
+      for (const [x, y] of curve) ctx.lineTo(x, y);
+      ctx.lineTo(b.x1, zero);
+      ctx.closePath();
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = accent;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      curve.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#1e1e22';
+      fs.forEach((f, i) => {
+        ctx.beginPath();
+        ctx.arc(xOf(b, f), yOf(b, gains[i]), i === hot ? 6 : 4, 0, Math.PI * 2);
+        ctx.fillStyle = i === hot ? '#fff' : accent;
+        ctx.fill();
+        ctx.stroke();
+      });
+      readout.textContent = hot >= 0 ? `${fmtHz(fs[hot])}: ${fmtDb(gains[hot])}` : '';
+      canvas.classList.toggle('sound-eq__canvas--hot', hot >= 0 || !!drag);
+    };
+
+    /** The point nearest the pointer, within a few pixels; -1 for none. */
+    const nearest = (e) => {
+      const r = canvas.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      const b = area();
+      const gains = shown();
+      const fs = SoundEq.freqs(gains.length);
+      let best = -1;
+      let bestD = 14;
+      fs.forEach((f, i) => {
+        const d = Math.hypot(xOf(b, f) - x, yOf(b, gains[i]) - y);
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      });
+      return best;
+    };
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const i = nearest(e);
+      if (i < 0) return;
+      e.preventDefault();
+      canvas.focus();
+      const gains = shown();
+      const r = canvas.getBoundingClientRect();
+      drag = { i, gains, dy: e.clientY - r.top - yOf(area(), gains[i]), moved: false };
+      hot = i;
+      canvas.setPointerCapture(e.pointerId);
+      draw();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!drag) {
+        const i = nearest(e);
+        if (i !== hot) {
+          hot = i;
+          draw();
+        }
+        return;
+      }
+      const r = canvas.getBoundingClientRect();
+      const step = e.shiftKey ? 0.1 : 0.5;
+      const db = round(Math.round(dbOf(area(), e.clientY - r.top - drag.dy) / step) * step);
+      if (db === drag.gains[drag.i]) return;
+      drag.gains = drag.gains.slice();
+      drag.gains[drag.i] = db;
+      drag.moved = true;
+      Store.previewSettings(custom(drag.gains));
+    });
+    const drop = () => {
+      if (!drag) return;
+      if (drag.moved) Store.saveSettings(custom(drag.gains));
+      drag = null;
+      draw();
+    };
+    canvas.addEventListener('pointerup', drop);
+    canvas.addEventListener('pointercancel', drop);
+    canvas.addEventListener('pointerleave', () => {
+      if (drag || hot < 0) return;
+      hot = -1;
+      draw();
+    });
+    canvas.addEventListener('dblclick', (e) => {
+      const i = nearest(e);
+      const gains = shown();
+      if (i < 0 || gains[i] === 0) return;
+      gains[i] = 0;
+      Store.saveSettings(custom(gains));
+    });
+    canvas.addEventListener('keydown', (e) => {
+      const gains = shown();
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        hot = Math.max(0, Math.min(gains.length - 1, hot < 0 ? 0 : hot + (e.key === 'ArrowLeft' ? -1 : 1)));
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (hot < 0) hot = 0;
+        const db = round(gains[hot] + (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 0.1 : 0.5));
+        if (db !== gains[hot]) {
+          gains[hot] = db;
+          Store.saveSettings(custom(gains));
+        }
+      } else {
+        return;
+      }
+      e.preventDefault();
+      draw();
+    });
+    canvas.addEventListener('blur', () => {
+      if (drag) return;
+      hot = -1;
+      draw();
+    });
+    new ResizeObserver(draw).observe(canvas);
+
+    this._refresh.push(() => {
+      bands.value = Store.settings.soundEqBands;
+      drawBands();
+      preset.value = Store.settings.soundEqPreset;
+      draw();
+    });
+
+    return [
+      h('h3.settings__section', 'Equalizer'),
+      this._row({
+        label: 'Audio bands',
+        desc: 'How many frequencies get separated for fidelity.',
+        right: h('div.settings__control', bands, bandsValue),
+      }),
+      this._row({
+        label: 'Pre-Defined',
+        desc: 'A ready-made curve, or Custom: your own points. Moving a point makes the curve shown your Custom one.',
+        right: preset,
+      }),
+      graph,
+    ];
   },
 
   /** The Android app's own: its version, and help for playing on with the screen off. */
