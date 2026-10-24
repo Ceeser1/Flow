@@ -25,7 +25,9 @@
 // as the apps do it (importer.finish). Words typed instead of a link are
 // searched for (search) without a batch: the app lists what was found, and
 // the uploads picked come back as a batch of their own (one: a one-song
-// batch of its link; several: createPicked). A batch nobody opens or finishes
+// batch of its link; several: createPicked). A playlist's Update reads its
+// link without a batch (check), and the songs ticked in the app come back as
+// a batch of their own that keeps the link (createPicked with source). A batch nobody opens or finishes
 // anything of for downloadKeepDays (30) is thrown away, and so is a deleted
 // profile's.
 
@@ -142,6 +144,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   const running = new Map();    // `${key}/${index}` -> cancel token
   const listing = new Map();    // profile key -> the listing's cancel group
   const searching = new Map();  // profile key -> the search's cancel group (search)
+  const checking = new Map();   // `${profile key}|${link}` -> the check's cancel group (check)
   let active = 0;
   let stopped = false;
 
@@ -518,12 +521,12 @@ function createDownloads({ config, library, tools, log = () => {} }) {
    * search (search), { items: [{ url, title, duration }], name, options }:
    * those songs, with nothing to read first, and no playlist unless asked.
    */
-  function create(profileId, { url, kind, options, cookies, items, name } = {}) {
+  function create(profileId, { url, kind, options, cookies, items, name, source } = {}) {
     if (config.get().downloads === false) throw new DownloadError(501, 'Downloads are turned off on this server (flow-server --downloads turns them on).');
     if (!tools.canDownload()) throw new DownloadError(501, 'This server cannot download songs: it needs yt-dlp and ffmpeg.');
     const key = keyOf(profileId);
     if (batches.has(key)) throw new DownloadError(409, 'There is a download on the server already. Finish or cancel it first.');
-    if (items !== undefined) return createPicked(key, profileId, { items, name, options });
+    if (items !== undefined) return createPicked(key, profileId, { items, name, options, source: source && source.url ? source : null });
     const link = checkLink(url);
     if (cookies !== undefined && cookies !== null && (typeof cookies !== 'string' || cookies.length > MAX_COOKIES)) {
       throw new DownloadError(400, 'The browser cookies sent along are not usable.');
@@ -554,16 +557,33 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     return publicBatch(batch);
   }
 
-  /** The uploads picked from a search, as a batch that is ready at once (see create). */
-  function createPicked(key, profileId, { items, name, options }) {
+  /**
+   * The uploads picked from a search, as a batch that is ready at once (see
+   * create). With `source` ({ url, kind }) they are the songs ticked in a
+   * playlist's Update (check): its link stays the batch's, so they go into
+   * the playlist, and a song with `existing` (a library song's id) is one of
+   * the library's, added to it rather than downloaded.
+   */
+  function createPicked(key, profileId, { items, name, options, source }) {
     if (!Array.isArray(items) || !items.length) throw new DownloadError(400, 'Pick at least one song to download.');
-    if (items.length > MAX_PICKED) throw new DownloadError(400, `At most ${MAX_PICKED} songs can be picked at once.`);
-    const picked = items.map((it, i) => itemOf({
-      title: cleanText(it && it.title, 200) || `Song ${i + 1}`,
-      duration: Number(it && it.duration) || 0,
-      url: checkLink(it && it.url),
-      status: 'ok',
-    }, i));
+    const max = source ? MAX_ITEMS : MAX_PICKED;
+    if (items.length > max) throw new DownloadError(400, `At most ${max} songs can be picked at once.`);
+    const link = source ? checkLink(source.url) : '';
+    const songs = new Map(library.data.songs.map((s) => [s.id, s]));
+    const picked = items.map((it, i) => {
+      const meta = source && it && it.meta && it.meta.title ? it.meta : null;
+      // A library song is not downloaded: its link (a Spotify list's may have none) is only kept.
+      const existing = source && it && it.existing ? existingInfo(songs.get(String(it.existing))) : null;
+      return itemOf({
+        title: cleanText(it && it.title, 200) || `Song ${i + 1}`,
+        duration: Number(it && it.duration) || 0,
+        url: existing ? cleanText(it.url, 2000) : checkLink(it && it.url),
+        key: source ? cleanText(it && it.key, 200) : '',
+        meta: meta && Object.fromEntries(['artist', 'title', 'mix', 'album', 'genre', 'subGenre'].map((k) => [k, cleanText(meta[k])])),
+        existing,
+        status: 'ok',
+      }, i);
+    });
     const now = Date.now();
     const batch = {
       id: crypto.randomBytes(6).toString('hex'),
@@ -572,7 +592,9 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       state: 'ready',
       error: '',
       single: false,
-      source: { url: '', name: cleanText(name, 200) || 'Search', kind: 'search' },
+      source: source
+        ? { url: link, name: cleanText(name, 200) || 'Download', kind: cleanText(source.kind, 40) }
+        : { url: '', name: cleanText(name, 200) || 'Search', kind: 'search' },
       options: cleanOptions(options),
       truncated: false,
       base: 0,
@@ -584,9 +606,63 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     };
     batches.set(key, batch);
     save(batch);
-    log(`Download batch "${batch.source.name}": ${picked.length} ${picked.length === 1 ? 'song' : 'songs'} picked from a search`);
+    log(`Download batch "${batch.source.name}": ${picked.length} ${picked.length === 1 ? 'song' : 'songs'} picked ${source ? 'from its link' : 'from a search'}`);
     pump();
     return publicBatch(batch);
+  }
+
+  /**
+   * A playlist's Update: its link read without a batch, nothing downloaded.
+   * { url, cookies } -> { single: true } for a link that is one song now, or
+   * { name, source, sourceUrl, truncated, items }, the items as the apps' own
+   * listing gives them (existing: the library's song of the same source).
+   * The app shows what changed and sends the songs ticked as a batch of their
+   * own (create with items and source). The same link checked again for the
+   * same profile stops the check before.
+   */
+  async function check(profileId, { url, cookies } = {}) {
+    if (config.get().downloads === false) throw new DownloadError(501, 'Downloads are turned off on this server (flow-server --downloads turns them on).');
+    if (!tools.canDownload()) throw new DownloadError(501, 'This server cannot download songs: it needs yt-dlp and ffmpeg.');
+    const link = checkLink(url);
+    if (cookies !== undefined && cookies !== null && (typeof cookies !== 'string' || cookies.length > MAX_COOKIES)) {
+      throw new DownloadError(400, 'The browser cookies sent along are not usable.');
+    }
+    const siteCookies = cookies ? cookiesFor(cookies, cookieSite(link)) : '';
+    const id = `${keyOf(profileId)}|${link}`;
+    const before = checking.get(id);
+    if (before) before.cancel();
+    let cookieFile = '';
+    if (siteCookies) {
+      cookieFile = path.join(root, `check-${crypto.randomBytes(6).toString('hex')}.cookies.txt`);
+      fs.writeFileSync(cookieFile, siteCookies, { mode: 0o600 });
+    }
+    const group = groupToken(cookieFile ? ['--cookies', cookieFile] : null);
+    checking.set(id, group);
+    const knownArtists = [...new Set(library.data.songs.map((s) => s.artist).filter(Boolean))];
+    try {
+      const result = await lister.list(link, group, () => {}, { knownArtists });
+      if (result.single) return { single: true };
+      const items = result.items.slice(0, MAX_ITEMS);
+      // As the batches do: a song the library has under the same source.
+      for (const it of items) {
+        if (it.existing || !it.key) continue;
+        const same = library.existingFor(null, { sourceKey: it.key, sourceUrl: it.url });
+        if (same) it.existing = existingInfo(same);
+      }
+      return {
+        name: cleanText(result.name, 200),
+        source: String(result.source || '').toLowerCase(),
+        sourceUrl: result.sourceUrl || link,
+        truncated: result.truncated || (result.items.length > MAX_ITEMS ? 'server' : false),
+        items,
+      };
+    } catch (err) {
+      if (group.cancelled) throw new DownloadError(409, 'A newer check of this link took the place of this one.');
+      throw new DownloadError(502, (err && err.message) || 'The link could not be read.');
+    } finally {
+      if (checking.get(id) === group) checking.delete(id);
+      if (cookieFile) removeQuietly(cookieFile);
+    }
   }
 
   /**
@@ -847,6 +923,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     available: () => config.get().downloads !== false && tools.canDownload(),
     get,
     create,
+    check,
     search,
     cancel,
     audioFile,
@@ -863,6 +940,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       stopped = true;
       for (const group of listing.values()) group.cancel();
       for (const group of searching.values()) group.cancel();
+      for (const group of checking.values()) group.cancel();
       for (const token of running.values()) token.cancel ? token.cancel() : (token.cancelled = true);
     },
   };

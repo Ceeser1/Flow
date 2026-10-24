@@ -72,6 +72,11 @@ const privateStats = createPrivateStats({
 });
 // What the window changes in the library; a Local Files song's file is
 // renamed and cut here (the uncut one to the Recycle Bin).
+// A list read for Add Songs or an Update is held against the server's
+// library while one is connected, not Local Files: the playlists and the
+// songs already there are the server's (see import:finish).
+importer.useLibrary(() => (remote.active() ? remote.view() : library.get()));
+
 const actions = createActions({
   remote,
   library,
@@ -469,7 +474,7 @@ handle('server:sessions', (body) => remote.sessions(body || null));
 // link's site's cookies from the browser chosen along.
 handle('server:downloads', async ({ action, ...args }) => {
   const browser = settings.get('useCookies') && settings.get('shareCookies') ? settings.get('cookiesBrowser') : '';
-  if (action === 'create' && args.url && browser) args.cookies = await cookieJar.siteCookies(args.url, browser);
+  if ((action === 'create' || action === 'check') && args.url && browser) args.cookies = await cookieJar.siteCookies(args.url, browser);
   const result = await remote.serverDownloads(action, args);
   // A song saved on the server from here is one this device added.
   if (action === 'finish' && result && result.song) privateStats.added(1);
@@ -629,6 +634,22 @@ handle('import:list', async ({ url, run }) => {
     return await importer.list(url, token, onProgress, { knownArtists: knownArtists() });
   } finally {
     endImport(token);
+  }
+});
+
+// A playlist's Update: its link read in the background, apart from the import
+// task (an import may run meanwhile, and its Cancel leaves this alone). The
+// same link checked again stops the check before.
+const checkTokens = new Map();
+handle('import:check', async ({ url }) => {
+  const before = checkTokens.get(url);
+  if (before) before.cancel();
+  const token = importer.groupToken();
+  checkTokens.set(url, token);
+  try {
+    return await importer.list(url, token, () => {}, { knownArtists: knownArtists() });
+  } finally {
+    if (checkTokens.get(url) === token) checkTokens.delete(url);
   }
 });
 

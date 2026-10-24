@@ -89,7 +89,7 @@ const ImportPanel = {
   server: null,           // a download on the server: { id, single } of its batch
   retry: null,            // failed songs tried again: { indexes, sending, done, failedAgain }
   bulkInfo: { album: '', genre: '', subGenre: '' }, // given to every new song without one (_drawBulk)
-  updating: null,         // a playlist's Update (AddPage.updatePlaylist): { id, name } of the playlist the songs go into
+  updating: null,         // a playlist's Update (playlistUpdate.js): { id, name, url } of the playlist the songs go into
   _bulkEl: null,
 
   /** A list is being read or imported: single-link downloads wait. */
@@ -161,6 +161,24 @@ const ImportPanel = {
       this._setState('idle');
       return listing.probed;
     }
+    this._review(listing);
+    return null;
+  },
+
+  /**
+   * A playlist's "Update from source" (playlistUpdate.js): the list its check
+   * read, as the checklist, without reading it again. Read by the server
+   * (`server`): the songs ticked are downloaded there (start).
+   */
+  openUpdate(p, listing, server) {
+    if (this.state !== 'idle') return;
+    this._newRun();
+    this.updating = { id: p.id, name: p.name, url: p.source.url };
+    this._review({ ...listing, local: false, search: false, fromServer: !!server });
+  },
+
+  /** The checklist of a list read. */
+  _review(listing) {
     this.listing = listing;
     // An Update: the songs the playlist has already are no news.
     const target = this._updateTarget();
@@ -171,7 +189,6 @@ const ImportPanel = {
     this._resetName(listing.name);
     $('progressPanel').hidden = true;
     this._setState('review');
-    return null;
   },
 
   /**
@@ -1153,9 +1170,23 @@ const ImportPanel = {
       return it.status === 'ok' && (everything || this.checked.has(it.index));
     });
     if (!chosen.length) return;
-    await this._run(chosen, {
-      source: { url: l.sourceUrl, kind: String(l.source || '').toLowerCase() },
-    });
+    const source = { url: l.sourceUrl, kind: String(l.source || '').toLowerCase() };
+    if (l.fromServer) {
+      // An Update read by the server: the songs ticked go there as a batch
+      // that keeps the link, shown in the frames as any of the server's.
+      const updating = this.updating;
+      this._reset();
+      this.updating = updating;
+      await ServerImport._create({
+        items: chosen.map((it) => ({
+          url: it.url, title: it.title, duration: it.duration, key: it.key, meta: it.meta, existing: it.existing ? it.existing.id : undefined,
+        })),
+        name: l.name,
+        source,
+      });
+      return;
+    }
+    await this._run(chosen, { source });
   },
 
   /**

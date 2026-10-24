@@ -38,7 +38,7 @@ const Keys = {
     const top = Visualizer.shown ? over : Modal.top();
     if (e.key === 'Escape' && top) {
       e.preventDefault();
-      top.close();
+      if (!top.sticky) top.close();
       return;
     }
     if (top) return;

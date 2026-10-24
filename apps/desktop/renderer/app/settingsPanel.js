@@ -441,7 +441,7 @@ const SettingsPanel = {
       return h('label.check', box, h('span', label));
     };
     return h('div.settings__ticks',
-      tick('colAlbum', 'Album'), tick('colMix', 'Mix'), tick('colGenre', 'Genre'), tick('colSubGenre', 'Info'));
+      tick('colAlbum', 'Album'), tick('colGenre', 'Genre'), tick('colSubGenre', 'Info'), tick('colMix', 'Mix'));
   },
 
   /** A slider with its value beside it. Percent 1-100 unless told otherwise. */

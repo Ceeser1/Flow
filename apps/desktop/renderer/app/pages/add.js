@@ -201,38 +201,19 @@ const AddPage = {
   },
 
   /**
-   * A playlist's Update (4.0): its source link read again, the songs it has
-   * gained since downloaded into it, the ones in the library already added
-   * to it. Through the server when it downloads, else here; with both, the
-   * link waits in the box for the user's pick.
+   * A playlist's Update through a Flow Server that cannot read a link without
+   * downloading it (no "downloadCheck", playlistUpdate.js): its batch here,
+   * the songs the playlist has gained downloaded into it, the ones in the
+   * library already added to it.
    */
   async updatePlaylist(p) {
     const url = p && p.source && p.source.url;
-    if (!url) return;
-    const client = Store.can('downloadHere') && DownloadsHelp.here;
-    const server = ServerImport.available;
+    if (!url || !ServerImport.available) return;
     Nav.show('add');
-    if (!client && !server) {
-      DownloadsHelp.open();
-      return;
-    }
     if (!await this._clearForNew()) return;
     $('linkInput').value = url;
-    if (client && server) {
-      ImportPanel.updating = { id: p.id, name: p.name, url };
-      toast(`To update "${p.name}", pick Download (Client) or Download (Server).`, 'info');
-      return;
-    }
     ImportPanel.updating = { id: p.id, name: p.name, url };
-    if (server) {
-      await ServerImport._create({ url, kind: 'list' });
-      return;
-    }
-    const probed = await ImportPanel.open(url);
-    if (probed) {
-      ImportPanel.updating = null;
-      this._showError(`The link of "${p.name}" leads to one song now, not to a playlist.`);
-    }
+    await ServerImport._create({ url, kind: 'list' });
   },
 
   /**

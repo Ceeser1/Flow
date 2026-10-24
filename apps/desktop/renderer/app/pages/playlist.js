@@ -63,8 +63,8 @@ const PlaylistPage = {
       }
       attempt(() => window.flow.setOffline(this.id, on));
     };
-    // An imported playlist's Update (4.0): its source read again (AddPage.updatePlaylist).
-    $('plUpdate').onclick = () => AddPage.updatePlaylist(Store.playlist(this.id));
+    // An imported playlist's Update (4.0): its source read again in the background (playlistUpdate.js).
+    $('plUpdate').onclick = () => PlaylistUpdate.check(Store.playlist(this.id));
     $('plRules').onclick = () => RulesEditor.open({ playlist: Store.playlist(this.id) });
     // The phone has Update as an icon in the row below the name, with the others (mobile.css orders them).
     if (Store.uiMode === 'mobile') $('plShare').after($('plUpdate'));
@@ -249,10 +249,18 @@ const PlaylistPage = {
     const btn = $('plUpdate');
     btn.hidden = !can;
     if (!can) return;
-    btn.title = `Download the songs added to ${p.source.url} since "${p.name}" was imported`;
-    // The phone's is only the icon, as its Download.
-    btn.innerHTML = Store.uiMode === 'mobile' ? Icons.refresh : `${Icons.refresh}<span>Update</span>`;
-    btn.setAttribute('aria-label', 'Update');
+    // Light blue with its icon turning while the link is read.
+    const busy = PlaylistUpdate.isChecking(p.id);
+    btn.classList.toggle('pl-update--busy', busy);
+    btn.title = busy ? `Checking ${p.source.url} for changes...`
+      : `Look for the songs added to or removed from ${p.source.url} since "${p.name}" was imported`;
+    // The phone's is only the icon, as its Download. Drawn once, so a turning icon keeps turning.
+    const html = Store.uiMode === 'mobile' ? Icons.refresh : `${Icons.refresh}<span>Update from source</span>`;
+    if (btn.dataset.html !== html) {
+      btn.innerHTML = html;
+      btn.dataset.html = html;
+    }
+    btn.setAttribute('aria-label', 'Update from source');
   },
 
   /**
@@ -423,7 +431,7 @@ const PlaylistPage = {
   },
 
   /**
-   * The columns between Artist and Duration: Album, Mix, Genre and Info as
+   * The columns between Artist and Duration: Album, Genre, Info and Mix as
    * Settings shows them, and a listening trend list's From Playlist.
    */
   _extraColumns(smartList) {
@@ -431,22 +439,22 @@ const PlaylistPage = {
     const muted = (text) => h('span.muted-text', { title: text }, text);
     return [
       set.colAlbum && { key: 'album', label: 'Album', cls: 'col-album', render: (r) => muted(r.song.album || '') },
-      set.colMix !== false && { key: 'mix', label: 'Mix', cls: 'col-mix', render: (r) => muted(r.song.mix) },
       set.colGenre && { key: 'genre', label: 'Genre', cls: 'col-genre', render: (r) => muted(r.song.genre || '') },
       set.colSubGenre && { key: 'subGenre', label: 'Info', cls: 'col-subgenre', render: (r) => muted(r.song.subGenre || '') },
+      set.colMix && { key: 'mix', label: 'Mix', cls: 'col-mix', render: (r) => muted(r.song.mix) },
       smartList && { key: 'from', label: 'From Playlist', cls: 'col-from', render: (r) => muted(this._from(r.song)) },
     ].filter(Boolean);
   },
 
   /**
    * Each column's share of the width left (the stylesheet's --w-<column>):
-   * Title 45, Artist 35, Album 25, Mix 20, Genre 15, Info 15, From Playlist 22 of
+   * Title 45, Artist 35, Album 25, Genre 15, Info 15, Mix 20, From Playlist 22 of
    * what the columns shown add up to, so every one shown makes the others
    * a little narrower. Title takes what is left.
    */
   _shareColumns(keys) {
     const weights = {
-      title: 45, artist: 35, album: 25, mix: 20, genre: 15, subGenre: 15, from: 22,
+      title: 45, artist: 35, album: 25, genre: 15, subGenre: 15, mix: 20, from: 22,
     };
     const shown = ['title', 'artist', ...keys];
     const total = shown.reduce((sum, k) => sum + weights[k], 0);

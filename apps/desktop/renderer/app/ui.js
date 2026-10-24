@@ -13,9 +13,11 @@ const Modal = {
    * return false to keep the popup open. Resolves nothing itself: callers wrap
    * it in their own promise. `drawer` makes it a panel that slides in from the
    * right over a lighter backdrop; `sheet` one that rises from the bottom
-   * (the phone's menus, mobile.css). Returns { close, el }.
+   * (the phone's menus, mobile.css). `sticky` keeps it open on a click
+   * beside it, Escape and the phone's Back: only X and its buttons close it.
+   * Returns { close, el, sticky }.
    */
-  open({ title, body, buttons = [], className = '', onClose, focus, drawer = false, sheet = false }) {
+  open({ title, body, buttons = [], className = '', onClose, focus, drawer = false, sheet = false, sticky = false }) {
     const closeBtn = iconButton('modal__close', Icons.x, 'Close', () => handle.close());
     const footer = h('div.modal__footer');
     const box = h('div.modal' + (className ? '.' + className : ''), { role: 'dialog', 'aria-modal': 'true' },
@@ -34,6 +36,7 @@ const Modal = {
     let closed = false;
     const handle = {
       el: box,
+      sticky,
       close(result) {
         if (closed) return;
         closed = true;
@@ -73,7 +76,7 @@ const Modal = {
       pressedBackdrop = e.target === backdrop;
     });
     backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop && pressedBackdrop) handle.close();
+      if (e.target === backdrop && pressedBackdrop && !sticky) handle.close();
     });
 
     $('modalRoot').appendChild(backdrop);

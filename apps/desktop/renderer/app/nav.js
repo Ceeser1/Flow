@@ -11,6 +11,17 @@ const Nav = {
   _at: null,
 
   init() {
+    // The main scroll bar's track reaches the window's top once the page is scrolled, and stops where
+    // the contents do once it is scrolled to the end (style.css).
+    const pages = $('pages');
+    const edges = () => {
+      pages.classList.toggle('pages--scrolled', pages.scrollTop > 0);
+      pages.classList.toggle('pages--end', pages.scrollTop + pages.clientHeight >= pages.scrollHeight - 1);
+    };
+    pages.addEventListener('scroll', edges, { passive: true });
+    const sizes = new ResizeObserver(edges);
+    sizes.observe(pages);
+    for (const node of pages.querySelectorAll('.page')) sizes.observe(node);
     $('menuSearch').innerHTML = Icons.search + '<span>Search</span>';
     $('menuAdd').innerHTML = Icons.add + '<span>Add Songs</span>'
       + '<span id="menuAddBadge" class="menu__badge" hidden title="Playlist import running"></span>';

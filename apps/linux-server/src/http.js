@@ -67,6 +67,10 @@
 //   GET    /api/downloads              { batch } (null: none)
 //   POST   /api/downloads { url, kind, options }   a new batch: { batch }, 409 with one already
 //   DELETE /api/downloads              cancel the whole batch
+//   POST   /api/downloads/check { url }   a playlist's Update (feature "downloadCheck"):
+//                                      its link read, nothing downloaded: { listing }; the
+//                                      songs ticked come back as POST /api/downloads
+//                                      { items, name, source }
 //   POST   /api/downloads/search { query, page }   uploads for a song's name typed
 //                                      instead of a link (only with the "search"
 //                                      feature): { query, artist, title, page, results }
@@ -851,7 +855,7 @@ function createHttpServer({
       // From home at level 3 and 4 no password is asked for, so none is announced.
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
-      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search'] : []), ...(live ? ['sessions'] : []),
+      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck'] : []), ...(live ? ['sessions'] : []),
         ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics', 'ownLyrics', 'lyricsSync'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
@@ -1078,6 +1082,10 @@ function createHttpServer({
     if (is('DELETE', /^\/api\/downloads$/)) {
       downloads.cancel(profileId);
       return sendJson(res, 200, { batch: null });
+    }
+    if (is('POST', /^\/api\/downloads\/check$/)) {
+      const body = await readJsonBody(req);
+      return sendJson(res, 200, { listing: await downloads.check(profileId, body) });
     }
     if (is('POST', /^\/api\/downloads\/search$/)) {
       const body = await readJsonBody(req);

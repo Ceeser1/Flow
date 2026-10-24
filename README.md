@@ -87,16 +87,22 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
     downloaded (SoundCloud's DRM, Bandcamp's previews) is passed over. The
     checklist names the site each song was found on. Vimeo cannot be searched
     without an account, so it is not among them.
-  - **Update** (from 4.0): a playlist imported from a link has Update beside
-    Download on its page (an icon on the phone), where something can
-    download (yt-dlp here, or the server's downloads). It reads the source
-    again: the songs it has gained are downloaded into the playlist, songs of
-    the source already in the library but not in the playlist are put into
-    it, and the ones it has are left out of the checklist's warnings. With
-    both Download (Client) and Download (Server) the link waits in the box
-    for either. The playlist keeps its own name whatever the source calls
-    itself now. "Playlist ... updated", or "... is up to date" when nothing
-    is missing.
+  - **Update from source** (from 4.0): a playlist imported from a link has
+    Update from source beside Download on its page (an icon on the phone),
+    where something can download. A click reads the source again in the
+    background (with yt-dlp here when it is in the tools folder, else on the
+    Flow Server) while the button turns light blue and its icon spins; the
+    page stays where it is. "No changes to ... found." when the source has
+    nothing the playlist lacks and lacks nothing it has. Otherwise a popup
+    lists Added Songs (new ones, and songs in the library but not in the
+    playlist) and Removed Songs (in the playlist, no longer in the source),
+    with **Keep songs removed from the playlist** and **Add new songs to the
+    playlist** (both ticked). It closes only with X or Cancel Playlist Update.
+    Continue takes the removed songs out of the playlist when the first box is
+    unticked, and with the second opens Add Songs with the list as its
+    checklist (Cancel, Download Selected, Download All); the songs go into the
+    playlist, which keeps its own name. A Flow Server from before the check
+    downloads the source's new songs on Add Songs as before.
 - **Playlists**: create, rename, delete. Deleting asks first, with **Also
   delete all songs that exist only in this playlist** (off): ticked, the
   songs in no other playlist and not among the favourites go too, files

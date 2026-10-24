@@ -28,7 +28,7 @@ const Icons = (() => {
     // A microphone: the lyrics.
     lyrics: svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'),
     // Two arrows round: read again (a playlist's Update).
-    refresh: svg('<path d="M20 11a8 8 0 0 0-14.9-3.9L4 8.5"/><path d="M4 4v4.5h4.5"/><path d="M4 13a8 8 0 0 0 14.9 3.9l1.1-1.4"/><path d="M20 20v-4.5h-4.5"/>'),
+    refresh: svg('<path d="M4 11a8 8 0 0 1 14.9-3.9L20 8.5"/><path d="M20 4v4.5h-4.5"/><path d="M20 13a8 8 0 0 1-14.9 3.9L4 15.5"/><path d="M4 20v-4.5h4.5"/>'),
     pencil: img('edit'),
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
     check: svg('<path d="M5 12.5l4.5 4.5L19 7"/>'),

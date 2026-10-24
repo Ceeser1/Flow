@@ -1,7 +1,7 @@
 'use strict';
 
 // Search: one box, seven columns. Playlists (the built-in ones included),
-// Songs, Artists, Albums, Mixes, Genres and Info whose name holds what was
+// Songs, Artists, Albums, Genres, Info and Mixes whose name holds what was
 // typed (Artists: those of the songs found). An empty box lists everything.
 // The columns keep their width and the row scrolls sideways (mobile.css: one
 // under the other).
@@ -9,10 +9,14 @@
 // The columns of the songs' names: which song field, its list and count.
 const SEARCH_NAMES = [
   { key: 'album', list: 'searchAlbums', count: 'searchAlbumsCount' },
-  { key: 'mix', list: 'searchMixes', count: 'searchMixesCount' },
   { key: 'genre', list: 'searchGenres', count: 'searchGenresCount' },
   { key: 'subGenre', list: 'searchInfo', count: 'searchInfoCount' },
+  { key: 'mix', list: 'searchMixes', count: 'searchMixesCount' },
 ];
+
+// A name longer than 40 characters is cut to 37 and "...", the whole name in its tooltip.
+const shortName = (text) => (text.length > 40 ? text.slice(0, 37) + '...' : text);
+const fullName = (text) => (text && text.length > 40 ? text : undefined);
 
 const SearchPage = {
   init() {
@@ -62,7 +66,7 @@ const SearchPage = {
     },
     h('span.result__icon', { html: listIcon(p) }),
     h('span.result__text',
-      h('span.result__title', p.name),
+      h('span.result__title', { title: fullName(p.name) }, shortName(p.name)),
       h('span.result__meta', `${Util.plural(p.entries.length, 'song')} · ${Util.fmtClock(Store.totalDuration(p.id))}`))));
 
     // Songs, newest first like All Songs
@@ -74,6 +78,7 @@ const SearchPage = {
     // than a button, as it holds buttons.
     this._fill('searchSongs', 'searchSongsCount', songs, (s) => {
       const play = () => Player.toggleSong(s.id, 'all');
+      const name = s.title + (s.mix ? ` (${s.mix})` : '');
       const row = h('div.result.result--song', {
         role: 'button',
         tabIndex: 0,
@@ -88,8 +93,8 @@ const SearchPage = {
       },
       Covers.el(s, 'result'),
       h('span.result__text',
-        h('span.result__title', s.title + (s.mix ? ` (${s.mix})` : '')),
-        h('span.result__meta', [s.artist, Util.fmtClock(s.duration)].filter(Boolean).join(' · '))),
+        h('span.result__title', { title: fullName(name) }, shortName(name)),
+        h('span.result__meta', { title: fullName(s.artist) }, [s.artist && shortName(s.artist), Util.fmtClock(s.duration)].filter(Boolean).join(' · '))),
       iconButton('act.act--green', Icons.plus, 'Add to Queue', (e) => {
         e.stopPropagation();
         Player.addToQueue(s.id);
@@ -110,10 +115,10 @@ const SearchPage = {
     },
     h('span.result__icon.result__avatar', a.name.slice(0, 1).toUpperCase()),
     h('span.result__text',
-      h('span.result__title', a.name),
+      h('span.result__title', { title: fullName(a.name) }, shortName(a.name)),
       h('span.result__meta', Util.plural(a.count, 'song')))));
 
-    // Albums, Mixes, Genres and Info the same way. An album shows
+    // Albums, Genres, Info and Mixes the same way. An album shows
     // the cover of a song on it, and its artist when all its songs share one.
     for (const col of SEARCH_NAMES) {
       this._fill(col.list, col.count, this._names(col.key, q), (n) => h('button.result', {
@@ -123,8 +128,8 @@ const SearchPage = {
       },
       col.key === 'album' ? Covers.el(n.song, 'result') : h('span.result__icon.result__avatar.result__avatar--name', n.name.slice(0, 1).toUpperCase()),
       h('span.result__text',
-        h('span.result__title', n.name),
-        h('span.result__meta', [col.key === 'album' && n.artists.size === 1 ? n.song.artist : '', Util.plural(n.count, 'song')]
+        h('span.result__title', { title: fullName(n.name) }, shortName(n.name)),
+        h('span.result__meta', [col.key === 'album' && n.artists.size === 1 ? shortName(n.song.artist) : '', Util.plural(n.count, 'song')]
           .filter(Boolean).join(' · ')))));
     }
   },

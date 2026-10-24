@@ -265,7 +265,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -353,6 +353,8 @@ function createRemote(env) {
       downloads: status.state === 'online' && conn.downloads,
       // It also searches by a song's name typed instead of a link.
       search: status.state === 'online' && conn.downloads && conn.search,
+      // It reads a playlist's link for its Update without downloading anything.
+      downloadCheck: status.state === 'online' && conn.downloads && conn.downloadCheck,
       // The server cuts its songs' files (Edit's trim).
       trim: status.state === 'online' && conn.trim,
       // Connected through the Tailscale address (away from home).
@@ -769,6 +771,7 @@ function createRemote(env) {
         const profiles = Array.isArray(hello.features) && hello.features.includes('profiles');
         const downloads = Array.isArray(hello.features) && hello.features.includes('download');
         const search = Array.isArray(hello.features) && hello.features.includes('search');
+        const downloadCheck = Array.isArray(hello.features) && hello.features.includes('downloadCheck');
         const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
@@ -782,7 +785,7 @@ function createRemote(env) {
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -3015,11 +3018,18 @@ function createRemote(env) {
     try {
       if (action === 'get') return (await call('/api/downloads')).batch;
       // create: cookies, the link's site's browser cookies (or none). Or items
-      // and name: uploads picked from a search, several at once.
+      // and name: uploads picked from a search, several at once; with source
+      // ({ url, kind }), the songs ticked in a playlist's Update.
       if (action === 'create') {
-        const { url, kind, options, cookies, items, name } = args;
-        const json = items ? { items, name, options } : { url, kind, options, cookies: cookies || undefined };
+        const { url, kind, options, cookies, items, name, source } = args;
+        const json = items ? { items, name, options, source: source || undefined } : { url, kind, options, cookies: cookies || undefined };
         return (await call('/api/downloads', { method: 'POST', json })).batch;
+      }
+      // A playlist's Update: its link read on the server, nothing downloaded ({ url, cookies }).
+      if (action === 'check') {
+        if (!conn.downloadCheck) throw new Error('This Flow Server cannot check a playlist for updates yet: update it.');
+        const json = { url: args.url, cookies: args.cookies || undefined };
+        return (await call('/api/downloads/check', { method: 'POST', json, timeout: 15 * 60 * 1000 })).listing;
       }
       if (action === 'cancel') return (await call('/api/downloads', { method: 'DELETE' })).batch;
       // A song's name typed instead of a link: { query, artist, title, page, results }.

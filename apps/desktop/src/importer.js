@@ -27,8 +27,16 @@ const {
 const { scanFolder, MAX_FILES } = require('./localScan');
 const { lookupInfo } = require('@flow/core/songInfo');
 
+// The songs a list is held against ("already in your library"): the library
+// the window shows, a Flow Server's while one is connected (main.js), whose
+// songs and playlists the ids then are.
+let shownLibrary = () => library.get();
+function useLibrary(fn) {
+  shownLibrary = fn;
+}
+
 // A downloaded song's album and genre: its list's or page's, else Apple's.
-const lister = createLister({ media, library: () => library.get(), lookupInfo });
+const lister = createLister({ media, library: () => shownLibrary(), lookupInfo });
 const { list, download, search } = lister;
 
 // ---- importing: download everything, then save it all at once ----
@@ -303,4 +311,4 @@ async function finish(job, onProgress) {
   return summary;
 }
 
-module.exports = { list, download, search, listLocal, prepareLocal, finish, groupToken, eachItem };
+module.exports = { list, download, search, listLocal, prepareLocal, finish, groupToken, eachItem, useLibrary };
