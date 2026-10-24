@@ -800,7 +800,7 @@ const AddPage = {
       this._lyricsChanged(e);
     };
     if (e.state === 'looking') {
-      box.append(h('span.ed-lyrics__label', 'Looking for lyrics...'));
+      box.append(h('span.ed-lyrics__label', LyricsEdit.spinner(), 'Looking for lyrics...'));
       return;
     }
     const found = e.state === 'found';

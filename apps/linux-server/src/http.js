@@ -126,6 +126,7 @@ const {
 } = require('./config');
 const { DownloadError } = require('./downloads');
 const cover = require('@flow/core/cover');
+const { NONE: NO_LYRICS } = require('@flow/core/lyrics');
 const tools = require('./tools');
 const { SessionError } = require('./sessions');
 const { createVorbis } = require('./vorbis');
@@ -954,11 +955,13 @@ function createHttpServer({
     if (m && lyrics && is('GET', /./)) {
       const song = library.data.songs.find((s) => s.id === m[1]);
       if (!song) throw new HttpError(404, 'That song is not on the server.');
+      // LRCLIB still busy or out of reach after all its tries: none found
+      // (nothing kept, so looked up again when an app asks next time).
       let found;
       try {
         found = await lyrics.get(song);
       } catch {
-        throw new HttpError(502, 'LRCLIB (lrclib.net), where the lyrics come from, cannot be reached right now.');
+        found = { ...NO_LYRICS };
       }
       return sendJson(res, 200, { lyrics: found });
     }

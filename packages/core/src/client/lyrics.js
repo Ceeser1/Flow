@@ -7,6 +7,8 @@
 // lyrics.ovh) here and kept in lyrics.json, the last KEEP songs asked for.
 // Lyrics written or edited in the app (4.0.1, set): a server's song's on the
 // server, any other's in lyrics.json for good (never among those let go).
+// LRCLIB still busy or out of reach after all its tries (@flow/core/lyrics
+// RETRY): "No lyrics found", kept an hour (`partial`), then looked up again.
 
 const lyrics = require('../lyrics');
 
@@ -54,7 +56,8 @@ function createLyricsClient({
   }
 
   /**
-   * { found, synced, plain, instrumental }; rejects when nobody can say.
+   * { found, synced, plain, instrumental }; none found when LRCLIB could not
+   * answer. Rejects for a song that is not here.
    * `id`: a song of the library, or { id, title, artist, duration } of one it
    * has not (another server's, in a session).
    */
@@ -80,7 +83,7 @@ function createLyricsClient({
       try {
         r = await lyrics.lookupLyrics(song, { fetch, agent });
       } catch {
-        throw new Error('The lyrics could not be looked up: LRCLIB (lrclib.net) cannot be reached right now.');
+        r = { ...lyrics.NONE, partial: true };
       } finally {
         running.delete(ownId);
       }
@@ -140,7 +143,7 @@ function createLyricsClient({
     try {
       return lyrics.clean(await lyrics.lookupLyrics(song, { fetch, agent }));
     } catch {
-      throw new Error('The lyrics could not be looked up: LRCLIB (lrclib.net) cannot be reached right now.');
+      return { ...lyrics.NONE };
     }
   }
 

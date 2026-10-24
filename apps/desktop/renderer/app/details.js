@@ -142,7 +142,7 @@ const SongDetails = {
   _lyrics(song, lyrics, reload) {
     const section = h('section.details__section', h('h4.details__heading', 'Lyrics'));
     if (lyrics.state === 'loading') {
-      section.appendChild(h('div.details__lyrics.details__lyrics--none', 'Looking for the lyrics...'));
+      section.appendChild(h('div.details__lyrics.details__lyrics--none', LyricsEdit.spinner(), 'Looking for the lyrics...'));
       return section;
     }
     if (lyrics.state === 'error') {

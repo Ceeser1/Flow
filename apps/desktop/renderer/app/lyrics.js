@@ -261,7 +261,7 @@ const Lyrics = {
     if (song) box.appendChild(h('div.lyrics__song', Util.songLine(song)));
     const note = this._note();
     if (note) {
-      box.appendChild(h('div.lyrics__note', note));
+      box.appendChild(h('div.lyrics__note', this.state === 'loading' ? LyricsEdit.spinner() : null, note));
       if (this.state === 'error') box.appendChild(h('button.btn.btn--small', { type: 'button', onclick: () => this.retry() }, 'Try again'));
       return;
     }

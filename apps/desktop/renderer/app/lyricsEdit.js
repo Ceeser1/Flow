@@ -107,6 +107,14 @@ const LyricsEdit = {
     return song.mix ? `${line} (${song.mix})` : line;
   },
 
+  /**
+   * The loading circle before "Looking for lyrics..." (a busy LRCLIB is
+   * tried up to nine times over 51 s, @flow/core/lyrics RETRY).
+   */
+  spinner() {
+    return h('span.lyrics-spinner');
+  },
+
   /** "Lyrics" with a green circled tick (found) or a red circled cross (none), for after a song's title. */
   badge(found) {
     return h(`span.lyrics-badge.lyrics-badge--${found ? 'yes' : 'no'}`, {

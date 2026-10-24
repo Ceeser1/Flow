@@ -57,12 +57,13 @@ test('the lyrics of a song, looked up once, again when it is renamed; LRCLIB out
     await get('/api/songs/aaa111/lyrics');
     assert.deepEqual(asked, ['Porcelain', 'Natural Blues']);
     assert.equal((await get('/api/songs/nope/lyrics')).status, 404);
-    // LRCLIB out of reach: said, nothing kept.
+    // LRCLIB out of reach after all its tries: none found, nothing kept.
     fs.rmSync(path.join(root, 'home', 'lyrics'), { recursive: true });
     down = true;
     const failed = await get('/api/songs/aaa111/lyrics');
-    assert.equal(failed.status, 502);
-    assert.match(failed.json.error, /LRCLIB/);
+    assert.equal(failed.status, 200);
+    assert.equal(failed.json.lyrics.found, false);
+    assert.ok(!fs.existsSync(path.join(root, 'home', 'lyrics', 'aaa111.json')));
   } finally {
     await server.close();
     fs.rmSync(root, { recursive: true, force: true });

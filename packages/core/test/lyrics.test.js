@@ -5,6 +5,9 @@ const assert = require('node:assert/strict');
 const lyrics = require('../src/lyrics');
 const { createLyricsClient } = require('../src/client/lyrics');
 
+// A failed lookup's tries (RETRY) without the 51 s between them.
+lyrics.RETRY.unitMs = 0;
+
 const LRC = '[ar: Moby]\n[00:12.50]In my dreams I\'m dying all the time\n[00:20.01][01:40.5]As I wake\n[00:30.00]\n\nno time here';
 
 test('LRC lines with their times, and the line playing', () => {
@@ -83,6 +86,60 @@ test('a lookup: LRCLIB\'s search, then the first artist alone', async () => {
   await assert.rejects(() => lyrics.lookupLyrics({ artist: 'Moby', title: 'Porcelain', duration: 241 }, { fetch: fakeFetch({ down: true }) }));
 });
 
+test('a failed lookup tried again: nine times over 51 s, until one answers in full', async () => {
+  const song = { artist: 'Moby', title: 'Porcelain', duration: 241 };
+  const found = { 'search?track_name=Porcelain&artist_name=Moby': [{ trackName: 'Porcelain', artistName: 'Moby', duration: 241, plainLyrics: 'In my dreams' }] };
+  // LRCLIB out of reach twice, then there.
+  let calls = 0;
+  const flaky = async (url, opts) => {
+    calls++;
+    return fakeFetch(calls <= 2 ? { down: true } : found)(url, opts);
+  };
+  assert.equal((await lyrics.lookupLyrics(song, { fetch: flaky })).plain, 'In my dreams');
+  assert.equal(calls, 3);
+  // Never there: nine tries, then the error; one with tries: 1.
+  calls = 0;
+  const down = async (url, opts) => {
+    calls++;
+    return fakeFetch({ down: true })(url, opts);
+  };
+  await assert.rejects(() => lyrics.lookupLyrics(song, { fetch: down }));
+  assert.equal(calls, 9);
+  calls = 0;
+  await assert.rejects(() => lyrics.lookupLyrics(song, { fetch: down, tries: 1 }));
+  assert.equal(calls, 1);
+  // Not on LRCLIB, lyrics.ovh out of reach once: asked again.
+  const asked = [];
+  let ovhDown = 1;
+  const ovh = async (url) => {
+    asked.push(url);
+    if (url.startsWith('https://lrclib.net/')) return { ok: true, status: 200, json: async () => [] };
+    if (ovhDown-- > 0) return { ok: false, status: 503, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => ({ lyrics: 'Numb words' }) };
+  };
+  const r = await lyrics.lookupLyrics({ artist: 'Linkin Park', title: 'Numb', duration: 185 }, { fetch: ovh });
+  assert.equal(r.plain, 'Numb words');
+  assert.equal(asked.filter((u) => u.includes('lyrics.ovh')).length, 2);
+  // Spread out: three tries 3 s apart, three 6 s, three 9 s (a second is 10 ms here).
+  lyrics.RETRY.unitMs = 10;
+  try {
+    const at = [];
+    const t0 = Date.now();
+    await assert.rejects(() => lyrics.lookupLyrics(song, {
+      fetch: async () => {
+        at.push(Date.now() - t0);
+        throw new TypeError('fetch failed');
+      },
+    }));
+    assert.equal(at.length, 9);
+    const want = [30, 30, 60, 60, 60, 90, 90, 90];
+    for (let i = 1; i < 9; i++) assert.ok(at[i] - at[i - 1] >= want[i - 1] - 2, `gap ${i}: ${at[i] - at[i - 1]} ms, want ${want[i - 1]}`);
+    assert.ok(at[8] >= 500, `all nine over ${at[8]} ms`);
+  } finally {
+    lyrics.RETRY.unitMs = 0;
+  }
+});
+
 test('the app\'s lyrics: the server\'s for its songs, its own looked up once and kept', async () => {
   const files = {};
   const jsonFiles = { read: (n) => files[n] || null, write: (n, v) => { files[n] = JSON.parse(JSON.stringify(v)); } };
@@ -106,8 +163,12 @@ test('the app\'s lyrics: the server\'s for its songs, its own looked up once and
   online = false;
   assert.equal((await client.get('s1')).found, false);
   assert.ok(asked.some((a) => /Natural/.test(a.url)));
-  const down = createLyricsClient({ remote, library: { get: () => local }, jsonFiles: { read: () => null, write() {} }, fetch: fakeFetch({ down: true }) });
-  await assert.rejects(() => down.get('s1'), /could not be looked up/);
+  // LRCLIB never answering: none found, kept an hour (partial), and so for a song looked up by its names.
+  const keptDown = {};
+  const down = createLyricsClient({ remote, library: { get: () => local }, jsonFiles: { read: () => null, write: (n, v) => { keptDown[n] = v; } }, fetch: fakeFetch({ down: true }) });
+  assert.deepEqual(await down.get('s1'), lyrics.NONE);
+  assert.equal(keptDown['lyrics.json'].s1.partial, true);
+  assert.deepEqual(await down.lookup({ artist: 'Moby', title: 'Porcelain', duration: 241 }), lyrics.NONE);
   await assert.rejects(() => client.get('nope'), /not here/);
 });
 

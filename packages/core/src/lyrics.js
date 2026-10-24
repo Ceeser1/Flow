@@ -28,6 +28,13 @@ const SYNC_SLACK = 4;
 const NOT_FOUND_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
 // Not on LRCLIB with lyrics.ovh out of reach (`partial`): after this long.
 const PARTIAL_RETRY_MS = 60 * 60 * 1000;
+// A lookup that failed (LRCLIB busy, its 503 "ServerOverloaded", or out of
+// reach; lyrics.ovh out of reach) is tried again after each of these waits
+// (seconds from the start of the try before): three tries 3 s apart, three
+// 6 s apart, three 9 s apart, nine in all over 51 s. LRCLIB lets a busy
+// search through now and then and keeps the answer once it has given it.
+// The tests set unitMs to 0.
+const RETRY = { gaps: [3, 3, 6, 6, 6, 9, 9, 9], unitMs: 1000 };
 
 // Own lyrics: at most this many lines, each this long, none past this second.
 const OWN_LINES = 1000;
@@ -131,9 +138,27 @@ function pick(results, { artist, title, duration = 0 }) {
  * A song's lyrics from LRCLIB, else lyrics.ovh's words: { artist, title,
  * album, duration }. Resolves NONE when there are none (with `partial` when
  * lyrics.ovh could not be asked); rejects when LRCLIB cannot be reached.
- * agent: whether to send the User-Agent (a page's fetch cannot).
+ * Either tried again (RETRY, nine tries over 51 s) until one answers in
+ * full. tries: fewer. agent: whether to send the User-Agent (a page's fetch
+ * cannot).
  */
-async function lookupLyrics(song, { fetch: get = globalThis.fetch, timeoutMs = 15000, agent = true } = {}) {
+async function lookupLyrics(song, opts = {}) {
+  const tries = Math.min(opts.tries || Infinity, RETRY.gaps.length + 1);
+  for (let n = 1; ; n++) {
+    const start = Date.now();
+    try {
+      const r = await lookupOnce(song, opts);
+      if (!r.partial || n >= tries) return r;
+    } catch (err) {
+      if (n >= tries) throw err;
+    }
+    const wait = start + RETRY.gaps[n - 1] * RETRY.unitMs - Date.now();
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, wait)));
+  }
+}
+
+/** One try of lookupLyrics; timeoutMs: each request's. */
+async function lookupOnce(song, { fetch: get = globalThis.fetch, timeoutMs = 10000, agent = true } = {}) {
   const title = String(song.title || '').trim();
   const artist = String(song.artist || '').trim();
   const duration = Number(song.duration) || 0;
@@ -264,6 +289,6 @@ function clean(kept) {
 }
 
 module.exports = {
-  parseLrc, lineAt, pick, fromRecord, ovhText, lookupLyrics, ownLyrics, lyricsKey, toKeep, stillGood, settled, clean, firstArtist,
+  parseLrc, lineAt, pick, fromRecord, ovhText, lookupLyrics, RETRY, ownLyrics, lyricsKey, toKeep, stillGood, settled, clean, firstArtist,
   NONE, SOURCES, NOT_FOUND_RETRY_MS, PARTIAL_RETRY_MS,
 };

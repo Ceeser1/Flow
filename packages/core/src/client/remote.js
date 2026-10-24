@@ -1260,7 +1260,8 @@ function createRemote(env) {
   async function songLyrics(songId) {
     if (!active() || status.state !== 'online' || !conn.lyrics) return null;
     try {
-      return (await call(`/api/songs/${encodeURIComponent(songId)}/lyrics`, { timeout: 30000 })).lyrics || null;
+      // The server tries a busy LRCLIB for 51 s (@flow/core/lyrics RETRY).
+      return (await call(`/api/songs/${encodeURIComponent(songId)}/lyrics`, { timeout: 120000 })).lyrics || null;
     } catch (err) {
       if (err instanceof OfflineError) return null;
       throw err;

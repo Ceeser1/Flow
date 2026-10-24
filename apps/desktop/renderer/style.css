@@ -646,10 +646,12 @@ button, input, select { font: inherit; color: inherit; }
 .prog-title:empty { display: none; }
 
 /* Waiting on something that says nothing back for a while (the server reading a link),
-   the footer's line while failed songs are tried again, and "Search for more". */
+   the footer's line while failed songs are tried again, "Search for more", and
+   lyrics being looked up. */
 .prog-title--busy::after,
 .import-retry--busy::before,
-.song-search__spinner {
+.song-search__spinner,
+.lyrics-spinner {
   content: '';
   display: inline-block;
   width: 12px;
@@ -662,7 +664,9 @@ button, input, select { font: inherit; color: inherit; }
   animation: prog-spin 0.8s linear infinite;
 }
 
-.import-retry--busy::before { margin: 0 8px 0 0; }
+.import-retry--busy::before,
+.lyrics-spinner { margin: 0 8px 0 0; }
+.lyrics-spinner { flex: none; }
 .song-search__spinner { margin-left: 0; flex: none; }
 .song-search__spinner[hidden] { display: none; }
 
