@@ -6,6 +6,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const http = require('http');
 const readline = require('readline');
 const configMod = require('./config');
 const { startServer } = require('./server');
@@ -13,6 +14,7 @@ const { runDoctor } = require('./doctor');
 const tools = require('./tools');
 const { songsToTag } = require('./library');
 const backups = require('./backups');
+const moveMusic = require('./moveMusic');
 const { unpack, fileName, KEEP } = require('@flow/core/backup');
 const qr = require('@flow/core/qr');
 const { makeLink } = require('@flow/core/client/share');
@@ -57,6 +59,11 @@ Usage:
   flow-server restore <name | file>     put a backup back: the running server does it within a few
                                         seconds (a stopped one when it starts), after backing up
                                         what is there now. Songs that came since stay
+  flow-server move-music <old folder>   move everything in a music folder used before into the one
+                                        now (--music <dir> sets it too), merging its folders with
+                                        those of the same name there; songs keep their playlists,
+                                        covers and stats. The server must be stopped; a backup is
+                                        made first. --dry-run says songs=N and files=N, moving nothing
   flow-server share                     a QR code for the Flow apps to scan (Settings, Flow Server, Scan):
                                         the server's addresses and, with a password, a code that lets
                                         one app in once within 10 minutes. Asks the running server for
@@ -132,7 +139,7 @@ function parseArgs(argv) {
     else if (a === '--master') out.master = true;
     else if (a === '--create') out.create = true;
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}. See flow-server --help.`);
-    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'profiles', 'admin', 'doctor', 'info', 'tag-songs', 'backup', 'backups', 'restore', 'share'].includes(a)) out.command = a;
+    else if (out.command === 'start' && !out.rest.length && ['set-password', 'clear-password', 'devices', 'profiles', 'admin', 'doctor', 'info', 'tag-songs', 'backup', 'backups', 'restore', 'share', 'move-music'].includes(a)) out.command = a;
     else out.rest.push(a);
   }
   return out;
@@ -249,12 +256,17 @@ async function shareCommand(config) {
 }
 
 /** flow-server backup, backups and restore (backups.js). */
-function backupCommand(config, args) {
-  const store = backups.storeFor(config, () => {
+/** The backups, made from the server's files (the server need not run). */
+function backupStore(config) {
+  return backups.storeFor(config, () => {
     const raw = readJson(config.libraryFile) || {};
     const cfg = config.get();
     return { server: { id: cfg.id, name: cfg.name }, library: raw, profiles: cfg.profiles.map(backups.profileEntry) };
   }, () => {});
+}
+
+function backupCommand(config, args) {
+  const store = backupStore(config);
   const line = (b) => `${b.name}  ${new Date(b.createdAt).toLocaleString()}  ${b.songs} songs, ${b.playlists} playlists, `
     + `${b.profiles} profiles  (${b.reason === 'restore' ? 'made before a restore' : b.reason})`;
   if (args.command === 'backup') {
@@ -290,6 +302,50 @@ function backupCommand(config, args) {
   console.log(`Restoring ${line(b)}`);
   console.log('A running server puts it back within a few seconds (its log says when), a stopped one when it starts again. '
     + 'What is there now is backed up first, so flow-server restore can go back to it.');
+}
+
+/** Whether a Flow Server answers at this port here. */
+function answers(port) {
+  return new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port, path: '/api/hello', timeout: 1500, agent: false }, (res) => {
+      let body = '';
+      res.on('data', (d) => { body += d; });
+      res.on('end', () => resolve(/"app"\s*:\s*"flow-server"/.test(body)));
+    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(false));
+  });
+}
+
+/** flow-server move-music <old folder> (moveMusic.js). */
+async function moveMusicCommand(config, args) {
+  const from = args.rest[0] ? path.resolve(args.rest[0]) : '';
+  if (!from) throw new Error('Which folder? flow-server move-music <old folder> moves it into the music folder.');
+  if (args.dryRun) {
+    // For install.sh and Flow Server Settings, asking before the new folder is set: one key=value a line.
+    const p = moveMusic.plan(config, from);
+    console.log(`songs=${p.songs}\nfiles=${p.files}`);
+    return;
+  }
+  const why = moveMusic.problem(from, config.musicDir);
+  if (why) throw new Error(why);
+  if (!fs.existsSync(from)) throw new Error(`${from} is not there (any more). Nothing was moved.`);
+  if (await answers(config.get().port)) {
+    throw new Error('The server is running: stop it first (sudo systemctl stop flow-server, or Stop Flow Server on Windows), '
+      + 'or it scans the songs away while they move. Nothing was moved.');
+  }
+  const b = backupStore(config).make('manual');
+  console.log(`Backed up first: ${b.name} (flow-server restore ${b.name} goes back to it).`);
+  console.log(`Moving ${from} into ${config.musicDir}...`);
+  const r = moveMusic.moveMusic({ config, from });
+  console.log(`Moved ${r.files} ${r.files === 1 ? 'file' : 'files'}; ${r.songs} ${r.songs === 1 ? 'song keeps its' : 'songs keep their'} playlists, covers and stats.`);
+  if (r.renamed) console.log(`${r.renamed} ${r.renamed === 1 ? 'file was' : 'files were'} there already under that name, so got " (2)".`);
+  for (const f of r.failed.slice(0, 10)) console.log(`  Not moved: ${f.file} (${f.error})`);
+  if (r.failed.length > 10) console.log(`  ...and ${r.failed.length - 10} more.`);
+  if (r.failed.length) {
+    process.exitCode = 1;
+    console.log(`${r.failed.length} ${r.failed.length === 1 ? 'file' : 'files'} stayed in ${from}; their songs still play from there.`);
+  } else if (r.removed) console.log(`${from} was empty afterwards and is removed.`);
 }
 
 /** A profile by its name (any case), or an Error naming the command that lists them. */
@@ -469,6 +525,10 @@ async function main() {
   }
   if (args.command === 'share') {
     await shareCommand(config);
+    return;
+  }
+  if (args.command === 'move-music') {
+    await moveMusicCommand(config, args);
     return;
   }
   if (['backup', 'backups', 'restore'].includes(args.command)) {

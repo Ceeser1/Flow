@@ -52,11 +52,27 @@ stay where they are.
 A song deleted from an app is not gone at once. Its file moves to
 `.flow-trash` in the music folder and is removed after 30 days.
 
+**Another music folder:** the server keeps each song's full path, so songs
+in the folder used before keep playing from there, while new ones go into
+the new folder. `install.sh` (and Flow Server Settings on Windows) asks
+when the folder is changed whether everything in the old one should move
+into the new one. By hand, with the server stopped:
+
+```sh
+flow-server move-music ~/old-music --dry-run   # songs=N and files=N, moves nothing
+flow-server --music ~/new-music move-music ~/old-music
+```
+
+It backs up the library first, merges folders of the same name (a file whose
+name is taken there gets " (2)"), and the songs keep their playlists, covers
+and statistics. The old folder goes once it is empty. Deleting the old folder
+instead takes its songs out of the library at the next scan.
+
 ### Installing it as a service (Linux)
 
 ```sh
 git clone <the repo> ~/Flow && cd ~/Flow
-sh apps/linux-server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --downloads, --no-downloads, --separate-folders, --keep-folders (and --no-...), --uninstall
+sh apps/linux-server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --downloads, --no-downloads, --separate-folders, --keep-folders, --move-music (and --no-...), --uninstall
 ```
 
 Works on any Linux with systemd and Node 18 or newer (a Raspberry Pi, a home

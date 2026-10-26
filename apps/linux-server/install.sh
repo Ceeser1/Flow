@@ -11,8 +11,10 @@
 #   sh apps/linux-server/install.sh [options]      from the cloned repo, as your own user
 #
 #   --level N        the level (default: the one chosen before; asked when there is a terminal)
-#   --music DIR      the music folder (default: what the server remembers, else ~/flow-music)
-#   --port N         the port (default: what the server remembers, else 7878)
+#   --music DIR      the music folder (default: what the server remembers, else ~/flow-music;
+#                    asked when there is a terminal). Another one than before: it offers to
+#                    move what is in the old one there (flow-server move-music)
+#   --port N       the port (default: what the server remembers, else 7878)
 #   --domain NAME    level 3: the server's name on the internet, like music.example.com
 #                    or mymusic.duckdns.org (asked when left out)
 #   --url URL        level 4: the https address the apps use, like https://music.example.com
@@ -32,6 +34,8 @@
 #   --keep-folders   an upload keeps its folders and file name from the app's music folder
 #   --no-keep-folders      uploads are saved as "Artist - Title" (asked when left out;
 #                    without a terminal: as before)
+#   --move-music     a music folder other than before: move what is in the old one into it
+#   --no-move-music  leave it there (asked when left out; --yes alone never moves)
 #   --uninstall      remove the service (the library and the music stay)
 #
 # Without a terminal, FLOW_SERVER_PASSWORD gives the password level 3 needs and
@@ -61,6 +65,7 @@ DISCOVERY=ask
 DOWNLOADS=ask
 SEPARATE=ask
 KEEP=ask
+MOVE=ask
 UNINSTALL=0
 
 say() { printf '%s\n' "$*"; }
@@ -82,11 +87,13 @@ while [ $# -gt 0 ]; do
     --no-separate-folders) SEPARATE=0 ;;
     --keep-folders) KEEP=1 ;;
     --no-keep-folders) KEEP=0 ;;
+    --move-music) MOVE=1 ;;
+    --no-move-music) MOVE=0 ;;
     --uninstall) UNINSTALL=1 ;;
     --url) [ $# -ge 2 ] || die "--url needs an https:// address."; URL="$2"; shift ;;
     --proxy) [ $# -ge 2 ] || die "--proxy needs nginx, apache, caddy, cloudflared or other."; PROXY="$2"; shift ;;
     --proxy-at) [ $# -ge 2 ] || die "--proxy-at needs an IP address."; PROXY_AT="$2"; shift ;;
-    -h|--help) sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option $1. See --help." ;;
   esac
   shift
@@ -305,6 +312,48 @@ if [ "$LEVEL" = 3 ]; then
     fi
   done
   say "Ports 80 and 443 are free for Caddy."
+fi
+
+step "The music folder"
+say "The server plays the songs in this folder and its subfolders, and puts new ones there."
+OLD_MUSIC=$(info_get music)
+if [ -z "$MUSIC" ]; then
+  MUSIC=$OLD_MUSIC
+  if [ "$YES" != 1 ] && [ -t 0 ]; then
+    printf 'Folder [%s]: ' "$MUSIC"
+    read -r answer || answer=""
+    answer=$(printf '%s' "$answer" | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")
+    case "$answer" in
+      "") ;;
+      "~") MUSIC=$RUN_HOME ;;
+      "~/"*) MUSIC="$RUN_HOME/${answer#"~/"}" ;;
+      /*) MUSIC=$answer ;;
+      *) MUSIC="$PWD/$answer" ;;
+    esac
+  fi
+fi
+while [ "${MUSIC%/}" != "$MUSIC" ] && [ "$MUSIC" != / ]; do MUSIC=${MUSIC%/}; done
+say "$MUSIC"
+# Another folder than before: what is in the old one can come along (moved at
+# "The service", once it is stopped). Never without asking (or --move-music):
+# --yes alone leaves it.
+MOVE_FROM=""
+if [ "$MOVE" != 0 ] && [ -n "$OLD_MUSIC" ] && [ "$MUSIC" != "$OLD_MUSIC" ] && [ -d "$OLD_MUSIC" ]; then
+  case "$MUSIC/" in "$OLD_MUSIC"/*) NESTED=1 ;; *) NESTED=0 ;; esac
+  case "$OLD_MUSIC/" in "$MUSIC"/*) NESTED=1 ;; esac
+  if [ "$NESTED" = 0 ]; then
+    THERE=$(flow move-music "$OLD_MUSIC" --dry-run 2>/dev/null || true)
+    OLD_FILES=$(printf '%s\n' "$THERE" | sed -n 's/^files=//p')
+    OLD_SONGS=$(printf '%s\n' "$THERE" | sed -n 's/^songs=//p')
+    if [ "${OLD_FILES:-0}" -gt 0 ]; then
+      if [ "$MOVE" = 1 ] || { [ "$YES" != 1 ] && [ -t 0 ] && ask "You entered a different music folder path, do you want to move and merge all folders and ${OLD_SONGS:-0} songs from '$OLD_MUSIC' into your new path at '$MUSIC'?"; }; then
+        MOVE_FROM=$OLD_MUSIC
+      else
+        say "The songs in $OLD_MUSIC stay there and still play from there. To move them later, with the server stopped:"
+        say "  node $REPO/apps/linux-server/src/main.js move-music \"$OLD_MUSIC\""
+      fi
+    fi
+  fi
 fi
 
 step "Should the server download songs itself?"
@@ -968,8 +1017,13 @@ if [ "$DISCOVERY" = 1 ]; then ARGS="$ARGS --discovery"; else ARGS="$ARGS --no-di
 if [ "$DOWNLOADS" = 1 ]; then ARGS="$ARGS --downloads"; else ARGS="$ARGS --no-downloads"; fi
 if [ "$SEPARATE" = 1 ]; then ARGS="$ARGS --separate-folders"; else ARGS="$ARGS --no-separate-folders"; fi
 if [ "$KEEP" = 1 ]; then ARGS="$ARGS --keep-folders"; else ARGS="$ARGS --no-keep-folders"; fi
-[ -n "$MUSIC" ] && ARGS="$ARGS --music $MUSIC"
+[ -n "$MUSIC" ] && ARGS="$ARGS --music \"$MUSIC\""
 [ -n "$PORT" ] && ARGS="$ARGS --port $PORT"
+if [ -n "$MOVE_FROM" ]; then
+  step "Moving the music"
+  $SUDO systemctl stop "$SERVICE" >/dev/null 2>&1 || true
+  flow --music "$MUSIC" move-music "$MOVE_FROM" || say "Not everything was moved (see above). What stayed in $MOVE_FROM still plays from there."
+fi
 TMP=$(mktemp)
 cat > "$TMP" <<EOF
 [Unit]

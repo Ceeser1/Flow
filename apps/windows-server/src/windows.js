@@ -166,7 +166,7 @@ const PROXIES = ['nginx', 'apache', 'caddy', 'cloudflared', 'other'];
 function parseArgs(argv) {
   const out = {
     command: 'setup', level: 0, music: '', port: 0, url: '', proxy: '', proxyAt: '', yes: false,
-    discovery: 'ask', downloads: 'ask', separate: 'ask', keep: 'ask', fromInstaller: false, onlyUpdate: false, pause: false, quiet: false,
+    discovery: 'ask', downloads: 'ask', separate: 'ask', keep: 'ask', move: 'ask', fromInstaller: false, onlyUpdate: false, pause: false, quiet: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -198,6 +198,8 @@ function parseArgs(argv) {
     else if (a === '--no-separate-folders') out.separate = false;
     else if (a === '--keep-folders') out.keep = true;
     else if (a === '--no-keep-folders') out.keep = false;
+    else if (a === '--move-music') out.move = true;
+    else if (a === '--no-move-music') out.move = false;
     else if (a === '--uninstall') out.command = 'uninstall';
     else if (a === '--from-installer') out.fromInstaller = true;
     else if (a === '--only-update') out.onlyUpdate = true;

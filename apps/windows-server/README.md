@@ -17,7 +17,10 @@ files, a window asks what `install.sh` asks on Linux:
    Caddy, Cloudflare Tunnel...). The window shows what to add to it and then
    checks it with `flow-server doctor`. Level 3 (Caddy set up by the
    installer) is Linux only; with a Caddy of your own, that is level 4.
-2. **The music folder** (default `~\flow-music`).
+2. **The music folder** (default `~\flow-music`). Another one than before:
+   it asks whether everything in the old one should move into it, merged
+   with the folders there; the songs keep their playlists, covers and stats
+   (`flow-server move-music`, see the server's README).
 3. **Downloads by the server:** yes needs yt-dlp. Download `yt-dlp.exe`
    yourself from yt-dlp's latest release at GitHub and put it into the folder
    the window opens (`%LOCALAPPDATA%\Flow\server\tools`). There it updates
