@@ -2,7 +2,7 @@
 
 // The sound equalizer (Settings > Equalizer; not the bars behind the pages,
 // equalizer.js). Its bands are points on a curve from 20 Hz to 20 kHz, evenly
-// spread on a log scale (8 to 48 of them, 16 by default), each -12 to +12 dB;
+// spread on a log scale (8 to 64 of them, 16 by default), each -12 to +12 dB;
 // between two points the curve eases out of the one and into the next (flat
 // at each point). Standard, Bass Boost, Subtle and Intimate are curves by
 // frequency, so they fit any number of bands; Custom is the user's own points
@@ -15,7 +15,7 @@
 // to, as a jump would click; a flat curve is passed by, untouched.
 //
 // The phone plays natively, so there the curve goes to its player instead
-// (attachEngine, engine.setSoundEq): read at 64 frequencies, the bands of
+// (attachEngine, engine.setSoundEq): read at 128 frequencies, the bands of
 // Android's DynamicsProcessing (SoundEq.java), close enough to follow the
 // line between the points too. Android 9 and newer (caps soundEq).
 //
@@ -30,7 +30,7 @@
   const HIGH_HZ = 20000;
   const MAX_DB = 12;
   const MIN_BANDS = 8;
-  const MAX_BANDS = 48;
+  const MAX_BANDS = 64;
   const DEFAULT_BANDS = 16;
 
   // [Hz, dB] points, eased between as the bands are; nothing given is 0 dB.
@@ -97,7 +97,7 @@
   }
 
   // How many frequencies the phone's player is given the curve at.
-  const NATIVE_POINTS = 64;
+  const NATIVE_POINTS = 128;
 
   /**
    * The curve through the band gains as the phone's player takes it: dB at

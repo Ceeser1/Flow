@@ -317,7 +317,8 @@ test('the sound equalizer: 16 flat bands by default, 8 to 48, Custom points with
   assert.equal(d.soundEqPreset, 'standard');
   assert.deepEqual(d.soundEqCustom, []);
   assert.equal(settings.clean({ soundEqBands: 4 }).soundEqBands, 8);
-  assert.equal(settings.clean({ soundEqBands: 60 }).soundEqBands, 48);
+  assert.equal(settings.clean({ soundEqBands: 64 }).soundEqBands, 64);
+  assert.equal(settings.clean({ soundEqBands: 80 }).soundEqBands, 64);
   assert.equal(settings.clean({ soundEqBands: '20.4' }).soundEqBands, 20);
   assert.equal(settings.clean({ soundEqBands: 'many' }).soundEqBands, 16);
   assert.equal(settings.clean({ soundEqPreset: 'bass' }).soundEqPreset, 'bass');

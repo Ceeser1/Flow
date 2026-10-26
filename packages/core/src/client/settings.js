@@ -571,10 +571,10 @@ function clean(raw) {
     s[key] = s[key] !== false;
   }
   const bands = Math.round(Number(s.soundEqBands));
-  s.soundEqBands = Number.isFinite(bands) ? Math.min(48, Math.max(8, bands)) : DEFAULTS.soundEqBands;
+  s.soundEqBands = Number.isFinite(bands) ? Math.min(64, Math.max(8, bands)) : DEFAULTS.soundEqBands;
   if (!SOUND_EQ_PRESETS.includes(s.soundEqPreset)) s.soundEqPreset = DEFAULTS.soundEqPreset;
   const own = Array.isArray(s.soundEqCustom) ? s.soundEqCustom.map(Number) : [];
-  s.soundEqCustom = own.length >= 8 && own.length <= 48 && own.every(Number.isFinite)
+  s.soundEqCustom = own.length >= 8 && own.length <= 64 && own.every(Number.isFinite)
     ? own.map((db) => Math.round(Math.min(12, Math.max(-12, db)) * 10) / 10)
     : [];
   const fade = Math.round(Number(s.crossfadeSeconds) * 10) / 10;

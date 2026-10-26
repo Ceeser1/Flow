@@ -14,7 +14,7 @@ import org.json.JSONObject;
 /**
  * Settings' Equalizer on one player's sound (FlowPlayer's, and the tail's
  * during a song transition): Android's DynamicsProcessing, its pre-EQ given
- * the curve the page drew, read at 64 frequencies (soundEq.js sampled), each
+ * the curve the page drew, read at 128 frequencies (soundEq.js sampled), each
  * band from halfway to the one before to halfway to the next. While the curve
  * raises a band its limiter catches the peaks (as the desktop's does: -2 dB,
  * 20:1, 2 ms, 150 ms). A flat curve: no effect at all.

@@ -392,13 +392,16 @@ const SettingsPanel = {
   // ---- Equalizer ----
 
   /**
-   * The sound equalizer (soundEq.js): Bands (8 to 48 points from 20 Hz to
+   * The sound equalizer (soundEq.js): Bands (8 to 64 points from 20 Hz to
    * 20 kHz), Sound Equalizer (the ready-made curves, and Custom: the user's own),
    * then the curve itself. A point is dragged up or down (Shift: finer) or put
    * back to 0 dB with a double-click; the keys pick one (Left, Right) and move
-   * it (Up, Down). Moving a point makes the curve Custom.
+   * it (Up, Down). On the phone a point is tapped first, then dragged, and the
+   * curve is pinched in or out (up to 400%) and slid along. Moving a point
+   * makes the curve Custom.
    */
   _soundEqRows() {
+    const MAX_ZOOM = 4;
     const shown = () => SoundEq.gainsOf(Store.settings);
     const custom = (gains) => ({ soundEqPreset: 'custom', soundEqCustom: gains });
     const round = (db) => Math.round(Math.max(-SoundEq.MAX_DB, Math.min(SoundEq.MAX_DB, db)) * 10) / 10;
@@ -443,22 +446,33 @@ const SettingsPanel = {
       tabIndex: 0, 'aria-label': 'Equalizer curve: Left and Right pick a band, Up and Down raise or lower it',
     });
     const readout = h('span.sound-eq__readout');
-    const graph = h('div.sound-eq', canvas,
-      h('div.sound-eq__info', readout, h('span', Store.phone
-        ? 'Drag a point up or down. A double tap puts it back to 0 dB.'
-        : 'Drag a point up or down (Shift: finer). A double-click puts it back to 0 dB.')));
+    // The phone's: the point picked and how far it is zoomed in above the curve
+    // (the zoom over its right end), how to use it in two rows under it.
+    const zoomNode = h('span.sound-eq__zoom');
+    const graph = Store.phone
+      ? h('div.sound-eq',
+        h('div.sound-eq__head', readout, zoomNode),
+        canvas,
+        h('div.sound-eq__note', 'Tap a point to pick it, then drag it up or down. A double tap puts it back to 0 dB.'),
+        h('div.sound-eq__note', `Pinch to zoom in or out (up to ${MAX_ZOOM * 100}%), slide left or right to move along.`))
+      : h('div.sound-eq', canvas,
+        h('div.sound-eq__info', readout, h('span', 'Drag a point up or down (Shift: finer). A double-click puts it back to 0 dB.')));
 
     // Room for the dB at the left and the Hz under it.
     const PAD = { l: 38, r: 14, t: 10, b: 22 };
     const LOG = Math.log(SoundEq.HIGH_HZ / SoundEq.LOW_HZ);
+    // The part shown, as parts of the whole log scale (zoomed in on the phone).
+    const view = { lo: 0, hi: 1 };
+    const zoomOf = () => 1 / (view.hi - view.lo);
     const area = () => ({ x0: PAD.l, x1: canvas.clientWidth - PAD.r, y0: PAD.t, y1: canvas.clientHeight - PAD.b });
-    const xOf = (b, hz) => b.x0 + (Math.log(hz / SoundEq.LOW_HZ) / LOG) * (b.x1 - b.x0);
-    const hzOf = (b, x) => SoundEq.LOW_HZ * Math.exp(((x - b.x0) / (b.x1 - b.x0)) * LOG);
+    const fracOf = (b, x) => view.lo + ((x - b.x0) / (b.x1 - b.x0)) * (view.hi - view.lo);
+    const xOf = (b, hz) => b.x0 + ((Math.log(hz / SoundEq.LOW_HZ) / LOG - view.lo) / (view.hi - view.lo)) * (b.x1 - b.x0);
+    const hzOf = (b, x) => SoundEq.LOW_HZ * Math.exp(fracOf(b, x) * LOG);
     const yOf = (b, db) => b.y0 + ((SoundEq.MAX_DB - db) / (2 * SoundEq.MAX_DB)) * (b.y1 - b.y0);
     const dbOf = (b, y) => SoundEq.MAX_DB - ((y - b.y0) / (b.y1 - b.y0)) * 2 * SoundEq.MAX_DB;
     const fmtHz = (hz) => (hz >= 1000 ? `${(hz / 1000).toFixed(hz >= 10000 ? 1 : 2).replace(/\.?0+$/, '')} kHz` : `${Math.round(hz)} Hz`);
     const fmtDb = (db) => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
-    let hot = -1;      // the point under the pointer, or picked with the keys
+    let hot = -1;      // the point under the pointer, picked with the keys, or tapped
     let drag = null;   // { i, gains, dy, moved } while one is dragged
 
     const draw = () => {
@@ -498,19 +512,24 @@ const SettingsPanel = {
         line(b.x0, y, b.x1, y);
         ctx.fillText(`${db > 0 ? '+' : ''}${db}`, b.x0 - 8, y);
       }
+      // The frequencies shown; zoomed in, those between them too.
       ctx.textBaseline = 'top';
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-      for (const hz of [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]) {
+      const marks = zoomOf() >= 2
+        ? [20, 30, 50, 70, 100, 150, 200, 300, 500, 700, 1000, 1500, 2000, 3000, 5000, 7000, 10000, 15000, 20000]
+        : [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+      for (const hz of marks) {
         const x = Math.round(xOf(b, hz)) + 0.5;
+        if (x < b.x0 - 0.5 || x > b.x1 + 0.5) continue;
         line(x, b.y0, x, b.y1);
-        ctx.textAlign = hz === 20 ? 'left' : hz === 20000 ? 'right' : 'center';
+        ctx.textAlign = x < b.x0 + 12 ? 'left' : x > b.x1 - 12 ? 'right' : 'center';
         ctx.fillText(hz >= 1000 ? `${hz / 1000}k` : String(hz), x, b.y1 + 6);
       }
 
       // The curve, eased from point to point, filled to 0 dB.
       const curve = [];
       for (let x = b.x0; x < b.x1; x += 1) curve.push([x, yOf(b, SoundEq.at(pts, hzOf(b, x)))]);
-      curve.push([b.x1, yOf(b, gains[gains.length - 1])]);
+      curve.push([b.x1, yOf(b, SoundEq.at(pts, hzOf(b, b.x1)))]);
       const zero = yOf(b, 0);
       ctx.beginPath();
       ctx.moveTo(b.x0, zero);
@@ -527,29 +546,52 @@ const SettingsPanel = {
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      ctx.lineWidth = 1.5;
+      // The points, smaller where they crowd; those beyond the part shown cut off at its edges.
+      const gap = fs.length > 1 ? xOf(b, fs[1]) - xOf(b, fs[0]) : 20;
+      const dot = Math.max(1.5, Math.min(4, gap * 0.35));
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(b.x0 - 7, 0, b.x1 - b.x0 + 14, ht);
+      ctx.clip();
+      ctx.lineWidth = dot < 3 ? 1 : 1.5;
       ctx.strokeStyle = '#1e1e22';
       fs.forEach((f, i) => {
+        const x = xOf(b, f);
+        if (x < b.x0 - 7 || x > b.x1 + 7) return;
         ctx.beginPath();
-        ctx.arc(xOf(b, f), yOf(b, gains[i]), i === hot ? 6 : 4, 0, Math.PI * 2);
+        ctx.arc(x, yOf(b, gains[i]), i === hot ? 6 : dot, 0, Math.PI * 2);
         ctx.fillStyle = i === hot ? '#fff' : accent;
         ctx.fill();
         ctx.stroke();
       });
+      ctx.restore();
       readout.textContent = hot >= 0 ? `${fmtHz(fs[hot])}: ${fmtDb(gains[hot])}` : '';
+      zoomNode.textContent = `Zoom ${Math.round(zoomOf() * 100)}%`;
       canvas.classList.toggle('sound-eq__canvas--hot', hot >= 0 || !!drag);
     };
 
-    /** The point nearest the pointer, within a few pixels (a finger: more); -1 for none. */
-    const nearest = (e) => {
+    /** Zoomed `zoom` times (1 to MAX_ZOOM), the part `frac` of the scale staying at `x`. */
+    const zoomTo = (zoom, frac, x) => {
+      const b = area();
+      const span = 1 / Math.max(1, Math.min(MAX_ZOOM, zoom));
+      view.lo = Math.max(0, Math.min(1 - span, frac - ((x - b.x0) / (b.x1 - b.x0)) * span));
+      view.hi = view.lo + span;
+      draw();
+    };
+
+    const at = (e) => {
       const r = canvas.getBoundingClientRect();
-      const x = e.clientX - r.left;
-      const y = e.clientY - r.top;
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+
+    /** The point nearest the pointer, within `reach` pixels; -1 for none. */
+    const nearest = (e, reach = 14) => {
+      const { x, y } = at(e);
       const b = area();
       const gains = shown();
       const fs = SoundEq.freqs(gains.length);
       let best = -1;
-      let bestD = e.pointerType === 'touch' ? 28 : 14;
+      let bestD = reach;
       fs.forEach((f, i) => {
         const d = Math.hypot(xOf(b, f) - x, yOf(b, gains[i]) - y);
         if (d < bestD) {
@@ -567,31 +609,125 @@ const SettingsPanel = {
       gains[i] = 0;
       Store.saveSettings(custom(gains));
     };
-    let tap = null;    // a finger's last tap on a point, { i, t }: a second soon after is a double tap
+
+    /** Point `i` dragged from the pointer's place `y` (kept as far from the point as it began). */
+    const startDrag = (i, y) => {
+      const gains = shown();
+      drag = { i, gains, dy: y - yOf(area(), gains[i]), moved: false };
+      hot = i;
+      draw();
+    };
+    const dragTo = (y, fine) => {
+      const step = fine ? 0.1 : 0.5;
+      const db = round(Math.round(dbOf(area(), y - drag.dy) / step) * step);
+      if (db === drag.gains[drag.i]) return;
+      drag.gains = drag.gains.slice();
+      drag.gains[drag.i] = db;
+      drag.moved = true;
+      Store.previewSettings(custom(drag.gains));
+    };
+    const drop = () => {
+      if (!drag) return;
+      if (drag.moved) Store.saveSettings(custom(drag.gains));
+      drag = null;
+      draw();
+    };
+
+    // Fingers: a tap picks a point (a second one soon after on it puts it back to
+    // 0 dB), a finger put on the picked point drags it, one put anywhere else slides
+    // the part shown along, two pinch it in or out. A finger passing over a point never takes it.
+    const fingers = new Map();   // pointerId -> { x, y }
+    let touch = null;            // one finger: { x0, y0, onHot, lo, moved }
+    let pinch = null;            // two: { d, zoom, frac }
+    let tapped = null;           // the last tap on a point, { i, t }
+    const spread = () => {
+      const [a, c] = [...fingers.values()];
+      return { d: Math.hypot(a.x - c.x, a.y - c.y), x: (a.x + c.x) / 2 };
+    };
+    const touchDown = (e) => {
+      fingers.set(e.pointerId, at(e));
+      if (fingers.size === 2) {
+        drop();
+        touch = null;
+        const s = spread();
+        pinch = { d: Math.max(1, s.d), zoom: zoomOf(), frac: fracOf(area(), s.x) };
+      } else if (fingers.size === 1 && !pinch) {
+        const p = at(e);
+        touch = { x0: p.x, y0: p.y, onHot: hot >= 0 && nearest(e, 24) === hot, lo: view.lo, moved: false };
+      }
+    };
+    const touchMove = (e) => {
+      if (!fingers.has(e.pointerId)) return;
+      const p = at(e);
+      fingers.set(e.pointerId, p);
+      if (pinch) {
+        if (fingers.size < 2) return;
+        const s = spread();
+        zoomTo(pinch.zoom * (s.d / pinch.d), pinch.frac, s.x);
+        return;
+      }
+      if (!touch) return;
+      if (!touch.moved) {
+        if (Math.hypot(p.x - touch.x0, p.y - touch.y0) < 6) return;
+        touch.moved = true;
+        if (touch.onHot) startDrag(hot, touch.y0);
+      }
+      if (drag) {
+        dragTo(p.y, false);
+        return;
+      }
+      const b = area();
+      const span = view.hi - view.lo;
+      view.lo = Math.max(0, Math.min(1 - span, touch.lo - ((p.x - touch.x0) / (b.x1 - b.x0)) * span));
+      view.hi = view.lo + span;
+      draw();
+    };
+    const touchUp = (e) => {
+      if (!fingers.delete(e.pointerId)) return;
+      if (pinch) {
+        // Nothing else until the other finger is lifted too.
+        if (!fingers.size) pinch = null;
+        return;
+      }
+      const t = touch;
+      touch = null;
+      if (drag) {
+        drop();
+        return;
+      }
+      if (!t || t.moved || e.type === 'pointercancel') return;
+      const i = nearest(e, 20);
+      const now = performance.now();
+      if (i >= 0 && tapped && tapped.i === i && now - tapped.t < 400) {
+        tapped = null;
+        zero(i);
+      } else {
+        tapped = i >= 0 ? { i, t: now } : null;
+      }
+      hot = i;
+      draw();
+    };
 
     canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') {
+        e.preventDefault();
+        canvas.setPointerCapture(e.pointerId);
+        touchDown(e);
+        return;
+      }
       if (e.button !== 0) return;
       const i = nearest(e);
       if (i < 0) return;
       e.preventDefault();
       canvas.focus();
-      if (e.pointerType === 'touch') {
-        const now = performance.now();
-        const twice = tap && tap.i === i && now - tap.t < 400;
-        tap = twice ? null : { i, t: now };
-        if (twice) {
-          zero(i);
-          return;
-        }
-      }
-      const gains = shown();
-      const r = canvas.getBoundingClientRect();
-      drag = { i, gains, dy: e.clientY - r.top - yOf(area(), gains[i]), moved: false };
-      hot = i;
       canvas.setPointerCapture(e.pointerId);
-      draw();
+      startDrag(i, at(e).y);
     });
     canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch') {
+        touchMove(e);
+        return;
+      }
       if (!drag) {
         const i = nearest(e);
         if (i !== hot) {
@@ -600,29 +736,20 @@ const SettingsPanel = {
         }
         return;
       }
-      const r = canvas.getBoundingClientRect();
-      const step = e.shiftKey ? 0.1 : 0.5;
-      const db = round(Math.round(dbOf(area(), e.clientY - r.top - drag.dy) / step) * step);
-      if (db === drag.gains[drag.i]) return;
-      drag.gains = drag.gains.slice();
-      drag.gains[drag.i] = db;
-      drag.moved = true;
-      Store.previewSettings(custom(drag.gains));
+      dragTo(at(e).y, e.shiftKey);
     });
-    const drop = () => {
-      if (!drag) return;
-      if (drag.moved) Store.saveSettings(custom(drag.gains));
-      drag = null;
-      draw();
-    };
-    canvas.addEventListener('pointerup', drop);
-    canvas.addEventListener('pointercancel', drop);
-    canvas.addEventListener('pointerleave', () => {
-      if (drag || hot < 0) return;
+    for (const type of ['pointerup', 'pointercancel']) {
+      canvas.addEventListener(type, (e) => (e.pointerType === 'touch' ? touchUp(e) : drop()));
+    }
+    canvas.addEventListener('pointerleave', (e) => {
+      if (e.pointerType === 'touch' || drag || hot < 0) return;
       hot = -1;
       draw();
     });
-    canvas.addEventListener('dblclick', (e) => zero(nearest(e)));
+    // A finger's double tap is its own (touchUp).
+    canvas.addEventListener('dblclick', (e) => {
+      if (!Store.phone) zero(nearest(e));
+    });
     canvas.addEventListener('keydown', (e) => {
       const gains = shown();
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {

@@ -2422,6 +2422,10 @@ div.import__frame-head { cursor: default; }
 .sound-eq__canvas--hot { cursor: ns-resize; }
 .sound-eq__info { display: flex; justify-content: space-between; gap: 16px; margin-top: 6px; font-size: 12px; color: var(--text-dim); }
 .sound-eq__readout { color: var(--text); font-variant-numeric: tabular-nums; }
+/* The phone's: the point picked and the zoom above the curve, the notes under it. */
+.sound-eq__head { display: flex; justify-content: space-between; gap: 16px; min-height: 16px; margin-bottom: 6px; font-size: 12px; }
+.sound-eq__zoom { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.sound-eq__note { margin-top: 6px; font-size: 12px; color: var(--text-dim); }
 .settings__slider:disabled { cursor: default; }
 .settings__control--off { opacity: 0.45; }
 /* The Add to Playlists dialog: like Settings, the app's own background at 93%

@@ -80,10 +80,10 @@ test('the settings give the gains shown: a preset, or Custom spread over the ban
 
 test('more or fewer bands keep the shape of the curve', () => {
   const own = SoundEq.presetGains('intimate', 16);
-  const more = SoundEq.resample(own, 48);
-  assert.equal(more.length, 48);
+  const more = SoundEq.resample(own, 64);
+  assert.equal(more.length, 64);
   assert.equal(more[0], own[0]);
-  assert.equal(more[47], own[15]);
+  assert.equal(more[63], own[15]);
   // Every old point is still on the new curve.
   const pts = SoundEq.pointsOf(more);
   SoundEq.freqs(16).forEach((f, i) => assert.ok(Math.abs(SoundEq.at(pts, f) - own[i]) < 0.35, `${f} Hz`));
@@ -120,7 +120,7 @@ test('the filter holds nothing back: its weight comes at the start', () => {
   assert.ok(Math.abs(flat[100]) < 1e-6);
 });
 
-test("the phone's player gets the curve at 64 frequencies, between the points too; flat is none", () => {
+test("the phone's player gets the curve at 128 frequencies, between the points too; flat is none", () => {
   assert.deepEqual(SoundEq.sampled(new Array(16).fill(0)), { hz: [], db: [] });
   const gains = SoundEq.presetGains('bass', 16);
   const { hz, db } = SoundEq.sampled(gains);

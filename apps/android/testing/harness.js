@@ -9,7 +9,7 @@
 // --keep leaves Flow running as it is (its music, its player) and only opens
 // its window again; otherwise it is stopped and started afresh.
 //
-// steps.js exports [{ name, key, tap, shell, run, js, wait, shot, screen }]: `key` is
+// steps.js exports [{ name, key, tap, shell, run, js, cdp, wait, shot, screen }]: `key` is
 // pressed on the emulator (BACK, HOME, SLEEP), `tap` taps what shows that text
 // on the screen (Android's own screens too, such as its file picker; a
 // regular expression, matched against each element's text and description;
@@ -18,7 +18,9 @@
 // expression `grep` when given), `run` is called here (an async function,
 // e.g. another device on the test server; what it returns is logged), `js` is
 // evaluated in the page (a promise is
-// awaited, the value logged), then after `wait` ms (400)
+// awaited, the value logged), `cdp` sent to the page's DevTools in turn ([{ method,
+// params, wait }], or a function of the last `js` value giving them: e.g.
+// Input.dispatchTouchEvent, two fingers pinching), then after `wait` ms (400)
 // `shot` saves the page as <shot>.png and `screen` the whole device screen
 // (status bar, notifications) as <screen>.png. Errors and console warnings go
 // to <outDir>/log.txt.
@@ -186,6 +188,7 @@ async function main() {
       await sleep(100);
     }
     await sleep(800);
+    let last;
     for (const step of steps) {
       // A key pressed on the emulator first (KEYCODE_ name without the prefix: BACK, HOME).
       if (step.key) {
@@ -220,9 +223,20 @@ async function main() {
       if (step.js) {
         try {
           const r = await evaluate(cdp, step.js);
+          last = r;
           if (r !== undefined) log('result', step.name || '', r);
         } catch (err) {
           log('step error', step.name || '', err.message);
+        }
+      }
+      if (step.cdp) {
+        try {
+          for (const c of typeof step.cdp === 'function' ? step.cdp(last) : step.cdp) {
+            await cdp.send(c.method, c.params || {});
+            if (c.wait) await sleep(c.wait);
+          }
+        } catch (err) {
+          log('cdp error', step.name || '', err.message);
         }
       }
       await sleep(step.wait || 400);
