@@ -221,6 +221,9 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.hlCoverFile, '');
   assert.equal(d.hlWiggle, true);
   assert.equal(d.hlPulse, true);
+  // Halo's Spin is gone: a saved one is dropped.
+  assert.equal(d.hlSpin, undefined);
+  assert.equal('hlSpin' in settings.clean({ hlSpin: true }), false);
   // Halo's sparks: 0-200% in steps of 5, 100% by default (10% what there were before).
   assert.equal(d.hlSparkAmount, 100);
   assert.equal(settings.clean({ hlSparkAmount: 0 }).hlSparkAmount, 0);

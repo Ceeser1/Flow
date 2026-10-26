@@ -57,14 +57,12 @@ const VIZ_OPTIONS = {
   ksLook: ['choice', 'kaleido', ['auto', 'kaleido', 'vortex', 'tunnel', 'starburst']],
   ksEvery: ['range', 30, 10, 120, 5],
   ksTrails: ['range', 100, 25, 200, 5],
-  // Halo: the round cover turning, the spectrum as bars, a line or dots, the
-  // colours (the cover's, rainbow, by the notes, or one of its own; Warm
+  // Halo: the spectrum as bars, a line or dots, the colours (the cover's, rainbow, by the notes, or one of its own; Warm
   // white became that), the sparks (and how many, percent; 10% the amount
   // there always were), the background (the cover blurred, or a
   // picture picked), the title. The cover in the middle is the song's or a
   // picture picked, wiggling and pulsing; the pictures are copies Flow keeps
   // (hlCoverFile, hlBackFile).
-  hlSpin: ['bool', true],
   hlStyle: ['choice', 'bars', ['bars', 'line', 'dots']],
   hlColors: ['choice', 'cover', ['cover', 'rainbow', 'notes', 'custom']],
   hlColor: ['color', '#3484f4'],
@@ -564,6 +562,8 @@ function clean(raw) {
   delete s.flashOn;
   delete s.flashTriggers;
   delete s.flashRange;
+  // And Halo's Spin (the round cover turning).
+  delete s.hlSpin;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',

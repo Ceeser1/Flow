@@ -9,8 +9,7 @@
 // song). A song without a cover gets a record instead. At the top the title
 // and the artist (the lyrics, when shown, are under it all).
 //
-// Its cogwheel: the round cover turning (like a record) or not; the
-// spectrum as bars with falling caps, as a line, or as dots; the colours
+// Its cogwheel: the spectrum as bars with falling caps, as a line, or as dots; the colours
 // (the cover's, a rainbow round the circle, by the chord sounding, one of
 // its own); the cover (the song's, or a picture picked, cut square), and it
 // wiggling (rocking left and right, pushed further by the beats) and
@@ -123,7 +122,6 @@
       this.colors = this.cover.colors;
       this.coverOn = 0;        // the cover behind fading in, 0..1
       this.picOn = 0;          // the picture behind over it, 0..1
-      this.angle = 0;
       this.turn = 0;
       this.wiggle = 0;         // the beats' push on the rocking (radians) and its speed
       this.wiggleV = 0;
@@ -211,8 +209,6 @@
       const cx = w / 2;
       const cy = h * 0.46;
       const R = h * 0.17 * (1 + 0.06 * a.kick);
-      if (set.hlSpin) this.angle += dt * (0.25 + 0.6 * a.bass);
-      else this.angle *= Math.exp(-dt * 3);
       this.turn += dt * 0.02;
       // Wiggle: rocking left and right (0.1 rad, every 2.5 s), and each beat
       // pushes it further the way it is going, springing back.
@@ -276,7 +272,7 @@
       gl.uniform2f(u.res, w, h);
       gl.uniform2f(u.center, cx, h - cy);
       gl.uniform1f(u.radius, coverR);
-      gl.uniform1f(u.angle, this.angle + tilt);
+      gl.uniform1f(u.angle, tilt);
       // Its shadow fainter as it nears the spectrum, not darkening the bars.
       gl.uniform1f(u.shade, 0.55 * (1 - 0.7 * this.grow));
       gl.uniform1f(u.ring, 0.35 + 0.9 * a.kick);
@@ -403,7 +399,6 @@
     gl: true,
     create: (canvas) => new Halo(canvas),
     options: [
-      { type: 'check', key: 'hlSpin', label: 'Spin' },
       { type: 'choice', key: 'hlStyle', label: 'Spectrum', choices: [['bars', 'Bars'], ['line', 'Line'], ['dots', 'Dots']] },
       {
         type: 'choice',
