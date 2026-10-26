@@ -207,7 +207,8 @@ function start() {
       return {
         platform,
         uiMode: 'mobile',
-        caps: platform === 'ios' ? caps.IOS : caps.ANDROID,
+        // The Equalizer from Android 9 on (its DynamicsProcessing).
+        caps: platform === 'ios' ? caps.IOS : { ...caps.ANDROID, soundEq: (info().sdk || 0) >= 28 },
         library: actions.currentLibrary(),
         server: remote.status(),
         settings: settings.all(),

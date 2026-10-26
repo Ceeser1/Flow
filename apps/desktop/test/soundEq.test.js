@@ -119,3 +119,19 @@ test('the filter holds nothing back: its weight comes at the start', () => {
   assert.ok(Math.abs(flat[0] - 1) < 1e-6);
   assert.ok(Math.abs(flat[100]) < 1e-6);
 });
+
+test("the phone's player gets the curve at 64 frequencies, between the points too; flat is none", () => {
+  assert.deepEqual(SoundEq.sampled(new Array(16).fill(0)), { hz: [], db: [] });
+  const gains = SoundEq.presetGains('bass', 16);
+  const { hz, db } = SoundEq.sampled(gains);
+  assert.equal(hz.length, SoundEq.NATIVE_POINTS);
+  assert.equal(db.length, SoundEq.NATIVE_POINTS);
+  assert.equal(hz[0], 20);
+  assert.equal(hz[hz.length - 1], 20000);
+  for (let i = 1; i < hz.length; i += 1) assert.ok(hz[i] > hz[i - 1]);
+  // Each one where the drawn line is, not only at the band points.
+  const pts = SoundEq.pointsOf(gains);
+  hz.forEach((f, i) => assert.ok(Math.abs(db[i] - SoundEq.at(pts, f)) < 0.01, `${f} Hz`));
+  assert.ok(Math.max(...db) > 5.5);
+  assert.ok(Math.abs(db[db.length - 1]) < 0.01);
+});

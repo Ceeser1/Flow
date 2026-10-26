@@ -14,7 +14,12 @@
 // (equalizer.js). A new curve goes to the second convolver and is faded over
 // to, as a jump would click; a flat curve is passed by, untouched.
 //
-// The numbers (freqs, at, resample, impulse) need no browser: tested in Node.
+// The phone plays natively, so there the curve goes to its player instead
+// (attachEngine, engine.setSoundEq): read at 64 frequencies, the bands of
+// Android's DynamicsProcessing (SoundEq.java), close enough to follow the
+// line between the points too. Android 9 and newer (caps soundEq).
+//
+// The numbers (freqs, at, resample, impulse, sampled) need no browser: tested in Node.
 
 (function (root, factory) {
   const api = factory();
@@ -89,6 +94,20 @@
     if (s.soundEqPreset !== 'custom') return presetGains(s.soundEqPreset, n);
     const own = Array.isArray(s.soundEqCustom) ? s.soundEqCustom : [];
     return own.length >= 2 ? resample(own, n) : new Array(n).fill(0);
+  }
+
+  // How many frequencies the phone's player is given the curve at.
+  const NATIVE_POINTS = 64;
+
+  /**
+   * The curve through the band gains as the phone's player takes it: dB at
+   * `n` frequencies from 20 Hz to 20 kHz (as freqs), none at all when flat.
+   */
+  function sampled(gains, n = NATIVE_POINTS) {
+    if (gains.every((g) => g === 0)) return { hz: [], db: [] };
+    const pts = pointsOf(gains);
+    const hz = freqs(n);
+    return { hz: hz.map((f) => Math.round(f * 10) / 10), db: hz.map((f) => Math.round(at(pts, f) * 100) / 100) };
   }
 
   // ---- the filter ----
@@ -191,11 +210,12 @@
 
   const SoundEq = {
     LOW_HZ, HIGH_HZ, MAX_DB, MIN_BANDS, MAX_BANDS, DEFAULT_BANDS, PRESETS, CHOICES,
-    freqs, at, pointsOf, resample, presetGains, gainsOf, impulse, fft,
+    freqs, at, pointsOf, resample, presetGains, gainsOf, impulse, fft, sampled, NATIVE_POINTS,
     FADE_S: 0.015,       // the fade between one curve and the next (time constant)
     BUILD_MS: 60,        // while a point is dragged, a new filter at most this often
 
     ctx: null,
+    engine: null,        // the phone's: its player shapes the sound (attachEngine)
     dry: null,
     wet: [],             // two { conv, gain }: the one heard and the one faded from
     live: -1,            // which is heard (-1: none, the sound passes untouched)
@@ -226,16 +246,26 @@
         gain.connect(output);
         return { conv, gain };
       });
+      this._follow();
+      return output;
+    },
+
+    /** The phone's: the curve goes to its player (engine.setSoundEq), which shapes the sound itself. */
+    attachEngine(engine) {
+      this.engine = engine;
+      this._follow();
+    },
+
+    _follow() {
       Store.onSettings((patch) => {
         if (['soundEqBands', 'soundEqPreset', 'soundEqCustom'].some((k) => k in patch)) this.update();
       });
       this.update();
-      return output;
     },
 
     /** The curve changed: a new filter now, or soon while it keeps changing. */
     update() {
-      if (!this.ctx || this._timer) return;
+      if ((!this.ctx && !this.engine) || this._timer) return;
       const wait = this._last + this.BUILD_MS - performance.now();
       if (wait > 0) {
         this._timer = setTimeout(() => {
@@ -245,7 +275,9 @@
         return;
       }
       this._last = performance.now();
-      this._apply(gainsOf(Store.settings));
+      const gains = gainsOf(Store.settings);
+      if (this.engine) this.engine.setSoundEq(sampled(gains));
+      else this._apply(gains);
     },
 
     _apply(gains) {

@@ -183,6 +183,8 @@ const Player = {
     this.engine = window.flow.createAudioEngine
       ? window.flow.createAudioEngine()
       : new HtmlAudioEngine($('mainAudio'), $('fadeAudio'));
+    // The phone's player shapes the sound itself (the desktop's in Equalizer's route).
+    if (this.engine.setSoundEq && Store.can('soundEq')) SoundEq.attachEngine(this.engine);
     // Without a volume slider (the phone's is its buttons), Flow plays at full volume.
     this.volume = Store.can('volume') ? Store.settings.volume : 1;
     this._applyVolume();

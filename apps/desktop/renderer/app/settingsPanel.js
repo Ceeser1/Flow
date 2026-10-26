@@ -444,7 +444,9 @@ const SettingsPanel = {
     });
     const readout = h('span.sound-eq__readout');
     const graph = h('div.sound-eq', canvas,
-      h('div.sound-eq__info', readout, h('span', 'Drag a point up or down (Shift: finer). A double-click puts it back to 0 dB.')));
+      h('div.sound-eq__info', readout, h('span', Store.phone
+        ? 'Drag a point up or down. A double tap puts it back to 0 dB.'
+        : 'Drag a point up or down (Shift: finer). A double-click puts it back to 0 dB.')));
 
     // Room for the dB at the left and the Hz under it.
     const PAD = { l: 38, r: 14, t: 10, b: 22 };
@@ -538,7 +540,7 @@ const SettingsPanel = {
       canvas.classList.toggle('sound-eq__canvas--hot', hot >= 0 || !!drag);
     };
 
-    /** The point nearest the pointer, within a few pixels; -1 for none. */
+    /** The point nearest the pointer, within a few pixels (a finger: more); -1 for none. */
     const nearest = (e) => {
       const r = canvas.getBoundingClientRect();
       const x = e.clientX - r.left;
@@ -547,7 +549,7 @@ const SettingsPanel = {
       const gains = shown();
       const fs = SoundEq.freqs(gains.length);
       let best = -1;
-      let bestD = 14;
+      let bestD = e.pointerType === 'touch' ? 28 : 14;
       fs.forEach((f, i) => {
         const d = Math.hypot(xOf(b, f) - x, yOf(b, gains[i]) - y);
         if (d < bestD) {
@@ -558,12 +560,30 @@ const SettingsPanel = {
       return best;
     };
 
+    /** A point back to 0 dB (a double-click, a double tap). */
+    const zero = (i) => {
+      const gains = shown();
+      if (i < 0 || gains[i] === 0) return;
+      gains[i] = 0;
+      Store.saveSettings(custom(gains));
+    };
+    let tap = null;    // a finger's last tap on a point, { i, t }: a second soon after is a double tap
+
     canvas.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
       const i = nearest(e);
       if (i < 0) return;
       e.preventDefault();
       canvas.focus();
+      if (e.pointerType === 'touch') {
+        const now = performance.now();
+        const twice = tap && tap.i === i && now - tap.t < 400;
+        tap = twice ? null : { i, t: now };
+        if (twice) {
+          zero(i);
+          return;
+        }
+      }
       const gains = shown();
       const r = canvas.getBoundingClientRect();
       drag = { i, gains, dy: e.clientY - r.top - yOf(area(), gains[i]), moved: false };
@@ -602,13 +622,7 @@ const SettingsPanel = {
       hot = -1;
       draw();
     });
-    canvas.addEventListener('dblclick', (e) => {
-      const i = nearest(e);
-      const gains = shown();
-      if (i < 0 || gains[i] === 0) return;
-      gains[i] = 0;
-      Store.saveSettings(custom(gains));
-    });
+    canvas.addEventListener('dblclick', (e) => zero(nearest(e)));
     canvas.addEventListener('keydown', (e) => {
       const gains = shown();
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {

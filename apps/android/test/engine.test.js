@@ -336,6 +336,17 @@ test('Song Transition goes to the player, which fades by itself; the page does n
   assert.deepEqual(plugin.runs, [[{ op: 'transition', ms: 3000 }, { op: 'transition', ms: 0 }]]);
 });
 
+test("Settings' Equalizer goes to the player, once for each curve; flat is none", async () => {
+  const { plugin, engine } = setup();
+  const curve = { hz: [20, 2000, 20000], db: [6, 0, -3] };
+  engine.setSoundEq(curve);
+  engine.setSoundEq({ ...curve });
+  engine.setSoundEq({ hz: [], db: [] });
+  engine.setSoundEq(null);
+  await settle();
+  assert.deepEqual(plugin.runs, [[{ op: 'soundEq', ...curve }, { op: 'soundEq', hz: [], db: [] }]]);
+});
+
 test('each page names its songs differently from the pages before it', async () => {
   const ids = [];
   for (let i = 0; i < 2; i += 1) {

@@ -30,9 +30,12 @@ Now Playing, the Queue, Settings.
 - **From 4.0** as on the desktop: lyrics (scroll Now Playing down), smart
   playlists, Continue with similar songs, a playlist's Update, and Share
   for the server's QR code.
+- **Settings > Equalizer** (Android 9 and newer): the sound shaped by a curve
+  of 8 to 48 bands or a ready-made one (Bass Boost, Subtle, Intimate), as on
+  the desktop. Android's player does it, so it works with the screen off too.
 
 Not on the phone: downloading with yt-dlp on the phone itself (the server
-does that), the visualizers and the equalizer (the clouds are there, without React to Bass).
+does that), the visualizers and the background equalizer (the clouds are there, without React to Bass).
 
 ## Installing
 
