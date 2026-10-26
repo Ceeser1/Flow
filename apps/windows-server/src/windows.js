@@ -8,6 +8,7 @@
 //
 //   <install>\node.exe             the Node.js the server runs on
 //   <install>\flow-server.cmd      the server's command line
+//   <install>\Flow Server Tray.exe the icon in the notification area (tray\tray.cs)
 //   <install>\tools\               ffmpeg.exe and ffprobe.exe
 //   <install>\app\server\          apps/linux-server's package.json and src
 //   <install>\app\windows\         this folder (src)
