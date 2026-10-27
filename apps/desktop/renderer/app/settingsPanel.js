@@ -396,7 +396,7 @@ const SettingsPanel = {
    * 20 kHz), Sound Equalizer (the ready-made curves, and Custom: the user's own),
    * then the curve itself. A point is dragged up or down (Shift: finer) or put
    * back to 0 dB with a double-click; the keys pick one (Left, Right) and move
-   * it (Up, Down). On the phone a point is tapped first, then dragged, and the
+   * it (Up, Down). On the phone a finger put on a point drags it at once, and the
    * curve is pinched in or out (up to 400%) and slid along. Moving a point
    * makes the curve Custom.
    */
@@ -453,7 +453,7 @@ const SettingsPanel = {
       ? h('div.sound-eq',
         h('div.sound-eq__head', readout, zoomNode),
         canvas,
-        h('div.sound-eq__note', 'Tap a point to pick it, then drag it up or down. A double tap puts it back to 0 dB.'),
+        h('div.sound-eq__note', 'Put a finger on a point and drag it up or down. A double tap puts it back to 0 dB.'),
         h('div.sound-eq__note', `Pinch to zoom in or out (up to ${MAX_ZOOM * 100}%), slide left or right to move along.`))
       : h('div.sound-eq', canvas,
         h('div.sound-eq__info', readout, h('span', 'Drag a point up or down (Shift: finer). A double-click puts it back to 0 dB.')));
@@ -473,7 +473,7 @@ const SettingsPanel = {
     const fmtHz = (hz) => (hz >= 1000 ? `${(hz / 1000).toFixed(hz >= 10000 ? 1 : 2).replace(/\.?0+$/, '')} kHz` : `${Math.round(hz)} Hz`);
     const fmtDb = (db) => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
     let hot = -1;      // the point under the pointer, picked with the keys, or tapped
-    let drag = null;   // { i, gains, dy, moved } while one is dragged
+    let drag = null;   // { i, gains, from: { y, db, fine }, moved } while one is dragged
 
     const draw = () => {
       const w = canvas.clientWidth;
@@ -610,16 +610,23 @@ const SettingsPanel = {
       Store.saveSettings(custom(gains));
     };
 
-    /** Point `i` dragged from the pointer's place `y` (kept as far from the point as it began). */
-    const startDrag = (i, y) => {
+    /**
+     * Point `i` dragged from the pointer's place `y`: it moves as far as the
+     * pointer, in 0.5 dB steps; with Shift a fifth as far, in 0.1 dB steps.
+     * Shift pressed or let go on the way goes on from where the point is.
+     */
+    const startDrag = (i, y, fine = false) => {
       const gains = shown();
-      drag = { i, gains, dy: y - yOf(area(), gains[i]), moved: false };
+      drag = { i, gains, from: { y, db: gains[i], fine }, moved: false };
       hot = i;
       draw();
     };
     const dragTo = (y, fine) => {
+      if (fine !== drag.from.fine) drag.from = { y, db: drag.gains[drag.i], fine };
+      const b = area();
+      const moved = (dbOf(b, y) - dbOf(b, drag.from.y)) * (fine ? 0.2 : 1);
       const step = fine ? 0.1 : 0.5;
-      const db = round(Math.round(dbOf(area(), y - drag.dy) / step) * step);
+      const db = round(drag.from.db + Math.round(moved / step) * step);
       if (db === drag.gains[drag.i]) return;
       drag.gains = drag.gains.slice();
       drag.gains[drag.i] = db;
@@ -633,11 +640,11 @@ const SettingsPanel = {
       draw();
     };
 
-    // Fingers: a tap picks a point (a second one soon after on it puts it back to
-    // 0 dB), a finger put on the picked point drags it, one put anywhere else slides
-    // the part shown along, two pinch it in or out. A finger passing over a point never takes it.
+    // Fingers: a finger put on a point drags it (a tap picks it, a second one soon
+    // after on it puts it back to 0 dB), one put anywhere else slides the part shown
+    // along, two pinch it in or out. A finger passing over a point never takes it.
     const fingers = new Map();   // pointerId -> { x, y }
-    let touch = null;            // one finger: { x0, y0, onHot, lo, moved }
+    let touch = null;            // one finger: { x0, y0, on (the point under it, or -1), lo, moved }
     let pinch = null;            // two: { d, zoom, frac }
     let tapped = null;           // the last tap on a point, { i, t }
     const spread = () => {
@@ -653,7 +660,7 @@ const SettingsPanel = {
         pinch = { d: Math.max(1, s.d), zoom: zoomOf(), frac: fracOf(area(), s.x) };
       } else if (fingers.size === 1 && !pinch) {
         const p = at(e);
-        touch = { x0: p.x, y0: p.y, onHot: hot >= 0 && nearest(e, 24) === hot, lo: view.lo, moved: false };
+        touch = { x0: p.x, y0: p.y, on: nearest(e, 24), lo: view.lo, moved: false };
       }
     };
     const touchMove = (e) => {
@@ -670,7 +677,7 @@ const SettingsPanel = {
       if (!touch.moved) {
         if (Math.hypot(p.x - touch.x0, p.y - touch.y0) < 6) return;
         touch.moved = true;
-        if (touch.onHot) startDrag(hot, touch.y0);
+        if (touch.on >= 0) startDrag(touch.on, touch.y0);
       }
       if (drag) {
         dragTo(p.y, false);
@@ -721,7 +728,7 @@ const SettingsPanel = {
       e.preventDefault();
       canvas.focus();
       canvas.setPointerCapture(e.pointerId);
-      startDrag(i, at(e).y);
+      startDrag(i, at(e).y, e.shiftKey);
     });
     canvas.addEventListener('pointermove', (e) => {
       if (e.pointerType === 'touch') {
