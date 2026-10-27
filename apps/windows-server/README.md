@@ -17,7 +17,10 @@ files, a window asks what `install.sh` asks on Linux:
    Caddy, Cloudflare Tunnel...). The window shows what to add to it and then
    checks it with `flow-server doctor`. Level 3 (Caddy set up by the
    installer) is Linux only; with a Caddy of your own, that is level 4.
-2. **The music folder** (default `~\flow-music`).
+2. **The music folder** (default `~\flow-music`). Another one than before:
+   it asks whether everything in the old one should move into it, merged
+   with the folders there; the songs keep their playlists, covers and stats
+   (`flow-server move-music`, see the server's README).
 3. **Downloads by the server:** yes needs yt-dlp. Download `yt-dlp.exe`
    yourself from yt-dlp's latest release at GitHub and put it into the folder
    the window opens (`%LOCALAPPDATA%\Flow\server\tools`). There it updates
@@ -26,7 +29,9 @@ files, a window asks what `install.sh` asks on Linux:
 4. **Where new songs go:** separate Uploads and Downloads folders, and
    whether uploads keep their folders.
 5. **Finding the server on the network**, the **password** (required at
-   level 4) and the **master admin**.
+   level 4) and the **master admin**. Finding the server is also how Flow
+   apps of other servers find its Active Sessions: guests from other
+   servers are allowed from the start (Administration turns it off).
 
 Then it registers the **Flow Server** task and opens Windows Firewall for it:
 
@@ -57,7 +62,24 @@ music are never touched by the installer, and stay when it is uninstalled.
 | Start, Stop, Restart Flow Server | the task (Stop: until Start, or the next start of Windows) |
 | Flow Server Log | `flow-server.log` in the library folder, in Notepad |
 | Flow Server Command Line | a window where `flow-server` works: `set-password`, `profiles`, `admin master <name>`, `doctor <address>`, `--help` |
+| Flow Server Tray Icon | the icon in the notification area again, after it was closed |
 | Uninstall Flow Server | removes the task, the firewall rules and the program |
+
+## The tray icon
+
+The server runs before anyone signs in and without a window, so it shows
+nothing by itself. `Flow Server Tray.exe` does: it starts when you sign in
+(the installer adds it for the account it was installed from) and shows
+Flow's icon in the notification area while the server answers on its port,
+a grey one while it doesn't; its tooltip says which. Windows may put a new
+icon behind the ^ arrow first: drag it next to the clock to keep it there.
+
+- **Left click:** the Flow Server Command Line.
+- **Right click:** whether it runs, then Command Line, Settings, Start, Stop,
+  Restart, Log, "Show this icon when Windows starts" and "Close this icon".
+
+`"Flow Server Tray.exe" --status` gives exit code 0 while the server answers
+(else 1), and `--quit` closes the icon of this sign-in.
 
 The settings can also be given on the command line, as `install.sh` takes
 them (`--level`, `--music`, `--port`, `--url`, `--proxy`, `--proxy-at`,
@@ -77,6 +99,8 @@ up before, else level 1 (2 when Tailscale is up on the PC) with the defaults.
 | `src/setup.js` | the questions, the task, the firewall; start, stop, restart, log, uninstall |
 | `src/run.js` | what the task runs: the server in a child process, its output in the log, restarted when it fails; stops it as on Ctrl+C when setup.js asks (`flow-server.stop`); updates a yt-dlp in the tools folder daily |
 | `src/windows.js` | shared and testable: where things are, the task's XML, the firewall's rules, the options |
+| `tray/tray.cs` | the tray icon (C# 5, for the C# compiler that comes with Windows) |
+| `tray/compile.js` | compiles it into `Flow Server Tray.exe` (build.js uses it) |
 | `installer.nsi` | the NSIS installer |
 | `build.js` | stages the files in `dist\stage` and runs makensis |
 

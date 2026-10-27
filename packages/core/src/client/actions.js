@@ -36,6 +36,28 @@ function createActions({
     return model.playlistById(remote.view(), id);
   }
 
+  /** A smart playlist (4.0): its songs are the ones its rules pick (playlistRules.js in the window). */
+  function createSmartPlaylist({ name, rules }) {
+    const clean = model.cleanRules(rules);
+    if (!clean) throw new Error('A smart playlist needs its rules.');
+    if (!remote.active()) {
+      return library.mutate((d) => {
+        const p = model.createPlaylist(d, name, library.newId());
+        return model.setPlaylistRules(d, p.id, clean);
+      });
+    }
+    const name2 = model.checkPlaylistName(remote.view(), name);
+    const id = library.newId();
+    remote.command('createPlaylist', { playlistId: id, name: name2, rules: clean });
+    return model.playlistById(remote.view(), id);
+  }
+
+  function setPlaylistRules({ id, rules }) {
+    const clean = model.cleanRules(rules);
+    if (!clean) throw new Error('A smart playlist needs its rules.');
+    return change((d) => model.setPlaylistRules(d, id, clean), 'setPlaylistRules', { playlistId: id, rules: clean });
+  }
+
   function renamePlaylist({ id, name }) {
     return change((d) => model.renamePlaylist(d, id, name), 'renamePlaylist', { playlistId: id, name });
   }
@@ -188,12 +210,27 @@ function createActions({
     });
   }
 
+  /**
+   * A listen as a guest in another server's session (4.0): this device's
+   * Private Statistics and the totals of the profile in use here (Local
+   * Files' without a server). Not the Default / Shared's of a server: those
+   * are the server's own listening.
+   */
+  function recordAwayListen({ song = {}, listened, duration }) {
+    const tz = new Date().getTimezoneOffset();
+    if (privateStats) privateStats.recordListen({ song, listened, duration, tz });
+    if (remote.active() && !remote.status().profile) return null;
+    return change((d) => model.recordAwayListen(d, { listened, duration, tz }), 'recordAwayListen', { listened, duration, tz });
+  }
+
   const findBySource = ({ url, key }) => model.findBySource(currentLibrary(), { url, key });
   const findByMeta = (meta) => model.findByMeta(currentLibrary(), meta);
 
   return {
     currentLibrary,
     createPlaylist,
+    createSmartPlaylist,
+    setPlaylistRules,
     renamePlaylist,
     deletePlaylist,
     setPlaylistShared,
@@ -206,6 +243,7 @@ function createActions({
     trimSong,
     setFavourite,
     recordListen,
+    recordAwayListen,
     findBySource,
     findByMeta,
   };

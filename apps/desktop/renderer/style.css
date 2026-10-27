@@ -59,6 +59,17 @@ button, input, select { font: inherit; color: inherit; }
 ::-webkit-scrollbar-thumb:hover { background-color: #50505a; }
 
 .icon { width: 18px; height: 18px; flex: none; display: block; }
+/* The white icons from images/ (icons.js), filled in the text's colour as the line ones; those drawn
+   to their edges are taken in a little to the lines' size. */
+.icon--img { background: currentColor; -webkit-mask: center / contain no-repeat; mask: center / contain no-repeat; }
+.icon--add { -webkit-mask-image: url(../images/add.png); mask-image: url(../images/add.png); -webkit-mask-size: 78%; mask-size: 78%; }
+.icon--add_thin { -webkit-mask-image: url(../images/add_thin.png); mask-image: url(../images/add_thin.png); -webkit-mask-size: 78%; mask-size: 78%; }
+.icon--download { -webkit-mask-image: url(../images/download.png); mask-image: url(../images/download.png); }
+.icon--edit { -webkit-mask-image: url(../images/edit.png); mask-image: url(../images/edit.png); }
+.icon--note { -webkit-mask-image: url(../images/note.png); mask-image: url(../images/note.png); -webkit-mask-size: 82%; mask-size: 82%; }
+.icon--search { -webkit-mask-image: url(../images/search.png); mask-image: url(../images/search.png); -webkit-mask-size: 82%; mask-size: 82%; }
+.icon--share { -webkit-mask-image: url(../images/share.png); mask-image: url(../images/share.png); -webkit-mask-size: 82%; mask-size: 82%; }
+.icon--shuffle { -webkit-mask-image: url(../images/shuffle.png); mask-image: url(../images/shuffle.png); }
 
 /* ===== layout ===== */
 
@@ -104,10 +115,41 @@ button, input, select { font: inherit; color: inherit; }
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
+/* The main scroll bar: a little thicker and on a dark track, 15 px from the contents and 15 px from the
+   window's edge (the contents 20 px from the menu: 40 / 30 / 30). The thumb moves between the contents' top and bottom
+   (the track's margins, never changed, so it does not jump). The dark strip behind it is drawn on the
+   scroll bar itself, 10 px wide with round ends: level with the contents, up to the window's top once the
+   page is scrolled and down to the player while there is more below (nav.js). Its room is always kept, so
+   the contents are as wide with or without it. */
+.pages {
+  --bar-top: 20px; /* the .page's top padding */
+  --bar-bottom: 0px;
+  --bar-color: rgba(0, 0, 0, 0.14); /* as the song rows */
+}
+.pages--scrolled { --bar-top: 0px; }
+.pages--end { --bar-bottom: 24px; /* the .page's bottom padding */ }
+.pages::-webkit-scrollbar {
+  width: 25px;
+  background:
+    radial-gradient(circle at 5px 5px, var(--bar-color) 4.5px, transparent 5px) 0 var(--bar-top) / 10px 5px no-repeat,
+    radial-gradient(circle at 5px 0, var(--bar-color) 4.5px, transparent 5px) 0 calc(100% - var(--bar-bottom)) / 10px 5px no-repeat,
+    linear-gradient(var(--bar-color), var(--bar-color)) 0 calc(var(--bar-top) + 5px) / 10px calc(100% - var(--bar-top) - var(--bar-bottom) - 10px) no-repeat;
+}
+.pages::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 20px 0 24px; /* the .page's padding */
+}
+.pages::-webkit-scrollbar-thumb {
+  background-color: #4a4a54;
+  border-width: 1px 16px 1px 1px;
+  border-radius: 5px 20px 20px 5px / 5px;
+}
+.pages::-webkit-scrollbar-thumb:hover { background-color: #5c5c68; }
 
 .page {
-  padding: 20px 28px 24px;
+  padding: 20px 15px 24px 20px; /* the contents 20 px from the menu and 15 px from the scroll bar */
   min-height: 100%;
 }
 
@@ -508,22 +550,43 @@ button, input, select { font: inherit; color: inherit; }
 /* The phone's All / Playlists / Songs / Artists ... row (mobile.css). */
 .search-filter { display: none; }
 
-/* Seven columns, each as wide as when the page held three (Playlists 1,
-   Songs 1.4, Artists 1 of the width) and never narrower than 260px (Songs
-   360px): the row scrolls sideways, its scrollbar at the bottom. */
+/* Seven columns, each as wide as its longest entry (names cut at 40 characters,
+   search.js) and 5% of the window more, at least wide enough for "No matches"
+   and at most a fifth of the window. Width left over in the row is shared out
+   evenly, so a few short ones still fill it; when they do not fit, the row
+   scrolls sideways, its scrollbar at the bottom. */
 .results {
-  --col: max(260px, (100cqw - 28px) / 3.4);
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: var(--col) max(360px, (100cqw - 28px) * 1.4 / 3.4) repeat(5, var(--col));
+  display: flex;
+  align-items: stretch;
   gap: 14px;
   overflow-x: auto;
   overflow-y: hidden;
   padding-bottom: 8px;
 }
+/* Its scroll bar as the main one (.pages), lying down. */
+.results::-webkit-scrollbar { height: 14px; }
+.results::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.14);
+  border: solid transparent;
+  border-width: 2px 0;
+  background-clip: padding-box;
+  border-radius: 7px;
+}
+.results::-webkit-scrollbar-thumb {
+  background-color: #4a4a54;
+  border-width: 3px 1px;
+  border-radius: 7px;
+}
+.results::-webkit-scrollbar-thumb:hover { background-color: #5c5c68; }
 
 .results__col {
+  flex: 1 0 auto;
+  width: max-content;
+  width: calc-size(max-content, size + 5vw);
+  min-width: 170px;
+  max-width: 20vw;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -560,6 +623,21 @@ button, input, select { font: inherit; color: inherit; }
   overflow-y: auto;
   padding: 6px;
 }
+/* Each frame's scroll bar as the row's below it, standing up. */
+.results__list::-webkit-scrollbar { width: 14px; }
+.results__list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.14);
+  border: solid transparent;
+  border-width: 4px 2px;
+  background-clip: padding-box;
+  border-radius: 7px;
+}
+.results__list::-webkit-scrollbar-thumb {
+  background-color: #4a4a54;
+  border-width: 5px 3px;
+  border-radius: 7px;
+}
+.results__list::-webkit-scrollbar-thumb:hover { background-color: #5c5c68; }
 
 .results__empty,
 .results__more {
@@ -635,10 +713,12 @@ button, input, select { font: inherit; color: inherit; }
 .prog-title:empty { display: none; }
 
 /* Waiting on something that says nothing back for a while (the server reading a link),
-   the footer's line while failed songs are tried again, and "Search for more". */
+   the footer's line while failed songs are tried again, "Search for more", and
+   lyrics being looked up. */
 .prog-title--busy::after,
 .import-retry--busy::before,
-.song-search__spinner {
+.song-search__spinner,
+.lyrics-spinner {
   content: '';
   display: inline-block;
   width: 12px;
@@ -651,7 +731,9 @@ button, input, select { font: inherit; color: inherit; }
   animation: prog-spin 0.8s linear infinite;
 }
 
-.import-retry--busy::before { margin: 0 8px 0 0; }
+.import-retry--busy::before,
+.lyrics-spinner { margin: 0 8px 0 0; }
+.lyrics-spinner { flex: none; }
 .song-search__spinner { margin-left: 0; flex: none; }
 .song-search__spinner[hidden] { display: none; }
 
@@ -863,8 +945,8 @@ progress {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
-  margin: 0 -28px -24px;
-  padding: 12px 28px 16px;
+  margin: 0 -15px -24px -20px; /* the .page's padding */
+  padding: 12px 15px 16px 20px;
   background: linear-gradient(to bottom, rgba(30, 30, 34, 0.2), rgba(30, 30, 34, 0.55) 40%);
   backdrop-filter: blur(8px);
   z-index: 3;
@@ -1380,10 +1462,15 @@ div.import__frame-head { cursor: default; }
 
 .row--current td { color: var(--green); }
 .row--current .cell-title { font-weight: 600; }
+/* The song playing: a faint green row, easy to find while scrolling.
+   Over the same darker shade as the other rows, so the clouds do not wash it out. */
+.table--songs tbody tr.row--current td { background: linear-gradient(rgba(120, 200, 140, 0.14), rgba(120, 200, 140, 0.14)) rgba(0, 0, 0, 0.14); }
+.table--songs tbody tr.row--current:hover td { background: linear-gradient(rgba(120, 200, 140, 0.2), rgba(120, 200, 140, 0.2)) rgba(0, 0, 0, 0.14); }
 .row--pinned td { background: rgba(90, 140, 220, 0.06); }
 /* A session chosen in the menu, for a moment (pages/sessions.js). */
 .row--lit td,
-.mrow.row--lit { background: rgba(90, 140, 220, 0.18); transition: background 0.3s; }
+.mrow.row--lit,
+.nearby__row.row--lit { background: rgba(90, 140, 220, 0.18); transition: background 0.3s; }
 
 .cell-title { color: var(--text-bright); }
 .row--current .cell-title { color: var(--green); }
@@ -1597,7 +1684,8 @@ div.import__frame-head { cursor: default; }
 /* No list under it (empty playlist): round all the way. */
 .pl-top:has(~ #plEmpty:not([hidden])) { border-radius: var(--radius); }
 .pl-top > :last-child { margin-bottom: 0; }
-.table--songs th { background: var(--head-bg); backdrop-filter: blur(14px); }
+/* The column names a little darker than the playlist's head above them. */
+.table--songs th { background: rgba(18, 18, 22, 0.84); backdrop-filter: blur(14px); }
 
 .pl-head { margin-bottom: 14px; }
 .pl-head .page__title { margin-bottom: 8px; }
@@ -1610,6 +1698,38 @@ div.import__frame-head { cursor: default; }
 }
 
 .pl-meta { color: var(--text-dim); font-size: 14px; margin-right: 6px; }
+#plOfflineNote:empty { display: none; }
+/* Share at the row's right end, below Update (the phone orders its own, mobile.css). */
+.pl-head__row #plShare { margin-left: auto; }
+
+/* "Update from source" while its playlist's link is read (playlistUpdate.js): light blue, the icon
+   turning clockwise once every 2 seconds. */
+#plUpdate.pl-update--busy {
+  color: #8cc8f4;
+  border-color: rgba(140, 200, 244, 0.5);
+  background: rgba(140, 200, 244, 0.1);
+}
+#plUpdate.pl-update--busy .icon { animation: prog-spin 2s linear infinite; }
+
+/* Its popup: the songs added to and removed from the source side by side, the two ticks below. */
+.modal.modal--pl-update { width: 720px; }
+.pl-update__lists { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; }
+.pl-update__col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pl-update__head { margin: 4px 0 6px; font-weight: 600; color: var(--text-bright); }
+.pl-update__list {
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  max-height: 46vh;
+  overflow-y: auto;
+  background: var(--well);
+  border-radius: var(--radius);
+}
+.pl-update__row { display: flex; gap: 8px; align-items: baseline; padding: 3px 10px; min-width: 0; user-select: text; }
+.pl-update__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-update__note { flex: none; margin-left: auto; color: var(--text-dim); font-size: 12px; }
+.pl-update__empty { padding: 3px 10px; color: var(--text-dim); }
+.pl-update__checks { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 
 .toggle {
   display: inline-flex;
@@ -1638,10 +1758,6 @@ div.import__frame-head { cursor: default; }
 
 .toggle__box .icon { width: 12px; height: 12px; stroke-width: 3; }
 .toggle .icon { width: 16px; height: 16px; }
-/* The white icons from images/: dimmed like the grey text, full on hover or when on. */
-.toggle__img { width: 16px; height: 16px; display: block; opacity: 0.7; }
-.toggle:hover .toggle__img,
-.toggle--on .toggle__img { opacity: 1; }
 
 .toggle--on {
   color: var(--green);
@@ -1865,6 +1981,16 @@ div.import__frame-head { cursor: default; }
 .queue-btn:hover { color: var(--text-bright); border-color: #50505a; background: var(--glass-hi); }
 .queue-btn__img { width: 14px; height: 14px; display: block; opacity: 0.75; }
 .queue-btn:hover .queue-btn__img { opacity: 1; }
+.queue-btn .icon { width: 14px; height: 14px; opacity: 0.75; }
+.queue-btn:hover .icon { opacity: 1; }
+/* In the Lyrics button's place when the song playing has none (lyrics.js). */
+.player__no-lyrics {
+  flex: none;
+  padding: 0 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
 
 /* A sleep timer running: "Time Left" in the middle of the line, title left
    and "from" with Queue right, each cut short rather than running under it. */
@@ -2130,6 +2256,7 @@ div.import__frame-head { cursor: default; }
   padding: 24px;
 }
 
+.modal:focus { outline: none; }
 .modal {
   width: 460px;
   max-width: 100%;
@@ -2192,6 +2319,10 @@ div.import__frame-head { cursor: default; }
 .song-edit__hint.hint--active { color: var(--accent); }
 .song-edit__trim-head .btn { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .song-edit__note { margin-top: 10px; }
+/* Lyrics: what it has, then Edit Lyrics and Show in Song Details. */
+.song-edit__lyrics-right { align-items: center; gap: 12px; }
+.song-edit__lyrics { display: inline-flex; align-items: center; color: var(--text); }
+.song-edit__lyrics-btns { display: flex; gap: 8px; }
 /* A server that cannot trim: the editor shows the song but takes no cut. */
 .song-trim--off { opacity: 0.45; pointer-events: none; }
 
@@ -2266,6 +2397,9 @@ div.import__frame-head { cursor: default; }
 
 .settings__row--off .settings__left,
 .settings__row--off .settings__right,
+/* Greyed out with its button still bright (Lyrics Cache). */
+.settings__row--dim .settings__left,
+.settings__row--dim .settings__note,
 .settings__row--unset:not(.settings__row--keep) .settings__right { opacity: 0.45; }
 
 .settings__left { min-width: 0; }
@@ -2282,6 +2416,17 @@ div.import__frame-head { cursor: default; }
 .settings__value { width: 44px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
 .settings__note { color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
 .settings__slider { width: 160px; }
+/* Settings > Equalizer's curve (soundEq.js): the graph across the whole row. */
+.sound-eq { padding: 12px 0 14px; border-bottom: 1px solid #34343c; }
+.sound-eq__canvas { display: block; width: 100%; height: 240px; background: rgba(0, 0, 0, 0.22); border-radius: 8px; touch-action: none; outline: none; }
+.sound-eq__canvas:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.sound-eq__canvas--hot { cursor: ns-resize; }
+.sound-eq__info { display: flex; justify-content: space-between; gap: 16px; margin-top: 6px; font-size: 12px; color: var(--text-dim); }
+.sound-eq__readout { color: var(--text); font-variant-numeric: tabular-nums; }
+/* The phone's: the point picked and the zoom above the curve, the notes under it. */
+.sound-eq__head { display: flex; justify-content: space-between; gap: 16px; min-height: 16px; margin-bottom: 6px; font-size: 12px; }
+.sound-eq__zoom { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.sound-eq__note { margin-top: 6px; font-size: 12px; color: var(--text-dim); }
 .settings__slider:disabled { cursor: default; }
 .settings__control--off { opacity: 0.45; }
 /* The Add to Playlists dialog: like Settings, the app's own background at 93%
@@ -2322,6 +2467,8 @@ div.import__frame-head { cursor: default; }
   display: flex;
   flex-direction: column;
 }
+/* Given the focus only to keep it from jumping (Administration's draw). */
+.modal__body:focus { outline: none; }
 
 .modal__text { margin: 4px 0 8px; line-height: 1.5; user-select: text; }
 .modal__subtitle { margin: 0 0 12px; color: var(--text-dim); user-select: text; }
@@ -2334,6 +2481,8 @@ div.import__frame-head { cursor: default; }
   padding: 12px 16px 16px;
   border-top: 1px solid var(--line);
 }
+/* Buttons given align: 'left' (ui.js) at the left, the others staying right. */
+.modal__footer .modal__left + .btn:not(.modal__left) { margin-left: auto; }
 
 .picker__create { display: flex; gap: 8px; }
 .picker__create .input { flex: 1; }
@@ -2454,6 +2603,99 @@ div.import__frame-head { cursor: default; }
 .queue__remove { visibility: hidden; }
 .queue__row:hover .queue__remove { visibility: visible; }
 
+/* ---- Active Sessions of other servers nearby (sessions.js, 4.0) ---- */
+
+.sessions-nearby { margin-top: 28px; }
+.nearby__server { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line, #33333b); border-radius: 10px; background: rgba(255, 255, 255, 0.02); }
+.nearby__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 700; margin-bottom: 8px; }
+.nearby__list { display: flex; flex-direction: column; gap: 4px; }
+.nearby__row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 6px; }
+.nearby__row:hover { background: rgba(255, 255, 255, 0.04); }
+.nearby__icon .icon { width: 16px; height: 16px; opacity: 0.8; }
+.nearby__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.nearby__name { font-weight: 600; }
+.nearby__song { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin__guests { margin-top: 10px; align-items: flex-start; }
+.admin__guests .admin__item-sub { display: block; margin-top: 2px; }
+.admin__guests--off { opacity: 0.5; cursor: default; }
+.admin__guests-note { color: var(--text-dim); }
+
+/* ---- a server shared as a QR code (qrShare.js) ---- */
+
+.share-control { gap: 8px; }
+.modal--qr { width: min(420px, 100%); }
+.qr__frame { display: flex; justify-content: center; margin: 4px 0 12px; }
+.qr__code { width: min(300px, 100%); height: auto; image-rendering: pixelated; border-radius: 8px; }
+.qr__bar { display: flex; justify-content: center; }
+
+/* ---- a smart playlist's rules (rulesEditor.js) ---- */
+
+.modal--rules { width: min(680px, 100%); }
+.rules__match { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; }
+.rules__list { display: flex; flex-direction: column; gap: 8px; }
+.rules__row { display: grid; grid-template-columns: 1.1fr 1.1fr 1.3fr auto; gap: 8px; align-items: center; }
+.rules__row .select, .rules__row .input { width: 100%; min-width: 0; }
+.rules__add { align-self: flex-start; margin: 10px 0 4px; }
+.rules__end { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; }
+.rules__field { display: flex; align-items: center; gap: 8px; }
+.rules__limit { width: 90px; }
+.rules__count { margin-top: 14px; font-weight: 600; color: var(--text-bright); }
+
+/* ---- the Lyrics drawer (lyrics.js) ---- */
+
+.modal--lyrics { width: min(520px, 100%); background: rgba(28, 28, 32, 0.92); }
+.lyrics { display: flex; flex-direction: column; gap: 12px; }
+.lyrics__song { font-size: 13px; color: var(--text-dim); }
+.lyrics__note { color: var(--text-dim); padding: 12px 0; }
+.lyrics__lines { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 35vh; }
+.lyrics__line {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #8d8d98;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin: 0 -6px;
+  transition: color 0.25s;
+}
+.lyrics__line--timed { cursor: pointer; }
+.lyrics__line--timed:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.lyrics__line--pause { color: #5c5c66; }
+.lyrics__line--now,
+.lyrics__line--now:hover { color: #fff; text-shadow: 0 0 18px rgba(255, 255, 255, 0.25); }
+.lyrics__source { font-size: 11px; color: var(--text-dim); margin-top: -30vh; }
+
+/* The line being sung and the next, over a full-screen visualizer; clear of the player bar. */
+.viz-lyrics {
+  position: absolute;
+  left: 50%;
+  /* The centre of the line playing; the next sits below it (lyrics.js places both). */
+  bottom: calc(150px + 1.5em);
+  z-index: 2;
+  width: min(90vw, 1200px);
+  height: 0;
+  transform: translateX(-50%);
+  font-size: clamp(22px, 2.6vw, 42px);
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.9);
+}
+/* Moving up a row takes 0.2 s, as long as Lyrics.VIZ_LEAD (done as the line is sung). */
+.viz-lyrics__line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: 1.3em;
+  line-height: 1.3;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
+  transition: transform 0.2s ease-out, opacity 0.2s linear, color 0.2s linear;
+}
+.viz-lyrics__line--now { color: #fff; }
+.viz-lyrics__hint { animation: viz-lyrics-hint 8s ease-in forwards; }
+@keyframes viz-lyrics-hint { from { opacity: 1; } to { opacity: 0; } }
+
 /* ---- the Music Visualizer, full screen (visualizer.js) ---- */
 
 .viz-full {
@@ -2561,7 +2803,8 @@ div.import__frame-head { cursor: default; }
   opacity: 0;
   transition: max-width 0.35s ease, opacity 0.25s, padding 0.35s;
 }
-.viz-cfg--open .viz-cfg__body { max-width: 1400px; padding: 0 28px 0 6px; opacity: 1; }
+/* As wide as the window allows, clear of the close button at the right. */
+.viz-cfg--open .viz-cfg__body { max-width: calc(100vw - 220px); padding: 0 28px 0 6px; opacity: 1; }
 .viz-cfg__item { display: flex; align-items: center; gap: 10px; }
 .viz-cfg__swatch {
   width: 30px;
@@ -2686,12 +2929,12 @@ div.import__frame-head { cursor: default; }
 }
 .viz-pick__preset:hover { border-color: #fff; }
 
-/* Halo's title and artist, under the cover; faded in with each song. */
+/* Halo's title and artist, at the top (the lyrics are at the bottom); faded in with each song. */
 .viz-halo {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 11%;
+  top: 28px;
   text-align: center;
   color: #fff;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
@@ -2700,7 +2943,7 @@ div.import__frame-head { cursor: default; }
 }
 .viz-halo--in { animation: viz-halo-in 1.2s ease forwards; }
 @keyframes viz-halo-in {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(-12px); }
   to { opacity: 1; transform: none; }
 }
 .viz-halo__title { font-size: clamp(22px, 3.2vh, 44px); font-weight: 600; letter-spacing: 0.01em; }
@@ -2829,12 +3072,17 @@ div.import__frame-head { cursor: default; }
   margin: 14px 0 2px;
   padding-bottom: 6px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text-bright);
   border-bottom: 1px solid var(--line);
 }
+
+/* Lyrics: where they came from after the name, Edit (or Add) at the right. */
+.details__heading--split { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.details__heading--split .btn { text-transform: none; letter-spacing: normal; margin: -4px 0 -2px; }
+.details__heading-note { font-weight: 400; color: var(--text-dim); text-transform: none; letter-spacing: normal; }
 
 .details__section:nth-child(2) .details__heading { margin-top: 2px; }
 
@@ -2890,7 +3138,7 @@ div.import__frame-head { cursor: default; }
 /* Each row has a thin line under it, as in Settings: both of its cells carry it. */
 .details__label,
 .details__value { padding: 10px 0; border-bottom: 1px solid #34343c; }
-.details__label { font-weight: 600; color: var(--text-bright); }
+.details__label { color: var(--text-dim); }
 .details__label { display: flex; flex-direction: column; justify-content: center; }
 .details__value {
   display: flex;
@@ -2903,6 +3151,9 @@ div.import__frame-head { cursor: default; }
   user-select: text;
 }
 .details__url { text-align: right; overflow-wrap: anywhere; user-select: text; }
+/* Source: the names are short, the links get the rest of the width. */
+.details__grid--source { grid-template-columns: max-content minmax(0, 1fr); }
+.details__grid--source .details__label { white-space: nowrap; }
 
 /* ===== toasts ===== */
 
@@ -3202,3 +3453,161 @@ body.mobile .switch-where { text-align: left; }
 .admin__ips { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 .admin__ips th { text-align: left; color: var(--text-dim); font-weight: 600; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
 .admin__ips td { padding: 4px 8px 4px 0; border-bottom: 1px solid #2c2c33; user-select: text; overflow-wrap: anywhere; }
+
+/* ---- Lyrics written or edited by hand (lyricsEdit.js, 4.0.1) ---- */
+
+/* "Lyrics" after a downloaded song's title: a green ring with a tick, or a red one with a cross. */
+.lyrics-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+}
+.lyrics-badge .icon { width: 15px; height: 15px; }
+.lyrics-badge--yes { color: var(--green); }
+.lyrics-badge--no { color: var(--red); }
+.import__title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.import__title-row .import__title { min-width: 0; }
+
+/* The song editor's lyrics row (Add Songs): "Found lyrics: Show, Edit Lyrics". */
+.ed-lyrics { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.ed-lyrics__label { color: var(--text-dim); }
+.ed-lyrics:empty { display: none; }
+
+/* Show: each line with its times. */
+.modal--lyrics-show { width: min(640px, 100%); max-height: 85vh; }
+.lyrics-show__song { font-weight: 600; color: var(--text-bright); padding-bottom: 8px; }
+.lyrics-show__note { color: var(--text-dim); padding-bottom: 8px; }
+.lyrics-show__lines { display: flex; flex-direction: column; user-select: text; }
+.lyrics-show__row { display: flex; gap: 16px; padding: 3px 0; border-bottom: 1px solid #2c2c33; }
+.lyrics-show__time { flex: none; color: var(--text-dim); font-variant-numeric: tabular-nums; min-width: 0; white-space: nowrap; }
+.lyrics-show__time:empty { display: none; }
+.lyrics-show__text { color: var(--text); }
+.lyrics-show__text--pause { color: var(--text-dim); }
+.lyrics-show__source { font-size: 11px; color: var(--text-dim); padding-top: 10px; }
+
+/* Edit and Add: From - To and the words, a row a line. */
+.modal--lyrics-edit { width: min(900px, 100%); height: 90vh; }
+/* The lines scroll on their own; the player stays at the bottom. */
+.modal--lyrics-edit .modal__body { overflow: hidden; }
+.lyrics-edit__hint { flex: none; padding-bottom: 10px; white-space: normal; }
+/* The song's names, Search LRCLIB at the right. */
+.lyrics-edit__top { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.lyrics-edit__top .btn { flex: none; margin-top: -3px; }
+
+/* Search LRCLIB: the results at the left, the one picked's lines at the right. */
+.modal--lyrics-search { width: min(900px, 100%); height: 80vh; }
+.modal--lyrics-search .modal__body { display: flex; flex-direction: column; overflow: hidden; }
+.lyrics-search__bar { flex: none; display: flex; gap: 8px; }
+.lyrics-search__q { flex: 1; }
+.lyrics-search__note { flex: none; font-size: 12px; color: var(--text-dim); padding: 6px 0; min-height: 26px; }
+.lyrics-search__panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.lyrics-search__list,
+.lyrics-search__preview { overflow-y: auto; min-height: 0; border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.lyrics-search__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.lyrics-search__item:hover { background: var(--glass-hi); }
+.lyrics-search__item--on,
+.lyrics-search__item--on:hover { background: rgba(90, 140, 220, 0.3); }
+.lyrics-search__name { font-weight: 600; color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lyrics-search__meta { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-dim); }
+.lyrics-search__kind { flex: none; padding: 0 6px; border-radius: 8px; border: 1px solid var(--line); }
+.lyrics-search__kind--timed { color: #8fdc9b; border-color: rgba(108, 196, 126, 0.5); }
+.lyrics-search__empty { color: var(--text-dim); padding: 8px; display: flex; align-items: center; gap: 8px; }
+
+/* Publish to LRCLIB: what goes, under which names. */
+.modal--lyrics-publish { width: min(520px, 100%); }
+.lyrics-publish__text { margin: 0 0 12px; color: var(--text-dim); line-height: 1.5; }
+.lyrics-publish__field { display: grid; grid-template-columns: 70px minmax(0, 1fr); align-items: center; gap: 10px; margin-bottom: 8px; }
+.lyrics-publish__field > span:first-child { color: var(--text-dim); }
+.lyrics-publish__value { color: var(--text); }
+.lyrics-publish__status { display: flex; align-items: center; gap: 8px; color: var(--text-dim); min-height: 20px; }
+.lyrics-edit__paste-box { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.lyrics-edit__paste { height: auto; flex: 1; min-height: 200px; padding: 8px 10px; resize: none; font: inherit; line-height: 1.5; }
+.lyrics-edit__paste-box[hidden],
+.lyrics-edit__table[hidden] { display: none; }
+.lyrics-edit__paste-foot { display: flex; justify-content: flex-end; }
+.lyrics-edit__table { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; }
+.lyrics-edit__rows { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; min-height: 0; padding-right: 4px; }
+.lyrics-edit__head,
+.lyrics-edit__row {
+  display: grid;
+  grid-template-columns: 104px 10px 104px minmax(0, 1fr) 28px 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 4px;
+}
+.lyrics-edit__head { font-size: 12px; font-weight: 600; color: var(--text-dim); padding-bottom: 2px; padding-right: 8px; }
+/* A line with words: its colour (lyricsEdit.js COLOURS) as strong as on the
+   waveform, its boxes see-through over it. */
+.lyrics-edit__row--lit { background: rgba(var(--line-rgb), 0.55); box-shadow: inset 4px 0 0 rgb(var(--line-rgb)); }
+.lyrics-edit__row--lit .input { background: rgba(0, 0, 0, 0.3); border-color: rgba(255, 255, 255, 0.14); color: #fff; }
+.lyrics-edit__row--lit .input::placeholder { color: rgba(255, 255, 255, 0.55); }
+.lyrics-edit__row--lit .icon-btn { color: #fff; }
+/* The line sung where the player is. */
+.lyrics-edit__row--now { outline: 1px solid rgba(255, 255, 255, 0.55); outline-offset: -1px; }
+.lyrics-edit__words { position: relative; min-width: 0; }
+.lyrics-edit__words .lyrics-edit__text { width: 100%; }
+/* A line without words: music, a note in its box. */
+.lyrics-edit__note { display: none; position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--text-dim); pointer-events: none; }
+.lyrics-edit__note .icon { width: 16px; height: 16px; }
+.lyrics-edit__row--music .lyrics-edit__note { display: inline-flex; }
+.lyrics-edit__row--music .lyrics-edit__text { padding-left: 32px; }
+.lyrics-edit__time { height: 28px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
+/* Dragged left or right to change the time (lyricsEdit.js _scrub); typed in once clicked. */
+.lyrics-edit__time:not(:focus),
+.lyrics-edit--scrubbing,
+.lyrics-edit--scrubbing * { cursor: ew-resize !important; }
+.lyrics-edit--scrubbing { user-select: none; }
+.lyrics-edit__text { height: 28px; }
+.lyrics-edit__dash { color: var(--text-dim); text-align: center; }
+.lyrics-edit__add,
+.lyrics-edit__remove { width: 28px; height: 28px; }
+.lyrics-edit__add .icon { width: 14px; height: 14px; }
+.lyrics-edit__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 6px; }
+.lyrics-edit__shift { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); }
+.lyrics-edit__shift span { margin-right: 4px; }
+.lyrics-edit__shift-by { width: 80px; height: 28px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
+.lyrics-edit__error { flex: none; }
+/* The player: the waveform, then -5 s, play, +5 s and the place. */
+.lyrics-edit__player { flex: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.lyrics-edit__wave-wrap { position: relative; height: 84px; }
+.lyrics-edit__wave { display: block; width: 100%; height: 84px; background: rgba(0, 0, 0, 0.33); border-radius: 4px; cursor: pointer; touch-action: none; }
+.lyrics-edit__wave-status { font-size: 14px; }
+.lyrics-edit__wave-status[hidden] { display: none; }
+.lyrics-edit__transport { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 8px; }
+.lyrics-edit__insert { margin-left: 6px; }
+.lyrics-edit__speed-box { display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; font-size: 13px; color: var(--text-dim); }
+.lyrics-edit__speed { width: 100px; }
+.lyrics-edit__speed:disabled { opacity: 0.5; cursor: default; }
+.lyrics-edit__speed-value { width: 38px; font-variant-numeric: tabular-nums; color: var(--text); }
+.lyrics-edit__pitch { display: inline-flex; }
+.lyrics-edit__pitch .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.lyrics-edit__pitch .btn:last-child { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.lyrics-edit__pitch .btn.lyrics-edit__pitch--on { background: var(--accent); color: #fff; font-weight: 600; }
+.lyrics-edit__transport .round-btn--main { width: 40px; height: 40px; }
+.lyrics-edit__clock { margin-left: 6px; font-variant-numeric: tabular-nums; color: var(--text-bright); font-size: 15px; }
+.lyrics-edit__zoom { margin-left: auto; font-size: 12px; color: var(--text-dim); text-align: right; }
+.lyrics-edit__wave-wrap .playhead[hidden] { display: none; }
+.lyrics-edit__scroll { position: relative; height: 12px; margin-top: 4px; border-radius: 6px; background: rgba(255, 255, 255, 0.07); cursor: pointer; touch-action: none; }
+.lyrics-edit__scroll[hidden] { display: none; }
+.lyrics-edit__scroll-thumb { position: absolute; top: 1px; bottom: 1px; min-width: 14px; border-radius: 5px; background: #6a6a76; cursor: grab; }
+.lyrics-edit__scroll-thumb:hover { background: #8a8a96; }
+.input--bad, .input--bad:focus { border-color: var(--red); }
+
+/* Song Details: the song's words without times, and Edit / Add Lyrics under them. */
+.details__lyrics { white-space: pre-wrap; color: var(--text); padding: 10px 0 0; user-select: text; line-height: 1.5; max-height: 320px; overflow-y: auto; }
+.details__lyrics--none { color: var(--text-dim); }

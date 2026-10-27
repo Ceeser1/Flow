@@ -47,6 +47,8 @@
   SleepTimer.init();
   Keys.init();
   Mobile.init();
+  // After Mobile: the phone's Now Playing has its lyrics frame by then.
+  Lyrics.init();
   Welcome.init();
   BackgroundHelp.init();
 

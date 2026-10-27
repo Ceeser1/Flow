@@ -51,6 +51,7 @@ const TYPES = {
       // becomes "Chill (2)" rather than getting lost.
       const p = model.createPlaylist(d, model.freePlaylistName(d, c.name), id, c.at);
       if (c.source) model.setPlaylistSource(d, id, c.source);
+      if (c.rules) model.setPlaylistRules(d, id, c.rules);
       return { value: p.id };
     },
   },
@@ -106,6 +107,14 @@ const TYPES = {
     run(d, c) {
       if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
       model.setPlaylistSource(d, str(c.playlistId), c.source);
+      return {};
+    },
+  },
+  setPlaylistRules: {
+    keys: (c) => [`p:${c.playlistId}:rules`],
+    run(d, c) {
+      if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
+      model.setPlaylistRules(d, str(c.playlistId), c.rules || null);
       return {};
     },
   },
@@ -194,6 +203,13 @@ const TYPES = {
       if (!s) return { skipped: 'gone' };
       if (!(s.duration > 0) && Number(c.duration) > 0) model.updateSong(d, s.id, { duration: Number(c.duration) });
       return { value: model.recordListen(d, str(c.songId), { listened: c.listened, duration: c.duration, at: c.at, contextId: c.contextId ? str(c.contextId) : null, tz: c.tz }) };
+    },
+  },
+  // A listen to a song of another server's session (4.0): the totals only.
+  recordAwayListen: {
+    keys: () => [],
+    run(d, c) {
+      return { value: model.recordAwayListen(d, { listened: c.listened, duration: c.duration, at: c.at, tz: c.tz }) };
     },
   },
   // A song trimmed: only ever applied by the app, to show it at its new

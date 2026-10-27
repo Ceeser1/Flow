@@ -26,12 +26,19 @@ function isRequest(buf) {
   }
 }
 
-/** A server's answer: what /api/hello tells anyone, and the port to use. */
-function makeReply({ id, name, port, protocol }) {
-  return Buffer.from(JSON.stringify({ app: 'flow-server', id, name, port, protocol }));
+/**
+ * A server's answer: what /api/hello tells anyone, and the port to use;
+ * guests: it takes guests from other servers into its sessions (4.0).
+ */
+function makeReply({
+  id, name, port, protocol, guests = false,
+}) {
+  return Buffer.from(JSON.stringify({
+    app: 'flow-server', id, name, port, protocol, ...(guests ? { guests: true } : {}),
+  }));
 }
 
-/** { ip, port, name, id, protocol } of an answer from `address`, or null. */
+/** { ip, port, name, id, protocol, guests } of an answer from `address`, or null. */
 function parseReply(buf, address) {
   if (!buf || buf.length > MAX_MESSAGE) return null;
   try {
@@ -44,6 +51,7 @@ function parseReply(buf, address) {
       name: String(m.name || 'Flow Server').slice(0, 60),
       id: String(m.id || ''),
       protocol: Number(m.protocol) || 0,
+      guests: m.guests === true,
     };
   } catch {
     return null;

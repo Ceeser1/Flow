@@ -96,6 +96,8 @@ const Covers = {
   /** The cover file of a song as a file:// address, or '' when it has none. */
   src(song, { local = false } = {}) {
     if (!song || !song.cover || song.cover === '-') return '';
+    // Another server's song (a guest in its session): its cover from there.
+    if (song.foreign) return song.coverUrl || '';
     // A song of Downloaded Songs that is not the server's has its cover in Local Files', by its id there.
     const dir = Store.server.on && !local && !song.isDevice ? this.dirs.server : this.dirs.local;
     if (!dir) return '';

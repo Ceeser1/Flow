@@ -41,8 +41,10 @@ const Output = {
       if ('outputDelayOn' in patch || 'serverOn' in patch) this._emit();
     });
     this.refresh();
-    if (Store.can('systemOutput')) window.flow.onOutputChange(() => this.refresh());
-    else if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    // (The desktop's phone layout, FLOW_UI=mobile, has no phone output to follow.)
+    if (Store.can('systemOutput')) {
+      if (window.flow.onOutputChange) window.flow.onOutputChange(() => this.refresh());
+    } else if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
       navigator.mediaDevices.addEventListener('devicechange', () => this.refresh());
     }
   },

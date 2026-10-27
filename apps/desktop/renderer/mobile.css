@@ -345,6 +345,44 @@ body.mobile .mp--open #btnQueue {
 body.mobile .mp--open #btnQueue span { display: none; }
 body.mobile .mp--open #btnQueue .queue-btn__img { width: 22px; height: 22px; opacity: 0.72; }
 
+/* The lyrics below the buttons (lyrics.js), scrolled down to: the cover keeps
+   its height without them (Mobile.fitLyrics), the screen scrolls. */
+body.mobile .mp:not(.mp--open) .mp__lyrics,
+body.mobile .mp--open:not(.mp--lyrics) .mp__lyrics { display: none !important; }
+body.mobile .player.mp--open.mp--lyrics {
+  grid-template-rows: auto var(--np-cover) auto auto auto auto auto auto auto auto;
+  grid-template-areas:
+    "collapse from ."
+    "cover cover cover"
+    "text text queue"
+    "session session session"
+    "track track track"
+    "times times times"
+    "buttons buttons buttons"
+    "extras extras extras"
+    "vol vol vol"
+    "lyrics lyrics lyrics";
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+body.mobile .mp--open .np-lyrics {
+  grid-area: lyrics;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 28px;
+  padding: 14px 16px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+}
+body.mobile .np-lyrics__head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 700; color: var(--text-dim); }
+body.mobile .np-lyrics__expand { font-size: 14px; }
+body.mobile .np-lyrics__lines { display: flex; flex-direction: column; gap: 6px; }
+body.mobile .np-lyrics__line { font-size: 19px; font-weight: 600; line-height: 1.35; color: #8d8d98; }
+body.mobile .np-lyrics__line--pause { color: #5c5c66; }
+body.mobile .np-lyrics__line--now { color: #fff; }
+body.mobile .modal--lyrics { width: 100%; background: var(--bg); }
+
 /* Only while controlling another device's volume: the phone's own is its buttons. */
 body.mobile .mp--open #volWrap { grid-area: vol; display: none; }
 body.mobile .mp--open.player--remote #volWrap:not([hidden]) { display: flex; width: auto; gap: 10px; }
@@ -505,9 +543,11 @@ body.mobile .mrow__sub { overflow: hidden; text-overflow: ellipsis; white-space:
 body.mobile .mrow__title { color: var(--text-bright); font-size: 16px; }
 body.mobile .mrow__sub { margin-top: 2px; color: var(--text-dim); font-size: 13.5px; }
 body.mobile .mrow.row--current .mrow__title { color: var(--green); }
+body.mobile .mrow.row--current { background: rgba(120, 200, 140, 0.12); }
+body.mobile .mrow.row--current:active { background: rgba(120, 200, 140, 0.18); }
 /* A song kept on the phone: a small golden arrow before the artist. */
 body.mobile .mrow__mark { display: inline-flex; vertical-align: -2px; margin-right: 4px; color: #f5be3c; }
-body.mobile .mrow__mark svg { width: 14px; height: 14px; }
+body.mobile .mrow__mark .icon { width: 14px; height: 14px; }
 
 body.mobile .mrow__more,
 body.mobile .mrow > .act {
@@ -651,7 +691,7 @@ body.mobile .search-filter__btn {
 }
 body.mobile .search-filter__btn--on { background: var(--accent); border-color: var(--accent); color: #fff; }
 body.mobile .results__col--off { display: none; }
-body.mobile .results__col { margin-top: 14px; overflow: visible; }
+body.mobile .results__col { margin-top: 14px; overflow: visible; width: auto; min-width: 0; max-width: none; }
 body.mobile .results__list { overflow: visible; padding: 4px; }
 body.mobile .result { min-height: 56px; gap: 12px; }
 body.mobile .result__icon,
@@ -661,7 +701,9 @@ body.mobile .result__meta { font-size: 13px; }
 body.mobile .result--song .act { width: 40px; height: 40px; }
 body.mobile .result:hover { background: none; }
 
-/* One playlist: the name, then its numbers, then Shuffle and Play side by side. */
+/* One playlist: the name, then its numbers, then Play at the left and the
+   others as icons at the right: Shuffle, Download, Share, Update (playlist.js
+   puts Update into this row), Edit Rules; the download note below them. */
 body.mobile .pl-top { padding: 4px 0 6px; background: none; backdrop-filter: none; }
 body.mobile .pl-head { margin-bottom: 10px; }
 body.mobile .pl-head .page__title { font-size: 26px; white-space: normal; }
@@ -669,11 +711,21 @@ body.mobile .pl-head__row { gap: 10px; }
 body.mobile .pl-meta { flex: 1 1 100%; font-size: 14px; }
 body.mobile .pl-head__row .toggle,
 body.mobile .pl-head__row .btn--play { height: 44px; border-radius: 22px; font-size: 15px; }
-/* Download: only its icon, golden while the playlist is kept on the phone. */
-body.mobile #plOffline { width: 44px; padding: 0; justify-content: center; }
-body.mobile #plOffline .icon { width: 20px; height: 20px; }
+body.mobile #plPlay { order: 1; padding: 0 24px 0 20px; }
+body.mobile #plShuffle { order: 2; margin-left: auto; }
+body.mobile #plOffline { order: 3; }
+body.mobile #plShare { order: 4; margin-left: 0; }
+body.mobile #plUpdate { order: 5; }
+/* The Update's popup: Added Songs above Removed Songs. */
+body.mobile .pl-update__lists { grid-template-columns: 1fr; }
+body.mobile .pl-update__list { max-height: 30vh; }
+body.mobile #plRules { order: 6; }
+body.mobile #plOfflineNote { order: 7; }
+body.mobile :is(#plShuffle, #plOffline, #plShare, #plUpdate, #plRules) { width: 44px; padding: 0; justify-content: center; flex: none; }
+body.mobile :is(#plShuffle, #plOffline, #plShare, #plUpdate, #plRules) .icon { width: 20px; height: 20px; }
+/* Download golden while the playlist is kept on the phone; Shuffle and Share green while on. */
 body.mobile #plOffline.toggle--on { color: #f5be3c; border-color: rgba(245, 190, 60, 0.5); background: rgba(245, 190, 60, 0.16); }
-body.mobile #plPlay { margin-left: auto; padding: 0 24px 0 20px; }
+body.mobile :is(#plShuffle, #plShare).toggle--on { background: rgba(120, 200, 140, 0.16); }
 body.mobile .pl-search-row { flex-wrap: wrap; gap: 6px; }
 body.mobile .pl-search-row .search-box { flex: 1 1 100%; height: 44px; }
 body.mobile .pick-banner { position: sticky; top: 0; z-index: 3; }
@@ -972,3 +1024,8 @@ body.mobile .admin__rule { font-size: 13px; }
 body.mobile .admin__rule { flex-direction: column; align-items: stretch; gap: 6px; }
 body.mobile .admin__form { max-width: none; }
 body.mobile .modal--admin-ips { width: auto; }
+
+/* A smart playlist's rules: field and comparison on one line, the value under them. */
+body.mobile .rules__row { grid-template-columns: 1fr 1fr auto; }
+body.mobile .rules__row > :nth-child(3) { grid-column: 1 / 3; grid-row: 2; }
+body.mobile .rules__row > :nth-child(4) { grid-column: 3; grid-row: 1; }

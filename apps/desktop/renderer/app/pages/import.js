@@ -89,6 +89,7 @@ const ImportPanel = {
   server: null,           // a download on the server: { id, single } of its batch
   retry: null,            // failed songs tried again: { indexes, sending, done, failedAgain }
   bulkInfo: { album: '', genre: '', subGenre: '' }, // given to every new song without one (_drawBulk)
+  updating: null,         // a playlist's Update (playlistUpdate.js): { id, name, url } of the playlist the songs go into
   _bulkEl: null,
 
   /** A list is being read or imported: single-link downloads wait. */
@@ -160,13 +161,34 @@ const ImportPanel = {
       this._setState('idle');
       return listing.probed;
     }
+    this._review(listing);
+    return null;
+  },
+
+  /**
+   * A playlist's "Update from source" (playlistUpdate.js): the list its check
+   * read, as the checklist, without reading it again. Read by the server
+   * (`server`): the songs ticked are downloaded there (start).
+   */
+  openUpdate(p, listing, server) {
+    if (this.state !== 'idle') return;
+    this._newRun();
+    this.updating = { id: p.id, name: p.name, url: p.source.url };
+    this._review({ ...listing, local: false, search: false, fromServer: !!server });
+  },
+
+  /** The checklist of a list read. */
+  _review(listing) {
     this.listing = listing;
+    // An Update: the songs the playlist has already are no news.
+    const target = this._updateTarget();
+    const inTarget = new Set(target ? target.entries.map((e) => e.songId) : []);
+    for (const it of listing.items) it.inTarget = !!(it.existing && inTarget.has(it.existing.id));
     this.checked = new Set(listing.items.filter((it) => !it.existing && it.status === 'ok').map((it) => it.index));
-    this.keepKnown = new Set(listing.items.filter((it) => it.existing).map((it) => it.index));
+    this.keepKnown = new Set(listing.items.filter((it) => it.existing && !it.inTarget).map((it) => it.index));
     this._resetName(listing.name);
     $('progressPanel').hidden = true;
     this._setState('review');
-    return null;
   },
 
   /**
@@ -283,6 +305,7 @@ const ImportPanel = {
     this.moveOriginals = false;
     this.bulkInfo = { album: '', genre: '', subGenre: '' };
     this._bulkEl = null;
+    this.updating = null;
     this._resetName('');
     this._setState('idle');
     this._setPending();
@@ -534,14 +557,23 @@ const ImportPanel = {
   },
 
   _knownItems() {
-    return this.listing ? this.listing.items.filter((it) => it.existing) : [];
+    return this.listing ? this.listing.items.filter((it) => it.existing && !it.inTarget) : [];
   },
 
-  /** A playlist of the same name, which the songs would be added to (see merge). */
+  /** The playlist an Update goes into, while it exists and the import keeps its name. */
+  _updateTarget() {
+    const u = this.updating;
+    const p = u && Store.playlist(u.id);
+    return p && (!this.name || this._finalName() === u.name) ? p : null;
+  },
+
+  /** A playlist of the same name, which the songs would be added to (see merge); an Update's own. */
   _takenPlaylist() {
     if (!this._makesPlaylist()) return null;
+    const target = this._updateTarget();
+    if (target) return target;
     const name = this._finalName().toLowerCase();
-    return Store.library.playlists.find((p) => p.name.toLowerCase() === name) || null;
+    return Store.library.playlists.find((p) => !p.isRuled && p.name.toLowerCase() === name) || null;
   },
 
   /** Local files (see optionalList) only make a playlist when "Create new Playlist" is ticked. */
@@ -554,7 +586,8 @@ const ImportPanel = {
   },
 
   _resetName(name) {
-    this.name = name || '';
+    // An Update keeps the playlist's own name, whatever its source calls itself now.
+    this.name = (this.updating && Store.playlist(this.updating.id) ? this.updating.name : name) || '';
     this.editingName = false;
     this.createList = false;
     this.playlistIds = [];
@@ -710,7 +743,11 @@ const ImportPanel = {
     const box = clear($('importWarnings'));
     const rows = [];
     const taken = this.state === 'saving' || this._saved() ? null : this._takenPlaylist();
-    if (taken) {
+    if (taken && taken === this._updateTarget()) {
+      rows.push(h('div.import__warning',
+        h('span.import__warn-icon', '!'),
+        h('div', `Updating "${taken.name}": the songs it does not have yet are added to it.`)));
+    } else if (taken) {
       const tick = h('input', { type: 'checkbox', checked: this.merge });
       tick.addEventListener('change', () => {
         this.merge = tick.checked;
@@ -753,7 +790,10 @@ const ImportPanel = {
     if (this.state === 'review') {
       const items = this._newItems();
       if (!items.length) {
-        list.appendChild(h('div.import__empty', 'Every song of this list is already in your library (see above).'));
+        const target = this._updateTarget();
+        list.appendChild(h('div.import__empty', target && !this._knownItems().length
+          ? `Nothing new: "${target.name}" has every song of its source already.`
+          : 'Every song of this list is already in your library (see above).'));
         return;
       }
       const frag = document.createDocumentFragment();
@@ -1011,7 +1051,7 @@ const ImportPanel = {
     h('span.import__num', String(it.index + 1)),
     this._cover(it),
     h('span.import__text',
-      h('span.import__title', { title: name }, name),
+      h('span.import__title-row', h('span.import__title', { title: name }, name), this._lyricsBadge(it, st)),
       sub ? h('span.import__sub' + (subBad ? '.import__sub--bad' : ''), sub) : null,
       info ? h('span.import__sub.import__info', { title: info }, info) : null),
     it.trim ? h('span.import__flag.import__flag--trim', 'trimmed') : null,
@@ -1031,6 +1071,25 @@ const ImportPanel = {
           h('button.btn.btn--primary', { type: 'button', title: 'Save this song now', onclick: () => this.finishOne(it.index) }, 'Finish this song'))));
     }
     return frame;
+  },
+
+  /** After a downloaded song's title (4.0.1): whether lyrics were found for it, once looked up. */
+  _lyricsBadge(it, st) {
+    const l = it.lyrics;
+    if (!l || !['ready', 'saving'].includes(st) || !['found', 'none'].includes(l.state)) return null;
+    return LyricsEdit.badge(l.state === 'found');
+  },
+
+  /** A song just downloaded (or prepared): its lyrics looked up by its names, its frame redrawn when known. */
+  _lookLyrics(it) {
+    if (!it.lyrics) it.lyrics = AddPage.newLyrics(() => this._redrawFrame(it, false));
+    if (it.lyrics && it.media && it.meta) AddPage.lookLyrics(it.lyrics, it.meta, it.media.duration);
+  },
+
+  /** Lyrics written for the song in Add Songs, moved to the song as trimmed; null when none were. */
+  _ownLyrics(it) {
+    if (!it.lyrics || !it.lyrics.own) return null;
+    return LyricsEdit.cut(it.lyrics.own, it.trim ? it.trim.start : 0, it.trim ? it.trim.end : it.media.duration);
   },
 
   /**
@@ -1063,6 +1122,7 @@ const ImportPanel = {
       artistFromChannel: it.artistFromChannel,
       sourceKey: it.song ? it.song.key : '',
       sourceUrl: it.song ? it.song.url : '',
+      lyrics: it.lyrics || null,
     });
     body.closest('.import__frame').scrollIntoView({ block: 'nearest' });
   },
@@ -1090,10 +1150,14 @@ const ImportPanel = {
     const it = this.included.find((x) => x.index === this.openIndex);
     const result = AddPage.closeEmbedded();
     this.openIndex = null;
-    if (!keep || !it || !result) return;
-    if (result.meta.title) it.meta = result.meta;
-    const whole = result.start < 0.01 && result.end > it.media.duration - 0.01;
-    it.trim = whole ? null : { start: result.start, end: result.end };
+    if (!it || !result) return;
+    if (keep) {
+      if (result.meta.title) it.meta = result.meta;
+      const whole = result.start < 0.01 && result.end > it.media.duration - 0.01;
+      it.trim = whole ? null : { start: result.start, end: result.end };
+    }
+    // Looked up while renamed in the editor: by the names it keeps.
+    this._lookLyrics(it);
   },
 
   // ---- importing ----
@@ -1106,9 +1170,23 @@ const ImportPanel = {
       return it.status === 'ok' && (everything || this.checked.has(it.index));
     });
     if (!chosen.length) return;
-    await this._run(chosen, {
-      source: { url: l.sourceUrl, kind: String(l.source || '').toLowerCase() },
-    });
+    const source = { url: l.sourceUrl, kind: String(l.source || '').toLowerCase() };
+    if (l.fromServer) {
+      // An Update read by the server: the songs ticked go there as a batch
+      // that keeps the link, shown in the frames as any of the server's.
+      const updating = this.updating;
+      this._reset();
+      this.updating = updating;
+      await ServerImport._create({
+        items: chosen.map((it) => ({
+          url: it.url, title: it.title, duration: it.duration, key: it.key, meta: it.meta, existing: it.existing ? it.existing.id : undefined,
+        })),
+        name: l.name,
+        source,
+      });
+      return;
+    }
+    await this._run(chosen, { source });
   },
 
   /**
@@ -1209,6 +1287,7 @@ const ImportPanel = {
       sourceUrl: it.song.url,
       sourceKey: it.song.key,
       originalPath: it.song.originalPath || '',
+      lyrics: this._ownLyrics(it),
     };
   },
 
@@ -1384,8 +1463,9 @@ const ImportPanel = {
       return;
     }
     const id = summary.playlistId;
-    const head = local ? `Local files added to playlist "${summary.name}"` : `Playlist "${summary.name}" imported`;
-    toast(`${head}: ${parts.join(', ') || 'nothing imported'}`, kind,
+    const update = !!this.updating && id === this.updating.id;
+    const head = local ? `Local files added to playlist "${summary.name}"` : `Playlist "${summary.name}" ${update ? 'updated' : 'imported'}`;
+    toast(`${head}: ${parts.join(', ') || (update ? 'nothing new' : 'nothing imported')}`, kind,
       id ? { label: 'Open playlist', onClick: () => Store.playlist(id) && Nav.openPlaylist(id) } : null);
   },
 
@@ -1541,6 +1621,7 @@ const ImportPanel = {
       it.meta = x.meta && x.meta.title ? { ...x.meta } : { artist: '', title: x.title, mix: '' };
       this._giveBulk(it);
       it.artistFromChannel = !!x.artistFromChannel;
+      this._lookLyrics(it);
     }
     return it;
   },
@@ -1583,6 +1664,20 @@ const ImportPanel = {
       const failed = batch.items.find((x) => x.state === 'failed');
       ServerImport.touch();
       window.flow.serverDownloads('cancel').catch(() => {});
+      // An Update: the library's songs its playlist lacks still go into it.
+      const target = this._updateTarget();
+      if (target) {
+        const inList = new Set(target.entries.map((e) => e.songId));
+        const missing = [...new Set(this.included.map((it) => it.existingId).filter((id) => id && !inList.has(id)))];
+        this._reset();
+        if (missing.length) {
+          window.flow.addSongsToPlaylist(target.id, missing)
+            .then(() => toast(`Playlist "${target.name}" updated: ${missing.length} from your library`, 'success'))
+            .catch((err) => toast(err.message, 'error'));
+        } else if (failed) toast(`Nothing could be downloaded: ${failed.error || 'failed'}`, 'error');
+        else toast(`"${target.name}" is up to date: its source has no songs it lacks.`, 'info');
+        return true;
+      }
       this._reset();
       toast(failed ? `Nothing could be downloaded: ${failed.error || 'failed'}` : 'Every song of this link is already in your library.', failed ? 'error' : 'info');
       return true;
@@ -1639,6 +1734,12 @@ const ImportPanel = {
       // The batch may be gone (cancelled on another device): the panel follows.
       ServerImport.poll();
       return;
+    }
+    // Lyrics written for it here go to the song the server saved.
+    const lines = this._ownLyrics(it);
+    if (lines && r.song && r.song.id) {
+      window.flow.setLyrics(r.song.id, lines, true)
+        .catch((err) => toast(`The lyrics of "${Util.songLine(meta)}" could not be saved: ${err.message}`, 'error'));
     }
     if (this.job !== job) return;
     this._record({
@@ -1721,6 +1822,7 @@ const ImportPanel = {
         it.meta = p.song.meta && p.song.meta.title ? { ...p.song.meta } : { artist: '', title: p.song.title, mix: '' };
         this._giveBulk(it);
         it.artistFromChannel = p.song.artistFromChannel;
+        this._lookLyrics(it);
         this._setPending();
       }
       if (p.status === 'library') {

@@ -63,16 +63,38 @@ const PlaylistPage = {
       }
       attempt(() => window.flow.setOffline(this.id, on));
     };
-    $('plShare').onclick = () => {
+    // An imported playlist's Update (4.0): its source read again in the background (playlistUpdate.js).
+    $('plUpdate').onclick = () => PlaylistUpdate.check(Store.playlist(this.id));
+    $('plRules').onclick = () => RulesEditor.open({ playlist: Store.playlist(this.id) });
+    // The phone has Update as an icon in the row below the name, with the others (mobile.css orders them).
+    if (Store.uiMode === 'mobile') $('plShare').after($('plUpdate'));
+    $('plShare').onclick = async () => {
       const p = Store.playlist(this.id);
       if (!p) return;
-      if (p.isShared) attempt(() => window.flow.setFollowing(p.id, !Store.isFollowing(p.id)));
-      else attempt(() => window.flow.setPlaylistShared(p.id, !p.shared));
+      if (p.isShared) {
+        attempt(() => window.flow.setFollowing(p.id, !Store.isFollowing(p.id)));
+        return;
+      }
+      // The phone's is only an icon: it asks either way, what it is about to do.
+      if (Store.uiMode === 'mobile') {
+        const ok = await confirmDialog(p.shared ? {
+          title: 'Stop sharing',
+          message: `Do you want to stop sharing your playlist ${p.name}? The other profiles on this server no longer see it.`,
+          confirmLabel: 'Confirm',
+        } : {
+          title: 'Share',
+          message: `Do you want to share your playlist ${p.name} with other profiles on this server?`,
+          confirmLabel: 'Confirm',
+        });
+        if (!ok) return;
+      }
+      attempt(() => window.flow.setPlaylistShared(p.id, !p.shared));
     };
     Store.onServer(() => {
       if (Nav.page === 'playlist') {
         this._drawOffline();
         this._drawShare();
+        this._drawUpdate();
       }
     });
     $('plPickDone').onclick = () => {
@@ -141,8 +163,15 @@ const PlaylistPage = {
     const view = this._view(id);
     let rows = Store.rowsOf(id)
       .filter((r) => Util.matches(view.filter, r.song.title, r.song.artist, r.song.mix, r.song.album, r.song.genre, r.song.subGenre));
-    if (!SmartLists.isSmart(id)) rows = rows.sort((a, b) => b.addedAt - a.addedAt);
+    if (!this._picksItself(id)) rows = rows.sort((a, b) => b.addedAt - a.addedAt);
     return Util.sortRows(rows, view.sort, (r, k) => this._sortValue(r, k));
+  },
+
+  /** A listening trend list or a smart playlist: its songs are picked for it, in its own order, never by hand. */
+  _picksItself(id) {
+    if (SmartLists.isSmart(id)) return true;
+    const p = Store.playlist(id);
+    return !!(p && p.isRuled);
   },
 
   /** The names of your own playlists holding a song, as one text (a listening trend list's From Playlist column). */
@@ -161,7 +190,14 @@ const PlaylistPage = {
     const all = Store.rowsOf(this.id);
     const total = all.reduce((sum, r) => sum + (r.song.duration || 0), 0);
     const by = p.isShared && p.ownerName ? `Shared by ${p.ownerName} · ` : '';
-    $('plMeta').textContent = `${by}${Util.plural(all.length, 'song')} · ${Util.fmtClock(total)}`;
+    $('plMeta').textContent = `${by}${p.isRuled ? 'Smart playlist · ' : ''}${Util.plural(all.length, 'song')} · ${Util.fmtClock(total)}`;
+    $('plMeta').title = p.isRuled ? PlaylistRules.describe(p.rules) : '';
+    $('plRules').hidden = !p.isRuled;
+    if (p.isRuled) {
+      $('plRules').title = `${PlaylistRules.describe(p.rules)}. Click to change the rules.`;
+      $('plRules').innerHTML = Store.uiMode === 'mobile' ? Icons.pulse : `${Icons.pulse}<span>Edit Rules</span>`;
+      $('plRules').setAttribute('aria-label', 'Edit Rules');
+    }
     $('plSearch').placeholder = `Search in ${p.name}`;
 
     const target = this.pickFor ? Store.playlist(this.pickFor) : null;
@@ -170,18 +206,19 @@ const PlaylistPage = {
 
     this._drawOffline();
     this._drawShare();
+    this._drawUpdate();
     this.renderTable();
   },
 
   /**
-   * Top right of the title: your own playlist gets "Share" (the
+   * In the row below the title, after Download: your own playlist gets "Share" (the
    * other profiles on the server can see and follow it); one another profile
    * shares gets "Follow". Both need a server with profiles.
    */
   _drawShare() {
     const p = Store.playlist(this.id);
     const btn = $('plShare');
-    const mine = !!p && !p.isAll && !p.isFrom && !p.isFavourites && !p.isSmart && !p.isShared && !p.isDevice;
+    const mine = !!p && !p.isAll && !p.isFrom && !p.isFavourites && !p.isSmart && !p.isShared && !p.isDevice && !p.isRuled && !p.isGuest;
     const can = !!p && Store.canShare() && (mine || p.isShared);
     btn.hidden = !can;
     if (!can) return;
@@ -191,7 +228,39 @@ const PlaylistPage = {
     btn.title = mine
       ? 'Let the other profiles on this server see this playlist and follow it'
       : `Follow this playlist: it shows in the menu under Followed Playlists`;
-    btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span><span>${mine ? 'Share' : 'Following'}</span>`;
+    if (Store.uiMode === 'mobile') {
+      // Only the icon on the phone, green while shared (or followed).
+      btn.innerHTML = Icons.share;
+      btn.setAttribute('aria-label', mine ? (on ? 'Shared' : 'Share') : (on ? 'Following' : 'Follow'));
+    } else {
+      btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.share}<span>${mine ? 'Share' : 'Following'}</span>`;
+    }
+  },
+
+  /**
+   * Update, for a playlist of your own imported from a link (its source):
+   * where something can download (yt-dlp here, or the server's downloads). Top right of the
+   * title (the phone's in the row below it).
+   */
+  _drawUpdate() {
+    const p = Store.playlist(this.id);
+    const can = !!(p && p.source && /^https?:\/\//i.test(p.source.url || '') && !p.isShared && !p.isSmart && !p.isDevice && !p.isFavourites)
+      && ((Store.can('downloadHere') && DownloadsHelp.here) || ServerImport.available);
+    const btn = $('plUpdate');
+    btn.hidden = !can;
+    if (!can) return;
+    // Light blue with its icon turning while the link is read.
+    const busy = PlaylistUpdate.isChecking(p.id);
+    btn.classList.toggle('pl-update--busy', busy);
+    btn.title = busy ? `Checking ${p.source.url} for changes...`
+      : `Look for the songs added to or removed from ${p.source.url} since "${p.name}" was imported`;
+    // The phone's is only the icon, as its Download. Drawn once, so a turning icon keeps turning.
+    const html = Store.uiMode === 'mobile' ? Icons.refresh : `${Icons.refresh}<span>Update from source</span>`;
+    if (btn.dataset.html !== html) {
+      btn.innerHTML = html;
+      btn.dataset.html = html;
+    }
+    btn.setAttribute('aria-label', 'Update from source');
   },
 
   /**
@@ -205,7 +274,7 @@ const PlaylistPage = {
     const btn = $('plOffline');
     const note = $('plOfflineNote');
     // A playlist another profile shares can be downloaded once it is followed.
-    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && !p.isDevice && (!p.isShared || Store.isFollowing(p.id));
+    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && !p.isRuled && !p.isDevice && !p.isGuest && (!p.isShared || Store.isFollowing(p.id));
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;
@@ -245,8 +314,9 @@ const PlaylistPage = {
       else if (favourites) $('plEmptyText').textContent = 'No favourites yet. Click the star on any song to add it here.';
       else if (smart) $('plEmptyText').textContent = 'Nothing here yet. This list fills itself as you listen to the songs in your playlists.';
       else if (p.isDevice) $('plEmptyText').textContent = `No songs on ${Store.here} yet. A song's or a playlist's Download keeps it here.`;
+      else if (p.isRuled) $('plEmptyText').textContent = 'No song matches its rules yet. Edit Rules changes them.';
       else $('plEmptyText').textContent = 'This playlist is empty.';
-      $('plEmptyAction').hidden = smart || favourites || !!p.isShared || !!p.isDevice;
+      $('plEmptyAction').hidden = smart || favourites || !!p.isShared || !!p.isDevice || !!p.isRuled;
       $('plEmptyAction').textContent = this.id === 'all' ? 'Add Songs' : 'Add songs from All Songs';
     }
     $('plFiltered').textContent = view.filter && !empty ? `Showing ${rows.length} of ${count}` : '';
@@ -289,9 +359,15 @@ const PlaylistPage = {
   _touchRows(pickTarget, pickSet, smartList) {
     const listId = this.id;
     const p = Store.playlist(listId);
-    const readOnly = !!(p && (p.isShared || p.isDevice));
+    const readOnly = !!(p && (p.isShared || p.isDevice || p.isGuest));
     // Downloaded Songs: queued, or deleted from this device; nothing else (some only play).
-    const actions = p && p.isDevice ? [
+    // Another server's songs (a guest): queued there.
+    const actions = p && p.isGuest ? [
+      { icon: Icons.plus, label: 'Add to Queue', short: 'Queue', run: (rows) => {
+        for (const r of rows) Player.addToQueue(r.song.id);
+        toast(`${Util.plural(rows.length, 'song')} added to the queue`, 'success');
+      } },
+    ] : p && p.isDevice ? [
       { icon: Icons.plus, label: 'Add to Queue', short: 'Queue', run: (rows) => {
         for (const r of rows) Player.addToQueue(r.song.id);
         toast(`${Util.plural(rows.length, 'song')} added to the queue`, 'success');
@@ -355,7 +431,7 @@ const PlaylistPage = {
   },
 
   /**
-   * The columns between Artist and Duration: Album, Mix, Genre and Info as
+   * The columns between Artist and Duration: Album, Genre, Info and Mix as
    * Settings shows them, and a listening trend list's From Playlist.
    */
   _extraColumns(smartList) {
@@ -363,22 +439,22 @@ const PlaylistPage = {
     const muted = (text) => h('span.muted-text', { title: text }, text);
     return [
       set.colAlbum && { key: 'album', label: 'Album', cls: 'col-album', render: (r) => muted(r.song.album || '') },
-      set.colMix !== false && { key: 'mix', label: 'Mix', cls: 'col-mix', render: (r) => muted(r.song.mix) },
       set.colGenre && { key: 'genre', label: 'Genre', cls: 'col-genre', render: (r) => muted(r.song.genre || '') },
       set.colSubGenre && { key: 'subGenre', label: 'Info', cls: 'col-subgenre', render: (r) => muted(r.song.subGenre || '') },
+      set.colMix && { key: 'mix', label: 'Mix', cls: 'col-mix', render: (r) => muted(r.song.mix) },
       smartList && { key: 'from', label: 'From Playlist', cls: 'col-from', render: (r) => muted(this._from(r.song)) },
     ].filter(Boolean);
   },
 
   /**
    * Each column's share of the width left (the stylesheet's --w-<column>):
-   * Title 45, Artist 35, Album 25, Mix 20, Genre 15, Info 15, From Playlist 22 of
+   * Title 45, Artist 35, Album 25, Genre 15, Info 15, Mix 20, From Playlist 22 of
    * what the columns shown add up to, so every one shown makes the others
    * a little narrower. Title takes what is left.
    */
   _shareColumns(keys) {
     const weights = {
-      title: 45, artist: 35, album: 25, mix: 20, genre: 15, subGenre: 15, from: 22,
+      title: 45, artist: 35, album: 25, genre: 15, subGenre: 15, mix: 20, from: 22,
     };
     const shown = ['title', 'artist', ...keys];
     const total = shown.reduce((sum, k) => sum + weights[k], 0);
@@ -457,6 +533,8 @@ const PlaylistPage = {
   /** More's buttons for a song (on the phone, its action sheet). */
   _moreButtons(song) {
     const listId = this.id;
+    // Another server's song (a guest in its session): it plays and queues there, nothing more.
+    if (song.foreign) return [];
     // A song here that is not the server's (Downloaded Songs) only plays, and can be deleted from here.
     if (song.isDevice) {
       return [iconButton('act.act--red', Icons.x, `Delete from ${Store.here}`, () => this.deleteFromDevice([song]))];
@@ -473,13 +551,13 @@ const PlaylistPage = {
     ];
     if (Store.isAllSongs(listId)) {
       buttons.push(iconButton('act.act--red', Icons.x, 'Delete Song', () => this.deleteSong(song)));
-    } else if (SmartLists.isSmart(listId)) {
+    } else if (this._picksItself(listId)) {
       buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist(s)', () => this.removeFromLists(song)));
     } else if (listId !== FAVOURITES_ID && !readOnly) {
       buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist', () => this.removeFromList(song)));
     }
     // All Songs and the listening trend lists: put the song into playlists from here, the leftmost button.
-    if (Store.isAllSongs(listId) || SmartLists.isSmart(listId)) buttons.unshift(SongActions.playlistButton(song));
+    if (Store.isAllSongs(listId) || this._picksItself(listId)) buttons.unshift(SongActions.playlistButton(song));
     return buttons;
   },
 
@@ -540,8 +618,10 @@ const PlaylistPage = {
     $('plPlay').disabled = !p || !Store.rowsOf(this.id).length;
     $('plShuffle').classList.toggle('toggle--on', Player.queue.shuffle);
     $('plShuffle').setAttribute('aria-pressed', String(Player.queue.shuffle));
-    $('plShuffle').innerHTML = `<span class="toggle__box">${Player.queue.shuffle ? Icons.check : ''}</span>`
-      + '<img class="toggle__img" src="../images/shuffle.png" alt="" /><span>Shuffle</span>';
+    // The phone's is only the icon, green while on.
+    $('plShuffle').innerHTML = Store.uiMode === 'mobile' ? Icons.shuffle
+      : `<span class="toggle__box">${Player.queue.shuffle ? Icons.check : ''}</span>${Icons.shuffle}<span>Shuffle</span>`;
+    $('plShuffle').setAttribute('aria-label', 'Shuffle');
 
     for (const tr of document.querySelectorAll('#plTable tbody tr, #plTableList .mrow')) {
       const current = tr.dataset.id === Player.currentId;

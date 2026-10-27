@@ -600,6 +600,10 @@ const Visualizer = {
    *   { type: 'choice', key, label, choices: [[value, label], ...] }  (label '': the pills alone)
    *       color: { value, key, presets }: after the pills a swatch, choosing
    *       `value` (lit while it is chosen) and opening a picker for `key`
+   *       pick: { value, key, name, square?, max }: the pill `value` opens the
+   *       file dialog for a picture (_pickPicture), chosen with it once one is
+   *       picked; its path in `key`
+   *       group: items beside it, framed as a box's group
    * Any of them with when: (settings) => bool, greyed out while it is false.
    */
   _cfgPanel(title, items) {
@@ -692,12 +696,20 @@ const Visualizer = {
       if (item.type === 'choice') {
         const pills = h('div.viz-cfg__pills', { role: 'group', 'aria-label': item.label });
         for (const [value, text] of item.choices) {
+          const pick = item.pick && item.pick.value === value ? item.pick : null;
           pills.appendChild(h('button.viz-cfg__pill', {
             type: 'button',
+            title: pick ? 'Choose a picture' : null,
             dataset: { value },
-            onclick: () => {
-              Store.saveSettings({ [item.key]: value });
+            onclick: async () => {
               pickers.forEach((p) => p.close());
+              if (pick) {
+                const file = await this._pickPicture(pick);
+                if (!file) return;
+                Store.saveSettings({ [item.key]: value, [pick.key]: file });
+              } else {
+                Store.saveSettings({ [item.key]: value });
+              }
               refresh();
             },
           }, text));
@@ -728,7 +740,9 @@ const Visualizer = {
             b.disabled = !enabled();
           }
         });
-        return h('div.viz-cfg__opt', item.label ? h('span.viz-cfg__label', item.label) : null, pills);
+        const opt = h('div.viz-cfg__opt', item.label ? h('span.viz-cfg__label', item.label) : null, pills);
+        if (!item.group) return opt;
+        return h('div.viz-cfg__item.viz-cfg__bumps', opt, h('div.viz-cfg__ride', item.group.map((g) => build(g, enabled))));
       }
       return null;
     };
@@ -741,6 +755,46 @@ const Visualizer = {
     };
     document.addEventListener('pointerdown', this._cfgOutside, true);
     return panel;
+  },
+
+  /**
+   * A picture for a visualizer: the file dialog (Explorer, the phone's
+   * picker), the picture read, cut to its middle square (square) and made at
+   * most `max` pixels across, and kept by Flow as a JPEG (window.flow.
+   * saveVizPicture, under `name`). Its path, or null when none was picked.
+   */
+  async _pickPicture({ name, square = false, max }) {
+    const file = await new Promise((resolve) => {
+      const input = h('input', { type: 'file', accept: 'image/*', hidden: true });
+      const done = (f) => {
+        input.remove();
+        resolve(f);
+      };
+      input.addEventListener('change', () => done(input.files[0] || null));
+      input.addEventListener('cancel', () => done(null));
+      document.body.appendChild(input);
+      input.click();
+    });
+    if (!file) return null;
+    try {
+      const img = await createImageBitmap(file);
+      const sw = square ? Math.min(img.width, img.height) : img.width;
+      const sh = square ? sw : img.height;
+      const k = Math.min(1, max / Math.max(sw, sh));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(sw * k));
+      c.height = Math.max(1, Math.round(sh * k));
+      const ctx = c.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, c.width, c.height);
+      img.close();
+      const blob = await new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', 0.92));
+      if (!blob) throw new Error('unreadable');
+      return await window.flow.saveVizPicture(name, new Uint8Array(await blob.arrayBuffer()));
+    } catch {
+      toast(`"${file.name}" could not be opened as a picture.`, 'error');
+      return null;
+    }
   },
 
   /**

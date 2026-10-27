@@ -35,7 +35,15 @@
 //   GET  /api/admin/signins                  the failed sign-ins, newest first: { failures }
 //   POST /api/admin/signins/clear
 //   GET  /api/admin/rules                    { profileCreation: 'anyone' | 'admins',
-//   POST /api/admin/rules { ... }              songDelete: 'anyone' | 'owner' }
+//   POST /api/admin/rules { ... }              songDelete: 'anyone' | 'owner', guests: true | false,
+//                                            discovery: whether the network search is answered
+//                                            (not set here) }
+//   GET  /api/admin/backups                  { backups: [{ name, createdAt, reason, size, songs,
+//                                            playlists, profiles }], keep }, newest first
+//   POST /api/admin/backups/make             one made now: { backup }
+//   POST /api/admin/backups/restore { name } master only: the library and the profiles put
+//                                            back as they were (a backup of now made first):
+//                                            { songs, back, missing, kept, profiles }
 //   POST /api/admin/password { current, password } or { current, remove }
 //                                            master only: the server password changed (or taken
 //                                            away, levels 1 and 2). Every device is signed out;
@@ -49,19 +57,20 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const { PUBLIC_LEVEL, passwordProblem } = require('@flow/core/password');
 const { checkPassword, passwordEntry } = require('./config');
+const { KEEP } = require('@flow/core/backup');
 
 // The overview's slow parts (the music folder's size, yt-dlp's version) are
 // worked out at most this often.
 const OVERVIEW_EVERY = 10 * 60 * 1000;
 
 /**
- * deps: { config, library, downloads, live, sessions, activity, tools,
+ * deps: { config, library, downloads, live, sessions, backups, activity, tools,
  * version, startedAt, throttle, issueToken, createProfile(name, pin, { ip,
  * device }), log, HttpError, sendJson, readJsonBody, allProfiles }. Returns route(req, res, p, me),
  * which answers (404 for a path it does not know); `me` is the admin asking.
  */
 function createAdminRoutes({
-  config, library, downloads, live, sessions = null, activity, tools = null, version = '', startedAt = Date.now(),
+  config, library, downloads, live, sessions = null, backups = null, activity, tools = null, version = '', startedAt = Date.now(),
   throttle = null, issueToken = null, createProfile = null, log, HttpError, sendJson, readJsonBody, allProfiles,
 }) {
   let slow = { at: 0, musicBytes: 0, ytdlp: '' };
@@ -82,7 +91,12 @@ function createAdminRoutes({
       }
       const bin = tools && tools.ytdlp();
       const ytdlp = !bin ? '' : await new Promise((resolve) => {
-        execFile(bin, ['--version'], { timeout: 15000 }, (err, out) => resolve(err ? '?' : String(out).trim().slice(0, 40)));
+        // A file that is no program throws at once: the overview still answers.
+        try {
+          execFile(bin, ['--version'], { timeout: 15000 }, (err, out) => resolve(err ? '?' : String(out).trim().slice(0, 40)));
+        } catch {
+          resolve('?');
+        }
       });
       slow = { at: Date.now(), musicBytes, ytdlp };
       slowRun = null;
@@ -236,14 +250,38 @@ function createAdminRoutes({
         const patch = {};
         if (body.profileCreation !== undefined) patch.profileCreation = body.profileCreation === 'admins' ? 'admins' : 'anyone';
         if (body.songDelete !== undefined) patch.songDelete = body.songDelete === 'owner' ? 'owner' : 'anyone';
+        if (body.guests !== undefined) patch.guests = body.guests === true;
         config.set(patch);
         log(`${me.name} set the server's rules: ${JSON.stringify(patch)}`);
       } else if (!isGet) throw new HttpError(404, 'Nothing here.');
       const cfg = config.get();
-      return sendJson(res, 200, { profileCreation: cfg.profileCreation, songDelete: cfg.songDelete });
+      return sendJson(res, 200, {
+        profileCreation: cfg.profileCreation, songDelete: cfg.songDelete, guests: cfg.guests, discovery: cfg.discovery,
+      });
     }
     if (p === '/api/admin/password' && req.method === 'POST') return changePassword(res, body, me, { entry, ip });
+    if (p.startsWith('/api/admin/backups') && backups) return backupRoute(req, res, p, me, body);
     throw new HttpError(404, 'Nothing here.');
+  }
+
+  function backupRoute(req, res, p, me, body) {
+    if (p === '/api/admin/backups' && req.method === 'GET') return sendJson(res, 200, { backups: backups.list(), keep: KEEP });
+    if (p === '/api/admin/backups/make' && req.method === 'POST') {
+      const backup = backups.make('manual');
+      log(`${me.name} made a backup: ${backup.name}`);
+      return sendJson(res, 200, { backup });
+    }
+    if (p === '/api/admin/backups/restore' && req.method === 'POST') {
+      if (!me.master) throw new HttpError(403, 'Only the master admin can restore a backup.');
+      let r;
+      try {
+        r = backups.restore(String(body.name || ''));
+      } catch (err) {
+        throw new HttpError(404, err.message);
+      }
+      log(`${me.name} restored the backup ${body.name}`);
+      return sendJson(res, 200, { ...r, rev: library.rev });
+    }
   }
 
   /** The master admin changes the server password, or takes it away (levels 1 and 2). */

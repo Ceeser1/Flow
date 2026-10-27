@@ -23,7 +23,8 @@
 // Flow, so the page plays.
 //
 // Song transitions are the player's own (setTransition; canFade is false, the
-// page does not fade): it moves on by itself, so it fades by itself too.
+// page does not fade): it moves on by itself, so it fades by itself too. So is
+// Settings' Equalizer (setSoundEq): the page does not hear the sound.
 
 // A state's place within this of where the page has it is taken this much (see onState).
 const SMOOTH_MAX = 0.25;
@@ -65,7 +66,7 @@ function createAudioEngine({
   let jumped = true;      // loaded, sought or moved on since the last state: its place is taken as it is
   let following = null;   // the timer asking for the place while follow() is on
   let nexts = 0;
-  const sent = { rate: 1, gain: null, volume: null, meta: '', next: '', sleep: 0 };
+  const sent = { rate: 1, gain: null, volume: null, meta: '', next: '', sleep: 0, soundEq: null };
 
   // Still playing from before this page (or loaded, paused): taken as it is.
   let current = null;
@@ -401,6 +402,19 @@ function createAudioEngine({
       if (ms === sent.transition) return;
       sent.transition = ms;
       op({ op: 'transition', ms });
+    },
+
+    /**
+     * Settings' Equalizer, shaped by the player itself: `curve` { hz, db },
+     * the curve's gain (dB) at those frequencies; none (empty) for flat.
+     */
+    setSoundEq(curve) {
+      const hz = (curve && curve.hz) || [];
+      const db = (curve && curve.db) || [];
+      const k = JSON.stringify([hz, db]);
+      if (k === sent.soundEq) return;
+      sent.soundEq = k;
+      op({ op: 'soundEq', hz, db });
     },
 
     // Output devices are the phone's own business.

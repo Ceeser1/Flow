@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('flow', {
   onFolderScanned: (fn) => ipcRenderer.on('library:scanned', (_e, result) => fn(result)),
 
   createPlaylist: (name) => call('library:createPlaylist', name),
+  // Smart playlists (4.0): rules { match, conditions, sort, limit } (libraryModel cleanRules).
+  createSmartPlaylist: (name, rules) => call('library:createSmartPlaylist', { name, rules }),
+  setPlaylistRules: (id, rules) => call('library:setPlaylistRules', { id, rules }),
   renamePlaylist: (id, name) => call('library:renamePlaylist', { id, name }),
   deletePlaylist: (id, deleteSongs = false) => call('library:deletePlaylist', { id, deleteSongs }),
   setPlaylistShared: (id, shared) => call('library:setPlaylistShared', { id, shared }),
@@ -54,11 +57,15 @@ contextBridge.exposeInMainWorld('flow', {
   probe: (url) => call('download:probe', url),
   // `run` numbers the import task; its progress messages carry it.
   listImport: (url, run) => call('import:list', { url, run }),
+  // A playlist's Update: its link read in the background, no progress (main.js).
+  checkImport: (url) => call('import:check', { url }),
   // A song's name typed instead of a link: the uploads found (importer.search).
   searchSongs: (query, page) => call('search:songs', { query, page }),
   cancelSearch: () => call('search:cancel'),
   downloadImport: (items, opts, run) => call('import:download', { items, opts, run }),
   pickLocalFiles: () => call('local:pickFiles'),
+  // A visualizer's picture picked in its cogwheel (a JPEG's bytes): kept, its path back.
+  saveVizPicture: (name, bytes) => call('viz:savePicture', { name, bytes }),
   pickLocalFolder: () => call('local:pickFolder'),
   listLocal: (picked, run) => call('import:listLocal', { picked, run }),
   prepareLocal: (items, opts, run) => call('import:download', { items, opts, local: true, run }),
@@ -111,6 +118,35 @@ contextBridge.exposeInMainWorld('flow', {
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),
   finishSong: (job) => call('song:finish', job),
   lookupInfo: (song) => call('song:lookupInfo', song),
+  // A song's lyrics (4.0): { found, synced: [{ t, text }] | null, plain, instrumental }.
+  lyrics: (songId) => call('song:lyrics', songId),
+  // Lyrics written or edited here (4.0.1): lines [{ t, end, text }], or null to
+  // look them up again; server: songId is a server's song just saved there.
+  setLyrics: (songId, lines, server = false) => call('song:setLyrics', { songId, lines, server }),
+  // A song just downloaded, by its names: { artist, title, duration }.
+  lookupLyrics: (meta) => call('song:lookupLyrics', meta),
+  // Settings' Lyrics cache (4.0.1): { count, none, bytes, left }; Clear lyrics cache resolves them after.
+  lyricsStats: () => call('lyrics:stats'),
+  clearLyricsCache: () => call('lyrics:clear'),
+  // Lyrics kept, or the background lookups moved on (4.0.1).
+  onLyricsChanged: (fn) => ipcRenderer.on('lyrics:changed', () => fn()),
+  // LRCLIB (4.0.1): its search ({ q } or { title, artist, album, duration }),
+  // and lyrics written here published there ({ title, artist, album, duration, lines }).
+  searchLyrics: (params) => call('lyrics:search', params),
+  publishLyrics: (meta) => call('lyrics:publish', meta),
+  // Sharing the server by QR code (4.0): { link, code, name }; a flow://connect link
+  // connected to ({ name }); a QR code's squares ({ size, modules }).
+  shareLink: () => call('server:shareLink'),
+  // Away listens (a guest in another server's session): totals only.
+  recordAwayListen: (song, listened, duration) => call('library:recordAwayListen', { song, listened, duration }),
+  // A guest in another server's session (4.0): look for them, then join,
+  // session ({ body }), leave, songs, status, list.
+  guestLook: () => call('guest:look'),
+  guest: (action, args) => call('guest:call', { action, args }),
+  onGuestLive: (fn) => ipcRenderer.on('guest:live', (_e, ev) => fn(ev)),
+  onGuestChanged: (fn) => ipcRenderer.on('guest:changed', (_e, list) => fn(list)),
+  connectLink: (text) => call('server:connectLink', text),
+  qr: (text) => call('qr:encode', text),
   // Covers: files in Music\FlowPlayer\Covers (Store.coverSrc).
   wantCovers: (ids) => call('covers:want', ids),
   coverStats: () => call('covers:stats'),
@@ -119,4 +155,8 @@ contextBridge.exposeInMainWorld('flow', {
   // Add Songs: the cover of a song downloaded but not saved yet ({ file, version } or null).
   stagedCover: (cachePath) => call('covers:staged', cachePath),
   onCoverStaged: (fn) => ipcRenderer.on('covers:staged', (_e, info) => fn(info)),
+  // Backups of this computer's library.json (4.0): the list, one now, one put back.
+  backups: () => call('backups:list'),
+  makeBackup: () => call('backups:make'),
+  restoreBackup: (name) => call('backups:restore', name),
 });

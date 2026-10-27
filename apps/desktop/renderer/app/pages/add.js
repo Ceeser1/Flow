@@ -24,6 +24,10 @@ const AddPage = {
   // coloured in the waveform while the settings ask for them.
   segments: [],
   _source: null,     // { key, url } of the song in the editor, for those
+  // The lyrics of the song in the editor (4.0.1, newLyrics): a playlist's
+  // song's are its frame's (import.js), shown here while it is open.
+  lyrics: null,
+  _lyricsChain: null,
   slider: null,
   playlistIds: [],
   _stopAt: null,     // the preview stops here (the end handle), or null
@@ -127,8 +131,10 @@ const AddPage = {
       return;
     }
     if (!await this._clearForNew()) return;
+    // Another link than the one an Update put into the box: no Update.
+    if (ImportPanel.updating && (pick || url !== ImportPanel.updating.url)) ImportPanel.updating = null;
 
-    let kind = pick ? 'song' : this._linkKind(url);
+    let kind = pick ? 'song' : (ImportPanel.updating ? 'list' : this._linkKind(url));
     if (kind === 'ask') {
       kind = await this._askSongOrList(url);
       if (!kind) return;
@@ -188,8 +194,26 @@ const AddPage = {
     }
     this.media = media;
     this._progress({ title: probed.title, frac: 1, status: media.summary, cancel: false });
+    this.lyrics = this.newLyrics();
     this._openEditor();
+    this.lookLyrics(this.lyrics, this._names(), media.duration);
     this._lookupInfo();
+  },
+
+  /**
+   * A playlist's Update through a Flow Server that cannot read a link without
+   * downloading it (no "downloadCheck", playlistUpdate.js): its batch here,
+   * the songs the playlist has gained downloaded into it, the ones in the
+   * library already added to it.
+   */
+  async updatePlaylist(p) {
+    const url = p && p.source && p.source.url;
+    if (!url || !ServerImport.available) return;
+    Nav.show('add');
+    if (!await this._clearForNew()) return;
+    $('linkInput').value = url;
+    ImportPanel.updating = { id: p.id, name: p.name, url };
+    await ServerImport._create({ url, kind: 'list' });
   },
 
   /**
@@ -431,6 +455,8 @@ const AddPage = {
     this.peaks = null;
     this.segments = [];
     this._source = null;
+    this.lyrics = null;
+    this._drawLyrics();
     this.playlistIds = [];
     this._drawPlaylistButton();
     this._setPhase('idle');
@@ -526,6 +552,12 @@ const AddPage = {
     $('edArtist').addEventListener('input', () => {
       $('edArtistHint').hidden = true;
     });
+    // Renamed: its lyrics looked up again under the new names (not once written by hand).
+    for (const id of ['edArtist', 'edTitle']) {
+      $(id).addEventListener('change', () => {
+        if (this.lyrics && this.media) this.lookLyrics(this.lyrics, this._names(), this.media.duration);
+      });
+    }
 
     // The volume under the selection's length is the player's own: moving
     // either moves both, and the preview plays as loud as the music would.
@@ -564,9 +596,12 @@ const AddPage = {
    * file belongs to the import, which also keeps the cut and names: read them
    * back with closeEmbedded().
    */
-  openEmbedded(host, { media, meta, title, start, end, artistFromChannel, sourceKey = '', sourceUrl = '' }) {
+  openEmbedded(host, {
+    media, meta, title, start, end, artistFromChannel, sourceKey = '', sourceUrl = '', lyrics = null,
+  }) {
     this._stopPreview(true);
     this.embedded = true;
+    this.lyrics = lyrics;
     host.prepend(this.editorEl);
     this.media = media;
     this.probed = { title, guess: { ...meta, artistFromChannel } };
@@ -598,6 +633,7 @@ const AddPage = {
     this.peaks = null;
     this.segments = [];
     this._source = null;
+    this.lyrics = null;
     this.embedded = false;
     this._setPhase('idle');
     return result;
@@ -614,6 +650,7 @@ const AddPage = {
     $('edGenre').value = guess.genre || '';
     $('edSubGenre').value = guess.subGenre || '';
     $('edError').textContent = '';
+    this._drawLyrics();
     // Its cover, found right after the download (the note until then). In a
     // playlist's frame the frame shows it.
     const withCover = !this.embedded && !!m.path;
@@ -644,7 +681,9 @@ const AddPage = {
     $('waveStatus').textContent = 'Drawing waveform...';
     requestAnimationFrame(() => this._redraw());
     try {
-      const peaks = m.peaks ? await m.peaks() : await window.flow.peaks(m.path, m.duration);
+      // Kept with the song: the lyrics editor's waveform waits for the same one.
+      m.peaksRun = m.peaks ? m.peaks() : window.flow.peaks(m.path, m.duration);
+      const peaks = await m.peaksRun;
       if (this.media !== m) return;
       this.peaks = peaks;
       $('waveStatus').hidden = true;
@@ -653,6 +692,120 @@ const AddPage = {
       $('waveStatus').textContent = 'Could not draw the waveform, but the song can still be trimmed.';
     }
     this._redraw();
+  },
+
+  // ---- its lyrics (4.0.1) ----
+
+  /** The artist, title and mix in the boxes. */
+  _names() {
+    return {
+      artist: $('edArtist').value.trim(), title: $('edTitle').value.trim(), mix: $('edMix').value.trim(),
+    };
+  },
+
+  /**
+   * A downloaded song's lyrics, before it is saved: { state ('looking',
+   * 'found', 'none', 'error'), data, own (lines written here, or null), key
+   * (the names looked up), onChange }. Null where they cannot be looked up
+   * here (the phone, for now).
+   */
+  newLyrics(onChange = null) {
+    if (!window.flow.lookupLyrics) return null;
+    return {
+      state: 'looking', data: null, own: null, key: '', error: '', onChange,
+    };
+  },
+
+  /**
+   * Looks up `entry`'s lyrics by `meta`'s artist and title, for a file
+   * `duration` seconds long; one lookup after another (a playlist's songs
+   * come quickly). Not again for the same names, nor once written by hand.
+   */
+  lookLyrics(entry, meta, duration) {
+    if (!entry || entry.own) return;
+    const key = `${String(meta.artist || '').toLowerCase()}|${String(meta.title || '').toLowerCase()}`;
+    if (key === entry.key && entry.state !== 'error') return;
+    entry.key = key;
+    entry.state = 'looking';
+    this._lyricsChanged(entry);
+    this._lyricsChain = (this._lyricsChain || Promise.resolve()).then(async () => {
+      if (entry.key !== key || entry.own) return;
+      let data = null;
+      let error = '';
+      try {
+        if (meta.title) data = await window.flow.lookupLyrics({ artist: meta.artist, title: meta.title, duration });
+      } catch (err) {
+        error = (err && err.message) || 'The lyrics could not be looked up.';
+      }
+      if (entry.key !== key || entry.own) return;
+      const words = !!(data && data.found && (data.synced || String(data.plain || '').trim()));
+      entry.state = error ? 'error' : (words ? 'found' : 'none');
+      entry.data = words ? data : null;
+      entry.error = error;
+      this._lyricsChanged(entry);
+    });
+  },
+
+  _lyricsChanged(entry) {
+    if (entry === this.lyrics) this._drawLyrics();
+    if (entry.onChange) entry.onChange();
+  },
+
+  /** The editor's lyrics row: what was found, Show, and Edit Lyrics or Add Lyrics. */
+  _drawLyrics() {
+    const box = clear(this.editorEl.querySelector('#edLyrics'));
+    const e = this.lyrics;
+    if (!e || !this.media) return;
+    const duration = this.media.duration;
+    const btn = (label, onclick, kind = '') => h(`button.btn.btn--small${kind}`, { type: 'button', onclick }, label);
+    const heading = () => LyricsEdit.heading(this._names());
+    // The editor plays the whole downloaded file, as the preview does.
+    const m = this.media;
+    const player = {
+      src: m.src ? m.src() : Util.fileUrl(m.path),
+      duration,
+      peaks: () => (m === this.media && this.peaks) || m.peaksRun || (m.peaks ? m.peaks() : window.flow.peaks(m.path, m.duration)),
+    };
+    // Written by hand: kept with the song; none (null) gives it the looked-up ones again.
+    const onSave = (lines) => {
+      const data = lines ? LyricsEdit.toData(lines) : null;
+      if (!data) {
+        e.own = null;
+        e.key = '';
+        this.lookLyrics(e, this._names(), duration);
+        return;
+      }
+      e.own = lines;
+      e.data = data;
+      e.state = 'found';
+      this._lyricsChanged(e);
+    };
+    if (e.state === 'looking') {
+      box.append(h('span.ed-lyrics__label', LyricsEdit.spinner(), 'Looking for lyrics...'));
+      return;
+    }
+    const found = e.state === 'found';
+    box.append(LyricsEdit.badge(found));
+    if (found) {
+      box.append(h('span.ed-lyrics__label', e.own ? 'Your lyrics:' : 'Found lyrics:'),
+        btn('Show', () => LyricsEdit.show({ title: heading(), data: e.data, duration })));
+    } else if (e.state === 'error') {
+      box.append(h('span.ed-lyrics__label', e.error), btn('Try again', () => this.lookLyrics(e, this._names(), duration)));
+    } else {
+      box.append(h('span.ed-lyrics__label', 'No lyrics found'));
+    }
+    if (!LyricsEdit.available) return;
+    // For LRCLIB: the names in the boxes now, and the downloaded file's length (the lines are on it).
+    const song = () => ({ ...this._names(), album: $('edAlbum').value.trim(), duration });
+    if (found) {
+      box.append(btn('Edit Lyrics', () => LyricsEdit.edit({
+        title: heading(), data: e.data, duration, onSave, player, song,
+      }), '.btn--light-green'));
+    } else {
+      box.append(btn('Add Lyrics', () => LyricsEdit.add({
+        title: heading(), onSave, player, song,
+      }), '.btn--light-green'));
+    }
   },
 
   /** SponsorBlock's parts of the song in the editor, as the settings want them. */
@@ -851,6 +1004,8 @@ const AddPage = {
       sourceUrl: this.probed ? this.probed.url : '',
       sourceKey: this.probed ? this.probed.key : '',
       playlistIds: this.playlistIds,
+      // Written here: moved to the song as trimmed.
+      lyrics: this.lyrics && this.lyrics.own ? LyricsEdit.cut(this.lyrics.own, this.slider.start, this.slider.end) : null,
     };
     // Let go of the cached file: it is read by ffmpeg and then deleted.
     const position = this.audio.currentTime;

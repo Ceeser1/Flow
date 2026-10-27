@@ -45,6 +45,15 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   pencil renames it until the first song is saved; or the existing one, if
   ticked), and **Add to Playlist** puts them into other playlists too.
   Whatever order they are finished in, the playlist keeps the source's order.
+  Every downloaded song's lyrics are looked up right away (from 4.0.1, on the
+  PC): its frame says **Lyrics** after the title, green with a tick when some
+  were found, red with a cross when not. An open frame (and the editor of a
+  song downloaded on its own) has **Found lyrics: Show** (each line with its
+  times, from - to) and **Edit Lyrics**, or **Add Lyrics** when none were
+  found: paste the words, one line a row, then give each line its From and
+  To (mm:ss:ms; To may stay empty, until the next line). Leave every time
+  empty to keep the words without times. Lyrics written there go with the
+  song when it is saved, moved along with its cut.
   A song that failed to download has **Try again** in its frame, and the
   bottom line ("47 songs ready · 3 failed") has **Retry failed**, which tries
   them all again and says how far it is and how many failed again.
@@ -78,6 +87,22 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
     downloaded (SoundCloud's DRM, Bandcamp's previews) is passed over. The
     checklist names the site each song was found on. Vimeo cannot be searched
     without an account, so it is not among them.
+  - **Update from source** (from 4.0): a playlist imported from a link has
+    Update from source beside Download on its page (an icon on the phone),
+    where something can download. A click reads the source again in the
+    background (with yt-dlp here when it is in the tools folder, else on the
+    Flow Server) while the button turns light blue and its icon spins; the
+    page stays where it is. "No changes to ... found." when the source has
+    nothing the playlist lacks and lacks nothing it has. Otherwise a popup
+    lists Added Songs (new ones, and songs in the library but not in the
+    playlist) and Removed Songs (in the playlist, no longer in the source),
+    with **Keep songs removed from the playlist** and **Add new songs to the
+    playlist** (both ticked). It closes only with X or Cancel Playlist Update.
+    Continue takes the removed songs out of the playlist when the first box is
+    unticked, and with the second opens Add Songs with the list as its
+    checklist (Cancel, Download Selected, Download All); the songs go into the
+    playlist, which keeps its own name. A Flow Server from before the check
+    downloads the source's new songs on Add Songs as before.
 - **Playlists**: create, rename, delete. Deleting asks first, with **Also
   delete all songs that exist only in this playlist** (off): ticked, the
   songs in no other playlist and not among the favourites go too, files
@@ -150,9 +175,22 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   profile, with a Flow Server that has profiles), last listened, times played,
   average listen duration, and how often it was listened to over 80% of its
   length, under 80%, and skipped in the first 30 seconds.
-  Under "Downloaded from": the Direct Url of the song's page, and for a song
+  Under "Source": the Direct Url of the song's page, and for a song
   that came with a playlist import also that playlist's Url. Both open in the
-  browser.
+  browser. Under "Lyrics" (from 4.0.1): the song's words, without times, and
+  **Edit Lyrics** (or **Add Lyrics** when it has none) to write them, as in
+  Add Songs (on the PC). Lyrics written by hand are kept for good, whatever the
+  song is renamed to; **Remove my lyrics** in the editor gives it the
+  looked-up ones again. In the editor, **Search LRCLIB** (top right) lists
+  LRCLIB's lyrics for the song (by its names, or by any words typed in), those
+  with times first, each with its album, length and how far that is from the
+  song's; one picked shows its lines, and **Use these lyrics** puts them in
+  the editor, kept as the song's own once saved. **Publish to LRCLIB**
+  (bottom left) gives the lines in the editor to everyone on
+  [LRCLIB](https://lrclib.net), under the title, artist and album shown
+  (LRCLIB needs an album) and the song's length: after a confirmation, as
+  LRCLIB keeps them for good. LRCLIB asks for a proof of work first, which
+  Flow works out in the background (seconds, up to a minute).
 - **Edit** (the pencil on a row): Artist, Title and Mix, and the song's
   **Trim**: the waveform (from the file here, else drawn by the Flow Server;
   without either the song can still be trimmed by the handles and times),
@@ -197,6 +235,58 @@ Paste a link, trim off the intro and outro, name it, put it in playlists.
   as in All Songs, except the red cross is **Remove from Playlist(s)**: it
   takes the song out of every playlist of yours that holds it (asking first
   when that is more than one) and leaves it in All Songs.
+- **Smart playlists** (from 4.0): **Smart playlist** beside Add new playlist
+  opens its rules, and the playlist fills itself from the library and keeps up
+  as it changes. The rules: its name, whether all or any of the conditions
+  must be met, each condition (Artist, Title, Album, Genre, Info or Mix
+  contains, does not contain, is, is not, starts with; Added or Last played in
+  the last or not in the last so many days; Length in minutes, Times played or
+  Times heard to the end more or less than; Favourite yes or no; 12 at most),
+  the order (newest, title, artist, most played, last played, longest) and at
+  most how many songs, with how many match counted as they are changed. An
+  artist condition names each artist of a song ("is Massive Attack" finds a
+  duet too). Its page says Smart playlist and has **Edit Rules** (an icon
+  beside Share on the phone). Like the listening trend lists, songs cannot be
+  added to it or taken out by hand (it is left out of every Add to
+  Playlist), it is not downloaded as a whole and never shared, and deleting
+  it deletes no songs. With a Flow Server the rules are kept there (a server
+  from before 4.0 has no Smart playlist button), and each app works out the
+  songs from its own library and stats.
+- **Lyrics** (from 4.0, Fetch/Sync Lyrics in Settings): the playing song's lyrics
+  from [LRCLIB](https://lrclib.net) (no account or key). The best of its
+  results has the same title, an artist in common and the closest length;
+  its lines keep their times only when its length is the song's within 4
+  seconds, else the words show without (another version, or a song trimmed
+  differently). A song LRCLIB does not have gets its words from
+  [lyrics.ovh](https://lyrics.ovh) (no account or key either), without
+  times. On the PC, **Lyrics** next to Queue (shown while the song has
+  lyrics, **(No Lyrics)** in its place otherwise) opens a drawer with every
+  line, the one being sung lit and kept in sight (unless the list was just
+  scrolled by hand); a click on a line plays from there. A full-screen
+  visualizer shows the line being sung and the next at the bottom. On the
+  phone, Now Playing looks as before; scrolled down, a frame below its
+  buttons has four lines with the one being sung second, and **Expand** grows
+  it to every line. Short pauses between lines are left out, long ones show
+  as a note. A Flow Server looks its songs' lyrics up itself and keeps them;
+  this device keeps copies of them (from 4.0.1) and looks up the rest (Local
+  Files, Downloaded Songs, a server out of reach or from before 4.0), all in
+  the `Lyrics` folder beside `Covers`. From 4.0.1 the songs of Local Files
+  get theirs in the background too, one every 2 seconds (as a Flow Server
+  does for its own), each once; LRCLIB out of reach, the rest 10 minutes
+  later. A busy LRCLIB that says how long to wait (Retry-After) is waited for
+  that long, up to a minute, before the next try. Lyrics written by hand (4.0.1) are
+  kept on the Flow Server for its songs (a server from 4.0.1 on), in
+  `Lyrics` for the others, and go up with a song when it is uploaded.
+- **Continue with similar songs** (from 4.0, off until ticked in Settings):
+  once the list playing has played through (without shuffle its last song,
+  with shuffle every song had its turn), songs like the last ones heard follow
+  instead of the list starting over, up to 10 queued past its end. Alike means
+  the same artists (a duet counts for each), genre, Info or album (not an
+  album that is only the title), the newest songs heard weighing most; among
+  those the ones listened to most come first, and songs skipped early more
+  often than heard never come. With nothing alike at all, the songs listened
+  to most. The Queue shows them under "Then similar songs"; a song of the
+  list picked by hand or another list started goes back to the list.
 
 How a listen is counted: only time actually played counts, and it is counted
 when the song changes. Skipping ahead adds nothing (jump 10 seconds forward
@@ -252,6 +342,8 @@ The cog at the bottom left of the menu. Every change counts at once.
     well under a second a song) and the result kept in the library.
   - **Show listening trends** (on): off hides Your listening trend from the
     menu and its lists from Search (a trend list open then goes back to All Songs).
+  - **Continue with similar songs** (off): see
+    [Continue with similar songs](#using-it) above.
 - **Flow Server**: **Use a Flow Server** (off). See
   [A Flow Server](#a-flow-server) below.
   - **Home Server in WiFi/LAN** and **Remote Server**: addresses, tried in
@@ -272,6 +364,19 @@ The cog at the bottom left of the menu. Every change counts at once.
     Delete Profile: its playlists, favourites and stats, on every device).
     Only while connected, except **Logout**, which also works away from the
     server (it hears of it at the next connection).
+  - **Share** (from 4.0, at the right of "Connected to ..."): the server as a
+    QR code, and on the PC **Copy link** too. On a phone **Scan** sits in front
+    of it (also before connecting, and on the first start's screen as "Scan a
+    QR code"); Android uses Google's code scanner, which needs no camera
+    permission. The code is a `flow://connect` link with the server's name and
+    Home and Remote address. When the server has a password, the link holds a
+    one-time code instead: the sharing app hands the password it keeps to
+    the server, which trades it once, within 10 minutes, for the code. No
+    password, profile or PIN is ever in the code; the other device picks its
+    own profile. Scanning it, or pasting the link into the Home box, connects
+    to that server as Switch server does. A server from before 4.0, or one
+    whose password this device does not keep: the code comes without it, and
+    the other device asks for the password. The iPhone has no Scan yet.
 - **Switch server** (only once a server was used; not under Use a Flow
   Server): see [Switch server](#a-flow-server) below. It works with Use a
   Flow Server unticked too: **Switch** ticks it (for the server last in use
@@ -294,10 +399,30 @@ The cog at the bottom left of the menu. Every change counts at once.
   - **Song Storage** (the phones, instead of Local Files): the songs kept on
     the phone and their room; **Remove downloads** deletes the Flow Server's
     songs kept there and unmarks every playlist's Download.
+  - **Backups** (from 4.0; PC only): the song names, playlists, favourites
+    and stats of Local Files (`library.json`, never the song files) are backed
+    up once a week, at the start when the newest backup is a week old, and
+    looked at every 6 hours; the last 6 are kept. **Back up now** makes one,
+    **Restore** puts the one picked back: song names, playlists, favourites
+    and stats go back to how they were then, each song keeping its file as it
+    is now; songs added since stay, songs whose files are gone stay out. What
+    is there is backed up first. A Flow Server backs up its own library (see
+    its README).
   - **Cover Cache**: how many covers this device keeps and how much room they
     take (with a Flow Server: the servers' covers kept here). With a server
     also **Clear cover cache**, which deletes those; the covers of the server
     connected come down again.
+  - **Fetch/Sync Lyrics** (on): songs get their lyrics looked up, kept and,
+    with a Flow Server (from 4.0.1), synchronized: every lyrics the server
+    keeps comes down in the background, those changed since again. Off,
+    nothing is looked up or synchronized and nothing new is kept; lyrics kept
+    here still show, and so do the server's for the song playing (those
+    written on it included).
+    - **Lyrics Cache**: how many lyrics this device keeps and how much room
+      they take (while the songs' lyrics are looked up in the background, how
+      many are still to come; the songs none were found for in its tooltip),
+      and **Clear lyrics cache**, which deletes them all but those
+      written in Flow for Local Files songs; a server's come down again.
   - **Allow downloads on mobile internet**
     (off; greyed out without a Flow Server, only shown with a Remote address):
     away from home, songs only go up and come down on connections Windows
@@ -577,6 +702,30 @@ listen (who, on hover), and **Join**.
   plays on from the same place and says "Anna - Sony GTK left, you are the new
   host". A device whose connection drops is let go after 15 seconds; one that
   played along keeps playing on its own.
+- **Guests from other servers** (from 4.0): a device of another Flow Server
+  on the same home network, or one with no server at all, can join a session
+  here, while this server allows it (Administration, Server rules:
+  **Allow guests in home network sessions/jams**; on for a new server,
+  an admin can turn it off) and the server's discovery is on (it is how
+  the guest finds it).
+  The Active Sessions page lists such servers' sessions under "Nearby, on
+  other servers" with **Join as guest**; it looks every 15 seconds while
+  open, and now and then otherwise, and Active Jams shows in the menu while
+  one plays. The host is always asked about a guest (also with Accept jam
+  join requests automatically ticked), the prompt saying it comes from
+  another server; the others see "(from <server>)" after its name. Once in,
+  the guest's player follows the host as any member's does (Play here
+  included), that server's songs show as "Songs on <server>" (in the menu
+  and on the page) to start or queue there, and nothing else of that server
+  is open to it. Its own songs can be played and queued in the session too:
+  each is sent to the host's server first (a list started: its song now,
+  the next 4 as they arrive), kept there for that session only, never in its
+  library, and gone when the session ends. A guest is never the host: the
+  next member of that server takes over, and with none left the session ends.
+  It cannot start that server's playlists. A guest's listening counts at
+  home only: in its Private Statistics and in its own profile's totals, with
+  no song's stats; nothing is counted on the host's server. Only from the
+  home network. The iPhone has no guests yet.
 - Sessions live in the server's memory only: restarting the server ends them,
   and each device says so. The server needs to pass its live channel on
   unbuffered when a web server or proxy sits in front of it (see the server's
@@ -593,9 +742,12 @@ listen (who, on hover), and **Join**.
 - Covers: `Covers` in that folder (moved along when it changes): `local`
   for the songs in Local Files, and a folder per Flow Server, each cover
   named after its song's id. Files dropped into `Covers` are not songs.
+- Lyrics: `Lyrics` in that folder, laid out as `Covers` (moved along too), a
+  JSON file per song (`<id>.none.json` when none were found).
 - Library, settings, the download cache and the tools folder (where
   `yt-dlp.exe` goes): `%LOCALAPPDATA%\Flow` (on Linux `~/.local/share/Flow`). The library is `library.json`, with the previous
-  version kept as `library.json.bak`.
+  version kept as `library.json.bak`. Its weekly backups are in `backups`
+  there, one gzipped JSON file each.
 
 yt-dlp, once put there, updates itself once a day in the background, since
 YouTube changes often enough to break an old copy.

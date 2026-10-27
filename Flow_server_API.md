@@ -109,8 +109,8 @@ Open to anyone (only the refusals above apply).
 {
   "app": "flow-server",
   "protocol": 1,
-  "features": ["profiles", "admin", "pin", "statistics", "download", "search", "sessions", "trim"],
-  "version": "3.3.3",
+  "features": ["profiles", "admin", "pin", "statistics", "smartPlaylists", "pair", "download", "search", "sessions", "trim", "lyrics", "ownLyrics", "guests"],
+  "version": "4.0.0",
   "id": "<server id>",
   "name": "Flow Server",
   "password": true,
@@ -127,7 +127,12 @@ Open to anyone (only the refusals above apply).
   without it); `download` when the server can download
   songs itself (yt-dlp and ffmpeg there, not turned off), and with it
   `search` (searching by a song's name; older servers lack it); `sessions` for
-  Active Sessions; `trim` when ffmpeg is there.
+  Active Sessions; `trim` when ffmpeg is there. From 4.0: `smartPlaylists`
+  (a playlist's `rules` kept, see Commands), `pair` (pairing codes for QR
+  codes, see [Pairing](#pairing-qr-codes)), `lyrics` (`GET
+  /api/songs/<id>/lyrics`), from 4.0.1 `ownLyrics` (`PUT
+  /api/songs/<id>/lyrics`) and `guests` while an admin lets guests from other
+  servers in (see [Guests from other servers](#guests-from-other-servers)).
 - `password`: whether this caller has to sign in.
 - `tailscale`: only at level 2 and up, only to callers on a private network
   that did not come through a proxy.
@@ -149,6 +154,17 @@ doctor`:
 
 → `{ "time": 1760270000000 }`: the server's clock in ms, for playing in step
 with other devices.
+
+## Pairing (QR codes)
+
+From 4.0 (`pair` in the features). An app shares the server as a QR code, a
+`flow://connect` link with the server's `id`, `name`, `home` and `remote`
+address and, when the server has a password, a one-time `code` in its place:
+
+| Route | Body | Answer |
+|---|---|---|
+| `POST /api/pair` | `{ password }` | `{ code, expiresIn }`: the password kept in memory for 10 minutes under the code (`code: ""` without a server password); 403 for a wrong password |
+| `POST /api/pair/redeem` | `{ code }` | open to anyone: `{ password }`, once; 404 for a code used or too old. Wrong codes wait as wrong passwords do |
 
 ## Library
 
@@ -228,7 +244,8 @@ Send up to 5000 at once:
 
 | `type` | Arguments | Does |
 |---|---|---|
-| `createPlaylist` | `playlistId`, `name`, `source?` | a new playlist with the id the client chose; a name taken already gets " (2)". `value`: its id |
+| `createPlaylist` | `playlistId`, `name`, `source?`, `rules?` | a new playlist with the id the client chose; a name taken already gets " (2)". `value`: its id. With `rules` (4.0) a smart playlist |
+| `setPlaylistRules` | `playlistId`, `rules` | 4.0: a smart playlist's rules changed (`null`: none) |
 | `renamePlaylist` | `playlistId`, `name` | |
 | `deletePlaylist` | `playlistId`, `deleteSongs?` | with `deleteSongs: true` also the songs no other playlist or favourite of any profile has (`deletedSongs` lists them) |
 | `setPlaylistSource` | `playlistId`, `source: { url, kind }` | the link a playlist was imported from |
@@ -243,6 +260,18 @@ Send up to 5000 at once:
 | `setLoudness` | `songId`, `loudness` | the measured loudness, for Equalize volume |
 | `setDuration` | `songId`, `duration` | only when the server doesn't know the length (`skipped: "known"` otherwise) |
 | `recordListen` | `songId`, `listened`, `duration`, `contextId?`, `tz?`, `jamMember?` | a listen: `listened` seconds heard of `duration`; counted into the profile's stats, `listening` and `statistics`. `tz`: the app's `Date.getTimezoneOffset()`, for the day and hour it was heard (the server's own without it). From a profile it counts for the Default / Shared too (its stats and `statistics`), unless `jamMember: true` (3.6: the app was a member of a Jam, whose host's listen counts there); a Jam member on the Default counts nowhere (`skipped: "jam"`) |
+
+A smart playlist's `rules` (4.0) are `{ match: "all" | "any", conditions,
+sort, limit }`. Each condition is `{ field, op, value }`: `artist`, `title`,
+`album`, `genre`, `info` or `mix` with `contains`, `notContains`, `is`,
+`isNot` or `startsWith` and a text; `added` or `lastPlayed` with `within` or
+`notWithin` and a number of days; `length` (minutes), `plays` or
+`fullListens` with `gt` or `lt` and a number; `favourite` with `is` and
+`true` or `false`. At most 12; others are dropped. `sort` is `added`,
+`title`, `artist`, `plays`, `lastPlayed` or `length`, `limit` at most 5000
+songs (0: no limit). The server only keeps the rules: each app works out the
+songs from its own library and stats. Songs cannot be added to such a
+playlist or taken out by hand, and it cannot be shared.
 
 ## Songs
 
@@ -323,6 +352,41 @@ work (304).
 The body is a JPEG (at most 4 MB; made 512 x 512 with ffmpeg if it is not).
 Kept only when the song has no cover yet. → `{ "cover": "<version>", "rev": 417 }`
 
+### GET /api/songs/\<id\>/lyrics
+
+From 4.0 (`lyrics` in the features). The song's lyrics, looked up on LRCLIB
+(a song it does not have: on lyrics.ovh, the words without their times) and
+kept: by the server in the background for every song, one every 5
+seconds, or the first time they are asked for (none found: asked again after
+a week; the song renamed or trimmed: at once):
+
+```json
+{ "lyrics": { "found": true, "synced": [{ "t": 12.4, "text": "..." }], "plain": "...", "instrumental": false, "source": "LRCLIB" } }
+```
+
+`synced` (the lines with their times in seconds) is null when LRCLIB has
+none, or when its length is more than 4 seconds off the song's; `plain` is
+the words without times. `source`: where the words came from, `LRCLIB`,
+`lyrics.ovh` (left out: LRCLIB) or `own` (written in an app, below; then
+also `"own": true`, and a line may have its `end`). 502 when
+LRCLIB cannot be reached.
+
+### PUT /api/songs/\<id\>/lyrics
+
+From 4.0.1 (`ownLyrics` in the features). Lyrics written or edited in an
+app, kept for good: never looked up again, whatever the song is renamed to.
+
+```json
+{ "lines": [{ "t": 12.5, "end": 15.2, "text": "In my dreams" }, { "t": 16, "end": null, "text": "..." }] }
+```
+
+`t` and `end` in seconds (`end` null: until the next line). Every line with
+words has its `t`, or none has (then only the words are kept, `synced`
+null); a line without words is a pause. `{ "lines": null }` (or no line
+with words) takes them away: the song's lyrics are looked up again. →
+`{ "lyrics": { ... } }` as GET answers; 400 when only some lines have times,
+404 for a song the server does not have.
+
 ## Profiles
 
 People sharing a server can each have a profile: the songs are everyone's,
@@ -376,7 +440,10 @@ master admin. Nobody changes their own profile or the master's here.
 | `GET /api/admin/trash` | | `{ items: [{ name, at, size, title, artist, by, addedBy, restorable }], bytes }` (`by`: who deleted it, `addedBy`: who added it; names, empty when not known) |
 | `POST /api/admin/trash/restore` | `{ name }` | back as it was (`restorable`: its id, names, stats, favourites and playlist places): `{ songId, rev }`; else as a new song: `{ scanned, rev }` |
 | `POST /api/admin/trash/empty` | | every file in it gone for good: `{ deleted }` |
-| `GET` / `POST /api/admin/rules` | `{ profileCreation?: "anyone" \| "admins", songDelete?: "anyone" \| "owner" }` | the rules: `{ profileCreation, songDelete }` |
+| `GET` / `POST /api/admin/rules` | `{ profileCreation?: "anyone" \| "admins", songDelete?: "anyone" \| "owner", guests?: true \| false }` | the rules: `{ profileCreation, songDelete, guests, discovery }`. `guests` (4.0): guests from other servers let in; turned off, every guest is out at once. `discovery` (4.0, read only): whether the server answers the network search, without which no guest finds it |
+| `GET /api/admin/backups` | | 4.0: `{ backups: [{ name, createdAt, reason, size, songs, playlists, profiles }], keep }`, newest first |
+| `POST /api/admin/backups/make` | | one made now: `{ backup }` |
+| `POST /api/admin/backups/restore` | `{ name }` | *master*: the library and the profiles put back as they were (a backup of now made first): `{ songs, back, missing, kept, profiles }` |
 | `POST /api/admin/password` | `{ current, password }` or `{ current, remove: true }` | *master*: the server password changed (or taken away, levels 1 and 2 only). Every device is signed out; the master's own gets `{ token }`. 403 for a wrong `current` |
 
 ## Live channel
@@ -485,7 +552,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/jso
 | Event | To | Data |
 |---|---|---|
 | `sessions` | everyone, when the list changes | `{ sessions }` |
-| `joinRequest` | the host | `{ requestId, sessionId, client, profileName, device, ip, expiresIn }` |
+| `joinRequest` | the host | `{ requestId, sessionId, client, profileName, device, ip, expiresIn }`, and `guest: true` with `serverName` for a guest from another server (4.0) |
 | `joinCancelled` | the host | `{ requestId, sessionId }`: taken back or run out |
 | `joinResult` | who asked | `{ requestId, sessionId, ok: true, session, state }`, or `ok: false` with `reason`: `declined` (+ `retryIn`), `expired`, `full`, `ended`, `unshared` |
 | `session` | every member, when members change | `{ session }` |
@@ -497,6 +564,43 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/jso
 A request to join runs out after a minute. A host whose live channel drops
 hands over after 15 seconds unless it is back. The last member out ends the
 session.
+
+From 4.0 a session's members (`session.members`) may include guests from
+other servers (`guest: true`, `serverName`), and `session.songs` lists the
+songs guests brought, once each is all there: `[{ id, title, artist, mix,
+duration, format, by }]`. The controls take their ids like the library's
+(`queueAdd`, `playSong`), and a member streams one from:
+
+### GET /api/sessions/songs/\<id\>/audio
+
+A song a guest brought into this app's session, with Range; `?client=<install
+id>` (and `?t=` with a password) names the app. 404 for an app outside that
+session.
+
+## Guests from other servers
+
+From 4.0, while the server lets them in (Administration rules, `guests: true`,
+the default for a new server;
+`guests` in the features and in the discovery answer). An app of another
+server on the home network, or one with no server, joins this server's
+sessions as a guest. Every route answers 403 to a caller that is not on a
+private address, and to all while guests are not let in. A guest's token
+comes from `hello`, is kept in memory only (gone with a restart, or after 12
+hours unused), and is sent as `Authorization: Bearer` or `?gt=` (for audio).
+A guest is never the host: with only guests left, the session ends
+(`left` with `reason: "hostLeft"`). Nothing a guest hears is counted here.
+
+| Route | Body | Answer |
+|---|---|---|
+| `POST /api/guest/hello` | `{ client, device, profileName, serverName }` | `{ token, id, name }`: the guest's token, and this server |
+| `GET /api/guest/sessions` | | `{ sessions }`: the shared ones, as `/api/sessions` lists them |
+| `GET /api/guest/live?client=<install id>` | | the guest's live channel, with the events a member gets |
+| `POST /api/guest/session` | `{ type, ... }` | `join`, `cancelJoin`, `control`, `mode` and `leave` as on `/api/sessions`; anything else 403. `playPlaylist` is refused (403) |
+| `GET /api/guest/time` | | `{ time }` |
+| `GET /api/guest/library` | | while in a session here: `{ songs }`, this server's songs (names, album, genre, length, cover and loudness; never a file or who added it); 403 otherwise |
+| `GET /api/guest/songs/<id>/audio` | | while in a session here: a song's file, with Range, a library song or one a guest brought |
+| `GET /api/guest/songs/<id>/cover` | | its cover |
+| `PUT /api/guest/songs/<id>?meta=<json>` | the file | one of the guest's own songs into its session (`meta`: `{ title, artist, mix, duration, format }`) → `{ id }`. Kept for that session only. At most 60 a session, 300 MB each (413) and 3 GB together; `format` one of mp3, m4a, aac, ogg, opus, flac, wav, webm (415 otherwise). Sent twice: kept once |
 
 ## Downloads by the server
 
@@ -615,6 +719,9 @@ Each server that hears it answers the sender directly:
 ```json
 {"app":"flow-server","id":"<server id>","name":"Flow Server","port":7878,"protocol":1}
 ```
+
+From 4.0 the answer also has `"guests": true` while the server lets guests
+from other servers into its sessions.
 
 Only askers on a private address are answered, at most 30 times a minute
 each. Send the question a few times (datagrams get lost) and collect answers

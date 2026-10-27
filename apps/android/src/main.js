@@ -14,6 +14,10 @@
 const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
 const { createPrivateStats } = require('@flow/core/client/privateStats');
+const { createLyricsClient } = require('@flow/core/client/lyrics');
+const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
+const { encode: encodeQr } = require('@flow/core/qr');
+const { createGuestLink } = require('@flow/core/client/guest');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const {
@@ -66,6 +70,64 @@ function start() {
   const actions = createActions({
     remote, library, files: env.files, privateStats,
   });
+  // A song's lyrics (4.0): the server's, else LRCLIB's through the page's
+  // fetch, which cannot name Flow as its User-Agent; kept in the Lyrics
+  // folder (4.0.1), only that with Settings' "Fetch/Sync Lyrics" off.
+  const lyricsClient = createLyricsClient({
+    remote,
+    library,
+    folder: createLyricsFolder(env.lyricsFiles),
+    jsonFiles: env.jsonFiles,
+    fetchOn: () => settings.get('lyricsOn') !== false,
+    syncEveryMs: 15 * 60 * 1000,
+    // Copies of a server's songs have the server's lyrics.
+    skip: (id) => remote.active() && remote.isServerCopy(id),
+    onChange: () => emit('lyrics:changed'),
+    fetch: (...args) => fetch(...args),
+    agent: false,
+  });
+  /**
+   * One of this phone's songs into the session it is a guest in (4.0): its
+   * file here, else the server's audio fetched into the cache first.
+   * Resolves { gid }.
+   */
+  async function bringSong(songId) {
+    const song = actions.currentLibrary().songs.find((s) => s.id === songId);
+    if (!song) throw new Error('That song is not in your library.');
+    const audio = remote.active() ? await remote.songAudio(songId) : { file: song.file, temp: false };
+    if (!audio.file || !fs.exists(audio.file)) throw new Error(`"${song.title}" has no file to send along.`);
+    const gid = `g-${settings.clientId().slice(0, 12)}-${songId}`.replace(/[^\w-]/g, '').slice(0, 64);
+    const ext = (/\.([a-z0-9]+)$/i.exec(song.file || audio.file) || [])[1] || song.format || 'mp3';
+    try {
+      await guest.upload(gid, {
+        title: song.title, artist: song.artist, mix: song.mix, duration: song.duration, format: ext.toLowerCase(),
+      }, audio.file);
+    } finally {
+      if (audio.temp) {
+        try {
+          fs.remove(audio.file);
+        } catch {
+          // Emptied with the cache.
+        }
+      }
+    }
+    return { gid };
+  }
+
+  // Being a guest in another server's session on this network (4.0).
+  const guest = createGuestLink({
+    http: env.http,
+    device: env.device,
+    clientId: () => settings.clientId(),
+    discovery: env.discovery,
+    ownServerId: () => (remote.active() ? remote.status().serverId : ''),
+    who: () => {
+      const st = remote.status();
+      return { profileName: st.on && st.profile ? st.profile.name : '', serverName: st.on ? st.serverName || st.name : '' };
+    },
+    onLive: (ev) => emit('guest:live', ev),
+    onChange: () => emit('guest:changed', guest.list()),
+  });
 
   function coverDirs() {
     return { local: covers.dirOf(covers.LOCAL), server: remote ? remote.coverDir() : '' };
@@ -74,6 +136,9 @@ function start() {
   library.onChange((data) => {
     if (!remote.active()) emit('library:changed', data);
   });
+  // Every Local Files song's lyrics in the background (4.0.1): now, and soon after a change.
+  library.onChange(() => lyricsClient.fillSoon());
+  lyricsClient.fillSoon();
 
   remote.init({
     onView: (view) => emit('library:changed', view),
@@ -142,7 +207,8 @@ function start() {
       return {
         platform,
         uiMode: 'mobile',
-        caps: platform === 'ios' ? caps.IOS : caps.ANDROID,
+        // The Equalizer from Android 9 on (its DynamicsProcessing).
+        caps: platform === 'ios' ? caps.IOS : { ...caps.ANDROID, soundEq: (info().sdk || 0) >= 28 },
         library: actions.currentLibrary(),
         server: remote.status(),
         settings: settings.all(),
@@ -161,6 +227,10 @@ function start() {
       const wasRemote = remote.active();
       const next = settings.set(clean);
       remote.reconfigure(clean);
+      if (clean.lyricsOn === true) {
+        lyricsClient.sync();
+        lyricsClient.fill();
+      }
       if (remote.active() !== wasRemote) {
         emit('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
         emit('library:changed', actions.currentLibrary());
@@ -175,6 +245,8 @@ function start() {
     onFolderScanned: nothing,
 
     createPlaylist: call((name) => actions.createPlaylist(name)),
+    createSmartPlaylist: call((name, rules) => actions.createSmartPlaylist({ name, rules })),
+    setPlaylistRules: call((id, rules) => actions.setPlaylistRules({ id, rules })),
     renamePlaylist: call((id, name) => actions.renamePlaylist({ id, name })),
     deletePlaylist: call((id, deleteSongs = false) => actions.deletePlaylist({ id, deleteSongs })),
     setPlaylistShared: call((id, shared) => actions.setPlaylistShared({ id, shared })),
@@ -212,6 +284,20 @@ function start() {
     cancelSearch: call(nothing),
     downloadImport: notHere('Importing on the phone'),
     pickLocalFiles: call(() => local.pick(false)),
+    // A visualizer's picture (as the desktop's viz:savePicture), in Flow's files.
+    saveVizPicture: call((name, bytes) => {
+      if (!/^[a-z][\w-]{0,40}$/i.test(String(name || ''))) throw new Error('Not a picture name.');
+      if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > 30e6) throw new Error('Not a picture.');
+      const dir = path.join(info().files, 'Visualizer');
+      if (fs.exists(dir)) {
+        for (const old of fs.list(dir)) if (old.name.startsWith(`${name}-`) && old.name.endsWith('.jpg')) fs.remove(path.join(dir, old.name));
+      } else {
+        fs.mkdir(dir);
+      }
+      const file = path.join(dir, `${name}-${Date.now().toString(36)}.jpg`);
+      fs.writeBytes(file, bytes);
+      return file;
+    }),
     pickLocalFolder: call(() => local.pick(true)),
     listLocal: call((picked) => local.listLocal(picked)),
     prepareLocal: call((items, opts, run) => local.prepareLocal(items, run)),
@@ -274,6 +360,37 @@ function start() {
     onServerLive: on('server:live'),
     onSettingsChanged: on('settings:changed'),
     finishSong: notHere('Saving a download on the phone'),
+    lyrics: call((songId) => lyricsClient.get(songId)),
+    lyricsStats: call(() => lyricsClient.stats()),
+    clearLyricsCache: call(() => lyricsClient.clear()),
+    onLyricsChanged: on('lyrics:changed'),
+    shareLink: call(() => remote.shareLink()),
+    recordAwayListen: call((song, listened, duration) => actions.recordAwayListen({ song, listened, duration })),
+    guestLook: call(() => guest.look()),
+    guest: call((action, args = {}) => {
+      if (action === 'join') return guest.join(args.serverId, args.sessionId, args.mode);
+      if (action === 'session') return guest.session(args.body || {});
+      if (action === 'leave') return guest.leave();
+      if (action === 'songs') return guest.songs();
+      if (action === 'bring') return bringSong(String(args.songId || ''));
+      if (action === 'status') return guest.status();
+      if (action === 'list') return guest.list();
+      throw new Error(`Unknown guest action ${action}.`);
+    }),
+    onGuestLive: on('guest:live'),
+    onGuestChanged: on('guest:changed'),
+    connectLink: call((text) => remote.connectLink(String(text || ''))),
+    qr: call((text) => encodeQr(String(text || ''))),
+    /** Google's code scanner (no camera permission): the text read, or '' when called off. */
+    scanQr: call(async () => {
+      const r = await plugin.scanQr();
+      if (r && r.cancelled) {
+        const err = new Error('Scan called off');
+        err.cancelled = true;
+        throw err;
+      }
+      return String((r && r.text) || '');
+    }),
     wantCovers: call((ids) => {
       if (remote.active()) remote.wantCovers(ids);
     }),

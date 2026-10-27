@@ -21,7 +21,10 @@ in the iOS Simulator on GitHub's Macs; not yet tried on a real iPhone.
   and plays the song it was on.
 
 Not on the iPhone: the share target (each extension of an app costs a free
-Apple ID one of its 10 App IDs a week; Flow and its widget take two).
+Apple ID one of its 10 App IDs a week; Flow and its widget take two). In 4.0
+also not: Scan for a server's QR code, and joining another server's
+sessions as a guest; the rest of 4.0 (lyrics, smart playlists, Continue with
+similar songs, a playlist's Update, Share) comes with the shared pages.
 
 Needs iOS 18.4 or later (iPhone XS / XR and newer): from 18.4 iOS plays Ogg
 Opus itself, the format most of Flow's songs from YouTube are in. Ogg Vorbis

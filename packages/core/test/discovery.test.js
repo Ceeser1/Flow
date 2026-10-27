@@ -14,7 +14,8 @@ test('only the apps question is taken for a question', () => {
 
 test('an answer carries the port, and the sender is the address', () => {
   const reply = d.makeReply({ id: 'abc123', name: 'Pi', port: 7878, protocol: 1 });
-  assert.deepEqual(d.parseReply(reply, '192.168.0.61'), { ip: '192.168.0.61', port: 7878, name: 'Pi', id: 'abc123', protocol: 1 });
+  assert.deepEqual(d.parseReply(reply, '192.168.0.61'), { ip: '192.168.0.61', port: 7878, name: 'Pi', id: 'abc123', protocol: 1, guests: false });
+  assert.equal(d.parseReply(d.makeReply({ id: 'abc123', name: 'Pi', port: 7878, protocol: 1, guests: true }), '192.168.0.61').guests, true, 'it takes guests');
   assert.equal(d.parseReply(Buffer.from('{"app":"x","port":7878}'), '192.168.0.61'), null);
   assert.equal(d.parseReply(Buffer.from('{"app":"flow-server","port":0}'), '192.168.0.61'), null);
   assert.equal(d.parseReply(Buffer.from('nonsense'), '192.168.0.61'), null);

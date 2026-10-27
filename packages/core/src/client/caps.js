@@ -34,6 +34,14 @@ const DESKTOP = {
   batteryHelp: false,
   // Ogg Vorbis plays; without, a Flow Server sends such a song as Opus (audio ?vorbis=0).
   vorbis: true,
+  // Its own library.json backed up once a week (Settings > Media Management).
+  backups: true,
+  // A server's QR code read with the camera (Settings > Flow Server's Scan): phones only.
+  scanQr: false,
+  // A guest in Active Sessions of other Flow Servers on the home network (4.0).
+  guests: true,
+  // Settings' Equalizer shapes the sound (here in Web Audio, on Android in its player).
+  soundEq: true,
 };
 
 const ANDROID = {
@@ -53,6 +61,11 @@ const ANDROID = {
   measureLoudness: false,
   batteryHelp: true,
   vorbis: true,
+  backups: false,
+  scanQr: true,
+  guests: true,
+  // Android 9 and newer (DynamicsProcessing): the app leaves it out before (main.js).
+  soundEq: true,
 };
 
 // The iPhone: as the Android phone, without what iOS has no need or room for.
@@ -62,6 +75,10 @@ const IOS = {
   batteryHelp: false,
   // iOS has no Vorbis decoder (it plays Ogg Opus).
   vorbis: false,
+  // No scanner on the iPhone yet, nor guests or the Equalizer (4.0 leaves iOS out).
+  scanQr: false,
+  guests: false,
+  soundEq: false,
 };
 
 module.exports = { DESKTOP, ANDROID, IOS };

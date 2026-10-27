@@ -10,10 +10,11 @@
 // during a song transition), each with its own two gains:
 //
 //   element -> loudness -> fade --+
-//   element -> loudness -> fade --+-> mix -> [limiter] -> analyser -> volume -> out
+//   element -> loudness -> fade --+-> mix -> [sound eq] -> [limiter] -> analyser -> volume -> out
 //
 // "loudness" evens out loud and quiet songs (Equalize volume), "fade" is the
-// song transition, and the limiter catches the peaks of a song turned up. The
+// song transition, the sound eq is Settings' Equalizer (soundEq.js), and the
+// limiter catches the peaks of a song turned up or a band raised. The
 // analyser comes before the volume, so the picture shows the song rather than
 // the volume knob. If Web Audio is not to be had, the elements play as before
 // and there is no equalizer, transition or evening out.
@@ -42,6 +43,7 @@ const Equalizer = {
   elements: [],
   channels: null,      // element -> { norm, fade } gains
   mix: null,
+  post: null,          // what comes after the mix: the sound eq, else the mix itself
   limiter: null,
   raf: null,
   lastFrame: 0,
@@ -132,7 +134,18 @@ const Equalizer = {
       this.delay = delay;
       this.gain = gain;
       this.samples = new Float32Array(analyser.fftSize);
-      this.setLimiter(Store.settings.normalize);
+      // The sound eq last, once the rest is there: a curve it starts with may
+      // already want the limiter (setLimiter waits for `post`).
+      let post = mix;
+      if (Store.can('soundEq')) {
+        try {
+          post = SoundEq.attach(ctx, mix);
+        } catch (err) {
+          console.warn('No sound equalizer:', err);
+        }
+      }
+      this.post = post;
+      this.setLimiter();
     } catch (err) {
       console.warn('No equalizer:', err);
       this.ctx = null;
@@ -150,7 +163,7 @@ const Equalizer = {
     Store.onSettings((patch) => {
       if (['eqOn', 'eqHeight', 'eqShine', 'eqShineSpread', 'eqColors'].some((k) => k in patch)) this._layout();
       if ('eqVisibility' in patch) this._applyVisibility();
-      if ('normalize' in patch) this.setLimiter(Store.settings.normalize);
+      if ('normalize' in patch) this.setLimiter();
     });
 
     for (const el of elements) {
@@ -189,16 +202,22 @@ const Equalizer = {
     return this._stereo;
   },
 
-  /** The limiter goes in with "Equalize volume", which may turn songs up. */
-  setLimiter(on) {
-    if (!this.ctx) return;
-    this.mix.disconnect();
+  /**
+   * The limiter goes in with "Equalize volume", which may turn songs up, and
+   * while the sound eq raises a band (SoundEq.boosting).
+   */
+  setLimiter() {
+    if (!this.ctx || !this.post) return;
+    const on = !!Store.settings.normalize || SoundEq.boosting;
+    if (on === this._limited) return;
+    this._limited = on;
+    this.post.disconnect();
     this.limiter.disconnect();
     if (on) {
-      this.mix.connect(this.limiter);
+      this.post.connect(this.limiter);
       this.limiter.connect(this.delay);
     } else {
-      this.mix.connect(this.delay);
+      this.post.connect(this.delay);
     }
   },
 

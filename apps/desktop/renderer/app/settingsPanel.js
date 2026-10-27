@@ -56,6 +56,7 @@ const SettingsPanel = {
       Stats.soon();
       this._drawMeasured();
       this._drawCovers();
+      this._drawLyrics();
       this._drawStorage();
     });
     Store.onServer(() => {
@@ -64,6 +65,12 @@ const SettingsPanel = {
       if (this.modal) Stats.soon();
       if (this.modal && this._jamNote) this._jamNote();
     });
+    // Lyrics kept, or the background lookups moved on (4.0.1).
+    if (window.flow.onLyricsChanged) {
+      window.flow.onLyricsChanged(() => {
+        if (this.modal) this._drawLyrics();
+      });
+    }
     Output.onChange(() => {
       if (this.modal && this._outputFill) this._outputFill();
       if (this.modal && this._delayFill) this._delayFill();
@@ -102,12 +109,20 @@ const SettingsPanel = {
         label: 'Show listening trends',
         desc: 'If disabled, your listening trend category will be hidden in the menu and the search.',
       }),
+      this._row({
+        key: 'autoDj',
+        label: 'Continue with similar songs',
+        desc: 'When the list playing has played through, songs like the last ones you heard follow (the same artists, genre, Info '
+          + 'or album, those you listen to most first) instead of the list starting over. The Queue shows them as "Then similar songs".',
+      }),
       // The phone's lists have no columns.
       Store.phone ? null : this._row({
         label: 'Show filterable columns for Songs',
         desc: 'Extra columns in All Songs and the playlists. Each can be sorted by a click on its heading, and the search finds what is in it.',
         right: this._columnTicks(),
       }),
+
+      ...(Store.can('soundEq') ? this._soundEqRows() : []),
 
       ...this._serverRows(),
 
@@ -151,7 +166,7 @@ const SettingsPanel = {
       ...(Store.can('effects') ? [
       this._row({
         key: 'eqOn',
-        label: 'Enable Equalizer',
+        label: 'Enable Background Equalizer',
         desc: 'The music\'s frequencies glowing up from the player bar.',
         right: this._slider({ key: 'eqHeight', label: 'Height', when: () => Store.settings.eqOn }),
       }),
@@ -182,11 +197,11 @@ const SettingsPanel = {
       this._visualizerRow([
         ...this._frameRateRows(),
         this._row({
-          key: 'vizRandomEach',
-          label: 'Random for every new song',
-          desc: 'When a new song starts playing a new random visualizer from the selected category is chosen. Keeps full screen.',
-          when: () => Store.settings.visualizer.startsWith('random'),
+          key: 'vizLyrics',
+          label: 'Show Lyrics in visualizers',
+          desc: 'The line being sung and the next one at the bottom of a full-screen visualizer, for songs whose lyrics have their times. A song starting without them says so there for a few seconds.',
         }),
+        this._randomEachRow(),
       ]),
       ] : []),
 
@@ -228,6 +243,7 @@ const SettingsPanel = {
     this._drawStats();
     this._drawMeasured();
     this._drawCovers();
+    this._drawLyrics();
     this._drawStorage();
     this._drawServer();
     this._drawAdmin(true);
@@ -373,6 +389,421 @@ const SettingsPanel = {
     return true;
   },
 
+  // ---- Equalizer ----
+
+  /**
+   * The sound equalizer (soundEq.js): Bands (8 to 64 points from 20 Hz to
+   * 20 kHz), Sound Equalizer (the ready-made curves, and Custom: the user's own),
+   * then the curve itself. A point is dragged up or down (Shift: finer) or put
+   * back to 0 dB with a double-click; the keys pick one (Left, Right) and move
+   * it (Up, Down). On the phone a finger put on a point drags it at once, and the
+   * curve is pinched in or out (up to 400%) and slid along. Moving a point
+   * makes the curve Custom.
+   */
+  _soundEqRows() {
+    const MAX_ZOOM = 4;
+    const shown = () => SoundEq.gainsOf(Store.settings);
+    const custom = (gains) => ({ soundEqPreset: 'custom', soundEqCustom: gains });
+    const round = (db) => Math.round(Math.max(-SoundEq.MAX_DB, Math.min(SoundEq.MAX_DB, db)) * 10) / 10;
+
+    const { MIN_BANDS, MAX_BANDS } = SoundEq;
+    const bands = h('input.volume-slider.settings__slider', {
+      type: 'range', min: MIN_BANDS, max: MAX_BANDS, step: 1, value: Store.settings.soundEqBands, 'aria-label': 'Audio bands',
+    });
+    const bandsValue = h('span.settings__value');
+    const drawBands = () => {
+      const v = Number(bands.value);
+      bandsValue.textContent = String(v);
+      bands.style.setProperty('--fill', `${((v - MIN_BANDS) / (MAX_BANDS - MIN_BANDS)) * 100}%`);
+    };
+    // Custom's points spread over the new number from those it had when the slider was taken.
+    let base = null;
+    const bandsPatch = () => {
+      const n = Number(bands.value);
+      if (Store.settings.soundEqPreset !== 'custom') return { soundEqBands: n };
+      if (!base) base = shown();
+      return { soundEqBands: n, soundEqCustom: SoundEq.resample(base, n) };
+    };
+    bands.addEventListener('input', () => {
+      drawBands();
+      Store.previewSettings(bandsPatch());
+    });
+    bands.addEventListener('change', () => {
+      Store.saveSettings(bandsPatch());
+      base = null;
+    });
+
+    const preset = h('select.select', { 'aria-label': 'Sound Equalizer' });
+    for (const id of SoundEq.CHOICES) preset.appendChild(h('option', { value: id }, id === 'custom' ? 'Custom' : SoundEq.PRESETS[id].name));
+    preset.addEventListener('change', () => {
+      const patch = { soundEqPreset: preset.value };
+      // Custom the first time: the curve shown until then, to change from.
+      if (preset.value === 'custom' && !Store.settings.soundEqCustom.length) patch.soundEqCustom = shown();
+      Store.saveSettings(patch);
+    });
+
+    const canvas = h('canvas.sound-eq__canvas', {
+      tabIndex: 0, 'aria-label': 'Equalizer curve: Left and Right pick a band, Up and Down raise or lower it',
+    });
+    const readout = h('span.sound-eq__readout');
+    // The phone's: the point picked and how far it is zoomed in above the curve
+    // (the zoom over its right end), how to use it in two rows under it.
+    const zoomNode = h('span.sound-eq__zoom');
+    const graph = Store.phone
+      ? h('div.sound-eq',
+        h('div.sound-eq__head', readout, zoomNode),
+        canvas,
+        h('div.sound-eq__note', 'Put a finger on a point and drag it up or down. A double tap puts it back to 0 dB.'),
+        h('div.sound-eq__note', `Pinch to zoom in or out (up to ${MAX_ZOOM * 100}%), slide left or right to move along.`))
+      : h('div.sound-eq', canvas,
+        h('div.sound-eq__info', readout, h('span', 'Drag a point up or down (Shift: finer). A double-click puts it back to 0 dB.')));
+
+    // Room for the dB at the left and the Hz under it.
+    const PAD = { l: 38, r: 14, t: 10, b: 22 };
+    const LOG = Math.log(SoundEq.HIGH_HZ / SoundEq.LOW_HZ);
+    // The part shown, as parts of the whole log scale (zoomed in on the phone).
+    const view = { lo: 0, hi: 1 };
+    const zoomOf = () => 1 / (view.hi - view.lo);
+    const area = () => ({ x0: PAD.l, x1: canvas.clientWidth - PAD.r, y0: PAD.t, y1: canvas.clientHeight - PAD.b });
+    const fracOf = (b, x) => view.lo + ((x - b.x0) / (b.x1 - b.x0)) * (view.hi - view.lo);
+    const xOf = (b, hz) => b.x0 + ((Math.log(hz / SoundEq.LOW_HZ) / LOG - view.lo) / (view.hi - view.lo)) * (b.x1 - b.x0);
+    const hzOf = (b, x) => SoundEq.LOW_HZ * Math.exp(fracOf(b, x) * LOG);
+    const yOf = (b, db) => b.y0 + ((SoundEq.MAX_DB - db) / (2 * SoundEq.MAX_DB)) * (b.y1 - b.y0);
+    const dbOf = (b, y) => SoundEq.MAX_DB - ((y - b.y0) / (b.y1 - b.y0)) * 2 * SoundEq.MAX_DB;
+    const fmtHz = (hz) => (hz >= 1000 ? `${(hz / 1000).toFixed(hz >= 10000 ? 1 : 2).replace(/\.?0+$/, '')} kHz` : `${Math.round(hz)} Hz`);
+    const fmtDb = (db) => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
+    let hot = -1;      // the point under the pointer, picked with the keys, or tapped
+    let drag = null;   // { i, gains, from: { y, db, fine }, moved } while one is dragged
+
+    const draw = () => {
+      const w = canvas.clientWidth;
+      const ht = canvas.clientHeight;
+      if (!w || !ht) return;
+      const dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(ht * dpr)) {
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(ht * dpr);
+      }
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, ht);
+      const css = getComputedStyle(document.body);
+      const accent = css.getPropertyValue('--accent').trim() || '#5a8cdc';
+      const b = area();
+      const gains = drag ? drag.gains : shown();
+      if (hot >= gains.length) hot = -1;
+      const fs = SoundEq.freqs(gains.length);
+      const pts = SoundEq.pointsOf(gains);
+      const line = (x0, y0, x1, y1) => {
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      };
+
+      ctx.font = `11px ${css.fontFamily}`;
+      ctx.fillStyle = css.getPropertyValue('--text-dim').trim() || '#8a8a94';
+      ctx.lineWidth = 1;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      for (const db of [12, 6, 0, -6, -12]) {
+        const y = Math.round(yOf(b, db)) + 0.5;
+        ctx.strokeStyle = db === 0 ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.08)';
+        line(b.x0, y, b.x1, y);
+        ctx.fillText(`${db > 0 ? '+' : ''}${db}`, b.x0 - 8, y);
+      }
+      // The frequencies shown; zoomed in, those between them too.
+      ctx.textBaseline = 'top';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      const marks = zoomOf() >= 2
+        ? [20, 30, 50, 70, 100, 150, 200, 300, 500, 700, 1000, 1500, 2000, 3000, 5000, 7000, 10000, 15000, 20000]
+        : [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+      for (const hz of marks) {
+        const x = Math.round(xOf(b, hz)) + 0.5;
+        if (x < b.x0 - 0.5 || x > b.x1 + 0.5) continue;
+        line(x, b.y0, x, b.y1);
+        ctx.textAlign = x < b.x0 + 12 ? 'left' : x > b.x1 - 12 ? 'right' : 'center';
+        ctx.fillText(hz >= 1000 ? `${hz / 1000}k` : String(hz), x, b.y1 + 6);
+      }
+
+      // The curve, eased from point to point, filled to 0 dB.
+      const curve = [];
+      for (let x = b.x0; x < b.x1; x += 1) curve.push([x, yOf(b, SoundEq.at(pts, hzOf(b, x)))]);
+      curve.push([b.x1, yOf(b, SoundEq.at(pts, hzOf(b, b.x1)))]);
+      const zero = yOf(b, 0);
+      ctx.beginPath();
+      ctx.moveTo(b.x0, zero);
+      for (const [x, y] of curve) ctx.lineTo(x, y);
+      ctx.lineTo(b.x1, zero);
+      ctx.closePath();
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = accent;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      curve.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // The points, smaller where they crowd; those beyond the part shown cut off at its edges.
+      const gap = fs.length > 1 ? xOf(b, fs[1]) - xOf(b, fs[0]) : 20;
+      const dot = Math.max(1.5, Math.min(4, gap * 0.35));
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(b.x0 - 7, 0, b.x1 - b.x0 + 14, ht);
+      ctx.clip();
+      ctx.lineWidth = dot < 3 ? 1 : 1.5;
+      ctx.strokeStyle = '#1e1e22';
+      fs.forEach((f, i) => {
+        const x = xOf(b, f);
+        if (x < b.x0 - 7 || x > b.x1 + 7) return;
+        ctx.beginPath();
+        ctx.arc(x, yOf(b, gains[i]), i === hot ? 6 : dot, 0, Math.PI * 2);
+        ctx.fillStyle = i === hot ? '#fff' : accent;
+        ctx.fill();
+        ctx.stroke();
+      });
+      ctx.restore();
+      readout.textContent = hot >= 0 ? `${fmtHz(fs[hot])}: ${fmtDb(gains[hot])}` : '';
+      zoomNode.textContent = `Zoom ${Math.round(zoomOf() * 100)}%`;
+      canvas.classList.toggle('sound-eq__canvas--hot', hot >= 0 || !!drag);
+    };
+
+    /** Zoomed `zoom` times (1 to MAX_ZOOM), the part `frac` of the scale staying at `x`. */
+    const zoomTo = (zoom, frac, x) => {
+      const b = area();
+      const span = 1 / Math.max(1, Math.min(MAX_ZOOM, zoom));
+      view.lo = Math.max(0, Math.min(1 - span, frac - ((x - b.x0) / (b.x1 - b.x0)) * span));
+      view.hi = view.lo + span;
+      draw();
+    };
+
+    const at = (e) => {
+      const r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+
+    /** The point nearest the pointer, within `reach` pixels; -1 for none. */
+    const nearest = (e, reach = 14) => {
+      const { x, y } = at(e);
+      const b = area();
+      const gains = shown();
+      const fs = SoundEq.freqs(gains.length);
+      let best = -1;
+      let bestD = reach;
+      fs.forEach((f, i) => {
+        const d = Math.hypot(xOf(b, f) - x, yOf(b, gains[i]) - y);
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      });
+      return best;
+    };
+
+    /** A point back to 0 dB (a double-click, a double tap). */
+    const zero = (i) => {
+      const gains = shown();
+      if (i < 0 || gains[i] === 0) return;
+      gains[i] = 0;
+      Store.saveSettings(custom(gains));
+    };
+
+    /**
+     * Point `i` dragged from the pointer's place `y`: it moves as far as the
+     * pointer, in 0.5 dB steps; with Shift a fifth as far, in 0.1 dB steps.
+     * Shift pressed or let go on the way goes on from where the point is.
+     */
+    const startDrag = (i, y, fine = false) => {
+      const gains = shown();
+      drag = { i, gains, from: { y, db: gains[i], fine }, moved: false };
+      hot = i;
+      draw();
+    };
+    const dragTo = (y, fine) => {
+      if (fine !== drag.from.fine) drag.from = { y, db: drag.gains[drag.i], fine };
+      const b = area();
+      const moved = (dbOf(b, y) - dbOf(b, drag.from.y)) * (fine ? 0.2 : 1);
+      const step = fine ? 0.1 : 0.5;
+      const db = round(drag.from.db + Math.round(moved / step) * step);
+      if (db === drag.gains[drag.i]) return;
+      drag.gains = drag.gains.slice();
+      drag.gains[drag.i] = db;
+      drag.moved = true;
+      Store.previewSettings(custom(drag.gains));
+    };
+    const drop = () => {
+      if (!drag) return;
+      if (drag.moved) Store.saveSettings(custom(drag.gains));
+      drag = null;
+      draw();
+    };
+
+    // Fingers: a finger put on a point drags it (a tap picks it, a second one soon
+    // after on it puts it back to 0 dB), one put anywhere else slides the part shown
+    // along, two pinch it in or out. A finger passing over a point never takes it.
+    const fingers = new Map();   // pointerId -> { x, y }
+    let touch = null;            // one finger: { x0, y0, on (the point under it, or -1), lo, moved }
+    let pinch = null;            // two: { d, zoom, frac }
+    let tapped = null;           // the last tap on a point, { i, t }
+    const spread = () => {
+      const [a, c] = [...fingers.values()];
+      return { d: Math.hypot(a.x - c.x, a.y - c.y), x: (a.x + c.x) / 2 };
+    };
+    const touchDown = (e) => {
+      fingers.set(e.pointerId, at(e));
+      if (fingers.size === 2) {
+        drop();
+        touch = null;
+        const s = spread();
+        pinch = { d: Math.max(1, s.d), zoom: zoomOf(), frac: fracOf(area(), s.x) };
+      } else if (fingers.size === 1 && !pinch) {
+        const p = at(e);
+        touch = { x0: p.x, y0: p.y, on: nearest(e, 24), lo: view.lo, moved: false };
+      }
+    };
+    const touchMove = (e) => {
+      if (!fingers.has(e.pointerId)) return;
+      const p = at(e);
+      fingers.set(e.pointerId, p);
+      if (pinch) {
+        if (fingers.size < 2) return;
+        const s = spread();
+        zoomTo(pinch.zoom * (s.d / pinch.d), pinch.frac, s.x);
+        return;
+      }
+      if (!touch) return;
+      if (!touch.moved) {
+        if (Math.hypot(p.x - touch.x0, p.y - touch.y0) < 6) return;
+        touch.moved = true;
+        if (touch.on >= 0) startDrag(touch.on, touch.y0);
+      }
+      if (drag) {
+        dragTo(p.y, false);
+        return;
+      }
+      const b = area();
+      const span = view.hi - view.lo;
+      view.lo = Math.max(0, Math.min(1 - span, touch.lo - ((p.x - touch.x0) / (b.x1 - b.x0)) * span));
+      view.hi = view.lo + span;
+      draw();
+    };
+    const touchUp = (e) => {
+      if (!fingers.delete(e.pointerId)) return;
+      if (pinch) {
+        // Nothing else until the other finger is lifted too.
+        if (!fingers.size) pinch = null;
+        return;
+      }
+      const t = touch;
+      touch = null;
+      if (drag) {
+        drop();
+        return;
+      }
+      if (!t || t.moved || e.type === 'pointercancel') return;
+      const i = nearest(e, 20);
+      const now = performance.now();
+      if (i >= 0 && tapped && tapped.i === i && now - tapped.t < 400) {
+        tapped = null;
+        zero(i);
+      } else {
+        tapped = i >= 0 ? { i, t: now } : null;
+      }
+      hot = i;
+      draw();
+    };
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') {
+        e.preventDefault();
+        canvas.setPointerCapture(e.pointerId);
+        touchDown(e);
+        return;
+      }
+      if (e.button !== 0) return;
+      const i = nearest(e);
+      if (i < 0) return;
+      e.preventDefault();
+      canvas.focus();
+      canvas.setPointerCapture(e.pointerId);
+      startDrag(i, at(e).y, e.shiftKey);
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch') {
+        touchMove(e);
+        return;
+      }
+      if (!drag) {
+        const i = nearest(e);
+        if (i !== hot) {
+          hot = i;
+          draw();
+        }
+        return;
+      }
+      dragTo(at(e).y, e.shiftKey);
+    });
+    for (const type of ['pointerup', 'pointercancel']) {
+      canvas.addEventListener(type, (e) => (e.pointerType === 'touch' ? touchUp(e) : drop()));
+    }
+    canvas.addEventListener('pointerleave', (e) => {
+      if (e.pointerType === 'touch' || drag || hot < 0) return;
+      hot = -1;
+      draw();
+    });
+    // A finger's double tap is its own (touchUp).
+    canvas.addEventListener('dblclick', (e) => {
+      if (!Store.phone) zero(nearest(e));
+    });
+    canvas.addEventListener('keydown', (e) => {
+      const gains = shown();
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        hot = Math.max(0, Math.min(gains.length - 1, hot < 0 ? 0 : hot + (e.key === 'ArrowLeft' ? -1 : 1)));
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (hot < 0) hot = 0;
+        const db = round(gains[hot] + (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 0.1 : 0.5));
+        if (db !== gains[hot]) {
+          gains[hot] = db;
+          Store.saveSettings(custom(gains));
+        }
+      } else {
+        return;
+      }
+      e.preventDefault();
+      draw();
+    });
+    canvas.addEventListener('blur', () => {
+      if (drag) return;
+      hot = -1;
+      draw();
+    });
+    new ResizeObserver(draw).observe(canvas);
+
+    this._refresh.push(() => {
+      bands.value = Store.settings.soundEqBands;
+      drawBands();
+      preset.value = Store.settings.soundEqPreset;
+      draw();
+    });
+
+    return [
+      h('h3.settings__section', 'Equalizer'),
+      this._row({
+        label: 'Audio bands',
+        desc: 'How many frequencies get separated for fidelity.',
+        right: h('div.settings__control', bands, bandsValue),
+      }),
+      this._row({
+        label: 'Sound Equalizer',
+        desc: 'A ready-made curve, or Custom: your own points. Moving a point makes the curve shown your Custom one.',
+        right: preset,
+      }),
+      graph,
+    ];
+  },
+
   /** The Android app's own: its version, and help for playing on with the screen off. */
   _appRows() {
     return [
@@ -427,7 +858,7 @@ const SettingsPanel = {
       return h('label.check', box, h('span', label));
     };
     return h('div.settings__ticks',
-      tick('colAlbum', 'Album'), tick('colMix', 'Mix'), tick('colGenre', 'Genre'), tick('colSubGenre', 'Info'));
+      tick('colAlbum', 'Album'), tick('colGenre', 'Genre'), tick('colSubGenre', 'Info'), tick('colMix', 'Mix'));
   },
 
   /** A slider with its value beside it. Percent 1-100 unless told otherwise. */
@@ -608,6 +1039,22 @@ const SettingsPanel = {
     ];
   },
 
+  /** Random for every new song: greyed out, it says what it needs. */
+  _randomEachRow() {
+    const random = () => Store.settings.visualizer.startsWith('random');
+    const row = this._row({
+      key: 'vizRandomEach',
+      label: 'Random for every new song',
+      desc: 'When a new song starts playing a new random visualizer from the selected category is chosen. Keeps full screen.',
+      when: random,
+    });
+    const name = row.querySelector('.settings__label span');
+    this._refresh.push(() => {
+      name.textContent = random() ? 'Random for every new song' : "Random for every new song (requires 'Random' in any category)";
+    });
+    return row;
+  },
+
   /** The browser the cookies come from: those found on this computer first. */
   /** The outputs Windows offers (output.js). */
   /** The phone's: where the music comes out now, and a button to its own chooser. */
@@ -617,7 +1064,7 @@ const SettingsPanel = {
       name.textContent = n;
     }).catch(() => {});
     draw();
-    if (!this._outputWatched) {
+    if (!this._outputWatched && window.flow.onOutputChange) {
       this._outputWatched = true;
       window.flow.onOutputChange(() => this._refreshAll());
     }
@@ -693,8 +1140,11 @@ const SettingsPanel = {
   _serverRows() {
     const on = () => Store.settings.serverOn;
     this._serverNode = h('div.settings__desc.server-state');
+    // Share (the server in use as a QR code) and, on a phone, Scan in front of it (qrShare.js).
+    this._shareNode = h('div.settings__control.share-control');
     const main = this._row({
       key: 'serverOn',
+      right: this._shareNode,
       label: 'Use a Flow Server',
       desc: 'Use the library on a Flow Server. Songs can be streamed from it and changes made here go to it. '
         + 'When turned on, your local files get uploaded to the server as well.',
@@ -757,6 +1207,13 @@ const SettingsPanel = {
       h('h3.settings__section', 'Media Management'),
       Store.can('musicFolder') ? this._savedSongsRow() : this._storageRow(),
       this._coversRow(),
+      this._row({
+        key: 'lyricsOn',
+        label: 'Fetch/Sync Lyrics',
+        desc: 'If enabled, songs get their lyrics looked up, saved and synchronized if connected to a server.',
+      }),
+      this._lyricsRow(),
+      Store.can('backups') ? this._backupsRow() : null,
       this._row({
         key: 'serverMetered',
         label: 'Allow downloads on mobile internet',
@@ -844,7 +1301,8 @@ const SettingsPanel = {
       this._row({
         key: 'sessionAutoAccept',
         label: 'Accept jam join requests automatically',
-        desc: 'If enabled, you do not get requests from users who want to join your jam, they can just join.',
+        desc: 'If enabled, you do not get requests from users who want to join your jam, they can just join. '
+          + 'Guests from other Flow Servers are still asked about.',
         sub: true,
         when: () => on() && Store.settings.sessionShare,
       }),
@@ -887,6 +1345,12 @@ const SettingsPanel = {
     });
     input.addEventListener('change', () => {
       const v = input.value.trim();
+      // A shared server's link (qrShare.js) pasted into an address: connected to.
+      if (/^flow:\/\/connect/i.test(v)) {
+        input.value = Store.settings[key] || '';
+        QrShare.connect(v);
+        return;
+      }
       input.value = v;
       if (v !== (Store.settings[key] || '')) Store.saveSettings({ [key]: v });
     });
@@ -962,6 +1426,16 @@ const SettingsPanel = {
     if (this._syncSecret) this._syncSecret();
     this._drawProfile();
     this._drawSwitch();
+    this._drawShare();
+  },
+
+  _drawShare() {
+    if (!this._shareNode) return;
+    const online = Store.server.on && Store.server.state === 'online';
+    clear(this._shareNode).append(...[
+      Store.can('scanQr') ? h('button.btn.btn--small', { type: 'button', title: 'Connect to a Flow Server by its QR code', onclick: () => QrShare.scan() }, 'Scan') : null,
+      online ? h('button.btn.btn--small', { type: 'button', title: 'Show this server as a QR code for another app', onclick: () => QrShare.open() }, 'Share') : null,
+    ].filter(Boolean));
   },
 
   // ---- Switch server ----
@@ -1415,6 +1889,101 @@ const SettingsPanel = {
       h('div.settings__label.settings__label--plain', 'Cover Cache'),
       h('div.settings__desc', 'Covers are found by the client or server, synchronized automatically.'));
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._coversNode, this._clearCovers)));
+  },
+
+  /**
+   * Lyrics (4.0.1): how many the Lyrics folder keeps and the room they take,
+   * under Fetch/Sync Lyrics. Clearing leaves those written in Flow for Local
+   * Files songs; a server's come down again.
+   */
+  _lyricsRow() {
+    this._lyricsNode = h('span.settings__note');
+    const clearBtn = h('button.btn.btn--small', {
+      type: 'button',
+      title: 'Delete the lyrics kept here, except those written in Flow for Local Files songs. Those of a server come down again.',
+      onclick: () => attempt(async () => {
+        await window.flow.clearLyricsCache();
+        toast('Lyrics cache cleared', 'success');
+        Lyrics.forgetAll();
+        this._drawLyrics();
+      }),
+    }, 'Clear lyrics cache');
+    const left = h('div.settings__left',
+      h('div.settings__label.settings__label--plain', 'Lyrics Cache'),
+      h('div.settings__desc', 'Lyrics are found by the client or server, or manually added using Flow. '
+        + 'Synchronized automatically if "Fetch/Sync Lyrics" is enabled.'));
+    const row = h('div.settings__row.settings__row--sub', left, h('div.settings__right', h('div.settings__control', this._lyricsNode, clearBtn)));
+    // Greyed out under Fetch/Sync Lyrics unticked, Clear lyrics cache still there to click.
+    this._refresh.push(() => row.classList.toggle('settings__row--dim', Store.settings.lyricsOn === false));
+    return row;
+  },
+
+  async _drawLyrics() {
+    if (!this._lyricsNode) return;
+    try {
+      const st = await window.flow.lyricsStats();
+      if (!this._lyricsNode) return;
+      // How many, the room they take, and while every song's are looked up, how many still are.
+      this._lyricsNode.textContent = `${st.count} lyrics · ${fmtBytes(st.bytes)}${st.left ? ` · looking up ${st.left} more` : ''}`;
+      this._lyricsNode.title = st.none ? `No lyrics found for ${Util.plural(st.none, 'song')}` : '';
+    } catch {
+      this._lyricsNode.textContent = '';
+    }
+  },
+
+  /**
+   * Backups of this computer's library (4.0): made once a week, the last 6
+   * kept; one picked is put back. A Flow Server backs up its own library
+   * (Administration).
+   */
+  _backupsRow() {
+    const pick = h('select.select');
+    const restore = h('button.btn.btn--small', {
+      type: 'button',
+      onclick: () => attempt(async () => {
+        const b = this._backupList.find((x) => x.name === pick.value);
+        if (!b) return;
+        const ok = await confirmDialog({
+          title: 'Restore backup',
+          message: `Put Local Files back as they were on ${Util.fmtDate(b.createdAt)}? Song names, playlists, favourites and stats `
+            + 'go back to how they were then; songs added since stay, songs whose files are gone stay out. What is there now is backed up first.',
+          confirmLabel: 'Restore',
+          kind: 'light-red',
+        });
+        if (!ok) return;
+        const r = await window.flow.restoreBackup(b.name);
+        toast(`Backup restored: ${Util.plural(r.songs, 'song')}${r.missing ? `, ${r.missing} without their files left out` : ''}`, 'success');
+        this._drawBackups();
+      }),
+    }, 'Restore');
+    const make = h('button.btn.btn--small', {
+      type: 'button',
+      onclick: () => attempt(async () => {
+        await window.flow.makeBackup();
+        toast('Backup made', 'success');
+        this._drawBackups();
+      }),
+    }, 'Back up now');
+    this._backupList = [];
+    this._backupPick = pick;
+    this._backupRestore = restore;
+    this._drawBackups();
+    const left = h('div.settings__left',
+      h('div.settings__label.settings__label--plain', 'Backups'),
+      h('div.settings__desc', 'The song names, playlists, favourites and stats of Local Files are backed up every week, '
+        + 'the last 6 kept. Never the song files themselves.'));
+    return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', pick, restore, make)));
+  },
+
+  async _drawBackups() {
+    const list = await window.flow.backups().catch(() => []);
+    const why = { weekly: '', manual: ' (by hand)', restore: ' (before a restore)' };
+    this._backupList = list;
+    clear(this._backupPick).append(...(list.length
+      ? list.map((b) => h('option', { value: b.name }, `${Util.fmtDate(b.createdAt)}${why[b.reason] || ''}`))
+      : [h('option', { value: '' }, 'No backups yet')]));
+    this._backupPick.disabled = !list.length;
+    this._backupRestore.disabled = !list.length;
   },
 
   /** The phone's songs and their room; Remove downloads deletes the server's songs kept here. */

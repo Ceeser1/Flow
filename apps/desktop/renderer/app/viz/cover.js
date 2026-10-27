@@ -8,6 +8,8 @@
 //   const cover = new VizCover(gl, { standIn: 'record' });
 //   each frame: if (cover.update()) the song changed (cover.song: it, or null)
 //   cover.tex, cover.loaded, cover.colors ([primary, secondary] rgb 0..1)
+//
+// VizCover.Picture: a picture picked in a cogwheel, the same way (Halo's).
 
 const VizCover = (() => {
   function hsv(h, s, v) {
@@ -185,19 +187,64 @@ const VizCover = (() => {
     }
 
     _upload(source) {
-      const gl = this.gl;
-      gl.bindTexture(gl.TEXTURE_2D, this.tex);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+      upload(this.gl, this.tex, source);
       this.loaded = true;
     }
   }
 
+  /** An image into a texture, with its mipmaps. */
+  function upload(gl, tex, source) {
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+  }
+
+  /**
+   * A picture picked in a cogwheel (a file Flow keeps, by its path): as a
+   * texture once loaded, and its colours (null when it has hardly any).
+   *   each frame: picture.want(path); picture.loaded, .tex, .width, .height, .colors
+   */
+  class Picture {
+    constructor(gl) {
+      this.gl = gl;
+      this.tex = gl.createTexture();
+      this.path = null;
+      this.loaded = false;
+      this.width = 1;
+      this.height = 1;
+      this.colors = null;
+    }
+
+    want(path) {
+      if (path === this.path) return;
+      this.path = path;
+      this.loaded = false;
+      if (!path) return;
+      const img = new Image();
+      img.onload = () => {
+        if (this.path !== path) return;
+        upload(this.gl, this.tex, img);
+        this.width = img.naturalWidth || 1;
+        this.height = img.naturalHeight || 1;
+        try {
+          this.colors = paletteOf(img);
+        } catch {
+          this.colors = null;
+        }
+        this.loaded = true;
+      };
+      // Gone (deleted by hand): the song's cover instead.
+      img.onerror = () => {};
+      img.src = Util.fileUrl(path);
+    }
+  }
+
   Cover.hsv = hsv;
+  Cover.Picture = Picture;
   return Cover;
 })();

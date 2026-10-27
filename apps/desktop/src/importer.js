@@ -27,8 +27,16 @@ const {
 const { scanFolder, MAX_FILES } = require('./localScan');
 const { lookupInfo } = require('@flow/core/songInfo');
 
+// The songs a list is held against ("already in your library"): the library
+// the window shows, a Flow Server's while one is connected (main.js), whose
+// songs and playlists the ids then are.
+let shownLibrary = () => library.get();
+function useLibrary(fn) {
+  shownLibrary = fn;
+}
+
 // A downloaded song's album and genre: its list's or page's, else Apple's.
-const lister = createLister({ media, library: () => library.get(), lookupInfo });
+const lister = createLister({ media, library: () => shownLibrary(), lookupInfo });
 const { list, download, search } = lister;
 
 // ---- importing: download everything, then save it all at once ----
@@ -188,8 +196,9 @@ function removeOriginal(file) {
  * entries } where an entry is { existingId } or { cachePath, start, end,
  * duration, meta, sourceUrl, sourceKey }, each with its `position` in the
  * whole list (else its place in entries). Resolves { playlistId, name, saved,
- * songIds, times, fromLibrary, failed: [{ title, reason }] }, where times
- * holds the time each song was put into the playlists.
+ * songIds, times, byPosition, fromLibrary, failed: [{ title, reason }] },
+ * where times holds the time each song was put into the playlists and
+ * byPosition each saved entry's song id by its position.
  *
  * The songs of one import may be saved a few at a time ("Finish this song"):
  * the job then keeps its `base` time, and the playlist the first call made
@@ -222,7 +231,7 @@ async function finish(job, onProgress) {
   // time, one second apart, and the playlist reads top to bottom as the source.
   const base = Number(job.base) || Date.now();
   const addedAt = (position) => base - position * 1000;
-  const summary = { playlistId, name: playlistName, saved: 0, songIds: [], times: {}, fromLibrary: 0, failed: [], kept: [] };
+  const summary = { playlistId, name: playlistName, saved: 0, songIds: [], times: {}, byPosition: {}, fromLibrary: 0, failed: [], kept: [] };
   const toSave = job.entries.filter((e) => !e.existingId).length;
   const listsOf = (d) => [...new Set([playlistId, ...(job.playlistIds || [])])]
     .filter((id) => id && model.playlistById(d, id));
@@ -279,6 +288,7 @@ async function finish(job, onProgress) {
         });
         summary.songIds.push(song.id);
         summary.times[song.id] = addedAt(position);
+        summary.byPosition[position] = song.id;
       });
       const songId = summary.songIds[summary.songIds.length - 1];
       // The cover found while it was trimmed (or once it is found). A local
@@ -301,4 +311,4 @@ async function finish(job, onProgress) {
   return summary;
 }
 
-module.exports = { list, download, search, listLocal, prepareLocal, finish, groupToken, eachItem };
+module.exports = { list, download, search, listLocal, prepareLocal, finish, groupToken, eachItem, useLibrary };

@@ -13,12 +13,17 @@ const Modal = {
    * return false to keep the popup open. Resolves nothing itself: callers wrap
    * it in their own promise. `drawer` makes it a panel that slides in from the
    * right over a lighter backdrop; `sheet` one that rises from the bottom
-   * (the phone's menus, mobile.css). Returns { close, el }.
+   * (the phone's menus, mobile.css). `sticky` keeps it open on a click
+   * beside it, Escape and the phone's Back: only X and its buttons close it.
+   * `confirmDismiss` (async, true to close) is asked first on those three.
+   * Returns { close, dismiss, el, sticky }; dismiss() is for those three.
    */
-  open({ title, body, buttons = [], className = '', onClose, focus, drawer = false, sheet = false }) {
+  open({
+    title, body, buttons = [], className = '', onClose, focus, drawer = false, sheet = false, sticky = false, confirmDismiss = null,
+  }) {
     const closeBtn = iconButton('modal__close', Icons.x, 'Close', () => handle.close());
     const footer = h('div.modal__footer');
-    const box = h('div.modal' + (className ? '.' + className : ''), { role: 'dialog', 'aria-modal': 'true' },
+    const box = h('div.modal' + (className ? '.' + className : ''), { role: 'dialog', 'aria-modal': 'true', tabIndex: -1 },
       h('div.modal__head', h('h2.modal__title', title), closeBtn),
       h('div.modal__body', body),
       footer);
@@ -32,8 +37,22 @@ const Modal = {
     if (document.body.classList.contains('viz-open')) backdrop.classList.add('modal-backdrop--over');
 
     let closed = false;
+    let asking = false;
     const handle = {
       el: box,
+      sticky,
+      async dismiss() {
+        if (sticky || closed || asking) return;
+        if (confirmDismiss) {
+          asking = true;
+          try {
+            if (!(await confirmDismiss())) return;
+          } finally {
+            asking = false;
+          }
+        }
+        handle.close();
+      },
       close(result) {
         if (closed) return;
         closed = true;
@@ -73,7 +92,7 @@ const Modal = {
       pressedBackdrop = e.target === backdrop;
     });
     backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop && pressedBackdrop) handle.close();
+      if (e.target === backdrop && pressedBackdrop) handle.dismiss();
     });
 
     $('modalRoot').appendChild(backdrop);
@@ -381,7 +400,7 @@ function pickPlaylists({ title = 'Add to Playlist', subtitle = '', lockedIds = [
 
     const draw = () => {
       clear(list);
-      const lists = Store.sortedPlaylists();
+      const lists = Store.editablePlaylists();
       if (!lists.length) {
         list.appendChild(h('div.picker__empty', 'No playlists yet. Create one above.'));
         return;

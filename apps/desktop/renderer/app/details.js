@@ -17,6 +17,8 @@ const SongDetails = {
 
     const body = h('div.details');
     let modal = null;
+    // Its lyrics (4.0.1), fetched once: { state: 'loading' | 'ready' | 'error', data, error }.
+    const lyrics = { state: 'loading', data: null, error: '' };
 
     const draw = () => {
       const song = Store.song(songId);
@@ -29,11 +31,24 @@ const SongDetails = {
       body.appendChild(this._playlists(song, shown));
       body.appendChild(this._stats(song));
       body.appendChild(this._source(song));
+      if (window.flow.lyrics) body.appendChild(this._lyrics(song, lyrics, load));
+    };
+    const load = async () => {
+      lyrics.state = 'loading';
+      draw();
+      try {
+        const data = await window.flow.lyrics(songId);
+        Object.assign(lyrics, { state: 'ready', data, error: '' });
+      } catch (err) {
+        Object.assign(lyrics, { state: 'error', data: null, error: (err && err.message) || 'The lyrics could not be fetched.' });
+      }
+      draw();
     };
 
     const redraw = () => draw();
     Store.onLibrary(redraw);
     draw();
+    if (window.flow.lyrics) load();
     // On the phone a full-screen panel from the right, like the Queue, swiped away to either side.
     modal = Modal.open({
       title: 'Song Details',
@@ -113,10 +128,45 @@ const SongDetails = {
     }, url);
     const row = (label, value) => [h('div.details__label', label), h('div.details__value', value)];
     return h('section.details__section',
-      h('h4.details__heading', 'Downloaded from'),
-      h('div.details__grid',
+      h('h4.details__heading', 'Source'),
+      h('div.details__grid.details__grid--source',
         ...row('Direct Url', song.sourceUrl ? link(song.sourceUrl) : h('span.muted-text', 'Not known (the file was added to Local Files by hand)')),
         ...(song.sourcePlaylistUrl ? row('Playlist Url', link(song.sourcePlaylistUrl)) : [])));
+  },
+
+  /**
+   * Its lyrics, the words without times (4.0.1), with Edit Lyrics (or Add
+   * Lyrics without any) at the heading's right: written ones are kept for
+   * good, on the server for a server's song. `reload` fetches them again.
+   */
+  _lyrics(song, lyrics, reload) {
+    // The heading says where the words came from; Edit (or Add) at its right.
+    const name = h('span', 'Lyrics');
+    const heading = h('h4.details__heading.details__heading--split', name);
+    const section = h('section.details__section', heading);
+    if (lyrics.state === 'loading') {
+      section.appendChild(h('div.details__lyrics.details__lyrics--none', LyricsEdit.spinner(), 'Looking for the lyrics...'));
+      return section;
+    }
+    if (lyrics.state === 'error') {
+      section.append(h('div.details__lyrics.details__lyrics--none', lyrics.error),
+        h('div.details__row', h('button.btn.btn--small', { type: 'button', onclick: reload }, 'Try again')));
+      return section;
+    }
+    const data = lyrics.data;
+    const words = data && data.found ? String(data.plain || '').trim() : '';
+    if (words) {
+      const from = data.own ? 'written in Flow' : `from ${data.source || 'LRCLIB'}`;
+      name.appendChild(h('span.details__heading-note', ` (${from}, ${data.synced ? 'with times' : 'without times'})`));
+    }
+    section.appendChild(words
+      ? h('div.details__lyrics', words)
+      : h('div.details__lyrics.details__lyrics--none', data && data.instrumental ? 'Instrumental' : 'No lyrics found for this song.'));
+    if (!LyricsEdit.available) return section;
+    heading.appendChild(h('button.btn.btn--small.btn--light-green', {
+      type: 'button', onclick: () => LyricsEdit.openFor(song, data, reload),
+    }, words ? 'Edit Lyrics' : 'Add Lyrics'));
+    return section;
   },
 
   _stats(song) {

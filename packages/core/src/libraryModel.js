@@ -153,6 +153,45 @@ function cleanIds(list) {
   return [...new Set((Array.isArray(list) ? list : []).map((x) => String(x || '')).filter(Boolean))];
 }
 
+// Smart playlists (4.0): a playlist with rules holds the songs that match
+// them, worked out by the apps (playlistRules.js in the window) from the
+// library as it is; its entries stay empty, and it is never shared. A rule's
+// field has a kind, and each kind its ways of comparing.
+const RULE_FIELDS = {
+  artist: 'text', title: 'text', album: 'text', genre: 'text', info: 'text', mix: 'text',
+  added: 'date', lastPlayed: 'date', length: 'number', plays: 'number', fullListens: 'number', favourite: 'bool',
+};
+const RULE_OPS = {
+  text: ['contains', 'notContains', 'is', 'isNot', 'startsWith'],
+  number: ['gt', 'lt'],
+  date: ['within', 'notWithin'],
+  bool: ['is'],
+};
+const RULE_SORTS = ['added', 'title', 'artist', 'plays', 'lastPlayed', 'length'];
+const MAX_RULES = 12;
+
+/** A smart playlist's rules as kept, or null for none: { match, conditions, sort, limit }. */
+function cleanRules(raw) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.conditions)) return null;
+  const conditions = [];
+  for (const c of raw.conditions) {
+    const kind = c && RULE_FIELDS[c.field];
+    if (!kind || !RULE_OPS[kind].includes(c.op)) continue;
+    let value;
+    if (kind === 'text') value = String(c.value == null ? '' : c.value).slice(0, 100);
+    else if (kind === 'bool') value = c.value !== false;
+    else value = Math.max(0, Math.min(1e7, Number(c.value) || 0));
+    conditions.push({ field: c.field, op: c.op, value });
+    if (conditions.length >= MAX_RULES) break;
+  }
+  return {
+    match: raw.match === 'any' ? 'any' : 'all',
+    conditions,
+    sort: RULE_SORTS.includes(raw.sort) ? raw.sort : 'added',
+    limit: Math.max(0, Math.min(5000, Math.floor(Number(raw.limit) || 0))),
+  };
+}
+
 function sanitize(raw) {
   const data = emptyLibrary();
   if (!raw || typeof raw !== 'object') return data;
@@ -197,13 +236,15 @@ function sanitize(raw) {
       inList.add(e.songId);
       entries.push({ songId: String(e.songId), addedAt: Number(e.addedAt) || Date.now() });
     }
+    const rules = cleanRules(p.rules);
     data.playlists.push({
       id: String(p.id),
       name: String(p.name || 'Playlist'),
       createdAt: Number(p.createdAt) || Date.now(),
-      entries,
+      entries: rules ? [] : entries,
       source: p.source && p.source.url ? { url: String(p.source.url), kind: String(p.source.kind || '') } : null,
-      shared: p.shared === true,
+      shared: p.shared === true && !rules,
+      rules,
     });
   }
   data.follows = cleanIds(raw.follows);
@@ -273,7 +314,7 @@ function checkPlaylistName(data, name, exceptId = null) {
 
 function createPlaylist(data, name, id, now = Date.now()) {
   const clean = checkPlaylistName(data, name);
-  const playlist = { id, name: clean, createdAt: now, entries: [], source: null, shared: false };
+  const playlist = { id, name: clean, createdAt: now, entries: [], source: null, shared: false, rules: null };
   data.playlists.push(playlist);
   return playlist;
 }
@@ -302,9 +343,19 @@ function renamePlaylist(data, id, name) {
   return p;
 }
 
+/** Makes a playlist a smart one with these rules (null: an ordinary, empty one again). */
+function setPlaylistRules(data, id, rules) {
+  const p = requirePlaylist(data, id);
+  p.rules = cleanRules(rules);
+  p.entries = [];
+  if (p.rules) p.shared = false;
+  return p;
+}
+
 /** Shares a playlist with the other profiles, or no longer. */
 function setPlaylistShared(data, id, shared) {
   const p = requirePlaylist(data, id);
+  if (shared && p.rules) throw new Error('A smart playlist is made from your own listening, so it cannot be shared.');
   p.shared = !!shared;
   return p;
 }
@@ -516,13 +567,26 @@ function recordListen(data, songId, { listened, duration, at = Date.now(), conte
   return kind;
 }
 
+/**
+ * A listen to a song this library does not have (4.0: as a guest in another
+ * server's session): it counts in the totals only (time, listens, the days
+ * and sessions of the Statistics), not for any song.
+ */
+function recordAwayListen(data, { listened, duration, at = Date.now(), tz = null }) {
+  const total = Number(duration) || 0;
+  const heard = Math.min(Math.max(0, Number(listened) || 0), total || Infinity);
+  if (heard < MIN_LISTEN_SECONDS) return null;
+  recordStatistics(data, heard, at, tz);
+  return heard;
+}
+
 /** Adds one song to several playlists. Lists that already hold it are skipped. */
 function addSongToPlaylists(data, songId, playlistIds, now = Date.now()) {
   requireSong(data, songId);
   let added = 0;
   for (const pid of playlistIds || []) {
     const p = requirePlaylist(data, pid);
-    if (p.entries.some((e) => e.songId === songId)) continue;
+    if (p.rules || p.entries.some((e) => e.songId === songId)) continue;
     p.entries.push({ songId, addedAt: now });
     added += 1;
   }
@@ -531,6 +595,7 @@ function addSongToPlaylists(data, songId, playlistIds, now = Date.now()) {
 
 function addSongsToPlaylist(data, playlistId, songIds, now = Date.now()) {
   const p = requirePlaylist(data, playlistId);
+  if (p.rules) throw new Error('A smart playlist picks its songs by its rules: they cannot be added by hand.');
   let added = 0;
   for (const sid of songIds || []) {
     requireSong(data, sid);
@@ -613,7 +678,8 @@ function sameNames(a, b) {
 module.exports = {
   ALL_SONGS_ID, ALL_SONGS_NAME, MAX_NAME, PLAYED_SHARE, EARLY_SKIP_SECONDS,
   emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
-  createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource,
+  createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource, setPlaylistRules, cleanRules, recordAwayListen,
+  RULE_FIELDS, RULE_OPS, RULE_SORTS,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
   addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,

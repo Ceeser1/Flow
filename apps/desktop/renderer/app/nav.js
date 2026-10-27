@@ -11,6 +11,17 @@ const Nav = {
   _at: null,
 
   init() {
+    // The main scroll bar's track reaches the window's top once the page is scrolled, and stops where
+    // the contents do once it is scrolled to the end (style.css).
+    const pages = $('pages');
+    const edges = () => {
+      pages.classList.toggle('pages--scrolled', pages.scrollTop > 0);
+      pages.classList.toggle('pages--end', pages.scrollTop + pages.clientHeight >= pages.scrollHeight - 1);
+    };
+    pages.addEventListener('scroll', edges, { passive: true });
+    const sizes = new ResizeObserver(edges);
+    sizes.observe(pages);
+    for (const node of pages.querySelectorAll('.page')) sizes.observe(node);
     $('menuSearch').innerHTML = Icons.search + '<span>Search</span>';
     $('menuAdd').innerHTML = Icons.add + '<span>Add Songs</span>'
       + '<span id="menuAddBadge" class="menu__badge" hidden title="Playlist import running"></span>';
@@ -206,6 +217,15 @@ const Nav = {
     $('menuSessionsList').hidden = !Session.visible || !sessionsOpen;
     const sessionList = clear($('menuSessionsList'));
     if (Session.visible && sessionsOpen) {
+      // A guest in another server's session: that server's songs, to play and queue.
+      const guestList = Store.guestPlaylist();
+      if (Session.guest && guestList) {
+        sessionList.appendChild(h('button.menu__sub', {
+          type: 'button',
+          title: `${guestList.name}: queue them, or start one, in the session`,
+          onclick: () => this.openPlaylist(GUEST_ID),
+        }, h('span.menu__sub-name', guestList.name)));
+      }
       const inId = Session.mine ? Session.mine.session.id : null;
       const sessions = [...Session.list].sort((a, b) => a.name.localeCompare(b.name));
       for (const s of sessions) {
@@ -219,6 +239,21 @@ const Nav = {
         },
         h('span.menu__sub-name', s.name),
         tag ? h('span.session-tag', tag) : null,
+        s.playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null));
+      }
+      // Other servers' sessions on this network, as "Server - Device": one opens the page at it (Join as guest).
+      const nearby = Store.can('guests') ? Session.nearby.flatMap((n) => n.sessions.map((s) => ({ s, n, label: `${n.name} - ${Session.deviceOf(s)}` }))) : [];
+      nearby.sort((a, b) => a.label.localeCompare(b.label));
+      for (const { s, n, label } of nearby) {
+        const joined = !!Session.guest && Session.guest.serverId === n.id && s.id === inId;
+        const song = s.song ? `${s.playing ? '' : 'Paused: '}${s.song.title}${s.song.artist ? ` - ${s.song.artist}` : ''}` : 'Nothing loaded';
+        sessionList.appendChild(h('button.menu__sub' + (s.playing ? '.menu__sub--playing' : ''), {
+          type: 'button',
+          title: `${s.name}, on the server ${n.name}${joined ? ' (joined)' : ''}\n${song}`,
+          onclick: () => this.show('sessions', { sessionId: s.id }),
+        },
+        h('span.menu__sub-name', label),
+        joined ? h('span.session-tag', 'Joined') : null,
         s.playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null));
       }
     }

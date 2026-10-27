@@ -183,10 +183,13 @@ const Player = {
     this.engine = window.flow.createAudioEngine
       ? window.flow.createAudioEngine()
       : new HtmlAudioEngine($('mainAudio'), $('fadeAudio'));
+    // The phone's player shapes the sound itself (the desktop's in Equalizer's route).
+    if (this.engine.setSoundEq && Store.can('soundEq')) SoundEq.attachEngine(this.engine);
     // Without a volume slider (the phone's is its buttons), Flow plays at full volume.
     this.volume = Store.can('volume') ? Store.settings.volume : 1;
     this._applyVolume();
     this.queue.setShuffle(Store.settings.shuffle);
+    this._applyAutoDj();
 
     const e = this.engine;
     e.on('play', () => {
@@ -306,6 +309,11 @@ const Player = {
       if (waiting === this.currentId) this._unreachable(Store.song(waiting));
     });
     Store.onSettings((patch) => {
+      if ('autoDj' in patch) {
+        this._applyAutoDj();
+        if (this.contextId && !this.remote) this.queue.fill(this.idsOf(this.contextId));
+        this._emit();
+      }
       if ('crossfade' in patch || 'crossfadeSeconds' in patch) this._syncUpcoming();
       if (!('normalize' in patch)) return;
       if (this.currentId) this.engine.setGain(this._normGain(this.currentId), true);
@@ -572,6 +580,18 @@ const Player = {
     this.load(id, this.contextId, { fromQueue: true });
   },
 
+  /**
+   * Settings' "Continue with similar songs": the queue goes on with songs
+   * like the last ones heard once the list has played through (autoDj.js).
+   */
+  _applyAutoDj() {
+    this.queue.continueWith = Store.settings.autoDj
+      ? (seeds, avoid) => AutoDJ.similar(Store.library.songs, seeds, avoid)
+      : null;
+    // Turned off: the list again, from where it was.
+    if (!this.queue.continueWith) this.queue._leaveDj();
+  },
+
   toggleRepeat() {
     if (this._remoteDo('repeat', { on: !this.repeat })) {
       this.repeat = !this.repeat;
@@ -745,7 +765,7 @@ const Player = {
   // ---- remote mode (in another device's session) ----
 
   _serverNow() {
-    return Date.now() + (Store.server.timeOffset || 0);
+    return Date.now() + Session.timeOffset();
   },
 
   _remotePosition() {
@@ -1164,6 +1184,7 @@ const Player = {
     if (!this.remote && this.currentId) {
       const ahead = new PlayQueue(this.queue.random, this.queue.limit);
       ahead.restore(this.queue.snapshot());
+      ahead.continueWith = this.queue.continueWith;
       const order = this.contextId ? this.idsOf(this.contextId) : [];
       while (ids.length < this.UPCOMING) {
         const id = ahead.next(order);
@@ -1264,6 +1285,11 @@ const Player = {
     if (!(listened >= 5)) return;
     const song = Store.song(songId);
     const duration = (song && song.duration) || played || 0;
+    // Another server's song (a guest in its session): counted at home, in the totals only.
+    if (song && song.foreign) {
+      window.flow.recordAwayListen({ title: song.title, artist: song.artist }, listened, duration).catch(() => {});
+      return;
+    }
     // The time also counts for the list that was playing, if the song is in it
     // (one queued from elsewhere is not).
     const list = contextId ? Store.playlist(contextId) : null;

@@ -105,6 +105,28 @@ ${log()}`);
     assert.deepStrictEqual(config().trustedProxies, []);
     assert.strictEqual(config().discovery, true, 'kept from before');
 
+    // Another music folder: --yes alone leaves the old one's songs where they are, --move-music brings them along.
+    const put = (file) => {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, 'audio');
+    };
+    put(path.join(music, 'Uploads', 'Portishead - Roads.mp3'));
+    const music2 = path.join(dir, 'music 2');
+    out = setup(['--yes', '--music', music2]);
+    assert.match(out, /stay there and still play from there/);
+    assert.match(out, /flow-server move-music "/);
+    assert.ok(fs.existsSync(path.join(music, 'Uploads', 'Portishead - Roads.mp3')));
+    assert.strictEqual(config().musicDir, music2);
+    put(path.join(music2, 'Downloads', 'Moby - Porcelain.mp3'));
+    const music3 = path.join(dir, 'music 3');
+    out = setup(['--yes', '--music', music3, '--move-music']);
+    assert.match(out, /== Moving the music/);
+    assert.match(out, /Moved 1 file/);
+    assert.ok(fs.existsSync(path.join(music3, 'Downloads', 'Moby - Porcelain.mp3')));
+    assert.ok(!fs.existsSync(music2), 'the old folder, empty, is gone');
+    assert.strictEqual(config().musicDir, music3);
+    await up();
+
     out = setup(['--uninstall']);
     assert.match(out, /removed/);
     assert.strictEqual(await hello(port), null);

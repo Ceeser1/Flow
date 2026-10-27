@@ -13,6 +13,8 @@
 //   tools\          ffmpeg.exe and ffprobe.exe from apps/desktop/tools, when there
 //   flow-server.cmd the server's command line
 //   icon.ico        Flow's icon
+//   Flow Server Tray.exe  the icon in the notification area (tray\tray.cs,
+//                   compiled with the C# compiler that comes with Windows)
 //
 // makensis is electron-builder's (app-builder-lib fetches it once), or the one
 // in MAKENSIS.
@@ -20,6 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const tray = require('./tray/compile');
 
 const HERE = __dirname;
 const ROOT = path.join(HERE, '..', '..');
@@ -91,6 +94,7 @@ async function main() {
     '',
   ].join('\r\n'));
   fs.copyFileSync(path.join(ROOT, 'apps', 'desktop', 'build', 'icon.ico'), path.join(STAGE, 'icon.ico'));
+  tray.compile(path.join(STAGE, 'Flow Server Tray.exe'), path.join(STAGE, 'icon.ico'));
 
   const out = path.join(DIST, `Flow Server Setup ${version}.exe`);
   try {

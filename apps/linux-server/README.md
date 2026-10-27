@@ -52,11 +52,27 @@ stay where they are.
 A song deleted from an app is not gone at once. Its file moves to
 `.flow-trash` in the music folder and is removed after 30 days.
 
+**Another music folder:** the server keeps each song's full path, so songs
+in the folder used before keep playing from there, while new ones go into
+the new folder. `install.sh` (and Flow Server Settings on Windows) asks
+when the folder is changed whether everything in the old one should move
+into the new one. By hand, with the server stopped:
+
+```sh
+flow-server move-music ~/old-music --dry-run   # songs=N and files=N, moves nothing
+flow-server --music ~/new-music move-music ~/old-music
+```
+
+It backs up the library first, merges folders of the same name (a file whose
+name is taken there gets " (2)"), and the songs keep their playlists, covers
+and statistics. The old folder goes once it is empty. Deleting the old folder
+instead takes its songs out of the library at the next scan.
+
 ### Installing it as a service (Linux)
 
 ```sh
 git clone <the repo> ~/Flow && cd ~/Flow
-sh apps/linux-server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --downloads, --no-downloads, --separate-folders, --keep-folders (and --no-...), --uninstall
+sh apps/linux-server/install.sh           # --level N, --domain NAME, --music DIR, --port N, --yes, --no-tailscale, --no-discovery, --downloads, --no-downloads, --separate-folders, --keep-folders, --move-music (and --no-...), --uninstall
 ```
 
 Works on any Linux with systemd and Node 18 or newer (a Raspberry Pi, a home
@@ -280,6 +296,23 @@ starts) and writes the files in the background, its log saying when it is
 done; a restart carries on where it was. The apps keep a
 copy of every cover, so a server that is off still leaves them with theirs.
 
+## Lyrics
+
+From 4.0 the apps show the playing song's lyrics (see Flow's README). For the
+server's songs the server looks them up on [LRCLIB](https://lrclib.net)
+(its search only; no account or key, but the internet), a song LRCLIB does
+not have on [lyrics.ovh](https://lyrics.ovh) (the words without their
+times, no key either), and keeps them in
+`lyrics/` of its home, one file per song. It does so in the background for
+every song, one every 5 seconds (new songs as they come, the whole library
+after the update to 4.0), and at once for a song an app asks for first
+(`GET /api/songs/<id>/lyrics`). The background lookup asks once a song,
+found or not (songs kept as not found before lyrics.ovh was added: once
+more); with LRCLIB out of reach it tries again after 10 minutes. A
+song nothing was found for is asked about again after a week when an app
+asks; a song renamed or trimmed at once; a deleted song's lyrics go at the
+next start.
+
 ## Finding the server on the network (optional, off by default)
 
 Turned on with `flow-server --discovery` (remembered; `--no-discovery` turns it
@@ -294,6 +327,10 @@ holds what `/api/hello` tells anyone. Each asker gets at most 30 answers a
 minute, so the port can't be used to bounce traffic at someone else. It doesn't cross routers or guest WiFi
 with client isolation, and if the port is taken the server says so on start
 and the address has to be typed in.
+
+Discovery is also how apps of other Flow Servers find this server's Active
+Sessions to join as guests (from 4.0, see Active Sessions below): the answer
+then says `guests: true`, once an admin allows them.
 
 ## Away from home: Tailscale
 
@@ -373,6 +410,23 @@ The server also guards against a proxy set up by hand, at any level:
 - The caller's address is taken from `X-Forwarded-For` only when the proxy is
   on the same machine, or listed with `--trusted-proxy`; the wrong-password
   waits go by it.
+
+## Sharing the server by QR code
+
+From 4.0 an app connected to the server has **Share** in its Settings (Flow
+Server), and the phones **Scan**: the code is a `flow://connect` link with
+the server's id, name and Home and Remote address. With a password, the link
+holds a one-time pairing code instead: the sharing app hands the password it
+keeps to the server (`POST /api/pair`, checked), which keeps it in memory for
+10 minutes and trades it once for the code (`POST /api/pair/redeem`, open to
+anyone; wrong codes wait as wrong passwords do). No password, profile or PIN
+is ever in the code. On a server without a screen:
+
+```sh
+flow-server share    # the running server's QR code and link, in the terminal
+```
+
+It asks for the password to get a code (`FLOW_SERVER_PASSWORD` gives it).
 
 ## Checking a server from outside: doctor
 
@@ -465,6 +519,37 @@ node apps/linux-server/src/main.js profiles add "Carla"         # a new profile 
 in `failed-signins.json`, deleted songs in `trash.json` (both in the
 server's home), next to `server.json`.
 
+From 4.0 the rules also have **Allow guests in home network
+sessions/jams** (off until ticked; see Active Sessions below). Unticking it ends
+every guest's place at once.
+
+## Backups
+
+From 4.0 the server backs up the library's data once a week, at the start
+(after the folder scan) when the newest backup is a week old, and looks every
+6 hours; the last 6 are kept in `backups/` of its home, one gzipped JSON file
+each. A backup holds `library.json` (the songs' names, album, genre, Info,
+trims and who added them, the playlists, favourites, follows and listening
+stats, Statistics included) and the profiles part of `server.json` (names,
+PIN hashes, admin flags): never the songs' files, the covers, the trash, the
+password, the level or a device's token.
+
+A restore puts the backup's song names, playlists, favourites, follows and
+stats back, each song keeping its file as it is now (trimmed, renamed);
+songs deleted since come back when their file is still in the trash, songs
+added since stay, a profile made since keeps its part, and the master admin
+stays who it is. What is there is backed up first, and that backup is never
+pruned away with the one being restored. Administration has a Backups block:
+every admin can **Back up now**, the master admin **Restore**. Or:
+
+```sh
+flow-server backup                 # one now
+flow-server backups                # the backups, newest first
+flow-server restore <name | file>  # the running server takes it within a few seconds
+```
+
+A stopped server takes a restore when it starts.
+
 ## Active Sessions
 
 Devices connected to the server can listen together (see Flow's README).
@@ -491,6 +576,26 @@ A web server or tunnel in front has to pass the live channel on unbuffered
 (level 4 above); `doctor` checks it. Without that, Flow still works, but
 pauses and skips from other devices arrive late or not at all.
 
+**Guests from other servers** (from 4.0; on for a new server until an admin
+unticks Allow guests in home network sessions/jams): an app of another Flow Server on the
+same home network, or one with no server, finds this server by discovery
+(which has to be on) and may ask to join a session here. The host is asked
+about every guest. A guest is never a profile here: it gets a pass of its own
+(in memory only, gone with a restart or after 12 hours unused) that opens only
+`/api/guest/*` and only from a private address: the sessions, its live
+channel, joining, the controls, leaving, the time, and while in a session the
+server's songs with their audio and covers. A guest is never the host: the
+next member of this server takes over, and with none left the session ends.
+It cannot start this server's playlists, and nothing it hears is counted
+here.
+
+A guest may also bring its own songs: its app sends each one it plays or
+queues (`PUT /api/guest/songs/<id>`), kept in `session-songs/<session id>` of
+the server's home for that session only, never in the library, and deleted
+when the session ends and at every start. At most 60 a session, 300 MB each
+and 3 GB together, only files that play (mp3, m4a, aac, ogg, opus, flac, wav,
+webm). The members stream them from `GET /api/sessions/songs/<id>/audio`.
+
 ## Where things are
 
 | | Linux | Windows |
@@ -498,6 +603,9 @@ pauses and skips from other devices arrive late or not at all.
 | library, settings | `~/.local/share/flow-server` | `%LOCALAPPDATA%\Flow\server` |
 | downloads not finished yet | `staging/` in there, a folder per profile | the same |
 | covers | `covers/` in there, `<song id>.jpg` | the same |
+| lyrics | `lyrics/` in there | the same |
+| backups | `backups/` in there, the last 6 | the same |
+| songs guests brought | `session-songs/` in there, while their session lasts | the same |
 | music | `~/flow-music` | `~/flow-music` |
 | log | `journalctl -u flow-server` | `flow-server.log` in the library folder |
 
@@ -527,6 +635,12 @@ report changes.
 | `POST /api/songs/<id>/trim` | `{ start, end, base, cut }` (only when `/api/hello` lists `trim`, i.e. with ffmpeg): the song's file cut to `start`..`end` seconds, the uncut file to the trash → `{ song, rev }`; `cut` is the trim's id (`song.cut`), `base` the cut it was made from. `{ skipped: 'repeat' }` when it is in already, `'changed'` when the song was trimmed by another app since (not applied), `'gone'` when deleted |
 | `GET /api/songs/<id>/cover?v=<version>` | the song's cover (JPEG), 404 when it has none; `song.cover` in the library is its version (`-`: none found, `null`: not looked at yet), and with the current one in `?v=` it may be cached for good; `ETag` / `If-None-Match` too |
 | `PUT /api/songs/<id>/cover` | an app's cover for a song (a JPEG body, at most 4 MB; made 512 x 512 when it is not) → `{ cover }`; kept only when the song has none yet |
+| `GET /api/songs/<id>/lyrics` | the song's lyrics (4.0, `lyrics` in the features): `{ lyrics: { found, synced, plain, instrumental, source } }`, `synced` the lines with their times, `source` `LRCLIB`, `lyrics.ovh` or `own`; 502 when LRCLIB cannot be reached |
+| `PUT /api/songs/<id>/lyrics` | lyrics written or edited in an app (4.0.1, `ownLyrics` in the features), body `{ lines: [{ t, end, text }] }`: kept for good (`own`), never looked up again; `{ lines: null }` takes them away (looked up again); 400 when only some lines have times |
+| `POST /api/pair` | `{ password }` (4.0, `pair`): a one-time pairing code for a QR code → `{ code, expiresIn }` (`''` without a server password); 403 for a wrong password |
+| `POST /api/pair/redeem` | `{ code }` → `{ password }`, once, within 10 minutes (open to anyone); 404 for a code used or too old |
+| `GET /api/sessions/songs/<id>/audio` | a song a guest brought into this app's session (4.0), with Range |
+| `/api/guest/...` | guests from other servers (4.0, `guests`; see Active Sessions above and [Flow_server_API.md](../../Flow_server_API.md#guests-from-other-servers)) |
 | `POST /api/rescan` | look through the music folder now |
 | `GET /api/live?client=<id>&device=<name>` | the app's live channel (Server-Sent Events): `hello { client, serverTime, pingMs }` first, then the Active Sessions events below; a second channel of the same app replaces the first; ends with `end { reason }` (`replaced`, `auth`, `shutdown`) |
 | `GET /api/time` | `{ time }`: the server's clock, for playing in step |

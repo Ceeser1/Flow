@@ -47,7 +47,7 @@ function listIcon(p) {
   if (p.isAll || p.isFrom) return Icons.library;
   if (p.isDevice) return Icons.download;
   if (p.isFavourites) return Icons.star;
-  return p.isSmart ? Icons.pulse : Icons.list;
+  return p.isSmart || p.isRuled ? Icons.pulse : Icons.list;
 }
 
 /** True for boxes the user types into, where Space and arrows belong to the box. */

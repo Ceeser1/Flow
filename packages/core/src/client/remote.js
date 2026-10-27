@@ -82,6 +82,7 @@ const { applyCommand } = require('../commands');
 const { songFileStem } = require('../text');
 const { serverBaseUrl: baseUrl, isTailscaleAddress } = require('../address');
 const { OfflineError, AuthError, randomHex } = require('./common');
+const { makeLink, parseLink } = require('./share');
 const { createTrackedProfiles } = require('./trackedProfiles');
 
 /**
@@ -124,8 +125,9 @@ function createRemote(env) {
   // the server answers "nothing new" while its revision is the same: a copy of
   // another format is shown at start but fetched whole again. Raise it whenever
   // the songs or playlists gain a field the server sends (3: addedBy, profileNames;
-  // 4: listening, 3.5; 5: statistics, 3.6; 6: album, genre, subGenre, infoLooked, 3.6.3).
-  const CACHE_FORMAT = 6;
+  // 4: listening, 3.5; 5: statistics, 3.6; 6: album, genre, subGenre, infoLooked, 3.6.3;
+  // 7: a playlist's rules, 4.0).
+  const CACHE_FORMAT = 7;
 
   function emptySync(serverId = '') {
     return {
@@ -263,7 +265,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -351,6 +353,8 @@ function createRemote(env) {
       downloads: status.state === 'online' && conn.downloads,
       // It also searches by a song's name typed instead of a link.
       search: status.state === 'online' && conn.downloads && conn.search,
+      // It reads a playlist's link for its Update without downloading anything.
+      downloadCheck: status.state === 'online' && conn.downloads && conn.downloadCheck,
       // The server cuts its songs' files (Edit's trim).
       trim: status.state === 'online' && conn.trim,
       // Connected through the Tailscale address (away from home).
@@ -372,6 +376,9 @@ function createRemote(env) {
       serverId: sync.serverId,
       serverName: sync.serverName,
       statistics: status.state === 'online' && conn.statistics,
+      // Smart playlists (4.0): a server from before keeps no rules. Known while
+      // it was reached once (the setting is kept while away from it).
+      smartPlaylists: !!conn.smartPlaylists,
       tracked: tracked.list(),
     };
   }
@@ -764,15 +771,21 @@ function createRemote(env) {
         const profiles = Array.isArray(hello.features) && hello.features.includes('profiles');
         const downloads = Array.isArray(hello.features) && hello.features.includes('download');
         const search = Array.isArray(hello.features) && hello.features.includes('search');
+        const downloadCheck = Array.isArray(hello.features) && hello.features.includes('downloadCheck');
         const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
         const pin = Array.isArray(hello.features) && hello.features.includes('pin');
         const statistics = Array.isArray(hello.features) && hello.features.includes('statistics');
+        const lyrics = Array.isArray(hello.features) && hello.features.includes('lyrics');
+        const ownLyrics = Array.isArray(hello.features) && hello.features.includes('ownLyrics');
+        const lyricsSync = Array.isArray(hello.features) && hello.features.includes('lyricsSync');
+        const smartPlaylists = Array.isArray(hello.features) && hello.features.includes('smartPlaylists');
+        const pair = Array.isArray(hello.features) && hello.features.includes('pair');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, search, sessions, trim, admin, pin, statistics,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -1243,6 +1256,79 @@ function createRemote(env) {
   }
 
   /** A server song's waveform (the server draws it). */
+  /**
+   * A server song's lyrics, as the server keeps them (4.0): { found, synced,
+   * plain, instrumental }. Null when the server cannot say (out of reach, or
+   * from before lyrics): the app then looks them up itself.
+   */
+  async function songLyrics(songId) {
+    if (!active() || status.state !== 'online' || !conn.lyrics) return null;
+    try {
+      // The server tries a busy LRCLIB for 51 s (@flow/core/lyrics RETRY).
+      return (await call(`/api/songs/${encodeURIComponent(songId)}/lyrics`, { timeout: 120000 })).lyrics || null;
+    } catch (err) {
+      if (err instanceof OfflineError) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * A server song's own lyrics (4.0.1): `lines` [{ t, end, text }], or null
+   * to give it looked-up ones again. Resolves them as the server keeps them.
+   */
+  async function setSongLyrics(songId, lines) {
+    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached right now.');
+    if (!conn.ownLyrics) throw new Error('This Flow Server is too old to keep lyrics written here: it needs an update.');
+    return (await call(`/api/songs/${encodeURIComponent(songId)}/lyrics`, { method: 'PUT', json: { lines }, timeout: 30000 })).lyrics;
+  }
+
+  // The own lyrics of a Local Files song, sent after it when it goes up (the app's lyrics client).
+  let ownLinesOf = () => null;
+  function useOwnLyrics(fn) {
+    ownLinesOf = fn;
+  }
+
+  /** A Local Files song's own lyrics after it, when it has some. */
+  async function uploadLyrics(local, serverId) {
+    const lines = ownLinesOf(local.id);
+    if (!lines || !conn.ownLyrics) return;
+    try {
+      await call(`/api/songs/${encodeURIComponent(serverId)}/lyrics`, { method: 'PUT', json: { lines }, timeout: 30000 });
+    } catch (err) {
+      if (err instanceof AuthError) throw err;
+      problems.push(`The lyrics of "${[local.artist, local.title].filter(Boolean).join(' - ')}" could not be sent: ${err.message}`);
+    }
+  }
+
+  // The app's lyrics client keeps copies of the server's (4.0.1): told when its library changed.
+  let lyricsSyncHook = () => {};
+  function useLyricsSync(fn) {
+    lyricsSyncHook = fn;
+  }
+
+  /**
+   * The server's songs with lyrics kept and their stamps, for copies kept
+   * here: { serverId, songs: { id: stamp } }; null when it cannot say
+   * (offline, or from before copies).
+   */
+  async function lyricsIndex() {
+    if (!active() || status.state !== 'online' || !conn.lyricsSync || !sync.serverId) return null;
+    const serverId = sync.serverId;
+    const r = await call('/api/lyrics', { timeout: 60000 });
+    return serverId === sync.serverId ? { serverId, songs: (r && r.songs) || {} } : null;
+  }
+
+  /** The lyrics of up to 200 of the server's songs: { id: { ...lyrics, v } }, those it keeps. */
+  async function lyricsOf(ids) {
+    if (!active() || status.state !== 'online' || !conn.lyricsSync) return {};
+    return (await call('/api/lyrics', { method: 'POST', json: { ids }, timeout: 60000 })).lyrics || {};
+  }
+
+  /** This server's id, '' without one. */
+  function serverId() {
+    return active() && sync.serverId ? sync.serverId : '';
+  }
+
   async function songPeaks(songId) {
     if (!active() || status.state !== 'online') throw new Error('The server cannot be reached.');
     return (await call(`/api/songs/${encodeURIComponent(songId)}/peaks`, { timeout: 120000 })).peaks;
@@ -1435,6 +1521,7 @@ function createRemote(env) {
     }
     saveSync();
     if (!r.json.existing) await uploadCover(local, serverId);
+    await uploadLyrics(local, serverId);
     if (!settings.get('serverKeepFiles') && !neededOffline(serverId)) {
       await forgetLocal(cmd.localId, { deleteFile: true });
     }
@@ -1758,6 +1845,7 @@ function createRemote(env) {
     if (status.state !== 'online' || !cache.library) return;
     followServer().catch(() => {});
     coverSync().catch(() => {});
+    lyricsSyncHook();
   }
 
   let following = null;
@@ -2128,6 +2216,12 @@ function createRemote(env) {
   /** A Local Files song that is a copy of one of the server's (its cover comes from there). */
   function isServerCopy(lid) {
     return !!sync.fetched[lid];
+  }
+
+  /** The Local Files song a server's song came from or went to (uploaded, or downloaded here), or ''. */
+  function localOf(serverSongId) {
+    for (const [lid, sid] of Object.entries(sync.songMap || {})) if (sid === serverSongId) return lid;
+    return '';
   }
 
   // ---- synchronizing ----
@@ -2575,6 +2669,76 @@ function createRemote(env) {
     refreshView();
   }
 
+  // ---- sharing by QR code (4.0, share.js) ----
+
+  /**
+   * The link to this server for another app's QR code scan: its addresses and,
+   * when it has a password, a one-time pairing code for it (the password this
+   * app keeps, handed to the server for 10 minutes). A server from before 4.0,
+   * or a password this app does not know (at home from level 3 on): no code,
+   * the other app is asked for the password.
+   */
+  async function shareLink() {
+    if (!active() || status.state !== 'online') throw new Error('Flow is not connected to its server right now.');
+    const s = settings.all();
+    let code = '';
+    const pw = decrypt(s.serverSecret);
+    if (conn.pair && pw) code = (await call('/api/pair', { method: 'POST', json: { password: pw } })).code || '';
+    let home = s.serverHomeOn !== false && s.serverHome ? s.serverHome : (conn.via === 'home' ? conn.address : '');
+    // The server runs here: the other device reaches it at this machine's address.
+    if (/^(localhost|127\.)/i.test(home)) {
+      const ip = network.lanAddress ? network.lanAddress() : '';
+      home = ip ? home.replace(/^[^:/]+/, ip) : '';
+    }
+    const remote = s.serverRemoteOn !== false ? String(s.serverRemote || '') : '';
+    if (!home && !remote) throw new Error('This server has no address another device could use. Enter its Home address (as the other device reaches it) first.');
+    return {
+      link: makeLink({
+        id: sync.serverId, name: conn.name, home, remote, code,
+      }),
+      code: !!code,
+      name: conn.name,
+    };
+  }
+
+  /**
+   * A link scanned or pasted: its server becomes the one in use, its pairing
+   * code traded for the password first (at its Home address, else Remote).
+   * Resolves { name }.
+   */
+  async function connectLink(text) {
+    const l = parseLink(text);
+    if (!l) throw new Error('That is not a link to a Flow Server.');
+    let password = null;
+    if (l.code) {
+      for (const address of [l.home, l.remote].filter(Boolean)) {
+        let r;
+        try {
+          r = await request(baseUrl(address), '/api/pair/redeem', { method: 'POST', json: { code: l.code }, timeout: address === l.home ? 3000 : 10000 });
+        } catch (err) {
+          if (err instanceof OfflineError) continue;
+          throw err;
+        }
+        if (r.status === 200 && r.json) {
+          password = String(r.json.password || '');
+          break;
+        }
+        throw new Error((r.json && r.json.error) || `"${l.name}" answered ${r.status}.`);
+      }
+      if (password === null) throw new Error(`"${l.name}" cannot be reached from here right now. Try on its home network, or ask for a new QR code.`);
+    }
+    if (sync.serverId && sync.serverId !== l.id) await sendWaiting();
+    // No Home address of its own: the search for one would find this home's server instead.
+    if (!l.home) sync.homeFilled = true;
+    const patch = {
+      serverOn: true, serverHome: l.home, serverRemote: l.remote, serverHomeOn: true, serverRemoteOn: true,
+    };
+    settings.set(password === null ? patch : { ...patch, serverSecret: encrypt(password) });
+    hooks.onSettings(patch);
+    reconfigure({ ...patch, serverSecret: true });
+    return { name: l.name };
+  }
+
   function setSecret(text) {
     settings.set({ serverSecret: encrypt(String(text || '')) });
     reconfigure({ serverSecret: true });
@@ -2854,11 +3018,18 @@ function createRemote(env) {
     try {
       if (action === 'get') return (await call('/api/downloads')).batch;
       // create: cookies, the link's site's browser cookies (or none). Or items
-      // and name: uploads picked from a search, several at once.
+      // and name: uploads picked from a search, several at once; with source
+      // ({ url, kind }), the songs ticked in a playlist's Update.
       if (action === 'create') {
-        const { url, kind, options, cookies, items, name } = args;
-        const json = items ? { items, name, options } : { url, kind, options, cookies: cookies || undefined };
+        const { url, kind, options, cookies, items, name, source } = args;
+        const json = items ? { items, name, options, source: source || undefined } : { url, kind, options, cookies: cookies || undefined };
         return (await call('/api/downloads', { method: 'POST', json })).batch;
+      }
+      // A playlist's Update: its link read on the server, nothing downloaded ({ url, cookies }).
+      if (action === 'check') {
+        if (!conn.downloadCheck) throw new Error('This Flow Server cannot check a playlist for updates yet: update it.');
+        const json = { url: args.url, cookies: args.cookies || undefined };
+        return (await call('/api/downloads/check', { method: 'POST', json, timeout: 15 * 60 * 1000 })).listing;
       }
       if (action === 'cancel') return (await call('/api/downloads', { method: 'DELETE' })).batch;
       // A song's name typed instead of a link: { query, artist, title, page, results }.
@@ -3129,11 +3300,11 @@ function createRemote(env) {
 
   return {
     init, active, reconfigure, setSecret, stop, adoptToken,
-    coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy,
-    trimSong, trimmedHere, songPeaks, newCutId,
+    coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy, localOf,
+    trimSong, trimmedHere, songPeaks, songLyrics, setSongLyrics, useOwnLyrics, useLyricsSync, lyricsIndex, lyricsOf, serverId, newCutId,
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, switchServer, forgetServer, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
-    admin, changeServerPassword, removeTracked,
+    admin, changeServerPassword, removeTracked, shareLink, connectLink,
   };
 }
 

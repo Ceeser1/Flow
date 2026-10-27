@@ -52,6 +52,10 @@ import java.util.List;
  * LoudnessEnhancer on its sound, which also keeps the peaks of a song turned
  * up from clipping (the desktop's limiter).
  *
+ * Settings' Equalizer: the curve the page sends is put on the sound (SoundEq,
+ * the tail's too) and kept in a file, so a player started without a page
+ * (the widget's Play) shapes the sound as well.
+ *
  * The sleep timer runs here too (the page's timers stop with the screen off):
  * the music fades out over its last seconds, then pauses.
  *
@@ -119,6 +123,10 @@ final class FlowPlayer {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final File heardFile;
     private final File lastFile;
+    private final File eqFile;
+    private SoundEq.Curve eqCurve;
+    private final SoundEq eq = new SoundEq("player");
+    private SoundEq tailEq;
     private JSONArray heardWhileAway;
     // When the widget's Play opened Flow with nothing loaded (elapsed ms; 0: not): a page
     // starting soon after plays. Not one much later (Android may not have let Flow open).
@@ -191,6 +199,8 @@ final class FlowPlayer {
         FlowLog.init(context);
         heardFile = new File(context.getFilesDir(), "audio-heard.json");
         lastFile = new File(context.getFilesDir(), "audio-last.json");
+        eqFile = new File(context.getFilesDir(), "sound-eq.json");
+        eqCurve = readEq();
         heardWhileAway = readHeard();
         music = new AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -203,6 +213,8 @@ final class FlowPlayer {
                 .setHandleAudioBecomingNoisy(true)
                 .setWakeMode(C.WAKE_MODE_NETWORK)
                 .build();
+        // The curve from before, before the page (if any) sends its own.
+        eq.apply(exo.getAudioSessionId(), eqCurve);
         exo.addListener(new Player.Listener() {
             @Override
             public void onEvents(Player player, Player.Events ev) {
@@ -262,6 +274,7 @@ final class FlowPlayer {
             @Override
             public void onAudioSessionIdChanged(int audioSessionId) {
                 applyVolume();
+                eq.apply(audioSessionId, eqCurve);
             }
 
             @Override
@@ -566,6 +579,12 @@ final class FlowPlayer {
                     volume = (float) op.optDouble("volume", 1);
                     applyVolume();
                     break;
+                case "soundEq":
+                    eqCurve = SoundEq.Curve.of(op);
+                    keepEq();
+                    eq.apply(exo.getAudioSessionId(), eqCurve);
+                    if (tailEq != null) tailEq.apply(tail.getAudioSessionId(), eqCurve);
+                    break;
                 case "meta": {
                     MediaItem current = exo.getCurrentMediaItem();
                     if (current != null) {
@@ -657,6 +676,28 @@ final class FlowPlayer {
             }
         } catch (JSONException | IOException e) {
             FlowLog.i("could not keep a listen: " + e.getMessage());
+        }
+    }
+
+    /** The Equalizer's curve kept from the page before; flat when none was. */
+    private SoundEq.Curve readEq() {
+        try {
+            if (eqFile.isFile()) return SoundEq.Curve.of(new JSONObject(new String(Files.readAllBytes(eqFile.toPath()), StandardCharsets.UTF_8)));
+        } catch (JSONException | IOException e) {
+            FlowLog.i("the equalizer's curve could not be read: " + e.getMessage());
+        }
+        return SoundEq.Curve.FLAT;
+    }
+
+    private void keepEq() {
+        if (eqCurve.flat()) {
+            eqFile.delete();
+            return;
+        }
+        try (OutputStream out = new FileOutputStream(eqFile)) {
+            out.write(eqCurve.toJson().toString().getBytes(StandardCharsets.UTF_8));
+        } catch (JSONException | IOException e) {
+            FlowLog.i("could not keep the equalizer's curve: " + e.getMessage());
         }
     }
 
@@ -768,6 +809,10 @@ final class FlowPlayer {
         tail.setMediaItem(current, from);
         tail.setPlaybackParameters(exo.getPlaybackParameters());
         tail.setVolume(0f);
+        if (!eqCurve.flat()) {
+            tailEq = new SoundEq("transition");
+            tailEq.apply(tail.getAudioSessionId(), eqCurve);
+        }
         tail.prepare();
         tail.setPlayWhenReady(false);
         tailFor = id;
@@ -852,6 +897,10 @@ final class FlowPlayer {
         if (tailEnhancer != null) {
             tailEnhancer.release();
             tailEnhancer = null;
+        }
+        if (tailEq != null) {
+            tailEq.release();
+            tailEq = null;
         }
         tail.release();
         tail = null;

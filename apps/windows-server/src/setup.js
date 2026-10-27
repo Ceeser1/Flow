@@ -23,7 +23,9 @@
 //   --proxy-at IP    level 4: where the web server or tunnel runs, when not on this PC
 //   --yes            no questions: what was chosen before, else the defaults
 //   --discovery, --no-discovery, --downloads, --no-downloads,
-//   --separate-folders, --no-separate-folders, --keep-folders, --no-keep-folders
+//   --separate-folders, --no-separate-folders, --keep-folders, --no-keep-folders,
+//   --move-music, --no-move-music (a music folder other than before: move what
+//                    is in the old one into it; asked, never done by --yes alone)
 //                    as install.sh's (asked when left out)
 //   --from-installer the window waits for Enter at the end
 //   --only-update    the installer's Only update: a server set up before stays as
@@ -46,6 +48,7 @@ const { spawn, spawnSync } = require('child_process');
 const win = require('./windows');
 
 const configMod = win.serverModule('config');
+const moveMusic = win.serverModule('moveMusic');
 const tools = win.serverModule('tools');
 const HOME = configMod.defaultHome();
 const NODE = process.execPath;
@@ -368,6 +371,23 @@ async function setup() {
   }
   fs.mkdirSync(music, { recursive: true });
   say(music);
+  // Another folder than before: what is in the old one can come along (moved
+  // at "The server", once it is stopped). Never without asking (or
+  // --move-music): --yes alone leaves it.
+  let moveFrom = '';
+  const oldMusic = cur.music;
+  if (oldMusic && opts.move !== false && !moveMusic.problem(oldMusic, music) && fs.existsSync(oldMusic)) {
+    const there = win.parseInfo(flow(['move-music', oldMusic, '--dry-run'], { quiet: true }).stdout);
+    if (Number(there.files) > 0) {
+      const question = `You entered a different music folder path, do you want to move and merge all folders and ${Number(there.songs) || 0} songs `
+        + `from '${oldMusic}' into your new path at '${music}'?`;
+      if (opts.move === true || (asking() && await ask(question))) moveFrom = oldMusic;
+      else {
+        say(`The songs in ${oldMusic} stay there and still play from there. To move them later, with the server stopped:`);
+        say(`  flow-server move-music "${oldMusic}"`);
+      }
+    }
+  }
 
   step('Should the server download songs itself?');
   say('With this, the Flow apps get "Download (Server)" on Add Songs: the server fetches the');
@@ -464,6 +484,8 @@ async function setup() {
   say('no Home address sends a small UDP question and the server answers with its name and port.');
   say('It tells them what /api/hello already tells anyone on the network, never the password or the library,');
   say('and only devices on private addresses get an answer. It opens UDP 7878 for your home network.');
+  say('It is also how Flow apps of other servers find your Active Sessions: guests from other servers');
+  say('are allowed from the start (Administration, Server rules turns it off).');
   let discovery = opts.discovery;
   if (discovery === 'ask') {
     // As before; a new server: on with --yes, off without a terminal.
@@ -627,6 +649,10 @@ async function setup() {
   const applied = flow([...settings, 'info'], { quiet: true });
   if (!applied.ok) die(applied.stderr.trim() || applied.stdout.trim());
   cur = win.parseInfo(applied.stdout);
+  if (moveFrom) {
+    step('Moving the music');
+    if (!flow(['move-music', moveFrom]).ok) say(`Not everything was moved (see above). What stayed in ${moveFrom} still plays from there.`);
+  }
   if (!(await portFree(port))) die(`Port ${port} is in use by another program. Choose another: Flow Server Settings with --port N, or stop that program.`);
   const xmlFile = path.join(os.tmpdir(), `flow-server-task-${process.pid}.xml`);
   fs.writeFileSync(xmlFile, win.utf16(win.taskXml({ sid: userSid(), node: NODE, script: RUN, home: HOME, workDir: path.dirname(RUN) })));

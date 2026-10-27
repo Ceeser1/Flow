@@ -5,9 +5,12 @@ Flow on the phone (from version 3.0). It plays the songs of your Flow Server
 itself, with Flow's look: the menu as a drawer, the player at the bottom,
 Now Playing, the Queue, Settings.
 
-- **Flow Server:** found on the home network at the first start, or its
-  address typed in; profiles, playlists, favourites and listening stats are the
-  server's, as on the desktop.
+- **Flow Server:** found on the home network at the first start, its address
+  typed in, or (from 4.0) its QR code scanned: **Scan a QR code** on the
+  first start's screen, or Scan in Settings, Flow Server, opens Google's code
+  scanner (Google Play services; no camera permission for Flow). Profiles,
+  playlists, favourites and listening stats are the server's, as on the
+  desktop.
 - **Playing with the screen off:** the music goes on in the background, with
   its notification, the lock screen's controls, headphone buttons and two home
   screen widgets. Song Transition, Equalize volume and the sleep timer work
@@ -21,10 +24,18 @@ Now Playing, the Queue, Settings.
   button stands where the link box was: a legal note, then how the server gets
   yt-dlp (Flow does not come with it).
 - **Active Sessions:** join another device's session and control it, or play
-  its music on the phone too, in step; or host one, while Flow is open.
+  its music on the phone too, in step; or host one, while Flow is open. From
+  4.0 also as a guest in a session of another Flow Server on the same home
+  network, bringing the phone's own songs along.
+- **From 4.0** as on the desktop: lyrics (scroll Now Playing down), smart
+  playlists, Continue with similar songs, a playlist's Update, and Share
+  for the server's QR code.
+- **Settings > Equalizer** (Android 9 and newer): the sound shaped by a curve
+  of 8 to 48 bands or a ready-made one (Bass Boost, Subtle, Intimate), as on
+  the desktop. Android's player does it, so it works with the screen off too.
 
 Not on the phone: downloading with yt-dlp on the phone itself (the server
-does that), the visualizers and the equalizer (the clouds are there, without React to Bass).
+does that), the visualizers and the background equalizer (the clouds are there, without React to Bass).
 
 ## Installing
 
@@ -84,7 +95,8 @@ comes from native pieces in `android/app/src/main/java/io/github/ceeser1/flow/`:
 - `FlowNative` (a Capacitor plugin): what takes a while: files downloaded and
   uploaded, Flow Servers looked for on the network (UDP), local files picked
   and read, waveforms, links shared to Flow, the output, orientation, battery
-  settings, the Back button.
+  settings, the Back button, and (4.0) the QR code scanner
+  (`play-services-code-scanner`).
 - `FlowPlayer`, `PlaybackService`, `FlowAudio`: the native player (Media3
   ExoPlayer) that plays on in the background, holds the songs coming next and
   moves on by itself; `src/engine.js` is the page's side of it.

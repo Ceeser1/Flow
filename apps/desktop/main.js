@@ -37,6 +37,11 @@ const { lookupInfo, createInfoFiller } = require('@flow/core/songInfo');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
+const { createBackupStore, mergeRestore } = require('@flow/core/backup');
+const { createLyricsClient } = require('@flow/core/client/lyrics');
+const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
+const { solveChallenge } = require('./src/lrclibChallenge');
+const { createGuestLink } = require('@flow/core/client/guest');
 
 let mainWindow = null;
 let downloadToken = null;
@@ -67,6 +72,11 @@ const privateStats = createPrivateStats({
 });
 // What the window changes in the library; a Local Files song's file is
 // renamed and cut here (the uncut one to the Recycle Bin).
+// A list read for Add Songs or an Update is held against the server's
+// library while one is connected, not Local Files: the playlists and the
+// songs already there are the server's (see import:finish).
+importer.useLibrary(() => (remote.active() ? remote.view() : library.get()));
+
 const actions = createActions({
   remote,
   library,
@@ -253,6 +263,126 @@ handle('covers:clear', () => remote.clearCoverCache());
 covers.onStaged((info) => sendToWindow('covers:staged', info));
 handle('covers:staged', (cachePath) => covers.stagedCover(String(cachePath || '')));
 
+// A song's lyrics (4.0): the server's for its songs, LRCLIB's for the others,
+// kept in the Lyrics folder (4.0.1); with Settings' "Fetch/Sync Lyrics" off
+// only what is kept there.
+const lyricsClient = createLyricsClient({
+  remote,
+  library,
+  folder: createLyricsFolder(env.lyricsFiles),
+  jsonFiles: env.jsonFiles,
+  fetchOn: () => settings.get('lyricsOn') !== false,
+  syncEveryMs: 15 * 60 * 1000,
+  // Copies of a server's songs have the server's lyrics.
+  skip: (id) => remote.active() && remote.isServerCopy(id),
+  onChange: () => sendToWindow('lyrics:changed'),
+});
+// Every Local Files song's lyrics looked up in the background (4.0.1): soon
+// after a change of the library, and once the window is up (startup).
+library.onChange(() => lyricsClient.fillSoon());
+handle('song:lyrics', (songId) => lyricsClient.get(songId));
+// Settings' Lyrics cache: { count, none, bytes, left }; cleared but for those written here for Local Files songs.
+handle('lyrics:stats', () => lyricsClient.stats());
+handle('lyrics:clear', () => lyricsClient.clear());
+// Lyrics picked by hand from LRCLIB's search (4.0.1).
+handle('lyrics:search', (params) => lyricsClient.search(params));
+// Lyrics written in Flow published on LRCLIB (4.0.1): its challenge solved in a worker thread.
+handle('lyrics:publish', (meta) => lyricsClient.publish(meta, solveChallenge));
+// Lyrics written or edited here (4.0.1): kept for good, a server's song's on the server.
+handle('song:setLyrics', ({ songId, lines, server }) => lyricsClient.set(songId, lines, { server: !!server }));
+// A song just downloaded (Add Songs), not in the library yet: looked up by its names.
+handle('song:lookupLyrics', (meta) => lyricsClient.lookup(meta));
+// A Local Files song's own lyrics go up to the server after it.
+remote.useOwnLyrics((localId) => lyricsClient.ownLines(localId));
+
+// Being a guest in another server's session on this network (4.0, @flow/core/client/guest).
+const guest = createGuestLink({
+  http: env.http,
+  device: env.device,
+  clientId: () => settings.clientId(),
+  discovery: env.discovery,
+  ownServerId: () => (remote.active() ? remote.status().serverId : ''),
+  who: () => {
+    const st = remote.status();
+    return { profileName: st.on && st.profile ? st.profile.name : '', serverName: st.on ? st.serverName || st.name : '' };
+  },
+  onLive: (ev) => sendToWindow('guest:live', ev),
+  onChange: () => sendToWindow('guest:changed', guest.list()),
+});
+handle('guest:look', () => guest.look());
+
+/**
+ * One of this app's songs into the session it is a guest in (4.0): its file
+ * here, else streamed from this app's own server into the cache first, sent
+ * as a session song. Resolves { gid }, the id the session knows it by.
+ */
+async function bringSong(songId) {
+  const song = actions.currentLibrary().songs.find((s) => s.id === songId);
+  if (!song) throw new Error('That song is not in your library.');
+  const audio = remote.active() ? await remote.songAudio(songId) : { file: song.file, temp: false };
+  if (!audio.file || !fs.existsSync(audio.file)) throw new Error(`"${song.title}" has no file to send along.`);
+  const gid = `g-${settings.clientId().slice(0, 12)}-${songId}`.replace(/[^\w-]/g, '').slice(0, 64);
+  const format = (path.extname(song.file || audio.file).slice(1) || song.format || 'mp3').toLowerCase();
+  try {
+    await guest.upload(gid, {
+      title: song.title, artist: song.artist, mix: song.mix, duration: song.duration, format,
+    }, audio.file);
+  } finally {
+    if (audio.temp) fs.rmSync(audio.file, { force: true });
+  }
+  return { gid };
+}
+handle('guest:call', ({ action, args = {} }) => {
+  if (action === 'join') return guest.join(args.serverId, args.sessionId, args.mode);
+  if (action === 'session') return guest.session(args.body || {});
+  if (action === 'leave') return guest.leave();
+  if (action === 'songs') return guest.songs();
+  if (action === 'bring') return bringSong(String(args.songId || ''));
+  if (action === 'status') return guest.status();
+  if (action === 'list') return guest.list();
+  throw new Error(`Unknown guest action ${action}.`);
+});
+
+// Sharing the server by QR code (4.0): the link, a link pasted, and a code's squares.
+handle('server:shareLink', () => remote.shareLink());
+handle('server:connectLink', (text) => remote.connectLink(String(text || '')));
+handle('qr:encode', (text) => require('@flow/core/qr').encode(String(text || '')));
+
+// Backups (4.0, @flow/core/backup): library.json's data once a week, the
+// last 6 kept in Flow's folder (backups), never the songs' files.
+const backups = createBackupStore({
+  dir: path.join(paths.rootDir(), 'backups'),
+  kind: 'app',
+  collect: () => ({ library: JSON.parse(JSON.stringify(library.get())) }),
+});
+// Looked at when the app starts and every 6 hours while it runs.
+const BACKUP_CHECK_MS = 6 * 60 * 60 * 1000;
+handle('backups:list', () => backups.list());
+handle('backups:make', () => backups.make('manual'));
+/**
+ * A backup put back (a backup of now made first): the songs' names,
+ * playlists, favourites and stats as they were; songs whose files are gone
+ * stay out, songs added since stay in.
+ */
+handle('backups:restore', (name) => library.quietly(async () => {
+  const doc = backups.read(String(name || ''));
+  if (doc.kind !== 'app') throw new Error('That is a backup of a Flow Server, not of this app.');
+  backups.make('restore', String(name));
+  const counts = library.mutate((d) => {
+    const { data, counts: c } = mergeRestore(d, model.sanitize(doc.library));
+    for (const k of Object.keys(d)) delete d[k];
+    Object.assign(d, model.sanitize(data));
+    return c;
+  });
+  setTimeout(() => {
+    library.scan().catch(() => {});
+    coverFiller.run();
+    infoFiller.run();
+    loudnessFiller.run();
+  }, 0);
+  return counts;
+}));
+
 handle('settings:set', (patch) => {
   // The password only ever arrives through server:setSecret, to be encrypted.
   const clean = { ...(patch || {}) };
@@ -261,6 +391,10 @@ handle('settings:set', (patch) => {
   const next = settings.set(clean);
   if (clean.normalize === true) loudnessFiller.run();
   remote.reconfigure(clean);
+  if (clean.lyricsOn === true) {
+    lyricsClient.sync();
+    lyricsClient.fill();
+  }
   if (remote.active() !== wasRemote) {
     sendToWindow('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
     sendToWindow('library:changed', currentLibrary());
@@ -275,6 +409,8 @@ ipcMain.on('settings:setSync', (event, patch) => {
 // Each change goes to the Local Files library, or with a server to the
 // server as a command (@flow/core/client/actions, shared with the Android app).
 handle('library:createPlaylist', (name) => actions.createPlaylist(name));
+handle('library:createSmartPlaylist', (arg) => actions.createSmartPlaylist(arg));
+handle('library:setPlaylistRules', (arg) => actions.setPlaylistRules(arg));
 handle('library:renamePlaylist', (arg) => actions.renamePlaylist(arg));
 handle('library:deletePlaylist', (arg) => actions.deletePlaylist(arg));
 handle('library:setPlaylistShared', (arg) => actions.setPlaylistShared(arg));
@@ -287,6 +423,7 @@ handle('library:editSong', (arg) => actions.editSong(arg));
 handle('library:trimSong', (arg) => actions.trimSong(arg));
 handle('library:setFavourite', (arg) => actions.setFavourite(arg));
 handle('library:recordListen', (arg) => actions.recordListen(arg));
+handle('library:recordAwayListen', (arg) => actions.recordAwayListen(arg));
 handle('stats:private', () => privateStats.get());
 handle('stats:removeTracked', ({ serverId, profileId }) => remote.removeTracked(serverId, profileId));
 handle('library:findBySource', (arg) => actions.findBySource(arg));
@@ -337,7 +474,7 @@ handle('server:sessions', (body) => remote.sessions(body || null));
 // link's site's cookies from the browser chosen along.
 handle('server:downloads', async ({ action, ...args }) => {
   const browser = settings.get('useCookies') && settings.get('shareCookies') ? settings.get('cookiesBrowser') : '';
-  if (action === 'create' && args.url && browser) args.cookies = await cookieJar.siteCookies(args.url, browser);
+  if ((action === 'create' || action === 'check') && args.url && browser) args.cookies = await cookieJar.siteCookies(args.url, browser);
   const result = await remote.serverDownloads(action, args);
   // A song saved on the server from here is one this device added.
   if (action === 'finish' && result && result.song) privateStats.added(1);
@@ -407,6 +544,23 @@ handle('local:pickFolder', async () => {
   return r.canceled || !r.filePaths.length ? null : r.filePaths;
 });
 
+// ---- a visualizer's picture (Halo's cover and background) ----
+//
+// Kept in Flow's own folder as <name>-<stamp>.jpg, a new name each time (no
+// stale copy shown), the one before deleted.
+
+handle('viz:savePicture', ({ name, bytes } = {}) => {
+  if (!/^[a-z][\w-]{0,40}$/i.test(String(name || ''))) throw new Error('Not a picture name.');
+  if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > 30e6) throw new Error('Not a picture.');
+  const dir = paths.ensure(path.join(paths.rootDir(), 'Visualizer'));
+  for (const old of fs.readdirSync(dir)) {
+    if (old.startsWith(`${name}-`) && old.endsWith('.jpg')) fs.rmSync(path.join(dir, old), { force: true });
+  }
+  const file = path.join(dir, `${name}-${Date.now().toString(36)}.jpg`);
+  fs.writeFileSync(file, bytes);
+  return file;
+});
+
 let moving = false;
 handle('folder:move', async (dir) => {
   refuseDuringImport();
@@ -419,6 +573,7 @@ handle('folder:move', async (dir) => {
       sendToWindow('folder:progress', { done, total, name });
     });
     covers.moveFolder(oldDir, result.dir);
+    covers.moveFolder(oldDir, result.dir, paths.LYRICS);
     settings.set({ musicDir: result.dir });
     sendToWindow('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
     return result;
@@ -499,6 +654,22 @@ handle('import:list', async ({ url, run }) => {
   }
 });
 
+// A playlist's Update: its link read in the background, apart from the import
+// task (an import may run meanwhile, and its Cancel leaves this alone). The
+// same link checked again stops the check before.
+const checkTokens = new Map();
+handle('import:check', async ({ url }) => {
+  const before = checkTokens.get(url);
+  if (before) before.cancel();
+  const token = importer.groupToken();
+  checkTokens.set(url, token);
+  try {
+    return await importer.list(url, token, () => {}, { knownArtists: knownArtists() });
+  } finally {
+    if (checkTokens.get(url) === token) checkTokens.delete(url);
+  }
+});
+
 // A song's name typed instead of a link (Add Songs): the uploads found. One
 // search at a time, apart from imports; a new one, or Cancel, stops the one
 // before.
@@ -563,7 +734,20 @@ handle('import:finish', ({ job, run }) => {
 });
 
 async function finishImport(job, onProgress) {
-  if (!remote.active()) return importer.finish(job, onProgress);
+  // Lyrics written for a song in Add Songs: kept under its id once saved (before it goes up).
+  const ownLyrics = (summary) => {
+    for (const e of job.entries) {
+      const id = e.lyrics && summary.byPosition && summary.byPosition[e.position];
+      if (!id) continue;
+      try {
+        lyricsClient.keepOwn(id, e.lyrics);
+      } catch {
+        // As in song:finish.
+      }
+    }
+    return summary;
+  };
+  if (!remote.active()) return ownLyrics(await importer.finish(job, onProgress));
   // With a server the songs are saved into Local Files first, as always,
   // then go up. The playlist to add to and the songs already in the
   // library are the server's, which Local Files does not have; only the
@@ -572,7 +756,7 @@ async function finishImport(job, onProgress) {
   const existingIds = job.entries.filter((e) => e.existingId).map((e) => e.existingId);
   const ownList = job.mergeInto && model.playlistById(library.get(), job.mergeInto) ? job.mergeInto : null;
   const localJob = { ...job, mergeInto: ownList, playlistIds: [], entries: job.entries.filter((e) => !e.existingId) };
-  const summary = await importer.finish(localJob, onProgress);
+  const summary = ownLyrics(await importer.finish(localJob, onProgress));
   // The times the library songs get, as the saved ones did (see importer.finish).
   const base = Number(job.base) || Date.now();
   job.entries.forEach((e, i) => {
@@ -775,6 +959,14 @@ handle('song:finish', (job) => library.quietly(async () => {
     model.addSongToPlaylists(d, song.id, lists, song.addedAt);
   });
   privateStats.added(1);
+  // Lyrics written for it in Add Songs, before the upload reads them.
+  if (job.lyrics) {
+    try {
+      lyricsClient.keepOwn(song.id, job.lyrics);
+    } catch {
+      // Only some lines with times: the editor does not let that through.
+    }
+  }
   // Its cover, found while it was trimmed (or once it is found).
   covers.adoptStaged(job.cachePath, song.id).catch(() => {});
   // With a server it goes up now, into the server playlists picked for it.
@@ -863,15 +1055,20 @@ app.whenReady().then(() => {
       loudnessFiller.run();
       coverFiller.run();
       infoFiller.run();
+      lyricsClient.fill();
+      // After the scan: a first start's backup holds the songs found.
+      backups.weekly();
     });
     library.watch();
     tools.refreshYtDlp();
+    setInterval(() => backups.weekly(), BACKUP_CHECK_MS);
   }, 1500);
 });
 
 app.on('window-all-closed', async () => {
   // Out of an Active Session first: a host hands it on at once.
   await remote.leaveSession(1500);
+  await guest.leave();
   remote.stop();
   library.unwatch();
   loudnessFiller.stop();

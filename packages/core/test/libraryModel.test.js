@@ -166,3 +166,28 @@ test('what a song\'s file carries: null untouched, "" to write, else the cover w
   m.updateSong(data, 's1', { tagged: null });
   assert.equal(m.songById(data, 's1').tagged, 'a1b2c3d4e5');
 });
+
+test('smart playlists: rules kept clean, no entries by hand, never shared', () => {
+  const model = m;
+  const { applyCommand } = require('../src/commands');
+  const d = model.sanitize({ songs: [{ id: 's1', file: '/m/a.mp3', title: 'Roads', artist: 'Portishead' }] });
+  applyCommand(d, {
+    cid: 'c1', at: 1, type: 'createPlaylist', playlistId: 'p1', name: 'Trip',
+    rules: { match: 'any', conditions: [{ field: 'genre', op: 'is', value: 'Trip Hop' }, { field: 'nope', op: 'is', value: 1 }, { field: 'plays', op: 'gt', value: '3' }], sort: 'plays', limit: 25.7 },
+  });
+  const p = model.playlistById(d, 'p1');
+  assert.deepEqual(p.rules, {
+    match: 'any', conditions: [{ field: 'genre', op: 'is', value: 'Trip Hop' }, { field: 'plays', op: 'gt', value: 3 }], sort: 'plays', limit: 25,
+  });
+  assert.throws(() => model.addSongsToPlaylist(d, 'p1', ['s1']), /by its rules/);
+  assert.equal(model.addSongToPlaylists(d, 's1', ['p1']), 0);
+  assert.throws(() => model.setPlaylistShared(d, 'p1', true), /cannot be shared/);
+  // Kept through a save; entries never.
+  const again = model.sanitize({ ...JSON.parse(JSON.stringify(d)), playlists: [{ ...p, entries: [{ songId: 's1' }], shared: true }] });
+  assert.deepEqual(again.playlists[0].entries, []);
+  assert.equal(again.playlists[0].shared, false);
+  applyCommand(d, { cid: 'c2', at: 2, type: 'setPlaylistRules', playlistId: 'p1', rules: null });
+  assert.equal(model.playlistById(d, 'p1').rules, null);
+  assert.equal(model.cleanRules({ conditions: 'x' }), null);
+  assert.equal(model.cleanRules({ conditions: Array.from({ length: 20 }, () => ({ field: 'favourite', op: 'is', value: true })) }).conditions.length, 12);
+});

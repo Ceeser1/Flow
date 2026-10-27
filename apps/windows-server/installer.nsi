@@ -15,6 +15,8 @@ Unicode true
 !define APP "Flow Server"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP}"
 !define SETUP '"$INSTDIR\node.exe" "$INSTDIR\app\windows\setup.js"'
+!define TRAY "Flow Server Tray.exe"
+!define RUN_KEY "Software\Microsoft\Windows\CurrentVersion\Run"
 
 Name "${APP}"
 OutFile "${OUTFILE}"
@@ -135,10 +137,15 @@ FunctionEnd
 Section "Flow Server"
   SetShellVarContext all
 
-  ; An update: the server running from here stops first (node.exe is in use while it runs).
+  ; An update: the server running from here stops first (node.exe is in use while it runs),
+  ; and so does the tray icon (its exe).
   ${If} ${FileExists} "$INSTDIR\app\windows\setup.js"
     DetailPrint "Stopping the Flow Server"
     nsExec::ExecToLog '${SETUP} stop'
+    Pop $0
+  ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\${TRAY}"
+    nsExec::Exec '"$INSTDIR\${TRAY}" --quit'
     Pop $0
   ${EndIf}
 
@@ -151,6 +158,7 @@ Section "Flow Server"
   File "${STAGE}\node.exe"
   File "${STAGE}\flow-server.cmd"
   File "${STAGE}\icon.ico"
+  File "${STAGE}\${TRAY}"
   WriteUninstaller "$INSTDIR\Uninstall Flow Server.exe"
 
   WriteRegStr HKLM "Software\${APP}" "InstallDir" "$INSTDIR"
@@ -172,7 +180,10 @@ Section "Flow Server"
   CreateShortcut "$SMPROGRAMS\${APP}\Restart Flow Server.lnk" "$INSTDIR\node.exe" '"$INSTDIR\app\windows\setup.js" restart --pause' "$INSTDIR\icon.ico"
   CreateShortcut "$SMPROGRAMS\${APP}\Flow Server Log.lnk" "$INSTDIR\node.exe" '"$INSTDIR\app\windows\setup.js" log' "$INSTDIR\icon.ico" 0 SW_SHOWMINIMIZED
   CreateShortcut "$SMPROGRAMS\${APP}\Flow Server Command Line.lnk" "$SYSDIR\cmd.exe" '/k "$INSTDIR\flow-server.cmd" --help' "$INSTDIR\icon.ico"
+  CreateShortcut "$SMPROGRAMS\${APP}\Flow Server Tray Icon.lnk" "$INSTDIR\${TRAY}"
   CreateShortcut "$SMPROGRAMS\${APP}\Uninstall Flow Server.lnk" "$INSTDIR\Uninstall Flow Server.exe"
+  ; The tray icon at every sign-in of this user (the account the server runs as).
+  WriteRegStr HKCU "${RUN_KEY}" "Flow Server Tray" '"$INSTDIR\${TRAY}"'
 
   ; The questions (an update: none), the task, the firewall.
   DetailPrint "Setting up the Flow Server (in its own window)"
@@ -191,6 +202,8 @@ Section "Flow Server"
       MessageBox MB_ICONEXCLAMATION "The Flow Server is installed, but its setup did not finish (its window said why). Run Flow Server Settings from the Start menu to try again."
     ${EndIf}
   ${EndIf}
+  ; The tray icon now too, through Explorer so it runs as the user and not as the administrator this installer is.
+  Exec '"$WINDIR\explorer.exe" "$INSTDIR\${TRAY}"'
 SectionEnd
 
 Section "Uninstall"
@@ -198,11 +211,15 @@ Section "Uninstall"
   DetailPrint "Removing the task and the firewall rules"
   nsExec::ExecToLog '${SETUP} --uninstall'
   Pop $0
+  nsExec::Exec '"$INSTDIR\${TRAY}" --quit'
+  Pop $0
+  DeleteRegValue HKCU "${RUN_KEY}" "Flow Server Tray"
   RMDir /r "$INSTDIR\app"
   RMDir /r "$INSTDIR\tools"
   Delete "$INSTDIR\node.exe"
   Delete "$INSTDIR\flow-server.cmd"
   Delete "$INSTDIR\icon.ico"
+  Delete "$INSTDIR\${TRAY}"
   Delete "$INSTDIR\Uninstall Flow Server.exe"
   RMDir "$INSTDIR"
   RMDir /r "$SMPROGRAMS\${APP}"

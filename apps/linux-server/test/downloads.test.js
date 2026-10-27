@@ -473,6 +473,50 @@ test('several uploads picked from a search are one batch, ready at once, saved i
   });
 });
 
+test('a playlist\'s Update: its link is checked without a batch, and the songs ticked come back as a batch that keeps it', needsFfmpeg, async () => {
+  await withServer(async ({ base }) => {
+    assert.ok((await api(base, 'GET', '/api/hello')).json.features.includes('downloadCheck'));
+    const fake = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(997, 7)]);
+    await fetch(`${base}/api/songs/old2?meta=${encodeURIComponent(JSON.stringify({ title: 'Old Two', format: 'mp3', sourceKey: 'youtube:v2' }))}`, { method: 'PUT', body: fake });
+
+    const r = await api(base, 'POST', '/api/downloads/check', { url: 'https://fake.test/list/3' });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const l = r.json.listing;
+    assert.equal(l.name, 'Fake List');
+    assert.equal(l.items.length, 3);
+    assert.deepEqual(l.items.map((it) => (it.existing ? it.existing.id : null)), [null, 'old2', null]);
+    // Nothing downloaded, no batch.
+    assert.equal(await batchOf(base), null);
+    assert.equal((await api(base, 'POST', '/api/downloads/check', { url: 'http://192.168.0.1/x' })).status, 400);
+    assert.equal((await api(base, 'POST', '/api/downloads/check', { url: 'https://fake.test/fail/x' })).status, 502);
+
+    // The first song and the library's one ticked; the library's needs no link.
+    const made = await api(base, 'POST', '/api/downloads', {
+      items: [
+        { url: l.items[0].url, title: l.items[0].title, duration: 3, key: l.items[0].key, meta: l.items[0].meta },
+        { url: '', title: l.items[1].title, existing: 'old2' },
+      ],
+      name: l.name,
+      source: { url: l.sourceUrl, kind: l.source },
+    });
+    assert.equal(made.status, 200, JSON.stringify(made.json));
+    assert.equal(made.json.batch.source.url, l.sourceUrl);
+    assert.notEqual(made.json.batch.source.kind, 'search');
+    const batch = await allSettled(base);
+    assert.deepEqual(batch.items.map((it) => it.state), ['ready', 'library']);
+    const done = await api(base, 'POST', '/api/downloads/items/0/finish', {
+      meta: { artist: 'Daft Punk', title: 'One' }, start: 0, end: 3, playlist: { name: 'Fake List' }, existing: [1],
+    });
+    assert.equal(done.json.batch, null);
+    assert.deepEqual(await playlistTitles(base, done.json.playlistId), ['One', 'Old Two']);
+    const lib = (await api(base, 'GET', '/api/library')).json.library;
+    assert.equal(lib.songs.find((s) => s.title === 'One').sourcePlaylistUrl, l.sourceUrl);
+    // A song not in the library still needs a link it may download.
+    const bad = await api(base, 'POST', '/api/downloads', { items: [{ url: '', title: 'x', existing: 'nope' }], name: 'x', source: { url: l.sourceUrl, kind: 'youtube' } });
+    assert.equal(bad.status, 400);
+  });
+});
+
 test('with separate folders a song the server downloads goes into Downloads/', needsFfmpeg, async () => {
   await withServer(async ({ server, base }) => {
     server.config.set({ separateFolders: true, keepFolders: true });

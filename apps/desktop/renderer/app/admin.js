@@ -3,8 +3,8 @@
 // Settings' last category, for an admin profile on a Flow Server (3.5): the
 // server at a glance, its profiles (a sortable table; on the phone each opens
 // with a tap), the failed sign-ins, every profile's server downloads and the
-// Active Sessions, the trash, the admins' rules, and for the master admin the
-// server password. Everything comes from the server's /api/admin (its
+// Active Sessions, the trash, the backups (4.0; restored by the master admin
+// only), the admins' rules, and for the master admin the server password. Everything comes from the server's /api/admin (its
 // admin.js) through window.flow.admin, fetched when Settings opens, after
 // every change made here, and with Refresh.
 
@@ -18,6 +18,7 @@ const Admin = {
   _sort: { key: 'name', dir: 'asc' },
   _query: '',
   _opened: new Set(), // the phone's profiles opened with a tap
+  _fits: [], // the scrolling lists' measuring, run as draw() puts them in
 
   /** The category: its heading and the node it is drawn into. */
   rows() {
@@ -33,11 +34,11 @@ const Admin = {
     if (!this._data) this._drawNote('Loading...');
     const get = (route) => window.flow.admin(route).catch((err) => ({ error: (err && err.message) || String(err) }));
     try {
-      const [server, profiles, signins, downloads, sessions, trash, rules] = await Promise.all([
-        get('server'), get('profiles'), get('signins'), get('downloads'), get('sessions'), get('trash'), get('rules'),
+      const [server, profiles, signins, downloads, sessions, trash, backups, rules] = await Promise.all([
+        get('server'), get('profiles'), get('signins'), get('downloads'), get('sessions'), get('trash'), get('backups'), get('rules'),
       ]);
       this._data = {
-        server, profiles, signins, downloads, sessions, trash, rules,
+        server, profiles, signins, downloads, sessions, trash, backups, rules,
       };
     } finally {
       this._loading = false;
@@ -65,6 +66,8 @@ const Admin = {
     };
     // Next frame: a height set inside the observer's call would be observed again at once.
     new ResizeObserver(() => requestAnimationFrame(fit)).observe(node);
+    // And once as draw() puts it in, before it is painted: else it shows its full length for a frame.
+    this._fits.push(fit);
     // A touch screen scrolls the list only from its middle half: a swipe on
     // its outer quarters scrolls the page (the list cannot scroll for that touch).
     // Not passive: Android then waits for this before it picks what the swipe scrolls.
@@ -120,6 +123,16 @@ const Admin = {
     const top = h('div.admin__top',
       me && !me.pin ? h('p.admin__warn', 'Your profile has no PIN: anyone who can reach this server can log in to it and use Administration.') : null,
       h('button.btn.btn--small', { type: 'button', onclick: () => this.load() }, 'Refresh'));
+    // Drawn afresh after every change, in the same place: the phone's WebView
+    // scrolls Settings to the top when the focused control (a rule's select
+    // just picked) is taken out, so the focus leaves it first without scrolling.
+    const scroller = this._node.closest('.modal__body');
+    const scrolled = scroller ? scroller.scrollTop : 0;
+    if (scroller && this._node.contains(document.activeElement)) {
+      scroller.tabIndex = -1;
+      scroller.focus({ preventScroll: true });
+    }
+    this._fits = [];
     // append() writes a null as the text "null": the master's block is left out instead.
     clear(this._node).append(...[
       top,
@@ -129,9 +142,12 @@ const Admin = {
       this._block('Server downloads', this._downloads(d.downloads)),
       this._block('Active Sessions', this._sessions(d.sessions)),
       this._block('Trash', this._trash(d.trash)),
-      this._block('Server rules', this._rules(d.rules)),
+      this._block('Backups', this._backups(d.backups)),
+      this._block('Server rules', this._rules(d.rules, d.server.name)),
       Store.server.master ? this._block('Server password', this._password(d.server)) : null,
     ].filter(Boolean));
+    for (const fit of this._fits) fit();
+    if (scroller) scroller.scrollTop = scrolled;
   },
 
   _block(title, ...body) {
@@ -506,9 +522,40 @@ const Admin = {
       this._list(rows), h('div.admin__bar', empty));
   },
 
+  // ---- Backups ----
+
+  _backups(r) {
+    // A server from before 4.0 has none.
+    if (r.error) return /nothing here/i.test(r.error) ? h('p.settings__note', 'This Flow Server makes no backups yet. Update it first.') : this._failed(r);
+    const master = Store.server.master;
+    const why = { weekly: 'Weekly', manual: 'Made by hand', restore: 'Made before a restore' };
+    const rows = r.backups.map((b) => h('li.admin__item.admin__item--row',
+      h('span.admin__item-text',
+        h('span.admin__item-main', Util.fmtDate(b.createdAt)),
+        h('span.admin__item-sub', ...this._parts([why[b.reason] || '', Util.plural(b.songs, 'song'), Util.plural(b.playlists, 'playlist'),
+          Util.plural(b.profiles, 'profile'), fmtBytes(b.size)]))),
+      master ? h('button.btn.btn--small', {
+        type: 'button',
+        onclick: async () => {
+          if (!(await this._confirm('Restore backup', `Put the library back as it was on ${Util.fmtDate(b.createdAt)}? `
+            + 'Song names, playlists, favourites, stats and profiles go back to how they were then; songs added since stay. '
+            + 'What is there now is backed up first.', 'Restore', 'light-red'))) return;
+          await this._do(() => window.flow.admin('backups/restore', { name: b.name }), 'Backup restored');
+        },
+      }, 'Restore') : null));
+    const make = h('button.btn.btn--small', {
+      type: 'button',
+      onclick: () => this._do(() => window.flow.admin('backups/make', {}), 'Backup made'),
+    }, 'Back up now');
+    const note = `The server backs up its library's data every week and keeps the last ${r.keep}: song names, playlists, favourites, `
+      + `stats and profiles, never the song files.${master ? '' : ' Only the master admin can restore one.'}`;
+    return h('div', h('p.settings__note', note),
+      r.backups.length ? this._list(rows) : h('p.settings__note', 'No backups yet.'), h('div.admin__bar', make));
+  },
+
   // ---- Server rules ----
 
-  _rules(r) {
+  _rules(r, serverName) {
     if (r.error) return this._failed(r);
     const select = (key, options) => {
       const node = h('select.select', ...options.map(([v, label]) => h('option', { value: v }, label)));
@@ -516,11 +563,22 @@ const Admin = {
       node.addEventListener('change', () => this._do(() => window.flow.admin('rules', { [key]: node.value }), 'Saved'));
       return node;
     };
+    // Guests from other servers (4.0): a server from before has no such rule.
+    const guests = r.guests === undefined ? null : h('input', { type: 'checkbox', checked: !!r.guests });
+    if (guests) guests.addEventListener('change', () => this._do(() => window.flow.admin('rules', { guests: guests.checked }), 'Saved'));
+    // Guests find the sessions only through the network search: without it the rule does nothing.
+    const unfound = !!guests && r.discovery === false;
+    if (unfound) guests.disabled = true;
     return h('div.admin__rules',
       h('label.admin__rule', h('span', 'Who may make new profiles'),
         select('profileCreation', [['anyone', 'Everyone'], ['admins', 'Only admins']])),
       h('label.admin__rule', h('span', 'Who may delete songs for everyone'),
-        select('songDelete', [['anyone', 'Everyone'], ['owner', 'Only who added it, and admins']])));
+        select('songDelete', [['anyone', 'Everyone'], ['owner', 'Only who added it, and admins']])),
+      guests ? h(`label.check.admin__guests${unfound ? '.admin__guests--off' : ''}`, guests,
+        h('span', 'Allow guests in home network sessions/jams',
+          unfound ? h('span.admin__guests-note', ` (Server '${serverName || 'this server'}' has UDP discovery disabled)`) : null,
+          h('span.admin__item-sub', 'Allow Flow apps connected to another server while being in this server\'s home network to see '
+            + 'active sessions so they can request to join as guests (no server password or profile/PIN needed, only for this jam session).'))) : null);
   },
 
   // ---- Server password (master admin) ----

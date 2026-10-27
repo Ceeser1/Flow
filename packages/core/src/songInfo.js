@@ -15,10 +15,10 @@
 // the Info, and the album when Apple had none and the release's tracklist
 // holds the song.
 
+const { agentName } = require('./agent');
+
 const SEARCH_URL = 'https://itunes.apple.com/search';
 const DISCOGS_URL = 'https://api.discogs.com';
-// Discogs wants a name it can tell apart from other programs.
-const DISCOGS_AGENT = 'Flow (+https://github.com/Ceeser1/Flow)';
 // 25 a minute: one search every 2.5 s at most, whoever asks.
 const DISCOGS_GAP_MS = 2500;
 const DISCOGS_RESULTS = 25;
@@ -193,7 +193,7 @@ async function askDiscogs(url, { fetch: get = globalThis.fetch, timeoutMs = 1500
   const wait = discogsNext - now;
   discogsNext = Math.max(now, discogsNext) + gapMs;
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-  const res = await get(url, { headers: { 'User-Agent': DISCOGS_AGENT }, signal: AbortSignal.timeout(timeoutMs) });
+  const res = await get(url, { headers: { 'User-Agent': agentName() }, signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`Discogs answered ${res.status}`);
   return res.json();
 }

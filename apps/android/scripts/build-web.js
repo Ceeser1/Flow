@@ -13,12 +13,13 @@ const desktop = path.join(__dirname, '..', '..', 'desktop');
 
 // The page talks to Flow Servers itself (fetch, the live channel, <audio>),
 // at whatever address they have; the desktop's page leaves that to Electron's
-// main process. Covers are files of the app's, served by Capacitor ('self').
+// main process. Covers are files of the app's, served by Capacitor ('self'),
+// except a guest's: the host's server's covers, straight from there (4.0).
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: http: https:",
   "media-src 'self' http: https: blob:",
   "connect-src 'self' http: https:",
 ].join('; ');

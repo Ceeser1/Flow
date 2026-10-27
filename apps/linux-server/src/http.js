@@ -8,6 +8,10 @@
 //   GET  /api/check                    what the server saw of this request (through
 //                                      a proxy?), for flow-server doctor; open to anyone
 //   POST /api/login   { password, device } -> { token }
+//   POST /api/pair    { password }      a pairing code for a QR code (pairing.js): { code, expiresIn }
+//                                      ('' without a server password); 403 for a wrong password
+//   POST /api/pair/redeem { code }      open to anyone: the password, once: { password }; 404
+//                                      for a code used or too old
 //   GET  /api/library [?since=rev&as=profileId]
 //                                      { rev, library, profile }, or 204 when
 //                                      nothing changed for that profile
@@ -25,6 +29,21 @@
 //                                      cannot play Ogg Vorbis: the iPhone) such a
 //                                      song as Ogg Opus, converted once (vorbis.js)
 //   GET  /api/songs/:id/peaks          { peaks }: its waveform, for an app's trim
+//   GET  /api/songs/:id/lyrics         { lyrics: { found, synced, plain, instrumental, source, v } }
+//                                      (only with the "lyrics" feature; lyrics.js), 502
+//                                      when LRCLIB cannot be reached
+//   PUT  /api/songs/:id/lyrics { lines: [{ t, end, text }] | null }
+//                                      { lyrics }: lyrics written or edited in an
+//                                      app, kept for good (source "own"); null
+//                                      gives the song looked-up ones again
+//                                      (feature "ownLyrics"), 400 when only some
+//                                      lines have times
+//   GET  /api/lyrics                   { songs: { <song id>: stamp } }: the songs
+//                                      with lyrics kept (found or not), the stamp
+//                                      changing with them (feature "lyricsSync":
+//                                      the apps keep copies)
+//   POST /api/lyrics { ids }           { lyrics: { <song id>: { ...lyrics, v } } }:
+//                                      those of up to 200 songs, v their stamp
 //   POST /api/songs/:id/trim { start, end, base, cut }
 //                                      its file cut (only when /api/hello lists
 //                                      the "trim" feature): { song, rev } or
@@ -39,6 +58,7 @@
 //                                      the app's live channel: events as they
 //                                      happen (live.js), while the app is connected
 //   GET  /api/time                     { time }: the server's clock, for playing in step
+//   GET  /api/sessions/songs/:gid/audio   a song a guest brought into this app's session (sessions.js)
 //   GET  /api/sessions                 { sessions, mine, request }: Active Sessions
 //   POST /api/sessions { type, ... }   taking part in them (sessions.js)
 //
@@ -47,6 +67,10 @@
 //   GET    /api/downloads              { batch } (null: none)
 //   POST   /api/downloads { url, kind, options }   a new batch: { batch }, 409 with one already
 //   DELETE /api/downloads              cancel the whole batch
+//   POST   /api/downloads/check { url }   a playlist's Update (feature "downloadCheck"):
+//                                      its link read, nothing downloaded: { listing }; the
+//                                      songs ticked come back as POST /api/downloads
+//                                      { items, name, source }
 //   POST   /api/downloads/search { query, page }   uploads for a song's name typed
 //                                      instead of a link (only with the "search"
 //                                      feature): { query, artist, title, page, results }
@@ -112,15 +136,19 @@ const {
 } = require('./config');
 const { DownloadError } = require('./downloads');
 const cover = require('@flow/core/cover');
+const { NONE: NO_LYRICS } = require('@flow/core/lyrics');
 const tools = require('./tools');
 const { SessionError } = require('./sessions');
 const { createVorbis } = require('./vorbis');
 const { createAdminRoutes } = require('./admin');
+const { createPairing, LIFE_MS: PAIR_LIFE_MS } = require('./pairing');
+const { createGuests } = require('./guests');
 
 const PROTOCOL = 1;
 // What this server can do beyond protocol 1, for apps that know to ask.
 // admin: /api/admin for admin profiles (admin.js).
-const FEATURES = ['profiles', 'admin', 'pin', 'statistics'];
+// smartPlaylists: a playlist's rules are kept (4.0). pair: QR codes' pairing codes (4.0).
+const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;
@@ -340,9 +368,18 @@ function bareIp(value) {
 const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
 
 function createHttpServer({
-  config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null, activity = null,
+  config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null, activity = null, backups = null,
+  lyrics = null,
 }) {
   const throttle = createThrottle();
+  // QR codes' pairing codes, in memory only.
+  const pairing = createPairing();
+  // Guests from other servers in this one's sessions (guests.js).
+  const guests = live && sessions ? createGuests({
+    config, library, live, sessions, log, helpers: {
+      HttpError, sendJson, sendFile, sendCover, readJsonBody,
+    },
+  }) : null;
   // What is noted about the profiles for the admins (activity.js); left out by tests that need none.
   const note = activity || {
     created() {}, seen() {}, left() {}, failed() {},
@@ -508,6 +545,7 @@ function createHttpServer({
     downloads,
     live,
     sessions,
+    backups,
     activity: activity || { lastSeen: (p) => p.lastSeenAt || 0, failed() {}, failures: () => [], clearFailures() {} },
     tools,
     version,
@@ -665,6 +703,20 @@ function createHttpServer({
     throw new HttpError(404, 'Nothing here.');
   }
 
+  /** A pairing code traded for the password (a QR code scanned); wrong codes wait as wrong passwords do. */
+  async function redeemPairing(req, res, { ip }) {
+    throttle.check(ip);
+    const body = await readJsonBody(req);
+    const password = pairing.redeem(body.code);
+    if (password === null) {
+      throttle.fail(ip);
+      throw new HttpError(404, 'That code was used already or is older than 10 minutes. Ask for a new QR code.');
+    }
+    throttle.ok(ip);
+    log(`A pairing code was used from ${ip}`);
+    sendJson(res, 200, { password });
+  }
+
   async function login(req, res, { ip }) {
     throttle.check(ip);
     const body = await readJsonBody(req);
@@ -803,8 +855,8 @@ function createHttpServer({
       // From home at level 3 and 4 no password is asked for, so none is announced.
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
-      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search'] : []), ...(live ? ['sessions'] : []),
-        ...(tools.ffmpeg() ? ['trim'] : [])];
+      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck'] : []), ...(live ? ['sessions'] : []),
+        ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics', 'ownLyrics', 'lyricsSync'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
       };
@@ -832,6 +884,12 @@ function createHttpServer({
     }
     checkExposure(client, false);
     if (is('POST', /^\/api\/login$/)) return login(req, res, client);
+    if (is('POST', /^\/api\/pair\/redeem$/)) return redeemPairing(req, res, client);
+    // A guest: on the home network (Tailscale is away from home), with its own pass.
+    if (guests && p.startsWith('/api/guest/')) {
+      const home = !client.outside && isPrivateIp(client.ip) && !isTailscaleAddress(client.ip);
+      return guests.route(req, res, p, url, client, home);
+    }
 
     if (!p.startsWith('/api/')) throw new HttpError(404, 'Nothing here. This is a Flow Server; open it in the Flow app.');
     const entry = requireAuth(req, url, client);
@@ -855,7 +913,25 @@ function createHttpServer({
     }
     if (is('GET', /^\/api\/live$/)) return openLive(req, res, url, client, entry);
     if (is('GET', /^\/api\/time$/)) return sendJson(res, 200, { time: Date.now() });
+    if (is('POST', /^\/api\/pair$/)) {
+      const body = await readJsonBody(req);
+      const cfg = config.get();
+      if (cfg.password && !checkPassword(cfg.password, String(body.password || ''))) {
+        throw new HttpError(403, `The password this app keeps is not the server's any more. Enter it again in Settings.`);
+      }
+      const code = cfg.password ? pairing.create(String(body.password)) : '';
+      if (code) log(`A pairing code was made for ${entry ? entry.device : client.ip}`);
+      return sendJson(res, 200, { code, expiresIn: Math.round(PAIR_LIFE_MS / 1000) });
+    }
     if (p === '/api/sessions' && (req.method === 'GET' || req.method === 'POST')) return sessionRoute(req, res, url, entry);
+    const sm = /^\/api\/sessions\/songs\/([\w-]{1,64})\/audio$/.exec(p);
+    if (sm && sessions && (req.method === 'GET' || req.method === 'HEAD')) {
+      // The app's install id: its token's, else the one it names (no password: no token).
+      const appId = (entry && entry.client) || String(url.searchParams.get('client') || '');
+      const file = sessions.songFileFor(appId, sm[1]);
+      if (!file) throw new HttpError(404, 'That song is not in your session.');
+      return sendFile(req, res, file);
+    }
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
       return sendJson(res, 200, library.runCommands(body.commands, profileId, { admin: !!(profile && profile.admin) }));
@@ -884,6 +960,40 @@ function createHttpServer({
       const peaks = await library.songPeaks(m[1]);
       if (!peaks) throw new HttpError(404, 'That song is not on the server.');
       return sendJson(res, 200, { peaks });
+    }
+    if (lyrics && is('GET', /^\/api\/lyrics$/)) return sendJson(res, 200, { songs: lyrics.index(library.data.songs) });
+    if (lyrics && is('POST', /^\/api\/lyrics$/)) {
+      const body = await readJsonBody(req);
+      const ids = new Set((Array.isArray(body && body.ids) ? body.ids : []).slice(0, 200).map(String));
+      return sendJson(res, 200, { lyrics: lyrics.many(library.data.songs.filter((s) => ids.has(s.id))) });
+    }
+    m = /^\/api\/songs\/([\w-]{1,64})\/lyrics$/.exec(p);
+    if (m && lyrics && is('GET', /./)) {
+      const song = library.data.songs.find((s) => s.id === m[1]);
+      if (!song) throw new HttpError(404, 'That song is not on the server.');
+      // LRCLIB still busy or out of reach after all its tries: none found
+      // (nothing kept, so looked up again when an app asks next time).
+      let found;
+      try {
+        found = await lyrics.get(song);
+      } catch {
+        found = { ...NO_LYRICS };
+      }
+      // Its stamp (v), for an app's copy (GET /api/lyrics).
+      return sendJson(res, 200, { lyrics: { ...found, v: lyrics.index([song])[song.id] || '' } });
+    }
+    if (m && lyrics && req.method === 'PUT') {
+      const body = await readJsonBody(req);
+      const song = library.data.songs.find((s) => s.id === m[1]);
+      if (!song) throw new HttpError(404, 'That song is not on the server.');
+      let kept;
+      try {
+        kept = await lyrics.put(song, body && Array.isArray(body.lines) ? body.lines : null);
+      } catch (err) {
+        throw new HttpError(400, err.message);
+      }
+      log(`Lyrics of "${[song.artist, song.title].filter(Boolean).join(' - ')}" ${kept.own ? 'edited' : 'taken back to the looked-up ones'}`);
+      return sendJson(res, 200, { lyrics: { ...kept, v: lyrics.index([song])[song.id] || '' } });
     }
     m = /^\/api\/songs\/([\w-]{1,64})\/trim$/.exec(p);
     if (m && req.method === 'POST') {
@@ -972,6 +1082,10 @@ function createHttpServer({
     if (is('DELETE', /^\/api\/downloads$/)) {
       downloads.cancel(profileId);
       return sendJson(res, 200, { batch: null });
+    }
+    if (is('POST', /^\/api\/downloads\/check$/)) {
+      const body = await readJsonBody(req);
+      return sendJson(res, 200, { listing: await downloads.check(profileId, body) });
     }
     if (is('POST', /^\/api\/downloads\/search$/)) {
       const body = await readJsonBody(req);

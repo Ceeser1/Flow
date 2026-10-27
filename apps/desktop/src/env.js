@@ -183,6 +183,33 @@ module.exports = {
   jsonFiles: {
     read: (name) => readJson(rootFile(name)),
     write: (name, value) => writeJsonAtomic(rootFile(name), value),
+    remove: (name) => fs.rmSync(rootFile(name), { force: true }),
+  },
+  // The Lyrics folder's files, as @flow/core/client/lyricsFolder takes them.
+  lyricsFiles: {
+    dir: paths.lyricsDir,
+    join: path.join,
+    fs: {
+      readText: (file) => {
+        try {
+          return fs.readFileSync(file, 'utf8');
+        } catch {
+          return null;
+        }
+      },
+      writeText: (file, text) => {
+        const tmp = `${file}.tmp`;
+        fs.writeFileSync(tmp, text);
+        fs.renameSync(tmp, file);
+      },
+      list: (dir) => fs.readdirSync(dir, { withFileTypes: true }).map((e) => ({
+        name: e.name,
+        dir: e.isDirectory(),
+        size: e.isDirectory() ? 0 : fs.statSync(path.join(dir, e.name)).size,
+      })),
+      remove: (file, { recursive = false } = {}) => fs.rmSync(file, { recursive, force: true }),
+      mkdir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    },
   },
   files: {
     exists: (file) => fs.existsSync(file),
@@ -203,5 +230,12 @@ module.exports = {
     find: () => discovery.find(),
     addressOf: (found) => discovery.addressOf(found, os.networkInterfaces()),
   },
-  network: { isMetered: () => network.isMetered() },
+  network: {
+    isMetered: () => network.isMetered(),
+    // This computer on the home network (a QR code's Home address when the server runs here).
+    lanAddress() {
+      const all = Object.values(os.networkInterfaces()).flat().filter((a) => a && a.family === 'IPv4' && !a.internal).map((a) => a.address);
+      return all.find((a) => /^(192\.168|10)\./.test(a)) || all.find((a) => /^172\.(1[6-9]|2\d|3[01])\./.test(a)) || '';
+    },
+  },
 };

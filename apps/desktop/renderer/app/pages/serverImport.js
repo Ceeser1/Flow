@@ -119,7 +119,9 @@ const ServerImport = {
       return;
     }
     if (!await AddPage._clearForNew()) return;
-    let kind = pick ? 'song' : AddPage._linkKind(url);
+    // Another link than the one an Update put into the box: no Update.
+    if (ImportPanel.updating && (pick || url !== ImportPanel.updating.url)) ImportPanel.updating = null;
+    let kind = pick ? 'song' : (ImportPanel.updating ? 'list' : AddPage._linkKind(url));
     if (kind === 'ask') {
       kind = await AddPage._askSongOrList(url);
       if (!kind) return;

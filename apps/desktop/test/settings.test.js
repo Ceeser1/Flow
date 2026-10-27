@@ -202,9 +202,9 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ brColors: 'classic' }).brColors, 'lime');
   assert.equal(settings.clean({ brColors: 'equalizer' }).brColors, 'lime');
   // Own colours after the schemes: blue by default; Orb's Ember, Ice and
-  // White became own ones.
+  // White and Halo's Warm white became own ones.
   for (const [scheme, key] of [['brColors', 'brColor'], ['rdColor', 'rdOwnColor'], ['skColors', 'skColor'], ['obColors', 'obColor'],
-    ['vnColors', 'vnColor'], ['stColors', 'stColor'], ['raColors', 'raColor'], ['szInk', 'szColor']]) {
+    ['vnColors', 'vnColor'], ['stColors', 'stColor'], ['raColors', 'raColor'], ['szInk', 'szColor'], ['hlColors', 'hlColor']]) {
     assert.equal(d[key], '#3484f4');
     assert.equal(settings.clean({ [scheme]: 'custom' })[scheme], 'custom');
   }
@@ -212,6 +212,27 @@ test('settings are kept within their ranges', () => {
   assert.equal(ember.obColors, 'custom');
   assert.equal(ember.obColor, '#ff8a33');
   assert.equal(settings.clean({ obColors: 'rainbow' }).obColors, 'rainbow');
+  const warm = settings.clean({ hlColors: 'white', hlColor: '#00ff00' });
+  assert.equal(warm.hlColors, 'custom');
+  assert.equal(warm.hlColor, '#ffbd80');
+  // Halo's cover and background: the song's by default, or a picture picked (its path kept).
+  assert.equal(d.hlCover, 'original');
+  assert.equal(d.hlBack, 'cover');
+  assert.equal(d.hlCoverFile, '');
+  assert.equal(d.hlWiggle, true);
+  assert.equal(d.hlPulse, true);
+  // Halo's Spin is gone: a saved one is dropped.
+  assert.equal(d.hlSpin, undefined);
+  assert.equal('hlSpin' in settings.clean({ hlSpin: true }), false);
+  // Halo's sparks: 0-200% in steps of 5, 100% by default (10% what there were before).
+  assert.equal(d.hlSparkAmount, 100);
+  assert.equal(settings.clean({ hlSparkAmount: 0 }).hlSparkAmount, 0);
+  assert.equal(settings.clean({ hlSparkAmount: 12 }).hlSparkAmount, 10);
+  assert.equal(settings.clean({ hlSparkAmount: 500 }).hlSparkAmount, 200);
+  assert.equal(settings.clean({ hlCover: 'pick', hlCoverFile: 'C:\\Flow\\Visualizer\\halo-cover-x.jpg' }).hlCoverFile, 'C:\\Flow\\Visualizer\\halo-cover-x.jpg');
+  assert.equal(settings.clean({ hlCover: 'other' }).hlCover, 'original');
+  assert.equal(settings.clean({ hlBackFile: 7 }).hlBackFile, '');
+  assert.equal(settings.clean({ hlBackFile: 'x'.repeat(1001) }).hlBackFile, '');
   // Waveform: rainbow bars by default.
   assert.equal(d.wfColors, 'rainbow');
   assert.equal(d.wfStyle, 'bars');
@@ -288,6 +309,25 @@ test('settings are kept within their ranges', () => {
   // Not Spectrogram's speed (sgSpeed).
   assert.equal(d.sgSpeed, 100);
   assert.equal(settings.clean({ ifForest: 'no' }).ifForest, true);
+});
+
+test('the sound equalizer: 16 flat bands by default, 8 to 48, Custom points within 12 dB', () => {
+  const d = settings.clean({});
+  assert.equal(d.soundEqBands, 16);
+  assert.equal(d.soundEqPreset, 'standard');
+  assert.deepEqual(d.soundEqCustom, []);
+  assert.equal(settings.clean({ soundEqBands: 4 }).soundEqBands, 8);
+  assert.equal(settings.clean({ soundEqBands: 64 }).soundEqBands, 64);
+  assert.equal(settings.clean({ soundEqBands: 80 }).soundEqBands, 64);
+  assert.equal(settings.clean({ soundEqBands: '20.4' }).soundEqBands, 20);
+  assert.equal(settings.clean({ soundEqBands: 'many' }).soundEqBands, 16);
+  assert.equal(settings.clean({ soundEqPreset: 'bass' }).soundEqPreset, 'bass');
+  assert.equal(settings.clean({ soundEqPreset: 'loud' }).soundEqPreset, 'standard');
+  const own = [20, -20, 1.234, 0, 0, 0, 0, '3'];
+  assert.deepEqual(settings.clean({ soundEqCustom: own }).soundEqCustom, [12, -12, 1.2, 0, 0, 0, 0, 3]);
+  assert.deepEqual(settings.clean({ soundEqCustom: [1, 2, 3] }).soundEqCustom, []);
+  assert.deepEqual(settings.clean({ soundEqCustom: new Array(8).fill('x') }).soundEqCustom, []);
+  assert.deepEqual(settings.clean({ soundEqCustom: 'loud' }).soundEqCustom, []);
 });
 
 test('a metered connection is told apart from a free one', () => {

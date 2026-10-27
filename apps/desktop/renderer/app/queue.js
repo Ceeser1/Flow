@@ -18,6 +18,14 @@
 // at once and leaves the queue as it is. Previous walks back through what
 // actually played.
 //
+// "Continue with similar songs" (4.0, `continueWith`, set by the Player when
+// Settings ask for it): once the list has played through (without shuffle
+// its last song taken, with shuffle every song drawn) the automatic part goes
+// on with songs like the last ones heard (autoDj.js) instead of starting the
+// list over, up to DJ_AHEAD songs past the list's end. Those (`dj`) stay in
+// the queue though they are not in the list. A song of the list picked by
+// hand, or a list started, goes back to the list.
+//
 // Every call that may add songs is handed the list as it is shown right now
 // (`ids`), so a new sort or search counts from the next song added. Without
 // shuffle the list is followed from `cursor`, the last song taken from it,
@@ -40,6 +48,26 @@
       this.used = new Set(); // shuffle: drawn this round
       this.cursor = null;    // no shuffle: the last song added from the list
       this.history = [];     // what played before, newest last
+      this.continueWith = null; // (seedIds, avoid) => similar song ids, or null: lists start over
+      this.dj = new Set();   // songs continueWith added
+      this.djOn = false;     // the list has played through: similar songs follow
+    }
+
+    /** The next similar song (continueWith), or null. */
+    _similar() {
+      const seeds = [...this.history.slice(-5), this.currentId, ...this.auto].filter(Boolean).slice(-5);
+      const avoid = new Set([...this.history.slice(-50), this.currentId, ...this.auto, ...this.manual]);
+      const id = (this.continueWith(seeds, avoid) || []).find((x) => !avoid.has(x)) || null;
+      if (id) this.dj.add(id);
+      return id;
+    }
+
+    /** Back to the list: the similar songs leave the queue. */
+    _leaveDj() {
+      this.djOn = false;
+      if (!this.dj.size) return;
+      this.auto = this.auto.filter((x) => !this.dj.has(x));
+      this.dj.clear();
     }
 
     _pick(list) {
@@ -48,9 +76,17 @@
 
     /** The next song for the automatic part, or null when the list is used up. */
     _candidate(ids) {
+      if (this.djOn) {
+        if (this.continueWith) return this._similar();
+        this.djOn = false;
+      }
       if (this.shuffle) {
         const queued = new Set(this.auto);
         let pool = ids.filter((x) => !this.used.has(x) && !queued.has(x) && x !== this.currentId);
+        if (!pool.length && this.continueWith) {
+          this.djOn = true;
+          return this._similar();
+        }
         if (!pool.length) {
           // Every song has had its turn: a new round.
           this.used.clear();
@@ -66,6 +102,10 @@
       const last = this.cursor || this.currentId;
       let i = ids.indexOf(last);
       if (i < 0 && last !== this.currentId) i = ids.indexOf(this.currentId);
+      if (this.continueWith && i >= 0 && i + 1 >= ids.length) {
+        this.djOn = true;
+        return this._similar();
+      }
       const id = ids[(i + 1) % ids.length];
       // Once round the whole list: nothing new to add.
       return this.auto.includes(id) ? null : id;
@@ -74,9 +114,11 @@
     /** Tops the automatic part up to LIMIT (or the list's length). */
     fill(ids) {
       const present = new Set(ids);
-      // Songs gone from the list (deleted, or searched out) leave the queue.
-      this.auto = this.auto.filter((x) => present.has(x));
-      const want = Math.min(this.limit, ids.length);
+      // Songs gone from the list (deleted, or searched out) leave the queue;
+      // similar songs are not the list's.
+      this.auto = this.auto.filter((x) => present.has(x) || this.dj.has(x));
+      for (const x of this.dj) if (x !== this.currentId && !this.auto.includes(x)) this.dj.delete(x);
+      const want = Math.min(this.limit, ids.length + (this.continueWith ? PlayQueue.DJ_AHEAD : 0));
       while (this.auto.length < want) {
         const id = this._candidate(ids);
         if (!id) break;
@@ -94,6 +136,8 @@
       this.contextId = contextId;
       this.auto = [];
       this.used = new Set();
+      this.dj.clear();
+      this.djOn = false;
       const first = startId || (!ids.length ? null : (this.shuffle ? this._pick(ids) : ids[0]));
       if (!first) return null;
       if (this.currentId && this.currentId !== first) this._remember(this.currentId);
@@ -106,6 +150,7 @@
 
     /** A song of the list playing, picked by hand: it plays now, the queue stays. */
     jump(id, ids) {
+      if (!this.dj.has(id)) this._leaveDj();
       if (id !== this.currentId) {
         if (this.currentId) this._remember(this.currentId);
         this.currentId = id;
@@ -200,6 +245,8 @@
     setShuffle(on, ids = []) {
       this.shuffle = !!on;
       this.auto = [];
+      this.dj.clear();
+      this.djOn = false;
       this.used = new Set(this.currentId ? [this.currentId] : []);
       this.cursor = this.currentId;
       if (ids.length) this.fill(ids);
@@ -216,6 +263,8 @@
         used: [...this.used],
         cursor: this.cursor,
         history: this.history.slice(),
+        dj: [...this.dj],
+        djOn: this.djOn,
       };
     }
 
@@ -231,6 +280,8 @@
       this.used = new Set(ids(s.used));
       this.cursor = typeof s.cursor === 'string' ? s.cursor : null;
       this.history = ids(s.history).slice(-500);
+      this.dj = new Set(ids(s.dj));
+      this.djOn = !!s.djOn;
     }
 
     /** Forgets songs that no longer exist. */
@@ -238,6 +289,7 @@
       this.manual = this.manual.filter(exists);
       this.auto = this.auto.filter(exists);
       this.history = this.history.filter(exists);
+      for (const id of this.dj) if (!exists(id)) this.dj.delete(id);
     }
 
     _remember(id) {
@@ -258,5 +310,7 @@
   }
 
   PlayQueue.LIMIT = 20;
+  // Similar songs queued past the list's end.
+  PlayQueue.DJ_AHEAD = 10;
   return PlayQueue;
 }));

@@ -10,7 +10,8 @@ const { randomBase64Url } = require('./common');
 
 // The visualizers' own settings (their cogwheels, apps/desktop/renderer/app/
 // viz/), by what they may be: ['color', default] a '#rrggbb'; ['bool',
-// default]; ['range', default, min, max, step]; ['choice', default, values].
+// default]; ['range', default, min, max, step]; ['choice', default, values];
+// ['file', ''] a picture's path, picked in the cogwheel.
 // Each visualizer's start with its own letters.
 const VIZ_OPTIONS = {
   // Opened as Random, another one with each song.
@@ -56,14 +57,24 @@ const VIZ_OPTIONS = {
   ksLook: ['choice', 'kaleido', ['auto', 'kaleido', 'vortex', 'tunnel', 'starburst']],
   ksEvery: ['range', 30, 10, 120, 5],
   ksTrails: ['range', 100, 25, 200, 5],
-  // Halo: the round cover turning, the spectrum as bars, a line or dots, the
-  // colours (the cover's, rainbow, by the notes, warm white), the sparks, the
-  // cover blurred behind, the title.
-  hlSpin: ['bool', true],
+  // Halo: the spectrum as bars, a line or dots, the colours (the cover's, rainbow, by the notes, or one of its own; Warm
+  // white became that), the sparks (and how many, percent; 10% the amount
+  // there always were), the background (the cover blurred, or a
+  // picture picked), the title. The cover in the middle is the song's or a
+  // picture picked, wiggling and pulsing; the pictures are copies Flow keeps
+  // (hlCoverFile, hlBackFile).
   hlStyle: ['choice', 'bars', ['bars', 'line', 'dots']],
-  hlColors: ['choice', 'cover', ['cover', 'rainbow', 'notes', 'white']],
+  hlColors: ['choice', 'cover', ['cover', 'rainbow', 'notes', 'custom']],
+  hlColor: ['color', '#3484f4'],
+  hlCover: ['choice', 'original', ['original', 'pick']],
+  hlCoverFile: ['file', ''],
+  hlWiggle: ['bool', true],
+  hlPulse: ['bool', true],
   hlParticles: ['bool', true],
+  hlSparkAmount: ['range', 100, 0, 200, 5],
   hlBackground: ['bool', true],
+  hlBack: ['choice', 'cover', ['cover', 'pick']],
+  hlBackFile: ['file', ''],
   hlTitle: ['bool', true],
   // Scope: XY, goniometer, wave or polar; the phosphor's colour; how long
   // it glows on (percent); the grid.
@@ -367,15 +378,28 @@ const DEFAULTS = {
   crossfadeSeconds: 3,
   // Every song brought to the same loudness, measured once per song.
   normalize: true,
+  // The sound equalizer (Settings > Equalizer, the desktop's soundEq.js): how
+  // many bands (points from 20 Hz to 20 kHz), the curve chosen (Standard is
+  // flat), and the user's own points for Custom (dB, -12 to 12; none yet: []).
+  soundEqBands: 16,
+  soundEqPreset: 'standard',
+  soundEqCustom: [],
   // The menu's Your listening trend entry and its lists.
   showTrend: true,
+  // Lyrics (4.0): the player's Lyrics and the phone's below Now Playing, and
+  // the line playing over a full-screen visualizer.
+  lyricsOn: true,
+  vizLyrics: true,
+  // "Continue with similar songs" when the list playing has played through
+  // (4.0, autoDj.js), instead of it starting over.
+  autoDj: false,
   // The song lists' optional columns (All Songs, the playlists), each one
-  // sortable and searched: Mix as before 3.6.3, Album, Genre and Info
-  // (subGenre) when asked.
-  colMix: true,
-  colAlbum: false,
+  // sortable and searched: Album, Genre, Info (subGenre) and Mix; Album
+  // unless turned off, the others when asked.
+  colAlbum: true,
   colGenre: false,
   colSubGenre: false,
+  colMix: false,
   // The clouds behind the pages, and how they swell with the bass (percent).
   cloudsOn: true,
   cloudsIntensity: 50,
@@ -468,6 +492,7 @@ const DEFAULTS = {
   dcScale75: false,
 };
 
+const SOUND_EQ_PRESETS = ['standard', 'bass', 'subtle', 'intimate', 'custom'];
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random-<category>' picks one of a
@@ -525,7 +550,7 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 100 && v)
     .slice(0, 100));
   for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
-    'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colAlbum', 'colGenre', 'colSubGenre']) s[key] = s[key] === true;
+    'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix']) s[key] = s[key] === true;
   if (!s.dcScale75) {
     s.dcScale = '75';
     s.dcScale75 = true;
@@ -537,12 +562,21 @@ function clean(raw) {
   delete s.flashOn;
   delete s.flashTriggers;
   delete s.flashRange;
+  // And Halo's Spin (the round cover turning).
+  delete s.hlSpin;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'colMix', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;
   }
+  const bands = Math.round(Number(s.soundEqBands));
+  s.soundEqBands = Number.isFinite(bands) ? Math.min(64, Math.max(8, bands)) : DEFAULTS.soundEqBands;
+  if (!SOUND_EQ_PRESETS.includes(s.soundEqPreset)) s.soundEqPreset = DEFAULTS.soundEqPreset;
+  const own = Array.isArray(s.soundEqCustom) ? s.soundEqCustom.map(Number) : [];
+  s.soundEqCustom = own.length >= 8 && own.length <= 64 && own.every(Number.isFinite)
+    ? own.map((db) => Math.round(Math.min(12, Math.max(-12, db)) * 10) / 10)
+    : [];
   const fade = Math.round(Number(s.crossfadeSeconds) * 10) / 10;
   s.crossfadeSeconds = Number.isFinite(fade) ? Math.min(10, Math.max(0.1, fade)) : DEFAULTS.crossfadeSeconds;
   for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'eqHeight', 'eqVisibility', 'eqShineSpread']) {
@@ -574,9 +608,15 @@ function clean(raw) {
     s.obColor = ORB_SOLID[s.obColors];
     s.obColors = 'custom';
   }
+  // Halo's Warm white became a colour of its own.
+  if (s.hlColors === 'white') {
+    s.hlColor = '#ffbd80';
+    s.hlColors = 'custom';
+  }
   for (const [key, [kind, def, a, b, step]] of Object.entries(VIZ_OPTIONS)) {
     const v = s[key];
-    if (kind === 'color') s[key] = /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v).toLowerCase() : def;
+    if (kind === 'file') s[key] = typeof v === 'string' && v.length <= 1000 ? v : def;
+    else if (kind === 'color') s[key] = /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v).toLowerCase() : def;
     else if (kind === 'bool') s[key] = typeof v === 'boolean' ? v : def;
     else if (kind === 'choice') s[key] = a.includes(v) ? v : def;
     else {

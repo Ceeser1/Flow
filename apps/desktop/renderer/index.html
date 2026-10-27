@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src file: http: https:" />
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: http: https:; media-src file: http: https:" />
   <title>Flow</title>
   <link rel="stylesheet" href="style.css" />
   <!-- The phone's layout, all under body.mobile (mobile.js). -->
@@ -52,7 +52,7 @@
         <div class="search-box search-box--big">
           <span id="searchIcon" class="search-box__icon"></span>
           <input id="searchInput" class="search-box__input" type="search"
-                 placeholder="Search playlists, songs, artists, albums, mixes, genres and info" autocomplete="off" spellcheck="false" />
+                 placeholder="Search playlists, songs, artists, albums, genres, info and mixes" autocomplete="off" spellcheck="false" />
         </div>
         <!-- Phone only: show one part of the results instead of all seven under each other. -->
         <div id="searchFilter" class="search-filter">
@@ -61,9 +61,9 @@
           <button class="search-filter__btn" type="button" data-part="songs">Songs</button>
           <button class="search-filter__btn" type="button" data-part="artists">Artists</button>
           <button class="search-filter__btn" type="button" data-part="albums">Albums</button>
-          <button class="search-filter__btn" type="button" data-part="mixes">Mixes</button>
           <button class="search-filter__btn" type="button" data-part="genres">Genres</button>
           <button class="search-filter__btn" type="button" data-part="info">Info</button>
+          <button class="search-filter__btn" type="button" data-part="mixes">Mixes</button>
         </div>
         <div id="searchResults" class="results">
           <div class="results__col" data-part="playlists">
@@ -82,17 +82,17 @@
             <h2 class="results__head">Albums <span id="searchAlbumsCount" class="count"></span></h2>
             <div id="searchAlbums" class="results__list"></div>
           </div>
-          <div class="results__col" data-part="mixes">
-            <h2 class="results__head">Mixes <span id="searchMixesCount" class="count"></span></h2>
-            <div id="searchMixes" class="results__list"></div>
-          </div>
           <div class="results__col" data-part="genres">
             <h2 class="results__head">Genres <span id="searchGenresCount" class="count"></span></h2>
             <div id="searchGenres" class="results__list"></div>
           </div>
           <div class="results__col" data-part="info">
-            <h2 class="results__head">Info <span id="searchInfoCount" class="count"></span></h2>
+            <h2 class="results__head">Info / Sub-Genre <span id="searchInfoCount" class="count"></span></h2>
             <div id="searchInfo" class="results__list"></div>
+          </div>
+          <div class="results__col" data-part="mixes">
+            <h2 class="results__head">Mixes <span id="searchMixesCount" class="count"></span></h2>
+            <div id="searchMixes" class="results__list"></div>
           </div>
         </div>
       </section>
@@ -193,6 +193,8 @@
                      placeholder="Sub-Genre, CD, Year, ..." /></label>
           </div>
           <div id="edError" class="form-error"></div>
+          <!-- Lyrics found for it (4.0.1): Show, Edit Lyrics or Add Lyrics (lyricsEdit.js). -->
+          <div id="edLyrics" class="ed-lyrics"></div>
 
           <div class="trim-head">
             <div class="section-title">Trim</div>
@@ -273,6 +275,8 @@
             <input id="newPlaylistName" class="input input--big" type="text" maxlength="80"
                    placeholder="Name" autocomplete="off" />
             <button id="newPlaylistBtn" class="btn btn--primary btn--big" type="button">Add new playlist</button>
+            <button id="newSmartBtn" class="btn btn--big" type="button"
+                    title="A playlist that fills itself with the songs matching its rules">Smart playlist</button>
           </div>
           <div id="newPlaylistError" class="form-error"></div>
         </div>
@@ -322,6 +326,8 @@
           start and queue songs. Its host is asked first.</p>
         <table id="sessionsTable" class="table table--playlists table--sessions"></table>
         <div id="sessionsEmpty" class="empty empty--small" hidden></div>
+        <!-- Sessions of other Flow Servers on this network that take guests (4.0). -->
+        <div id="sessionsNearby" class="sessions-nearby" hidden></div>
       </section>
 
       <!-- One playlist -->
@@ -331,15 +337,18 @@
         <div class="pl-head">
           <div class="pl-head__titlerow">
             <h1 id="plTitle" class="page__title"></h1>
-            <button id="plShare" class="toggle" type="button" aria-pressed="false" hidden></button>
+            <button id="plUpdate" class="toggle" type="button" hidden
+                    title="Download the songs added to this playlist's source since it was imported"></button>
           </div>
           <div class="pl-head__row">
             <span id="plMeta" class="pl-meta"></span>
-            <button id="plShuffle" class="toggle" type="button" aria-pressed="false" title="Play in random order"></button>
             <button id="plPlay" class="btn btn--play" type="button"></button>
+            <button id="plShuffle" class="toggle" type="button" aria-pressed="false" title="Play in random order"></button>
             <button id="plOffline" class="toggle" type="button" aria-pressed="false" hidden
                     title="Keep this playlist's songs on this computer, to play without the server"></button>
             <span id="plOfflineNote" class="pl-meta" hidden></span>
+            <button id="plShare" class="toggle" type="button" aria-pressed="false" hidden></button>
+            <button id="plRules" class="toggle" type="button" hidden title="Change the rules that pick this playlist's songs"></button>
           </div>
         </div>
         <div id="plPickBanner" class="pick-banner" hidden>
@@ -383,6 +392,9 @@
           <button id="playerFrom" class="player__from" type="button" hidden title="Open this playlist">
             from <span id="playerFromName"></span>
           </button>
+          <!-- Lyrics while the song playing has some, else "(No Lyrics)" (lyrics.js). -->
+          <button id="btnLyrics" class="queue-btn" type="button" title="Lyrics" hidden></button>
+          <span id="noLyrics" class="player__no-lyrics" hidden>(No Lyrics)</span>
           <button id="btnQueue" class="queue-btn" type="button" title="Queue">
             <img class="queue-btn__img" src="../images/queue.png" alt="" /><span>Queue</span></button>
         </div>
@@ -443,6 +455,8 @@
 <script src="app/util.js"></script>
 <script src="app/queue.js"></script>
 <script src="app/smartLists.js"></script>
+<script src="app/autoDj.js"></script>
+<script src="app/playlistRules.js"></script>
 <script src="app/statistics.js"></script>
 <script src="app/icons.js"></script>
 <script src="app/dom.js"></script>
@@ -452,9 +466,11 @@
 <script src="app/touchList.js"></script>
 <script src="app/trim.js"></script>
 <script src="app/songEdit.js"></script>
+<script src="app/rulesEditor.js"></script>
 <script src="app/spectrum.js"></script>
 <script src="app/tempo.js"></script>
 <script src="app/notes.js"></script>
+<script src="app/soundEq.js"></script>
 <script src="app/equalizer.js"></script>
 <script src="app/ambient.js"></script>
 <script src="app/landscape.js"></script>
@@ -464,6 +480,9 @@
 <script src="app/output.js"></script>
 <script src="app/session.js"></script>
 <script src="app/queueView.js"></script>
+<script src="app/lyrics.js"></script>
+<script src="app/lyricsEdit.js"></script>
+<script src="app/qrShare.js"></script>
 <script src="app/visualizer.js"></script>
 <script src="app/viz/audio.js"></script>
 <script src="app/viz/gl.js"></script>
@@ -527,6 +546,7 @@
 <script src="app/pages/sessions.js"></script>
 <script src="app/pages/trend.js"></script>
 <script src="app/pages/playlist.js"></script>
+<script src="app/pages/playlistUpdate.js"></script>
 <script src="app/details.js"></script>
 <script src="app/settingsPanel.js"></script>
 <script src="app/admin.js"></script>
