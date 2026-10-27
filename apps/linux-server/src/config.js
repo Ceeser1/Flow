@@ -167,8 +167,9 @@ function clean(raw) {
     // ('owner': the profile that added it, and the admins).
     profileCreation: r.profileCreation === 'admins' ? 'admins' : 'anyone',
     // Apps of other Flow Servers on the home network may ask to join this
-    // server's Active Sessions (guests.js, 4.0); off until an admin allows it.
-    guests: r.guests === true,
+    // server's Active Sessions (guests.js, 4.0); on until an admin turns it off
+    // (a server from before keeps what it has saved).
+    guests: r.guests !== false,
     songDelete: r.songDelete === 'owner' ? 'owner' : 'anyone',
     adminSeeded,
     profiles,

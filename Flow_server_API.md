@@ -579,7 +579,8 @@ session.
 
 ## Guests from other servers
 
-From 4.0, while an admin lets them in (Administration rules, `guests: true`;
+From 4.0, while the server lets them in (Administration rules, `guests: true`,
+the default for a new server;
 `guests` in the features and in the discovery answer). An app of another
 server on the home network, or one with no server, joins this server's
 sessions as a guest. Every route answers 403 to a caller that is not on a

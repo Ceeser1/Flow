@@ -54,7 +54,9 @@ test('a guest from another server: let in by the admins and the host, its songs,
     const sessionId = started.json.sessionId;
     assert.ok(sessionId);
 
-    // Off until an admin allows it.
+    // On for a new server; nobody gets in once an admin turns it off.
+    assert.strictEqual(server.config.get().guests, true);
+    server.config.set({ guests: false });
     const hello = { client: 'guestclient01', device: 'Galaxy', profileName: 'Ben', serverName: 'Pi' };
     assert.equal((await call(base, '/api/guest/hello', { body: hello })).status, 403);
     assert.ok(!(await call(base, '/api/hello')).json.features.includes('guests'));

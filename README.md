@@ -704,9 +704,10 @@ listen (who, on hover), and **Join**.
   played along keeps playing on its own.
 - **Guests from other servers** (from 4.0): a device of another Flow Server
   on the same home network, or one with no server at all, can join a session
-  here, when an admin of this server allows it (Administration, Server
-  rules: **Allow guests in home network sessions/jams**; off until
-  ticked) and the server's discovery is on (it is how the guest finds it).
+  here, while this server allows it (Administration, Server rules:
+  **Allow guests in home network sessions/jams**; on for a new server,
+  an admin can turn it off) and the server's discovery is on (it is how
+  the guest finds it).
   The Active Sessions page lists such servers' sessions under "Nearby, on
   other servers" with **Join as guest**; it looks every 15 seconds while
   open, and now and then otherwise, and Active Jams shows in the menu while

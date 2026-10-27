@@ -576,8 +576,8 @@ A web server or tunnel in front has to pass the live channel on unbuffered
 (level 4 above); `doctor` checks it. Without that, Flow still works, but
 pauses and skips from other devices arrive late or not at all.
 
-**Guests from other servers** (from 4.0, off until an admin ticks Allow guests
-in home network sessions/jams): an app of another Flow Server on the
+**Guests from other servers** (from 4.0; on for a new server until an admin
+unticks Allow guests in home network sessions/jams): an app of another Flow Server on the
 same home network, or one with no server, finds this server by discovery
 (which has to be on) and may ask to join a session here. The host is asked
 about every guest. A guest is never a profile here: it gets a pass of its own

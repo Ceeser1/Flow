@@ -376,8 +376,10 @@ test('the overview, the rules and the failed sign-ins', async () => {
     assert.ok(o.startedAt > 0 && typeof o.version === 'string');
     assert.equal((await get(base, '/api/admin/server', tBen)).status, 403);
 
-    assert.deepEqual((await get(base, '/api/admin/rules', tAnna)).json, { profileCreation: 'anyone', songDelete: 'anyone', guests: false, discovery: false });
-    assert.deepEqual((await post(base, '/api/admin/rules', { songDelete: 'owner' }, tAnna)).json, { profileCreation: 'anyone', songDelete: 'owner', guests: false, discovery: false });
+    assert.deepEqual((await get(base, '/api/admin/rules', tAnna)).json, { profileCreation: 'anyone', songDelete: 'anyone', guests: true, discovery: false });
+    assert.deepEqual((await post(base, '/api/admin/rules', { songDelete: 'owner' }, tAnna)).json, { profileCreation: 'anyone', songDelete: 'owner', guests: true, discovery: false });
+    assert.equal((await post(base, '/api/admin/rules', { guests: false }, tAnna)).json.guests, false, 'guests from other servers turned off');
+    assert.equal(server.config.get().guests, false, 'and kept off');
     assert.equal((await post(base, '/api/admin/rules', { guests: true }, tAnna)).json.guests, true, 'guests from other servers let in');
     assert.equal(server.config.get().songDelete, 'owner');
 
