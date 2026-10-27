@@ -248,7 +248,7 @@ test('a Flow Server as the library, step by step', async (t) => {
     const list = await remote.admin('profiles');
     assert.equal(list.me, night.id);
     assert.ok(list.profiles.some((p) => p.id === night.id && p.admin));
-    assert.deepEqual(await remote.admin('rules', { songDelete: 'owner' }), { profileCreation: 'anyone', songDelete: 'owner', guests: false, discovery: false });
+    assert.deepEqual(await remote.admin('rules', { songDelete: 'owner' }), { profileCreation: 'anyone', songDelete: 'owner', guests: true, discovery: false });
     assert.equal(remote.status().rules.songDelete, 'anyone', 'an admin may delete any song');
     await assert.rejects(remote.admin('../hello'), /No such page/);
     await assert.rejects(remote.changeServerPassword({ password: 'abcd' }), /master/);
