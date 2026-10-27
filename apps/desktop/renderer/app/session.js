@@ -119,6 +119,13 @@ const Session = {
     return s ? s.name : 'the session';
   },
 
+  /** The device a session plays on: its name without the host's profile ("Ceeser - Sony GTK" is Sony GTK). */
+  deviceOf(s) {
+    const profile = s.host && s.host.profileName ? `${s.host.profileName} - ` : '';
+    if (profile && s.name.startsWith(profile) && s.name.length > profile.length) return s.name.slice(profile.length);
+    return (s.host && s.host.device) || s.name;
+  },
+
   onChange(fn) {
     this._listeners.push(fn);
   },

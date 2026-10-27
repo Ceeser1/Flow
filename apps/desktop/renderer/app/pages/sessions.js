@@ -150,7 +150,7 @@ const SessionsPage = {
     for (const n of servers) {
       const list = h('div.nearby__list');
       for (const s of n.sessions) {
-        list.appendChild(h('div.nearby__row', { dataset: { id: s.id } },
+        list.appendChild(h('div.nearby__row' + (this._lit === s.id ? '.row--lit' : ''), { dataset: { id: s.id } },
           h('span.nearby__icon', { html: Icons.sessions }),
           h('span.nearby__text',
             h('span.nearby__name', s.name),
@@ -160,7 +160,7 @@ const SessionsPage = {
       if (!n.sessions.length) list.appendChild(h('div.muted-text', 'Nothing plays there right now.'));
       const joined = Session.guest && Session.guest.serverId === n.id && Session.mine;
       box.append(h('div.nearby__server',
-        h('div.nearby__head', h('span', `On ${n.name}`),
+        h('div.nearby__head', h('span', `On Server: ${n.name}`),
           joined && Store.foreign.size ? h('button.btn.btn--small', { type: 'button', onclick: () => Nav.openPlaylist(GUEST_ID) }, `Songs on ${n.name}`) : null),
         list));
     }

@@ -241,6 +241,21 @@ const Nav = {
         tag ? h('span.session-tag', tag) : null,
         s.playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null));
       }
+      // Other servers' sessions on this network, as "Server - Device": one opens the page at it (Join as guest).
+      const nearby = Store.can('guests') ? Session.nearby.flatMap((n) => n.sessions.map((s) => ({ s, n, label: `${n.name} - ${Session.deviceOf(s)}` }))) : [];
+      nearby.sort((a, b) => a.label.localeCompare(b.label));
+      for (const { s, n, label } of nearby) {
+        const joined = !!Session.guest && Session.guest.serverId === n.id && s.id === inId;
+        const song = s.song ? `${s.playing ? '' : 'Paused: '}${s.song.title}${s.song.artist ? ` - ${s.song.artist}` : ''}` : 'Nothing loaded';
+        sessionList.appendChild(h('button.menu__sub' + (s.playing ? '.menu__sub--playing' : ''), {
+          type: 'button',
+          title: `${s.name}, on the server ${n.name}${joined ? ' (joined)' : ''}\n${song}`,
+          onclick: () => this.show('sessions', { sessionId: s.id }),
+        },
+        h('span.menu__sub-name', label),
+        joined ? h('span.session-tag', 'Joined') : null,
+        s.playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null));
+      }
     }
 
     // Your listening trend: there unless switched off in Settings, its lists closed until opened.
