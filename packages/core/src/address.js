@@ -7,15 +7,43 @@
 const DEFAULT_PORT = 7878;
 
 /**
- * "192.168.0.63:7878", "192.168.0.63", "flow.example.com" or a full link, as
- * "http://192.168.0.63:7878". Plain http without a port means 7878; https
- * without one means 443 (a proxy in front of the server). A path is kept,
- * for a server behind a proxy at /flow. '' for nothing; throws for nonsense.
+ * Whether an address typed without http:// or https:// means https: a
+ * website's name ("ceeser.de/flow", "flow.example.com", with :443 or no
+ * port), a server behind a proxy. The rest is a server reached straight at
+ * home or on the tailnet, over plain http: an IP address, localhost, a name
+ * without a dot, a home network's or Tailscale's name, any other port.
+ * The window has a copy of this (renderer/app/util.js serverAddress), which
+ * apps/desktop/test checks against this one.
+ */
+function meansHttps(address) {
+  const a = String(address || '').trim();
+  if (!a || /^https?:\/\//i.test(a)) return false;
+  const m = /^(\[[^\]]*\]|[^:]*)(?::(\d*))?$/.exec(a.split(/[/?#]/)[0]);
+  if (!m) return false;
+  const host = m[1].toLowerCase();
+  if (m[2] !== undefined && m[2] !== '443') return false;
+  if (!host || host.startsWith('[') || ipv4(host) || host === 'localhost' || !host.includes('.')) return false;
+  return !/\.(local|lan|home|internal|home\.arpa|ts\.net)\.?$/.test(host);
+}
+
+/** The address as it is meant: https:// in front where it means https (meansHttps), else as typed. */
+function completeAddress(address) {
+  const a = String(address || '').trim();
+  return meansHttps(a) ? `https://${a}` : a;
+}
+
+/**
+ * "192.168.0.63:7878", "192.168.0.63", "ceeser.de/flow" or a full link, as
+ * "http://192.168.0.63:7878" or "https://ceeser.de/flow". Without http:// or
+ * https://, a website's name is https and the rest plain http (meansHttps).
+ * Plain http without a port means 7878; https without one means 443 (a proxy
+ * in front of the server). A path is kept, for a server behind a proxy at
+ * /flow. '' for nothing; throws for nonsense.
  */
 function serverBaseUrl(address) {
   let a = String(address || '').trim();
   if (!a) return '';
-  if (!/^https?:\/\//i.test(a)) a = `http://${a}`;
+  if (!/^https?:\/\//i.test(a)) a = meansHttps(a) ? `https://${a}` : `http://${a}`;
   const u = new URL(a);
   if (!u.hostname) throw new Error('No host');
   if (!u.port && u.protocol === 'http:') u.port = String(DEFAULT_PORT);
@@ -61,4 +89,6 @@ function isPrivateIp(ip) {
   return a === '::1' || /^f[cd][0-9a-f]{2}:/.test(a) || /^fe[89ab][0-9a-f]:/.test(a);
 }
 
-module.exports = { DEFAULT_PORT, serverBaseUrl, isTailscaleAddress, isPrivateIp };
+module.exports = {
+  DEFAULT_PORT, serverBaseUrl, meansHttps, completeAddress, isTailscaleAddress, isPrivateIp,
+};

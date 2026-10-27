@@ -1160,7 +1160,9 @@ const SettingsPanel = {
         desc: 'Flow connects to your home server or finds the server in your local network itself if UDP discovery is enabled.',
         sub: true,
         when: on,
-        right: this._textField({ key: 'serverHome', placeholder: '192.168.0.63:7878', when: on }),
+        right: this._textField({
+          key: 'serverHome', placeholder: '192.168.0.63:7878', when: on, address: true,
+        }),
       }),
       this._row({
         key: 'serverRemoteOn',
@@ -1168,7 +1170,9 @@ const SettingsPanel = {
         desc: 'Fallback if no home server is found or you are away. Enter an IP:Port or a website connected to the server.',
         sub: true,
         when: on,
-        right: this._textField({ key: 'serverRemote', placeholder: '100.101.102.103:7878 or flow.example.com', when: on }),
+        right: this._textField({
+          key: 'serverRemote', placeholder: '100.101.102.103:7878 or flow.example.com', when: on, address: true,
+        }),
       }),
       this._row({
         label: 'Server Password (if the server is password protected)',
@@ -1349,8 +1353,13 @@ const SettingsPanel = {
     });
   },
 
-  /** A text box saved when left (or on Enter). */
-  _textField({ key, placeholder, when }) {
+  /**
+   * A text box saved when left (or on Enter). address: a Flow Server's, which
+   * gets https:// in front where it means https (Util.serverAddress).
+   */
+  _textField({
+    key, placeholder, when, address = false,
+  }) {
     const input = h('input.input.settings__input', {
       type: 'text', value: Store.settings[key] || '', placeholder, spellcheck: false, autocomplete: 'off',
     });
@@ -1362,8 +1371,9 @@ const SettingsPanel = {
         QrShare.connect(v);
         return;
       }
-      input.value = v;
-      if (v !== (Store.settings[key] || '')) Store.saveSettings({ [key]: v });
+      const done = address ? Util.serverAddress(v) : v;
+      input.value = done;
+      if (done !== (Store.settings[key] || '')) Store.saveSettings({ [key]: done });
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') input.blur();

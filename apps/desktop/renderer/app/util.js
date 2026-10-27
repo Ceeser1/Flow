@@ -187,8 +187,27 @@
     };
   }
 
+  /**
+   * A Flow Server's address as typed, with https:// in front where it means
+   * https: a website's name ("ceeser.de/flow"). A server at home or on the
+   * tailnet (an IP address, localhost, a name without a dot, .local, .lan,
+   * .ts.net, a port other than 443) stays as typed: plain http. The same
+   * rule as @flow/core/address meansHttps (test/renderer.test.js checks).
+   */
+  function serverAddress(address) {
+    const a = String(address || '').trim();
+    if (!a || /^https?:\/\//i.test(a)) return a;
+    const m = /^(\[[^\]]*\]|[^:]*)(?::(\d*))?$/.exec(a.split(/[/?#]/)[0]);
+    if (!m) return a;
+    const host = m[1].toLowerCase();
+    if (m[2] !== undefined && m[2] !== '443') return a;
+    const ipv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) && host.split('.').every((n) => Number(n) <= 255);
+    if (!host || host.startsWith('[') || ipv4 || host === 'localhost' || !host.includes('.')) return a;
+    return /\.(local|lan|home|internal|home\.arpa|ts\.net)\.?$/.test(host) ? a : `https://${a}`;
+  }
+
   return {
     fmtClock, fmtDate, fmtDay, fmtListened, fmtTimeOfDay, fmtPrecise, parsePrecise, fileUrl,
-    compareValues, cycleSort, sortRows, fold, matches, songLine, plural, fmtAgo, serverName,
+    compareValues, cycleSort, sortRows, fold, matches, songLine, plural, fmtAgo, serverName, serverAddress,
   };
 }));

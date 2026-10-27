@@ -15,6 +15,17 @@ test('clock and date formats', () => {
   assert.throws(() => Util.parsePrecise('abc'));
 });
 
+test('a server address typed without http(s):// gets https:// where the shared client connects over https', () => {
+  const { completeAddress } = require('@flow/core/address');
+  for (const a of ['ceeser.de', 'ceeser.de/flow', ' flow-test.duckdns.org ', 'music.example.com:443', 'Music.Example.com/flow/',
+    '192.168.0.61:7878', '192.168.0.61', '999.1.1.1', '[fd7a::1]:7878', 'fe80::1', 'localhost', 'raspberrypi', 'pi.local', 'pi.lan',
+    'pi.home.arpa', 'pi.tail1234.ts.net', 'flow.example.com:7878', 'flow.example.com:80', 'http://ceeser.de', 'https://ceeser.de', '']) {
+    assert.equal(Util.serverAddress(a), completeAddress(a), a);
+  }
+  assert.equal(Util.serverAddress('ceeser.de/flow'), 'https://ceeser.de/flow');
+  assert.equal(Util.serverAddress('192.168.0.61:7878'), '192.168.0.61:7878');
+});
+
 test('file URLs match Node\'s own', () => {
   for (const p of ['C:\\Users\\A B\\Music\\FlowPlayer\\x #1 (Remix) 100%.mp3',
     'D:\\Müsik\\Björk - Jóga.opus', 'C:\\a\\it\'s [live]!.flac']) {

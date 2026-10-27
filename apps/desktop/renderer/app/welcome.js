@@ -99,7 +99,9 @@ const Welcome = {
   },
 
   connect() {
-    const address = this._address.value.trim();
+    // "ceeser.de/flow" is https://ceeser.de/flow (Util.serverAddress).
+    const address = Util.serverAddress(this._address.value);
+    this._address.value = address;
     if (!address) {
       this._draw('Enter the server\'s address, like 192.168.0.20:7878.', false, true);
       this._address.focus();
@@ -158,7 +160,7 @@ const Welcome = {
 
   /** An address the browser will not open from this https page (plain http, not this computer). */
   _blockedHere(address) {
-    const a = String(address || '').trim();
+    const a = Util.serverAddress(address);
     if (location.protocol !== 'https:' || /^https:\/\//i.test(a)) return false;
     return !/^(https?:\/\/)?(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(a);
   },
