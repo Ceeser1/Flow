@@ -22,6 +22,10 @@ function fakeStore() {
     getItem: (k) => (m.has(k) ? m.get(k) : null),
     setItem: (k, v) => m.set(k, String(v)),
     removeItem: (k) => m.delete(k),
+    get length() {
+      return m.size;
+    },
+    key: (i) => [...m.keys()][i] ?? null,
   };
 }
 
@@ -59,6 +63,24 @@ test('passwords and tokens stay in the browser session, never in localStorage', 
   assert.equal(later.hasSecret(kept), false);
   assert.equal(a.secrets.encrypt(''), '');
   assert.equal(a.secrets.decrypt('e:something-else'), '');
+});
+
+test('Logout: the server\'s files and every secret go, and nothing is written after', () => {
+  const local = fakeStore();
+  const session = fakeStore();
+  session.setItem('other-site-key', 'x');
+  const a = createStorage({ local, session });
+  const kept = a.secrets.encrypt('Webtest123');
+  a.writeJson('settings.json', { volume: 0.4 });
+  a.writeJson('server-sync.json', { serverId: 'abc', token: kept });
+  a.forget(['server-sync.json']);
+  assert.equal(a.readJson('server-sync.json'), null);
+  assert.equal(a.secrets.decrypt(kept), '');
+  assert.deepEqual([...session.m.keys()], ['other-site-key']);
+  // What the page still saves on its way out does not bring it back.
+  a.writeJson('server-sync.json', { serverId: 'abc' });
+  assert.equal(createStorage({ local, session }).readJson('server-sync.json'), null);
+  assert.equal(createStorage({ local, session }).readJson('settings.json').volume, 0.4);
 });
 
 test('a browser that refuses storage still works, from memory', () => {

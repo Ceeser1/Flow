@@ -3,14 +3,42 @@
 // The line under Flow's name while a Flow Server is in use: which server and
 // whether it can be reached, what is going up or down, and how many changes
 // wait to be sent. A click opens Settings.
+//
+// The web player has Logout beside it, under the settings button: the
+// browser forgets the server (window.flow.logout) and the page starts again
+// at the connect form (welcome.js).
 
 const ServerChip = {
   _wasOnline: null,
+  _row: null,
 
   init() {
     $('serverChip').onclick = () => SettingsPanel.open();
+    if (Store.web) this._addLogout();
     Store.onServer((st) => this.draw(st));
     this.draw(Store.server);
+  },
+
+  _addLogout() {
+    const chip = $('serverChip');
+    this._row = h('div.server-row');
+    chip.before(this._row);
+    this._row.append(chip, h('button.server-logout', {
+      type: 'button',
+      title: 'Log out: this browser forgets the server, its password and your profile',
+      onclick: () => this.logout(),
+    }, 'Logout'));
+  },
+
+  async logout() {
+    Player.stop();
+    try {
+      await window.flow.logout();
+    } catch (err) {
+      toast(err.message, 'error');
+      return;
+    }
+    location.reload();
   },
 
   /** How the server is reached, as a word: Home, Tailscale or Remote. */
@@ -37,6 +65,7 @@ const ServerChip = {
   draw(st) {
     const chip = $('serverChip');
     chip.hidden = !st.on;
+    if (this._row) this._row.hidden = !st.on;
     if (!st.on) {
       this._wasOnline = null;
       return;

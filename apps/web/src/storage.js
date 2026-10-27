@@ -33,6 +33,8 @@ function store(kind) {
 
 function createStorage({ local = store('localStorage'), session = store('sessionStorage') } = {}) {
   const memory = new Map();
+  // Logout: nothing is written any more until the page loads again.
+  let frozen = false;
 
   /** A JSON file by name: its value, or null when there is none. */
   function readJson(name) {
@@ -54,6 +56,7 @@ function createStorage({ local = store('localStorage'), session = store('session
   }
 
   function writeJson(name, value) {
+    if (frozen) return;
     const text = JSON.stringify(value);
     if (KEEP.has(name) && local) {
       try {
@@ -104,8 +107,28 @@ function createStorage({ local = store('localStorage'), session = store('session
   /** Whether `value` still opens a secret here (a key from a browser session that ended does not). */
   const hasSecret = (value) => !!decrypt(value);
 
+  /**
+   * Logout: the files of `names` and every secret of this browser session
+   * go, and nothing more is written (what the page still saves on its way
+   * out would bring them back).
+   */
+  function forget(names) {
+    for (const name of names) removeJson(name);
+    vault.clear();
+    try {
+      if (session) {
+        const keys = [];
+        for (let i = 0; i < session.length; i += 1) keys.push(session.key(i));
+        for (const k of keys) if (k && k.startsWith(SECRET_PREFIX)) session.removeItem(k);
+      }
+    } catch {
+      // Gone with the browser session anyway.
+    }
+    frozen = true;
+  }
+
   return {
-    readJson, writeJson, removeJson, secrets: { encrypt, decrypt }, hasSecret,
+    readJson, writeJson, removeJson, secrets: { encrypt, decrypt }, hasSecret, forget,
   };
 }
 

@@ -312,6 +312,19 @@ function start() {
     }),
 
     serverStatus: call(() => remote.status()),
+    /**
+     * The web player's own Logout (the menu's server line): this browser
+     * forgets the server, its password and token, the profile and what this
+     * browser heard; the look and sound settings stay. The window loads
+     * again after it, at the connect form.
+     */
+    logout: call(() => {
+      remote.stop();
+      settings.set({
+        serverOn: false, serverHome: '', serverRemote: '', serverHomeOn: true, serverRemoteOn: true, serverSecret: '', serverNames: {},
+      });
+      storage.forget(['server-sync.json', 'server-others.json', 'server-library.json', 'tracked-profiles.json', 'private-statistics.json']);
+    }),
     setServerSecret: call((text) => remote.setSecret(text)),
     syncNow: call(() => remote.syncNow()),
     setOffline: notHere('Keeping songs for offline'),
