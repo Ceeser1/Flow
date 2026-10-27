@@ -31,8 +31,11 @@ using Microsoft.Win32;
 
 static class FlowServerTray
 {
-    const string MUTEX = "Local\\FlowServerTray";
-    const string QUIT = "Local\\FlowServerTrayQuit";
+    // One icon per sign-in. FLOW_SERVER_TRAY_ID gives a run names of its own
+    // (the tests), so it never closes or blocks the real icon.
+    static readonly string Id = Environment.GetEnvironmentVariable("FLOW_SERVER_TRAY_ID") ?? "";
+    static readonly string MUTEX = "Local\\FlowServerTray" + Id;
+    static readonly string QUIT = "Local\\FlowServerTrayQuit" + Id;
     const string RUN_KEY = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
     const string RUN_NAME = "Flow Server Tray";
     const int DEFAULT_PORT = 7878;

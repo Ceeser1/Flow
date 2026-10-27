@@ -16,8 +16,9 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-tray-'));
 const exe = path.join(dir, 'Flow Server Tray.exe');
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
+// Names of its own: a --quit here must never close the icon of the real server on this PC.
 const exitCode = (args, env) => new Promise((resolve, reject) => {
-  const p = spawn(exe, args, { env: { ...process.env, ...env }, windowsHide: true });
+  const p = spawn(exe, args, { env: { ...process.env, FLOW_SERVER_TRAY_ID: `-test-${process.pid}`, ...env }, windowsHide: true });
   p.on('error', reject);
   p.on('exit', resolve);
 });
