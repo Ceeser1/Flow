@@ -860,6 +860,7 @@ apps/linux-server/    Flow Server: hosts a library for the apps, and its Linux i
 apps/windows-server/  the Flow Server's installer for Windows (see its README)
 apps/android/         the Android app (v3.0, a Flow Server client; see its README)
 apps/ios/             the iPhone app (the Android app's page in Swift; see its README)
+apps/web/             the web player: Flow in a browser, as a Flow Server client (see its README)
 icons/                Flow's icon, the source of every app's (npm run icon)
 ```
 

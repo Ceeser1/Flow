@@ -92,7 +92,9 @@ const { createTrackedProfiles } = require('./trackedProfiles');
  * it fetches a song's audio ('vorbis=0': an iPhone, which cannot play Ogg
  * Vorbis, gets such a song as Opus); convertUploads: uploads carry the
  * "Always convert" choice (alwaysMp3, mp3Quality, keepMp3) for the server to
- * convert them by (a phone, which has no ffmpeg; the PC converts its own).
+ * convert them by (a phone, which has no ffmpeg; the PC converts its own);
+ * streamCovers: the window shows covers straight from the server (the web
+ * player, which keeps no files), so none come down here.
  */
 function createRemote(env) {
   const {
@@ -2100,7 +2102,7 @@ function createRemote(env) {
 
   /** After every look at the server's library: which covers to fetch, which to drop. */
   async function coverSync() {
-    if (status.state !== 'online' || !cache.library || cache.serverId !== sync.serverId || !sync.serverId) return;
+    if (env.streamCovers || status.state !== 'online' || !cache.library || cache.serverId !== sync.serverId || !sync.serverId) return;
     const store = covers.storeOf(sync.serverId);
     const songs = cache.library.songs;
     const known = new Set(songs.map((x) => x.id));
@@ -2117,7 +2119,7 @@ function createRemote(env) {
   /** The window shows these songs and has no cover file for them yet. */
   function wantCovers(ids) {
     const list = (Array.isArray(ids) ? ids : []).map(String).filter((id) => /^[\w-]{1,64}$/.test(id));
-    if (!list.length) return;
+    if (!list.length || env.streamCovers) return;
     coverWanted = [...new Set([...list, ...coverWanted])].slice(0, 300);
     pumpCovers();
   }

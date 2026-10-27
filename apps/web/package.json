@@ -1,0 +1,16 @@
+{
+  "name": "flow-web",
+  "version": "4.0.0",
+  "description": "Flow's web player: the desktop renderer in a browser, as a client of a Flow Server",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.js",
+    "serve": "node scripts/serve.js",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "author": "Ceeser",
+  "license": "MIT"
+}

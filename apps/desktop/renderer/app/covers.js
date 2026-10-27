@@ -34,8 +34,18 @@ const Covers = {
       this.refresh(info.ids);
     });
     window.flow.onCoverStaged((info) => {
-      this._setPending(info.cachePath, `${Util.fileUrl(info.file)}?v=${encodeURIComponent(info.version)}`);
+      this._setPending(info.cachePath, this._address(info.file, `v=${encodeURIComponent(info.version)}`));
     });
+  },
+
+  /**
+   * A cover file's address with `query` on it. The web player's addresses
+   * may have a query of their own (a server's cover, ?t=) or a fragment (a
+   * blob: address, which a query would break): then it is added after that.
+   */
+  _address(file, query) {
+    const url = Util.fileUrl(file);
+    return `${url}${/[?#]/.test(url) ? '&' : '?'}${query}`;
   },
 
   _pendingKey(key) {
@@ -81,7 +91,7 @@ const Covers = {
     if (!version || this._serverAsked.get(k) === version) return;
     this._serverAsked.set(k, version);
     window.flow.serverDownloads('cover', { index, version }).then((file) => {
-      if (file && this._serverAsked.get(k) === version) this._setPending(k, `${Util.fileUrl(file)}?v=${encodeURIComponent(version)}`);
+      if (file && this._serverAsked.get(k) === version) this._setPending(k, this._address(file, `v=${encodeURIComponent(version)}`));
     }).catch(() => {
       this._serverAsked.delete(k);
     });
@@ -103,7 +113,7 @@ const Covers = {
     if (!dir) return '';
     const id = song.isDevice ? song.localId : song.id;
     const again = this._tries + (this._arrived.get(song.id) || 0);
-    return `${Util.fileUrl(`${dir}/${id}.jpg`)}?v=${encodeURIComponent(song.cover)}${again ? `&r=${again}` : ''}`;
+    return this._address(`${dir}/${id}.jpg`, `v=${encodeURIComponent(song.cover)}${again ? `&r=${again}` : ''}`);
   },
 
   /** The note that stands in for a cover. */

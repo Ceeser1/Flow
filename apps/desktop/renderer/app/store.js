@@ -70,13 +70,19 @@ const Store = {
     return this.caps[cap] !== false;
   },
 
-  /** Whether this app runs on a phone (Android or iPhone). */
+  /** Whether this app runs on a phone (Android or iPhone, or the web player in a phone's layout). */
   get phone() {
-    return this.platform === 'android' || this.platform === 'ios';
+    return this.platform === 'android' || this.platform === 'ios' || (this.platform === 'web' && this.uiMode === 'mobile');
   },
 
-  /** The device as the window names it: "this phone" or "this computer". */
+  /** Whether this is the web player (apps/web): a page in a browser. */
+  get web() {
+    return this.platform === 'web';
+  },
+
+  /** The device as the window names it: "this phone", "this browser" or "this computer". */
   get here() {
+    if (this.web) return 'this browser';
     return this.phone ? 'this phone' : 'this computer';
   },
 
@@ -233,10 +239,11 @@ const Store = {
    * Downloaded Songs, first under All Songs while a Flow Server is in use:
    * every song with a file on this device, the server's (downloaded, or
    * uploaded from here) and the rest (copies of another server's songs, songs
-   * not uploaded: lib.deviceSongs, which only play). Null without a server.
+   * not uploaded: lib.deviceSongs, which only play). Null without a server,
+   * and in an app that keeps no songs (the web player).
    */
   devicePlaylist() {
-    if (!this.server.on) return null;
+    if (!this.server.on || !this.can('localFiles')) return null;
     const songs = [...this.library.songs.filter((s) => s.file), ...(this.library.deviceSongs || [])];
     return {
       id: DEVICE_ID,

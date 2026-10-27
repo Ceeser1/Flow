@@ -17,6 +17,7 @@
   Store.caps = init.caps || {};
   Store.version = init.version || '';
   document.body.classList.toggle('mobile', Store.uiMode === 'mobile');
+  document.body.classList.toggle('web', Store.web);
   Store.settings = init.settings;
   Store.musicDir = init.musicDir;
   Store.iconDataUrl = init.iconDataUrl;

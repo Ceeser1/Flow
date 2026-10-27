@@ -52,6 +52,7 @@ const AddPage = {
     });
     $('openFilesBtn').onclick = () => this.openLocal(false);
     $('openFolderBtn').onclick = () => this.openLocal(true);
+    this.drawLocalPick();
     $('progCancel').onclick = () => {
       if (SongSearch.busy) SongSearch.cancel();
       else if (ImportPanel.busy) ImportPanel.cancel();
@@ -298,10 +299,10 @@ const AddPage = {
     await ImportPanel.openLocal(picked);
   },
 
-  /** The "or" and the local buttons, only while nothing else is open. */
+  /** The "or" and the local buttons, only while nothing else is open (never in the web player). */
   drawLocalPick() {
     const importing = typeof ImportPanel !== 'undefined' && ImportPanel.state !== 'idle';
-    $('localPick').hidden = this.phase !== 'idle' || importing;
+    $('localPick').hidden = this.phase !== 'idle' || importing || !Store.can('localFiles');
   },
 
   /**

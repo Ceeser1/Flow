@@ -1147,7 +1147,7 @@ const SettingsPanel = {
       right: this._shareNode,
       label: 'Use a Flow Server',
       desc: 'Use the library on a Flow Server. Songs can be streamed from it and changes made here go to it. '
-        + 'When turned on, your local files get uploaded to the server as well.',
+        + (Store.can('localFiles') ? 'When turned on, your local files get uploaded to the server as well.' : 'In the browser, Flow plays only a server\'s songs.'),
     });
     main.querySelector('.settings__left').appendChild(this._serverNode);
     this._syncBtn = h('button.btn.btn--small', { type: 'button', onclick: () => this._syncNow() }, 'Synchronize now');
@@ -1172,7 +1172,8 @@ const SettingsPanel = {
       }),
       this._row({
         label: 'Server Password (if the server is password protected)',
-        desc: 'Flow keeps it encrypted on your device.',
+        // The web player keeps it in the browser's session (apps/web/src/storage.js).
+        desc: Store.web ? 'This browser keeps it only until it is closed.' : 'Flow keeps it encrypted on your device.',
         sub: true,
         when: on,
         right: this._secretField(on),
@@ -1203,10 +1204,15 @@ const SettingsPanel = {
     });
     // The button beside the box works whether or not the box is ticked.
     sync.classList.add('settings__row--keep');
+    // The web player keeps no songs, downloads or covers: only what it plays from the server.
+    const keeps = Store.can('localFiles');
+    let storage = null;
+    if (Store.can('musicFolder')) storage = this._savedSongsRow();
+    else if (Store.can('offline')) storage = this._storageRow();
     return [
       h('h3.settings__section', 'Media Management'),
-      Store.can('musicFolder') ? this._savedSongsRow() : this._storageRow(),
-      this._coversRow(),
+      storage,
+      keeps ? this._coversRow() : null,
       this._row({
         key: 'lyricsOn',
         label: 'Fetch/Sync Lyrics',
@@ -1214,7 +1220,7 @@ const SettingsPanel = {
       }),
       this._lyricsRow(),
       Store.can('backups') ? this._backupsRow() : null,
-      this._row({
+      !Store.can('offline') ? null : this._row({
         key: 'serverMetered',
         label: 'Allow downloads on mobile internet',
         desc: 'If the app detects a metered connection/mobile internet, it will not download marked-to-download songs '
@@ -1222,14 +1228,14 @@ const SettingsPanel = {
         when: server,
         show: () => !!Store.settings.serverRemote && Store.settings.serverRemoteOn !== false,
       }),
-      this._row({
+      !keeps ? null : this._row({
         key: 'serverKeepFiles',
         label: 'Keep local files after server upload',
         desc: 'If disabled, your local songs will be removed after they got uploaded to the server, '
           + 'unless you have these songs marked to be downloaded.',
         when: server,
       }),
-      sync,
+      keeps ? sync : null,
       here ? this._row({
         key: 'useCookies',
         label: 'Use browser session-cookies for downloading',
@@ -1263,9 +1269,7 @@ const SettingsPanel = {
       this._row({
         key: 'alwaysMp3',
         label: here ? 'Always convert downloads into MP3' : 'Upload songs to the server as MP3',
-        desc: here ? 'Otherwise songs are kept in the format they come in.'
-          : 'Songs you upload from your phone to the server using local files or using the Download (Server) button '
-            + 'get converted into MP3 at the chosen quality by the server if enabled. Songs downloaded to this phone are not changed.',
+        desc: here ? 'Otherwise songs are kept in the format they come in.' : this._serverMp3Desc(keeps),
         right: this._mp3Quality(),
       }),
       this._row({
@@ -1276,6 +1280,13 @@ const SettingsPanel = {
         when: () => Store.settings.alwaysMp3,
       }),
     ];
+  },
+
+  /** What "Upload songs to the server as MP3" does where the server converts (the phone; the web player: only its downloads). */
+  _serverMp3Desc(keeps) {
+    if (!keeps) return 'Songs the Download (Server) button gets are converted into MP3 at the chosen quality by the server if enabled.';
+    return 'Songs you upload from your phone to the server using local files or using the Download (Server) button '
+      + 'get converted into MP3 at the chosen quality by the server if enabled. Songs downloaded to this phone are not changed.';
   },
 
   // ---- Jam session ----

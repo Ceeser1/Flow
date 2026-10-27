@@ -11,14 +11,24 @@
 // app shares (qrShare.js).
 //
 // Only in the phone's layout; the desktop starts with Local Files.
+//
+// The web player (apps/web) has nothing without a server, so it shows the
+// form in both layouts, straight away (a browser cannot search the network),
+// and again when the server asks for its password once more: the browser
+// keeps it only while it is open (apps/web/src/env.js).
 
 const Welcome = {
   el: null,
   _phase: '', // searching | form | connecting
   _searchSeen: false,
   _timer: null,
+  _skipped: false,
 
   init() {
+    if (Store.web) {
+      this._initWeb();
+      return;
+    }
     if (!document.body.classList.contains('mobile')) return;
     const s = Store.settings;
     if (s.serverHome || s.serverRemote || Store.library.songs.length) return;
@@ -27,10 +37,24 @@ const Welcome = {
     this.search();
   },
 
+  _initWeb() {
+    Store.onServer((st) => this._onServer(st));
+    const s = Store.settings;
+    if (s.serverHome || s.serverRemote) {
+      // The server may have asked for its password before the window started.
+      this._onServer(Store.server);
+      return;
+    }
+    this._build();
+    this._showForm('Enter your Flow Server\'s address.');
+    this._address.focus();
+  },
+
   _build() {
+    const web = Store.web;
     this._status = h('p.welcome__status');
     this._address = h('input.input.welcome__input', {
-      type: 'text', placeholder: '192.168.0.20:7878', inputMode: 'url', autocomplete: 'off', autocapitalize: 'off', spellcheck: false,
+      type: 'text', placeholder: web ? 'https://music.example.com' : '192.168.0.20:7878', inputMode: 'url', autocomplete: 'off', autocapitalize: 'off', spellcheck: false,
     });
     this._password = h('input.input.welcome__input', { type: 'password', placeholder: 'Only if it has one', autocomplete: 'off' });
     this._connectBtn = h('button.btn.btn--primary.welcome__connect', { type: 'button', onclick: () => this.connect() }, 'Connect');
@@ -45,14 +69,16 @@ const Welcome = {
       h('label.welcome__label', h('span', 'Password'), this._password),
       this._connectBtn,
       Store.can('scanQr') ? h('button.btn.welcome__again', { type: 'button', onclick: () => this.scan() }, 'Scan a QR code') : null,
-      h('p.welcome__hint', 'The Flow Server shows its address when it starts, and on its page in the browser.'),
-      h('button.btn.welcome__again', { type: 'button', onclick: () => this.search() }, 'Look on this network again'),
-      h('button.btn.welcome__again', { type: 'button', onclick: () => this.localFiles() }, 'Add songs from this phone'));
+      h('p.welcome__hint', web ? this._webHint() : 'The Flow Server shows its address when it starts, and on its page in the browser.'),
+      web ? null : h('button.btn.welcome__again', { type: 'button', onclick: () => this.search() }, 'Look on this network again'),
+      web ? null : h('button.btn.welcome__again', { type: 'button', onclick: () => this.localFiles() }, 'Add songs from this phone'));
     this.el = h('div.welcome', { role: 'dialog', 'aria-label': 'Welcome to Flow' },
       h('div.welcome__inner',
         h('img.welcome__icon', { src: 'assets/icon.png', alt: '' }),
         h('h1.welcome__title', 'Welcome to Flow'),
-        h('p.welcome__text', 'On your phone, Flow plays the songs of your Flow Server: the one on your computer or your Raspberry Pi.'),
+        h('p.welcome__text', web
+          ? 'In the browser, Flow plays the songs of your Flow Server. This page keeps none of them: everything comes from your server.'
+          : 'On your phone, Flow plays the songs of your Flow Server: the one on your computer or your Raspberry Pi.'),
         this._status,
         this._form),
       h('button.welcome__skip', { type: 'button', onclick: () => this.skip() }, 'Not now'));
@@ -119,8 +145,22 @@ const Welcome = {
 
   skip() {
     clearTimeout(this._timer);
+    this._skipped = true;
     if (Store.server.state !== 'online') Store.saveSettings({ serverOn: false });
     this.close();
+  },
+
+  /** The web player's word on addresses: from an https page a browser opens no plain http ones. */
+  _webHint() {
+    if (location.protocol !== 'https:') return 'The address your Flow Server was set up with, like 192.168.0.20:7878 or https://music.example.com.';
+    return 'The https address your Flow Server was set up with. From this page a browser opens no plain http addresses, except a server on this computer (localhost:7878).';
+  },
+
+  /** An address the browser will not open from this https page (plain http, not this computer). */
+  _blockedHere(address) {
+    const a = String(address || '').trim();
+    if (location.protocol !== 'https:' || /^https:\/\//i.test(a)) return false;
+    return !/^(https?:\/\/)?(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(a);
   },
 
   close() {
@@ -132,6 +172,13 @@ const Welcome = {
   },
 
   _onServer(st) {
+    // The web player signed in before, but this browser no longer has the password.
+    if (!this.el && Store.web && !this._skipped && st.state === 'password') {
+      this._build();
+      this._showForm('This server has a password. Enter it.');
+      this._password.focus();
+      return;
+    }
     if (!this.el) return;
     if (this._phase === 'searching') {
       if (st.searching) {
@@ -153,7 +200,14 @@ const Welcome = {
       this._showForm(this._password.value ? 'That password is not the server\'s.' : 'This server has a password. Enter it.', true);
       this._password.focus();
     } else if (st.state === 'offline') {
-      this._showForm(`${Store.settings.serverHome} does not answer. Is the phone on the same network as the server, and is the server running?`, true);
+      const address = Store.settings.serverHome;
+      let why = 'Is the phone on the same network as the server, and is the server running?';
+      if (Store.web) {
+        why = this._blockedHere(address)
+          ? 'This page is https, and from it a browser opens no plain http addresses: use the server\'s https address.'
+          : 'Is the server running, and can this device reach it?';
+      }
+      this._showForm(`${address} does not answer. ${why}`, true);
     } else if (st.state === 'error') {
       this._showForm(st.message || 'The server could not be used.', true);
     }
@@ -161,7 +215,7 @@ const Welcome = {
 
   _showForm(text, error = false) {
     this._phase = 'form';
-    if (!this._address.value) this._address.value = Store.settings.serverHome || '';
+    if (!this._address.value) this._address.value = Store.settings.serverHome || Store.settings.serverRemote || '';
     this._draw(text, false, error);
   },
 
