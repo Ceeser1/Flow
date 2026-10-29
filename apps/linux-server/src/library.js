@@ -385,7 +385,11 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
    * profile with its songs): their files go to the trash. Resolves how many.
    */
   function deleteSongsOf(profileId, by = null) {
-    const ids = data.songs.filter((s) => s.addedBy === profileId).map((s) => s.id);
+    return deleteSongs(data.songs.filter((s) => s.addedBy === profileId).map((s) => s.id), by);
+  }
+
+  /** Deletes these songs for everyone, as the admin `by`: their files go to the trash. Returns how many. */
+  function deleteSongs(ids, by = null) {
     if (!ids.length) return 0;
     const at = Date.now();
     const { results } = runCommands(ids.map((songId, i) => ({ cid: `admin-${at}-${i}`, at, type: 'deleteSong', songId })), null, { by, admin: true });
@@ -1250,6 +1254,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     deleteProfile,
     summary,
     deleteSongsOf,
+    deleteSongs,
     runCommands,
     trimSong,
     songPeaks,

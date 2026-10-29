@@ -382,7 +382,7 @@ function createHttpServer({
   }) : null;
   // What is noted about the profiles for the admins (activity.js); left out by tests that need none.
   const note = activity || {
-    created() {}, seen() {}, left() {}, failed() {},
+    created() {}, seen() {}, left() {}, failed() {}, uploaded() {},
   };
   // An app gone from its live channel was last seen then.
   if (live) {
@@ -546,7 +546,9 @@ function createHttpServer({
     live,
     sessions,
     backups,
-    activity: activity || { lastSeen: (p) => p.lastSeenAt || 0, failed() {}, failures: () => [], clearFailures() {} },
+    activity: activity || {
+      lastSeen: (p) => p.lastSeenAt || 0, failed() {}, failures: () => [], clearFailures() {}, uploads: () => [],
+    },
     tools,
     version,
     startedAt,
@@ -777,7 +779,7 @@ function createHttpServer({
     });
   }
 
-  async function upload(req, res, url, id, profileId) {
+  async function upload(req, res, url, id, profileId, { ip, device }) {
     let meta;
     try {
       meta = JSON.parse(url.searchParams.get('meta') || '{}');
@@ -813,6 +815,7 @@ function createHttpServer({
     }
     const song = library.addUploaded(tmp, id, meta, meta.playlistIds, profileId);
     log(`Uploaded: ${[song.artist, song.title].filter(Boolean).join(' - ')}`);
+    note.uploaded(song.id, { profileId: profileId || '', ip, device });
     sendJson(res, 200, { existing: false, id: song.id, rev: library.rev });
   }
 
@@ -1011,7 +1014,7 @@ function createHttpServer({
     if (m && (req.method === 'GET' || req.method === 'HEAD')) return sendCover(req, res, url, library.coverOf(m[1]));
     if (m && req.method === 'PUT') return uploadCover(req, res, m[1]);
     m = /^\/api\/songs\/([\w-]{1,64})$/.exec(p);
-    if (m && req.method === 'PUT') return upload(req, res, url, m[1], profileId);
+    if (m && req.method === 'PUT') return upload(req, res, url, m[1], profileId, { ip: client.ip, device: entry ? entry.device : '' });
     if (p.startsWith('/api/downloads')) return downloadRoute(req, res, p, profileId, url);
     throw new HttpError(404, 'Nothing here.');
   }

@@ -3389,7 +3389,27 @@ body.mobile .switch-where { text-align: left; }
 .admin__top { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 .admin__warn { flex: 1; margin: 0; color: var(--amber); font-size: 12px; line-height: 1.45; }
 .admin__block { padding: 10px 0 12px; border-bottom: 1px solid #34343c; }
-.admin__head { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-bright); }
+/* A part's heading folds it away with a click (adminOpen, kept). */
+.admin__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-bright);
+  text-align: left;
+  cursor: pointer;
+}
+.admin__head:hover { color: #b3cdf4; }
+.admin__body { margin-top: 8px; }
+.admin__body[hidden] { display: none; }
+.admin__item--row > .btn { flex: none; }
 .admin__bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .admin__bar .admin__search { flex: 1; }
 .admin__facts {

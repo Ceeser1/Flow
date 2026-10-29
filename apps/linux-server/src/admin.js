@@ -34,6 +34,10 @@
 //   POST /api/admin/sessions/end { id }      its members are out
 //   GET  /api/admin/signins                  the failed sign-ins, newest first: { failures }
 //   POST /api/admin/signins/clear
+//   GET  /api/admin/uploads                  the songs the apps uploaded that are still here,
+//                                            newest first: { uploads: [{ songId, title, artist,
+//                                            mix, at, by, ip, device }] }, the newest 100
+//   POST /api/admin/uploads/delete { songId } that song deleted for everyone (to the trash)
 //   GET  /api/admin/rules                    { profileCreation: 'anyone' | 'admins',
 //   POST /api/admin/rules { ... }              songDelete: 'anyone' | 'owner', guests: true | false,
 //                                            discovery: whether the network search is answered
@@ -58,6 +62,9 @@ const fs = require('fs');
 const { PUBLIC_LEVEL, passwordProblem } = require('@flow/core/password');
 const { checkPassword, passwordEntry } = require('./config');
 const { KEEP } = require('@flow/core/backup');
+
+// The uploads the admins see at most.
+const UPLOADS_SHOWN = 100;
 
 // The overview's slow parts (the music folder's size, yt-dlp's version) are
 // worked out at most this often.
@@ -244,6 +251,30 @@ function createAdminRoutes({
     if (p === '/api/admin/signins/clear' && req.method === 'POST') {
       activity.clearFailures();
       return sendJson(res, 200, {});
+    }
+    if (p === '/api/admin/uploads' && isGet) {
+      const songs = new Map(library.data.songs.map((s) => [s.id, s]));
+      const uploads = activity.uploads().filter((u) => songs.has(u.songId)).slice(0, UPLOADS_SHOWN).map((u) => {
+        const s = songs.get(u.songId);
+        return {
+          songId: u.songId,
+          title: s.title,
+          artist: s.artist,
+          mix: s.mix,
+          at: u.at,
+          by: !u.profileId || u.profileId === 'default' ? 'Default / Shared' : nameOf(u.profileId) || 'a deleted profile',
+          ip: u.ip,
+          device: u.device,
+        };
+      });
+      return sendJson(res, 200, { uploads });
+    }
+    if (p === '/api/admin/uploads/delete' && req.method === 'POST') {
+      const song = library.data.songs.find((s) => s.id === String(body.songId || ''));
+      if (!song) throw new HttpError(404, 'That song is not on the server any more.');
+      library.deleteSongs([song.id], me.id);
+      log(`${me.name} deleted the uploaded song ${[song.artist, song.title].filter(Boolean).join(' - ')}`);
+      return sendJson(res, 200, { rev: library.rev });
     }
     if (p === '/api/admin/rules') {
       if (req.method === 'POST') {

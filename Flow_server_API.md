@@ -433,6 +433,8 @@ master admin. Nobody changes their own profile or the master's here.
 | `POST /api/admin/profiles/<id>/admin` | `{ admin }` | *master*: an admin made or taken back; 409 to make one of a profile without a PIN |
 | `GET /api/admin/signins` | | `{ failures: [{ at, kind: "pin" \| "password", profileId, profileName, ip, device }] }`, the newest 500 |
 | `POST /api/admin/signins/clear` | | |
+| `GET /api/admin/uploads` | | `{ uploads: [{ songId, title, artist, mix, at, by, ip, device }] }`: the songs the apps uploaded that are still on the server, newest first (the newest 100); `by` is the profile's name |
+| `POST /api/admin/uploads/delete` | `{ songId }` | `{ rev }`: the song deleted for everyone, to the trash; 404 when it is gone already |
 | `GET /api/admin/downloads` | | every profile's server download: `{ batches: [{ key, profileId, profileName, state, name, url, createdAt, songs, saved, open, failed }] }` |
 | `POST /api/admin/downloads/cancel` | `{ key }` | that download cancelled |
 | `GET /api/admin/sessions` | | every Active Session: `{ sessions: [...] }` as `/api/sessions` lists them, with `shared` |

@@ -353,6 +353,8 @@ const DEFAULTS = {
   settingsCategory: '',
   // The Music Visualizer's categories folded shut in Settings (their ids).
   vizCollapsed: [],
+  // Administration's parts opened in Settings (their ids, admin.js); the rest stay shut.
+  adminOpen: [],
   // The sleep timer running, kept so a restart still shows (and can cancel)
   // the shutdown Windows has been told about: { endsAt, shutdownAt, ended },
   // times in ms, shutdownAt null without a shutdown.
@@ -529,6 +531,9 @@ function clean(raw) {
     : [];
   s.settingsCategory = typeof s.settingsCategory === 'string' ? s.settingsCategory.slice(0, 60) : '';
   s.vizCollapsed = Array.isArray(s.vizCollapsed) ? [...new Set(s.vizCollapsed.filter((c) => VIZ_CATEGORY_IDS.includes(c)))] : [];
+  s.adminOpen = Array.isArray(s.adminOpen)
+    ? [...new Set(s.adminOpen.filter((t) => typeof t === 'string' && /^[a-z]{1,20}$/.test(t)))].slice(0, 20)
+    : [];
   const st = s.sleepTimer;
   const endsAt = st && typeof st === 'object' ? Number(st.endsAt) : NaN;
   const shutdownAt = st && Number.isFinite(Number(st.shutdownAt)) && st.shutdownAt !== null ? Number(st.shutdownAt) : null;

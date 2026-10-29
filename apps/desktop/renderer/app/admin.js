@@ -2,13 +2,15 @@
 
 // Settings' last category, for an admin profile on a Flow Server (3.5): the
 // server at a glance, its profiles (a sortable table; on the phone each opens
-// with a tap), the failed sign-ins, every profile's server downloads and the
-// Active Sessions, the trash, the backups (4.0; restored by the master admin
-// only), the admins' rules, and for the master admin the server password. Everything comes from the server's /api/admin (its
-// admin.js) through window.flow.admin, fetched when Settings opens, after
-// every change made here, and with Refresh.
+// with a tap), the songs uploaded last, the failed sign-ins, every profile's
+// server downloads and the Active Sessions, the trash, the backups (4.0;
+// restored by the master admin only), the admins' rules, and for the master
+// admin the server password. Each part opens and closes with a click on its
+// heading (adminOpen, kept; all shut at first). Everything comes from the
+// server's /api/admin (its admin.js) through window.flow.admin, fetched when
+// Settings opens, after every change made here, and with Refresh.
 
-// The lists (profiles, failed logins, downloads, sessions, trash) show this many rows, then scroll.
+// The lists (profiles, uploads, failed logins, downloads, sessions, trash) show this many rows, then scroll.
 const ROWS = 5;
 
 const Admin = {
@@ -34,11 +36,11 @@ const Admin = {
     if (!this._data) this._drawNote('Loading...');
     const get = (route) => window.flow.admin(route).catch((err) => ({ error: (err && err.message) || String(err) }));
     try {
-      const [server, profiles, signins, downloads, sessions, trash, backups, rules] = await Promise.all([
-        get('server'), get('profiles'), get('signins'), get('downloads'), get('sessions'), get('trash'), get('backups'), get('rules'),
+      const [server, profiles, uploads, signins, downloads, sessions, trash, backups, rules] = await Promise.all([
+        get('server'), get('profiles'), get('uploads'), get('signins'), get('downloads'), get('sessions'), get('trash'), get('backups'), get('rules'),
       ]);
       this._data = {
-        server, profiles, signins, downloads, sessions, trash, backups, rules,
+        server, profiles, uploads, signins, downloads, sessions, trash, backups, rules,
       };
     } finally {
       this._loading = false;
@@ -136,22 +138,45 @@ const Admin = {
     // append() writes a null as the text "null": the master's block is left out instead.
     clear(this._node).append(...[
       top,
-      this._block('Overview', this._overview(d.server)),
-      this._block('Profiles', this._profiles(d.profiles, mobile)),
-      this._block('Failed logins', this._failures(d.signins)),
-      this._block('Server downloads', this._downloads(d.downloads)),
-      this._block('Active Sessions', this._sessions(d.sessions)),
-      this._block('Trash', this._trash(d.trash)),
-      this._block('Backups', this._backups(d.backups)),
-      this._block('Server rules', this._rules(d.rules, d.server.name)),
-      Store.server.master ? this._block('Server password', this._password(d.server)) : null,
+      this._block('overview', 'Overview', this._overview(d.server)),
+      this._block('profiles', 'Profiles', this._profiles(d.profiles, mobile)),
+      this._block('uploads', 'Recent uploads', this._uploads(d.uploads)),
+      this._block('signins', 'Failed logins', this._failures(d.signins)),
+      this._block('downloads', 'Server downloads', this._downloads(d.downloads)),
+      this._block('sessions', 'Active Sessions', this._sessions(d.sessions)),
+      this._block('trash', 'Trash', this._trash(d.trash)),
+      this._block('backups', 'Backups', this._backups(d.backups)),
+      this._block('rules', 'Server rules', this._rules(d.rules, d.server.name)),
+      Store.server.master ? this._block('password', 'Server password', this._password(d.server)) : null,
     ].filter(Boolean));
     for (const fit of this._fits) fit();
     if (scroller) scroller.scrollTop = scrolled;
   },
 
-  _block(title, ...body) {
-    return h('section.admin__block', h('h4.admin__head', title), ...body);
+  /**
+   * A part under its heading, which opens and closes it (open as left last
+   * time: adminOpen, kept). A scrolling list in it measures itself once it
+   * shows (_scrollRows).
+   */
+  _block(id, title, ...body) {
+    const open = () => Store.settings.adminOpen.includes(id);
+    const chevron = h('span.settings__chevron', { html: Icons.chevron });
+    const head = h('button.admin__head', { type: 'button', title: 'Show or hide this part' }, chevron, h('span', title));
+    const rows = h('div.admin__body', ...body);
+    const fold = () => {
+      rows.hidden = !open();
+      chevron.classList.toggle('settings__chevron--down', !open());
+      head.setAttribute('aria-expanded', String(open()));
+    };
+    head.addEventListener('click', () => {
+      const now = new Set(Store.settings.adminOpen);
+      if (now.has(id)) now.delete(id);
+      else now.add(id);
+      Store.saveSettings({ adminOpen: [...now] });
+      fold();
+    });
+    fold();
+    return h('section.admin__block', head, rows);
   },
 
   _failed(part) {
@@ -437,6 +462,28 @@ const Admin = {
         },
       ],
     });
+  },
+
+  // ---- Recent uploads ----
+
+  _uploads(r) {
+    // A server from before 4.0.1 keeps no such list.
+    if (r.error) return /nothing here/i.test(r.error) ? h('p.settings__note', 'This Flow Server does not list its uploads yet. Update it first.') : this._failed(r);
+    if (!r.uploads.length) return h('p.settings__note', 'No songs uploaded yet.');
+    return this._list(r.uploads.map((u) => {
+      const name = Util.songLine(u);
+      return h('li.admin__item.admin__item--row',
+        h('span.admin__item-text',
+          h('span.admin__item-main', name),
+          h('span.admin__item-sub', { title: u.device ? `From ${u.device}` : '' }, ...this._parts([`Added by ${u.by}`, Util.fmtDate(u.at), u.ip]))),
+        h('button.btn.btn--small.btn--danger', {
+          type: 'button',
+          onclick: async () => {
+            if (!(await this._confirm('Delete song', `Delete "${name}" for everyone? It goes to the trash, where it can be restored for 30 days.`, 'Delete', true))) return;
+            await this._do(() => window.flow.admin('uploads/delete', { songId: u.songId }), `"${u.title}" deleted`);
+          },
+        }, 'Delete'));
+    }));
   },
 
   // ---- Failed logins ----

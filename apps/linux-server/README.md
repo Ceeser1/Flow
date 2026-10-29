@@ -516,8 +516,11 @@ node apps/linux-server/src/main.js profiles add "Carla"         # a new profile 
 ```
 
 `FLOW_PROFILE_PIN` gives the PIN without asking. The failed logins are kept
-in `failed-signins.json`, deleted songs in `trash.json` (both in the
-server's home), next to `server.json`.
+in `failed-signins.json`, the songs the apps uploaded (who, when, from which
+address) in `uploads.json`, deleted songs in `trash.json` (all in the
+server's home), next to `server.json`. Administration's **Recent uploads**
+lists the uploaded songs still on the server, newest first, each with a
+Delete button (to the trash, for everyone).
 
 From 4.0 the rules also have **Allow guests in home network
 sessions/jams** (off until ticked; see Active Sessions below). Unticking it ends

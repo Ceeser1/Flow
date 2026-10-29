@@ -341,6 +341,38 @@ test('deleting a profile, with or without the songs it added', async () => {
   });
 });
 
+test('the songs uploaded last: who, when and from where, and deleted from the list', async () => {
+  await withServer(async ({ base, server, dirs }) => {
+    const { tAnna, tBen, songId } = await annaAndBen(base);
+    const other = await upload(base, 'up2', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 }, tAnna);
+    // Sent twice: one entry.
+    await upload(base, 'up2', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 }, tAnna);
+    assert.equal((await get(base, '/api/admin/uploads', tBen)).status, 403);
+    let list = (await get(base, '/api/admin/uploads', tAnna)).json.uploads;
+    assert.deepEqual(list.map((u) => [u.songId, u.title, u.artist, u.by, u.ip, u.device]), [
+      [other.json.id, 'Teardrop', 'Massive Attack', 'Anna', '127.0.0.1', 'PC'],
+      [songId, 'Glory Box', 'Portishead', 'Ben', '127.0.0.1', 'Phone'],
+    ]);
+    assert.ok(list[0].at >= list[1].at);
+    // Not in the songs every app gets.
+    const lib = (await get(base, '/api/library', tBen)).json.library;
+    assert.equal(JSON.stringify(lib).includes('127.0.0.1'), false);
+
+    const del = await post(base, '/api/admin/uploads/delete', { songId }, tAnna);
+    assert.equal(del.status, 200);
+    assert.equal(server.library.data.songs.some((s) => s.id === songId), false);
+    assert.equal(fs.readdirSync(path.join(dirs.music, '.flow-trash')).length, 1);
+    const trash = (await get(base, '/api/admin/trash', tAnna)).json.items;
+    assert.equal(trash[0].by, 'Anna');
+    list = (await get(base, '/api/admin/uploads', tAnna)).json.uploads;
+    assert.deepEqual(list.map((u) => u.songId), [other.json.id]);
+    assert.equal((await post(base, '/api/admin/uploads/delete', { songId }, tAnna)).status, 404);
+    // Kept over a restart.
+    const again = createActivity({ config: server.config });
+    assert.deepEqual(again.uploads().map((u) => u.songId), [other.json.id, songId]);
+  });
+});
+
 test('only the master admin makes admins', async () => {
   await withServer(async ({ base, server }) => {
     const { tAnna, tBen, benId } = await annaAndBen(base);

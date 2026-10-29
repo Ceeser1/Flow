@@ -996,6 +996,10 @@ body.mobile .stats__mode { height: 32px; padding: 0 14px; font-size: 13px; }
 /* The bars and the lines over them: as high as each other (style.css's 156px on the PC). */
 body.mobile .stats__graph .stats__barbox,
 body.mobile .stats__grid { height: 136px; }
+/* A finger's height to open or close a part by. */
+body.mobile .admin__block { padding: 0; }
+body.mobile .admin__head { min-height: 46px; font-size: 14px; }
+body.mobile .admin__body { margin-top: 0; padding-bottom: 12px; }
 body.mobile .admin__plist { display: flex; flex-direction: column; margin-top: 8px; }
 body.mobile .admin__plist > .admin__scroll { padding: 0 10px; }
 body.mobile .admin__prow { border-bottom: 1px solid #34343c; }

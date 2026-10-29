@@ -194,6 +194,10 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.settingsCategory, '');
   assert.deepEqual(settings.clean({ settingsCollapsed: ['General', 'General', 3, '', 'Flow Server'] }).settingsCollapsed, ['General', 'Flow Server']);
   assert.deepEqual(settings.clean({ settingsCollapsed: 'General' }).settingsCollapsed, []);
+  // Administration's parts opened (all shut at first).
+  assert.deepEqual(d.adminOpen, []);
+  assert.deepEqual(settings.clean({ adminOpen: ['trash', 'trash', 'Trash', 3, '', 'uploads'] }).adminOpen, ['trash', 'uploads']);
+  assert.deepEqual(settings.clean({ adminOpen: 'trash' }).adminOpen, []);
   assert.equal(settings.clean({ settingsCategory: 'App' }).settingsCategory, 'App');
   assert.equal(settings.clean({ settingsCategory: 7 }).settingsCategory, '');
   // Bars' colours: Lime by default, the old Winamp and Equalizer left behind.

@@ -14,6 +14,10 @@
 // Wrong PINs and wrong server passwords go into failed-signins.json in the
 // server's home, the newest MAX_FAILED: not into server.json, which would
 // otherwise be written on every guess.
+//
+// The songs the apps upload go into uploads.json beside it, the newest
+// MAX_UPLOADS: who added each, when, and from which address. Not into the
+// song itself, which every app gets.
 
 const path = require('path');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
@@ -21,6 +25,7 @@ const { cleanIp } = require('./config');
 
 const SEEN_EVERY = 60 * 1000;
 const MAX_FAILED = 500;
+const MAX_UPLOADS = 500;
 
 function cleanFailures(raw) {
   return (Array.isArray(raw) ? raw : [])
@@ -37,10 +42,26 @@ function cleanFailures(raw) {
     .slice(0, MAX_FAILED);
 }
 
+function cleanUploads(raw) {
+  return (Array.isArray(raw) ? raw : [])
+    .filter((u) => u && typeof u.songId === 'string' && u.songId)
+    .map((u) => ({
+      at: Number(u.at) || 0,
+      songId: u.songId.slice(0, 64),
+      profileId: String(u.profileId || ''),
+      ip: cleanIp(u.ip),
+      device: String(u.device || '').slice(0, 80),
+    }))
+    .sort((a, b) => b.at - a.at)
+    .slice(0, MAX_UPLOADS);
+}
+
 /** opts: { config, now }. */
 function createActivity({ config, now = Date.now }) {
   const failedFile = path.join(config.home, 'failed-signins.json');
   let failures = cleanFailures(readJson(failedFile));
+  const uploadsFile = path.join(config.home, 'uploads.json');
+  let uploads = cleanUploads(readJson(uploadsFile));
 
   function update(profileId, fn) {
     const cfg = config.get();
@@ -115,7 +136,22 @@ function createActivity({ config, now = Date.now }) {
       failures = [];
       writeJsonAtomic(failedFile, failures);
     },
+
+    /** A song an app uploaded, by `profileId` ('' the Default / Shared), at `ip` from `device`. */
+    uploaded(songId, { profileId, ip, device }) {
+      uploads = cleanUploads([{
+        at: now(), songId, profileId, ip, device,
+      }, ...uploads]);
+      writeJsonAtomic(uploadsFile, uploads);
+    },
+
+    /** The uploads, newest first. */
+    uploads() {
+      return uploads.map((u) => ({ ...u }));
+    },
   };
 }
 
-module.exports = { createActivity, SEEN_EVERY, MAX_FAILED };
+module.exports = {
+  createActivity, SEEN_EVERY, MAX_FAILED, MAX_UPLOADS,
+};
