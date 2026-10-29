@@ -45,7 +45,7 @@ test('settings and sign-in survive a reload, the library only lives in memory', 
   assert.equal(b.readJson('server-library.json'), null);
 });
 
-test('passwords and tokens stay in the browser session, never in localStorage', () => {
+test('passwords and PINs stay in the browser session, never in localStorage', () => {
   const local = fakeStore();
   const session = fakeStore();
   const a = createStorage({ local, session });
@@ -63,6 +63,25 @@ test('passwords and tokens stay in the browser session, never in localStorage', 
   assert.equal(later.hasSecret(kept), false);
   assert.equal(a.secrets.encrypt(''), '');
   assert.equal(a.secrets.decrypt('e:something-else'), '');
+});
+
+test('the server\'s token stays in its file, also in a new browser session, until Logout', () => {
+  const local = fakeStore();
+  const session = fakeStore();
+  const a = createStorage({ local, session });
+  const token = a.secrets.keep('tok-123');
+  assert.equal(token, 'k:tok-123');
+  assert.equal(a.secrets.keep(''), '');
+  a.writeJson('server-sync.json', { serverId: 'abc', token });
+  assert.equal(session.m.size, 0);
+
+  // The browser closed and opened again: the token is still there.
+  const later = createStorage({ local, session: fakeStore() });
+  assert.equal(later.secrets.decrypt(later.readJson('server-sync.json').token), 'tok-123');
+  assert.equal(later.hasSecret(token), true);
+
+  later.forget(['server-sync.json']);
+  assert.equal(createStorage({ local, session }).readJson('server-sync.json'), null);
 });
 
 test('Logout: the server\'s files and every secret go, and nothing is written after', () => {

@@ -5,10 +5,12 @@
 //
 //   localStorage    the settings and the few small files that say which
 //                   server, which profile, what still waits to go to it
-//                   (KEEP), so a reload finds them again
-//   sessionStorage  passwords, PINs and the server's token, through
-//                   secrets: gone when the browser closes, so the next
-//                   visit asks for the server's password again
+//                   (KEEP), so a reload finds them again; in them the
+//                   server's token (secrets.keep), so the next visit is
+//                   signed in to the same server and profile, until Logout
+//                   or the browser clears it
+//   sessionStorage  passwords and PINs, through secrets: gone when the
+//                   browser closes, never kept longer
 //   memory          everything else (the server's library, lyrics, a
 //                   download's cover): fetched again after a reload
 //
@@ -93,7 +95,13 @@ function createStorage({ local = store('localStorage'), session = store('session
     return `w:${key}`;
   }
 
+  // The server's token: in the file that holds it ('k:<token>'), so it stays
+  // as long as the file does (Logout removes it).
+  const keep = (text) => (text ? `k:${text}` : '');
+
   function decrypt(value) {
+    const kept = /^k:(.+)$/.exec(String(value || ''));
+    if (kept) return kept[1];
     const m = /^w:([0-9a-f]{18})$/.exec(String(value || ''));
     if (!m) return '';
     if (vault.has(m[1])) return vault.get(m[1]);
@@ -128,7 +136,7 @@ function createStorage({ local = store('localStorage'), session = store('session
   }
 
   return {
-    readJson, writeJson, removeJson, secrets: { encrypt, decrypt }, hasSecret, forget,
+    readJson, writeJson, removeJson, secrets: { encrypt, decrypt, keep }, hasSecret, forget,
   };
 }
 

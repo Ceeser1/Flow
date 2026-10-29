@@ -237,6 +237,10 @@ function createRemote(env) {
   // ---- the passwords and PINs, kept encrypted ----
 
   const { encrypt, decrypt } = secrets;
+  // The server's token. An app whose secrets can keep it (the web player:
+  // until Logout or the browser clears it) signs in with it again later,
+  // without the password; the others keep it only encrypted.
+  const keepToken = secrets.keep || encrypt;
 
   // ---- talking to the server ----
 
@@ -632,7 +636,7 @@ function createRemote(env) {
     const r = await request(base, '/api/login', { method: 'POST', json: { password: pw, device: device.name(), client: clientId() }, timeout: 20000 });
     if (r.status === 401) throw new AuthError('Wrong password.');
     if (r.status !== 200 || !r.json || !r.json.token) throw new Error((r.json && r.json.error) || 'The server did not let Flow sign in.');
-    sync.token = encrypt(r.json.token);
+    sync.token = keepToken(r.json.token);
     runToken = r.json.token;
     saveSync();
     return r.json.token;
@@ -668,7 +672,7 @@ function createRemote(env) {
         method: 'POST', json: { profileId: was.id, pin, device: device.name(), client: clientId() }, token, timeout: 20000,
       });
       if (r.status === 200 && r.json && r.json.token) {
-        sync.token = encrypt(r.json.token);
+        sync.token = keepToken(r.json.token);
         runToken = r.json.token;
         saveSync();
         return r.json.token;
@@ -693,7 +697,7 @@ function createRemote(env) {
   function adoptToken(token) {
     if (!token || token === runToken) return;
     runToken = token;
-    sync.token = encrypt(token);
+    sync.token = keepToken(token);
     saveSync();
     if (status.state !== 'online') return;
     conn.token = token;
@@ -751,8 +755,10 @@ function createRemote(env) {
         }
         // Without a password the token only says which profile this is. Where
         // there is one, Flow signs in with it at every start: only a token got
-        // in this run counts, never the one kept from the last.
-        let token = hello.password ? runToken : decrypt(sync.token);
+        // in this run counts, never the one kept from the last. Except where
+        // the token is kept (keepToken): the server's no to it (the probe)
+        // asks for the password.
+        let token = hello.password && !secrets.keep ? runToken : decrypt(sync.token);
         try {
           if (hello.password) {
             if (token) {
@@ -3151,7 +3157,7 @@ function createRemote(env) {
   async function switchProfile(token, profile, pin = '') {
     if (token !== undefined) {
       conn.token = token;
-      sync.token = encrypt(token);
+      sync.token = keepToken(token);
       runToken = token;
       // The old token is gone on the server: the live channel opens with the new one.
       startLive();
@@ -3282,7 +3288,7 @@ function createRemote(env) {
     if (r.token) {
       conn.token = r.token;
       runToken = r.token;
-      sync.token = encrypt(r.token);
+      sync.token = keepToken(r.token);
       saveSync();
       // The live channel opened with the old token, which the server no longer knows.
       startLive();
