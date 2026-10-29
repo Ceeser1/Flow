@@ -57,19 +57,26 @@ const VIZ_OPTIONS = {
   ksLook: ['choice', 'kaleido', ['auto', 'kaleido', 'vortex', 'tunnel', 'starburst']],
   ksEvery: ['range', 30, 10, 120, 5],
   ksTrails: ['range', 100, 25, 200, 5],
-  // Halo: the spectrum as bars, a line or dots, the colours (the cover's, rainbow, by the notes, or one of its own; Warm
+  // Halo: the spectrum as bars, a line or dots, and its size (percent, the
+  // cover growing with it), the colours (the cover's, rainbow, by the notes, or one of its own; Warm
   // white became that), the sparks (and how many, percent; 10% the amount
   // there always were), the background (the cover blurred, or a
-  // picture picked), the title. The cover in the middle is the song's or a
-  // picture picked, wiggling and pulsing; the pictures are copies Flow keeps
+  // picture or a video picked), the title. The cover in the middle is the song's or a
+  // picture picked, its size (percent), wiggling and pulsing (each how much,
+  // percent), its outline; the pictures are copies Flow keeps
   // (hlCoverFile, hlBackFile).
   hlStyle: ['choice', 'bars', ['bars', 'line', 'dots']],
+  hlScale: ['range', 100, 50, 150, 5],
   hlColors: ['choice', 'cover', ['cover', 'rainbow', 'notes', 'custom']],
   hlColor: ['color', '#3484f4'],
   hlCover: ['choice', 'original', ['original', 'pick']],
   hlCoverFile: ['file', ''],
+  hlCoverScale: ['range', 100, 50, 150, 5],
   hlWiggle: ['bool', true],
+  hlWiggleAmount: ['range', 100, 0, 200, 5],
   hlPulse: ['bool', true],
+  hlPulseAmount: ['range', 100, 0, 200, 5],
+  hlOutline: ['bool', true],
   hlParticles: ['bool', true],
   hlSparkAmount: ['range', 100, 0, 200, 5],
   hlBackground: ['bool', true],

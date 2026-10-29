@@ -225,6 +225,14 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.hlCoverFile, '');
   assert.equal(d.hlWiggle, true);
   assert.equal(d.hlPulse, true);
+  assert.equal(d.hlOutline, true);
+  // How much it wiggles and pulses (0-200%), its size and the spectrum's (50-150%), 100% by default.
+  assert.deepEqual([d.hlWiggleAmount, d.hlPulseAmount, d.hlCoverScale, d.hlScale], [100, 100, 100, 100]);
+  assert.equal(settings.clean({ hlWiggleAmount: 250 }).hlWiggleAmount, 200);
+  assert.equal(settings.clean({ hlPulseAmount: 0 }).hlPulseAmount, 0);
+  assert.equal(settings.clean({ hlCoverScale: 20 }).hlCoverScale, 50);
+  assert.equal(settings.clean({ hlScale: 152 }).hlScale, 150);
+  assert.equal(settings.clean({ hlOutline: false }).hlOutline, false);
   // Halo's Spin is gone: a saved one is dropped.
   assert.equal(d.hlSpin, undefined);
   assert.equal('hlSpin' in settings.clean({ hlSpin: true }), false);

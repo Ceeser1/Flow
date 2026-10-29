@@ -39,6 +39,7 @@ const { MP3_QUALITIES, LOCAL_EXTS } = require('@flow/core/formats');
 const { ProcessCancelledError } = require('@flow/core/processRunner');
 const { createBackupStore, mergeRestore } = require('@flow/core/backup');
 const { createLyricsClient } = require('@flow/core/client/lyrics');
+const vizPicture = require('@flow/core/client/vizPicture');
 const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
 const { solveChallenge } = require('./src/lrclibChallenge');
 const { createGuestLink } = require('@flow/core/client/guest');
@@ -550,13 +551,13 @@ handle('local:pickFolder', async () => {
 // stale copy shown), the one before deleted.
 
 handle('viz:savePicture', ({ name, bytes } = {}) => {
-  if (!/^[a-z][\w-]{0,40}$/i.test(String(name || ''))) throw new Error('Not a picture name.');
-  if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > 30e6) throw new Error('Not a picture.');
+  // A JPEG, a PNG (one with see-through parts), or an MP4 or WebM (a background's video).
+  const ext = vizPicture.check(name, bytes, 300);
   const dir = paths.ensure(path.join(paths.rootDir(), 'Visualizer'));
   for (const old of fs.readdirSync(dir)) {
-    if (old.startsWith(`${name}-`) && old.endsWith('.jpg')) fs.rmSync(path.join(dir, old), { force: true });
+    if (vizPicture.keptBefore(old, name)) fs.rmSync(path.join(dir, old), { force: true });
   }
-  const file = path.join(dir, `${name}-${Date.now().toString(36)}.jpg`);
+  const file = path.join(dir, `${name}-${Date.now().toString(36)}.${ext}`);
   fs.writeFileSync(file, bytes);
   return file;
 });

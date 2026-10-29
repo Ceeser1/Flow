@@ -19,6 +19,7 @@
 
 const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
+const vizPicture = require('@flow/core/client/vizPicture');
 const { createPrivateStats } = require('@flow/core/client/privateStats');
 const { createLyricsClient } = require('@flow/core/client/lyrics');
 const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
@@ -274,11 +275,10 @@ function start() {
     pickLocalFolder: notHere('Adding a folder of this device'),
     // A visualizer's picture: kept in the page's memory, for as long as it is open.
     saveVizPicture: call((name, bytes) => {
-      if (!/^[a-z][\w-]{0,40}$/i.test(String(name || ''))) throw new Error('Not a picture name.');
-      if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > 30e6) throw new Error('Not a picture.');
+      const ext = vizPicture.check(name, bytes, 60);
       const dir = '/flow/Visualizer';
-      for (const old of memfs.list(dir)) if (old.name.startsWith(`${name}-`)) memfs.remove(`${dir}/${old.name}`);
-      const file = `${dir}/${name}-${Date.now().toString(36)}.jpg`;
+      for (const old of memfs.list(dir)) if (vizPicture.keptBefore(old.name, name)) memfs.remove(`${dir}/${old.name}`);
+      const file = `${dir}/${name}-${Date.now().toString(36)}.${ext}`;
       memfs.writeBytes(file, bytes);
       return file;
     }),

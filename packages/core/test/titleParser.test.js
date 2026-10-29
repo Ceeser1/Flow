@@ -55,6 +55,14 @@ const cases = [
     { artist: 'Artist', title: 'Song', mix: '' }],
   ["Artist 'Song' Remix",
     { artist: 'Artist', title: 'Song', mix: 'Remix' }],
+  ['Linkin Park - Numb [asdf]',
+    { artist: 'Linkin Park', title: 'Numb', mix: '' }],
+  ['Daft Punk - Aerodynamic (Live) [Bass Boosted] [kn3Hf8Lm2Qx]',
+    { artist: 'Daft Punk', title: 'Aerodynamic', mix: 'Live' }],
+  ['Muse - Uprising [Remix]',
+    { artist: 'Muse', title: 'Uprising', mix: 'Remix' }],
+  ['Muse - Knights of Cydonia (Part 2)',
+    { artist: 'Muse', title: 'Knights of Cydonia (Part 2)', mix: '' }],
 ];
 
 for (const [raw, want] of cases) {

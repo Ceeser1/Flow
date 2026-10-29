@@ -13,6 +13,7 @@
 
 const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
+const vizPicture = require('@flow/core/client/vizPicture');
 const { createPrivateStats } = require('@flow/core/client/privateStats');
 const { createLyricsClient } = require('@flow/core/client/lyrics');
 const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
@@ -286,15 +287,14 @@ function start() {
     pickLocalFiles: call(() => local.pick(false)),
     // A visualizer's picture (as the desktop's viz:savePicture), in Flow's files.
     saveVizPicture: call((name, bytes) => {
-      if (!/^[a-z][\w-]{0,40}$/i.test(String(name || ''))) throw new Error('Not a picture name.');
-      if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > 30e6) throw new Error('Not a picture.');
+      const ext = vizPicture.check(name, bytes, 60);
       const dir = path.join(info().files, 'Visualizer');
       if (fs.exists(dir)) {
-        for (const old of fs.list(dir)) if (old.name.startsWith(`${name}-`) && old.name.endsWith('.jpg')) fs.remove(path.join(dir, old.name));
+        for (const old of fs.list(dir)) if (vizPicture.keptBefore(old.name, name)) fs.remove(path.join(dir, old.name));
       } else {
         fs.mkdir(dir);
       }
-      const file = path.join(dir, `${name}-${Date.now().toString(36)}.jpg`);
+      const file = path.join(dir, `${name}-${Date.now().toString(36)}.${ext}`);
       fs.writeBytes(file, bytes);
       return file;
     }),

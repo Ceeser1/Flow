@@ -2803,8 +2803,9 @@ div.import__frame-head { cursor: default; }
   opacity: 0;
   transition: max-width 0.35s ease, opacity 0.25s, padding 0.35s;
 }
-/* As wide as the window allows, clear of the close button at the right. */
-.viz-cfg--open .viz-cfg__body { max-width: calc(100vw - 220px); padding: 0 28px 0 6px; opacity: 1; }
+/* As wide as the window allows, clear of the close button at the right;
+   what does not fit scrolled to sideways (the wheel, a finger). */
+.viz-cfg--open .viz-cfg__body { max-width: calc(100vw - 220px); padding: 0 28px 0 6px; opacity: 1; overflow-x: auto; scrollbar-width: none; }
 .viz-cfg__item { display: flex; align-items: center; gap: 10px; }
 .viz-cfg__swatch {
   width: 30px;

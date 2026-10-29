@@ -600,9 +600,9 @@ const Visualizer = {
    *   { type: 'choice', key, label, choices: [[value, label], ...] }  (label '': the pills alone)
    *       color: { value, key, presets }: after the pills a swatch, choosing
    *       `value` (lit while it is chosen) and opening a picker for `key`
-   *       pick: { value, key, name, square?, max }: the pill `value` opens the
-   *       file dialog for a picture (_pickPicture), chosen with it once one is
-   *       picked; its path in `key`
+   *       pick: { value, key, name, square?, max, video? }: the pill `value`
+   *       opens the file dialog for a picture (_pickPicture; video: or an MP4
+   *       or WebM video), chosen with it once one is picked; its path in `key`
    *       group: items beside it, framed as a box's group
    * Any of them with when: (settings) => bool, greyed out while it is false.
    */
@@ -699,7 +699,7 @@ const Visualizer = {
           const pick = item.pick && item.pick.value === value ? item.pick : null;
           pills.appendChild(h('button.viz-cfg__pill', {
             type: 'button',
-            title: pick ? 'Choose a picture' : null,
+            title: pick ? (pick.video ? 'Choose a picture or a video' : 'Choose a picture') : null,
             dataset: { value },
             onclick: async () => {
               pickers.forEach((p) => p.close());
@@ -747,7 +747,14 @@ const Visualizer = {
       return null;
     };
 
-    panel.append(cog, h('div.viz-cfg__body', items.map((item) => build(item, () => true))));
+    const body = h('div.viz-cfg__body', items.map((item) => build(item, () => true)));
+    // Wider than the window: the wheel scrolls it sideways.
+    body.addEventListener('wheel', (e) => {
+      if (body.scrollWidth <= body.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      body.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }, { passive: false });
+    panel.append(cog, body);
     refresh();
 
     this._cfgOutside = (e) => {
@@ -760,12 +767,15 @@ const Visualizer = {
   /**
    * A picture for a visualizer: the file dialog (Explorer, the phone's
    * picker), the picture read, cut to its middle square (square) and made at
-   * most `max` pixels across, and kept by Flow as a JPEG (window.flow.
-   * saveVizPicture, under `name`). Its path, or null when none was picked.
+   * most `max` pixels across, and kept by Flow as a JPEG, or as a PNG when
+   * some of it is see-through (window.flow.saveVizPicture, under `name`).
+   * With `video`, an MP4 or WebM video too, kept as it is (_keepVideo).
+   * Its path, or null when none was picked.
    */
-  async _pickPicture({ name, square = false, max }) {
+  async _pickPicture({ name, square = false, max, video = false }) {
     const file = await new Promise((resolve) => {
-      const input = h('input', { type: 'file', accept: 'image/*', hidden: true });
+      const accept = video ? 'image/*,video/mp4,video/webm,.mp4,.m4v,.webm' : 'image/*';
+      const input = h('input', { type: 'file', accept, hidden: true });
       const done = (f) => {
         input.remove();
         resolve(f);
@@ -776,6 +786,7 @@ const Visualizer = {
       input.click();
     });
     if (!file) return null;
+    if (video && (/^video\//.test(file.type) || /\.(mp4|m4v|webm)$/i.test(file.name))) return this._keepVideo(file, name);
     try {
       const img = await createImageBitmap(file);
       const sw = square ? Math.min(img.width, img.height) : img.width;
@@ -788,11 +799,54 @@ const Visualizer = {
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, c.width, c.height);
       img.close();
-      const blob = await new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', 0.92));
+      const px = ctx.getImageData(0, 0, c.width, c.height).data;
+      let clear = false;
+      for (let i = 3; i < px.length && !clear; i += 4) clear = px[i] < 255;
+      const blob = await new Promise((resolve) => (clear ? c.toBlob(resolve, 'image/png') : c.toBlob(resolve, 'image/jpeg', 0.92)));
       if (!blob) throw new Error('unreadable');
       return await window.flow.saveVizPicture(name, new Uint8Array(await blob.arrayBuffer()));
     } catch {
       toast(`"${file.name}" could not be opened as a picture.`, 'error');
+      return null;
+    }
+  },
+
+  /**
+   * A video picked for a visualizer's background: tried first (one this
+   * device cannot play is not kept, and the one kept before stays), then
+   * kept by Flow as it is. Up to 300 MB on a computer, 60 MB on a phone and
+   * in the browser. Its path, or null.
+   */
+  async _keepVideo(file, name) {
+    const most = ['android', 'ios', 'web'].includes(Store.platform) ? 60 : 300;
+    if (file.size > most * 1e6) {
+      toast(`"${file.name}" is too big for a background: at most ${most} MB.`, 'error');
+      return null;
+    }
+    const url = URL.createObjectURL(file);
+    const plays = await new Promise((resolve) => {
+      const v = document.createElement('video');
+      v.muted = true;
+      const done = (ok) => {
+        clearTimeout(late);
+        v.removeAttribute('src');
+        v.load();
+        resolve(ok);
+      };
+      const late = setTimeout(() => done(false), 10000);
+      v.addEventListener('loadeddata', () => done(v.videoWidth > 0), { once: true });
+      v.addEventListener('error', () => done(false), { once: true });
+      v.src = url;
+    });
+    URL.revokeObjectURL(url);
+    if (!plays) {
+      toast(`"${file.name}" could not be played as a video.`, 'error');
+      return null;
+    }
+    try {
+      return await window.flow.saveVizPicture(name, new Uint8Array(await file.arrayBuffer()));
+    } catch {
+      toast(`"${file.name}" could not be kept.`, 'error');
       return null;
     }
   },

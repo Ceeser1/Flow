@@ -4,8 +4,9 @@
 // scan, Add Songs' local files): its names, and which song it is when a song's
 // file went missing. No Node: the Android app uses it too.
 
-const { parseTitle } = require('./titleParser');
+const { parseTitle, cleanTitleTag, withFeat } = require('./titleParser');
 const { sourceKeyFromUrl } = require('./text');
+const { parseFlowId } = require('./tags');
 
 /** A file's name without its folder and extension ("C:\Music\A - B.mp3" -> "A - B"). */
 function fileStem(file) {
@@ -18,16 +19,22 @@ function fileStem(file) {
  * Artist, title, mix, album, genre, sub-genre and source link of a file,
  * from its tags or else its name (album, genre and sub-genre, the grouping
  * tag, only from tags). The source link is the one Flow writes into the
- * comment tag.
+ * comment tag. A title tag Flow did not write (no flowid) is cleaned as a
+ * name is: "Song (Extended Mix) [asdf]" is Song, its mix Extended Mix.
  */
 function metaFromFile(file, tags = {}) {
   const fromName = parseTitle(fileStem(file));
   const comment = tags.comment || tags.purl || '';
   const sourceUrl = /^https?:\/\//i.test(comment) ? comment : '';
+  const tag = tags.title && !parseFlowId(tags) ? cleanTitleTag(tags.title) : null;
+  const artist = tags.artist || tags.album_artist || '';
+  // A mix tag and the mix in the title's brackets, each once.
+  const mixes = [tags.mix, tag && tag.mix].map((m) => String(m || '').trim()).filter(Boolean);
+  const mix = mixes.filter((m, i) => !mixes.slice(0, i).some((o) => o.toLowerCase() === m.toLowerCase())).join(', ');
   return {
-    title: tags.title || fromName.title,
-    artist: tags.artist || tags.album_artist || fromName.artist,
-    mix: tags.mix || (tags.title ? '' : fromName.mix),
+    title: tag ? tag.title : tags.title || fromName.title,
+    artist: artist ? withFeat(artist, tag ? tag.feat : '') : fromName.artist,
+    mix: mix || (tags.title ? '' : fromName.mix),
     album: String(tags.album || '').trim(),
     genre: String(tags.genre || '').trim(),
     subGenre: String(tags.grouping || '').trim(),
