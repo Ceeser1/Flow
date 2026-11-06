@@ -129,17 +129,16 @@
 
   Visualizer.add({
     id: 'prism',
-    name: 'Prism',
-    desc: "The song's cover through a kaleidoscope, turning and rippling with the music",
+    name: T('viz.prism.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8.66 5v10L12 22l-8.66-5V7z"/><path d="M12 2v20M3.34 7l17.32 10M20.66 7L3.34 17"/></svg>',
     gl: true,
     create: (canvas) => new Prism(canvas),
     options: [
-      { type: 'choice', key: 'psMode', label: 'Mirror', choices: [['kaleido', 'Kaleidoscope'], ['tiles', 'Tiles']] },
-      { type: 'choice', key: 'psSlices', label: 'Slices', choices: [['4', '4'], ['6', '6'], ['8', '8'], ['12', '12']], when: (s) => s.psMode !== 'tiles' },
-      { type: 'slider', key: 'psSpin', label: 'Turning', min: 0, max: 200, step: 5 },
-      { type: 'check', key: 'psShift', label: 'Color shift' },
+      { type: 'choice', key: 'psMode', label: T('viz.prism.setting.mirror'), choices: [['kaleido', T('viz.kaleidoscope.name')], ['tiles', T('viz.shared.tiles')]] },
+      { type: 'choice', key: 'psSlices', label: T('viz.prism.setting.slices'), choices: [['4', '4'], ['6', '6'], ['8', '8'], ['12', '12']], when: (s) => s.psMode !== 'tiles' },
+      { type: 'slider', key: 'psSpin', label: T('viz.shared.turning'), min: 0, max: 200, step: 5 },
+      { type: 'check', key: 'psShift', label: T('viz.prism.setting.colorShift') },
     ],
   });
 })();

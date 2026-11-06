@@ -5,10 +5,10 @@
 // a plain script and gets `Util` as a global.
 
 (function (root, factory) {
-  const api = factory();
+  const api = factory(typeof module === 'object' && module.exports ? require('./i18n').t : root.T);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.Util = api;
-}(typeof self !== 'undefined' ? self : this, () => {
+}(typeof self !== 'undefined' ? self : this, (T) => {
   const pad2 = (n) => String(n).padStart(2, '0');
 
   /** 3:05, or 1:02:03 from an hour up. */
@@ -145,7 +145,7 @@
   /** "Title - Artist - (Mix)", the way the player shows a song. */
   function songLine(song) {
     if (!song) return '';
-    let line = song.title || 'Untitled';
+    let line = song.title || T('common.untitled');
     if (song.artist) line += ' - ' + song.artist;
     if (song.mix) line += ' - (' + song.mix + ')';
     return line;
@@ -153,7 +153,10 @@
 
   /** "12 songs" / "1 song" */
   function plural(n, word) {
-    return `${n} ${word}${n === 1 ? '' : 's'}`;
+    // common.count.songs, .sharedPlaylists, .otherDevices ...
+    const key = `common.count.${word.replace(/ (\w)/g, (_, c) => c.toUpperCase())}s`;
+    const text = T(key, { count: n });
+    return text === key ? `${n} ${word}${n === 1 ? '' : 's'}` : text;
   }
 
   /** "just now", "5 minutes ago", "3 hours ago", "2 days ago" ... "1 year ago" */
@@ -168,9 +171,9 @@
       [60, 'minute'],
     ];
     for (const [size, word] of steps) {
-      if (seconds >= size) return `${plural(Math.floor(seconds / size), word)} ago`;
+      if (seconds >= size) return T('common.ago', { time: T(`common.ago.${word}`, { count: Math.floor(seconds / size) }) });
     }
-    return 'just now';
+    return T('common.ago.justNow');
   }
 
   /**

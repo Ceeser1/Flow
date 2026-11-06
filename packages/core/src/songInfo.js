@@ -16,6 +16,7 @@
 // holds the song.
 
 const { agentName } = require('./agent');
+const { tr } = require('./lang');
 
 const SEARCH_URL = 'https://itunes.apple.com/search';
 const DISCOGS_URL = 'https://api.discogs.com';
@@ -126,7 +127,7 @@ async function lookupApple(song, { fetch: get = globalThis.fetch, timeoutMs = 15
   const term = [song.artist, title].filter(Boolean).join(' ');
   const url = `${SEARCH_URL}?media=music&entity=song&country=US&lang=en_us&limit=${RESULTS}&term=${encodeURIComponent(term)}`;
   const res = await get(url, { signal: AbortSignal.timeout(timeoutMs) });
-  if (!res.ok) throw new Error(`Apple's search answered ${res.status}`);
+  if (!res.ok) throw new Error(tr('core.songInfo.appleAnswered', 'Apple\'s search answered {status}', { status: res.status }));
   const data = await res.json();
   return pickResult(song, data && data.results) || { album: '', genre: '' };
 }
@@ -194,7 +195,7 @@ async function askDiscogs(url, { fetch: get = globalThis.fetch, timeoutMs = 1500
   discogsNext = Math.max(now, discogsNext) + gapMs;
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
   const res = await get(url, { headers: { 'User-Agent': agentName() }, signal: AbortSignal.timeout(timeoutMs) });
-  if (!res.ok) throw new Error(`Discogs answered ${res.status}`);
+  if (!res.ok) throw new Error(tr('core.songInfo.discogsAnswered', 'Discogs answered {status}', { status: res.status }));
   return res.json();
 }
 

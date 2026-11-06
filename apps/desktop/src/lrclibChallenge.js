@@ -6,6 +6,7 @@
 // Millions of hashes: in a worker thread, so the app keeps going meanwhile.
 
 const { Worker } = require('worker_threads');
+const { tr } = require('@flow/core/lang');
 
 const WORKER = `
 const { parentPort, workerData } = require('worker_threads');
@@ -26,13 +27,13 @@ const LIMIT_MS = 10 * 60 * 1000;
 /** The nonce for LRCLIB's challenge ({ prefix, target }, target in hex). */
 function solveChallenge(prefix, target, { limitMs = LIMIT_MS } = {}) {
   if (!/^[0-9a-f]{2,128}$/i.test(String(target)) || String(target).length % 2) {
-    return Promise.reject(new Error('LRCLIB sent a challenge Flow cannot read.'));
+    return Promise.reject(new Error(tr('common.lrclibChallengeUnreadable', 'LRCLIB sent a challenge Flow cannot read.')));
   }
   return new Promise((resolve, reject) => {
     const worker = new Worker(WORKER, { eval: true, workerData: { prefix: String(prefix), target: String(target) } });
     const timer = setTimeout(() => {
       worker.terminate();
-      reject(new Error('LRCLIB\'s challenge took too long. Try again later.'));
+      reject(new Error(tr('desktop.error.lrclibChallengeSlow', 'LRCLIB\'s challenge took too long. Try again later.')));
     }, limitMs);
     worker.once('message', (nonce) => {
       clearTimeout(timer);

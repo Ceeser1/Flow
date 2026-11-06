@@ -1,5 +1,7 @@
 'use strict';
 
+const { tr } = require('./lang');
+
 // QR codes (4.0): the "Share" of a Flow Server (a flow://connect link) as a
 // picture another phone scans. Text in byte mode (UTF-8), error correction
 // level M, the smallest version it fits, the mask with the least penalty, as
@@ -255,7 +257,7 @@ function encode(text) {
   let ver = 1;
   // The count is 8 bits up to version 9, 16 from 10 on.
   while (ver <= 40 && 4 + (ver <= 9 ? 8 : 16) + bytes.length * 8 > dataCodewords(ver) * 8) ver += 1;
-  if (ver > 40) throw new Error('That is too long for a QR code.');
+  if (ver > 40) throw new Error(tr('core.qr.tooLong', 'That is too long for a QR code.'));
   const codewords = withErrorCorrection(dataBytes(bytes, ver), ver);
   let best = null;
   let bestScore = Infinity;

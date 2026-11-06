@@ -9,6 +9,7 @@
 const path = require('path');
 const fsp = require('fs').promises;
 const { SCAN_EXTS } = require('@flow/core/formats');
+const { tr } = require('@flow/core/lang');
 
 const MAX_FILES = 2000;
 const MAX_DEPTH = 6;
@@ -41,7 +42,7 @@ function isScanFile(name) {
 }
 
 function cancelledError() {
-  const err = new Error('Cancelled.');
+  const err = new Error(tr('common.cancelled', 'Canceled.'));
   err.cancelled = true;
   return err;
 }

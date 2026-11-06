@@ -1,5 +1,7 @@
 'use strict';
 
+const { tr } = require('../lang');
+
 // A visualizer's picture (or a background's video) picked in its cogwheel,
 // as each app keeps it (window.flow.saveVizPicture): what it is by its
 // first bytes, the most it may be, and which files it takes the place of.
@@ -22,10 +24,10 @@ const isVideo = (type) => type === 'mp4' || type === 'webm';
  * a video over `videoMB`.
  */
 function check(name, bytes, videoMB) {
-  if (!/^[a-z][\w-]{0,40}$/i.test(String(name || ''))) throw new Error('Not a picture name.');
-  if (!(bytes instanceof Uint8Array) || !bytes.length) throw new Error('Not a picture.');
+  if (!/^[a-z][\w-]{0,40}$/i.test(String(name || ''))) throw new Error(tr('vizPicture.error.badName', 'Not a picture name.'));
+  if (!(bytes instanceof Uint8Array) || !bytes.length) throw new Error(tr('common.notPicture', 'Not a picture.'));
   const type = typeOf(bytes);
-  if (bytes.length > (isVideo(type) ? videoMB * 1e6 : 30e6)) throw new Error('Too big.');
+  if (bytes.length > (isVideo(type) ? videoMB * 1e6 : 30e6)) throw new Error(tr('vizPicture.error.tooBig', 'Too big.'));
   return type;
 }
 

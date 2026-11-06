@@ -37,7 +37,7 @@ const SleepTimer = {
 
   openDialog() {
     const shutdown = h('input', { type: 'checkbox' });
-    const custom = h('input.input.sleep__custom', { type: 'number', min: 1, max: this.MAX_MINUTES, step: 1, placeholder: 'min' });
+    const custom = h('input.input.sleep__custom', { type: 'number', min: 1, max: this.MAX_MINUTES, step: 1, placeholder: T('sleepTimer.custom.placeholder') });
     const error = h('div.form-error');
     let modal = null;
     const go = (minutes) => {
@@ -47,7 +47,7 @@ const SleepTimer = {
     const apply = () => {
       const m = Math.round(Number(custom.value));
       if (!custom.value.trim() || !Number.isFinite(m) || m < 1 || m > this.MAX_MINUTES) {
-        error.textContent = `Enter a number of minutes from 1 to ${this.MAX_MINUTES}.`;
+        error.textContent = T('sleepTimer.enterMinutes', { max: this.MAX_MINUTES });
         custom.focus();
         return;
       }
@@ -56,19 +56,19 @@ const SleepTimer = {
     custom.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') apply();
     });
-    const presets = this.PRESETS.map((m) => h('button.btn.sleep__preset', { type: 'button', onclick: () => go(m) }, `${m} Min`));
+    const presets = this.PRESETS.map((m) => h('button.btn.sleep__preset', { type: 'button', onclick: () => go(m) }, T('common.minutes', { minutes: m })));
     modal = Modal.open({
-      title: 'Sleep Timer',
+      title: T('sleepTimer.title'),
       className: 'modal--sleep',
       sheet: document.body.classList.contains('mobile'),
       body: [
         // Only where Flow can shut the device down (not the phone).
-        !Store.can('shutdown') ? null : h('label.check.sleep__shutdown', shutdown, h('span', 'Shut down my PC after the timer runs out (+5 min delay). Make sure you\'ve saved everything.')),
+        !Store.can('shutdown') ? null : h('label.check.sleep__shutdown', shutdown, h('span', T('sleepTimer.shutdown.option'))),
         h('div.sleep__row',
           ...presets,
           h('span.sleep__sep'),
-          h('label.sleep__custom-label', h('span', 'Custom:'), custom),
-          h('button.btn.btn--primary', { type: 'button', onclick: apply }, 'Apply')),
+          h('label.sleep__custom-label', h('span', T('sleepTimer.custom')), custom),
+          h('button.btn.btn--primary', { type: 'button', onclick: apply }, T('common.apply'))),
         error,
       ],
     });
@@ -81,7 +81,7 @@ const SleepTimer = {
       try {
         await window.flow.scheduleShutdown(minutes * 60 + this.SHUTDOWN_DELAY_MS / 1000);
       } catch (err) {
-        toast(`The sleep timer was not started. ${err.message}`, 'error');
+        toast(T('sleepTimer.notStarted', { reason: err.message }), 'error');
         return;
       }
       shutdownAt = endsAt + this.SHUTDOWN_DELAY_MS;
@@ -92,11 +92,11 @@ const SleepTimer = {
     this._draw();
     const stops = Util.fmtTimeOfDay(endsAt);
     if (shutdownAt) {
-      const text = `The music stops at ${stops}, and your PC shuts down at ${Util.fmtTimeOfDay(shutdownAt)}.`;
-      this._notify(`Sleep timer set. ${text}`);
-      toast(`Sleep timer set: ${text}`, 'success');
+      const text = T('sleepTimer.shutdown.set', { time: stops, shutdownTime: Util.fmtTimeOfDay(shutdownAt) });
+      this._notify(T('sleepTimer.shutdown.setNotice', { details: text }));
+      toast(T('sleepTimer.shutdown.setToast', { details: text }), 'success');
     } else {
-      toast(`Sleep timer set: the music stops at ${stops}.`, 'success');
+      toast(T('sleepTimer.set', { time: stops }), 'success');
     }
   },
 
@@ -109,13 +109,13 @@ const SleepTimer = {
       try {
         await window.flow.cancelShutdown();
       } catch (err) {
-        toast(`The shutdown could not be cancelled: ${err.message}. Run "${Store.os === 'win32' ? 'shutdown /a' : 'shutdown -c'}" to stop it.`, 'error');
+        toast(T('sleepTimer.shutdown.notCancelled', { reason: err.message, command: Store.os === 'win32' ? 'shutdown /a' : 'shutdown -c' }), 'error');
         return;
       }
-      this._notify('Sleep timer cancelled. Your PC will not shut down.');
-      toast('Sleep timer cancelled, and the shutdown with it.', 'info');
+      this._notify(T('sleepTimer.shutdown.cancelledNotice'));
+      toast(T('sleepTimer.shutdown.cancelled'), 'info');
     } else {
-      toast('Sleep timer cancelled.', 'info');
+      toast(T('sleepTimer.cancelled'), 'info');
     }
   },
 
@@ -164,15 +164,14 @@ const SleepTimer = {
     Player.setSleepFade(1);
     if (!s.shutdownAt) {
       this._stop();
-      toast('Sleep timer: the music has stopped.', 'info');
+      toast(T('sleepTimer.stopped'), 'info');
       return;
     }
     s.ended = true;
     Player.engine.setSleep(null);
     this._save(s);
     this._draw();
-    this._notify(`The music has stopped. Your PC shuts down at ${Util.fmtTimeOfDay(s.shutdownAt)}. `
-      + 'To stop that, open Flow and click the moon (Sleep Timer).');
+    this._notify(T('sleepTimer.shutdown.musicStopped', { time: Util.fmtTimeOfDay(s.shutdownAt) }));
   },
 
   _notify(text) {
@@ -188,8 +187,8 @@ const SleepTimer = {
     $('btnSleep').innerHTML = Icons.moon;
     $('btnSleep').classList.toggle('sleep-btn--on', on);
     $('btnSleep').title = on
-      ? (this.state.shutdownAt ? 'Cancel the sleep timer and the planned shutdown' : 'Cancel the sleep timer')
-      : 'Sleep Timer: stop the music after a while';
+      ? (this.state.shutdownAt ? T('sleepTimer.shutdown.cancel.tooltip') : T('sleepTimer.cancel.tooltip'))
+      : T('sleepTimer.button.tooltip');
     $('btnSleep').setAttribute('aria-label', $('btnSleep').title);
     $('player').classList.toggle('player--sleep', on);
     $('sleepLeft').hidden = !on;
@@ -205,10 +204,10 @@ const SleepTimer = {
     const total = Math.ceil(ms / 1000);
     const mm = String(Math.floor(total / 60)).padStart(2, '0');
     const ss = String(total % 60).padStart(2, '0');
-    $('sleepLeft').textContent = `${shutdownSoon ? 'Shutdown in' : 'Time Left'}: ${mm}:${ss}`;
+    $('sleepLeft').textContent = T(shutdownSoon ? 'sleepTimer.shutdown.in' : 'sleepTimer.timeLeft', { time: `${mm}:${ss}` });
     $('sleepLeft').classList.toggle('player__sleep-left--shutdown', !!shutdownSoon);
     $('sleepLeft').title = s.shutdownAt
-      ? `Your PC shuts down at ${Util.fmtTimeOfDay(s.shutdownAt)}`
-      : `The music stops at ${Util.fmtTimeOfDay(s.endsAt)}`;
+      ? T('sleepTimer.shutdown.at.tooltip', { time: Util.fmtTimeOfDay(s.shutdownAt) })
+      : T('sleepTimer.stopsAt.tooltip', { time: Util.fmtTimeOfDay(s.endsAt) });
   },
 };

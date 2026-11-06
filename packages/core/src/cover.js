@@ -25,6 +25,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const spotify = require('./spotify');
+const { tr } = require('./lang');
 
 const SIZE = 512;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -195,23 +196,23 @@ async function makeSquare(ffmpeg, input, { letterbox = false } = {}) {
  * at most `maxBytes`, within `timeout`. Throws otherwise.
  */
 async function fetchImage(url, { maxBytes = MAX_IMAGE_BYTES, timeout = FETCH_TIMEOUT, fetchFn = globalThis.fetch } = {}) {
-  if (!/^https?:\/\//i.test(String(url || ''))) throw new Error('Not a web address.');
+  if (!/^https?:\/\//i.test(String(url || ''))) throw new Error(tr('core.cover.notWebAddress', 'Not a web address.'));
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
     const res = await fetchFn(url, { signal: ctrl.signal, redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 Flow' } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const type = String(res.headers.get('content-type') || '').toLowerCase();
-    if (!type.startsWith('image/')) throw new Error('Not a picture.');
+    if (!type.startsWith('image/')) throw new Error(tr('common.notPicture', 'Not a picture.'));
     const declared = Number(res.headers.get('content-length'));
-    if (declared > maxBytes) throw new Error('The picture is too large.');
+    if (declared > maxBytes) throw new Error(tr('core.cover.tooLarge', 'The picture is too large.'));
     const chunks = [];
     let size = 0;
     for await (const chunk of res.body) {
       size += chunk.length;
       if (size > maxBytes) {
         ctrl.abort();
-        throw new Error('The picture is too large.');
+        throw new Error(tr('core.cover.tooLarge', 'The picture is too large.'));
       }
       chunks.push(Buffer.from(chunk));
     }
@@ -412,7 +413,7 @@ function coverVersion(jpeg) {
  */
 function createCoverStore(dir) {
   const file = (id) => {
-    if (!ID_RE.test(String(id || ''))) throw new Error('Not a song id.');
+    if (!ID_RE.test(String(id || ''))) throw new Error(tr('common.notSongId', 'Not a song id.'));
     return path.join(dir, `${id}.jpg`);
   };
   return {

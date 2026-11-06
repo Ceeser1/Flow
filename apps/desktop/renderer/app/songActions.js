@@ -42,7 +42,7 @@ const SongActions = {
 
   /** The cell: `shown` buttons, then More holding `more` (built when opened). */
   cell(shown, more) {
-    const btn = iconButton('act.act--grey.act--more', Icons.more, 'More', () => {
+    const btn = iconButton('act.act--grey.act--more', Icons.more, T('common.more'), () => {
       if (this.anchor === btn) this.close();
       else this.open(btn, more());
     });
@@ -75,7 +75,7 @@ const SongActions = {
    * left instead of closing the tray. See pickPlaylists.
    */
   playlistButton(song) {
-    const btn = iconButton('act.act--green', Icons.playlists, 'Add to Playlists', () => this.pickPlaylists(btn, song));
+    const btn = iconButton('act.act--green', Icons.playlists, T('common.addToPlaylists'), () => this.pickPlaylists(btn, song));
     btn.dataset.keepOpen = '1';
     return btn;
   },
@@ -108,11 +108,11 @@ const SongActions = {
       type: 'button',
       disabled: !lists.length,
       onclick: () => this._applyPlaylists(song, had, boxes),
-    }, 'Apply');
-    const picker = h('div.pl-picker', { role: 'dialog', 'aria-label': 'Add to Playlists' },
-      h('div.pl-picker__title', 'Add to Playlists'),
+    }, T('common.apply'));
+    const picker = h('div.pl-picker', { role: 'dialog', 'aria-label': T('common.addToPlaylists') },
+      h('div.pl-picker__title', T('common.addToPlaylists')),
       above ? h('div.pl-picker__song', { title: Util.songLine(song) }, Util.songLine(song)) : null,
-      h('div.pl-picker__list', ...(rows.length ? rows : [h('div.pl-picker__empty', 'No playlists yet.')])),
+      h('div.pl-picker__list', ...(rows.length ? rows : [h('div.pl-picker__empty', T('songActions.noPlaylists'))])),
       apply);
     document.body.appendChild(picker);
     this.picker = picker;
@@ -144,14 +144,14 @@ const SongActions = {
         h('span.picker__meta', Util.plural(p.entries.length, 'song')));
     });
     Modal.open({
-      title: 'Add to Playlists',
+      title: T('common.addToPlaylists'),
       sheet: true,
       className: 'modal--picker',
       body: [h('p.modal__subtitle', Util.songLine(song)),
-        h('div.picker__list', ...(rows.length ? rows : [h('div.picker__empty', 'No playlists yet.')]))],
+        h('div.picker__list', ...(rows.length ? rows : [h('div.picker__empty', T('songActions.noPlaylists'))]))],
       buttons: [
-        { label: 'Cancel' },
-        { label: 'Apply', kind: 'primary', onClick: () => { this._applyPlaylists(song, had, boxes); } },
+        { label: T('common.cancel') },
+        { label: T('common.apply'), kind: 'primary', onClick: () => { this._applyPlaylists(song, had, boxes); } },
       ],
     });
   },
@@ -168,7 +168,7 @@ const SongActions = {
     await attempt(async () => {
       if (add.length) await window.flow.addSongToPlaylists(song.id, add);
       for (const id of remove) await window.flow.removeFromPlaylist(id, song.id);
-      toast('Playlists updated', 'success');
+      toast(T('common.playlistsUpdated'), 'success');
     });
   },
 

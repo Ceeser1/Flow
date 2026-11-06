@@ -29,19 +29,19 @@ const BackgroundHelp = {
   /** How Android treats Flow, in words: { text, good }. */
   async status() {
     const p = await window.flow.power();
-    if (p.restricted) return { p, good: false, text: 'Android has stopped Flow from running in the background. The music stops soon after the screen goes off.' };
-    if (p.unrestricted) return { p, good: true, text: 'Flow may run in the background: the music plays on with the screen off.' };
-    return { p, good: false, text: 'Android may stop Flow in the background to save battery, and with it the music.' };
+    if (p.restricted) return { p, good: false, text: T('backgroundHelp.state.stopped') };
+    if (p.unrestricted) return { p, good: true, text: T('backgroundHelp.state.allowed') };
+    return { p, good: false, text: T('backgroundHelp.state.mayStop') };
   },
 
   open() {
     if (this._modal) return;
     this._body = h('div.bg-help');
     this._modal = Modal.open({
-      title: 'Playing with the screen off',
+      title: T('settings.app.screenOff.label'),
       className: 'modal--small',
       body: [this._body],
-      buttons: [{ label: 'Close', kind: 'primary' }],
+      buttons: [{ label: T('common.close'), kind: 'primary' }],
       onClose: () => {
         this._modal = null;
       },
@@ -57,17 +57,14 @@ const BackgroundHelp = {
       return;
     }
     if (!this._modal) return;
-    const allow = h('button.btn', { type: 'button', onclick: () => window.flow.allowBackground().catch(() => {}) }, 'Allow background use');
-    const settings = h('button.btn', { type: 'button', onclick: () => window.flow.appSettings().catch(() => {}) }, 'Flow\'s app settings');
+    const allow = h('button.btn', { type: 'button', onclick: () => window.flow.allowBackground().catch(() => {}) }, T('backgroundHelp.allow'));
+    const settings = h('button.btn', { type: 'button', onclick: () => window.flow.appSettings().catch(() => {}) }, T('backgroundHelp.appSettings'));
     clear(this._body);
     const parts = [
       h('p.bg-help__status' + (s.good ? '.bg-help__status--good' : ''), s.text),
-      s.good ? null : h('p.modal__text', 'So the music never stops with the screen off, let Flow run in the background: '
-        + 'tap Allow background use and answer Allow. Or in Flow\'s app settings, set Battery to Unrestricted.'),
+      s.good ? null : h('p.modal__text', T('backgroundHelp.howTo')),
       h('div.bg-help__buttons', s.p.unrestricted ? null : allow, settings),
-      s.p.maker === 'samsung' ? h('p.muted-text', 'On a Samsung phone also: Settings > Battery > Background usage limits. '
-        + 'Flow must not be in Sleeping apps or Deep sleeping apps; add it to Never sleeping apps, '
-        + 'or turn off Put unused apps to sleep.') : null,
+      s.p.maker === 'samsung' ? h('p.muted-text', T('backgroundHelp.samsung')) : null,
     ];
     this._body.append(...parts.filter(Boolean));
   },

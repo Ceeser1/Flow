@@ -56,9 +56,9 @@ const SongSearch = {
     this.where = where;
     this.state = 'searching';
     AddPage._progress({
-      title: `Searching for "${query}"`,
+      title: T('songSearch.title', { query }),
       frac: null,
-      status: where === 'server' ? 'Searching YouTube on the server...' : 'Searching YouTube...',
+      status: where === 'server' ? T('songSearch.progress.youtubeOnServer') : T('songSearch.progress.youtube'),
       busy: true,
     });
     let found;
@@ -118,11 +118,11 @@ const SongSearch = {
     $('progBar').hidden = true;
     $('progCancel').hidden = true;
     if (err && err.cancelled) {
-      $('progStatus').textContent = 'Search cancelled.';
+      $('progStatus').textContent = T('songSearch.cancelled');
       $('progError').hidden = true;
     } else {
-      $('progStatus').textContent = 'The search failed.';
-      AddPage._showError((err && err.message) || 'Something went wrong.');
+      $('progStatus').textContent = T('songSearch.failed');
+      AddPage._showError((err && err.message) || T('common.wentWrong'));
     }
   },
 
@@ -149,7 +149,7 @@ const SongSearch = {
     } catch (err) {
       if (run !== this.run) return;
       this.moreState = 'failed';
-      this.note = `Nothing more could be searched: ${err.message}`;
+      this.note = T('songSearch.nothingMore', { reason: err.message });
       this._drawButtons();
       return;
     }
@@ -164,7 +164,7 @@ const SongSearch = {
       const list = $('searchList');
       list.scrollTo({ top: list.scrollTop + section.getBoundingClientRect().top - list.getBoundingClientRect().top, behavior: 'smooth' });
     } else {
-      this.note = page === 1 ? 'Nothing new on SoundCloud, Bandcamp or the Internet Archive.' : 'Nothing new found this time.';
+      this.note = page === 1 ? T('songSearch.nothingNewOtherSites') : T('songSearch.nothingNew');
     }
     this._drawButtons();
   },
@@ -175,12 +175,12 @@ const SongSearch = {
     $('searchPanel').hidden = false;
     const head = clear($('searchHead'));
     head.append(
-      h('span.import__badge', 'Search'),
-      h('span.import__heading', `"${f.query}"`),
-      h('span.muted-text', f.results.length ? 'Pick one or more to download. They can be trimmed and named after.' : ''));
+      h('span.import__badge', T('common.search')),
+      h('span.import__heading', T('songSearch.query', { query: f.query })),
+      h('span.muted-text', f.results.length ? T('songSearch.pickHint') : ''));
     const list = clear($('searchList'));
     if (!f.results.length) {
-      list.appendChild(h('div.import__empty', 'Nothing found on YouTube for these words. Try other words, or search for more.'));
+      list.appendChild(h('div.import__empty', T('songSearch.nothingOnYoutube')));
     }
     f.results.forEach((r, i) => list.appendChild(this._row(r, i === 0)));
     for (const p of this.pages) if (p.results.length) this._appendPage(p.results, p.page);
@@ -190,8 +190,8 @@ const SongSearch = {
   /** A page of "Search for more" at the end of the list, under its heading; resolves the heading. */
   _appendPage(results, page) {
     const list = $('searchList');
-    const section = h('div.song-search__section', page === 1 ? 'SoundCloud, Bandcamp and the Internet Archive'
-      : `More from YouTube (its results ${(page - 1) * 10 + 1} to ${page * 10})`);
+    const section = h('div.song-search__section', page === 1 ? T('songSearch.otherSites.heading')
+      : T('songSearch.moreYoutube.heading', { from: (page - 1) * 10 + 1, to: page * 10 }));
     list.appendChild(section);
     for (const r of results) list.appendChild(this._row(r, false));
     return section;
@@ -201,14 +201,14 @@ const SongSearch = {
     const btn = $('searchMore');
     const searching = this.moreState === 'searching';
     btn.disabled = searching;
-    btn.textContent = searching ? 'Searching...' : 'Search for more';
+    btn.textContent = searching ? T('songSearch.more.searching') : T('common.searchForMore');
     const others = this._nextPage() === 1;
-    btn.title = others ? 'Look on SoundCloud, Bandcamp and the Internet Archive too' : 'Look further down YouTube\'s results';
+    btn.title = others ? T('songSearch.more.otherSites.tooltip') : T('songSearch.more.youtube.tooltip');
     // The turning circle while it searches, and where.
     $('searchSpinner').hidden = !searching;
     const note = $('searchNote');
     note.textContent = searching
-      ? (others ? 'Searching SoundCloud, Bandcamp and the Internet Archive...' : 'Searching further down YouTube...')
+      ? (others ? T('songSearch.more.otherSites.searching') : T('songSearch.more.youtube.searching'))
       : this.note;
     note.hidden = !note.textContent;
     note.classList.toggle('song-search__note--bad', this.moreState === 'failed');
@@ -223,7 +223,7 @@ const SongSearch = {
   _drawCount() {
     const all = this._all();
     const chosen = all.filter((r) => this.checked.has(r.url)).length;
-    $('searchCount').textContent = all.length ? `${chosen} of ${all.length} selected` : '';
+    $('searchCount').textContent = all.length ? T('common.selected', { chosen, total: all.length }) : '';
     $('searchSelected').disabled = !chosen;
     $('searchAll').disabled = !all.length;
   },
@@ -231,14 +231,14 @@ const SongSearch = {
   /** One upload: a box to tick, its title (opens it to check), where it is and who uploaded it. */
   _row(r, first) {
     const flags = [];
-    if (first && r.quality === 'good') flags.push(h('span.import__flag.import__flag--best', 'best match'));
+    if (first && r.quality === 'good') flags.push(h('span.import__flag.import__flag--best', T('songSearch.bestMatch')));
     for (const v of r.versions || []) flags.push(h('span.import__flag', v));
     if (r.existing) {
-      flags.push(h('span.import__flag.import__flag--trim', { title: `In your library as "${Util.songLine(r.existing)}"` }, 'in your library'));
+      flags.push(h('span.import__flag.import__flag--trim', { title: T('songSearch.inLibrary.tooltip', { song: Util.songLine(r.existing) }) }, T('common.inLibrary')));
     }
     const title = h('button.link-btn.song-search__title', {
       type: 'button',
-      title: `${r.title}\nOpen on ${r.site} to check`,
+      title: T('songSearch.result.tooltip', { title: r.title, site: r.site }),
       onclick: (e) => {
         // A click on the title opens it; only the rest of the row ticks the box.
         e.preventDefault();

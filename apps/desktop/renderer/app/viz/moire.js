@@ -169,15 +169,14 @@
 
   Visualizer.add({
     id: 'moire',
-    name: 'Moiré',
-    desc: 'Fine lines and rings laid over each other, the great fringes between them sweeping and bending with the music',
+    name: T('viz.moire.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/><circle cx="9" cy="12" r="2.5"/><circle cx="15" cy="12" r="2.5"/></svg>',
     gl: true,
     create: (canvas) => new Moire(canvas),
     options: [
-      { type: 'choice', key: 'mrKind', label: 'Gratings', choices: [['lines', 'Lines'], ['rings', 'Rings'], ['both', 'Both']] },
-      { type: 'choice', key: 'mrColors', label: 'Colours', choices: [['paper', 'Ink on paper'], ['print', 'Print'], ['neon', 'Neon']] },
+      { type: 'choice', key: 'mrKind', label: T('viz.moire.setting.gratings'), choices: [['lines', T('viz.shared.lines')], ['rings', T('viz.shared.rings')], ['both', T('viz.moire.setting.gratings.both')]] },
+      { type: 'choice', key: 'mrColors', label: T('viz.shared.colors'), choices: [['paper', T('viz.moire.setting.colours.paper')], ['print', T('viz.moire.setting.colours.print')], ['neon', T('viz.shared.neon')]] },
     ],
   });
 })();

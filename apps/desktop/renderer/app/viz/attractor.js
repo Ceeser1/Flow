@@ -331,16 +331,15 @@
 
   Visualizer.add({
     id: 'attractor',
-    name: 'Attractor',
-    desc: 'A strange attractor drawn by a million points, melting into a new shape every few bars and breathing with the bass',
+    name: T('viz.attractor.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 12c-3-5-9-4-9 0s6 5 9 0 9-4 9 0-6 5-9 0z"/><path d="M12 12c-2-3-5-2.5-5 0s3 3 5 0 5-2.5 5 0-3 3-5 0z"/></svg>',
     gl: true,
     create: (canvas) => new Attractor(canvas),
     options: [
-      { type: 'choice', key: 'atKind', label: 'Attractor', choices: [['clifford', 'Clifford'], ['dejong', 'De Jong'], ['lorenz', 'Lorenz']] },
-      { type: 'choice', key: 'atColors', label: 'Colours', choices: [['fire', 'Fire'], ['ice', 'Ice'], ['rainbow', 'Rainbow'], ['gold', 'Gold']] },
-      { type: 'slider', key: 'atSpin', label: 'Turning', min: 0, max: 300, step: 5 },
+      { type: 'choice', key: 'atKind', label: T('viz.attractor.name'), choices: [['clifford', 'Clifford'], ['dejong', 'De Jong'], ['lorenz', 'Lorenz']] },
+      { type: 'choice', key: 'atColors', label: T('viz.shared.colors'), choices: [['fire', T('viz.shared.fire')], ['ice', T('viz.shared.ice')], ['rainbow', T('common.color.rainbow')], ['gold', T('viz.shared.gold')]] },
+      { type: 'slider', key: 'atSpin', label: T('viz.shared.turning'), min: 0, max: 300, step: 5 },
     ],
   });
 })();

@@ -36,16 +36,15 @@ const PlaylistPage = {
       if (Store.uiMode === 'mobile') {
         const p = Store.playlist(this.id);
         const total = Store.rowsOf(this.id).length;
-        const name = this.id === 'all' ? 'All Songs' : (p ? p.name : 'this playlist');
+        const name = this.id === 'all' ? T('common.allSongs') : (p ? p.name : T('playlist.download.thisPlaylistName'));
         const ok = await confirmDialog(on ? {
-          title: 'Download',
-          message: `Download all ${Util.plural(total, 'song')} of ${name} to ${Store.here}? New songs of it come down too.`,
-          confirmLabel: 'Download',
+          title: T('common.download'),
+          message: T(`playlist.download.text.${Store.hereKey}`, { songs: Util.plural(total, 'song'), playlist: name }),
+          confirmLabel: T('common.download'),
         } : {
-          title: 'Stop downloading',
-          message: `${name} is no longer kept on ${Store.here}: its downloaded songs are deleted here `
-            + '(except those another download holds). They still play from the server.',
-          confirmLabel: 'Delete downloads',
+          title: T('playlist.download.stop.title'),
+          message: T(`playlist.download.stop.text.${Store.hereKey}`, { playlist: name }),
+          confirmLabel: T('playlist.download.stop.confirm'),
           danger: true,
         });
         if (!ok) return;
@@ -55,9 +54,9 @@ const PlaylistPage = {
         const total = Store.rowsOf(this.id).length;
         const p = Store.playlist(this.id);
         const ok = await confirmDialog({
-          title: 'Download all songs',
-          message: `Are you sure you want to download all ${total} ${total === 1 ? 'song' : 'songs'}${p && p.isFrom ? ` ${p.menuName}` : ''}?`,
-          confirmLabel: 'Yes',
+          title: T('playlist.downloadAll.title'),
+          message: p && p.isFrom ? T('playlist.downloadAll.text.from', { count: total, playlist: p.menuName }) : T('playlist.downloadAll.text', { count: total }),
+          confirmLabel: T('playlist.downloadAll.confirm'),
         });
         if (!ok) return;
       }
@@ -78,13 +77,13 @@ const PlaylistPage = {
       // The phone's is only an icon: it asks either way, what it is about to do.
       if (Store.uiMode === 'mobile') {
         const ok = await confirmDialog(p.shared ? {
-          title: 'Stop sharing',
-          message: `Do you want to stop sharing your playlist ${p.name}? The other profiles on this server no longer see it.`,
-          confirmLabel: 'Confirm',
+          title: T('playlist.share.stop.title'),
+          message: T('playlist.share.stop.text', { playlist: p.name }),
+          confirmLabel: T('common.confirm'),
         } : {
-          title: 'Share',
-          message: `Do you want to share your playlist ${p.name} with other profiles on this server?`,
-          confirmLabel: 'Confirm',
+          title: T('common.share'),
+          message: T('playlist.share.text', { playlist: p.name }),
+          confirmLabel: T('common.confirm'),
         });
         if (!ok) return;
       }
@@ -189,20 +188,23 @@ const PlaylistPage = {
     $('plTitle').textContent = p.name;
     const all = Store.rowsOf(this.id);
     const total = all.reduce((sum, r) => sum + (r.song.duration || 0), 0);
-    const by = p.isShared && p.ownerName ? `Shared by ${p.ownerName} · ` : '';
-    $('plMeta').textContent = `${by}${p.isRuled ? 'Smart playlist · ' : ''}${Util.plural(all.length, 'song')} · ${Util.fmtClock(total)}`;
+    const by = p.isShared && p.ownerName ? `${T('playlist.header.sharedBy', { profile: p.ownerName })} ` : '';
+    $('plMeta').textContent = `${by}${p.isRuled ? `${T('playlist.header.smartPlaylist')} ` : ''}${Util.plural(all.length, 'song')} · ${Util.fmtClock(total)}`;
     $('plMeta').title = p.isRuled ? PlaylistRules.describe(p.rules) : '';
     $('plRules').hidden = !p.isRuled;
     if (p.isRuled) {
-      $('plRules').title = `${PlaylistRules.describe(p.rules)}. Click to change the rules.`;
-      $('plRules').innerHTML = Store.uiMode === 'mobile' ? Icons.pulse : `${Icons.pulse}<span>Edit Rules</span>`;
-      $('plRules').setAttribute('aria-label', 'Edit Rules');
+      $('plRules').title = T('playlist.rules.tooltip', { rules: PlaylistRules.describe(p.rules) });
+      $('plRules').innerHTML = Store.uiMode === 'mobile' ? Icons.pulse : `${Icons.pulse}<span>${T('common.editRules')}</span>`;
+      $('plRules').setAttribute('aria-label', T('common.editRules'));
     }
-    $('plSearch').placeholder = `Search in ${p.name}`;
+    $('plSearch').placeholder = T('playlist.search.placeholder', { playlist: p.name });
 
     const target = this.pickFor ? Store.playlist(this.pickFor) : null;
     $('plPickBanner').hidden = !target;
-    if (target) $('plPickName').textContent = target.name;
+    if (target) {
+      const [before, after = ''] = T('window.playlist.pick.banner', { playlist: '\u0000' }).split('\u0000');
+      clear($('plPickText')).append(before, h('strong', target.name), after);
+    }
 
     this._drawOffline();
     this._drawShare();
@@ -226,14 +228,14 @@ const PlaylistPage = {
     btn.classList.toggle('toggle--on', on);
     btn.setAttribute('aria-pressed', String(on));
     btn.title = mine
-      ? 'Let the other profiles on this server see this playlist and follow it'
-      : `Follow this playlist: it shows in the menu under Followed Playlists`;
+      ? T('playlist.share.tooltip')
+      : T('playlist.follow.tooltip');
     if (Store.uiMode === 'mobile') {
       // Only the icon on the phone, green while shared (or followed).
       btn.innerHTML = Icons.share;
-      btn.setAttribute('aria-label', mine ? (on ? 'Shared' : 'Share') : (on ? 'Following' : 'Follow'));
+      btn.setAttribute('aria-label', mine ? (on ? T('playlist.share.shared') : T('common.share')) : (on ? T('playlist.follow.following') : T('common.follow')));
     } else {
-      btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.share}<span>${mine ? 'Share' : 'Following'}</span>`;
+      btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.share}<span>${mine ? T('common.share') : T('playlist.follow.following')}</span>`;
     }
   },
 
@@ -252,15 +254,15 @@ const PlaylistPage = {
     // Light blue with its icon turning while the link is read.
     const busy = PlaylistUpdate.isChecking(p.id);
     btn.classList.toggle('pl-update--busy', busy);
-    btn.title = busy ? `Checking ${p.source.url} for changes...`
-      : `Look for the songs added to or removed from ${p.source.url} since "${p.name}" was imported`;
+    btn.title = busy ? T('playlist.updateFromSource.checking.tooltip', { url: p.source.url })
+      : T('playlist.updateFromSource.tooltip', { url: p.source.url, playlist: p.name });
     // The phone's is only the icon, as its Download. Drawn once, so a turning icon keeps turning.
-    const html = Store.uiMode === 'mobile' ? Icons.refresh : `${Icons.refresh}<span>Update from source</span>`;
+    const html = Store.uiMode === 'mobile' ? Icons.refresh : `${Icons.refresh}<span>${T('playlist.updateFromSource.button')}</span>`;
     if (btn.dataset.html !== html) {
       btn.innerHTML = html;
       btn.dataset.html = html;
     }
-    btn.setAttribute('aria-label', 'Update from source');
+    btn.setAttribute('aria-label', T('playlist.updateFromSource.button'));
   },
 
   /**
@@ -284,16 +286,16 @@ const PlaylistPage = {
     if (Store.uiMode === 'mobile') {
       // Only the icon on the phone, golden while the playlist is kept here.
       btn.innerHTML = Icons.download;
-      btn.title = on ? `Downloaded to ${Store.here}` : `Download to ${Store.here}`;
+      btn.title = T(`playlist.download.button${on ? '.done' : ''}.tooltip.${Store.hereKey}`);
       btn.setAttribute('aria-label', btn.title);
     } else {
-      btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.download}<span>Download</span>`;
+      btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.download}<span>${T('common.download')}</span>`;
     }
     const rows = Store.rowsOf(this.id);
     const here = rows.filter((r) => r.song.file).length;
     note.textContent = !rows.length ? ''
-      : here === rows.length ? (on ? 'All downloaded' : `All ${rows.length} on ${Store.here}`)
-        : on ? `${here} of ${rows.length} downloaded` : here ? `${here} of ${rows.length} on ${Store.here}` : '';
+      : here === rows.length ? (on ? T('playlist.download.state.allDownloaded') : T(`playlist.download.state.allHere.${Store.hereKey}`, { count: rows.length }))
+        : on ? T('playlist.download.state.someDownloaded', { done: here, count: rows.length }) : here ? T(`playlist.download.state.someHere.${Store.hereKey}`, { done: here, count: rows.length }) : '';
   },
 
   renderTable() {
@@ -310,16 +312,16 @@ const PlaylistPage = {
     if (empty) {
       const smart = SmartLists.isSmart(this.id);
       const favourites = this.id === FAVOURITES_ID;
-      if (this.id === 'all') $('plEmptyText').textContent = 'No songs yet. Download your first one on the Add Songs page.';
-      else if (favourites) $('plEmptyText').textContent = 'No favourites yet. Click the star on any song to add it here.';
-      else if (smart) $('plEmptyText').textContent = 'Nothing here yet. This list fills itself as you listen to the songs in your playlists.';
-      else if (p.isDevice) $('plEmptyText').textContent = `No songs on ${Store.here} yet. A song's or a playlist's Download keeps it here.`;
-      else if (p.isRuled) $('plEmptyText').textContent = 'No song matches its rules yet. Edit Rules changes them.';
-      else $('plEmptyText').textContent = 'This playlist is empty.';
+      if (this.id === 'all') $('plEmptyText').textContent = T('playlist.empty.allSongs');
+      else if (favourites) $('plEmptyText').textContent = T('playlist.empty.favourites');
+      else if (smart) $('plEmptyText').textContent = T('playlist.empty.trend');
+      else if (p.isDevice) $('plEmptyText').textContent = T(`playlist.empty.downloaded.${Store.hereKey}`);
+      else if (p.isRuled) $('plEmptyText').textContent = T('playlist.empty.smart');
+      else $('plEmptyText').textContent = T('playlist.empty.playlist');
       $('plEmptyAction').hidden = smart || favourites || !!p.isShared || !!p.isDevice || !!p.isRuled;
-      $('plEmptyAction').textContent = this.id === 'all' ? 'Add Songs' : 'Add songs from All Songs';
+      $('plEmptyAction').textContent = this.id === 'all' ? T('common.addSongs') : T('playlist.empty.addFromAllSongs');
     }
-    $('plFiltered').textContent = view.filter && !empty ? `Showing ${rows.length} of ${count}` : '';
+    $('plFiltered').textContent = view.filter && !empty ? T('playlist.showing', { shown: rows.length, count }) : '';
 
     this._playButtons = new Map();
     const pickTarget = this.pickFor ? Store.playlist(this.pickFor) : null;
@@ -339,12 +341,12 @@ const PlaylistPage = {
       },
       onRowDblClick: (r) => Player.load(r.song.id, this.id),
       columns: [
-        { key: 'title', label: 'Title', cls: 'col-title', render: (r) => this._title(r.song), onClick: (r) => this._playFromTitle(r.song) },
-        { key: 'artist', label: 'Artist', cls: 'col-artist', render: (r) => h('span', { title: r.song.artist }, r.song.artist) },
+        { key: 'title', label: T('common.title'), cls: 'col-title', render: (r) => this._title(r.song), onClick: (r) => this._playFromTitle(r.song) },
+        { key: 'artist', label: T('common.artist'), cls: 'col-artist', render: (r) => h('span', { title: r.song.artist }, r.song.artist) },
         ...extra,
-        { key: 'duration', label: 'Duration', cls: 'col-num', render: (r) => Util.fmtClock(r.song.duration) },
-        { key: 'added', label: 'Added', cls: 'col-date', render: (r) => Util.fmtDate(r.addedAt) },
-        { key: 'actions', label: 'Actions', sortable: false, cls: 'col-actions', render: (r) => this._actions(r, pickTarget, pickSet) },
+        { key: 'duration', label: T('common.duration'), cls: 'col-num', render: (r) => Util.fmtClock(r.song.duration) },
+        { key: 'added', label: T('common.added'), cls: 'col-date', render: (r) => Util.fmtDate(r.addedAt) },
+        { key: 'actions', label: T('common.actions'), sortable: false, cls: 'col-actions', render: (r) => this._actions(r, pickTarget, pickSet) },
       ],
       mobile: this._touchRows(pickTarget, pickSet, smartList),
     });
@@ -363,31 +365,31 @@ const PlaylistPage = {
     // Downloaded Songs: queued, or deleted from this device; nothing else (some only play).
     // Another server's songs (a guest): queued there.
     const actions = p && p.isGuest ? [
-      { icon: Icons.plus, label: 'Add to Queue', short: 'Queue', run: (rows) => {
+      { icon: Icons.plus, label: T('common.addToQueue'), short: T('playlist.selection.addToQueue.short'), run: (rows) => {
         for (const r of rows) Player.addToQueue(r.song.id);
-        toast(`${Util.plural(rows.length, 'song')} added to the queue`, 'success');
+        toast(T('playlist.selection.addedToQueue', { songs: Util.plural(rows.length, 'song') }), 'success');
       } },
     ] : p && p.isDevice ? [
-      { icon: Icons.plus, label: 'Add to Queue', short: 'Queue', run: (rows) => {
+      { icon: Icons.plus, label: T('common.addToQueue'), short: T('playlist.selection.addToQueue.short'), run: (rows) => {
         for (const r of rows) Player.addToQueue(r.song.id);
-        toast(`${Util.plural(rows.length, 'song')} added to the queue`, 'success');
+        toast(T('playlist.selection.addedToQueue', { songs: Util.plural(rows.length, 'song') }), 'success');
       } },
-      { icon: Icons.x, label: `Delete from ${Store.here}`, short: 'Delete', kind: 'danger', run: (rows) => this.deleteFromDevice(rows.map((r) => r.song)) },
+      { icon: Icons.x, label: T(`playlist.song.deleteHere.${Store.hereKey}`), short: T('common.delete'), kind: 'danger', run: (rows) => this.deleteFromDevice(rows.map((r) => r.song)) },
     ] : [
-      { icon: Icons.plus, label: 'Add to Queue', short: 'Queue', run: (rows) => {
+      { icon: Icons.plus, label: T('common.addToQueue'), short: T('playlist.selection.addToQueue.short'), run: (rows) => {
         for (const r of rows) Player.addToQueue(r.song.id);
-        toast(`${Util.plural(rows.length, 'song')} added to the queue`, 'success');
+        toast(T('playlist.selection.addedToQueue', { songs: Util.plural(rows.length, 'song') }), 'success');
       } },
-      { icon: Icons.playlists, label: 'Add to Playlists', short: 'Playlist', run: async (rows) => {
+      { icon: Icons.playlists, label: T('common.addToPlaylists'), short: T('playlist.selection.addToPlaylists.short'), run: async (rows) => {
         const ids = await pickPlaylists({ subtitle: Util.plural(rows.length, 'song') });
         if (!ids || !ids.length) return false;
         await attempt(async () => {
           for (const id of ids) await window.flow.addSongsToPlaylist(id, rows.map((r) => r.song.id));
-          toast('Playlists updated', 'success');
+          toast(T('common.playlistsUpdated'), 'success');
         });
         return true;
       } },
-      { icon: Icons.star, label: 'Favourite', short: 'Favourite', run: (rows) => attempt(async () => {
+      { icon: Icons.star, label: T('common.favourite'), short: T('common.favourite'), run: (rows) => attempt(async () => {
         for (const r of rows) if (!r.song.favouriteAt) await window.flow.setFavourite(r.song.id, true);
       }) },
     ];
@@ -396,17 +398,18 @@ const PlaylistPage = {
     if (p && p.isDevice) {
       // Its actions are all there.
     } else if (offline) {
-      actions.push({ icon: Icons.download, label: 'Download', short: 'Download', run: (rows) => {
+      actions.push({ icon: Icons.download, label: T('common.download'), short: T('common.download'), run: (rows) => {
         // Choosing ends at once; the songs come down one after another.
         this.downloadSongs(rows.map((r) => r.song));
       } });
     }
     if (Store.isAllSongs(listId)) {
-      actions.push({ icon: Icons.x, label: 'Delete Songs', short: 'Delete', kind: 'danger', run: (rows) => this.deleteSongs(rows.map((r) => r.song)) });
+      actions.push({ icon: Icons.x, label: T('common.deleteSongs'), short: T('common.delete'), kind: 'danger', run: (rows) => this.deleteSongs(rows.map((r) => r.song)) });
     } else if (!smartList && listId !== FAVOURITES_ID && !readOnly) {
-      actions.push({ icon: Icons.x, label: 'Remove from Playlist', short: 'Remove', kind: 'danger', run: (rows) => attempt(async () => {
+      actions.push({ icon: Icons.x, label: T('playlist.song.removeFromPlaylist'), short: T('common.remove'), kind: 'danger', run: (rows) => attempt(async () => {
         for (const r of rows) await window.flow.removeFromPlaylist(listId, r.song.id);
-        toast(`Removed ${Util.plural(rows.length, 'song')} from ${p ? p.name : 'the playlist'}`, 'success');
+        toast(p ? T('playlist.selection.removed', { songs: Util.plural(rows.length, 'song'), playlist: p.name })
+          : T('playlist.selection.removed.thePlaylist', { songs: Util.plural(rows.length, 'song') }), 'success');
       }) });
     }
     return {
@@ -422,7 +425,7 @@ const PlaylistPage = {
       tap: (r) => this._playFromTitle(r.song),
       side: (r) => (pickTarget ? this._pickButton(r.song, pickTarget, pickSet) : null),
       more: (r) => [
-        iconButton('act.act--green', Icons.plus, 'Add to Queue', () => Player.addToQueue(r.song.id)),
+        iconButton('act.act--green', Icons.plus, T('common.addToQueue'), () => Player.addToQueue(r.song.id)),
         ...this._moreButtons(r.song),
       ],
       // Adding songs to a playlist, only the + (and X) do anything to a song: no long press.
@@ -438,11 +441,11 @@ const PlaylistPage = {
     const set = Store.settings;
     const muted = (text) => h('span.muted-text', { title: text }, text);
     return [
-      set.colAlbum && { key: 'album', label: 'Album', cls: 'col-album', render: (r) => muted(r.song.album || '') },
-      set.colGenre && { key: 'genre', label: 'Genre', cls: 'col-genre', render: (r) => muted(r.song.genre || '') },
-      set.colSubGenre && { key: 'subGenre', label: 'Info', cls: 'col-subgenre', render: (r) => muted(r.song.subGenre || '') },
-      set.colMix && { key: 'mix', label: 'Mix', cls: 'col-mix', render: (r) => muted(r.song.mix) },
-      smartList && { key: 'from', label: 'From Playlist', cls: 'col-from', render: (r) => muted(this._from(r.song)) },
+      set.colAlbum && { key: 'album', label: T('common.album'), cls: 'col-album', render: (r) => muted(r.song.album || '') },
+      set.colGenre && { key: 'genre', label: T('common.genre'), cls: 'col-genre', render: (r) => muted(r.song.genre || '') },
+      set.colSubGenre && { key: 'subGenre', label: T('common.info'), cls: 'col-subgenre', render: (r) => muted(r.song.subGenre || '') },
+      set.colMix && { key: 'mix', label: T('common.mix'), cls: 'col-mix', render: (r) => muted(r.song.mix) },
+      smartList && { key: 'from', label: T('playlist.column.fromPlaylist'), cls: 'col-from', render: (r) => muted(this._from(r.song)) },
     ].filter(Boolean);
   },
 
@@ -478,7 +481,7 @@ const PlaylistPage = {
 
   /** The cover and title, in a cell that plays the song on a click (_playFromTitle). */
   _title(song) {
-    return h('span.title-cell', Covers.el(song), h('span.cell-title', { title: `Play "${song.title}"` }, song.title));
+    return h('span.title-cell', Covers.el(song), h('span.cell-title', { title: T('playlist.song.play.tooltip', { song: song.title }) }, song.title));
   },
 
   /**
@@ -501,9 +504,9 @@ const PlaylistPage = {
    */
   _actions(row, pickTarget, pickSet) {
     const song = row.song;
-    const play = iconButton('act.act--green', Icons.play, 'Play', () => Player.toggleSong(song.id, this.id));
+    const play = iconButton('act.act--green', Icons.play, T('common.play'), () => Player.toggleSong(song.id, this.id));
     this._playButtons.set(song.id, play);
-    const queue = () => iconButton('act.act--green', Icons.plus, 'Add to Queue', () => Player.addToQueue(song.id));
+    const queue = () => iconButton('act.act--green', Icons.plus, T('common.addToQueue'), () => Player.addToQueue(song.id));
     const more = () => {
       const buttons = this._moreButtons(song);
       if (pickTarget) buttons.unshift(queue());
@@ -519,14 +522,14 @@ const PlaylistPage = {
    */
   _pickButton(song, pickTarget, pickSet) {
     if (pickSet.has(song.id)) {
-      return iconButton('act.act--orange', Icons.x, `Remove from ${pickTarget.name}`, () => attempt(async () => {
+      return iconButton('act.act--orange', Icons.x, T('playlist.pick.remove', { playlist: pickTarget.name }), () => attempt(async () => {
         await window.flow.removeFromPlaylist(pickTarget.id, song.id);
-        toast(`Removed from ${pickTarget.name}`, 'success');
+        toast(T('common.removedFrom', { playlist: pickTarget.name }), 'success');
       }));
     }
-    return iconButton('act.act--green', Icons.plus, `Add to ${pickTarget.name}`, () => attempt(async () => {
+    return iconButton('act.act--green', Icons.plus, T('playlist.pick.add', { playlist: pickTarget.name }), () => attempt(async () => {
       await window.flow.addSongsToPlaylist(pickTarget.id, [song.id]);
-      toast(`Added to ${pickTarget.name}`, 'success');
+      toast(T('common.addedTo', { playlist: pickTarget.name }), 'success');
     }));
   },
 
@@ -537,7 +540,7 @@ const PlaylistPage = {
     if (song.foreign) return [];
     // A song here that is not the server's (Downloaded Songs) only plays, and can be deleted from here.
     if (song.isDevice) {
-      return [iconButton('act.act--red', Icons.x, `Delete from ${Store.here}`, () => this.deleteFromDevice([song]))];
+      return [iconButton('act.act--red', Icons.x, T(`playlist.song.deleteHere.${Store.hereKey}`), () => this.deleteFromDevice([song]))];
     }
     // A playlist another profile shares can only be changed by its owner; Downloaded Songs by nobody.
     const list = Store.playlist(listId) || {};
@@ -546,15 +549,15 @@ const PlaylistPage = {
       this._favButton(song),
       // With a Flow Server the songs are streamed, and one can be kept here too.
       ...(Store.server.on && Store.can('offline') ? [this._downloadButton(song)] : []),
-      iconButton('act.act--grey', Icons.search, 'Song Details', () => SongDetails.open(song.id)),
-      iconButton('act.act--grey', Icons.pencil, 'Edit', () => this.edit(song)),
+      iconButton('act.act--grey', Icons.search, T('common.songDetails'), () => SongDetails.open(song.id)),
+      iconButton('act.act--grey', Icons.pencil, T('playlist.song.edit'), () => this.edit(song)),
     ];
     if (Store.isAllSongs(listId)) {
-      buttons.push(iconButton('act.act--red', Icons.x, 'Delete Song', () => this.deleteSong(song)));
+      buttons.push(iconButton('act.act--red', Icons.x, T('common.deleteSong'), () => this.deleteSong(song)));
     } else if (this._picksItself(listId)) {
-      buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist(s)', () => this.removeFromLists(song)));
+      buttons.push(iconButton('act.act--red', Icons.x, T('playlist.song.removeFromPlaylists'), () => this.removeFromLists(song)));
     } else if (listId !== FAVOURITES_ID && !readOnly) {
-      buttons.push(iconButton('act.act--red', Icons.x, 'Remove from Playlist', () => this.removeFromList(song)));
+      buttons.push(iconButton('act.act--red', Icons.x, T('playlist.song.removeFromPlaylist'), () => this.removeFromList(song)));
     }
     // All Songs and the listening trend lists: put the song into playlists from here, the leftmost button.
     if (Store.isAllSongs(listId) || this._picksItself(listId)) buttons.unshift(SongActions.playlistButton(song));
@@ -570,14 +573,14 @@ const PlaylistPage = {
     const on = !!song.file;
     return iconButton(on ? 'act.act--dl.act--dl-on' : 'act.act--dl', Icons.download,
       // On the phone the label is a line of its action sheet.
-      on ? (Store.uiMode === 'mobile' ? `Delete from ${Store.here}` : `Downloaded: click to delete it from ${Store.here}`) : 'Download',
+      on ? (Store.uiMode === 'mobile' ? T(`playlist.song.deleteHere.${Store.hereKey}`) : T(`playlist.song.downloaded.tooltip.${Store.hereKey}`)) : T('common.download'),
       () => attempt(async () => {
         if (on) {
           await window.flow.removeServerDownload(song.id);
-          toast(`Deleted "${song.title}" from ${Store.here}`, 'success');
+          toast(T(`playlist.song.deletedHere.${Store.hereKey}`, { song: song.title }), 'success');
         } else {
           await window.flow.downloadServerSong(song.id);
-          toast(`Downloaded "${song.title}"`, 'success');
+          toast(T('playlist.song.downloadedOne', { song: song.title }), 'success');
         }
       }));
   },
@@ -586,7 +589,7 @@ const PlaylistPage = {
   async downloadSongs(songs) {
     const todo = songs.filter((s) => !s.file);
     if (!todo.length) {
-      toast(`${songs.length === 1 ? 'It is' : 'They are'} on ${Store.here} already`, 'info');
+      toast(T(`playlist.song.alreadyHere.${songs.length === 1 ? 'one' : 'other'}.${Store.hereKey}`), 'info');
       return;
     }
     let done = 0;
@@ -599,14 +602,14 @@ const PlaylistPage = {
         break;
       }
     }
-    if (done) toast(`Downloaded ${Util.plural(done, 'song')}`, 'success');
+    if (done) toast(T('playlist.song.downloadedMany', { songs: Util.plural(done, 'song') }), 'success');
   },
 
   /** An empty green star, or a filled golden one for a favourite; a click turns it over. */
   _favButton(song) {
     const on = !!song.favouriteAt;
     return iconButton(on ? 'act.act--fav.act--fav-on' : 'act.act--fav',
-      on ? Icons.starFilled : Icons.star, on ? 'Unfavourite' : 'Favourite',
+      on ? Icons.starFilled : Icons.star, on ? T('common.unfavourite') : T('common.favourite'),
       () => attempt(() => window.flow.setFavourite(song.id, !on)));
   },
 
@@ -614,14 +617,14 @@ const PlaylistPage = {
     const p = Store.playlist(this.id);
     const listActive = Player.contextId === this.id && !!Player.currentId;
     const listPlaying = listActive && Player.isPlaying;
-    $('plPlay').innerHTML = (listPlaying ? Icons.pause : Icons.play) + `<span>${listPlaying ? 'Pause' : 'Play'}</span>`;
+    $('plPlay').innerHTML = (listPlaying ? Icons.pause : Icons.play) + `<span>${listPlaying ? T('common.pause') : T('common.play')}</span>`;
     $('plPlay').disabled = !p || !Store.rowsOf(this.id).length;
     $('plShuffle').classList.toggle('toggle--on', Player.queue.shuffle);
     $('plShuffle').setAttribute('aria-pressed', String(Player.queue.shuffle));
     // The phone's is only the icon, green while on.
     $('plShuffle').innerHTML = Store.uiMode === 'mobile' ? Icons.shuffle
-      : `<span class="toggle__box">${Player.queue.shuffle ? Icons.check : ''}</span>${Icons.shuffle}<span>Shuffle</span>`;
-    $('plShuffle').setAttribute('aria-label', 'Shuffle');
+      : `<span class="toggle__box">${Player.queue.shuffle ? Icons.check : ''}</span>${Icons.shuffle}<span>${T('common.shuffle')}</span>`;
+    $('plShuffle').setAttribute('aria-label', T('common.shuffle'));
 
     for (const tr of document.querySelectorAll('#plTable tbody tr, #plTableList .mrow')) {
       const current = tr.dataset.id === Player.currentId;
@@ -630,7 +633,7 @@ const PlaylistPage = {
     for (const [songId, btn] of this._playButtons) {
       const playing = songId === Player.currentId && Player.isPlaying;
       btn.innerHTML = playing ? Icons.pause : Icons.play;
-      btn.title = playing ? 'Pause' : 'Play';
+      btn.title = playing ? T('common.pause') : T('common.play');
     }
   },
 
@@ -638,7 +641,7 @@ const PlaylistPage = {
     const p = Store.playlist(this.id);
     await attempt(async () => {
       await window.flow.removeFromPlaylist(this.id, song.id);
-      toast(`Removed "${song.title}" from ${p ? p.name : 'the playlist'}`, 'success');
+      toast(p ? T('playlist.remove.done', { song: song.title, playlist: p.name }) : T('playlist.remove.done.thePlaylist', { song: song.title }), 'success');
     });
   },
 
@@ -649,16 +652,17 @@ const PlaylistPage = {
     // More than one list is more than a click should undo unasked.
     if (lists.length > 1) {
       const ok = await confirmDialog({
-        title: 'Remove from playlists',
-        message: `Remove "${Util.songLine(song)}" from ${lists.map((p) => p.name).join(', ')}? It stays in All Songs.`,
-        confirmLabel: 'Remove',
+        title: T('playlist.remove.fromMany.title'),
+        message: T('playlist.remove.fromMany.text', { song: Util.songLine(song), playlists: lists.map((p) => p.name).join(', ') }),
+        confirmLabel: T('common.remove'),
         danger: true,
       });
       if (!ok) return;
     }
     await attempt(async () => {
       for (const p of lists) await window.flow.removeFromPlaylist(p.id, song.id);
-      toast(`Removed "${song.title}" from ${lists.length === 1 ? lists[0].name : `${lists.length} playlists`}`, 'success');
+      toast(lists.length === 1 ? T('playlist.remove.done', { song: song.title, playlist: lists[0].name })
+        : T('playlist.remove.fromMany.done.count', { song: song.title, count: lists.length }), 'success');
     });
   },
 
@@ -676,10 +680,14 @@ const PlaylistPage = {
     const only = songs.filter((s) => s.isDevice && !(s.servers || []).length);
     const one = songs.length === 1 ? `"${Util.songLine(songs[0])}"` : Util.plural(songs.length, 'song');
     const ok = await confirmDialog({
-      title: `Delete from ${Store.here}`,
-      message: `Delete ${one} from ${Store.here}? ${songs.length === 1 ? 'It stays' : 'They stay'} on the Flow Servers that have ${songs.length === 1 ? 'it' : 'them'}.`
-        + (only.length ? ` ${only.length === songs.length ? (songs.length === 1 ? 'This song is' : 'These songs are') : `${Util.plural(only.length, 'song')} of them ${only.length === 1 ? 'is' : 'are'}`} on no Flow Server: ${only.length === 1 ? 'its file here is the only copy' : 'their files here are the only copies'} and will be gone for good.` : ''),
-      confirmLabel: 'Delete',
+      title: T(`playlist.song.deleteHere.${Store.hereKey}`),
+      message: (songs.length === 1
+        ? T(`playlist.deleteHere.text.one.${Store.hereKey}`, { song: Util.songLine(songs[0]) })
+        : T(`playlist.deleteHere.text.other.${Store.hereKey}`, { songs: one }))
+        + (only.length ? ` ${only.length === songs.length
+          ? T(songs.length === 1 ? 'playlist.deleteHere.onlyCopy.thisSong' : 'playlist.deleteHere.onlyCopy.theseSongs')
+          : T(only.length === 1 ? 'playlist.deleteHere.onlyCopy.someOne' : 'playlist.deleteHere.onlyCopy.someOther', { songs: Util.plural(only.length, 'song') })}` : ''),
+      confirmLabel: T('common.delete'),
       danger: true,
     });
     if (!ok) return false;
@@ -697,7 +705,7 @@ const PlaylistPage = {
         break;
       }
     }
-    if (deleted) toast(`Deleted ${Util.plural(deleted, 'song')} from ${Store.here}`, 'success');
+    if (deleted) toast(T(`playlist.deleteHere.done.${Store.hereKey}`, { songs: Util.plural(deleted, 'song') }), 'success');
     return true;
   },
 
@@ -706,14 +714,14 @@ const PlaylistPage = {
     if (songs.length === 1) return this.deleteSong(songs[0]);
     const onServer = Store.server.on;
     const answer = await confirmDialog({
-      title: 'Delete songs',
+      title: T('common.deleteSongs'),
       message: onServer
-        ? `Delete ${songs.length} songs from the server's library and every playlist? Their files stay in the server's trash for 30 days.`
-        : `Delete ${songs.length} songs from your library and every playlist?`,
-      confirmLabel: 'Delete',
+        ? T('playlist.delete.many.text.server', { count: songs.length })
+        : T('playlist.delete.many.text.local', { count: songs.length }),
+      confirmLabel: T('common.delete'),
       danger: true,
       checkbox: onServer && !songs.some((s) => s.file) ? null : {
-        label: onServer ? 'Also delete their files from Local Files on this device' : 'Also delete the files from Local Files',
+        label: onServer ? T('playlist.delete.many.alsoFiles.device') : T('playlist.delete.many.alsoFiles'),
         checked: true,
       },
     });
@@ -728,21 +736,21 @@ const PlaylistPage = {
       if (ok) deleted += 1;
       else Player.resume(token);
     }
-    if (deleted) toast(`Deleted ${Util.plural(deleted, 'song')}`, 'success');
+    if (deleted) toast(T('playlist.delete.many.done', { songs: Util.plural(deleted, 'song') }), 'success');
     return true;
   },
 
   async deleteSong(song) {
     const onServer = Store.server.on;
     const answer = await confirmDialog({
-      title: 'Delete song',
+      title: T('common.deleteSong'),
       message: onServer
-        ? `Delete "${Util.songLine(song)}" from the server's library and every playlist? Its file stays in the server's trash for 30 days.`
-        : `Delete "${Util.songLine(song)}" from your library and every playlist?`,
-      confirmLabel: 'Delete',
+        ? T('playlist.delete.one.text.server', { song: Util.songLine(song) })
+        : T('playlist.delete.one.text.local', { song: Util.songLine(song) }),
+      confirmLabel: T('common.delete'),
       danger: true,
       checkbox: onServer && !song.file ? null : {
-        label: onServer ? 'Also delete its file from Local Files on this computer' : 'Also delete the file from Local Files',
+        label: onServer ? T('playlist.delete.one.alsoFile.computer') : T('playlist.delete.one.alsoFile'),
         checked: true,
       },
     });
@@ -752,7 +760,7 @@ const PlaylistPage = {
       await window.flow.deleteSong(song.id, !!answer.checked);
       return true;
     });
-    if (ok) toast(`Deleted "${song.title}"`, 'success');
+    if (ok) toast(T('common.songDeleted', { song: song.title }), 'success');
     else Player.resume(token);
   },
 };

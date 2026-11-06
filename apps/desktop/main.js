@@ -17,6 +17,10 @@ app.setPath('userData', paths.userDataDir());
 app.commandLine.appendSwitch('gpu-program-cache-size-kb', '32768');
 
 const settings = require('./src/settings');
+const I18n = require('./renderer/app/i18n');
+const T = I18n.t;
+// The shared code's messages (downloads, imports, the Flow Server connection) in the language picked too.
+require('@flow/core/lang').useTranslator((key, vars) => (I18n.has(key) ? I18n.t(key, vars) : null));
 const cookieJar = require('./src/cookieJar');
 const library = require('./src/library');
 const model = require('@flow/core/libraryModel');
@@ -153,9 +157,9 @@ function createWindow() {
       const choice = dialog.showMessageBoxSync(mainWindow, {
         type: 'warning',
         title: 'Flow',
-        message: `${importPending} imported ${importPending === 1 ? 'song is' : 'songs are'} not saved yet.`,
-        detail: 'They are only kept until Flow closes. Go back and press "Finish all" to save them, or quit and lose them.',
-        buttons: ['Go back', 'Quit anyway'],
+        message: T('desktop.quit.text', { count: importPending }),
+        detail: T('desktop.quit.detail'),
+        buttons: [T('common.back'), T('desktop.quit.quitAnyway')],
         defaultId: 0,
         cancelId: 0,
       });
@@ -319,9 +323,9 @@ handle('guest:look', () => guest.look());
  */
 async function bringSong(songId) {
   const song = actions.currentLibrary().songs.find((s) => s.id === songId);
-  if (!song) throw new Error('That song is not in your library.');
+  if (!song) throw new Error(T('common.songNotInLibrary'));
   const audio = remote.active() ? await remote.songAudio(songId) : { file: song.file, temp: false };
-  if (!audio.file || !fs.existsSync(audio.file)) throw new Error(`"${song.title}" has no file to send along.`);
+  if (!audio.file || !fs.existsSync(audio.file)) throw new Error(T('common.error.noFileToSend', { song: song.title }));
   const gid = `g-${settings.clientId().slice(0, 12)}-${songId}`.replace(/[^\w-]/g, '').slice(0, 64);
   const format = (path.extname(song.file || audio.file).slice(1) || song.format || 'mp3').toLowerCase();
   try {
@@ -341,7 +345,7 @@ handle('guest:call', ({ action, args = {} }) => {
   if (action === 'bring') return bringSong(String(args.songId || ''));
   if (action === 'status') return guest.status();
   if (action === 'list') return guest.list();
-  throw new Error(`Unknown guest action ${action}.`);
+  throw new Error(T('common.error.unknownGuestAction', { action }));
 });
 
 // Sharing the server by QR code (4.0): the link, a link pasted, and a code's squares.
@@ -367,7 +371,7 @@ handle('backups:make', () => backups.make('manual'));
  */
 handle('backups:restore', (name) => library.quietly(async () => {
   const doc = backups.read(String(name || ''));
-  if (doc.kind !== 'app') throw new Error('That is a backup of a Flow Server, not of this app.');
+  if (doc.kind !== 'app') throw new Error(T('desktop.error.serverBackup'));
   backups.make('restore', String(name));
   const counts = library.mutate((d) => {
     const { data, counts: c } = mergeRestore(d, model.sanitize(doc.library));
@@ -390,6 +394,7 @@ handle('settings:set', (patch) => {
   delete clean.serverSecret;
   const wasRemote = remote.active();
   const next = settings.set(clean);
+  if ('language' in clean) useLanguage();
   if (clean.normalize === true) loudnessFiller.run();
   remote.reconfigure(clean);
   if (clean.lyricsOn === true) {
@@ -401,6 +406,18 @@ handle('settings:set', (patch) => {
     sendToWindow('library:changed', currentLibrary());
   }
   return next;
+});
+// The language picked in Settings, or the computer's: for the window (i18n.js
+// reads it before drawing) and for the dialogs here.
+function useLanguage() {
+  I18n.setLanguage(settings.get('language') || (/^de\b/i.test(app.getLocale()) ? 'de' : 'en'));
+}
+// The window drawn again in the language just picked (will-navigate stops a reload from the page itself).
+ipcMain.on('app:reload', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload();
+});
+ipcMain.on('i18n:language', (event) => {
+  event.returnValue = settings.get('language') || '';
 });
 ipcMain.on('settings:setSync', (event, patch) => {
   settings.set(patch);
@@ -443,7 +460,7 @@ handle('server:songPeaks', (songId) => remote.songPeaks(songId));
 handle('audio:song', async (songId) => {
   if (!remote.active()) {
     const song = model.songById(library.get(), songId);
-    if (!song || !song.file) throw new Error('No such song here.');
+    if (!song || !song.file) throw new Error(T('desktop.error.noSuchSong'));
     return fs.promises.readFile(song.file);
   }
   const { file, temp } = await remote.songAudio(songId);
@@ -512,7 +529,7 @@ handle('library:folderStats', () => {
 
 handle('folder:choose', async () => {
   const r = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose where Flow saves your songs',
+    title: T('desktop.pick.musicFolder.title'),
     defaultPath: paths.musicDir(),
     properties: ['openDirectory', 'createDirectory', 'promptToCreate'],
   });
@@ -525,12 +542,12 @@ handle('folder:choose', async () => {
 
 handle('local:pickFiles', async () => {
   const r = await dialog.showOpenDialog(mainWindow, {
-    title: 'Open local files',
-    buttonLabel: 'Select',
+    title: T('desktop.pick.files.title'),
+    buttonLabel: T('desktop.pick.files.button'),
     properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: 'Audio and video files', extensions: LOCAL_EXTS },
-      { name: 'All files', extensions: ['*'] },
+      { name: T('desktop.pick.files.filter.media'), extensions: LOCAL_EXTS },
+      { name: T('desktop.pick.files.filter.all'), extensions: ['*'] },
     ],
   });
   return r.canceled || !r.filePaths.length ? null : r.filePaths;
@@ -538,8 +555,8 @@ handle('local:pickFiles', async () => {
 
 handle('local:pickFolder', async () => {
   const r = await dialog.showOpenDialog(mainWindow, {
-    title: 'Open a local folder',
-    buttonLabel: 'Select',
+    title: T('common.openLocalFolder'),
+    buttonLabel: T('desktop.pick.files.button'),
     properties: ['openDirectory'],
   });
   return r.canceled || !r.filePaths.length ? null : r.filePaths;
@@ -565,8 +582,8 @@ handle('viz:savePicture', ({ name, bytes } = {}) => {
 let moving = false;
 handle('folder:move', async (dir) => {
   refuseDuringImport();
-  if (downloadToken) throw new Error('A download is running. Wait for it to finish first.');
-  if (moving) throw new Error('The songs are already being moved.');
+  if (downloadToken) throw new Error(T('desktop.error.downloadRunning'));
+  if (moving) throw new Error(T('desktop.error.alreadyMoving'));
   moving = true;
   try {
     const oldDir = paths.musicDir();
@@ -590,7 +607,7 @@ function knownArtists() {
 }
 
 function refuseDuringImport() {
-  if (importRunning || importSaves) throw new Error('A playlist import is running. Wait for it to finish, or cancel it.');
+  if (importRunning || importSaves) throw new Error(T('desktop.error.importRunning'));
 }
 
 handle('download:probe', async (url) => {
@@ -819,19 +836,19 @@ function runShutdown(args) {
 
 handle('sleep:scheduleShutdown', async (seconds) => {
   const s = Math.round(Number(seconds));
-  if (!Number.isFinite(s) || s < 60 || s > 315360000) throw new Error('That is not a time the shutdown can be set to.');
+  if (!Number.isFinite(s) || s < 60 || s > 315360000) throw new Error(T('desktop.shutdown.badTime'));
   if (process.platform !== 'win32') {
     // A new plan replaces an earlier one here.
-    const r = await runShutdown(['-P', `+${Math.ceil(s / 60)}`, 'Flow sleep timer']);
+    const r = await runShutdown(['-P', `+${Math.ceil(s / 60)}`, T('desktop.shutdown.reason')]);
     // Its last line says why ("Failed to schedule shutdown: Access denied ...").
     const why = r.text.split('\n').map((l) => l.trim()).filter(Boolean).pop();
-    if (!r.ok) throw new Error(`The system did not accept the shutdown${why ? `: ${why}` : '.'}`);
+    if (!r.ok) throw new Error(why ? T('desktop.shutdown.refused.why', { reason: why }) : T('desktop.shutdown.refused'));
     return;
   }
   // An earlier plan (a timer set again) would make Windows refuse the new one.
   await runShutdown(['/a']);
-  const r = await runShutdown(['/s', '/t', String(s), '/c', 'Flow sleep timer']);
-  if (!r.ok) throw new Error(`Windows did not accept the shutdown${r.text ? `: ${r.text}` : '.'}`);
+  const r = await runShutdown(['/s', '/t', String(s), '/c', T('desktop.shutdown.reason')]);
+  if (!r.ok) throw new Error(r.text ? T('desktop.shutdown.refusedWindows.why', { reason: r.text }) : T('desktop.shutdown.refusedWindows'));
 });
 
 handle('sleep:cancelShutdown', async () => {
@@ -842,7 +859,7 @@ handle('sleep:cancelShutdown', async () => {
 
 handle('sleep:notify', (body) => {
   if (!Notification.isSupported()) return false;
-  new Notification({ title: 'Flow: Sleep Timer', body: String(body || ''), icon: paths.appIconPath() || undefined }).show();
+  new Notification({ title: T('desktop.window.sleepTimer'), body: String(body || ''), icon: paths.appIconPath() || undefined }).show();
   return true;
 });
 
@@ -850,7 +867,7 @@ handle('sleep:notify', (body) => {
 handle('session:notify', (body) => {
   if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFocused()) mainWindow.flashFrame(true);
   if (!Notification.isSupported()) return false;
-  const n = new Notification({ title: 'Flow: Active Sessions', body: String(body || ''), icon: paths.appIconPath() || undefined });
+  const n = new Notification({ title: T('desktop.window.activeSessions'), body: String(body || ''), icon: paths.appIconPath() || undefined });
   n.on('click', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -935,7 +952,7 @@ handle('song:finish', (job) => library.quietly(async () => {
     genre: String(job.genre || '').trim(),
     subGenre: String(job.subGenre || '').trim(),
   };
-  if (!meta.title) throw new Error('Please enter a title.');
+  if (!meta.title) throw new Error(T('common.enterTitle'));
   const saved = await exporter.saveSong({
     cachePath: job.cachePath, start: job.start, end: job.end, duration: job.duration,
     ...meta, sourceUrl: job.sourceUrl,
@@ -987,6 +1004,7 @@ app.whenReady().then(() => {
   // which the installer gives the build's appId.
   if (app.isPackaged) app.setAppUserModelId('com.ceeser.flow');
   settings.load();
+  useLanguage();
   if (settings.get('musicDir')) paths.setMusicDir(settings.get('musicDir'));
   library.load();
   downloader.clearCache();
@@ -1002,18 +1020,16 @@ app.whenReady().then(() => {
     confirmUpload: async ({
       count, name, fromOthers = 0, returning = false,
     }) => {
-      const songs = count === 1 ? 'song' : 'songs';
-      const others = fromOthers ? `${fromOthers === count ? (count === 1 ? 'It was' : 'All of them were') : `${fromOthers} of them were`} downloaded from another Flow Server. ` : '';
+      const others = fromOthers
+        ? `${fromOthers === count ? T(count === 1 ? 'common.upload.fromOthers.it' : 'common.upload.fromOthers.all') : T('common.upload.fromOthers.some', { count: fromOthers })} ` : '';
       const { response } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
         type: 'question',
         title: 'Flow',
-        message: returning
-          ? `Upload the ${count} ${songs} that came to Local Files while you used another Flow Server to "${name}"?`
-          : `Upload your ${count} Local Files ${songs} to "${name}"?`,
+        message: T(returning ? 'desktop.upload.text.afterOther' : 'desktop.upload.text', { count, server: name }),
         detail: returning
-          ? `${others}Choose Not now to keep them on this computer only; Synchronize now in Settings uploads them later.`
-          : `This is a Flow Server you have not used before. ${others}If you are not sure it is yours, choose Not now: your songs stay on this computer, and Synchronize now in Settings uploads them later.`,
-        buttons: ['Upload', 'Not now'],
+          ? T('desktop.upload.detail.known', { fromOthers: others })
+          : T('desktop.upload.detail.newServer', { fromOthers: others }),
+        buttons: [T('common.upload'), T('common.notNow')],
         defaultId: 1,
         cancelId: 1,
       });
@@ -1025,12 +1041,12 @@ app.whenReady().then(() => {
       const { response, checkboxChecked } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
         type: 'question',
         title: 'Flow',
-        message: `"${label(local)}" is on "${name}" already, as "${label(server)}".`,
-        detail: 'It is the same song under other names. Use the names from here on the server, keep the server\'s, or upload it as a song of its own?',
-        buttons: ['Use these names', 'Keep the server\'s', 'Upload as a new song'],
+        message: T('desktop.sameSong.text', { song: label(local), server: name, serverSong: label(server) }),
+        detail: T('desktop.sameSong.detail'),
+        buttons: [T('desktop.sameSong.useThese'), T('common.sameSong.keepServers'), T('desktop.sameSong.uploadNew')],
         defaultId: 1,
         cancelId: 1,
-        checkboxLabel: 'Do the same for the other songs of this upload',
+        checkboxLabel: T('common.sameSong.forAll'),
       });
       return { choice: ['apply', 'keep', 'new'][response] || 'keep', all: checkboxChecked };
     },

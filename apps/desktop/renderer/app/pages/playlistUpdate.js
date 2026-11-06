@@ -42,12 +42,12 @@ const PlaylistUpdate = {
     }
     this.checking.add(p.id);
     this._redraw();
-    toast(`Checking for Updates on ${p.name}...`, 'info');
+    toast(T('playlistUpdate.checking', { playlist: p.name }), 'info');
     let listing;
     try {
       listing = how === 'client' ? await window.flow.checkImport(url) : await window.flow.serverDownloads('check', { url });
     } catch (err) {
-      toast(`"${p.name}" could not be checked: ${err.message}`, 'error');
+      toast(T('playlistUpdate.couldNotCheck', { playlist: p.name, reason: err.message }), 'error');
       return;
     } finally {
       this.checking.delete(p.id);
@@ -57,12 +57,12 @@ const PlaylistUpdate = {
     const list = Store.playlist(p.id);
     if (!list || !list.source || list.source.url !== url) return;
     if (listing.single) {
-      toast(`The link of "${list.name}" leads to one song now, not to a playlist.`, 'error');
+      toast(T('playlistUpdate.nowOneSong', { playlist: list.name }), 'error');
       return;
     }
     const changes = this._changes(list, listing);
     if (!changes.added.length && !changes.removed.length) {
-      toast(`No changes to ${list.name} found.`, 'info');
+      toast(T('playlistUpdate.noChanges', { playlist: list.name }), 'info');
       return;
     }
     this._ask(list, listing, how === 'server', changes);
@@ -94,35 +94,35 @@ const PlaylistUpdate = {
     const removed = [...changes.removed].sort((a, b) => byTitle(a.title || '', b.title || ''));
     const column = (title, rows) => h('div.pl-update__col',
       h('div.pl-update__head', `${title} (${rows.length})`),
-      h('ul.pl-update__list', rows.length ? rows : h('li.pl-update__empty', 'None')));
+      h('ul.pl-update__list', rows.length ? rows : h('li.pl-update__empty', T('playlistUpdate.none'))));
     const addedRows = added.map((it) => {
       const line = it.existing ? Util.songLine(it.existing) : (it.meta && it.meta.title ? Util.songLine(it.meta) : it.title);
       return h('li.pl-update__row', { title: line },
         h('span.pl-update__name', line),
-        it.existing ? h('span.pl-update__note', 'in your library') : null);
+        it.existing ? h('span.pl-update__note', T('common.inLibrary')) : null);
     });
     const removedRows = removed.map((s) => h('li.pl-update__row', { title: Util.songLine(s) }, h('span.pl-update__name', Util.songLine(s))));
     const keep = h('input', { type: 'checkbox', checked: true });
     const add = h('input', { type: 'checkbox', checked: true });
     let go = null;
     const handle = Modal.open({
-      title: `Updates for "${list.name}"`,
+      title: T('playlistUpdate.title', { playlist: list.name }),
       className: 'modal--pl-update',
       sticky: true,
       body: [
-        h('div.pl-update__lists', column('Added Songs', addedRows), column('Removed Songs', removedRows)),
+        h('div.pl-update__lists', column(T('common.addedSongs'), addedRows), column(T('playlistUpdate.column.removed'), removedRows)),
         h('div.pl-update__checks',
-          h('label.check', keep, h('span', 'Keep songs removed from the playlist')),
-          h('label.check', add, h('span', 'Add new songs to the playlist'))),
+          h('label.check', keep, h('span', T('playlistUpdate.keepRemoved'))),
+          h('label.check', add, h('span', T('playlistUpdate.addNew')))),
       ],
       buttons: [
-        { label: 'Cancel Playlist Update' },
+        { label: T('playlistUpdate.cancel') },
         {
-          label: 'Continue',
+          label: T('playlistUpdate.continue'),
           kind: 'primary',
           onClick: () => {
             if (add.checked && added.length && ImportPanel.busy) {
-              toast('A playlist import is still open on Add Songs. Finish it ("Finish all") or cancel it first.', 'error');
+              toast(T('playlistUpdate.importOpen'), 'error');
               return false;
             }
             go = { keep: keep.checked, add: add.checked };
@@ -152,9 +152,9 @@ const PlaylistUpdate = {
           await window.flow.removeFromPlaylist(list.id, s.id);
           done += 1;
         }
-        toast(`${Util.plural(done, 'song')} removed from "${list.name}".`, 'success');
+        toast(T('playlistUpdate.removed', { songs: Util.plural(done, 'song'), playlist: list.name }), 'success');
       } catch (err) {
-        toast(`${done ? `${Util.plural(done, 'song')} removed from "${list.name}", then: ` : ''}${err.message}`, 'error');
+        toast(done ? T('playlistUpdate.removedThenFailed', { songs: Util.plural(done, 'song'), playlist: list.name, reason: err.message }) : err.message, 'error');
       }
     }
     if (!go.add || !changes.added.length) return;

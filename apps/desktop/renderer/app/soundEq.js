@@ -22,10 +22,10 @@
 // The numbers (freqs, at, resample, impulse, sampled) need no browser: tested in Node.
 
 (function (root, factory) {
-  const api = factory();
+  const api = factory(typeof module === 'object' && module.exports ? require('./i18n').t : root.T);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.SoundEq = api;
-}(typeof self !== 'undefined' ? self : this, () => {
+}(typeof self !== 'undefined' ? self : this, (T) => {
   const LOW_HZ = 20;
   const HIGH_HZ = 20000;
   const MAX_DB = 12;
@@ -35,13 +35,13 @@
 
   // [Hz, dB] points, eased between as the bands are; nothing given is 0 dB.
   const PRESETS = {
-    standard: { name: 'Standard', points: [] },
+    standard: { name: T('soundEq.preset.standard'), points: [] },
     // The low end lifted: already up at 20 Hz, the peak at 80 Hz, back to 0 by 250 Hz.
-    bass: { name: 'Bass Boost', points: [[20, 4], [80, 6], [250, 0]] },
+    bass: { name: T('soundEq.preset.bassBoost'), points: [[20, 4], [80, 6], [250, 0]] },
     // The bass held down a little, a light lift at the top.
-    subtle: { name: 'Subtle', points: [[20, -2], [80, -1.5], [250, -0.5], [1000, -0.5], [3000, 0.5], [8000, 1.5], [20000, 2]] },
+    subtle: { name: T('soundEq.preset.subtle'), points: [[20, -2], [80, -1.5], [250, -0.5], [1000, -0.5], [3000, 0.5], [8000, 1.5], [20000, 2]] },
     // A wave: the low end down, the middle (500 Hz) up, the highs a little down.
-    intimate: { name: 'Intimate', points: [[20, -6], [500, 6], [20000, -3]] },
+    intimate: { name: T('soundEq.preset.intimate'), points: [[20, -6], [500, 6], [20000, -3]] },
   };
   const CHOICES = [...Object.keys(PRESETS), 'custom'];
 

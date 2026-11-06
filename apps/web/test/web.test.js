@@ -140,7 +140,7 @@ test('the built folder: the window.flow first, every script and style versioned,
   try {
     const { version } = build({ out });
     const html = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
-    assert.match(html, new RegExp(`<script src="flow-web\\.js\\?v=${version}"></script>\\s*<script src="app/util\\.js\\?v=${version}"`));
+    assert.match(html, new RegExp(`<script src="flow-web\\.js\\?v=${version}"></script>\\s*<script src="app/strings\\.js\\?v=${version}"`));
     assert.doesNotMatch(html, /<script src="[^"?]+"/);
     assert.doesNotMatch(html, /<link rel="stylesheet" href="[^"?]+"/);
     assert.match(html, /connect-src 'self' http: https:/);
@@ -165,7 +165,28 @@ test('window.flow answers every call of the desktop\'s, but those a browser cann
   const webCalls = new Set([...web.matchAll(/^ {4}([a-zA-Z]+)\s*:/gm)].map((m) => m[1]));
   // Left out on purpose: the window checks for each before using it (yt-dlp's
   // folder, the lyrics editor and lookups, backups, guests of other servers).
-  const notInBrowser = new Set(['openToolsFolder', 'toolStatus', 'checkImport', 'lookupInfo', 'setLyrics', 'lookupLyrics', 'searchLyrics', 'publishLyrics', 'backups', 'makeBackup', 'restoreBackup', 'guestLook']);
+  // The reload that switches the language: the page loads again by itself.
+  const notInBrowser = new Set(['openToolsFolder', 'toolStatus', 'checkImport', 'lookupInfo', 'setLyrics', 'lookupLyrics', 'searchLyrics', 'publishLyrics', 'backups', 'makeBackup', 'restoreBackup', 'guestLook',
+    'reload']);
   const missing = [...desktopCalls].filter((c) => !webCalls.has(c) && !notInBrowser.has(c));
   assert.deepEqual(missing, []);
+});
+
+test('the web player\'s own texts: every key it asks for is in the sheet, and the language comes from its settings', () => {
+  const { parseSheet } = require('@flow/core/i18nSheet');
+  const sheet = parseSheet(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'translations', 'translations.txt'), 'utf8'));
+  const src = path.join(__dirname, '..', 'src');
+  const missing = [];
+  let asked = 0;
+  for (const name of fs.readdirSync(src)) {
+    const text = fs.readFileSync(path.join(src, name), 'utf8');
+    for (const m of text.matchAll(/\b(?:tr|notHere)\('([a-zA-Z]\w*\.[\w.]+)'/g)) {
+      asked += 1;
+      if (!(m[1] in sheet.en) || !(m[1] in (sheet.de || {}))) missing.push(`${name}: ${m[1]}`);
+    }
+  }
+  assert.ok(asked > 20);
+  assert.deepEqual(missing, []);
+  const web = fs.readFileSync(path.join(src, 'main.js'), 'utf8');
+  assert.match(web, /^ {4}language: settings\.get\('language'\) \|\| '',$/m);
 });

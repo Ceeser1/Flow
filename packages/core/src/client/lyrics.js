@@ -18,6 +18,7 @@
 
 const lyrics = require('../lyrics');
 const { LOCAL } = require('./lyricsFolder');
+const { tr } = require('../lang');
 
 // Before the Lyrics folder (4.0): every song's in one file of the app's own.
 const OLD_FILE = 'lyrics.json';
@@ -185,7 +186,7 @@ function createLyricsClient({
       });
     }
     const found = songOf(String(id || ''));
-    if (!found) throw new Error('That song is not here any more.');
+    if (!found) throw new Error(tr('songs.error.songNotHere', 'That song is not here any more.'));
     const { song, server } = found;
     if (server) return ofServer(song);
     return ofLocal(song.localId || song.id, song);
@@ -200,7 +201,7 @@ function createLyricsClient({
    */
   async function set(id, lines, { server: onServer = false } = {}) {
     const found = songOf(String(id || '')) || (onServer && remote ? { song: { id: String(id) }, server: true } : null);
-    if (!found) throw new Error('That song is not here any more.');
+    if (!found) throw new Error(tr('songs.error.songNotHere', 'That song is not here any more.'));
     const { song, server } = found;
     if (server) {
       const { v, ...r } = await remote.setSongLyrics(song.id, lines);

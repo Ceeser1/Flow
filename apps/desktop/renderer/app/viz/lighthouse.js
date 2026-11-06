@@ -705,16 +705,15 @@
 
   Visualizer.add({
     id: 'lighthouse',
-    name: 'Lighthouse',
-    desc: 'A lighthouse on its rocks over a night sea, its beams sweeping round with the tempo, a big wave rolling in every bar and breaking on the rocks, now and then a ship passing',
+    name: T('viz.lighthouse.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M10 21l1-12h2l1 12z"/><path d="M10 9h4M11 9V6h2v3M12 6V4"/><path d="M14 7l7-2M14 8l7 2M3 21h18"/></svg>',
     gl: true,
     create: (canvas) => new Lighthouse(canvas),
     options: [
-      { type: 'choice', key: 'lhWeather', label: 'Weather', choices: [['clear', 'Clear'], ['cloudy', 'Cloudy'], ['storm', 'Storm']] },
-      { type: 'check', key: 'lhShip', label: 'Ships passing' },
-      { type: 'choice', key: 'lhScale', label: 'Render scale', choices: VizGL.SCALES },
+      { type: 'choice', key: 'lhWeather', label: T('viz.shared.weather'), choices: [['clear', T('viz.shared.clear')], ['cloudy', T('viz.lighthouse.setting.weather.cloudy')], ['storm', T('viz.lighthouse.setting.weather.storm')]] },
+      { type: 'check', key: 'lhShip', label: T('viz.lighthouse.setting.shipsPassing') },
+      { type: 'choice', key: 'lhScale', label: T('viz.shared.renderScale'), choices: VizGL.SCALES },
     ],
   });
 })();

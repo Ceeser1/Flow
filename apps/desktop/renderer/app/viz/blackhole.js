@@ -395,17 +395,16 @@
 
   Visualizer.add({
     id: 'blackhole',
-    name: 'Black Hole',
-    desc: 'A black hole bending the light of its glowing disk round itself, the gas swirling faster with the music, hot spots flaring on the kicks',
+    name: T('viz.blackhole.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><ellipse cx="12" cy="12" rx="10" ry="3"/><path d="M8 9.5a5 5 0 0 1 8 0"/></svg>',
     gl: true,
     create: (canvas) => new BlackHole(canvas),
     options: [
-      { type: 'choice', key: 'bhColors', label: 'Colours', choices: [['warm', 'Warm'], ['blue', 'Blue'], ['neon', 'Neon']] },
-      { type: 'choice', key: 'bhView', label: 'View', choices: [['edge', 'Edge on'], ['slant', 'Slanted'], ['above', 'From above']] },
-      { type: 'slider', key: 'bhSpin', label: 'Swirling', min: 0, max: 300, step: 5 },
-      { type: 'choice', key: 'bhScale', label: 'Render scale', choices: VizGL.SCALES },
+      { type: 'choice', key: 'bhColors', label: T('viz.shared.colors'), choices: [['warm', T('viz.shared.warm')], ['blue', T('common.color.blue')], ['neon', T('viz.shared.neon')]] },
+      { type: 'choice', key: 'bhView', label: T('viz.shared.view'), choices: [['edge', T('viz.shared.edgeOn')], ['slant', T('viz.shared.slanted')], ['above', T('viz.shared.fromAbove')]] },
+      { type: 'slider', key: 'bhSpin', label: T('viz.blackhole.setting.swirling'), min: 0, max: 300, step: 5 },
+      { type: 'choice', key: 'bhScale', label: T('viz.shared.renderScale'), choices: VizGL.SCALES },
     ],
   });
 })();

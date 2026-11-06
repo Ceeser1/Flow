@@ -94,7 +94,7 @@ const AddPage = {
    */
   shared({ url, text }) {
     if (!url) {
-      toast(text ? 'Nothing to add: what was shared has no link in it.' : 'Nothing to add: nothing was shared.', 'error');
+      toast(text ? T('add.share.noLink') : T('add.share.nothing'), 'error');
       return;
     }
     Nav.show('add', { shared: true });
@@ -123,7 +123,7 @@ const AddPage = {
     if (this.phase === 'probing' || this.phase === 'downloading' || this.phase === 'saving') return;
     const url = pick ? pick.url : $('linkInput').value.trim();
     if (!url) {
-      this._showError('Paste a link, or type the name of a song, into the box first.');
+      this._showError(T('common.emptyBox'));
       $('linkInput').focus();
       return;
     }
@@ -160,7 +160,7 @@ const AddPage = {
         // Checking is a courtesy; carry on without it.
       }
       this._setPhase('probing');
-      this._progress({ title: 'Reading link...', frac: null, status: url });
+      this._progress({ title: T('common.readingLink'), frac: null, status: url });
       try {
         probed = await window.flow.probe(url);
       } catch (err) {
@@ -185,7 +185,7 @@ const AddPage = {
 
     this.probed = probed;
     this._setPhase('downloading');
-    this._progress({ title: probed.title, frac: null, status: 'Starting download...' });
+    this._progress({ title: probed.title, frac: null, status: T('add.progress.startingDownload') });
     let media;
     try {
       media = await window.flow.download(probed, this.downloadOptions());
@@ -263,15 +263,15 @@ const AddPage = {
   async _clearForNew() {
     if (this.editorReady) {
       const ok = await confirmDialog({
-        title: 'Discard current song?',
-        message: 'The song in the editor has not been saved yet. Download the new link and discard it?',
-        confirmLabel: 'Discard',
+        title: T('add.discard.title'),
+        message: T('add.discard.text'),
+        confirmLabel: T('add.discard.confirm'),
         danger: true,
       });
       if (!ok) return false;
     }
     if (ImportPanel.busy) {
-      this._showError('A playlist import is still open. Finish it ("Finish all") or cancel it first.');
+      this._showError(T('add.importOpen'));
       return false;
     }
     if (ImportPanel.state === 'review') ImportPanel.close();
@@ -359,15 +359,15 @@ const AddPage = {
     return new Promise((resolve) => {
       let answer = null;
       Modal.open({
-        title: 'Song or playlist?',
+        title: T('add.songOrPlaylist.title'),
         className: 'modal--small',
         body: [h('p.modal__text', mix
-          ? 'This song was opened from a YouTube Mix. A Mix is made up for you and never ends; importing it lists its first 50 songs.'
-          : 'This link is a song inside a playlist. Download just this song, or import the whole playlist?')],
+          ? T('add.songOrPlaylist.mix')
+          : T('add.songOrPlaylist.playlist'))],
         buttons: [
-          { label: 'Cancel' },
-          { label: mix ? 'Import the Mix' : 'Whole playlist', onClick: () => { answer = 'list'; } },
-          { label: 'This song only', kind: 'primary', onClick: () => { answer = 'song'; } },
+          { label: T('common.cancel') },
+          { label: mix ? T('add.songOrPlaylist.importMix') : T('add.songOrPlaylist.wholePlaylist'), onClick: () => { answer = 'list'; } },
+          { label: T('add.songOrPlaylist.songOnly'), kind: 'primary', onClick: () => { answer = 'song'; } },
         ],
         onClose: () => resolve(answer),
       });
@@ -376,9 +376,9 @@ const AddPage = {
 
   async _confirmDuplicateSource(song) {
     const ok = await confirmDialog({
-      title: 'Already in your library',
-      message: `This link is already in your library as "${Util.songLine(song)}". Download it anyway?`,
-      confirmLabel: 'Download anyway',
+      title: T('add.known.title'),
+      message: T('add.known.link', { song: Util.songLine(song) }),
+      confirmLabel: T('add.known.link.confirm'),
     });
     return !!ok;
   },
@@ -403,16 +403,16 @@ const AddPage = {
   },
 
   _failed(err) {
-    const cancelled = err && (err.cancelled || /^Cancelled\.?$/.test(err.message));
+    const cancelled = err && (err.cancelled || /^Cancelled\.?$/.test(err.message) || [T('common.cancelled'), T('common.cancelled')].includes(err.message));
     this._setPhase('idle');
     $('progBar').hidden = true;
     $('progCancel').hidden = true;
     if (cancelled) {
-      $('progStatus').textContent = 'Cancelled.';
+      $('progStatus').textContent = T('common.cancelled');
       $('progError').hidden = true;
     } else {
-      $('progStatus').textContent = 'Download failed.';
-      this._showError(err ? err.message : 'Something went wrong.');
+      $('progStatus').textContent = T('common.downloadFailed');
+      this._showError(err ? err.message : T('common.wentWrong'));
     }
   },
 
@@ -443,7 +443,7 @@ const AddPage = {
     $('finishBtn').disabled = phase === 'saving';
     $('addToPlaylistBtn').disabled = phase === 'saving';
     $('importCancelAll').disabled = phase === 'saving';
-    $('finishBtn').textContent = phase === 'saving' ? 'Saving...' : 'Finish';
+    $('finishBtn').textContent = phase === 'saving' ? T('common.saving') : T('common.finish');
   },
 
   /** Throws away the cached download and empties the editor. */
@@ -482,9 +482,9 @@ const AddPage = {
     };
     this.slider.onDragStateChange = (factor) => {
       const hint = $('trimHint');
-      if (factor === FINE_CTRL) hint.textContent = 'Fine: 100x';
-      else if (factor === FINE_SHIFT) hint.textContent = 'Fine: 10x';
-      else hint.textContent = 'Hold Shift while dragging for 10x finer control, Ctrl for 100x';
+      if (factor === FINE_CTRL) hint.textContent = T('common.trim.fine100');
+      else if (factor === FINE_SHIFT) hint.textContent = T('common.trim.fine10');
+      else hint.textContent = T('common.trim.hint');
       hint.classList.toggle('hint--active', factor !== 1);
     };
 
@@ -679,7 +679,7 @@ const AddPage = {
     this.peaks = null;
     if (whole) return;
     $('waveStatus').hidden = false;
-    $('waveStatus').textContent = 'Drawing waveform...';
+    $('waveStatus').textContent = T('common.drawingWaveform');
     requestAnimationFrame(() => this._redraw());
     try {
       // Kept with the song: the lyrics editor's waveform waits for the same one.
@@ -690,7 +690,7 @@ const AddPage = {
       $('waveStatus').hidden = true;
     } catch (err) {
       if (this.media !== m) return;
-      $('waveStatus').textContent = 'Could not draw the waveform, but the song can still be trimmed.';
+      $('waveStatus').textContent = T('common.trim.waveformFailed');
     }
     this._redraw();
   },
@@ -736,7 +736,7 @@ const AddPage = {
       try {
         if (meta.title) data = await window.flow.lookupLyrics({ artist: meta.artist, title: meta.title, duration });
       } catch (err) {
-        error = (err && err.message) || 'The lyrics could not be looked up.';
+        error = (err && err.message) || T('add.lyrics.lookupFailed');
       }
       if (entry.key !== key || entry.own) return;
       const words = !!(data && data.found && (data.synced || String(data.plain || '').trim()));
@@ -782,28 +782,28 @@ const AddPage = {
       this._lyricsChanged(e);
     };
     if (e.state === 'looking') {
-      box.append(h('span.ed-lyrics__label', LyricsEdit.spinner(), 'Looking for lyrics...'));
+      box.append(h('span.ed-lyrics__label', LyricsEdit.spinner(), T('common.lookingForLyrics')));
       return;
     }
     const found = e.state === 'found';
     box.append(LyricsEdit.badge(found));
     if (found) {
-      box.append(h('span.ed-lyrics__label', e.own ? 'Your lyrics:' : 'Found lyrics:'),
-        btn('Show', () => LyricsEdit.show({ title: heading(), data: e.data, duration })));
+      box.append(h('span.ed-lyrics__label', e.own ? T('add.lyrics.yours') : T('add.lyrics.found')),
+        btn(T('common.show'), () => LyricsEdit.show({ title: heading(), data: e.data, duration })));
     } else if (e.state === 'error') {
-      box.append(h('span.ed-lyrics__label', e.error), btn('Try again', () => this.lookLyrics(e, this._names(), duration)));
+      box.append(h('span.ed-lyrics__label', e.error), btn(T('common.tryAgain'), () => this.lookLyrics(e, this._names(), duration)));
     } else {
-      box.append(h('span.ed-lyrics__label', 'No lyrics found'));
+      box.append(h('span.ed-lyrics__label', T('common.noLyricsFound')));
     }
     if (!LyricsEdit.available) return;
     // For LRCLIB: the names in the boxes now, and the downloaded file's length (the lines are on it).
     const song = () => ({ ...this._names(), album: $('edAlbum').value.trim(), duration });
     if (found) {
-      box.append(btn('Edit Lyrics', () => LyricsEdit.edit({
+      box.append(btn(T('common.editLyrics'), () => LyricsEdit.edit({
         title: heading(), data: e.data, duration, onSave, player, song,
       }), '.btn--light-green'));
     } else {
-      box.append(btn('Add Lyrics', () => LyricsEdit.add({
+      box.append(btn(T('common.addLyrics'), () => LyricsEdit.add({
         title: heading(), onSave, player, song,
       }), '.btn--light-green'));
     }
@@ -832,7 +832,7 @@ const AddPage = {
     $('startField').value = Util.fmtPrecise(s.start);
     $('endField').value = Util.fmtPrecise(s.end);
     const total = this.media ? this.media.duration : 0;
-    $('spanLabel').textContent = `Selection: ${Util.fmtPrecise(s.end - s.start)}   of   ${Util.fmtPrecise(total)}`;
+    $('spanLabel').textContent = T('common.trim.selection', { selection: Util.fmtPrecise(s.end - s.start), total: Util.fmtPrecise(total) });
   },
 
   _redraw() {
@@ -858,13 +858,14 @@ const AddPage = {
     this.volSlider.value = String(Math.round(v * 100));
     this.volSlider.style.setProperty('--fill', (v * 100) + '%');
     this.volBtn.innerHTML = v === 0 ? Icons.mute : (v < 0.5 ? Icons.volumeLow : Icons.volume);
-    this.volBtn.title = v === 0 ? 'Unmute' : 'Mute';
+    this.volBtn.title = v === 0 ? T('common.unmute') : T('common.mute');
   },
 
   _drawPreviewButton() {
     const playing = !this.audio.paused;
     $('previewPlay').innerHTML = playing ? Icons.pause : Icons.play;
-    $('previewPlay').title = (playing ? 'Pause' : 'Play') + (Store.can('keyboard') ? ' (Space)' : '');
+    const action = playing ? T('common.pause') : T('common.play');
+    $('previewPlay').title = Store.can('keyboard') ? T('common.spaceKeyHint', { action }) : action;
   },
 
   // ---- the preview ----
@@ -943,9 +944,9 @@ const AddPage = {
     const owner = forImport ? ImportPanel : this;
     owner.playlistIds = owner.playlistIds.filter((id) => Store.playlist(id));
     const names = owner.playlistIds.map((id) => Store.playlist(id).name);
-    $('addToPlaylistBtn').innerHTML = Icons.plus + `<span>Add to Playlist${names.length ? ` (${names.length})` : ''}</span>`;
+    $('addToPlaylistBtn').innerHTML = Icons.plus + `<span>${names.length ? T('add.addToPlaylist.count', { count: names.length }) : T('common.addToPlaylist')}</span>`;
     $('addToPlaylistBtn').title = names.length ? names.join(', ')
-      : (forImport ? 'Choose playlists for every song of this import' : 'Choose playlists for this song');
+      : (forImport ? T('add.addToPlaylist.import.tooltip') : T('add.addToPlaylist.song.tooltip'));
     $('addPlaylistNames').textContent = names.length ? names.join(', ') : '';
   },
 
@@ -953,16 +954,16 @@ const AddPage = {
   async cancelSingle() {
     if (!this.editorReady || this.embedded) return;
     const ok = await confirmDialog({
-      title: 'Cancel import?',
-      message: 'Throw away the downloaded song? Nothing of it is saved.',
-      confirmLabel: 'Cancel import',
+      title: T('common.cancelImport.title'),
+      message: T('add.cancel.text'),
+      confirmLabel: T('common.cancelImport'),
       danger: true,
     });
     if (!ok || !this.editorReady || this.embedded) return;
     this._discard();
     $('progressPanel').hidden = true;
     $('linkInput').focus();
-    toast('Download thrown away', 'info');
+    toast(T('add.cancel.done'), 'info');
   },
 
   async finish() {
@@ -976,7 +977,7 @@ const AddPage = {
       subGenre: $('edSubGenre').value.trim(),
     };
     if (!meta.title) {
-      $('edError').textContent = 'Please enter a title.';
+      $('edError').textContent = T('common.enterTitle');
       $('edTitle').focus();
       return;
     }
@@ -985,9 +986,9 @@ const AddPage = {
       const dup = await window.flow.findByMeta(meta);
       if (dup) {
         const ok = await confirmDialog({
-          title: 'Already in your library',
-          message: `"${Util.songLine(dup)}" is already in your library. Save this one as well?`,
-          confirmLabel: 'Save anyway',
+          title: T('add.known.title'),
+          message: T('add.known.save', { song: Util.songLine(dup) }),
+          confirmLabel: T('add.known.save.confirm'),
         });
         if (!ok) return;
       }
@@ -1014,7 +1015,7 @@ const AddPage = {
     this._setPhase('saving');
     try {
       const song = await window.flow.finishSong(job);
-      toast(`Saved "${Util.songLine(song)}"`, 'success');
+      toast(T('add.saved', { song: Util.songLine(song) }), 'success');
       this.media = null;
       this._discard();
       $('linkInput').value = '';

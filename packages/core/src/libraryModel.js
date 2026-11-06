@@ -56,6 +56,7 @@ const { comparableUrl } = require('./text');
 const {
   emptyListening, cleanListening, recordListening, emptyStatistics, cleanStatistics, recordStatistics,
 } = require('./listening');
+const { tr } = require('./lang');
 
 const ALL_SONGS_ID = 'all';
 const ALL_SONGS_NAME = 'All Songs';
@@ -288,27 +289,27 @@ function playlistById(data, id) {
 }
 
 function requirePlaylist(data, id) {
-  if (id === ALL_SONGS_ID) throw new Error('All Songs cannot be changed.');
+  if (id === ALL_SONGS_ID) throw new Error(tr('core.library.allSongsFixed', 'All Songs cannot be changed.'));
   const p = playlistById(data, id);
-  if (!p) throw new Error('That playlist no longer exists.');
+  if (!p) throw new Error(tr('core.library.playlistGone', 'That playlist no longer exists.'));
   return p;
 }
 
 function requireSong(data, id) {
   const s = songById(data, id);
-  if (!s) throw new Error('That song no longer exists.');
+  if (!s) throw new Error(tr('common.songGone', 'That song no longer exists.'));
   return s;
 }
 
 /** The name trimmed, or an Error saying why it cannot be used. */
 function checkPlaylistName(data, name, exceptId = null) {
   const clean = String(name || '').replace(/\s+/g, ' ').trim();
-  if (!clean) throw new Error('Please enter a name for the playlist.');
-  if (clean.length > MAX_NAME) throw new Error(`Playlist names can be at most ${MAX_NAME} characters.`);
+  if (!clean) throw new Error(tr('core.library.enterPlaylistName', 'Please enter a name for the playlist.'));
+  if (clean.length > MAX_NAME) throw new Error(tr('core.library.nameTooLong', 'Playlist names can be at most {max} characters.', { max: MAX_NAME }));
   const lower = clean.toLowerCase();
-  if (lower === ALL_SONGS_NAME.toLowerCase()) throw new Error('"All Songs" is already taken.');
+  if (lower === ALL_SONGS_NAME.toLowerCase()) throw new Error(tr('core.library.allSongsTaken', '"All Songs" is already taken.'));
   const clash = data.playlists.find((p) => p.id !== exceptId && p.name.toLowerCase() === lower);
-  if (clash) throw new Error(`A playlist called "${clash.name}" already exists.`);
+  if (clash) throw new Error(tr('common.playlistExists', 'A playlist called "{playlist}" already exists.', { playlist: clash.name }));
   return clean;
 }
 
@@ -355,7 +356,7 @@ function setPlaylistRules(data, id, rules) {
 /** Shares a playlist with the other profiles, or no longer. */
 function setPlaylistShared(data, id, shared) {
   const p = requirePlaylist(data, id);
-  if (shared && p.rules) throw new Error('A smart playlist is made from your own listening, so it cannot be shared.');
+  if (shared && p.rules) throw new Error(tr('core.library.smartNotShared', 'A smart playlist is made from your own listening, so it cannot be shared.'));
   p.shared = !!shared;
   return p;
 }
@@ -367,8 +368,8 @@ function sharedPlaylistById(data, id) {
 
 /** Follows a playlist another profile shares. Your own cannot be followed. */
 function followPlaylist(data, id) {
-  if (playlistById(data, id)) throw new Error('Your own playlists are always yours; there is nothing to follow.');
-  if (!sharedPlaylistById(data, id)) throw new Error('That playlist is no longer shared.');
+  if (playlistById(data, id)) throw new Error(tr('core.library.ownNotFollowed', 'Your own playlists are always yours; there is nothing to follow.'));
+  if (!sharedPlaylistById(data, id)) throw new Error(tr('core.library.noLongerShared', 'That playlist is no longer shared.'));
   data.follows = cleanIds([...(data.follows || []), id]);
 }
 
@@ -595,7 +596,7 @@ function addSongToPlaylists(data, songId, playlistIds, now = Date.now()) {
 
 function addSongsToPlaylist(data, playlistId, songIds, now = Date.now()) {
   const p = requirePlaylist(data, playlistId);
-  if (p.rules) throw new Error('A smart playlist picks its songs by its rules: they cannot be added by hand.');
+  if (p.rules) throw new Error(tr('core.library.smartByRules', 'A smart playlist picks its songs by its rules: they cannot be added by hand.'));
   let added = 0;
   for (const sid of songIds || []) {
     requireSong(data, sid);

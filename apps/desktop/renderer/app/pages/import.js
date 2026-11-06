@@ -54,14 +54,14 @@
 // task's number is retired, so whatever it still says is ignored.
 
 const SOURCE_NAMES = {
-  search: 'Search', youtube: 'YouTube', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', spotify: 'Spotify', deezer: 'Deezer', 'amazon music': 'Amazon Music', vimeo: 'Vimeo', local: 'Local files',
+  search: T('common.search'), youtube: 'YouTube', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', spotify: 'Spotify', deezer: 'Deezer', 'amazon music': 'Amazon Music', vimeo: 'Vimeo', local: T('common.localFiles'),
 };
 
 // The box above the frames: each field's name and the editor's box for it.
 const BULK = {
-  album: { label: 'Album', box: 'edAlbum' },
-  genre: { label: 'Genre', box: 'edGenre' },
-  subGenre: { label: 'Info', box: 'edSubGenre' },
+  album: { label: T('common.album'), box: 'edAlbum' },
+  genre: { label: T('common.genre'), box: 'edGenre' },
+  subGenre: { label: T('common.info'), box: 'edSubGenre' },
 };
 
 const ImportPanel = {
@@ -146,7 +146,7 @@ const ImportPanel = {
   async open(url) {
     const run = this._newRun();
     this._setState('listing');
-    AddPage._progress({ title: 'Reading playlist...', frac: null, status: url });
+    AddPage._progress({ title: T('import.progress.readingPlaylist'), frac: null, status: url });
     let listing;
     try {
       listing = await window.flow.listImport(url, run);
@@ -200,16 +200,15 @@ const ImportPanel = {
     const drive = picked.length === 1 && /^([A-Za-z]:[\\/]?|\/)$/.test(picked[0]) ? picked[0] : '';
     if (drive) {
       const ok = await confirmDialog({
-        title: 'Look through the whole drive?',
-        message: `Looking through all of ${drive} takes a while. Program and system folders are left out, `
-          + 'and at most 2000 files are listed. Opening the folder your music is in is quicker.',
-        confirmLabel: 'Look through it',
+        title: T('import.drive.title'),
+        message: T('import.drive.text', { drive }),
+        confirmLabel: T('import.drive.confirm'),
       });
       if (!ok || this.state !== 'idle') return;
     }
     const run = this._newRun();
     this._setState('listing');
-    AddPage._progress({ title: 'Looking through the folder...', frac: null, status: 'Starting...' });
+    AddPage._progress({ title: T('import.folder.lookingThrough'), frac: null, status: T('import.progress.starting') });
     let listing;
     try {
       listing = await window.flow.listLocal(picked, run);
@@ -278,14 +277,14 @@ const ImportPanel = {
       window.flow.serverDownloads('cancel').catch(() => {});
       this._reset();
       $('progressPanel').hidden = false;
-      AddPage._failed({ cancelled: true, message: 'Cancelled.' });
+      AddPage._failed({ cancelled: true, message: T('common.cancelled') });
       return;
     }
     window.flow.cancelImport().catch(() => {});
     if (this.state !== 'listing') return;
     this._newRun();
     this._setState('idle');
-    AddPage._failed({ cancelled: true, message: 'Cancelled.' });
+    AddPage._failed({ cancelled: true, message: T('common.cancelled') });
   },
 
   /** Leaves the import (the checklist, or the frames) and empties the panel. */
@@ -373,7 +372,7 @@ const ImportPanel = {
     else if (this.state === 'trimming') text = String(this._ready().length);
     badge.hidden = !text;
     badge.textContent = text;
-    badge.title = this.state === 'trimming' ? 'Imported songs waiting for "Finish all"' : 'Playlist import running';
+    badge.title = this.state === 'trimming' ? T('import.bar.waiting.tooltip') : T('import.bar.running.tooltip');
   },
 
   /** The page's sticky footer: Cancel import and "Finish all" while importing. */
@@ -388,7 +387,7 @@ const ImportPanel = {
       $('addFooter').classList.remove('add-footer--retry');
       // Back to the single song's footer, shown with its editor.
       const saving = AddPage.phase === 'saving';
-      $('finishBtn').textContent = saving ? 'Saving...' : 'Finish';
+      $('finishBtn').textContent = saving ? T('common.saving') : T('common.finish');
       $('finishBtn').disabled = saving;
       $('importCancelAll').disabled = saving;
       $('addToPlaylistBtn').disabled = saving;
@@ -405,20 +404,20 @@ const ImportPanel = {
     const waiting = this.included.filter((it) => !it.existingId && (!it.state || it.state === 'current')
       && !(r && r.indexes.includes(it.index))).length;
     const saved = this.job ? this.job.totals.saved : 0;
-    const parts = [`${Util.plural(ready, 'song')} ready`];
-    if (failed) parts.push(`${failed} failed`);
-    if (trimmed) parts.push(`${trimmed} trimmed`);
-    if (saved) parts.push(`${saved} saved`);
+    const parts = [T('import.summary.ready', { songs: Util.plural(ready, 'song') })];
+    if (failed) parts.push(T('import.done.failed', { count: failed }));
+    if (trimmed) parts.push(T('import.summary.trimmed', { count: trimmed }));
+    if (saved) parts.push(T('import.done.saved', { count: saved }));
     if (waiting && this.state === 'downloading') {
-      parts.push(`${waiting} still ${this.local ? 'preparing' : (this.server ? 'downloading on the server' : 'downloading')}`);
+      parts.push(T(this.local ? 'import.summary.stillPreparing' : (this.server ? 'import.summary.stillDownloadingOnServer' : 'import.summary.stillDownloading'), { count: waiting }));
     }
     $('importFooterText').textContent = parts.join(' · ');
     this._drawRetry(failed);
-    $('finishBtn').textContent = this.state === 'saving' ? 'Saving...' : 'Finish all';
+    $('finishBtn').textContent = this.state === 'saving' ? T('common.saving') : T('import.finishAll');
     const anything = ready || this._existingEntries().length;
     $('finishBtn').disabled = this.state !== 'trimming' || !anything;
     $('finishBtn').title = this.state === 'downloading'
-      ? `Available once every song is ${this.local ? 'prepared' : 'downloaded'}` : '';
+      ? T(this.local ? 'import.finishAll.notYet.prepared.tooltip' : 'import.finishAll.notYet.downloaded.tooltip') : '';
     $('importCancelAll').disabled = this.state === 'saving';
   },
 
@@ -437,9 +436,9 @@ const ImportPanel = {
     if (busy) {
       const mine = this.included.filter((it) => r.indexes.includes(it.index));
       const started = mine.filter((it) => it.existingId || it.state).length;
-      line = `Reattempting to download song ${Math.min(Math.max(started, 1), mine.length)} of ${mine.length}`;
+      line = T('import.progress.retry', { number: Math.min(Math.max(started, 1), mine.length), total: mine.length });
     } else if (r && failed && r.failedAgain) {
-      line = `Reattempt: ${r.failedAgain} failed again`;
+      line = T('import.progress.retry.failedAgain', { count: r.failedAgain });
     }
     const text = $('importRetryText');
     text.textContent = line;
@@ -500,7 +499,7 @@ const ImportPanel = {
     const run = this._newRun();
     this.progress = { number: 0, total: items.length };
     this._setState('downloading');
-    AddPage._progress({ title: `Downloading ${Util.plural(items.length, 'song')} again`, frac: null, status: 'Starting...' });
+    AddPage._progress({ title: T('import.progress.downloadingAgain', { songs: Util.plural(items.length, 'song') }), frac: null, status: T('import.progress.starting') });
     try {
       const list = items.map((it) => ({ index: it.index, title: it.title, url: it.url, path: '', meta: it.meta }));
       await window.flow.downloadImport(list, AddPage.downloadOptions(), run);
@@ -517,7 +516,7 @@ const ImportPanel = {
     for (const it of items) {
       if (!it.existingId && (!it.state || it.state === 'current' || it.state === 'cancelled')) {
         it.state = 'failed';
-        it.reason = it.reason || 'cancelled';
+        it.reason = it.reason || T('import.song.cancelled');
       }
     }
     r.sending -= 1;
@@ -537,8 +536,7 @@ const ImportPanel = {
     $('copyMoveMove').classList.add('copy-move__label--move');
     const saving = this.state === 'saving';
     for (const b of [sw, $('copyMoveCopy'), $('copyMoveMove')]) b.disabled = saving;
-    $('copyMoveTip').textContent = 'Warning! Moving original files will remove them from their source folder '
-      + `and move them into '${Store.musicDir}'!`;
+    $('copyMoveTip').textContent = T('import.moveOriginals.warning', { folder: Store.musicDir });
   },
 
   _ready() {
@@ -582,7 +580,7 @@ const ImportPanel = {
   },
 
   _finalName() {
-    return this.name.replace(/\s+/g, ' ').trim() || (this.listing ? this.listing.name : '') || 'Imported playlist';
+    return this.name.replace(/\s+/g, ' ').trim() || (this.listing ? this.listing.name : '') || T('common.importedPlaylist');
   },
 
   _resetName(name) {
@@ -619,10 +617,10 @@ const ImportPanel = {
           input.select();
         }
       });
-      box.appendChild(h('label.check.import__create', tick, h('span', 'Create new Playlist')));
+      box.appendChild(h('label.check.import__create', tick, h('span', T('import.playlist.createNew'))));
       if (this.createList) {
         const input = h('input.input.import__name-box', {
-          type: 'text', maxLength: 75, spellcheck: false, value: this.name, disabled: fixed, 'aria-label': 'Playlist name',
+          type: 'text', maxLength: 75, spellcheck: false, value: this.name, disabled: fixed, 'aria-label': T('import.playlist.name.ariaLabel'),
         });
         input.addEventListener('input', () => {
           this.name = input.value;
@@ -637,7 +635,7 @@ const ImportPanel = {
     if (this.editingName && !fixed) {
       const hint = h('span.import__name-hint', { hidden: !this._nameHint }, this._nameHint);
       const input = h('input.input.import__name-box', {
-        type: 'text', maxLength: 75, spellcheck: false, value: this._nameDraft, 'aria-label': 'Playlist name',
+        type: 'text', maxLength: 75, spellcheck: false, value: this._nameDraft, 'aria-label': T('import.playlist.name.ariaLabel'),
       });
       input.addEventListener('input', () => {
         this._nameDraft = input.value;
@@ -656,14 +654,14 @@ const ImportPanel = {
         }
       });
       box.append(input,
-        h('button.btn.btn--small.btn--light-green', { type: 'button', onclick: () => this._applyName() }, 'Apply'),
-        h('button.btn.btn--small', { type: 'button', onclick: () => this._cancelName() }, 'Cancel'),
+        h('button.btn.btn--small.btn--light-green', { type: 'button', onclick: () => this._applyName() }, T('common.apply')),
+        h('button.btn.btn--small', { type: 'button', onclick: () => this._cancelName() }, T('common.cancel')),
         hint);
       requestAnimationFrame(() => input.focus());
       return;
     }
     box.append(h('span.import__heading', this.name));
-    if (!fixed) box.append(iconButton('icon-btn.import__rename', Icons.pencil, 'Rename the playlist', () => this._editName()));
+    if (!fixed) box.append(iconButton('icon-btn.import__rename', Icons.pencil, T('common.renamePlaylist'), () => this._editName()));
   },
 
   _editName() {
@@ -680,7 +678,7 @@ const ImportPanel = {
   _applyName() {
     const name = this._nameDraft.replace(/\s+/g, ' ').trim();
     if (!name) {
-      this._nameHint = 'A playlist needs a name.';
+      this._nameHint = T('import.playlist.needsName');
       this._drawName();
       return;
     }
@@ -699,7 +697,7 @@ const ImportPanel = {
   /** Add to Playlist for a whole import: existing playlists every song joins. */
   async choosePlaylists() {
     const chosen = await pickPlaylists({
-      subtitle: `Every song of ${this._makesPlaylist() ? `"${this._finalName()}"` : 'this import'}`,
+      subtitle: this._makesPlaylist() ? T('import.playlist.everySongOf', { playlist: this._finalName() }) : T('import.playlist.everySongOfImport'),
       selectedIds: this.playlistIds,
     });
     if (chosen === null) return;
@@ -711,27 +709,27 @@ const ImportPanel = {
     const l = this.listing;
     if (!l) return;
     const kind = String(l.source || '').toLowerCase();
-    const source = SOURCE_NAMES[kind] || l.source || 'Playlist';
+    const source = SOURCE_NAMES[kind] || l.source || T('common.playlist');
     const head = clear($('importSource'));
     head.appendChild(h('span.import__badge', source));
     head.appendChild(h('span.import__name', { id: 'importNameBox' }));
     this._drawName();
     if (this.state === 'review') {
-      head.appendChild(h('span', `${Util.plural(l.items.length, 'song')} in this list`));
+      head.appendChild(h('span', T('import.playlist.songCount', { songs: Util.plural(l.items.length, 'song') })));
     }
     if (l.truncated === 'files') {
-      head.appendChild(h('span.import__warn-text', `The folder holds more files: only the first ${l.items.length} are listed.`));
+      head.appendChild(h('span.import__warn-text', T('import.list.folderHasMore', { count: l.items.length })));
     } else if (l.truncated === 'spotify') {
-      head.appendChild(h('span.import__warn-text', 'Spotify only showed the first 100 songs; the rest of the list is missing.'));
+      head.appendChild(h('span.import__warn-text', T('import.list.spotifyFirst100')));
     } else if (l.truncated === 'amazon') {
-      head.appendChild(h('span.import__warn-text', `Amazon Music only showed the first ${l.items.length} songs; the rest of the list is missing.`));
+      head.appendChild(h('span.import__warn-text', T('import.list.amazonFirstN', { count: l.items.length })));
     } else if (l.truncated === 'mix') {
-      head.appendChild(h('span.import__warn-text', 'A Mix never ends: its first 50 songs are listed.'));
+      head.appendChild(h('span.import__warn-text', T('import.list.mixFirst50')));
     }
     if (this.state !== 'review') {
       const hint = this._wholeOnly()
-        ? 'Tap a ready song to change its names. Songs are saved whole on the phone; trim them once they are on a Flow Server.'
-        : `${Store.uiMode === 'mobile' ? 'Tap' : 'Click'} a ${this.local ? 'ready' : 'downloaded'} song to trim it or change its names.`;
+        ? T('import.list.hint.phone')
+        : T(`import.list.hint.trimOrRename.${this.local ? 'ready' : 'downloaded'}${Store.uiMode === 'mobile' ? '.touch' : ''}`);
       head.appendChild(h('span.muted-text', hint));
     }
     this._drawWarnings();
@@ -746,7 +744,7 @@ const ImportPanel = {
     if (taken && taken === this._updateTarget()) {
       rows.push(h('div.import__warning',
         h('span.import__warn-icon', '!'),
-        h('div', `Updating "${taken.name}": the songs it does not have yet are added to it.`)));
+        h('div', T('import.playlist.updating', { playlist: taken.name }))));
     } else if (taken) {
       const tick = h('input', { type: 'checkbox', checked: this.merge });
       tick.addEventListener('change', () => {
@@ -755,9 +753,9 @@ const ImportPanel = {
       rows.push(h('div.import__warning',
         h('span.import__warn-icon', '!'),
         h('div',
-          h('div', `A playlist called "${taken.name}" already exists.`),
+          h('div', T('common.playlistExists', { playlist: taken.name })),
           h('label.check', tick,
-            h('span', `Add the songs to it (unticked: a new playlist "${taken.name} (2)")`)))));
+            h('span', T('import.playlist.exists.addToIt', { playlist: taken.name }))))));
     }
     const known = this.state === 'review' ? this._knownItems() : [];
     if (known.length) {
@@ -771,13 +769,12 @@ const ImportPanel = {
         });
         list.appendChild(h('label.check.import__known-row', tick,
           h('span', it.title),
-          h('span.muted-text', ` - in your library as "${Util.songLine(it.existing)}"`)));
+          h('span.muted-text', ` ${T('import.known.inLibraryAs', { song: Util.songLine(it.existing) })}`)));
       }
       rows.push(h('div.import__warning',
         h('span.import__warn-icon', '!'),
         h('div.import__warn-body',
-          h('div', `${Util.plural(known.length, 'song')} ${known.length === 1 ? 'is' : 'are'} already in your library `
-            + 'and will not be downloaded again. Ticked ones are added to the playlist:'),
+          h('div', T('import.known.note', { songs: Util.plural(known.length, 'song'), count: known.length })),
           list)));
     }
     box.hidden = !rows.length;
@@ -792,8 +789,8 @@ const ImportPanel = {
       if (!items.length) {
         const target = this._updateTarget();
         list.appendChild(h('div.import__empty', target && !this._knownItems().length
-          ? `Nothing new: "${target.name}" has every song of its source already.`
-          : 'Every song of this list is already in your library (see above).'));
+          ? T('import.known.nothingNew', { playlist: target.name })
+          : T('import.known.allInLibrary')));
         return;
       }
       const frag = document.createDocumentFragment();
@@ -837,7 +834,7 @@ const ImportPanel = {
       const input = h('input.input.import__bulk-input', {
         type: 'text', maxLength: 150, spellcheck: false, placeholder, 'aria-label': label,
       });
-      const apply = h('button.btn.btn--small.btn--light-green', { type: 'button', disabled: true }, 'Apply');
+      const apply = h('button.btn.btn--small.btn--light-green', { type: 'button', disabled: true }, T('common.apply'));
       input.addEventListener('input', () => {
         apply.disabled = !input.value.trim();
       });
@@ -848,16 +845,16 @@ const ImportPanel = {
         }
       });
       apply.onclick = () => this._applyBulk(key, input.value);
-      return h('label.import__bulk-field', h('span.import__bulk-label', `${label}:`), input, apply);
+      return h('label.import__bulk-field', h('span.import__bulk-label', T('import.bulk.field', { field: label })), input, apply);
     };
     this._bulkEl = h('div.import__bulk',
-      h('div.import__bulk-text', 'You can set custom Album, Genre and Info for ALL new songs at once here if you want, if they miss them:'),
+      h('div.import__bulk-text', T('import.bulk.intro')),
       h('div.import__bulk-row',
-        field('album', BULK.album.label, 'Album-title'),
+        field('album', BULK.album.label, T('import.bulk.album.placeholder')),
         field('genre', BULK.genre.label, 'Hardstyle'),
-        field('subGenre', BULK.subGenre.label, 'Sub-Genre, CD, Year, ...')),
+        field('subGenre', BULK.subGenre.label, T('common.infoPlaceholder'))),
       h('div.import__bulk-note.muted-text',
-        'Some song albums can be found, genre rarely. If you leave Album empty it gets filled automatically by the song title.'));
+        T('import.bulk.note')));
     return this._bulkEl;
   },
 
@@ -901,8 +898,9 @@ const ImportPanel = {
         this._redrawFrame(it, false);
       }
     }
-    toast(`${BULK[key].label} "${v}" given to ${Util.plural(given, 'song')} without one`
-      + (coming ? `; the ${Util.plural(coming, 'song')} still coming get it too` : ''), 'success');
+    toast(T(coming ? 'import.bulk.given.alsoComing' : 'import.bulk.given', {
+      field: BULK[key].label, value: v, songs: Util.plural(given, 'song'), coming: Util.plural(coming, 'song'),
+    }), 'success');
   },
 
   /**
@@ -919,16 +917,17 @@ const ImportPanel = {
     if (!failed.length) return;
     const byReason = new Map();
     for (const it of failed) {
-      const r = it.reason || 'failed';
-      if (!byReason.has(r)) byReason.set(r, []);
-      byReason.get(r).push(it.title);
+      const r = it.reason || T('import.song.failed');
+      if (!byReason.has(r)) byReason.set(r, { titles: [], noAudio: false });
+      byReason.get(r).titles.push(it.title);
+      if (it.noAudio) byReason.get(r).noAudio = true;
     }
-    for (const [reason, titles] of byReason) {
+    for (const [reason, { titles, noAudio }] of byReason) {
       const n = titles.length;
-      const text = /no audio/i.test(reason)
-        ? `${Util.plural(n, 'file')} had no audio in ${n === 1 ? 'it' : 'them'} and ${n === 1 ? 'was' : 'were'} left out.`
-        : `${Util.plural(n, 'file')} could not be opened: ${reason}`;
-      const more = n > 20 ? `\n... and ${n - 20} more` : '';
+      const text = noAudio
+        ? T('import.files.noAudio', { files: Util.plural(n, 'file'), count: n })
+        : T('import.files.notOpened', { files: Util.plural(n, 'file'), count: n, reason });
+      const more = n > 20 ? `\n${T('import.files.andMore', { count: n - 20 })}` : '';
       box.appendChild(h('div.import__sub.import__sub--bad', { title: titles.slice(0, 20).join('\n') + more }, text));
     }
   },
@@ -956,27 +955,27 @@ const ImportPanel = {
    * on YouTube or the site it was found on instead.
    */
   _matchLine(it) {
-    if (it.status === 'unavailable') return h('div.import__sub.import__sub--bad', it.note || 'not available');
+    if (it.status === 'unavailable') return h('div.import__sub.import__sub--bad', it.note || T('import.match.notAvailable'));
     const m = it.match;
     if (!m) {
-      return it.status === 'notfound' ? h('div.import__sub.import__sub--bad', `Not found: ${it.note || 'no match'}`) : null;
+      return it.status === 'notfound' ? h('div.import__sub.import__sub--bad', T('import.match.notFound', { reason: it.note || T('import.match.notFound.noMatch') })) : null;
     }
     const site = m.site || 'YouTube';
     const diff = Math.round((m.duration || 0) - (it.duration || 0));
-    const off = diff === 0 ? 'same length' : `${diff > 0 ? '+' : ''}${diff} s`;
+    const off = diff === 0 ? T('import.match.sameLength') : `${diff > 0 ? '+' : ''}${diff} s`;
     const link = h('button.link-btn.import__link', {
       type: 'button',
-      title: `Open on ${site} to check`,
+      title: T('import.match.openToCheck.tooltip', { site }),
       onclick: (e) => {
         e.preventDefault();
         e.stopPropagation();
         window.flow.openUrl(m.url || `https://www.youtube.com/watch?v=${m.id}`);
       },
     }, m.title || site);
-    const parts = [h('span', `${site}: `), link,
+    const parts = [h('span', `${T('import.match.site', { site })} `), link,
       h('span', ` · ${m.channel || '?'} · ${Util.fmtClock(m.duration)} (${off})`)];
-    if (it.status === 'notfound') parts.unshift(h('span.import__flag.import__flag--bad', 'not found'));
-    else if (m.quality === 'shaky') parts.unshift(h('span.import__flag', 'check'));
+    if (it.status === 'notfound') parts.unshift(h('span.import__flag.import__flag--bad', T('import.match.notFound.flag')));
+    else if (m.quality === 'shaky') parts.unshift(h('span.import__flag', T('import.match.check.flag')));
     return h('div.import__sub', ...parts);
   },
 
@@ -997,10 +996,10 @@ const ImportPanel = {
     const seconds = chosen.reduce((sum, it) => sum + (it.duration || 0), 0);
     const kbps = Store.settings.alwaysMp3 ? Number(Store.settings.mp3Quality) || 192 : 160;
     const mb = (kbps * 1000 / 8) * seconds / 1e6;
-    let text = `${chosen.length} of ${usable.length} selected`;
-    if (chosen.length) text += ` · about ${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+    let text = T('common.selected', { chosen: chosen.length, total: usable.length });
+    if (chosen.length) text += ` ${T('import.selection.size', { mb: mb < 10 ? mb.toFixed(1) : Math.round(mb) })}`;
     const known = this._knownItems().filter((it) => this.keepKnown.has(it.index)).length;
-    if (known) text += ` · ${known} from your library`;
+    if (known) text += ` ${T('import.selection.fromLibrary', { count: known })}`;
     $('importCount').textContent = text;
     $('importSelected').disabled = !chosen.length && !known;
     $('importEverything').disabled = !usable.length && !this._knownItems().length;
@@ -1016,22 +1015,21 @@ const ImportPanel = {
 
     let sub = '';
     let subBad = false;
-    if (st === 'library') sub = 'from your library';
-    else if (st === 'failed') { sub = it.reason || 'failed'; subBad = true; }
-    else if (st === 'cancelled') { sub = 'cancelled'; subBad = true; }
-    else if (st === 'current') sub = it.note || (this.local ? 'preparing...' : 'downloading...');
-    else if (st === 'saving') sub = 'saving...';
-    else if (st === 'waiting') sub = 'waiting';
+    if (st === 'library') sub = T('import.song.fromLibrary');
+    else if (st === 'failed') { sub = it.reason || T('import.song.failed'); subBad = true; }
+    else if (st === 'cancelled') { sub = T('import.song.cancelled'); subBad = true; }
+    else if (st === 'current') sub = it.note || (this.local ? T('import.song.preparing') : T('import.song.downloading'));
+    else if (st === 'saving') sub = T('import.song.saving');
+    else if (st === 'waiting') sub = T('import.song.waiting');
     else if (it.trim) {
-      sub = `trimmed ${Util.fmtClock(it.trim.start)} - ${Util.fmtClock(it.trim.end)}, `
-        + `${Util.fmtClock(it.trim.end - it.trim.start)} of ${Util.fmtClock(it.media.duration)}`;
-    } else sub = open ? '' : this._wholeOnly() ? 'tap to rename' : `${Store.uiMode === 'mobile' ? 'tap' : 'click'} to trim or rename`;
+      sub = T('import.song.trimmed', { start: Util.fmtClock(it.trim.start), end: Util.fmtClock(it.trim.end), length: Util.fmtClock(it.trim.end - it.trim.start), duration: Util.fmtClock(it.media.duration) });
+    } else sub = open ? '' : this._wholeOnly() ? T('import.song.tapToRename') : T(Store.uiMode === 'mobile' ? 'import.song.tapToTrimOrRename' : 'import.song.clickToTrimOrRename');
 
     // What it will be saved with: the album and genre found (or given), or
     // that there are none, and its info when it has some.
     const info = st === 'ready' && it.meta
-      ? [it.meta.album ? `Album: ${it.meta.album}` : 'no album (the title then)', it.meta.genre ? `Genre: ${it.meta.genre}` : 'no genre',
-        it.meta.subGenre && `Info: ${it.meta.subGenre}`].filter(Boolean).join(' · ')
+      ? [it.meta.album ? T('import.song.album', { album: it.meta.album }) : T('import.song.noAlbum'), it.meta.genre ? T('import.song.genre', { genre: it.meta.genre }) : T('import.song.noGenre'),
+        it.meta.subGenre && T('import.song.info', { info: it.meta.subGenre })].filter(Boolean).join(' · ')
       : '';
     const length = st === 'ready'
       ? Util.fmtClock(it.trim ? it.trim.end - it.trim.start : it.media.duration)
@@ -1044,7 +1042,7 @@ const ImportPanel = {
     const head = h(retry ? 'div.import__frame-head' : 'button.import__frame-head', retry ? {} : {
       type: 'button',
       disabled: !clickable,
-      title: clickable ? (open ? 'Close (keeps the changes)' : 'Trim or rename this song') : '',
+      title: clickable ? (open ? T('import.song.close.tooltip') : T('import.song.open.tooltip')) : '',
       onclick: () => this.toggleFrame(it.index),
     },
     h('span.import__state', { html: { ready: Icons.check, library: Icons.check, failed: Icons.x, cancelled: Icons.x }[st] || '' }),
@@ -1054,8 +1052,8 @@ const ImportPanel = {
       h('span.import__title-row', h('span.import__title', { title: name }, name), this._lyricsBadge(it, st)),
       sub ? h('span.import__sub' + (subBad ? '.import__sub--bad' : ''), sub) : null,
       info ? h('span.import__sub.import__info', { title: info }, info) : null),
-    it.trim ? h('span.import__flag.import__flag--trim', 'trimmed') : null,
-    retry ? h('button.btn.btn--small.btn--light-green', { type: 'button', onclick: () => this.retryFailed([it.index]) }, 'Try again') : null,
+    it.trim ? h('span.import__flag.import__flag--trim', T('import.song.trimmed.flag')) : null,
+    retry ? h('button.btn.btn--small.btn--light-green', { type: 'button', onclick: () => this.retryFailed([it.index]) }, T('common.tryAgain')) : null,
     h('span.import__dur', length),
     clickable ? h('span.import__chevron', { html: Icons.chevron }) : null);
 
@@ -1066,9 +1064,9 @@ const ImportPanel = {
     if (open) {
       frame.appendChild(h('div.import__frame-body',
         h('div.import__frame-foot',
-          h('button.btn.btn--light-grey', { type: 'button', title: 'Back to the cut and names it had when opened', onclick: () => this.cancelEdits() }, 'Cancel Edits'),
-          h('button.btn.btn--light-green', { type: 'button', onclick: () => this.apply() }, 'Apply Edits'),
-          h('button.btn.btn--primary', { type: 'button', title: 'Save this song now', onclick: () => this.finishOne(it.index) }, 'Finish this song'))));
+          h('button.btn.btn--light-grey', { type: 'button', title: T('import.song.cancelEdits.tooltip'), onclick: () => this.cancelEdits() }, T('import.song.cancelEdits')),
+          h('button.btn.btn--light-green', { type: 'button', onclick: () => this.apply() }, T('import.song.applyEdits')),
+          h('button.btn.btn--primary', { type: 'button', title: T('import.song.finish.tooltip'), onclick: () => this.finishOne(it.index) }, T('import.song.finish')))));
     }
     return frame;
   },
@@ -1219,10 +1217,10 @@ const ImportPanel = {
     this._setState('downloading');
     if (toFetch.length) {
       AddPage._progress({
-        title: job.local ? `Opening ${Util.plural(toFetch.length, 'file')}`
-          : (this.picked ? `Downloading ${Util.plural(toFetch.length, 'song')}` : `Importing "${this._finalName()}"`),
+        title: job.local ? T('import.progress.openingFiles', { files: Util.plural(toFetch.length, 'file') })
+          : (this.picked ? T('import.progress.downloadingSongs', { songs: Util.plural(toFetch.length, 'song') }) : T('import.progress.importing', { playlist: this._finalName() })),
         frac: null,
-        status: 'Starting...',
+        status: T('import.progress.starting'),
       });
       const items = toFetch.map((it) => ({ index: it.index, title: it.title, url: it.url, path: it.path, meta: it.meta }));
       try {
@@ -1248,8 +1246,8 @@ const ImportPanel = {
     if (this._endIfDone()) return;
     const ready = this._ready().length;
     const failed = this.included.filter((it) => it.state === 'failed').length;
-    toast(`${Util.plural(ready, 'song')} ${job.local ? 'ready' : 'downloaded'}${failed ? `, ${failed} failed` : ''}. `
-      + `${this._wholeOnly() ? 'Change any names you like' : 'Trim any you like'}, then "Finish all".`, ready ? 'success' : 'error');
+    const finish = this._wholeOnly() ? 'import.summary.namesOnlyToFinish' : job.local ? 'import.summary.readyToFinish' : 'import.summary.downloadedToFinish';
+    toast(T(failed ? `${finish}.withFailed` : finish, { songs: Util.plural(ready, 'song'), failed }), ready ? 'success' : 'error');
   },
 
   /**
@@ -1369,7 +1367,7 @@ const ImportPanel = {
       summary = await window.flow.finishImport(this._jobFor(entries), this.run);
     } catch (err) {
       summary = null;
-      toast(`"${title}" could not be saved: ${err.message}`, 'error');
+      toast(T('import.song.notSaved', { song: title, reason: err.message }), 'error');
     }
     // Cancelled meanwhile: what was saved stays saved.
     if (this.job !== job) return;
@@ -1377,7 +1375,7 @@ const ImportPanel = {
     const ok = summary && summary.saved;
     it.state = ok ? 'saved' : 'ready';
     // A saved song just leaves the list (the footer counts it); only trouble gets a toast.
-    if (summary && !ok) toast(`"${title}" could not be saved: ${(summary.failed[0] || {}).reason || 'failed'}`, 'error');
+    if (summary && !ok) toast(T('import.song.notSaved', { song: title, reason: (summary.failed[0] || {}).reason || T('import.song.failed') }), 'error');
     this._setPending();
     this._drawName();
     this._drawWarnings();
@@ -1430,7 +1428,7 @@ const ImportPanel = {
     this.editingName = false;
     const job = this._jobFor(entries);
     this._setState('saving');
-    AddPage._progress({ title: local ? (move ? 'Moving the files' : 'Copying the files') : `Saving "${job.name}"`,
+    AddPage._progress({ title: local ? (move ? T('import.progress.movingFiles') : T('import.progress.copyingFiles')) : T('import.progress.saving', { playlist: job.name }),
       frac: 0, status: '', cancel: false });
     let summary;
     try {
@@ -1449,24 +1447,24 @@ const ImportPanel = {
 
   _toastSummary(summary, local, move) {
     const parts = [];
-    if (summary.saved) parts.push(`${summary.saved} ${local ? (move ? 'moved' : 'copied') : 'saved'}`);
-    if (summary.fromLibrary) parts.push(`${summary.fromLibrary} ${local ? 'already in your library' : 'from your library'}`);
+    if (summary.saved) parts.push(T(local ? (move ? 'import.done.moved' : 'import.done.copied') : 'import.done.saved', { count: summary.saved }));
+    if (summary.fromLibrary) parts.push(T(local ? 'common.alreadyInLibrary' : 'import.done.fromLibrary', { count: summary.fromLibrary }));
     const failedDownloads = this.included.filter((it) => it.state === 'failed').length;
     const failed = summary.failed.length + failedDownloads;
-    if (failed) parts.push(`${failed} failed`);
+    if (failed) parts.push(T('import.done.failed', { count: failed }));
     const kept = (summary.kept || []).length;
-    if (kept) parts.push(`${kept} original${kept === 1 ? '' : 's'} could not be removed (in use?)`);
+    if (kept) parts.push(T('import.done.originalsKept', { count: kept }));
     const kind = summary.saved || summary.fromLibrary ? 'success' : 'error';
     if (!summary.playlistId && (local || this.optionalList)) {
-      const what = local ? 'Local files' : (summary.saved === 1 ? 'Song' : 'Songs');
-      toast(`${what} added to All Songs: ${parts.join(', ') || 'nothing added'}`, kind);
+      const key = local ? 'import.done.localFilesAdded' : (summary.saved === 1 ? 'import.done.addedToAllSongs.song' : 'import.done.addedToAllSongs.songs');
+      toast(T(key, { result: parts.join(', ') || T('import.done.nothingAdded') }), kind);
       return;
     }
     const id = summary.playlistId;
     const update = !!this.updating && id === this.updating.id;
-    const head = local ? `Local files added to playlist "${summary.name}"` : `Playlist "${summary.name}" ${update ? 'updated' : 'imported'}`;
-    toast(`${head}: ${parts.join(', ') || (update ? 'nothing new' : 'nothing imported')}`, kind,
-      id ? { label: 'Open playlist', onClick: () => Store.playlist(id) && Nav.openPlaylist(id) } : null);
+    const key = local ? 'import.done.localFilesAddedToPlaylist' : update ? 'import.done.playlistUpdated' : 'import.done.playlistImported';
+    toast(T(key, { playlist: summary.name, result: parts.join(', ') || (update ? T('import.done.nothingNew') : T('import.done.nothingImported')) }), kind,
+      id ? { label: T('import.done.openPlaylist'), onClick: () => Store.playlist(id) && Nav.openPlaylist(id) } : null);
   },
 
   /**
@@ -1480,16 +1478,16 @@ const ImportPanel = {
     const picked = this.picked;
     const saved = this.job ? this.job.totals.saved : 0;
     if (ready || this.state === 'downloading') {
-      const originals = local ? ' The original files stay where they are.' : '';
+      const originals = local ? ` ${T('import.cancel.originalsStay')}` : '';
       const kept = saved
-        ? ` The ${Util.plural(saved, 'song')} already finished ${saved === 1 ? 'stays' : 'stay'} saved.`
-        : ' Nothing of this import is saved.';
+        ? ` ${T('import.cancel.finishedStays', { songs: Util.plural(saved, 'song'), count: saved })}`
+        : ` ${T('import.cancel.nothingSaved')}`;
       const ok = await confirmDialog({
-        title: 'Cancel import?',
+        title: T('common.cancelImport.title'),
         message: (ready
-          ? `Throw away the ${saved ? 'remaining ' : ''}${Util.plural(ready, 'song')} ${local ? 'prepared' : 'downloaded'} so far?`
-          : 'Stop the import?') + kept + originals,
-        confirmLabel: 'Cancel import',
+          ? T(`import.cancel.text${saved ? (local ? '.remainingPrepared' : '.remaining') : (local ? '.prepared' : '')}`, { songs: Util.plural(ready, 'song') })
+          : T('import.cancel.text.stop')) + kept + originals,
+        confirmLabel: T('common.cancelImport'),
         danger: true,
       });
       if (!ok) return;
@@ -1500,7 +1498,7 @@ const ImportPanel = {
       window.flow.serverDownloads('cancel').catch((err) => toast(err.message, 'error'));
       this._closeEditor(false);
       this._reset();
-      toast(`Download on the server cancelled${saved ? ` (${Util.plural(saved, 'song')} finished before ${saved === 1 ? 'stays' : 'stay'} saved)` : ''}`, 'info');
+      toast(saved ? T('import.server.cancelled.finishedStays', { songs: Util.plural(saved, 'song'), count: saved }) : T('import.server.cancelled'), 'info');
       return;
     }
     // The task's number is retired first: anything it still says is ignored.
@@ -1511,8 +1509,8 @@ const ImportPanel = {
       if (it.state === 'ready' && it.media) window.flow.discardDownload(it.media.path).catch(() => {});
     }
     this._reset();
-    const keptText = saved ? ` (${Util.plural(saved, 'song')} finished before ${saved === 1 ? 'stays' : 'stay'} saved)` : '';
-    toast((local ? 'Import of local files cancelled' : (picked ? 'Download cancelled' : 'Playlist import cancelled')) + keptText, 'info');
+    const message = local ? T('import.cancelled.localFiles') : (picked ? T('common.downloadCancelled') : T('import.cancelled.playlist'));
+    toast(saved ? T('import.cancelled.finishedStays', { message, songs: Util.plural(saved, 'song'), count: saved }) : message, 'info');
   },
 
   // ---- a download on the server ----
@@ -1558,7 +1556,7 @@ const ImportPanel = {
       if (this.state === 'saving') return;
       this._closeEditor(false);
       this._reset();
-      toast('The download on the server was finished or cancelled on another device.', 'info');
+      toast(T('import.server.endedElsewhere'), 'info');
       if (batch) this.openServer(batch);
       return;
     }
@@ -1596,8 +1594,8 @@ const ImportPanel = {
     // Its cover, once the server found one (the frame's box fills in by itself).
     it.coverKey = `server:${x.index}`;
     if (x.cover && x.state === 'ready') Covers.serverPending(x.index, x.cover);
-    const doing = x.state === 'converting' ? 'converting' : 'downloading';
-    it.note = `${doing} on the server${x.progress && x.progress.text ? `: ${x.progress.text}` : '...'}`;
+    const doing = x.state === 'converting' ? 'import.song.convertingOnServer' : 'import.song.downloadingOnServer';
+    it.note = x.progress && x.progress.text ? T(`${doing}.progress`, { progress: x.progress.text }) : T(doing);
     const states = {
       queued: null, downloading: 'current', converting: 'current', ready: 'ready', failed: 'failed',
       saving: 'saving', saved: 'saved', discarded: 'discarded', library: null, added: null,
@@ -1642,14 +1640,14 @@ const ImportPanel = {
       ServerImport.touch();
       window.flow.serverDownloads('cancel').catch(() => {});
       this._reset();
-      $('progTitle').textContent = 'The server could not read the link.';
-      AddPage._showError(batch.error || 'The link could not be read.');
+      $('progTitle').textContent = T('import.server.couldNotReadLink');
+      AddPage._showError(batch.error || T('import.server.linkNotRead'));
       return true;
     }
     if (batch.state === 'listing') {
       if (this.state !== 'listing') this._setState('listing');
       AddPage._progress({
-        title: 'Reading the link on the server...',
+        title: T('import.progress.readingLinkOnServer'),
         frac: batch.progress ? batch.progress.frac : null,
         status: batch.progress && batch.progress.text ? batch.progress.text : batch.source.url,
         busy: true,
@@ -1672,14 +1670,14 @@ const ImportPanel = {
         this._reset();
         if (missing.length) {
           window.flow.addSongsToPlaylist(target.id, missing)
-            .then(() => toast(`Playlist "${target.name}" updated: ${missing.length} from your library`, 'success'))
+            .then(() => toast(T('import.server.playlistUpdated', { playlist: target.name, count: missing.length }), 'success'))
             .catch((err) => toast(err.message, 'error'));
-        } else if (failed) toast(`Nothing could be downloaded: ${failed.error || 'failed'}`, 'error');
-        else toast(`"${target.name}" is up to date: its source has no songs it lacks.`, 'info');
+        } else if (failed) toast(T('import.server.nothingDownloaded', { reason: failed.error || T('import.song.failed') }), 'error');
+        else toast(T('import.server.upToDate', { playlist: target.name }), 'info');
         return true;
       }
       this._reset();
-      toast(failed ? `Nothing could be downloaded: ${failed.error || 'failed'}` : 'Every song of this link is already in your library.', failed ? 'error' : 'info');
+      toast(failed ? T('import.server.nothingDownloaded', { reason: failed.error || T('import.song.failed') }) : T('import.server.allInLibrary'), failed ? 'error' : 'info');
       return true;
     }
     if (this.state === 'saving') return false;
@@ -1694,9 +1692,9 @@ const ImportPanel = {
     }
     if (current) {
       AddPage._progress({
-        title: `Downloading on the server, song ${this.progress.number} of ${all}: ${current.title}`,
+        title: T('import.progress.downloadingOnServer', { number: this.progress.number, total: all, title: current.title }),
         frac: current.progress ? current.progress.frac : null,
-        status: current.progress ? current.progress.text : 'Starting...',
+        status: current.progress ? current.progress.text : T('import.progress.starting'),
         cancel: false,
       });
     } else if (!coming.length) {
@@ -1725,7 +1723,7 @@ const ImportPanel = {
     try {
       r = await window.flow.serverDownloads('finish', { index: it.index, body });
     } catch (err) {
-      toast(`"${Util.songLine(meta)}" could not be saved: ${err.message}`, 'error');
+      toast(T('import.song.notSaved', { song: Util.songLine(meta), reason: err.message }), 'error');
       if (this.job === job) {
         it.state = 'ready';
         this._redrawFrame(it, false);
@@ -1739,7 +1737,7 @@ const ImportPanel = {
     const lines = this._ownLyrics(it);
     if (lines && r.song && r.song.id) {
       window.flow.setLyrics(r.song.id, lines, true)
-        .catch((err) => toast(`The lyrics of "${Util.songLine(meta)}" could not be saved: ${err.message}`, 'error'));
+        .catch((err) => toast(T('import.song.lyricsNotSaved', { song: Util.songLine(meta), reason: err.message }), 'error'));
     }
     if (this.job !== job) return;
     this._record({
@@ -1778,7 +1776,7 @@ const ImportPanel = {
     for (let n = 0; n < ready.length && this.job; n += 1) {
       const it = ready[n];
       AddPage._progress({
-        title: `Saving song ${n + 1} of ${ready.length}`,
+        title: T('import.progress.savingSong', { number: n + 1, total: ready.length }),
         frac: n / ready.length,
         status: Util.songLine(it.meta && it.meta.title ? it.meta : { title: it.title }),
         cancel: false,
@@ -1798,17 +1796,17 @@ const ImportPanel = {
     if (p.run !== this.run) return;
     if (p.phase === 'scanning' && this.state === 'listing') {
       AddPage._progress({
-        title: 'Looking through the folder...',
+        title: T('import.folder.lookingThrough'),
         frac: null,
-        status: `${Util.plural(p.found, 'file')} found   ${p.dir || ''}`,
+        status: T('import.folder.found', { files: Util.plural(p.found, 'file'), folder: p.dir || '' }),
       });
     } else if (p.phase === 'listing' && this.state === 'listing') {
-      AddPage._progress({ title: 'Reading playlist...', frac: null, status: p.text });
+      AddPage._progress({ title: T('import.progress.readingPlaylist'), frac: null, status: p.text });
     } else if (p.phase === 'matching' && this.state === 'listing') {
       AddPage._progress({
-        title: 'Looking up the songs...',
+        title: T('import.progress.lookingUpSongs'),
         frac: p.total ? p.done / p.total : null,
-        status: [`${p.done} of ${p.total}`, p.known && `${p.known} already in your library`, p.title]
+        status: [T('import.progress.lookingUp.count', { done: p.done, total: p.total }), p.known && T('common.alreadyInLibrary', { count: p.known }), p.title]
           .filter(Boolean).join(' · '),
       });
     } else if (p.phase === 'item' && this.state === 'downloading') {
@@ -1816,6 +1814,7 @@ const ImportPanel = {
       if (!it) return;
       it.state = p.status;
       if (p.reason) it.reason = p.reason;
+      it.noAudio = !!p.noAudio;
       if (p.status === 'ready') {
         it.media = p.media;
         it.song = p.song;
@@ -1834,14 +1833,14 @@ const ImportPanel = {
     } else if (p.phase === 'download' && this.state === 'downloading') {
       this.progress = { number: p.number, total: p.total };
       this._lastProgress = {
-        title: `${this.local ? 'Preparing file' : 'Downloading song'} ${p.number} of ${p.total}: ${p.title}`,
+        title: T(this.local ? 'import.progress.preparingFile' : 'import.progress.downloadingSong', { number: p.number, total: p.total, title: p.title }),
         frac: p.frac,
         status: p.text,
       };
       this._scheduleDraw();
     } else if (p.phase === 'saving' && this.state === 'saving') {
       AddPage._progress({
-        title: `Saving song ${p.number} of ${p.total}`,
+        title: T('import.progress.savingSong', { number: p.number, total: p.total }),
         frac: p.total ? (p.number - 1) / p.total : null,
         status: p.title,
         cancel: false,

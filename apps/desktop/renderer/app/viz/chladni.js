@@ -353,8 +353,7 @@
 
   Visualizer.add({
     id: 'chladni',
-    name: 'Chladni Plate',
-    desc: 'Sand on a ringing metal plate, gathering in the figure of the note the music dwells on and running to the next when it changes',
+    name: T('viz.chladni.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1"/>'
       + '<path d="M3 9c4 0 5 3 9 3s5-3 9-3M3 15c4 0 5-3 9-3s5 3 9 3M9 3c0 4 3 5 3 9s-3 5-3 9M15 3c0 4-3 5-3 9s3 5 3 9"/></svg>',
@@ -362,9 +361,9 @@
     create: (canvas) => new Chladni(canvas),
     click: (scene) => scene.next(),
     options: [
-      { type: 'choice', key: 'chPlate', label: 'Plate', choices: [['full', 'Whole screen'], ['square', 'Square'], ['round', 'Round']] },
-      { type: 'choice', key: 'chColors', label: 'Sand', choices: [['sand', 'Sand'], ['gold', 'Gold'], ['ice', 'Ice'], ['notes', 'By the notes']] },
-      { type: 'slider', key: 'chShake', label: 'Shaking', min: 25, max: 200, step: 5 },
+      { type: 'choice', key: 'chPlate', label: T('viz.chladni.setting.plate'), choices: [['full', T('viz.shared.wholeScreen')], ['square', T('viz.shared.square')], ['round', T('viz.shared.round')]] },
+      { type: 'choice', key: 'chColors', label: T('viz.chladni.setting.sand'), choices: [['sand', T('viz.chladni.setting.sand')], ['gold', T('viz.shared.gold')], ['ice', T('viz.shared.ice')], ['notes', T('viz.shared.byTheNotes')]] },
+      { type: 'slider', key: 'chShake', label: T('viz.chladni.setting.shaking'), min: 25, max: 200, step: 5 },
     ],
   });
 })();

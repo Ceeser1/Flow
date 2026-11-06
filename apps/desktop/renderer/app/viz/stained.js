@@ -685,18 +685,17 @@
 
   Visualizer.add({
     id: 'stainedglass',
-    name: 'Stained Glass',
-    desc: "The song's cover as a church window of coloured glass in lead, the light behind it moving with the music and falling in shafts into the dark, torches on the walls",
+    name: T('viz.stained.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M5 22V10a7 7 0 0 1 14 0v12z"/><path d="M5 15l5-3 4 4 5-4M12 3v9M8 22l2-10M16 22l-2-6"/></svg>',
     gl: true,
     create: (canvas) => new StainedGlass(canvas),
     options: [
-      { type: 'choice', key: 'sgWindow', label: 'Window', choices: [['rose', 'Rose'], ['arch', 'Arch'], ['full', 'Whole screen']] },
-      { type: 'choice', key: 'sgGlass', label: 'Colours', choices: [['cover', 'Cover'], ['warm', 'Warm'], ['cold', 'Cold'], ['rainbow', 'Rainbow']] },
-      { type: 'slider', key: 'sgPanes', label: 'Panes', min: 6, max: 24, step: 1, unit: '' },
-      { type: 'check', key: 'sgRays', label: 'Shafts of light', when: (s) => s.sgWindow !== 'full' },
-      { type: 'check', key: 'sgTorches', label: 'Torches', when: (s) => s.sgWindow !== 'full' },
+      { type: 'choice', key: 'sgWindow', label: T('viz.stained.setting.window'), choices: [['rose', T('viz.stained.setting.window.rose')], ['arch', T('viz.stained.setting.window.arch')], ['full', T('viz.shared.wholeScreen')]] },
+      { type: 'choice', key: 'sgGlass', label: T('viz.shared.colors'), choices: [['cover', T('viz.shared.cover')], ['warm', T('viz.shared.warm')], ['cold', T('viz.stained.setting.colours.cold')], ['rainbow', T('common.color.rainbow')]] },
+      { type: 'slider', key: 'sgPanes', label: T('viz.stained.setting.panes'), min: 6, max: 24, step: 1, unit: '' },
+      { type: 'check', key: 'sgRays', label: T('viz.stained.setting.shaftsOfLight'), when: (s) => s.sgWindow !== 'full' },
+      { type: 'check', key: 'sgTorches', label: T('viz.stained.setting.torches'), when: (s) => s.sgWindow !== 'full' },
     ],
   });
 })();

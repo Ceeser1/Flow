@@ -618,18 +618,17 @@
 
   Visualizer.add({
     id: 'aurora',
-    name: 'Aurora',
-    desc: 'The northern lights over mountains and a still lake, each curtain rising and glowing with its own part of the music: bass, mids and highs',
+    name: T('viz.aurora.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M3 10c3-4 6 2 9-2s6 1 9-3M3 14c3-3 6 2 9-1s6 1 9-2"/><path d="M2 21l5-5 3 3 4-5 8 7"/></svg>',
     gl: true,
     create: (canvas) => new Aurora(canvas),
     options: [
-      { type: 'choice', key: 'auColors', label: 'Colors', choices: [['green', 'Green'], ['red', 'Red'], ['violet', 'Violet'], ['rainbow', 'Rainbow']] },
-      { type: 'slider', key: 'auActivity', label: 'Restless', min: 25, max: 300, step: 5 },
-      { type: 'slider', key: 'auGlare', label: 'Glare', min: 50, max: 150, step: 5 },
-      { type: 'check', key: 'auLake', label: 'Lake' },
-      { type: 'check', key: 'auStars', label: 'Stars' },
+      { type: 'choice', key: 'auColors', label: T('viz.shared.colors'), choices: [['green', T('common.color.green')], ['red', T('common.color.red')], ['violet', T('viz.aurora.setting.colors.violet')], ['rainbow', T('common.color.rainbow')]] },
+      { type: 'slider', key: 'auActivity', label: T('viz.aurora.setting.restless'), min: 25, max: 300, step: 5 },
+      { type: 'slider', key: 'auGlare', label: T('viz.aurora.setting.glare'), min: 50, max: 150, step: 5 },
+      { type: 'check', key: 'auLake', label: T('viz.aurora.setting.lake') },
+      { type: 'check', key: 'auStars', label: T('viz.shared.stars') },
     ],
   });
 })();

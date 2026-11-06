@@ -372,18 +372,17 @@
 
   Visualizer.add({
     id: 'fireworks',
-    name: 'Fireworks',
-    desc: 'Fireworks over a city at night, bursting on the beats: bigger shells for bigger beats, glitter on the snares',
+    name: T('viz.fireworks.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 9V3M12 9l4-4M12 9l-4-4M12 9l5 1M12 9l-5 1M12 9l3 4M12 9l-3 4M12 22v-6"/></svg>',
     gl: true,
     create: (canvas) => new Fireworks(canvas),
     options: [
-      { type: 'choice', key: 'fwColors', label: 'Colors', choices: [['festive', 'Festive'], ['gold', 'Gold & silver'], ['music', 'The music']] },
-      { type: 'slider', key: 'fwSize', label: 'Bursts', min: 50, max: 200, step: 5 },
-      { type: 'slider', key: 'fwTrails', label: 'Trails', min: 0, max: 100, step: 5 },
-      { type: 'check', key: 'fwCity', label: 'City' },
-      { type: 'check', key: 'fwFlash', label: 'Screen flash', amount: { key: 'fwFlashAmount', min: 0, max: 100, step: 5 } },
+      { type: 'choice', key: 'fwColors', label: T('viz.shared.colors'), choices: [['festive', T('viz.fireworks.setting.colors.festive')], ['gold', T('viz.fireworks.setting.colors.gold')], ['music', T('viz.fireworks.setting.colors.music')]] },
+      { type: 'slider', key: 'fwSize', label: T('viz.fireworks.setting.bursts'), min: 50, max: 200, step: 5 },
+      { type: 'slider', key: 'fwTrails', label: T('viz.fireworks.setting.trails'), min: 0, max: 100, step: 5 },
+      { type: 'check', key: 'fwCity', label: T('viz.fireworks.setting.city') },
+      { type: 'check', key: 'fwFlash', label: T('viz.shared.screenFlash'), amount: { key: 'fwFlashAmount', min: 0, max: 100, step: 5 } },
     ],
   });
 })();

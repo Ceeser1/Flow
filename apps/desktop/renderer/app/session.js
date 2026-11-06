@@ -116,7 +116,7 @@ const Session = {
   sessionName(id) {
     const s = this.list.find((x) => x.id === id) || (this.mine && this.mine.session.id === id ? this.mine.session : null)
       || this.nearby.flatMap((n) => n.sessions).find((x) => x.id === id);
-    return s ? s.name : 'the session';
+    return s ? s.name : T('sessions.name.theSession');
   },
 
   /** The device a session plays on: its name without the host's profile ("Ceeser - Sony GTK" is Sony GTK). */
@@ -220,7 +220,7 @@ const Session = {
    */
   name() {
     if (!this.outputLabel) return '';
-    const profile = (Store.server.profile && Store.server.profile.name) || 'Default';
+    const profile = (Store.server.profile && Store.server.profile.name) || T('sessions.name.defaultProfile');
     return `${profile} - ${this.outputLabel}`;
   },
 
@@ -235,7 +235,7 @@ const Session = {
         // Out of a session of this app's own server first: a guest is in one at a time.
         if (this.mine && !this.guest) await this.leave();
         const server = this.nearby.find((n) => n.id === serverId);
-        this.guest = { serverId, name: server ? server.name : 'the other server', offset: 0, asking: true };
+        this.guest = { serverId, name: server ? server.name : T('sessions.name.theOtherServer'), offset: 0, asking: true };
         r = await window.flow.guest('join', { serverId, sessionId, mode });
       } else {
         if (this.guest) await this.leave();
@@ -286,7 +286,7 @@ const Session = {
   async _bringOne(songId) {
     if (this._brought.has(songId)) return this._brought.get(songId);
     const song = Store.song(songId);
-    toast(`Sending "${song ? song.title : 'the song'}" to the session...`, 'info');
+    toast(T('sessions.toast.sending', { song: song ? song.title : T('sessions.name.theSong') }), 'info');
     const { gid } = await window.flow.guest('bring', { songId });
     this._brought.set(songId, gid);
     return gid;
@@ -395,10 +395,13 @@ const Session = {
   },
 
   _who(from) {
-    const device = (from && (from.device || from.ip)) || 'another device';
+    const device = (from && (from.device || from.ip)) || T('sessions.name.anotherDevice');
     // A guest from another server says which (and has no profile here: its own, if any).
-    if (from && from.guest) return `${from.profileName ? `${from.profileName} - ` : ''}${device} (from ${from.serverName || 'another Flow Server'})`;
-    return `${(from && from.profileName) || 'Default'} - ${device}`;
+    if (from && from.guest) {
+      const server = from.serverName || T('sessions.name.anotherServer');
+      return from.profileName ? T('sessions.name.guestWithProfile', { profile: from.profileName, device, server }) : T('sessions.name.guest', { device, server });
+    }
+    return `${(from && from.profileName) || T('sessions.name.defaultProfile')} - ${device}`;
   },
 
   /** A Windows notification (and the taskbar button flashing) while the window is not in front. */
@@ -425,17 +428,17 @@ const Session = {
       return;
     }
     const modal = Modal.open({
-      title: 'Join request',
+      title: T('sessions.request.title'),
       className: 'modal--small',
       body: [
-        h('p.modal__text', `${who} wants to join your session.`),
-        h('p.muted-text', 'Once in, they can pause, skip and queue songs that play here.'
-          + (r.guest ? ' They are a guest from another Flow Server on your network: while in the session they see your songs and may bring their own, deleted when it ends; nothing else.' : '')
-          + (r.ip && r.device ? ` Connecting from ${r.ip}.` : '')),
+        h('p.modal__text', T('sessions.request.text', { who })),
+        h('p.muted-text', T('sessions.request.canControl')
+          + (r.guest ? ` ${T('sessions.request.isGuest')}` : '')
+          + (r.ip && r.device ? ` ${T('sessions.request.fromIp', { ip: r.ip })}` : '')),
       ],
       buttons: [
-        { label: 'Decline', onClick: () => answer(false) },
-        { label: 'Accept', kind: 'primary', onClick: () => answer(true) },
+        { label: T('sessions.request.decline'), onClick: () => answer(false) },
+        { label: T('sessions.request.accept'), kind: 'primary', onClick: () => answer(true) },
       ],
       onClose: () => {
         const p = this._prompts.get(r.requestId);
@@ -446,7 +449,7 @@ const Session = {
     // The server says when it runs out (joinCancelled); this is in case that is missed.
     const timer = setTimeout(() => modal.close(), (r.expiresIn || 60000) + 2000);
     this._prompts.set(r.requestId, { modal, timer, who });
-    this._notify(`${who} wants to join your session.`);
+    this._notify(T('sessions.request.text', { who }));
   },
 
   _closePrompts() {
@@ -457,13 +460,13 @@ const Session = {
   _newHost(previous, reason) {
     const who = this._who(previous);
     const text = reason === 'dropped'
-      ? `${who} lost its connection, you are the new host.`
-      : `${who} left, you are the new host.`;
+      ? T('sessions.newHost.lostConnection', { who })
+      : T('sessions.newHost.left', { who });
     Modal.open({
-      title: 'You are the new host',
+      title: T('sessions.newHost.title'),
       className: 'modal--small',
-      body: [h('p.modal__text', text), h('p.muted-text', 'The music plays on here, on this device.')],
-      buttons: [{ label: 'Dismiss', kind: 'primary' }],
+      body: [h('p.modal__text', text), h('p.muted-text', T('sessions.newHost.playsHere'))],
+      buttons: [{ label: T('sessions.newHost.dismiss'), kind: 'primary' }],
     });
     this._notify(text);
   },
@@ -479,18 +482,18 @@ const Session = {
     $('playerHere').hidden = !m || m.host;
     $('playerHere').classList.toggle('player__here--on', here);
     $('playerHere').setAttribute('aria-pressed', String(here));
-    const drift = here && Player.remote.drift !== null && Player.remote.drift !== undefined
-      ? ` (now ${Math.round(Math.abs(Player.remote.drift) * 1000)} ms apart)` : '';
+    const drift = here && Player.remote.drift !== null && Player.remote.drift !== undefined;
     $('playerHere').title = here
-      ? `Playing here too, in step with the host${drift}. Click for remote control only`
-      : 'Remote control only. Click to play the music on this device too, in step with the host';
+      ? (drift ? T('sessions.chip.playHere.drift.tooltip', { ms: Math.round(Math.abs(Player.remote.drift) * 1000) }) : T('sessions.chip.playHere.tooltip'))
+      : T('sessions.chip.remoteOnly.tooltip');
     if (pill.hidden) return;
-    const text = m.host ? `Your session: ${company} listening` : `In ${m.session.name}${this.guest ? ` (${this.guest.name})` : ''}`;
+    const text = m.host ? T('sessions.chip.hosting', { count: company })
+      : this.guest ? T('sessions.chip.guest', { session: m.session.name, server: this.guest.name }) : T('sessions.chip.member', { session: m.session.name });
     pill.innerHTML = Icons.sessions;
     pill.append(h('span', text));
     pill.title = m.host
       ? m.session.members.slice(1).map((x) => this._who(x)).join('\n')
-      : 'What plays here plays on that device. Open Active Sessions';
+      : T('sessions.chip.tooltip');
   },
 
   /** Asks the server where this app stands (after a new stream). */
@@ -517,9 +520,9 @@ const Session = {
         Player.setHere(!!Store.settings.sessionPlayHere);
       }
     } else if (this.mine) {
-      if (wasMember) toast(`You are no longer in ${wasMember.name}: the connection to the server was lost.`, 'info');
+      if (wasMember) toast(T('sessions.toast.connectionLost.member', { session: wasMember.name }), 'info');
       else if (this.mine.session.members.length > 1) {
-        toast('Your session went on without this device (the server restarted or lost the connection).', 'info');
+        toast(T('sessions.toast.wentOnWithout'), 'info');
       }
       if (Player.remote) Player.endRemote();
       this.mine = null;
@@ -570,7 +573,7 @@ const Session = {
         const p = this._prompts.get(data.requestId);
         if (p) {
           p.modal.close();
-          toast(`${p.who} no longer asks to join.`, 'info');
+          toast(T('sessions.request.withdrawn', { who: p.who }), 'info');
         }
         return;
       }
@@ -609,12 +612,12 @@ const Session = {
     this._sessionSongs(data.session);
     if (host) this.sessionId = data.session.id;
     if (data.joined && data.joined.client !== me) {
-      toast(`${this._who(data.joined)} joined ${host ? 'your session' : 'the session'}.`, 'info');
+      toast(T(host ? 'sessions.toast.joinedYours' : 'sessions.toast.joinedThe', { who: this._who(data.joined) }), 'info');
     } else if (data.left && data.left.client !== me) {
-      toast(`${this._who(data.left)} left ${host ? 'your session' : 'the session'}.`, 'info');
+      toast(T(host ? 'sessions.toast.leftYours' : 'sessions.toast.leftThe', { who: this._who(data.left) }), 'info');
     } else if (data.hostChanged && !host) {
       const hostNow = data.session.members[0];
-      toast(`${this._who(data.hostChanged.previous)} left. ${this._who(hostNow)} hosts the session now.`, 'info');
+      toast(T('sessions.toast.hostChanged', { who: this._who(data.hostChanged.previous), host: this._who(hostNow) }), 'info');
     }
     this._emit();
   },
@@ -625,19 +628,19 @@ const Session = {
     if (!this.request || this.request.requestId === data.requestId) this.request = null;
     if (data.ok) {
       this._becomeMember(data.session, data.state);
-      toast(`You joined ${data.session.name}.`, 'success');
+      toast(T('sessions.toast.youJoined', { session: data.session.name }), 'success');
     } else if (data.reason === 'declined') {
       const wait = data.retryIn || 60;
       this.cooldowns.set(data.sessionId, Date.now() + wait * 1000);
-      toast(`${name} declined. You can ask again in ${wait} seconds.`, 'info');
+      toast(T('sessions.toast.declined', { session: name, seconds: wait }), 'info');
     } else if (data.reason === 'expired') {
-      toast(`${name} did not answer in time. Ask again if you like.`, 'info');
+      toast(T('sessions.toast.noAnswer', { session: name }), 'info');
     } else if (data.reason === 'full') {
-      toast(`${name} is full.`, 'info');
+      toast(T('sessions.toast.full', { session: name }), 'info');
     } else if (data.reason === 'unshared') {
-      toast(`${name} is no longer shared.`, 'info');
+      toast(T('sessions.toast.notShared', { session: name }), 'info');
     } else {
-      toast('That session has ended.', 'info');
+      toast(T('sessions.toast.ended'), 'info');
     }
     this._emit();
   },
@@ -647,9 +650,9 @@ const Session = {
     if (this.mine && this.mine.session.id !== sessionId) return;
     this._out();
     if (!wasMember) return;
-    if (reason === 'dropped') toast(`You are no longer in ${wasMember.name}: the connection to the server was lost.`, 'info');
-    else if (reason === 'ended') toast(`${wasMember.name} has ended.`, 'info');
-    else if (reason === 'hostLeft') toast(`${wasMember.name} has ended: its host left, and a guest does not host.`, 'info');
+    if (reason === 'dropped') toast(T('sessions.toast.connectionLost.member', { session: wasMember.name }), 'info');
+    else if (reason === 'ended') toast(T('sessions.toast.sessionEnded', { session: wasMember.name }), 'info');
+    else if (reason === 'hostLeft') toast(T('sessions.toast.sessionEnded.hostLeft', { session: wasMember.name }), 'info');
   },
 
   /** The live channel of the server this app is a guest of (or asks to be). */
@@ -669,7 +672,7 @@ const Session = {
         this.mine = null;
         this.request = null;
         this._guestOut();
-        toast(`${name}: the other server no longer lets guests in.`, 'info');
+        toast(T('sessions.toast.noGuests', { server: name }), 'info');
         return;
       }
       case 'joinResult':
@@ -744,9 +747,9 @@ const Session = {
       const name = this.mine.session.name;
       const keep = !!Player.remote && Player.remote.here && Player.remote.state.playing;
       if (Player.remote) Player.endRemote({ keepPlaying: keep });
-      toast(`The connection to the server was lost, and with it ${name}.${keep ? ' The music plays on here.' : ''}`, 'info');
+      toast(T(keep ? 'sessions.toast.connectionLost.sessionPlaysOn' : 'sessions.toast.connectionLost.session', { session: name }), 'info');
     } else if (this.mine.session.members.length > 1) {
-      toast('The connection to the server was lost. The others in your session go on without this device.', 'info');
+      toast(T('sessions.toast.connectionLost.host'), 'info');
     }
     this.mine = null;
     this.sessionId = null;
@@ -862,7 +865,7 @@ const Session = {
   _execute({ action, args = {}, from }) {
     const songTitle = (id) => {
       const s = Store.song(id);
-      return s ? s.title : 'a song';
+      return s ? s.title : T('sessions.name.aSong');
     };
     switch (action) {
       case 'toggle': Player.toggle(); break;
@@ -877,7 +880,7 @@ const Session = {
         if (!Store.song(args.songId)) return;
         Player.queue.add(args.songId);
         Player._emit();
-        toast(`${this._who(from)} added "${songTitle(args.songId)}" to the queue`, 'info');
+        toast(T('sessions.toast.queued', { who: this._who(from), song: songTitle(args.songId) }), 'info');
         break;
       case 'queueRemove': Player.removeFromQueue(args.part, args.index); break;
       case 'queueMove': Player.moveInQueue(args.part, args.from, args.to); break;

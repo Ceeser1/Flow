@@ -299,16 +299,15 @@
 
   Visualizer.add({
     id: 'skyline',
-    name: 'Skyline',
-    desc: 'The spectrum as a city of bars in 3D: the last few seconds stretch away into the distance as the camera circles',
+    name: T('viz.skyline.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V11h3v10M10 21V6h4v15M16 21v-7h3v7"/></svg>',
     gl: true,
     create: (canvas) => new Skyline(canvas),
     options: [
-      { type: 'choice', key: 'skColors', label: 'Colors', choices: [['classic', 'Classic'], ['neon', 'Neon'], ['ice', 'Ice'], ['fire', 'Fire']], color: { value: 'custom', key: 'skColor', presets: Visualizer.OWN_PRESETS } },
-      { type: 'choice', key: 'skCamera', label: 'Camera', choices: [['orbit', 'Circling'], ['front', 'Front'], ['above', 'Above']] },
-      { type: 'slider', key: 'skHistory', label: 'History', min: 25, max: 100, step: 5 },
+      { type: 'choice', key: 'skColors', label: T('viz.shared.colors'), choices: [['classic', T('viz.shared.classic')], ['neon', T('viz.shared.neon')], ['ice', T('viz.shared.ice')], ['fire', T('viz.shared.fire')]], color: { value: 'custom', key: 'skColor', presets: Visualizer.OWN_PRESETS } },
+      { type: 'choice', key: 'skCamera', label: T('viz.skyline.setting.camera'), choices: [['orbit', T('viz.skyline.setting.camera.orbit')], ['front', T('viz.skyline.setting.camera.front')], ['above', T('viz.skyline.setting.camera.above')]] },
+      { type: 'slider', key: 'skHistory', label: T('viz.skyline.setting.history'), min: 25, max: 100, step: 5 },
     ],
   });
 })();

@@ -279,7 +279,7 @@
       c.fillRect(0, 22, 5, H);
       c.fillRect(W - 5, 22, 5, H);
       c.fillStyle = '#ffffff';
-      this._text(c, `SCORE ${String(g.score).padStart(4, '0')}`, 8, 9, 2);
+      this._text(c, T('viz.drawn.arcade.score', { score: String(g.score).padStart(4, '0') }), 8, 9, 2);
       this._text(c, a.sure >= 0.35 && a.bpm ? `BPM ${Math.round(a.bpm)}` : 'BPM ---', W - 8, 9, 2, 'right');
       // The bricks, each column glowing with its part of the spectrum.
       for (const b of g.bricks) {
@@ -466,9 +466,9 @@
 
       const c = this.g;
       c.fillStyle = '#ffffff';
-      this._text(c, `SCORE ${String(g.score).padStart(4, '0')}`, 8, 6, 2);
+      this._text(c, T('viz.drawn.arcade.score', { score: String(g.score).padStart(4, '0') }), 8, 6, 2);
       this._text(c, a.sure >= 0.35 && a.bpm ? `BPM ${Math.round(a.bpm)}` : 'BPM ---', W / 2, 6, 2, 'center');
-      this._text(c, `WAVE ${g.wave}`, W - 8, 6, 2, 'right');
+      this._text(c, T('viz.drawn.arcade.wave', { wave: g.wave }), W - 8, 6, 2, 'right');
       for (const x of alive) {
         const b = this._alienBox(g, x);
         this._sprite(c, this._alienSprite(x.r, g.frame), b.x, b.y);
@@ -624,16 +624,15 @@
 
   Visualizer.add({
     id: 'arcade',
-    name: 'Arcade',
-    desc: 'Pong, Breakout and Space Invaders playing themselves to the beat on a glowing screen of big pixels',
+    name: T('viz.arcade.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h2V6h2v2h4V6h2v2h2v3h2v5h-2v-3h-1v3H7v-3H6v3H4v-5h2z"/><path d="M9 11h.01M15 11h.01"/></svg>',
     create: (cv) => new Arcade(cv),
     click: (scene) => scene.next(),
     options: [
-      { type: 'choice', key: 'arGame', label: 'Game', choices: [['auto', 'Each song another'], ['pong', 'Pong'], ['breakout', 'Breakout'], ['invaders', 'Invaders']] },
-      { type: 'choice', key: 'arColors', label: 'Colours', choices: [['arcade', 'Arcade'], ['green', 'Green'], ['amber', 'Amber']] },
-      { type: 'check', key: 'arCrt', label: 'Screen lines' },
+      { type: 'choice', key: 'arGame', label: T('viz.arcade.setting.game'), choices: [['auto', T('viz.arcade.setting.game.auto')], ['pong', 'Pong'], ['breakout', 'Breakout'], ['invaders', 'Invaders']] },
+      { type: 'choice', key: 'arColors', label: T('viz.shared.colors'), choices: [['arcade', T('viz.arcade.name')], ['green', T('common.color.green')], ['amber', T('viz.shared.amber')]] },
+      { type: 'check', key: 'arCrt', label: T('viz.arcade.setting.screenLines') },
     ],
   });
 })();

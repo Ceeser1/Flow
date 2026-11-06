@@ -62,7 +62,7 @@ const ServerImport = {
     // without yt-dlp shows its own greyed out (a click opens the legal note).
     $('downloadBtn').hidden = !computer || none;
     $('downloadBtn').classList.toggle('btn--off', computer && !DownloadsHelp.here);
-    $('downloadBtn').textContent = on ? 'Download (Client)' : 'Download';
+    $('downloadBtn').textContent = on ? T('add.download.client') : T('common.download');
     const busy = ImportPanel.busy || ['probing', 'downloading', 'saving'].includes(AddPage.phase);
     $('serverDownloadBtn').disabled = busy;
   },
@@ -106,13 +106,13 @@ const ServerImport = {
     if (!this.available) return;
     const url = pick ? pick.url : $('linkInput').value.trim();
     if (!url) {
-      AddPage._showError('Paste a link, or type the name of a song, into the box first.');
+      AddPage._showError(T('common.emptyBox'));
       $('linkInput').focus();
       return;
     }
     if (!pick && AddPage.isSearch(url)) {
       if (ImportPanel.busy) {
-        AddPage._showError('An import is still open. Finish it or cancel it first.');
+        AddPage._showError(T('serverImport.importOpen'));
         return;
       }
       SongSearch.open(url, 'server');

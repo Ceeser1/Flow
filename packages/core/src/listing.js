@@ -28,6 +28,7 @@ const songSearch = require('./songSearch');
 const { parseTitle, cleanUploader } = require('./titleParser');
 const { normalizeListUrl, sourceKey } = require('./text');
 const { fillInfo } = require('./songInfo');
+const { tr } = require('./lang');
 
 const SEARCH_RESULTS = 5;
 const SEARCH_PARALLEL = 4;
@@ -38,7 +39,6 @@ const MIX_LIMIT = 50;
 // downloaded (SoundCloud's uploads by labels often cannot: DRM).
 const READ_TRIES = 2;
 const QUALITY_RANK = { good: 2, shaky: 1, none: 0 };
-const SEARCHED_SITES = 'YouTube, SoundCloud, Bandcamp or the Internet Archive';
 // Words typed instead of a link (search): YouTube's results asked for (a
 // page's worth), the YouTube Music songs read for their artist and length;
 // with "Search for more", the other sites' hits read (for their lengths, and
@@ -82,7 +82,7 @@ function groupToken(ytdlpArgs = null) {
 }
 
 function cancelled() {
-  const err = new Error('Cancelled.');
+  const err = new Error(tr('common.cancelled', 'Canceled.'));
   err.cancelled = true;
   return err;
 }
@@ -152,7 +152,7 @@ async function eachItem(items, group, onProgress, fetchOne) {
       phase: 'download', index: it.index, number: n + 1, total: items.length, title: it.title, frac, text,
     });
     onProgress({ phase: 'item', index: it.index, status: 'current' });
-    report(null, 'Reading...');
+    report(null, tr('core.listing.reading', 'Reading...'));
     try {
       const got = await fetchOne(it, report);
       if (group.cancelled) {
@@ -176,7 +176,9 @@ async function eachItem(items, group, onProgress, fetchOne) {
         break;
       }
       summary.failed += 1;
-      onProgress({ phase: 'item', index: it.index, status: 'failed', reason: (err && err.message) || 'failed' });
+      onProgress({
+        phase: 'item', index: it.index, status: 'failed', reason: (err && err.message) || tr('import.song.failed', 'failed'), noAudio: !!(err && err.noAudio),
+      });
     }
   }
   return summary;
@@ -191,7 +193,7 @@ async function eachItem(items, group, onProgress, fetchOne) {
 function createLister({ media, library, lookupInfo = null }) {
   /** A yt-dlp playlist (YouTube, SoundCloud, Bandcamp ...) as checklist items. */
   async function listWithYtDlp(url, group, onProgress) {
-    onProgress({ phase: 'listing', text: 'Reading the playlist...' });
+    onProgress({ phase: 'listing', text: tr('core.listing.readingPlaylist', 'Reading the playlist...') });
     // A YouTube Mix is made up as it goes and runs to hundreds of songs: only
     // its start is taken.
     const mix = /[?&]list=RD/.test(url);
@@ -203,19 +205,19 @@ function createLister({ media, library, lookupInfo = null }) {
 
     let entries = Array.isArray(info.entries) ? info.entries.filter(Boolean) : [];
     if (entries.some((e) => /Tab$/i.test(String(e.ie_key || '')) || e._type === 'playlist')) {
-      throw new Error('This link holds several lists (a channel?). Open the list you want, e.g. its Videos tab, and paste that link.');
+      throw new Error(tr('core.link.severalLists', 'This link holds several lists (a channel?). Open the list you want, e.g. its Videos tab, and paste that link.'));
     }
     // SoundCloud's quick listing often leaves the titles out; read it fully then.
     const untitled = entries.filter((e) => !e.title).length;
     if (entries.length && untitled > entries.length / 2) {
-      onProgress({ phase: 'listing', text: `Reading ${entries.length} songs...` });
+      onProgress({ phase: 'listing', text: tr('core.listing.readingSongs', 'Reading {count} songs...', { count: entries.length }) });
       info = await read(false);
       entries = Array.isArray(info.entries) ? info.entries.filter(Boolean) : [];
     }
 
     const data = library();
     const items = entries.map((e, index) => {
-      const title = String(e.title || e.fulltitle || `Song ${index + 1}`);
+      const title = String(e.title || e.fulltitle || tr('core.link.songNumber', 'Song {number}', { number: index + 1 }));
       const link = e.webpage_url || e.url || '';
       const key = e.id ? sourceKey(e.ie_key || e.extractor_key || info.extractor_key || '', e.id) : '';
       const unavailable = UNAVAILABLE_RE.test(title.trim());
@@ -233,9 +235,9 @@ function createLister({ media, library, lookupInfo = null }) {
       };
     });
     return {
-      source: String(info.extractor_key || info.extractor || 'playlist').replace(/Tab$|Playlist$|Set$/i, '') || 'Playlist',
+      source: String(info.extractor_key || info.extractor || 'playlist').replace(/Tab$|Playlist$|Set$/i, '') || tr('common.playlist', 'Playlist'),
       sourceUrl: info.webpage_url || url,
-      name: String(info.title || 'Imported playlist'),
+      name: String(info.title || tr('common.importedPlaylist', 'Imported playlist')),
       truncated: mix && items.length >= MIX_LIMIT ? 'mix' : false,
       items,
     };
@@ -467,7 +469,7 @@ function createLister({ media, library, lookupInfo = null }) {
    */
   async function search(text, group, { page = 0, more = false } = {}) {
     const parsed = songSearch.parseQuery(text);
-    if (!parsed.query) throw new Error('Type the name of a song, or paste a link.');
+    if (!parsed.query) throw new Error(tr('core.link.typeOrPaste', 'Type the name of a song, or paste a link.'));
     const p = more ? 1 : Math.max(0, Math.floor(Number(page) || 0));
     let found = [];
     if (p === 0) found = await searchYouTube(parsed, group);
@@ -483,7 +485,7 @@ function createLister({ media, library, lookupInfo = null }) {
 
   /** A Spotify playlist or album, each song looked up on YouTube. */
   async function listSpotify(ref, url, group, onProgress) {
-    onProgress({ phase: 'listing', text: 'Reading the Spotify playlist...' });
+    onProgress({ phase: 'listing', text: tr('core.listing.readingSpotify', 'Reading the Spotify playlist...') });
     const page = await spotify.fetchSpotify(ref);
     if (group.cancelled) throw cancelled();
     return listByName(page, {
@@ -495,7 +497,7 @@ function createLister({ media, library, lookupInfo = null }) {
 
   /** A Deezer playlist, album or song, each song looked up on YouTube. */
   async function listDeezer(ref, url, group, onProgress) {
-    onProgress({ phase: 'listing', text: 'Reading the Deezer playlist...' });
+    onProgress({ phase: 'listing', text: tr('core.listing.readingDeezer', 'Reading the Deezer playlist...') });
     const page = await deezer.fetchDeezer(await deezer.resolveShortLink(ref), () => group.cancelled);
     if (group.cancelled) throw cancelled();
     return listByName(page, { source: 'Deezer', sourceUrl: page.url, truncated: false }, group, onProgress);
@@ -503,9 +505,9 @@ function createLister({ media, library, lookupInfo = null }) {
 
   /** An Amazon Music playlist, album or song, each song looked up on YouTube. */
   async function listAmazonMusic(ref, url, group, onProgress) {
-    onProgress({ phase: 'listing', text: 'Reading the Amazon Music playlist...' });
+    onProgress({ phase: 'listing', text: tr('core.listing.readingAmazon', 'Reading the Amazon Music playlist...') });
     const page = await amazonMusic.fetchAmazonMusic(ref, () => group.cancelled, (done, total) => {
-      onProgress({ phase: 'listing', text: `Reading the Amazon Music playlist: song ${done} of ${total}...` });
+      onProgress({ phase: 'listing', text: tr('core.listing.readingAmazon.song', 'Reading the Amazon Music playlist: song {done} of {total}...', { done, total }) });
     });
     if (group.cancelled) throw cancelled();
     return listByName(page, {
@@ -533,7 +535,7 @@ function createLister({ media, library, lookupInfo = null }) {
         url: '',
         key: '',
         status: t.playable ? 'pending' : 'unavailable',
-        note: t.playable ? '' : `not playable on ${source}`,
+        note: t.playable ? '' : tr('core.match.notPlayable', 'not playable on {source}', { source }),
         match: null,
         existing: existingInfo(existingSong(data, { meta })),
       };
@@ -563,7 +565,7 @@ function createLister({ media, library, lookupInfo = null }) {
         if (it.status === 'pending') {
           if (!pick || !pick.cand || pick.quality === 'none') {
             it.status = 'notfound';
-            it.note = pick && pick.cand ? `closest upload is ${Math.round(pick.diff)} s off` : `nothing found on ${SEARCHED_SITES}`;
+            it.note = pick && pick.cand ? tr('core.match.closestOff', 'closest upload is {seconds} s off', { seconds: Math.round(pick.diff) }) : tr('core.match.nothingFound', 'nothing found on YouTube, SoundCloud, Bandcamp or the Internet Archive');
             if (pick && pick.cand) it.match = { ...pick.cand, diff: pick.diff, quality: 'none', site: pick.site };
           } else {
             it.status = 'ok';
@@ -594,14 +596,14 @@ function createLister({ media, library, lookupInfo = null }) {
     const ref = spotify.parseSpotifyUrl(rawUrl);
     if (ref) return listSpotify(ref, rawUrl, group, onProgress);
     if (spotify.isSpotifyTrackUrl(rawUrl)) {
-      throw new Error('Single Spotify songs cannot be downloaded. Paste a Spotify playlist or album link, or the song\'s YouTube link.');
+      throw new Error(tr('core.spotify.singleSong', 'Single Spotify songs cannot be downloaded. Paste a Spotify playlist or album link, or the song\'s YouTube link.'));
     }
     const dz = deezer.parseDeezerUrl(rawUrl);
     if (dz) return listDeezer(dz, rawUrl, group, onProgress);
     const amazon = amazonMusic.parseAmazonMusicUrl(rawUrl);
     if (amazon) return listAmazonMusic(amazon, rawUrl, group, onProgress);
     const url = normalizeListUrl(rawUrl);
-    if (!url) throw new Error('That does not look like a link.');
+    if (!url) throw new Error(tr('core.link.notALink', 'That does not look like a link.'));
     const listing = await listWithYtDlp(url, group, onProgress);
     if (listing.single) return { single: true, probed: media.probedFrom(listing.info, url, rawUrl, knownArtists) };
     return listing;

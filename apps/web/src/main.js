@@ -26,8 +26,17 @@ const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
 const { encode: encodeQr } = require('@flow/core/qr');
 const caps = require('@flow/core/client/caps');
 const { MP3_QUALITIES } = require('@flow/core/formats');
+const { tr, useTranslator } = require('@flow/core/lang');
 const { createEnv } = require('./env');
 const { version } = require('../package.json');
+
+// The shared client's messages (the server connection, Download (Server)) in
+// the window's language: i18n.js loads after this bundle, so it is asked only
+// when a message is made.
+useTranslator((key, vars) => {
+  const i18n = typeof window !== 'undefined' && window.I18n;
+  return i18n && i18n.has(key) ? i18n.t(key, vars) : null;
+});
 
 // ---- events to the window (the preload's on* calls) ----
 
@@ -174,15 +183,16 @@ function start() {
       try {
         return copy(await fn(...args.map(copy)));
       } catch (err) {
-        const e = new Error((err && err.message) || String(err) || 'Something went wrong.');
+        const e = new Error((err && err.message) || String(err) || tr('common.wentWrong', 'Something went wrong.'));
         e.cancelled = !!(err && err.cancelled);
         throw e;
       }
     };
   }
 
-  const notHere = (what) => call(() => {
-    throw new Error(`${what} is not possible in the browser.`);
+  // `key` / `english`: what cannot be done ("Downloading in the browser").
+  const notHere = (key, english) => call(() => {
+    throw new Error(tr('web.notHere', '{what} is not possible in the browser.', { what: tr(key, english) }));
   });
   const nothing = () => {};
 
@@ -195,6 +205,10 @@ function start() {
   };
 
   const flow = {
+    // The texts' language chosen in Settings ('' for the browser's), read once
+    // as the desktop's preload does: i18n.js needs it before anything is drawn,
+    // and the page loads again to switch.
+    language: settings.get('language') || '',
     init: call(async () => ({
       platform: 'web',
       os: osName(),
@@ -258,21 +272,21 @@ function start() {
     findBySource: call((url, key) => actions.findBySource({ url, key })),
     findByMeta: call((meta) => actions.findByMeta(meta)),
     rescan: call(() => library.scan()),
-    showSong: notHere('Showing a song\'s file'),
-    openMusicFolder: notHere('Opening the music folder'),
-    folderStats: notHere('The music folder'),
-    chooseFolder: notHere('Choosing a folder'),
-    moveMusicFolder: notHere('Moving the music folder'),
+    showSong: notHere('common.notHere.showSongFile', 'Showing a song\'s file'),
+    openMusicFolder: notHere('common.notHere.openMusicFolder', 'Opening the music folder'),
+    folderStats: notHere('common.notHere.musicFolder', 'The music folder'),
+    chooseFolder: notHere('common.notHere.chooseFolder', 'Choosing a folder'),
+    moveMusicFolder: notHere('common.notHere.moveMusicFolder', 'Moving the music folder'),
     onFolderProgress: nothing,
 
     // Add Songs in the browser downloads through the server ("Download (Server)") only.
-    probe: notHere('Downloading in the browser'),
-    listImport: notHere('Importing in the browser'),
-    searchSongs: notHere('Searching for songs in the browser'),
+    probe: notHere('web.notHere.download', 'Downloading'),
+    listImport: notHere('web.notHere.import', 'Importing'),
+    searchSongs: notHere('web.notHere.searchSongs', 'Searching for songs'),
     cancelSearch: call(nothing),
-    downloadImport: notHere('Importing in the browser'),
-    pickLocalFiles: notHere('Adding files of this device'),
-    pickLocalFolder: notHere('Adding a folder of this device'),
+    downloadImport: notHere('web.notHere.import', 'Importing'),
+    pickLocalFiles: notHere('web.notHere.addFiles', 'Adding files of this device'),
+    pickLocalFolder: notHere('web.notHere.addFolder', 'Adding a folder of this device'),
     // A visualizer's picture: kept in the page's memory, for as long as it is open.
     saveVizPicture: call((name, bytes) => {
       const ext = vizPicture.check(name, bytes, 60);
@@ -282,32 +296,32 @@ function start() {
       memfs.writeBytes(file, bytes);
       return file;
     }),
-    listLocal: notHere('Adding files of this device'),
-    prepareLocal: notHere('Adding files of this device'),
-    finishImport: notHere('Adding files of this device'),
+    listLocal: notHere('web.notHere.addFiles', 'Adding files of this device'),
+    prepareLocal: notHere('web.notHere.addFiles', 'Adding files of this device'),
+    finishImport: notHere('web.notHere.addFiles', 'Adding files of this device'),
     setImportPending: call(nothing),
     cancelImport: call(nothing),
     onImportProgress: on('import:progress'),
     openUrl: call((url) => {
       if (/^https:\/\//i.test(String(url || ''))) window.open(String(url), '_blank', 'noopener');
     }),
-    scheduleShutdown: notHere('Shutting down'),
+    scheduleShutdown: notHere('common.notHere.shutDown', 'Shutting down'),
     cancelShutdown: call(() => false),
     notify: call(() => false),
     notifySession: call(() => false),
-    download: notHere('Downloading in the browser'),
+    download: notHere('web.notHere.download', 'Downloading'),
     cancelDownload: call(nothing),
     discardDownload: call(nothing),
     onDownloadProgress: nothing,
-    peaks: notHere('Reading a file of this device'),
+    peaks: notHere('web.notHere.readFile', 'Reading a file of this device'),
     sponsorSegments: call(() => []),
     /** A server song's file, whole (seekCheck.js decodes it to find where a seek in an MP3 landed). */
     songAudio: call(async (songId) => {
       const st = remote.status();
-      if (st.state !== 'online' || !st.base) throw new Error('The server cannot be reached.');
+      if (st.state !== 'online' || !st.base) throw new Error(tr('common.unreachable', 'The server cannot be reached.'));
       const q = [st.token ? `t=${encodeURIComponent(st.token)}` : '', vorbis ? '' : 'vorbis=0'].filter(Boolean).join('&');
       const res = await fetch(`${st.base}/api/songs/${encodeURIComponent(String(songId))}/audio${q ? `?${q}` : ''}`);
-      if (!res.ok) throw new Error('The server could not send it.');
+      if (!res.ok) throw new Error(tr('common.serverFailed', 'The server could not send it.'));
       return new Uint8Array(await res.arrayBuffer());
     }),
 
@@ -327,8 +341,8 @@ function start() {
     }),
     setServerSecret: call((text) => remote.setSecret(text)),
     syncNow: call(() => remote.syncNow()),
-    setOffline: notHere('Keeping songs for offline'),
-    downloadServerSong: notHere('Keeping songs for offline'),
+    setOffline: notHere('web.notHere.offline', 'Keeping songs for offline'),
+    downloadServerSong: notHere('web.notHere.offline', 'Keeping songs for offline'),
     removeServerDownload: call(nothing),
     removeDeviceSong: call(nothing),
     switchServer: call((id) => remote.switchServer(id)),
@@ -355,7 +369,7 @@ function start() {
     sessions: call((body) => remote.sessions(body || null)),
     onServerLive: on('server:live'),
     onSettingsChanged: on('settings:changed'),
-    finishSong: notHere('Saving a download in the browser'),
+    finishSong: notHere('web.notHere.saveDownload', 'Saving a download'),
     lyrics: call((songId) => lyricsClient.get(songId)),
     lyricsStats: call(() => lyricsClient.stats()),
     clearLyricsCache: call(() => lyricsClient.clear()),
@@ -363,7 +377,7 @@ function start() {
     shareLink: call(() => remote.shareLink()),
     recordAwayListen: call((song, listened, duration) => actions.recordAwayListen({ song, listened, duration })),
     // Guests of other servers' sessions need the network searched (caps.guests is off).
-    guest: notHere('Joining another server\'s session'),
+    guest: notHere('web.notHere.joinOtherServer', 'Joining another server\'s session'),
     onGuestLive: nothing,
     onGuestChanged: nothing,
     connectLink: call((text) => remote.connectLink(String(text || ''))),

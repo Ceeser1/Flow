@@ -33,7 +33,7 @@
 const VIZ_RANDOM_GLYPH = '<img class="viz-tile__icon" src="../images/shuffle.png" alt="" />';
 
 const VISUALIZERS = [
-  { id: 'bars', name: 'Bars', ready: true, desc: 'Spectrum bars with falling peaks, in the manner of Winamp', glyph: Icons.speaker, image: '../images/viz-bars.jpg' },
+  { id: 'bars', name: T('viz.bars.name'), ready: true, glyph: Icons.speaker, image: '../images/viz-bars.jpg' },
 ];
 
 // The categories in Settings, each's visualizers in their order there (and
@@ -41,26 +41,26 @@ const VISUALIZERS = [
 const VIZ_CATEGORIES = [
   {
     id: 'equalizers',
-    name: 'Equalizers',
-    desc: 'The sound itself: bars, waves, rings and dots',
+    name: T('viz.category.equalizers.name'),
+    desc: T('viz.category.equalizers.desc'),
     ids: ['bars', 'waveform', 'scope', 'spectrogram', 'ridges', 'skyline', 'halo', 'orb', 'reactor', 'hifi', 'vinyl', 'strings', 'radar', 'seismo'],
   },
   {
     id: 'worlds',
-    name: 'Worlds',
-    desc: 'Places to look at',
+    name: T('viz.category.worlds.name'),
+    desc: T('viz.category.worlds.desc'),
     ids: ['synthwave', 'galaxy', 'aurora', 'lightning', 'inferno', 'fireworks', 'disco', 'stainedglass', 'blackhole', 'deepsea', 'pond', 'lighthouse', 'train', 'fountain'],
   },
   {
     id: 'trippy',
-    name: 'Trippy',
-    desc: 'Patterns, colour and motion',
+    name: T('viz.category.trippy.name'),
+    desc: T('viz.category.trippy.desc'),
     ids: ['kaleidoscope', 'prism', 'lava', 'demo', 'rain', 'chladni', 'coral', 'attractor', 'julia', 'plasmaglobe', 'tunnel', 'warp', 'mandelbulb', 'moire'],
   },
   {
     id: 'other',
-    name: 'Other',
-    desc: 'The odd ones',
+    name: T('viz.category.other.name'),
+    desc: T('viz.category.other.desc'),
     ids: ['pianoroll', 'arcade', 'shatter', 'mosaic'],
   },
 ];
@@ -127,7 +127,7 @@ const Visualizer = {
     this._random = pool ? id : null;
     this._songAt = Player.currentId;
 
-    const close = iconButton('viz-full__close', Icons.x, Store.can('keyboard') ? 'Close (Esc)' : 'Close', () => this.close());
+    const close = iconButton('viz-full__close', Icons.x, Store.can('keyboard') ? T('viz.close.withKey') : T('common.close'), () => this.close());
     this.el = h('div.viz-full', close);
     // Anywhere, the player bar included, since that is over the layer; but
     // on the Queue (a drawer over it) they get out of the way instead.
@@ -168,11 +168,11 @@ const Visualizer = {
     this.stage = h('div.viz-full__stage', this.canvas);
     this.el.insertBefore(this.stage, this.el.firstChild);
     if (!Equalizer.active) {
-      this.stage.appendChild(h('p.viz-full__note', 'The visualizer needs Web Audio, which could not be started on this computer.'));
+      this.stage.appendChild(h('p.viz-full__note', T('viz.noWebAudio')));
     }
     if (kind === 'bars') this.stage.appendChild(this._barsPanel());
     const def = this.scenes[kind];
-    if (def && def.options) this.stage.appendChild(this._cfgPanel(`${def.name} settings`, def.options));
+    if (def && def.options) this.stage.appendChild(this._cfgPanel(T('viz.settings.title', { visualizer: def.name }), def.options));
     if (def && def.click) this.canvas.addEventListener('click', () => this.scene && def.click(this.scene));
     if (def && def.hint) this.canvas.title = def.hint;
     if (!Equalizer.active) return;
@@ -183,7 +183,7 @@ const Visualizer = {
         this.scene = def.create(this.canvas);
       } catch (err) {
         console.warn('Visualizer:', err);
-        this.stage.appendChild(h('p.viz-full__note', `${def.name} could not be started on this computer (${def.gl ? 'it needs WebGL 2' : String(err.message || err)}).`));
+        this.stage.appendChild(h('p.viz-full__note', T('viz.couldNotStart', { visualizer: def.name, reason: def.gl ? T('viz.couldNotStart.needsWebGl2') : String(err.message || err) })));
         return;
       }
     }
@@ -310,7 +310,7 @@ const Visualizer = {
   },
 
   /**
-   * A visualizer from viz/: { id, name, desc, glyph, create(canvas) -> scene,
+   * A visualizer from viz/: { id, name, glyph, create(canvas) -> scene,
    * options?, click?(scene), hint?, stereo?, gl?, resolution?, sharp? }. The
    * scene: size(w, h) (canvas pixels), frame(audio, dt, now) with audio
    * VizAudio, destroy?(). resolution: canvas pixels per css pixel (1), sharp:
@@ -320,7 +320,7 @@ const Visualizer = {
     this.scenes[def.id] = def;
     // Its picture in Settings: images/viz-<id>.jpg, a moment of it playing.
     const image = def.image === undefined ? `../images/viz-${def.id}.jpg` : def.image;
-    VISUALIZERS.push({ id: def.id, name: def.name, ready: true, desc: def.desc, glyph: def.glyph, image });
+    VISUALIZERS.push({ id: def.id, name: def.name, ready: true, glyph: def.glyph, image });
   },
 
   /** One of `ids` at random, not the last one picked nor the one showing if it can. */
@@ -449,18 +449,18 @@ const Visualizer = {
 
   /** Bars' cogwheel. */
   _barsPanel() {
-    return this._cfgPanel('Bars settings', [
-      { type: 'slider', key: 'brCount', label: 'Bars', min: 16, max: 128, step: 4, unit: '' },
+    return this._cfgPanel(T('viz.bars.settings.title'), [
+      { type: 'slider', key: 'brCount', label: T('viz.bars.name'), min: 16, max: 128, step: 4, unit: '' },
       {
         type: 'choice',
         key: 'brColors',
-        label: 'Colors',
-        choices: [['fire', 'Fire'], ['ice', 'Ice'], ['lime', 'Lime'], ['rainbow', 'Rainbow']],
+        label: T('viz.shared.colors'),
+        choices: [['fire', T('viz.shared.fire')], ['ice', T('viz.shared.ice')], ['lime', T('viz.bars.setting.colors.lime')], ['rainbow', T('common.color.rainbow')]],
         color: { value: 'custom', key: 'brColor', presets: this.OWN_PRESETS },
       },
-      { type: 'choice', key: 'brStyle', label: 'Style', choices: [['solid', 'Solid'], ['led', 'LED']] },
-      { type: 'check', key: 'brPeaks', label: 'Peaks' },
-      { type: 'check', key: 'brMirror', label: 'Mirror floor' },
+      { type: 'choice', key: 'brStyle', label: T('viz.shared.style'), choices: [['solid', T('viz.bars.setting.style.solid')], ['led', 'LED']] },
+      { type: 'check', key: 'brPeaks', label: T('viz.bars.setting.peaks') },
+      { type: 'check', key: 'brMirror', label: T('viz.bars.setting.mirrorFloor') },
     ]);
   },
 
@@ -644,7 +644,7 @@ const Visualizer = {
     const build = (item, around) => {
       const enabled = item.when ? () => around() && item.when(Store.settings) : around;
       if (item.type === 'color') {
-        const swatch = h('button.viz-cfg__swatch', { type: 'button', title: `Choose the ${item.label.toLowerCase()}` });
+        const swatch = h('button.viz-cfg__swatch', { type: 'button', title: T('viz.settings.choose.tooltip', { setting: item.label.toLowerCase() }) });
         const paint = (hex) => {
           swatch.style.background = hex;
         };
@@ -652,7 +652,7 @@ const Visualizer = {
         const picker = this._picker(panel, swatch, paint, item.key, item.presets);
         pickers.push(picker);
         swatch.addEventListener('click', () => picker.toggle());
-        return h('div.viz-cfg__item', h('span', `${item.label}:`), swatch);
+        return h('div.viz-cfg__item', h('span', T('viz.settings.field', { setting: item.label })), swatch);
       }
       if (item.type === 'check') {
         const box = h('input', { type: 'checkbox', checked: !!Store.settings[item.key] });
@@ -699,7 +699,7 @@ const Visualizer = {
           const pick = item.pick && item.pick.value === value ? item.pick : null;
           pills.appendChild(h('button.viz-cfg__pill', {
             type: 'button',
-            title: pick ? (pick.video ? 'Choose a picture or a video' : 'Choose a picture') : null,
+            title: pick ? (pick.video ? T('viz.settings.choosePictureOrVideo') : T('viz.settings.choosePicture')) : null,
             dataset: { value },
             onclick: async () => {
               pickers.forEach((p) => p.close());
@@ -717,7 +717,7 @@ const Visualizer = {
         if (item.color) {
           // Its own colour: the swatch picks it (and opens the picker).
           const { value, key, presets } = item.color;
-          const swatch = h('button.viz-cfg__pill.viz-cfg__pill--swatch', { type: 'button', title: 'Choose a color', 'aria-label': 'Own color', dataset: { value } });
+          const swatch = h('button.viz-cfg__pill.viz-cfg__pill--swatch', { type: 'button', title: T('viz.settings.chooseColor'), 'aria-label': T('viz.settings.ownColor.ariaLabel'), dataset: { value } });
           const paint = (hex) => swatch.style.setProperty('--swatch', hex);
           paint(Store.settings[key]);
           const picker = this._picker(panel, swatch, paint, key, presets);
@@ -806,7 +806,7 @@ const Visualizer = {
       if (!blob) throw new Error('unreadable');
       return await window.flow.saveVizPicture(name, new Uint8Array(await blob.arrayBuffer()));
     } catch {
-      toast(`"${file.name}" could not be opened as a picture.`, 'error');
+      toast(T('viz.picture.notAPicture', { file: file.name }), 'error');
       return null;
     }
   },
@@ -820,7 +820,7 @@ const Visualizer = {
   async _keepVideo(file, name) {
     const most = ['android', 'ios', 'web'].includes(Store.platform) ? 60 : 300;
     if (file.size > most * 1e6) {
-      toast(`"${file.name}" is too big for a background: at most ${most} MB.`, 'error');
+      toast(T('viz.picture.tooBig', { file: file.name, mb: most }), 'error');
       return null;
     }
     const url = URL.createObjectURL(file);
@@ -840,13 +840,13 @@ const Visualizer = {
     });
     URL.revokeObjectURL(url);
     if (!plays) {
-      toast(`"${file.name}" could not be played as a video.`, 'error');
+      toast(T('viz.picture.notAVideo', { file: file.name }), 'error');
       return null;
     }
     try {
       return await window.flow.saveVizPicture(name, new Uint8Array(await file.arrayBuffer()));
     } catch {
-      toast(`"${file.name}" could not be kept.`, 'error');
+      toast(T('viz.picture.notKept', { file: file.name }), 'error');
       return null;
     }
   },
@@ -919,7 +919,7 @@ const Visualizer = {
       hsv.h = Math.min(359.9, x * 360);
     });
     for (const hex of presets) {
-      const title = hex === presets[0] ? 'Default' : hex;
+      const title = hex === presets[0] ? T('viz.settings.default') : hex;
       const btn = h('button.viz-pick__preset', {
         type: 'button',
         title,

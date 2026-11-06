@@ -297,16 +297,15 @@
 
   Visualizer.add({
     id: 'plasmaglobe',
-    name: 'Plasma',
-    desc: 'Plasma crackling with the music, its tendrils reaching out across the screen or for the glass of a globe, gathering to a fingertip on the big kicks',
+    name: T('viz.plasma.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 12l-4-6M12 12l6-3M12 12l-1 7M12 12l7 3"/></svg>',
     gl: true,
     create: (canvas) => new Plasma(canvas),
     options: [
-      { type: 'choice', key: 'pgShape', label: 'Shape', choices: [['full', 'Full screen'], ['globe', 'Globe']] },
-      { type: 'choice', key: 'pgColors', label: 'Colours', choices: [['plasma', 'Plasma'], ['blue', 'Blue'], ['green', 'Green'], ['rainbow', 'Rainbow']] },
-      { type: 'slider', key: 'pgCount', label: 'Tendrils', min: 4, max: MAX, step: 1, unit: '' },
+      { type: 'choice', key: 'pgShape', label: T('viz.shared.shape'), choices: [['full', T('viz.plasma.setting.shape.full')], ['globe', T('viz.plasma.setting.shape.globe')]] },
+      { type: 'choice', key: 'pgColors', label: T('viz.shared.colors'), choices: [['plasma', T('viz.plasma.name')], ['blue', T('common.color.blue')], ['green', T('common.color.green')], ['rainbow', T('common.color.rainbow')]] },
+      { type: 'slider', key: 'pgCount', label: T('viz.plasma.setting.tendrils'), min: 4, max: MAX, step: 1, unit: '' },
     ],
   });
 })();

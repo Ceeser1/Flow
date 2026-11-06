@@ -343,8 +343,7 @@
 
   Visualizer.add({
     id: 'waveform',
-    name: 'Waveform',
-    desc: 'The equalizer, glowing out from the middle of the screen',
+    name: T('viz.waveform.name'),
     glyph: Icons.pulse,
     image: '../images/viz-waveform.jpg',
     gl: true,
@@ -353,12 +352,12 @@
       {
         type: 'choice',
         key: 'wfColors',
-        label: 'Color',
-        choices: [['rainbow', 'Rainbow'], ['spectrum', 'Spectrum'], ['greyscale', 'Greyscale']],
+        label: T('viz.shared.color'),
+        choices: [['rainbow', T('common.color.rainbow')], ['spectrum', T('common.spectrum')], ['greyscale', T('common.color.greyscale')]],
         color: { value: 'custom', key: 'wfColor', presets: Visualizer.OWN_PRESETS },
       },
-      { type: 'choice', key: 'wfStyle', label: 'Style', choices: [['bars', 'Bars'], ['wave', 'Wave']] },
-      { type: 'check', key: 'wfShine', label: 'Shine', amount: { key: 'wfShineSpread', min: 0, max: 100, step: 5 } },
+      { type: 'choice', key: 'wfStyle', label: T('viz.shared.style'), choices: [['bars', T('viz.bars.name')], ['wave', T('viz.shared.wave')]] },
+      { type: 'check', key: 'wfShine', label: T('viz.waveform.setting.shine'), amount: { key: 'wfShineSpread', min: 0, max: 100, step: 5 } },
     ],
   });
 })();

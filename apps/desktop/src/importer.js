@@ -26,6 +26,7 @@ const {
 } = require('@flow/core/listing');
 const { scanFolder, MAX_FILES } = require('./localScan');
 const { lookupInfo } = require('@flow/core/songInfo');
+const { tr } = require('@flow/core/lang');
 
 // The songs a list is held against ("already in your library"): the library
 // the window shows, a Flow Server's while one is connected (main.js), whose
@@ -91,8 +92,9 @@ async function listLocal(picked, group, onProgress) {
     if (inMusicDir(full)) {
       if (st.isDirectory()) {
         const own = full.toLowerCase() === path.resolve(paths.musicDir()).toLowerCase();
-        throw new Error(`${own ? 'This is Flow\'s own music folder' : 'This folder is inside Flow\'s own music folder'} `
-          + `(${paths.musicDir()}). Its songs are already in your library.`);
+        throw new Error(own
+          ? tr('desktop.import.ownFolder', 'This is Flow\'s own music folder ({folder}). Its songs are already in your library.', { folder: paths.musicDir() })
+          : tr('desktop.import.insideOwnFolder', 'This folder is inside Flow\'s own music folder ({folder}). Its songs are already in your library.', { folder: paths.musicDir() }));
       }
       fromMusicDir += 1;
       continue;
@@ -118,10 +120,11 @@ async function listLocal(picked, group, onProgress) {
   const unique = files.filter((f) => !seen.has(f.toLowerCase()) && seen.add(f.toLowerCase()));
   if (!unique.length) {
     if (fromMusicDir) {
-      throw new Error(`${fromMusicDir === 1 ? 'This file is' : 'These files are'} already in Flow's own music folder `
-        + `(${paths.musicDir()}), so ${fromMusicDir === 1 ? 'it is' : 'they are'} in your library.`);
+      throw new Error(tr('desktop.import.filesInOwnFolder', fromMusicDir === 1
+        ? 'This file is already in Flow\'s own music folder ({folder}), so it is in your library.'
+        : 'These files are already in Flow\'s own music folder ({folder}), so they are in your library.', { folder: paths.musicDir(), count: fromMusicDir }));
     }
-    throw new Error(folder ? 'No audio or video files were found in this folder.' : 'The file could not be opened.');
+    throw new Error(folder ? tr('desktop.import.noMediaInFolder', 'No audio or video files were found in this folder.') : tr('common.fileNotOpened', 'The file could not be opened.'));
   }
   const bySong = new Map(library.get().songs.map((s) => [path.resolve(s.file).toLowerCase(), s]));
   const items = unique.map((file, index) => {
@@ -138,7 +141,7 @@ async function listLocal(picked, group, onProgress) {
       existing: existingInfo(bySong.get(file.toLowerCase())),
     };
   });
-  let name = `${unique.length} files`;
+  let name = tr('common.count.files', '{count} files', { count: unique.length });
   if (folder) name = path.basename(folder) || folder;
   else if (unique.length === 1) name = path.basename(unique[0]);
   return { local: true, source: 'Local', sourceUrl: '', name, truncated, items };

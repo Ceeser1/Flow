@@ -474,15 +474,14 @@
 
   Visualizer.add({
     id: 'mosaic',
-    name: 'Mosaic Cover',
-    desc: "The song's cover built from the covers in your own library, the tiles flipping over on the beat",
+    name: T('viz.mosaic.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 15l3.5-1.5L21 15v5l-3.5 1.5L14 20z"/></svg>',
     gl: true,
     create: (canvas) => new Mosaic(canvas),
     options: [
-      { type: 'choice', key: 'msSize', label: 'Tiles', choices: [['tiny', 'Tiny'], ['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']] },
-      { type: 'slider', key: 'msTint', label: 'Towards the picture', min: 0, max: 100, step: 5 },
+      { type: 'choice', key: 'msSize', label: T('viz.shared.tiles'), choices: [['tiny', T('viz.mosaic.setting.tiles.tiny')], ['small', T('viz.mosaic.setting.tiles.small')], ['medium', T('viz.mosaic.setting.tiles.medium')], ['large', T('viz.mosaic.setting.tiles.large')]] },
+      { type: 'slider', key: 'msTint', label: T('viz.mosaic.setting.towardsThePicture'), min: 0, max: 100, step: 5 },
     ],
   });
 })();

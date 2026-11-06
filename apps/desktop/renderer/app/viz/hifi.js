@@ -984,7 +984,7 @@
       const id = Player.currentId;
       const song = id ? Store.song(id) || (Player.remote ? Player.remote.state : null) : null;
       if (!song) return { line: 'FLOW', title: '' };
-      const title = song.title || 'Untitled';
+      const title = song.title || T('common.untitled');
       return { line: dotText(song.artist ? `${title} - ${song.artist}` : title), title };
     }
 
@@ -1090,7 +1090,7 @@
       const dim = rgba(col, 0.55);
       this._vfdText(lg, this.scale.text, this.scale.x, this.scale.y, this.scale.size, dim, 'left');
       this._vfdText(lg, 'BPM', this.bpmLabel.x, this.bpmLabel.y, this.bpmLabel.size, dim, 'left');
-      this._vfdText(lg, 'KEY', this.keyLabel.x, this.keyLabel.y, this.keyLabel.size, dim, 'right');
+      this._vfdText(lg, T('viz.drawn.hifi.key'), this.keyLabel.x, this.keyLabel.y, this.keyLabel.size, dim, 'right');
       for (let ch = 0; ch < 2; ch += 1) {
         this._vfdText(lg, ch ? 'R' : 'L', this.chLabel.x, bars.y + ch * (bars.h + bars.gap) + bars.h / 2, this.chLabel.size, dim, 'left');
       }
@@ -1109,7 +1109,8 @@
       const bpm = a.sure >= 0.35 && a.bpm ? String(Math.round(a.bpm)).padStart(3, ' ') : '---';
       for (let i = 0; i < 3; i += 1) seg7(lg, this.bpm.x + i * this.bpm.w * 1.45, this.bpm.y, this.bpm.w, this.bpm.h, bpm[i]);
       const notes = a.notes();
-      const key = notes.key >= 0 && notes.clarity > 0.2 ? `${NAMES[notes.key]}${notes.minor ? ' MIN' : ' MAJ'}` : '';
+      const note = notes.key >= 0 ? T('viz.drawn.notes').split(' ')[notes.key] || NAMES[notes.key] : '';
+      const key = notes.key >= 0 && notes.clarity > 0.2 ? `${note.toUpperCase()} ${notes.minor ? T('viz.drawn.hifi.minor') : T('viz.drawn.hifi.major')}` : '';
       if (key) {
         const k = this.keyM;
         lg.drawImage(this._strip(key.padStart(6, ' '), k.pitch, col), k.x, k.y);
@@ -1312,8 +1313,7 @@
 
   Visualizer.add({
     id: 'hifi',
-    name: 'Hi-Fi',
-    desc: 'An 80s stereo rack: the title on a glowing display, an LED spectrum analyser, VU meters swinging with each channel, a cassette turning',
+    name: T('viz.hifi.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 15l2.5-5M15 15l2.5-5"/>'
       + '<path d="M4.5 15h7M13.5 15h7"/></svg>',
@@ -1321,10 +1321,10 @@
     sharp: true,
     create: (cv) => new HiFi(cv),
     options: [
-      { type: 'choice', key: 'hfFinish', label: 'Finish', choices: [['silver', 'Silver'], ['black', 'Black']] },
-      { type: 'choice', key: 'hfDisplay', label: 'Display', choices: [['teal', 'Teal'], ['amber', 'Amber'], ['blue', 'Blue'], ['green', 'Green']] },
-      { type: 'choice', key: 'hfMeters', label: 'Meter light', choices: [['amber', 'Warm'], ['white', 'White'], ['blue', 'Blue']] },
-      { type: 'check', key: 'hfPeaks', label: 'Analyzer peaks' },
+      { type: 'choice', key: 'hfFinish', label: T('viz.hifi.setting.finish'), choices: [['silver', T('viz.shared.silver')], ['black', T('common.color.black')]] },
+      { type: 'choice', key: 'hfDisplay', label: T('viz.hifi.setting.display'), choices: [['teal', T('viz.hifi.setting.display.teal')], ['amber', T('viz.shared.amber')], ['blue', T('common.color.blue')], ['green', T('common.color.green')]] },
+      { type: 'choice', key: 'hfMeters', label: T('viz.hifi.setting.meterLight'), choices: [['amber', T('viz.shared.warm')], ['white', T('common.color.white')], ['blue', T('common.color.blue')]] },
+      { type: 'check', key: 'hfPeaks', label: T('viz.hifi.setting.analyzerPeaks') },
     ],
   });
 })();

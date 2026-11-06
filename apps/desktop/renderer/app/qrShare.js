@@ -21,22 +21,22 @@ const QrShare = {
     const canvas = this._draw(code);
     const copy = Store.can('keyboard') ? h('button.btn.btn--small', {
       type: 'button',
-      onclick: () => navigator.clipboard.writeText(shared.link).then(() => toast('Link copied', 'success'), () => toast('The link could not be copied.', 'error')),
-    }, 'Copy link') : null;
+      onclick: () => navigator.clipboard.writeText(shared.link).then(() => toast(T('qrShare.copied'), 'success'), () => toast(T('qrShare.notCopied'), 'error')),
+    }, T('qrShare.copyLink')) : null;
     Modal.open({
-      title: `Share ${shared.name}`,
+      title: T('qrShare.title', { server: shared.name }),
       className: 'modal--small.modal--qr',
       body: [
         h('div.qr__frame', canvas),
         h('p.settings__note', Store.phone
-          ? 'On the other phone: Flow, Settings, Flow Server, Scan.'
-          : 'On a phone: Flow, Settings, Flow Server, Scan. On another computer, paste the link into the Home address.'),
+          ? T('qrShare.howTo.phone')
+          : T('qrShare.howTo.computer')),
         h('p.settings__note', shared.code
-          ? 'It lets one app in, once, within 10 minutes. It holds no password, profile or PIN: the other app picks its own profile.'
-          : 'It holds no password: the other app is asked for the server password, if the server has one.'),
+          ? T('qrShare.onceOnly')
+          : T('qrShare.noPassword')),
         copy ? h('div.qr__bar', copy) : null,
       ],
-      buttons: [{ label: 'Close', kind: 'primary' }],
+      buttons: [{ label: T('common.close'), kind: 'primary' }],
     });
   },
 
@@ -71,12 +71,12 @@ const QrShare = {
   /** A flow://connect link (scanned, pasted): its server is the one in use. True when it was one. */
   async connect(text) {
     if (!/^\s*flow:\/\/connect/i.test(String(text || ''))) {
-      toast('That QR code is not one of a Flow Server.', 'error');
+      toast(T('qrShare.notFlow'), 'error');
       return false;
     }
     try {
       const { name } = await window.flow.connectLink(String(text));
-      toast(`Connecting to ${name}...`, 'success');
+      toast(T('qrShare.connecting', { server: name }), 'success');
     } catch (err) {
       toast(err.message, 'error');
     }

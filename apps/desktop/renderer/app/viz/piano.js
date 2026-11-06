@@ -307,17 +307,16 @@
 
   Visualizer.add({
     id: 'pianoroll',
-    name: 'Piano Roll',
-    desc: 'The notes the music plays pressing the keys of a piano and rising from them as glowing bars, as long as they are held',
+    name: T('viz.piano.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="14" width="20" height="7" rx="1"/><path d="M7 14v4M12 14v4M17 14v4"/>'
       + '<path d="M5 3v8M10 6v5M15 2v9M19 7v4"/></svg>',
     sharp: true,
     create: (cv) => new PianoRoll(cv),
     options: [
-      { type: 'choice', key: 'prColors', label: 'Colours', choices: [['hands', 'Two hands'], ['rainbow', 'Per note'], ['neon', 'Neon']] },
-      { type: 'slider', key: 'prSpeed', label: 'Speed', min: 25, max: 300, step: 5 },
-      { type: 'check', key: 'prSparks', label: 'Sparks' },
+      { type: 'choice', key: 'prColors', label: T('viz.shared.colors'), choices: [['hands', T('viz.piano.setting.colours.hands')], ['rainbow', T('viz.piano.setting.colours.rainbow')], ['neon', T('viz.shared.neon')]] },
+      { type: 'slider', key: 'prSpeed', label: T('viz.shared.speed'), min: 25, max: 300, step: 5 },
+      { type: 'check', key: 'prSparks', label: T('viz.shared.sparks') },
     ],
   });
 })();

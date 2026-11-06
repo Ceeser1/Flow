@@ -368,6 +368,9 @@ const DEFAULTS = {
   sleepTimer: null,
 
   // ---- the Settings window ----
+  // The texts' language (i18n.js): '' for the device's, or 'en' / 'de'. Kept
+  // on this device only.
+  language: '',
   // Where songs are saved; '' is Music\FlowPlayer.
   musicDir: '',
   // With alwaysMp3: leave MP3s as they are instead of encoding them again.
@@ -577,6 +580,7 @@ function clean(raw) {
   // And Halo's Spin (the round cover turning).
   delete s.hlSpin;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
+  if (!['', 'en', 'de'].includes(s.language)) s.language = '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {

@@ -176,16 +176,15 @@
 
   Visualizer.add({
     id: 'reactor',
-    name: 'Reactor',
-    desc: "A starship's display of turning rings, each a level meter for its part of the spectrum, the core glowing with the bass",
+    name: T('viz.reactor.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M12 5a7 7 0 0 1 7 7M12 19a7 7 0 0 1-7-7M12 2a10 10 0 0 1 10 10M12 22A10 10 0 0 1 2 12"/></svg>',
     gl: true,
     create: (canvas) => new Reactor(canvas),
     options: [
-      { type: 'color', key: 'rxColor', label: 'Color', presets: PRESETS },
-      { type: 'slider', key: 'rxRings', label: 'Rings', min: 4, max: 16, step: 1, unit: '' },
-      { type: 'slider', key: 'rxSpin', label: 'Turning', min: 0, max: 300, step: 5 },
+      { type: 'color', key: 'rxColor', label: T('viz.shared.color'), presets: PRESETS },
+      { type: 'slider', key: 'rxRings', label: T('viz.shared.rings'), min: 4, max: 16, step: 1, unit: '' },
+      { type: 'slider', key: 'rxSpin', label: T('viz.shared.turning'), min: 0, max: 300, step: 5 },
     ],
   });
 })();

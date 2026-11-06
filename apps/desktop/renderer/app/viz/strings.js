@@ -137,7 +137,8 @@
       c.textBaseline = 'middle';
       c.font = '600 34px system-ui, sans-serif';
       c.textAlign = 'center';
-      NAMES.forEach((n, i) => c.fillText(n, i * 64 + 32, 34));
+      const names = T('viz.strings.notes').split(' ');
+      NAMES.forEach((n, i) => c.fillText(names[i] || n, i * 64 + 32, 34));
       c.textAlign = 'right';
       c.font = '500 30px system-ui, sans-serif';
       c.fillText(key, 1020, 34);
@@ -188,7 +189,7 @@
         this.speed[p] = 7 * Math.pow(1.6, oct);
       }
       this.glow += ((a.playing ? a.throb : 0) - this.glow) * Math.min(1, dt * 10);
-      if (set('stNames') && notes && notes.key >= 0 && notes.clarity > 0.15) this._labels(`${NAMES[notes.key]} ${notes.minor ? 'minor' : 'major'}`);
+      if (set('stNames') && notes && notes.key >= 0 && notes.clarity > 0.15) this._labels(T(notes.minor ? 'viz.drawn.key.minor' : 'viz.drawn.key.major', { note: T(notes.minor ? 'viz.strings.notes.minor' : 'viz.strings.notes').split(' ')[notes.key] || NAMES[notes.key] }));
       else if (!notes) this._labels('');
 
       gl.disable(gl.BLEND);
@@ -212,15 +213,14 @@
 
   Visualizer.add({
     id: 'strings',
-    name: 'Strings',
-    desc: 'Twelve strings, one for each note, vibrating as strongly as their notes sound: slow and wide when low, shivering when high',
+    name: T('viz.strings.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 10c6-3 12 3 18 0M3 14c4 2 6-2 9 0s5 2 9 0M3 18h18"/></svg>',
     gl: true,
     create: (canvas) => new Strings(canvas),
     options: [
-      { type: 'choice', key: 'stColors', label: 'Colours', choices: [['notes', 'Round the notes'], ['gold', 'Gold'], ['ice', 'Ice']], color: { value: 'custom', key: 'stColor', presets: Visualizer.OWN_PRESETS } },
-      { type: 'check', key: 'stNames', label: "The notes' names and the key" },
+      { type: 'choice', key: 'stColors', label: T('viz.shared.colors'), choices: [['notes', T('viz.strings.setting.colours.notes')], ['gold', T('viz.shared.gold')], ['ice', T('viz.shared.ice')]], color: { value: 'custom', key: 'stColor', presets: Visualizer.OWN_PRESETS } },
+      { type: 'check', key: 'stNames', label: T('viz.strings.setting.theNotesNamesAndTheKey') },
     ],
   });
 })();

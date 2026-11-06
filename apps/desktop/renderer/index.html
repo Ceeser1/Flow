@@ -17,7 +17,7 @@
   <aside class="menu">
     <div class="brand">
       <span class="brand__name">Flow</span>
-      <button id="menuSettings" class="settings-btn" type="button" title="Settings" aria-label="Settings"></button>
+      <button id="menuSettings" class="settings-btn" type="button" title="Settings" aria-label="Settings" data-i18n-aria-label="common.settings" data-i18n-title="common.settings"></button>
     </div>
     <!-- The Flow Server in use: connected, offline, songs going up or down. -->
     <button id="serverChip" class="server-chip" type="button" hidden></button>
@@ -25,18 +25,18 @@
     <button id="menuAdd" class="menu__item" type="button"></button>
     <!-- Every song; under it, with a Flow Server, the songs each profile added. -->
     <button id="menuAllSongs" class="menu__item" type="button"></button>
-    <nav id="menuAllSongsList" class="menu__subs" aria-label="Downloaded Songs, and All Songs by who added them" hidden></nav>
+    <nav id="menuAllSongsList" class="menu__subs" aria-label="Downloaded Songs, and All Songs by who added them" hidden data-i18n-aria-label="window.menu.downloaded.ariaLabel"></nav>
     <button id="menuPlaylists" class="menu__item" type="button"></button>
-    <nav id="menuPlaylistList" class="menu__subs" aria-label="Playlists"></nav>
+    <nav id="menuPlaylistList" class="menu__subs" aria-label="Playlists" data-i18n-aria-label="common.playlists"></nav>
     <!-- Below the playlists; only while at least one shared playlist is followed. -->
     <button id="menuFollowed" class="menu__item" type="button" hidden></button>
-    <nav id="menuFollowedList" class="menu__subs" aria-label="Followed Playlists" hidden></nav>
+    <nav id="menuFollowedList" class="menu__subs" aria-label="Followed Playlists" hidden data-i18n-aria-label="common.followedPlaylists"></nav>
     <!-- Only while another device plays on the Flow Server (session.js). -->
     <button id="menuSessions" class="menu__item" type="button" hidden></button>
-    <nav id="menuSessionsList" class="menu__subs" aria-label="Active Jams" hidden></nav>
+    <nav id="menuSessionsList" class="menu__subs" aria-label="Active Jams" hidden data-i18n-aria-label="common.activeJams"></nav>
     <!-- The lists made from how you listen (smartLists.js), closed until opened. -->
     <button id="menuTrend" class="menu__item" type="button"></button>
-    <nav id="menuTrendList" class="menu__subs" aria-label="Your listening trend" hidden></nav>
+    <nav id="menuTrendList" class="menu__subs" aria-label="Your listening trend" hidden data-i18n-aria-label="common.yourListeningTrend"></nav>
   </aside>
 
   <!-- ===== Content ===== -->
@@ -52,46 +52,46 @@
         <div class="search-box search-box--big">
           <span id="searchIcon" class="search-box__icon"></span>
           <input id="searchInput" class="search-box__input" type="search"
-                 placeholder="Search playlists, songs, artists, albums, genres, info and mixes" autocomplete="off" spellcheck="false" />
+                 placeholder="Search playlists, songs, artists, albums, genres, info and mixes" autocomplete="off" spellcheck="false"  data-i18n-placeholder="window.search.placeholder"/>
         </div>
         <!-- Phone only: show one part of the results instead of all seven under each other. -->
         <div id="searchFilter" class="search-filter">
-          <button class="search-filter__btn search-filter__btn--on" type="button" data-part="all">All</button>
-          <button class="search-filter__btn" type="button" data-part="playlists">Playlists</button>
-          <button class="search-filter__btn" type="button" data-part="songs">Songs</button>
-          <button class="search-filter__btn" type="button" data-part="artists">Artists</button>
-          <button class="search-filter__btn" type="button" data-part="albums">Albums</button>
-          <button class="search-filter__btn" type="button" data-part="genres">Genres</button>
-          <button class="search-filter__btn" type="button" data-part="info">Info</button>
-          <button class="search-filter__btn" type="button" data-part="mixes">Mixes</button>
+          <button class="search-filter__btn search-filter__btn--on" type="button" data-part="all" data-i18n="window.search.filter.all">All</button>
+          <button class="search-filter__btn" type="button" data-part="playlists" data-i18n="common.playlists">Playlists</button>
+          <button class="search-filter__btn" type="button" data-part="songs" data-i18n="common.songs">Songs</button>
+          <button class="search-filter__btn" type="button" data-part="artists" data-i18n="window.search.filter.artists">Artists</button>
+          <button class="search-filter__btn" type="button" data-part="albums" data-i18n="window.search.filter.albums">Albums</button>
+          <button class="search-filter__btn" type="button" data-part="genres" data-i18n="window.search.filter.genres">Genres</button>
+          <button class="search-filter__btn" type="button" data-part="info" data-i18n="common.info">Info</button>
+          <button class="search-filter__btn" type="button" data-part="mixes" data-i18n="window.search.filter.mixes">Mixes</button>
         </div>
         <div id="searchResults" class="results">
           <div class="results__col" data-part="playlists">
-            <h2 class="results__head">Playlists <span id="searchPlaylistsCount" class="count"></span></h2>
+            <h2 class="results__head"><span data-i18n="common.playlists">Playlists</span> <span id="searchPlaylistsCount" class="count"></span></h2>
             <div id="searchPlaylists" class="results__list"></div>
           </div>
           <div class="results__col" data-part="songs">
-            <h2 class="results__head">Songs <span id="searchSongsCount" class="count"></span></h2>
+            <h2 class="results__head"><span data-i18n="common.songs">Songs</span> <span id="searchSongsCount" class="count"></span></h2>
             <div id="searchSongs" class="results__list"></div>
           </div>
           <div class="results__col" data-part="artists">
-            <h2 class="results__head">Artists <span id="searchArtistsCount" class="count"></span></h2>
+            <h2 class="results__head"><span data-i18n="window.search.filter.artists">Artists</span> <span id="searchArtistsCount" class="count"></span></h2>
             <div id="searchArtists" class="results__list"></div>
           </div>
           <div class="results__col" data-part="albums">
-            <h2 class="results__head">Albums <span id="searchAlbumsCount" class="count"></span></h2>
+            <h2 class="results__head"><span data-i18n="window.search.filter.albums">Albums</span> <span id="searchAlbumsCount" class="count"></span></h2>
             <div id="searchAlbums" class="results__list"></div>
           </div>
           <div class="results__col" data-part="genres">
-            <h2 class="results__head">Genres <span id="searchGenresCount" class="count"></span></h2>
+            <h2 class="results__head"><span data-i18n="window.search.filter.genres">Genres</span> <span id="searchGenresCount" class="count"></span></h2>
             <div id="searchGenres" class="results__list"></div>
           </div>
           <div class="results__col" data-part="info">
-            <h2 class="results__head">Info / Sub-Genre <span id="searchInfoCount" class="count"></span></h2>
+            <h2 class="results__head"><span data-i18n="window.search.heading.info">Info / Sub-Genre</span> <span id="searchInfoCount" class="count"></span></h2>
             <div id="searchInfo" class="results__list"></div>
           </div>
           <div class="results__col" data-part="mixes">
-            <h2 class="results__head">Mixes <span id="searchMixesCount" class="count"></span></h2>
+            <h2 class="results__head"><span data-i18n="window.search.filter.mixes">Mixes</span> <span id="searchMixesCount" class="count"></span></h2>
             <div id="searchMixes" class="results__list"></div>
           </div>
         </div>
@@ -99,24 +99,24 @@
 
       <!-- Add Songs -->
       <section id="page-add" class="page page--add" hidden>
-        <h1 class="page__title">Add Songs</h1>
+        <h1 class="page__title" data-i18n="common.addSongs">Add Songs</h1>
 
         <div class="panel">
           <div class="link-row">
             <input id="linkInput" class="input input--big" type="text" autocomplete="off" spellcheck="false"
-                   placeholder="Paste a link from YouTube, SoundCloud, Vimeo, Bandcamp... or type a song&#39;s name" />
-            <button id="downloadBtn" class="btn btn--primary btn--big" type="button">Download</button>
+                   placeholder="Paste a link from YouTube, SoundCloud, Vimeo, Bandcamp... or type a song&#39;s name"  data-i18n-placeholder="window.add.link.placeholder"/>
+            <button id="downloadBtn" class="btn btn--primary btn--big" type="button" data-i18n="common.download">Download</button>
             <!-- With a Flow Server that downloads songs itself (serverImport.js). -->
-            <button id="serverDownloadBtn" class="btn btn--big" type="button" hidden>Download (Server)</button>
+            <button id="serverDownloadBtn" class="btn btn--big" type="button" hidden data-i18n="window.add.downloadServer">Download (Server)</button>
             <!-- Where nothing downloads from links: the legal note and how to get yt-dlp (downloadsHelp.js). -->
-            <button id="downloadsHelpBtn" class="btn btn--big downloads-help-btn" type="button" hidden>Downloads?</button>
+            <button id="downloadsHelpBtn" class="btn btn--big downloads-help-btn" type="button" hidden data-i18n="window.add.downloadsHelp">Downloads?</button>
           </div>
           <!-- Songs from the computer instead: hidden once something is open. -->
           <div id="localPick" class="local-pick">
-            <div class="local-pick__or">or</div>
+            <div class="local-pick__or" data-i18n="common.or">or</div>
             <div class="local-pick__buttons">
-              <button id="openFilesBtn" class="btn btn--big" type="button">Open local File(s)</button>
-              <button id="openFolderBtn" class="btn btn--big" type="button">Open local Folder</button>
+              <button id="openFilesBtn" class="btn btn--big" type="button" data-i18n="window.add.openFiles">Open local File(s)</button>
+              <button id="openFolderBtn" class="btn btn--big" type="button" data-i18n="common.openLocalFolder">Open local Folder</button>
             </div>
           </div>
         </div>
@@ -126,7 +126,7 @@
           <div id="progTitle" class="prog-title"></div>
           <div class="progress-row">
             <progress id="progBar" max="1"></progress>
-            <button id="progCancel" class="btn" type="button">Cancel</button>
+            <button id="progCancel" class="btn" type="button" data-i18n="common.cancel">Cancel</button>
           </div>
           <div id="progStatus" class="status-label"></div>
           <div id="progError" class="error-hint" hidden></div>
@@ -138,16 +138,16 @@
             <div id="searchHead" class="import__source"></div>
           </div>
           <div class="import__toolbar">
-            <button id="searchMore" class="btn btn--small btn--light-grey" type="button">Search for more</button>
+            <button id="searchMore" class="btn btn--small btn--light-grey" type="button" data-i18n="common.searchForMore">Search for more</button>
             <span id="searchSpinner" class="song-search__spinner" hidden></span>
             <span id="searchNote" class="song-search__note" hidden></span>
             <span id="searchCount" class="import__count"></span>
           </div>
           <div id="searchList" class="import__list"></div>
           <div class="import__buttons">
-            <button id="searchClose" class="btn btn--light-red" type="button">Cancel</button>
-            <button id="searchSelected" class="btn btn--light-green" type="button">Download Selected</button>
-            <button id="searchAll" class="btn btn--light-grey" type="button">Download All</button>
+            <button id="searchClose" class="btn btn--light-red" type="button" data-i18n="common.cancel">Cancel</button>
+            <button id="searchSelected" class="btn btn--light-green" type="button" data-i18n="window.add.downloadSelected">Download Selected</button>
+            <button id="searchAll" class="btn btn--light-grey" type="button" data-i18n="window.add.downloadAll">Download All</button>
           </div>
         </div>
 
@@ -159,47 +159,47 @@
           </div>
           <div id="importWarnings" class="import__warnings" hidden></div>
           <div id="importToolbar" class="import__toolbar">
-            <button id="importSelectAll" class="link-btn" type="button">Select all</button>
+            <button id="importSelectAll" class="link-btn" type="button" data-i18n="window.add.selectAll">Select all</button>
             <span class="muted-text">·</span>
-            <button id="importSelectNone" class="link-btn" type="button">Select none</button>
+            <button id="importSelectNone" class="link-btn" type="button" data-i18n="window.add.selectNone">Select none</button>
             <span id="importCount" class="import__count"></span>
           </div>
           <div id="importList" class="import__list"></div>
           <div id="importButtons" class="import__buttons">
-            <button id="importCancel" class="btn btn--light-red" type="button">Cancel</button>
-            <button id="importSelected" class="btn btn--light-green" type="button">Download Selected</button>
-            <button id="importEverything" class="btn btn--light-grey" type="button">Download All</button>
+            <button id="importCancel" class="btn btn--light-red" type="button" data-i18n="common.cancel">Cancel</button>
+            <button id="importSelected" class="btn btn--light-green" type="button" data-i18n="window.add.downloadSelected">Download Selected</button>
+            <button id="importEverything" class="btn btn--light-grey" type="button" data-i18n="window.add.downloadAll">Download All</button>
           </div>        </div>
 
         <div id="editor" class="panel editor" hidden>
           <div class="meta-grid">
             <!-- The song's cover, found right after its download (covers.js pendingEl). -->
             <span id="edCover" class="cover cover--editor" hidden></span>
-            <label class="form-row"><span class="form-label">Artist
-                <span id="edArtistHint" class="field-hint" hidden>from the channel name, please check</span></span>
+            <label class="form-row"><span class="form-label"><span data-i18n="common.artist">Artist</span>
+                <span id="edArtistHint" class="field-hint" hidden data-i18n="window.add.field.artist.fromChannel">from the channel name, please check</span></span>
               <input id="edArtist" class="input" type="text" spellcheck="false" maxlength="150" /></label>
-            <label class="form-row"><span class="form-label">Title</span>
+            <label class="form-row"><span class="form-label" data-i18n="common.title">Title</span>
               <input id="edTitle" class="input" type="text" spellcheck="false" maxlength="150" /></label>
-            <label class="form-row"><span class="form-label">Album</span>
+            <label class="form-row"><span class="form-label" data-i18n="common.album">Album</span>
               <input id="edAlbum" class="input" type="text" spellcheck="false" maxlength="150"
-                     placeholder="Empty: the title" /></label>
-            <label class="form-row"><span class="form-label">Mix</span>
+                     placeholder="Empty: the title"  data-i18n-placeholder="common.albumPlaceholder"/></label>
+            <label class="form-row"><span class="form-label" data-i18n="common.mix">Mix</span>
               <input id="edMix" class="input" type="text" spellcheck="false" maxlength="150"
-                     placeholder="e.g. Extended Mix, Live" /></label>
-            <label class="form-row"><span class="form-label">Genre</span>
+                     placeholder="e.g. Extended Mix, Live"  data-i18n-placeholder="common.mixPlaceholder"/></label>
+            <label class="form-row"><span class="form-label" data-i18n="common.genre">Genre</span>
               <input id="edGenre" class="input" type="text" spellcheck="false" maxlength="150" /></label>
-            <label class="form-row"><span class="form-label">Info</span>
+            <label class="form-row"><span class="form-label" data-i18n="common.info">Info</span>
               <input id="edSubGenre" class="input" type="text" spellcheck="false" maxlength="150"
-                     placeholder="Sub-Genre, CD, Year, ..." /></label>
+                     placeholder="Sub-Genre, CD, Year, ..."  data-i18n-placeholder="common.infoPlaceholder"/></label>
           </div>
           <div id="edError" class="form-error"></div>
           <!-- Lyrics found for it (4.0.1): Show, Edit Lyrics or Add Lyrics (lyricsEdit.js). -->
           <div id="edLyrics" class="ed-lyrics"></div>
 
           <div class="trim-head">
-            <div class="section-title">Trim</div>
-            <div id="trimHint" class="hint-label">Hold Shift while dragging for 10x finer control, Ctrl for 100x</div>
-            <button id="resetTrimBtn" class="btn btn--small" type="button">Reset</button>
+            <div class="section-title" data-i18n="common.trim">Trim</div>
+            <div id="trimHint" class="hint-label" data-i18n="common.trim.hint">Hold Shift while dragging for 10x finer control, Ctrl for 100x</div>
+            <button id="resetTrimBtn" class="btn btn--small" type="button" data-i18n="common.trim.reset">Reset</button>
           </div>
           <div class="audio-canvas-wrap">
             <canvas id="waveCanvas" class="audio-canvas"></canvas>
@@ -211,28 +211,28 @@
               <div id="trimFill" class="trim-slider__fill"></div>
             </div>
             <div id="trimPlayhead" class="playhead playhead--trim"></div>
-            <div id="startHandle" class="trim-slider__handle trim-slider__handle--start" title="Start"></div>
-            <div id="endHandle" class="trim-slider__handle trim-slider__handle--end" title="End"></div>
+            <div id="startHandle" class="trim-slider__handle trim-slider__handle--start" title="Start" data-i18n-title="common.trim.start"></div>
+            <div id="endHandle" class="trim-slider__handle trim-slider__handle--end" title="End" data-i18n-title="common.trim.end"></div>
           </div>
           <div class="trim-row">
             <div class="time-group">
-              <span class="time-caption time-caption--start">Start</span>
+              <span class="time-caption time-caption--start" data-i18n="common.trim.start">Start</span>
               <input id="startField" class="time-field" type="text" value="00:00:00.000" spellcheck="false" />
             </div>
             <div class="preview-transport">
-              <button id="previewPlay" class="round-btn round-btn--main" type="button" title="Play"></button>
+              <button id="previewPlay" class="round-btn round-btn--main" type="button" title="Play" data-i18n-title="common.play"></button>
               <span id="previewTime" class="time-readout">0:00 / 0:00</span>
             </div>
             <div class="span-cell">
               <div id="spanLabel" class="span-label"></div>
               <div id="prevVolWrap" class="span-volume">
-                <button id="prevVolBtn" class="icon-btn span-volume__btn" type="button" title="Mute"></button>
+                <button id="prevVolBtn" class="icon-btn span-volume__btn" type="button" title="Mute" data-i18n-title="common.mute"></button>
                 <input id="prevVolSlider" class="volume-slider" type="range" min="0" max="100" step="1" value="80"
-                       aria-label="Volume" title="Volume (the same as the player's)" />
+                       aria-label="Volume" title="Volume (the same as the player's)"  data-i18n-title="window.add.player.volume.tooltip" data-i18n-aria-label="window.player.volume.ariaLabel"/>
               </div>
             </div>
             <div class="time-group time-group--end">
-              <span class="time-caption time-caption--end">End</span>
+              <span class="time-caption time-caption--end" data-i18n="common.trim.end">End</span>
               <input id="endField" class="time-field" type="text" value="00:00:00.000" spellcheck="false" />
             </div>
           </div>
@@ -241,42 +241,42 @@
         <div id="addFooter" class="add-footer" hidden>
           <div class="add-footer__left">
             <!-- One song, or a whole import (then with how far it is). -->
-            <button id="importCancelAll" class="btn btn--light-red" type="button">Cancel import</button>
+            <button id="importCancelAll" class="btn btn--light-red" type="button" data-i18n="common.cancelImport">Cancel import</button>
             <span id="importFooterText" class="muted-text" hidden></span>
             <!-- Songs that failed to download: tried again, and how that went. -->
-            <button id="importRetryFailed" class="btn btn--small btn--light-green" type="button" hidden>Retry failed</button>
+            <button id="importRetryFailed" class="btn btn--small btn--light-green" type="button" hidden data-i18n="window.add.import.retryFailed">Retry failed</button>
             <span id="importRetryText" class="muted-text" hidden></span>
           </div>
           <div class="add-footer__center">
             <!-- Local files: copy them into the save folder, or move them there. -->
             <div id="copyMove" class="copy-move" hidden>
-              <button id="copyMoveCopy" class="copy-move__label" type="button">Copy Files</button>
+              <button id="copyMoveCopy" class="copy-move__label" type="button" data-i18n="window.add.import.copyFiles">Copy Files</button>
               <span class="copy-move__switch-wrap">
                 <button id="copyMoveSwitch" class="switch" type="button" role="switch" aria-checked="false"
-                        aria-label="Move the original files instead of copying them"></button>
+                        aria-label="Move the original files instead of copying them" data-i18n-aria-label="window.add.import.moveOriginals.ariaLabel"></button>
                 <span id="copyMoveTip" class="copy-move__tip" role="tooltip"></span>
               </span>
-              <button id="copyMoveMove" class="copy-move__label" type="button">Move Originals</button>
+              <button id="copyMoveMove" class="copy-move__label" type="button" data-i18n="window.add.import.moveOriginals">Move Originals</button>
             </div>
           </div>
           <div class="add-footer__right">
             <span id="addPlaylistNames" class="muted-text"></span>
             <button id="addToPlaylistBtn" class="btn btn--green" type="button"></button>
-            <button id="finishBtn" class="btn btn--primary btn--big" type="button">Finish</button>
+            <button id="finishBtn" class="btn btn--primary btn--big" type="button" data-i18n="common.finish">Finish</button>
           </div>
         </div>
       </section>
 
       <!-- Playlists -->
       <section id="page-playlists" class="page page--playlists" hidden>
-        <h1 class="page__title">Playlists</h1>
+        <h1 class="page__title" data-i18n="common.playlists">Playlists</h1>
         <div class="panel">
           <div class="link-row">
             <input id="newPlaylistName" class="input input--big" type="text" maxlength="80"
-                   placeholder="Name" autocomplete="off" />
-            <button id="newPlaylistBtn" class="btn btn--primary btn--big" type="button">Add new playlist</button>
+                   placeholder="Name" autocomplete="off"  data-i18n-placeholder="common.name"/>
+            <button id="newPlaylistBtn" class="btn btn--primary btn--big" type="button" data-i18n="window.playlists.new.add">Add new playlist</button>
             <button id="newSmartBtn" class="btn btn--big" type="button"
-                    title="A playlist that fills itself with the songs matching its rules">Smart playlist</button>
+                    title="A playlist that fills itself with the songs matching its rules" data-i18n="window.playlists.new.smart" data-i18n-title="window.playlists.new.smart.tooltip">Smart playlist</button>
           </div>
           <div id="newPlaylistError" class="form-error"></div>
         </div>
@@ -286,7 +286,7 @@
         </div>
         <table id="sharedTable" class="table table--playlists"></table>
         <div class="section-head">
-          <h2 class="section-head__title">Your Playlists</h2>
+          <h2 class="section-head__title" data-i18n="window.playlists.yours">Your Playlists</h2>
           <span id="playlistsCount" class="muted-text"></span>
         </div>
         <table id="playlistsTable" class="table table--playlists"></table>
@@ -294,35 +294,35 @@
 
       <!-- Followed Playlists -->
       <section id="page-followed" class="page page--playlists" hidden>
-        <h1 class="page__title">Followed Playlists</h1>
+        <h1 class="page__title" data-i18n="common.followedPlaylists">Followed Playlists</h1>
         <div class="section-head">
-          <h2 class="section-head__title">Playlists you follow</h2>
+          <h2 class="section-head__title" data-i18n="window.followed.subheading">Playlists you follow</h2>
           <span id="followedCount" class="muted-text"></span>
         </div>
-        <p class="muted-text">Shared by the other profiles. Only their owner can change them.</p>
+        <p class="muted-text" data-i18n="window.followed.desc">Shared by the other profiles. Only their owner can change them.</p>
         <table id="followedTable" class="table table--playlists"></table>
       </section>
 
       <!-- Your listening trend -->
       <section id="page-trend" class="page page--playlists" hidden>
-        <h1 class="page__title">Your listening trend</h1>
+        <h1 class="page__title" data-i18n="common.yourListeningTrend">Your listening trend</h1>
         <div class="section-head">
-          <h2 class="section-head__title">Made from how you listen</h2>
+          <h2 class="section-head__title" data-i18n="window.trend.subheading">Made from how you listen</h2>
           <span id="trendCount" class="muted-text"></span>
         </div>
-        <p class="muted-text">Each list fills itself from the songs in your playlists as you listen to them.</p>
+        <p class="muted-text" data-i18n="window.trend.desc">Each list fills itself from the songs in your playlists as you listen to them.</p>
         <table id="trendTable" class="table table--playlists"></table>
       </section>
 
       <!-- Active Sessions -->
       <section id="page-sessions" class="page page--playlists" hidden>
-        <h1 class="page__title">Active Sessions</h1>
+        <h1 class="page__title" data-i18n="common.activeSessions">Active Sessions</h1>
         <div id="sessionsMine" class="panel sessions-mine" hidden></div>
         <div class="section-head">
-          <h2 class="section-head__title">Playing right now</h2>
+          <h2 class="section-head__title" data-i18n="common.nowPlaying">Playing right now</h2>
           <span id="sessionsCount" class="muted-text"></span>
         </div>
-        <p class="muted-text">The devices playing on this Flow Server. Join one to control it from here: pause, skip,
+        <p class="muted-text" data-i18n="window.sessions.desc">The devices playing on this Flow Server. Join one to control it from here: pause, skip,
           start and queue songs. Its host is asked first.</p>
         <table id="sessionsTable" class="table table--playlists table--sessions"></table>
         <div id="sessionsEmpty" class="empty empty--small" hidden></div>
@@ -338,22 +338,23 @@
           <div class="pl-head__titlerow">
             <h1 id="plTitle" class="page__title"></h1>
             <button id="plUpdate" class="toggle" type="button" hidden
-                    title="Download the songs added to this playlist's source since it was imported"></button>
+                    title="Download the songs added to this playlist's source since it was imported" data-i18n-title="window.playlist.update.tooltip"></button>
           </div>
           <div class="pl-head__row">
             <span id="plMeta" class="pl-meta"></span>
             <button id="plPlay" class="btn btn--play" type="button"></button>
-            <button id="plShuffle" class="toggle" type="button" aria-pressed="false" title="Play in random order"></button>
+            <button id="plShuffle" class="toggle" type="button" aria-pressed="false" title="Play in random order" data-i18n-title="window.playlist.shuffle.tooltip"></button>
             <button id="plOffline" class="toggle" type="button" aria-pressed="false" hidden
-                    title="Keep this playlist's songs on this computer, to play without the server"></button>
+                    title="Keep this playlist's songs on this computer, to play without the server" data-i18n-title="window.playlist.offline.tooltip"></button>
             <span id="plOfflineNote" class="pl-meta" hidden></span>
             <button id="plShare" class="toggle" type="button" aria-pressed="false" hidden></button>
-            <button id="plRules" class="toggle" type="button" hidden title="Change the rules that pick this playlist's songs"></button>
+            <button id="plRules" class="toggle" type="button" hidden title="Change the rules that pick this playlist's songs" data-i18n-title="window.playlist.rules.tooltip"></button>
           </div>
         </div>
         <div id="plPickBanner" class="pick-banner" hidden>
-          <span>Adding songs to <strong id="plPickName"></strong>: click <strong>+</strong> on a song to add it, <strong>X</strong> to take it out again.</span>
-          <button id="plPickDone" class="btn btn--primary" type="button">Done</button>
+          <!-- "Adding songs to <name>: ..." (window.playlist.pick.banner), the name in bold (playlist.js). -->
+          <span id="plPickText"></span>
+          <button id="plPickDone" class="btn btn--primary" type="button" data-i18n="common.done">Done</button>
         </div>
         <div class="pl-search-row">
           <div class="search-box">
@@ -369,7 +370,7 @@
         </div>
         <div id="plTableWrap">
           <table id="plTable" class="table table--songs"></table>
-          <div id="plNoMatch" class="empty empty--small" hidden>No songs match the search.</div>
+          <div id="plNoMatch" class="empty empty--small" hidden data-i18n="window.playlist.noMatches">No songs match the search.</div>
         </div>
       </section>
     </div>
@@ -381,22 +382,22 @@
       <span id="playerCover" class="cover cover--bar" aria-hidden="true"></span>
       <div class="player__main">
       <div class="player__line">
-        <div id="playerTitle" class="player__title">Nothing playing</div>
+        <div id="playerTitle" class="player__title" data-i18n="common.nothingPlaying">Nothing playing</div>
         <!-- The sleep timer, while one runs (sleepTimer.js). -->
         <div id="sleepLeft" class="player__sleep-left" hidden></div>
         <div class="player__line-end">
           <!-- In another device's Active Session, or hosting one with company (session.js). -->
           <button id="playerSession" class="player__session" type="button" hidden></button>
-          <button id="playerHere" class="player__leave player__here" type="button" hidden aria-pressed="false">Play here</button>
-          <button id="playerLeave" class="player__leave" type="button" hidden title="Leave the session">Leave</button>
-          <button id="playerFrom" class="player__from" type="button" hidden title="Open this playlist">
+          <button id="playerHere" class="player__leave player__here" type="button" hidden aria-pressed="false" data-i18n="window.player.playHere">Play here</button>
+          <button id="playerLeave" class="player__leave" type="button" hidden title="Leave the session" data-i18n="common.leave" data-i18n-title="common.leaveSession">Leave</button>
+          <button id="playerFrom" class="player__from" type="button" hidden title="Open this playlist" data-i18n-title="window.player.from.tooltip">
             from <span id="playerFromName"></span>
           </button>
           <!-- Lyrics while the song playing has some, else "(No Lyrics)" (lyrics.js). -->
-          <button id="btnLyrics" class="queue-btn" type="button" title="Lyrics" hidden></button>
-          <span id="noLyrics" class="player__no-lyrics" hidden>(No Lyrics)</span>
-          <button id="btnQueue" class="queue-btn" type="button" title="Queue">
-            <img class="queue-btn__img" src="../images/queue.png" alt="" /><span>Queue</span></button>
+          <button id="btnLyrics" class="queue-btn" type="button" title="Lyrics" hidden data-i18n-title="common.lyrics"></button>
+          <span id="noLyrics" class="player__no-lyrics" hidden data-i18n="window.player.noLyrics">(No Lyrics)</span>
+          <button id="btnQueue" class="queue-btn" type="button" title="Queue" data-i18n-title="common.queue">
+            <img class="queue-btn__img" src="../images/queue.png" alt="" /><span data-i18n="common.queue">Queue</span></button>
         </div>
       </div>
       <div id="playerTrack" class="timeline player__timeline">
@@ -409,23 +410,23 @@
         <div class="player__side player__left">
           <span id="playerTime" class="time-readout">0:00 / 0:00</span>
           <div class="player__extras">
-            <button id="btnShuffle" class="sq-btn" type="button" aria-pressed="false" title="Shuffle">
+            <button id="btnShuffle" class="sq-btn" type="button" aria-pressed="false" title="Shuffle" data-i18n-title="common.shuffle">
               <img class="sq-btn__img" src="../images/shuffle.png" alt="" /></button>
-            <button id="btnRepeat" class="sq-btn" type="button" aria-pressed="false" title="Repeat this song">
+            <button id="btnRepeat" class="sq-btn" type="button" aria-pressed="false" title="Repeat this song" data-i18n-title="common.repeatThisSong">
               <img class="sq-btn__img" src="../images/repeat.png" alt="" /></button>
-            <button id="btnVisualizer" class="sq-btn" type="button" title="Visualizer">
+            <button id="btnVisualizer" class="sq-btn" type="button" title="Visualizer" data-i18n-title="window.player.visualizer.tooltip">
               <img class="sq-btn__img" src="../images/visualizer.png" alt="" /></button>
             <!-- The song playing into playlists, and as a favourite (player.js). -->
-            <button id="btnAddToPlaylist" class="sq-btn" type="button" title="Add to Playlists"></button>
-            <button id="btnFavourite" class="sq-btn" type="button" aria-pressed="false" title="Favourite"></button>
+            <button id="btnAddToPlaylist" class="sq-btn" type="button" title="Add to Playlists" data-i18n-title="common.addToPlaylists"></button>
+            <button id="btnFavourite" class="sq-btn" type="button" aria-pressed="false" title="Favorite" data-i18n-title="common.favourite"></button>
           </div>
         </div>
         <div class="player__buttons">
-          <button id="btnPrev" class="round-btn" type="button" title="Previous song"></button>
-          <button id="btnBack10" class="round-btn" type="button" title="Back 10 seconds (Left)"></button>
-          <button id="btnPlay" class="round-btn round-btn--main" type="button" title="Play"></button>
-          <button id="btnFwd10" class="round-btn" type="button" title="Forward 10 seconds (Right)"></button>
-          <button id="btnNext" class="round-btn" type="button" title="Next song"></button>
+          <button id="btnPrev" class="round-btn" type="button" title="Previous song" data-i18n-title="common.previousSong"></button>
+          <button id="btnBack10" class="round-btn" type="button" title="Back 10 seconds (Left)" data-i18n-title="window.player.back10.tooltip"></button>
+          <button id="btnPlay" class="round-btn round-btn--main" type="button" title="Play" data-i18n-title="common.play"></button>
+          <button id="btnFwd10" class="round-btn" type="button" title="Forward 10 seconds (Right)" data-i18n-title="window.player.forward10.tooltip"></button>
+          <button id="btnNext" class="round-btn" type="button" title="Next song" data-i18n-title="common.nextSong"></button>
         </div>
         <div class="player__side player__right">
           <div class="player__sleep-slot">
@@ -434,9 +435,9 @@
           <!-- Where the music comes out (output.js). -->
           <button id="btnOutput" class="icon-btn player__output" type="button" aria-haspopup="menu"></button>
           <div id="volWrap" class="player__volume">
-            <button id="volBtn" class="icon-btn" type="button" title="Mute"></button>
+            <button id="volBtn" class="icon-btn" type="button" title="Mute" data-i18n-title="common.mute"></button>
             <input id="volSlider" class="volume-slider" type="range" min="0" max="100" step="1" value="80"
-                   aria-label="Volume" />
+                   aria-label="Volume"  data-i18n-aria-label="window.player.volume.ariaLabel"/>
             <span id="volValue" class="vol-value">80%</span>
           </div>
         </div>
@@ -452,6 +453,8 @@
 <audio id="fadeAudio" preload="auto"></audio>
 <audio id="previewAudio" preload="auto"></audio>
 
+<script src="app/strings.js"></script>
+<script src="app/i18n.js"></script>
 <script src="app/util.js"></script>
 <script src="app/queue.js"></script>
 <script src="app/smartLists.js"></script>

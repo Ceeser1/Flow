@@ -13,13 +13,13 @@
 (function (root, factory) {
   // eslint-disable-next-line global-require
   const util = typeof Util !== 'undefined' ? Util : require('./util');
-  const api = factory(util);
+  const api = factory(util, (typeof module === 'object' && module.exports ? require('./i18n').t : root.T));
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.Statistics = api;
-}(typeof self !== 'undefined' ? self : this, (Util) => {
+}(typeof self !== 'undefined' ? self : this, (Util, T) => {
   const PRIVATE = 'private';
-  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const MONTHS = [T('common.month.january'), T('common.month.february'), T('common.month.march'), T('common.month.april'), T('common.month.may'), T('common.month.june'), T('common.month.july'), T('common.month.august'), T('common.month.september'), T('common.month.october'), T('common.month.november'), T('common.month.december')];
+  const WEEKDAYS = [T('common.weekday.sunday'), T('common.weekday.monday'), T('common.weekday.tuesday'), T('common.weekday.wednesday'), T('common.weekday.thursday'), T('common.weekday.friday'), T('common.weekday.saturday')];
   const pad2 = (n) => String(n).padStart(2, '0');
   const emptyStatistics = () => ({
     since: 0, seconds: 0, listens: 0, months: {}, days: {}, sessions: {}, longest: null,
@@ -128,14 +128,14 @@
       const key = `${shown}-${pad2(d)}`;
       if (key > today) break;
       const weekday = WEEKDAYS[new Date(y, mon - 1, d).getDay()];
-      const date = `${pad2(d)}.${pad2(mon)}`;
+      const date = T('stats.activity.day.date', { day: pad2(d), month: pad2(mon) });
       const hours = (Number(days[key]) || 0) / 3600;
       total += hours;
       out.push({
         key,
         name: key >= monday ? weekday : date,
         short: key >= monday ? weekday.slice(0, 3) : date,
-        title: `${weekday.slice(0, 3)} ${date}.${y}`,
+        title: T('stats.activity.day.tooltip', { weekday: weekday.slice(0, 3), date, year: y }),
         hours,
       });
     }
@@ -175,8 +175,8 @@
     const s = Number(seconds) || 0;
     if (!(s > 0)) return '-';
     const minutes = Math.floor(s / 60);
-    if (!minutes) return '<1 min';
-    return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+    if (!minutes) return T('stats.time.lessThanMinute');
+    return minutes < 60 ? T('common.minutes', { minutes }) : T('stats.time.hoursMinutes', { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
   }
 
   /**
@@ -207,8 +207,8 @@
    * (the server as named on this device).
    */
   function title(src, names) {
-    if (src.id === PRIVATE) return `Statistics for profile: ${src.name}`;
-    return `Statistics for profile: ${src.name} at server ${Util.serverName(names, src.serverId, src.server).name}`;
+    if (src.id === PRIVATE) return T('stats.forProfile', { profile: src.name });
+    return T('stats.forProfileAtServer', { profile: src.name, server: Util.serverName(names, src.serverId, src.server).name });
   }
 
   /**
@@ -218,18 +218,18 @@
   function facts(src, now = Date.now()) {
     const st = src.statistics || emptyStatistics();
     const streak = streaks(st.days, now);
-    const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
+    const days = (n) => T('stats.days', { count: n });
     const session = (r) => (r && r.seconds > 0 ? `${fmtSession(r.seconds)} (${Util.fmtDay(r.end)})` : '-');
     return [[
-      ['Created at', Util.fmtDay(src.createdAt) || '-'],
-      ['Added songs', String(src.addedSongs || 0)],
-      ['Listened songs', String(st.listens || 0)],
-      ['Time listened', Util.fmtListened(st.seconds)],
+      [T('stats.row.createdAt'), Util.fmtDay(src.createdAt) || '-'],
+      [T('common.addedSongs'), String(src.addedSongs || 0)],
+      [T('stats.row.listenedSongs'), String(st.listens || 0)],
+      [T('common.timeListened'), Util.fmtListened(st.seconds)],
     ], [
-      ['Current streak', days(streak.current)],
-      ['Highest daily streak', days(streak.best)],
-      ['Longest session (month)', session((st.sessions || {})[monthKey(now)])],
-      ['Longest session (ever)', session(st.longest)],
+      [T('stats.row.currentStreak'), days(streak.current)],
+      [T('stats.row.highestDailyStreak'), days(streak.best)],
+      [T('stats.row.longestSessionMonth'), session((st.sessions || {})[monthKey(now)])],
+      [T('stats.row.longestSessionEver'), session(st.longest)],
     ]];
   }
 
@@ -239,8 +239,8 @@
     return {
       id: PRIVATE,
       server: '',
-      profile: 'Private',
-      name: 'Private',
+      profile: T('stats.private'),
+      name: T('stats.private'),
       createdAt: Number(d.since) || 0,
       statistics: {
         since: Number(d.since) || 0,
@@ -275,8 +275,8 @@
     const list = (s.tracked || []).map((r) => ({
       id: `${r.serverId}/${r.profileId}`,
       server: r.serverName || 'Flow Server',
-      profile: r.profileName || 'Profile',
-      name: r.profileName || 'Profile',
+      profile: r.profileName || T('common.profile'),
+      name: r.profileName || T('common.profile'),
       createdAt: r.createdAt,
       statistics: r.statistics,
       addedSongs: r.addedSongs,

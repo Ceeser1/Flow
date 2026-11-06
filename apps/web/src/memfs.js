@@ -6,6 +6,8 @@
 // for <img> and <audio>, ending in '#' so what the window adds to it (?v=...)
 // lands in the fragment instead of breaking the address.
 
+const { tr } = require('@flow/core/lang');
+
 const ROOT = '/flow';
 
 const path = {
@@ -69,10 +71,10 @@ function createMemFs() {
       files.delete(f);
       return;
     }
-    if (!dirs.has(f)) throw new Error(`Not there: ${p}`);
+    if (!dirs.has(f)) throw new Error(tr('common.error.notThere', 'Not there: {path}', { path: p }));
     const inside = `${f}/`;
     const children = [...files.keys(), ...dirs].some((k) => k.startsWith(inside));
-    if (children && !recursive) throw new Error(`Not empty: ${p}`);
+    if (children && !recursive) throw new Error(tr('web.error.notEmpty', 'Not empty: {path}', { path: p }));
     for (const k of [...files.keys()]) {
       if (k.startsWith(inside)) {
         forgetUrl(k);
@@ -105,7 +107,7 @@ function createMemFs() {
   function rename(from, to) {
     const f = clean(from);
     const bytes = files.get(f);
-    if (!bytes) throw new Error(`Not there: ${from}`);
+    if (!bytes) throw new Error(tr('common.error.notThere', 'Not there: {path}', { path: from }));
     forgetUrl(f);
     files.delete(f);
     writeBytes(to, bytes);

@@ -46,7 +46,7 @@ const Welcome = {
       return;
     }
     this._build();
-    this._showForm('Enter your Flow Server\'s address.');
+    this._showForm(T('welcome.enterAddress'));
     this._address.focus();
   },
 
@@ -56,8 +56,8 @@ const Welcome = {
     this._address = h('input.input.welcome__input', {
       type: 'text', placeholder: web ? 'https://music.example.com' : '192.168.0.20:7878', inputMode: 'url', autocomplete: 'off', autocapitalize: 'off', spellcheck: false,
     });
-    this._password = h('input.input.welcome__input', { type: 'password', placeholder: 'Only if it has one', autocomplete: 'off' });
-    this._connectBtn = h('button.btn.btn--primary.welcome__connect', { type: 'button', onclick: () => this.connect() }, 'Connect');
+    this._password = h('input.input.welcome__input', { type: 'password', placeholder: T('welcome.password.placeholder'), autocomplete: 'off' });
+    this._connectBtn = h('button.btn.btn--primary.welcome__connect', { type: 'button', onclick: () => this.connect() }, T('welcome.connect'));
     this._address.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this._password.focus();
     });
@@ -65,23 +65,23 @@ const Welcome = {
       if (e.key === 'Enter') this.connect();
     });
     this._form = h('div.welcome__form',
-      h('label.welcome__label', h('span', 'Server address'), this._address),
-      h('label.welcome__label', h('span', 'Password'), this._password),
+      h('label.welcome__label', h('span', T('welcome.serverAddress')), this._address),
+      h('label.welcome__label', h('span', T('common.password')), this._password),
       this._connectBtn,
-      Store.can('scanQr') ? h('button.btn.welcome__again', { type: 'button', onclick: () => this.scan() }, 'Scan a QR code') : null,
-      h('p.welcome__hint', web ? this._webHint() : 'The Flow Server shows its address when it starts, and on its page in the browser.'),
-      web ? null : h('button.btn.welcome__again', { type: 'button', onclick: () => this.search() }, 'Look on this network again'),
-      web ? null : h('button.btn.welcome__again', { type: 'button', onclick: () => this.localFiles() }, 'Add songs from this phone'));
-    this.el = h('div.welcome', { role: 'dialog', 'aria-label': 'Welcome to Flow' },
+      Store.can('scanQr') ? h('button.btn.welcome__again', { type: 'button', onclick: () => this.scan() }, T('welcome.scanQr')) : null,
+      h('p.welcome__hint', web ? this._webHint() : T('welcome.serverShowsAddress')),
+      web ? null : h('button.btn.welcome__again', { type: 'button', onclick: () => this.search() }, T('welcome.lookAgain')),
+      web ? null : h('button.btn.welcome__again', { type: 'button', onclick: () => this.localFiles() }, T('welcome.phone.addLocalSongs')));
+    this.el = h('div.welcome', { role: 'dialog', 'aria-label': T('welcome.title') },
       h('div.welcome__inner',
         h('img.welcome__icon', { src: 'assets/icon.png', alt: '' }),
-        h('h1.welcome__title', 'Welcome to Flow'),
+        h('h1.welcome__title', T('welcome.title')),
         h('p.welcome__text', web
-          ? 'In the browser, Flow plays the songs of your Flow Server. This page keeps none of them: everything comes from your server.'
-          : 'On your phone, Flow plays the songs of your Flow Server: the one on your computer or your Raspberry Pi.'),
+          ? T('welcome.web.intro')
+          : T('welcome.phone.intro')),
         this._status,
         this._form),
-      h('button.welcome__skip', { type: 'button', onclick: () => this.skip() }, 'Not now'));
+      h('button.welcome__skip', { type: 'button', onclick: () => this.skip() }, T('common.notNow')));
     document.body.appendChild(this.el);
   },
 
@@ -89,12 +89,12 @@ const Welcome = {
   search() {
     this._phase = 'searching';
     this._searchSeen = false;
-    this._draw('Looking for your Flow Server on this network…', true);
+    this._draw(T('welcome.looking'), true);
     Store.saveSettings({ serverOn: true, serverHome: '' });
     // Discovery takes a few seconds; one that never started (no network) ends here.
     clearTimeout(this._timer);
     this._timer = setTimeout(() => {
-      if (this._phase === 'searching' && !Store.server.searching) this._showForm('No Flow Server answered on this network. Enter its address.');
+      if (this._phase === 'searching' && !Store.server.searching) this._showForm(T('welcome.noneAnswered'));
     }, 6000);
   },
 
@@ -103,14 +103,14 @@ const Welcome = {
     const address = Util.serverAddress(this._address.value);
     this._address.value = address;
     if (!address) {
-      this._draw('Enter the server\'s address, like 192.168.0.20:7878.', false, true);
+      this._draw(T('welcome.enterAddress.example'), false, true);
       this._address.focus();
       return;
     }
     this._phase = 'connecting';
     this._address.blur();
     this._password.blur();
-    this._draw(`Connecting to ${address}…`, true);
+    this._draw(T('welcome.connectingTo', { address }), true);
     const pw = this._password.value;
     attempt(async () => {
       if (pw) await window.flow.setServerSecret(pw);
@@ -129,10 +129,10 @@ const Welcome = {
     }
     if (!text) return;
     this._phase = 'connecting';
-    this._draw('Connecting…', true);
+    this._draw(T('welcome.connecting'), true);
     try {
       const { name } = await window.flow.connectLink(text);
-      this._draw(`Connecting to "${name}"…`, true);
+      this._draw(T('welcome.connectingToName', { server: name }), true);
     } catch (err) {
       this._showForm(err.message, true);
     }
@@ -154,8 +154,8 @@ const Welcome = {
 
   /** The web player's word on addresses: from an https page a browser opens no plain http ones. */
   _webHint() {
-    if (location.protocol !== 'https:') return 'The address your Flow Server was set up with, like 192.168.0.20:7878 or https://music.example.com.';
-    return 'The https address your Flow Server was set up with. From this page a browser opens no plain http addresses, except a server on this computer (localhost:7878).';
+    if (location.protocol !== 'https:') return T('welcome.phone.addressHint');
+    return T('welcome.web.addressHint');
   },
 
   /** An address the browser will not open from this https page (plain http, not this computer). */
@@ -177,7 +177,7 @@ const Welcome = {
     // The web player signed in before, but this browser no longer has the password.
     if (!this.el && Store.web && !this._skipped && st.state === 'password') {
       this._build();
-      this._showForm('This server has a password. Enter it.');
+      this._showForm(T('welcome.hasPassword'));
       this._password.focus();
       return;
     }
@@ -189,9 +189,9 @@ const Welcome = {
       }
       if (Store.settings.serverHome) {
         this._phase = 'connecting';
-        this._draw(`Found "${st.name || 'a Flow Server'}". Connecting…`, true);
+        this._draw(st.name ? T('welcome.found', { server: st.name }) : T('welcome.found.unnamed'), true);
       } else if (this._searchSeen) {
-        this._showForm('No Flow Server answered on this network. Enter its address.');
+        this._showForm(T('welcome.noneAnswered'));
         return;
       }
     }
@@ -199,19 +199,19 @@ const Welcome = {
     if (st.state === 'online') {
       this._done(st);
     } else if (st.state === 'password') {
-      this._showForm(this._password.value ? 'That password is not the server\'s.' : 'This server has a password. Enter it.', true);
+      this._showForm(this._password.value ? T('welcome.wrongPassword') : T('welcome.hasPassword'), true);
       this._password.focus();
     } else if (st.state === 'offline') {
       const address = Store.settings.serverHome;
-      let why = 'Is the phone on the same network as the server, and is the server running?';
+      let why = T('welcome.phone.noAnswer.why');
       if (Store.web) {
         why = this._blockedHere(address)
-          ? 'This page is https, and from it a browser opens no plain http addresses: use the server\'s https address.'
-          : 'Is the server running, and can this device reach it?';
+          ? T('welcome.web.noAnswer.httpsOnly')
+          : T('welcome.noAnswer.why');
       }
-      this._showForm(`${address} does not answer. ${why}`, true);
+      this._showForm(T('welcome.noAnswer', { address, why }), true);
     } else if (st.state === 'error') {
-      this._showForm(st.message || 'The server could not be used.', true);
+      this._showForm(st.message || T('welcome.couldNotUse'), true);
     }
   },
 
@@ -224,7 +224,7 @@ const Welcome = {
   /** Connected: Flow opens; a server with profiles first asks which one is this phone's. */
   _done(st) {
     this.close();
-    toast(`Connected to "${st.name || 'the Flow Server'}"`, 'success');
+    toast(st.name ? T('welcome.connected', { server: st.name }) : T('welcome.connected.unnamed'), 'success');
     const askProfile = (s) => s.profilesSupported && Array.isArray(s.profiles) && s.profiles.length && !s.profile;
     const open = () => {
       SettingsPanel.open();

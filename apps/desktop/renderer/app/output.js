@@ -33,7 +33,7 @@ const Output = {
     $('btnOutput').onclick = () => this.openMenu($('btnOutput'));
     this.onChange(() => {
       const chosen = Store.settings.outputDevice ? this._chosen() : null;
-      $('btnOutput').title = `Play on: ${this.label() || 'the default output'}`;
+      $('btnOutput').title = T('output.playOn.tooltip', { output: this.label() || T('output.defaultOutput') });
       $('btnOutput').classList.toggle('player__output--on', !!chosen);
     });
     // "Output delay" ticked or unticked, here or in Settings, or the Flow Server turned on or off.
@@ -51,7 +51,7 @@ const Output = {
 
   /** The default output's entry: "Windows default" on Windows, "System default" elsewhere. */
   get defaultName() {
-    return Store.os === 'win32' ? 'Windows default' : 'System default';
+    return Store.os === 'win32' ? T('output.default.windows') : T('output.default.system');
   },
 
   /** The name of the output playing now, as Windows calls it ('' when unknown). */
@@ -126,9 +126,9 @@ const Output = {
     const wasLabel = this.label();
     await this._apply();
     if (this._ready && Store.settings.outputDevice && was !== this.current) {
-      const chosen = Store.settings.outputDeviceLabel || 'The chosen output';
-      if (!this.current) toast(`${chosen} is not there right now. Playing on ${this.defaultLabel || 'the default output'} meanwhile.`, 'info');
-      else if (was === '' && wasLabel !== this.label()) toast(`${this.label()} is back. Playing there again.`, 'info');
+      const chosen = Store.settings.outputDeviceLabel || T('output.chosen');
+      if (!this.current) toast(T('output.notThere', { output: chosen, default: this.defaultLabel || T('output.defaultOutput') }), 'info');
+      else if (was === '' && wasLabel !== this.label()) toast(T('output.back', { output: this.label() }), 'info');
     }
     this._ready = true;
     this._emit();
@@ -139,7 +139,7 @@ const Output = {
     const d = this.devices.find((x) => x.deviceId === deviceId);
     Store.saveSettings({ outputDevice: d ? d.deviceId : '', outputDeviceLabel: d ? d.label : '' });
     const ok = await this._apply();
-    if (!ok && d) toast(`Flow could not play on ${d.label}. It plays on the default output.`, 'error');
+    if (!ok && d) toast(T('output.failed', { output: d.label }), 'error');
     this._emit();
   },
 
@@ -180,7 +180,7 @@ const Output = {
     const menu = h('div.output-menu', { role: 'menu' });
     const draw = () => {
       clear(menu);
-      menu.appendChild(h('div.output-menu__head', 'Play on'));
+      menu.appendChild(h('div.output-menu__head', T('output.playOn')));
       const chosen = Store.settings.outputDevice ? this._chosen() : null;
       const item = (id, label, on, note = '') => h('button.output-menu__item' + (on ? '.output-menu__item--on' : ''), {
         type: 'button',
@@ -195,7 +195,7 @@ const Output = {
       menu.appendChild(item('', this.defaultName, !Store.settings.outputDevice, this.defaultLabel));
       for (const d of this.devices) menu.appendChild(item(d.deviceId, d.label, !!chosen && chosen.deviceId === d.deviceId));
       if (Store.settings.outputDevice && !chosen) {
-        menu.appendChild(h('div.output-menu__gone', `${Store.settings.outputDeviceLabel || 'The chosen device'} is not there: playing on the default meanwhile.`));
+        menu.appendChild(h('div.output-menu__gone', T('output.notThere.menu', { device: Store.settings.outputDeviceLabel || T('output.chosenDevice') })));
       }
       // Only for jams, which need the Flow Server.
       if (Store.settings.serverOn) menu.appendChild(this._delayRow());
@@ -226,9 +226,8 @@ const Output = {
 
   /** The note under "Output delay", in the menu and in Settings. */
   get DELAY_NOTE() {
-    return 'At jam sessions, different speakers may have delays. Bluetooth lags 50 to 300ms. '
-      + 'Adjust the slider of the faster speakers until the sounds are in sync.'
-      + (Store.can('keyboard') ? ' Hold shift for 10x finer control.' : '');
+    return T('output.delay.note')
+      + (Store.can('keyboard') ? ` ${T('output.delay.note.shift')}` : '');
   },
 
   /**
@@ -249,7 +248,7 @@ const Output = {
     const box = h('input', { type: 'checkbox', checked: on });
     // The menu is drawn again (Store.onSettings in init).
     box.addEventListener('change', () => Store.saveSettings({ outputDelayOn: box.checked }));
-    const label = h('label.check.output-menu__delay-label', box, h('span', 'Output delay (Sync speakers at Jams)'));
+    const label = h('label.check.output-menu__delay-label', box, h('span', T('output.delay.heading')));
     if (!on) return h('div.output-menu__delay', h('div.output-menu__delay-head', label));
     const c = this.delayControl('output-menu__slider', 'output-menu__delay-value');
     return h('div.output-menu__delay',
@@ -274,7 +273,7 @@ const Output = {
     const THUMB = 12;
     const value = h(`span.${valueClass}`);
     const slider = h(`input.volume-slider.${sliderClass}`, {
-      type: 'range', min: 0, max: MAX, step: 1, 'aria-label': 'Output delay',
+      type: 'range', min: 0, max: MAX, step: 1, 'aria-label': T('output.delay.ariaLabel'),
     });
     const show = (v) => {
       slider.value = String(Math.round(Math.max(0, Math.min(MAX, v))));

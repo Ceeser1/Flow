@@ -25,6 +25,11 @@
 // screen as it is, darkened; the video playing without its sound, over and
 // over); the title.
 //
+// The sparks and the video picked go by the song's time, not the screen's:
+// paused (or a song not started yet) they stand still, and the same place of
+// a song has the same sparks and the same frame of the video, whatever the
+// other settings are (two takes of a song, cut together, match).
+//
 // WebGL (viz/gl.js): the background and the cover are passes over the whole
 // screen reading the cover's texture (its mipmaps blur the background), the
 // spectrum and the sparks soft lines.
@@ -34,6 +39,9 @@
   const SPARKS = 420;       // at most, at 10% (the amount they had before it could be set)
   const MIN_HZ = 40;
   const MAX_HZ = 12000;
+  const SLOT = 0.01;        // sparks are born on this grid of the song's time (seconds)
+  const BURST = 0.05;       // and an onset's on a coarser one, a frame early or late the same
+  const WARM = 20;          // after a seek: the sparks of the seconds before it, as without kicks
 
   const BG_FS = `
     in vec2 uv;
@@ -126,6 +134,16 @@
 
   const hsv = VizCover.hsv;
   const wrap = (x) => ((x % 1) + 1) % 1;
+  /** 0..1, always the same for the same three whole numbers. */
+  const rand = (slot, i, k) => {
+    let x = Math.imul(slot | 0, 0x9e3779b1) ^ Math.imul(i + 1, 0x85ebca77) ^ Math.imul(k + 1, 0xc2b2ae3d);
+    x ^= x >>> 16;
+    x = Math.imul(x, 0x7feb352d);
+    x ^= x >>> 15;
+    x = Math.imul(x, 0x846ca68b);
+    x ^= x >>> 16;
+    return (x >>> 0) / 4294967296;
+  };
 
   class Halo {
     constructor(canvas) {
@@ -153,6 +171,9 @@
       this.caps = new Float32Array(BARS);
       this.capFall = new Float32Array(BARS);
       this.sparks = [];
+      this.sparkT = null;      // the song's time the sparks are at (null: to be made again)
+      this.clock = 0;          // the song's time, smoothed, never going back but on a seek
+      this.songId = null;
       this.age = 0;
       this.w = 1;
       this.h = 1;
@@ -177,7 +198,7 @@
     _song() {
       if (!this.cover.update()) return;
       const song = this.cover.song;
-      this.text.firstChild.textContent = song ? song.title || 'Untitled' : '';
+      this.text.firstChild.textContent = song ? song.title || T('common.untitled') : '';
       this.text.lastChild.textContent = song ? [song.artist, song.mix ? `(${song.mix})` : ''].filter(Boolean).join(' ') : '';
       this.text.classList.remove('viz-halo--in');
       void this.text.offsetWidth;
@@ -206,10 +227,23 @@
       const gl = this.gl;
       const w = this.w;
       const h = this.h;
+      // The song's time: going on with the frames while it plays, drawn to
+      // where the player is; a seek or another song jumps there.
+      const playing = Player.isPlaying;
+      const pos = Player.position || 0;
+      if (Player.currentId !== this.songId || Math.abs(pos - this.clock) > 0.5) {
+        this.songId = Player.currentId;
+        this.clock = pos;
+        this.sparkT = null;
+      } else if (playing) {
+        const next = this.clock + dt;
+        this.clock = Math.max(this.clock, next + (pos - next) * 0.2);
+      } else this.clock = Math.max(this.clock, pos);
       // The cover shown: the picture picked, once loaded, else the song's.
       this.coverPic.want(set.hlCover === 'pick' ? set.hlCoverFile : '');
-      // A video plays only while it is shown.
+      // A video plays only while it is shown, at the song's place in it.
       this.backPic.want(set.hlBackground && set.hlBack === 'pick' ? set.hlBackFile : '');
+      this.backPic.follow(this.clock, playing);
       this.backPic.tick();
       const pic = this.coverPic.loaded ? this.coverPic : null;
       const coverTex = pic ? pic.tex : this.cover.tex;
@@ -295,7 +329,8 @@
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       const rainbow = mode === 'rainbow';
-      if (set.hlParticles) this._sparks(a, dt, cx, cy, R, c1, c2, rainbow);
+      if (set.hlParticles) this._sparks(a, cx, cy, R, c1, c2, rainbow);
+      else this.sparkT = null;
       this._spectrum(a, dt, cx, cy, R, c1, c2, set.hlStyle, rainbow);
       this.lines.draw(w, h);
 
@@ -402,37 +437,86 @@
       }
     }
 
-    _sparks(a, dt, cx, cy, R, c1, c2, rainbow) {
-      const unit = this.h / 1080;
-      // New ones from the rim, many more on the kicks.
-      // The amount: 10% as many as there always were, 100% ten times that.
-      const amount = (Store.settings.hlSparkAmount || 0) / 10;
-      const born = (8 + 160 * a.kick * a.kick + (a.onset ? 40 * a.onsetPower : 0)) * dt * (a.playing ? 1 : 0.3) * amount;
-      this._owed = (this._owed || 0) + born;
-      while (this._owed >= 1 && this.sparks.length < SPARKS * amount) {
-        this._owed -= 1;
-        const ang = Math.random() * Math.PI * 2;
-        this.sparks.push({ ang, r: R * (1.1 + Math.random() * 0.15), v: (60 + Math.random() * 140) * unit, size: (1 + Math.random() * 2) * unit, c: Math.random() });
+    _sparks(a, cx, cy, R, c1, c2, rainbow) {
+      const t = this.clock;
+      // Made again (a seek, another song, just switched on): those of the
+      // seconds before it, as they are without kicks, the same each time.
+      if (this.sparkT === null || t < this.sparkT) {
+        this.sparks = [];
+        this._burst = { slot: -1, i: 0 };
+        const R0 = R / (1 + 0.06 * a.kick);
+        for (let s = Math.max(0, t - WARM); s < t;) {
+          const e = Math.min(t, s + 1);
+          this._sparkStep(s, e, 0, 0, 0, R0);
+          s = e;
+        }
+        this.sparkT = t;
+        this._kick = a.kick;
       }
-      this._owed = Math.min(this._owed, 1);
-      const push = 1 + 6 * a.kick;
+      // Moving only while the song does.
+      if (t > this.sparkT) this._sparkStep(this.sparkT, t, this._kick, a.kick, a.onset ? a.onsetPower : 0, R);
+      this.sparkT = t;
+      this._kick = a.kick;
       const far = Math.hypot(this.w, this.h) * 0.6;
       for (const s of this.sparks) {
-        s.r += s.v * push * dt;
-        s.ang += dt * 0.05;
         const fade = Math.max(0, 1 - s.r / far);
         let col = s.c < 0.45 ? c1 : (s.c < 0.9 ? c2 : [1, 1, 1]);
         if (rainbow && s.c < 0.9) col = hsv(wrap(s.c / 0.9 + this.age * 0.02), 0.75, 1);
         this.lines.dot(cx + Math.cos(s.ang) * s.r, cy + Math.sin(s.ang) * s.r, s.size * 1.6, col, 0.7 * fade);
       }
+    }
+
+    /**
+     * The sparks from the song's time t0 to t1 (seconds), the kick going from
+     * k0 to k1 on the way: moved, and new ones from the rim, many more on the
+     * kicks (onset: an onset's strength, 0 for none). Each is born on a grid
+     * of the song's time and is what that place of the grid says, not what
+     * the frames were.
+     */
+    _sparkStep(t0, t1, k0, k1, onset, R) {
+      const unit = this.h / 1080;
+      // The amount: 10% as many as there always were, 100% ten times that.
+      const amount = (Store.settings.hlSparkAmount || 0) / 10;
+      const most = SPARKS * amount;
+      const push = 1 + 3 * (k0 + k1);
+      const step = t1 - t0;
+      for (const s of this.sparks) {
+        s.r += s.v * push * step;
+        s.ang += step * 0.05;
+      }
+      // Born at the time "at", moved on to t1 since.
+      const add = (slot, i, k, at) => {
+        if (this.sparks.length >= most) return;
+        const v = (60 + rand(slot, i, k + 1) * 140) * unit;
+        const since = Math.max(0, t1 - at);
+        this.sparks.push({
+          ang: rand(slot, i, k) * Math.PI * 2 + since * 0.05,
+          r: R * (1.1 + rand(slot, i, k + 2) * 0.15) + v * push * since,
+          v,
+          size: (1 + rand(slot, i, k + 3) * 2) * unit,
+          c: rand(slot, i, k + 4),
+        });
+      };
+      for (let slot = Math.floor(t0 / SLOT) + 1; slot <= Math.floor(t1 / SLOT); slot += 1) {
+        const kick = k0 + (k1 - k0) * ((slot * SLOT - t0) / (step || 1));
+        const n = Math.floor((8 + 160 * kick * kick) * SLOT * amount + rand(slot, 0, 9));
+        for (let i = 0; i < n; i += 1) add(slot, i, 0, slot * SLOT);
+      }
+      // An onset: a burst (as many as a frame at 60 fps had), on the coarser grid.
+      if (onset > 0) {
+        const slot = Math.floor(t1 / BURST);
+        if (slot !== this._burst.slot) this._burst = { slot, i: 0 };
+        const n = Math.floor((40 * onset / 60) * amount + rand(slot, 0, 19));
+        for (let i = 0; i < n; i += 1) add(slot, this._burst.i++, 10, slot * BURST);
+      }
+      const far = Math.hypot(this.w, this.h) * 0.6;
       this.sparks = this.sparks.filter((s) => s.r < far);
     }
   }
 
   Visualizer.add({
     id: 'halo',
-    name: 'Halo',
-    desc: "The song's cover with the spectrum around it, in the cover's own colours (or others), sparks flying off on the kicks",
+    name: T('viz.halo.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
     gl: true,
@@ -441,44 +525,44 @@
       {
         type: 'choice',
         key: 'hlStyle',
-        label: 'Spectrum',
-        choices: [['bars', 'Bars'], ['line', 'Line'], ['dots', 'Dots']],
-        group: [{ type: 'slider', key: 'hlScale', label: 'Scale', min: 50, max: 150, step: 5 }],
+        label: T('common.spectrum'),
+        choices: [['bars', T('viz.bars.name')], ['line', T('viz.halo.setting.spectrum.line')], ['dots', T('viz.shared.dots')]],
+        group: [{ type: 'slider', key: 'hlScale', label: T('viz.halo.setting.scale'), min: 50, max: 150, step: 5 }],
       },
       {
         type: 'choice',
         key: 'hlColors',
-        label: 'Color',
-        choices: [['cover', 'Cover'], ['rainbow', 'Rainbow'], ['notes', 'By the notes']],
+        label: T('viz.shared.color'),
+        choices: [['cover', T('viz.shared.cover')], ['rainbow', T('common.color.rainbow')], ['notes', T('viz.shared.byTheNotes')]],
         color: { value: 'custom', key: 'hlColor', presets: Visualizer.OWN_PRESETS },
       },
       {
         type: 'choice',
         key: 'hlCover',
-        label: 'Cover',
-        choices: [['original', 'Original'], ['pick', 'Pick']],
+        label: T('viz.shared.cover'),
+        choices: [['original', T('viz.halo.setting.cover.original')], ['pick', T('viz.halo.setting.back.pick')]],
         pick: { value: 'pick', key: 'hlCoverFile', name: 'halo-cover', max: 2048 },
         group: [
-          { type: 'slider', key: 'hlCoverScale', label: 'Scale', min: 50, max: 150, step: 5 },
-          { type: 'check', key: 'hlWiggle', label: 'Wiggle', amount: { key: 'hlWiggleAmount', min: 0, max: 200, step: 5 } },
-          { type: 'check', key: 'hlPulse', label: 'Pulsing', amount: { key: 'hlPulseAmount', min: 0, max: 200, step: 5 } },
-          { type: 'check', key: 'hlOutline', label: 'Outline' },
+          { type: 'slider', key: 'hlCoverScale', label: T('viz.halo.setting.scale'), min: 50, max: 150, step: 5 },
+          { type: 'check', key: 'hlWiggle', label: T('viz.halo.setting.wiggle'), amount: { key: 'hlWiggleAmount', min: 0, max: 200, step: 5 } },
+          { type: 'check', key: 'hlPulse', label: T('viz.halo.setting.pulsing'), amount: { key: 'hlPulseAmount', min: 0, max: 200, step: 5 } },
+          { type: 'check', key: 'hlOutline', label: T('viz.halo.setting.outline') },
         ],
       },
-      { type: 'check', key: 'hlParticles', label: 'Sparks', amount: { key: 'hlSparkAmount', min: 0, max: 200, step: 5 } },
+      { type: 'check', key: 'hlParticles', label: T('viz.shared.sparks'), amount: { key: 'hlSparkAmount', min: 0, max: 200, step: 5 } },
       {
         type: 'check',
         key: 'hlBackground',
-        label: 'Background',
+        label: T('viz.shared.background'),
         group: [{
           type: 'choice',
           key: 'hlBack',
           label: '',
-          choices: [['cover', 'Cover'], ['pick', 'Pick']],
+          choices: [['cover', T('viz.shared.cover')], ['pick', T('viz.halo.setting.back.pick')]],
           pick: { value: 'pick', key: 'hlBackFile', name: 'halo-background', max: 3840, video: true },
         }],
       },
-      { type: 'check', key: 'hlTitle', label: 'Song title' },
+      { type: 'check', key: 'hlTitle', label: T('viz.halo.setting.songTitle') },
     ],
   });
 })();

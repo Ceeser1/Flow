@@ -40,7 +40,7 @@ const SongDetails = {
         const data = await window.flow.lyrics(songId);
         Object.assign(lyrics, { state: 'ready', data, error: '' });
       } catch (err) {
-        Object.assign(lyrics, { state: 'error', data: null, error: (err && err.message) || 'The lyrics could not be fetched.' });
+        Object.assign(lyrics, { state: 'error', data: null, error: (err && err.message) || T('common.lyricsNotFetched') });
       }
       draw();
     };
@@ -51,11 +51,11 @@ const SongDetails = {
     if (window.flow.lyrics) load();
     // On the phone a full-screen panel from the right, like the Queue, swiped away to either side.
     modal = Modal.open({
-      title: 'Song Details',
+      title: T('common.songDetails'),
       className: 'modal--details',
       drawer: Mobile.on,
       body,
-      buttons: Mobile.on ? [] : [{ label: 'Close', kind: 'primary' }],
+      buttons: Mobile.on ? [] : [{ label: T('common.close'), kind: 'primary' }],
       onClose: () => {
         Store._listeners = Store._listeners.filter((fn) => fn !== redraw);
       },
@@ -72,7 +72,7 @@ const SongDetails = {
       h('h3.details__title', { title: song.title }, song.title),
       h('div.details__meta', meta),
       h('div.details__tags',
-        tag('Album', song.album), tag('Mix', song.mix), tag('Genre', song.genre), tag('Info', song.subGenre)));
+        tag(T('common.album'), song.album), tag(T('common.mix'), song.mix), tag(T('common.genre'), song.genre), tag(T('common.info'), song.subGenre)));
   },
 
   _playlists(song, shown) {
@@ -83,20 +83,20 @@ const SongDetails = {
 
     const chips = h('div.details__chips');
     const lists = Store.sortedPlaylists().filter((p) => shown.has(p.id));
-    if (!lists.length) chips.appendChild(h('span.muted-text', 'Not in any playlist yet.'));
+    if (!lists.length) chips.appendChild(h('span.muted-text', T('details.playlists.none')));
     for (const p of lists) {
       const on = inList.has(p.id);
       chips.appendChild(h('button.chip' + (on ? '.chip--on' : ''), {
         type: 'button',
-        title: on ? `In ${p.name}: click to take it out` : `Click to put it back into ${p.name}`,
+        title: on ? T('details.playlists.in.tooltip', { playlist: p.name }) : T('details.playlists.out.tooltip', { playlist: p.name }),
         html: `<span class="chip__box">${on ? Icons.check : ''}</span>`,
         onclick: () => attempt(async () => {
           if (on) {
             await window.flow.removeFromPlaylist(p.id, song.id);
-            toast(`Removed from ${p.name}`, 'success');
+            toast(T('common.removedFrom', { playlist: p.name }), 'success');
           } else {
             await window.flow.addSongToPlaylists(song.id, [p.id]);
-            toast(`Added to ${p.name}`, 'success');
+            toast(T('common.addedTo', { playlist: p.name }), 'success');
           }
         }),
       }, h('span', p.name)));
@@ -104,19 +104,19 @@ const SongDetails = {
 
     const add = h('button.btn.btn--green', {
       type: 'button',
-      html: Icons.plus + '<span>Add to Playlists</span>',
+      html: Icons.plus + `<span>${T('common.addToPlaylists')}</span>`,
       onclick: async () => {
         const chosen = await pickPlaylists({ subtitle: Util.songLine(song), lockedIds: [...inList] });
         if (!chosen || !chosen.length) return;
         await attempt(async () => {
           const n = await window.flow.addSongToPlaylists(song.id, chosen);
-          toast(`Added to ${Util.plural(n, 'playlist')}`, 'success');
+          toast(T('details.playlists.addedMany', { playlists: Util.plural(n, 'playlist') }), 'success');
         });
       },
     });
 
     return h('section.details__section',
-      h('h4.details__heading', 'Playlists'),
+      h('h4.details__heading', T('common.playlists')),
       chips,
       h('div.details__row', add));
   },
@@ -124,14 +124,14 @@ const SongDetails = {
   /** The page the song was downloaded from, and the playlist it came in with if any. */
   _source(song) {
     const link = (url) => h('button.link-btn.details__url', {
-      type: 'button', title: 'Open in the browser', onclick: () => window.flow.openUrl(url),
+      type: 'button', title: T('details.source.openInBrowser.tooltip'), onclick: () => window.flow.openUrl(url),
     }, url);
     const row = (label, value) => [h('div.details__label', label), h('div.details__value', value)];
     return h('section.details__section',
-      h('h4.details__heading', 'Source'),
+      h('h4.details__heading', T('details.source.heading')),
       h('div.details__grid.details__grid--source',
-        ...row('Direct Url', song.sourceUrl ? link(song.sourceUrl) : h('span.muted-text', 'Not known (the file was added to Local Files by hand)')),
-        ...(song.sourcePlaylistUrl ? row('Playlist Url', link(song.sourcePlaylistUrl)) : [])));
+        ...row(T('details.source.directUrl'), song.sourceUrl ? link(song.sourceUrl) : h('span.muted-text', T('details.source.unknown'))),
+        ...(song.sourcePlaylistUrl ? row(T('details.source.playlistUrl'), link(song.sourcePlaylistUrl)) : [])));
   },
 
   /**
@@ -141,31 +141,31 @@ const SongDetails = {
    */
   _lyrics(song, lyrics, reload) {
     // The heading says where the words came from; Edit (or Add) at its right.
-    const name = h('span', 'Lyrics');
+    const name = h('span', T('common.lyrics'));
     const heading = h('h4.details__heading.details__heading--split', name);
     const section = h('section.details__section', heading);
     if (lyrics.state === 'loading') {
-      section.appendChild(h('div.details__lyrics.details__lyrics--none', LyricsEdit.spinner(), 'Looking for the lyrics...'));
+      section.appendChild(h('div.details__lyrics.details__lyrics--none', LyricsEdit.spinner(), T('common.lookingForLyrics')));
       return section;
     }
     if (lyrics.state === 'error') {
       section.append(h('div.details__lyrics.details__lyrics--none', lyrics.error),
-        h('div.details__row', h('button.btn.btn--small', { type: 'button', onclick: reload }, 'Try again')));
+        h('div.details__row', h('button.btn.btn--small', { type: 'button', onclick: reload }, T('common.tryAgain'))));
       return section;
     }
     const data = lyrics.data;
     const words = data && data.found ? String(data.plain || '').trim() : '';
     if (words) {
-      const from = data.own ? 'written in Flow' : `from ${data.source || 'LRCLIB'}`;
-      name.appendChild(h('span.details__heading-note', ` (${from}, ${data.synced ? 'with times' : 'without times'})`));
+      const from = data.own ? T('details.lyrics.from.own') : T('details.lyrics.from.source', { source: data.source || 'LRCLIB' });
+      name.appendChild(h('span.details__heading-note', ` ${T(data.synced ? 'details.lyrics.note.timed' : 'details.lyrics.note.untimed', { from })}`));
     }
     section.appendChild(words
       ? h('div.details__lyrics', words)
-      : h('div.details__lyrics.details__lyrics--none', data && data.instrumental ? 'Instrumental' : 'No lyrics found for this song.'));
+      : h('div.details__lyrics.details__lyrics--none', data && data.instrumental ? T('common.instrumental') : T('common.noLyricsForSong')));
     if (!LyricsEdit.available) return section;
     heading.appendChild(h('button.btn.btn--small.btn--light-green', {
       type: 'button', onclick: () => LyricsEdit.openFor(song, data, reload),
-    }, words ? 'Edit Lyrics' : 'Add Lyrics'));
+    }, words ? T('common.editLyrics') : T('common.addLyrics')));
     return section;
   },
 
@@ -175,22 +175,22 @@ const SongDetails = {
     const sessions = st.sessions || 0;
     const last = st.lastPlayedAt;
     const avg = sessions ? (st.listened || 0) / sessions : 0;
-    const share = avg && song.duration ? ` (${Math.round((avg / song.duration) * 100)}% of the song)` : '';
+    const share = avg && song.duration ? Math.round((avg / song.duration) * 100) : null;
 
     const row = (label, value) => [h('div.details__label', label), h('div.details__value', value)];
     // With a Flow Server that has profiles: the one that uploaded the song or had the server download it.
-    const by = Store.canShare() ? (song.addedBy && Store.profileName(song.addedBy)) || 'Not known' : null;
+    const by = Store.canShare() ? (song.addedBy && Store.profileName(song.addedBy)) || T('common.unknown') : null;
     return h('section.details__section',
-      h('h4.details__heading', 'Statistics'),
+      h('h4.details__heading', T('common.statistics')),
       h('div.details__grid',
-        ...row('Added', Util.fmtDate(song.addedAt)),
-        ...(by ? row('Added by', by) : []),
-        ...row('Last listened', last ? `${Util.fmtDate(last)}  (${Util.fmtAgo(last)})` : 'Never'),
-        ...row('Times played (>5 seconds)', String(sessions)),
-        ...row('Average listen duration', sessions ? Util.fmtClock(avg) + share : '-'),
+        ...row(T('common.added'), Util.fmtDate(song.addedAt)),
+        ...(by ? row(T('details.stats.addedBy'), by) : []),
+        ...row(T('details.stats.lastListened'), last ? `${Util.fmtDate(last)}  (${Util.fmtAgo(last)})` : T('details.stats.never')),
+        ...row(T('details.stats.timesPlayed'), String(sessions)),
+        ...row(T('details.stats.averageListen'), sessions ? (share !== null ? T('details.stats.averageListen.share', { duration: Util.fmtClock(avg), percent: share }) : Util.fmtClock(avg)) : '-'),
         // Short enough for one line each on the phone.
-        ...row('Listened > 80% duration', `${plays}x`),
-        ...row('Listened < 80% duration', `${st.stops || 0}x`),
-        ...row('Skipped early < 30s', `${st.skips || 0}x`)));
+        ...row(T('details.stats.over80'), `${plays}x`),
+        ...row(T('details.stats.under80'), `${st.stops || 0}x`),
+        ...row(T('details.stats.skippedEarly'), `${st.skips || 0}x`)));
   },
 };

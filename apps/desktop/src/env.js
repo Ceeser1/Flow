@@ -20,6 +20,7 @@ const { coverVersion } = require('@flow/core/cover');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const discovery = require('@flow/core/discovery');
 const { OfflineError } = require('@flow/core/client/common');
+const { tr } = require('@flow/core/lang');
 
 // ---- the passwords and PINs, kept encrypted ----
 
@@ -57,7 +58,7 @@ function request(base, pathname, { method = 'GET', json, file, saveTo, token, ti
     try {
       url = new URL(base + pathname);
     } catch {
-      reject(new Error('That is not an address.'));
+      reject(new Error(tr('common.error.notAnAddress', 'That is not an address.')));
       return;
     }
     const lib = url.protocol === 'https:' ? https : http;
@@ -83,13 +84,13 @@ function request(base, pathname, { method = 'GET', json, file, saveTo, token, ti
         });
         res.pipe(out);
         out.on('finish', () => {
-          if (total && got !== total) reject(new OfflineError('The download was cut off.'));
+          if (total && got !== total) reject(new OfflineError(tr('common.error.downloadCutOff', 'The download was cut off.')));
           else resolve({ status: 200, json: null });
         });
         out.on('error', (err) => reject(err));
         res.on('aborted', () => {
           out.destroy();
-          reject(new OfflineError('The download was cut off.'));
+          reject(new OfflineError(tr('common.error.downloadCutOff', 'The download was cut off.')));
         });
         return;
       }
@@ -105,9 +106,9 @@ function request(base, pathname, { method = 'GET', json, file, saveTo, token, ti
         }
         resolve({ status: res.statusCode, json: body });
       });
-      res.on('aborted', () => reject(new OfflineError('The connection was cut off.')));
+      res.on('aborted', () => reject(new OfflineError(tr('desktop.error.connectionCutOff', 'The connection was cut off.'))));
     });
-    req.setTimeout(timeout, () => req.destroy(new OfflineError('The server did not answer in time.')));
+    req.setTimeout(timeout, () => req.destroy(new OfflineError(tr('common.error.noAnswerInTime', 'The server did not answer in time.'))));
     req.on('error', (err) => reject(err instanceof OfflineError ? err : new OfflineError(err.message)));
     if (payload) req.end(payload);
     else if (file) {

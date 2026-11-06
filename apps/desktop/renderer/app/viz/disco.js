@@ -1544,30 +1544,29 @@
 
   Visualizer.add({
     id: 'disco',
-    name: 'Disco',
-    desc: 'A dance hall: a mirror ball scattering its spots, beams sweeping through the haze with the beat, an LED floor playing to the music, the DJ on a stage between speakers and strobes',
+    name: T('viz.disco.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><circle cx="12" cy="12" r="6"/><path d="M6 12h12M12 6c-2 2-2 10 0 12M12 6c2 2 2 10 0 12"/></svg>',
     gl: true,
     create: (canvas) => new Disco(canvas),
     options: [
-      { type: 'choice', key: 'dcColors', label: 'Colours', choices: [['disco', 'Disco'], ['warm', 'Warm'], ['cool', 'Cool']] },
-      { type: 'check', key: 'dcBeams', label: 'Beams' },
+      { type: 'choice', key: 'dcColors', label: T('viz.shared.colors'), choices: [['disco', T('viz.disco.name')], ['warm', T('viz.shared.warm')], ['cool', T('viz.disco.setting.colours.cool')]] },
+      { type: 'check', key: 'dcBeams', label: T('viz.disco.setting.beams') },
       {
         type: 'check',
         key: 'dcStrobes',
-        label: 'Strobes',
-        group: [{ type: 'slider', key: 'dcStrobeRoom', label: 'Room lightup', min: 0, max: 100, step: 5 }],
+        label: T('viz.disco.setting.strobes'),
+        group: [{ type: 'slider', key: 'dcStrobeRoom', label: T('viz.disco.setting.roomLightup'), min: 0, max: 100, step: 5 }],
       },
-      { type: 'slider', key: 'dcSpin', label: 'Ball turning', min: 0, max: 300, step: 5 },
+      { type: 'slider', key: 'dcSpin', label: T('viz.disco.setting.ballTurning'), min: 0, max: 300, step: 5 },
       {
         type: 'check',
         key: 'dcCamera',
-        label: 'Camera moves',
+        label: T('viz.disco.setting.cameraMoves'),
         amount: { key: 'dcSwivel', min: 0, max: 500, step: 5 },
-        group: [{ type: 'slider', key: 'dcSwingRange', label: 'Swing range', min: 50, max: 250, step: 5 }],
+        group: [{ type: 'slider', key: 'dcSwingRange', label: T('viz.disco.setting.swingRange'), min: 50, max: 250, step: 5 }],
       },
-      { type: 'choice', key: 'dcScale', label: 'Render scale', choices: [['100', '100%'], ['75', '75%'], ['50', '50%']] },
+      { type: 'choice', key: 'dcScale', label: T('viz.shared.renderScale'), choices: [['100', '100%'], ['75', '75%'], ['50', '50%']] },
     ],
   });
 })();

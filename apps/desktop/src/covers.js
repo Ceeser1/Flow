@@ -31,6 +31,7 @@ const library = require('./library');
 const model = require('@flow/core/libraryModel');
 const cover = require('@flow/core/cover');
 const { isNameOnlyList } = require('@flow/core/text');
+const { tr } = require('@flow/core/lang');
 
 const LOCAL = 'local';
 const BATCH = 10;
@@ -40,7 +41,7 @@ const BATCH_MS = 5000;
 const PAUSE_MS = 1000;
 
 const storeOf = (scope) => {
-  if (!/^[\w-]{1,64}$/.test(String(scope || ''))) throw new Error('Not a cover folder.');
+  if (!/^[\w-]{1,64}$/.test(String(scope || ''))) throw new Error(tr('desktop.error.notCoverFolder', 'Not a cover folder.'));
   return cover.createCoverStore(path.join(paths.coversDir(), scope));
 };
 const localStore = () => storeOf(LOCAL);

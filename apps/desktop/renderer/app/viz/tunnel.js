@@ -194,17 +194,16 @@
 
   Visualizer.add({
     id: 'tunnel',
-    name: 'Tunnel',
-    desc: 'Flying down a tunnel of light that winds with the music, its walls lit by the spectrum, rings shooting away on the beats',
+    name: T('viz.tunnel.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.5"/></svg>',
     gl: true,
     create: (canvas) => new Tunnel(canvas),
     options: [
-      { type: 'choice', key: 'tnShape', label: 'Shape', choices: [['round', 'Round'], ['square', 'Square'], ['hex', 'Hexagon']] },
-      { type: 'choice', key: 'tnWalls', label: 'Walls', choices: [['grid', 'Grid'], ['hex', 'Hexes'], ['rings', 'Rings']] },
-      { type: 'choice', key: 'tnColors', label: 'Colors', choices: [['neon', 'Neon'], ['sunset', 'Sunset'], ['matrix', 'Matrix'], ['ice', 'Ice'], ['gold', 'Gold']] },
-      { type: 'slider', key: 'tnSpeed', label: 'Speed', min: 25, max: 300, step: 5 },
+      { type: 'choice', key: 'tnShape', label: T('viz.shared.shape'), choices: [['round', T('viz.shared.round')], ['square', T('viz.shared.square')], ['hex', T('viz.tunnel.setting.shape.hex')]] },
+      { type: 'choice', key: 'tnWalls', label: T('viz.tunnel.setting.walls'), choices: [['grid', T('viz.shared.grid')], ['hex', T('viz.tunnel.setting.walls.hex')], ['rings', T('viz.shared.rings')]] },
+      { type: 'choice', key: 'tnColors', label: T('viz.shared.colors'), choices: [['neon', T('viz.shared.neon')], ['sunset', T('viz.tunnel.setting.colors.sunset')], ['matrix', 'Matrix'], ['ice', T('viz.shared.ice')], ['gold', T('viz.shared.gold')]] },
+      { type: 'slider', key: 'tnSpeed', label: T('viz.shared.speed'), min: 25, max: 300, step: 5 },
     ],
   });
 })();

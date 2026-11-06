@@ -20,6 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const { tr } = require('./lang');
 
 const KEEP = 6;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -46,12 +47,12 @@ function unpack(buf) {
   try {
     doc = JSON.parse(zlib.gunzipSync(buf).toString('utf8'));
   } catch {
-    throw new Error('That file is not a Flow backup (or it is damaged).');
+    throw new Error(tr('core.backup.notBackupDamaged', 'That file is not a Flow backup (or it is damaged).'));
   }
   if (!doc || doc.app !== 'flow-backup' || !doc.library || typeof doc.library !== 'object') {
-    throw new Error('That file is not a Flow backup.');
+    throw new Error(tr('core.backup.notBackup', 'That file is not a Flow backup.'));
   }
-  if (Number(doc.format) > FORMAT) throw new Error('That backup was made by a newer Flow. Update Flow first.');
+  if (Number(doc.format) > FORMAT) throw new Error(tr('core.backup.newer', 'That backup was made by a newer Flow. Update Flow first.'));
   return doc;
 }
 
@@ -162,12 +163,12 @@ function createBackupStore({
 
   /** A backup's content by its name, or an Error. */
   function read(name) {
-    if (!isName(name)) throw new Error('There is no such backup.');
+    if (!isName(name)) throw new Error(tr('core.backup.none', 'There is no such backup.'));
     let buf;
     try {
       buf = fs.readFileSync(path.join(dir, name));
     } catch {
-      throw new Error('That backup is gone.');
+      throw new Error(tr('core.backup.gone', 'That backup is gone.'));
     }
     return unpack(buf);
   }

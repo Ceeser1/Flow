@@ -32,10 +32,10 @@
   //   size      how large it is drawn
   //   kaleido   mirrored slices seen through (0: none)
   const LOOKS = [
-    { id: 'kaleido', name: 'Kaleidoscope', zoom: 1.01, kickZoom: 0.025, rot: 0.004, twist: 0.0, swirl: 0.006, swirlScale: 1.6, drift: [0, 0], decay: 0.96, hue: 0.002, base: 0.85, wave: 0, size: 0.18, kaleido: 6 },
-    { id: 'vortex', name: 'Vortex', zoom: 1.012, kickZoom: 0.03, rot: 0.006, twist: 0.012, swirl: 0.004, swirlScale: 2.2, drift: [0, 0], decay: 0.965, hue: 0.0015, base: 0.62, wave: 1, size: 0.22, kaleido: 0 },
-    { id: 'tunnel', name: 'Tunnel', zoom: 1.035, kickZoom: 0.05, rot: 0.0, twist: 0.0, swirl: 0.0015, swirlScale: 3.0, drift: [0, 0], decay: 0.95, hue: 0.003, base: 0.05, wave: 1, size: 0.12, kaleido: 0 },
-    { id: 'starburst', name: 'Starburst', zoom: 1.05, kickZoom: 0.06, rot: -0.002, twist: 0.0, swirl: 0.001, swirlScale: 4.0, drift: [0, 0], decay: 0.91, hue: 0.004, base: 0.1, wave: 2, size: 0.1, kaleido: 0 },
+    { id: 'kaleido', name: T('viz.kaleidoscope.name'), zoom: 1.01, kickZoom: 0.025, rot: 0.004, twist: 0.0, swirl: 0.006, swirlScale: 1.6, drift: [0, 0], decay: 0.96, hue: 0.002, base: 0.85, wave: 0, size: 0.18, kaleido: 6 },
+    { id: 'vortex', name: T('viz.kaleidoscope.look.vortex'), zoom: 1.012, kickZoom: 0.03, rot: 0.006, twist: 0.012, swirl: 0.004, swirlScale: 2.2, drift: [0, 0], decay: 0.965, hue: 0.0015, base: 0.62, wave: 1, size: 0.22, kaleido: 0 },
+    { id: 'tunnel', name: T('viz.tunnel.name'), zoom: 1.035, kickZoom: 0.05, rot: 0.0, twist: 0.0, swirl: 0.0015, swirlScale: 3.0, drift: [0, 0], decay: 0.95, hue: 0.003, base: 0.05, wave: 1, size: 0.12, kaleido: 0 },
+    { id: 'starburst', name: T('viz.kaleidoscope.look.starburst'), zoom: 1.05, kickZoom: 0.06, rot: -0.002, twist: 0.0, swirl: 0.001, swirlScale: 4.0, drift: [0, 0], decay: 0.91, hue: 0.004, base: 0.1, wave: 2, size: 0.1, kaleido: 0 },
   ];
   const NUMBERS = ['zoom', 'kickZoom', 'rot', 'twist', 'swirl', 'swirlScale', 'decay', 'hue', 'size'];
 
@@ -346,18 +346,17 @@
 
   Visualizer.add({
     id: 'kaleidoscope',
-    name: 'Kaleidoscope',
-    desc: 'In the manner of Milkdrop: the music drawn into a picture that flows on, zooming, swirling and changing colour',
+    name: T('viz.kaleidoscope.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 12m-2 0a2 2 0 1 0 4 0a4 4 0 1 0-8 0a6 6 0 1 0 12 0a8 8 0 1 0-16 0"/></svg>',
     gl: true,
-    hint: 'Click for the next look',
+    hint: T('viz.kaleidoscope.hint'),
     create: (canvas) => new Kaleidoscope(canvas),
     click: (scene) => scene.next(),
     options: [
-      { type: 'choice', key: 'ksLook', label: 'Look', choices: [['auto', 'Auto'], ...LOOKS.map((l) => [l.id, l.name])] },
-      { type: 'slider', key: 'ksEvery', label: 'Auto changes every', min: 10, max: 120, step: 5, unit: ' s', when: (s) => s.ksLook === 'auto' },
-      { type: 'slider', key: 'ksTrails', label: 'Trails', min: 25, max: 200, step: 5 },
+      { type: 'choice', key: 'ksLook', label: T('viz.shared.look'), choices: [['auto', T('viz.kaleidoscope.setting.look.auto')], ...LOOKS.map((l) => [l.id, l.name])] },
+      { type: 'slider', key: 'ksEvery', label: T('viz.kaleidoscope.setting.autoChangesEvery'), min: 10, max: 120, step: 5, unit: ' s', when: (s) => s.ksLook === 'auto' },
+      { type: 'slider', key: 'ksTrails', label: T('viz.kaleidoscope.setting.trails'), min: 25, max: 200, step: 5 },
     ],
   });
 })();

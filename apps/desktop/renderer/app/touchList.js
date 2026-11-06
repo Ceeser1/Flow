@@ -59,7 +59,7 @@ const TouchList = {
     let end = opts.side ? opts.side(row) : null;
     const items = !end && opts.more ? opts.more(row) : null;
     if (items && items.length) {
-      end = iconButton('mrow__more', Icons.more, 'More', () => {
+      end = iconButton('mrow__more', Icons.more, T('common.more'), () => {
         actionSheet({ title: opts.sheetTitle ? opts.sheetTitle(row) : opts.title(row), items: opts.more(row) });
       });
     }
@@ -115,14 +115,14 @@ const TouchList = {
     const btn = h('button.mlist__sort', {
       type: 'button',
       onclick: () => actionSheet({
-        title: 'Sort by',
+        title: T('mobile.list.sortBy'),
         items: columns.map((c) => ({
           label: c.label + (active === c ? arrow : ''),
           kind: active === c ? 'on' : '',
           onClick: () => onSort(c.key),
         })),
       }),
-    }, active ? `Sorted by ${active.label}${arrow}` : 'Sort');
+    }, active ? T('mobile.list.sortedBy', { column: active.label, arrow }) : T('mobile.list.sort'));
     return h('div.mlist__head', btn);
   },
 
@@ -183,8 +183,8 @@ const TouchList = {
     const keys = [...chosen];
     const rowsNow = () => drawn.rows.filter((r) => chosen.has(drawn.rowKey(r)));
     bar.append(
-      iconButton('choose-bar__close', Icons.x, 'Stop choosing', () => this.stopChoosing()),
-      h('span.choose-bar__count', `${keys.length} chosen`),
+      iconButton('choose-bar__close', Icons.x, T('mobile.list.stopChoosing'), () => this.stopChoosing()),
+      h('span.choose-bar__count', T('mobile.list.chosen', { count: keys.length })),
       h('div.choose-bar__actions', ...(drawn.select.actions || []).map((a) => h('button.choose-bar__btn' + (a.kind ? '.choose-bar__btn--' + a.kind : ''), {
         type: 'button',
         title: a.label,

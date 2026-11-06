@@ -82,7 +82,7 @@ const SearchPage = {
       const row = h('div.result.result--song', {
         role: 'button',
         tabIndex: 0,
-        title: 'Play',
+        title: T('common.play'),
         dataset: { id: s.id },
         onclick: play,
         onkeydown: (e) => {
@@ -95,11 +95,11 @@ const SearchPage = {
       h('span.result__text',
         h('span.result__title', { title: fullName(name) }, shortName(name)),
         h('span.result__meta', { title: fullName(s.artist) }, [s.artist && shortName(s.artist), Util.fmtClock(s.duration)].filter(Boolean).join(' · '))),
-      iconButton('act.act--green', Icons.plus, 'Add to Queue', (e) => {
+      iconButton('act.act--green', Icons.plus, T('common.addToQueue'), (e) => {
         e.stopPropagation();
         Player.addToQueue(s.id);
       }),
-      iconButton('act.act--green.result__play', Icons.play, 'Play', (e) => {
+      iconButton('act.act--green.result__play', Icons.play, T('common.play'), (e) => {
         e.stopPropagation();
         play();
       }));
@@ -110,7 +110,7 @@ const SearchPage = {
     // Artists: the artists of the songs found, each once, with how many songs they have
     this._fill('searchArtists', 'searchArtistsCount', this._artists(songs), (a) => h('button.result', {
       type: 'button',
-      title: `Show songs by ${a.name}`,
+      title: T('search.artist.tooltip', { artist: a.name }),
       onclick: () => Nav.openPlaylist('all', { filter: a.name }),
     },
     h('span.result__icon.result__avatar', a.name.slice(0, 1).toUpperCase()),
@@ -123,7 +123,7 @@ const SearchPage = {
     for (const col of SEARCH_NAMES) {
       this._fill(col.list, col.count, this._names(col.key, q), (n) => h('button.result', {
         type: 'button',
-        title: `Show the songs with ${n.name}`,
+        title: T('search.tag.tooltip', { name: n.name }),
         onclick: () => Nav.openPlaylist('all', { filter: n.name }),
       },
       col.key === 'album' ? Covers.el(n.song, 'result') : h('span.result__icon.result__avatar.result__avatar--name', n.name.slice(0, 1).toUpperCase()),
@@ -200,13 +200,13 @@ const SearchPage = {
     const list = clear($(listId));
     $(countId).textContent = items.length ? String(items.length) : '';
     if (!items.length) {
-      list.appendChild(h('div.results__empty', 'No matches'));
+      list.appendChild(h('div.results__empty', T('search.noMatches')));
       return;
     }
     const frag = document.createDocumentFragment();
     for (const item of items.slice(0, limit)) frag.appendChild(draw(item));
     if (items.length > limit) {
-      frag.appendChild(h('div.results__more', `${items.length - limit} more - type more to narrow it down`));
+      frag.appendChild(h('div.results__more', T('search.more', { count: items.length - limit })));
     }
     list.appendChild(frag);
   },
@@ -218,9 +218,9 @@ const SearchPage = {
       node.classList.toggle('result--current', current);
       const btn = node.querySelector('.result__play');
       btn.innerHTML = playing ? Icons.pause : Icons.play;
-      btn.title = playing ? 'Pause' : 'Play';
+      btn.title = playing ? T('common.pause') : T('common.play');
       btn.setAttribute('aria-label', btn.title);
-      node.title = playing ? 'Pause' : 'Play';
+      node.title = playing ? T('common.pause') : T('common.play');
     }
   },
 };

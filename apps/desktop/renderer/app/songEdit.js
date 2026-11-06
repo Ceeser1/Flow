@@ -41,24 +41,24 @@ function songTrimEditor(song, { enabled = true } = {}) {
   const status = h('div.audio-status');
   const fill = h('div.trim-slider__fill');
   const trimPlayhead = h('div.playhead.playhead--trim');
-  const startHandle = h('div.trim-slider__handle.trim-slider__handle--start', { title: 'Start' });
-  const endHandle = h('div.trim-slider__handle.trim-slider__handle--end', { title: 'End' });
+  const startHandle = h('div.trim-slider__handle.trim-slider__handle--start', { title: T('common.trim.start') });
+  const endHandle = h('div.trim-slider__handle.trim-slider__handle--end', { title: T('common.trim.end') });
   const sliderEl = h('div.trim-slider', h('div.trim-slider__track', fill), trimPlayhead, startHandle, endHandle);
   const startField = h('input.time-field', { type: 'text', spellcheck: false });
   const endField = h('input.time-field', { type: 'text', spellcheck: false });
-  const playBtn = h('button.round-btn.round-btn--main', { type: 'button', title: 'Play' });
+  const playBtn = h('button.round-btn.round-btn--main', { type: 'button', title: T('common.play') });
   const timeText = h('span.time-readout', '0:00 / 0:00');
   const spanLabel = h('div.span-label');
-  const hint = h('span.song-edit__hint', 'Hold Shift while dragging for 10x finer control, Ctrl for 100x');
-  const resetBtn = h('button.btn.btn--small', { type: 'button' }, 'Reset');
+  const hint = h('span.song-edit__hint', T('common.trim.hint'));
+  const resetBtn = h('button.btn.btn--small', { type: 'button' }, T('common.trim.reset'));
   const el = h('div.song-trim' + (enabled ? '' : '.song-trim--off'),
     h('div.audio-canvas-wrap', canvas, wavePlayhead, status),
     sliderEl,
     h('div.trim-row',
-      h('div.time-group', h('span.time-caption.time-caption--start', 'Start'), startField),
+      h('div.time-group', h('span.time-caption.time-caption--start', T('common.trim.start')), startField),
       h('div.preview-transport', playBtn, timeText),
       h('div.span-cell', spanLabel),
-      h('div.time-group.time-group--end', h('span.time-caption.time-caption--end', 'End'), endField)));
+      h('div.time-group.time-group--end', h('span.time-caption.time-caption--end', T('common.trim.end')), endField)));
 
   let duration = song.duration || 0;
   let peaks = null;
@@ -71,7 +71,7 @@ function songTrimEditor(song, { enabled = true } = {}) {
   const src = Store.audioSrc(song);
   if (src) audio.src = src;
   playBtn.disabled = !src;
-  if (!src) playBtn.title = `Not on ${Store.here}, and the server cannot be reached`;
+  if (!src) playBtn.title = T(`songEdit.trim.notPlayable.${Store.hereKey}`);
 
   const slider = new TrimSlider(sliderEl, startHandle, endHandle, fill);
   addTrimNudges(slider, startField.parentNode, endField.parentNode);
@@ -96,7 +96,7 @@ function songTrimEditor(song, { enabled = true } = {}) {
   const syncFields = () => {
     startField.value = Util.fmtPrecise(slider.start);
     endField.value = Util.fmtPrecise(slider.end);
-    spanLabel.textContent = `Selection: ${Util.fmtPrecise(slider.end - slider.start)}   of   ${Util.fmtPrecise(duration)}`;
+    spanLabel.textContent = T('common.trim.selection', { selection: Util.fmtPrecise(slider.end - slider.start), total: Util.fmtPrecise(duration) });
   };
   const drawPlay = () => {
     playBtn.innerHTML = audio.paused ? Icons.play : Icons.pause;
@@ -151,9 +151,9 @@ function songTrimEditor(song, { enabled = true } = {}) {
     if (audio.paused) seek(which === 'start' ? start : Math.max(start, end - 3));
   };
   slider.onDragStateChange = (factor) => {
-    if (factor === FINE_CTRL) hint.textContent = 'Fine: 100x';
-    else if (factor === FINE_SHIFT) hint.textContent = 'Fine: 10x';
-    else hint.textContent = 'Hold Shift while dragging for 10x finer control, Ctrl for 100x';
+    if (factor === FINE_CTRL) hint.textContent = T('common.trim.fine100');
+    else if (factor === FINE_SHIFT) hint.textContent = T('common.trim.fine10');
+    else hint.textContent = T('common.trim.hint');
     hint.classList.toggle('hint--active', factor !== 1);
   };
   // A click or drag on the waveform or the track moves the playhead there.
@@ -214,7 +214,7 @@ function songTrimEditor(song, { enabled = true } = {}) {
   // The song's length: the library's, else the audio's own.
   if (duration) begin();
   else {
-    setStatus('Reading the song...');
+    setStatus(T('common.readingSong'));
     audio.addEventListener('loadedmetadata', () => {
       if (gone || duration || !Number.isFinite(audio.duration)) return;
       duration = audio.duration;
@@ -227,10 +227,10 @@ function songTrimEditor(song, { enabled = true } = {}) {
     if (!duration) return;
     const jobs = songPeakJobs(song, duration);
     if (!jobs.length) {
-      setStatus(`No waveform: the song is not on ${Store.here} and the server cannot be reached. It can still be trimmed.`);
+      setStatus(T(`songEdit.trim.noWaveform.${Store.hereKey}`));
       return;
     }
-    setStatus('Drawing waveform...');
+    setStatus(T('common.drawingWaveform'));
     let got = null;
     for (const job of jobs) {
       try {
@@ -242,7 +242,7 @@ function songTrimEditor(song, { enabled = true } = {}) {
     }
     if (gone) return;
     peaks = got;
-    setStatus(got ? '' : 'Could not draw the waveform, but the song can still be trimmed.');
+    setStatus(got ? '' : T('common.trim.waveformFailed'));
     draw();
   }
   if (duration) loadPeaks();
@@ -287,17 +287,17 @@ function songTrimEditor(song, { enabled = true } = {}) {
  * itself; resolves true when something was saved. An album left empty is
  * the title.
  */
-function editSongDialog(song, heading = 'Edit Song') {
+function editSongDialog(song, heading = T('songEdit.title')) {
   return new Promise((resolve) => {
     const field = (name, value, placeholder = '') => h('input.input.settings__input.song-edit__input', {
       type: 'text', value: value || '', name, maxLength: 150, spellcheck: false, placeholder,
     });
     const artist = field('artist', song.artist);
     const title = field('title', song.title);
-    const mix = field('mix', song.mix, 'e.g. Extended Mix, Live');
-    const album = field('album', song.album, 'Empty: the title');
-    const genre = field('genre', song.genre, 'e.g. Hardstyle');
-    const subGenre = field('subGenre', song.subGenre, 'Sub-Genre, CD, Year, ...');
+    const mix = field('mix', song.mix, T('common.mixPlaceholder'));
+    const album = field('album', song.album, T('common.albumPlaceholder'));
+    const genre = field('genre', song.genre, T('songEdit.field.genre.placeholder'));
+    const subGenre = field('subGenre', song.subGenre, T('common.infoPlaceholder'));
     const row = (label, input) => h('label.settings__row',
       h('div.settings__left', h('div.settings__label.settings__label--plain', label)),
       h('div.settings__right', input));
@@ -314,12 +314,12 @@ function editSongDialog(song, heading = 'Edit Song') {
     // The phone cuts no file itself: without a server, no trim there.
     const trim = !othersSong && (Store.can('localTrim') || st.on) ? songTrimEditor(song, { enabled: !serverCannot }) : null;
     let note;
-    if (othersSong) note = `This Song was uploaded by ${owner}. Only that profile can trim this song.`;
-    else if (!trim) note = 'Songs on this phone are trimmed through a Flow Server (Settings, Flow Server).';
-    else if (serverCannot) note = 'This Flow Server cannot trim songs. Update it, and install ffmpeg on it (sudo apt install ffmpeg).';
-    else if (st.on && st.state === 'online') note = 'Save cuts the song\'s file on the server; the uncut file stays in its trash for 30 days.';
-    else if (st.on) note = 'Save cuts the song\'s copy here, if there is one, and the server cuts its file once it is connected again.';
-    else note = 'Save cuts the song\'s file; the uncut file goes to the Recycle Bin.';
+    if (othersSong) note = T('songEdit.trim.note.onlyOwner', { profile: owner });
+    else if (!trim) note = T('songEdit.trim.note.phoneNeedsServer');
+    else if (serverCannot) note = T('common.serverCannotTrim');
+    else if (st.on && st.state === 'online') note = T('songEdit.trim.note.serverCuts');
+    else if (st.on) note = T('songEdit.trim.note.serverCutsLater');
+    else note = T('songEdit.trim.note.recycleBin');
     const error = h('div.form-error');
     let saved = false;
     let modal = null;
@@ -329,26 +329,26 @@ function editSongDialog(song, heading = 'Edit Song') {
     const lyricsInfo = h('span.song-edit__lyrics');
     const lyricsButtons = h('div.song-edit__lyrics-btns');
     const lyricsRow = window.flow.lyrics ? h('div.settings__row',
-      h('div.settings__left', h('div.settings__label.settings__label--plain', 'Lyrics')),
+      h('div.settings__left', h('div.settings__label.settings__label--plain', T('common.lyrics'))),
       h('div.settings__right.song-edit__lyrics-right', lyricsInfo, lyricsButtons)) : null;
     const show = h('button.btn.btn--small', {
       type: 'button',
-      title: 'Close this and open Song Details',
+      title: T('songEdit.lyrics.showInDetails.tooltip'),
       onclick: () => {
         modal.close();
         SongDetails.open(song.id);
       },
-    }, 'Show in Song Details');
+    }, T('songEdit.lyrics.showInDetails'));
     const drawLyrics = (state, data = null, err = '') => {
       clear(lyricsInfo);
       clear(lyricsButtons);
-      if (state === 'loading') lyricsInfo.append(LyricsEdit.spinner(), 'Looking for lyrics...');
+      if (state === 'loading') lyricsInfo.append(LyricsEdit.spinner(), T('common.lookingForLyrics'));
       else if (state === 'error') lyricsInfo.append(err);
       else lyricsInfo.append(LyricsEdit.summary(data));
       if (state === 'ready' && LyricsEdit.available) {
         lyricsButtons.appendChild(h('button.btn.btn--small.btn--light-green', {
           type: 'button', onclick: () => LyricsEdit.openFor(song, data, loadLyrics),
-        }, LyricsEdit.hasWords(data) ? 'Edit Lyrics' : 'Add Lyrics'));
+        }, LyricsEdit.hasWords(data) ? T('common.editLyrics') : T('common.addLyrics')));
       }
       lyricsButtons.appendChild(show);
     };
@@ -357,7 +357,7 @@ function editSongDialog(song, heading = 'Edit Song') {
       try {
         drawLyrics('ready', await window.flow.lyrics(song.id));
       } catch (err) {
-        drawLyrics('error', null, (err && err.message) || 'The lyrics could not be fetched.');
+        drawLyrics('error', null, (err && err.message) || T('common.lyricsNotFetched'));
       }
     };
     if (lyricsRow) loadLyrics();
@@ -373,7 +373,7 @@ function editSongDialog(song, heading = 'Edit Song') {
         subGenre: subGenre.value.trim(),
       };
       if (!meta.title) {
-        error.textContent = 'Please enter a title.';
+        error.textContent = T('common.enterTitle');
         return false;
       }
       const renamed = meta.artist !== song.artist || meta.title !== song.title || meta.mix !== song.mix
@@ -392,7 +392,7 @@ function editSongDialog(song, heading = 'Edit Song') {
       }
       saved = true;
       Player.resume(token);
-      if (cut) toast(`Trimmed "${meta.title}" to ${Util.fmtClock(cut.end - cut.start)}`, 'success');
+      if (cut) toast(T('songEdit.trim.done', { song: meta.title, duration: Util.fmtClock(cut.end - cut.start) }), 'success');
       return true;
     };
 
@@ -401,22 +401,22 @@ function editSongDialog(song, heading = 'Edit Song') {
       className: 'modal--settings.modal--song-edit',
       focus: 'input[name="title"]',
       body: [h('div.settings.song-edit',
-        h('h3.settings__section.settings__section--static', 'Song'),
-        row('Artist', artist),
-        row('Title', title),
-        row('Album', album),
-        row('Mix', mix),
-        row('Genre', genre),
-        row('Info', subGenre),
+        h('h3.settings__section.settings__section--static', T('common.song')),
+        row(T('common.artist'), artist),
+        row(T('common.title'), title),
+        row(T('common.album'), album),
+        row(T('common.mix'), mix),
+        row(T('common.genre'), genre),
+        row(T('common.info'), subGenre),
         lyricsRow,
-        trim && h('h3.settings__section.settings__section--static.song-edit__trim-head', h('span', 'Trim'), trim.hint, trim.resetBtn),
-        othersSong && h('h3.settings__section.settings__section--static', 'Trim'),
+        trim && h('h3.settings__section.settings__section--static.song-edit__trim-head', h('span', T('common.trim')), trim.hint, trim.resetBtn),
+        othersSong && h('h3.settings__section.settings__section--static', T('common.trim')),
         trim && trim.el,
         h('div.settings__desc.song-edit__note', note),
         error)],
       buttons: [
-        { label: 'Cancel' },
-        { label: 'Save', kind: 'primary', onClick: save },
+        { label: T('common.cancel') },
+        { label: T('common.save'), kind: 'primary', onClick: save },
       ],
       onClose: () => {
         if (trim) trim.destroy();

@@ -59,6 +59,13 @@ const SessionsPage = {
     return s.host.client === Store.server.clientId;
   },
 
+  /** "Title - Artist", with "Paused: " in front while it is. */
+  _songText(s) {
+    const vars = { title: s.song.title, artist: s.song.artist };
+    if (!s.song.artist) return s.playing ? s.song.title : `${T('common.paused')} ${s.song.title}`;
+    return s.playing ? `${s.song.title} - ${s.song.artist}` : T('sessions.song.pausedWithArtist', vars);
+  },
+
   /** Who listens, for the Listeners cell's tooltip. */
   _listeners(s) {
     return s.members.slice(1).map((m) => Session._who(m)).join('\n');
@@ -72,8 +79,8 @@ const SessionsPage = {
     this._drawMine();
     $('sessionsEmpty').hidden = rows.length > 0;
     $('sessionsEmpty').textContent = Session.available
-      ? 'Nothing is playing on the server right now. Sessions show up here as soon as a device plays something.'
-      : 'Active Sessions need a connection to a Flow Server that has them (version 2.8 or later).';
+      ? T('sessions.page.noneOnServer')
+      : T('sessions.page.needsServer');
     $('sessionsTable').hidden = !rows.length;
     renderTable($('sessionsTable'), {
       rows: Util.sortRows(rows, this.sort, (s, k) => this._value(s, k)),
@@ -90,34 +97,34 @@ const SessionsPage = {
       columns: [
         {
           key: 'name',
-          label: 'Session name',
+          label: T('sessions.column.name'),
           cls: 'col-name',
           render: (s) => h('span.session-name',
             h('span.link-cell__icon', { html: Icons.sessions }),
             h('span.link-cell__name', s.name),
-            this._isOwn(s) ? h('span.session-tag', 'You') : null),
+            this._isOwn(s) ? h('span.session-tag', T('common.you')) : null),
         },
         {
           key: 'song',
-          label: 'Song',
+          label: T('common.song'),
           cls: 'col-song',
           render: (s) => (s.song
             ? h('span.session-song',
-              s.playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : h('span.muted-text', 'Paused: '),
+              s.playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : h('span.muted-text', `${T('common.paused')} `),
               Covers.el(Store.song(s.song.id) || s.song),
               h('span.cell-title', s.song.title),
               s.song.artist ? h('span.muted-text', ` - ${s.song.artist}`) : null)
-            : h('span.muted-text', 'Nothing loaded')),
+            : h('span.muted-text', T('common.nothingLoaded'))),
         },
         {
           key: 'listeners',
-          label: 'Listeners',
+          label: T('sessions.column.listeners'),
           cls: 'col-num',
-          render: (s) => h('span', { title: this._listeners(s) || 'Nobody has joined yet' }, String(s.listeners)),
+          render: (s) => h('span', { title: this._listeners(s) || T('sessions.listeners.nobody') }, String(s.listeners)),
         },
         {
           key: 'actions',
-          label: 'Actions',
+          label: T('common.actions'),
           sortable: false,
           cls: 'col-actions',
           render: (s) => h('div.actions', ...this._actions(s)),
@@ -125,9 +132,9 @@ const SessionsPage = {
       ],
       mobile: {
         lead: () => h('span.mrow__icon', { html: Icons.sessions }),
-        title: (s) => (this._isOwn(s) ? `${s.name} (you)` : s.name),
+        title: (s) => (this._isOwn(s) ? T('sessions.nameYou', { session: s.name }) : s.name),
         sub: (s) => [
-          s.song ? `${s.playing ? '' : 'Paused: '}${s.song.title}${s.song.artist ? ` - ${s.song.artist}` : ''}` : 'Nothing loaded',
+          s.song ? this._songText(s) : T('common.nothingLoaded'),
           Util.plural(s.listeners, 'listener'),
         ].join(' · '),
         side: (s) => (this._isOwn(s) ? h('span') : h('div.actions.mrow__side', ...this._actions(s))),
@@ -143,10 +150,8 @@ const SessionsPage = {
     const servers = Store.can('guests') ? Session.nearby.filter((n) => n.sessions.length || (Session.guest && Session.guest.serverId === n.id)) : [];
     box.hidden = !servers.length;
     if (!servers.length) return;
-    box.append(h('div.section-head', h('h2.section-head__title', 'Nearby, on other servers')),
-      h('p.muted-text', 'Flow Servers on this network that let guests from other servers in. Join as a guest: you can control the '
-        + 'session, queue its server\'s songs and your own, and play along. Your songs stay there for that session only, '
-        + 'and nothing is counted on that server.'));
+    box.append(h('div.section-head', h('h2.section-head__title', T('sessions.nearby.heading'))),
+      h('p.muted-text', T('sessions.nearby.desc')));
     for (const n of servers) {
       const list = h('div.nearby__list');
       for (const s of n.sessions) {
@@ -154,14 +159,14 @@ const SessionsPage = {
           h('span.nearby__icon', { html: Icons.sessions }),
           h('span.nearby__text',
             h('span.nearby__name', s.name),
-            h('span.nearby__song.muted-text', s.song ? `${s.playing ? '' : 'Paused: '}${s.song.title}${s.song.artist ? ` - ${s.song.artist}` : ''}` : 'Nothing loaded')),
+            h('span.nearby__song.muted-text', s.song ? this._songText(s) : T('common.nothingLoaded'))),
           h('div.actions', ...this._nearbyActions(s, n))));
       }
-      if (!n.sessions.length) list.appendChild(h('div.muted-text', 'Nothing plays there right now.'));
+      if (!n.sessions.length) list.appendChild(h('div.muted-text', T('sessions.nearby.nothingPlays')));
       const joined = Session.guest && Session.guest.serverId === n.id && Session.mine;
       box.append(h('div.nearby__server',
-        h('div.nearby__head', h('span', `On Server: ${n.name}`),
-          joined && Store.foreign.size ? h('button.btn.btn--small', { type: 'button', onclick: () => Nav.openPlaylist(GUEST_ID) }, `Songs on ${n.name}`) : null),
+        h('div.nearby__head', h('span', T('sessions.nearby.onServer', { server: n.name })),
+          joined && Store.foreign.size ? h('button.btn.btn--small', { type: 'button', onclick: () => Nav.openPlaylist(GUEST_ID) }, T('common.songsOn', { server: n.name })) : null),
         list));
     }
   },
@@ -170,55 +175,55 @@ const SessionsPage = {
     const here = Session.guest && Session.guest.serverId === n.id;
     if (here && Session.mine && Session.mine.session.id === s.id) {
       return [
-        h('span.session-joined', { html: `${Icons.check}<span>Joined</span>` }),
-        h('button.btn.btn--small', { type: 'button', onclick: () => attempt(() => Session.leave()) }, 'Leave'),
+        h('span.session-joined', { html: `${Icons.check}<span>${T('common.joined')}</span>` }),
+        h('button.btn.btn--small', { type: 'button', onclick: () => attempt(() => Session.leave()) }, T('common.leave')),
       ];
     }
     const req = Session.request;
     if (req && req.sessionId === s.id) {
       const left = Math.max(0, Math.ceil((req.expiresAt - Date.now()) / 1000));
       return [
-        h('span.muted-text', { title: 'The host is asked to let you in' }, `Waiting ${left} s`),
-        h('button.btn.btn--small', { type: 'button', onclick: () => attempt(() => Session.cancelJoin()) }, 'Cancel'),
+        h('span.muted-text', { title: T('sessions.join.waiting.tooltip') }, T('sessions.join.waiting', { seconds: left })),
+        h('button.btn.btn--small', { type: 'button', onclick: () => attempt(() => Session.cancelJoin()) }, T('common.cancel')),
       ];
     }
     const wait = Session.cooldownLeft(s.id);
-    if (wait) return [h('button.btn.btn--small', { type: 'button', disabled: true, title: 'The host declined' }, `Ask again in ${wait} s`)];
-    if (s.members.length >= 8) return [h('span.muted-text', 'Full')];
+    if (wait) return [h('button.btn.btn--small', { type: 'button', disabled: true, title: T('sessions.join.declined.tooltip') }, T('sessions.join.askAgain', { seconds: wait }))];
+    if (s.members.length >= 8) return [h('span.muted-text', T('sessions.join.full'))];
     return [h('button.btn.btn--small.btn--primary', {
       type: 'button',
-      title: `Ask to join ${s.name} as a guest from your server`,
+      title: T('sessions.nearby.joinAsGuest.tooltip', { session: s.name }),
       onclick: () => this._join(s, n.id),
-    }, 'Join as guest')];
+    }, T('sessions.nearby.joinAsGuest'))];
   },
 
   _actions(s) {
     const mine = Session.mine && Session.mine.session.id === s.id;
-    if (this._isOwn(s)) return [h('span.muted-text', 'Your session')];
+    if (this._isOwn(s)) return [h('span.muted-text', T('sessions.yourSession'))];
     if (mine) {
       return [
-        h('span.session-joined', { html: `${Icons.check}<span>Joined</span>` }),
-        h('button.btn.btn--small', { type: 'button', title: `Leave ${s.name}`, onclick: () => this._leave() }, 'Leave'),
+        h('span.session-joined', { html: `${Icons.check}<span>${T('common.joined')}</span>` }),
+        h('button.btn.btn--small', { type: 'button', title: T('sessions.leave.tooltip', { session: s.name }), onclick: () => this._leave() }, T('common.leave')),
       ];
     }
     const req = Session.request;
     if (req && req.sessionId === s.id) {
       const left = Math.max(0, Math.ceil((req.expiresAt - Date.now()) / 1000));
       return [
-        h('span.muted-text', { title: 'The host is asked to let you in' }, `Waiting ${left} s`),
-        h('button.btn.btn--small', { type: 'button', onclick: () => attempt(() => Session.cancelJoin()) }, 'Cancel'),
+        h('span.muted-text', { title: T('sessions.join.waiting.tooltip') }, T('sessions.join.waiting', { seconds: left })),
+        h('button.btn.btn--small', { type: 'button', onclick: () => attempt(() => Session.cancelJoin()) }, T('common.cancel')),
       ];
     }
     const wait = Session.cooldownLeft(s.id);
     if (wait) {
-      return [h('button.btn.btn--small', { type: 'button', disabled: true, title: 'The host declined' }, `Ask again in ${wait} s`)];
+      return [h('button.btn.btn--small', { type: 'button', disabled: true, title: T('sessions.join.declined.tooltip') }, T('sessions.join.askAgain', { seconds: wait }))];
     }
-    if (s.members.length >= 8) return [h('span.muted-text', 'Full')];
+    if (s.members.length >= 8) return [h('span.muted-text', T('sessions.join.full'))];
     return [h('button.btn.btn--small.btn--primary', {
       type: 'button',
-      title: `Ask to join ${s.name}`,
+      title: T('sessions.join.tooltip', { session: s.name }),
       onclick: () => this._join(s),
-    }, 'Join')];
+    }, T('sessions.join'))];
   },
 
   async _join(s, serverId = null) {
@@ -226,9 +231,9 @@ const SessionsPage = {
     if (Session.isHost && Session.mine.session.members.length > 1) {
       const next = Session.mine.session.members[1];
       const ok = await confirmDialog({
-        title: 'Join another session',
-        message: `You host a session others listen to. If ${s.name} lets you in, ${Session._who(next)} hosts yours from then on and the music stops here.`,
-        confirmLabel: 'Ask to join',
+        title: T('sessions.joinOther.title'),
+        message: T('sessions.joinOther.text', { session: s.name, device: Session._who(next) }),
+        confirmLabel: T('sessions.joinOther.confirm'),
       });
       if (!ok) return;
     }
@@ -240,9 +245,9 @@ const SessionsPage = {
     if (host) {
       const next = Session.mine.session.members[1];
       const ok = await confirmDialog({
-        title: 'Leave your session',
-        message: `${Session._who(next)} carries on playing it, and the music stops here.`,
-        confirmLabel: 'Leave',
+        title: T('sessions.leaveOwn.title'),
+        message: T('sessions.leaveOwn.text', { device: Session._who(next) }),
+        confirmLabel: T('common.leave'),
       });
       if (!ok) return;
     }
@@ -261,12 +266,12 @@ const SessionsPage = {
     box.hidden = false;
     const names = others.map((x) => Session._who(x));
     const text = m.host
-      ? `You host this session. Listening: ${names.join(', ')}.`
-      : `You are in ${m.session.name}. What you press plays there.`;
+      ? T('sessions.state.hosting', { names: names.join(', ') })
+      : T('sessions.state.member', { session: m.session.name });
     box.append(
       h('span.sessions-mine__icon', { html: Icons.sessions }),
       h('span.sessions-mine__text', text),
-      h('button.btn', { type: 'button', onclick: () => this._leave() }, 'Leave session'),
+      h('button.btn', { type: 'button', onclick: () => this._leave() }, T('common.leaveSession')),
     );
     if (m.host) box.append(this._volumeBox());
   },
@@ -275,7 +280,7 @@ const SessionsPage = {
   _volumeBox() {
     const box = h('input', { type: 'checkbox', checked: !!Store.settings.sessionAllowVolume });
     box.addEventListener('change', () => Store.saveSettings({ sessionAllowVolume: box.checked }));
-    return h('label.check.sessions-mine__volume', box, h('span', 'They may change my volume'));
+    return h('label.check.sessions-mine__volume', box, h('span', T('sessions.mayChangeVolume')));
   },
 
   /** Counts down a request or a wait while this page shows one. */

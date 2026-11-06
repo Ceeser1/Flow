@@ -64,7 +64,7 @@ const Lyrics = {
     // The phone has its lyrics below Now Playing instead (Mobile leaves the button out).
     const btn = $('btnLyrics');
     if (btn) {
-      btn.innerHTML = `${Icons.lyrics}<span>Lyrics</span>`;
+      btn.innerHTML = `${Icons.lyrics}<span>${T('common.lyrics')}</span>`;
       btn.onclick = () => this.toggleDrawer();
     }
     this._drawButton();
@@ -132,7 +132,7 @@ const Lyrics = {
     } catch (err) {
       if (seq !== this._seq) return;
       this.state = 'error';
-      this.error = (err && err.message) || 'The lyrics could not be fetched.';
+      this.error = (err && err.message) || T('common.lyricsNotFetched');
     }
     this._drawAll();
   },
@@ -219,12 +219,12 @@ const Lyrics = {
 
   /** What to say instead of lines, or '' when there are lines. */
   _note() {
-    if (this.state === 'idle') return 'Nothing is playing.';
-    if (this.state === 'loading') return 'Looking for the lyrics...';
+    if (this.state === 'idle') return T('common.nothingIsPlaying');
+    if (this.state === 'loading') return T('common.lookingForLyrics');
     if (this.state === 'error') return this.error;
     if (this.state !== 'ready') return '';
-    if (!this.data || !this.data.found) return 'No lyrics found for this song.';
-    if (!this.lines.some((l) => l.trim())) return this.data.instrumental ? 'Instrumental' : 'No lyrics found for this song.';
+    if (!this.data || !this.data.found) return T('common.noLyricsForSong');
+    if (!this.lines.some((l) => l.trim())) return this.data.instrumental ? T('common.instrumental') : T('common.noLyricsForSong');
     return '';
   },
 
@@ -249,7 +249,7 @@ const Lyrics = {
     }
     const body = h('div.lyrics');
     const modal = Modal.open({
-      title: 'Lyrics',
+      title: T('common.lyrics'),
       className: 'modal--lyrics',
       drawer: true,
       body: [body],
@@ -275,7 +275,7 @@ const Lyrics = {
     const note = this._note();
     if (note) {
       box.appendChild(h('div.lyrics__note', this.state === 'loading' ? LyricsEdit.spinner() : null, note));
-      if (this.state === 'error') box.appendChild(h('button.btn.btn--small', { type: 'button', onclick: () => this.retry() }, 'Try again'));
+      if (this.state === 'error') box.appendChild(h('button.btn.btn--small', { type: 'button', onclick: () => this.retry() }, T('common.tryAgain')));
       return;
     }
     const list = h('div.lyrics__lines');
@@ -301,8 +301,8 @@ const Lyrics = {
     if (!this._hintFor || this._hintFor !== this.songId || this.state === 'loading') return;
     this._hintFor = null;
     if (this.state !== 'ready') return;
-    if (!this.lines.some((l) => l.trim())) this._hint = { songId: this.songId, lines: ['(No lyrics for this song)'] };
-    else if (!this.synced) this._hint = { songId: this.songId, lines: ['(No timed lyrics for this song)', '(Open lyrics window for plain text)'] };
+    if (!this.lines.some((l) => l.trim())) this._hint = { songId: this.songId, lines: [T('lyrics.visualizer.none')] };
+    else if (!this.synced) this._hint = { songId: this.songId, lines: [T('lyrics.visualizer.noneTimed'), T('lyrics.visualizer.openWindow')] };
   },
 
   _placeViz() {
@@ -337,8 +337,9 @@ const Lyrics = {
     else this._drawViz();
   },
 
-  /** A line's node over the visualizer: the line playing, or the next (smaller, dimmer). */
-  _vizLine(text, now) {
+  /** A line's node over the visualizer: the line playing, or the next (smaller, dimmer); a pause is a note as in the drawer. */
+  _vizLine(line, now) {
+    const text = line ? (line.text.trim() ? line.text : '♪') : '';
     return h(`div.viz-lyrics__line${now ? '.viz-lyrics__line--now' : ''}`, text);
   },
 
@@ -360,7 +361,7 @@ const Lyrics = {
     const at = this._hint ? -1 : this.lineAt(synced, Player.position + this.VIZ_LEAD);
     const v = this._viz;
     if (v && v.data === this.data && v.hint === this._hint && v.at === at) return;
-    const now = this._vizLine(synced[at] && !this._hint ? synced[at].text : '', true);
+    const now = this._vizLine(this._hint ? null : synced[at], true);
     let next;
     if (this._hint) {
       // In the second row, fading out over 8 s.
@@ -370,7 +371,7 @@ const Lyrics = {
         this._placeViz();
         this._drawViz();
       });
-    } else next = this._vizLine(synced[at + 1] ? synced[at + 1].text : '', false);
+    } else next = this._vizLine(synced[at + 1], false);
     clear(this._vizEl).append(now, next);
     // Put in place, not moved there.
     now.style.transition = 'none';
@@ -394,7 +395,7 @@ const Lyrics = {
     const v = this._viz;
     const synced = this.synced;
     const rise = this._vizBelow(v.now, v.next);
-    const after = this._vizLine(synced[at + 1] ? synced[at + 1].text : '', false);
+    const after = this._vizLine(synced[at + 1], false);
     after.style.opacity = '0';
     this._vizEl.appendChild(after);
     // Where it comes from, before it moves (the browser takes this as the start).
@@ -446,13 +447,13 @@ const Lyrics = {
     }
     const more = lines.length > 4 || this.expanded;
     clear(frame).append(
-      h('div.np-lyrics__head', h('span', 'Lyrics'), more ? h('button.link-btn.np-lyrics__expand', {
+      h('div.np-lyrics__head', h('span', T('common.lyrics')), more ? h('button.link-btn.np-lyrics__expand', {
         type: 'button',
         onclick: () => {
           this.expanded = !this.expanded;
           this._drawPhone();
         },
-      }, this.expanded ? 'Collapse' : 'Expand') : null),
+      }, this.expanded ? T('lyrics.panel.collapse') : T('lyrics.panel.expand')) : null),
       list,
     );
   },

@@ -6,6 +6,7 @@
 // the token). Files go to and come from the page's memory (memfs.js).
 
 const { OfflineError } = require('@flow/core/client/common');
+const { tr } = require('@flow/core/lang');
 
 function parse(text) {
   try {
@@ -50,7 +51,7 @@ function createHttp(memfs) {
     try {
       url = new URL(base + pathname);
     } catch {
-      throw new Error('That is not an address.');
+      throw new Error(tr('common.error.notAnAddress', 'That is not an address.'));
     }
     const headers = { Accept: 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -62,7 +63,7 @@ function createHttp(memfs) {
       };
       if (file) {
         const bytes = memfs.readBytes(file);
-        if (!bytes) throw new Error(`Not there: ${file}`);
+        if (!bytes) throw new Error(tr('common.error.notThere', 'Not there: {path}', { path: file }));
         headers['Content-Type'] = 'application/octet-stream';
         init.body = bytes;
       } else if (json !== undefined) {

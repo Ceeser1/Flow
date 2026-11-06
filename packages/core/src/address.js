@@ -1,5 +1,7 @@
 'use strict';
 
+const { tr } = require('./lang');
+
 // Where a Flow Server is: an address as typed into Settings, turned into the
 // base every request starts with.
 
@@ -45,7 +47,7 @@ function serverBaseUrl(address) {
   if (!a) return '';
   if (!/^https?:\/\//i.test(a)) a = meansHttps(a) ? `https://${a}` : `http://${a}`;
   const u = new URL(a);
-  if (!u.hostname) throw new Error('No host');
+  if (!u.hostname) throw new Error(tr('core.address.noHost', 'No host'));
   if (!u.port && u.protocol === 'http:') u.port = String(DEFAULT_PORT);
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`;
 }

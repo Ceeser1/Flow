@@ -22,23 +22,23 @@ const Nav = {
     const sizes = new ResizeObserver(edges);
     sizes.observe(pages);
     for (const node of pages.querySelectorAll('.page')) sizes.observe(node);
-    $('menuSearch').innerHTML = Icons.search + '<span>Search</span>';
-    $('menuAdd').innerHTML = Icons.add + '<span>Add Songs</span>'
-      + '<span id="menuAddBadge" class="menu__badge" hidden title="Playlist import running"></span>';
-    this._entry('menuAllSongs', 'All Songs', 'allSongsMenuOpen', { icon: Icons.library });
+    $('menuSearch').innerHTML = Icons.search + `<span>${T('common.search')}</span>`;
+    $('menuAdd').innerHTML = Icons.add + `<span>${T('common.addSongs')}</span>`
+      + `<span id="menuAddBadge" class="menu__badge" hidden title="${T('import.bar.running.tooltip')}"></span>`;
+    this._entry('menuAllSongs', T('common.allSongs'), 'allSongsMenuOpen', { icon: Icons.library });
     // The speaker while All Songs plays, or a part of it that is folded away.
-    this._allPlaying = h('span.menu__playing', { html: Icons.speaker, title: 'Playing' });
+    this._allPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
     $('menuAllSongs').appendChild(this._allPlaying);
-    this._entry('menuPlaylists', 'Playlists', 'playlistsMenuOpen');
-    this._entry('menuFollowed', 'Followed Playlists', 'followedMenuOpen');
-    this._entry('menuSessions', 'Active Jams', 'sessionsMenuOpen', { icon: Icons.sessions });
+    this._entry('menuPlaylists', T('common.playlists'), 'playlistsMenuOpen');
+    this._entry('menuFollowed', T('common.followedPlaylists'), 'followedMenuOpen');
+    this._entry('menuSessions', T('common.activeJams'), 'sessionsMenuOpen', { icon: Icons.sessions });
     $('menuSessions').appendChild(h('span.menu__badge', { id: 'menuSessionsBadge', hidden: true }));
-    this._entry('menuTrend', 'Your listening trend', 'trendMenuOpen', {
+    this._entry('menuTrend', T('common.yourListeningTrend'), 'trendMenuOpen', {
       icon: '<img class="menu__img" src="../images/trend.png" alt="" />',
       shut: true,
     });
     // The speaker while one of its lists plays and they are folded away.
-    this._trendPlaying = h('span.menu__playing', { html: Icons.speaker, title: 'Playing' });
+    this._trendPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
     $('menuTrend').appendChild(this._trendPlaying);
     $('menuSearch').onclick = () => this.show('search');
     $('menuAdd').onclick = () => this.show('add');
@@ -87,10 +87,16 @@ const Nav = {
     return this._shut[key] ? Store.settings[key] === true : Store.settings[key] !== false;
   },
 
+  /** A jam's song for its tooltip: "Title - Artist", "Paused: " in front while it is. */
+  _jamSong(s) {
+    const line = s.song.artist ? `${s.song.title} - ${s.song.artist}` : s.song.title;
+    return s.playing ? line : `${T('common.paused')} ${line}`;
+  },
+
   _drawArrow(key, open, what) {
     const arrow = this._arrows[key];
     arrow.classList.toggle('menu__chevron--open', open);
-    arrow.title = open ? `Hide ${what}` : `Show ${what}`;
+    arrow.title = open ? T('nav.section.hide.tooltip', { what }) : T('nav.section.show.tooltip', { what });
     arrow.setAttribute('aria-expanded', String(open));
   },
 
@@ -158,9 +164,9 @@ const Nav = {
     const playlistsOpen = this._open('playlistsMenuOpen');
     const followedOpen = this._open('followedMenuOpen');
     const trendOpen = this._open('trendMenuOpen');
-    this._drawArrow('playlistsMenuOpen', playlistsOpen, 'the playlists');
-    this._drawArrow('followedMenuOpen', followedOpen, 'the followed playlists');
-    this._drawArrow('trendMenuOpen', trendOpen, 'the listening trend lists');
+    this._drawArrow('playlistsMenuOpen', playlistsOpen, T('nav.section.what.playlists'));
+    this._drawArrow('followedMenuOpen', followedOpen, T('nav.section.what.followedPlaylists'));
+    this._drawArrow('trendMenuOpen', trendOpen, T('nav.section.what.listeningTrend'));
     $('menuPlaylistList').hidden = !playlistsOpen;
 
     // The list playing has the speaker, and its bar on the left stays green.
@@ -177,7 +183,7 @@ const Nav = {
       // Downloaded Songs has its icon before its name.
       p.isDevice ? h('span.menu__sub-icon', { html: listIcon(p) }) : null,
       h('span.menu__sub-name', p.menuName || p.name),
-      playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null);
+      playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null);
     };
 
     // All Songs: with a Flow Server, under it Downloaded Songs (every song on
@@ -186,7 +192,7 @@ const Nav = {
     const device = Store.devicePlaylist();
     const froms = [...(device ? [device] : []), ...Store.fromPlaylists()];
     const allOpen = this._open('allSongsMenuOpen');
-    this._drawArrow('allSongsMenuOpen', allOpen, 'Downloaded Songs and who added the songs');
+    this._drawArrow('allSongsMenuOpen', allOpen, T('nav.section.what.downloaded'));
     this._arrows.allSongsMenuOpen.hidden = !froms.length;
     $('menuAllSongsList').hidden = !froms.length || !allOpen;
     const allList = clear($('menuAllSongsList'));
@@ -210,10 +216,10 @@ const Nav = {
     const others = Session.others().length;
     $('menuSessionsBadge').hidden = !others;
     $('menuSessionsBadge').textContent = String(others);
-    $('menuSessionsBadge').title = `${Util.plural(others, 'other device')} playing`;
+    $('menuSessionsBadge').title = T('nav.jams.othersPlaying.tooltip', { devices: Util.plural(others, 'other device'), count: others });
     // Under it the sessions, as the playlists: one opens the page at it.
     const sessionsOpen = this._open('sessionsMenuOpen');
-    this._drawArrow('sessionsMenuOpen', sessionsOpen, 'the jams');
+    this._drawArrow('sessionsMenuOpen', sessionsOpen, T('nav.section.what.jams'));
     $('menuSessionsList').hidden = !Session.visible || !sessionsOpen;
     const sessionList = clear($('menuSessionsList'));
     if (Session.visible && sessionsOpen) {
@@ -222,7 +228,7 @@ const Nav = {
       if (Session.guest && guestList) {
         sessionList.appendChild(h('button.menu__sub', {
           type: 'button',
-          title: `${guestList.name}: queue them, or start one, in the session`,
+          title: T('nav.jams.guestQueue.tooltip', { session: guestList.name }),
           onclick: () => this.openPlaylist(GUEST_ID),
         }, h('span.menu__sub-name', guestList.name)));
       }
@@ -230,31 +236,32 @@ const Nav = {
       const sessions = [...Session.list].sort((a, b) => a.name.localeCompare(b.name));
       for (const s of sessions) {
         // Its tag as on the page, kept whole when a long name is cut.
-        const tag = s.host.client === Store.server.clientId ? 'You' : s.id === inId ? 'Joined' : '';
-        const song = s.song ? `${s.playing ? '' : 'Paused: '}${s.song.title}${s.song.artist ? ` - ${s.song.artist}` : ''}` : 'Nothing loaded';
+        const tag = s.host.client === Store.server.clientId ? T('common.you') : s.id === inId ? T('common.joined') : '';
+        const song = s.song ? this._jamSong(s) : T('common.nothingLoaded');
+        const lower = s.host.client === Store.server.clientId ? T('common.you.lower') : T('nav.jams.tag.joined.lower');
         sessionList.appendChild(h('button.menu__sub' + (s.playing ? '.menu__sub--playing' : ''), {
           type: 'button',
-          title: `${s.name}${tag ? ` (${tag.toLowerCase()})` : ''}\n${song}`,
+          title: tag ? `${s.name} (${lower})\n${song}` : `${s.name}\n${song}`,
           onclick: () => this.show('sessions', { sessionId: s.id }),
         },
         h('span.menu__sub-name', s.name),
         tag ? h('span.session-tag', tag) : null,
-        s.playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null));
+        s.playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null));
       }
       // Other servers' sessions on this network, as "Server - Device": one opens the page at it (Join as guest).
       const nearby = Store.can('guests') ? Session.nearby.flatMap((n) => n.sessions.map((s) => ({ s, n, label: `${n.name} - ${Session.deviceOf(s)}` }))) : [];
       nearby.sort((a, b) => a.label.localeCompare(b.label));
       for (const { s, n, label } of nearby) {
         const joined = !!Session.guest && Session.guest.serverId === n.id && s.id === inId;
-        const song = s.song ? `${s.playing ? '' : 'Paused: '}${s.song.title}${s.song.artist ? ` - ${s.song.artist}` : ''}` : 'Nothing loaded';
+        const song = s.song ? this._jamSong(s) : T('common.nothingLoaded');
         sessionList.appendChild(h('button.menu__sub' + (s.playing ? '.menu__sub--playing' : ''), {
           type: 'button',
-          title: `${s.name}, on the server ${n.name}${joined ? ' (joined)' : ''}\n${song}`,
+          title: T(joined ? 'nav.jams.nearby.joined.tooltip' : 'nav.jams.nearby.tooltip', { session: s.name, server: n.name, song }),
           onclick: () => this.show('sessions', { sessionId: s.id }),
         },
         h('span.menu__sub-name', label),
-        joined ? h('span.session-tag', 'Joined') : null,
-        s.playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null));
+        joined ? h('span.session-tag', T('common.joined')) : null,
+        s.playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null));
       }
     }
 

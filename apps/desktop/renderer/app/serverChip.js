@@ -25,9 +25,9 @@ const ServerChip = {
     chip.before(this._row);
     this._row.append(chip, h('button.server-logout', {
       type: 'button',
-      title: 'Log out: this browser forgets the server, its password and your profile',
+      title: T('serverChip.logout.tooltip'),
       onclick: () => this.logout(),
-    }, 'Logout'));
+    }, T('common.logout')));
   },
 
   async logout() {
@@ -43,23 +43,23 @@ const ServerChip = {
 
   /** How the server is reached, as a word: Home, Tailscale or Remote. */
   via(st) {
-    return st.via === 'remote' ? (st.tailscale ? 'Tailscale' : 'Remote') : 'Home';
+    return st.via === 'remote' ? (st.tailscale ? 'Tailscale' : T('serverChip.via.remote')) : T('serverChip.via.home');
   },
 
   /** One line for a server state, also used by Settings. */
   describe(st) {
     if (!st || !st.on) return { text: '', kind: 'off' };
-    const name = st.name ? `"${st.name}"` : 'the server';
-    const waiting = st.queued ? ` · ${Util.plural(st.queued, 'change')} waiting` : '';
+    const name = st.name ? T('serverChip.serverName', { server: st.name }) : T('serverChip.theServer');
+    const waiting = st.queued ? ` ${T('serverChip.changesWaiting', { changes: Util.plural(st.queued, 'change') })}` : '';
     if (st.state === 'online') {
-      const where = st.via === 'remote' ? (st.tailscale ? 'Tailscale' : 'remote') : 'home';
-      const as = st.profile ? ` as ${st.profile.name}` : '';
-      return { text: `Connected to ${name}${as} (${where})${waiting}`, kind: 'online' };
+      const via = this.via(st);
+      const text = st.profile ? T('serverChip.connected.asProfile', { server: name, profile: st.profile.name, via }) : T('serverChip.connected', { server: name, via });
+      return { text: text + waiting, kind: 'online' };
     }
-    if (st.state === 'connecting') return { text: `Connecting...${waiting}`, kind: 'busy' };
-    if (st.state === 'password') return { text: st.message || 'The server needs its password.', kind: 'error' };
-    if (st.state === 'error') return { text: st.message || 'Something is wrong with the server.', kind: 'error' };
-    return { text: `Offline: the server cannot be reached${waiting}`, kind: 'offline' };
+    if (st.state === 'connecting') return { text: T('common.connecting') + waiting, kind: 'busy' };
+    if (st.state === 'password') return { text: st.message || T('serverChip.needsPassword'), kind: 'error' };
+    if (st.state === 'error') return { text: st.message || T('serverChip.somethingWrong'), kind: 'error' };
+    return { text: T('serverChip.offline') + waiting, kind: 'offline' };
   },
 
   draw(st) {
@@ -72,11 +72,13 @@ const ServerChip = {
     }
     const { text, kind } = this.describe(st);
     // Online: "Server: Pi as Ceeser (Home)", with Tailscale or Remote away from home.
-    const short = kind === 'online' ? `Server: ${st.name || 'Server'}${st.profile ? ` as ${st.profile.name}` : ''} (${this.via(st)})`
-      : kind === 'busy' ? 'Connecting...'
-        : kind === 'error' ? 'Server: needs attention' : 'Server offline';
-    const extra = st.transfer ? (st.transfer.startsWith('Up') ? 'uploading' : 'downloading')
-      : st.queued ? `${st.queued} waiting` : '';
+    const server = st.name || T('common.server');
+    const short = kind === 'online' ? (st.profile ? T('serverChip.short.serverAsProfile', { server, profile: st.profile.name, via: this.via(st) })
+      : T('serverChip.short.server', { server, via: this.via(st) }))
+      : kind === 'busy' ? T('common.connecting')
+        : kind === 'error' ? T('serverChip.short.needsAttention') : T('serverChip.short.offline');
+    const extra = st.transfer ? (st.transferUp ? T('serverChip.extra.uploading') : T('serverChip.extra.downloading'))
+      : st.queued ? T('serverChip.extra.waiting', { count: st.queued }) : '';
     chip.className = `server-chip server-chip--${kind}`;
     chip.title = [text, st.transfer, st.note].filter(Boolean).join('\n');
     clear(chip).append(
@@ -86,8 +88,8 @@ const ServerChip = {
     );
     // Losing the server and getting it back are worth a word; the rest the chip says.
     const online = st.state === 'online';
-    if (this._wasOnline === true && st.state === 'offline') toast('The server cannot be reached. Downloaded songs still play; changes wait until it is back.', 'info');
-    if (this._wasOnline === false && online) toast(`Connected to "${st.name}" again`, 'success');
+    if (this._wasOnline === true && st.state === 'offline') toast(T('serverChip.toast.lost'), 'info');
+    if (this._wasOnline === false && online) toast(T('serverChip.toast.back', { server: st.name }), 'success');
     if (st.state === 'online' || st.state === 'offline') this._wasOnline = online;
   },
 };

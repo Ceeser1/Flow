@@ -20,7 +20,7 @@ const PlaylistsPage = {
       const p = await RulesEditor.open({ name: $('newPlaylistName').value });
       if (!p) return;
       $('newPlaylistName').value = '';
-      toast(`Smart playlist "${p.name}" created`, 'success');
+      toast(T('playlists.smartCreated', { playlist: p.name }), 'success');
       this._whenListed(p.id, () => Nav.openPlaylist(p.id));
     };
     box.addEventListener('keydown', (e) => {
@@ -59,7 +59,7 @@ const PlaylistsPage = {
       const p = await window.flow.createPlaylist(box.value);
       box.value = '';
       $('newPlaylistError').textContent = '';
-      toast(`Playlist "${p.name}" created`, 'success');
+      toast(T('playlists.created', { playlist: p.name }), 'success');
       // Straight on to filling it: All Songs, adding songs to it.
       this._whenListed(p.id, () => Nav.openPlaylist('all', { pickFor: p.id }));
     } catch (err) {
@@ -111,8 +111,8 @@ const PlaylistsPage = {
     const sharedRows = [Store.allSongsPlaylist(), ...(open ? shared : [])];
     $('sharedHead').className = `section-head__btn${open ? ' section-head__btn--open' : ''}`;
     $('sharedHead').setAttribute('aria-expanded', String(open));
-    $('sharedHead').title = open ? 'Hide the shared playlists' : 'Show the shared playlists';
-    clear($('sharedHead')).append(h('span.menu__chevron', { html: Icons.chevron }), h('span', 'Shared Playlists'));
+    $('sharedHead').title = open ? T('playlists.shared.hide.tooltip') : T('playlists.shared.show.tooltip');
+    clear($('sharedHead')).append(h('span.menu__chevron', { html: Icons.chevron }), h('span', T('playlists.shared.heading')));
     $('sharedCount').textContent = Store.canShare() ? Util.plural(shared.length, 'shared playlist') : '';
 
     // Clearing the table takes the rename box out, which blurs it, and a blur
@@ -144,18 +144,18 @@ const PlaylistsPage = {
       },
       onRowDblClick: (p) => Nav.openPlaylist(p.id),
       columns: [
-        { key: 'name', label: 'Name', cls: 'col-name', render: (p) => this._nameCell(p) },
-        { key: 'songs', label: 'Songs', cls: 'col-num', render: (p) => String(p.entries.length) },
-        { key: 'duration', label: 'Duration', cls: 'col-num', render: (p) => Util.fmtClock(Store.totalDuration(p.id)) },
+        { key: 'name', label: T('common.name'), cls: 'col-name', render: (p) => this._nameCell(p) },
+        { key: 'songs', label: T('common.songs'), cls: 'col-num', render: (p) => String(p.entries.length) },
+        { key: 'duration', label: T('common.duration'), cls: 'col-num', render: (p) => Util.fmtClock(Store.totalDuration(p.id)) },
         // Listen Duration: your own time listening to it, as the list playing.
         // Created: the lists the app keeps itself have no date.
-        { key: 'listened', label: 'Listen Duration', cls: 'col-listened', render: (p) => Util.fmtClock(Store.listenedTo(p.id)) },
-        { key: 'created', label: 'Created', cls: 'col-date', render: (p) => (p.createdAt ? Util.fmtDate(p.createdAt) : '') },
-        { key: 'actions', label: 'Actions', sortable: false, cls: 'col-actions', render: actions },
+        { key: 'listened', label: T('common.listenDuration'), cls: 'col-listened', render: (p) => Util.fmtClock(Store.listenedTo(p.id)) },
+        { key: 'created', label: T('common.created'), cls: 'col-date', render: (p) => (p.createdAt ? Util.fmtDate(p.createdAt) : '') },
+        { key: 'actions', label: T('common.actions'), sortable: false, cls: 'col-actions', render: actions },
       ],
       mobile: {
         ...listRowSpec((p) => [Util.plural(p.entries.length, 'song'), Util.fmtClock(Store.totalDuration(p.id)),
-          p.ownerName ? `by ${p.ownerName}` : ''].filter(Boolean).join(' · ')),
+          p.ownerName ? T('common.byOwner', { profile: p.ownerName }) : ''].filter(Boolean).join(' · ')),
         side,
         more: more && ((p) => more(p)),
       },
@@ -196,7 +196,7 @@ const PlaylistsPage = {
     return h('button.link-cell', { type: 'button', onclick: () => Nav.openPlaylist(p.id) },
       h('span.link-cell__icon', { html: listIcon(p) }),
       h('span.link-cell__name', p.name),
-      p.ownerName ? h('span.link-cell__by', `by ${p.ownerName}`) : null);
+      p.ownerName ? h('span.link-cell__by', T('common.byOwner', { profile: p.ownerName })) : null);
   },
 
   /**
@@ -208,9 +208,9 @@ const PlaylistsPage = {
     const on = Store.isFollowing(p.id);
     return h('div.actions', h('button.btn.btn--small' + (on ? '' : '.btn--primary'), {
       type: 'button',
-      title: on ? `Stop following "${p.name}"` : `Follow "${p.name}": it shows in the menu`,
+      title: on ? T('common.unfollow.tooltip', { playlist: p.name }) : T('playlists.follow.tooltip', { playlist: p.name }),
       onclick: () => attempt(() => window.flow.setFollowing(p.id, !on)),
-    }, on ? 'Unfollow' : 'Follow'));
+    }, on ? T('common.unfollow') : T('common.follow')));
   },
 
   _actions(p) {
@@ -224,9 +224,9 @@ const PlaylistsPage = {
     return [
       // A smart playlist's songs come from its rules.
       p.isRuled
-        ? iconButton('act.act--green', Icons.pulse, 'Edit Rules', () => RulesEditor.open({ playlist: Store.playlist(p.id) }))
-        : iconButton('act.act--green', Icons.plus, 'Add Songs', () => Nav.openPlaylist('all', { pickFor: p.id })),
-      iconButton('act.act--grey', Icons.pencil, 'Rename', () => {
+        ? iconButton('act.act--green', Icons.pulse, T('common.editRules'), () => RulesEditor.open({ playlist: Store.playlist(p.id) }))
+        : iconButton('act.act--green', Icons.plus, T('common.addSongs'), () => Nav.openPlaylist('all', { pickFor: p.id })),
+      iconButton('act.act--grey', Icons.pencil, T('playlists.rename'), () => {
         if (document.body.classList.contains('mobile')) {
           this.renameDialog(p);
           return;
@@ -234,12 +234,12 @@ const PlaylistsPage = {
         this.renaming = p.id;
         this.render();
       }),
-      iconButton('act.act--red', Icons.x, 'Delete', () => this.remove(p)),
+      iconButton('act.act--red', Icons.x, T('common.delete'), () => this.remove(p)),
     ];
   },
 
   async renameDialog(p) {
-    const name = await promptDialog({ title: 'Rename playlist', value: p.name, confirmLabel: 'Rename', maxLength: 80 });
+    const name = await promptDialog({ title: T('common.renamePlaylist'), value: p.name, confirmLabel: T('playlists.rename'), maxLength: 80 });
     if (name === null || name.trim() === p.name) return;
     attempt(() => window.flow.renamePlaylist(p.id, name));
   },
@@ -252,22 +252,23 @@ const PlaylistsPage = {
 
   async remove(p) {
     const answer = await confirmDialog({
-      title: 'Delete playlist',
-      message: `Do you really want to delete the playlist "${p.name}"?`,
-      confirmLabel: 'Delete',
+      title: T('playlists.delete.title'),
+      message: T('playlists.delete.text', { playlist: p.name }),
+      confirmLabel: T('common.delete'),
       danger: true,
       // A smart playlist's songs are other lists' and the library's.
-      checkbox: p.isRuled ? null : { label: 'Also delete all songs that exist only in this playlist', checked: false },
+      checkbox: p.isRuled ? null : { label: T('playlists.delete.alsoSongs'), checked: false },
     });
     if (!answer) return;
     const withSongs = !p.isRuled && !!answer.checked;
     await attempt(async () => {
       const r = await window.flow.deletePlaylist(p.id, withSongs);
-      let text = `Playlist "${p.name}" deleted`;
-      if (withSongs && !r) text += '. Its songs in no other playlist are deleted on the server.';
+      let text = T('playlists.delete.done', { playlist: p.name });
+      if (withSongs && !r) text = T('playlists.delete.done.onServer', { playlist: p.name });
       else if (withSongs) {
-        text += r.deleted ? `, and ${Util.plural(r.deleted, 'song')} only in it` : '. It had no songs only in it';
-        if (r.kept) text += `. ${Util.plural(r.kept, 'song')} could not be deleted (in use) and stayed`;
+        text = r.deleted ? T('playlists.delete.done.withSongs', { playlist: p.name, songs: Util.plural(r.deleted, 'song') })
+          : T('playlists.delete.done.noneOnly', { playlist: p.name });
+        if (r.kept) text += `. ${T('playlists.delete.done.kept', { songs: Util.plural(r.kept, 'song'), count: r.kept })}`;
       }
       toast(text, 'success');
     });

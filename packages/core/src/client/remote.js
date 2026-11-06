@@ -75,6 +75,7 @@
 // songs here while another profile is signed in (offlineKeep).
 
 const model = require('../libraryModel');
+const { tr } = require('../lang');
 // The Default / Shared's id as a song's addedBy (profiles.js DEFAULT_OWNER,
 // which loads Node's crypto).
 const DEFAULT_OWNER = 'default';
@@ -260,8 +261,8 @@ function createRemote(env) {
   /** A JSON route that must answer 2xx: its body, or an Error saying why not. */
   async function call(pathname, opts = {}) {
     const r = await request(conn.base, pathname, { token: conn.token, ...opts });
-    if (r.status === 401) throw new AuthError((r.json && r.json.error) || 'This server needs its password.');
-    if (r.status < 200 || r.status >= 300) throw new Error((r.json && r.json.error) || `The server answered ${r.status}.`);
+    if (r.status === 401) throw new AuthError((r.json && r.json.error) || tr('connection.needsPassword', 'This server needs its password.'));
+    if (r.status < 200 || r.status >= 300) throw new Error((r.json && r.json.error) || tr('common.serverAnswered', 'The server answered {status}.', { status: r.status }));
     return r.json;
   }
 
@@ -277,6 +278,7 @@ function createRemote(env) {
     state: 'off', // off | connecting | online | offline | password | error
     message: '',
     transfer: '', // "Uploading 3 of 12: ..." while songs go up or down
+    transferUp: false, // the transfer is an upload
     note: '', // why songs wait (a metered connection), or '' 
     syncing: false,
     searching: false, // looking for a server on the network
@@ -340,6 +342,7 @@ function createRemote(env) {
       state: active() ? status.state : 'off',
       message: status.message,
       transfer: status.transfer,
+      transferUp: status.transferUp,
       note: status.note,
       syncing: status.syncing,
       searching: status.searching,
@@ -498,7 +501,7 @@ function createRemote(env) {
    * changes). Not the one signed in to.
    */
   function removeTracked(serverId, profileId) {
-    if (serverId === sync.serverId && profileId === currentProfile()) throw new Error('The profile in use cannot be removed. Log out of it first.');
+    if (serverId === sync.serverId && profileId === currentProfile()) throw new Error(tr('connection.profiles.inUse', 'The profile in use cannot be removed. Log out of it first.'));
     const ours = (c) => (c.profile || '') === profileId && c.type !== 'upload' && !SHARED_TYPES.has(c.type);
     if (serverId === sync.serverId) {
       sync.queue = sync.queue.filter((c) => !ours(c));
@@ -592,8 +595,12 @@ function createRemote(env) {
     saveOthers();
     saveSync();
     saveCache();
-    if (back) hooks.onNotice(`Back with "${back.sync.serverName || 'this Flow Server'}": its playlists marked for download and its waiting changes are as you left them.`, 'info');
-    else if (hadOther) hooks.onNotice('This is a different Flow Server than before. Your Local Files will be synchronized with it.', 'info');
+    if (back) {
+      hooks.onNotice(back.sync.serverName
+        ? tr('connection.notice.backWith', 'Back with "{server}": its playlists marked for download and its waiting changes are as you left them.', { server: back.sync.serverName })
+        : tr('connection.notice.backWith.unnamed', 'Back with this Flow Server: its playlists marked for download and its waiting changes are as you left them.'), 'info');
+    }
+    else if (hadOther) hooks.onNotice(tr('connection.notice.differentServer', 'This is a different Flow Server than before. Your Local Files will be synchronized with it.'), 'info');
   }
 
   // Songs held back on coming back to a server (holdAwayChanges): asked about once connected.
@@ -632,10 +639,10 @@ function createRemote(env) {
   async function login(base) {
     const s = settings.all();
     const pw = decrypt(s.serverSecret);
-    if (!pw) throw new AuthError('This server needs its password. Enter it under "Server Password".');
+    if (!pw) throw new AuthError(tr('connection.needsPassword.enterIt', 'This server needs its password. Enter it under "Server Password".'));
     const r = await request(base, '/api/login', { method: 'POST', json: { password: pw, device: device.name(), client: clientId() }, timeout: 20000 });
-    if (r.status === 401) throw new AuthError('Wrong password.');
-    if (r.status !== 200 || !r.json || !r.json.token) throw new Error((r.json && r.json.error) || 'The server did not let Flow sign in.');
+    if (r.status === 401) throw new AuthError(tr('connection.wrongPassword', 'Wrong password.'));
+    if (r.status !== 200 || !r.json || !r.json.token) throw new Error((r.json && r.json.error) || tr('connection.signInRefused', 'The server did not let Flow sign in.'));
     sync.token = keepToken(r.json.token);
     runToken = r.json.token;
     saveSync();
@@ -726,7 +733,7 @@ function createRemote(env) {
         try {
           base = baseUrl(address);
         } catch {
-          problem = problem || ['error', `"${address}" is not an address Flow understands.`];
+          problem = problem || ['error', tr('connection.notAnAddress', '"{address}" is not an address Flow understands.', { address })];
           continue;
         }
         let hello;
@@ -734,18 +741,18 @@ function createRemote(env) {
           const r = await request(base, '/api/hello', { timeout: via === 'home' ? 2500 : 8000 });
           hello = r.json;
         } catch {
-          if (!problem || problem[0] === 'offline') problem = ['offline', 'The server cannot be reached.'];
+          if (!problem || problem[0] === 'offline') problem = ['offline', tr('common.unreachable', 'The server cannot be reached.')];
           continue;
         }
         if (gen !== generation) return false;
         if (!hello || hello.app !== 'flow-server') {
-          problem = ['error', `${address} answers, but it is not a Flow Server.`];
+          problem = ['error', tr('connection.notAFlowServer', '{address} answers, but it is not a Flow Server.', { address })];
           continue;
         }
         if (hello.protocol !== PROTOCOL) {
           problem = ['error', hello.protocol > PROTOCOL
-            ? 'The server is newer than this Flow. Update Flow to use it.'
-            : 'The server is older than this Flow. Update the Flow Server.'];
+            ? tr('connection.serverNewer', 'The server is newer than this Flow. Update Flow to use it.')
+            : tr('connection.serverOlder', 'The server is older than this Flow. Update the Flow Server.')];
           continue;
         }
         adoptServer(String(hello.id || base));
@@ -815,9 +822,9 @@ function createRemote(env) {
       if (gen !== generation) return false;
       conn.base = '';
       conn.token = '';
-      let [state, message] = problem || ['offline', 'The server cannot be reached.'];
+      let [state, message] = problem || ['offline', tr('common.unreachable', 'The server cannot be reached.')];
       if (state === 'offline' && isTailscaleAddress(own.remote)) {
-        message = 'The server cannot be reached. Away from home, Tailscale has to be on at this PC.';
+        message = tr('connection.unreachable.tailscale', 'The server cannot be reached. Away from home, Tailscale has to be on at this PC.');
       }
       setState(state, message);
       // A wrong password is not tried over and over; a changed setting tries again.
@@ -864,13 +871,13 @@ function createRemote(env) {
   function fillRemote(hello) {
     if (!hello || sync.remoteFilled || settings.get('serverRemote')) return;
     let address = publicUrlOf(hello);
-    let notice = `Remote Server set to ${address}, the server's address on the internet, for when you are away from home.`;
+    let notice = tr('connection.notice.remoteSet.internet', 'Remote Server set to {address}, the server\'s address on the internet, for when you are away from home.', { address });
     const ts = hello.tailscale;
     if (!address && ts) {
       const port = Math.round(Number(ts.port));
       if (typeof ts.ip !== 'string' || !isTailscaleAddress(ts.ip) || !(port > 0 && port < 65536)) return;
       address = `${ts.ip}:${port}`;
-      notice = `Remote Server set to ${address}, the server's Tailscale address, for when you are away from home. Tailscale has to be on at this PC then too.`;
+      notice = tr('connection.notice.remoteSet.tailscale', 'Remote Server set to {address}, the server\'s Tailscale address, for when you are away from home. Tailscale has to be on at this PC then too.', { address });
     }
     if (!address) return;
     settings.set({ serverRemote: address });
@@ -910,12 +917,12 @@ function createRemote(env) {
       sync.homeFilled = true;
       saveSync();
       hooks.onSettings({ serverHome: address });
-      hooks.onNotice(`Found the Flow Server "${found[0].name}" on this network. Home Server set to ${address}.`, 'info');
+      hooks.onNotice(tr('connection.notice.foundOne', 'Found the Flow Server "{server}" on this network. Home Server set to {address}.', { server: found[0].name, address }), 'info');
       reconfigure({ serverHome: address });
       return;
     }
     if (found.length > 1) {
-      hooks.onNotice(`Found ${found.length} Flow Servers on this network (${found.map((f) => `"${f.name}" at ${f.ip}:${f.port}`).join(', ')}). Enter the one you want as the Home Server.`, 'info');
+      hooks.onNotice(tr('connection.notice.foundMany', 'Found {count} Flow Servers on this network ({servers}). Enter the one you want as the Home Server.', { count: found.length, servers: found.map((f) => tr('connection.notice.foundMany.entry', '"{server}" at {address}', { server: f.name, address: `${f.ip}:${f.port}` })).join(', ') }), 'info');
     }
     emitStatus();
   }
@@ -978,7 +985,7 @@ function createRemote(env) {
     if (err instanceof OfflineError) {
       clearTimeout(pollTimer);
       conn.base = '';
-      setState('offline', 'The server cannot be reached.');
+      setState('offline', tr('common.unreachable', 'The server cannot be reached.'));
       scheduleRetry();
       return;
     }
@@ -991,14 +998,14 @@ function createRemote(env) {
     // sends the whole library even when nothing changed.
     const since = cache.library ? `?since=${cache.rev}&as=${encodeURIComponent(cache.profile)}` : '';
     const r = await request(conn.base, `/api/library${since}`, { token: conn.token, timeout: 30000 });
-    if (r.status === 401) throw new AuthError('Signed out.');
+    if (r.status === 401) throw new AuthError(tr('connection.signedOut', 'Signed out.'));
     if (r.status === 204) return false;
-    if (r.status !== 200 || !r.json || !r.json.library) throw new Error((r.json && r.json.error) || `The server answered ${r.status}.`);
+    if (r.status !== 200 || !r.json || !r.json.library) throw new Error((r.json && r.json.error) || tr('common.serverAnswered', 'The server answered {status}.', { status: r.status }));
     const profile = cleanProfile(r.json.profile);
     const before = sync.profile;
     if (before && (!profile || profile.id !== before.id)) {
       // Deleted or signed out on the server, by another device.
-      hooks.onNotice(`You are no longer logged in as "${before.name}": the profile was deleted or signed out on the server.`, 'info');
+      hooks.onNotice(tr('connection.notice.profileGone', 'You are no longer logged in as "{profile}": the profile was deleted or signed out on the server.', { profile: before.name }), 'info');
       loadProfiles().catch(() => {});
     }
     sync.profile = profile;
@@ -1056,7 +1063,7 @@ function createRemote(env) {
     const first = problems[0];
     const more = problems.length - 1;
     problems.length = 0;
-    hooks.onNotice(`${first}${more ? ` (and ${more} more)` : ''}`, 'error');
+    hooks.onNotice(more ? tr('connection.notice.andMore', '{notice} (and {count} more)', { notice: first, count: more }) : first, 'error');
   }
 
   function flushSoon(delay = 50) {
@@ -1106,7 +1113,7 @@ function createRemote(env) {
           done.add(c.cid);
           if (r.ok) sync.sent.push({ cmd: c, rev: res.rev });
           if (r.ok && Array.isArray(r.deletedSongs)) deleted.push(...r.deletedSongs.map(String));
-          if (!r.ok) problems.push(`The server did not take a change: ${r.error}`);
+          if (!r.ok) problems.push(tr('sync.problem.changeRefused', 'The server did not take a change: {reason}', { reason: r.error }));
         }
         sync.queue = sync.queue.filter((c) => !done.has(c.cid));
         saveSync();
@@ -1161,10 +1168,12 @@ function createRemote(env) {
         }
         status.transfer = '';
         status.note = blocked.size
-          ? `${blocked.size} ${blocked.size === 1 ? 'song waits' : 'songs wait'} to be uploaded until the connection is not metered.`
+          ? tr('sync.uploadsWaitMetered', blocked.size === 1 ? '{count} song waits to be uploaded until the connection is not metered.'
+            : '{count} songs wait to be uploaded until the connection is not metered.', { count: blocked.size })
           : '';
         if (trimsWaiting) {
-          status.note = `${status.note ? `${status.note} ` : ''}${trimsWaiting} ${trimsWaiting === 1 ? 'trim waits' : 'trims wait'} for the server: update it (and give it ffmpeg) to trim songs.`;
+          status.note = `${status.note ? `${status.note} ` : ''}${tr('sync.trimsWait', trimsWaiting === 1 ? '{count} trim waits for the server: update it (and give it ffmpeg) to trim songs.'
+            : '{count} trims wait for the server: update it (and give it ffmpeg) to trim songs.', { count: trimsWaiting })}`;
         }
         if (!sync.queue.some(mine)) status.lastSync = Date.now();
         await refresh();
@@ -1196,19 +1205,20 @@ function createRemote(env) {
    */
   async function trimOne(cmd) {
     const s = model.songById(getView(), cmd.songId);
-    const label = s ? [s.artist, s.title].filter(Boolean).join(' - ') : 'A song';
-    status.transfer = `Trimming on the server: ${label}`;
+    const label = s ? [s.artist, s.title].filter(Boolean).join(' - ') : tr('sync.aSong', 'A song');
+    status.transfer = tr('sync.transfer.trimming', 'Trimming on the server: {song}', { song: label });
+    status.transferUp = false;
     emitStatus();
     const r = await request(conn.base, `/api/songs/${encodeURIComponent(cmd.songId)}/trim`, {
       method: 'POST', json: { start: cmd.start, end: cmd.end, base: cmd.base || '', cut: cmd.cut }, token: conn.token, timeout: 5 * 60 * 1000,
     });
-    if (r.status === 401) throw new AuthError('Signed out.');
+    if (r.status === 401) throw new AuthError(tr('connection.signedOut', 'Signed out.'));
     sync.queue = sync.queue.filter((c) => c.cid !== cmd.cid);
     if (r.status === 200 && r.json) {
       if (!r.json.skipped) sync.sent.push({ cmd, rev: Number(r.json.rev) });
-      if (r.json.skipped === 'changed') problems.push(`"${label}" was trimmed on another device meanwhile, so this trim was not applied.`);
+      if (r.json.skipped === 'changed') problems.push(tr('sync.trimmedElsewhere', '"{song}" was trimmed on another device meanwhile, so this trim was not applied.', { song: label }));
     } else {
-      problems.push(`The server could not trim "${label}": ${(r.json && r.json.error) || `it answered ${r.status}`}`);
+      problems.push(tr('sync.trimFailed', 'The server could not trim "{song}": {reason}', { song: label, reason: (r.json && r.json.error) || tr('sync.trimFailed.answered', 'it answered {status}', { status: r.status }) }));
     }
     saveSync();
   }
@@ -1226,9 +1236,9 @@ function createRemote(env) {
    */
   async function trimSong(songId, { start, end }) {
     const s = model.songById(getView(), songId);
-    if (!s) throw new Error('That song no longer exists.');
+    if (!s) throw new Error(tr('common.songGone', 'That song no longer exists.'));
     if (status.state === 'online' && !conn.trim) {
-      throw new Error('This Flow Server cannot trim songs. Update it, and install ffmpeg on it (sudo apt install ffmpeg).');
+      throw new Error(tr('common.serverCannotTrim', 'This Flow Server cannot trim songs. Update it, and install ffmpeg on it (sudo apt install ffmpeg).'));
     }
     const base = s.cut || '';
     const cut = newCutId();
@@ -1285,8 +1295,8 @@ function createRemote(env) {
    * to give it looked-up ones again. Resolves them as the server keeps them.
    */
   async function setSongLyrics(songId, lines) {
-    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached right now.');
-    if (!conn.ownLyrics) throw new Error('This Flow Server is too old to keep lyrics written here: it needs an update.');
+    if (!active() || status.state !== 'online') throw new Error(tr('connection.unreachableNow', 'The server cannot be reached right now.'));
+    if (!conn.ownLyrics) throw new Error(tr('connection.tooOld.lyrics', 'This Flow Server is too old to keep lyrics written here: it needs an update.'));
     return (await call(`/api/songs/${encodeURIComponent(songId)}/lyrics`, { method: 'PUT', json: { lines }, timeout: 30000 })).lyrics;
   }
 
@@ -1304,7 +1314,7 @@ function createRemote(env) {
       await call(`/api/songs/${encodeURIComponent(serverId)}/lyrics`, { method: 'PUT', json: { lines }, timeout: 30000 });
     } catch (err) {
       if (err instanceof AuthError) throw err;
-      problems.push(`The lyrics of "${[local.artist, local.title].filter(Boolean).join(' - ')}" could not be sent: ${err.message}`);
+      problems.push(tr('sync.lyricsNotSent', 'The lyrics of "{song}" could not be sent: {reason}', { song: [local.artist, local.title].filter(Boolean).join(' - '), reason: err.message }));
     }
   }
 
@@ -1338,7 +1348,7 @@ function createRemote(env) {
   }
 
   async function songPeaks(songId) {
-    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached.');
+    if (!active() || status.state !== 'online') throw new Error(tr('common.unreachable', 'The server cannot be reached.'));
     return (await call(`/api/songs/${encodeURIComponent(songId)}/peaks`, { timeout: 120000 })).peaks;
   }
 
@@ -1359,7 +1369,8 @@ function createRemote(env) {
     for (const { lid, there } of stale) {
       if (status.state !== 'online' || !active() || !(await transfersAllowed())) break;
       const label = [there.artist, there.title].filter(Boolean).join(' - ');
-      status.transfer = `Downloading the trimmed song: ${label}`;
+      status.transfer = tr('sync.transfer.downloadingTrimmed', 'Downloading the trimmed song: {song}', { song: label });
+      status.transferUp = false;
       emitStatus();
       // Trimmed here since the look began: nothing to replace.
       const now = model.songById(library.get(), lid);
@@ -1368,8 +1379,8 @@ function createRemote(env) {
       const tmp = files.join(files.dirname(now.file), `.flow-download-${randomHex(5)}${files.extname(now.file)}`);
       try {
         const r = await request(conn.base, audioPath(there.id), { token: conn.token, saveTo: tmp, timeout: 60000 });
-        if (r.status === 401) throw new AuthError('Signed out.');
-        if (r.status !== 200) throw new Error((r.json && r.json.error) || `the server answered ${r.status}`);
+        if (r.status === 401) throw new AuthError(tr('connection.signedOut', 'Signed out.'));
+        if (r.status !== 200) throw new Error((r.json && r.json.error) || tr('connection.serverAnswered.lower', 'the server answered {status}', { status: r.status }));
         await library.quietly(async () => {
           const s = model.songById(library.get(), lid);
           if (!s) return;
@@ -1389,7 +1400,7 @@ function createRemote(env) {
           status.transfer = '';
           throw err;
         }
-        problems.push(`The trimmed "${label}" could not be downloaded: ${err.message}`);
+        problems.push(tr('sync.trimmedNotDownloaded', 'The trimmed "{song}" could not be downloaded: {reason}', { song: label, reason: err.message }));
       } finally {
         files.rm(tmp, { force: true });
       }
@@ -1449,7 +1460,8 @@ function createRemote(env) {
       return;
     }
     const label = [local.artist, local.title].filter(Boolean).join(' - ');
-    status.transfer = `Uploading ${number} of ${total}: ${label}`;
+    status.transfer = tr('sync.transfer.uploading', 'Uploading {number} of {total}: {song}', { number, total, song: label });
+    status.transferUp = true;
     emitStatus();
     const meta = {
       title: local.title,
@@ -1488,17 +1500,19 @@ function createRemote(env) {
       token: conn.token,
       timeout: 120000,
       onProgress: (f) => {
-        status.transfer = `Uploading ${number} of ${total} (${Math.round(f * 100)}%): ${label}`;
+        status.transfer = tr('sync.transfer.uploading.percent', 'Uploading {number} of {total} ({percent}%): {song}', {
+          number, total, percent: Math.round(f * 100), song: label,
+        });
         emitStatus();
       },
     });
-    if (r.status === 401) throw new AuthError('Signed out.');
+    if (r.status === 401) throw new AuthError(tr('connection.signedOut', 'Signed out.'));
     if (r.status !== 200 || !r.json) {
       // Refused for good (a format the server does not take, no room): the song
       // stays here only, and the reason is told.
       drop();
       delete sync.songMap[cmd.localId];
-      problems.push(`"${label}" could not be uploaded: ${(r.json && r.json.error) || `the server answered ${r.status}`}`);
+      problems.push(tr('sync.uploadFailed', '"{song}" could not be uploaded: {reason}', { song: label, reason: (r.json && r.json.error) || tr('connection.serverAnswered.lower', 'the server answered {status}', { status: r.status }) }));
       return;
     }
     const serverId = String(r.json.id);
@@ -1929,7 +1943,8 @@ function createRemote(env) {
       if (gone.length && (gone.length <= 20 || gone.length < mapped / 2)) {
         for (const [lid] of gone) await forgetLocal(lid, { deleteFile: true });
       } else if (gone.length) {
-        status.note = `${gone.length} songs are missing on the server. Their files were kept here.`;
+        status.note = tr('sync.missingOnServer', gone.length === 1 ? '{count} song is missing on the server. Its file was kept here.'
+          : '{count} songs are missing on the server. Their files were kept here.', { count: gone.length });
         emitStatus();
       }
 
@@ -1951,7 +1966,8 @@ function createRemote(env) {
 
   // ---- playlists marked for download ----
 
-  const DOWNLOADS_WAIT = ' to be downloaded until the connection is not metered.';
+  // The note telling that downloads wait for a connection that is not metered, while it shows.
+  let downloadsWaitNote = '';
 
   /** Every song of the marked playlists without a copy here comes down. */
   async function downloadOffline() {
@@ -1973,7 +1989,8 @@ function createRemote(env) {
         if (s && !sync.queue.some((c) => c.type === 'upload' && c.songId === s.id)) want.push(s);
       }
     }
-    if (status.note.endsWith(DOWNLOADS_WAIT)) status.note = '';
+    if (downloadsWaitNote && status.note === downloadsWaitNote) status.note = '';
+    downloadsWaitNote = '';
     if (!want.length) {
       emitStatus();
       return;
@@ -1985,17 +2002,22 @@ function createRemote(env) {
       if (!(await transfersAllowed())) {
         const left = want.length - number;
         status.transfer = '';
-        status.note = `${left} ${left === 1 ? 'song waits' : 'songs wait'}${DOWNLOADS_WAIT}`;
+        status.note = tr('sync.downloadsWaitMetered', left === 1 ? '{count} song waits to be downloaded until the connection is not metered.'
+          : '{count} songs wait to be downloaded until the connection is not metered.', { count: left });
+        downloadsWaitNote = status.note;
         emitStatus();
         return;
       }
       number += 1;
       const label = [s.artist, s.title].filter(Boolean).join(' - ');
-      status.transfer = `Downloading ${number} of ${want.length}: ${label}`;
+      status.transfer = tr('sync.transfer.downloading', 'Downloading {number} of {total}: {song}', { number, total: want.length, song: label });
+      status.transferUp = false;
       emitStatus();
       try {
         await fetchSong(s, (f) => {
-          status.transfer = `Downloading ${number} of ${want.length} (${Math.round(f * 100)}%): ${label}`;
+          status.transfer = tr('sync.transfer.downloading.percent', 'Downloading {number} of {total} ({percent}%): {song}', {
+            number, total: want.length, percent: Math.round(f * 100), song: label,
+          });
           emitStatus();
         });
       } catch (err) {
@@ -2004,7 +2026,7 @@ function createRemote(env) {
           wentWrong(err);
           return;
         }
-        problems.push(`"${label}" could not be downloaded: ${err.message}`);
+        problems.push(tr('sync.downloadFailed', '"{song}" could not be downloaded: {reason}', { song: label, reason: err.message }));
       }
       // The window hears of each song as it arrives.
       refreshView();
@@ -2021,8 +2043,8 @@ function createRemote(env) {
       const r = await request(conn.base, audioPath(s.id), {
         token: conn.token, saveTo: tmp, timeout: 60000, onProgress,
       });
-      if (r.status === 401) throw new AuthError('Signed out.');
-      if (r.status !== 200) throw new Error((r.json && r.json.error) || `the server answered ${r.status}`);
+      if (r.status === 401) throw new AuthError(tr('connection.signedOut', 'Signed out.'));
+      if (r.status !== 200) throw new Error((r.json && r.json.error) || tr('connection.serverAnswered.lower', 'the server answered {status}', { status: r.status }));
       await library.quietly(async () => {
         const dest = exporter.uniquePath(songFileStem(s.artist, s.title, s.mix), ext);
         files.rename(tmp, dest);
@@ -2261,7 +2283,8 @@ function createRemote(env) {
         saveSync();
         queueLocalChanges();
       } else {
-        hooks.onNotice(`Your ${count} Local Files songs stay here. Synchronize now in Settings uploads them to "${conn.name}".`, 'info');
+        hooks.onNotice(tr('connection.notice.localFilesStay', count === 1 ? 'Your Local Files song stays here. Synchronize now in Settings uploads it to "{server}".'
+          : 'Your {count} Local Files songs stay here. Synchronize now in Settings uploads them to "{server}".', { count, server: conn.name }), 'info');
       }
     })().finally(() => { asking = null; });
     return asking;
@@ -2304,10 +2327,10 @@ function createRemote(env) {
    * server's music folder looked through, and the marked playlists downloaded.
    */
   async function syncNow() {
-    if (!active()) throw new Error('Tick "Use a Flow Server" and enter an address first.');
+    if (!active()) throw new Error(tr('connection.tickUseServerAndAddress', 'Tick "Use a Flow Server" and enter an address first.'));
     if (status.state !== 'online') {
       await connect();
-      if (status.state !== 'online') throw new Error(status.message || 'The server cannot be reached.');
+      if (status.state !== 'online') throw new Error(status.message || tr('common.unreachable', 'The server cannot be reached.'));
     }
     status.syncing = true;
     emitStatus();
@@ -2427,7 +2450,7 @@ function createRemote(env) {
         }
         if (statusCode === 401) {
           live.req = null;
-          wentWrong(new AuthError('Signed out.'));
+          wentWrong(new AuthError(tr('connection.signedOut', 'Signed out.')));
           return false;
         }
         if (statusCode !== 200) {
@@ -2505,7 +2528,7 @@ function createRemote(env) {
       }
       if (data.reason === 'auth') {
         stopLive();
-        wentWrong(new AuthError('Signed out.'));
+        wentWrong(new AuthError(tr('connection.signedOut', 'Signed out.')));
         return;
       }
       if (data.reason === 'replaced') return;
@@ -2521,8 +2544,8 @@ function createRemote(env) {
    * with the server's reason.
    */
   async function sessions(body) {
-    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached right now.');
-    if (!conn.sessions) throw new Error('This Flow Server is too old for Active Sessions. Update it first.');
+    if (!active() || status.state !== 'online') throw new Error(tr('connection.unreachableNow', 'The server cannot be reached right now.'));
+    if (!conn.sessions) throw new Error(tr('connection.tooOld.sessions', 'This Flow Server is too old for Active Sessions. Update it first.'));
     try {
       if (!body) return await call(`/api/sessions?client=${encodeURIComponent(clientId())}`, { timeout: 10000 });
       return await call('/api/sessions', { method: 'POST', json: { ...body, client: clientId() }, timeout: 10000 });
@@ -2637,7 +2660,7 @@ function createRemote(env) {
    */
   async function switchServer(id) {
     const entry = loadOthers()[id];
-    if (!entry || id === sync.serverId) throw new Error('Flow has not used that server on this device.');
+    if (!entry || id === sync.serverId) throw new Error(tr('connection.switch.notUsedHere', 'Flow has not used that server on this device.'));
     const a = entry.sync.addresses;
     const name = entry.sync.serverName || 'Flow Server';
     let found = false;
@@ -2653,7 +2676,9 @@ function createRemote(env) {
       }
     }
     if (!found) {
-      throw new Error(`"${name}" cannot be reached right now${status.state === 'online' ? `, so Flow stays with "${conn.name}"` : ''}.`);
+      throw new Error(status.state === 'online'
+        ? tr('connection.switch.unreachable.staying', '"{server}" cannot be reached right now, so Flow stays with "{current}".', { server: name, current: conn.name })
+        : tr('connection.switch.unreachable', '"{server}" cannot be reached right now.', { server: name }));
     }
     await sendWaiting();
     // No Home address of its own: the search for one would find this home's server instead.
@@ -2687,7 +2712,7 @@ function createRemote(env) {
    * the other app is asked for the password.
    */
   async function shareLink() {
-    if (!active() || status.state !== 'online') throw new Error('Flow is not connected to its server right now.');
+    if (!active() || status.state !== 'online') throw new Error(tr('connection.notConnected', 'Flow is not connected to its server right now.'));
     const s = settings.all();
     let code = '';
     const pw = decrypt(s.serverSecret);
@@ -2699,7 +2724,7 @@ function createRemote(env) {
       home = ip ? home.replace(/^[^:/]+/, ip) : '';
     }
     const remote = s.serverRemoteOn !== false ? String(s.serverRemote || '') : '';
-    if (!home && !remote) throw new Error('This server has no address another device could use. Enter its Home address (as the other device reaches it) first.');
+    if (!home && !remote) throw new Error(tr('connection.share.noAddress', 'This server has no address another device could use. Enter its Home address (as the other device reaches it) first.'));
     return {
       link: makeLink({
         id: sync.serverId, name: conn.name, home, remote, code,
@@ -2716,7 +2741,7 @@ function createRemote(env) {
    */
   async function connectLink(text) {
     const l = parseLink(text);
-    if (!l) throw new Error('That is not a link to a Flow Server.');
+    if (!l) throw new Error(tr('connection.link.notFlow', 'That is not a link to a Flow Server.'));
     let password = null;
     if (l.code) {
       for (const address of [l.home, l.remote].filter(Boolean)) {
@@ -2731,9 +2756,9 @@ function createRemote(env) {
           password = String(r.json.password || '');
           break;
         }
-        throw new Error((r.json && r.json.error) || `"${l.name}" answered ${r.status}.`);
+        throw new Error((r.json && r.json.error) || tr('connection.link.answered', '"{server}" answered {status}.', { server: l.name, status: r.status }));
       }
-      if (password === null) throw new Error(`"${l.name}" cannot be reached from here right now. Try on its home network, or ask for a new QR code.`);
+      if (password === null) throw new Error(tr('connection.link.unreachable', '"{server}" cannot be reached from here right now. Try on its home network, or ask for a new QR code.', { server: l.name }));
     }
     if (sync.serverId && sync.serverId !== l.id) await sendWaiting();
     // No Home address of its own: the search for one would find this home's server instead.
@@ -2755,7 +2780,7 @@ function createRemote(env) {
   /** Marks a server playlist for download, or no longer. */
   async function setOffline(pid, on) {
     const all = isAllList(pid);
-    if (on && !all && !markedList(getView(), pid)) throw new Error('Only All Songs, your own playlists and the ones you follow can be downloaded.');
+    if (on && !all && !markedList(getView(), pid)) throw new Error(tr('songs.error.onlyOwnDownloads', 'Only All Songs, your own playlists and the ones you follow can be downloaded.'));
     if (on && !sync.offline.includes(pid)) sync.offline.push(pid);
     if (!on) sync.offline = sync.offline.filter((x) => x !== pid);
     if (on && !all) sync.offlineKeep[pid] = { profile: currentProfile(), songs: markedSongs(pid, getView()) };
@@ -2833,10 +2858,10 @@ function createRemote(env) {
    * dropped, see dropUnneededCopies).
    */
   async function downloadSong(songId) {
-    if (!active()) throw new Error('Tick "Use a Flow Server" first.');
-    if (status.state !== 'online') throw new Error('The server cannot be reached right now. A song can only be downloaded while it can.');
+    if (!active()) throw new Error(tr('connection.tickUseServer', 'Tick "Use a Flow Server" first.'));
+    if (status.state !== 'online') throw new Error(tr('songs.error.downloadUnreachable', 'The server cannot be reached right now. A song can only be downloaded while it can.'));
     const song = model.songById(getView(), songId);
-    if (!song) throw new Error('That song is not on the server.');
+    if (!song) throw new Error(tr('songs.error.notOnServer', 'That song is not on the server.'));
     if (localCopies().has(songId)) {
       sync.kept[songId] = true;
       saveSync();
@@ -2846,18 +2871,19 @@ function createRemote(env) {
     // Marked before the copy exists: a synchronization in between must not drop it as unneeded.
     sync.kept[songId] = true;
     saveSync();
-    status.transfer = `Downloading: ${label}`;
+    status.transfer = tr('sync.transfer.downloadingOne', 'Downloading: {song}', { song: label });
+    status.transferUp = false;
     emitStatus();
     try {
       await fetchSong(song, (f) => {
-        status.transfer = `Downloading (${Math.round(f * 100)}%): ${label}`;
+        status.transfer = tr('sync.transfer.downloadingOne.percent', 'Downloading ({percent}%): {song}', { percent: Math.round(f * 100), song: label });
         emitStatus();
       });
     } catch (err) {
       delete sync.kept[songId];
       saveSync();
       if (err instanceof OfflineError || err instanceof AuthError) wentWrong(err);
-      throw new Error(`"${label}" could not be downloaded: ${err.message}`);
+      throw new Error(tr('sync.downloadFailed', '"{song}" could not be downloaded: {reason}', { song: label, reason: err.message }));
     } finally {
       status.transfer = '';
       emitStatus();
@@ -2871,7 +2897,7 @@ function createRemote(env) {
    * download holds the song), or lost for good (it has not gone up yet).
    */
   async function removeDownload(songId) {
-    if (!active()) throw new Error('Tick "Use a Flow Server" first.');
+    if (!active()) throw new Error(tr('connection.tickUseServer', 'Tick "Use a Flow Server" first.'));
     const lids = Object.entries(sync.songMap).filter(([, sid]) => sid === songId).map(([lid]) => lid);
     // A copy here only taken for it (not tied to it): its file goes, as from Downloaded Songs.
     const loose = !lids.length && localCopies().get(songId);
@@ -2881,10 +2907,10 @@ function createRemote(env) {
       return;
     }
     if (sync.queue.some((c) => c.type === 'upload' && c.songId === songId)) {
-      throw new Error('This song has not been uploaded to the server yet. Its file here is the only copy.');
+      throw new Error(tr('songs.error.notUploadedYet', 'This song has not been uploaded to the server yet. Its file here is the only copy.'));
     }
     if (sync.offline.some((pid) => markedSongs(pid, getView()).includes(songId))) {
-      throw new Error('This song is in a playlist marked for download (or All Songs is), so it would come straight back. Unmark that in Settings first.');
+      throw new Error(tr('songs.error.markedForDownload', 'This song is in a playlist marked for download (or All Songs is), so it would come straight back. Unmark that in Settings first.'));
     }
     delete sync.kept[songId];
     saveSync();
@@ -2901,7 +2927,7 @@ function createRemote(env) {
       if (!(await forgetLocal(lid, { deleteFile: true }))) {
         sync.kept[songId] = true;
         saveSync();
-        throw new Error('The song\'s file is in use (playing?). Try again once it has stopped.');
+        throw new Error(tr('songs.error.fileInUse', 'The song\'s file is in use (playing?). Try again once it has stopped.'));
       }
     }
     refreshView();
@@ -2914,7 +2940,7 @@ function createRemote(env) {
    * were deleted, and how many are in use (playing) and stay for now.
    */
   async function removeAllDownloads() {
-    if (!active()) throw new Error('Tick "Use a Flow Server" first.');
+    if (!active()) throw new Error(tr('connection.tickUseServer', 'Tick "Use a Flow Server" first.'));
     sync.offline = [];
     sync.offlineKeep = {};
     sync.kept = {};
@@ -2946,11 +2972,11 @@ function createRemote(env) {
    */
   async function removeDeviceSong(songId) {
     const id = String(songId || '');
-    if (!id.startsWith(DEVICE)) throw new Error('That song is not one of this device\'s own.');
+    if (!id.startsWith(DEVICE)) throw new Error(tr('songs.error.notOwn', 'That song is not one of this device\'s own.'));
     const lid = id.slice(DEVICE.length);
     const song = model.songById(library.get(), lid);
     if (!song) return;
-    if (sync.songMap[lid]) throw new Error('That song is on this server: delete it from here with its Download button.');
+    if (sync.songMap[lid]) throw new Error(tr('songs.error.isOnServer', 'That song is on this server: delete it from here with its Download button.'));
     await deleteHere(song);
     refreshView();
   }
@@ -2968,7 +2994,7 @@ function createRemote(env) {
       library.mutate((d) => model.removeSong(d, lid, false));
       gone = true;
     });
-    if (!gone) throw new Error('The song\'s file is in use (playing?). Try again once it has stopped.');
+    if (!gone) throw new Error(tr('songs.error.fileInUse', 'The song\'s file is in use (playing?). Try again once it has stopped.'));
     for (const o of Object.values(loadOthers())) {
       delete o.sync.songMap[lid];
       delete o.sync.fetched[lid];
@@ -2989,12 +3015,12 @@ function createRemote(env) {
   async function songAudio(songId) {
     const here = localFileOf(songId);
     if (here) return { file: here, temp: false };
-    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached.');
+    if (!active() || status.state !== 'online') throw new Error(tr('common.unreachable', 'The server cannot be reached.'));
     files.mkdir(paths.cacheDir());
     const tmp = files.join(paths.cacheDir(), `.flow-audio-${randomHex(5)}`);
     try {
       const r = await request(conn.base, audioPath(songId), { token: conn.token, saveTo: tmp, timeout: 60000 });
-      if (r.status !== 200) throw new Error(`the server answered ${r.status}`);
+      if (r.status !== 200) throw new Error(tr('connection.serverAnswered.lower', 'the server answered {status}', { status: r.status }));
     } catch (err) {
       files.rm(tmp, { force: true });
       throw err;
@@ -3009,8 +3035,8 @@ function createRemote(env) {
   // Files: a song finished there is the server's at once, like any other.
 
   function requireDownloads() {
-    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached right now.');
-    if (!conn.downloads) throw new Error('This Flow Server does not download songs.');
+    if (!active() || status.state !== 'online') throw new Error(tr('connection.unreachableNow', 'The server cannot be reached right now.'));
+    if (!conn.downloads) throw new Error(tr('connection.noDownloads', 'This Flow Server does not download songs.'));
   }
 
   /**
@@ -3035,14 +3061,14 @@ function createRemote(env) {
       }
       // A playlist's Update: its link read on the server, nothing downloaded ({ url, cookies }).
       if (action === 'check') {
-        if (!conn.downloadCheck) throw new Error('This Flow Server cannot check a playlist for updates yet: update it.');
+        if (!conn.downloadCheck) throw new Error(tr('connection.tooOld.playlistUpdates', 'This Flow Server cannot check a playlist for updates yet: update it.'));
         const json = { url: args.url, cookies: args.cookies || undefined };
         return (await call('/api/downloads/check', { method: 'POST', json, timeout: 15 * 60 * 1000 })).listing;
       }
       if (action === 'cancel') return (await call('/api/downloads', { method: 'DELETE' })).batch;
       // A song's name typed instead of a link: { query, artist, title, page, results }.
       if (action === 'search') {
-        if (!conn.search) throw new Error('This Flow Server cannot search for songs by name yet: update it, or paste a link.');
+        if (!conn.search) throw new Error(tr('connection.tooOld.songSearch', 'This Flow Server cannot search for songs by name yet: update it, or paste a link.'));
         return await call('/api/downloads/search', { method: 'POST', json: { query: args.query, page: Number(args.page) || 0 }, timeout: 120000 });
       }
       if (action === 'peaks') return (await call(`${item}/peaks`, { timeout: 30000 })).peaks;
@@ -3064,7 +3090,7 @@ function createRemote(env) {
       if (err instanceof OfflineError || err instanceof AuthError) wentWrong(err);
       throw err;
     }
-    throw new Error(`Unknown download action ${action}.`);
+    throw new Error(tr('connection.unknownDownloadAction', 'Unknown download action {action}.', { action }));
   }
 
   /**
@@ -3134,9 +3160,9 @@ function createRemote(env) {
   }
 
   function requireProfiles() {
-    if (!active()) throw new Error('Tick "Use a Flow Server" first.');
-    if (status.state !== 'online') throw new Error('The server cannot be reached right now. Profiles can only be changed while it can.');
-    if (!conn.profiles) throw new Error('This Flow Server is too old for profiles. Update it first.');
+    if (!active()) throw new Error(tr('connection.tickUseServer', 'Tick "Use a Flow Server" first.'));
+    if (status.state !== 'online') throw new Error(tr('connection.profiles.unreachable', 'The server cannot be reached right now. Profiles can only be changed while it can.'));
+    if (!conn.profiles) throw new Error(tr('connection.tooOld.profiles', 'This Flow Server is too old for profiles. Update it first.'));
   }
 
   /**
@@ -3228,8 +3254,8 @@ function createRemote(env) {
   /** The signed-in profile's PIN changed from `pin` to `newPin` ('': none). */
   async function changePin(pin, newPin) {
     requireProfiles();
-    if (!conn.pin) throw new Error('This Flow Server is too old to change a PIN. Update it first.');
-    if (!currentProfile()) throw new Error('Log in to a profile first.');
+    if (!conn.pin) throw new Error(tr('connection.tooOld.changePin', 'This Flow Server is too old to change a PIN. Update it first.'));
+    if (!currentProfile()) throw new Error(tr('connection.profiles.loginFirst', 'Log in to a profile first.'));
     const r = await call('/api/profiles/pin', { method: 'POST', json: { pin: String(pin || ''), newPin: String(newPin || '') } });
     sync.profile = cleanProfile({ ...sync.profile, ...r.profile });
     // The next start signs in with the new one (restoreProfile).
@@ -3244,7 +3270,7 @@ function createRemote(env) {
   async function deleteProfile() {
     requireProfiles();
     const gone = currentProfile();
-    if (!gone) throw new Error('Log in to a profile first.');
+    if (!gone) throw new Error(tr('connection.profiles.loginFirst', 'Log in to a profile first.'));
     // A song renamed or deleted in it still counts.
     await sendWaiting();
     await call('/api/profiles/delete', { method: 'POST', json: {} });
@@ -3265,8 +3291,8 @@ function createRemote(env) {
    */
   async function admin(route, body) {
     requireProfiles();
-    if (!conn.admin) throw new Error('This Flow Server is too old for Administration. Update it first.');
-    if (!/^[\w/-]{1,120}$/.test(String(route || ''))) throw new Error('No such page in Administration.');
+    if (!conn.admin) throw new Error(tr('connection.tooOld.admin', 'This Flow Server is too old for Administration. Update it first.'));
+    if (!/^[\w/-]{1,120}$/.test(String(route || ''))) throw new Error(tr('connection.admin.noSuchPage', 'No such page in Administration.'));
     const r = await call(`/api/admin/${route}`, body === undefined ? { timeout: 30000 } : { method: 'POST', json: body, timeout: 60000 });
     // What the admins change can change what this app sees (a song back
     // from the trash, a rule): fetched now rather than at the next poll.

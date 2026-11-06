@@ -1,5 +1,7 @@
 'use strict';
 
+const { tr } = require('./lang');
+
 // Amazon Music playlists, albums and songs, by way of YouTube, the way Spotify
 // lists are (spotify.js): Amazon's audio is copy protected and yt-dlp refuses
 // it, so only the track list comes from Amazon and each song is then looked up
@@ -114,7 +116,7 @@ function trackIdOf(href) {
 function parseAmazonPage(html) {
   const header = tagsNamed(html, 'music-detail-header').find((a) => a.headline);
   if (!header) {
-    throw new Error('Amazon Music shows nothing at this link. Is the playlist public, and from this country\'s Amazon Music?');
+    throw new Error(tr('core.amazon.nothingShown', 'Amazon Music shows nothing at this link. Is the playlist public, and from this country\'s Amazon Music?'));
   }
   const pageArtist = cleanArtists(header['primary-text']);
   const type = String(header.label || '').toLowerCase();
@@ -135,10 +137,10 @@ function parseAmazonPage(html) {
   const count = /^\s*(\d[\d.,]*)\s/.exec(header['tertiary-text'] || '');
   const total = type !== 'song' && count ? Number(count[1].replace(/[.,]/g, '')) : null;
   if (!tracks.length) {
-    if (total === 0) throw new Error('This Amazon Music list has no songs.');
-    throw new Error('Amazon Music\'s page could not be read. Amazon may have changed it.');
+    if (total === 0) throw new Error(tr('core.amazon.noSongs', 'This Amazon Music list has no songs.'));
+    throw new Error(tr('core.amazon.pageUnreadable', 'Amazon Music\'s page could not be read. Amazon may have changed it.'));
   }
-  return { name: String(header.headline || 'Amazon Music playlist'), type, total, tracks };
+  return { name: String(header.headline || tr('core.amazon.playlist', 'Amazon Music playlist')), type, total, tracks };
 }
 
 /** The value of each <meta> named `name` (property= or name=), in page order. */
@@ -160,7 +162,7 @@ function metaValues(html, name) {
 function parsePreviewCard(html) {
   const name = metaValues(html, 'og:title')[0];
   if (!name) {
-    throw new Error('Amazon Music shows nothing at this link. Is the playlist public, and from this country\'s Amazon Music?');
+    throw new Error(tr('core.amazon.nothingShown', 'Amazon Music shows nothing at this link. Is the playlist public, and from this country\'s Amazon Music?'));
   }
   const ids = metaValues(html, 'music:song').map(trackIdOf).filter(Boolean);
   return { name, ids };
@@ -171,10 +173,10 @@ async function fetchPage(url, userAgent) {
   try {
     res = await fetch(url, { headers: { 'User-Agent': userAgent, 'Accept-Language': 'en' } });
   } catch {
-    throw new Error('Could not reach Amazon Music. Please check the internet connection.');
+    throw new Error(tr('core.amazon.unreachable', 'Could not reach Amazon Music. Please check the internet connection.'));
   }
-  if (res.status === 404) throw new Error('Nothing was found at this Amazon Music link. Is the playlist public?');
-  if (!res.ok) throw new Error(`Amazon Music refused the request (error ${res.status}). Try again later.`);
+  if (res.status === 404) throw new Error(tr('core.amazon.nothingFound', 'Nothing was found at this Amazon Music link. Is the playlist public?'));
+  if (!res.ok) throw new Error(tr('core.amazon.refused', 'Amazon Music refused the request (error {status}). Try again later.', { status: res.status }));
   return res.text();
 }
 
@@ -191,7 +193,7 @@ async function fetchTrack(tld, id) {
  */
 async function fetchUserPlaylist(ref, isCancelled, onTrack) {
   const card = parsePreviewCard(await fetchPage(pageUrl(ref), PREVIEW_UA));
-  if (!card.ids.length) throw new Error('This Amazon Music list has no songs.');
+  if (!card.ids.length) throw new Error(tr('core.amazon.noSongs', 'This Amazon Music list has no songs.'));
   const tracks = new Array(card.ids.length);
   let next = 0;
   let done = 0;
@@ -205,13 +207,13 @@ async function fetchUserPlaylist(ref, isCancelled, onTrack) {
       } catch {
         // Below: kept as not playable.
       }
-      tracks[n] = track || { title: `Song ${n + 1}`, artists: '', duration: 0, playable: false, id: card.ids[n] };
+      tracks[n] = track || { title: tr('core.link.songNumber', 'Song {number}', { number: n + 1 }), artists: '', duration: 0, playable: false, id: card.ids[n] };
       done += 1;
       onTrack(done, card.ids.length);
     }
   };
   await Promise.all(Array.from({ length: TRACK_PARALLEL }, worker));
-  if (tracks.every((t) => !t.playable)) throw new Error('Amazon Music\'s song pages could not be read. Amazon may have changed them.');
+  if (tracks.every((t) => !t.playable)) throw new Error(tr('core.amazon.songPagesUnreadable', 'Amazon Music\'s song pages could not be read. Amazon may have changed them.'));
   return { name: card.name, type: 'playlist', total: tracks.length, tracks };
 }
 

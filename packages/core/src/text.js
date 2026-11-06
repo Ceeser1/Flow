@@ -3,6 +3,8 @@
 // Pure text helpers: link keys and filename safety. No Electron or Node
 // dependency, so everything here is covered directly by node --test.
 
+const { tr } = require('./lang');
+
 const YT_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const YT_PATH_ID_RE = /^\/(?:shorts|embed|live|v)\/([A-Za-z0-9_-]{11})/;
 const YT_HOSTS = new Set([
@@ -128,7 +130,7 @@ function isNameOnlyList(url) {
 /** "Artist - Title (Mix)", the name a saved song's file gets. */
 function songFileStem(artist, title, mix) {
   const a = String(artist || '').trim();
-  const t = String(title || '').trim() || 'Unknown title';
+  const t = String(title || '').trim() || tr('core.link.unknownTitle', 'Unknown title');
   const m = String(mix || '').trim();
   let stem = a ? `${a} - ${t}` : t;
   if (m) stem += ` (${m})`;

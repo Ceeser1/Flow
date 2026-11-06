@@ -12,6 +12,9 @@ async function call(channel, arg) {
 }
 
 contextBridge.exposeInMainWorld('flow', {
+  // The texts' language chosen in Settings ('' for the device's), read once: i18n.js needs it before anything is drawn.
+  language: ipcRenderer.sendSync('i18n:language'),
+  reload: () => ipcRenderer.send('app:reload'),
   init: () => call('app:init'),
   setSettings: (patch) => call('settings:set', patch),
   // For the window closing, where an async call may not get out in time.

@@ -21,7 +21,7 @@ const Modal = {
   open({
     title, body, buttons = [], className = '', onClose, focus, drawer = false, sheet = false, sticky = false, confirmDismiss = null,
   }) {
-    const closeBtn = iconButton('modal__close', Icons.x, 'Close', () => handle.close());
+    const closeBtn = iconButton('modal__close', Icons.x, T('common.close'), () => handle.close());
     const footer = h('div.modal__footer');
     const box = h('div.modal' + (className ? '.' + className : ''), { role: 'dialog', 'aria-modal': 'true', tabIndex: -1 },
       h('div.modal__head', h('h2.modal__title', title), closeBtn),
@@ -115,7 +115,7 @@ const Modal = {
  * { checked } on yes and null on no.
  */
 function confirmDialog({
-  title, message, confirmLabel = 'OK', cancelLabel = 'Cancel', danger = false, kind = '', checkbox = null,
+  title, message, confirmLabel = T('common.ok'), cancelLabel = T('common.cancel'), danger = false, kind = '', checkbox = null,
 }) {
   return new Promise((resolve) => {
     let box = null;
@@ -179,7 +179,7 @@ function actionSheet({ title, subtitle = '', items }) {
 }
 
 /** Asks for a line of text; resolves it, or null when cancelled. */
-function promptDialog({ title, value = '', confirmLabel = 'OK', maxLength = 150 }) {
+function promptDialog({ title, value = '', confirmLabel = T('common.ok'), maxLength = 150 }) {
   return new Promise((resolve) => {
     const input = h('input.input', { type: 'text', value, maxLength, spellcheck: false });
     let answer = null;
@@ -189,7 +189,7 @@ function promptDialog({ title, value = '', confirmLabel = 'OK', maxLength = 150 
       body: [input],
       focus: 'input',
       buttons: [
-        { label: 'Cancel' },
+        { label: T('common.cancel') },
         { label: confirmLabel, kind: 'primary', onClick: () => { answer = input.value; } },
       ],
       onClose: () => resolve(answer),
@@ -209,7 +209,7 @@ function promptDialog({ title, value = '', confirmLabel = 'OK', maxLength = 150 
  * confirm button (or Enter); what it throws is shown in the popup, which stays
  * open, else it closes. Resolves what submit returned, or null when cancelled.
  */
-function formDialog({ title, fields, confirmLabel = 'Submit', submit }) {
+function formDialog({ title, fields, confirmLabel = T('common.confirm'), submit }) {
   return new Promise((resolve) => {
     const error = h('div.form-error');
     const boxes = {};
@@ -234,7 +234,7 @@ function formDialog({ title, fields, confirmLabel = 'Submit', submit }) {
       body: [...rows, error],
       focus: 'input:not(:disabled)',
       buttons: [
-        { label: 'Cancel' },
+        { label: T('common.cancel') },
         {
           label: confirmLabel,
           kind: 'primary',
@@ -350,7 +350,7 @@ function renderTable(table, { columns, rows, sort, onSort, rowKey, rowClass, onR
     const th = h('th' + (col.cls ? '.' + col.cls : ''),
       sortable ? h('button.th-sort' + (active ? '.th-sort--active' : ''), {
         type: 'button',
-        title: 'Sort by ' + col.label,
+        title: T('common.sortBy', { column: col.label }),
         onclick: () => onSort(col.key),
       }, h('span', col.label), h('span.th-arrow', arrow)) : h('span.th-plain', col.label));
     headRow.appendChild(th);
@@ -390,19 +390,19 @@ function renderTable(table, { columns, rows, sort, onSort, rowKey, rowClass, onR
  * green, ticked, and cannot be changed. Offers a box to create a new list
  * right there. Resolves the chosen ids (without the locked ones), or null.
  */
-function pickPlaylists({ title = 'Add to Playlist', subtitle = '', lockedIds = [], selectedIds = [] }) {
+function pickPlaylists({ title = T('common.addToPlaylist'), subtitle = '', lockedIds = [], selectedIds = [] }) {
   return new Promise((resolve) => {
     const locked = new Set(lockedIds);
     const selected = new Set(selectedIds.filter((id) => !locked.has(id)));
     const list = h('div.picker__list');
-    const nameBox = h('input.input', { type: 'text', placeholder: 'New playlist name', maxLength: 80 });
+    const nameBox = h('input.input', { type: 'text', placeholder: T('pickPlaylists.newName.placeholder'), maxLength: 80 });
     const error = h('div.form-error');
 
     const draw = () => {
       clear(list);
       const lists = Store.editablePlaylists();
       if (!lists.length) {
-        list.appendChild(h('div.picker__empty', 'No playlists yet. Create one above.'));
+        list.appendChild(h('div.picker__empty', T('pickPlaylists.none')));
         return;
       }
       for (const p of lists) {
@@ -415,7 +415,7 @@ function pickPlaylists({ title = 'Add to Playlist', subtitle = '', lockedIds = [
         list.appendChild(h('label.picker__row' + (isLocked ? '.picker__row--locked' : ''),
           box,
           h('span.picker__name', p.name),
-          h('span.picker__meta', isLocked ? 'Already added' : Util.plural(p.entries.length, 'song'))));
+          h('span.picker__meta', isLocked ? T('pickPlaylists.alreadyAdded') : Util.plural(p.entries.length, 'song'))));
       }
     };
 
@@ -449,13 +449,13 @@ function pickPlaylists({ title = 'Add to Playlist', subtitle = '', lockedIds = [
       sheet: document.body.classList.contains('mobile'),
       body: [
         subtitle ? h('p.modal__subtitle', subtitle) : null,
-        h('div.picker__create', nameBox, h('button.btn', { type: 'button', onclick: create }, 'Create')),
+        h('div.picker__create', nameBox, h('button.btn', { type: 'button', onclick: create }, T('common.create'))),
         error,
         list,
       ],
       buttons: [
-        { label: 'Cancel' },
-        { label: 'Save', kind: 'primary', onClick: () => { result = [...selected]; } },
+        { label: T('common.cancel') },
+        { label: T('common.save'), kind: 'primary', onClick: () => { result = [...selected]; } },
       ],
       onClose: () => {
         unsubscribe();

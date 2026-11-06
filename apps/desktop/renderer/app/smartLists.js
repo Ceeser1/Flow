@@ -27,20 +27,20 @@
 //   Least listened artists  the lowest, artists never heard included
 
 (function (root, factory) {
-  const api = factory();
+  const api = factory((typeof module === 'object' && module.exports ? require('./i18n').t : root.T));
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.SmartLists = api;
-}(typeof self !== 'undefined' ? self : this, () => {
+}(typeof self !== 'undefined' ? self : this, (T) => {
   const SHARE = 0.2;
 
   const LISTS = [
-    { id: 'smart:artists-most', name: 'Most listened artists', desc: 'Every song of the fifth of your artists you listen to most' },
-    { id: 'smart:most', name: 'Most listened songs', desc: 'Times played, by how much of the song you hear' },
-    { id: 'smart:skipped-least', name: 'Least skipped songs', desc: 'Heard to 80% or more most of the times played' },
-    { id: 'smart:stale', name: 'Long time no see', desc: 'Not heard for the longest time' },
-    { id: 'smart:skipped-most', name: 'Most skipped songs', desc: 'Skipped most often in the first 30 seconds' },
-    { id: 'smart:least', name: 'Least listened songs', desc: 'The shortest average listen, for the length of the song' },
-    { id: 'smart:artists-least', name: 'Least listened artists', desc: 'Every song of the fifth of your artists you listen to least' },
+    { id: 'smart:artists-most', name: T('trend.mostListenedArtists.name'), desc: T('trend.mostListenedArtists.desc') },
+    { id: 'smart:most', name: T('trend.mostListenedSongs.name'), desc: T('trend.mostListenedSongs.desc') },
+    { id: 'smart:skipped-least', name: T('trend.leastSkippedSongs.name'), desc: T('trend.leastSkippedSongs.desc') },
+    { id: 'smart:stale', name: T('trend.longTimeNoSee.name'), desc: T('trend.longTimeNoSee.desc') },
+    { id: 'smart:skipped-most', name: T('trend.mostSkippedSongs.name'), desc: T('trend.mostSkippedSongs.desc') },
+    { id: 'smart:least', name: T('trend.leastListenedSongs.name'), desc: T('trend.leastListenedSongs.desc') },
+    { id: 'smart:artists-least', name: T('trend.leastListenedArtists.name'), desc: T('trend.leastListenedArtists.desc') },
   ];
 
   const statsOf = (s) => s.stats || {};

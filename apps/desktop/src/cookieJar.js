@@ -15,6 +15,7 @@ const tools = require('./tools');
 const { runProcess } = require('@flow/core/processRunner');
 const { ytDlpError } = require('@flow/core/media');
 const { BROWSERS, cookieSite, cookiesFor } = require('@flow/core/cookies');
+const { tr } = require('@flow/core/lang');
 
 // Where each browser keeps its profiles (a list where it can be in more than
 // one place); a browser missing here is not offered.
@@ -72,7 +73,7 @@ async function siteCookies(url, browser) {
   const site = cookieSite(url);
   if (!site || !WHERE[browser]) return '';
   const exe = tools.findYtDlp();
-  if (!exe) throw new Error(`${tools.exe('yt-dlp')} was not found. Please reinstall Flow.`);
+  if (!exe) throw new Error(tr('desktop.error.toolMissing', '{tool} was not found. Please reinstall Flow.', { tool: tools.exe('yt-dlp') }));
   fs.mkdirSync(paths.cacheDir(), { recursive: true });
   const file = path.join(paths.cacheDir(), `cookies-${crypto.randomBytes(6).toString('hex')}.txt`);
   try {

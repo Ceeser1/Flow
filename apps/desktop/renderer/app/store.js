@@ -5,11 +5,11 @@
 // library, which is when the pages redraw.
 
 const ALL_SONGS_ID = 'all';
-const ALL_SONGS_NAME = 'All Songs';
+const ALL_SONGS_NAME = T('common.allSongs');
 const FAVOURITES_ID = 'favourites';
 // The songs of another server's session this app is a guest in (4.0).
 const GUEST_ID = 'guest:songs';
-const FAVOURITES_NAME = 'Favourites';
+const FAVOURITES_NAME = T('common.favourites');
 // "All Songs from <profile>": the songs one profile of the Flow Server added.
 const FROM_PREFIX = 'from:';
 // The Default / Shared's id as a song's addedBy (@flow/core/profiles DEFAULT_OWNER).
@@ -82,8 +82,13 @@ const Store = {
 
   /** The device as the window names it: "this phone", "this browser" or "this computer". */
   get here() {
-    if (this.web) return 'this browser';
-    return this.phone ? 'this phone' : 'this computer';
+    return T(`common.this${this.hereKey[0].toUpperCase()}${this.hereKey.slice(1)}`);
+  },
+
+  /** 'computer', 'phone' or 'browser': the end of the keys whose sentence names this device (German changes its case). */
+  get hereKey() {
+    if (this.web) return 'browser';
+    return this.phone ? 'phone' : 'computer';
   },
 
   onLibrary(fn) {
@@ -219,7 +224,7 @@ const Store = {
     if (!this.foreign.size) return null;
     return {
       id: GUEST_ID,
-      name: `Songs on ${this.foreignName || 'the other server'}`,
+      name: T('common.songsOn', { server: this.foreignName || T('common.songsOn.otherServer') }),
       entries: [...this.foreign.values()].map((s) => ({ songId: s.id, addedAt: 0 })),
       isGuest: true,
     };
@@ -247,7 +252,7 @@ const Store = {
     const songs = [...this.library.songs.filter((s) => s.file), ...(this.library.deviceSongs || [])];
     return {
       id: DEVICE_ID,
-      name: 'Downloaded Songs',
+      name: T('common.downloadedSongs'),
       entries: songs.map((s) => ({ songId: s.id, addedAt: s.addedAt })),
       isDevice: true,
     };
@@ -278,7 +283,7 @@ const Store = {
       .filter((s) => s.addedBy === profileId)
       .map((s) => ({ songId: s.id, addedAt: s.addedAt }));
     if (!name || !entries.length) return null;
-    return { id: FROM_PREFIX + profileId, name: `All Songs from ${name}`, menuName: `from ${name}`, entries, isFrom: true };
+    return { id: FROM_PREFIX + profileId, name: T('common.allSongsFrom', { profile: name }), menuName: T('common.allSongsFrom.menu', { profile: name }), entries, isFrom: true };
   },
 
   /** The profile songs added now count as added by: the one signed in to, else the Default / Shared. */

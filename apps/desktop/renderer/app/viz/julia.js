@@ -133,15 +133,14 @@
 
   Visualizer.add({
     id: 'julia',
-    name: 'Fractals',
-    desc: 'A Julia set gliding along the edge of the Mandelbrot set with the tempo, its islands joining and breaking apart, glowing with the beat',
+    name: T('viz.julia.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 12c2-4 7-4 8 0s-4 6-8 3-6-1-8-3 4-6 8 0z"/><circle cx="6" cy="7" r="1.5"/><circle cx="18" cy="17" r="1.5"/></svg>',
     gl: true,
     create: (canvas) => new Julia(canvas),
     options: [
-      { type: 'choice', key: 'jlLook', label: 'Look', choices: [['neon', 'Glowing edges'], ['classic', 'Bands'], ['ink', 'Ink']] },
-      { type: 'slider', key: 'jlSpeed', label: 'Changing', min: 25, max: 300, step: 5 },
+      { type: 'choice', key: 'jlLook', label: T('viz.shared.look'), choices: [['neon', T('viz.julia.setting.look.neon')], ['classic', T('viz.julia.setting.look.classic')], ['ink', T('viz.shared.ink')]] },
+      { type: 'slider', key: 'jlSpeed', label: T('viz.julia.setting.changing'), min: 25, max: 300, step: 5 },
     ],
   });
 })();

@@ -208,17 +208,16 @@
 
   Visualizer.add({
     id: 'rain',
-    name: 'Code Rain',
-    desc: 'In the manner of The Matrix: columns of glyphs falling, faster and brighter the louder their part of the spectrum',
+    name: T('viz.rain.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v6M5 13v2M10 6v10M10 19v2M15 3v4M15 10v8M20 5v9M20 17v2"/></svg>',
     gl: true,
     create: (canvas) => new Rain(canvas),
     options: [
-      { type: 'color', key: 'rnColor', label: 'Color', presets: PRESETS },
-      { type: 'slider', key: 'rnDensity', label: 'Density', min: 50, max: 200, step: 5 },
-      { type: 'slider', key: 'rnSpeed', label: 'Speed', min: 25, max: 300, step: 5 },
-      { type: 'choice', key: 'rnGlyphs', label: 'Glyphs', choices: [['katakana', 'Katakana'], ['binary', 'Binary'], ['latin', 'Letters']] },
+      { type: 'color', key: 'rnColor', label: T('viz.shared.color'), presets: PRESETS },
+      { type: 'slider', key: 'rnDensity', label: T('viz.rain.setting.density'), min: 50, max: 200, step: 5 },
+      { type: 'slider', key: 'rnSpeed', label: T('viz.shared.speed'), min: 25, max: 300, step: 5 },
+      { type: 'choice', key: 'rnGlyphs', label: T('viz.rain.setting.glyphs'), choices: [['katakana', 'Katakana'], ['binary', T('viz.rain.setting.glyphs.binary')], ['latin', T('viz.rain.setting.glyphs.latin')]] },
     ],
   });
 })();

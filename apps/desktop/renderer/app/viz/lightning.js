@@ -704,17 +704,16 @@ ${LAYERS.map((l, i) => `      float l${i} = layer(p, ${glsl(l.xs)}, ${glsl(l.see
 
   Visualizer.add({
     id: 'lightning',
-    name: 'Lightning',
-    desc: 'A storm at night: the beats strike, the drops bring bolts down to the ground, calm parts flash inside the clouds',
+    name: T('viz.lightning.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>',
     gl: true,
     create: (canvas) => new Storm(canvas),
     options: [
-      { type: 'color', key: 'ltColor', label: 'Lightning color', presets: PRESETS },
-      { type: 'check', key: 'ltFlash', label: 'Screen flash', amount: { key: 'ltFlashAmount', min: 0, max: 200, step: 5 } },
-      { type: 'slider', key: 'ltStrikes', label: 'Strikes', min: 25, max: 200, step: 5 },
-      { type: 'check', key: 'ltRain', label: 'Rain', amount: { key: 'ltRainAmount', min: 0, max: 100, step: 5 } },
+      { type: 'color', key: 'ltColor', label: T('viz.lightning.setting.lightningColor'), presets: PRESETS },
+      { type: 'check', key: 'ltFlash', label: T('viz.shared.screenFlash'), amount: { key: 'ltFlashAmount', min: 0, max: 200, step: 5 } },
+      { type: 'slider', key: 'ltStrikes', label: T('viz.lightning.setting.strikes'), min: 25, max: 200, step: 5 },
+      { type: 'check', key: 'ltRain', label: T('viz.shared.rain'), amount: { key: 'ltRainAmount', min: 0, max: 100, step: 5 } },
     ],
   });
 })();

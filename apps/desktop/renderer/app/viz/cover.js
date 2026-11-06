@@ -219,10 +219,11 @@ const VizCover = (() => {
    * A picture picked in a cogwheel (a file Flow keeps, by its path): as a
    * texture once loaded, and its colours (null when it has hardly any); a
    * PNG has see-through parts of its own (clear: Flow keeps a picture as a
-   * PNG only then). An MP4 or WebM is a video instead: playing muted, over
-   * and over, its texture each new frame of it (tick), without mipmaps, no
-   * colours.
-   *   each frame: picture.want(path); picture.tick(); picture.loaded, .tex, .width, .height, .colors, .clear
+   * PNG only then). An MP4 or WebM is a video instead: muted, at the place
+   * a clock says (follow: the song's time, over and over, standing still
+   * while it does), its texture each new frame of it (tick), without
+   * mipmaps, no colours.
+   *   each frame: picture.want(path); picture.follow(seconds, playing); picture.tick(); picture.loaded, .tex, .width, .height, .colors, .clear
    *   picture.close() when done: the video stopped
    */
   class Picture {
@@ -266,6 +267,33 @@ const VizCover = (() => {
       // Gone (deleted by hand): the song's cover instead.
       img.onerror = () => {};
       img.src = Util.fileUrl(path);
+    }
+
+    /**
+     * The video at a clock's place (seconds, over and over by its length),
+     * paused while the clock stands still: a little faster or slower while
+     * it is close, put there when it is not.
+     */
+    follow(seconds, playing) {
+      const v = this.video;
+      const len = v ? v.duration : 0;
+      if (!(len > 0) || !Number.isFinite(len)) return;
+      const want = ((seconds % len) + len) % len;
+      let off = want - v.currentTime;
+      // The shorter way round the loop.
+      if (off > len / 2) off -= len;
+      else if (off < -len / 2) off += len;
+      if (!playing) {
+        if (!v.paused) v.pause();
+        if (Math.abs(off) > 0.02 && !v.seeking) v.currentTime = want;
+        return;
+      }
+      let rate = 1;
+      if (Math.abs(off) > 0.3) {
+        if (!v.seeking) v.currentTime = want;
+      } else if (Math.abs(off) > 0.03) rate = 1 + Math.max(-0.1, Math.min(0.1, off));
+      if (Math.abs(v.playbackRate - rate) > 0.005) v.playbackRate = rate;
+      if (v.paused) v.play().catch(() => {});
     }
 
     /** The video's newest frame into the texture, when it has one. */
@@ -313,10 +341,14 @@ const VizCover = (() => {
         this.fresh = true;
         v.requestVideoFrameCallback(frame);
       }, { once: true });
+      // Put somewhere else while paused: that frame too.
+      v.addEventListener('seeked', () => {
+        if (this.video === v) this.fresh = true;
+      });
       // Gone or unplayable: the song's cover instead.
       v.addEventListener('error', () => {});
+      // Played by follow, not before.
       v.src = Util.fileUrl(path);
-      v.play().catch(() => {});
     }
 
     _stop() {

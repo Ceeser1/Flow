@@ -11,13 +11,14 @@ const { createLocalLibrary } = require('@flow/core/client/localLibrary');
 const { createStorage } = require('./storage');
 const { createMemFs, path, ROOT } = require('./memfs');
 const { createHttp } = require('./http');
+const { tr } = require('@flow/core/lang');
 
 const LOCAL = 'local';
 const COVERS = path.join(ROOT, 'Covers');
 
 /** The browser and the system it runs on, as a session's device name: "Firefox - Windows". */
 function deviceName(ua = (globalThis.navigator && navigator.userAgent) || '') {
-  let browser = 'Browser';
+  let browser = tr('web.device.browser', 'Browser');
   if (/Edg\//.test(ua)) browser = 'Edge';
   else if (/OPR\//.test(ua)) browser = 'Opera';
   else if (/Firefox\//.test(ua)) browser = 'Firefox';
@@ -121,7 +122,7 @@ function createEnv({ tellCovers, vorbis = true, storage = createStorage() }) {
       rename: (from, to) => memfs.rename(from, to),
       read: (p) => {
         const bytes = memfs.readBytes(p);
-        if (!bytes) throw new Error(`Not there: ${p}`);
+        if (!bytes) throw new Error(tr('common.error.notThere', 'Not there: {path}', { path: p }));
         return bytes;
       },
       mkdir: (dir) => memfs.mkdir(dir),
@@ -138,7 +139,7 @@ function createEnv({ tellCovers, vorbis = true, storage = createStorage() }) {
         return dest;
       },
       trimSong: async () => {
-        throw new Error('Songs are cut by the Flow Server, not in the browser.');
+        throw new Error(tr('web.error.cutByServer', 'Songs are cut by the Flow Server, not in the browser.'));
       },
     },
     http,

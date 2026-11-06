@@ -266,15 +266,14 @@
   Visualizer.add({
     id: 'mandelbulb',
     name: 'Mandelbulb',
-    desc: 'A slow flight round a three-dimensional fractal, breathing and twisting with the music, its colours following the harmony',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.9 2.9M15.5 15.5l2.9 2.9M5.6 18.4l2.9-2.9M15.5 8.5l2.9-2.9"/></svg>',
     gl: true,
     create: (canvas) => new Mandelbulb(canvas),
     options: [
-      { type: 'choice', key: 'mbColors', label: 'Colours', choices: [['notes', 'By the notes'], ['fire', 'Fire'], ['ice', 'Ice'], ['rainbow', 'Rainbow']] },
-      { type: 'choice', key: 'mbView', label: 'View', choices: [['whole', 'The whole'], ['close', 'Close up']] },
-      { type: 'slider', key: 'mbMorph', label: 'Breathing', min: 0, max: 200, step: 5 },
+      { type: 'choice', key: 'mbColors', label: T('viz.shared.colors'), choices: [['notes', T('viz.shared.byTheNotes')], ['fire', T('viz.shared.fire')], ['ice', T('viz.shared.ice')], ['rainbow', T('common.color.rainbow')]] },
+      { type: 'choice', key: 'mbView', label: T('viz.shared.view'), choices: [['whole', T('viz.mandelbulb.setting.view.whole')], ['close', T('viz.mandelbulb.setting.view.close')]] },
+      { type: 'slider', key: 'mbMorph', label: T('viz.mandelbulb.setting.breathing'), min: 0, max: 200, step: 5 },
     ],
   });
 })();

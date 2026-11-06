@@ -14,6 +14,7 @@
 // serverName } as the host is told; onLive({ type, data }) for the window.
 
 const { serverBaseUrl } = require('../address');
+const { tr } = require('../lang');
 
 const LIVE_RETRY_MS = [1000, 2000, 5000, 10000];
 const CLOCK_SAMPLES = 5;
@@ -34,7 +35,7 @@ function createGuestLink({
   async function ask(server, pathname, opts = {}) {
     const r = await request(server.base, pathname, { token: server.token, timeout: 8000, ...opts });
     if (r.status < 200 || r.status >= 300) {
-      const err = new Error((r.json && r.json.error) || `"${server.name}" answered ${r.status}.`);
+      const err = new Error((r.json && r.json.error) || tr('connection.link.answered', '"{server}" answered {status}.', { server: server.name, status: r.status }));
       err.status = r.status;
       throw err;
     }
@@ -51,7 +52,7 @@ function createGuestLink({
       },
       timeout: 5000,
     });
-    if (r.status !== 200 || !r.json || !r.json.token) throw new Error((r.json && r.json.error) || `"${server.name}" lets no guests in.`);
+    if (r.status !== 200 || !r.json || !r.json.token) throw new Error((r.json && r.json.error) || tr('connection.guest.noGuests', '"{server}" lets no guests in.', { server: server.name }));
     server.token = r.json.token;
     server.name = r.json.name || server.name;
   }
@@ -216,7 +217,7 @@ function createGuestLink({
 
   function serverOf(id) {
     const server = servers.get(id);
-    if (!server) throw new Error('That server is no longer on this network.');
+    if (!server) throw new Error(tr('connection.guest.gone', 'That server is no longer on this network.'));
     return server;
   }
 

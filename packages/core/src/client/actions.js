@@ -14,6 +14,7 @@
 // heard here counts there too, whatever library it was from.
 
 const model = require('../libraryModel');
+const { tr } = require('../lang');
 
 function createActions({
   remote, library, files, retag = null, trim = null, privateStats = null,
@@ -39,7 +40,7 @@ function createActions({
   /** A smart playlist (4.0): its songs are the ones its rules pick (playlistRules.js in the window). */
   function createSmartPlaylist({ name, rules }) {
     const clean = model.cleanRules(rules);
-    if (!clean) throw new Error('A smart playlist needs its rules.');
+    if (!clean) throw new Error(tr('songs.error.smartNeedsRules', 'A smart playlist needs its rules.'));
     if (!remote.active()) {
       return library.mutate((d) => {
         const p = model.createPlaylist(d, name, library.newId());
@@ -54,7 +55,7 @@ function createActions({
 
   function setPlaylistRules({ id, rules }) {
     const clean = model.cleanRules(rules);
-    if (!clean) throw new Error('A smart playlist needs its rules.');
+    if (!clean) throw new Error(tr('songs.error.smartNeedsRules', 'A smart playlist needs its rules.'));
     return change((d) => model.setPlaylistRules(d, id, clean), 'setPlaylistRules', { playlistId: id, rules: clean });
   }
 
@@ -98,7 +99,7 @@ function createActions({
   }
 
   function setFollowing({ id, on }) {
-    if (!remote.active()) throw new Error('Following playlists needs a Flow Server.');
+    if (!remote.active()) throw new Error(tr('songs.error.followNeedsServer', 'Following playlists needs a Flow Server.'));
     const result = remote.command(on ? 'followPlaylist' : 'unfollowPlaylist', { playlistId: id });
     // Unfollowed: its downloaded songs go too, unless another downloaded
     // playlist (or All Songs) still holds them.
@@ -122,12 +123,12 @@ function createActions({
     if (remote.active()) return remote.deleteSong(songId, !!deleteFile);
     return library.quietly(() => {
       const song = model.songById(library.get(), songId);
-      if (!song) throw new Error('That song no longer exists.');
+      if (!song) throw new Error(tr('common.songGone', 'That song no longer exists.'));
       if (deleteFile && files.exists(song.file)) {
         try {
           files.rm(song.file);
         } catch {
-          throw new Error('The file could not be deleted. It may be open in another program.');
+          throw new Error(tr('songs.error.fileNotDeleted', 'The file could not be deleted. It may be open in another program.'));
         }
       }
       return library.mutate((d) => model.removeSong(d, songId, !deleteFile));
@@ -138,7 +139,7 @@ function createActions({
     songId, artist, title, mix, album, genre, subGenre,
   }) {
     const meta = { artist: String(artist || '').trim(), title: String(title || '').trim(), mix: String(mix || '').trim() };
-    if (!meta.title) throw new Error('Please enter a title.');
+    if (!meta.title) throw new Error(tr('common.enterTitle', 'Please enter a title.'));
     if (album !== undefined) meta.album = String(album || '').trim();
     if (genre !== undefined) meta.genre = String(genre || '').trim();
     if (subGenre !== undefined) meta.subGenre = String(subGenre || '').trim();
@@ -146,14 +147,14 @@ function createActions({
     if (remote.active()) return remote.command('editSong', { songId, ...meta });
     return library.quietly(async () => {
       const song = model.songById(library.get(), songId);
-      if (!song) throw new Error('That song no longer exists.');
+      if (!song) throw new Error(tr('common.songGone', 'That song no longer exists.'));
       let file = song.file;
       let written = false;
       if (retag && files.exists(song.file)) {
         try {
           ({ file, written } = await retag(song, meta));
         } catch {
-          throw new Error('The file could not be renamed. It may be open in another program.');
+          throw new Error(tr('songs.error.fileNotRenamed', 'The file could not be renamed. It may be open in another program.'));
         }
       }
       return library.mutate((d) => {
@@ -170,13 +171,13 @@ function createActions({
   // that is one of a server's goes there too once it is connected.
   function trimSong({ songId, start, end }) {
     const span = { start: Math.max(0, Number(start) || 0), end: Number(end) || 0 };
-    if (!(span.end - span.start >= 0.5)) throw new Error('The trim is too short.');
+    if (!(span.end - span.start >= 0.5)) throw new Error(tr('songs.error.trimTooShort', 'The trim is too short.'));
     if (remote.active()) return remote.trimSong(songId, span);
-    if (!trim) throw new Error('Songs on this device can only be trimmed through a Flow Server.');
+    if (!trim) throw new Error(tr('songs.error.trimNeedsServer', 'Songs on this device can only be trimmed through a Flow Server.'));
     return library.quietly(async () => {
       const song = model.songById(library.get(), songId);
-      if (!song) throw new Error('That song no longer exists.');
-      if (!files.exists(song.file)) throw new Error('The song\'s file is missing.');
+      if (!song) throw new Error(tr('common.songGone', 'That song no longer exists.'));
+      if (!files.exists(song.file)) throw new Error(tr('songs.error.fileMissing', 'The song\'s file is missing.'));
       const base = song.cut;
       const cut = remote.newCutId();
       const { duration } = await trim(song, span.start, span.end);

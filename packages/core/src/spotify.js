@@ -1,5 +1,7 @@
 'use strict';
 
+const { tr } = require('./lang');
+
 // Spotify playlists and albums, by way of YouTube. Spotify's audio is copy
 // protected and yt-dlp does not read it, so only the track list comes from
 // Spotify: its public embed page (open.spotify.com/embed/...) carries the
@@ -32,17 +34,17 @@ function isSpotifyTrackUrl(text) {
  */
 function parseEmbedPage(html) {
   const m = /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/.exec(String(html || ''));
-  if (!m) throw new Error('Spotify\'s page could not be read. Spotify may have changed it.');
+  if (!m) throw new Error(tr('core.spotify.pageUnreadable', 'Spotify\'s page could not be read. Spotify may have changed it.'));
   let entity;
   try {
     entity = JSON.parse(m[1]).props.pageProps.state.data.entity;
   } catch {
-    throw new Error('Spotify\'s page could not be read. Spotify may have changed it.');
+    throw new Error(tr('core.spotify.pageUnreadable', 'Spotify\'s page could not be read. Spotify may have changed it.'));
   }
   if (!entity || !Array.isArray(entity.trackList)) {
-    throw new Error('This Spotify link has no songs that can be read. Is the playlist public?');
+    throw new Error(tr('core.spotify.noSongs', 'This Spotify link has no songs that can be read. Is the playlist public?'));
   }
-  const name = String(entity.name || entity.title || 'Spotify playlist');
+  const name = String(entity.name || entity.title || tr('core.spotify.playlist', 'Spotify playlist'));
   const album = String(entity.type || '').toLowerCase() === 'album' ? name.trim() : '';
   return {
     name,
@@ -68,10 +70,10 @@ async function fetchSpotify({ type, id }) {
       },
     });
   } catch {
-    throw new Error('Could not reach Spotify. Please check the internet connection.');
+    throw new Error(tr('core.spotify.unreachable', 'Could not reach Spotify. Please check the internet connection.'));
   }
-  if (res.status === 404) throw new Error('Nothing was found at this Spotify link. Is the playlist public?');
-  if (!res.ok) throw new Error(`Spotify refused the request (error ${res.status}). Try again later.`);
+  if (res.status === 404) throw new Error(tr('core.spotify.nothingFound', 'Nothing was found at this Spotify link. Is the playlist public?'));
+  if (!res.ok) throw new Error(tr('core.spotify.refused', 'Spotify refused the request (error {status}). Try again later.', { status: res.status }));
   return parseEmbedPage(await res.text());
 }
 

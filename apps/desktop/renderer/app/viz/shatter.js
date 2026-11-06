@@ -328,16 +328,15 @@
 
   Visualizer.add({
     id: 'shatter',
-    name: 'Shatter',
-    desc: "The song's cover as a pane of glass, shivering on the kicks and breaking on the big hits, its shards flying and tumbling off the screen, a new pane behind it",
+    name: T('viz.shatter.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h12l-3 6 4 3-7 9H3z"/><path d="M18 4l3-1M19 9l3 1M18 15l2 3"/></svg>',
     gl: true,
     create: (canvas) => new Shatter(canvas),
     options: [
-      { type: 'slider', key: 'shPieces', label: 'Shards', min: 4, max: 20, step: 1, unit: '' },
-      { type: 'slider', key: 'shForce', label: 'Force', min: 25, max: 200, step: 5 },
-      { type: 'choice', key: 'shWhen', label: 'Breaks', choices: [['hits', 'On the big hits'], ['bar', 'Every bar']] },
+      { type: 'slider', key: 'shPieces', label: T('viz.shatter.setting.shards'), min: 4, max: 20, step: 1, unit: '' },
+      { type: 'slider', key: 'shForce', label: T('viz.shatter.setting.force'), min: 25, max: 200, step: 5 },
+      { type: 'choice', key: 'shWhen', label: T('viz.shatter.setting.breaks'), choices: [['hits', T('viz.shatter.setting.breaks.hits')], ['bar', T('viz.shatter.setting.breaks.bar')]] },
     ],
   });
 })();

@@ -28,23 +28,22 @@ const DownloadsHelp = {
     const missing = h('p.error-hint', { hidden: true });
     const how = computer
       ? h('div.downloads-help__how', { hidden: true },
-        h('p.modal__text', `Download ${this.file} yourself from its latest release at GitHub and put it into Flow's tools folder.`),
-        h('button.btn', { type: 'button', onclick: () => window.flow.openToolsFolder().catch((err) => toast(err.message, 'error')) }, 'Open Tools Folder'))
+        h('p.modal__text', T('downloadsHelp.desktop.getIt', { file: this.file })),
+        h('button.btn', { type: 'button', onclick: () => window.flow.openToolsFolder().catch((err) => toast(err.message, 'error')) }, T('downloadsHelp.desktop.openTools')))
       : h('div.downloads-help__how', { hidden: true },
-        h('p.modal__text', 'On the phone your Flow Server downloads the songs. Install yt-dlp on the server yourself (its installer says which file), then connect to it in Settings, Flow Server.'));
+        h('p.modal__text', T('downloadsHelp.phone.serverDownloads')));
     const modal = Modal.open({
-      title: 'Legal note',
+      title: T('downloadsHelp.legal.title'),
       className: 'modal--small',
       body: [
-        h('p.modal__text', 'Using Flow to play your own local music files is completely fine. Downloading requires yt-dlp. '
-          + 'Using yt-dlp or downloading from URLs may break copyright law in your country or the terms of the site you download from. Use at your own risk.'),
-        h('label.check.modal__check', box, h('span', 'I understand and want to proceed')),
+        h('p.modal__text', T('downloadsHelp.legal.text')),
+        h('label.check.modal__check', box, h('span', T('downloadsHelp.legal.understand'))),
         how,
         missing,
       ],
       buttons: [
-        { label: 'Cancel' },
-        { label: 'Done', kind: 'primary', onClick: () => this._done(computer, missing) },
+        { label: T('common.cancel') },
+        { label: T('common.done'), kind: 'primary', onClick: () => this._done(computer, missing) },
       ],
     });
     const done = modal.el.querySelector('.modal__footer .btn--primary');
@@ -68,13 +67,13 @@ const DownloadsHelp = {
       }
       if (this.here) {
         ServerImport.drawButtons();
-        toast('yt-dlp found: Add Songs downloads from links now.', 'success');
+        toast(T('downloadsHelp.desktop.found'), 'success');
         return true;
       }
-      missing.textContent = `${this.file} was not found in Flow's tools folder.`;
+      missing.textContent = T('downloadsHelp.desktop.notFound', { file: this.file });
     } else {
       if (ServerImport.available) return true;
-      missing.textContent = 'No Flow Server that downloads songs is connected.';
+      missing.textContent = T('downloadsHelp.noServer');
     }
     missing.hidden = false;
     return false;

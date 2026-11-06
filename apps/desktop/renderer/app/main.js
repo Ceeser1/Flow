@@ -8,7 +8,7 @@
   try {
     init = await window.flow.init();
   } catch (err) {
-    document.body.textContent = 'Flow could not start: ' + err.message;
+    document.body.textContent = T('startup.couldNotStart', { reason: err.message });
     return;
   }
   Store.platform = init.platform || 'desktop';
@@ -72,16 +72,16 @@
   // Songs added, deleted or renamed in Local Files from outside.
   window.flow.onFolderScanned(({ added, removed, moved }) => {
     const parts = [];
-    if (added) parts.push(`${Util.plural(added, 'song')} added`);
-    if (removed) parts.push(`${Util.plural(removed, 'song')} removed`);
-    if (moved) parts.push(`${Util.plural(moved, 'song')} renamed or moved`);
-    if (parts.length) toast(`Local Files: ${parts.join(', ')}`, 'success');
+    if (added) parts.push(T('startup.localFiles.added', { songs: Util.plural(added, 'song') }));
+    if (removed) parts.push(T('startup.localFiles.removed', { songs: Util.plural(removed, 'song') }));
+    if (moved) parts.push(T('startup.localFiles.moved', { songs: Util.plural(moved, 'song') }));
+    if (parts.length) toast(T('startup.localFiles.changed', { changes: parts.join(', ') }), 'success');
   });
 
   // yt-dlp is not shipped (downloadsHelp.js): only ffmpeg and ffprobe are missed.
   const missing = Object.entries(init.tools || {}).filter(([name, ok]) => !ok && name !== 'ytDlp').map(([name]) => name);
   if (missing.length) {
-    toast(`Missing tools: ${missing.join(', ')}. Downloading will not work until Flow is reinstalled.`, 'error');
+    toast(T('startup.missingTools', { tools: missing.join(', ') }), 'error');
   }
 
   Player.restore();
