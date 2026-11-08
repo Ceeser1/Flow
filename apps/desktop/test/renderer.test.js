@@ -253,3 +253,63 @@ test('a queue taken over from a snapshot goes on exactly as the original would',
   assert.deepEqual(c.auto, ['s1']);
   assert.equal(c.contextId, null);
 });
+
+test('the window\'s copy of libraryPatch.js is core\'s (npm run strings writes it)', () => {
+  const fs = require('fs');
+  const { SHARED, sharedSource } = require('../scripts/build-strings');
+  const path = require('path');
+  for (const [name, from] of SHARED) {
+    assert.equal(fs.readFileSync(path.join(__dirname, '..', 'renderer', 'app', name), 'utf8'), sharedSource(name, fs.readFileSync(from, 'utf8')), name);
+  }
+});
+
+test('the library reaches the window whole once, then as its changes, and the window\'s copy ends the same', () => {
+  const WindowPatch = require('../renderer/app/libraryPatch');
+  const { createViewChannel } = require('@flow/core/client/viewChannel');
+  const sent = [];
+  const ch = createViewChannel((msg) => sent.push(JSON.parse(JSON.stringify(msg))));
+  const song = (id, extra = {}) => ({ id, title: `T${id}`, artist: 'A', stats: { plays: 0 }, tagged: '', ...extra });
+  const lib = { songs: [song('a'), song('b'), song('c')], playlists: [{ id: 'p', name: 'P', entries: [{ songId: 'a', addedAt: 1 }] }], follows: [] };
+  let seq = ch.start(lib);
+  let mine = JSON.parse(JSON.stringify(lib));
+  const take = (msg) => {
+    if (!msg.patch) {
+      mine = msg.library;
+      seq = msg.seq;
+      return true;
+    }
+    if (msg.base !== seq) return false;
+    mine = WindowPatch.apply(mine, msg.patch);
+    seq = msg.seq;
+    return true;
+  };
+  lib.songs[1].title = 'renamed';
+  ch.update(lib);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].patch.map((s) => s[1]), ['songs']);
+  assert.deepEqual(sent[0].patch[0][2].put.map((s) => s.id), ['b']);
+  const kept = mine.songs[0];
+  assert.ok(take(sent[0]));
+  assert.equal(mine.songs[0], kept, 'a song that stays is the same object');
+  // A song's file tagged shows nowhere: nothing sent.
+  lib.songs[0].tagged = 'abc';
+  ch.update(lib);
+  assert.equal(sent.length, 1);
+  lib.songs.push(song('d'));
+  lib.playlists[0].entries.push({ songId: 'd', addedAt: 2 });
+  ch.update(lib);
+  assert.ok(take(sent[1]));
+  const { tagged: _a, ...want } = lib.songs[0];
+  assert.deepEqual(mine.songs.map((s) => s.id), ['a', 'b', 'c', 'd']);
+  assert.deepEqual({ ...mine.songs[0], tagged: undefined }, { ...want, tagged: undefined });
+  assert.deepEqual(mine.playlists, lib.playlists);
+  // One missed: the next does not fit, the window asks it whole.
+  lib.songs.shift();
+  ch.update(lib);
+  lib.follows = ['x'];
+  ch.update(lib);
+  assert.equal(take(sent[3]), false);
+  ch.whole(lib);
+  assert.ok(take(sent[4]));
+  assert.deepEqual(mine, JSON.parse(JSON.stringify(lib)));
+});

@@ -25,7 +25,7 @@
   // The computer's ffmpeg, ffprobe and yt-dlp (downloadsHelp.js).
   Store.tools = init.tools || {};
   Store.setServer(init.server);
-  Store.setLibrary(init.library);
+  Store.takeLibrary({ library: init.library, seq: init.librarySeq });
   Covers.init(init.covers);
 
   Player.init();
@@ -57,7 +57,7 @@
   // settled, so opening it the first time does not wait for them.
   setTimeout(() => Visualizer.warm(), 3000);
 
-  window.flow.onLibraryChanged((lib) => Store.setLibrary(lib));
+  window.flow.onLibraryChanged((msg) => Store.takeLibrary(msg));
   window.flow.onServerStatus((st) => Store.setServer(st));
   // A setting Flow changed by itself (the Remote address filled in).
   window.flow.onSettingsChanged((patch) => Store.previewSettings(patch));

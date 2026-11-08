@@ -47,6 +47,7 @@ const vizPicture = require('@flow/core/client/vizPicture');
 const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
 const { solveChallenge } = require('./src/lrclibChallenge');
 const { createGuestLink } = require('@flow/core/client/guest');
+const { createViewChannel } = require('@flow/core/client/viewChannel');
 
 let mainWindow = null;
 let downloadToken = null;
@@ -212,19 +213,12 @@ function handle(channel, fn) {
   });
 }
 
-// With a Flow Server the window shows the server's library (remote.js), and
-// Local Files changes reach it through that.
-// Unchanged for the window (a song's file tagged): not sent again.
-let localSent = '';
+// The library on its way to the window: whole at its start, then only what
+// changed (4.3.3). With a Flow Server the window shows the server's library
+// (remote.js), and Local Files changes reach it through that.
+const toWindow = createViewChannel((msg) => sendToWindow('library:changed', msg));
 library.onChange((data) => {
-  if (remote.active()) {
-    localSent = '';
-    return;
-  }
-  const key = model.viewKey(data);
-  if (key === localSent) return;
-  localSent = key;
-  sendToWindow('library:changed', data);
+  if (!remote.active()) toWindow.update(data);
 });
 
 /** The library the window works with: the server's, or Local Files. */
@@ -239,12 +233,25 @@ function iconDataUrl() {
   }
 }
 
-handle('app:init', () => ({
+handle('app:init', () => {
+  const lib = currentLibrary();
+  return {
+    library: lib,
+    librarySeq: toWindow.start(lib),
+    ...startInfo(),
+  };
+});
+// A change the window could not fit (one missed): the library whole.
+handle('library:whole', () => {
+  toWindow.whole(currentLibrary());
+  return true;
+});
+
+const startInfo = () => ({
   platform: 'desktop',
   os: process.platform,
   uiMode: MOBILE_UI ? 'mobile' : 'desktop',
   caps: MOBILE_UI ? caps.ANDROID : caps.DESKTOP,
-  library: currentLibrary(),
   server: remote.status(),
   settings: settings.all(),
   musicDir: paths.musicDir(),
@@ -254,7 +261,7 @@ handle('app:init', () => ({
   // For the Windows media overlay, which only takes http(s) or data: artwork.
   iconDataUrl: iconDataUrl(),
   covers: coverDirs(),
-}));
+});
 
 /**
  * Where the window finds covers (Store.coverSrc): Local Files' folder, and
@@ -417,7 +424,7 @@ handle('settings:set', (patch) => {
   }
   if (remote.active() !== wasRemote) {
     sendToWindow('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
-    sendToWindow('library:changed', currentLibrary());
+    toWindow.whole(currentLibrary());
   }
   return next;
 });
@@ -1027,7 +1034,7 @@ app.whenReady().then(() => {
   library.load();
   downloader.clearCache();
   remote.init({
-    onView: (view) => sendToWindow('library:changed', view),
+    onView: (view) => toWindow.update(view),
     onStatus: (st) => sendToWindow('server:status', st),
     onNotice: (text, kind) => sendToWindow('server:notice', { text, kind }),
     onSettings: (patch) => sendToWindow('settings:changed', patch),

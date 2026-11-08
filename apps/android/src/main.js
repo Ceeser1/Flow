@@ -20,6 +20,7 @@ const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
 const { encode: encodeQr } = require('@flow/core/qr');
 const { createGuestLink } = require('@flow/core/client/guest');
 const caps = require('@flow/core/client/caps');
+const { createViewChannel } = require('@flow/core/client/viewChannel');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const {
   platform, plugin, audio, fileUrl, fs, path, info,
@@ -143,15 +144,22 @@ function start() {
     return { local: covers.dirOf(covers.LOCAL), server: remote ? remote.coverDir() : '' };
   }
 
+  // The library on its way to the window: whole at its start, then only what changed (4.3.3).
+  const toWindow = createViewChannel((msg) => emit('library:changed', msg));
+  // The window's first library, numbered: the next change fits it.
+  const startLibrary = () => {
+    const lib = actions.currentLibrary();
+    return { library: lib, librarySeq: toWindow.start(lib) };
+  };
   library.onChange((data) => {
-    if (!remote.active()) emit('library:changed', data);
+    if (!remote.active()) toWindow.update(data);
   });
   // Every Local Files song's lyrics in the background (4.0): now, and soon after a change.
   library.onChange(() => lyricsClient.fillSoon());
   lyricsClient.fillSoon();
 
   remote.init({
-    onView: (view) => emit('library:changed', view),
+    onView: (view) => toWindow.update(view),
     onStatus: (st) => emit('server:status', st),
     onNotice: (text, kind) => emit('server:notice', { text, kind }),
     onSettings: (patch) => emit('settings:changed', patch),
@@ -219,7 +227,7 @@ function start() {
         uiMode: 'mobile',
         // The Equalizer from Android 9 on (its DynamicsProcessing).
         caps: platform === 'ios' ? caps.IOS : { ...caps.ANDROID, soundEq: (info().sdk || 0) >= 28 },
-        library: actions.currentLibrary(),
+        ...startLibrary(),
         server: remote.status(),
         settings: settings.all(),
         musicDir: '',
@@ -243,7 +251,7 @@ function start() {
       }
       if (remote.active() !== wasRemote) {
         emit('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
-        emit('library:changed', actions.currentLibrary());
+        toWindow.whole(actions.currentLibrary());
       }
       return next;
     }),
@@ -252,6 +260,11 @@ function start() {
       return true;
     },
     onLibraryChanged: on('library:changed'),
+    // A change that did not fit: the library comes whole through onLibraryChanged.
+    libraryWhole: call(() => {
+      toWindow.whole(actions.currentLibrary());
+      return true;
+    }),
     onFolderScanned: nothing,
 
     createPlaylist: call((name) => actions.createPlaylist(name)),

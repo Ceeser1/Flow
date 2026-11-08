@@ -270,7 +270,7 @@ const Nav = {
     $('menuTrend').hidden = !trendOn;
     $('menuTrendList').hidden = !trendOn || !trendOpen;
     const trendList = clear($('menuTrendList'));
-    for (const p of Store.smartPlaylists()) trendList.appendChild(item(p));
+    for (const p of Store.smartNames()) trendList.appendChild(item(p));
     this._trendPlaying.hidden = trendOpen || !(SmartLists.isSmart(Player.contextId) && Player.isPlaying);
   },
 };

@@ -17,6 +17,17 @@ const DEFAULT_PROFILE = 'default';
 // Downloaded Songs (with a Flow Server): every song with a file on this device.
 const DEVICE_ID = 'device';
 
+/** A list's entries are still `songs` (the same ids, `at` the same date) in the same order. */
+function sameEntries(entries, songs, at) {
+  if (entries.length !== songs.length) return false;
+  for (let i = 0; i < songs.length; i += 1) {
+    const e = entries[i];
+    const s = songs[i];
+    if (e.songId !== s.id || e.addedAt !== at(s)) return false;
+  }
+  return true;
+}
+
 const Store = {
   library: { songs: [], playlists: [], ignoredFiles: [] },
   settings: {},
@@ -34,7 +45,6 @@ const Store = {
   // The Flow Server's state (remote.js publicStatus); `on` false without one.
   server: { on: false, state: 'off', offline: [] },
   songsById: new Map(),
-  smart: {}, // the listening trend lists: id -> song ids, best match first
   holding: new Map(), // song id -> your own playlists ({ id, name }) that hold it, A to Z
   // A guest in another server's session (4.0): that server's songs, to show,
   // queue and play along with (Session sets them): id -> song (foreign: true).
@@ -44,18 +54,61 @@ const Store = {
   sessionSongs: new Map(),
   _listeners: [],
 
-  setLibrary(lib) {
+  /**
+   * The library as the app sends it (4.3.3): whole ({ library, seq }), or
+   * what changed since the one numbered `base` ({ patch, base, seq },
+   * LibraryPatch), so the songs that stay are the same objects and keep
+   * what was worked out for them (search, sort keys). One that does not fit
+   * (a change missed) has it sent whole.
+   */
+  takeLibrary(msg) {
+    if (!msg) return;
+    if (!msg.patch) {
+      this._librarySeq = msg.seq;
+      this.setLibrary(msg.library || { songs: [], playlists: [], ignoredFiles: [] });
+      return;
+    }
+    if (msg.base !== this._librarySeq) {
+      if (!this._askedWhole && window.flow.libraryWhole) {
+        this._askedWhole = true;
+        window.flow.libraryWhole().catch(() => {}).finally(() => { this._askedWhole = false; });
+      }
+      return;
+    }
+    this._librarySeq = msg.seq;
+    this.setLibrary(LibraryPatch.apply(this.library, msg.patch), msg.patch);
+  },
+  _librarySeq: 0,
+
+  /** steps: what changed since the library before (a patch), when that is how it came. */
+  setLibrary(lib, steps = null) {
     this.library = lib;
-    this._allSongs = null;
     // The songs here that are not the server's (Downloaded Songs) can be played and queued too.
-    this.songsById = new Map([...lib.songs, ...(lib.deviceSongs || [])].map((s) => [s.id, s]));
+    // A patch changes only its songs (100 000: the map is not made again).
+    const songSteps = steps && steps.filter((s) => s[1] === 'songs' || s[1] === 'deviceSongs');
+    if (songSteps && songSteps.every((s) => s[0] === 'list')) {
+      for (const [, , s] of songSteps) for (const id of s.gone || []) this.songsById.delete(id);
+      for (const [, p, s] of songSteps) {
+        const list = lib[p] || [];
+        // The changed songs where the patch says they are now, else looked for.
+        const at = s.order ? [] : s.at || [];
+        const missed = (s.put || []).some((x, n) => {
+          const song = list[at[n]];
+          if (!song || song.id !== x.id) return true;
+          this.songsById.set(song.id, song);
+          return false;
+        });
+        if (missed) for (const song of list) if (this.songsById.get(song.id) !== song) this.songsById.set(song.id, song);
+      }
+    } else {
+      this.songsById = new Map([...lib.songs, ...(lib.deviceSongs || [])].map((s) => [s.id, s]));
+    }
     // Smart playlists (4.0): their songs are the ones their rules pick, now.
     for (const p of lib.playlists) {
       if (!p.rules) continue;
       p.entries = PlaylistRules.evaluate(lib.songs, p.rules).map((s) => ({ songId: s.id, addedAt: s.addedAt }));
       p.isRuled = true;
     }
-    this.smart = SmartLists.compute(lib.songs, lib.playlists.filter((p) => !p.isRuled));
     this.holding = new Map();
     for (const p of this.editablePlaylists()) {
       for (const e of p.entries) {
@@ -249,6 +302,22 @@ const Store = {
    * A listening trend list, shaped like a playlist. Read-only; its entries
    * are in rank order and carry the download date as when they were added.
    */
+  /**
+   * The listening trend lists: id -> song ids, best match first. Worked out
+   * when one is shown or played, once per library (100 000 songs: some 200 ms).
+   */
+  get smart() {
+    if (!this._smart || this._smart.lib !== this.library) {
+      this._smart = { lib: this.library, lists: SmartLists.compute(this.library.songs, this.library.playlists.filter((p) => !p.isRuled)) };
+    }
+    return this._smart.lists;
+  },
+
+  /** The trend lists by their names only (the menu), without working them out. */
+  smartNames() {
+    return SmartLists.LISTS.map((l) => ({ id: l.id, name: l.name, desc: l.desc, isSmart: true }));
+  },
+
   smartPlaylist(id) {
     const def = SmartLists.LISTS.find((l) => l.id === id);
     if (!def) return null;
@@ -281,12 +350,19 @@ const Store = {
 
   /** All Songs, shaped like a playlist whose entries were added on download. */
   allSongsPlaylist() {
-    // Made once per library (a long one is asked for often while drawing).
-    if (this._allSongs && this._allSongs.lib === this.library) return this._allSongs.list;
+    // Made once per library (a long one is asked for often while drawing),
+    // and kept while its songs and their dates stay (a star, a rename).
+    const kept = this._allSongs;
+    if (kept && kept.lib === this.library) return kept.list;
+    const songs = this.library.songs;
+    if (kept && sameEntries(kept.list.entries, songs, (s) => s.addedAt)) {
+      kept.lib = this.library;
+      return kept.list;
+    }
     const list = {
       id: ALL_SONGS_ID,
       name: ALL_SONGS_NAME,
-      entries: this.library.songs.map((s) => ({ songId: s.id, addedAt: s.addedAt })),
+      entries: songs.map((s) => ({ songId: s.id, addedAt: s.addedAt })),
       isAll: true,
     };
     this._allSongs = { lib: this.library, list };
@@ -303,8 +379,13 @@ const Store = {
   devicePlaylist() {
     if (!this.server.on || !this.can('localFiles')) return null;
     // Made once per library, as All Songs.
-    if (this._deviceList && this._deviceList.lib === this.library) return this._deviceList.list;
+    const kept = this._deviceList;
+    if (kept && kept.lib === this.library) return kept.list;
     const songs = [...this.library.songs.filter((s) => s.file), ...(this.library.deviceSongs || [])];
+    if (kept && sameEntries(kept.list.entries, songs, (s) => s.addedAt)) {
+      kept.lib = this.library;
+      return kept.list;
+    }
     const list = {
       id: DEVICE_ID,
       name: T('common.downloadedSongs'),
@@ -336,11 +417,23 @@ const Store = {
    */
   fromPlaylist(profileId) {
     const name = this.profileName(profileId);
-    const entries = this.library.songs
-      .filter((s) => s.addedBy === profileId)
-      .map((s) => ({ songId: s.id, addedAt: s.addedAt }));
+    const entries = this._addedBy().get(profileId) || [];
     if (!name || !entries.length) return null;
     return { id: FROM_PREFIX + profileId, name: T('common.allSongsFrom', { profile: name }), menuName: T('common.allSongsFrom.menu', { profile: name }), entries, isFrom: true };
+  },
+
+  /** profile id -> the entries of the songs it added, once per library (in one pass). */
+  _addedBy() {
+    if (this._added && this._added.lib === this.library) return this._added.map;
+    const map = new Map();
+    for (const s of this.library.songs) {
+      if (!s.addedBy) continue;
+      let list = map.get(s.addedBy);
+      if (!list) map.set(s.addedBy, (list = []));
+      list.push({ songId: s.id, addedAt: s.addedAt });
+    }
+    this._added = { lib: this.library, map };
+    return map;
   },
 
   /** The profile songs added now count as added by: the one signed in to, else the Default / Shared. */
@@ -354,7 +447,7 @@ const Store = {
    */
   fromPlaylists() {
     const profiles = Object.keys(this.library.profileNames || {}).some((id) => id !== DEFAULT_PROFILE);
-    const ids = new Set(this.library.songs.map((s) => s.addedBy).filter((id) => id && (profiles || id !== DEFAULT_PROFILE)));
+    const ids = [...this._addedBy().keys()].filter((id) => profiles || id !== DEFAULT_PROFILE);
     return [...ids].map((id) => this.fromPlaylist(id)).filter(Boolean)
       .sort((a, b) => Util.compareValues(a.menuName, b.menuName));
   },
@@ -398,13 +491,28 @@ const Store = {
     const p = this.playlist(playlistId);
     if (!p) return [];
     const kept = this._rowsKept.get(p.entries);
-    if (kept && kept.byId === this.songsById) return kept.rows;
+    if (kept && kept.lib === this.library) return kept.rows;
+    // A library changed elsewhere (a song of another list starred): the same
+    // rows while each is its song as it was, so their order stays worked out.
+    const old = kept ? kept.rows : null;
+    let same = !!old;
     const rows = [];
     for (const e of p.entries) {
       const song = this.song(e.songId);
-      if (song) rows.push({ song, addedAt: e.addedAt });
+      if (!song) continue;
+      const o = old ? old[rows.length] : null;
+      if (o && o.song === song && o.addedAt === e.addedAt) {
+        rows.push(o);
+      } else {
+        same = false;
+        rows.push({ song, addedAt: e.addedAt });
+      }
     }
-    this._rowsKept.set(p.entries, { byId: this.songsById, rows });
+    if (same && rows.length === old.length) {
+      kept.lib = this.library;
+      return old;
+    }
+    this._rowsKept.set(p.entries, { lib: this.library, rows });
     return rows;
   },
   _rowsKept: new WeakMap(),

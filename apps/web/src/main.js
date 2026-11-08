@@ -25,6 +25,7 @@ const { createLyricsClient } = require('@flow/core/client/lyrics');
 const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
 const { encode: encodeQr } = require('@flow/core/qr');
 const caps = require('@flow/core/client/caps');
+const { createViewChannel } = require('@flow/core/client/viewChannel');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const { tr, useTranslator } = require('@flow/core/lang');
 const { createEnv } = require('./env');
@@ -139,12 +140,19 @@ function start() {
     }
   }
 
+  // The library on its way to the window: whole at its start, then only what changed (4.3.3).
+  const toWindow = createViewChannel((msg) => emit('library:changed', msg));
+  // The window's first library, numbered: the next change fits it.
+  const startLibrary = () => {
+    const lib = actions.currentLibrary();
+    return { library: lib, librarySeq: toWindow.start(lib) };
+  };
   library.onChange((data) => {
-    if (!remote.active()) emit('library:changed', data);
+    if (!remote.active()) toWindow.update(data);
   });
 
   remote.init({
-    onView: (view) => emit('library:changed', view),
+    onView: (view) => toWindow.update(view),
     onStatus,
     onNotice: (text, kind) => emit('server:notice', { text, kind }),
     onSettings: (patch) => emit('settings:changed', patch),
@@ -220,7 +228,7 @@ function start() {
       os: osName(),
       uiMode,
       caps: pageCaps,
-      library: actions.currentLibrary(),
+      ...startLibrary(),
       server: remote.status(),
       settings: settings.all(),
       musicDir: '',
@@ -243,7 +251,7 @@ function start() {
       }
       if (remote.active() !== wasRemote) {
         emit('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
-        emit('library:changed', actions.currentLibrary());
+        toWindow.whole(actions.currentLibrary());
       }
       return next;
     }),
@@ -252,6 +260,11 @@ function start() {
       return true;
     },
     onLibraryChanged: on('library:changed'),
+    // A change that did not fit: the library comes whole through onLibraryChanged.
+    libraryWhole: call(() => {
+      toWindow.whole(actions.currentLibrary());
+      return true;
+    }),
     onFolderScanned: nothing,
 
     createPlaylist: call((name) => actions.createPlaylist(name)),

@@ -19,7 +19,10 @@ contextBridge.exposeInMainWorld('flow', {
   setSettings: (patch) => call('settings:set', patch),
   // For the window closing, where an async call may not get out in time.
   setSettingsNow: (patch) => ipcRenderer.sendSync('settings:setSync', patch),
+  // { library, seq } whole, or { patch, base, seq }: what changed (4.3.3, @flow/core/client/viewChannel).
   onLibraryChanged: (fn) => ipcRenderer.on('library:changed', (_e, data) => fn(data)),
+  // A change that did not fit: the library comes whole through onLibraryChanged.
+  libraryWhole: () => call('library:whole'),
   onFolderScanned: (fn) => ipcRenderer.on('library:scanned', (_e, result) => fn(result)),
 
   createPlaylist: (name) => call('library:createPlaylist', name),

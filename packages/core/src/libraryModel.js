@@ -529,14 +529,6 @@ function setTagged(data, id, value) {
   return s;
 }
 
-/**
- * What a library shows, as one string: two the same show the same (whether
- * a song's file has its tags written, song.tagged, shows nowhere).
- */
-function viewKey(data) {
-  return JSON.stringify(data, (k, v) => (k === 'tagged' ? undefined : v));
-}
-
 /** A song whose file wants its tags written: new, cover settled, not written with this cover yet. */
 function needsTags(s) {
   return !!s && s.tagged !== null && s.tagged !== undefined && s.cover !== null && s.cover !== undefined && s.tagged !== s.cover;
@@ -744,7 +736,7 @@ module.exports = {
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource, setPlaylistRules, cleanRules, recordAwayListen, favouritesList,
   RULE_FIELDS, RULE_OPS, RULE_SORTS,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
-  addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, viewKey, setFavourite, removeSong, songsOnlyIn,
+  addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta, sameSongIn, sameNames,
 };
