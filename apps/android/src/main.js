@@ -57,10 +57,19 @@ function start() {
   // ---- the clients ----
 
   let remote = null;
-  const env = createEnv({ tellCovers: (scope, ids) => emit('covers:updated', { scope, ids, dirs: coverDirs() }) });
+  const env = createEnv({ tellCovers: (scope, ids, size) => emit('covers:updated', { scope, ids, size, dirs: coverDirs() }) });
   const { settings, library, covers } = env;
   settings.load();
   library.load();
+  // Covers from before 4.3.1 into the two sizes (Local Files'), or gone (a server's).
+  try {
+    covers.convertLegacy((id) => {
+      const s = library.get().songs.find((x) => x.id === id);
+      return s ? s.cover : '';
+    });
+  } catch {
+    // Tried again at the next start.
+  }
   remote = createRemote(env);
   // The Statistics of everything heard on this phone (privateStats.js).
   const privateStats = createPrivateStats({
@@ -81,8 +90,8 @@ function start() {
     jsonFiles: env.jsonFiles,
     fetchOn: () => settings.get('lyricsOn') !== false,
     syncEveryMs: 15 * 60 * 1000,
-    // Copies of a server's songs have the server's lyrics.
-    skip: (id) => remote.active() && remote.isServerCopy(id),
+    // Local Files songs that are a server's too (copies, or uploaded and kept) have the server's lyrics.
+    skip: (id) => remote.active() && (remote.isServerCopy(id) || !!remote.serverSongOf(id)),
     onChange: () => emit('lyrics:changed'),
     fetch: (...args) => fetch(...args),
     agent: false,
@@ -394,11 +403,14 @@ function start() {
       }
       return String((r && r.text) || '');
     }),
-    wantCovers: call((ids) => {
-      if (remote.active()) remote.wantCovers(ids);
+    wantCovers: call((ids, size) => {
+      if (remote.active()) remote.wantCovers(ids, size);
     }),
-    coverStats: call(() => ({ local: covers.localStore().size(), server: remote.active() ? remote.coverStats() : null })),
-    clearCoverCache: call(() => remote.clearCoverCache()),
+    coverStats: call(() => ({
+      local: { small: covers.localStore().size('small'), big: covers.localStore().size('big') },
+      server: remote.active() ? remote.coverStats() : null,
+    })),
+    clearCoverCache: call((size) => remote.clearCoverCache(size === 'small' || size === 'big' ? size : null)),
     onCoversUpdated: on('covers:updated'),
     stagedCover: call((cachePath) => local.stagedCover(cachePath)),
     onCoverStaged: on('cover:staged'),

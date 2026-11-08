@@ -157,7 +157,9 @@ const VizCover = (() => {
     update() {
       const id = Player.currentId;
       const song = id ? Store.song(id) || (Player.remote ? { ...Player.remote.state, id } : null) : null;
-      const src = song ? Covers.src(song) : '';
+      // The big cover (512 x 512), the thumbnail standing in until it is here.
+      const list = song ? Covers.candidates(song, 'big') : [];
+      const src = list[0] || '';
       const key = `${id}|${src}`;
       if (key === this.key) return false;
       this.key = key;
@@ -184,7 +186,14 @@ const VizCover = (() => {
         }
         this.colors = pal || [hsv(hue, 0.6, 1), hsv((hue + 0.1) % 1, 0.5, 1)];
       };
-      img.onerror = fallback;
+      let at = 0;
+      img.onerror = () => {
+        if (this.key !== key) return;
+        if (at === 0) Covers.askBig(song);
+        at += 1;
+        if (at < list.length) img.src = list[at];
+        else fallback();
+      };
       img.src = src;
       return true;
     }

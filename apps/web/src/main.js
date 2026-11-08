@@ -92,7 +92,7 @@ function start() {
   // ---- the clients ----
 
   let remote = null;
-  const env = createEnv({ tellCovers: (scope, ids) => emit('covers:updated', { scope, ids, dirs: coverDirs() }), vorbis });
+  const env = createEnv({ tellCovers: (scope, ids, size) => emit('covers:updated', { scope, ids, size, dirs: coverDirs() }), vorbis });
   const { settings, library, storage, memfs } = env;
   settings.load();
   library.load();
@@ -158,15 +158,19 @@ function start() {
    * A file as an address for <img> and <audio> (Util.fileUrl): a cover in
    * the server's folder straight from the server, with its token; a file in
    * the page's memory as a blob:; anything else as an address that loads
-   * nothing (the window shows its note instead).
+   * nothing (the window shows its note instead). A cover's size is its
+   * folder's (thumbnails 128 x 128, high_res 512 x 512: only with the
+   * high-res setting, else the small one stands in).
    */
-  const coverPath = /^\/flow\/Covers\/([\w-]+)\/([\w-]{1,64})\.jpg$/;
+  const coverPath = /^\/flow\/Covers\/([\w-]+)\/(thumbnails|high_res)\/([\w-]{1,64})\.webp$/;
   function fileUrl(p) {
     const m = coverPath.exec(String(p || ''));
     if (m) {
       const st = remote.status();
       if (m[1] === env.covers.LOCAL || st.state !== 'online' || !st.base) return 'data:,';
-      return `${st.base}/api/songs/${encodeURIComponent(m[2])}/cover${st.token ? `?t=${encodeURIComponent(st.token)}` : ''}`;
+      const size = m[2] === 'high_res' && env.settings.get('highResCovers') !== false ? 'big' : 'small';
+      const query = [`size=${size}`, st.token ? `t=${encodeURIComponent(st.token)}` : ''].filter(Boolean).join('&');
+      return `${st.base}/api/songs/${encodeURIComponent(m[3])}/cover?${query}`;
     }
     return memfs.url(p) || 'data:,';
   }
@@ -386,8 +390,8 @@ function start() {
     connectLink: call((text) => remote.connectLink(String(text || ''))),
     qr: call((text) => encodeQr(String(text || ''))),
     wantCovers: call(nothing),
-    coverStats: call(() => ({ local: { count: 0, bytes: 0 }, server: remote.active() ? remote.coverStats() : null })),
-    clearCoverCache: call(() => remote.clearCoverCache()),
+    coverStats: call(() => ({ local: { small: { count: 0, bytes: 0 }, big: { count: 0, bytes: 0 } }, server: remote.active() ? remote.coverStats() : null })),
+    clearCoverCache: call((size) => remote.clearCoverCache(size === 'small' || size === 'big' ? size : null)),
     onCoversUpdated: on('covers:updated'),
     stagedCover: call(() => null),
     onCoverStaged: nothing,

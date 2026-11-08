@@ -89,7 +89,7 @@ const Lyrics = {
   /** The song playing changed (or was renamed, or Settings): its lyrics fetched. */
   _follow(force = false) {
     const song = Player.currentId ? Store.song(Player.currentId) : null;
-    const key = song ? `${song.id}|${song.artist}|${song.title}|${Math.round(song.duration || 0)}` : '';
+    const key = song ? this._keyOf(song) : '';
     if (key === this.key && !force) return;
     const newSong = !song || song.id !== this.songId;
     this.key = key;
@@ -110,6 +110,23 @@ const Lyrics = {
       return;
     }
     this._drawAll();
+  },
+
+  /** The key a song's lyrics are kept under here (its names: renamed, they are fetched again). */
+  _keyOf(song) {
+    return `${song.id}|${song.artist}|${song.title}|${Math.round(song.duration || 0)}`;
+  },
+
+  /** The song coming next (Player, a few seconds before): its lyrics fetched now, to show at once. */
+  prepare(song) {
+    if (!song || song.foreign || !Store.settings.lyricsOn && !Store.server.on) return;
+    const key = this._keyOf(song);
+    if (this._cache.has(key)) return;
+    window.flow.lyrics(song.id).then((data) => {
+      if (this._cache.has(key)) return;
+      this._cache.set(key, this._tidy(data));
+      if (this._cache.size > this.KEEP) this._cache.delete(this._cache.keys().next().value);
+    }).catch(() => {});
   },
 
   async _load(song, key) {

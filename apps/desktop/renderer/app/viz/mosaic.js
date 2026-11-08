@@ -168,6 +168,7 @@
       const songs = (Store.library && Store.library.songs) || [];
       const seen = new Set();
       const picks = [];
+      const ids = [];
       for (const s of songs.slice().sort(() => Math.random() - 0.5)) {
         const src = Covers.src(s);
         if (!src) continue;
@@ -175,8 +176,11 @@
         if (seen.has(key)) continue;
         seen.add(key);
         picks.push(src);
+        ids.push(s.id);
         if (picks.length >= MAX) break;
       }
+      // A server's thumbnails not here yet are asked for (in one go): the next look has them.
+      if (Store.server.on && ids.length) window.flow.wantCovers(ids.slice(0, 100), 'small').catch(() => {});
       // Real covers replace the stand-ins from the first place on, once there are enough of them.
       let slot = 0;
       let left = picks.length;

@@ -77,6 +77,17 @@ function createLyricsFolder({ dir, fs, join }) {
     return [...out];
   }
 
+  /** The songs with lyrics found kept in `scope` (not those none were found for). */
+  function foundIds(scope) {
+    if (!ID.test(String(scope || ''))) return [];
+    const out = [];
+    for (const e of list(join(dir(), scope))) {
+      const m = !e.dir && FILE.exec(e.name);
+      if (m && !m[2]) out.push(m[1]);
+    }
+    return out;
+  }
+
   /** local and the servers' ids. */
   function scopes() {
     return list(dir()).filter((e) => e.dir && ID.test(e.name)).map((e) => e.name);
@@ -109,7 +120,7 @@ function createLyricsFolder({ dir, fs, join }) {
   }
 
   return {
-    read, write, remove, ids, scopes, removeScope, size,
+    read, write, remove, ids, foundIds, scopes, removeScope, size,
   };
 }
 

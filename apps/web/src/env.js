@@ -37,29 +37,38 @@ function deviceName(ua = (globalThis.navigator && navigator.userAgent) || '') {
 /**
  * Covers as the shared client asks for them (the desktop's covers.js), with
  * none kept: the window loads each from the server. Only the folders' names
- * matter, which main.js's fileUrl turns into the server's addresses.
+ * matter, which main.js's fileUrl turns into the server's addresses
+ * (<scope>/thumbnails/<id>.webp the 128 x 128 one, high_res/ the 512 one).
  */
 function createCovers({ tell }) {
   const dirOf = (scope) => path.join(COVERS, scope);
+  const SIZES = { small: 'thumbnails', big: 'high_res' };
   const storeOf = (scope) => ({
     dir: dirOf(scope),
-    file: (id) => path.join(dirOf(scope), `${id}.jpg`),
+    folder: (size = 'small') => path.join(dirOf(scope), SIZES[size] || SIZES.small),
+    file: (id, size = 'small') => path.join(dirOf(scope), SIZES[size] || SIZES.small, `${id}.webp`),
     has: () => false,
+    version: () => '',
     read: () => null,
-    write: () => '',
+    write: () => {},
     remove: () => {},
+    sweep: () => 0,
+    clear: () => 0,
     ids: () => [],
     size: () => ({ count: 0, bytes: 0 }),
+    legacy: () => [],
+    copyTo: () => '',
+    flush: () => {},
+    forget: () => {},
   });
   return {
     LOCAL,
     dirOf,
     storeOf,
     localStore: () => storeOf(LOCAL),
-    tell: (scope, ids) => {
-      if (ids && ids.length) tell(scope, ids);
+    tell: (scope, ids, size = null) => {
+      if (ids && ids.length) tell(scope, ids, size);
     },
-    versionOf: () => '',
     copyToLocal: () => null,
     copyToServer: () => false,
     serverIds: () => [],

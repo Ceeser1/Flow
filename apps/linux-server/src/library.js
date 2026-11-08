@@ -43,9 +43,12 @@
 // (recordListen's jamMember): in a Jam only the host's listen counts there,
 // once for the song played. A Jam member on the Default counts nowhere.
 //
-// Covers (@flow/core/cover) live in <home>/covers/<song id>.jpg, outside the
-// music folder; song.cover is the file's version. A song's cover goes with
-// the song. Songs without one get one in the background, one at a time.
+// Covers (@flow/core/cover) live in <home>/covers, outside the music folder:
+// high_res/<song id>.webp (512 x 512) and thumbnails/<song id>.webp (128 x
+// 128, what the apps' lists show), 4.3.1; song.cover is the picture's
+// version. A song's cover goes with the song. Songs without one get one in
+// the background, one at a time; a cover from before 4.3.1 (<song id>.jpg)
+// is made into the two at the next start.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -72,8 +75,10 @@ const TOMB_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 const TOMB_MAX = 50000;
 // What of a song the apps get, and what they compare to tell a change (not
 // the stats or the star, which are each owner's; not tagged, the server's own).
+// lyrics (4.3.1): the stamp of the lyrics kept for the song (lyrics.js), so
+// an app asks for them only when they changed.
 const SONG_FIELDS = ['file', 'title', 'artist', 'mix', 'album', 'genre', 'subGenre', 'infoLooked', 'duration', 'format',
-  'sourceUrl', 'sourceKey', 'sourcePlaylistUrl', 'addedAt', 'addedBy', 'loudness', 'cover', 'cut'];
+  'sourceUrl', 'sourceKey', 'sourcePlaylistUrl', 'addedAt', 'addedBy', 'loudness', 'cover', 'cut', 'lyrics'];
 // The stats stamp of the time listened to each list.
 const LISTS_KEY = '#lists';
 // A file younger than this may still be being copied in.
@@ -133,7 +138,7 @@ function songsToTag(data) {
  */
 function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietMs = CONVERT_QUIET_MS, lookupInfo = null } = {}) {
   const musicDir = config.musicDir;
-  const covers = cover.createCoverStore(path.join(config.home, 'covers'));
+  const covers = cover.createPairStore(path.join(config.home, 'covers'));
   const trash = createTrash({ dir: path.join(musicDir, '.flow-trash'), indexFile: path.join(config.home, 'trash.json'), log });
   const raw = readJson(config.libraryFile);
   let data = model.sanitize(raw);
@@ -896,27 +901,100 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
 
   // ---- covers ----
 
-  /** { file, version } of a song's cover, or null. */
-  function coverOf(id) {
+  /** Whether a song has its cover here: both made (4.3.1), or one from before still to be made into them. */
+  const hasCover = (id) => covers.has(id, 'big') || !!covers.legacy(id);
+
+  /**
+   * { file, version } of a song's cover, `size` 'big' (512) or 'small' (128),
+   * or null. One from before 4.3.1 not made into the two yet is sent as it
+   * is for either.
+   */
+  function coverOf(id, size = 'big') {
     const s = model.songById(data, id);
-    if (!s || !s.cover || s.cover === cover.NO_COVER || !covers.has(id)) return null;
-    return { file: covers.file(id), version: s.cover };
+    if (!s || !s.cover || s.cover === cover.NO_COVER) return null;
+    if (covers.has(id, size)) return { file: covers.file(id, size), version: s.cover };
+    if (size === 'small' && covers.has(id, 'big')) return { file: covers.file(id, 'big'), version: s.cover };
+    const old = covers.legacy(id);
+    if (old) {
+      queuePairs();
+      return { file: old, version: s.cover };
+    }
+    return null;
   }
 
   /**
-   * A JPEG as the song's cover (an app's upload, a download's). With
-   * `onlyIfNone`, a song that has one keeps it. Resolves the version, or null.
+   * A picture as the song's cover (an app's upload, a download's), made into
+   * the two sizes; or `big`, an app's own 512 x 512 WebP (checked by
+   * http.js), kept as it is, its thumbnail coming next (setThumbnail; made
+   * here a while later when it does not). With `onlyIfNone`, a song that
+   * has one keeps it. Resolves the version, or null.
    */
-  function setCover(id, jpeg, { onlyIfNone = false } = {}) {
+  async function setCover(id, picture, { onlyIfNone = false, big = null } = {}) {
     const s = model.songById(data, id);
-    if (!s || !jpeg) return null;
-    if (onlyIfNone && s.cover && s.cover !== cover.NO_COVER && covers.has(id)) return s.cover;
-    const version = covers.write(id, jpeg);
-    if (model.songById(data, id)) mutate((d) => model.setCover(d, id, version));
-    else covers.remove(id);
+    if (!s || (!picture && !big)) return null;
+    const keeps = (x) => onlyIfNone && x.cover && x.cover !== cover.NO_COVER && hasCover(id);
+    if (keeps(s)) return s.cover;
+    // Without ffmpeg a 512 x 512 picture is kept as it is (shown for both sizes).
+    if (!big && !tools.ffmpeg()) {
+      const dims = cover.imageSize(picture);
+      if (!dims || dims.width !== cover.SIZE || dims.height !== cover.SIZE) return null;
+      big = picture;
+    }
+    const both = big ? null : await cover.makeCoverPair(tools.ffmpeg(), picture);
+    if (!big && !both) return null;
+    const now = model.songById(data, id);
+    if (!now) return null;
+    if (keeps(now)) return now.cover;
+    let version;
+    if (big) {
+      covers.remove(id);
+      covers.writeOne(id, 'big', big);
+      version = cover.coverVersion(big);
+      setTimeout(queuePairs, 30000).unref();
+    } else version = covers.write(id, both);
+    mutate((d) => model.setCover(d, id, version));
     // Into its file too (new songs, songs written before).
     queueLoudness();
     return version;
+  }
+
+  /** An app's own thumbnail (128 x 128 WebP) of the cover it just sent; answers the cover's version, or null. */
+  function setThumbnail(id, small) {
+    const s = model.songById(data, id);
+    if (!s || !s.cover || s.cover === cover.NO_COVER || !covers.has(id, 'big')) return null;
+    covers.writeOne(id, 'small', small);
+    return s.cover;
+  }
+
+  // Covers from before 4.3.1 (one 512 JPEG each) made into the two WebP
+  // sizes, and a missing thumbnail made from its big one: looked at every
+  // start, one at a time in the background. A song's version stays: it is
+  // the same picture.
+  let pairing = false;
+  let pairRun = Promise.resolve();
+  function queuePairs() {
+    if (pairing || stopped || !tools.ffmpeg()) return;
+    pairing = true;
+    pairRun = (async () => {
+      try {
+        for (const s of data.songs.slice()) {
+          if (stopped) break;
+          if (!s.cover || s.cover === cover.NO_COVER || !model.songById(data, s.id)) continue;
+          const old = covers.legacy(s.id);
+          if (old) {
+            const both = await cover.makeCoverPair(tools.ffmpeg(), fs.readFileSync(old));
+            if (both && !stopped && model.songById(data, s.id)) covers.write(s.id, both);
+          } else if (covers.has(s.id, 'big') && !covers.has(s.id, 'small')) {
+            const both = await cover.makeCoverPair(tools.ffmpeg(), covers.read(s.id, 'big'));
+            if (both && !stopped && model.songById(data, s.id)) covers.writeOne(s.id, 'small', both.small);
+          }
+        }
+      } catch (err) {
+        log(`Covers: ${err.message}`);
+      } finally {
+        pairing = false;
+      }
+    })();
   }
 
   /** How many songs have a cover, and how many are still to be looked at. */
@@ -1241,8 +1319,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     if (stopped || !model.songById(data, s.id)) return;
     const now = model.songById(data, s.id);
     if (now.cover) return; // one arrived meanwhile (an upload)
-    if (r.jpeg) setCover(s.id, r.jpeg);
-    else if (r.retry) coverLater.add(s.id);
+    if (r.jpeg) {
+      if (!(await setCover(s.id, r.jpeg))) coverLater.add(s.id);
+    } else if (r.retry) coverLater.add(s.id);
     else {
       mutate((d) => model.setCover(d, s.id, cover.NO_COVER));
       // A new song's flowid goes into its file now.
@@ -1274,13 +1353,18 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     }
   }
 
-  /** At the start: covers of songs that are gone, away; songs whose cover file is missing, looked for again. */
+  /**
+   * At every start: covers of songs that are gone, away; songs whose cover is
+   * missing, looked for again; covers from before 4.3.1, and big ones without
+   * their thumbnail, made into both (queuePairs).
+   */
   function checkCovers() {
     covers.sweep(new Set(data.songs.map((s) => s.id)));
-    const lost = data.songs.filter((s) => s.cover && s.cover !== cover.NO_COVER && !covers.has(s.id)).map((s) => s.id);
+    const lost = data.songs.filter((s) => s.cover && s.cover !== cover.NO_COVER && !hasCover(s.id)).map((s) => s.id);
     if (lost.length) mutate((d) => {
       for (const id of lost) if (model.songById(d, id)) model.setCover(d, id, null);
     });
+    if (data.songs.some((s) => s.cover && s.cover !== cover.NO_COVER && (covers.legacy(s.id) || !covers.has(s.id, 'small')))) queuePairs();
   }
 
   // The albums, genres and Info of songs never looked up (from before 3.6.3,
@@ -1322,7 +1406,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     const out = path.join(path.dirname(file), `.flow-retag-${crypto.randomBytes(6).toString('hex')}${path.extname(file)}`);
     let ok = false;
     try {
-      const picture = coverNow && coverNow !== cover.NO_COVER ? covers.read(s.id) : null;
+      // The tags take a JPEG (4.3.1: the covers are WebP).
+      const kept = coverNow && coverNow !== cover.NO_COVER ? covers.read(s.id, 'big') || (covers.legacy(s.id) ? fs.readFileSync(covers.legacy(s.id)) : null) : null;
+      const picture = kept ? await cover.toJpeg(tools.ffmpeg(), kept) : null;
       ok = await media.rewriteTags(file, out, {
         meta: {
           title: s.title, artist: s.artist, mix: s.mix, album: s.album, genre: s.genre, subGenre: s.subGenre, sourceUrl: s.sourceUrl,
@@ -1623,6 +1709,22 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     queueLoudness();
   }
 
+  /**
+   * The songs' lyrics stamps (4.3.1, lyrics.js index: { id: stamp }, those
+   * left out have none): set where they changed, in one change.
+   */
+  function setLyricsStamps(stamps) {
+    const differs = (s) => String(stamps[s.id] || '') !== String(s.lyrics || '');
+    if (!data.songs.some(differs)) return;
+    mutate((d) => {
+      for (const s of d.songs) {
+        if (!differs(s)) continue;
+        if (stamps[s.id]) s.lyrics = String(stamps[s.id]);
+        else delete s.lyrics;
+      }
+    });
+  }
+
   emptyTrash();
   checkCovers();
 
@@ -1672,6 +1774,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     lookForCover,
     coverOf,
     setCover,
+    setThumbnail,
+    setLyricsStamps,
     coverCounts,
     covers,
     emptyTrash,
@@ -1686,7 +1790,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     stop() {
       stopped = true;
       clearTimeout(convertTimer);
-      return Promise.all([workRun, coverRun, convertRun, infoFiller.stop()]).then(() => {});
+      return Promise.all([workRun, coverRun, convertRun, pairRun, infoFiller.stop()]).then(() => {});
     },
   };
 }

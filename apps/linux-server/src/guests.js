@@ -134,7 +134,7 @@ function createGuests({
     const m = /^\/api\/guest\/songs\/([\w-]{1,64})\/(audio|cover)$/.exec(p);
     if (m && (req.method === 'GET' || req.method === 'HEAD')) {
       requireMember(g);
-      if (m[2] === 'cover') return sendCover(req, res, url, library.coverOf(m[1]));
+      if (m[2] === 'cover') return sendCover(req, res, url, library.coverOf(m[1], url.searchParams.get('size') === 'small' ? 'small' : 'big'));
       const file = library.songFile(m[1]) || sessions.songFileFor(g.client, m[1]);
       if (!file) throw new HttpError(404, 'That song is not on this server.');
       return sendFile(req, res, file);

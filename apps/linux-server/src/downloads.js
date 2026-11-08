@@ -393,7 +393,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       const found = await library.lookForCover(song, () => !alive());
       if (!found.jpeg || !alive()) return;
       if (item.state === 'saved') {
-        if (item.songId) library.setCover(item.songId, found.jpeg, { onlyIfNone: true });
+        if (item.songId) library.setCover(item.songId, found.jpeg, { onlyIfNone: true }).catch(() => {});
         return;
       }
       fs.writeFileSync(coverOf(batch, item), found.jpeg);
@@ -891,7 +891,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     }
     library.queueLoudness();
     try {
-      if (fs.existsSync(coverOf(batch, item))) library.setCover(song.id, fs.readFileSync(coverOf(batch, item)), { onlyIfNone: true });
+      if (fs.existsSync(coverOf(batch, item))) library.setCover(song.id, fs.readFileSync(coverOf(batch, item)), { onlyIfNone: true }).catch(() => {});
     } catch {
       // The library looks for one itself.
     }

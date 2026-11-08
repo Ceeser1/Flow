@@ -214,6 +214,11 @@ const Player = {
       this._countListening();
       this._drawTime();
       this._maybeFade();
+      this._prepareNext();
+    });
+    // The song's big cover arrived (or is known to load now): the lock screen shows it.
+    Covers.onArrived((ids) => {
+      if (this.currentId && (!ids || ids.includes(this.currentId))) this._updateMediaSession();
     });
     // A jump is not listening: the next update starts counting afresh.
     e.on('seeking', () => {
@@ -1224,14 +1229,38 @@ const Player = {
     this._emit();
   },
 
-  /** What the system shows of a song (the phone's notification and lock screen). */
+  /** What the system shows of a song (the phone's notification and lock screen): its big cover once here. */
   _meta(song) {
     return {
       title: song.mix ? `${song.title} (${song.mix})` : song.title,
       artist: song.artist || '',
       album: this.listName() || 'Flow',
-      artwork: Store.coverSrc(song),
+      artwork: Covers.bestBig(song),
     };
+  },
+
+  // A few seconds before a song ends, the next one's big cover (and lyrics) is made ready.
+  PREPARE_S: 12,
+  _preparedFor: '',
+
+  /** The song that plays next here ('' for none, or along with a host). */
+  _peekNext() {
+    if (this.remote || !this.currentId) return '';
+    const ahead = new PlayQueue(this.queue.random, this.queue.limit);
+    ahead.restore(this.queue.snapshot());
+    ahead.continueWith = this.queue.continueWith;
+    return ahead.next(this.contextId ? this.idsOf(this.contextId) : []) || '';
+  },
+
+  _prepareNext() {
+    if (this.remote || this.repeat || !this.currentId || this._preparedFor === this.currentId) return;
+    const d = this.engine.duration || 0;
+    if (!d || d - (this.engine.time || 0) > this.PREPARE_S) return;
+    this._preparedFor = this.currentId;
+    const next = Store.song(this._peekNext());
+    if (!next) return;
+    Covers.probeBig(next);
+    if (typeof Lyrics !== 'undefined' && Lyrics.prepare) Lyrics.prepare(next);
   },
 
   // ---- equalize volume ----

@@ -229,6 +229,8 @@ function sanitize(raw) {
       tagged: cleanTagged(s.tagged),
       cut: cleanCut(s.cut),
       favouriteAt: Number(s.favouriteAt) || null,
+      // A Flow Server's: the stamp of its lyrics kept (4.3.1), an app's copy standing while it stays.
+      ...(s.lyrics ? { lyrics: String(s.lyrics).slice(0, 40) } : {}),
     });
   }
   const seenLists = new Set();

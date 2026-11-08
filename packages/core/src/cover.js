@@ -15,7 +15,7 @@
 //      its thumbnail the same way.
 //   3. Otherwise the middle of the video's own thumbnail.
 //
-// The covers are kept by song id (createCoverStore), never by name, so a song
+// The covers are kept by song id (client/coverStore.js, createPairStore), never by name, so a song
 // renamed keeps its cover; `song.cover` is the version of the file (a short
 // hash), so an app sees when one changed.
 
@@ -26,6 +26,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const spotify = require('./spotify');
 const { tr } = require('./lang');
+const { packCovers, unpackCovers } = require('./coverPack');
 
 const SIZE = 512;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -189,6 +190,74 @@ async function makeSquare(ffmpeg, input, { letterbox = false } = {}) {
     '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'], { input: fromFile ? null : input });
   if (!r.ok || r.stdout.length < 100 || r.stdout[0] !== 0xff || r.stdout[1] !== 0xd8) return null;
   return r.stdout;
+}
+
+// The two covers kept of each song (4.3.1): the high resolution one and the
+// thumbnail every list shows, both WebP (a third smaller than JPEG).
+const THUMB = 128;
+const WEBP_QUALITY = '80';
+
+/** Whether a picture is a WebP. */
+function isWebp(buf) {
+  return Buffer.isBuffer(buf) && buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP';
+}
+
+/** Whether a picture is a JPEG. */
+function isJpeg(buf) {
+  return Buffer.isBuffer(buf) && buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8;
+}
+
+/**
+ * A song's two covers from a picture (a Buffer, or a song file's first
+ * picture: `input` a path), in one ffmpeg run: { big } 512 x 512 and
+ * { small } 128 x 128, WebP, the middle square of the picture. An ffmpeg
+ * without WebP (libwebp) makes JPEGs instead, which every app shows as well.
+ * Null when ffmpeg could not.
+ */
+async function makeCoverPair(ffmpeg, input, { letterbox = false } = {}) {
+  if (!ffmpeg || !input) return null;
+  const fromFile = typeof input === 'string';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-cover-'));
+  const square = [...(letterbox ? ['crop=iw:iw*9/16'] : []), 'crop=w=min(iw\\,ih):h=min(iw\\,ih)'].join(',');
+  const filter = `[0:v]${square},split=2[a][b];[a]scale=${SIZE}:${SIZE}:flags=lanczos[big];[b]scale=${THUMB}:${THUMB}:flags=lanczos[small]`;
+  const source = fromFile ? ['-i', input] : ['-f', 'image2pipe', '-i', 'pipe:0'];
+  const run = async (codec, ext) => {
+    const big = path.join(dir, `big.${ext}`);
+    const small = path.join(dir, `small.${ext}`);
+    const r = await ffmpegRun(ffmpeg, [...source, '-filter_complex', filter,
+      '-map', '[big]', '-frames:v', '1', ...codec, big,
+      '-map', '[small]', '-frames:v', '1', ...codec, small], { input: fromFile ? null : input });
+    if (!r.ok) return null;
+    try {
+      return { big: fs.readFileSync(big), small: fs.readFileSync(small) };
+    } catch {
+      return null;
+    }
+  };
+  try {
+    let pair = await run(['-c:v', 'libwebp', '-quality', WEBP_QUALITY], 'webp');
+    if (!pair || !isWebp(pair.big)) pair = await run(['-pix_fmt', 'yuvj420p', '-c:v', 'mjpeg', '-q:v', '3'], 'jpg');
+    if (!pair || pair.big.length < 100 || pair.small.length < 50) return null;
+    return pair;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** A cover as a JPEG (for a song file's tags, which want one): as it is when it is one. */
+async function toJpeg(ffmpeg, picture) {
+  if (!picture || isJpeg(picture)) return picture || null;
+  if (!ffmpeg) return null;
+  const r = await ffmpegRun(ffmpeg, ['-f', 'image2pipe', '-i', 'pipe:0', '-frames:v', '1', '-pix_fmt', 'yuvj420p', '-q:v', '3',
+    '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'], { input: picture });
+  return r.ok && isJpeg(r.stdout) ? r.stdout : null;
+}
+
+/** The picture's content type, for sending it. */
+function pictureType(buf) {
+  if (isWebp(buf)) return 'image/webp';
+  if (Buffer.isBuffer(buf) && buf.length > 4 && buf.readUInt32BE(0) === 0x89504e47) return 'image/png';
+  return 'image/jpeg';
 }
 
 /**
@@ -405,112 +474,116 @@ function coverVersion(jpeg) {
   return crypto.createHash('sha1').update(jpeg).digest('hex').slice(0, 10);
 }
 
-// ---- the store: <dir>/<song id>.jpg ----
+// ---- the server's store (4.3.1): <dir>/high_res/<id>.webp, <dir>/thumbnails/<id>.webp ----
+
+const SIZES = { big: 'high_res', small: 'thumbnails' };
 
 /**
- * The covers of one library, a file per song id. write() is atomic (a
- * temporary file renamed over the old one) and gives the new version.
+ * A Flow Server's covers: each song's two (makeCoverPair) in a folder each.
+ * A song's version (song.cover) is the picture's, kept in the library, so
+ * the two files carry none of their own. A cover from before 4.3.1
+ * (<dir>/<id>.jpg) is `legacy` until it is made into the two.
  */
-function createCoverStore(dir) {
-  const file = (id) => {
+function createPairStore(dir) {
+  const check = (id) => {
     if (!ID_RE.test(String(id || ''))) throw new Error(tr('common.notSongId', 'Not a song id.'));
-    return path.join(dir, `${id}.jpg`);
+    return String(id);
+  };
+  const file = (id, size = 'big') => path.join(dir, SIZES[size] || SIZES.big, `${check(id)}.webp`);
+  const legacyFile = (id) => path.join(dir, `${check(id)}.jpg`);
+  const exists = (f) => {
+    try {
+      return fs.statSync(f).size > 0;
+    } catch {
+      return false;
+    }
+  };
+  function put(dest, bytes) {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    const tmp = `${dest}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+    fs.writeFileSync(tmp, bytes);
+    try {
+      fs.renameSync(tmp, dest);
+    } catch (err) {
+      fs.rmSync(tmp, { force: true });
+      throw err;
+    }
+  }
+  const idsIn = (folder, ext) => {
+    try {
+      return fs.readdirSync(folder).filter((f) => f.endsWith(ext)).map((f) => f.slice(0, -ext.length)).filter((id) => ID_RE.test(id));
+    } catch {
+      return [];
+    }
   };
   return {
     dir,
     file,
-    has(id) {
+    legacyFile,
+    has: (id, size = 'big') => exists(file(id, size)),
+    /** A cover from before 4.3.1 still to be made into the two. */
+    legacy: (id) => (exists(legacyFile(id)) ? legacyFile(id) : null),
+    read(id, size = 'big') {
       try {
-        return fs.statSync(file(id)).size > 0;
-      } catch {
-        return false;
-      }
-    },
-    read(id) {
-      try {
-        return fs.readFileSync(file(id));
+        return fs.readFileSync(file(id, size));
       } catch {
         return null;
       }
     },
-    write(id, jpeg) {
-      const dest = file(id);
-      fs.mkdirSync(dir, { recursive: true });
-      const tmp = path.join(dir, `.${id}.${crypto.randomBytes(4).toString('hex')}.tmp`);
-      fs.writeFileSync(tmp, jpeg);
-      try {
-        fs.renameSync(tmp, dest);
-      } catch (err) {
-        fs.rmSync(tmp, { force: true });
-        throw err;
-      }
-      return coverVersion(jpeg);
+    /** Both covers of a song (makeCoverPair's); the old one goes. Answers the new version. */
+    write(id, { big, small }) {
+      put(file(id, 'big'), big);
+      put(file(id, 'small'), small);
+      fs.rmSync(legacyFile(id), { force: true });
+      return coverVersion(big);
     },
-    /** Takes another file (same folder or drive best) in as the cover of `id`. */
-    adopt(id, from) {
-      const jpeg = fs.readFileSync(from);
-      return this.write(id, jpeg);
+    /** One of the two, as it is. */
+    writeOne(id, size, bytes) {
+      put(file(id, size), bytes);
     },
     remove(id) {
-      try {
-        fs.rmSync(file(id), { force: true });
-      } catch {
-        // Open somewhere; the next sweep gets it.
+      for (const f of [file(id, 'big'), file(id, 'small'), legacyFile(id)]) {
+        try {
+          fs.rmSync(f, { force: true });
+        } catch {
+          // Open somewhere; the next sweep gets it.
+        }
       }
     },
-    /** The ids that have a cover file. */
+    /** The ids with a cover, made or from before. */
     ids() {
-      try {
-        return fs.readdirSync(dir).filter((f) => /\.jpg$/i.test(f)).map((f) => f.slice(0, -4)).filter((id) => ID_RE.test(id));
-      } catch {
-        return [];
-      }
+      return [...new Set([...idsIn(path.join(dir, SIZES.big), '.webp'), ...idsIn(dir, '.jpg')])];
     },
-    /** Removes the covers of songs not in `keep` (a Set of ids), and leftover temporary files. */
+    /** Removes the covers of songs not in `keep`, and leftover temporary files. */
     sweep(keep) {
       let removed = 0;
-      let names = [];
-      try {
-        names = fs.readdirSync(dir);
-      } catch {
-        return 0;
-      }
-      for (const name of names) {
-        const full = path.join(dir, name);
-        if (/\.tmp$/i.test(name)) {
-          fs.rmSync(full, { force: true });
+      for (const folder of [dir, path.join(dir, SIZES.big), path.join(dir, SIZES.small)]) {
+        let names = [];
+        try {
+          names = fs.readdirSync(folder);
+        } catch {
           continue;
         }
-        if (!/\.jpg$/i.test(name)) continue;
-        if (keep.has(name.slice(0, -4))) continue;
-        try {
-          fs.rmSync(full, { force: true });
-          removed += 1;
-        } catch {
-          // In use; the next sweep.
+        for (const name of names) {
+          const full = path.join(folder, name);
+          const m = /^(.+)\.(webp|jpg)$/i.exec(name);
+          if (/\.tmp$/i.test(name) || (m && !keep.has(m[1]))) {
+            try {
+              fs.rmSync(full, { force: true });
+              if (m) removed += 1;
+            } catch {
+              // In use; the next sweep.
+            }
+          }
         }
       }
       return removed;
-    },
-    /** { count, bytes } of the covers here. */
-    size() {
-      let count = 0;
-      let bytes = 0;
-      for (const id of this.ids()) {
-        try {
-          bytes += fs.statSync(file(id)).size;
-          count += 1;
-        } catch {
-          // Gone meanwhile.
-        }
-      }
-      return { count, bytes };
     },
   };
 }
 
 module.exports = {
-  SIZE, NO_COVER, ID_RE, FLAT_LIMIT,
-  imageSize, bandsAreFlat, makeSquare, fetchImage, ffmpegRun,
-  youtubeIdOf, youtubeThumbs, coverUrlsFromInfo, resolveCover, lookupsFor, embeddedCover, coverVersion, createCoverStore,
+  SIZE, THUMB, NO_COVER, ID_RE, FLAT_LIMIT,
+  imageSize, bandsAreFlat, makeSquare, makeCoverPair, toJpeg, isWebp, isJpeg, pictureType, fetchImage, ffmpegRun, createPairStore, packCovers, unpackCovers,
+  youtubeIdOf, youtubeThumbs, coverUrlsFromInfo, resolveCover, lookupsFor, embeddedCover, coverVersion,
 };

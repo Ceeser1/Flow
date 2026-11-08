@@ -17,7 +17,6 @@ const library = require('./library');
 const exporter = require('./exporter');
 const network = require('./network');
 const covers = require('./covers');
-const { coverVersion } = require('@flow/core/cover');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const discovery = require('@flow/core/discovery');
 const { OfflineError } = require('@flow/core/client/common');
@@ -50,10 +49,11 @@ function decrypt(stored) {
 
 /**
  * One request. `body` may be JSON (`json`) or a file (`file`, streamed up);
- * `saveTo` streams the answer into a file. Resolves { status, json }.
+ * `saveTo` streams the answer into a file. Resolves { status, json }, and
+ * with `binary` the answer's bytes too ({ status, json, bytes }: covers, 4.3.1).
  * Unreachable, timed out or cut off: OfflineError.
  */
-function request(base, pathname, { method = 'GET', json, file, saveTo, token, timeout = 15000, onProgress } = {}) {
+function request(base, pathname, { method = 'GET', json, file, saveTo, binary = false, token, timeout = 15000, onProgress } = {}) {
   return new Promise((resolve, reject) => {
     let url;
     try {
@@ -107,6 +107,10 @@ function request(base, pathname, { method = 'GET', json, file, saveTo, token, ti
             reject(new OfflineError(tr('desktop.error.connectionCutOff', 'The connection was cut off.')));
             return;
           }
+        }
+        if (binary && res.statusCode === 200) {
+          resolve({ status: 200, json: null, bytes: raw });
+          return;
         }
         const text = raw.toString('utf8');
         let body = null;
@@ -166,17 +170,6 @@ function stream(url, { headers }, on) {
 
 const rootFile = (name) => path.join(paths.ensure(paths.rootDir()), name);
 
-/** Each Flow Server's covers, by server id: the folders under Covers but Local Files' own. */
-function coverServerIds() {
-  let names = [];
-  try {
-    names = fs.readdirSync(paths.coversDir(), { withFileTypes: true });
-  } catch {
-    names = [];
-  }
-  return names.filter((e) => e.isDirectory() && e.name !== covers.LOCAL).map((e) => e.name);
-}
-
 module.exports = {
   settings,
   library,
@@ -187,9 +180,8 @@ module.exports = {
     copyToLocal: covers.copyToLocal,
     copyToServer: covers.copyToServer,
     tell: covers.tell,
-    versionOf: coverVersion,
-    serverIds: coverServerIds,
-    removeServer: (id) => fs.rmSync(path.join(paths.coversDir(), id), { recursive: true, force: true }),
+    serverIds: covers.serverIds,
+    removeServer: covers.removeServer,
   },
   // The client's own files (server-library.json, server-sync.json, server-others.json).
   jsonFiles: {

@@ -1258,6 +1258,7 @@ const SettingsPanel = {
       h('h3.settings__section', T('settings.media.heading')),
       storage,
       keeps ? this._coversRow() : null,
+      this._highResRow(keeps),
       this._row({
         key: 'lyricsOn',
         label: T('settings.media.lyrics.label'),
@@ -1901,6 +1902,7 @@ const SettingsPanel = {
     const change = h('button.btn.btn--small', { type: 'button', onclick: () => this._changeFolder(change) }, T('common.change'));
     const left = h('div.settings__left',
       h('div.settings__label.settings__label--plain', T('common.localFiles')),
+      h('div.settings__desc', T('settings.localFiles.desc')),
       this._pathNode);
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._statsNode, open, change)));
   },
@@ -1922,8 +1924,9 @@ const SettingsPanel = {
   },
 
   /**
-   * Covers: how many this computer keeps and the room they take (with a
-   * server: the servers' covers kept here, which can be cleared).
+   * Covers (4.3.1): the thumbnails kept here and the room they take (with a
+   * server: the servers' ones, which can be cleared after asking; they come
+   * again as lists are scrolled).
    */
   _coversRow() {
     this._coversNode = h('span.settings__note');
@@ -1931,7 +1934,14 @@ const SettingsPanel = {
       type: 'button',
       title: T('settings.coverCache.clear.tooltip'),
       onclick: () => attempt(async () => {
-        await window.flow.clearCoverCache();
+        const ok = await confirmDialog({
+          title: T('settings.coverCache.clear.title'),
+          message: T('settings.coverCache.clear.text'),
+          confirmLabel: T('settings.coverCache.clear'),
+          danger: true,
+        });
+        if (!ok) return;
+        await window.flow.clearCoverCache('small');
         toast(T('settings.coverCache.cleared'), 'success');
         this._drawCovers();
       }),
@@ -1940,6 +1950,33 @@ const SettingsPanel = {
       h('div.settings__label.settings__label--plain', T('settings.coverCache.heading')),
       h('div.settings__desc', T('settings.coverCache.desc')));
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._coversNode, this._clearCovers)));
+  },
+
+  /**
+   * "Download high resolution covers (512px)" under the thumbnails (4.3.1):
+   * off, only those kept already are shown. Its big covers kept here, and
+   * "Clear big cover cache" for the servers' (no question: they are only
+   * fetched again when shown). The web player keeps none: the tick alone.
+   */
+  _highResRow(keeps) {
+    this._bigNode = keeps ? h('span.settings__note') : null;
+    this._clearBig = keeps ? h('button.btn.btn--small', {
+      type: 'button',
+      title: T('settings.coverCache.highRes.clear.tooltip'),
+      onclick: () => attempt(async () => {
+        await window.flow.clearCoverCache('big');
+        Covers.refresh(null);
+        toast(T('settings.coverCache.highRes.cleared'), 'success');
+        this._drawCovers();
+      }),
+    }, T('settings.coverCache.highRes.clear')) : null;
+    return this._row({
+      key: 'highResCovers',
+      label: T('settings.coverCache.highRes.label'),
+      desc: T('settings.coverCache.highRes.desc'),
+      sub: keeps,
+      right: keeps ? h('div.settings__control', this._bigNode, this._clearBig) : null,
+    });
   },
 
   /**
@@ -2082,13 +2119,17 @@ const SettingsPanel = {
   async _drawCovers() {
     if (!this._coversNode) return;
     this._clearCovers.hidden = !Store.server.on;
+    if (this._clearBig) this._clearBig.hidden = !Store.server.on;
     try {
       const st = await window.flow.coverStats();
       const here = Store.server.on ? st.server : st.local;
       if (!here || !this._coversNode) return;
-      this._coversNode.textContent = `${Util.plural(here.count, 'cover')} · ${fmtBytes(here.bytes)}`;
+      const line = (n) => (n ? `${Util.plural(n.count, 'cover')} · ${fmtBytes(n.bytes)}` : '');
+      this._coversNode.textContent = line(here.small);
+      if (this._bigNode) this._bigNode.textContent = line(here.big);
     } catch {
       this._coversNode.textContent = '';
+      if (this._bigNode) this._bigNode.textContent = '';
     }
   },
 

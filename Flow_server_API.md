@@ -218,7 +218,7 @@ gzipped to a caller that sends `Accept-Encoding: gzip`.
 
 | Field | |
 |---|---|
-| `songs` | `[{ id, file, title, artist, mix, album, genre, subGenre, infoLooked, duration, format, sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, addedBy, loudness, cover, cut }]`. `file` is relative to the music folder. No stats or stars: those are each profile's own (`GET /api/stats`, Favourites) |
+| `songs` | `[{ id, file, title, artist, mix, album, genre, subGenre, infoLooked, duration, format, sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, addedBy, loudness, cover, cut, lyrics? }]`. `file` is relative to the music folder. No stats or stars: those are each profile's own (`GET /api/stats`, Favourites) |
 | `playlists` | `[{ id, name, createdAt, entries: [{ songId, addedAt }], source, shared, rules, favourites? }]`, this profile's own, its Favourites among them |
 | `sharedPlaylists` | the playlists of others this profile follows, with their songs: `{ id, name, createdAt, entries, ownerId, ownerName, favourites? }` (the others: `GET /api/shared`) |
 | `follows` | ids of the shared playlists this profile follows |
@@ -226,6 +226,10 @@ gzipped to a caller that sends `Accept-Encoding: gzip`.
 
 - `cover`: the cover's version (see [covers](#get-apisongsidcover)), `"-"`
   when none was found, null when not looked for yet.
+- `lyrics` (4.3.1): the stamp of the lyrics the server keeps for the song
+  (found or not), left out while it keeps none. It changes when they do, so
+  an app keeps a copy and asks for a song's lyrics only when its stamp is
+  not the copy's.
 - "All Songs" is not stored: all songs. Favourites (4.3) are a playlist of
   each owner's own (`favourites: true`, id `fav-<profile id>`, `fav-default`
   for the Default / Shared): shared, followed and downloaded like any other,
@@ -406,14 +410,33 @@ seconds; the uncut file goes to the trash.
 
 ### GET /api/songs/\<id\>/cover
 
-The cover, a 512 x 512 JPEG; 404 when it has none. With `?v=<version>` (the
-song's `cover` field) it may be cached for good. `ETag` / `If-None-Match`
-work (304).
+The cover in one of two sizes (4.3.1), both WebP: 512 x 512 (`?size=big`,
+the default) or its 128 x 128 thumbnail (`?size=small`); 404 when it has
+none. A cover from before 4.3.1 (a 512 x 512 JPEG) is served as it is for
+both sizes until the server has made it into the two (in the background,
+checked at every start; its version stays). With `?v=<version>` (the song's
+`cover` field) it may be cached for good. `ETag` / `If-None-Match` work
+(304; the thumbnail's ETag ends in `-s`). The `Content-Type` is the
+picture's.
+
+### POST /api/covers
+
+4.3.1. Several covers in one answer, for the rows a list shows: `{ ids:
+[...] (at most 100), size: "small" | "big" }`. The answer is binary
+(`application/octet-stream`): a 4-byte big-endian length, a JSON index
+`[{ id, v, n }]` (the song, its cover's version, the picture's length) of
+that length, then the pictures one after another in that order. Songs
+without a cover (or unknown ids) are left out.
 
 ### PUT /api/songs/\<id\>/cover
 
-The body is a JPEG (at most 4 MB; made 512 x 512 with ffmpeg if it is not).
-Kept only when the song has no cover yet. → `{ "cover": "<version>", "rev": 417 }`
+The body is the 512 x 512 cover, a WebP kept as it is, or another picture
+(at most 4 MB) made into the two sizes with ffmpeg. Without ffmpeg only a
+512 x 512 picture is taken, and shown for both sizes. Kept only when the
+song has no cover yet. → `{ "cover": "<version>", "rev": 417 }`. With
+`?size=small` the body is its 128 x 128 WebP thumbnail (4.3.1, sent after
+the big one; 415 otherwise), answered with the song's `cover`; without one
+the server makes it from the big one.
 
 ### GET /api/songs/\<id\>/lyrics
 

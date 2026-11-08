@@ -71,9 +71,11 @@
 // songs gone meanwhile are only forgotten, never deleted on it. A file that
 // another server's songs are tied to is never deleted for this one.
 //
-// Covers: every song's comes down in the background into Covers\<server id>
-// (covers.js), and stays there across restarts and server switches; one
-// goes when its song is gone from that server.
+// Covers (4.3.1): each song's in two sizes into Covers\<server id> (the
+// app's covers.js), fetched when the window shows them (thumbnails for the
+// lists, several in one request; the 512 x 512 one with the high-res
+// setting), the offline songs' in advance; they stay across restarts and
+// server switches, one goes when its song is gone from that server.
 //
 // Statistics (3.6): each profile signed in to here keeps a row in
 // tracked-profiles.json (trackedProfiles.js) with its Statistics as the
@@ -100,6 +102,7 @@ const { applyCommand } = require('../commands');
 const { songFileStem } = require('../text');
 const { serverBaseUrl: baseUrl, isTailscaleAddress } = require('../address');
 const { OfflineError, AuthError, randomHex } = require('./common');
+const { unpackCovers } = require('../coverPack');
 const { makeLink, parseLink } = require('./share');
 const { createTrackedProfiles } = require('./trackedProfiles');
 
@@ -1682,16 +1685,10 @@ function createRemote(env) {
     lyricsSyncHook = fn;
   }
 
-  /**
-   * The server's songs with lyrics kept and their stamps, for copies kept
-   * here: { serverId, songs: { id: stamp } }; null when it cannot say
-   * (offline, or from before copies).
-   */
-  async function lyricsIndex() {
-    if (!active() || status.state !== 'online' || !conn.lyricsSync || !sync.serverId) return null;
-    const serverId = sync.serverId;
-    const r = await call('/api/lyrics', { timeout: 60000 });
-    return serverId === sync.serverId ? { serverId, songs: (r && r.songs) || {} } : null;
+  // ...and when a Local Files song's file went (its lyrics there go too).
+  let forgotHook = () => {};
+  function useForgotLocal(fn) {
+    forgotHook = fn;
   }
 
   /** The lyrics of up to 200 of the server's songs: { id: { ...lyrics, v } }, those it keeps. */
@@ -1907,14 +1904,21 @@ function createRemote(env) {
     }
   }
 
-  /** A Local Files song's cover after it, when it has one (the server keeps its own if it found one first). */
+  /**
+   * A Local Files song's cover after it, when it has one (the server keeps its
+   * own if it found one first): the 512 x 512 one, then its thumbnail.
+   */
   async function uploadCover(local, serverId) {
-    if (!local.cover || local.cover === '-' || !covers.localStore().has(local.id)) return;
+    const store = covers.localStore();
+    if (!local.cover || local.cover === '-' || !store.has(local.id, 'big')) return;
     try {
-      const r = await request(conn.base, `/api/songs/${encodeURIComponent(serverId)}/cover`, {
-        method: 'PUT', file: covers.localStore().file(local.id), token: conn.token, timeout: 30000,
-      });
-      if (r.status === 200 && r.json && r.json.cover === local.cover) covers.copyToServer(local.id, sync.serverId, serverId);
+      const at = `/api/songs/${encodeURIComponent(serverId)}/cover`;
+      const r = await request(conn.base, at, { method: 'PUT', file: store.file(local.id, 'big'), token: conn.token, timeout: 30000 });
+      if (!(r.status === 200 && r.json && r.json.cover === local.cover)) return;
+      if (store.has(local.id, 'small')) {
+        await request(conn.base, `${at}?size=small`, { method: 'PUT', file: store.file(local.id, 'small'), token: conn.token, timeout: 30000 }).catch(() => null);
+      }
+      covers.copyToServer(local.id, sync.serverId, serverId);
     } catch {
       // The server looks for one itself.
     }
@@ -1987,6 +1991,20 @@ function createRemote(env) {
       library.mutate((d) => model.removeSong(d, lid, !deleteFile));
       removed = true;
     });
+    // Its file gone (uploaded with "Keep local files" off, or a copy no longer
+    // needed): its cover and lyrics here go along (4.3.1).
+    if (removed && deleteFile) {
+      try {
+        covers.localStore().remove(lid);
+      } catch {
+        // Swept later.
+      }
+      try {
+        forgotHook(lid);
+      } catch {
+        // Swept later.
+      }
+    }
     if (!removed) {
       // Not gone after all: still tied to the server as before.
       if (before.sid) sync.songMap[lid] = before.sid;
@@ -2351,6 +2369,8 @@ function createRemote(env) {
       emitStatus();
       return;
     }
+    // Their covers first, in batches (each song's copy takes them).
+    if (await transfersAllowed()) await ensureCovers(want.map((s) => s.id));
     let number = 0;
     for (const s of want) {
       if (status.state !== 'online' || !active()) break;
@@ -2391,8 +2411,9 @@ function createRemote(env) {
     emitStatus();
   }
 
-  /** One server song into Local Files, as a copy. */
+  /** One server song into Local Files, as a copy (its covers with it). */
   async function fetchSong(s, onProgress) {
+    await ensureCovers([s.id]);
     const ext = String(s.format || 'mp3').toLowerCase();
     const tmp = files.join(paths.musicDir(), `.flow-download-${randomHex(5)}.${ext}`);
     try {
@@ -2453,18 +2474,24 @@ function createRemote(env) {
 
   // ---- covers ----
   //
-  // Every cover comes down, COVER_JOBS at a time, those the window asks for
-  // first (rows on screen whose cover is not here yet: wantCovers). Away from
-  // home on a metered connection only those, unless transfers are allowed.
+  // 4.3.1: a server's covers come when the window shows them, never all at
+  // once. The rows on screen once the list stops (or almost: the window's
+  // covers.js) ask for their 128 x 128 thumbnails, COVER_BATCH in one request
+  // (POST /api/covers); Details, the visualizers, the lock screen and the
+  // next song ask for the 512 x 512 one, fetched only with the setting
+  // "Download high resolution covers" (one kept already is shown anyway).
+  // The songs kept here for offline (playlists marked for download, songs
+  // downloaded by hand) get their thumbnails in advance, so they show without
+  // the server. A cover here whose version (recorded in the store's index)
+  // is not the song's is fetched again when shown.
 
-  const COVER_JOBS = 3;
-  const coverHave = new Map(); // `${serverId}/${songId}` -> version of the file here
-  const coverFailed = new Set(); // could not be had this run
-  let coverTodo = [];
-  let coverWanted = [];
-  let coverBulk = false;
+  const COVER_BATCH = 100;
+  const COVER_JOBS = 2;
+  const coverFailed = new Set(); // `${size}/${songId}` that could not be had this run
+  const coverWanted = { small: [], big: [] };
   let coverRunning = 0;
-  let coverArrived = [];
+  let coverSingles = false; // a server without POST /api/covers (one at a time there)
+  let coverArrived = { small: [], big: [] };
   let coverTellTimer = null;
 
   /** Where the window finds this server's covers: '' without a server. */
@@ -2472,68 +2499,95 @@ function createRemote(env) {
     return active() && sync.serverId ? covers.dirOf(sync.serverId) : '';
   }
 
-  /** The version of the cover file here, hashed once and then remembered. */
-  function versionHere(store, id) {
-    const key = `${sync.serverId}/${id}`;
-    if (coverHave.has(key)) return coverHave.get(key);
-    const jpeg = store.read(id);
-    const v = jpeg ? covers.versionOf(jpeg) : '';
-    coverHave.set(key, v);
-    return v;
+  const wantsCover = (s) => !!(s && s.cover && s.cover !== '-');
+  const coverSize = (size) => (size === 'big' ? 'big' : 'small');
+  const highRes = () => settings.get('highResCovers') !== false;
+
+  /** The server's songs kept for offline (their covers and lyrics in advance): the copies here, and the marked playlists'. */
+  function offlineIds() {
+    const ids = new Set();
+    for (const lid of Object.keys(sync.fetched || {})) if (sync.songMap[lid]) ids.add(sync.songMap[lid]);
+    for (const sid of Object.keys(sync.kept || {})) ids.add(sid);
+    if (sync.offline.length) {
+      const v = getView();
+      for (const pid of sync.offline) for (const sid of markedSongs(pid, v)) ids.add(sid);
+    }
+    return ids;
   }
 
-  const wantsCover = (s) => !!(s && s.cover && s.cover !== '-');
-
-  /** After every look at the server's library: which covers to fetch, which to drop. */
+  /**
+   * After every look at the server's library: the covers of songs gone go,
+   * and the songs kept for offline get the thumbnails they lack (and their
+   * big covers with the high-res setting), when transfers are allowed.
+   */
   async function coverSync() {
     if (env.streamCovers || status.state !== 'online' || !cache.library || cache.serverId !== sync.serverId || !sync.serverId) return;
     const store = covers.storeOf(sync.serverId);
     const songs = cache.library.songs;
-    const known = new Set(songs.map((x) => x.id));
-    for (const id of store.ids()) {
-      if (known.has(id)) continue;
-      store.remove(id);
-      coverHave.delete(`${sync.serverId}/${id}`);
-    }
-    coverTodo = songs.filter((x) => wantsCover(x) && !coverFailed.has(x.id) && versionHere(store, x.id) !== x.cover).map((x) => x.id);
-    coverBulk = await transfersAllowed();
+    store.sweep(new Set(songs.map((x) => x.id)));
+    const offline = offlineIds();
+    if (!offline.size || !(await transfersAllowed())) return;
+    const lacking = (size) => songs.filter((x) => offline.has(x.id) && wantsCover(x) && !coverFailed.has(`${size}/${x.id}`)
+      && store.version(x.id, size) !== x.cover).map((x) => x.id);
+    queueCovers(lacking('small'), 'small', { first: false });
+    if (highRes()) queueCovers(lacking('big'), 'big', { first: false });
+  }
+
+  function queueCovers(ids, size, { first = true } = {}) {
+    const list = coverWanted[size];
+    const fresh = ids.filter((id) => !list.includes(id));
+    coverWanted[size] = first ? [...fresh, ...list] : [...list, ...fresh];
     pumpCovers();
   }
 
-  /** The window shows these songs and has no cover file for them yet. */
-  function wantCovers(ids) {
+  /**
+   * The window shows these songs and has no fitting cover file for them:
+   * 'small' (a list's rows) or 'big' (Details, a visualizer, the song playing
+   * or next). A big one is fetched only with the high-res setting; one here
+   * already (the right version) is told to the window at once.
+   */
+  function wantCovers(ids, size = 'small') {
+    const sz = coverSize(size);
     const list = (Array.isArray(ids) ? ids : []).map(String).filter((id) => /^[\w-]{1,64}$/.test(id));
-    if (!list.length || env.streamCovers) return;
-    coverWanted = [...new Set([...list, ...coverWanted])].slice(0, 300);
-    pumpCovers();
+    if (!list.length || env.streamCovers || !sync.serverId || !cache.library) return;
+    const store = covers.storeOf(sync.serverId);
+    const here = [];
+    const fetch = [];
+    for (const id of list) {
+      const song = model.songById(cache.library, id);
+      if (!wantsCover(song)) continue;
+      if (store.version(id, sz) === song.cover) here.push(id);
+      else if (sz === 'small' || highRes()) fetch.push(id);
+    }
+    if (here.length) covers.tell(sync.serverId, here, sz);
+    if (fetch.length) queueCovers(fetch.slice(0, 300), sz);
   }
 
-  function nextCover() {
+  /** The next songs to fetch covers for: { size, songs }, or null. Thumbnails first. */
+  function nextCovers() {
     const lib = cache.library;
     if (!lib || !sync.serverId) return null;
     const store = covers.storeOf(sync.serverId);
-    const ok = (id) => {
-      const song = model.songById(lib, id);
-      return wantsCover(song) && !coverFailed.has(id) && versionHere(store, id) !== song.cover ? song : null;
-    };
-    while (coverWanted.length) {
-      const song = ok(coverWanted.shift());
-      if (song) return song;
-    }
-    while (coverBulk && coverTodo.length) {
-      const song = ok(coverTodo.shift());
-      if (song) return song;
+    for (const size of ['small', 'big']) {
+      const songs = [];
+      const max = coverSingles ? 1 : COVER_BATCH;
+      while (coverWanted[size].length && songs.length < max) {
+        const id = coverWanted[size].shift();
+        const song = model.songById(lib, id);
+        if (wantsCover(song) && !coverFailed.has(`${size}/${id}`) && store.version(id, size) !== song.cover && !songs.includes(song)) songs.push(song);
+      }
+      if (songs.length) return { size, songs };
     }
     return null;
   }
 
   function pumpCovers() {
     while (coverRunning < COVER_JOBS && status.state === 'online') {
-      const song = nextCover();
-      if (!song) return;
+      const next = nextCovers();
+      if (!next) return;
       coverRunning += 1;
-      fetchCover(song).catch(() => {
-        coverFailed.add(song.id);
+      fetchCovers(next).catch(() => {
+        for (const s of next.songs) coverFailed.add(`${next.size}/${s.id}`);
       }).finally(() => {
         coverRunning -= 1;
         pumpCovers();
@@ -2541,59 +2595,101 @@ function createRemote(env) {
     }
   }
 
-  async function fetchCover(song) {
+  /** Covers that arrived reach the window together (many at once as one message). */
+  function coversArrived(size, ids) {
+    coverArrived[size].push(...ids);
+    if (coverTellTimer) return;
+    coverTellTimer = setTimeout(() => {
+      coverTellTimer = null;
+      const arrived = coverArrived;
+      coverArrived = { small: [], big: [] };
+      for (const sz of ['small', 'big']) if (arrived[sz].length) covers.tell(sync.serverId, arrived[sz], sz);
+    }, 150);
+  }
+
+  /** A JPEG or a WebP. */
+  const isPicture = (b) => !!b && b.length > 12 && ((b[0] === 0xff && b[1] === 0xd8)
+    || (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50));
+
+  /** One batch of one size: the server's answer (packCovers) into the store. */
+  async function fetchCovers({ size, songs }) {
     const serverId = sync.serverId;
     const store = covers.storeOf(serverId);
-    files.mkdir(store.dir);
-    const tmp = files.join(store.dir, `.${song.id}.${randomHex(4)}.tmp`);
-    try {
-      const r = await request(conn.base, `/api/songs/${encodeURIComponent(song.id)}/cover?v=${encodeURIComponent(song.cover)}`, {
-        token: conn.token, saveTo: tmp, timeout: 30000,
+    if (coverSingles) {
+      const song = songs[0];
+      const r = await request(conn.base, `/api/songs/${encodeURIComponent(song.id)}/cover?v=${encodeURIComponent(song.cover)}&size=${size}`, {
+        token: conn.token, binary: true, timeout: 30000,
       });
-      if (r.status !== 200 || serverId !== sync.serverId) {
-        coverFailed.add(song.id);
+      if (serverId !== sync.serverId) return;
+      if (r.status !== 200 || !isPicture(r.bytes)) {
+        coverFailed.add(`${size}/${song.id}`);
         return;
       }
-      const jpeg = files.read(tmp);
-      if (jpeg.length < 4 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) {
-        coverFailed.add(song.id);
-        return;
+      store.write(song.id, size, r.bytes, song.cover);
+      coversArrived(size, [song.id]);
+      return;
+    }
+    const r = await request(conn.base, '/api/covers', {
+      method: 'POST', json: { ids: songs.map((s) => s.id), size }, token: conn.token, binary: true, timeout: 60000,
+    });
+    if (serverId !== sync.serverId) return;
+    if (r.status === 404 || r.status === 405) {
+      // No batches there: one at a time.
+      coverSingles = true;
+      coverWanted[size].unshift(...songs.map((s) => s.id));
+      return;
+    }
+    if (r.status !== 200 || !r.bytes) throw new Error(`HTTP ${r.status}`);
+    const got = new Set();
+    for (const item of unpackCovers(r.bytes)) {
+      const song = songs.find((s) => s.id === item.id);
+      if (!song || !isPicture(item.bytes)) continue;
+      store.write(item.id, size, item.bytes, item.v || song.cover);
+      got.add(item.id);
+    }
+    for (const s of songs) if (!got.has(s.id)) coverFailed.add(`${size}/${s.id}`);
+    if (got.size) coversArrived(size, [...got]);
+  }
+
+  /** The covers of these server songs here before they are needed (a song downloaded: its copy takes them). */
+  async function ensureCovers(ids) {
+    if (env.streamCovers || !sync.serverId || !cache.library || status.state !== 'online') return;
+    const store = covers.storeOf(sync.serverId);
+    for (const size of highRes() ? ['small', 'big'] : ['small']) {
+      const songs = ids.map((id) => model.songById(cache.library, id)).filter((s) => wantsCover(s) && store.version(s.id, size) !== s.cover);
+      for (let i = 0; i < songs.length; i += COVER_BATCH) {
+        await fetchCovers({ size, songs: songs.slice(i, i + COVER_BATCH) }).catch(() => {});
       }
-      const version = store.write(song.id, jpeg);
-      coverHave.set(`${serverId}/${song.id}`, version);
-      coverArrived.push(song.id);
-      if (!coverTellTimer) {
-        // Many at once reach the window as one message.
-        coverTellTimer = setTimeout(() => {
-          coverTellTimer = null;
-          const ids = coverArrived;
-          coverArrived = [];
-          covers.tell(sync.serverId, ids);
-        }, 250);
-      }
-    } finally {
-      files.rm(tmp, { force: true });
     }
   }
 
-  /** The servers' covers kept here (count, bytes; current: this server's), and how many still come. */
+  /**
+   * The servers' covers kept here, by size: { small, big: { count, bytes,
+   * current } } (current: this server's count); count and bytes for both.
+   */
   function coverStats() {
-    let count = 0;
-    let current = 0;
-    let bytes = 0;
+    const out = { small: { count: 0, bytes: 0, current: 0 }, big: { count: 0, bytes: 0, current: 0 } };
     for (const id of covers.serverIds()) {
-      const size = covers.storeOf(id).size();
-      bytes += size.bytes;
-      count += size.count;
-      if (id === sync.serverId) current = size.count;
+      for (const size of ['small', 'big']) {
+        const n = covers.storeOf(id).size(size);
+        out[size].count += n.count;
+        out[size].bytes += n.bytes;
+        if (id === sync.serverId) out[size].current = n.count;
+      }
     }
-    return { count, current, bytes, waiting: coverTodo.length + coverWanted.length };
+    return { ...out, count: out.small.count, bytes: out.small.bytes + out.big.bytes, current: out.small.current };
   }
 
-  /** "Clear cover cache": every server's covers go; this server's come down again. */
-  function clearCoverCache() {
-    for (const id of covers.serverIds()) covers.removeServer(id);
-    coverHave.clear();
+  /**
+   * Settings' Clear: every server's covers of one size go ('small': the
+   * thumbnails, 'big': the high-res ones, null: both). Shown again, they are
+   * fetched again; the offline songs' at once.
+   */
+  function clearCoverCache(size = null) {
+    for (const id of covers.serverIds()) {
+      if (size === 'small' || size === 'big') covers.storeOf(id).clear(size);
+      else covers.removeServer(id);
+    }
     coverFailed.clear();
     coverSync().catch(() => {});
     return coverStats();
@@ -2602,6 +2698,11 @@ function createRemote(env) {
   /** A Local Files song that is a copy of one of the server's (its cover comes from there). */
   function isServerCopy(lid) {
     return !!sync.fetched[lid];
+  }
+
+  /** The server's song a Local Files song went to or came from (uploaded, or downloaded here), or ''. */
+  function serverSongOf(lid) {
+    return active() ? String((sync.songMap || {})[lid] || '') : '';
   }
 
   /** The Local Files song a server's song came from or went to (uploaded, or downloaded here), or ''. */
@@ -3492,8 +3593,7 @@ function createRemote(env) {
     try {
       const r = await request(conn.base, `${item}/cover?v=${v}`, { token: conn.token, saveTo: tmp, timeout: 30000 });
       if (r.status !== 200) return '';
-      const head = files.read(tmp).subarray(0, 2);
-      if (head[0] !== 0xff || head[1] !== 0xd8) return '';
+      if (!isPicture(files.read(tmp).subarray(0, 16))) return '';
       files.rename(tmp, file);
       return file;
     } finally {
@@ -3726,7 +3826,7 @@ function createRemote(env) {
   return {
     init, active, reconfigure, setSecret, stop, adoptToken,
     coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy, localOf,
-    trimSong, trimmedHere, songPeaks, songLyrics, setSongLyrics, useOwnLyrics, useLyricsSync, lyricsIndex, lyricsOf, serverId, newCutId,
+    trimSong, trimmedHere, songPeaks, songLyrics, setSongLyrics, useOwnLyrics, useLyricsSync, useForgotLocal, lyricsOf, offlineIds, serverSongOf, serverId, newCutId,
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, switchServer, forgetServer, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
     admin, changeServerPassword, removeTracked, shareLink, connectLink,

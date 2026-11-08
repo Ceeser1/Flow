@@ -63,10 +63,18 @@
 //                                      the "trim" feature): { song, rev } or
 //                                      { skipped: 'gone' | 'repeat' | 'changed', rev };
 //                                      403 for a song another profile uploaded
-//   GET  /api/songs/:id/cover[?v=]     the song's cover (JPEG); with ?v= its
-//                                      current version, cached for good
-//   PUT  /api/songs/:id/cover          an app's cover for a song that has none;
-//                                      the body is the JPEG: { cover }
+//   GET  /api/songs/:id/cover[?v=&size=]  the song's cover (4.3.1: WebP, size
+//                                      big 512 x 512 or small 128 x 128); with ?v=
+//                                      its current version, cached for good
+//   POST /api/covers { ids, size }     several covers in one answer (4.3.1, at most
+//                                      100): the body is a 4-byte length, a JSON
+//                                      index [{ id, v, n }] and the pictures one
+//                                      after another (cover.packCovers)
+//   PUT  /api/songs/:id/cover[?size=]  an app's cover for a song that has none;
+//                                      the body is the picture: { cover }. A WebP
+//                                      512 x 512 is kept as it is (its 128 x 128
+//                                      follows with ?size=small); anything else
+//                                      is made into both
 //   POST /api/rescan                   look through the music folder again
 //   GET  /api/live?client=<id>&device=<name>
 //                                      the app's live channel: events as they
@@ -291,7 +299,8 @@ function sendFile(req, res, file) {
  */
 function sendCover(req, res, url, found) {
   if (!found) throw new HttpError(404, 'This song has no cover.');
-  const etag = `"${found.version}"`;
+  // The two sizes of one version are two pictures.
+  const etag = `"${found.version}${url.searchParams.get('size') === 'small' ? '-s' : ''}"`;
   const headers = {
     'Content-Type': 'image/jpeg',
     ETag: etag,
@@ -308,10 +317,14 @@ function sendCover(req, res, url, found) {
   } catch {
     throw new HttpError(404, 'This song has no cover.');
   }
+  headers['Content-Type'] = cover.pictureType(body);
   headers['Content-Length'] = body.length;
   res.writeHead(200, headers);
   res.end(req.method === 'HEAD' ? undefined : body);
 }
+
+/** The size a cover is asked for in: 'small' (128) or 'big' (512, also when left out). */
+const coverSize = (url) => (url.searchParams.get('size') === 'small' || url.searchParams.get('size') === '128' ? 'small' : 'big');
 
 /** A request's body, at most `max` bytes. */
 function readBody(req, max) {
@@ -850,20 +863,47 @@ function createHttpServer({
    * (the server's own search may have found one first). A JPEG; one that is
    * not 512 x 512 is made so with ffmpeg, when there is one.
    */
-  async function uploadCover(req, res, id) {
+  async function uploadCover(req, res, id, size) {
     if (!library.data.songs.some((s) => s.id === id)) {
       req.resume();
       throw new HttpError(404, 'That song is not on the server.');
     }
-    let jpeg = await readBody(req, MAX_COVER);
-    const size = cover.imageSize(jpeg);
-    if (!size || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new HttpError(415, 'A cover is a JPEG picture.');
-    if ((size.width !== cover.SIZE || size.height !== cover.SIZE) && tools.ffmpeg()) {
-      jpeg = await cover.makeSquare(tools.ffmpeg(), jpeg);
-      if (!jpeg) throw new HttpError(415, 'The picture could not be read.');
+    const picture = await readBody(req, MAX_COVER);
+    const dims = cover.imageSize(picture);
+    if (!dims) throw new HttpError(415, 'A cover is a picture (WebP, JPEG or PNG).');
+    // 4.3.1: the app's own thumbnail of the cover it sent just before.
+    if (size === 'small') {
+      if (!cover.isWebp(picture) || dims.width !== cover.THUMB || dims.height !== cover.THUMB) throw new HttpError(415, 'A thumbnail is a WebP of 128 x 128.');
+      return sendJson(res, 200, { cover: library.setThumbnail(id, picture), rev: library.rev });
     }
-    const version = library.setCover(id, jpeg, { onlyIfNone: true });
+    // A WebP of the right size is kept as it is; anything else is made into both sizes.
+    // Without ffmpeg (nothing could be made of it) a 512 x 512 picture is kept as it is too.
+    const square = dims.width === cover.SIZE && dims.height === cover.SIZE;
+    const ready = square && (cover.isWebp(picture) || !tools.ffmpeg());
+    if (!ready && !tools.ffmpeg()) throw new HttpError(415, 'This server needs ffmpeg to take that picture.');
+    const version = await library.setCover(id, ready ? null : picture, { onlyIfNone: true, big: ready ? picture : null });
+    if (!version) throw new HttpError(415, 'The picture could not be read.');
     sendJson(res, 200, { cover: version, rev: library.rev });
+  }
+
+  /** Several covers in one answer (POST /api/covers): what the apps' lists show, as they come into sight. */
+  async function coverBatch(req, res) {
+    const body = await readJsonBody(req);
+    const size = body && (body.size === 'small' || body.size === 128) ? 'small' : 'big';
+    const items = [];
+    for (const id of (Array.isArray(body && body.ids) ? body.ids : []).slice(0, 100).map(String)) {
+      if (!cover.ID_RE.test(id)) continue;
+      const found = library.coverOf(id, size);
+      if (!found) continue;
+      try {
+        items.push({ id, v: found.version, bytes: fs.readFileSync(found.file) });
+      } catch {
+        // Gone meanwhile: not in this answer.
+      }
+    }
+    const packed = cover.packCovers(items);
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': packed.length, 'Cache-Control': 'no-store' });
+    res.end(packed);
   }
 
   async function route(req, res) {
@@ -1064,8 +1104,9 @@ function createHttpServer({
       return sendJson(res, 200, { ...(r.song ? { song: { ...r.song, file: '' } } : {}), skipped: r.skipped, rev: library.rev });
     }
     m = /^\/api\/songs\/([\w-]{1,64})\/cover$/.exec(p);
-    if (m && (req.method === 'GET' || req.method === 'HEAD')) return sendCover(req, res, url, library.coverOf(m[1]));
-    if (m && req.method === 'PUT') return uploadCover(req, res, m[1]);
+    if (m && (req.method === 'GET' || req.method === 'HEAD')) return sendCover(req, res, url, library.coverOf(m[1], coverSize(url)));
+    if (m && req.method === 'PUT') return uploadCover(req, res, m[1], coverSize(url));
+    if (is('POST', /^\/api\/covers$/)) return coverBatch(req, res);
     m = /^\/api\/songs\/([\w-]{1,64})$/.exec(p);
     if (m && req.method === 'PUT') return upload(req, res, url, m[1], profileId, { ip: client.ip, device: entry ? entry.device : '' });
     if (p.startsWith('/api/downloads')) return downloadRoute(req, res, p, profileId, url);

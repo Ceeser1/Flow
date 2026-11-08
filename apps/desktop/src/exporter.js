@@ -62,7 +62,7 @@ async function retagSong(song, meta) {
   const dest = uniquePath(songFileStem(meta.artist, meta.title, meta.mix), ext, song.file);
   const tmp = path.join(path.dirname(dest), `.flow-retag-${Date.now()}.${ext}`);
   try {
-    const picture = song.cover && song.cover !== '-' ? covers.localStore().read(song.id) : null;
+    const picture = song.cover && song.cover !== '-' ? await covers.tagPicture(song.id) : null;
     const ok = await media.rewriteTags(song.file, tmp, {
       meta: {
         ...meta,

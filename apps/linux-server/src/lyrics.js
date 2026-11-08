@@ -6,7 +6,11 @@
 // again after a week when an app asks; the song renamed or trimmed: at
 // once). One lookup at a time per song, however many apps ask. Lyrics
 // written or edited in an app (4.0, put) are kept for good instead. The
-// apps keep copies of them (4.0, index and many: GET / POST /api/lyrics).
+// apps keep copies of them: each song in the library carries the stamp of
+// its lyrics (4.3.1, index; server.js), so an app asks for a song's only
+// when it is played and its copy is not that one (or for many at once, the
+// songs it keeps for offline: POST /api/lyrics). onChange(id): a song's
+// lyrics kept anew.
 
 const fs = require('fs');
 const path = require('path');
@@ -21,8 +25,15 @@ const FAIL_WAIT_MS = 10 * 60 * 1000;
 
 /** dir: where they are kept; lookup: how a song's are found (the tests' fake); pauseMs, failWaitMs: the filler's. */
 function createLyricsStore({
-  dir, lookup = lyrics.lookupLyrics, log = () => {}, pauseMs = PAUSE_MS, failWaitMs = FAIL_WAIT_MS,
+  dir, lookup = lyrics.lookupLyrics, log = () => {}, pauseMs = PAUSE_MS, failWaitMs = FAIL_WAIT_MS, onChange = () => {},
 }) {
+  const changed = (id) => {
+    try {
+      onChange(id);
+    } catch {
+      // The next look at the stamps.
+    }
+  };
   const running = new Map();
   const fileOf = (id) => path.join(dir, `${id}.json`);
 
@@ -40,6 +51,7 @@ function createLyricsStore({
         if (now && now.own) return lyrics.clean(now);
         fs.mkdirSync(dir, { recursive: true });
         writeJsonAtomic(fileOf(song.id), lyrics.toKeep(found, song));
+        changed(song.id);
         return lyrics.clean(found);
       } catch (err) {
         log(`Lyrics of "${song.title}" could not be looked up: ${err.message}`);
@@ -64,10 +76,12 @@ function createLyricsStore({
     failed.delete(song.id);
     if (!own) {
       fs.rmSync(fileOf(song.id), { force: true });
+      changed(song.id);
       return get(song).catch(() => ({ ...lyrics.NONE }));
     }
     fs.mkdirSync(dir, { recursive: true });
     writeJsonAtomic(fileOf(song.id), lyrics.toKeep(own, song));
+    changed(song.id);
     return Promise.resolve(lyrics.clean(own));
   }
 

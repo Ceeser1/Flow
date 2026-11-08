@@ -256,14 +256,19 @@ function coverDirs() {
 }
 
 // A cover arrived: the window shows it in place of the note.
-covers.onUpdated((scope, ids) => sendToWindow('covers:updated', { scope, ids, dirs: coverDirs() }));
+covers.onUpdated((scope, ids, size) => sendToWindow('covers:updated', { scope, ids, size, dirs: coverDirs() }));
 // Rows on screen whose cover file is not here yet: a server's come down first.
-handle('covers:want', (ids) => {
-  if (remote.active()) remote.wantCovers(ids);
+// { ids, size }: 'small' for the lists, 'big' for Details, the visualizers, the lock screen.
+handle('covers:want', (arg) => {
+  if (remote.active()) remote.wantCovers(Array.isArray(arg) ? arg : arg && arg.ids, arg && arg.size);
 });
 // Settings: the covers kept here (Local Files', and the servers').
-handle('covers:stats', () => ({ local: covers.localStore().size(), server: remote.active() ? remote.coverStats() : null }));
-handle('covers:clear', () => remote.clearCoverCache());
+handle('covers:stats', () => ({
+  local: { small: covers.localStore().size('small'), big: covers.localStore().size('big') },
+  server: remote.active() ? remote.coverStats() : null,
+}));
+// size: 'small' (Cover thumbnails cache) or 'big' (Clear big cover cache).
+handle('covers:clear', (size) => remote.clearCoverCache(size === 'small' || size === 'big' ? size : null));
 // Add Songs: a song's cover as soon as it is downloaded, before it is saved.
 covers.onStaged((info) => sendToWindow('covers:staged', info));
 handle('covers:staged', (cachePath) => covers.stagedCover(String(cachePath || '')));
@@ -278,8 +283,8 @@ const lyricsClient = createLyricsClient({
   jsonFiles: env.jsonFiles,
   fetchOn: () => settings.get('lyricsOn') !== false,
   syncEveryMs: 15 * 60 * 1000,
-  // Copies of a server's songs have the server's lyrics.
-  skip: (id) => remote.active() && remote.isServerCopy(id),
+  // Local Files songs that are a server's too (copies, or uploaded and kept) have the server's lyrics.
+  skip: (id) => remote.active() && (remote.isServerCopy(id) || !!remote.serverSongOf(id)),
   onChange: () => sendToWindow('lyrics:changed'),
 });
 // Every Local Files song's lyrics looked up in the background (4.0): soon
@@ -1094,6 +1099,7 @@ app.on('window-all-closed', async () => {
   library.unwatch();
   loudnessFiller.stop();
   coverFiller.stop();
+  covers.flush();
   infoFiller.stop();
   tagger.stop();
   if (importToken) importToken.cancel();

@@ -154,9 +154,9 @@ contextBridge.exposeInMainWorld('flow', {
   connectLink: (text) => call('server:connectLink', text),
   qr: (text) => call('qr:encode', text),
   // Covers: files in Music\FlowPlayer\Covers (Store.coverSrc).
-  wantCovers: (ids) => call('covers:want', ids),
+  wantCovers: (ids, size = 'small') => call('covers:want', { ids, size }),
   coverStats: () => call('covers:stats'),
-  clearCoverCache: () => call('covers:clear'),
+  clearCoverCache: (size) => call('covers:clear', size),
   onCoversUpdated: (fn) => ipcRenderer.on('covers:updated', (_e, info) => fn(info)),
   // Add Songs: the cover of a song downloaded but not saved yet ({ file, version } or null).
   stagedCover: (cachePath) => call('covers:staged', cachePath),

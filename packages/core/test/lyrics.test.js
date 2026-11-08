@@ -358,44 +358,72 @@ test('the app\'s own lyrics: a server song\'s on the server, a local one\'s kept
   assert.equal((await client.lookup({ artist: 'Moby', title: 'Porcelain', duration: 241 })).found, false);
 });
 
-test('the server\'s lyrics synchronized: those whose stamp changed come down, those of songs gone go', async () => {
+test('the server\'s lyrics (4.3.1): asked for when played unless the copy is the stamp\'s, the offline songs\' in advance, one copy per song', async () => {
   const { files, folder } = memFolder();
-  const serverSongs = [{ id: 's1', artist: 'Moby', title: 'Porcelain' }, { id: 's2', artist: 'Moby', title: 'Bodyrock' }, { id: 's3', artist: 'Moby', title: 'Honey' }];
-  let index = { s1: 'a', s2: 'b' };
+  const serverSongs = [
+    { id: 's1', artist: 'Moby', title: 'Porcelain', lyrics: 'a' },
+    { id: 's2', artist: 'Moby', title: 'Bodyrock', lyrics: 'b' },
+    { id: 's3', artist: 'Moby', title: 'Honey', lyrics: 'c' },
+    { id: 's4', artist: 'Moby', title: 'Natural Blues' },
+  ];
   const fetched = [];
+  const asked = [];
   let hook = null;
+  const stampOf = (id) => (serverSongs.find((s) => s.id === id) || {}).lyrics || '';
   const remote = {
     active: () => true,
     view: () => ({ songs: serverSongs, deviceSongs: [] }),
     serverId: () => 'srv',
+    localOf: (sid) => (sid === 's3' ? 'l3' : ''),
+    offlineIds: () => new Set(['s1', 's2']),
     useLyricsSync: (fn) => {
       hook = fn;
     },
-    lyricsIndex: async () => ({ serverId: 'srv', songs: index }),
     lyricsOf: async (ids) => {
       fetched.push(...ids);
       return Object.fromEntries(ids.map((id) => [id, {
-        found: id !== 's2', synced: null, plain: id === 's2' ? '' : `words ${id}`, instrumental: false, v: index[id],
+        found: id !== 's2', synced: null, plain: id === 's2' ? '' : `words ${id}`, instrumental: false, v: stampOf(id),
       }]));
     },
-    songLyrics: async () => null,
+    songLyrics: async (id) => {
+      asked.push(id);
+      return { found: true, synced: null, plain: `played ${id}`, instrumental: false, v: stampOf(id) };
+    },
   };
-  const client = createLyricsClient({ remote, library: { get: () => ({ songs: [] }) }, folder, fetch: fakeFetch({ down: true }) });
+  const client = createLyricsClient({
+    remote, library: { get: () => ({ songs: [{ id: 'l3', artist: 'Moby', title: 'Honey' }] }) }, folder, fetch: fakeFetch({ down: true }),
+  });
   assert.equal(typeof hook, 'function', 'told when the server\'s library changes');
+  // From before 4.3.1, kept twice (the server's folder and its Local Files copy's): once.
+  folder.write('srv', 's3', { found: true, plain: 'old copy', server: true, v: 'x' });
+  folder.write('local', 'l3', { found: true, plain: 'looked up here', key: 'k' });
   await client.sync();
-  assert.deepEqual(fetched, ['s1', 's2']);
+  assert.deepEqual(fetched, ['s1', 's2'], 'only the songs kept for offline, many at once');
   assert.ok(files.has('Lyrics/srv/s1.json'));
   assert.ok(files.has('Lyrics/srv/s2.none.json'));
-  assert.equal((await client.get('s1')).plain, 'words s1', 'the copy while the server cannot say');
-  // Nothing changed: nothing comes down. s1 changed, s2 gone from the server.
+  assert.ok(!files.has('Lyrics/srv/s3.json'), 'one copy per song');
+  // Played: the copy is the one the stamp says, nothing asked.
+  assert.equal((await client.get('s1')).plain, 'words s1');
+  assert.deepEqual(asked, []);
+  // Not the stamp's: asked for once, kept in its Local Files copy's file.
+  assert.equal((await client.get('s3')).plain, 'played s3');
+  assert.equal((await client.get('s3')).plain, 'played s3');
+  assert.deepEqual(asked, ['s3']);
+  assert.equal(JSON.parse(files.get('Lyrics/local/l3.json')).v, 'c');
+  assert.ok(!files.has('Lyrics/srv/s3.json'));
+  // Nothing kept on the server yet (no stamp): asked when played.
+  await client.get('s4');
+  assert.deepEqual(asked, ['s3', 's4']);
+  // Changed on the server (a new stamp): asked again when played, not by the next sync.
+  serverSongs[0].lyrics = 'a2';
+  assert.equal((await client.get('s1')).plain, 'played s1');
   await client.sync();
-  assert.equal(fetched.length, 2);
-  index = { s1: 'c' };
+  assert.deepEqual(fetched, ['s1', 's2']);
+  // Gone from the server: its copy goes.
   serverSongs.splice(1, 1);
   await client.sync();
-  assert.deepEqual(fetched.slice(2), ['s1']);
   assert.ok(!files.has('Lyrics/srv/s2.none.json'));
-  assert.equal(client.stats().count, 1);
+  assert.equal(client.stats().count, 3, 'each song once: s1, s3 (its Local Files copy), s4');
 });
 
 test('Clear lyrics cache: all but those written for Local Files songs, the server\'s again; the old lyrics.json moved over', async () => {
@@ -412,9 +440,9 @@ test('Clear lyrics cache: all but those written for Local Files songs, the serve
     active: () => false,
     view: () => ({ songs: [], deviceSongs: [] }),
     serverId: () => '',
-    lyricsIndex: async () => {
+    lyricsOf: async () => {
       synced += 1;
-      return null;
+      return {};
     },
   };
   const client = createLyricsClient({ remote, library: { get: () => local }, folder, jsonFiles, fetch: fakeFetch({ down: true }) });
@@ -428,7 +456,7 @@ test('Clear lyrics cache: all but those written for Local Files songs, the serve
   assert.equal(client.stats().count, 4, 'the deleted song\'s gone when first counted, not one written by hand');
   assert.equal(client.clear().count, 2);
   assert.deepEqual([...files.keys()].sort(), ['Lyrics/local/goneOwn.json', 'Lyrics/local/l1.json']);
-  assert.equal(synced, 1, 'the server\'s asked for again');
+  assert.equal(synced, 0, 'not signed in to a server: nothing asked for');
 });
 
 test('a server song uploaded from here: the lyrics written for its Local Files copy, fetching on or off', async () => {

@@ -667,24 +667,52 @@ settings.jam.outputDelay.keptPerOutput
 # ── Settings › Media Management › Cover Cache and Lyrics Cache ──
 
 settings.coverCache.heading
-  en: Cover Cache
-  de: Cover-Cache
+  en: Cover thumbnails cache
+  de: Cache für Cover-Vorschaubilder
 
 settings.coverCache.desc
-  en: Covers are found by the client or server, synchronized automatically.
-  de: Cover werden von Client oder Server gefunden und automatisch synchronisiert.
+  en: Thumbnails are only 128x128px (~4 KB each), downloaded and stored as you open playlists or scroll on demand.
+  de: Vorschaubilder sind nur 128x128 px groß (je ~4 KB) und werden bei Bedarf geladen und gespeichert, wenn du Playlists öffnest oder scrollst.
 
 settings.coverCache.clear
-  en: Clear cover cache
-  de: Cover-Cache leeren
+  en: Clear thumbnails
+  de: Vorschaubilder leeren
 
 settings.coverCache.clear.tooltip
-  en: Delete the covers downloaded from Flow Servers. Those of this server come down again.
-  de: Von Flow Servern geladene Cover löschen. Die dieses Servers werden neu geladen.
+  en: Delete the cover thumbnails downloaded from Flow Servers. They come down again as you scroll.
+  de: Von Flow Servern geladene Cover-Vorschaubilder löschen. Sie werden beim Scrollen neu geladen.
+
+settings.coverCache.clear.title
+  en: Clear cover thumbnails
+  de: Cover-Vorschaubilder leeren
+
+settings.coverCache.clear.text
+  en: Cover thumbnails are going to be re-downloaded as you scroll through playlists, do you really want to delete the current cache to free some space?
+  de: Cover-Vorschaubilder werden neu geladen, wenn du durch Playlists scrollst. Möchtest du den aktuellen Cache wirklich löschen, um Platz zu schaffen?
 
 settings.coverCache.cleared
-  en: Cover cache cleared: the covers come down again
-  de: Cover-Cache geleert: Die Cover werden neu geladen
+  en: Cover thumbnails cleared
+  de: Cover-Vorschaubilder geleert
+
+settings.coverCache.highRes.label
+  en: Download high resolution covers (512px)
+  de: Cover in hoher Auflösung laden (512 px)
+
+settings.coverCache.highRes.desc
+  en: High resolution covers (512x512 px) are only downloaded for songs being played, song details or visualizers and stored after.
+  de: Cover in hoher Auflösung (512x512 px) werden nur für gespielte Songs, Song-Details oder Visualizer geladen und danach gespeichert.
+
+settings.coverCache.highRes.clear
+  en: Clear big cover cache
+  de: Große Cover leeren
+
+settings.coverCache.highRes.clear.tooltip
+  en: Delete the high resolution covers downloaded from Flow Servers. Those of Local Files stay.
+  de: Von Flow Servern geladene Cover in hoher Auflösung löschen. Die von „Lokale Dateien“ bleiben.
+
+settings.coverCache.highRes.cleared
+  en: Big cover cache cleared
+  de: Große Cover geleert
 
 settings.lyricsCache.heading
   en: Lyrics Cache
@@ -762,8 +790,8 @@ settings.media.keepLocalAfterUpload.label
   de: Lokale Dateien nach Server-Upload behalten
 
 settings.media.keepLocalAfterUpload.desc
-  en: If disabled, your local songs will be removed after they got uploaded to the server, unless you have these songs marked to be downloaded.
-  de: Wenn deaktiviert, werden lokale Songs nach dem Upload auf den Server entfernt, außer sie sind zum Download markiert.
+  en: Enabled, your local songs stay here with their covers and lyrics after they got uploaded to the server. If disabled, all files of a song are removed from here after its upload, unless you have it marked to be downloaded.
+  de: Aktiviert bleiben lokale Songs mit ihren Covern und Lyrics nach dem Upload auf den Server hier. Wenn deaktiviert, werden alle Dateien eines Songs nach dem Upload hier entfernt, außer er ist zum Download markiert.
 
 # Settings rows where the Flow Server converts the songs (phones and the web player)
 settings.media.convertMp3.server.label
@@ -7479,6 +7507,10 @@ settings.media.convertMp3.desktop.label
   de: Downloads immer in MP3 umwandeln
 
 # Settings › Media Management › Local Files (the music folder on this computer)
+settings.localFiles.desc
+  en: All downloaded songs, covers and lyrics.
+  de: Alle heruntergeladenen Songs, Cover und Lyrics.
+
 settings.localFiles.open
   en: Open
   de: Öffnen

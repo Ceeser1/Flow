@@ -69,8 +69,20 @@ async function startServer(opts = {}) {
   const backups = createBackups({ config, library, log });
   // The songs' lyrics from LRCLIB, kept once looked up; with fillLyrics,
   // every song's in the background, one every few seconds.
+  // Each song in the library carries the stamp of its lyrics (4.3.1): the
+  // apps ask for a song's only when it changed. Looked at after every change
+  // of the library (a rename asks for others) and of the lyrics.
+  let stampTimer = null;
+  const stampLyrics = () => {
+    if (stampTimer) return;
+    stampTimer = setTimeout(() => {
+      if (stampTimer === -1) return;
+      stampTimer = null;
+      library.setLyricsStamps(lyrics.index(library.data.songs));
+    }, 200);
+  };
   const lyrics = createLyricsStore({
-    dir: path.join(config.home, 'lyrics'), lookup: opts.lookupLyrics, log, pauseMs: opts.lyricsPauseMs,
+    dir: path.join(config.home, 'lyrics'), lookup: opts.lookupLyrics, log, pauseMs: opts.lyricsPauseMs, onChange: stampLyrics,
   });
   // The library's changes go to the apps on their live channels (4.3).
   const push = createPush({ library, live, delayMs: opts.pushDelayMs });
@@ -106,8 +118,10 @@ async function startServer(opts = {}) {
   backups.checkRequest();
   backups.weekly();
   lyrics.sweep(new Set(library.data.songs.map((s) => s.id)));
+  library.setLyricsStamps(lyrics.index(library.data.songs));
   fillLyrics();
   library.onChange(fillLyrics);
+  library.onChange(stampLyrics);
   const timers = [
     setInterval(() => library.scan().catch(() => {}), RESCAN_MS),
     setInterval(() => library.emptyTrash(), TRASH_MS),
@@ -134,6 +148,8 @@ async function startServer(opts = {}) {
     close() {
       if (discovery) discovery.close();
       for (const t of timers) clearInterval(t);
+      clearTimeout(stampTimer);
+      stampTimer = -1;
       downloads.stop();
       backups.stop();
       sessions.stop();

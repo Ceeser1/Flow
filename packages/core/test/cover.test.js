@@ -200,23 +200,60 @@ test('fetchImage refuses what is not a picture, or too large', async () => {
   await assert.rejects(cover.fetchImage('https://x.test/a', { fetchFn: async () => ({ ok: false, status: 404, headers: { get: () => null } }) }), /404/);
 });
 
-test('the store: by id, atomic, swept', () => {
+test('the store (4.3.1): two sizes by id, versions recorded, swept, copied, old covers found', () => {
+  const { createCoverStore } = require('../src/client/coverStore');
+  const io = {
+    join: path.join,
+    list: (d) => fs.readdirSync(d, { withFileTypes: true }).map((e) => ({ name: e.name, dir: e.isDirectory(), size: e.isDirectory() ? 0 : fs.statSync(path.join(d, e.name)).size })),
+    readText: (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null),
+    writeText: (p, s) => fs.writeFileSync(p, s),
+    writeBytes: (p, b) => fs.writeFileSync(p, b),
+    readBytes: (p) => fs.readFileSync(p),
+    remove: (p, o = {}) => fs.rmSync(p, { force: true, recursive: !!o.recursive }),
+    mkdir: (p) => fs.mkdirSync(p, { recursive: true }),
+    rename: (a1, b1) => fs.renameSync(a1, b1),
+    copy: (a1, b1) => fs.copyFileSync(a1, b1),
+    exists: (p) => fs.existsSync(p),
+  };
   const dir = path.join(scratch, 'store');
-  const store = cover.createCoverStore(dir);
-  const v1 = store.write('abc123', Buffer.from('one'));
-  const v2 = store.write('abc123', Buffer.from('two'));
-  assert.notEqual(v1, v2);
-  assert.equal(v2, cover.coverVersion(Buffer.from('two')));
-  assert.equal(store.read('abc123').toString(), 'two');
-  assert.ok(store.has('abc123'));
-  store.write('gone1', Buffer.from('x'));
-  fs.writeFileSync(path.join(dir, '.left.tmp'), 'x');
-  assert.equal(store.sweep(new Set(['abc123'])), 1);
-  assert.deepEqual(store.ids(), ['abc123']);
-  assert.deepEqual(fs.readdirSync(dir), ['abc123.jpg']);
-  assert.deepEqual(store.size(), { count: 1, bytes: 3 });
+  const store = createCoverStore(dir, io, { saveDelayMs: 1 });
+  store.write('abc123', 'big', Buffer.from('big one'), 'v1');
+  store.write('abc123', 'small', Buffer.from('small'), 'v1');
+  assert.equal(store.version('abc123', 'big'), 'v1');
+  assert.equal(store.read('abc123', 'small').toString(), 'small');
+  assert.ok(fs.existsSync(path.join(dir, 'high_res', 'abc123.webp')));
+  assert.ok(fs.existsSync(path.join(dir, 'thumbnails', 'abc123.webp')));
+  assert.deepEqual(store.size('small'), { count: 1, bytes: 5 });
+  store.write('gone1', 'small', Buffer.from('x'), 'v2');
+  fs.writeFileSync(path.join(dir, 'thumbnails', 'left.webp.1234.tmp'), 'x');
+  store.flush();
+  // Read again (a new start): the versions from the index, the leftover gone.
+  const again = createCoverStore(dir, io);
+  assert.equal(again.version('abc123', 'small'), 'v1');
+  assert.equal(again.version('gone1', 'small'), 'v2');
+  assert.ok(!fs.existsSync(path.join(dir, 'thumbnails', 'left.webp.1234.tmp')));
+  // A file changed behind the index's back has no version: fetched again.
+  fs.writeFileSync(path.join(dir, 'high_res', 'abc123.webp'), 'another picture');
+  assert.equal(createCoverStore(dir, io).version('abc123', 'big'), '');
+  assert.equal(again.sweep(new Set(['abc123'])), 1);
+  assert.deepEqual(again.ids('small'), ['abc123']);
+  // Copied with both sizes into another store, the version given.
+  const other = createCoverStore(path.join(scratch, 'store2'), io);
+  assert.equal(again.copyTo('abc123', other, 'zzz', 'v9'), 'v9');
+  assert.equal(other.version('zzz', 'small'), 'v9');
+  assert.equal(other.read('zzz', 'big').toString(), 'another picture');
+  // One size cleared (Settings), the other kept.
+  assert.equal(again.clear('small'), 1);
+  assert.equal(again.has('abc123', 'small'), false);
+  assert.equal(again.has('abc123', 'big'), true);
+  again.remove('abc123');
+  assert.equal(again.has('abc123', 'big'), false);
+  // A cover from before 4.3.1.
+  fs.writeFileSync(path.join(dir, 'old1.jpg'), 'jpeg');
+  assert.deepEqual(again.legacy().map((x) => x.id), ['old1']);
   assert.throws(() => store.file('../evil'), /Not a song id/);
-  assert.throws(() => store.write('a/b', Buffer.from('x')), /Not a song id/);
-  store.remove('abc123');
-  assert.equal(store.has('abc123'), false);
+  assert.throws(() => store.write('a/b', 'small', Buffer.from('x'), 'v'), /Not a song id/);
+  store.forget();
+  other.forget();
+  again.forget();
 });

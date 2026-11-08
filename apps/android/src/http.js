@@ -28,10 +28,11 @@ function parse(text) {
 
 /**
  * One request, as the desktop's (apps/desktop/src/env.js): JSON (`json`) or a
- * file (`file`) up, or the answer saved into a file (`saveTo`). Resolves { status, json }.
+ * file (`file`) up, or the answer saved into a file (`saveTo`). Resolves { status, json },
+ * and with `binary` the answer's bytes too ({ status, json, bytes }: covers, 4.3.1).
  * Unreachable, timed out or cut off: OfflineError.
  */
-async function request(base, pathname, { method = 'GET', json, file, saveTo, token, timeout = 15000, onProgress } = {}) {
+async function request(base, pathname, { method = 'GET', json, file, saveTo, binary = false, token, timeout = 15000, onProgress } = {}) {
   let url;
   try {
     url = new URL(base + pathname);
@@ -76,6 +77,7 @@ async function request(base, pathname, { method = 'GET', json, file, saveTo, tok
       init.body = JSON.stringify(json);
     }
     const res = await fetch(url.href, init);
+    if (binary && res.status === 200) return { status: 200, json: null, bytes: new Uint8Array(await res.arrayBuffer()) };
     const text = await res.text();
     return { status: res.status, json: parse(text) };
   } catch (err) {

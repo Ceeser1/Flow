@@ -400,8 +400,13 @@ test('a downloaded song\'s cover is looked for at once: shown while it waits, th
 
     const done = await api(base, 'POST', '/api/downloads/items/0/finish', { meta: { title: 'One' }, start: 0, end: 3 });
     assert.equal(done.status, 200);
-    const song = (await api(base, 'GET', '/api/library')).json.library.songs.find((s) => s.id === done.json.song.id);
-    assert.equal(song.cover, batch.items[0].cover);
+    // Its cover made into the two sizes (4.3.1) right after.
+    let song = null;
+    for (let i = 0; i < 100 && !(song && song.cover); i += 1) {
+      song = (await api(base, 'GET', '/api/library')).json.library.songs.find((s) => s.id === done.json.song.id);
+      if (!song.cover) await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.match(song.cover, /^[0-9a-f]{10}$/);
     const after = await batchOf(base);
     assert.equal(after.items[0].state, 'saved');
     assert.equal(after.items[0].cover, '');
