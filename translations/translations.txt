@@ -96,8 +96,8 @@ settings.general.songColumns.label
   de: Filterbare Spalten für Songs anzeigen
 
 settings.general.songColumns.desc
-  en: Extra columns in All Songs and the playlists. Each can be sorted by a click on its heading, and the search finds what is in it.
-  de: Zusätzliche Spalten in „Alle Songs“ und den Playlists. Jede lässt sich per Klick auf ihre Überschrift sortieren, und die Suche findet ihren Inhalt.
+  en: Extra columns in All Songs and the playlists. Each can be sorted by a click on its heading, and the Search page finds what is in it.
+  de: Zusätzliche Spalten in „Alle Songs“ und den Playlists. Jede lässt sich per Klick auf ihre Überschrift sortieren, und die Seite „Suche“ findet ihren Inhalt.
 
 # ── Settings › App Visuals ──
 
@@ -2037,8 +2037,8 @@ playlist.header.smartPlaylist
   de: Smarte Playlist ·
 
 playlist.search.placeholder
-  en: Search in {playlist}
-  de: In {playlist} suchen
+  en: Search song titles in {playlist}
+  de: Songtitel in {playlist} suchen
 
 playlist.rules.tooltip
   en: {rules}. Click to change the rules.
@@ -2047,6 +2047,11 @@ playlist.rules.tooltip
 playlist.showing
   en: Showing {shown} of {count}
   de: Zeige {shown} von {count}
+
+# An artist, album, genre, Info or mix picked on the Search page: All Songs shows only its songs.
+playlist.field.clear.tooltip
+  en: Show all songs again
+  de: Wieder alle Songs zeigen
 
 # Song lists › when the list is empty
 playlist.empty.allSongs

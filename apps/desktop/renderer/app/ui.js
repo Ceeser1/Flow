@@ -327,6 +327,136 @@ async function attempt(fn) {
   }
 }
 
+// ---- long lists ----
+
+/**
+ * A long list drawn only where it shows: the rows on screen and a screen
+ * above and below them are in the page, two spacers stand for the rest,
+ * and scrolling swaps rows in and out (only those coming in are made), so
+ * 100 000 rows cost what 60 do. Every row is as tall as the first one drawn.
+ *
+ * scroller: the element that scrolls; holder: where the rows go (after
+ * what is in it already); count, makeRow(i); spacer(): an empty row of the
+ * holder's kind; height: a row's height until one is measured; hint: where
+ * the list is { top: the scroller's scrollTop, offset: the holder's top in
+ * it, height } (a list drawn again keeps its place without measuring the
+ * page while it is changing); onAdded(nodes), onRemoved(nodes).
+ * Returns { stop(), offset, height }.
+ */
+function windowRows({ scroller, holder, count, makeRow, spacer, height, hint = {}, onAdded, onRemoved }) {
+  const top = spacer();
+  const bottom = spacer();
+  holder.append(top, bottom);
+  const drawn = [];
+  let start = 0;
+  let end = 0;
+  let rowH = hint.height || height;
+  let offset = Number.isFinite(hint.offset) ? hint.offset : 0;
+  let frame = 0;
+  let live = true;
+
+  const range = (scrollTop, view) => {
+    const first = Math.floor((scrollTop - offset) / rowH);
+    const screen = Math.max(1, Math.ceil(view / rowH));
+    const clamp = (n) => Math.max(0, Math.min(count, n));
+    return [clamp(first - screen), clamp(first + screen * 2 + 1)];
+  };
+
+  function show([s, e]) {
+    if (s === start && e === end) return;
+    const gone = [];
+    if (s >= end || e <= start) {
+      gone.push(...drawn.splice(0));
+      start = s;
+      end = s;
+    } else {
+      while (start < s) {
+        gone.push(drawn.shift());
+        start += 1;
+      }
+      while (end > e) {
+        gone.push(drawn.pop());
+        end -= 1;
+      }
+    }
+    for (const n of gone) n.remove();
+    const added = [];
+    if (s < start) {
+      const fresh = [];
+      for (let i = s; i < start; i += 1) fresh.push(makeRow(i));
+      top.after(...fresh);
+      drawn.unshift(...fresh);
+      added.push(...fresh);
+      start = s;
+    }
+    if (e > end) {
+      const fresh = [];
+      for (let i = end; i < e; i += 1) fresh.push(makeRow(i));
+      bottom.before(...fresh);
+      drawn.push(...fresh);
+      added.push(...fresh);
+      end = e;
+    }
+    top.style.height = `${start * rowH}px`;
+    bottom.style.height = `${(count - end) * rowH}px`;
+    if (gone.length && onRemoved) onRemoved(gone);
+    if (added.length && onAdded) onAdded(added);
+  }
+
+  const place = () => top.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+
+  // Once a frame while scrolling: where the list is now, measured.
+  function update() {
+    frame = 0;
+    if (!live || !holder.isConnected) return;
+    const view = scroller.clientHeight;
+    // Hidden (another page shows): nothing to measure.
+    if (!view || !top.getClientRects().length) return;
+    let again = false;
+    if (drawn.length) {
+      const h0 = drawn[0].getBoundingClientRect().height;
+      if (h0 > 0 && Math.abs(h0 - rowH) > 0.01) {
+        rowH = h0;
+        again = true;
+      }
+    }
+    const was = offset;
+    offset = place();
+    if (Math.abs(offset - was) > 1) again = true;
+    show(range(scroller.scrollTop, view));
+    // Measured anew (a row's height, the list's place): once more to be sure.
+    if (again) soon();
+  }
+  function soon() {
+    if (!frame && live) frame = requestAnimationFrame(update);
+  }
+  scroller.addEventListener('scroll', soon, { passive: true });
+  window.addEventListener('resize', soon);
+  show(range(Number.isFinite(hint.top) ? hint.top : 0, window.innerHeight));
+  soon();
+  return {
+    stop() {
+      live = false;
+      scroller.removeEventListener('scroll', soon);
+      window.removeEventListener('resize', soon);
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+    },
+    get offset() {
+      return offset;
+    },
+    get height() {
+      return rowH;
+    },
+  };
+}
+
+/** The cover boxes in nodes leaving the page let go (Covers watches them while their pictures come). */
+function releaseCovers(nodes) {
+  if (typeof Covers === 'undefined' || !Covers.release) return;
+  for (const n of nodes) Covers.release(n);
+}
+
 // ---- sortable table ----
 
 /**
@@ -334,13 +464,28 @@ async function attempt(fn) {
  * render(row), onClick(row) }]; onClick makes the whole cell clickable
  * (buttons in it keep their own clicks). `sort` is { key, dir } and onSort(key) is called with the
  * clicked column. rowKey(row) goes on each <tr> as data-id.
+ *
+ * scroller: the element the page scrolls in; given, only the rows where
+ * the list shows are in the page (windowRows), scrollTop: where it is
+ * scrolled (known from its scroll events, not measured while drawing).
+ * onRowsAdded(trs), onRowsRemoved(trs): rows coming in and going.
  */
-function renderTable(table, { columns, rows, sort, onSort, rowKey, rowClass, onRowDblClick, mobile }) {
+function renderTable(table, {
+  columns, rows, sort, onSort, rowKey, rowClass, onRowDblClick, mobile, scroller, scrollTop, onRowsAdded, onRowsRemoved,
+}) {
+  // A list drawn before: where it was, then let go.
+  const before = table._rows;
+  const hint = before ? { top: scrollTop, offset: before.offset, height: before.height } : { top: scrollTop };
+  if (before) before.stop();
+  table._rows = null;
   // The phone draws the rows as a touch list instead (touchList.js).
   if (mobile && document.body.classList.contains('mobile')) {
-    TouchList.render(table, { columns, rows, sort, onSort, rowKey, rowClass, ...mobile });
+    TouchList.render(table, {
+      columns, rows, sort, onSort, rowKey, rowClass, scroller, hint, onRowsAdded, onRowsRemoved, ...mobile,
+    });
     return;
   }
+  releaseCovers([table]);
   clear(table);
   const headRow = h('tr');
   for (const col of columns) {
@@ -356,8 +501,7 @@ function renderTable(table, { columns, rows, sort, onSort, rowKey, rowClass, onR
     headRow.appendChild(th);
   }
   const tbody = h('tbody');
-  const frag = document.createDocumentFragment();
-  for (const row of rows) {
+  const makeRow = (row) => {
     const tr = h('tr', { dataset: { id: rowKey(row) } });
     const extra = rowClass ? rowClass(row) : '';
     if (extra) tr.className = extra;
@@ -376,11 +520,30 @@ function renderTable(table, { columns, rows, sort, onSort, rowKey, rowClass, onR
         if (!e.target.closest('button')) onRowDblClick(row);
       });
     }
-    frag.appendChild(tr);
-  }
-  tbody.appendChild(frag);
+    return tr;
+  };
   table.appendChild(h('thead', headRow));
   table.appendChild(tbody);
+  if (!scroller) {
+    const frag = document.createDocumentFragment();
+    for (const row of rows) frag.appendChild(makeRow(row));
+    tbody.appendChild(frag);
+    return;
+  }
+  table._rows = windowRows({
+    scroller,
+    holder: tbody,
+    count: rows.length,
+    makeRow: (i) => makeRow(rows[i]),
+    spacer: () => h('tr.vspace', { 'aria-hidden': 'true' }, h('td', { colSpan: columns.length })),
+    height: 41,
+    hint,
+    onAdded: onRowsAdded,
+    onRemoved: (trs) => {
+      releaseCovers(trs);
+      if (onRowsRemoved) onRowsRemoved(trs);
+    },
+  });
 }
 
 // ---- dialogs ----

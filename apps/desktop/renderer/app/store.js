@@ -46,6 +46,7 @@ const Store = {
 
   setLibrary(lib) {
     this.library = lib;
+    this._allSongs = null;
     // The songs here that are not the server's (Downloaded Songs) can be played and queued too.
     this.songsById = new Map([...lib.songs, ...(lib.deviceSongs || [])].map((s) => [s.id, s]));
     // Smart playlists (4.0): their songs are the ones their rules pick, now.
@@ -63,6 +64,32 @@ const Store = {
       }
     }
     for (const fn of this._listeners) fn(lib);
+    this._prepare(lib);
+  },
+
+  /**
+   * While nothing else runs: each song's folded names and title, its title's and
+   * artist's sort keys made (Util.songHay, songSortKey), so the first search
+   * or sort of a long library does not wait for 100 000 of them.
+   */
+  _prepare(lib) {
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(() => fn({ timeRemaining: () => 8 }), 50));
+    let at = 0;
+    const step = (deadline) => {
+      if (this.library !== lib) return;
+      const songs = lib.songs;
+      while (at < songs.length && deadline.timeRemaining() > 2) {
+        for (let k = 0; k < 200 && at < songs.length; k += 1, at += 1) {
+          const s = songs[at];
+          Util.songHay(s);
+          Util.titleHay(s);
+          Util.songSortKey(s, 'title');
+          Util.songSortKey(s, 'artist');
+        }
+      }
+      if (at < songs.length) idle(step, { timeout: 2000 });
+    };
+    idle(step, { timeout: 2000 });
   },
 
   /** Whether this app can do `cap` (@flow/core/client/caps); its controls are hidden when not. */
@@ -254,12 +281,16 @@ const Store = {
 
   /** All Songs, shaped like a playlist whose entries were added on download. */
   allSongsPlaylist() {
-    return {
+    // Made once per library (a long one is asked for often while drawing).
+    if (this._allSongs && this._allSongs.lib === this.library) return this._allSongs.list;
+    const list = {
       id: ALL_SONGS_ID,
       name: ALL_SONGS_NAME,
       entries: this.library.songs.map((s) => ({ songId: s.id, addedAt: s.addedAt })),
       isAll: true,
     };
+    this._allSongs = { lib: this.library, list };
+    return list;
   },
 
   /**
@@ -271,13 +302,17 @@ const Store = {
    */
   devicePlaylist() {
     if (!this.server.on || !this.can('localFiles')) return null;
+    // Made once per library, as All Songs.
+    if (this._deviceList && this._deviceList.lib === this.library) return this._deviceList.list;
     const songs = [...this.library.songs.filter((s) => s.file), ...(this.library.deviceSongs || [])];
-    return {
+    const list = {
       id: DEVICE_ID,
       name: T('common.downloadedSongs'),
       entries: songs.map((s) => ({ songId: s.id, addedAt: s.addedAt })),
       isDevice: true,
     };
+    this._deviceList = { lib: this.library, list };
+    return list;
   },
 
   /** All Songs or a part of it ("All Songs from ..."): the lists whose songs can be deleted from the library. */
@@ -358,19 +393,29 @@ const Store = {
   },
 
   /** Songs of a playlist as rows: the song plus when it was added to this list. */
+  /** A list's rows ({ song, addedAt }), the same array while its entries and the library stay: never to be changed. */
   rowsOf(playlistId) {
     const p = this.playlist(playlistId);
     if (!p) return [];
+    const kept = this._rowsKept.get(p.entries);
+    if (kept && kept.byId === this.songsById) return kept.rows;
     const rows = [];
     for (const e of p.entries) {
       const song = this.song(e.songId);
       if (song) rows.push({ song, addedAt: e.addedAt });
     }
+    this._rowsKept.set(p.entries, { byId: this.songsById, rows });
     return rows;
   },
+  _rowsKept: new WeakMap(),
+  _durations: new WeakMap(), // a list's rows (rowsOf) -> their length in seconds
 
   totalDuration(playlistId) {
-    return this.rowsOf(playlistId).reduce((sum, r) => sum + (r.song.duration || 0), 0);
+    const rows = this.rowsOf(playlistId);
+    if (this._durations.has(rows)) return this._durations.get(rows);
+    const total = rows.reduce((sum, r) => sum + (r.song.duration || 0), 0);
+    this._durations.set(rows, total);
+    return total;
   },
 
   /**

@@ -1478,6 +1478,8 @@ div.import__frame-head { cursor: default; }
 .cell-title { color: var(--text-bright); }
 .row--current .cell-title { color: var(--green); }
 /* The whole Title cell plays the song (playlist.js), and says so on hover. */
+/* A long list's spacers (windowRows): the rows not drawn, as tall as they would be. */
+.table tr.vspace td { height: auto; padding: 0; border: 0; background: none !important; }
 .table td.cell--play { cursor: pointer; }
 .table td.cell--play:hover .cell-title { text-decoration: underline; text-underline-offset: 3px; }
 
@@ -1800,6 +1802,37 @@ div.import__frame-head { cursor: default; }
   gap: 14px;
   margin-bottom: 10px;
 }
+/* "Artist: Dame" picked on the Search page, its X shows all songs again. */
+.pl-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 40%;
+  height: 28px;
+  padding: 0 4px 0 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-bright);
+  font-size: 13px;
+}
+.pl-field[hidden] { display: none; }
+.pl-field__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-field__x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.pl-field__x:hover { color: var(--text-bright); background: rgba(255, 255, 255, 0.08); }
+.pl-field__x .icon { width: 14px; height: 14px; }
 
 .empty {
   padding: 50px 20px;

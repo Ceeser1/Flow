@@ -69,6 +69,53 @@ test('search matching ignores case and accents, all words must match', () => {
   assert.ok(Util.matches('', 'x'));
 });
 
+test('long lists: sort keys sort without case or accents and numbers by value, stable, empties last', () => {
+  const titles = ['song 10', 'Song 2', 'Ärger', 'apfel', 'song 02b', 'Zebra', ''];
+  const rows = titles.map((t, i) => ({ t, i }));
+  const asc = Util.sortByKeys(rows, { key: 't', dir: 'asc' }, (r) => Util.sortKey(r.t)).map((r) => r.t);
+  assert.deepEqual(asc, ['apfel', 'Ärger', 'Song 2', 'song 02b', 'song 10', 'Zebra', '']);
+  const desc = Util.sortByKeys(rows, { key: 't', dir: 'desc' }, (r) => Util.sortKey(r.t)).map((r) => r.t);
+  assert.deepEqual(desc, ['Zebra', 'song 10', 'song 02b', 'Song 2', 'Ärger', 'apfel', '']);
+  // Ties keep their order both ways; no sort gives the rows themselves.
+  const ties = [{ k: 'a', n: 1 }, { k: 'A', n: 2 }, { k: 'b', n: 3 }];
+  assert.deepEqual(Util.sortByKeys(ties, { key: 'k', dir: 'desc' }, (r) => Util.sortKey(r.k)).map((r) => r.n), [3, 1, 2]);
+  assert.equal(Util.sortByKeys(ties, { key: null }, () => ''), ties);
+  // Descending made from ascending in one pass is the same as sorting descending.
+  const many = Array.from({ length: 300 }, (_, i) => ({ t: ['b', 'A', '', 'a', 'c 2', 'c 10', 'é'][i % 7], i }));
+  const key = (r) => Util.sortKey(r.t);
+  const ascMany = Util.sortByKeys(many, { key: 't', dir: 'asc' }, key);
+  assert.deepEqual(Util.reverseSorted(ascMany, 't', key), Util.sortByKeys(many, { key: 't', dir: 'desc' }, key));
+  // Numbers as they are.
+  assert.deepEqual(Util.sortByKeys([{ d: 30 }, { d: 5 }, { d: 200 }], { key: 'd', dir: 'asc' }, (r) => r.d).map((r) => r.d), [5, 30, 200]);
+});
+
+test('long lists: a song\'s search text is made once and found by all words, case and accents aside', () => {
+  const song = { title: 'Über Nacht', artist: 'Dame', mix: '', album: 'Notiz an mich', genre: 'Hip-Hop', subGenre: '' };
+  assert.equal(Util.songHay(song), Util.songHay(song));
+  assert.equal(Util.hasWords(Util.songHay(song), Util.queryWords('uber dame')), true);
+  assert.equal(Util.hasWords(Util.songHay(song), Util.queryWords('  NOTIZ  hip ')), true);
+  assert.equal(Util.hasWords(Util.songHay(song), Util.queryWords('dame techno')), false);
+  assert.deepEqual(Util.queryWords('   '), []);
+  assert.equal(Util.songSortKey(song, 'title'), Util.sortKey('Über Nacht'));
+  // A list's own search: titles only.
+  assert.equal(Util.hasWords(Util.titleHay(song), Util.queryWords('uber')), true);
+  assert.equal(Util.hasWords(Util.titleHay(song), Util.queryWords('dame')), false);
+});
+
+test('an artist, album ... picked on the Search page: the songs that have it, case and accents aside', () => {
+  const songs = [
+    { artist: 'Broiler, Tessa Odden', album: 'Après' },
+    { artist: 'Broiler', album: 'apres ' },
+    { artist: 'Broilers', album: 'Other' },
+  ];
+  const pick = (key, value) => songs.filter(Util.fieldMatcher(key, value)).map((s) => songs.indexOf(s));
+  assert.deepEqual(pick('artist', 'broiler'), [0, 1]);
+  assert.deepEqual(pick('artist', 'Tessa Odden'), [0]);
+  assert.deepEqual(pick('artist', 'Broiler, Tessa Odden'), [0]);
+  assert.deepEqual(pick('album', 'Après'), [0, 1]);
+  assert.deepEqual(pick('genre', 'Pop'), []);
+});
+
 test('song line', () => {
   assert.equal(Util.songLine({ title: 'T', artist: 'A', mix: 'M' }), 'T - A - (M)');
   assert.equal(Util.songLine({ title: 'T', artist: '', mix: '' }), 'T');

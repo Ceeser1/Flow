@@ -33,7 +33,8 @@ function h(spec, props, ...children) {
 }
 
 function clear(node) {
-  while (node.firstChild) node.removeChild(node.firstChild);
+  // All at once (a long list's rows one by one took many times as long).
+  node.textContent = '';
   return node;
 }
 

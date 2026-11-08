@@ -469,6 +469,29 @@ const Covers = {
     box._coverJob = null;
   },
 
+  /**
+   * The cover boxes in `node` (or it) leave the page for good (a long
+   * list's rows scrolled away, a list drawn again): no longer watched, and
+   * a picture on its way for them is not put in.
+   */
+  release(node) {
+    if (!node || node.nodeType !== 1) return;
+    const boxes = node.matches('.cover') ? [node] : node.querySelectorAll('.cover');
+    for (const box of boxes) {
+      this._unnear(box);
+      box._coverProbe = null;
+      this._waiting.delete(box);
+      this._unwatch(box);
+      // Its turn to ask goes to the box shown for that song now (one asking
+      // from a list drawn again would wait for it forever).
+      const id = box.dataset.coverId;
+      if (id && this._ask.get(id) === box) {
+        this._ask.delete(id);
+        this._asked.delete(id);
+      }
+    }
+  },
+
   _probe(box) {
     const job = box._coverJob;
     if (!job) return;
@@ -515,6 +538,9 @@ const Covers = {
   },
 
   _askFor(box, song) {
+    // Asked already from a box no longer in the page, not sent yet: this one asks instead.
+    const before = this._ask.get(song.id);
+    if (before && before !== box && !before.isConnected) this._asked.delete(song.id);
     if (this._isServer(song) && !this._asked.has(song.id)) {
       this._asked.add(song.id);
       this._ask.set(song.id, box);

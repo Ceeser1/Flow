@@ -30,6 +30,7 @@ const TouchList = {
       list = h('div.mlist', { id: table.id + 'List' });
       table.after(list);
     }
+    releaseCovers([list]);
     clear(list);
 
     const sortable = columns.filter((c) => c.sortable !== false && c.key !== 'actions');
@@ -42,9 +43,28 @@ const TouchList = {
       for (const k of [...chosen]) if (!keys.has(k)) chosen.delete(k);
     }
 
-    const frag = document.createDocumentFragment();
-    for (const row of rows) frag.appendChild(this._row(table.id, row, opts, chosen));
-    list.appendChild(frag);
+    if (opts.scroller) {
+      // Only the rows where the list shows are in the page (windowRows in ui.js).
+      table._rows = windowRows({
+        scroller: opts.scroller,
+        holder: list,
+        count: rows.length,
+        // Rows chosen since the list was drawn stay chosen when scrolled to again.
+        makeRow: (i) => this._row(table.id, rows[i], opts, this.chosen.get(table.id)),
+        spacer: () => h('div.mlist__space', { 'aria-hidden': 'true' }),
+        height: 64,
+        hint: opts.hint || {},
+        onAdded: opts.onRowsAdded,
+        onRemoved: (nodes) => {
+          releaseCovers(nodes);
+          if (opts.onRowsRemoved) opts.onRowsRemoved(nodes);
+        },
+      });
+    } else {
+      const frag = document.createDocumentFragment();
+      for (const row of rows) frag.appendChild(this._row(table.id, row, opts, chosen));
+      list.appendChild(frag);
+    }
     list.classList.toggle('mlist--choosing', !!chosen);
     if (chosen && chosen.size) this._drawBar();
     else if (chosen) this.stopChoosing();

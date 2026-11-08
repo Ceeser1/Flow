@@ -8,17 +8,32 @@
 // with `pickFor` set (so does creating a playlist), and every row's + then
 // adds straight to that list, its X takes a song out again.
 
+// The columns sorted by their text (Util.songSortKey).
+const TEXT_COLUMNS = new Set(['title', 'artist', 'mix', 'album', 'genre', 'subGenre']);
+
 const PlaylistPage = {
   id: null,
   pickFor: null,
   views: new Map(), // playlist id -> { filter, sort }
   _playButtons: new Map(),
+  // How far the page is scrolled, kept from its scroll events (read while
+  // drawing, it would make the browser lay out the old list first).
+  _scrollTop: 0,
 
   init() {
+    $('pages').addEventListener('scroll', () => {
+      this._scrollTop = $('pages').scrollTop;
+    }, { passive: true });
     $('plSearchIcon').innerHTML = Icons.search;
+    // Typed fast, the list is drawn once a frame with what is in the box then.
+    let typed = 0;
     $('plSearch').addEventListener('input', () => {
       this._view(this.id).filter = $('plSearch').value;
-      this.renderTable();
+      if (typed) return;
+      typed = requestAnimationFrame(() => {
+        typed = 0;
+        this.renderTable();
+      });
     });
     $('plSearch').addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && $('plSearch').value) {
@@ -127,8 +142,10 @@ const PlaylistPage = {
     });
   },
 
+  // filter: the search box (song titles); field: an artist, album, genre,
+  // info or mix picked on the Search page ({ key, value }), or null.
   _view(id) {
-    if (!this.views.has(id)) this.views.set(id, { filter: '', sort: { key: null, dir: null } });
+    if (!this.views.has(id)) this.views.set(id, { filter: '', field: null, sort: { key: null, dir: null } });
     return this.views.get(id);
   },
 
@@ -136,10 +153,15 @@ const PlaylistPage = {
     this.id = id;
     this.pickFor = id === 'all' && opts.pickFor && Store.playlist(opts.pickFor) ? opts.pickFor : null;
     if (opts.filter !== undefined) this._view(id).filter = opts.filter;
+    // Picked on the Search page, the list shows that one's songs; opened otherwise, all of them.
+    this._view(id).field = opts.field && opts.field.value ? { key: opts.field.key, value: opts.field.value } : null;
     $('plSearch').value = this._view(id).filter;
+    // Opened at its top (Nav.show): its first rows are the ones drawn.
+    this._scrollTop = 0;
     this._openShared(id);
     this.render();
   },
+
 
   // The shared playlist whose songs are being fetched (its id), or null.
   _loading: null,
@@ -162,31 +184,93 @@ const PlaylistPage = {
     });
   },
 
+  /** A row's sort key in a column (Util.sortByKeys): texts as Util.sortKey, numbers as they are. */
   _sortValue(row, key) {
     const s = row.song;
-    if (key === 'title') return s.title;
-    if (key === 'artist') return s.artist;
-    if (key === 'mix') return s.mix;
-    if (key === 'album') return s.album || '';
-    if (key === 'genre') return s.genre || '';
-    if (key === 'subGenre') return s.subGenre || '';
-    if (key === 'from') return this._from(s);
+    if (TEXT_COLUMNS.has(key)) return Util.songSortKey(s, key);
+    if (key === 'from') return Util.sortKey(this._from(s));
     if (key === 'duration') return s.duration || 0;
     if (key === 'added') return row.addedAt;
     return '';
   },
 
+  // Each list's rows in an order, kept while the list is the same (Store.rowsOf
+  // gives the same array): sorting again the same way costs nothing.
+  _orders: new WeakMap(),
+  // The last search's rows, for one more letter typed: only those are looked through.
+  _lastFound: null,
+
+  /** A list's rows newest first (or in its own order), sorted by `sort`, all of them. */
+  _ordered(id, sort) {
+    const all = Store.rowsOf(id);
+    let kept = this._orders.get(all);
+    if (!kept) {
+      kept = new Map();
+      this._orders.set(all, kept);
+    }
+    const name = sort && sort.key ? `${sort.key}:${sort.dir}` : '';
+    if (kept.has(name)) return kept.get(name);
+    let rows;
+    const keyOf = (r, k) => this._sortValue(r, k);
+    if (!name) rows = this._picksItself(id) ? all : all.slice().sort((a, b) => b.addedAt - a.addedAt);
+    else if (sort.dir === 'desc') rows = Util.reverseSorted(this._ordered(id, { key: sort.key, dir: 'asc' }), sort.key, keyOf);
+    else rows = Util.sortByKeys(this._ordered(id, null), sort, keyOf);
+    kept.set(name, rows);
+    return rows;
+  },
+
   /**
-   * A list's rows as shown: newest first unless sorted, then the search. The
-   * listening trend lists keep their own order, best match first.
+   * A list's rows as shown: newest first unless sorted, only the songs of
+   * the artist (album ...) picked on the Search page, then the search, which
+   * looks at song titles only (their artists, albums and the rest are the
+   * Search page's). The listening trend lists keep their own order, best
+   * match first. Never to be changed (the same array may come again).
    */
   rowsFor(id) {
     const view = this._view(id);
-    let rows = Store.rowsOf(id)
-      .filter((r) => Util.matches(view.filter, r.song.title, r.song.artist, r.song.mix, r.song.album, r.song.genre, r.song.subGenre));
-    if (!this._picksItself(id)) rows = rows.sort((a, b) => b.addedAt - a.addedAt);
-    return Util.sortRows(rows, view.sort, (r, k) => this._sortValue(r, k));
+    const ordered = this._picked(this._ordered(id, view.sort), view.field);
+    const words = Util.queryWords(view.filter);
+    if (!words.length) return ordered;
+    const q = words.join(' ');
+    // One more letter (or word): what the shorter search found holds all of it.
+    const last = this._lastFound;
+    const from = last && last.ordered === ordered && q.startsWith(last.q) ? last.rows : ordered;
+    const rows = from.filter((r) => Util.hasWords(Util.titleHay(r.song), words));
+    this._lastFound = { ordered, q, rows };
+    return rows;
   },
+
+  /** "Artist: Dame" by the search box while one was picked on the Search page, its X shows all songs again. */
+  _drawField(view) {
+    const node = $('plField');
+    const field = view.field;
+    node.hidden = !field;
+    clear(node);
+    if (!field) return;
+    const label = {
+      artist: 'common.artist', album: 'common.album', genre: 'common.genre', subGenre: 'common.info', mix: 'common.mix',
+    }[field.key] || 'common.artist';
+    node.append(
+      h('span.pl-field__text', { title: field.value }, `${T(label)}: ${field.value}`),
+      iconButton('pl-field__x', Icons.x, T('playlist.field.clear.tooltip'), () => {
+        view.field = null;
+        this.renderTable();
+      }),
+    );
+  },
+
+  /** The rows of the artist (album ...) picked on the Search page, kept while the list and the pick stay. */
+  _picked(rows, field) {
+    if (!field) return rows;
+    const name = `${field.key}\u0000${field.value}`;
+    const kept = this._lastPicked;
+    if (kept && kept.rows === rows && kept.name === name) return kept.picked;
+    const has = Util.fieldMatcher(field.key, field.value);
+    const picked = rows.filter((r) => has(r.song));
+    this._lastPicked = { rows, name, picked };
+    return picked;
+  },
+  _lastPicked: null,
 
   /** A listening trend list or a smart playlist: its songs are picked for it, in its own order, never by hand. */
   _picksItself(id) {
@@ -349,7 +433,8 @@ const PlaylistPage = {
       $('plEmptyAction').hidden = smart || favourites || !!p.isShared || !!p.isDevice || !!p.isRuled;
       $('plEmptyAction').textContent = this.id === 'all' ? T('common.addSongs') : T('playlist.empty.addFromAllSongs');
     }
-    $('plFiltered').textContent = view.filter && !empty ? T('playlist.showing', { shown: rows.length, count }) : '';
+    $('plFiltered').textContent = (view.filter || view.field) && !empty ? T('playlist.showing', { shown: rows.length, count }) : '';
+    this._drawField(view);
 
     this._playButtons = new Map();
     const pickTarget = this.pickFor ? Store.playlist(this.pickFor) : null;
@@ -368,6 +453,17 @@ const PlaylistPage = {
         this.renderTable();
       },
       onRowDblClick: (r) => Player.load(r.song.id, this.id),
+      // Only the rows on screen and a screen around them are in the page,
+      // whatever the length (renderTable's scroller).
+      scroller: $('pages'),
+      scrollTop: this._scrollTop,
+      // The song playing scrolled to: marked as it comes; rows scrolled away forget their Play.
+      onRowsAdded: (trs) => {
+        if (Player.currentId && trs.some((tr) => tr.dataset.id === Player.currentId)) this._drawPlayState();
+      },
+      onRowsRemoved: (trs) => {
+        for (const tr of trs) this._playButtons.delete(tr.dataset.id);
+      },
       columns: [
         { key: 'title', label: T('common.title'), cls: 'col-title', render: (r) => this._title(r.song), onClick: (r) => this._playFromTitle(r.song) },
         { key: 'artist', label: T('common.artist'), cls: 'col-artist', render: (r) => h('span', { title: r.song.artist }, r.song.artist) },
@@ -658,8 +754,11 @@ const PlaylistPage = {
       const current = tr.dataset.id === Player.currentId;
       tr.classList.toggle('row--current', current);
     }
+    // Only the buttons that change (each starts as Play).
     for (const [songId, btn] of this._playButtons) {
       const playing = songId === Player.currentId && Player.isPlaying;
+      if (!!btn._playing === playing) continue;
+      btn._playing = playing;
       btn.innerHTML = playing ? Icons.pause : Icons.play;
       btn.title = playing ? T('common.pause') : T('common.play');
     }

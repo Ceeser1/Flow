@@ -142,6 +142,130 @@
     return q.split(/\s+/).every((word) => hay.includes(word));
   }
 
+  // ---- long lists (100 000 songs): what a search and a sort need, made once a song ----
+
+  // A song (the object of the library as it came) -> its names folded, for the search.
+  const hays = new WeakMap();
+  // A song -> { [column]: its sort key }.
+  const sortKeys = new WeakMap();
+
+  // A song -> its title folded (a list's own search looks at titles only).
+  const titles = new WeakMap();
+
+  /** A song's title folded, made once per song. */
+  function titleHay(song) {
+    let t = titles.get(song);
+    if (t === undefined) {
+      t = fold(song.title);
+      titles.set(song, t);
+    }
+    return t;
+  }
+
+  /**
+   * fn(song): whether a song has `value` in a field, as the Search page
+   * lists them: an artist alone or all of a song's artists together (split
+   * at the commas), an album, genre, info or mix as a whole; case and
+   * accents aside.
+   */
+  function fieldMatcher(key, value) {
+    const want = fold(value).trim();
+    if (key === 'artist') {
+      return (song) => {
+        const parts = String(song.artist || '').split(',').map((p) => fold(p).trim()).filter(Boolean);
+        return parts.includes(want) || parts.join(', ') === want;
+      };
+    }
+    return (song) => fold(String(song[key] || '').trim()) === want;
+  }
+
+  /** A song's names in one folded text (title, artist, mix, album, genre, info), made once per song. */
+  function songHay(song) {
+    let hay = hays.get(song);
+    if (hay === undefined) {
+      hay = fold([song.title, song.artist, song.mix, song.album, song.genre, song.subGenre].join(' \u0000 '));
+      hays.set(song, hay);
+    }
+    return hay;
+  }
+
+  /** A search's words, folded ([] for none). */
+  function queryWords(query) {
+    const q = fold(query).trim();
+    return q ? q.split(/\s+/) : [];
+  }
+
+  /** Whether a folded text holds every word. */
+  function hasWords(hay, words) {
+    for (const w of words) if (!hay.includes(w)) return false;
+    return true;
+  }
+
+  /**
+   * A text as a key that sorts as the column sorts (no case, no accents,
+   * numbers by their value: "2" before "10") when compared as plain text,
+   * which is many times faster than comparing in the language's order.
+   */
+  function sortKey(text) {
+    return fold(text).trim().replace(/\d+/g, (d) => {
+      const n = d.replace(/^0+(?=\d)/, '');
+      return String.fromCharCode(48 + Math.min(n.length, 16)) + n;
+    });
+  }
+
+  /** A song's sort key of a text column (`field`), made once per song. */
+  function songSortKey(song, field) {
+    let keys = sortKeys.get(song);
+    if (!keys) {
+      keys = {};
+      sortKeys.set(song, keys);
+    }
+    if (!(field in keys)) keys[field] = sortKey(song[field] || '');
+    return keys[field];
+  }
+
+  /**
+   * rows sorted by `state` with keyOf(row, key): sortKey texts or numbers,
+   * compared as they are. Stable; empty ones last either way. The rows
+   * themselves when there is no sort.
+   */
+  function sortByKeys(rows, state, keyOf) {
+    if (!state || !state.key) return rows;
+    const sign = state.dir === 'desc' ? -1 : 1;
+    const items = rows.map((row, i) => ({ row, i, k: keyOf(row, state.key) }));
+    items.sort((x, y) => {
+      const ex = x.k === '' || x.k === null || x.k === undefined;
+      const ey = y.k === '' || y.k === null || y.k === undefined;
+      if (ex !== ey) return ex ? 1 : -1;
+      const c = x.k < y.k ? -1 : (x.k > y.k ? 1 : 0);
+      return (sign * c) || (x.i - y.i);
+    });
+    return items.map((x) => x.row);
+  }
+
+  /**
+   * Rows sorted ascending by sortByKeys as they would be descending, in one
+   * pass: the runs of equal keys reversed as a whole (each keeps its order),
+   * the empty ones still last.
+   */
+  function reverseSorted(asc, key, keyOf) {
+    const isEmpty = (k) => k === '' || k === null || k === undefined;
+    const keys = asc.map((r) => keyOf(r, key));
+    let filled = asc.length;
+    while (filled > 0 && isEmpty(keys[filled - 1])) filled -= 1;
+    const out = [];
+    let end = filled;
+    while (end > 0) {
+      const k = keys[end - 1];
+      let start = end - 1;
+      while (start > 0 && keys[start - 1] === k) start -= 1;
+      for (let i = start; i < end; i += 1) out.push(asc[i]);
+      end = start;
+    }
+    for (let i = filled; i < asc.length; i += 1) out.push(asc[i]);
+    return out;
+  }
+
   /** "Title - Artist - (Mix)", the way the player shows a song. */
   function songLine(song) {
     if (!song) return '';
@@ -211,6 +335,6 @@
 
   return {
     fmtClock, fmtDate, fmtDay, fmtListened, fmtTimeOfDay, fmtPrecise, parsePrecise, fileUrl,
-    compareValues, cycleSort, sortRows, fold, matches, songLine, plural, fmtAgo, serverName, serverAddress,
+    compareValues, cycleSort, sortRows, fold, matches, titleHay, fieldMatcher, songHay, queryWords, hasWords, sortKey, songSortKey, sortByKeys, reverseSorted, songLine, plural, fmtAgo, serverName, serverAddress,
   };
 }));
