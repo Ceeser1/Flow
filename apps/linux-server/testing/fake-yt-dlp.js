@@ -5,7 +5,8 @@
 //
 //   https://fake.test/list/<n>[?slow=<i>][&fail=<j>]
 //                                          a playlist of n songs, v1 ... vn
-//                                          (song i downloads forever, song j fails)
+//                                          (song i downloads forever, song j fails);
+//                                          &ids=<p> names them p1 ... pn, &name=<t> titles the list
 //   https://fake.test/v/<id>               one song
 //   https://fake.test/slow/<id>            one song whose download never ends
 //   https://fake.test/fail/<id>            a song that is not available
@@ -71,11 +72,12 @@ if (args.includes('-J') || args.includes('-j')) {
     const n = Number(parts[1]) || 1;
     const slow = Number(url.searchParams.get('slow')) || 0;
     const fail = Number(url.searchParams.get('fail')) || 0;
+    const ids = url.searchParams.get('ids') || 'v';
     const entries = Array.from({ length: n }, (_, k) => {
-      const v = video(`v${k + 1}`, k + 1 === slow ? 'slow' : (k + 1 === fail ? 'fail' : 'v'));
+      const v = video(`${ids}${k + 1}`, k + 1 === slow ? 'slow' : (k + 1 === fail ? 'fail' : 'v'));
       return { ...v, url: v.webpage_url, ie_key: 'Youtube' };
     });
-    process.stdout.write(JSON.stringify({ _type: 'playlist', title: 'Fake List', extractor_key: 'YoutubeTab', webpage_url: url.href, entries }) + '\n');
+    process.stdout.write(JSON.stringify({ _type: 'playlist', title: url.searchParams.get('name') || 'Fake List', extractor_key: 'YoutubeTab', webpage_url: url.href, entries }) + '\n');
   } else {
     process.stdout.write(JSON.stringify(video(parts[1] || 'x', parts[0])) + '\n');
   }

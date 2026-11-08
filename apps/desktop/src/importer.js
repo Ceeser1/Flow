@@ -280,7 +280,8 @@ async function finish(job, onProgress) {
           format: saved.format,
           sourceUrl: e.sourceUrl || '',
           sourceKey: e.sourceKey || '',
-          sourcePlaylistUrl: (job.source && job.source.url) || '',
+          // Of several links read as one: the link the song was found in.
+          sourcePlaylistUrl: typeof e.sourcePlaylistUrl === 'string' ? e.sourcePlaylistUrl : ((job.source && job.source.url) || ''),
           addedAt: Date.now(),
           // Its file gets its flowid and cover once the cover is settled (tagger.js).
           tagged: '',

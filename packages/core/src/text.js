@@ -127,6 +127,33 @@ function isNameOnlyList(url) {
     || /^(?:https?:\/\/)?(?:www\.)?amazon\.[a-z.]+\/music\//i.test(raw);
 }
 
+const LINKISH_RE = /^(?:spotify:\S+|[a-z][a-z0-9+.-]*:\/\/\S+|[^\s/:,]+\.[a-z]{2,}(?::\d+)?(?:[/?#]\S*)?)$/i;
+
+/**
+ * The links of a box with several pasted at once, split at the commas
+ * ("https://open.spotify.com/album/a, https://open.spotify.com/album/b"):
+ * each one in turn, spaces around them ignored, empty parts and repeats left
+ * out. A text that is not such a list (one link, words, a link with a comma
+ * of its own) is a list of itself alone. As many links as are pasted.
+ */
+function splitLinks(text) {
+  const raw = String(text || '').trim();
+  if (!raw.includes(',')) return raw ? [raw] : [];
+  const parts = [...new Set(raw.split(',').map((p) => p.trim()).filter(Boolean))];
+  if (parts.length < 2 || !parts.every((p) => LINKISH_RE.test(p))) return [raw];
+  return parts;
+}
+
+/** Whether the box holds several links (splitLinks); one link or words are not. */
+function isLinkList(text) {
+  return splitLinks(text).length > 1;
+}
+
+/** Several links as one source again, the way splitLinks reads them. */
+function joinLinks(links) {
+  return links.map((l) => String(l || '').trim()).filter(Boolean).join(', ');
+}
+
 /** "Artist - Title (Mix)", the name a saved song's file gets. */
 function songFileStem(artist, title, mix) {
   const a = String(artist || '').trim();
@@ -157,5 +184,5 @@ function splitSongPath(text) {
 
 module.exports = {
   parseYouTubeId, normalizeUrl, normalizeListUrl, sourceKey, sourceKeyFromUrl, comparableUrl,
-  safeFilename, songFileStem, isNameOnlyList, splitSongPath,
+  safeFilename, songFileStem, isNameOnlyList, splitSongPath, splitLinks, isLinkList, joinLinks,
 };

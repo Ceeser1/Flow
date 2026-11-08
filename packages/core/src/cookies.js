@@ -7,7 +7,7 @@
 // own site, out of the Netscape cookie file yt-dlp writes; the server keeps
 // them with that download alone and deletes them with it.
 
-const { isNameOnlyList } = require('./text');
+const { isNameOnlyList, splitLinks } = require('./text');
 
 // The browsers yt-dlp reads cookies from (Safari is macOS only).
 const BROWSERS = [
@@ -48,22 +48,28 @@ function cookieSite(rawUrl) {
   return labels.slice(short ? -3 : -2).join('.');
 }
 
+/** The sites of every link of a box with several (text.splitLinks), each once. */
+function cookieSites(rawUrl) {
+  return [...new Set(splitLinks(rawUrl).map(cookieSite).filter(Boolean))];
+}
+
 /**
  * The lines of a Netscape cookie file that belong to `site` (itself or a
- * subdomain), with the file's header; '' when none do. Anything that is not a
- * cookie line is left out.
+ * subdomain; or to any of several sites), with the file's header; '' when
+ * none do. Anything that is not a cookie line is left out.
  */
 function cookiesFor(text, site) {
-  if (!site) return '';
+  const sites = (Array.isArray(site) ? site : [site]).filter(Boolean);
+  if (!sites.length) return '';
   const keep = [];
   for (const line of String(text || '').split(/\r?\n/)) {
     const fields = line.split('\t');
     if (fields.length !== 7) continue;
     const domain = fields[0].replace(/^#HttpOnly_/, '').replace(/^\./, '').toLowerCase();
     if (!domain || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) continue;
-    if (domain === site || domain.endsWith(`.${site}`)) keep.push(line);
+    if (sites.some((x) => domain === x || domain.endsWith(`.${x}`))) keep.push(line);
   }
   return keep.length ? `# Netscape HTTP Cookie File\n${keep.join('\n')}\n` : '';
 }
 
-module.exports = { BROWSERS, MAX_COOKIES, cookieSite, cookiesFor };
+module.exports = { BROWSERS, MAX_COOKIES, cookieSite, cookieSites, cookiesFor };

@@ -636,6 +636,20 @@ lines are kept. Or, for uploads picked from a search: `items`, up to 50
 the batch is `ready` at once, its `source` `{ url: "", name, kind: "search" }`,
 and no playlist is made unless a finish asks for one.
 
+**Several links at once:** `url` may hold any number of links separated by
+commas (`"https://open.spotify.com/album/a, https://www.youtube.com/playlist?list=b"`;
+spaces around them do not count), of any sites, each checked as one link is.
+They are read one after another as one list (`kind` is then always `list`):
+the batch's `source.url` is all of them again (`a, b`), its `name` the first
+link's list's, and each song saved keeps the link it was found in as its
+`sourcePlaylistUrl` (the playlist made keeps all of them as its source, so
+its Update reads them all together). A song an earlier link listed already
+is left out. A link that cannot be read is skipped (its entry in `links` has
+an `error`); only when none can, the batch fails. A playlist's Update
+(`POST /api/downloads/check`) takes the same text and answers each item
+with its `listUrl`; send that back in the `items` of the batch of the songs
+ticked.
+
 **Searching by name** (only with `search` in `/api/hello`): `query` is a
 song's name as typed (`"Linkin Park - Numb"`, "Artist - Title" split at the
 dash; at most 200 characters, else 400). `page` (default 0) is how many
@@ -669,7 +683,7 @@ the upload picked as a new batch with `kind: "song"`, or several as `items`.
 {
   "id": "...", "state": "ready", "error": "",
   "source": { "url": "...", "name": "Road trip", "kind": "spotify" },
-  "single": false, "truncated": false, "sourceTotal": 0,
+  "single": false, "truncated": false, "sourceTotal": 0, "links": null,
   "options": { "alwaysMp3": false, "quality": 192, "keepMp3": true },
   "cookies": false, "playlistId": null, "createdAt": 0, "expiresAt": 0,
   "progress": null,
@@ -692,7 +706,11 @@ the upload picked as a new batch with `kind: "song"`, or several as `items`.
   page shows only the first 100 songs), `amazon`, `mix` (a YouTube Mix's
   first 50), `server` (more than 500). `sourceTotal`: how many songs the list
   has where it came from (a Spotify playlist), when more than are listed, else
-  0.
+  0. Of several links: `links` (else null) is what each gave,
+  `[{ url, name, songs, listed, truncated, sourceTotal, single?, error? }]`
+  (`songs` those taken, `listed` those the link had, before the ones an
+  earlier link had), and `truncated` is `links` when one failed or was cut
+  short (`server` past 500).
 - At most 500 songs a batch. A batch nobody looks at for 30 days is thrown
   away.
 

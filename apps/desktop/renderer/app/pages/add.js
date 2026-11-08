@@ -127,7 +127,9 @@ const AddPage = {
       $('linkInput').focus();
       return;
     }
-    if (!pick && this.isSearch(url)) {
+    // Several links pasted at once ("a, b, c"): read as one list.
+    const many = !pick && this.isLinkList(url);
+    if (!pick && !many && this.isSearch(url)) {
       SongSearch.open(url, 'client');
       return;
     }
@@ -135,7 +137,7 @@ const AddPage = {
     // Another link than the one an Update put into the box: no Update.
     if (ImportPanel.updating && (pick || url !== ImportPanel.updating.url)) ImportPanel.updating = null;
 
-    let kind = pick ? 'song' : (ImportPanel.updating ? 'list' : this._linkKind(url));
+    let kind = pick ? 'song' : (ImportPanel.updating || many ? 'list' : this._linkKind(url));
     if (kind === 'ask') {
       kind = await this._askSongOrList(url);
       if (!kind) return;
@@ -321,6 +323,24 @@ const AddPage = {
       return true;
     }
     return !/\.[a-z]{2,}$/i.test(host) && !/^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  },
+
+  /**
+   * Several links pasted at once, split at the commas, spaces around them
+   * ignored: the links of any site, each once, when the box holds two or
+   * more, else [the text]. The same as @flow/core/text splitLinks, which
+   * reads them.
+   */
+  splitLinks(text) {
+    const raw = String(text || '').trim();
+    if (!raw.includes(',')) return raw ? [raw] : [];
+    const linkish = /^(?:spotify:\S+|[a-z][a-z0-9+.-]*:\/\/\S+|[^\s/:,]+\.[a-z]{2,}(?::\d+)?(?:[/?#]\S*)?)$/i;
+    const parts = [...new Set(raw.split(',').map((p) => p.trim()).filter(Boolean))];
+    return parts.length > 1 && parts.every((p) => linkish.test(p)) ? parts : [raw];
+  },
+
+  isLinkList(text) {
+    return this.splitLinks(text).length > 1;
   },
 
   /**

@@ -254,8 +254,11 @@ const PlaylistPage = {
     // Light blue with its icon turning while the link is read.
     const busy = PlaylistUpdate.isChecking(p.id);
     btn.classList.toggle('pl-update--busy', busy);
-    btn.title = busy ? T('playlist.updateFromSource.checking.tooltip', { url: p.source.url })
-      : T('playlist.updateFromSource.tooltip', { url: p.source.url, playlist: p.name });
+    // Imported from several links at once: all of them are read.
+    const links = AddPage.splitLinks(p.source.url).length;
+    const several = links > 1 ? '.links' : '';
+    btn.title = busy ? T(`playlist.updateFromSource.checking.tooltip${several}`, { url: p.source.url, count: links })
+      : T(`playlist.updateFromSource.tooltip${several}`, { url: p.source.url, playlist: p.name, count: links });
     // The phone's is only the icon, as its Download. Drawn once, so a turning icon keeps turning.
     const html = Store.uiMode === 'mobile' ? Icons.refresh : `${Icons.refresh}<span>${T('playlist.updateFromSource.button')}</span>`;
     if (btn.dataset.html !== html) {

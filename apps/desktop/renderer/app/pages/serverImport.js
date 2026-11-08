@@ -110,7 +110,9 @@ const ServerImport = {
       $('linkInput').focus();
       return;
     }
-    if (!pick && AddPage.isSearch(url)) {
+    // Several links pasted at once ("a, b, c"): read as one list.
+    const many = !pick && AddPage.isLinkList(url);
+    if (!pick && !many && AddPage.isSearch(url)) {
       if (ImportPanel.busy) {
         AddPage._showError(T('serverImport.importOpen'));
         return;
@@ -121,7 +123,7 @@ const ServerImport = {
     if (!await AddPage._clearForNew()) return;
     // Another link than the one an Update put into the box: no Update.
     if (ImportPanel.updating && (pick || url !== ImportPanel.updating.url)) ImportPanel.updating = null;
-    let kind = pick ? 'song' : (ImportPanel.updating ? 'list' : AddPage._linkKind(url));
+    let kind = pick ? 'song' : (ImportPanel.updating || many ? 'list' : AddPage._linkKind(url));
     if (kind === 'ask') {
       kind = await AddPage._askSongOrList(url);
       if (!kind) return;

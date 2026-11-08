@@ -37,7 +37,8 @@ const net = require('net');
 const path = require('path');
 const { createMedia, ProcessCancelledError } = require('@flow/core/media');
 const { createLister, groupToken, existingInfo } = require('@flow/core/listing');
-const { MAX_COOKIES, cookieSite, cookiesFor } = require('@flow/core/cookies');
+const { MAX_COOKIES, cookieSites, cookiesFor } = require('@flow/core/cookies');
+const { splitLinks, joinLinks } = require('@flow/core/text');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const { isPrivateIp } = require('@flow/core/address');
@@ -93,6 +94,16 @@ function checkLink(text) {
     throw new DownloadError(400, 'The server does not download from itself or the home network. Paste a link to a page on the internet.');
   }
   return u.href;
+}
+
+/**
+ * A box with several links pasted at once (text.splitLinks): each checked as
+ * checkLink does, then all of them as one source again. As many as are sent.
+ */
+function checkLinks(text) {
+  const links = splitLinks(text);
+  if (links.length < 2) return checkLink(text);
+  return joinLinks(links.map(checkLink));
 }
 
 /** The conversion choice an app sends, as formats.planFor takes it. */
@@ -226,6 +237,22 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   // ---- reading the link ----
 
   /** A song of the listing as a batch item. */
+  /**
+   * Why a list read is not whole: the list's own reason (Spotify's first 100
+   * ...), else 'server' past MAX_ITEMS. Of several links, whose notes say
+   * what each lacks, the server's limit comes first.
+   */
+  function cutAt(result) {
+    const over = result.items.length > MAX_ITEMS ? 'server' : false;
+    return (result.links ? over || result.truncated : result.truncated || over) || false;
+  }
+
+  /** The playlist link a saved song keeps: its own link of several (listUrl), else the batch's. */
+  function playlistUrlOf(batch, item) {
+    if (batch.single) return '';
+    return typeof item.listUrl === 'string' ? item.listUrl : batch.source.url;
+  }
+
   function itemOf(it, i) {
     let state = 'queued';
     let error = '';
@@ -250,6 +277,9 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       } : null,
       artistFromChannel: false,
       existing: it.existing || null,
+      // Of several links read as one (listing.listMany): the link it was found
+      // in, the playlist it came from once saved. Without it, the batch's link.
+      ...(typeof it.listUrl === 'string' ? { listUrl: it.listUrl } : {}),
       state,
       error,
       file: '',
@@ -273,6 +303,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       let kind = batch.source.kind;
       let truncated = false;
       let sourceTotal = 0;
+      let links = null;
       if (batch.single) {
         const probed = await media.probe(batch.source.url, group.sub(), { knownArtists });
         items = [itemOf({ title: probed.title, duration: probed.duration, url: probed.url, key: probed.key, status: 'ok' }, 0)];
@@ -290,8 +321,9 @@ function createDownloads({ config, library, tools, log = () => {} }) {
           kind = String(probed.site || '').toLowerCase();
         } else {
           items = result.items.slice(0, MAX_ITEMS).map(itemOf);
-          truncated = result.truncated || (result.items.length > MAX_ITEMS ? 'server' : false);
+          truncated = cutAt(result);
           sourceTotal = Number(result.sourceTotal) || 0;
+          links = result.links || null;
           name = result.name;
           kind = String(result.source || '').toLowerCase();
           batch.source.url = result.sourceUrl || batch.source.url;
@@ -308,6 +340,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       }
       if (batches.get(batch.key) !== batch) return;
       Object.assign(batch, { state: 'ready', items, truncated, sourceTotal, error: '' });
+      if (links) batch.links = links;
       batch.source.name = cleanText(name, 200) || 'Download';
       batch.source.kind = kind;
       log(`Download batch "${batch.source.name}": ${items.length} ${items.length === 1 ? 'song' : 'songs'}`);
@@ -434,7 +467,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       findCover(batch, item, {
         sourceKey: probed.key,
         sourceUrl: probed.url,
-        sourcePlaylistUrl: batch.single ? '' : batch.source.url,
+        sourcePlaylistUrl: playlistUrlOf(batch, item),
         artist: item.meta.artist,
         title: item.meta.title,
         duration: item.duration,
@@ -470,6 +503,8 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       truncated: batch.truncated || false,
       // How many songs the list has where it came from (Spotify), when more than are listed.
       sourceTotal: batch.sourceTotal || 0,
+      // Several links read as one: what each gave ([{ url, name, songs, listed, truncated, sourceTotal, error? }]).
+      links: batch.links || null,
       options: batch.options,
       // Downloaded with browser cookies from the app that started it.
       cookies: !!batch.cookies,
@@ -531,11 +566,13 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     const key = keyOf(profileId);
     if (batches.has(key)) throw new DownloadError(409, 'There is a download on the server already. Finish or cancel it first.');
     if (items !== undefined) return createPicked(key, profileId, { items, name, options, source: source && source.url ? source : null });
-    const link = checkLink(url);
+    const link = checkLinks(url);
+    // Several links are always read as lists (a song among them is one of its songs).
+    const many = splitLinks(link).length > 1;
     if (cookies !== undefined && cookies !== null && (typeof cookies !== 'string' || cookies.length > MAX_COOKIES)) {
       throw new DownloadError(400, 'The browser cookies sent along are not usable.');
     }
-    const siteCookies = cookies ? cookiesFor(cookies, cookieSite(link)) : '';
+    const siteCookies = cookies ? cookiesFor(cookies, cookieSites(link)) : '';
     const now = Date.now();
     const batch = {
       id: crypto.randomBytes(6).toString('hex'),
@@ -543,7 +580,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       profileId: profileId || null,
       state: 'listing',
       error: '',
-      single: kind === 'song',
+      single: kind === 'song' && !many,
       source: { url: link, name: '', kind: '' },
       options: cleanOptions(options),
       truncated: false,
@@ -572,7 +609,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     if (!Array.isArray(items) || !items.length) throw new DownloadError(400, 'Pick at least one song to download.');
     const max = source ? MAX_ITEMS : MAX_PICKED;
     if (items.length > max) throw new DownloadError(400, `At most ${max} songs can be picked at once.`);
-    const link = source ? checkLink(source.url) : '';
+    const link = source ? checkLinks(source.url) : '';
     const songs = new Map(library.data.songs.map((s) => [s.id, s]));
     const picked = items.map((it, i) => {
       const meta = source && it && it.meta && it.meta.title ? it.meta : null;
@@ -585,6 +622,8 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         key: source ? cleanText(it && it.key, 200) : '',
         meta: meta && Object.fromEntries(['artist', 'title', 'mix', 'album', 'genre', 'subGenre'].map((k) => [k, cleanText(meta[k])])),
         existing,
+        // Of several links: the one the song was found in (see itemOf).
+        listUrl: source && it && typeof it.listUrl === 'string' ? cleanText(it.listUrl, 2000) : undefined,
         status: 'ok',
       }, i);
     });
@@ -627,11 +666,11 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   async function check(profileId, { url, cookies } = {}) {
     if (config.get().downloads === false) throw new DownloadError(501, 'Downloads are turned off on this server (flow-server --downloads turns them on).');
     if (!tools.canDownload()) throw new DownloadError(501, 'This server cannot download songs: it needs yt-dlp and ffmpeg.');
-    const link = checkLink(url);
+    const link = checkLinks(url);
     if (cookies !== undefined && cookies !== null && (typeof cookies !== 'string' || cookies.length > MAX_COOKIES)) {
       throw new DownloadError(400, 'The browser cookies sent along are not usable.');
     }
-    const siteCookies = cookies ? cookiesFor(cookies, cookieSite(link)) : '';
+    const siteCookies = cookies ? cookiesFor(cookies, cookieSites(link)) : '';
     const id = `${keyOf(profileId)}|${link}`;
     const before = checking.get(id);
     if (before) before.cancel();
@@ -657,8 +696,9 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         name: cleanText(result.name, 200),
         source: String(result.source || '').toLowerCase(),
         sourceUrl: result.sourceUrl || link,
-        truncated: result.truncated || (result.items.length > MAX_ITEMS ? 'server' : false),
+        truncated: cutAt(result),
         sourceTotal: Number(result.sourceTotal) || 0,
+        ...(result.links ? { links: result.links } : {}),
         items,
       };
     } catch (err) {
@@ -830,7 +870,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       }, tmp);
       const songMeta = {
         ...meta, infoLooked: true, format: ext, duration: saved.duration, sourceUrl: item.sourceUrl || item.url, sourceKey: item.sourceKey || item.key,
-        sourcePlaylistUrl: batch.single ? '' : batch.source.url,
+        sourcePlaylistUrl: playlistUrlOf(batch, item),
       };
       // Saved meanwhile by another app (an upload of the same source): that one is used.
       const same = library.existingFor(null, { sourceKey: songMeta.sourceKey, sourceUrl: songMeta.sourceUrl });

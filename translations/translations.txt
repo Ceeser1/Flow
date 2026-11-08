@@ -1609,6 +1609,36 @@ import.list.mixFirst50
   en: A Mix never ends: its first 50 songs are listed.
   de: Ein Mix endet nie: Seine ersten 50 Songs sind gelistet.
 
+# Several links pasted at once ("a, b, c"), read as one list: under its name, then a line
+# for each link that could not be read or was cut short. {name} is that link's list.
+import.list.fromLinks
+  en: from {links}
+  de: aus {links}
+
+import.list.link.failed
+  en: Could not read {link}: {reason}
+  de: {link} konnte nicht gelesen werden: {reason}
+
+import.list.link.spotifyFirstOfTotal
+  en: {name}: Spotify only showed the first {count} of the {total} songs; the rest of that list is missing.
+  de: {name}: Spotify zeigte nur die ersten {count} der {total} Songs; der Rest dieser Liste fehlt.
+
+import.list.link.spotifyFirstN
+  en: {name}: Spotify only showed the first {count} songs; the rest of that list is missing.
+  de: {name}: Spotify zeigte nur die ersten {count} Songs; der Rest dieser Liste fehlt.
+
+import.list.link.amazonFirstN
+  en: {name}: Amazon Music only showed the first {count} songs; the rest of that list is missing.
+  de: {name}: Amazon Music zeigte nur die ersten {count} Songs; der Rest dieser Liste fehlt.
+
+import.list.link.mixFirst50
+  en: {name}: A Mix never ends, so its first 50 songs are listed.
+  de: {name}: Ein Mix endet nie, darum sind seine ersten 50 Songs gelistet.
+
+import.list.serverFirst500
+  en: The Flow Server takes at most 500 songs at once; the rest is missing.
+  de: Der Flow Server nimmt höchstens 500 Songs auf einmal; der Rest fehlt.
+
 import.list.hint.trimOrRename.ready
   en: Click a ready song to trim it or change its names.
   de: Bereiten Song anklicken: kürzen oder Namen ändern.
@@ -2072,6 +2102,15 @@ playlist.updateFromSource.tooltip
 playlist.updateFromSource.checking.tooltip
   en: Checking {url} for changes...
   de: {url} wird auf Änderungen geprüft...
+
+# A playlist imported from several links at once: all of them are checked together.
+playlist.updateFromSource.tooltip.links
+  en: Look for the songs added to or removed from its {count} links since "{playlist}" was imported
+  de: Songs suchen, die seit dem Import von „{playlist}“ zu seinen {count} Links hinzugefügt oder daraus entfernt wurden
+
+playlist.updateFromSource.checking.tooltip.links
+  en: Checking its {count} links for changes...
+  de: Seine {count} Links werden auf Änderungen geprüft...
 
 # Song lists › Download (keeping a Flow Server's songs on this device)
 playlist.download.thisPlaylistName
@@ -7006,6 +7045,12 @@ common.count.songs
   en.other: {count} songs
   de.other: {count} Songs
 
+common.count.links
+  en.one: {count} link
+  de.one: {count} Link
+  en.other: {count} links
+  de.other: {count} Links
+
 common.count.playlists
   en.one: {count} playlist
   de.one: {count} Playlist
@@ -7206,8 +7251,8 @@ window.search.heading.info
 
 # The window › Add Songs
 window.add.link.placeholder
-  en: Paste a link from YouTube, SoundCloud, Vimeo, Bandcamp... or type a song's name
-  de: Link von YouTube, SoundCloud, Vimeo, Bandcamp... einfügen oder Songnamen tippen
+  en: Paste a link, multiple links (separate with a comma), or type a word to search for
+  de: Link einfügen, mehrere Links (mit Komma getrennt) oder ein Wort zum Suchen eingeben
 
 window.add.downloadServer
   en: Download (Server)
@@ -8071,6 +8116,15 @@ core.listing.readingSongs
 core.listing.readingSpotify
   en: Reading the Spotify playlist...
   de: Spotify-Playlist wird gelesen...
+
+# Several links pasted at once: which one is being read, then what it says ({text}).
+core.listing.linkOf
+  en: Link {number} of {total}: {text}
+  de: Link {number} von {total}: {text}
+
+core.link.couldNotRead
+  en: The link could not be read.
+  de: Der Link konnte nicht gelesen werden.
 
 core.listing.readingDeezer
   en: Reading the Deezer playlist...

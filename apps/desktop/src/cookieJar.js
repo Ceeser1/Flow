@@ -14,7 +14,7 @@ const paths = require('./paths');
 const tools = require('./tools');
 const { runProcess } = require('@flow/core/processRunner');
 const { ytDlpError } = require('@flow/core/media');
-const { BROWSERS, cookieSite, cookiesFor } = require('@flow/core/cookies');
+const { BROWSERS, cookieSites, cookiesFor } = require('@flow/core/cookies');
 const { tr } = require('@flow/core/lang');
 
 // Where each browser keeps its profiles (a list where it can be in more than
@@ -70,8 +70,9 @@ function ytdlpArgs(browser) {
  * words (browser not there, open, or its cookies locked).
  */
 async function siteCookies(url, browser) {
-  const site = cookieSite(url);
-  if (!site || !WHERE[browser]) return '';
+  // Several links pasted at once: the cookies of each one's site.
+  const sites = cookieSites(url);
+  if (!sites.length || !WHERE[browser]) return '';
   const exe = tools.findYtDlp();
   if (!exe) throw new Error(tr('desktop.error.toolMissing', '{tool} was not found. Please reinstall Flow.', { tool: tools.exe('yt-dlp') }));
   fs.mkdirSync(paths.cacheDir(), { recursive: true });
@@ -83,7 +84,7 @@ async function siteCookies(url, browser) {
       '--ignore-config', '--no-warnings', '--cookies-from-browser', browser, '--cookies', file, '--simulate', 'about:blank',
     ], null, null);
     if (!fs.existsSync(file)) throw new Error(ytDlpError(r.stderrTail || []));
-    return cookiesFor(fs.readFileSync(file, 'utf8'), site);
+    return cookiesFor(fs.readFileSync(file, 'utf8'), sites);
   } finally {
     fs.rmSync(file, { force: true });
   }

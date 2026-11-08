@@ -114,6 +114,94 @@ test('a full Spotify page warns with the real number of songs, or not at all whe
   assert.deepEqual(album.asked, ['embed/album/4aawyAB9vmqN3uQ7FjRGTy']);
 });
 
+test('several links pasted at once: split at the commas, of any site, spaces ignored', () => {
+  const { splitLinks, isLinkList, joinLinks } = require('../src/text');
+  const { cookieSites, cookiesFor } = require('../src/cookies');
+  assert.deepEqual(splitLinks('https://open.spotify.com/album/a, https://open.spotify.com/album/b'),
+    ['https://open.spotify.com/album/a', 'https://open.spotify.com/album/b']);
+  // Spaces around them, empty parts and the same link twice do not count; sites mix.
+  assert.deepEqual(splitLinks(' youtube.com/playlist?list=PL1 ,, https://soundcloud.com/x/sets/y,spotify:album:abc ,youtube.com/playlist?list=PL1 '),
+    ['youtube.com/playlist?list=PL1', 'https://soundcloud.com/x/sets/y', 'spotify:album:abc']);
+  // One link, words with a comma, and a link with a comma of its own are not several.
+  assert.deepEqual(splitLinks('https://open.spotify.com/album/a'), ['https://open.spotify.com/album/a']);
+  assert.equal(isLinkList('Linkin Park, Numb'), false);
+  assert.equal(isLinkList('https://example.com/a,b'), false);
+  assert.equal(isLinkList('https://a.com/x, https://b.com/y'), true);
+  // As many as are pasted.
+  const many = Array.from({ length: 40 }, (_, i) => `https://open.spotify.com/album/${i}`);
+  assert.equal(splitLinks(many.join(',')).length, 40);
+  assert.equal(joinLinks(splitLinks(` ${many.join(' , ')} `)), many.join(', '));
+  // Each link's site's cookies (a Spotify list's songs come from YouTube).
+  assert.deepEqual(cookieSites('https://open.spotify.com/album/a, https://soundcloud.com/x/sets/y, https://youtu.be/abc'), ['youtube.com', 'soundcloud.com']);
+  const file = '.youtube.com\tTRUE\t/\tTRUE\t0\tA\t1\n.soundcloud.com\tTRUE\t/\tTRUE\t0\tB\t2\n.other.com\tTRUE\t/\tTRUE\t0\tC\t3\n';
+  assert.equal(cookiesFor(file, ['youtube.com', 'soundcloud.com']).split('\n').filter((l) => l.includes('\t')).length, 2);
+});
+
+test('several links are read as one list: the first one\'s name, each song with its link, repeats and failed links left out', async () => {
+  const { createLister, groupToken } = require('../src/listing');
+  // Songs the library has by name need no search, so nothing goes to YouTube.
+  const lib = m.emptyLibrary();
+  for (const title of ['One', 'Two', 'Three']) m.addSong(lib, { id: `s-${title}`, file: `${title}.mp3`, artist: 'Dame', title, mix: '' });
+  const embed = (name, titles) => `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: { pageProps: { state: { data: { entity: { type: 'album', name, trackList: titles.map((t) => ({ title: t, subtitle: 'Dame', duration: 200000, isPlayable: true })) } } } } },
+  })}</script>`;
+  const pages = { '3EcC7Tb6Vm8RfAa8AiWoHC': embed('Album A', ['One', 'Two']), '4TxErgYLqeRWaV5A7AwQLU': embed('Album B', ['Two', 'Three']) };
+  const ytList = 'https://www.youtube.com/playlist?list=PLx';
+  const media = {
+    readJson: async (args) => {
+      const url = args[args.length - 1];
+      if (url !== ytList) throw new Error('not here');
+      return {
+        _type: 'playlist', title: 'Upload list', extractor_key: 'YoutubeTab', webpage_url: ytList,
+        entries: [
+          { id: 'v4', title: 'Dame - Four', ie_key: 'Youtube', url: 'https://www.youtube.com/watch?v=v4', duration: 200 },
+          { id: 'v4', title: 'Dame - Four', ie_key: 'Youtube', url: 'https://www.youtube.com/watch?v=v4', duration: 200 },
+        ],
+      };
+    },
+  };
+  const lister = createLister({ media, library: () => lib });
+  const realFetch = global.fetch;
+  global.fetch = async (url) => {
+    const id = (String(url).match(/\/embed\/album\/(\w+)/) || [])[1];
+    if (!pages[id]) return { ok: false, status: 404, text: async () => '' };
+    return { ok: true, status: 200, text: async () => pages[id] };
+  };
+  const texts = [];
+  try {
+    const A = 'https://open.spotify.com/album/3EcC7Tb6Vm8RfAa8AiWoHC';
+    const B = 'https://open.spotify.com/album/4TxErgYLqeRWaV5A7AwQLU';
+    const C = 'https://open.spotify.com/album/0Xb1rjEVxP1gOhdY1oakIZ';
+    const l = await lister.list(` ${A} ,${C}, ${B},${ytList}`, groupToken(), (p) => p.text && texts.push(p.text));
+    assert.equal(l.name, 'Album A');
+    assert.equal(l.source, 'Spotify');
+    assert.equal(l.sourceUrl, `${A}, ${C}, ${B}, ${ytList}`);
+    assert.deepEqual(l.items.map((it) => it.title), ['Dame - One', 'Dame - Two', 'Dame - Three', 'Dame - Four']);
+    assert.deepEqual(l.items.map((it) => it.index), [0, 1, 2, 3]);
+    assert.deepEqual(l.items.map((it) => it.listUrl), [A, A, B, ytList]);
+    assert.deepEqual(l.items.slice(0, 3).map((it) => it.existing.id), ['s-One', 's-Two', 's-Three']);
+    assert.equal(l.truncated, 'links');
+    assert.deepEqual(l.links.map((p) => [p.url, p.name, p.songs, p.listed, !!p.error]), [
+      [A, 'Album A', 2, 2, false], [C, '', 0, 0, true], [B, 'Album B', 1, 2, false], [ytList, 'Upload list', 1, 2, false],
+    ]);
+    assert.ok(texts.includes('Link 1 of 4: Reading the Spotify playlist...'));
+    assert.ok(texts.some((t) => t.startsWith('Link 4 of 4: ')));
+
+    // All of them whole: nothing cut short.
+    const whole = await lister.list(`${A}, ${B}`, groupToken(), () => {});
+    assert.equal(whole.truncated, false);
+    assert.deepEqual(whole.items.map((it) => it.listUrl), [A, A, B]);
+    // One link alone is read as before: no notes per link, no link per song.
+    const alone = await lister.list(A, groupToken(), () => {});
+    assert.ok(!('links' in alone));
+    assert.ok(alone.items.every((it) => !('listUrl' in it)));
+    // None can be read: the first one's error.
+    await assert.rejects(lister.list(`${C}, https://open.spotify.com/album/7Gmj5b3Fnzl17l432Qbr49`, groupToken(), () => {}));
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
 test('the search uses the first artist and the plain title', () => {
   assert.equal(spotify.searchQuery({ artists: 'KAROL G, Judeline', title: 'BbY WOW (feat. Someone)' }), 'KAROL G - BbY WOW');
   assert.equal(spotify.searchQuery({ artists: 'Queen', title: 'Bohemian Rhapsody - Remastered 2011' }), 'Queen - Bohemian Rhapsody');

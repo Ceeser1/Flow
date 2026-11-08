@@ -517,6 +517,66 @@ test('a playlist\'s Update: its link is checked without a batch, and the songs t
   });
 });
 
+test('several links pasted at once: one batch named after the first, each song keeping its own link, one that fails skipped, and the Update reads them all', needsFfmpeg, async () => {
+  await withServer(async ({ base }) => {
+    const first = 'https://fake.test/list/2?ids=a&name=First';
+    const second = 'https://fake.test/list/3?ids=a&name=Second';
+    // Spaces around the commas do not count; the second list repeats the first's two songs.
+    const pasted = ` ${first} ,https://fake.test/fail/x,   ${second}`;
+    const r = await api(base, 'POST', '/api/downloads', { url: pasted, kind: 'list' });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const batch = await allSettled(base);
+    assert.equal(batch.source.name, 'First');
+    assert.equal(batch.source.url, `${first}, https://fake.test/fail/x, ${second}`);
+    assert.deepEqual(batch.items.map((it) => it.title), ['Daft Punk - Song a1', 'Daft Punk - Song a2', 'Daft Punk - Song a3']);
+    assert.deepEqual(batch.items.map((it) => it.state), ['ready', 'ready', 'ready']);
+    assert.equal(batch.truncated, 'links');
+    assert.deepEqual(batch.links.map((l) => [l.url, l.name, l.songs, !!l.error]), [
+      [first, 'First', 2, false], ['https://fake.test/fail/x', '', 0, true], [second, 'Second', 1, false],
+    ]);
+
+    // One song of each list saved into the playlist.
+    const one = await api(base, 'POST', '/api/downloads/items/0/finish', { meta: { artist: 'Daft Punk', title: 'A one' }, start: 0, end: 3, playlist: { name: 'First' } });
+    assert.equal(one.status, 200, JSON.stringify(one.json));
+    const three = await api(base, 'POST', '/api/downloads/items/2/finish', { meta: { artist: 'Daft Punk', title: 'A three' }, start: 0, end: 3, playlist: { name: 'First' } });
+    assert.equal(three.status, 200, JSON.stringify(three.json));
+    const lib = (await api(base, 'GET', '/api/library')).json.library;
+    assert.equal(lib.songs.find((s) => s.title === 'A one').sourcePlaylistUrl, first);
+    assert.equal(lib.songs.find((s) => s.title === 'A three').sourcePlaylistUrl, second);
+    const list = lib.playlists.find((p) => p.id === one.json.playlistId);
+    assert.equal(list.name, 'First');
+    assert.equal(list.source.url, batch.source.url);
+
+    // The Update reads every link again as one list.
+    const check = await api(base, 'POST', '/api/downloads/check', { url: list.source.url });
+    assert.equal(check.status, 200, JSON.stringify(check.json));
+    assert.equal(check.json.listing.sourceUrl, list.source.url);
+    assert.equal(check.json.listing.items.length, 3);
+    assert.deepEqual(check.json.listing.items.map((it) => it.listUrl), [first, first, second]);
+    assert.ok(check.json.listing.items[0].existing);
+    assert.equal(check.json.listing.links.length, 3);
+
+    // The songs ticked there come back as a batch, each still with its own link.
+    await api(base, 'DELETE', '/api/downloads');
+    const picked = await api(base, 'POST', '/api/downloads', {
+      items: [{ url: check.json.listing.items[1].url, title: 'Daft Punk - Song a2', duration: 3, key: check.json.listing.items[1].key, listUrl: first }],
+      name: 'First',
+      source: { url: list.source.url, kind: 'youtube' },
+    });
+    assert.equal(picked.status, 200, JSON.stringify(picked.json));
+    await allSettled(base);
+    const two = await api(base, 'POST', '/api/downloads/items/0/finish', { meta: { artist: 'Daft Punk', title: 'A two' }, start: 0, end: 3, playlist: { name: 'First', mergeInto: list.id } });
+    assert.equal(two.status, 200, JSON.stringify(two.json));
+    const after = (await api(base, 'GET', '/api/library')).json.library;
+    assert.equal(after.songs.find((s) => s.title === 'A two').sourcePlaylistUrl, first);
+
+    // Links the server would not download from are refused, however many there are.
+    assert.equal((await api(base, 'POST', '/api/downloads/check', { url: `${first}, http://192.168.0.1/x` })).status, 400);
+    // None of them can be read: that is an error.
+    assert.equal((await api(base, 'POST', '/api/downloads/check', { url: 'https://fake.test/fail/x, https://fake.test/fail/y' })).status, 502);
+  });
+});
+
 test('with separate folders a song the server downloads goes into Downloads/', needsFfmpeg, async () => {
   await withServer(async ({ server, base }) => {
     server.config.set({ separateFolders: true, keepFolders: true });

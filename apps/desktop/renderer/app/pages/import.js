@@ -737,7 +737,14 @@ const ImportPanel = {
     if (this.state === 'review') {
       head.appendChild(h('span', T('import.playlist.songCount', { songs: Util.plural(l.items.length, 'song') })));
     }
-    if (l.truncated === 'files') {
+    if (Array.isArray(l.links) && l.links.length > 1) {
+      head.appendChild(h('span.muted-text', T('import.list.fromLinks', { links: Util.plural(l.links.length, 'link') })));
+      for (const part of l.links) {
+        const text = this._linkNote(part);
+        if (text) head.appendChild(h('span.import__warn-text', text));
+      }
+      if (l.truncated === 'server') head.appendChild(h('span.import__warn-text', T('import.list.serverFirst500')));
+    } else if (l.truncated === 'files') {
       head.appendChild(h('span.import__warn-text', T('import.list.folderHasMore', { count: l.items.length })));
     } else if (l.truncated === 'spotify') {
       head.appendChild(h('span.import__warn-text', l.sourceTotal > l.items.length
@@ -757,6 +764,20 @@ const ImportPanel = {
     this._drawWarnings();
     this._drawList();
     this._drawCount();
+  },
+
+  /** The note for one of several links read as one: it failed, or was cut short; '' when it is fine. */
+  _linkNote(part) {
+    const name = part.name || part.url;
+    if (part.error) return T('import.list.link.failed', { link: part.url, reason: part.error });
+    if (part.truncated === 'spotify') {
+      return part.sourceTotal > part.listed
+        ? T('import.list.link.spotifyFirstOfTotal', { name, count: part.listed, total: part.sourceTotal })
+        : T('import.list.link.spotifyFirstN', { name, count: part.listed });
+    }
+    if (part.truncated === 'amazon') return T('import.list.link.amazonFirstN', { name, count: part.listed });
+    if (part.truncated === 'mix') return T('import.list.link.mixFirst50', { name });
+    return '';
   },
 
   _drawWarnings() {
@@ -1199,7 +1220,7 @@ const ImportPanel = {
       this.updating = updating;
       await ServerImport._create({
         items: chosen.map((it) => ({
-          url: it.url, title: it.title, duration: it.duration, key: it.key, meta: it.meta, existing: it.existing ? it.existing.id : undefined,
+          url: it.url, title: it.title, duration: it.duration, key: it.key, meta: it.meta, existing: it.existing ? it.existing.id : undefined, listUrl: it.listUrl,
         })),
         name: l.name,
         source,
@@ -1232,6 +1253,8 @@ const ImportPanel = {
       path: it.path || '',
       meta: it.meta && it.meta.title ? { ...it.meta } : null,
       existingId: it.existing ? it.existing.id : null,
+      // Of several links read as one (listMany): the one it was found in.
+      listUrl: typeof it.listUrl === 'string' ? it.listUrl : undefined,
       state: null,
     }));
     const toFetch = this.included.filter((it) => !it.existingId);
@@ -1306,6 +1329,7 @@ const ImportPanel = {
       meta,
       sourceUrl: it.song.url,
       sourceKey: it.song.key,
+      ...(typeof it.listUrl === 'string' ? { sourcePlaylistUrl: it.listUrl } : {}),
       originalPath: it.song.originalPath || '',
       lyrics: this._ownLyrics(it),
     };
@@ -1544,7 +1568,7 @@ const ImportPanel = {
     Covers.forgetServerPending();
     this.server = { id: batch.id, single: !!batch.single };
     this.listing = {
-      local: false, search: batch.source.kind === 'search', source: batch.source.kind || 'server', sourceUrl: batch.source.url, name: batch.source.name, truncated: batch.truncated, sourceTotal: batch.sourceTotal || 0, items: [],
+      local: false, search: batch.source.kind === 'search', source: batch.source.kind || 'server', sourceUrl: batch.source.url, name: batch.source.name, truncated: batch.truncated, sourceTotal: batch.sourceTotal || 0, links: batch.links || null, items: [],
     };
     this.included = [];
     this.moveOriginals = false;
@@ -1584,7 +1608,7 @@ const ImportPanel = {
     }
     if (this.state === 'listing' && batch.state === 'ready') {
       this._resetName(batch.source.name);
-      Object.assign(this.listing, { name: batch.source.name, source: batch.source.kind, truncated: batch.truncated, sourceTotal: batch.sourceTotal || 0 });
+      Object.assign(this.listing, { name: batch.source.name, source: batch.source.kind, truncated: batch.truncated, sourceTotal: batch.sourceTotal || 0, links: batch.links || null });
       this.server.single = !!batch.single;
     }
     const changed = [];

@@ -95,3 +95,19 @@ test('songs finished one by one, in any order, read as the source; the first sav
   assert.deepEqual(titlesOf(first.playlistId), ['Two', 'Known', 'Five', 'Seven']);
   assert.equal(third.times[third.songIds[0]], base - 5000);
 });
+
+test('songs of several links read as one: one playlist with all the links, each song with the link it was found in', async () => {
+  const a = 'https://open.spotify.com/album/3EcC7Tb6Vm8RfAa8AiWoHC';
+  const b = 'https://open.spotify.com/album/4TxErgYLqeRWaV5A7AwQLU';
+  const summary = await importer.finish({
+    name: 'Dame albums', playlist: true, playlistIds: [], source: { url: `${a}, ${b}`, kind: 'spotify' },
+    entries: [{ ...entry('From A'), position: 0, sourcePlaylistUrl: a }, { ...entry('From B'), position: 1, sourcePlaylistUrl: b }, { ...entry('Alone'), position: 2 }],
+  }, () => {});
+  const d = library.get();
+  assert.equal(model.playlistById(d, summary.playlistId).source.url, `${a}, ${b}`);
+  const linkOf = (title) => d.songs.find((s) => s.title === title).sourcePlaylistUrl;
+  assert.equal(linkOf('From A'), a);
+  assert.equal(linkOf('From B'), b);
+  // A song without its own (one link read) keeps the playlist's, as before.
+  assert.equal(linkOf('Alone'), `${a}, ${b}`);
+});
