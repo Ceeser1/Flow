@@ -680,12 +680,21 @@ function createRemote(env) {
   }
 
   let viewTimer = null;
+  // The last view refreshView sent ('' once another was sent).
+  let sentView = '';
   function refreshView() {
     clearTimeout(viewTimer);
     viewTimer = setTimeout(() => {
       viewTimer = null;
       if (!active()) return;
-      hooks.onView(buildView());
+      const v = buildView();
+      // Nothing the window shows changed (a cover written into a song's
+      // file): not sent, so its lists are not drawn again for it.
+      const key = model.viewKey(v);
+      if (key !== sentView) {
+        hooks.onView(v);
+        sentView = key;
+      }
       emitStatus();
     }, 20);
   }
@@ -3063,6 +3072,11 @@ function createRemote(env) {
 
   function init(h) {
     hooks = { ...hooks, ...h };
+    const sendView = hooks.onView;
+    hooks.onView = (v) => {
+      sentView = '';
+      sendView(v);
+    };
     ensureLoaded();
     library.onChange(() => localChanged());
     if (active()) {

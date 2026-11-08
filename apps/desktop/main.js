@@ -214,8 +214,17 @@ function handle(channel, fn) {
 
 // With a Flow Server the window shows the server's library (remote.js), and
 // Local Files changes reach it through that.
+// Unchanged for the window (a song's file tagged): not sent again.
+let localSent = '';
 library.onChange((data) => {
-  if (!remote.active()) sendToWindow('library:changed', data);
+  if (remote.active()) {
+    localSent = '';
+    return;
+  }
+  const key = model.viewKey(data);
+  if (key === localSent) return;
+  localSent = key;
+  sendToWindow('library:changed', data);
 });
 
 /** The library the window works with: the server's, or Local Files. */

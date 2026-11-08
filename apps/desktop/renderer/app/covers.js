@@ -53,6 +53,9 @@ const Covers = {
   _watched: new WeakSet(),
   _placed: new WeakSet(),
   _io: null,
+  // Addresses that loaded: a list drawn again shows them at once (a box
+  // left empty until its look would blink at every redraw).
+  _loaded: new Set(),
 
   init(dirs) {
     this.dirs = dirs || this.dirs;
@@ -402,16 +405,23 @@ const Covers = {
       this._show(box, '');
       return;
     }
+    // One of its addresses loaded before: shown now (the best one: done).
+    const known = list.find((src) => this._loaded.has(src)) || '';
+    if (known && known === list[0]) {
+      this._show(box, known);
+      return;
+    }
     // A server's song while the list flies by (or always where nothing is
     // kept: the web player loads each from the server): its turn comes once
     // the scrolling settles, if it is still on screen.
     if (!now && size === 'small' && this._isServer(song) && (!this._settled() || !Store.can('offline'))) {
-      this._show(box, '');
+      this._show(box, known);
       this._waiting.add(box);
       this._watch(box);
       this._settleSoon();
       return;
     }
+    if (known) this._show(box, known);
     box._coverJob = { song, size, list };
     this._near(box);
   },
@@ -425,7 +435,11 @@ const Covers = {
     if (src) {
       if (img && img.getAttribute('src') === src) return;
       clear(box);
-      box.appendChild(h('img.cover__img', { alt: '', decoding: 'async', draggable: false, src }));
+      // A thumbnail is decoded with the frame it is put in (it loaded
+      // already, and is small): drawn again, a row never shows an empty box.
+      box.appendChild(h('img.cover__img', {
+        alt: '', decoding: box.dataset.coverSize === 'big' ? 'async' : 'sync', draggable: false, src,
+      }));
     } else if (img || !box.querySelector('.cover__note')) {
       clear(box);
       box.appendChild(this._placeholder());
@@ -466,6 +480,8 @@ const Covers = {
     probe.onload = () => {
       if (box._coverProbe !== probe) return;
       box._coverProbe = null;
+      if (this._loaded.size > 20000) this._loaded.clear();
+      this._loaded.add(list[at]);
       if (size === 'big' && at === 0) this._bigHere.add(`${song.id}:${song.cover}`);
       this._show(box, list[at]);
     };
