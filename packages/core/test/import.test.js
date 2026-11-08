@@ -60,6 +60,60 @@ test('the embed page gives the name and each song', () => {
   assert.equal(albumPage.tracks[0].album, 'Discovery');
 });
 
+test('a Spotify playlist\'s own page tells how many songs it has', () => {
+  assert.equal(spotify.parseSongCount('<meta name="music:song_count" content="254"/>'), 254);
+  assert.equal(spotify.parseSongCount('<meta property="og:title" content="Rammstein Complete"/>'), 0);
+  assert.equal(spotify.parseSongCount(''), 0);
+});
+
+test('a full Spotify page warns with the real number of songs, or not at all when it is the whole list', async () => {
+  const { createLister, groupToken } = require('../src/listing');
+  // Songs not playable on Spotify need no search, so nothing goes to YouTube.
+  const trackList = Array.from({ length: 100 }, (_, i) => ({ title: `Song ${i + 1}`, subtitle: 'Band', duration: 200000, isPlayable: false }));
+  const embed = (type) => `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: { pageProps: { state: { data: { entity: { type, name: 'Long list', trackList } } } } },
+  })}</script>`;
+  const lister = createLister({ media: {}, library: () => m.emptyLibrary() });
+  const realFetch = global.fetch;
+  const run = async (link, countPage) => {
+    const asked = [];
+    global.fetch = async (url) => {
+      asked.push(String(url).replace('https://open.spotify.com/', ''));
+      if (/\/embed\//.test(url)) return { ok: true, status: 200, text: async () => embed(/album/.test(url) ? 'album' : 'playlist') };
+      if (countPage instanceof Error) throw countPage;
+      return { ok: true, status: 200, text: async () => countPage };
+    };
+    try {
+      return { asked, listing: await lister.list(link, groupToken(), () => {}) };
+    } finally {
+      global.fetch = realFetch;
+    }
+  };
+  const count = (n) => `<meta name="music:song_count" content="${n}"/>`;
+
+  const long = await run('https://open.spotify.com/playlist/0SOay3RkjojjevrF5lHMON', count(254));
+  assert.equal(long.listing.items.length, 100);
+  assert.equal(long.listing.truncated, 'spotify');
+  assert.equal(long.listing.sourceTotal, 254);
+  assert.deepEqual(long.asked, ['embed/playlist/0SOay3RkjojjevrF5lHMON', 'playlist/0SOay3RkjojjevrF5lHMON']);
+
+  const whole = await run('https://open.spotify.com/playlist/0SOay3RkjojjevrF5lHMON', count(100));
+  assert.equal(whole.listing.truncated, false);
+  assert.ok(!('sourceTotal' in whole.listing));
+
+  // The count cannot be read: the warning without a number, as before.
+  for (const page of [new Error('offline'), '<html></html>']) {
+    const unknown = await run('https://open.spotify.com/playlist/0SOay3RkjojjevrF5lHMON', page);
+    assert.equal(unknown.listing.truncated, 'spotify');
+    assert.ok(!('sourceTotal' in unknown.listing));
+  }
+
+  // An album's page has no count, so it is not asked.
+  const album = await run('https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy', count(254));
+  assert.equal(album.listing.truncated, 'spotify');
+  assert.deepEqual(album.asked, ['embed/album/4aawyAB9vmqN3uQ7FjRGTy']);
+});
+
 test('the search uses the first artist and the plain title', () => {
   assert.equal(spotify.searchQuery({ artists: 'KAROL G, Judeline', title: 'BbY WOW (feat. Someone)' }), 'KAROL G - BbY WOW');
   assert.equal(spotify.searchQuery({ artists: 'Queen', title: 'Bohemian Rhapsody - Remastered 2011' }), 'Queen - Bohemian Rhapsody');

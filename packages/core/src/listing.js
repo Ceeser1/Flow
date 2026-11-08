@@ -488,10 +488,21 @@ function createLister({ media, library, lookupInfo = null }) {
     onProgress({ phase: 'listing', text: tr('core.listing.readingSpotify', 'Reading the Spotify playlist...') });
     const page = await spotify.fetchSpotify(ref);
     if (group.cancelled) throw cancelled();
+    // A full page may be the whole list or its start: the playlist's own
+    // page tells (0 when it cannot, and the warning says "the first 100").
+    let truncated = false;
+    let sourceTotal = 0;
+    if (page.tracks.length >= SPOTIFY_PAGE_LIMIT) {
+      sourceTotal = await spotify.fetchSongCount(ref);
+      if (group.cancelled) throw cancelled();
+      truncated = sourceTotal && sourceTotal <= page.tracks.length ? false : 'spotify';
+      if (!truncated) sourceTotal = 0;
+    }
     return listByName(page, {
       source: 'Spotify',
       sourceUrl: `https://open.spotify.com/${ref.type}/${ref.id}`,
-      truncated: page.tracks.length >= SPOTIFY_PAGE_LIMIT ? 'spotify' : false,
+      truncated,
+      sourceTotal,
     }, group, onProgress);
   }
 
@@ -521,7 +532,7 @@ function createLister({ media, library, lookupInfo = null }) {
    * A list known by its songs' names only (page: { name, tracks: [{ title,
    * artists, duration, playable }] }), each song looked for (findSong).
    */
-  async function listByName(page, { source, sourceUrl, truncated }, group, onProgress) {
+  async function listByName(page, { source, sourceUrl, truncated, sourceTotal = 0 }, group, onProgress) {
     const tracks = page.tracks;
     const data = library();
     const items = tracks.map((t, index) => {
@@ -583,14 +594,19 @@ function createLister({ media, library, lookupInfo = null }) {
     };
     await Promise.all(Array.from({ length: SEARCH_PARALLEL }, worker));
 
-    return { source, sourceUrl, name: page.name, truncated, items };
+    const out = { source, sourceUrl, name: page.name, truncated, items };
+    // How many songs the list has where it came from, when more than are listed.
+    if (truncated && sourceTotal > items.length) out.sourceTotal = sourceTotal;
+    return out;
   }
 
   /**
    * Reads a playlist link. Resolves { single: true, probed } when the link is
    * one song after all, or the listing: { source, sourceUrl, name, truncated,
-   * items: [{ index, title, duration, url, key, status, note, meta?, track?,
-   * match?, existing? }] }. status is 'ok', 'unavailable' or 'notfound'.
+   * sourceTotal?, items: [{ index, title, duration, url, key, status, note,
+   * meta?, track?, match?, existing? }] }. status is 'ok', 'unavailable' or
+   * 'notfound'. sourceTotal: how many songs the list has where it came from,
+   * when more than are listed (a Spotify playlist's).
    */
   async function list(rawUrl, group, onProgress, { knownArtists = [] } = {}) {
     const ref = spotify.parseSpotifyUrl(rawUrl);

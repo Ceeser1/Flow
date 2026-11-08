@@ -667,7 +667,7 @@ the upload picked as a new batch with `kind: "song"`, or several as `items`.
 {
   "id": "...", "state": "ready", "error": "",
   "source": { "url": "...", "name": "Road trip", "kind": "spotify" },
-  "single": false, "truncated": false,
+  "single": false, "truncated": false, "sourceTotal": 0,
   "options": { "alwaysMp3": false, "quality": 192, "keepMp3": true },
   "cookies": false, "playlistId": null, "createdAt": 0, "expiresAt": 0,
   "progress": null,
@@ -686,6 +686,11 @@ the upload picked as a new batch with `kind: "song"`, or several as `items`.
 - Item `state`: `queued`, `downloading` (with `progress: { frac, text }`),
   `converting`, `ready`, `failed` (`error`), `library` (the library has it
   already; `existing` says which), `saving`, `saved`, `added`, `discarded`.
+- `truncated`: `false`, or why the list is cut short: `spotify` (Spotify's
+  page shows only the first 100 songs), `amazon`, `mix` (a YouTube Mix's
+  first 50), `server` (more than 500). `sourceTotal`: how many songs the list
+  has where it came from (a Spotify playlist), when more than are listed, else
+  0.
 - At most 500 songs a batch. A batch nobody looks at for 30 days is thrown
   away.
 

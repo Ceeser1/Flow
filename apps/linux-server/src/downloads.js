@@ -272,6 +272,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       let name = batch.source.name;
       let kind = batch.source.kind;
       let truncated = false;
+      let sourceTotal = 0;
       if (batch.single) {
         const probed = await media.probe(batch.source.url, group.sub(), { knownArtists });
         items = [itemOf({ title: probed.title, duration: probed.duration, url: probed.url, key: probed.key, status: 'ok' }, 0)];
@@ -290,6 +291,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         } else {
           items = result.items.slice(0, MAX_ITEMS).map(itemOf);
           truncated = result.truncated || (result.items.length > MAX_ITEMS ? 'server' : false);
+          sourceTotal = Number(result.sourceTotal) || 0;
           name = result.name;
           kind = String(result.source || '').toLowerCase();
           batch.source.url = result.sourceUrl || batch.source.url;
@@ -305,7 +307,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         }
       }
       if (batches.get(batch.key) !== batch) return;
-      Object.assign(batch, { state: 'ready', items, truncated, error: '' });
+      Object.assign(batch, { state: 'ready', items, truncated, sourceTotal, error: '' });
       batch.source.name = cleanText(name, 200) || 'Download';
       batch.source.kind = kind;
       log(`Download batch "${batch.source.name}": ${items.length} ${items.length === 1 ? 'song' : 'songs'}`);
@@ -466,6 +468,8 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       source: batch.source,
       single: !!batch.single,
       truncated: batch.truncated || false,
+      // How many songs the list has where it came from (Spotify), when more than are listed.
+      sourceTotal: batch.sourceTotal || 0,
       options: batch.options,
       // Downloaded with browser cookies from the app that started it.
       cookies: !!batch.cookies,
@@ -654,6 +658,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         source: String(result.source || '').toLowerCase(),
         sourceUrl: result.sourceUrl || link,
         truncated: result.truncated || (result.items.length > MAX_ITEMS ? 'server' : false),
+        sourceTotal: Number(result.sourceTotal) || 0,
         items,
       };
     } catch (err) {

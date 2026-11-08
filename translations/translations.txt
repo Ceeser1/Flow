@@ -1556,6 +1556,10 @@ import.list.spotifyFirst100
   en: Spotify only showed the first 100 songs; the rest of the list is missing.
   de: Spotify zeigte nur die ersten 100 Songs; der Rest der Liste fehlt.
 
+import.list.spotifyFirstOfTotal
+  en: Spotify only showed the first {count} of the {total} songs; the rest of the list is missing.
+  de: Spotify zeigte nur die ersten {count} der {total} Songs; der Rest der Liste fehlt.
+
 import.list.amazonFirstN
   en: Amazon Music only showed the first {count} songs; the rest of the list is missing.
   de: Amazon Music zeigte nur die ersten {count} Songs; der Rest der Liste fehlt.

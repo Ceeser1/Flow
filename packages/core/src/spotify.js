@@ -77,6 +77,31 @@ async function fetchSpotify({ type, id }) {
   return parseEmbedPage(await res.text());
 }
 
+/**
+ * How many songs a playlist has in all, or 0 when it cannot be told. The
+ * embed page lists the first 100 only and does not say how many there are;
+ * the playlist's own page does, in the tag link previews read
+ * (music:song_count), sent to a client that is not a browser. An album's
+ * page has no such tag. Never fails.
+ */
+function parseSongCount(html) {
+  const m = /<meta\s+name="music:song_count"\s+content="(\d+)"/.exec(String(html || ''));
+  return m ? Number(m[1]) : 0;
+}
+
+async function fetchSongCount({ type, id }) {
+  if (type !== 'playlist') return 0;
+  try {
+    const res = await fetch(`https://open.spotify.com/playlist/${id}`, {
+      headers: { 'User-Agent': 'Flow', 'Accept-Language': 'en' },
+      signal: AbortSignal.timeout(15000),
+    });
+    return res.ok ? parseSongCount(await res.text()) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 // ---- matching a Spotify song to a YouTube upload ----
 
 // Versions that are a different recording, or a worse copy, than the song on
@@ -215,7 +240,7 @@ function pickMatch(track, candidates) {
 }
 
 module.exports = {
-  parseSpotifyUrl, isSpotifyTrackUrl, parseEmbedPage, fetchSpotify,
+  parseSpotifyUrl, isSpotifyTrackUrl, parseEmbedPage, fetchSpotify, parseSongCount, fetchSongCount,
   searchQuery, searchTitle, scoreMatch, rankMatches, pickMatch, pickMusicResult, musicSearchUrl, channelIsArtist, fold,
   hasWord, OTHER_VERSION,
 };

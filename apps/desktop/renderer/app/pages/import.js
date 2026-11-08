@@ -73,6 +73,7 @@ const ImportPanel = {
   job: null,              // source, local: fixed when downloading starts
   name: '',               // the playlist's name, editable until the songs are saved
   createList: false,      // local files: make a playlist of them ("Create new Playlist")
+  keepList: true,         // a playlist's songs: make the playlist ("Create new Playlist"); unticked they only go to All Songs
   playlistIds: [],        // existing playlists every song joins ("Add to Playlist")
   editingName: false,
   _nameDraft: '',
@@ -574,9 +575,14 @@ const ImportPanel = {
     return Store.library.playlists.find((p) => !p.isRuled && p.name.toLowerCase() === name) || null;
   },
 
-  /** Local files (see optionalList) only make a playlist when "Create new Playlist" is ticked. */
+  /**
+   * Local files (see optionalList) only make a playlist when "Create new
+   * Playlist" is ticked; a playlist's songs unless "Create new Playlist" is
+   * unticked (then they only go to All Songs, each still knowing the
+   * playlist it came from: sourcePlaylistUrl).
+   */
   _makesPlaylist() {
-    return !this.optionalList || this.createList;
+    return this.optionalList ? this.createList : this.keepList;
   },
 
   _finalName() {
@@ -588,6 +594,7 @@ const ImportPanel = {
     this.name = (this.updating && Store.playlist(this.updating.id) ? this.updating.name : name) || '';
     this.editingName = false;
     this.createList = false;
+    this.keepList = true;
     this.playlistIds = [];
     this.merge = true;
   },
@@ -597,7 +604,9 @@ const ImportPanel = {
    * is text with a pencil, which turns it into a box with Apply and Cancel
    * (Enter and Escape do the same). Local files have "Create new Playlist"
    * in front: unticked the name is only the list's label, ticked it is a box
-   * with the name the playlist gets.
+   * with the name the playlist gets. A playlist's has "Create new Playlist" after
+   * it (ticked): unticked its songs only go to All Songs. An Update has none:
+   * its songs go into the playlist updated.
    */
   _drawName() {
     const box = $('importNameBox');
@@ -632,6 +641,15 @@ const ImportPanel = {
       }
       return;
     }
+    const keepTick = () => {
+      if (this.updating) return [];
+      const tick = h('input', { type: 'checkbox', checked: this.keepList, disabled: fixed });
+      tick.addEventListener('change', () => {
+        this.keepList = tick.checked;
+        this._drawWarnings();
+      });
+      return [h('label.check.import__create', tick, h('span', T('import.playlist.createNew')))];
+    };
     if (this.editingName && !fixed) {
       const hint = h('span.import__name-hint', { hidden: !this._nameHint }, this._nameHint);
       const input = h('input.input.import__name-box', {
@@ -656,12 +674,14 @@ const ImportPanel = {
       box.append(input,
         h('button.btn.btn--small.btn--light-green', { type: 'button', onclick: () => this._applyName() }, T('common.apply')),
         h('button.btn.btn--small', { type: 'button', onclick: () => this._cancelName() }, T('common.cancel')),
+        ...keepTick(),
         hint);
       requestAnimationFrame(() => input.focus());
       return;
     }
     box.append(h('span.import__heading', this.name));
     if (!fixed) box.append(iconButton('icon-btn.import__rename', Icons.pencil, T('common.renamePlaylist'), () => this._editName()));
+    box.append(...keepTick());
   },
 
   _editName() {
@@ -720,7 +740,9 @@ const ImportPanel = {
     if (l.truncated === 'files') {
       head.appendChild(h('span.import__warn-text', T('import.list.folderHasMore', { count: l.items.length })));
     } else if (l.truncated === 'spotify') {
-      head.appendChild(h('span.import__warn-text', T('import.list.spotifyFirst100')));
+      head.appendChild(h('span.import__warn-text', l.sourceTotal > l.items.length
+        ? T('import.list.spotifyFirstOfTotal', { count: l.items.length, total: l.sourceTotal })
+        : T('import.list.spotifyFirst100')));
     } else if (l.truncated === 'amazon') {
       head.appendChild(h('span.import__warn-text', T('import.list.amazonFirstN', { count: l.items.length })));
     } else if (l.truncated === 'mix') {
@@ -1455,7 +1477,7 @@ const ImportPanel = {
     const kept = (summary.kept || []).length;
     if (kept) parts.push(T('import.done.originalsKept', { count: kept }));
     const kind = summary.saved || summary.fromLibrary ? 'success' : 'error';
-    if (!summary.playlistId && (local || this.optionalList)) {
+    if (!summary.playlistId && (local || this.optionalList || !this.keepList)) {
       const key = local ? 'import.done.localFilesAdded' : (summary.saved === 1 ? 'import.done.addedToAllSongs.song' : 'import.done.addedToAllSongs.songs');
       toast(T(key, { result: parts.join(', ') || T('import.done.nothingAdded') }), kind);
       return;
@@ -1522,7 +1544,7 @@ const ImportPanel = {
     Covers.forgetServerPending();
     this.server = { id: batch.id, single: !!batch.single };
     this.listing = {
-      local: false, search: batch.source.kind === 'search', source: batch.source.kind || 'server', sourceUrl: batch.source.url, name: batch.source.name, truncated: batch.truncated, items: [],
+      local: false, search: batch.source.kind === 'search', source: batch.source.kind || 'server', sourceUrl: batch.source.url, name: batch.source.name, truncated: batch.truncated, sourceTotal: batch.sourceTotal || 0, items: [],
     };
     this.included = [];
     this.moveOriginals = false;
@@ -1562,7 +1584,7 @@ const ImportPanel = {
     }
     if (this.state === 'listing' && batch.state === 'ready') {
       this._resetName(batch.source.name);
-      Object.assign(this.listing, { name: batch.source.name, source: batch.source.kind, truncated: batch.truncated });
+      Object.assign(this.listing, { name: batch.source.name, source: batch.source.kind, truncated: batch.truncated, sourceTotal: batch.sourceTotal || 0 });
       this.server.single = !!batch.single;
     }
     const changed = [];
