@@ -23,7 +23,8 @@
 //   listMap   local playlist id -> server playlist id
 //   snapshot  the Local Files library as it was at the last synchronization,
 //             so the next one knows what changed there since: songs added or
-//             removed by hand, a playlist made while the server was off.
+//             removed by hand (removed ones stay on the server), a playlist
+//             made while the server was off.
 //   offline   the playlists marked for download (one's own, or followed ones
 //             another profile shares); 'all' stands for All Songs: every song
 //             of the server, kept in step with it
@@ -1641,7 +1642,8 @@ function createRemote(env) {
 
   /**
    * Queues what changed in Local Files since the last synchronization: songs
-   * added go up, songs removed are deleted on the server, names, favourites and
+   * added go up, songs removed only let go of their copy here (they stay on
+   * the server), names, favourites and
    * playlists follow. `onlyNew`: only additions (a song just downloaded goes
    * up even while "Synchronize local changes" is off). `playlistsFor`: server
    * playlists a new song goes into (the ones picked when downloading it).
@@ -1700,18 +1702,15 @@ function createRemote(env) {
     if (!onlyNew) {
       for (const lid of Object.keys(snap.songs)) {
         if (localIds.has(lid)) continue;
-        // Removed from the folder by hand (or deleted while the server was off).
-        const sid = sync.songMap[lid];
+        // Removed from the folder by hand (or deleted while the server was
+        // off): only the copy here is gone, as with "Delete from this
+        // computer". The song stays on the server, in its playlists; only
+        // the song's X deletes it there (deleteSong). An upload still
+        // waiting for it has nothing left to send.
         delete snap.songs[lid];
         delete sync.songMap[lid];
         delete sync.fetched[lid];
-        if (!sid) continue;
-        const waiting = sync.queue.find((c) => c.type === 'upload' && c.localId === lid);
-        if (waiting) sync.queue = sync.queue.filter((c) => c !== waiting);
-        else if (!Object.values(sync.songMap).includes(sid)) {
-          q('deleteSong', { songId: sid });
-          count += 1;
-        }
+        sync.queue = sync.queue.filter((c) => !(c.type === 'upload' && c.localId === lid));
       }
     }
 

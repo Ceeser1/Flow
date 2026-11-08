@@ -116,6 +116,31 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.throws(() => remote.command('createPlaylist', { playlistId: '', name: 'No id' }));
   });
 
+  await t.test('a song deleted from the folder by hand stays on the server; only its X deletes it there', async () => {
+    const file = path.join(process.env.FLOW_MUSIC, 'Massive Attack - Teardrop.mp3');
+    fs.writeFileSync(file, FAKE_MP3);
+    library.mutate((d) => model.addSong(d, {
+      id: 'tear1', file, title: 'Teardrop', artist: 'Massive Attack', mix: '', duration: 330, format: 'mp3', addedAt: Date.now(),
+    }));
+    await remote.syncNow();
+    await until(async () => (await serverLibrary(one.base)).songs.some((s) => s.id === 'tear1'), 'the upload');
+    remote.command('addSongsToPlaylist', { playlistId: 'eve1', songIds: ['tear1'] });
+    const inEvening = async () => (await serverLibrary(one.base)).playlists.find((p) => p.id === 'eve1').entries.some((e) => e.songId === 'tear1');
+    await until(inEvening, 'the song in the playlist');
+
+    fs.rmSync(file);
+    await remote.syncNow();
+    assert.equal(remote.status().queued, 0);
+    assert.ok((await serverLibrary(one.base)).songs.some((s) => s.id === 'tear1'));
+    assert.ok(await inEvening());
+    // Streamed from now on: still in the view, no copy here.
+    assert.ok(model.songById(remote.view(), 'tear1'));
+    assert.equal(remote.localFileOf('tear1'), null);
+
+    await remote.deleteSong('tear1', false);
+    await until(async () => !(await serverLibrary(one.base)).songs.some((s) => s.id === 'tear1'), 'the delete');
+  });
+
   await t.test('a song only the server has: downloaded, and dropped again', async () => {
     const meta = { title: 'Glory Box', artist: 'Portishead', format: 'mp3', duration: 301 };
     const r = await fetch(`${one.base}/api/songs/glory1?meta=${encodeURIComponent(JSON.stringify(meta))}`, { method: 'PUT', body: FAKE_MP3 });

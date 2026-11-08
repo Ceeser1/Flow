@@ -742,8 +742,8 @@ settings.server.syncLocal.label
   de: Lokale Änderungen synchronisieren
 
 settings.server.syncLocal.desc
-  en: Songs added to or removed from local files go to the server by themselves. If disabled, only the button will sync local changes.
-  de: Zu lokalen Dateien hinzugefügte oder entfernte Songs gehen von selbst an den Server. Wenn deaktiviert, synchronisiert nur die Taste.
+  en: Songs added to local files go to the server by themselves. Songs removed from local files stay on the server: only the X deletes a song there. If disabled, only the button will sync local changes.
+  de: Zu lokalen Dateien hinzugefügte Songs gehen von selbst an den Server. Aus lokalen Dateien entfernte Songs bleiben auf dem Server: Nur das X löscht dort einen Song. Wenn deaktiviert, synchronisiert nur die Taste.
 
 settings.server.use.desc.localFilesUploaded
   en: When turned on, your local files get uploaded to the server as well.
