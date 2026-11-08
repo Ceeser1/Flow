@@ -577,3 +577,49 @@ test('the rule "only admins make profiles"', async () => {
     assert.equal((await post(base, '/api/admin/profiles', { name: 'carla' }, tAnna)).status, 409);
   });
 });
+
+test('All Playlists: every playlist with its owner, and given to another', async () => {
+  await withServer(async ({ base, server }) => {
+    const { tAnna, tBen, benId, songId } = await annaAndBen(base);
+    const annaId = (await get(base, '/api/admin/profiles', tAnna)).json.me;
+    await commands(base, [
+      { type: 'createPlaylist', playlistId: 'b1', name: 'Rainy days' },
+      { type: 'addSongsToPlaylist', playlistId: 'b1', songIds: [songId] },
+    ], tBen);
+    await commands(base, [{ type: 'createPlaylist', playlistId: 'a1', name: 'Rainy days' }], tAnna);
+    assert.equal((await get(base, '/api/admin/playlists', tBen)).status, 403, 'no admin');
+
+    const r = (await get(base, '/api/admin/playlists', tAnna)).json;
+    assert.deepEqual(r.playlists.map((p) => [p.id, p.name, p.ownerId, p.songs, p.seconds]).sort(), [
+      ['a1', 'Rainy days', annaId, 0, 0],
+      ['b1', 'Rainy days', benId, 1, 300],
+    ]);
+    assert.deepEqual(r.owners.map((o) => o.name), ['Default / Shared', 'Anna', 'Ben']);
+
+    // Ben's to Anna, who has a list of that name.
+    const rev = server.library.rev;
+    const moved = await post(base, '/api/admin/playlists/owner', { id: 'b1', owner: annaId }, tAnna);
+    assert.equal(moved.status, 200);
+    assert.equal(moved.json.name, 'Rainy days (2)');
+    assert.ok(server.library.rev > rev, 'the apps hear of it');
+    const anna = (await get(base, '/api/library', tAnna)).json.library;
+    assert.deepEqual(anna.playlists.map((p) => [p.id, p.name, p.entries.length]), [['a1', 'Rainy days', 0], ['b1', 'Rainy days (2)', 1]]);
+    assert.deepEqual((await get(base, '/api/library', tBen)).json.library.playlists, []);
+    // To the Default / Shared.
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'b1', owner: 'default' }, tAnna)).status, 200);
+    assert.deepEqual(server.library.data.playlists.map((p) => p.id), ['b1']);
+
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'nothing', owner: annaId }, tAnna)).status, 404);
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'a1', owner: 'nobody' }, tAnna)).status, 404);
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'a1', owner: benId }, tBen)).status, 403);
+
+    // The master's playlists only by the master.
+    server.config.set({ profiles: server.config.get().profiles.map((p) => (p.id === benId ? { ...p, master: true } : p)) });
+    await commands(base, [{ type: 'createPlaylist', playlistId: 'b3', name: 'Mine' }], tBen);
+    const refused = await post(base, '/api/admin/playlists/owner', { id: 'b3', owner: annaId }, tAnna);
+    assert.equal(refused.status, 403);
+    assert.match(refused.json.error, /master/);
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'a1', owner: benId }, tAnna)).status, 200, 'given to the master is fine');
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'b3', owner: annaId }, tBen)).status, 200);
+  });
+});

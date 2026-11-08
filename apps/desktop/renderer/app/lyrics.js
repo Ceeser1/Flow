@@ -2,7 +2,7 @@
 
 // Lyrics (4.0): the playing song's, from its Flow Server or from LRCLIB
 // (window.flow.lyrics); with Settings' "Fetch/Sync Lyrics" off only those
-// kept in the Lyrics folder (4.0.1). Three places:
+// kept in the Lyrics folder (4.1.0). Three places:
 //  - the player bar's Lyrics, shown while the song has lyrics ("(No Lyrics)"
 //    in its place otherwise): a drawer beside the page with every line, the
 //    one playing lit and kept in sight (unless the list was just scrolled by
@@ -139,7 +139,7 @@ const Lyrics = {
 
   /**
    * A pause between two lines is only shown (as a note) when it is a long
-   * one. A line written with its end (4.0.1) is over then: a pause follows
+   * one. A line written with its end (4.1.0) is over then: a pause follows
    * when the next one starts later.
    */
   _tidy(data) {
@@ -159,7 +159,7 @@ const Lyrics = {
     this._follow(true);
   },
 
-  /** A song's lyrics were written or edited (4.0.1): asked for anew, at once when it is playing. */
+  /** A song's lyrics were written or edited (4.1.0): asked for anew, at once when it is playing. */
   forget(songId) {
     for (const key of [...this._cache.keys()]) if (key.startsWith(`${songId}|`)) this._cache.delete(key);
     if (songId === this.songId) this._follow(true);

@@ -17,7 +17,7 @@ const SongDetails = {
 
     const body = h('div.details');
     let modal = null;
-    // Its lyrics (4.0.1), fetched once: { state: 'loading' | 'ready' | 'error', data, error }.
+    // Its lyrics (4.1.0), fetched once: { state: 'loading' | 'ready' | 'error', data, error }.
     const lyrics = { state: 'loading', data: null, error: '' };
 
     const draw = () => {
@@ -135,7 +135,7 @@ const SongDetails = {
   },
 
   /**
-   * Its lyrics, the words without times (4.0.1), with Edit Lyrics (or Add
+   * Its lyrics, the words without times (4.1.0), with Edit Lyrics (or Add
    * Lyrics without any) at the heading's right: written ones are kept for
    * good, on the server for a server's song. `reload` fetches them again.
    */

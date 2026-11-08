@@ -218,3 +218,54 @@ test('the Default shares and follows as well, and its changes go back into the l
   assert.deepEqual(lib.data.follows, [v.sharedPlaylists[0].id]);
   assert.equal(lib.data.sharedPlaylists.length, 0, 'what is shared with the Default is not stored in it');
 });
+
+test('every playlist with its owner, and a playlist given to another owner', () => {
+  const lib = withAnna();
+  prof.addProfile(lib.data, lib.profiles, 'ben');
+  lib.data.songs.find((s) => s.id === 's1').duration = 330;
+  lib.data.songs.find((s) => s.id === 's2').duration = 300;
+  run(lib, null, { type: 'createPlaylist', playlistId: 'd1', name: 'Kitchen' });
+  run(lib, 'ben', { type: 'createPlaylist', playlistId: 'b1', name: 'Evening' });
+  run(lib, 'ben', { type: 'createPlaylist', playlistId: 'b2', name: 'Fresh' });
+  run(lib, 'ben', { type: 'setPlaylistRules', playlistId: 'b2', rules: { match: 'all', conditions: [{ field: 'artist', op: 'contains', value: 'Portishead' }] } });
+  const rows = () => prof.allPlaylists(lib.data, lib.profiles).map((p) => [p.id, p.name, p.ownerId, p.songs, p.seconds, p.smart]);
+  assert.deepEqual(rows(), [
+    ['d1', 'Kitchen', 'default', 0, 0, false],
+    ['p1', 'Evening', 'anna', 2, 630, false],
+    ['b1', 'Evening', 'ben', 0, 0, false],
+    ['b2', 'Fresh', 'ben', null, null, true],
+  ]);
+  assert.equal(prof.playlistOwner(lib.data, lib.profiles, 'p1'), 'anna');
+  assert.equal(prof.playlistOwner(lib.data, lib.profiles, 'nothing'), null);
+
+  // Shared and followed by Ben and the Default; Anna has listened to it.
+  run(lib, 'anna', { type: 'setPlaylistShared', playlistId: 'p1', shared: true });
+  run(lib, 'ben', { type: 'followPlaylist', playlistId: 'p1' });
+  run(lib, null, { type: 'followPlaylist', playlistId: 'p1' });
+  lib.profiles.anna.playlistListened.p1 = 120;
+
+  // To Ben, who has an Evening already: "Evening (2)", his own now, no longer followed by him.
+  assert.equal(prof.movePlaylist(lib.data, lib.profiles, 'p1', 'ben'), 'Evening (2)');
+  const ben = prof.view(lib.data, lib.profiles, 'ben');
+  const moved = ben.playlists.find((p) => p.id === 'p1');
+  assert.deepEqual([moved.name, moved.shared, moved.entries.map((e) => e.songId)], ['Evening (2)', true, ['s1', 's2']]);
+  assert.deepEqual(ben.playlists.map((p) => p.id), ['b1', 'b2', 'p1'], 'at the end');
+  assert.deepEqual(ben.follows, []);
+  assert.deepEqual(prof.view(lib.data, lib.profiles, 'anna').playlists, []);
+  assert.deepEqual(lib.profiles.anna.playlistListened, {}, 'Anna\'s time with it went with it');
+  assert.deepEqual(lib.data.follows, ['p1'], 'the Default still follows it');
+  assert.deepEqual(prof.view(lib.data, lib.profiles, 'anna', { ben: 'Ben' }).sharedPlaylists.map((p) => [p.id, p.ownerName]), [['p1', 'Ben']]);
+
+  // To the Default, which followed it; a smart one keeps its rules.
+  assert.equal(prof.movePlaylist(lib.data, lib.profiles, 'p1', 'default'), 'Evening (2)');
+  assert.deepEqual(lib.data.follows, []);
+  assert.equal(prof.playlistOwner(lib.data, lib.profiles, 'p1'), 'default');
+  prof.movePlaylist(lib.data, lib.profiles, 'b2', 'anna');
+  assert.equal(prof.view(lib.data, lib.profiles, 'anna').playlists[0].rules.conditions[0].value, 'Portishead');
+  // To its own owner: nothing changes.
+  assert.equal(prof.movePlaylist(lib.data, lib.profiles, 'b2', 'anna'), 'Fresh');
+  assert.equal(lib.profiles.anna.playlists.length, 1);
+
+  assert.throws(() => prof.movePlaylist(lib.data, lib.profiles, 'nothing', 'ben'), /no longer exists/);
+  assert.throws(() => prof.movePlaylist(lib.data, lib.profiles, 'b1', 'carla'), /profile no longer exists/);
+});

@@ -1093,7 +1093,7 @@ const ImportPanel = {
     return frame;
   },
 
-  /** After a downloaded song's title (4.0.1): whether lyrics were found for it, once looked up. */
+  /** After a downloaded song's title (4.1.0): whether lyrics were found for it, once looked up. */
   _lyricsBadge(it, st) {
     const l = it.lyrics;
     if (!l || !['ready', 'saving'].includes(st) || !['found', 'none'].includes(l.state)) return null;

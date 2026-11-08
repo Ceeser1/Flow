@@ -1,6 +1,6 @@
 'use strict';
 
-// The Lyrics folder (4.0.1), next to Covers in Flow's music folder: a file
+// The Lyrics folder (4.1.0), next to Covers in Flow's music folder: a file
 // for each song, by scope as the covers are:
 //
 //   local/<song id>.json        Local Files' songs: looked up here, or written in Flow

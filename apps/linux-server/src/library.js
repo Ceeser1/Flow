@@ -380,6 +380,22 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     return prof.ownerSummary(data, profiles, profileId);
   }
 
+  /** Every playlist with its owner, for the admins (profiles.js allPlaylists). */
+  function allPlaylists() {
+    return prof.allPlaylists(data, profiles);
+  }
+
+  /** Who has a playlist: 'default', a profile id, or null. */
+  function playlistOwner(playlistId) {
+    return prof.playlistOwner(data, profiles, playlistId);
+  }
+
+  /** A playlist given to another owner (profiles.js movePlaylist): its name there. */
+  function movePlaylist(playlistId, toOwner) {
+    if (prof.playlistOwner(data, profiles, playlistId) === toOwner) return prof.movePlaylist(data, profiles, playlistId, toOwner);
+    return mutate((d) => prof.movePlaylist(d, profiles, playlistId, toOwner));
+  }
+
   /**
    * Deletes every song a profile added, for everyone (an admin deleting the
    * profile with its songs): their files go to the trash. Resolves how many.
@@ -1253,6 +1269,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     createProfile,
     deleteProfile,
     summary,
+    allPlaylists,
+    playlistOwner,
+    movePlaylist,
     deleteSongsOf,
     deleteSongs,
     runCommands,

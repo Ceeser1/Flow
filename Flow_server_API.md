@@ -130,7 +130,7 @@ Open to anyone (only the refusals above apply).
   Active Sessions; `trim` when ffmpeg is there. From 4.0: `smartPlaylists`
   (a playlist's `rules` kept, see Commands), `pair` (pairing codes for QR
   codes, see [Pairing](#pairing-qr-codes)), `lyrics` (`GET
-  /api/songs/<id>/lyrics`), from 4.0.1 `ownLyrics` (`PUT
+  /api/songs/<id>/lyrics`), from 4.1.0 `ownLyrics` (`PUT
   /api/songs/<id>/lyrics`) and `guests` while an admin lets guests from other
   servers in (see [Guests from other servers](#guests-from-other-servers)).
 - `password`: whether this caller has to sign in.
@@ -373,7 +373,7 @@ LRCLIB cannot be reached.
 
 ### PUT /api/songs/\<id\>/lyrics
 
-From 4.0.1 (`ownLyrics` in the features). Lyrics written or edited in an
+From 4.1.0 (`ownLyrics` in the features). Lyrics written or edited in an
 app, kept for good: never looked up again, whatever the song is renamed to.
 
 ```json
@@ -435,6 +435,8 @@ master admin. Nobody changes their own profile or the master's here.
 | `POST /api/admin/signins/clear` | | |
 | `GET /api/admin/uploads` | | `{ uploads: [{ songId, title, artist, mix, at, by, ip, device }] }`: the songs the apps uploaded that are still on the server, newest first (the newest 100); `by` is the profile's name |
 | `POST /api/admin/uploads/delete` | `{ songId }` | `{ rev }`: the song deleted for everyone, to the trash; 404 when it is gone already |
+| `GET /api/admin/playlists` | | 4.2.3: every playlist on the server with its owner: `{ playlists: [{ id, name, ownerId, songs, seconds, smart, shared }], owners: [{ id, name, master }] }`. `ownerId` and the owners' ids: a profile, or `"default"` (the Default / Shared). A smart playlist's `songs` and `seconds` are null (the apps work its songs out from its rules) |
+| `POST /api/admin/playlists/owner` | `{ id, owner }` | 4.2.3: the playlist given to another owner: the same playlist (id, songs, rules, sharing), so its followers keep following it; the new owner no longer follows it, and a name it has already gets " (2)": `{ name, rev }`. 404 for a playlist or owner not there; 403 for the master admin's playlists unless the master asks |
 | `GET /api/admin/downloads` | | every profile's server download: `{ batches: [{ key, profileId, profileName, state, name, url, createdAt, songs, saved, open, failed }] }` |
 | `POST /api/admin/downloads/cancel` | `{ key }` | that download cancelled |
 | `GET /api/admin/sessions` | | every Active Session: `{ sessions: [...] }` as `/api/sessions` lists them, with `shared` |

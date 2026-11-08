@@ -807,6 +807,10 @@ admin.part.profiles
   en: Profiles
   de: Profile
 
+admin.part.allPlaylists
+  en: All Playlists
+  de: Alle Playlists
+
 admin.part.recentUploads
   en: Recent uploads
   de: Neueste Uploads
@@ -1097,6 +1101,43 @@ admin.profiles.new.pin.placeholder
 admin.profiles.new.done
   en: Profile "{profile}" made
   de: Profil „{profile}“ erstellt
+
+# Administration › All Playlists: every playlist on the server, each with its owner to change
+admin.playlists.serverTooOld
+  en: This Flow Server does not list its playlists yet. Update it first.
+  de: Dieser Flow Server listet seine Playlists noch nicht. Aktualisiere ihn zuerst.
+
+admin.playlists.none
+  en: No playlists on the server yet.
+  de: Noch keine Playlists auf dem Server.
+
+admin.playlists.search.placeholder
+  en: Search playlists or owners
+  de: Playlists oder Besitzer suchen
+
+admin.playlists.noMatch
+  en: No playlist matches.
+  de: Keine Playlist passt.
+
+admin.playlists.owner
+  en: Owner:
+  de: Besitzer:
+
+admin.playlists.owner.ariaLabel
+  en: Owner of {playlist}
+  de: Besitzer von {playlist}
+
+admin.playlists.owner.masterOnly.tooltip
+  en: Only the master admin can give away the master admin's playlists.
+  de: Nur der Master-Admin kann die Playlists des Master-Admins weitergeben.
+
+admin.playlists.given
+  en: "{playlist}" now belongs to {profile}
+  de: „{playlist}“ gehört jetzt {profile}
+
+admin.playlists.given.renamed
+  en: "{playlist}" now belongs to {profile}, as "{name}": {profile} had a playlist of that name
+  de: „{playlist}“ gehört jetzt {profile}, als „{name}“: {profile} hatte schon eine Playlist mit diesem Namen
 
 # Administration › Recent uploads
 admin.uploads.serverTooOld

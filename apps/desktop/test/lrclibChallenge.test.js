@@ -1,6 +1,6 @@
 'use strict';
 
-// LRCLIB's proof of work (4.0.1): the first nonce whose sha256 is no bigger than the target.
+// LRCLIB's proof of work (4.1.0): the first nonce whose sha256 is no bigger than the target.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

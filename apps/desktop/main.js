@@ -269,7 +269,7 @@ covers.onStaged((info) => sendToWindow('covers:staged', info));
 handle('covers:staged', (cachePath) => covers.stagedCover(String(cachePath || '')));
 
 // A song's lyrics (4.0): the server's for its songs, LRCLIB's for the others,
-// kept in the Lyrics folder (4.0.1); with Settings' "Fetch/Sync Lyrics" off
+// kept in the Lyrics folder (4.1.0); with Settings' "Fetch/Sync Lyrics" off
 // only what is kept there.
 const lyricsClient = createLyricsClient({
   remote,
@@ -282,18 +282,18 @@ const lyricsClient = createLyricsClient({
   skip: (id) => remote.active() && remote.isServerCopy(id),
   onChange: () => sendToWindow('lyrics:changed'),
 });
-// Every Local Files song's lyrics looked up in the background (4.0.1): soon
+// Every Local Files song's lyrics looked up in the background (4.1.0): soon
 // after a change of the library, and once the window is up (startup).
 library.onChange(() => lyricsClient.fillSoon());
 handle('song:lyrics', (songId) => lyricsClient.get(songId));
 // Settings' Lyrics cache: { count, none, bytes, left }; cleared but for those written here for Local Files songs.
 handle('lyrics:stats', () => lyricsClient.stats());
 handle('lyrics:clear', () => lyricsClient.clear());
-// Lyrics picked by hand from LRCLIB's search (4.0.1).
+// Lyrics picked by hand from LRCLIB's search (4.1.0).
 handle('lyrics:search', (params) => lyricsClient.search(params));
-// Lyrics written in Flow published on LRCLIB (4.0.1): its challenge solved in a worker thread.
+// Lyrics written in Flow published on LRCLIB (4.1.0): its challenge solved in a worker thread.
 handle('lyrics:publish', (meta) => lyricsClient.publish(meta, solveChallenge));
-// Lyrics written or edited here (4.0.1): kept for good, a server's song's on the server.
+// Lyrics written or edited here (4.1.0): kept for good, a server's song's on the server.
 handle('song:setLyrics', ({ songId, lines, server }) => lyricsClient.set(songId, lines, { server: !!server }));
 // A song just downloaded (Add Songs), not in the library yet: looked up by its names.
 handle('song:lookupLyrics', (meta) => lyricsClient.lookup(meta));

@@ -274,4 +274,68 @@ function ownerSummary(data, profiles, ownerId) {
   return { addedSongs: data.songs.filter((s) => s.addedBy === ownerId).length, ...listenTotals(stats) };
 }
 
-module.exports = { ownerSummary, startStatistics, songsOfOthers, sanitizeProfiles, view, absorb, prune, addProfile, removeProfile, sharedFor, DEFAULT_OWNER, DEFAULT_NAME };
+/** The playlists of an owner (a profile, or DEFAULT_OWNER), or null for one that is not there. */
+function playlistsOf(data, profiles, ownerId) {
+  if (ownerId === DEFAULT_OWNER) return data.playlists;
+  return profiles[ownerId] ? profiles[ownerId].playlists : null;
+}
+
+/** Who has `playlistId`: DEFAULT_OWNER, a profile id, or null for no one. */
+function playlistOwner(data, profiles, playlistId) {
+  if (data.playlists.some((p) => p.id === playlistId)) return DEFAULT_OWNER;
+  for (const [id, p] of Object.entries(profiles)) if (p.playlists.some((l) => l.id === playlistId)) return id;
+  return null;
+}
+
+/**
+ * Every playlist on the server with its owner, for the Administration's All
+ * Playlists: [{ id, name, ownerId, songs, seconds, smart, shared }]. A smart
+ * playlist's songs are the apps' to work out from its rules (songs and
+ * seconds null).
+ */
+function allPlaylists(data, profiles) {
+  const length = new Map(data.songs.map((s) => [s.id, Number(s.duration) || 0]));
+  const row = (ownerId, p) => {
+    const smart = !!p.rules;
+    return {
+      id: p.id,
+      name: p.name,
+      ownerId,
+      songs: smart ? null : p.entries.length,
+      seconds: smart ? null : Math.round(p.entries.reduce((n, e) => n + (length.get(e.songId) || 0), 0)),
+      smart,
+      shared: !!p.shared,
+    };
+  };
+  return [
+    ...data.playlists.map((p) => row(DEFAULT_OWNER, p)),
+    ...Object.entries(profiles).flatMap(([id, pr]) => pr.playlists.map((p) => row(id, p))),
+  ];
+}
+
+/**
+ * Gives a playlist to another owner (a profile, or DEFAULT_OWNER): the same
+ * playlist, id, songs, rules, source and sharing, so whoever follows it still
+ * does, now in the new owner's playlists (at their end). The new owner no
+ * longer follows it (it is its own); a name it has already gets "(2)". The
+ * old owner's time listened to it goes (prune), as with any list it lost.
+ * Answers its name there; throws for a playlist or owner not there.
+ */
+function movePlaylist(data, profiles, playlistId, toOwner) {
+  const from = playlistOwner(data, profiles, playlistId);
+  if (!from) throw new Error('That playlist no longer exists.');
+  const target = playlistsOf(data, profiles, toOwner);
+  if (!target) throw new Error('That profile no longer exists.');
+  const source = playlistsOf(data, profiles, from);
+  const playlist = source.find((p) => p.id === playlistId);
+  if (from === toOwner) return playlist.name;
+  source.splice(source.indexOf(playlist), 1);
+  playlist.name = model.freePlaylistName({ playlists: target }, playlist.name);
+  target.push(playlist);
+  const owner = toOwner === DEFAULT_OWNER ? data : profiles[toOwner];
+  owner.follows = (owner.follows || []).filter((id) => id !== playlistId);
+  prune(data, profiles);
+  return playlist.name;
+}
+
+module.exports = { allPlaylists, playlistOwner, movePlaylist, ownerSummary, startStatistics, songsOfOthers, sanitizeProfiles, view, absorb, prune, addProfile, removeProfile, sharedFor, DEFAULT_OWNER, DEFAULT_NAME };

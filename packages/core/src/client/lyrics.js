@@ -1,13 +1,13 @@
 'use strict';
 
 // A song's lyrics for the window (4.0, @flow/core/lyrics), kept in the Lyrics
-// folder (4.0.1, lyricsFolder.js). A Flow Server's song: the server's (it
+// folder (4.1.0, lyricsFolder.js). A Flow Server's song: the server's (it
 // looks them up once and keeps them), a copy kept here; every copy of the
 // server's comes down in the background (sync: those whose stamp changed).
 // Every other song (Local Files, Downloaded Songs), and a server's while the
 // server cannot say (out of reach, or from before lyrics): looked up on
 // LRCLIB (else lyrics.ovh) here and kept. Lyrics written or edited in the
-// app (4.0.1, set): a server's song's on the server, any other's here for
+// app (4.1.0, set): a server's song's on the server, any other's here for
 // good (Clear lyrics cache leaves them). LRCLIB still busy or out of reach
 // after all its tries (@flow/core/lyrics RETRY): "No lyrics found", kept an
 // hour (`partial`), then looked up again.
@@ -193,7 +193,7 @@ function createLyricsClient({
   }
 
   /**
-   * A song's own lyrics (4.0.1): `lines` [{ t, end, text }] as
+   * A song's own lyrics (4.1.0): `lines` [{ t, end, text }] as
    * lyrics.ownLyrics takes them, or null to let them go (looked up again).
    * Resolves them as get does. A server's song's go to the server; `server`:
    * the id is the server's, of a song it may not have told about yet (just
@@ -320,7 +320,7 @@ function createLyricsClient({
     if (t.unref) t.unref();
   }
 
-  // ---- every Local Files song's, in the background (4.0.1) ----
+  // ---- every Local Files song's, in the background (4.1.0) ----
   //
   // The songs without an answer kept that settles them (@flow/core/lyrics
   // settled) looked up one after another, fillPauseMs apart, as the server
@@ -400,7 +400,7 @@ function createLyricsClient({
     if (fillTimer.unref) fillTimer.unref();
   }
 
-  // ---- picked by hand and published (4.0.1) ----
+  // ---- picked by hand and published (4.1.0) ----
 
   /** LRCLIB's search (lyrics.searchLyrics): lyrics to pick by hand. */
   function search(params) {

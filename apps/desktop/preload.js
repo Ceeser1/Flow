@@ -123,17 +123,17 @@ contextBridge.exposeInMainWorld('flow', {
   lookupInfo: (song) => call('song:lookupInfo', song),
   // A song's lyrics (4.0): { found, synced: [{ t, text }] | null, plain, instrumental }.
   lyrics: (songId) => call('song:lyrics', songId),
-  // Lyrics written or edited here (4.0.1): lines [{ t, end, text }], or null to
+  // Lyrics written or edited here (4.1.0): lines [{ t, end, text }], or null to
   // look them up again; server: songId is a server's song just saved there.
   setLyrics: (songId, lines, server = false) => call('song:setLyrics', { songId, lines, server }),
   // A song just downloaded, by its names: { artist, title, duration }.
   lookupLyrics: (meta) => call('song:lookupLyrics', meta),
-  // Settings' Lyrics cache (4.0.1): { count, none, bytes, left }; Clear lyrics cache resolves them after.
+  // Settings' Lyrics cache (4.1.0): { count, none, bytes, left }; Clear lyrics cache resolves them after.
   lyricsStats: () => call('lyrics:stats'),
   clearLyricsCache: () => call('lyrics:clear'),
-  // Lyrics kept, or the background lookups moved on (4.0.1).
+  // Lyrics kept, or the background lookups moved on (4.1.0).
   onLyricsChanged: (fn) => ipcRenderer.on('lyrics:changed', () => fn()),
-  // LRCLIB (4.0.1): its search ({ q } or { title, artist, album, duration }),
+  // LRCLIB (4.1.0): its search ({ q } or { title, artist, album, duration }),
   // and lyrics written here published there ({ title, artist, album, duration, lines }).
   searchLyrics: (params) => call('lyrics:search', params),
   publishLyrics: (meta) => call('lyrics:publish', meta),

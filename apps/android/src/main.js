@@ -73,7 +73,7 @@ function start() {
   });
   // A song's lyrics (4.0): the server's, else LRCLIB's through the page's
   // fetch, which cannot name Flow as its User-Agent; kept in the Lyrics
-  // folder (4.0.1), only that with Settings' "Fetch/Sync Lyrics" off.
+  // folder (4.1.0), only that with Settings' "Fetch/Sync Lyrics" off.
   const lyricsClient = createLyricsClient({
     remote,
     library,
@@ -137,7 +137,7 @@ function start() {
   library.onChange((data) => {
     if (!remote.active()) emit('library:changed', data);
   });
-  // Every Local Files song's lyrics in the background (4.0.1): now, and soon after a change.
+  // Every Local Files song's lyrics in the background (4.1.0): now, and soon after a change.
   library.onChange(() => lyricsClient.fillSoon());
   lyricsClient.fillSoon();
 

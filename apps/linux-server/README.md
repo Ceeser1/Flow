@@ -492,6 +492,10 @@ profiles. Apps older than 3.6 still count, but say nothing of Jams.
 An admin profile gets Administration as the last category of the apps'
 Settings: the server at a glance, every profile (when made, last seen, the
 songs it added, time listened, the IP addresses and devices it came from),
+every playlist on the server with its songs, length and owner (from 4.2.3;
+picking another owner gives the playlist to that profile or the Default /
+Shared, its followers keep it, and a name the new owner has already gets
+"(2)"; the master admin's playlists only the master can give away),
 the failed logins (wrong PINs and passwords), every profile's server
 downloads and the Active Sessions, the trash (deleted songs come back as
 they were, playlists and stats included), and the rules: who may make
@@ -639,7 +643,7 @@ report changes.
 | `GET /api/songs/<id>/cover?v=<version>` | the song's cover (JPEG), 404 when it has none; `song.cover` in the library is its version (`-`: none found, `null`: not looked at yet), and with the current one in `?v=` it may be cached for good; `ETag` / `If-None-Match` too |
 | `PUT /api/songs/<id>/cover` | an app's cover for a song (a JPEG body, at most 4 MB; made 512 x 512 when it is not) → `{ cover }`; kept only when the song has none yet |
 | `GET /api/songs/<id>/lyrics` | the song's lyrics (4.0, `lyrics` in the features): `{ lyrics: { found, synced, plain, instrumental, source } }`, `synced` the lines with their times, `source` `LRCLIB`, `lyrics.ovh` or `own`; 502 when LRCLIB cannot be reached |
-| `PUT /api/songs/<id>/lyrics` | lyrics written or edited in an app (4.0.1, `ownLyrics` in the features), body `{ lines: [{ t, end, text }] }`: kept for good (`own`), never looked up again; `{ lines: null }` takes them away (looked up again); 400 when only some lines have times |
+| `PUT /api/songs/<id>/lyrics` | lyrics written or edited in an app (4.1.0, `ownLyrics` in the features), body `{ lines: [{ t, end, text }] }`: kept for good (`own`), never looked up again; `{ lines: null }` takes them away (looked up again); 400 when only some lines have times |
 | `POST /api/pair` | `{ password }` (4.0, `pair`): a one-time pairing code for a QR code → `{ code, expiresIn }` (`''` without a server password); 403 for a wrong password |
 | `POST /api/pair/redeem` | `{ code }` → `{ password }`, once, within 10 minutes (open to anyone); 404 for a code used or too old |
 | `GET /api/sessions/songs/<id>/audio` | a song a guest brought into this app's session (4.0), with Range |

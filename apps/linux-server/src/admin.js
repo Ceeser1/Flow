@@ -38,6 +38,13 @@
 //                                            newest first: { uploads: [{ songId, title, artist,
 //                                            mix, at, by, ip, device }] }, the newest 100
 //   POST /api/admin/uploads/delete { songId } that song deleted for everyone (to the trash)
+//   GET  /api/admin/playlists                every playlist with its owner: { playlists: [{ id, name,
+//                                            ownerId ('default' or a profile), songs, seconds, smart,
+//                                            shared }], owners: [{ id, name, master }] } (a smart
+//                                            playlist's songs and seconds are null: the apps' to work out)
+//   POST /api/admin/playlists/owner { id, owner }   the playlist given to another owner (its
+//                                            followers keep it; "(2)" for a name the owner has):
+//                                            { name, rev }. The master's only by the master
 //   GET  /api/admin/rules                    { profileCreation: 'anyone' | 'admins',
 //   POST /api/admin/rules { ... }              songDelete: 'anyone' | 'owner', guests: true | false,
 //                                            discovery: whether the network search is answered
@@ -275,6 +282,29 @@ function createAdminRoutes({
       library.deleteSongs([song.id], me.id);
       log(`${me.name} deleted the uploaded song ${[song.artist, song.title].filter(Boolean).join(' - ')}`);
       return sendJson(res, 200, { rev: library.rev });
+    }
+    if (p === '/api/admin/playlists' && isGet) {
+      const profiles = allProfiles();
+      const owners = [
+        { id: 'default', name: 'Default / Shared', master: false },
+        ...profiles.map((x) => ({ id: x.id, name: x.name, master: !!x.master })),
+      ];
+      return sendJson(res, 200, { playlists: library.allPlaylists(), owners });
+    }
+    if (p === '/api/admin/playlists/owner' && req.method === 'POST') {
+      const id = String(body.id || '');
+      const to = String(body.owner || '');
+      const from = library.playlistOwner(id);
+      if (!from) throw new HttpError(404, 'That playlist no longer exists.');
+      const profiles = allProfiles();
+      if (to !== 'default' && !profiles.some((x) => x.id === to)) throw new HttpError(404, 'That profile no longer exists.');
+      const fromProfile = profiles.find((x) => x.id === from);
+      if (fromProfile && fromProfile.master && !me.master) throw new HttpError(403, 'Only the master admin can give away the master admin\'s playlists.');
+      const before = library.allPlaylists().find((x) => x.id === id).name;
+      const name = library.movePlaylist(id, to);
+      const ownerName = (x) => (x === 'default' ? 'Default / Shared' : nameOf(x));
+      if (from !== to) log(`${me.name} gave the playlist "${before}" of ${ownerName(from)} to ${ownerName(to)}${name !== before ? ` (now "${name}")` : ''}`);
+      return sendJson(res, 200, { name, rev: library.rev });
     }
     if (p === '/api/admin/rules') {
       if (req.method === 'POST') {

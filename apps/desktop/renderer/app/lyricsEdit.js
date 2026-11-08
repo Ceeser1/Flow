@@ -1,6 +1,6 @@
 'use strict';
 
-// Lyrics written or edited by hand (4.0.1), for a song of the library (Song
+// Lyrics written or edited by hand (4.1.0), for a song of the library (Song
 // Details) or one just downloaded (Add Songs). Three popups:
 //  - show: the song's lines, each with its times "from - to";
 //  - edit: each line's From and To boxes (mm:ss:ms) and its words, lines
@@ -18,7 +18,7 @@
 // the millisecond. Every song starts with a line of music (no words, a note)
 // until the first line is sung.
 //
-// LRCLIB (4.0.1): Search LRCLIB picks lyrics from its search into the editor
+// LRCLIB (4.1.0): Search LRCLIB picks lyrics from its search into the editor
 // (_search), Publish to LRCLIB gives the lines there to everyone (_publish).
 
 const LyricsEdit = {

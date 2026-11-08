@@ -48,7 +48,7 @@ Flow is made for private use.
 - Reach it **at home, through Tailscale, or over the internet** (with a password)
 - **Share** a server with a QR code
 - **Shared playlists** to follow other profiles' playlists
-- **Administration** for admins: profiles, rules, recent uploads, trash
+- **Administration** for admins: profiles, every playlist and who owns it, rules, recent uploads, trash
 - **Weekly backups**
 
 ### Jam sessions

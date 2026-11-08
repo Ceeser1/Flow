@@ -2,7 +2,8 @@
 
 // Settings' last category, for an admin profile on a Flow Server (3.5): the
 // server at a glance, its profiles (a sortable table; on the phone each opens
-// with a tap), the songs uploaded last, the failed sign-ins, every profile's
+// with a tap), every playlist with its owner (4.2.3: the owner changed there),
+// the songs uploaded last, the failed sign-ins, every profile's
 // server downloads and the Active Sessions, the trash, the backups (4.0;
 // restored by the master admin only), the admins' rules, and for the master
 // admin the server password. Each part opens and closes with a click on its
@@ -19,6 +20,7 @@ const Admin = {
   _loading: false,
   _sort: { key: 'name', dir: 'asc' },
   _query: '',
+  _playlistQuery: '',
   _opened: new Set(), // the phone's profiles opened with a tap
   _fits: [], // the scrolling lists' measuring, run as draw() puts them in
 
@@ -36,11 +38,11 @@ const Admin = {
     if (!this._data) this._drawNote(T('admin.loading'));
     const get = (route) => window.flow.admin(route).catch((err) => ({ error: (err && err.message) || String(err) }));
     try {
-      const [server, profiles, uploads, signins, downloads, sessions, trash, backups, rules] = await Promise.all([
-        get('server'), get('profiles'), get('uploads'), get('signins'), get('downloads'), get('sessions'), get('trash'), get('backups'), get('rules'),
+      const [server, profiles, playlists, uploads, signins, downloads, sessions, trash, backups, rules] = await Promise.all([
+        get('server'), get('profiles'), get('playlists'), get('uploads'), get('signins'), get('downloads'), get('sessions'), get('trash'), get('backups'), get('rules'),
       ]);
       this._data = {
-        server, profiles, uploads, signins, downloads, sessions, trash, backups, rules,
+        server, profiles, playlists, uploads, signins, downloads, sessions, trash, backups, rules,
       };
     } finally {
       this._loading = false;
@@ -140,6 +142,7 @@ const Admin = {
       top,
       this._block('overview', T('admin.part.overview'), this._overview(d.server)),
       this._block('profiles', T('admin.part.profiles'), this._profiles(d.profiles, mobile)),
+      this._block('playlists', T('admin.part.allPlaylists'), this._playlists(d.playlists)),
       this._block('uploads', T('admin.part.recentUploads'), this._uploads(d.uploads)),
       this._block('signins', T('admin.part.failedLogins'), this._failures(d.signins)),
       this._block('downloads', T('admin.part.serverDownloads'), this._downloads(d.downloads)),
@@ -464,10 +467,68 @@ const Admin = {
     });
   },
 
+  // ---- All Playlists ----
+
+  /**
+   * Every playlist on the server, by name: its songs and length (a smart
+   * one's are worked out by the apps), and its owner to pick, which gives it
+   * to that profile (or the Default / Shared). The search finds names and
+   * owners. The master's playlists only the master can give away.
+   */
+  _playlists(r) {
+    // A server from before 4.2.3 has no such list.
+    if (r.error) return /nothing here/i.test(r.error) ? h('p.settings__note', T('admin.playlists.serverTooOld')) : this._failed(r);
+    if (!r.playlists.length) return h('p.settings__note', T('admin.playlists.none'));
+    const ownerName = new Map(r.owners.map((o) => [o.id, o.id === 'default' ? T('settings.server.profile.pick.shared') : o.name]));
+    const masters = new Set(r.owners.filter((o) => o.master).map((o) => o.id));
+    const byName = r.playlists.slice().sort((a, b) => Util.fold(a.name).localeCompare(Util.fold(b.name))
+      || Util.fold(ownerName.get(a.ownerId) || '').localeCompare(Util.fold(ownerName.get(b.ownerId) || '')));
+    const row = (p) => {
+      const select = h('select.select.admin__owner-select', { 'aria-label': T('admin.playlists.owner.ariaLabel', { playlist: p.name }) },
+        ...r.owners.map((o) => h('option', { value: o.id }, ownerName.get(o.id))));
+      select.value = p.ownerId;
+      if (masters.has(p.ownerId) && !Store.server.master) {
+        select.disabled = true;
+        select.title = T('admin.playlists.owner.masterOnly.tooltip');
+      }
+      select.addEventListener('change', () => this._giveAway(p, select.value, ownerName.get(select.value)));
+      const facts = p.smart ? [T('window.playlists.new.smart')] : [Util.plural(p.songs, 'song'), Util.fmtClock(p.seconds)];
+      return h('li.admin__item.admin__item--row.admin__item--playlist',
+        h('span.admin__item-main.admin__playlist', ...this._parts([h('span.admin__playlist-name', p.name), ...facts.map((f) => h('span.admin__playlist-fact', f))])),
+        h('label.admin__owner', h('span', T('admin.playlists.owner')), select));
+    };
+    const search = h('input.input.settings__input.admin__search', {
+      type: 'search', placeholder: T('admin.playlists.search.placeholder'), value: this._playlistQuery, spellcheck: false, autocomplete: 'off',
+    });
+    const holder = h('div');
+    const draw = () => {
+      const rows = byName.filter((p) => Util.matches(this._playlistQuery, p.name, ownerName.get(p.ownerId) || ''));
+      clear(holder).append(rows.length ? this._list(rows.map(row)) : h('p.settings__note', T('admin.playlists.noMatch')));
+    };
+    search.addEventListener('input', () => {
+      this._playlistQuery = search.value;
+      draw();
+    });
+    draw();
+    return h('div', h('div.admin__bar.admin__bar--top', search), holder);
+  },
+
+  /** A playlist given to another owner; a name the owner has already gets "(2)" (the server says). */
+  async _giveAway(p, ownerId, ownerName) {
+    let r = null;
+    await this._do(async () => {
+      r = await window.flow.admin('playlists/owner', { id: p.id, owner: ownerId });
+    });
+    if (!r) return;
+    toast(r.name && r.name !== p.name
+      ? T('admin.playlists.given.renamed', { playlist: p.name, profile: ownerName, name: r.name })
+      : T('admin.playlists.given', { playlist: p.name, profile: ownerName }), 'success');
+  },
+
   // ---- Recent uploads ----
 
   _uploads(r) {
-    // A server from before 4.0.1 keeps no such list.
+    // A server from before 4.1 keeps no such list.
     if (r.error) return /nothing here/i.test(r.error) ? h('p.settings__note', T('admin.uploads.serverTooOld')) : this._failed(r);
     if (!r.uploads.length) return h('p.settings__note', T('admin.uploads.none'));
     return this._list(r.uploads.map((u) => {

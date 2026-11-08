@@ -3413,6 +3413,7 @@ body.mobile .switch-where { text-align: left; }
 .admin__item--row > .btn { flex: none; }
 .admin__bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .admin__bar .admin__search { flex: 1; }
+.admin__bar--top { margin: 0 0 8px; }
 .admin__facts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -3480,6 +3481,12 @@ body.mobile .switch-where { text-align: left; }
 .admin__item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .admin__item-main { color: var(--text); overflow-wrap: anywhere; }
 .admin__item-sub { color: var(--text-dim); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.admin__item--playlist { flex-wrap: wrap; row-gap: 6px; }
+.admin__playlist { flex: 1 1 200px; min-width: 0; }
+.admin__playlist-name { font-weight: 600; }
+.admin__playlist-fact { color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.admin__owner { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; color: var(--text-dim); }
+.admin__owner-select { max-width: 200px; }
 
 .admin__rules { display: flex; flex-direction: column; gap: 8px; }
 .admin__rule { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 12px; }
@@ -3491,7 +3498,7 @@ body.mobile .switch-where { text-align: left; }
 .admin__ips th { text-align: left; color: var(--text-dim); font-weight: 600; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
 .admin__ips td { padding: 4px 8px 4px 0; border-bottom: 1px solid #2c2c33; user-select: text; overflow-wrap: anywhere; }
 
-/* ---- Lyrics written or edited by hand (lyricsEdit.js, 4.0.1) ---- */
+/* ---- Lyrics written or edited by hand (lyricsEdit.js, 4.1.0) ---- */
 
 /* "Lyrics" after a downloaded song's title: a green ring with a tick, or a red one with a cross. */
 .lyrics-badge {
