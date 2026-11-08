@@ -65,7 +65,7 @@ const SettingsPanel = {
       if (this.modal) Stats.soon();
       if (this.modal && this._jamNote) this._jamNote();
     });
-    // Lyrics kept, or the background lookups moved on (4.1.0).
+    // Lyrics kept, or the background lookups moved on (4.0).
     if (window.flow.onLyricsChanged) {
       window.flow.onLyricsChanged(() => {
         if (this.modal) this._drawLyrics();
@@ -1924,7 +1924,7 @@ const SettingsPanel = {
   },
 
   /**
-   * Lyrics (4.1.0): how many the Lyrics folder keeps and the room they take,
+   * Lyrics (4.0): how many the Lyrics folder keeps and the room they take,
    * under Fetch/Sync Lyrics. Clearing leaves those written in Flow for Local
    * Files songs; a server's come down again.
    */

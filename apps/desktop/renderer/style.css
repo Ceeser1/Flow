@@ -3498,7 +3498,7 @@ body.mobile .switch-where { text-align: left; }
 .admin__ips th { text-align: left; color: var(--text-dim); font-weight: 600; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
 .admin__ips td { padding: 4px 8px 4px 0; border-bottom: 1px solid #2c2c33; user-select: text; overflow-wrap: anywhere; }
 
-/* ---- Lyrics written or edited by hand (lyricsEdit.js, 4.1.0) ---- */
+/* ---- Lyrics written or edited by hand (lyricsEdit.js, 4.0) ---- */
 
 /* "Lyrics" after a downloaded song's title: a green ring with a tick, or a red one with a cross. */
 .lyrics-badge {

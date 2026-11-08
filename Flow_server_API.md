@@ -130,7 +130,7 @@ Open to anyone (only the refusals above apply).
   Active Sessions; `trim` when ffmpeg is there. From 4.0: `smartPlaylists`
   (a playlist's `rules` kept, see Commands), `pair` (pairing codes for QR
   codes, see [Pairing](#pairing-qr-codes)), `lyrics` (`GET
-  /api/songs/<id>/lyrics`), from 4.1.0 `ownLyrics` (`PUT
+  /api/songs/<id>/lyrics`), from 4.0 `ownLyrics` (`PUT
   /api/songs/<id>/lyrics`) and `guests` while an admin lets guests from other
   servers in (see [Guests from other servers](#guests-from-other-servers)).
 - `password`: whether this caller has to sign in.
@@ -373,7 +373,7 @@ LRCLIB cannot be reached.
 
 ### PUT /api/songs/\<id\>/lyrics
 
-From 4.1.0 (`ownLyrics` in the features). Lyrics written or edited in an
+From 4.0 (`ownLyrics` in the features). Lyrics written or edited in an
 app, kept for good: never looked up again, whatever the song is renamed to.
 
 ```json

@@ -289,7 +289,7 @@ test('not on LRCLIB: lyrics.ovh\'s words, without times; kept answers from fewer
   assert.equal(lyrics.clean({ found: true, plain: 'x' }).source, 'LRCLIB', 'kept before sources were named');
 });
 
-test('own lyrics (4.1.0): every line timed or none, ends kept, never looked up again', () => {
+test('own lyrics (4.0): every line timed or none, ends kept, never looked up again', () => {
   const own = lyrics.ownLyrics([
     { t: 20, end: 24.5, text: 'As I wake' },
     { t: 12.5, end: null, text: ' In my dreams ' },

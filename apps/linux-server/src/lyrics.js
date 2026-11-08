@@ -5,8 +5,8 @@
 // before that, then kept in <home>/lyrics/<song id>.json (none found: asked
 // again after a week when an app asks; the song renamed or trimmed: at
 // once). One lookup at a time per song, however many apps ask. Lyrics
-// written or edited in an app (4.1.0, put) are kept for good instead. The
-// apps keep copies of them (4.1.0, index and many: GET / POST /api/lyrics).
+// written or edited in an app (4.0, put) are kept for good instead. The
+// apps keep copies of them (4.0, index and many: GET / POST /api/lyrics).
 
 const fs = require('fs');
 const path = require('path');

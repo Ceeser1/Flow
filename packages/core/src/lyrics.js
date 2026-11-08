@@ -9,7 +9,7 @@
 // What a lookup answers, and what is kept:
 //   { found, synced: [{ t, text }] | null, plain, instrumental, source }
 // source: where the words came from, "LRCLIB", "lyrics.ovh", or "own" for
-// lyrics written or edited in Flow (4.1.0, ownLyrics: `own` set, kept for
+// lyrics written or edited in Flow (4.0, ownLyrics: `own` set, kept for
 // good, never looked up again, whatever the song is renamed to).
 // synced: each line with the second it starts at (an own line also with the
 // second it ends at, `end`, when it was given one). Lines in step with the
@@ -17,7 +17,7 @@
 // trimmed differently would be out of step): else only the plain text.
 //
 // Also LRCLIB's search for picking lyrics by hand (searchLyrics) and
-// publishing lyrics written in Flow there (publishLyrics, 4.1.0).
+// publishing lyrics written in Flow there (publishLyrics, 4.0).
 
 const { agentName } = require('./agent');
 const { tr } = require('./lang');
@@ -226,7 +226,7 @@ async function lookupOnce(song, { fetch: get = globalThis.fetch, timeoutMs = 100
 }
 
 /**
- * Lyrics written or edited by hand (4.1.0) as kept: `rows` [{ t, end, text }]
+ * Lyrics written or edited by hand (4.0) as kept: `rows` [{ t, end, text }]
  * in any order, t and end in seconds or null (none given). Every line with
  * words has its start time, or none has (then only the words are kept). Null
  * when no line has words (the song's own lyrics then go: looked up again).
@@ -259,7 +259,7 @@ function ownLyrics(rows) {
   };
 }
 
-// ---- picking by hand and publishing (4.1.0) ----
+// ---- picking by hand and publishing (4.0) ----
 
 /**
  * LRCLIB's search, for lyrics picked by hand: `q` (any words), else `title`

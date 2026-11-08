@@ -24,7 +24,7 @@ const AddPage = {
   // coloured in the waveform while the settings ask for them.
   segments: [],
   _source: null,     // { key, url } of the song in the editor, for those
-  // The lyrics of the song in the editor (4.1.0, newLyrics): a playlist's
+  // The lyrics of the song in the editor (4.0, newLyrics): a playlist's
   // song's are its frame's (import.js), shown here while it is open.
   lyrics: null,
   _lyricsChain: null,
@@ -695,7 +695,7 @@ const AddPage = {
     this._redraw();
   },
 
-  // ---- its lyrics (4.1.0) ----
+  // ---- its lyrics (4.0) ----
 
   /** The artist, title and mix in the boxes. */
   _names() {

@@ -1292,7 +1292,7 @@ function createRemote(env) {
   }
 
   /**
-   * A server song's own lyrics (4.1.0): `lines` [{ t, end, text }], or null
+   * A server song's own lyrics (4.0): `lines` [{ t, end, text }], or null
    * to give it looked-up ones again. Resolves them as the server keeps them.
    */
   async function setSongLyrics(songId, lines) {
@@ -1319,7 +1319,7 @@ function createRemote(env) {
     }
   }
 
-  // The app's lyrics client keeps copies of the server's (4.1.0): told when its library changed.
+  // The app's lyrics client keeps copies of the server's (4.0): told when its library changed.
   let lyricsSyncHook = () => {};
   function useLyricsSync(fn) {
     lyricsSyncHook = fn;

@@ -148,7 +148,7 @@ test('the filler with LRCLIB out of reach: stops, waits, that song only at the n
   }
 });
 
-test('own lyrics (4.1.0): written in an app, kept for good, taken back to the looked-up ones', async () => {
+test('own lyrics (4.0): written in an app, kept for good, taken back to the looked-up ones', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-lyrics-test-'));
   const asked = [];
   const server = await startServer({
@@ -220,7 +220,7 @@ test('a lookup running while lyrics are written keeps the written ones', async (
   }
 });
 
-test('the apps\' copies (4.1.0): the stamps of the songs with lyrics kept, then those lyrics', async () => {
+test('the apps\' copies (4.0): the stamps of the songs with lyrics kept, then those lyrics', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-lyrics-test-'));
   const server = await startServer({
     home: path.join(root, 'home'),
