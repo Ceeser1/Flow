@@ -85,10 +85,10 @@ const Store = {
     this.library = lib;
     // The songs here that are not the server's (Downloaded Songs) can be played and queued too.
     // A patch changes only its songs (100 000: the map is not made again).
-    const songSteps = steps && steps.filter((s) => s[1] === 'songs' || s[1] === 'deviceSongs');
+    const songSteps = steps && steps.filter((s) => s[1].length === 1 && (s[1][0] === 'songs' || s[1][0] === 'deviceSongs'));
     if (songSteps && songSteps.every((s) => s[0] === 'list')) {
       for (const [, , s] of songSteps) for (const id of s.gone || []) this.songsById.delete(id);
-      for (const [, p, s] of songSteps) {
+      for (const [, [p], s] of songSteps) {
         const list = lib[p] || [];
         // The changed songs where the patch says they are now, else looked for.
         const at = s.order ? [] : s.at || [];

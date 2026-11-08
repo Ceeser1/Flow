@@ -1,6 +1,7 @@
 'use strict';
 
-// The library on disk: library.json, saved after every change, and the scan
+// The library on disk: library.json, saved as its changes (library.json.log,
+// @flow/core/journalFile) after every change, and the scan
 // that keeps it in step with the Music\FlowPlayer folder. The rules themselves
 // live in libraryModel.js.
 
@@ -9,7 +10,8 @@ const path = require('path');
 const paths = require('./paths');
 const tools = require('./tools');
 const model = require('@flow/core/libraryModel');
-const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
+const { fileJournalIo } = require('@flow/core/jsonFile');
+const { createJournal, LIBRARY_SPEC } = require('@flow/core/journalFile');
 const { createLocalLibrary } = require('@flow/core/client/localLibrary');
 const { metaFromFile, findMoved } = require('@flow/core/fileMeta');
 const { AUDIO_EXTS } = require('@flow/core/formats');
@@ -18,10 +20,7 @@ const { parseFlowId } = require('@flow/core/tags');
 const { tr } = require('@flow/core/lang');
 
 // The library itself, shared with the Android app; saved to library.json here.
-const local = createLocalLibrary({
-  read: () => readJson(paths.libraryFile()),
-  write: (data) => writeJsonAtomic(paths.libraryFile(), data),
-});
+const local = createLocalLibrary({ journal: createJournal(fileJournalIo, () => paths.libraryFile(), LIBRARY_SPEC) });
 const {
   load, get, save, onChange, mutate, newId,
 } = local;

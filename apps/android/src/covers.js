@@ -27,6 +27,7 @@ const io = {
   list: (dir) => fs.list(dir),
   readText: (p) => fs.readText(p),
   writeText: (p, text) => fs.writeText(p, text),
+  ...(fs.canAppend() ? { appendText: (p, text) => fs.appendText(p, text) } : {}),
   writeBytes: (p, bytes) => fs.writeBytes(p, bytes),
   readBytes: (p) => fs.readBytes(p),
   remove: (p, opts) => fs.remove(p, opts),

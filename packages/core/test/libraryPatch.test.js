@@ -74,6 +74,28 @@ test('a field only some songs have, gained or lost, is seen', () => {
   roundTrip((n) => { n.songs[1].brandNew = true; });
 });
 
+test('a spec path with * stands for any key: each profile songs as a map', () => {
+  const spec = { songs: 'list', 'profiles.*.songs': 'map' };
+  const was = { songs: [{ id: 'a' }], profiles: { p1: { name: 'Anna', songs: { a: { plays: 1 }, b: { plays: 2 } } }, p2: { name: 'Ben', songs: {} } } };
+  const now = copy(was);
+  now.profiles.p1.songs.a.plays = 3;
+  now.profiles.p2.name = 'Benjamin';
+  now.profiles.p3 = { name: 'New', songs: { a: { plays: 0 } } };
+  const steps = P.diff(was, now, spec);
+  assert.deepEqual(steps.map((s) => [s[0], s[1].join('.')]), [['map', 'profiles.p1.songs'], ['set', 'profiles.p2.name'], ['set', 'profiles.p3']]);
+  assert.deepEqual(Object.keys(steps[0][2].put), ['a']);
+  assert.deepEqual(copy(P.apply(was, steps)), now);
+});
+
+test('keys with dots in them are kept apart (paths are arrays)', () => {
+  const spec = { 'm.*.x': 'map' };
+  const was = { m: { 'a.b': { x: { k: 1 } } } };
+  const now = { m: { 'a.b': { x: { k: 2 } } } };
+  const steps = P.diff(was, now, spec);
+  assert.deepEqual(steps[0][1], ['m', 'a.b', 'x']);
+  assert.deepEqual(P.apply(was, steps), now);
+});
+
 test('ignored fields alone are no change', () => {
   assert.deepEqual(roundTripSteps((n) => { n.songs[0].tagged = 'y'; }), []);
   function roundTripSteps(change) {

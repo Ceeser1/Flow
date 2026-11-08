@@ -57,6 +57,7 @@ const model = require('@flow/core/libraryModel');
 const { applyCommand } = require('@flow/core/commands');
 const prof = require('@flow/core/profiles');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
+const { libraryJournal, stateJournal } = require('./libraryFile');
 const { createTrash } = require('./trash');
 const { parseTitle } = require('@flow/core/titleParser');
 const { sourceKeyFromUrl, songFileStem, isNameOnlyList, splitSongPath } = require('@flow/core/text');
@@ -140,12 +141,15 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   const musicDir = config.musicDir;
   const covers = cover.createPairStore(path.join(config.home, 'covers'));
   const trash = createTrash({ dir: path.join(musicDir, '.flow-trash'), indexFile: path.join(config.home, 'trash.json'), log });
-  const raw = readJson(config.libraryFile);
+  // Both files are kept as their changes (libraryFile.js).
+  const libFile = libraryJournal(config);
+  const stateFile = stateJournal(config);
+  const raw = libFile.load();
   let data = model.sanitize(raw);
   const profiles = prof.sanitizeProfiles(data, raw && raw.profiles);
   // Favourites as playlists (4.3), made once from the songs' stars.
   const madeFavourites = prof.ensureFavourites(data, profiles);
-  const rawState = readJson(config.stateFile) || {};
+  const rawState = stateFile.load() || {};
   const count = (v) => Math.max(0, Math.floor(Number(v) || 0));
   const counts = (o) => Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {}).map(([k, v]) => [k, count(v)]));
   const hadStamps = !!(rawState.stamps && typeof rawState.stamps === 'object');
@@ -184,7 +188,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   }
 
   function save() {
-    writeJsonAtomic(config.libraryFile, { ...data, profiles });
+    libFile.save({ ...data, profiles });
     const cutoff = Date.now() - TOUCHED_KEEP_MS;
     for (const [k, at] of Object.entries(state.touched)) if (!(at > cutoff)) delete state.touched[k];
     state.seen = state.seen.slice(-SEEN_KEEP);
@@ -201,7 +205,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       }
       if (cut) state.tombs[key] = list.slice(cut);
     }
-    writeJsonAtomic(config.stateFile, state);
+    stateFile.save(state);
   }
 
   // ---- what changed (4.3) ----

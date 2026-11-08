@@ -184,7 +184,7 @@ test('a library from before 4.3: Favourites made from the stars, every app gets 
     const part = server.library.snapshot(anna);
     assert.deepEqual(part.playlists.find((p) => p.favourites).entries.map((e) => e.songId), ['s2', 's1'], 'hers, in star order');
     assert.equal(part.songs.find((s) => s.id === 's1').favouriteAt, 20);
-    const saved = JSON.parse(fs.readFileSync(path.join(server.config.home, 'library.json'), 'utf8'));
+    const saved = require('../src/libraryFile').readLibrary(server.config); // the file and its log (4.3.4)
     assert.deepEqual(saved.profiles[anna].songs, {}, 'the stars left the songs');
     // An app from before (rev 7) is sent everything, not "nothing new".
     const r = await get(base, '/api/library?since=7&as=');
@@ -222,4 +222,38 @@ test('a large answer goes compressed to an app that takes gzip', async () => {
     assert.equal(json.library.songs.length, 12);
     assert.ok(raw.body.length < JSON.stringify(json).length / 2);
   });
+});
+
+test('4.3.4: a change adds a line to the logs instead of writing library.json again, and a restart reads it back', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-journal-test-'));
+  const opts = {
+    home: path.join(root, 'home'), music: path.join(root, 'music'), port: 0, host: '127.0.0.1', detectTailscale: async () => null, discoveryPort: null, pushDelayMs: 20,
+  };
+  try {
+    let server = await startServer(opts);
+    let base = `http://127.0.0.1:${server.port}`;
+    await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 300 });
+    await upload(base, 's2', { title: 'Roads', artist: 'Portishead', format: 'mp3', duration: 300 });
+    const lib = path.join(opts.home, 'library.json');
+    const wholeAt = fs.statSync(lib).mtimeMs;
+    const wholeText = fs.readFileSync(lib, 'utf8');
+    await new Promise((r) => setTimeout(r, 30));
+    await post(base, '/api/commands', { commands: [cmd('setFavourite', { songId: 's2', on: true }), cmd('editSong', { songId: 's1', artist: 'Massive Attack', title: 'Teardrop (Live)', mix: '' }), cmd('recordListen', { songId: 's1', listened: 300, duration: 300 })] });
+    assert.equal(fs.readFileSync(lib, 'utf8'), wholeText, 'library.json itself not written again');
+    assert.equal(fs.statSync(lib).mtimeMs, wholeAt);
+    const log = fs.readFileSync(`${lib}.log`, 'utf8').trim().split('\n');
+    assert.ok(log.length >= 2, 'its changes are lines of the log');
+    assert.ok(fs.existsSync(path.join(opts.home, 'state.json.log')));
+    await server.close();
+
+    server = await startServer(opts);
+    base = `http://127.0.0.1:${server.port}`;
+    const again = (await get(base, '/api/library')).json.library;
+    assert.equal(again.songs.find((s) => s.id === 's1').title, 'Teardrop (Live)');
+    assert.deepEqual(again.playlists.find((p) => p.favourites).entries.map((e) => e.songId), ['s2']);
+    assert.equal((await get(base, '/api/stats')).json.songs.s1.plays, 1);
+    await server.close();
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

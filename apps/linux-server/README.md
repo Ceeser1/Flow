@@ -530,6 +530,17 @@ From 4.0 the rules also have **Allow guests in home network
 sessions/jams** (off until ticked; see Active Sessions below). Unticking it ends
 every guest's place at once.
 
+## The library's files
+
+The library is `library.json` in the server's home, with what the apps were
+last told in `state.json`. From 4.3.4 a change (a star, a listen, a rename)
+adds a line to `library.json.log` and `state.json.log` instead of writing the
+whole file again (some 80 MB with 100 000 songs); the whole file is written
+again once its log has grown to a quarter of it, and the log starts over.
+Keep each file with its `.log` when copying the home by hand (stop the server
+first); the server and its commands (backup, restore, move-music, tag-songs)
+read both.
+
 ## Backups
 
 From 4.0 the server backs up the library's data once a week, at the start

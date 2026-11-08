@@ -88,6 +88,7 @@ const io = {
     }
   },
   writeText: (p, text) => writeAtomic(p, text),
+  appendText: (p, text) => fs.appendFileSync(p, text, 'utf8'),
   writeBytes: (p, bytes) => writeAtomic(p, bytes),
   readBytes: (p) => fs.readFileSync(p),
   remove: (p, { recursive = false } = {}) => fs.rmSync(p, { force: true, recursive }),

@@ -945,7 +945,7 @@ test('playlists shared by a profile reach the others, with the owner\'s name, an
     assert.equal(lib.profileNames[anna.profile.id], 'Anna B');
 
     // All of it is kept over a restart of the library file.
-    const saved = JSON.parse(fs.readFileSync(server.library.file || path.join(server.config.home, 'library.json'), 'utf8'));
+    const saved = require('../src/libraryFile').readLibrary(server.config); // the file and its log (4.3.4)
     assert.deepEqual(saved.profiles[ben.profile.id].follows, ['pa']);
     assert.equal(saved.profiles[anna.profile.id].playlists.find((p) => p.id === 'pa').shared, true);
   });
@@ -976,7 +976,7 @@ test('a song remembers the profile that uploaded it, and the library names the p
     assert.deepEqual(lib.profileNames, { default: 'Default / Shared', [anna.profile.id]: 'Anna', [ben.profile.id]: 'Ben' });
 
     // Kept over a restart of the library file, and a rename reaches the names.
-    const saved = JSON.parse(fs.readFileSync(server.library.file || path.join(server.config.home, 'library.json'), 'utf8'));
+    const saved = require('../src/libraryFile').readLibrary(server.config); // the file and its log (4.3.4)
     assert.equal(saved.songs.find((s) => s.id === 's1').addedBy, anna.profile.id);
     await post(base, '/api/profiles/rename', { name: 'Anna B', pin: '1111' }, anna.token);
     assert.equal((await get(base, '/api/library', ben.token)).json.library.profileNames[anna.profile.id], 'Anna B');

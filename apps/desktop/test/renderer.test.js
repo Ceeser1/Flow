@@ -286,7 +286,7 @@ test('the library reaches the window whole once, then as its changes, and the wi
   lib.songs[1].title = 'renamed';
   ch.update(lib);
   assert.equal(sent.length, 1);
-  assert.deepEqual(sent[0].patch.map((s) => s[1]), ['songs']);
+  assert.deepEqual(sent[0].patch.map((s) => s[1]), [['songs']]);
   assert.deepEqual(sent[0].patch[0][2].put.map((s) => s.id), ['b']);
   const kept = mine.songs[0];
   assert.ok(take(sent[0]));

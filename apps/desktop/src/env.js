@@ -17,7 +17,9 @@ const library = require('./library');
 const exporter = require('./exporter');
 const network = require('./network');
 const covers = require('./covers');
-const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
+const {
+  writeJsonAtomic, readJson, writeTextAtomic, readText,
+} = require('@flow/core/jsonFile');
 const discovery = require('@flow/core/discovery');
 const { OfflineError } = require('@flow/core/client/common');
 const { tr } = require('@flow/core/lang');
@@ -184,9 +186,13 @@ module.exports = {
     removeServer: covers.removeServer,
   },
   // The client's own files (server-library.json, server-sync.json, server-others.json).
+  // The text calls are for the big ones kept as their changes (@flow/core/journalFile).
   jsonFiles: {
     read: (name) => readJson(rootFile(name)),
     write: (name, value) => writeJsonAtomic(rootFile(name), value),
+    readText: (name) => readText(rootFile(name)),
+    writeText: (name, text) => writeTextAtomic(rootFile(name), text),
+    appendText: (name, text) => fs.appendFileSync(rootFile(name), text, 'utf8'),
     remove: (name) => fs.rmSync(rootFile(name), { force: true }),
   },
   // The Lyrics folder's files, as @flow/core/client/lyricsFolder takes them.

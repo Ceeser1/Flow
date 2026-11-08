@@ -106,6 +106,9 @@ const { unpackCovers } = require('../coverPack');
 const { makeLink, parseLink } = require('./share');
 const { createTrackedProfiles } = require('./trackedProfiles');
 const LibraryPatch = require('../libraryPatch');
+const {
+  createJournal, within, LIBRARY_SPEC, STATISTICS_SPEC,
+} = require('../journalFile');
 
 /**
  * The client of one app. `env`: settings, library (Local Files), covers,
@@ -257,8 +260,14 @@ function createRemote(env) {
     };
   }
 
+  // The copy is saved as its changes (4.3.4, journalFile.js): a star adds a
+  // line to server-library.json.log instead of writing the whole copy again.
+  const cacheJournal = createJournal(jsonFiles, CACHE_FILE, {
+    ...within('library', LIBRARY_SPEC), 'stats.songs': 'map', ...within('statistics.data', STATISTICS_SPEC),
+  });
+
   function loadCache() {
-    const raw = jsonFiles.read(CACHE_FILE);
+    const raw = cacheJournal.load();
     if (!raw || typeof raw !== 'object' || !raw.library) return emptyCache();
     // A copy of another format is shown at start but fetched whole again.
     const same = raw.format === CACHE_FORMAT;
@@ -298,7 +307,7 @@ function createRemote(env) {
 
   function saveCache() {
     try {
-      jsonFiles.write(CACHE_FILE, { ...cache, format: CACHE_FORMAT });
+      cacheJournal.save({ ...cache, format: CACHE_FORMAT });
     } catch {
       // Only the copy for starting offline; the server still has it all.
     }

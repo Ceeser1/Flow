@@ -16,8 +16,12 @@
 //
 // `io` is the app's way to its files (the desktop's fs, the phone's bridge):
 // { join, list(dir) -> [{ name, dir, size }], readText, writeText, writeBytes,
-// readBytes, remove(path, { recursive }), mkdir, rename, copy, exists }.
-// No Node modules: the phone runs this in its WebView.
+// readBytes, remove(path, { recursive }), mkdir, rename, copy, exists,
+// appendText? }. With appendText the index is kept as its changes (4.3.4,
+// index.json.log, journalFile.js: { "$index": { id: { v, n } } }), else
+// written whole. No Node modules: the phone runs this in its WebView.
+
+const { createJournal } = require('../journalFile');
 
 const ID_RE = /^[\w-]{1,64}$/;
 const SIZES = { small: 'thumbnails', big: 'high_res' };
@@ -33,16 +37,31 @@ function createCoverStore(dir, io, { saveDelayMs = 1000 } = {}) {
   const file = (id, size = 'small') => io.join(sub(size), `${check(id)}${EXT}`);
   const indexes = { small: null, big: null };
   const timers = { small: null, big: null };
+  const journals = { small: null, big: null };
+  const jio = {
+    read: (p) => {
+      const t = io.readText(p);
+      return t ? JSON.parse(t) : null;
+    },
+    write: (p, v) => io.writeText(p, JSON.stringify(v)),
+    readText: io.readText,
+    writeText: io.writeText,
+    ...(io.appendText ? { appendText: io.appendText } : {}),
+    remove: (p) => io.remove(p),
+  };
+  const journalOf = (size) => journals[size] || (journals[size] = createJournal(jio, io.join(sub(size), INDEX), { $index: 'map' }));
 
   /** A size's index, checked against its folder once: files without an entry have no version. */
   function load(size) {
     if (indexes[size]) return indexes[size];
     let saved = null;
     try {
-      saved = JSON.parse(io.readText(io.join(sub(size), INDEX)) || 'null');
+      saved = journalOf(size).load();
     } catch {
       saved = null;
     }
+    // An index from before 4.3.4 is the map itself.
+    if (saved && typeof saved === 'object' && saved.$index && typeof saved.$index === 'object') saved = saved.$index;
     const index = {};
     let changed = false;
     let entries = [];
@@ -86,7 +105,7 @@ function createCoverStore(dir, io, { saveDelayMs = 1000 } = {}) {
     if (!indexes[size]) return;
     try {
       io.mkdir(sub(size));
-      io.writeText(io.join(sub(size), INDEX), JSON.stringify(indexes[size]));
+      journalOf(size).save({ $index: indexes[size] });
     } catch {
       // The next change saves it; a lost index costs a fetch again.
     }
@@ -214,6 +233,7 @@ function createCoverStore(dir, io, { saveDelayMs = 1000 } = {}) {
         clearTimeout(timers[sz]);
         timers[sz] = null;
         indexes[sz] = null;
+        journals[sz] = null;
       }
     },
   };

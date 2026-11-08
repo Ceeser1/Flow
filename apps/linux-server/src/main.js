@@ -19,7 +19,7 @@ const { unpack, fileName, KEEP } = require('@flow/core/backup');
 const qr = require('@flow/core/qr');
 const { makeLink } = require('@flow/core/client/share');
 const model = require('@flow/core/libraryModel');
-const { readJson } = require('@flow/core/jsonFile');
+const { readLibrary } = require('./libraryFile');
 const { lookupInfo } = require('@flow/core/songInfo');
 const { setAgentName } = require('@flow/core/agent');
 const { LEVEL_NAMES, PUBLIC_LEVEL, parseLevel, passwordProblem } = require('@flow/core/password');
@@ -196,7 +196,7 @@ async function doctor(address, connectTo) {
  * (server.json's tagSongs); a server not running does it at its next start.
  */
 function tagSongs(config, dryRun) {
-  const todo = songsToTag(model.sanitize(readJson(config.libraryFile)));
+  const todo = songsToTag(model.sanitize(readLibrary(config)));
   const rel = (file) => path.relative(config.musicDir, file) || file;
   if (!todo.length) {
     console.log('Nothing to write: every song\'s file has its flowid already (WAV files cannot carry one).');
@@ -259,7 +259,7 @@ async function shareCommand(config) {
 /** The backups, made from the server's files (the server need not run). */
 function backupStore(config) {
   return backups.storeFor(config, () => {
-    const raw = readJson(config.libraryFile) || {};
+    const raw = readLibrary(config) || {};
     const cfg = config.get();
     return { server: { id: cfg.id, name: cfg.name }, library: raw, profiles: cfg.profiles.map(backups.profileEntry) };
   }, () => {});

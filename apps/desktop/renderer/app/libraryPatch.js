@@ -6,12 +6,13 @@
 // patch applied again (4.3.3).
 //
 // spec names the parts compared item by item, by their path:
-//   'songs': 'list'          an array of objects with an id
-//   'stats.songs': 'map'     an object of values by key
+//   'songs': 'list'             an array of objects with an id
+//   'stats.songs': 'map'        an object of values by key
+//   'profiles.*.songs': 'map'   '*' stands for any one key
 // Anything else is compared whole (an object on the way to a list or map,
 // such as 'library' for 'library.songs', is walked into).
 //
-// A patch is a list of steps:
+// A patch is a list of steps, each path an array of keys (['library', 'songs']):
 //   ['set', path, value]                       the value at path, whole
 //   ['del', path]                              the key at path gone
 //   ['list', path, { put, gone, order }]       put: whole items (new or changed);
@@ -72,16 +73,6 @@
     }
     const out = {};
     for (const k in v) if (v[k] !== undefined) out[k] = clone(v[k]);
-    return out;
-  }
-
-  /** The paths walked into on the way to a list or map: 'library' for 'library.songs'. */
-  function prefixesOf(spec) {
-    const out = new Set();
-    for (const p of Object.keys(spec)) {
-      const parts = p.split('.');
-      for (let i = 1; i < parts.length; i += 1) out.add(parts.slice(0, i).join('.'));
-    }
     return out;
   }
 
@@ -238,37 +229,65 @@
   }
 
   /**
+   * The spec made ready: kindOf(path) ('list', 'map' or undefined) and
+   * walkInto(path) (a step on the way to one), for paths as arrays; '*' in
+   * the spec stands for any one key ('profiles.*.songs').
+   */
+  function compile(spec) {
+    const rules = Object.entries(spec || {}).map(([p, kind]) => ({ parts: p.split('.'), kind }));
+    const fits = (parts, path, n) => {
+      for (let i = 0; i < n; i += 1) if (parts[i] !== '*' && parts[i] !== path[i]) return false;
+      return true;
+    };
+    return {
+      kindOf(path) {
+        for (const r of rules) if (r.parts.length === path.length && fits(r.parts, path, path.length)) return r.kind;
+        return undefined;
+      },
+      walkInto(path) {
+        return rules.some((r) => r.parts.length > path.length && fits(r.parts, path, path.length));
+      },
+    };
+  }
+
+  /**
    * The steps from `was` to `now` (an empty list: nothing changed). known:
-   * { path: Set } of the fields the items of `was`'s lists and maps have
-   * (createDiffer keeps them; left out, they are looked up).
+   * a Map (path -> Set) of the fields the items of `was`'s lists and maps
+   * have, kept by createDiffer between calls (filled in when missing).
    */
   function diff(was, now, spec = {}, { ignore = null, known = null } = {}) {
     const skip = ignore ? new Set(ignore) : null;
-    const prefixes = prefixesOf(spec);
+    const rules = compile(spec);
     const steps = [];
+    const fieldsAt = (path, items) => {
+      if (!known) return null;
+      const key = path.join('\u0001');
+      let f = known.get(key);
+      if (!f) known.set(key, (f = fieldsOf(items)));
+      return f;
+    };
     const walk = (a, b, at) => {
       for (const k in b) {
-        const p = at ? `${at}.${k}` : k;
         const v = b[k];
         if (v === undefined) continue;
-        const kind = spec[p];
+        const p = [...at, k];
+        const kind = rules.kindOf(p);
         const old = a ? a[k] : undefined;
-        const fields = known ? known.get(p) || known.set(p, new Set()).get(p) : null;
         if (kind === 'list' && Array.isArray(v)) {
-          const s = listStep(old, v, skip, fields);
+          const s = listStep(old, v, skip, fieldsAt(p, Array.isArray(old) ? old : []));
           if (s) steps.push(['list', p, s]);
         } else if (kind === 'map' && isObj(v)) {
-          const s = mapStep(old, v, skip, fields);
+          const s = mapStep(old, v, skip, fieldsAt(p, isObj(old) ? Object.values(old) : []));
           if (s) steps.push(['map', p, s]);
-        } else if (prefixes.has(p) && isObj(v) && isObj(old)) {
+        } else if (isObj(v) && isObj(old) && rules.walkInto(p)) {
           walk(old, v, p);
         } else if (!same(old, v)) {
           steps.push(['set', p, clone(v)]);
         }
       }
-      if (a) for (const k in a) if (a[k] !== undefined && (b[k] === undefined)) steps.push(['del', at ? `${at}.${k}` : k]);
+      if (a) for (const k in a) if (a[k] !== undefined && b[k] === undefined) steps.push(['del', [...at, k]]);
     };
-    walk(isObj(was) ? was : null, now, '');
+    walk(isObj(was) ? was : null, now, []);
     return steps;
   }
 
@@ -325,8 +344,8 @@
    */
   function apply(value, steps, { inPlace = false } = {}) {
     const root = isObj(value) ? (inPlace ? value : { ...value }) : {};
-    for (const [kind, p, arg] of steps || []) {
-      const parts = p.split('.');
+    for (const [kind, path, arg] of steps || []) {
+      const parts = Array.isArray(path) ? path : String(path).split('.');
       let at = root;
       for (let i = 0; i < parts.length - 1; i += 1) {
         const k = parts[i];
@@ -343,13 +362,6 @@
     return root;
   }
 
-  /** The value at a dotted path, or undefined. */
-  function at(value, p) {
-    let v = value;
-    for (const k of p.split('.')) v = isObj(v) ? v[k] : undefined;
-    return v;
-  }
-
   /**
    * Keeps a copy of the value last told, to tell only what changed since.
    * next(value): the steps from the value told last ([] when alike, null when
@@ -361,11 +373,6 @@
     const keep = (value) => {
       last = clone(value);
       known = new Map();
-      for (const [p, kind] of Object.entries(spec)) {
-        const v = at(last, p);
-        if (kind === 'list' && Array.isArray(v)) known.set(p, fieldsOf(v));
-        if (kind === 'map' && isObj(v)) known.set(p, fieldsOf(Object.values(v)));
-      }
     };
     return {
       /** Whether a value was told yet. */

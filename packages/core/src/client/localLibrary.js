@@ -1,21 +1,22 @@
 'use strict';
 
 // The songs kept on this device (Local Files): the library held in memory,
-// saved whole after every change, and whoever listens told. Where it is saved
-// is the app's (read, write); the rules are libraryModel.js's.
+// saved after every change, and whoever listens told. Where it is saved is
+// the app's (read, write; or a journal, which saves only what changed,
+// journalFile.js); the rules are libraryModel.js's.
 
 const model = require('../libraryModel');
 const { randomHex } = require('./common');
 
-/** read(): the saved library, or null. write(data): saves it. */
-function createLocalLibrary({ read, write }) {
+/** read(): the saved library, or null. write(data): saves it. journal: in their place (journalFile.js). */
+function createLocalLibrary({ read, write, journal = null }) {
   let data = null;
   const listeners = [];
 
   const newId = () => randomHex(6);
 
   function load() {
-    data = model.sanitize(read());
+    data = model.sanitize(journal ? journal.load() : read());
     return data;
   }
 
@@ -24,7 +25,8 @@ function createLocalLibrary({ read, write }) {
   }
 
   function save() {
-    write(get());
+    if (journal) journal.save(get());
+    else write(get());
   }
 
   function onChange(fn) {
