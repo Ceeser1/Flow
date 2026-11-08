@@ -2502,6 +2502,9 @@ function createRemote(env) {
   const wantsCover = (s) => !!(s && s.cover && s.cover !== '-');
   const coverSize = (size) => (size === 'big' ? 'big' : 'small');
   const highRes = () => settings.get('highResCovers') !== false;
+  // "Cover thumbnails cache" unticked: no thumbnails asked for (those kept still show).
+  const thumbs = () => settings.get('thumbCovers') !== false;
+  const fetchesSize = (size) => (size === 'big' ? highRes() : thumbs());
 
   /** The server's songs kept for offline (their covers and lyrics in advance): the copies here, and the marked playlists'. */
   function offlineIds() {
@@ -2529,7 +2532,7 @@ function createRemote(env) {
     if (!offline.size || !(await transfersAllowed())) return;
     const lacking = (size) => songs.filter((x) => offline.has(x.id) && wantsCover(x) && !coverFailed.has(`${size}/${x.id}`)
       && store.version(x.id, size) !== x.cover).map((x) => x.id);
-    queueCovers(lacking('small'), 'small', { first: false });
+    if (thumbs()) queueCovers(lacking('small'), 'small', { first: false });
     if (highRes()) queueCovers(lacking('big'), 'big', { first: false });
   }
 
@@ -2543,7 +2546,8 @@ function createRemote(env) {
   /**
    * The window shows these songs and has no fitting cover file for them:
    * 'small' (a list's rows) or 'big' (Details, a visualizer, the song playing
-   * or next). A big one is fetched only with the high-res setting; one here
+   * or next). A big one is fetched only with the high-res setting, a small
+   * one only with the thumbnails' (both ticked at first); one here
    * already (the right version) is told to the window at once.
    */
   function wantCovers(ids, size = 'small') {
@@ -2557,7 +2561,7 @@ function createRemote(env) {
       const song = model.songById(cache.library, id);
       if (!wantsCover(song)) continue;
       if (store.version(id, sz) === song.cover) here.push(id);
-      else if (sz === 'small' || highRes()) fetch.push(id);
+      else if (fetchesSize(sz)) fetch.push(id);
     }
     if (here.length) covers.tell(sync.serverId, here, sz);
     if (fetch.length) queueCovers(fetch.slice(0, 300), sz);
@@ -2655,7 +2659,7 @@ function createRemote(env) {
   async function ensureCovers(ids) {
     if (env.streamCovers || !sync.serverId || !cache.library || status.state !== 'online') return;
     const store = covers.storeOf(sync.serverId);
-    for (const size of highRes() ? ['small', 'big'] : ['small']) {
+    for (const size of ['small', 'big'].filter(fetchesSize)) {
       const songs = ids.map((id) => model.songById(cache.library, id)).filter((s) => wantsCover(s) && store.version(s.id, size) !== s.cover);
       for (let i = 0; i < songs.length; i += COVER_BATCH) {
         await fetchCovers({ size, songs: songs.slice(i, i + COVER_BATCH) }).catch(() => {});

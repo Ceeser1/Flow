@@ -667,12 +667,12 @@ settings.jam.outputDelay.keptPerOutput
 # ── Settings › Media Management › Cover Cache and Lyrics Cache ──
 
 settings.coverCache.heading
-  en: Cover thumbnails cache
-  de: Cache für Cover-Vorschaubilder
+  en: Download cover thumbnails
+  de: Cover-Vorschaubilder laden
 
 settings.coverCache.desc
-  en: Thumbnails are only 128x128px (~4 KB each), downloaded and stored as you open playlists or scroll on demand.
-  de: Vorschaubilder sind nur 128x128 px groß (je ~4 KB) und werden bei Bedarf geladen und gespeichert, wenn du Playlists öffnest oder scrollst.
+  en: Thumbnails are only 128x128px (~4 KB each), downloaded and stored as you open playlists or scroll on demand. If disabled, no thumbnails are requested from the server.
+  de: Vorschaubilder sind nur 128x128 px groß (je ~4 KB) und werden bei Bedarf geladen und gespeichert, wenn du Playlists öffnest oder scrollst. Wenn deaktiviert, werden keine Vorschaubilder vom Server angefragt.
 
 settings.coverCache.clear
   en: Clear thumbnails
@@ -681,14 +681,6 @@ settings.coverCache.clear
 settings.coverCache.clear.tooltip
   en: Delete the cover thumbnails downloaded from Flow Servers. They come down again as you scroll.
   de: Von Flow Servern geladene Cover-Vorschaubilder löschen. Sie werden beim Scrollen neu geladen.
-
-settings.coverCache.clear.title
-  en: Clear cover thumbnails
-  de: Cover-Vorschaubilder leeren
-
-settings.coverCache.clear.text
-  en: Cover thumbnails are going to be re-downloaded as you scroll through playlists, do you really want to delete the current cache to free some space?
-  de: Cover-Vorschaubilder werden neu geladen, wenn du durch Playlists scrollst. Möchtest du den aktuellen Cache wirklich löschen, um Platz zu schaffen?
 
 settings.coverCache.cleared
   en: Cover thumbnails cleared

@@ -38,11 +38,21 @@ const Covers = {
   // Add Songs: key -> file:// address of a song's cover before it is saved.
   _pending: new Map(),
   _serverAsked: new Map(), // 'server:<index>' -> version asked for
-  // The scrolling: the last move, whether it was fast, a sample per scroller.
+  // The scrolling: the last move, whether it was fast, a sample per scroller
+  // (taken once a frame: reading where a list is in the scroll event itself
+  // would measure the page again at every event).
   _lastScroll: 0,
   _fast: false,
   _samples: new WeakMap(),
+  _scrolled: new Set(),
+  _scrollFrame: 0,
   _settleTimer: null,
+  // Boxes waiting (or asked for) that are on screen, told by an
+  // IntersectionObserver, so nothing is measured to find them.
+  _visible: new Set(),
+  _watched: new WeakSet(),
+  _placed: new WeakSet(),
+  _io: null,
 
   init(dirs) {
     this.dirs = dirs || this.dirs;
@@ -56,7 +66,7 @@ const Covers = {
     document.addEventListener('scroll', (e) => this._onScroll(e), { capture: true, passive: true });
     // The high-res tick changed: the big covers asked for again (after the setting reached the app).
     Store.onSettings((patch) => {
-      if ('highResCovers' in patch) setTimeout(() => this.refresh(null));
+      if ('highResCovers' in patch || 'thumbCovers' in patch) setTimeout(() => this.refresh(null));
     });
   },
 
@@ -70,19 +80,56 @@ const Covers = {
   _onScroll(e) {
     const el = e.target === document || !e.target || e.target.nodeType !== 1 ? document.scrollingElement : e.target;
     if (!el) return;
-    const now = performance.now();
-    const top = el.scrollTop;
-    const prev = this._samples.get(el);
-    if (!prev || now - prev.t > 250) {
-      this._samples.set(el, { t: now, top });
-    } else if (now - prev.t >= 30) {
-      // Screens a second, over at least 30 ms (single wheel steps are not a speed).
-      const screens = Math.abs(top - prev.top) / Math.max(1, el.clientHeight);
-      this._fast = screens / ((now - prev.t) / 1000) > 1;
-      this._samples.set(el, { t: now, top });
-    }
-    this._lastScroll = now;
+    this._lastScroll = performance.now();
+    this._scrolled.add(el);
+    if (!this._scrollFrame) this._scrollFrame = requestAnimationFrame(() => this._sampleScroll());
     this._settleSoon();
+  },
+
+  /** Once a frame while lists scroll: how fast they go. */
+  _sampleScroll() {
+    this._scrollFrame = 0;
+    const now = performance.now();
+    for (const el of this._scrolled) {
+      const top = el.scrollTop;
+      const prev = this._samples.get(el);
+      if (!prev || now - prev.t > 250) {
+        this._samples.set(el, { t: now, top });
+      } else if (now - prev.t >= 30) {
+        // Screens a second, over at least 30 ms (single wheel steps are not a speed).
+        const screens = Math.abs(top - prev.top) / Math.max(1, el.clientHeight);
+        this._fast = screens / ((now - prev.t) / 1000) > 1;
+        this._samples.set(el, { t: now, top });
+      }
+    }
+    this._scrolled.clear();
+  },
+
+  /** A box whose turn may come once it is on screen: watched for that. */
+  // The observer tells where a box is a moment after it is watched: until
+  // then (not in _placed) its turn waits, it is not taken as off screen.
+  _watch(box) {
+    if (!this._io) {
+      this._io = new IntersectionObserver((entries) => {
+        for (const en of entries) {
+          this._placed.add(en.target);
+          if (en.isIntersecting) this._visible.add(en.target);
+          else this._visible.delete(en.target);
+        }
+        this._settleSoon();
+      });
+    }
+    if (this._watched.has(box)) return;
+    this._watched.add(box);
+    this._placed.delete(box);
+    this._io.observe(box);
+  },
+
+  _unwatch(box) {
+    if (this._io) this._io.unobserve(box);
+    this._watched.delete(box);
+    this._placed.delete(box);
+    this._visible.delete(box);
   },
 
   /** The lists are still, or nearly: what is on screen may load. */
@@ -105,20 +152,23 @@ const Covers = {
   },
 
   _onScreen(box) {
-    if (!box || !box.isConnected) return false;
-    const r = box.getBoundingClientRect();
-    return r.width > 0 && r.bottom > 0 && r.right > 0 && r.top < window.innerHeight && r.left < window.innerWidth;
+    return !!box && box.isConnected && this._visible.has(box);
   },
 
   /** Boxes that waited for the scrolling: those on screen now get their pictures. */
   _flushWaiting() {
+    const shown = [];
     for (const box of this._waiting) {
       if (!box.isConnected) {
         this._waiting.delete(box);
-        continue;
+        this._unwatch(box);
+      } else if (this._onScreen(box)) {
+        shown.push(box);
       }
-      if (!this._onScreen(box)) continue;
+    }
+    for (const box of shown) {
       this._waiting.delete(box);
+      this._unwatch(box);
       const song = Store.song(box.dataset.coverId);
       if (song) this._fill(box, song, { now: true });
     }
@@ -127,15 +177,25 @@ const Covers = {
   /** The thumbnails asked for, of the rows still on screen, in one go. */
   _flushAsk() {
     const ids = [];
+    const later = [];
     for (const [id, box] of this._ask) {
-      if (!box || this._onScreen(box)) ids.push(id);
-      else {
+      if (!box || this._onScreen(box)) {
+        ids.push(id);
+        if (box && !this._waiting.has(box)) this._unwatch(box);
+      } else if (box.isConnected && !this._placed.has(box)) {
+        // Not told where it is yet: the next flush (the observer brings one).
+        later.push([id, box]);
+      } else if (box.isConnected) {
         // Scrolled off before its turn: tried again once it is on screen.
         this._asked.delete(id);
-        if (box.isConnected) this._waiting.add(box);
+        this._waiting.add(box);
+        this._watch(box);
+      } else {
+        this._asked.delete(id);
+        this._unwatch(box);
       }
     }
-    this._ask.clear();
+    this._ask = new Map(later);
     for (let i = 0; i < ids.length; i += this.ASK_MAX) {
       window.flow.wantCovers(ids.slice(i, i + this.ASK_MAX), 'small').catch(() => {});
     }
@@ -323,51 +383,126 @@ const Covers = {
   },
 
   _fill(box, song, { now = false } = {}) {
-    clear(box);
-    this._waiting.delete(box);
-    box.dataset.coverId = song ? song.id : '';
-    const size = box.dataset.coverSize === 'big' ? 'big' : 'small';
+    const id = song ? song.id : '';
+    const sizeOf = box.dataset.coverSize === 'big' ? 'big' : 'small';
+    // The same picture on its way already (a box drawn again while it loads).
+    if (!now && (box._coverJob || box._coverProbe) && box.dataset.coverId === id
+      && box._coverFirst === (this.candidates(song, sizeOf)[0] || '')) return;
+    if (this._waiting.delete(box)) this._unwatch(box);
+    this._unnear(box);
+    box._coverProbe = null;
+    // Another song: what was shown goes at once (the same one's stays until
+    // its new picture is there).
+    if (box.dataset.coverId !== id) clear(box);
+    box.dataset.coverId = id;
+    const size = sizeOf;
     const list = this.candidates(song, size);
+    box._coverFirst = list[0] || '';
     if (!list.length) {
-      box.appendChild(this._placeholder());
+      this._show(box, '');
       return;
     }
     // A server's song while the list flies by (or always where nothing is
     // kept: the web player loads each from the server): its turn comes once
     // the scrolling settles, if it is still on screen.
     if (!now && size === 'small' && this._isServer(song) && (!this._settled() || !Store.can('offline'))) {
-      box.appendChild(this._placeholder());
+      this._show(box, '');
       this._waiting.add(box);
+      this._watch(box);
       this._settleSoon();
       return;
     }
-    const img = h('img.cover__img', { alt: '', loading: 'lazy', decoding: 'async', draggable: false });
+    box._coverJob = { song, size, list };
+    this._near(box);
+  },
+
+  /**
+   * A picture (its address) or the note ('') in a box, changing it only when
+   * it differs.
+   */
+  _show(box, src) {
+    const img = box.querySelector('img.cover__img');
+    if (src) {
+      if (img && img.getAttribute('src') === src) return;
+      clear(box);
+      box.appendChild(h('img.cover__img', { alt: '', decoding: 'async', draggable: false, src }));
+    } else if (img || !box.querySelector('.cover__note')) {
+      clear(box);
+      box.appendChild(this._placeholder());
+    }
+  },
+
+  // A box's picture is looked for once it comes near the screen (lazy), and
+  // off the page: its addresses are tried on an Image of its own, and only
+  // one that loads goes into the box. A picture failing in the page would
+  // make Chromium draw its broken-image stand-in and measure the list again,
+  // up to three times a row, which made long lists stutter while scrolling.
+  _near(box) {
+    if (!this._nearIo) {
+      this._nearIo = new IntersectionObserver((entries) => {
+        for (const en of entries) {
+          if (!en.isIntersecting) continue;
+          this._nearIo.unobserve(en.target);
+          this._probe(en.target);
+        }
+      }, { rootMargin: '400px 0px', scrollMargin: '400px 0px' });
+    }
+    this._nearIo.observe(box);
+  },
+
+  _unnear(box) {
+    if (this._nearIo) this._nearIo.unobserve(box);
+    box._coverJob = null;
+  },
+
+  _probe(box) {
+    const job = box._coverJob;
+    if (!job) return;
+    box._coverJob = null;
+    const { song, size, list } = job;
+    const probe = new Image();
+    box._coverProbe = probe;
     let at = 0;
-    img.addEventListener('error', () => {
+    probe.onload = () => {
+      if (box._coverProbe !== probe) return;
+      box._coverProbe = null;
+      if (size === 'big' && at === 0) this._bigHere.add(`${song.id}:${song.cover}`);
+      this._show(box, list[at]);
+    };
+    probe.onerror = () => {
+      if (box._coverProbe !== probe) return;
       if (at === 0 && size === 'big') this.askBig(song);
       at += 1;
       if (at < list.length) {
-        img.src = list[at];
+        probe.src = list[at];
         return;
       }
-      this._missing(box, img, song);
-    });
-    if (size === 'big') {
-      img.addEventListener('load', () => {
-        if (at === 0) this._bigHere.add(`${song.id}:${song.cover}`);
-      });
-    }
-    img.src = list[0];
-    box.appendChild(img);
+      box._coverProbe = null;
+      this._show(box, '');
+      this._missing(box, song);
+    };
+    probe.src = list[0];
   },
 
-  /** No file (yet): the note, and a server song's thumbnail is asked for once the scrolling settles. */
-  _missing(box, img, song) {
-    img.remove();
-    if (!box.querySelector('.cover__note')) box.appendChild(this._placeholder());
+  /** No file (yet): a server song's thumbnail is asked for once the scrolling settles. */
+  _missing(box, song) {
+    // A box not in the page asks nothing: a list drawn again leaves its old
+    // rows behind, and one of those must not take the shown row's turn. One
+    // put in the page right after still asks.
+    if (!box.isConnected) {
+      requestAnimationFrame(() => {
+        if (box.isConnected) this._askFor(box, song);
+      });
+      return;
+    }
+    this._askFor(box, song);
+  },
+
+  _askFor(box, song) {
     if (this._isServer(song) && !this._asked.has(song.id)) {
       this._asked.add(song.id);
       this._ask.set(song.id, box);
+      this._watch(box);
       this._settleSoon();
     }
   },

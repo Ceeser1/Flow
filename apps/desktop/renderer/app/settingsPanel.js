@@ -1924,9 +1924,10 @@ const SettingsPanel = {
   },
 
   /**
-   * Covers (4.3.1): the thumbnails kept here and the room they take (with a
-   * server: the servers' ones, which can be cleared after asking; they come
-   * again as lists are scrolled).
+   * Covers (4.3.1): whether a server's thumbnails are fetched for the lists,
+   * the thumbnails kept here and the room they take (with a server: the
+   * servers' ones, which can be cleared; they come again as lists are
+   * scrolled).
    */
   _coversRow() {
     this._coversNode = h('span.settings__note');
@@ -1934,26 +1935,24 @@ const SettingsPanel = {
       type: 'button',
       title: T('settings.coverCache.clear.tooltip'),
       onclick: () => attempt(async () => {
-        const ok = await confirmDialog({
-          title: T('settings.coverCache.clear.title'),
-          message: T('settings.coverCache.clear.text'),
-          confirmLabel: T('settings.coverCache.clear'),
-          danger: true,
-        });
-        if (!ok) return;
         await window.flow.clearCoverCache('small');
         toast(T('settings.coverCache.cleared'), 'success');
         this._drawCovers();
       }),
     }, T('settings.coverCache.clear'));
-    const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', T('settings.coverCache.heading')),
-      h('div.settings__desc', T('settings.coverCache.desc')));
-    return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._coversNode, this._clearCovers)));
+    const row = this._row({
+      key: 'thumbCovers',
+      label: T('settings.coverCache.heading'),
+      desc: T('settings.coverCache.desc'),
+      right: h('div.settings__control', this._coversNode, this._clearCovers),
+    });
+    // Unticked, its Clear button still looks and works as it is.
+    row.classList.add('settings__row--btns');
+    return row;
   },
 
   /**
-   * "Download high resolution covers (512px)" under the thumbnails (4.3.1):
+   * "Download high resolution covers (512px)", a setting of its own (4.3.1):
    * off, only those kept already are shown. Its big covers kept here, and
    * "Clear big cover cache" for the servers' (no question: they are only
    * fetched again when shown). The web player keeps none: the tick alone.
@@ -1970,13 +1969,14 @@ const SettingsPanel = {
         this._drawCovers();
       }),
     }, T('settings.coverCache.highRes.clear')) : null;
-    return this._row({
+    const row = this._row({
       key: 'highResCovers',
       label: T('settings.coverCache.highRes.label'),
       desc: T('settings.coverCache.highRes.desc'),
-      sub: keeps,
       right: keeps ? h('div.settings__control', this._bigNode, this._clearBig) : null,
     });
+    row.classList.add('settings__row--btns');
+    return row;
   },
 
   /**

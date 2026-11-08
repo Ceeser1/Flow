@@ -169,6 +169,8 @@ function start() {
       const st = remote.status();
       if (m[1] === env.covers.LOCAL || st.state !== 'online' || !st.base) return 'data:,';
       const size = m[2] === 'high_res' && env.settings.get('highResCovers') !== false ? 'big' : 'small';
+      // "Cover thumbnails cache" unticked: the lists ask the server for none.
+      if (size === 'small' && env.settings.get('thumbCovers') === false) return 'data:,';
       const query = [`size=${size}`, st.token ? `t=${encodeURIComponent(st.token)}` : ''].filter(Boolean).join('&');
       return `${st.base}/api/songs/${encodeURIComponent(m[3])}/cover?${query}`;
     }

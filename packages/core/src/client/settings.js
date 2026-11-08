@@ -465,6 +465,9 @@ const DEFAULTS = {
   // Songs downloaded here stay here after going up to the server (with their
   // covers and lyrics); off, all of a song's files here go once it is up.
   serverKeepFiles: true,
+  // A Flow Server's 128 x 128 cover thumbnails fetched for the lists (and the
+  // offline songs'); off, none are asked for and only those kept are shown.
+  thumbCovers: true,
   // A Flow Server's covers in 512 x 512 too (Details, the visualizers, the
   // lock screen), fetched when shown; off, only those kept already are used
   // and the 128 x 128 ones stand in.
@@ -587,7 +590,7 @@ function clean(raw) {
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   if (!['', 'en', 'de'].includes(s.language)) s.language = '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
-    'serverKeepFiles', 'highResCovers', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
+    'serverKeepFiles', 'thumbCovers', 'highResCovers', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;
   }
