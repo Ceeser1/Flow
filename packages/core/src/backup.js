@@ -183,7 +183,8 @@ function defaultSummary(payload) {
   const profiles = lib.profiles && typeof lib.profiles === 'object' ? Object.keys(lib.profiles).length : 0;
   return {
     songs: Array.isArray(lib.songs) ? lib.songs.length : 0,
-    playlists: Array.isArray(lib.playlists) ? lib.playlists.length : 0,
+    // Each owner's Favourites (4.3) is not counted as a playlist.
+    playlists: Array.isArray(lib.playlists) ? lib.playlists.filter((p) => !(p && p.favourites)).length : 0,
     profiles,
   };
 }

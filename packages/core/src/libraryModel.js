@@ -48,8 +48,13 @@
 //                    Default / Shared), for the songs' addedBy ("All Songs from ...")
 //
 // "All Songs" is not stored: it is every song, and a song's addedAt is when it
-// was downloaded. Neither is "Favourites": the songs with a favouriteAt, which
-// is when they were made one (null for the rest). A playlist entry's addedAt is when it was put in that list.
+// was downloaded. "Favourites" is the songs with a favouriteAt, which is when
+// they were made one (null for the rest). On a Flow Server (4.3) each owner's
+// Favourites is also a playlist of its own (favourites: true, profiles.js
+// FAV_PREFIX + owner), shared, followed and downloaded like any other but never
+// renamed, deleted or ruled; while a library has one, a song's favouriteAt and
+// that list's entries are kept the same both ways (setFavourite, adding to it,
+// taking out of it). A playlist entry's addedAt is when it was put in that list.
 // Every mutation throws an Error whose message is fit to show the user.
 
 const { comparableUrl } = require('./text');
@@ -237,16 +242,19 @@ function sanitize(raw) {
       inList.add(e.songId);
       entries.push({ songId: String(e.songId), addedAt: Number(e.addedAt) || Date.now() });
     }
-    const rules = cleanRules(p.rules);
-    data.playlists.push({
+    const favourites = p.favourites === true;
+    const rules = favourites ? null : cleanRules(p.rules);
+    const list = {
       id: String(p.id),
       name: String(p.name || 'Playlist'),
       createdAt: Number(p.createdAt) || Date.now(),
       entries: rules ? [] : entries,
-      source: p.source && p.source.url ? { url: String(p.source.url), kind: String(p.source.kind || '') } : null,
+      source: !favourites && p.source && p.source.url ? { url: String(p.source.url), kind: String(p.source.kind || '') } : null,
       shared: p.shared === true && !rules,
       rules,
-    });
+    };
+    if (favourites) list.favourites = true;
+    data.playlists.push(list);
   }
   data.follows = cleanIds(raw.follows);
   data.playlistListened = cleanListened(raw.playlistListened);
@@ -265,14 +273,24 @@ function sanitize(raw) {
       inList.add(e.songId);
       entries.push({ songId: String(e.songId), addedAt: Number(e.addedAt) || Date.now() });
     }
-    data.sharedPlaylists.push({
+    const shared = {
       id: String(p.id),
       name: String(p.name || 'Playlist'),
       createdAt: Number(p.createdAt) || Date.now(),
       entries,
       ownerId: String(p.ownerId || ''),
       ownerName: String(p.ownerName || ''),
-    });
+    };
+    // Another profile's Favourites (4.3); a list known only by its details
+    // (4.3: Shared Playlists before it is opened or followed) carries its
+    // number of songs and length instead of its entries.
+    if (p.favourites === true) shared.favourites = true;
+    if (p.partial === true) {
+      shared.partial = true;
+      shared.songCount = Math.max(0, Math.floor(Number(p.songCount) || 0));
+      shared.seconds = Math.max(0, Number(p.seconds) || 0);
+    }
+    data.sharedPlaylists.push(shared);
   }
   if (Array.isArray(raw.ignoredFiles)) {
     data.ignoredFiles = [...new Set(raw.ignoredFiles.map((f) => String(f).toLowerCase()))];
@@ -295,6 +313,18 @@ function requirePlaylist(data, id) {
   return p;
 }
 
+/** The owner's Favourites as a playlist (a Flow Server's, 4.3), or null. */
+function favouritesList(data) {
+  return (data.playlists || []).find((p) => p.favourites) || null;
+}
+
+/** A playlist that can be renamed, deleted and given rules: not Favourites. */
+function requireOrdinary(data, id) {
+  const p = requirePlaylist(data, id);
+  if (p.favourites) throw new Error(tr('core.library.favouritesFixed', 'Favourites cannot be renamed, deleted or given rules.'));
+  return p;
+}
+
 function requireSong(data, id) {
   const s = songById(data, id);
   if (!s) throw new Error(tr('common.songGone', 'That song no longer exists.'));
@@ -308,7 +338,7 @@ function checkPlaylistName(data, name, exceptId = null) {
   if (clean.length > MAX_NAME) throw new Error(tr('core.library.nameTooLong', 'Playlist names can be at most {max} characters.', { max: MAX_NAME }));
   const lower = clean.toLowerCase();
   if (lower === ALL_SONGS_NAME.toLowerCase()) throw new Error(tr('core.library.allSongsTaken', '"All Songs" is already taken.'));
-  const clash = data.playlists.find((p) => p.id !== exceptId && p.name.toLowerCase() === lower);
+  const clash = data.playlists.find((p) => p.id !== exceptId && !p.favourites && p.name.toLowerCase() === lower);
   if (clash) throw new Error(tr('common.playlistExists', 'A playlist called "{playlist}" already exists.', { playlist: clash.name }));
   return clean;
 }
@@ -324,7 +354,7 @@ function createPlaylist(data, name, id, now = Date.now()) {
 function freePlaylistName(data, name) {
   const base = String(name || '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME - 5) || 'Imported playlist';
   const taken = (n) => n.toLowerCase() === ALL_SONGS_NAME.toLowerCase()
-    || data.playlists.some((p) => p.name.toLowerCase() === n.toLowerCase());
+    || data.playlists.some((p) => !p.favourites && p.name.toLowerCase() === n.toLowerCase());
   if (!taken(base)) return base;
   for (let i = 2; ; i += 1) {
     if (!taken(`${base} (${i})`)) return `${base} (${i})`;
@@ -334,19 +364,19 @@ function freePlaylistName(data, name) {
 /** Remembers where an imported playlist came from, unless it already knows. */
 function setPlaylistSource(data, id, source) {
   const p = requirePlaylist(data, id);
-  if (!p.source && source && source.url) p.source = { url: String(source.url), kind: String(source.kind || '') };
+  if (!p.source && !p.favourites && source && source.url) p.source = { url: String(source.url), kind: String(source.kind || '') };
   return p;
 }
 
 function renamePlaylist(data, id, name) {
-  const p = requirePlaylist(data, id);
+  const p = requireOrdinary(data, id);
   p.name = checkPlaylistName(data, name, id);
   return p;
 }
 
 /** Makes a playlist a smart one with these rules (null: an ordinary, empty one again). */
 function setPlaylistRules(data, id, rules) {
-  const p = requirePlaylist(data, id);
+  const p = requireOrdinary(data, id);
   p.rules = cleanRules(rules);
   p.entries = [];
   if (p.rules) p.shared = false;
@@ -380,7 +410,7 @@ function unfollowPlaylist(data, id) {
 }
 
 function deletePlaylist(data, id) {
-  requirePlaylist(data, id);
+  requireOrdinary(data, id);
   data.playlists = data.playlists.filter((p) => p.id !== id);
   if (data.playlistListened) delete data.playlistListened[id];
 }
@@ -429,6 +459,9 @@ function addSong(data, song) {
   song.tagged = cleanTagged(song.tagged);
   song.cut = cleanCut(song.cut);
   data.songs.push(song);
+  // Starred already (an upload brings its own): into the Favourites list too.
+  const fav = song.favouriteAt ? favouritesList(data) : null;
+  if (fav && !fav.entries.some((e) => e.songId === song.id)) fav.entries.push({ songId: song.id, addedAt: song.favouriteAt });
   const lower = String(song.file).toLowerCase();
   data.ignoredFiles = data.ignoredFiles.filter((f) => f !== lower);
   return song;
@@ -504,7 +537,23 @@ function setFavourite(data, id, on, now = Date.now()) {
   const s = requireSong(data, id);
   if (on && !s.favouriteAt) s.favouriteAt = now;
   if (!on) s.favouriteAt = null;
+  // The Favourites playlist (a Flow Server's) follows: the star is putting the song in it.
+  const fav = favouritesList(data);
+  if (fav) {
+    const has = fav.entries.some((e) => e.songId === id);
+    if (on && !has) fav.entries.push({ songId: id, addedAt: s.favouriteAt });
+    if (!on && has) fav.entries = fav.entries.filter((e) => e.songId !== id);
+  }
   return s;
+}
+
+/** A song put into (or taken out of) Favourites as a playlist: its star follows. */
+function starFollows(data, p, songId, on, now) {
+  if (!p.favourites) return;
+  const s = songById(data, songId);
+  if (!s) return;
+  if (on && !s.favouriteAt) s.favouriteAt = now;
+  if (!on) s.favouriteAt = null;
 }
 
 /**
@@ -589,6 +638,7 @@ function addSongToPlaylists(data, songId, playlistIds, now = Date.now()) {
     const p = requirePlaylist(data, pid);
     if (p.rules || p.entries.some((e) => e.songId === songId)) continue;
     p.entries.push({ songId, addedAt: now });
+    starFollows(data, p, songId, true, now);
     added += 1;
   }
   return added;
@@ -602,6 +652,7 @@ function addSongsToPlaylist(data, playlistId, songIds, now = Date.now()) {
     requireSong(data, sid);
     if (p.entries.some((e) => e.songId === sid)) continue;
     p.entries.push({ songId: sid, addedAt: now });
+    starFollows(data, p, sid, true, now);
     added += 1;
   }
   return added;
@@ -610,6 +661,7 @@ function addSongsToPlaylist(data, playlistId, songIds, now = Date.now()) {
 function removeFromPlaylist(data, playlistId, songId) {
   const p = requirePlaylist(data, playlistId);
   p.entries = p.entries.filter((e) => e.songId !== songId);
+  starFollows(data, p, songId, false);
 }
 
 /**
@@ -679,7 +731,7 @@ function sameNames(a, b) {
 module.exports = {
   ALL_SONGS_ID, ALL_SONGS_NAME, MAX_NAME, PLAYED_SHARE, EARLY_SKIP_SECONDS,
   emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
-  createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource, setPlaylistRules, cleanRules, recordAwayListen,
+  createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource, setPlaylistRules, cleanRules, recordAwayListen, favouritesList,
   RULE_FIELDS, RULE_OPS, RULE_SORTS,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
   addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,

@@ -253,6 +253,7 @@ const SettingsPanel = {
     this._drawServer();
     this._drawAdmin(true);
     Stats.load();
+    if (this._shows(T('common.statistics'))) Stats.loadServer();
     // Profiles made or renamed on other devices since.
     if (Store.server.on && Store.server.state === 'online') window.flow.profiles().catch(() => {});
   },
@@ -304,6 +305,7 @@ const SettingsPanel = {
         else shut.add(title);
         Store.saveSettings({ settingsCollapsed: [...shut] });
         draw();
+        if (!shut.has(title)) this._opened(title);
       };
       node.addEventListener('click', toggle);
       node.addEventListener('keydown', (e) => {
@@ -364,6 +366,23 @@ const SettingsPanel = {
     if (this._backBtn) this._backBtn.hidden = !title;
     const body = this.modal && this.modal.el.querySelector('.modal__body');
     if (body) body.scrollTop = 0;
+    if (title) this._opened(title);
+  },
+
+  /**
+   * Whether a category shows: on the phone its screen is open, elsewhere it is
+   * not folded shut. Statistics and Administration fetch from the server only
+   * while they show (4.3).
+   */
+  _shows(title) {
+    if (document.body.classList.contains('mobile')) return this._screen === title;
+    return !(Store.settings.settingsCollapsed || []).includes(title);
+  },
+
+  /** A category came into view: what it shows from the server is fetched now. */
+  _opened(title) {
+    if (title === T('common.statistics')) Stats.loadServer();
+    if (title === T('admin.heading') && Store.server.admin) Admin.load();
   },
 
   /**
@@ -384,7 +403,7 @@ const SettingsPanel = {
       const group = head && head.closest('.settings__group');
       if (group) group.hidden = !on;
     }
-    if (on && (force || !was)) Admin.load();
+    if (on && (force || !was) && this._shows(title)) Admin.load();
   },
 
   /** The phone's Back while Settings is open: from a category to the list. False on the list. */

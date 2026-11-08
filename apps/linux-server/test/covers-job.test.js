@@ -99,7 +99,7 @@ test('songs without a cover get one: their thumbnail, the picture in the file, e
     assert.equal(jpeg[1], 0xd8);
     assert.deepEqual(server.library.coverCounts(), { total: 4, have: 2, todo: 1 });
     // Songs that were there before are not written by themselves (flow-server tag-songs does that).
-    assert.equal(songs.Teardrop.tagged, null);
+    assert.equal(server.library.data.songs.find((s) => s.id === songs.Teardrop.id).tagged, null);
     const full = (id) => server.library.data.songs.find((s) => s.id === id).file;
     assert.equal(tagsOf(full(songs.Teardrop.id)).flowid, undefined);
   } finally {

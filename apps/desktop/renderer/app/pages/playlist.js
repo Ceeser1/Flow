@@ -137,7 +137,29 @@ const PlaylistPage = {
     this.pickFor = id === 'all' && opts.pickFor && Store.playlist(opts.pickFor) ? opts.pickFor : null;
     if (opts.filter !== undefined) this._view(id).filter = opts.filter;
     $('plSearch').value = this._view(id).filter;
+    this._openShared(id);
     this.render();
+  },
+
+  // The shared playlist whose songs are being fetched (its id), or null.
+  _loading: null,
+
+  /**
+   * A playlist another profile shares that is not followed comes with its
+   * songs when opened, every time it is opened (4.3); a followed one is kept
+   * in step already.
+   */
+  _openShared(id) {
+    const p = Store.playlist(id);
+    if (!p || !p.isShared || Store.isFollowing(id) || !window.flow.openShared || Store.server.state !== 'online') return;
+    this._loading = id;
+    window.flow.openShared(id).catch((err) => {
+      if (this.id === id) toast(err.message, 'error');
+    }).finally(() => {
+      if (this._loading !== id) return;
+      this._loading = null;
+      if (Nav.page === 'playlist' && this.id === id) this.render();
+    });
   },
 
   _sortValue(row, key) {
@@ -187,9 +209,10 @@ const PlaylistPage = {
     if (!p) return;
     $('plTitle').textContent = p.name;
     const all = Store.rowsOf(this.id);
-    const total = all.reduce((sum, r) => sum + (r.song.duration || 0), 0);
+    // Known by its details only while its songs are on their way.
+    const total = p.partial ? p.seconds || 0 : all.reduce((sum, r) => sum + (r.song.duration || 0), 0);
     const by = p.isShared && p.ownerName ? `${T('playlist.header.sharedBy', { profile: p.ownerName })} ` : '';
-    $('plMeta').textContent = `${by}${p.isRuled ? `${T('playlist.header.smartPlaylist')} ` : ''}${Util.plural(all.length, 'song')} · ${Util.fmtClock(total)}`;
+    $('plMeta').textContent = `${by}${p.isRuled ? `${T('playlist.header.smartPlaylist')} ` : ''}${Util.plural(p.partial ? p.songCount || 0 : all.length, 'song')} · ${Util.fmtClock(total)}`;
     $('plMeta').title = p.isRuled ? PlaylistRules.describe(p.rules) : '';
     $('plRules').hidden = !p.isRuled;
     if (p.isRuled) {
@@ -220,7 +243,8 @@ const PlaylistPage = {
   _drawShare() {
     const p = Store.playlist(this.id);
     const btn = $('plShare');
-    const mine = !!p && !p.isAll && !p.isFrom && !p.isFavourites && !p.isSmart && !p.isShared && !p.isDevice && !p.isRuled && !p.isGuest;
+    // Favourites on a Flow Server (4.3) is a playlist of your own too.
+    const mine = !!p && !p.isAll && !p.isFrom && (!p.isFavourites || !!p.favourites) && !p.isSmart && !p.isShared && !p.isDevice && !p.isRuled && !p.isGuest;
     const can = !!p && Store.canShare() && (mine || p.isShared);
     btn.hidden = !can;
     if (!can) return;
@@ -279,7 +303,7 @@ const PlaylistPage = {
     const btn = $('plOffline');
     const note = $('plOfflineNote');
     // A playlist another profile shares can be downloaded once it is followed.
-    const can = !!p && Store.server.on && Store.can('offline') && !p.isFavourites && !p.isSmart && !p.isRuled && !p.isDevice && !p.isGuest && (!p.isShared || Store.isFollowing(p.id));
+    const can = !!p && Store.server.on && Store.can('offline') && (!p.isFavourites || !!p.favourites) && !p.isSmart && !p.isRuled && !p.isDevice && !p.isGuest && (!p.isShared || Store.isFollowing(p.id));
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;
@@ -316,6 +340,7 @@ const PlaylistPage = {
       const smart = SmartLists.isSmart(this.id);
       const favourites = this.id === FAVOURITES_ID;
       if (this.id === 'all') $('plEmptyText').textContent = T('playlist.empty.allSongs');
+      else if (p.partial || this._loading === this.id) $('plEmptyText').textContent = T('playlist.empty.loadingShared');
       else if (favourites) $('plEmptyText').textContent = T('playlist.empty.favourites');
       else if (smart) $('plEmptyText').textContent = T('playlist.empty.trend');
       else if (p.isDevice) $('plEmptyText').textContent = T(`playlist.empty.downloaded.${Store.hereKey}`);

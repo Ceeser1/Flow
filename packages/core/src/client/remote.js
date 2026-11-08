@@ -14,6 +14,22 @@
 // can. What the window shows is the server's library with the waiting
 // commands applied on top, so a change shows at once either way.
 //
+// Only what changed travels (4.3, protocol 2): the copy keeps the library's
+// revision, and the server sends what changed since (GET /api/library?since=,
+// the answer to the app's own commands, and pushed on the live channel the
+// moment it happens). The profile's songs' stats are a copy of their own with
+// a revision of their own (GET /api/stats), so a listen never sends the
+// library again; its Statistics totals are fetched when Settings shows them,
+// the playlists other profiles share by their details when Shared Playlists
+// shows (one opened: its songs then). The live channel is also what tells the
+// app the server is there: lost, the server is asked once, and without an
+// answer the app is offline. Only while the channel cannot open does the app
+// ask for changes itself, once a minute.
+//
+// Favourites (4.3) are a playlist of the profile's own on the server
+// (fav-<owner>); the window knows it as 'favourites' (FAV), and the commands
+// naming it go with its real id.
+//
 // The Local Files folder (Music\FlowPlayer) keeps its own library.json, as
 // without a server. It is where songs downloaded here wait to go up to the
 // server, and where the songs of playlists marked for download are kept. The
@@ -109,8 +125,12 @@ function createRemote(env) {
   const FROM = 'from:';
   // A song here that is not this server's (Downloaded Songs): 'device:' + its Local Files id.
   const DEVICE = 'device:';
-  const PROTOCOL = 1;
-  const POLL_MS = 10000;
+  // 2 (4.3): what changed, the stats apart, Favourites as a playlist, pushed changes.
+  const PROTOCOL = 2;
+  // Only while the live channel is down: the changes asked for this often.
+  const POLL_MS = 60000;
+  // The window's id of the profile's Favourites playlist (the server's is fav-<owner>).
+  const FAV = 'favourites';
   // While on the remote address, how often home is tried again.
   const HOME_RETRY_MS = 2 * 60 * 1000;
   const RETRY_MS = [3000, 5000, 10000, 20000, 30000, 60000];
@@ -130,8 +150,9 @@ function createRemote(env) {
   // another format is shown at start but fetched whole again. Raise it whenever
   // the songs or playlists gain a field the server sends (3: addedBy, profileNames;
   // 4: listening, 3.5; 5: statistics, 3.6; 6: album, genre, subGenre, infoLooked, 3.6.3;
-  // 7: a playlist's rules, 4.0).
-  const CACHE_FORMAT = 7;
+  // 7: a playlist's rules, 4.0; 8: songs without stats, the stats, Statistics
+  // and shared playlists' details kept apart, Favourites as a playlist, 4.3).
+  const CACHE_FORMAT = 8;
 
   function emptySync(serverId = '') {
     return {
@@ -202,14 +223,57 @@ function createRemote(env) {
     return Object.entries(loadOthers()).some(([id, o]) => id !== sync.serverId && o.sync.fetched[lid]);
   }
 
-  function loadCache() {
-    const raw = jsonFiles.read(CACHE_FILE);
-    if (!raw || typeof raw !== 'object' || !raw.library) return { serverId: '', rev: -1, library: null, profile: '' };
-    const rev = raw.format === CACHE_FORMAT ? Number(raw.rev) : -1;
-    return { serverId: String(raw.serverId || ''), rev, library: model.sanitize(raw.library), profile: String(raw.profile || '') };
+  /**
+   * The copy kept: { serverId, rev, library, profile, stats, statistics, shared }.
+   * stats { rev, owner, songs: { id: stats }, playlistListened }: the profile's
+   * (owner: its id, '' the Default); statistics { srev, data } once fetched;
+   * shared [details] of the playlists others share, as last fetched.
+   */
+  function emptyCache(serverId = '') {
+    return {
+      serverId, rev: -1, library: null, profile: '', stats: emptyStatsCopy(), statistics: null, shared: null,
+    };
   }
 
-  let cache = { serverId: '', rev: -1, library: null, profile: '' };
+  function emptyStatsCopy(owner = '') {
+    return {
+      rev: -1, owner, songs: {}, playlistListened: {},
+    };
+  }
+
+  function cleanStatsCopy(raw) {
+    if (!raw || typeof raw !== 'object') return emptyStatsCopy();
+    const songs = {};
+    for (const [id, st] of Object.entries(raw.songs && typeof raw.songs === 'object' ? raw.songs : {})) songs[id] = model.sanitize({ songs: [{ id, file: 'x', stats: st }] }).songs[0].stats;
+    return {
+      rev: Number.isFinite(Number(raw.rev)) ? Number(raw.rev) : -1,
+      owner: String(raw.owner || ''),
+      songs,
+      playlistListened: model.sanitize({ playlistListened: raw.playlistListened }).playlistListened,
+    };
+  }
+
+  function loadCache() {
+    const raw = jsonFiles.read(CACHE_FILE);
+    if (!raw || typeof raw !== 'object' || !raw.library) return emptyCache();
+    // A copy of another format is shown at start but fetched whole again.
+    const same = raw.format === CACHE_FORMAT;
+    const st = raw.statistics && typeof raw.statistics === 'object' ? raw.statistics : null;
+    return {
+      serverId: String(raw.serverId || ''),
+      rev: same ? Number(raw.rev) : -1,
+      library: model.sanitize(raw.library),
+      profile: String(raw.profile || ''),
+      stats: same ? cleanStatsCopy(raw.stats) : emptyStatsCopy(),
+      statistics: same && st ? { srev: Number(st.srev) || 0, owner: String(st.owner || ''), data: model.sanitize({ statistics: st.data }).statistics } : null,
+      shared: same && Array.isArray(raw.shared) ? model.sanitize({ sharedPlaylists: raw.shared.map((p) => ({ ...p, entries: [], partial: true })) }).sharedPlaylists : null,
+    };
+  }
+
+  let cache = emptyCache();
+  // Shared playlists opened but not followed (4.3): their songs as fetched
+  // when opened, for this run only (fetched again at the next open).
+  const sharedOpen = new Map();
   let sync = emptySync();
   let loaded = false;
 
@@ -447,19 +511,92 @@ function createRemote(env) {
     return { type: 'addSong', at: cmd.at, playlistIds: cmd.playlistIds, song: { ...local, id: cmd.songId, addedBy: currentProfile() || DEFAULT_OWNER } };
   }
 
+  // Commands counted in the stats (and the Statistics totals), not the library.
+  const LISTENS = new Set(['recordListen', 'recordAwayListen']);
+
+  /** The stats copy is the signed-in profile's. */
+  const statsOurs = () => cache.stats.owner === currentProfile() && cache.stats.rev >= 0;
+  /** The Statistics totals kept are the signed-in profile's. */
+  const statisticsOurs = () => !!cache.statistics && cache.statistics.owner === currentProfile();
+
+  /**
+   * A listen the copy has not heard yet, shown at once: in its song's stats
+   * and the time listened to its list (`song`), and in the Statistics
+   * totals (`totals`), each only where the copy lacks it.
+   */
+  function previewListen(d, c, { song, totals }) {
+    if (!song && !totals) return;
+    const s = c.type === 'recordListen' ? model.songById(d, String(c.songId)) : null;
+    if (c.type === 'recordListen' && !s) return;
+    const target = {
+      ...model.emptyLibrary(),
+      songs: s ? [song ? s : { ...s, stats: { ...s.stats } }] : [],
+      playlists: song ? d.playlists : [],
+      sharedPlaylists: song ? d.sharedPlaylists : [],
+      follows: d.follows,
+      playlistListened: song ? d.playlistListened : {},
+      statistics: totals ? d.statistics : model.emptyLibrary().statistics,
+    };
+    try {
+      applyCommand(target, c);
+    } catch {
+      // The server will say.
+    }
+  }
+
+  /** The playlists others share, for the window: those followed (with their songs), then the rest by their details. */
+  function sharedForView(d) {
+    const names = d.profileNames || {};
+    const followed = new Set(d.follows || []);
+    const out = d.sharedPlaylists.filter((p) => followed.has(p.id));
+    const have = new Set(out.map((p) => p.id));
+    for (const p of cache.shared || []) {
+      if (have.has(p.id)) continue;
+      have.add(p.id);
+      const open = sharedOpen.get(p.id);
+      out.push(open ? JSON.parse(JSON.stringify(open)) : { ...p, entries: [] });
+    }
+    // A profile renamed: its name as the library has it now.
+    for (const p of out) if (names[p.ownerId]) p.ownerName = names[p.ownerId];
+    return out;
+  }
+
   function buildView() {
     const d = JSON.parse(JSON.stringify(cache.library || model.emptyLibrary()));
+    // The profile's own stats and time listened to each list (kept apart, 4.3).
+    const st = statsOurs() ? cache.stats : null;
+    for (const s of d.songs) s.stats = st && st.songs[s.id] ? { ...st.songs[s.id] } : model.emptyStats();
+    d.playlistListened = st ? { ...st.playlistListened } : {};
+    d.statistics = statisticsOurs() ? JSON.parse(JSON.stringify(cache.statistics.data)) : model.emptyLibrary().statistics;
+    // Favourites: the window's 'favourites', and each song's star from it.
+    const fav = d.playlists.find((p) => p.favourites);
+    if (fav) {
+      fav.id = FAV;
+      fav.name = 'Favourites';
+    }
+    const starred = new Map((fav ? fav.entries : []).map((e) => [e.songId, e.addedAt]));
+    for (const s of d.songs) s.favouriteAt = starred.get(s.id) || null;
+    d.sharedPlaylists = sharedForView(d);
     // Sent but not in the copy yet (its answer came before the library did),
     // then everything still waiting.
-    const pending = [...sync.sent.filter((x) => x.rev > cache.rev).map((x) => x.cmd), ...sync.queue.filter(mine)];
-    for (const c of pending) {
+    const apply = (c) => {
       const cmd = c.type === 'upload' ? uploadAsAddSong(c) : c;
-      if (!cmd) continue;
+      if (!cmd) return;
       try {
         applyCommand(d, cmd);
       } catch {
         // The server will say what was wrong with it.
       }
+    };
+    const newer = (x, rev) => !(Number(x.srev) <= rev);
+    for (const x of sync.sent) {
+      if (LISTENS.has(x.cmd.type)) {
+        previewListen(d, x.cmd, { song: !st || newer(x, cache.stats.rev), totals: statisticsOurs() && newer(x, cache.statistics.srev) });
+      } else if (x.rev > cache.rev) apply(x.cmd);
+    }
+    for (const c of sync.queue.filter(mine)) {
+      if (LISTENS.has(c.type)) previewListen(d, c, { song: true, totals: statisticsOurs() });
+      else apply(c);
     }
     const copies = localCopies(d);
     const shown = new Set();
@@ -488,9 +625,10 @@ function createRemote(env) {
       profileId: p.id,
       profileName: p.name,
       createdAt: p.createdAt,
-      statistics: d.statistics,
       addedSongs: d.songs.filter((s) => s.addedBy === p.id).length,
     };
+    // Its totals once fetched (4.3: when Settings shows them); until then the row keeps its own.
+    if (statisticsOurs()) row.statistics = d.statistics;
     // Whether it keeps Statistics is only known while connected.
     if (online) row.supported = !!conn.statistics;
     if (tracked.update(row, { online })) emitStatus();
@@ -592,7 +730,7 @@ function createRemote(env) {
       }
     }
     if (back) heldSinceAway = holdAwayChanges();
-    cache = { serverId: id, rev: -1, library: null, profile: '' };
+    cache = emptyCache(id);
     saveOthers();
     saveSync();
     saveCache();
@@ -770,7 +908,8 @@ function createRemote(env) {
         try {
           if (hello.password) {
             if (token) {
-              const probe = await request(base, `/api/library?since=${cache.rev}`, { token, timeout: 15000 });
+              // The smallest answer that needs the sign-in.
+              const probe = await request(base, '/api/time', { token, timeout: 15000 });
               if (probe.status === 401) token = '';
             }
             if (!token) token = await login(base);
@@ -960,13 +1099,16 @@ function createRemote(env) {
         // Still away from home.
       }
     }
-    try {
-      const changed = await refresh();
-      if (sync.queue.length) flushSoon();
-      if (changed) afterServerChange();
-    } catch (err) {
-      wentWrong(err);
-      return;
+    // The live channel brings the changes; only without it are they asked for (4.3).
+    if (!status.live) {
+      try {
+        const changed = await refresh();
+        if (sync.queue.length) flushSoon();
+        if (changed) afterServerChange();
+      } catch (err) {
+        wentWrong(err);
+        return;
+      }
     }
     schedulePoll();
   }
@@ -993,15 +1135,25 @@ function createRemote(env) {
     hooks.onNotice(err.message, 'error');
   }
 
-  /** Fetches the server's library when it changed. Resolves true when it did. */
+  /** The copy is this server's and the signed-in profile's: what changed since its revision can be asked for. */
+  const copyOurs = () => !!cache.library && cache.serverId === sync.serverId && cache.profile === currentProfile() && cache.rev >= 0;
+
+  /**
+   * What changed on the server since the copy (4.3: GET /api/library?since=,
+   * the whole library when there is no copy or it is too old), and the
+   * profile's stats since theirs. Resolves true when the library changed.
+   */
   async function refresh() {
     // `as`: the profile the copy is of. Signed in to another since, the server
     // sends the whole library even when nothing changed.
-    const since = cache.library ? `?since=${cache.rev}&as=${encodeURIComponent(cache.profile)}` : '';
-    const r = await request(conn.base, `/api/library${since}`, { token: conn.token, timeout: 30000 });
+    const since = cache.library && cache.serverId === sync.serverId ? `?since=${cache.rev}&as=${encodeURIComponent(cache.profile)}` : '';
+    const r = await request(conn.base, `/api/library${since}`, { token: conn.token, timeout: 60000 });
     if (r.status === 401) throw new AuthError(tr('connection.signedOut', 'Signed out.'));
-    if (r.status === 204) return false;
-    if (r.status !== 200 || !r.json || !r.json.library) throw new Error((r.json && r.json.error) || tr('common.serverAnswered', 'The server answered {status}.', { status: r.status }));
+    if (r.status === 204) {
+      await refreshStats();
+      return false;
+    }
+    if (r.status !== 200 || !r.json || (r.json.full && !r.json.library)) throw new Error((r.json && r.json.error) || tr('common.serverAnswered', 'The server answered {status}.', { status: r.status }));
     const profile = cleanProfile(r.json.profile);
     const before = sync.profile;
     if (before && (!profile || profile.id !== before.id)) {
@@ -1013,12 +1165,191 @@ function createRemote(env) {
     if (r.json.rules && typeof r.json.rules === 'object') {
       status.rules = { ...status.rules, songDelete: r.json.rules.songDelete === 'owner' ? 'owner' : 'anyone' };
     }
-    cache = { serverId: sync.serverId, rev: Number(r.json.rev), library: model.sanitize(r.json.library), profile: currentProfile() };
-    sync.sent = sync.sent.filter((x) => x.rev > cache.rev);
+    if (r.json.full) {
+      const owner = currentProfile();
+      cache = {
+        ...cache,
+        serverId: sync.serverId,
+        rev: Number(r.json.rev),
+        library: model.sanitize(r.json.library),
+        profile: owner,
+        // Another profile's (or another server's) are of no use now.
+        stats: cache.stats.owner === owner && cache.serverId === sync.serverId ? cache.stats : emptyStatsCopy(owner),
+        statistics: statisticsOurs() && cache.serverId === sync.serverId ? cache.statistics : null,
+        shared: cache.profile === owner && cache.serverId === sync.serverId ? cache.shared : null,
+      };
+    } else {
+      mergeChanges(r.json);
+    }
+    await refreshStats();
+    pruneSent();
     saveCache();
     saveSync();
     refreshView();
     return true;
+  }
+
+  /**
+   * What changed since the copy's revision, merged into it: songs and
+   * playlists (its own, Favourites too) new or changed, those gone, the
+   * follows, the playlists followed (with their songs), the profiles' names.
+   */
+  function mergeChanges(c) {
+    const lib = cache.library || model.emptyLibrary();
+    const goneSongs = new Set((c.deletedSongs || []).map(String));
+    const changedSongs = new Map((c.songs || []).map((s) => [String(s.id), s]));
+    const songs = [];
+    for (const s of lib.songs) {
+      if (goneSongs.has(s.id)) continue;
+      const now = changedSongs.get(s.id);
+      songs.push(now || s);
+      changedSongs.delete(s.id);
+    }
+    songs.push(...changedSongs.values());
+    const goneLists = new Set((c.deletedPlaylists || []).map(String));
+    const changedLists = new Map((c.playlists || []).map((p) => [String(p.id), p]));
+    const playlists = [];
+    for (const p of lib.playlists) {
+      if (goneLists.has(p.id)) continue;
+      playlists.push(changedLists.get(p.id) || p);
+      changedLists.delete(p.id);
+    }
+    playlists.push(...changedLists.values());
+    const follows = Array.isArray(c.follows) ? c.follows : lib.follows;
+    const unshared = new Set((c.unshared || []).map(String));
+    const changedShared = new Map((c.sharedPlaylists || []).map((p) => [String(p.id), p]));
+    const followed = new Set(follows);
+    const shared = [];
+    for (const p of lib.sharedPlaylists) {
+      if (unshared.has(p.id) || !followed.has(p.id)) continue;
+      shared.push(changedShared.get(p.id) || p);
+      changedShared.delete(p.id);
+    }
+    shared.push(...changedShared.values());
+    cache.library = model.sanitize({
+      ...lib, songs, playlists, follows, sharedPlaylists: shared, profileNames: c.profileNames || lib.profileNames,
+    });
+    cache.rev = Number(c.rev);
+  }
+
+  /**
+   * Changes the server sent on its own (the live channel) or with an answer:
+   * merged when they start where the copy is (or before it, overlapping),
+   * skipped when the copy has them already, and the copy asked for afresh
+   * when some are missing in between (or the server says too many are).
+   */
+  function takeChanges(c) {
+    if (!c || !copyOurs()) return false;
+    if (c.stale || Number(c.from) > cache.rev) {
+      refresh().catch(wentWrong);
+      return false;
+    }
+    if (Number(c.rev) <= cache.rev) return false;
+    mergeChanges(c);
+    pruneSent();
+    saveCache();
+    saveSync();
+    refreshView();
+    return true;
+  }
+
+  // ---- the profile's stats (4.3) ----
+
+  /** The profile's stats since the copy's (all of them for a copy of another profile's, or none). */
+  async function refreshStats() {
+    const owner = currentProfile();
+    const since = cache.stats.owner === owner && cache.stats.rev >= 0 ? `?since=${cache.stats.rev}` : '';
+    const s = await call(`/api/stats${since}`, { timeout: 60000 });
+    applyStats(s, owner);
+  }
+
+  function applyStats(s, owner = currentProfile()) {
+    if (!s) return;
+    if (s.full) cache.stats = cleanStatsCopy({ rev: s.rev, owner, songs: s.songs, playlistListened: s.playlistListened });
+    else {
+      const clean = cleanStatsCopy({ songs: s.songs, playlistListened: s.playlistListened });
+      Object.assign(cache.stats.songs, clean.songs);
+      if (s.playlistListened) cache.stats.playlistListened = clean.playlistListened;
+      cache.stats.rev = Number(s.rev);
+    }
+  }
+
+  /** Stats pushed or answered: taken as the library's changes are (takeChanges). */
+  function takeStats(s) {
+    if (!s || !statsOurs()) return false;
+    if (s.stale || Number(s.from) > cache.stats.rev) {
+      refreshStats().then(() => {
+        pruneSent();
+        saveCache();
+        refreshView();
+      }).catch(() => {});
+      return false;
+    }
+    if (Number(s.rev) <= cache.stats.rev) return false;
+    applyStats(s);
+    pruneSent();
+    saveCache();
+    refreshView();
+    return true;
+  }
+
+  /**
+   * The sent commands the copy has now go: a change once the library's
+   * revision reaches its answer's, a listen once the stats (and the
+   * Statistics totals, when kept) have it.
+   */
+  function pruneSent() {
+    const before = sync.sent.length;
+    sync.sent = sync.sent.filter((x) => {
+      if (!LISTENS.has(x.cmd.type)) return x.rev > cache.rev;
+      const srev = Number(x.srev);
+      if (!Number.isFinite(srev)) return false;
+      return srev > cache.stats.rev || (statisticsOurs() && srev > cache.statistics.srev);
+    });
+    if (sync.sent.length !== before) saveSync();
+  }
+
+  /** The profile's Statistics totals (4.3: fetched when Settings shows them), kept for when the server is away. */
+  async function loadStatistics() {
+    if (!active() || status.state !== 'online' || !conn.statistics) return null;
+    const r = await call('/api/statistics', { timeout: 30000 });
+    cache.statistics = { srev: Number(r.srev) || 0, owner: currentProfile(), data: model.sanitize({ statistics: r.statistics }).statistics };
+    pruneSent();
+    saveCache();
+    buildView();
+    hooks.onView(view);
+    emitStatus();
+    return cache.statistics.data;
+  }
+
+  // ---- the playlists others share (4.3) ----
+
+  /** Their details (name, owner, number of songs, length), fetched when Shared Playlists shows them. */
+  async function loadShared() {
+    if (!active() || status.state !== 'online' || !conn.profiles) return null;
+    const r = await call('/api/shared', { timeout: 30000 });
+    cache.shared = model.sanitize({ sharedPlaylists: (r.playlists || []).map((p) => ({ ...p, entries: [], partial: true })) }).sharedPlaylists;
+    saveCache();
+    refreshView();
+    return cache.shared;
+  }
+
+  /** One of them with its songs, opened (fetched at every open; one followed is kept in step instead). */
+  async function openShared(id) {
+    if (!active() || status.state !== 'online' || !conn.profiles) return null;
+    let r;
+    try {
+      r = await call(`/api/shared/${encodeURIComponent(id)}`, { timeout: 30000 });
+    } catch (err) {
+      sharedOpen.delete(id);
+      if (cache.shared) cache.shared = cache.shared.filter((p) => p.id !== id);
+      refreshView();
+      throw err;
+    }
+    const [p] = model.sanitize({ songs: (cache.library || model.emptyLibrary()).songs, sharedPlaylists: [r.playlist] }).sharedPlaylists;
+    if (p) sharedOpen.set(id, p);
+    refreshView();
+    return p || null;
   }
 
   // ---- commands ----
@@ -1040,6 +1371,23 @@ function createRemote(env) {
     refreshView();
     flushSoon();
     return result.value;
+  }
+
+  /** The server's id of the profile's Favourites playlist ('' without one). */
+  function favouritesId() {
+    const p = cache.library && cache.library.playlists.find((x) => x.favourites);
+    return p ? p.id : '';
+  }
+
+  /** A command as the server takes it: the window's 'favourites' as the server's id of that playlist. */
+  function outgoing(c) {
+    const real = favouritesId();
+    if (!real) return c;
+    const fix = (id) => (id === FAV ? real : id);
+    const out = { ...c };
+    if (out.playlistId !== undefined) out.playlistId = fix(out.playlistId);
+    if (Array.isArray(out.playlistIds)) out.playlistIds = out.playlistIds.map(fix);
+    return out;
   }
 
   /** Every id a command refers to, renamed (an upload the server gave another id). */
@@ -1105,14 +1453,20 @@ function createRemote(env) {
         if (!batch.length) return;
         const sending = batch;
         batch = [];
-        const res = await call('/api/commands', { method: 'POST', json: { commands: sending }, timeout: 60000 });
+        // With the copy's revisions: the answer brings what changed since (4.3).
+        const json = { commands: sending.map(outgoing), client: clientId() };
+        if (copyOurs()) json.rev = cache.rev;
+        if (statsOurs()) json.srev = cache.stats.rev;
+        const res = await call('/api/commands', { method: 'POST', json, timeout: 60000 });
+        if (res.stats) takeStats(res.stats);
+        if (res.changes) takeChanges(res.changes);
         const byCid = new Map((res.results || []).map((r) => [r.cid, r]));
         const done = new Set();
         for (const c of sending) {
           const r = byCid.get(c.cid);
           if (!r) continue;
           done.add(c.cid);
-          if (r.ok) sync.sent.push({ cmd: c, rev: res.rev });
+          if (r.ok) sync.sent.push({ cmd: c, rev: res.rev, srev: res.srev });
           if (r.ok && Array.isArray(r.deletedSongs)) deleted.push(...r.deletedSongs.map(String));
           if (!r.ok) problems.push(tr('sync.problem.changeRefused', 'The server did not take a change: {reason}', { reason: r.error }));
         }
@@ -1177,7 +1531,10 @@ function createRemote(env) {
             : '{count} trims wait for the server: update it (and give it ffmpeg) to trim songs.', { count: trimsWaiting })}`;
         }
         if (!sync.queue.some(mine)) status.lastSync = Date.now();
-        await refresh();
+        // The answers brought what changed, and the live channel brings the
+        // rest (an upload's song); without the channel it is asked for.
+        if (!status.live) await refresh();
+        pruneSent();
         afterServerChange();
       } catch (err) {
         status.transfer = '';
@@ -1492,7 +1849,7 @@ function createRemote(env) {
       Object.assign(meta, {
         favouriteAt: local.favouriteAt,
         stats: local.stats,
-        playlistIds: (cmd.playlistIds || []).filter((pid) => model.playlistById(getView(), pid)),
+        playlistIds: (cmd.playlistIds || []).filter((pid) => model.playlistById(getView(), pid)).map((pid) => (pid === FAV ? favouritesId() || pid : pid)),
       });
     }
     const r = await request(conn.base, `/api/songs/${encodeURIComponent(cmd.songId)}?meta=${encodeURIComponent(JSON.stringify(meta))}`, {
@@ -2352,11 +2709,15 @@ function createRemote(env) {
 
   // ---- the live channel ----
   //
-  // While connected to a server that has Active Sessions, one stream stays open
-  // (GET /api/live, Server-Sent Events) on which the server tells this app
-  // what happens at once: a session paused, a join asked for. Every event goes
-  // to the window (hooks.onLive). A dropped stream is opened again after a
-  // moment; one silent for longer than three pings is taken for dead.
+  // While connected, one stream stays open (GET /api/live, Server-Sent Events)
+  // on which the server tells this app what happens at once: the library's
+  // and the stats' changes (4.3: `library`, `stats`, taken here), a session
+  // paused, a join asked for (those go to the window, hooks.onLive). It opens
+  // with the copy's revisions, so the server sends what is missing at once.
+  // One silent for a ping and five seconds more is taken for dead (4.3: it is
+  // what tells the server is there): lost, the server is asked once; no
+  // answer, and the app is offline; an answer, and the stream is opened again
+  // after a moment (the changes are asked for once a minute meanwhile).
 
   const LIVE_RETRY_MS = [1000, 2000, 5000, 10000, 20000];
   const live = {
@@ -2364,7 +2725,7 @@ function createRemote(env) {
     step: 0,
     retryTimer: null,
     watchdog: null,
-    pingMs: 10000,
+    pingMs: 15000,
     // Server time minus this machine's: from the stream's greeting at first,
     // then measured (syncClock) once a minute, for devices playing in step.
     offset: 0,
@@ -2398,7 +2759,7 @@ function createRemote(env) {
   }
 
   function liveWanted() {
-    return active() && status.state === 'online' && conn.sessions && !!conn.base;
+    return active() && status.state === 'online' && !!conn.base;
   }
 
   function stopLive() {
@@ -2431,7 +2792,10 @@ function createRemote(env) {
     if (!liveWanted()) return;
     let url;
     try {
-      url = new URL(`${conn.base}/api/live?client=${encodeURIComponent(clientId())}&device=${encodeURIComponent(device.name())}`);
+      // The copy's revisions (4.3): the server sends what changed since.
+      const rev = copyOurs() ? cache.rev : -1;
+      const srev = statsOurs() ? cache.stats.rev : -1;
+      url = new URL(`${conn.base}/api/live?client=${encodeURIComponent(clientId())}&device=${encodeURIComponent(device.name())}&rev=${rev}&srev=${srev}`);
     } catch {
       return;
     }
@@ -2491,7 +2855,7 @@ function createRemote(env) {
       clearTimeout(live.watchdog);
       live.watchdog = setTimeout(() => {
         if (mineNow()) req.close(new Error('silent'));
-      }, live.pingMs * 3 + 5000);
+      }, live.pingMs + 5000);
     }
     function lost() {
       if (!mineNow()) return;
@@ -2502,14 +2866,36 @@ function createRemote(env) {
         emitStatus();
         hooks.onLive({ type: 'down', data: {} });
       }
-      retryLive();
+      // Is the server still there? Asked once: no answer, and it is offline.
+      checkAfterLost();
     }
   }
 
+  let checking = null;
+  /** The live channel was lost: the server asked for what changed; reached, the channel opens again soon. */
+  function checkAfterLost() {
+    if (checking || !liveWanted()) return;
+    checking = refresh().then(() => {
+      retryLive();
+      schedulePoll();
+    }).catch((err) => wentWrong(err)).finally(() => {
+      checking = null;
+    });
+  }
+
   function liveEvent(type, data) {
+    // The library's and the stats' changes (4.3) are this client's.
+    if (type === 'library') {
+      if (takeChanges(data)) afterServerChange();
+      return;
+    }
+    if (type === 'stats') {
+      takeStats(data);
+      return;
+    }
     if (type === 'hello') {
       live.step = 0;
-      live.pingMs = Math.max(1000, Number(data.pingMs) || 10000);
+      live.pingMs = Math.max(1000, Number(data.pingMs) || 15000);
       if (Number.isFinite(Number(data.serverTime))) live.offset = Number(data.serverTime) - Date.now();
       status.live = true;
       emitStatus();
@@ -3184,9 +3570,11 @@ function createRemote(env) {
       conn.token = token;
       sync.token = keepToken(token);
       runToken = token;
-      // The old token is gone on the server: the live channel opens with the new one.
-      startLive();
     }
+    // The old token is gone on the server, and the copy's revisions are
+    // another profile's: the live channel opens again once the copy is this one's.
+    stopLive();
+    sharedOpen.clear();
     sync.profile = cleanProfile(profile);
     sync.logoutPending = false;
     // Kept encrypted, so the next start can sign in to it again (restoreProfile).
@@ -3196,7 +3584,11 @@ function createRemote(env) {
     cache = { ...cache, rev: -1, profile: currentProfile() };
     saveSync();
     saveCache();
-    await refresh();
+    try {
+      await refresh();
+    } finally {
+      startLive();
+    }
     await loadProfiles().catch(() => {});
     afterServerChange();
     emitStatus();
@@ -3338,6 +3730,7 @@ function createRemote(env) {
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, switchServer, forgetServer, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
     admin, changeServerPassword, removeTracked, shareLink, connectLink,
+    loadStatistics, loadShared, openShared,
   };
 }
 

@@ -13,9 +13,23 @@
 //   POST /api/pair/redeem { code }      open to anyone: the password, once: { password }; 404
 //                                      for a code used or too old
 //   GET  /api/library [?since=rev&as=profileId]
-//                                      { rev, library, profile }, or 204 when
-//                                      nothing changed for that profile
-//   POST /api/commands { commands }    { rev, results }  (see @flow/core/commands)
+//                                      what changed for the profile since its copy's
+//                                      revision (4.3, library.js changes): { rev, full,
+//                                      songs, playlists, ..., profile, rules }; all of it
+//                                      (full) without since or when too old; 204 when
+//                                      nothing did. Songs come without stats and stars.
+//   GET  /api/stats [?since=srev]      the profile's songs' stats since its stats
+//                                      revision (4.3, statsChanges): { rev, full, songs,
+//                                      playlistListened? }
+//   GET  /api/statistics               { statistics, srev }: the profile's Statistics totals
+//   GET  /api/shared                   { playlists }: the playlists others share, by their
+//                                      details (name, owner, songCount, seconds; 4.3)
+//   GET  /api/shared/:id               { playlist }: one of them with its songs
+//   POST /api/commands { commands, rev?, srev?, client? }
+//                                      { rev, srev, results } (see @flow/core/commands); with
+//                                      the app's revisions also what changed since
+//                                      (changes, stats), which its live channel then
+//                                      does not send again
 //   PUT  /api/songs/:id?meta=...       upload a song; the body is the file:
 //                                      { existing, id, rev, names? }. One the
 //                                      server has already is not taken: its
@@ -124,6 +138,7 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const zlib = require('zlib');
 const http = require('http');
 const path = require('path');
 const { URL } = require('url');
@@ -144,16 +159,18 @@ const { createAdminRoutes } = require('./admin');
 const { createPairing, LIFE_MS: PAIR_LIFE_MS } = require('./pairing');
 const { createGuests } = require('./guests');
 
-const PROTOCOL = 1;
-// What this server can do beyond protocol 1, for apps that know to ask.
+// 2 (4.3): the library comes as what changed (GET /api/library?since=), the
+// stats apart from it, Favourites as playlists, changes pushed on the live channel.
+const PROTOCOL = 2;
+// What this server can do beyond its protocol, for apps that know to ask.
 // admin: /api/admin for admin profiles (admin.js).
 // smartPlaylists: a playlist's rules are kept (4.0). pair: QR codes' pairing codes (4.0).
 const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;
-// Level 3 and 4 sessions: an app polls every few seconds while it is open, so
-// the idle time only ends the session of an app that was closed or asleep.
+// Level 3 and 4 sessions: an open app keeps its live channel, whose token is checked
+// at every ping, so the idle time only ends the session of an app that was closed or asleep.
 const SESSION_IDLE = 30 * 60 * 1000;
 const SESSION_MAX = 24 * 60 * 60 * 1000;
 
@@ -182,9 +199,18 @@ function cors(res) {
   res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
 }
 
+// Answers larger than this go compressed to an app that takes gzip (4.3).
+const GZIP_FROM = 1024;
+
 function sendJson(res, status, value) {
-  const body = Buffer.from(JSON.stringify(value));
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length, 'Cache-Control': 'no-store' });
+  let body = Buffer.from(JSON.stringify(value));
+  const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', Vary: 'Accept-Encoding' };
+  if (body.length > GZIP_FROM && /\bgzip\b/.test(String((res.req && res.req.headers['accept-encoding']) || ''))) {
+    body = zlib.gzipSync(body, { level: 6 });
+    headers['Content-Encoding'] = 'gzip';
+  }
+  headers['Content-Length'] = body.length;
+  res.writeHead(status, headers);
   res.end(body);
 }
 
@@ -369,7 +395,7 @@ const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
 
 function createHttpServer({
   config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null, activity = null, backups = null,
-  lyrics = null,
+  lyrics = null, push = null,
 }) {
   const throttle = createThrottle();
   // QR codes' pairing codes, in memory only.
@@ -905,14 +931,26 @@ function createHttpServer({
       // switched, or its profile was deleted) gets the whole library, even
       // at the same revision.
       const as = url.searchParams.get('as') || '';
-      if (since !== null && Number(since) === library.rev && as === (profileId || '')) {
+      const same = as === (profileId || '');
+      const c = library.changes(profileId, since === null || !same ? -1 : Number(since));
+      if (library.noChanges(c)) {
         res.writeHead(204);
         res.end();
         return;
       }
-      return sendJson(res, 200, {
-        rev: library.rev, library: library.snapshot(profileId), profile: publicProfile(profile), rules: rulesFor(profile),
-      });
+      return sendJson(res, 200, { ...c, profile: publicProfile(profile), rules: rulesFor(profile) });
+    }
+    if (is('GET', /^\/api\/stats$/)) {
+      const since = url.searchParams.get('since');
+      return sendJson(res, 200, library.statsChanges(profileId, since === null ? -1 : Number(since)));
+    }
+    if (is('GET', /^\/api\/statistics$/)) return sendJson(res, 200, library.statisticsOf(profileId));
+    if (is('GET', /^\/api\/shared$/)) return sendJson(res, 200, { playlists: library.sharedDetails(profileId) });
+    const shm = /^\/api\/shared\/([\w-]{1,64})$/.exec(p);
+    if (shm && is('GET', /./)) {
+      const one = library.sharedOne(profileId, shm[1]);
+      if (!one) throw new HttpError(404, 'That playlist is no longer shared.');
+      return sendJson(res, 200, { playlist: one });
     }
     if (is('GET', /^\/api\/live$/)) return openLive(req, res, url, client, entry);
     if (is('GET', /^\/api\/time$/)) return sendJson(res, 200, { time: Date.now() });
@@ -937,7 +975,22 @@ function createHttpServer({
     }
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
-      return sendJson(res, 200, library.runCommands(body.commands, profileId, { admin: !!(profile && profile.admin) }));
+      const result = library.runCommands(body.commands, profileId, { admin: !!(profile && profile.admin) });
+      // What changed since the app's copy goes back with the answer (4.3), and not again on its live channel.
+      const known = (v) => v !== undefined && v !== null && Number.isFinite(Number(v)) && Number(v) >= 0;
+      if (known(body.rev) && Number(body.rev) < result.rev) {
+        const c = library.changes(profileId, Number(body.rev));
+        if (!c.full) result.changes = c;
+      }
+      if (known(body.srev) && Number(body.srev) < result.srev) {
+        const s = library.statsChanges(profileId, Number(body.srev));
+        if (!s.full) result.stats = s;
+      }
+      if (push) {
+        const app = (entry && entry.client) || (CLIENT_ID.test(String(body.client || '')) ? String(body.client) : '');
+        push.caughtUp(app, { rev: result.changes ? result.rev : null, srev: result.stats ? result.srev : null });
+      }
+      return sendJson(res, 200, result);
     }
     if (p.startsWith('/api/admin/')) {
       const me = profileOf(entry);
@@ -1050,8 +1103,13 @@ function createHttpServer({
       }
       return now;
     };
+    // The revisions of the app's copy (4.3): its changes come on the channel from there.
+    const num = (key) => {
+      const v = url.searchParams.get(key);
+      return v === null || v === '' || !Number.isFinite(Number(v)) ? -1 : Number(v);
+    };
     live.open(req, res, {
-      client: id, ...first, probe: url.searchParams.get('probe') === '1', check,
+      client: id, ...first, probe: url.searchParams.get('probe') === '1', check, rev: num('rev'), srev: num('srev'), syncProfile: first.profileId,
     });
   }
 

@@ -167,7 +167,7 @@ const Store = {
     if (own) return own;
     // A playlist another profile shares: to read, not to change.
     const shared = (this.library.sharedPlaylists || []).find((p) => p.id === id);
-    return shared ? { ...shared, isShared: true } : null;
+    return shared ? this._shared(shared) : null;
   },
 
   /** With a Flow Server that has profiles: playlists can be shared with the others and followed. */
@@ -175,11 +175,33 @@ const Store = {
     return !!this.server.on && !!this.server.profilesSupported;
   },
 
-  /** The playlists other profiles share, A to Z. */
+  /**
+   * The playlists other profiles share, A to Z. Another profile's Favourites
+   * (4.3) is "Anna's Favourites". One not followed and not opened yet comes
+   * by its details only (partial: songCount and seconds instead of its songs).
+   */
   sharedPlaylists() {
     return (this.library.sharedPlaylists || [])
-      .map((p) => ({ ...p, isShared: true }))
+      .map((p) => this._shared(p))
       .sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
+  _shared(p) {
+    const owner = this.profileName(p.ownerId) || p.ownerName;
+    return {
+      // "James' Favorites" for a name ending in s.
+      ...p, ownerName: owner, isShared: true, ...(p.favourites ? { name: T(/s$/i.test(owner) ? 'common.favouritesOf.s' : 'common.favouritesOf', { profile: owner }) } : {}),
+    };
+  },
+
+  /** How many songs a list has, also one known only by its details. */
+  songCount(p) {
+    return p.partial ? p.songCount || 0 : p.entries.length;
+  },
+
+  /** A list's length in seconds, also one known only by its details. */
+  durationOf(p) {
+    return p.partial ? p.seconds || 0 : this.totalDuration(p.id);
   },
 
   isFollowing(id) {
@@ -302,8 +324,14 @@ const Store = {
       .sort((a, b) => Util.compareValues(a.menuName, b.menuName));
   },
 
-  /** The favourite songs, shaped like a playlist whose entries were added when made one. */
+  /**
+   * The favourite songs, shaped like a playlist whose entries were added when
+   * made one. On a Flow Server (4.3) it is a playlist of the profile's own
+   * (favourites: true), shared and downloaded like the others.
+   */
   favouritesPlaylist() {
+    const own = this.library.playlists.find((p) => p.favourites);
+    if (own) return { ...own, name: FAVOURITES_NAME, isFavourites: true };
     return {
       id: FAVOURITES_ID,
       name: FAVOURITES_NAME,
@@ -319,9 +347,9 @@ const Store = {
     return [this.allSongsPlaylist(), this.favouritesPlaylist(), ...this.smartPlaylists()];
   },
 
-  /** User playlists by name, A to Z. */
+  /** User playlists by name, A to Z (Favourites is one of the app's own lists). */
   sortedPlaylists() {
-    return this.library.playlists.slice().sort((a, b) => Util.compareValues(a.name, b.name));
+    return this.library.playlists.filter((p) => !p.favourites).sort((a, b) => Util.compareValues(a.name, b.name));
   },
 
   /** The ones songs can be put into by hand: not the smart ones (their rules pick their songs). */

@@ -9,8 +9,9 @@
 const http = require('http');
 
 // `guest`: a guest's pass (guests.js): its own channel, /api/guest/live?gt=.
+// `rev`, `srev`: the revisions of the app's copy (4.3, push.js).
 function connect(base, client, {
-  token, device, probe, guest,
+  token, device, probe, guest, rev, srev,
 } = {}) {
   return new Promise((resolve, reject) => {
     const q = new URLSearchParams();
@@ -18,6 +19,8 @@ function connect(base, client, {
     if (device) q.set('device', device);
     if (probe) q.set('probe', '1');
     if (guest) q.set('gt', guest);
+    if (rev !== undefined) q.set('rev', String(rev));
+    if (srev !== undefined) q.set('srev', String(srev));
     const headers = { Accept: 'text/event-stream' };
     if (token) headers.Authorization = `Bearer ${token}`;
     const events = [];

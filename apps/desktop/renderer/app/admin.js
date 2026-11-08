@@ -9,7 +9,8 @@
 // admin the server password. Each part opens and closes with a click on its
 // heading (adminOpen, kept; all shut at first). Everything comes from the
 // server's /api/admin (its admin.js) through window.flow.admin, fetched when
-// Settings opens, after every change made here, and with Refresh.
+// it shows (4.3: Settings opened with it unfolded, or it unfolded; on the
+// phone its screen opened), after every change made here, and with Refresh.
 
 // The lists (profiles, uploads, failed logins, downloads, sessions, trash) show this many rows, then scroll.
 const ROWS = 5;

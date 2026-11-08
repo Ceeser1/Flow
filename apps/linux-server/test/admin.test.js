@@ -451,9 +451,9 @@ test('a deleted song comes back from the trash as it was', async () => {
     assert.equal(back.json.songId, songId);
     const lib = (await get(base, '/api/library', tAnna)).json.library;
     assert.deepEqual(lib.playlists.find((p) => p.id === 'pa').entries.map((e) => e.songId), [other.json.id, songId], 'in its place');
-    assert.ok(lib.songs.find((s) => s.id === songId).favouriteAt, 'still a favourite');
+    assert.ok(lib.playlists.find((p) => p.favourites).entries.some((e) => e.songId === songId), 'still in her Favourites');
     const bens = (await get(base, '/api/library', tBen)).json.library.songs.find((s) => s.id === songId);
-    assert.equal(bens.stats.listened, 300, 'the listens kept');
+    assert.equal((await get(base, '/api/stats', tBen)).json.songs[songId].listened, 300, 'the listens kept');
     assert.ok(fs.existsSync(path.join(dirs.music, bens.file)));
     trash = (await get(base, '/api/admin/trash', tAnna)).json;
     assert.equal(trash.items.length, 0);
@@ -603,11 +603,12 @@ test('All Playlists: every playlist with its owner, and given to another', async
     assert.equal(moved.json.name, 'Rainy days (2)');
     assert.ok(server.library.rev > rev, 'the apps hear of it');
     const anna = (await get(base, '/api/library', tAnna)).json.library;
-    assert.deepEqual(anna.playlists.map((p) => [p.id, p.name, p.entries.length]), [['a1', 'Rainy days', 0], ['b1', 'Rainy days (2)', 1]]);
-    assert.deepEqual((await get(base, '/api/library', tBen)).json.library.playlists, []);
+    const ordinary = (list) => list.filter((p) => !p.favourites);
+    assert.deepEqual(ordinary(anna.playlists).map((p) => [p.id, p.name, p.entries.length]), [['a1', 'Rainy days', 0], ['b1', 'Rainy days (2)', 1]]);
+    assert.deepEqual(ordinary((await get(base, '/api/library', tBen)).json.library.playlists), []);
     // To the Default / Shared.
     assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'b1', owner: 'default' }, tAnna)).status, 200);
-    assert.deepEqual(server.library.data.playlists.map((p) => p.id), ['b1']);
+    assert.deepEqual(ordinary(server.library.data.playlists).map((p) => p.id), ['b1']);
 
     assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'nothing', owner: annaId }, tAnna)).status, 404);
     assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'a1', owner: 'nobody' }, tAnna)).status, 404);

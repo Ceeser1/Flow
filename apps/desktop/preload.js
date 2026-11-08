@@ -42,6 +42,9 @@ contextBridge.exposeInMainWorld('flow', {
   privateStatistics: () => call('stats:private'),
   onPrivateStatistics: (fn) => ipcRenderer.on('stats:private', (_e, data) => fn(data)),
   removeTrackedProfile: (serverId, profileId) => call('stats:removeTracked', { serverId, profileId }),
+  serverStatistics: () => call('stats:server'),
+  loadShared: () => call('shared:list'),
+  openShared: (id) => call('shared:open', id),
   recordListen: (songId, listened, duration, contextId, jamMember) => call('library:recordListen', {
     songId, listened, duration, contextId, jamMember: !!jamMember,
   }),

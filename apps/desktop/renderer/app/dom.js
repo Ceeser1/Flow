@@ -46,7 +46,8 @@ function iconButton(cls, icon, title, onclick) {
 function listIcon(p) {
   if (p.isAll || p.isFrom) return Icons.library;
   if (p.isDevice) return Icons.download;
-  if (p.isFavourites) return Icons.star;
+  // Yours, or another profile's shared with you (4.3).
+  if (p.isFavourites || p.favourites) return Icons.star;
   return p.isSmart || p.isRuled ? Icons.pulse : Icons.list;
 }
 

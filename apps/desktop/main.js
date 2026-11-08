@@ -444,6 +444,10 @@ handle('library:recordListen', (arg) => actions.recordListen(arg));
 handle('library:recordAwayListen', (arg) => actions.recordAwayListen(arg));
 handle('stats:private', () => privateStats.get());
 handle('stats:removeTracked', ({ serverId, profileId }) => remote.removeTracked(serverId, profileId));
+// Fetched when the window shows them (4.3): the profile's Statistics, the playlists others share, one of them.
+handle('stats:server', () => remote.loadStatistics());
+handle('shared:list', () => remote.loadShared());
+handle('shared:open', (id) => remote.openShared(id));
 handle('library:findBySource', (arg) => actions.findBySource(arg));
 handle('library:findByMeta', (meta) => actions.findByMeta(meta));
 handle('library:rescan', () => library.scan());

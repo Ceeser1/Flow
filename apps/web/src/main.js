@@ -266,6 +266,9 @@ function start() {
     privateStatistics: call(() => privateStats.get()),
     onPrivateStatistics: on('stats:private'),
     removeTrackedProfile: call((serverId, profileId) => remote.removeTracked(serverId, profileId)),
+    serverStatistics: call(() => remote.loadStatistics()),
+    loadShared: call(() => remote.loadShared()),
+    openShared: call((id) => remote.openShared(id)),
     recordListen: call((songId, listened, duration, contextId, jamMember) => actions.recordListen({
       songId, listened, duration, contextId, jamMember: !!jamMember,
     })),

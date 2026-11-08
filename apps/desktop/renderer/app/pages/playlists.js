@@ -31,6 +31,7 @@ const PlaylistsPage = {
     });
     $('sharedHead').onclick = () => {
       Store.saveSettings({ sharedGroupOpen: Store.settings.sharedGroupOpen === false });
+      this._loadShared();
       this.render();
     };
     Store.onLibrary(() => {
@@ -50,7 +51,17 @@ const PlaylistsPage = {
 
   show() {
     this.renaming = null;
+    this._loadShared();
     this.render();
+  },
+
+  /**
+   * The playlists others share come by their details when they show (4.3):
+   * the page opened, or the section opened; never in the background.
+   */
+  _loadShared() {
+    if (Store.settings.sharedGroupOpen === false || !Store.canShare() || Store.server.state !== 'online' || !window.flow.loadShared) return;
+    window.flow.loadShared().catch(() => {});
   },
 
   async create() {
@@ -93,8 +104,8 @@ const PlaylistsPage = {
 
   _value(p, key) {
     if (key === 'name') return p.name;
-    if (key === 'songs') return p.entries.length;
-    if (key === 'duration') return Store.totalDuration(p.id);
+    if (key === 'songs') return Store.songCount(p);
+    if (key === 'duration') return Store.durationOf(p);
     if (key === 'created') return p.createdAt || 0;
     if (key === 'listened') return Store.listenedTo(p.id);
     return '';
@@ -103,7 +114,7 @@ const PlaylistsPage = {
   render() {
     const lists = Util.sortRows(Store.sortedPlaylists(), this.sort, (p, k) => this._value(p, k));
     const rows = [Store.favouritesPlaylist(), ...lists];
-    $('playlistsCount').textContent = Util.plural(Store.library.playlists.length, 'playlist');
+    $('playlistsCount').textContent = Util.plural(Store.sortedPlaylists().length, 'playlist');
 
     // Shared Playlists: All Songs always, the shared ones only while open.
     const open = Store.settings.sharedGroupOpen !== false;
@@ -145,16 +156,16 @@ const PlaylistsPage = {
       onRowDblClick: (p) => Nav.openPlaylist(p.id),
       columns: [
         { key: 'name', label: T('common.name'), cls: 'col-name', render: (p) => this._nameCell(p) },
-        { key: 'songs', label: T('common.songs'), cls: 'col-num', render: (p) => String(p.entries.length) },
-        { key: 'duration', label: T('common.duration'), cls: 'col-num', render: (p) => Util.fmtClock(Store.totalDuration(p.id)) },
+        { key: 'songs', label: T('common.songs'), cls: 'col-num', render: (p) => String(Store.songCount(p)) },
+        { key: 'duration', label: T('common.duration'), cls: 'col-num', render: (p) => Util.fmtClock(Store.durationOf(p)) },
         // Listen Duration: your own time listening to it, as the list playing.
         // Created: the lists the app keeps itself have no date.
         { key: 'listened', label: T('common.listenDuration'), cls: 'col-listened', render: (p) => Util.fmtClock(Store.listenedTo(p.id)) },
-        { key: 'created', label: T('common.created'), cls: 'col-date', render: (p) => (p.createdAt ? Util.fmtDate(p.createdAt) : '') },
+        { key: 'created', label: T('common.created'), cls: 'col-date', render: (p) => (p.createdAt && !p.isFavourites ? Util.fmtDate(p.createdAt) : '') },
         { key: 'actions', label: T('common.actions'), sortable: false, cls: 'col-actions', render: actions },
       ],
       mobile: {
-        ...listRowSpec((p) => [Util.plural(p.entries.length, 'song'), Util.fmtClock(Store.totalDuration(p.id)),
+        ...listRowSpec((p) => [Util.plural(Store.songCount(p), 'song'), Util.fmtClock(Store.durationOf(p)),
           p.ownerName ? T('common.byOwner', { profile: p.ownerName }) : ''].filter(Boolean).join(' · ')),
         side,
         more: more && ((p) => more(p)),

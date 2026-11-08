@@ -9,6 +9,7 @@ const http = require('http');
 const https = require('https');
 const os = require('os');
 const path = require('path');
+const zlib = require('zlib');
 const { safeStorage } = require('electron');
 const paths = require('./paths');
 const settings = require('./settings');
@@ -62,7 +63,8 @@ function request(base, pathname, { method = 'GET', json, file, saveTo, token, ti
       return;
     }
     const lib = url.protocol === 'https:' ? https : http;
-    const headers = { Accept: 'application/json' };
+    // A large answer comes compressed (4.3: the library).
+    const headers = { Accept: 'application/json', 'Accept-Encoding': 'gzip' };
     if (token) headers.Authorization = `Bearer ${token}`;
     let payload = null;
     if (json !== undefined) {
@@ -97,7 +99,16 @@ function request(base, pathname, { method = 'GET', json, file, saveTo, token, ti
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
-        const text = Buffer.concat(chunks).toString('utf8');
+        let raw = Buffer.concat(chunks);
+        if (/gzip/i.test(String(res.headers['content-encoding'] || ''))) {
+          try {
+            raw = zlib.gunzipSync(raw);
+          } catch {
+            reject(new OfflineError(tr('desktop.error.connectionCutOff', 'The connection was cut off.')));
+            return;
+          }
+        }
+        const text = raw.toString('utf8');
         let body = null;
         try {
           body = text ? JSON.parse(text) : null;

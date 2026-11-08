@@ -57,6 +57,9 @@ async function command(base, commands, headers = {}) {
   return r.json();
 }
 
+/** A library's playlists but each owner's Favourites (4.3). */
+const ordinary = (list) => list.filter((p) => !p.favourites);
+
 test('hello, an upload, and the library it ends up in', async () => {
   await withServer(async ({ base, dirs }) => {
     const hello = await (await fetch(`${base}/api/hello`)).json();
@@ -287,13 +290,13 @@ test('profiles share the songs and keep their own playlists, also after a restar
     let lib = server.library;
     lib.createProfile('anna');
     lib.createProfile('ben');
-    const annaEvening = lib.snapshot('anna').playlists;
+    const annaEvening = ordinary(lib.snapshot('anna').playlists);
     assert.deepEqual(annaEvening.map((p) => p.name), ['Evening'], 'a new profile gets a copy of the default playlists');
     assert.notEqual(annaEvening[0].id, 'p1');
-    assert.deepEqual(lib.snapshot('ben').playlists.map((p) => p.name), ['Evening']);
+    assert.deepEqual(ordinary(lib.snapshot('ben').playlists).map((p) => p.name), ['Evening']);
     assert.equal(lib.snapshot('anna').songs[0].favouriteAt, null, 'favourites stay with the default');
     assert.equal(lib.snapshot().songs[0].favouriteAt, 9);
-    assert.deepEqual(lib.snapshot().playlists.map((p) => p.id), ['p1'], 'the default keeps its playlists');
+    assert.deepEqual(ordinary(lib.snapshot().playlists).map((p) => p.id), ['p1'], 'the default keeps its playlists');
 
     // An upload brings its favourite and playlists into the profile it came from.
     const tmp = path.join(dirs.music, '.flow-upload-test.mp3');
@@ -304,7 +307,7 @@ test('profiles share the songs and keep their own playlists, also after a restar
     assert.equal(ben.songs.length, 2);
     assert.equal(ben.songs.find((s) => s.id === 's2').favouriteAt, 4);
     assert.deepEqual(ben.playlists.find((p) => p.id === 'p2').entries.map((e) => e.songId), ['s2'], "Anna's playlist is not his to fill");
-    assert.deepEqual(lib.snapshot('anna').playlists[0].entries.map((e) => e.songId), [], "nor is the default's copy");
+    assert.deepEqual(ordinary(lib.snapshot('anna').playlists)[0].entries.map((e) => e.songId), [], "nor is the default's copy");
     assert.equal(lib.snapshot('anna').songs.find((s) => s.id === 's2').favouriteAt, null);
     assert.equal(lib.snapshot().songs.find((s) => s.id === 's2').favouriteAt, null);
     assert.throws(() => lib.runCommands([], 'nobody'), /no longer exists/);
@@ -314,15 +317,15 @@ test('profiles share the songs and keep their own playlists, also after a restar
     server = await open();
     lib = server.library;
     assert.deepEqual(lib.profileIds().sort(), ['anna', 'ben']);
-    assert.deepEqual(lib.snapshot('anna').playlists.map((p) => p.id), [annaEvening[0].id]);
-    assert.deepEqual(lib.snapshot('ben').playlists.map((p) => p.name).sort(), ['Evening', 'Lunch']);
+    assert.deepEqual(ordinary(lib.snapshot('anna').playlists).map((p) => p.id), [annaEvening[0].id]);
+    assert.deepEqual(ordinary(lib.snapshot('ben').playlists).map((p) => p.name).sort(), ['Evening', 'Lunch']);
     assert.equal(lib.snapshot('ben').songs.find((s) => s.id === 's2').favouriteAt, 4);
     assert.equal(fs.readFileSync(path.join(dirs.home, 'library.json'), 'utf8').includes('"profiles"'), true);
 
     // Deleting a song reaches every profile; deleting a profile keeps the songs.
     const base2 = `http://127.0.0.1:${server.port}`;
     await command(base2, [{ cid: 'c3', at: Date.now(), type: 'deleteSong', songId: 's1' }]);
-    assert.deepEqual(lib.snapshot('anna').playlists[0].entries, []);
+    assert.deepEqual(ordinary(lib.snapshot('anna').playlists)[0].entries, []);
     lib.deleteProfile('anna');
     assert.deepEqual(lib.profileIds(), ['ben']);
     assert.deepEqual(lib.snapshot().songs.map((s) => s.id), ['s2']);
@@ -358,14 +361,14 @@ test('profiles over the network: make, sign in with a PIN, rename, sign out, del
     const tAnna = anna.json.token;
     let lib = await get(base, '/api/library', tAnna);
     assert.equal(lib.json.profile.name, 'Anna');
-    assert.deepEqual(lib.json.library.playlists.map((p) => p.name), ['Evening'], 'she got a copy of the default playlists');
-    const annaCopy = lib.json.library.playlists[0].id;
+    assert.deepEqual(ordinary(lib.json.library.playlists).map((p) => p.name), ['Evening'], 'she got a copy of the default playlists');
+    const annaCopy = ordinary(lib.json.library.playlists)[0].id;
     assert.notEqual(annaCopy, 'p1');
     const rev = lib.json.rev;
     assert.equal((await get(base, `/api/library?since=${rev}&as=${anna.json.profile.id}`, tAnna)).status, 204);
     // Asking as someone else (the app just switched) gets the whole library.
     assert.equal((await get(base, `/api/library?since=${rev}&as=`, tAnna)).status, 200);
-    assert.deepEqual((await get(base, '/api/library')).json.library.playlists.map((p) => p.id), ['p1'], 'without a profile: the default keeps its playlists');
+    assert.deepEqual(ordinary((await get(base, '/api/library')).json.library.playlists).map((p) => p.id), ['p1'], 'without a profile: the default keeps its playlists');
 
     assert.equal((await post(base, '/api/profiles', { name: 'anna', device: 'phone' })).status, 409);
     assert.equal((await post(base, '/api/profiles', { name: 'None', device: 'phone' })).status, 400);
@@ -374,8 +377,8 @@ test('profiles over the network: make, sign in with a PIN, rename, sign out, del
     const tBen = ben.json.token;
     assert.equal(ben.json.profile.pin, false);
     await command(base, [{ cid: 'c2', at: Date.now(), type: 'createPlaylist', playlistId: 'p2', name: 'Lunch' }], { Authorization: `Bearer ${tBen}` });
-    assert.deepEqual((await get(base, '/api/library', tBen)).json.library.playlists.map((p) => p.name).sort(), ['Evening', 'Lunch']);
-    assert.deepEqual((await get(base, '/api/library', tAnna)).json.library.playlists.map((p) => p.id), [annaCopy]);
+    assert.deepEqual(ordinary((await get(base, '/api/library', tBen)).json.library.playlists).map((p) => p.name).sort(), ['Evening', 'Lunch']);
+    assert.deepEqual(ordinary((await get(base, '/api/library', tAnna)).json.library.playlists).map((p) => p.id), [annaCopy]);
 
     const list = (await get(base, '/api/profiles', tBen)).json;
     assert.deepEqual(list.profiles.map((p) => p.name), ['Anna', 'Ben']);
@@ -700,7 +703,9 @@ test('at level 3 and 4 the home network needs no password, anyone else does', as
   const dirs = tempDirs();
   const config = configMod.open({ home: dirs.home, music: dirs.music });
   config.set({ level: 3, password: configMod.passwordEntry('Portis8head') });
-  const server = createHttpServer({ config, library: { profileIds: () => [], rev: 1, snapshot: () => ({}) }, version: 'test' });
+  const server = createHttpServer({ config, library: {
+    profileIds: () => [], rev: 1, changes: () => ({ rev: 1, full: true, library: {} }), noChanges: () => false,
+  }, version: 'test' });
   const ask = (remoteAddress, headers = {}) => new Promise((resolve) => {
     const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
     const req = { method: 'GET', url: '/api/library', headers: lower, socket: { remoteAddress, localPort: 7878 }, complete: true };
@@ -910,16 +915,22 @@ test('playlists shared by a profile reach the others, with the owner\'s name, an
       { cid: 'a3', at: Date.now(), type: 'setPlaylistShared', playlistId: 'pa', shared: true },
     ], as(anna.token));
 
+    // Shared Playlists (4.3): only their details until one is opened or followed.
     let lib = (await get(base, '/api/library', ben.token)).json.library;
-    assert.deepEqual(lib.sharedPlaylists.map((p) => [p.id, p.ownerName]), [['pa', 'Anna']]);
-    assert.deepEqual(lib.sharedPlaylists[0].entries.map((e) => e.songId), ['s1']);
-    assert.equal((await get(base, '/api/library', anna.token)).json.library.sharedPlaylists.length, 0, 'not her own');
+    assert.deepEqual(lib.sharedPlaylists, [], 'not followed: not in the library');
+    const details = (await get(base, '/api/shared', ben.token)).json.playlists;
+    assert.deepEqual(details.map((p) => [p.id, p.ownerName, p.songCount, p.seconds, p.entries]), [['pa', 'Anna', 1, 330, undefined]]);
+    assert.deepEqual((await get(base, '/api/shared/pa', ben.token)).json.playlist.entries.map((e) => e.songId), ['s1']);
+    assert.equal((await get(base, '/api/shared/nothing', ben.token)).status, 404);
+    assert.deepEqual((await get(base, '/api/shared', anna.token)).json.playlists, [], 'not her own');
 
     const r = await command(base, [
       { cid: 'b1', at: Date.now(), type: 'followPlaylist', playlistId: 'pa' },
     ], as(ben.token));
     assert.equal(r.results[0].ok, true);
-    assert.deepEqual((await get(base, '/api/library', ben.token)).json.library.follows, ['pa']);
+    lib = (await get(base, '/api/library', ben.token)).json.library;
+    assert.deepEqual(lib.follows, ['pa']);
+    assert.deepEqual(lib.sharedPlaylists.map((p) => [p.id, p.ownerName, p.entries.length]), [['pa', 'Anna', 1]], 'followed: with its songs');
     const own = await command(base, [{ cid: 'a4', at: Date.now(), type: 'followPlaylist', playlistId: 'pa' }], as(anna.token));
     assert.equal(own.results[0].ok, false, 'not your own');
     const stranger = await command(base, [{ cid: 'b2', at: Date.now(), type: 'renamePlaylist', playlistId: 'pa', name: 'Mine' }], as(ben.token));
@@ -931,11 +942,12 @@ test('playlists shared by a profile reach the others, with the owner\'s name, an
     assert.ok(server.library.rev > rev);
     lib = (await get(base, '/api/library', ben.token)).json.library;
     assert.equal(lib.sharedPlaylists[0].ownerName, 'Anna B');
+    assert.equal(lib.profileNames[anna.profile.id], 'Anna B');
 
     // All of it is kept over a restart of the library file.
     const saved = JSON.parse(fs.readFileSync(server.library.file || path.join(server.config.home, 'library.json'), 'utf8'));
     assert.deepEqual(saved.profiles[ben.profile.id].follows, ['pa']);
-    assert.equal(saved.profiles[anna.profile.id].playlists[0].shared, true);
+    assert.equal(saved.profiles[anna.profile.id].playlists.find((p) => p.id === 'pa').shared, true);
   });
 });
 
@@ -1069,7 +1081,10 @@ test('Statistics: start at 0 on the first 3.6 run; a profile listen counts for t
     assert.deepEqual([stats(ben.profile.id).seconds, stats(ben.profile.id).listens], [300, 1]);
     assert.deepEqual([stats(null).seconds, stats(null).listens], [340, 2], 'Anna and its own');
     assert.equal(lib.data.songs[0].stats.plays, 5, 'the Default Most Played hears Anna too');
-    assert.equal((await get(base, '/api/library', anna.token)).json.library.statistics.seconds, 300);
+    assert.equal((await get(base, '/api/statistics', anna.token)).json.statistics.seconds, 300, 'fetched apart (4.3)');
+    assert.equal((await get(base, '/api/library', anna.token)).json.library.statistics, undefined);
+    const own = (await get(base, '/api/stats', anna.token)).json;
+    assert.deepEqual([own.full, own.songs.s1.plays], [true, 1], 'her own stats of the song');
 
     // Deleting the song lowers nothing.
     await command(base, [{ cid: 'd1', at: Date.now(), type: 'deleteSong', songId: 's1' }], as(anna.token));

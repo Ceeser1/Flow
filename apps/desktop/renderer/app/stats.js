@@ -49,6 +49,19 @@ const Stats = {
     this.draw();
   },
 
+  _serverAt: 0,
+
+  /**
+   * The profile's totals fetched from the Flow Server (4.3: only while this
+   * category shows, never in the background); they arrive with the status.
+   */
+  loadServer() {
+    if (!Store.server.on || Store.server.state !== 'online' || !window.flow.serverStatistics) return;
+    if (Date.now() - this._serverAt < 2000) return;
+    this._serverAt = Date.now();
+    window.flow.serverStatistics().catch(() => {});
+  },
+
   /** Drawn again in a moment: a playing song changes the numbers often. */
   soon() {
     if (!this._node || this._timer) return;

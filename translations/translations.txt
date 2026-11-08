@@ -2057,6 +2057,11 @@ playlist.empty.playlist
   en: This playlist is empty.
   de: Diese Playlist ist leer.
 
+# A playlist another profile shares, opened: its songs are on their way from the server.
+playlist.empty.loadingShared
+  en: Loading the songs of this playlist...
+  de: Die Songs dieser Playlist werden geladen...
+
 playlist.empty.addFromAllSongs
   en: Add songs from All Songs
   de: Songs aus „Alle Songs“ hinzufügen
@@ -6204,6 +6209,15 @@ common.favourites
   en: Favorites
   de: Favoriten
 
+# Another profile's Favorites, shared with you; the second for a name ending in s ("James' Favorites").
+common.favouritesOf
+  en: {profile}'s Favorites
+  de: Favoriten von {profile}
+
+common.favouritesOf.s
+  en: {profile}' Favorites
+  de: Favoriten von {profile}
+
 common.downloadedSongs
   en: Downloaded Songs
   de: Heruntergeladene Songs
@@ -8279,6 +8293,10 @@ core.library.unknownCommand
 core.library.allSongsFixed
   en: All Songs cannot be changed.
   de: „Alle Songs“ lässt sich nicht ändern.
+
+core.library.favouritesFixed
+  en: Favourites cannot be renamed, deleted or given rules.
+  de: Favoriten lassen sich nicht umbenennen, löschen oder mit Regeln versehen.
 
 core.library.playlistGone
   en: That playlist no longer exists.

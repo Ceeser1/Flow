@@ -78,7 +78,7 @@ test('a backup, changes, and the backup put back by the master admin', async () 
     const text = JSON.stringify(doc);
     assert.ok(!text.includes(server.config.get().password.hash), 'never the password');
     assert.ok(!text.includes('"tokens"'));
-    assert.equal(doc.library.profiles[annaId].playlists[0].name, 'Evening');
+    assert.equal(doc.library.profiles[annaId].playlists.filter((p) => !p.favourites)[0].name, 'Evening');
 
     // Since: Teardrop deleted (its file to the trash), Porcelain renamed, the
     // playlist gone, Ben made, a new song.
@@ -112,7 +112,7 @@ test('a backup, changes, and the backup put back by the master admin', async () 
     assert.ok(byId.ccc333, 'the song from since stays');
     const evening = lib.playlists.find((p) => p.name === 'Evening');
     assert.deepEqual(evening.entries.map((e) => e.songId), ['aaa111', 'bbb222']);
-    assert.ok(byId.bbb222.favouriteAt, 'its favourite back');
+    assert.ok(lib.playlists.find((p) => p.favourites).entries.some((e) => e.songId === 'bbb222'), 'back in her Favourites');
     // Ben, made since, stays; Anna is still the master.
     assert.deepEqual(server.config.get().profiles.map((p) => [p.name, p.master]), [['Anna', true], ['Ben', false]]);
     assert.ok(server.config.get().password, 'the password stays');
@@ -150,7 +150,7 @@ test('flow-server backup, backups and restore, the last taken by the running ser
     assert.match(cli('restore', name), /within a few seconds/);
     await new Promise((resolve) => setTimeout(resolve, 6500));
     assert.equal(server.config.get().restoreRequest, '');
-    assert.deepEqual(server.library.data.playlists.map((p) => p.name), ['Evening']);
+    assert.deepEqual(server.library.data.playlists.filter((p) => !p.favourites).map((p) => p.name), ['Evening']);
     assert.throws(() => cli('restore', 'flow-backup-20200101-000000.json.gz'), /no backup called/);
   } finally {
     await server.close();

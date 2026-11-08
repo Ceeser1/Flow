@@ -468,7 +468,7 @@ test('several uploads picked from a search are one batch, ready at once, saved i
     const lib = (await api(base, 'GET', '/api/library')).json.library;
     assert.deepEqual(lib.songs.map((s) => s.title), ['Song a']);
     assert.equal(lib.songs[0].sourcePlaylistUrl || '', '');
-    assert.equal(lib.playlists.length, 0);
+    assert.equal(lib.playlists.filter((p) => !p.favourites).length, 0);
     assert.equal(lib.songs[0].file, 'Daft Punk - Song a.wav');
   });
 });

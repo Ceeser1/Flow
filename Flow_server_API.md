@@ -108,7 +108,7 @@ Open to anyone (only the refusals above apply).
 ```json
 {
   "app": "flow-server",
-  "protocol": 1,
+  "protocol": 2,
   "features": ["profiles", "admin", "pin", "statistics", "smartPlaylists", "pair", "download", "search", "sessions", "trim", "lyrics", "ownLyrics", "guests"],
   "version": "4.0.0",
   "id": "<server id>",
@@ -123,7 +123,7 @@ Open to anyone (only the refusals above apply).
 - `features`: `profiles` always; `admin` from 3.5 (the
   [Administration](#administration) routes); `pin` from 3.5.1 (a profile
   changes its own PIN, `POST /api/profiles/pin`); `statistics` from 3.6 (the
-  library's `statistics` totals; an app shows the server as outdated
+  Statistics totals, `GET /api/statistics` from 4.3; an app shows the server as outdated
   without it); `download` when the server can download
   songs itself (yt-dlp and ffmpeg there, not turned off), and with it
   `search` (searching by a song's name; older servers lack it); `sessions` for
@@ -168,44 +168,102 @@ address and, when the server has a password, a one-time `code` in its place:
 
 ## Library
 
+From protocol 2 (4.3) the library travels as what changed: the server keeps
+a revision (`rev`) that moves with every change an app shows (a song's
+names, a playlist, a follow, a profile's name), never with a listen. An app
+keeps a copy, asks for what changed since its `rev`, and gets the rest
+pushed on its [live channel](#live-channel). The stats of the songs travel
+apart (`GET /api/stats`), the Statistics totals and the playlists others
+share only when an app shows them. Songs or playlists gone are remembered for
+30 days; an app further back than that gets everything again.
+
 ### GET /api/library
 
 Query: `since=<rev>` and `as=<profile id>` (both optional).
 
-- 204 with no body when `since` is the current `rev` and `as` is the profile
-  this token is signed in to (empty for none): nothing changed.
-- Otherwise 200:
+- 204 with no body when nothing changed since `since` for the profile this
+  token is signed in to, and `as` is that profile (empty for none).
+- Without `since`, with one too old (or unknown), or with another `as`
+  (the app switched profiles): everything, as one library.
 
 ```json
 {
   "rev": 412,
-  "library": { ... },
+  "full": true,
+  "library": { "songs": [...], "playlists": [...], "follows": [...], "sharedPlaylists": [...], "profileNames": {...}, "ignoredFiles": [] },
   "profile": { "id": "9f3a1c0b7e2d", "name": "Sam", "pin": false, "createdAt": 1760270000000, "admin": false, "master": false },
   "rules": { "createProfiles": true, "songDelete": "anyone" }
 }
 ```
 
-`profile` is null without one. `rules` (3.5): the admins' rules as they touch
-this caller: whether it may make profiles, and `songDelete` `"owner"` when
-only who added a song (and the admins) may delete it for everyone.
-`library`, as the signed-in profile sees it:
+- Otherwise what changed since `since`:
+
+```json
+{
+  "rev": 415, "full": false, "from": 412,
+  "songs": [...], "deletedSongs": ["s9"],
+  "playlists": [...], "deletedPlaylists": ["p3"],
+  "follows": [...], "sharedPlaylists": [...], "unshared": ["p7"],
+  "profileNames": {...},
+  "profile": {...}, "rules": {...}
+}
+```
+
+`songs` and `playlists` hold the whole of each one that changed (or is new);
+`follows` and `profileNames` come only when they changed. `profile` is null
+without one. `rules` (3.5): the admins' rules as they touch this caller:
+whether it may make profiles, and `songDelete` `"owner"` when only who added
+a song (and the admins) may delete it for everyone. Answers over 1 KB come
+gzipped to a caller that sends `Accept-Encoding: gzip`.
 
 | Field | |
 |---|---|
-| `songs` | `[{ id, file, title, artist, mix, duration, format, sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, addedBy, stats, favouriteAt, loudness, cover, cut, ... }]`. `file` is relative to the music folder. `stats` and `favouriteAt` are this profile's. |
-| `playlists` | `[{ id, name, createdAt, entries: [{ songId, addedAt }], source, shared }]`, this profile's own |
-| `sharedPlaylists` | other profiles' shared playlists, read-only: `{ id, name, createdAt, entries, ownerId, ownerName }` |
+| `songs` | `[{ id, file, title, artist, mix, album, genre, subGenre, infoLooked, duration, format, sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, addedBy, loudness, cover, cut }]`. `file` is relative to the music folder. No stats or stars: those are each profile's own (`GET /api/stats`, Favourites) |
+| `playlists` | `[{ id, name, createdAt, entries: [{ songId, addedAt }], source, shared, rules, favourites? }]`, this profile's own, its Favourites among them |
+| `sharedPlaylists` | the playlists of others this profile follows, with their songs: `{ id, name, createdAt, entries, ownerId, ownerName, favourites? }` (the others: `GET /api/shared`) |
 | `follows` | ids of the shared playlists this profile follows |
-| `playlistListened` | seconds listened per list: `{ [playlistId \| "all" \| "favourites" \| "smart:..."]: seconds }` |
-| `listening` | when and what this profile listened to (3.5, for the Statistics): `{ days: { "YYYY-MM-DD": seconds }, grid: [168 seconds, Monday 0-1 o'clock first], songMonths: { "YYYY-MM": { songId: seconds } }, run, late, longest }`; `run` / `longest`: the current and the longest listening session `{ start, end, seconds }` (songs with gaps of at most 10 minutes), `late`: the session of listens that arrived after newer ones (an app that was offline) |
-| `statistics` | this profile's Statistics totals (3.6): `{ since, seconds, listens, months: { "YYYY-MM": seconds } }`. `since`: when they started (the server's first run of 3.6, or when the profile was made); `listens`: listens of 30 seconds or more. They only grow: deleting songs does not lower them |
 | `profileNames` | `{ [profileId]: name }`, for the songs' `addedBy` (`"default"`: Default / Shared) |
 
-- `stats`: `{ plays, stops, skips, sessions, listened, lastPlayedAt }`.
 - `cover`: the cover's version (see [covers](#get-apisongsidcover)), `"-"`
   when none was found, null when not looked for yet.
-- "All Songs" and "Favourites" are not stored: all songs, and the songs with
-  a `favouriteAt`.
+- "All Songs" is not stored: all songs. Favourites (4.3) are a playlist of
+  each owner's own (`favourites: true`, id `fav-<profile id>`, `fav-default`
+  for the Default / Shared): shared, followed and downloaded like any other,
+  but never renamed, deleted, given rules or given to another owner. Star a
+  song with `setFavourite` or by adding it to that list; others see it as
+  "Sam's Favorites".
+
+### GET /api/stats
+
+Query: `since=<stats rev>` (optional). The signed-in profile's songs' stats,
+with a revision of their own that moves with every listen it counts:
+
+```json
+{ "rev": 88, "full": false, "from": 86, "songs": { "s1": { "plays": 4, "stops": 0, "skips": 1, "sessions": 5, "listened": 1210, "lastPlayedAt": 1760270000000 } }, "playlistListened": { "p1": 3600 } }
+```
+
+Without `since` (or too old): all songs that have any (`full: true`).
+`playlistListened` (seconds listened per list: `{ [playlistId | "all" |
+"favourites" | "smart:..."]: seconds }`) comes when it changed.
+
+### GET /api/statistics
+
+→ `{ "statistics": { since, seconds, listens, months, days, sessions, run, late, longest }, "srev": 88 }`:
+the signed-in profile's Statistics totals (3.6), for when an app shows them.
+`since`: when they started (the server's first run of 3.6, or when the
+profile was made); `listens`: listens of 30 seconds or more. They only grow:
+deleting songs does not lower them. `srev`: the stats revision they are at.
+
+### GET /api/shared
+
+→ `{ "playlists": [{ id, name, createdAt, ownerId, ownerName, favourites?, songCount, seconds }] }`:
+the playlists the others share with this profile, by their details only.
+
+### GET /api/shared/\<id\>
+
+→ `{ "playlist": { id, name, createdAt, entries, ownerId, ownerName, favourites? } }`:
+one of them with its songs (404 when it is no longer shared). One the profile
+follows comes with the library and stays in step there instead.
 
 ### POST /api/rescan
 
@@ -228,7 +286,12 @@ Send up to 5000 at once:
 }
 ```
 
-→ `{ "rev": 414, "results": [{ "cid": "c-001", "ok": true, "value": "p-roadtrip" }, { "cid": "c-002", "ok": true }] }`
+→ `{ "rev": 414, "srev": 88, "results": [{ "cid": "c-001", "ok": true, "value": "p-roadtrip" }, { "cid": "c-002", "ok": true }] }`
+
+With the copy's revisions in the body (`"rev": 412, "srev": 87`, 4.3) the
+answer also carries what changed since: `changes` (as `GET
+/api/library?since=`) and `stats` (as `GET /api/stats?since=`). With the
+app's `client` id too, its live channel does not send those again.
 
 - `cid`: unique per command. A command sent twice (its answer got lost)
   counts once; the second gets `skipped: "repeat"`.
@@ -256,7 +319,7 @@ Send up to 5000 at once:
 | `removeFromPlaylist` | `playlistId`, `songId` | |
 | `deleteSong` | `songId` | for everyone; the file goes to `.flow-trash` for 30 days, the song with it (an admin can restore it). With the rule `songDelete: "owner"` only the profile that added it and the admins may (`ok: false` with the reason otherwise; `deletePlaylist` then keeps those songs) |
 | `editSong` | `songId`, `artist`, `title`, `mix` | new names (title required); the file is renamed and its tags rewritten |
-| `setFavourite` | `songId`, `on` | |
+| `setFavourite` | `songId`, `on` | into the profile's Favourites playlist, or out of it |
 | `setLoudness` | `songId`, `loudness` | the measured loudness, for Equalize volume |
 | `setDuration` | `songId`, `duration` | only when the server doesn't know the length (`skipped: "known"` otherwise) |
 | `recordListen` | `songId`, `listened`, `duration`, `contextId?`, `tz?`, `jamMember?` | a listen: `listened` seconds heard of `duration`; counted into the profile's stats, `listening` and `statistics`. `tz`: the app's `Date.getTimezoneOffset()`, for the day and hour it was heard (the server's own without it). From a profile it counts for the Default / Shared too (its stats and `statistics`), unless `jamMember: true` (3.6: the app was a member of a Jam, whose host's listen counts there); a Jam member on the Default counts nowhere (`skipped: "jam"`) |
@@ -452,7 +515,7 @@ master admin. Nobody changes their own profile or the master's here.
 
 ## Live channel
 
-### GET /api/live?client=\<install id\>&device=\<name\>
+### GET /api/live?client=\<install id\>&device=\<name\>&rev=\<rev\>&srev=\<stats rev\>
 
 A Server-Sent Events stream (`text/event-stream`), kept open while the app
 is connected; the server pushes events on it as they happen. One per app: a
@@ -462,15 +525,29 @@ signing in, only that app may open its channel (403).
 
 ```
 event: hello
-data: {"client":"a1b2c3d4e5f6","serverTime":1760270000000,"pingMs":10000}
+data: {"client":"a1b2c3d4e5f6","serverTime":1760270000000,"pingMs":15000}
 
-: ping 1760270010000
+: ping 1760270015000
+
+event: library
+data: {"rev":416,"full":false,"from":415,"songs":[...],"playlists":[],...}
+
+event: stats
+data: {"rev":89,"full":false,"from":88,"songs":{"s1":{...}}}
 
 event: sessions
 data: {"sessions":[...]}
 ```
 
-- `hello` first, then a `: ping` comment every 10 seconds.
+- `hello` first, then a `: ping` comment every 15 seconds (4.3; 10 before).
+- `rev` and `srev` (4.3): the revisions of the app's copy. From them on the
+  server sends `library` (as `GET /api/library?since=`) and `stats` (as
+  `GET /api/stats?since=`) whenever something this profile sees changes,
+  at once for what is missing when the channel opens. Changes quickly one
+  after another come together (within about 2 seconds). `{ "rev": 420,
+  "stale": true }` when too much is missing: ask `GET /api/library` (or
+  `/api/stats`). Without them (or `-1`) none are sent. A channel whose profile
+  changes (signed out of it) gets none until opened again.
 - The token is checked again at each ping: a changed password or an ended
   session closes the stream with `end { reason: "auth" }`. Other reasons:
   `replaced`, `shutdown`.
@@ -744,7 +821,7 @@ this datagram to UDP port 7878 (always 7878, whatever the server's port):
 Each server that hears it answers the sender directly:
 
 ```json
-{"app":"flow-server","id":"<server id>","name":"Flow Server","port":7878,"protocol":1}
+{"app":"flow-server","id":"<server id>","name":"Flow Server","port":7878,"protocol":2}
 ```
 
 From 4.0 the answer also has `"guests": true` while the server lets guests
