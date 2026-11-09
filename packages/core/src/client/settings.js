@@ -385,6 +385,12 @@ const DEFAULTS = {
   // music video's non-music parts red.
   sponsorBlock: false,
   sponsorBlockIntros: false,
+  // 4.4, Add Songs: a link goes on without asking (the checklist's Download All,
+  // its name kept; a single song into All Songs), and with autoFinish its songs
+  // are saved as they came once downloaded (Finish All). Each queued link
+  // keeps them as they were when it was queued.
+  autoComplete: false,
+  autoFinish: false,
   // The next song starts this long before the current one ends, faded over.
   crossfade: true,
   crossfadeSeconds: 3,
@@ -573,7 +579,7 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 100 && v)
     .slice(0, 100));
   for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
-    'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix']) s[key] = s[key] === true;
+    'sponsorBlock', 'sponsorBlockIntros', 'autoComplete', 'autoFinish', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix']) s[key] = s[key] === true;
   if (!s.dcScale75) {
     s.dcScale = '75';
     s.dcScale75 = true;

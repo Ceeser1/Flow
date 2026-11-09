@@ -254,11 +254,11 @@ const Covers = {
   },
 
   /** A song of the server's download whose cover the server found (version): fetched once. */
-  serverPending(index, version) {
+  serverPending(index, version, batchId = '') {
     const k = `server:${index}`;
     if (!version || this._serverAsked.get(k) === version) return;
     this._serverAsked.set(k, version);
-    window.flow.serverDownloads('cover', { index, version }).then((file) => {
+    window.flow.serverDownloads('cover', { index, version, batchId }).then((file) => {
       if (file && this._serverAsked.get(k) === version) this._setPending(k, this._address(file, `v=${encodeURIComponent(version)}`));
     }).catch(() => {
       this._serverAsked.delete(k);

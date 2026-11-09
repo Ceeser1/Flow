@@ -350,7 +350,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -442,6 +442,8 @@ function createRemote(env) {
       search: status.state === 'online' && conn.downloads && conn.search,
       // It reads a playlist's link for its Update without downloading anything.
       downloadCheck: status.state === 'online' && conn.downloads && conn.downloadCheck,
+      // It keeps several batches per profile, taking turns (4.4, the Server queue).
+      downloadQueue: status.state === 'online' && conn.downloads && conn.downloadQueue,
       // The server cuts its songs' files (Edit's trim).
       trim: status.state === 'online' && conn.trim,
       // Connected through the Tailscale address (away from home).
@@ -961,6 +963,7 @@ function createRemote(env) {
         const downloads = Array.isArray(hello.features) && hello.features.includes('download');
         const search = Array.isArray(hello.features) && hello.features.includes('search');
         const downloadCheck = Array.isArray(hello.features) && hello.features.includes('downloadCheck');
+        const downloadQueue = Array.isArray(hello.features) && hello.features.includes('downloadQueue');
         const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
@@ -974,7 +977,7 @@ function createRemote(env) {
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -3551,7 +3554,8 @@ function createRemote(env) {
 
   // ---- downloads by the server ("Download (Server)" on Add Songs) ----
   //
-  // The server keeps one batch per profile (apps/linux-server/src/downloads.js) and
+  // The server keeps one batch per profile (apps/linux-server/src/downloads.js),
+  // or with downloadQueue (4.4) several taking turns with every profile's, and
   // the window polls it while Add Songs is open. None of it goes through Local
   // Files: a song finished there is the server's at once, like any other.
 
@@ -3564,20 +3568,32 @@ function createRemote(env) {
    * One request about the server's download batch. action: get, create
    * ({ url, kind, options }), cancel, peaks ({ index }), finish ({ index, body }),
    * retry ({ index }), discard ({ index }). Resolves the batch (null: none), or
-   * for peaks the peaks, for finish { song, batch }.
+   * for peaks the peaks, for finish { song, batch }. With the server's queue
+   * (4.4): queue resolves { batches, queue, done } (null where there is none
+   * to ask); args.batchId names the batch the others are about (none: the
+   * profile's oldest); create takes queue: true and auto ({ complete,
+   * finish }).
    */
   async function serverDownloads(action, args = {}) {
-    if (action === 'get' && (!active() || status.state !== 'online' || !conn.downloads)) return null;
+    if ((action === 'get' || action === 'queue') && (!active() || status.state !== 'online' || !conn.downloads)) return null;
+    if (action === 'queue' && !conn.downloadQueue) return null;
     requireDownloads();
-    const item = `/api/downloads/items/${Math.max(0, Math.floor(Number(args.index) || 0))}`;
+    const batchId = conn.downloadQueue && /^[0-9a-f]{12}$/.test(String(args.batchId || '')) ? String(args.batchId) : '';
+    const item = `/api/downloads${batchId ? `/${batchId}` : ''}/items/${Math.max(0, Math.floor(Number(args.index) || 0))}`;
     try {
       if (action === 'get') return (await call('/api/downloads')).batch;
+      if (action === 'queue') {
+        const r = await call('/api/downloads?queue=1');
+        return { batches: r.batches || [], queue: r.queue || [], done: r.done || [] };
+      }
       // create: cookies, the link's site's browser cookies (or none). Or items
       // and name: uploads picked from a search, several at once; with source
       // ({ url, kind }), the songs ticked in a playlist's Update.
       if (action === 'create') {
         const { url, kind, options, cookies, items, name, source } = args;
         const json = items ? { items, name, options, source: source || undefined } : { url, kind, options, cookies: cookies || undefined };
+        // Queued behind what the server is doing, finishing by itself as asked.
+        if (conn.downloadQueue && args.queue) Object.assign(json, { queue: true, auto: args.auto || undefined });
         return (await call('/api/downloads', { method: 'POST', json })).batch;
       }
       // A playlist's Update: its link read on the server, nothing downloaded ({ url, cookies }).
@@ -3586,7 +3602,7 @@ function createRemote(env) {
         const json = { url: args.url, cookies: args.cookies || undefined };
         return (await call('/api/downloads/check', { method: 'POST', json, timeout: 15 * 60 * 1000 })).listing;
       }
-      if (action === 'cancel') return (await call('/api/downloads', { method: 'DELETE' })).batch;
+      if (action === 'cancel') return (await call(`/api/downloads${batchId ? `/${batchId}` : ''}`, { method: 'DELETE' })).batch;
       // A song's name typed instead of a link: { query, artist, title, page, results }.
       if (action === 'search') {
         if (!conn.search) throw new Error(tr('connection.tooOld.songSearch', 'This Flow Server cannot search for songs by name yet: update it, or paste a link.'));

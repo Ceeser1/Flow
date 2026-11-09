@@ -234,4 +234,20 @@ async function fetchAmazonMusic(ref, isCancelled = () => false, onTrack = () => 
   return page;
 }
 
-module.exports = { parseAmazonMusicUrl, pageUrl, parseAmazonPage, parsePreviewCard, fetchAmazonMusic, cleanArtists };
+/**
+ * A list's name and song count without reading every song (a queued link's
+ * line, listing.peek): a playlist someone made by its card alone, anything
+ * else by its one page.
+ */
+async function peekAmazonMusic(ref) {
+  if (ref.type === 'user-playlist') {
+    const card = parsePreviewCard(await fetchPage(pageUrl(ref), PREVIEW_UA));
+    return { name: card.name, count: card.ids.length };
+  }
+  const page = await fetchAmazonMusic(ref);
+  return { name: page.name, count: page.tracks.length };
+}
+
+module.exports = {
+  parseAmazonMusicUrl, pageUrl, parseAmazonPage, parsePreviewCard, fetchAmazonMusic, peekAmazonMusic, cleanArtists,
+};

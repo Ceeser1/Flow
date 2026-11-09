@@ -630,6 +630,23 @@ settings.media.needsServer
   en: (requires a Flow server connection)
   de: (braucht eine Flow-Server-Verbindung)
 
+# Also shown right under Add Songs' link box, to switch them for each link
+settings.media.autoComplete.label
+  en: Auto-complete confirmations when adding songs
+  de: Bestätigungen beim Hinzufügen von Songs automatisch erledigen
+
+settings.media.autoComplete.desc
+  en: When enabled, a pasted link does not wait for your confirmation and just proceeds with the given songs, playlist name, etc. A playlist gets all songs with its loaded playlist name and all songs added into it, a single song gets no playlist.
+  de: Wenn aktiv, wartet ein eingefügter Link nicht auf deine Bestätigung und macht einfach mit den gefundenen Songs, dem Playlist-Namen usw. weiter. Eine Playlist bekommt ihren geladenen Namen und alle ihre Songs, ein einzelner Song kommt in keine Playlist.
+
+settings.media.autoFinish.label
+  en: Automate "Finish All"
+  de: „Alle abschließen“ automatisieren
+
+settings.media.autoFinish.desc
+  en: If enabled, downloaded batches don't wait for your confirmation to finish all or cancel and simply get finished. If disabled, all batches require you to confirm the selected songs by clicking "Finish All", or you can also cancel the import.
+  de: Wenn aktiv, warten heruntergeladene Batches nicht darauf, dass du sie abschließt oder abbrichst, sondern werden einfach abgeschlossen. Wenn aus, bestätigst du bei jedem Batch die gewählten Songs mit „Alle abschließen“, oder du brichst den Import ab.
+
 # ── Settings › Jam session ──
 
 settings.jam.heading
@@ -3498,6 +3515,52 @@ sessions.toast.queued
 # ===== Add Songs =====
 
 # The Add Songs page: a link or a song name, the download, the trim and the names.
+
+# While something downloads, a new link waits its turn: the buttons say so
+add.queueDownload
+  en: Queue Download
+  de: Download einreihen
+
+add.queueDownload.client
+  en: Queue Download (Client)
+  de: Download einreihen (Client)
+
+add.queueDownload.server
+  en: Queue Download (Server)
+  de: Download einreihen (Server)
+
+add.queue.added.client
+  en: Added to the Client queue.
+  de: Zur Client-Warteschlange hinzugefügt.
+
+add.queue.added.server
+  en: Added to the Server queue.
+  de: Zur Server-Warteschlange hinzugefügt.
+
+add.queue.skipped
+  en: "{song}" is in All Songs already, so it was not downloaded again.
+  de: „{song}“ ist schon in Alle Songs und wurde nicht noch einmal geladen.
+
+add.queue.searchBusy
+  en: Something is downloading right now: searching for a song's name has to wait until it is done. A link can be queued meanwhile.
+  de: Gerade wird etwas geladen: Die Suche nach einem Songnamen muss warten, bis es fertig ist. Einen Link kannst du solange einreihen.
+
+serverImport.waitingTurn
+  en: Waiting for its turn on the server (number {place} in the queue)...
+  de: Wartet auf dem Server, bis es dran ist (Nummer {place} in der Warteschlange)...
+
+# A batch the server finished by itself ("Automate "Finish All"")
+serverImport.done.saved
+  en.one: "{name}": {count} song saved.
+  de.one: „{name}“: {count} Song gespeichert.
+  en.other: "{name}": {count} songs saved.
+  de.other: „{name}“: {count} Songs gespeichert.
+
+serverImport.done.failed
+  en.one: {count} could not be downloaded.
+  de.one: {count} konnte nicht geladen werden.
+  en.other: {count} could not be downloaded.
+  de.other: {count} konnten nicht geladen werden.
 
 add.share.noLink
   en: Nothing to add: what was shared has no link in it.
@@ -7836,6 +7899,18 @@ desktop.quit.text
 desktop.quit.detail
   en: They are only kept until Flow closes. Go back and press "Finish all" to save them, or quit and lose them.
   de: Sie bleiben nur, bis Flow schließt. Geh zurück und drücke „Alle abschließen“ zum Speichern, oder beende und verliere sie.
+
+desktop.quit.queued
+  en.one: {count} link in the Client queue will not be downloaded:
+  de.one: {count} Link in der Client-Warteschlange wird nicht geladen:
+  en.other: {count} links in the Client queue will not be downloaded:
+  de.other: {count} Links in der Client-Warteschlange werden nicht geladen:
+
+desktop.quit.queuedOnly
+  en.one: {count} link is still waiting in the Client queue.
+  de.one: {count} Link wartet noch in der Client-Warteschlange.
+  en.other: {count} links are still waiting in the Client queue.
+  de.other: {count} Links warten noch in der Client-Warteschlange.
 
 desktop.quit.quitAnyway
   en: Quit anyway

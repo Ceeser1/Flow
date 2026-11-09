@@ -322,6 +322,10 @@ function start() {
     prepareLocal: notHere('web.notHere.addFiles', 'Adding files of this device'),
     finishImport: notHere('web.notHere.addFiles', 'Adding files of this device'),
     setImportPending: call(nothing),
+    // Add Songs' Client queue (4.4) is the computer's only: nothing downloads here.
+    peekLink: call(nothing),
+    cancelPeek: call(nothing),
+    setQueuePending: call(nothing),
     cancelImport: call(nothing),
     onImportProgress: on('import:progress'),
     openUrl: call((url) => {

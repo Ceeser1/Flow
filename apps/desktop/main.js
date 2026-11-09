@@ -53,6 +53,8 @@ let mainWindow = null;
 let downloadToken = null;
 // Imported songs downloaded but not saved yet (the window says how many).
 let importPending = 0;
+// Links waiting in Add Songs' Client queue (4.4): { count, names }.
+let queuePending = { count: 0, names: [] };
 // Measures the songs' loudness in the background while "Equalize volume" is on.
 const loudnessFiller = loudness.createFiller(library, model, () => settings.get('normalize'));
 // Finds covers for Local Files songs in the background; copies of a server's
@@ -154,12 +156,16 @@ function createWindow() {
   mainWindow.on('close', (e) => {
     // Imported songs not yet saved live in the cache, which the next start
     // empties: ask before throwing them away.
-    if (importPending > 0) {
+    if (importPending > 0 || queuePending.count > 0) {
+      // Links waiting in the Client queue are never downloaded then: named.
+      const queued = queuePending.count > 0
+        ? [T('desktop.quit.queued', { count: queuePending.count }), ...queuePending.names.slice(0, 5).map((n) => `- ${n}`)].join('\n')
+        : '';
       const choice = dialog.showMessageBoxSync(mainWindow, {
         type: 'warning',
         title: 'Flow',
-        message: T('desktop.quit.text', { count: importPending }),
-        detail: T('desktop.quit.detail'),
+        message: importPending > 0 ? T('desktop.quit.text', { count: importPending }) : T('desktop.quit.queuedOnly', { count: queuePending.count }),
+        detail: [importPending > 0 ? T('desktop.quit.detail') : '', queued].filter(Boolean).join('\n\n'),
         buttons: [T('common.back'), T('desktop.quit.quitAnyway')],
         defaultId: 0,
         cancelId: 0,
@@ -169,6 +175,7 @@ function createWindow() {
         return;
       }
       importPending = 0;
+      queuePending = { count: 0, names: [] };
     }
     if (!MOBILE_UI) {
       settings.set({
@@ -819,6 +826,33 @@ async function finishImport(job, onProgress) {
 
 handle('import:pending', (count) => {
   importPending = Math.max(0, Number(count) || 0);
+});
+
+handle('queue:pending', (info) => {
+  const names = Array.isArray(info && info.names) ? info.names.map((n) => String(n || '').slice(0, 200)) : [];
+  queuePending = { count: Math.max(0, Number(info && info.count) || 0), names };
+});
+
+// A link put into Add Songs' Client queue (4.4): its name and song count at
+// once (listing.peek), apart from the import task and the download; the
+// whole read is its turn's. Each queued link has its own (id), and its
+// Cancel stops it.
+const peekTokens = new Map();
+handle('download:peek', async ({ id, url, song }) => {
+  const key = String(id || '');
+  const token = importer.groupToken();
+  peekTokens.set(key, token);
+  try {
+    return await importer.peek(String(url || ''), token, { song: !!song });
+  } finally {
+    if (peekTokens.get(key) === token) peekTokens.delete(key);
+  }
+});
+
+handle('download:peekCancel', (id) => {
+  const token = peekTokens.get(String(id || ''));
+  if (token) token.cancel();
+  peekTokens.delete(String(id || ''));
 });
 
 handle('import:cancel', () => {

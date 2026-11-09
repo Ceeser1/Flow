@@ -10,6 +10,8 @@
 //
 //   list()      reads the list without downloading anything and marks what is
 //               already in the library.
+//   peek()      only its name and how many songs it has, quickly (a queued
+//               link's line, 4.4).
 //   download()  fetches the chosen songs one after another into the cache.
 //   search()    the uploads that can be a song whose name was typed instead of
 //               a link (songSearch.js); the one picked is downloaded as a link.
@@ -746,6 +748,100 @@ function createLister({ media, library, lookupInfo = null }) {
   }
 
   /**
+   * A link's name and song count, quickly and without looking anything up
+   * on YouTube (4.4: a queued link's line in the Client or Server queue; the
+   * whole read stays for its turn, list()). { name, count, single, source,
+   * sourceTotal }: single for a link that is one song (count 1, name its
+   * title); sourceTotal as list()'s, a Spotify playlist's songs in all when
+   * its embed page lists only the first 100. opts.song: the link is to be
+   * read as one song (YouTube's watch?v=...&list=... answered "This song
+   * only"). Several links pasted at once: the first list's name, the counts
+   * added up; one that cannot be read is left out, unless none can.
+   */
+  async function peek(rawUrl, group, { song = false } = {}) {
+    const links = song ? [String(rawUrl || '').trim()] : splitLinks(rawUrl);
+    if (links.length > 1) {
+      let first = null;
+      let count = 0;
+      let error = null;
+      for (const link of links) {
+        if (group.cancelled) throw cancelled();
+        try {
+          const got = await peekOne(link, group, {});
+          if (!first || (first.single && !got.single)) first = got;
+          count += got.count;
+        } catch (err) {
+          if (group.cancelled) throw cancelled();
+          error = error || err;
+        }
+      }
+      if (!first) throw error || new Error(tr('core.link.couldNotRead', 'The link could not be read.'));
+      return {
+        name: first.name, count, single: false, source: first.source, sourceTotal: 0,
+      };
+    }
+    return peekOne(links[0] || '', group, { song });
+  }
+
+  async function peekOne(rawUrl, group, { song }) {
+    const done = (got) => {
+      if (group.cancelled) throw cancelled();
+      return {
+        name: String(got.name || '').trim() || tr('common.importedPlaylist', 'Imported playlist'),
+        count: Math.max(0, Number(got.count) || 0),
+        single: !!got.single,
+        source: got.source || '',
+        sourceTotal: Number(got.sourceTotal) || 0,
+      };
+    };
+    const ref = spotify.parseSpotifyUrl(rawUrl);
+    if (ref) {
+      const page = await spotify.fetchSpotify(ref);
+      let sourceTotal = 0;
+      if (page.tracks.length >= SPOTIFY_PAGE_LIMIT) {
+        const all = await spotify.fetchSongCount(ref);
+        if (all > page.tracks.length) sourceTotal = all;
+      }
+      return done({
+        name: page.name, count: page.tracks.length, source: 'Spotify', sourceTotal,
+      });
+    }
+    if (spotify.isSpotifyTrackUrl(rawUrl)) {
+      throw new Error(tr('core.spotify.singleSong', 'Single Spotify songs cannot be downloaded. Paste a Spotify playlist or album link, or the song\'s YouTube link.'));
+    }
+    const dz = deezer.parseDeezerUrl(rawUrl);
+    if (dz) {
+      const r = await deezer.resolveShortLink(dz);
+      const got = await deezer.peekDeezer(r);
+      return done({ ...got, single: r.type === 'track', source: 'Deezer' });
+    }
+    const amazon = amazonMusic.parseAmazonMusicUrl(rawUrl);
+    if (amazon) {
+      const got = await amazonMusic.peekAmazonMusic(amazon);
+      return done({ ...got, single: got.count === 1 && (amazon.type === 'track' || !!amazon.trackId), source: 'Amazon Music' });
+    }
+    const url = song ? String(rawUrl || '').trim() : normalizeListUrl(rawUrl);
+    if (!url) throw new Error(tr('core.link.notALink', 'That does not look like a link.'));
+    // As listWithYtDlp reads it: a Mix only up to its start.
+    const mix = !song && /[?&]list=RD/.test(url);
+    const args = song
+      ? ['--no-playlist', '-J', url]
+      : ['--flat-playlist', '--yes-playlist', ...(mix ? ['-I', `1:${MIX_LIMIT}`] : []), '-J', url];
+    const info = await withSub(group, (t) => media.readJson(args, t));
+    if (info._type !== 'playlist') {
+      return done({
+        name: info.title || info.fulltitle || '', count: 1, single: true, source: info.extractor_key || info.extractor || '',
+      });
+    }
+    const entries = Array.isArray(info.entries) ? info.entries.filter(Boolean) : [];
+    return done({
+      name: info.title || '',
+      count: entries.length || Number(info.playlist_count) || 0,
+      source: String(info.extractor_key || info.extractor || '').replace(/Tab$|Playlist$|Set$/i, ''),
+    });
+  }
+
+  /**
    * A downloaded song's names with its album and genre: the list's own (a
    * Spotify album's, Deezer's, Amazon's), else the upload's page's (YouTube
    * Music's, Bandcamp's, SoundCloud's), else Apple's search, then Discogs'
@@ -799,7 +895,7 @@ function createLister({ media, library, lookupInfo = null }) {
   }
 
   return {
-    list, listMany, download, search, withInfo, listWithYtDlp, listSpotify, listDeezer, listAmazonMusic, matchOnYouTube, findSong,
+    list, listMany, peek, download, search, withInfo, listWithYtDlp, listSpotify, listDeezer, listAmazonMusic, matchOnYouTube, findSong,
   };
 }
 

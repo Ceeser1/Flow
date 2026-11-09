@@ -85,10 +85,22 @@
 //   POST /api/sessions { type, ... }   taking part in them (sessions.js)
 //
 // Downloads by the server (downloads.js; only when /api/hello lists the
-// "download" feature), one batch per profile:
-//   GET    /api/downloads              { batch } (null: none)
-//   POST   /api/downloads { url, kind, options }   a new batch: { batch }, 409 with one already
-//   DELETE /api/downloads              cancel the whole batch
+// "download" feature). Without the "downloadQueue" feature (servers before
+// 4.4) one batch per profile, and the routes below without :id are that
+// one; with it a profile may have several, taking turns with every
+// profile's, and :id (12 hex) names one of them:
+//   GET    /api/downloads              { batch } (null: none; the oldest)
+//   GET    /api/downloads?queue=1      also { batches (the profile's), queue
+//                                      (every profile's waiting and downloading
+//                                      ones: id, own, profileName, name, count, url,
+//                                      state, place), done (what its batches that
+//                                      finished by themselves did lately) }
+//   POST   /api/downloads { url, kind, options, queue, auto }   a new batch: { batch };
+//                                      409 with one already unless queue: true;
+//                                      auto: { complete, finish } (finishes by itself)
+//   DELETE /api/downloads              cancel the whole batch (the oldest)
+//   DELETE /api/downloads/:id          cancel that one (the profile's only)
+//   .../api/downloads/:id/items/:i/... as below, for that batch
 //   POST   /api/downloads/check { url }   a playlist's Update (feature "downloadCheck"):
 //                                      its link read, nothing downloaded: { listing }; the
 //                                      songs ticked come back as POST /api/downloads
@@ -940,7 +952,7 @@ function createHttpServer({
       // From home at level 3 and 4 no password is asked for, so none is announced.
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
-      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck'] : []), ...(live ? ['sessions'] : []),
+      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck', 'downloadQueue'] : []), ...(live ? ['sessions'] : []),
         ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics', 'ownLyrics', 'lyricsSync'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
@@ -1192,7 +1204,7 @@ function createHttpServer({
   async function downloadRoute(req, res, p, profileId, url) {
     if (!downloads) throw new HttpError(404, 'This server does not download songs.');
     const is = (method, pattern) => (method === req.method || (method === 'GET' && req.method === 'HEAD')) && pattern.test(p);
-    if (is('GET', /^\/api\/downloads$/)) return sendJson(res, 200, { batch: downloads.get(profileId) });
+    if (is('GET', /^\/api\/downloads$/)) return sendJson(res, 200, downloads.get(profileId, { queue: url.searchParams.get('queue') === '1' }));
     if (is('POST', /^\/api\/downloads$/)) {
       const body = await readJsonBody(req);
       return sendJson(res, 200, { batch: downloads.create(profileId, body) });
@@ -1209,19 +1221,24 @@ function createHttpServer({
       const body = await readJsonBody(req);
       return sendJson(res, 200, await downloads.search(profileId, body));
     }
-    const m = /^\/api\/downloads\/items\/(\d{1,4})(?:\/(peaks|audio|cover|finish|retry))?$/.exec(p);
+    const one = /^\/api\/downloads\/([0-9a-f]{12})$/.exec(p);
+    if (one && req.method === 'DELETE') {
+      downloads.cancel(profileId, one[1]);
+      return sendJson(res, 200, { batch: null });
+    }
+    const m = /^\/api\/downloads(?:\/([0-9a-f]{12}))?\/items\/(\d{1,4})(?:\/(peaks|audio|cover|finish|retry))?$/.exec(p);
     if (!m) throw new HttpError(404, 'Nothing here.');
-    const [, index, what] = m;
-    if (what === 'peaks' && is('GET', /./)) return sendJson(res, 200, { peaks: downloads.peaks(profileId, index) });
-    if (what === 'audio' && is('GET', /./)) return sendFile(req, res, downloads.audioFile(profileId, index));
-    if (what === 'cover' && is('GET', /./)) return sendCover(req, res, url, downloads.coverFile(profileId, index));
+    const [, id = null, index, what] = m;
+    if (what === 'peaks' && is('GET', /./)) return sendJson(res, 200, { peaks: downloads.peaks(profileId, index, id) });
+    if (what === 'audio' && is('GET', /./)) return sendFile(req, res, downloads.audioFile(profileId, index, id));
+    if (what === 'cover' && is('GET', /./)) return sendCover(req, res, url, downloads.coverFile(profileId, index, id));
     if (what === 'finish' && req.method === 'POST') {
       const body = await readJsonBody(req);
-      const result = await downloads.finish(profileId, index, body);
+      const result = await downloads.finish(profileId, index, body, id);
       return sendJson(res, 200, { ...result, rev: library.rev });
     }
-    if (what === 'retry' && req.method === 'POST') return sendJson(res, 200, { batch: downloads.retry(profileId, index) });
-    if (!what && req.method === 'DELETE') return sendJson(res, 200, { batch: downloads.discard(profileId, index) });
+    if (what === 'retry' && req.method === 'POST') return sendJson(res, 200, { batch: downloads.retry(profileId, index, id) });
+    if (!what && req.method === 'DELETE') return sendJson(res, 200, { batch: downloads.discard(profileId, index, id) });
     throw new HttpError(404, 'Nothing here.');
   }
 

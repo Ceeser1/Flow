@@ -112,4 +112,19 @@ async function fetchDeezer(ref, isCancelled = () => false) {
   return { name: String(info.title || tr('core.deezer.playlist', 'Deezer playlist')), url, tracks };
 }
 
-module.exports = { parseDeezerUrl, resolveShortLink, fetchDeezer, trackOf };
+/**
+ * A list's name and song count without its songs (a queued link's line,
+ * listing.peek): one request. A song is its names and 1.
+ */
+async function peekDeezer(ref) {
+  const info = await getJson(`${API}/${ref.type}/${ref.id}`);
+  if (ref.type === 'track') {
+    const t = trackOf(info);
+    return { name: `${t.artists} - ${t.title}`, count: 1 };
+  }
+  return { name: String(info.title || tr('core.deezer.playlist', 'Deezer playlist')), count: Math.min(Number(info.nb_tracks) || 0, MAX_SONGS) };
+}
+
+module.exports = {
+  parseDeezerUrl, resolveShortLink, fetchDeezer, peekDeezer, trackOf,
+};

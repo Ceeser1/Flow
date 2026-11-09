@@ -476,3 +476,64 @@ test('lists found on YouTube by name: Spotify, Deezer, Amazon Music', () => {
   assert.equal(isNameOnlyList('https://www.youtube.com/playlist?list=PL1'), false);
   assert.equal(isNameOnlyList(''), false);
 });
+
+test('a queued link\'s name and song count are read quickly, without looking anything up (peek)', async () => {
+  const { createLister, groupToken } = require('../src/listing');
+  const trackList = (n) => Array.from({ length: n }, (_, i) => ({ title: `Song ${i + 1}`, subtitle: 'Band', duration: 200000, isPlayable: true }));
+  const embed = (name, n) => `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: { pageProps: { state: { data: { entity: { type: 'playlist', name, trackList: trackList(n) } } } } },
+  })}</script>`;
+  const asked = [];
+  const media = {
+    readJson: async (args) => {
+      asked.push(args);
+      const url = args[args.length - 1];
+      if (url.includes('list=PLx')) {
+        return { _type: 'playlist', title: 'Road trip', extractor_key: 'YoutubeTab', entries: [{ id: 'a' }, { id: 'b' }, null, { id: 'c' }] };
+      }
+      if (url.includes('bad')) throw new Error('unreadable');
+      return { _type: 'video', title: 'Massive Attack - Teardrop', extractor_key: 'Youtube' };
+    },
+  };
+  const lister = createLister({ media, library: () => m.emptyLibrary() });
+  const realFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (/\/embed\/playlist\/7LoNg/.test(url)) return { ok: true, status: 200, text: async () => embed('Long list', 100) };
+    if (/\/embed\/playlist\/5hOrT/.test(url)) return { ok: true, status: 200, text: async () => embed('Short list', 12) };
+    if (/open\.spotify\.com\/playlist\/7LoNg/.test(url)) return { ok: true, status: 200, text: async () => '<meta name="music:song_count" content="254"/>' };
+    if (/api\.deezer\.com\/playlist\/77/.test(url)) return { ok: true, status: 200, json: async () => ({ title: 'Deep cuts', nb_tracks: 41 }), text: async () => JSON.stringify({ title: 'Deep cuts', nb_tracks: 41 }) };
+    throw new Error(`not asked for: ${url}`);
+  };
+  try {
+    const sp = await lister.peek('https://open.spotify.com/playlist/5hOrTlIsTaAaAaAaAaAaAa', groupToken());
+    assert.deepEqual(sp, { name: 'Short list', count: 12, single: false, source: 'Spotify', sourceTotal: 0 });
+    const long = await lister.peek('https://open.spotify.com/playlist/7LoNgLiStAaAaAaAaAaAaA', groupToken());
+    assert.equal(long.count, 100);
+    assert.equal(long.sourceTotal, 254);
+
+    const yt = await lister.peek('https://www.youtube.com/playlist?list=PLx', groupToken());
+    assert.deepEqual(yt, { name: 'Road trip', count: 3, single: false, source: 'Youtube', sourceTotal: 0 });
+    assert.ok(asked[0].includes('--flat-playlist'));
+
+    // One song: its title, 1; "This song only" reads it without its list.
+    const one = await lister.peek('https://www.youtube.com/watch?v=abc', groupToken());
+    assert.deepEqual([one.name, one.count, one.single], ['Massive Attack - Teardrop', 1, true]);
+    await lister.peek('https://www.youtube.com/watch?v=abc&list=PLx', groupToken(), { song: true });
+    assert.ok(asked[asked.length - 1].includes('--no-playlist'));
+
+    const dz = await lister.peek('https://www.deezer.com/playlist/77', groupToken());
+    assert.deepEqual([dz.name, dz.count, dz.single, dz.source], ['Deep cuts', 41, false, 'Deezer']);
+
+    // Several links: the first list's name, the counts added up, one unreadable left out.
+    const many = await lister.peek('https://www.youtube.com/watch?v=abc, https://open.spotify.com/playlist/5hOrTlIsTaAaAaAaAaAaAa, https://bad.example.com/x', groupToken());
+    assert.deepEqual([many.name, many.count, many.single], ['Short list', 13, false]);
+    await assert.rejects(lister.peek('https://bad.example.com/x, https://bad.example.com/y', groupToken()), /unreadable/);
+    await assert.rejects(lister.peek('https://open.spotify.com/track/abc', groupToken()), /Single Spotify songs/);
+    // Cancelled: no answer.
+    const g = groupToken();
+    g.cancel();
+    await assert.rejects(lister.peek('https://open.spotify.com/playlist/5hOrTlIsTaAaAaAaAaAaAa', g));
+  } finally {
+    global.fetch = realFetch;
+  }
+});

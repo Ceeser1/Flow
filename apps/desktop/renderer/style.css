@@ -466,6 +466,10 @@ button, input, select { font: inherit; color: inherit; }
 
 .link-row { display: flex; gap: 10px; }
 .link-row .input { flex: 1; }
+/* Auto-complete and Automate "Finish All" right under the link box (4.4). */
+.auto-row { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 10px; font-size: 13px; color: var(--text-dim); }
+.auto-row .check { color: inherit; }
+.auto-row[hidden], .auto-row__sub[hidden] { display: none; }
 /* "Downloads?" alone in the row, where the link box was (downloadsHelp.js). */
 .downloads-help-btn { margin: 0 auto; }
 /* Download (Client) without yt-dlp: greyed out, but a click opens the legal note. */

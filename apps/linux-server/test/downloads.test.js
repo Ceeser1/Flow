@@ -247,9 +247,10 @@ test('after a restart the batch is still there, and a cut-off download starts ov
       const b = await batchOf(base);
       return b && b.items.length && b.items[0].state === 'ready' && b.items[1].state === 'downloading';
     }, 'song 1 ready, song 2 downloading');
+    const { id } = await batchOf(base);
     await server.close();
     // A server that was killed rather than stopped leaves the half-done file.
-    const staging = path.join(d.home, 'staging', '_shared');
+    const staging = path.join(d.home, 'staging', '_shared', id);
     const partial = path.join(staging, 'i1_youtube_v2.src.wav.part');
     fs.writeFileSync(partial, 'half');
 
@@ -345,7 +346,7 @@ test('browser cookies sent along reach every yt-dlp run of that download, only t
         assert.match(run.cookies, /HID\thidden/);
         assert.doesNotMatch(run.cookies, /example\.org/);
       }
-      const file = path.join(server.config.home, 'staging', '_shared', 'cookies.txt');
+      const file = path.join(server.config.home, 'staging', '_shared', r.json.batch.id, 'cookies.txt');
       assert.ok(fs.existsSync(file));
       if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
       assert.equal((await api(base, 'DELETE', '/api/downloads')).status, 200);
@@ -641,6 +642,141 @@ test('a downloaded song gets its album and genre looked up; one left empty is it
     assert.deepEqual(asked, ['Song a']);
     const dropped = lib.songs.find((x) => x.file === 'Someone - Dropped.wav');
     assert.deepEqual([dropped.album, dropped.genre], ['Homework', 'House']);
+  } finally {
+    await server.close();
+  }
+});
+
+// ---- the download queue (4.4) ----
+
+const queueOf = async (base, headers) => (await api(base, 'GET', '/api/downloads?queue=1', undefined, headers)).json;
+
+test('with the queue a profile may queue several batches: they take turns with every profile\'s, each named at once', needsFfmpeg, async () => {
+  await withServer(async ({ base }) => {
+    assert.ok((await api(base, 'GET', '/api/hello')).json.features.includes('downloadQueue'));
+    const profile = async (name) => ({ Authorization: `Bearer ${(await api(base, 'POST', '/api/profiles', { name, pin: '1111', device: name })).json.token}` });
+    const a = await profile('Anna');
+    const b = await profile('Ben');
+    // Its third song downloads forever: once it has started, the next batch has its turn.
+    const first = (await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/list/3?slow=3', kind: 'list', queue: true }, a)).json.batch;
+    assert.equal(first.state, 'listing');
+    const second = (await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/list/2?ids=q&name=Second', kind: 'list', queue: true }, a)).json.batch;
+    assert.equal(second.state, 'queued');
+    assert.equal(second.place, 1);
+    const third = (await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/b1', kind: 'song', queue: true }, b)).json.batch;
+    assert.equal(third.place, 2);
+    // An app from before the queue cannot start a second one, and sees the oldest.
+    assert.equal((await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/zz', kind: 'song' }, a)).status, 409);
+    assert.equal((await batchOf(base, a)).id, first.id);
+
+    // Named and counted while they wait; every profile sees every line, its own marked.
+    const named = await waitFor(async () => {
+      const q = await queueOf(base, b);
+      const rows = Object.fromEntries(q.queue.map((r) => [r.id, r]));
+      return rows[second.id] && rows[second.id].name === 'Second' && rows[third.id] && rows[third.id].name && q;
+    }, 'the queued batches named');
+    const rows = Object.fromEntries(named.queue.map((r) => [r.id, r]));
+    assert.deepEqual([rows[second.id].profileName, rows[second.id].count, rows[second.id].own, rows[second.id].state], ['Anna', 2, false, 'queued']);
+    assert.deepEqual([rows[third.id].profileName, rows[third.id].count, rows[third.id].own, rows[third.id].single], ['Ben', 1, true, true]);
+    assert.equal(rows[second.id].url, 'https://fake.test/list/2?ids=q&name=Second');
+    assert.deepEqual(named.batches.map((x) => x.id), [third.id]);
+    // Only a profile's own can be cancelled, or looked into.
+    assert.equal((await api(base, 'DELETE', `/api/downloads/${second.id}`, undefined, b)).status, 404);
+    assert.equal((await api(base, 'GET', `/api/downloads/${second.id}/items/0/peaks`, undefined, b)).status, 404);
+
+    // The first batch's last song has started: the next one is read meanwhile,
+    // its songs waiting for the one download there is (downloadJobs 1).
+    await waitFor(async () => {
+      const q = await queueOf(base, a);
+      const mine = Object.fromEntries(q.batches.map((x) => [x.id, x]));
+      return mine[second.id].state === 'ready' && mine[second.id].items.length === 2
+        && mine[first.id].items[2].state === 'downloading' && q;
+    }, 'the second batch read');
+    // The song that never ends thrown away: the rest download.
+    assert.equal((await api(base, 'DELETE', `/api/downloads/${first.id}/items/2`, undefined, a)).status, 200);
+    await waitFor(async () => {
+      const q = await queueOf(base, a);
+      const mine = Object.fromEntries(q.batches.map((x) => [x.id, x]));
+      return mine[second.id].items.every((it) => it.state === 'ready') && q;
+    }, 'the second batch downloaded');
+    const ben = await waitFor(async () => {
+      const q = await queueOf(base, b);
+      return q.batches[0] && q.batches[0].items[0] && q.batches[0].items[0].state === 'ready' && q;
+    }, 'the song of the other profile downloaded');
+    // A batch whose songs have all come is no longer a line of the queue.
+    assert.ok(!ben.queue.some((r) => r.id === third.id));
+
+    // One of them finished by its id, another cancelled: the rest stay.
+    const peaks = await api(base, 'GET', `/api/downloads/${second.id}/items/1/peaks`, undefined, a);
+    assert.equal(peaks.status, 200);
+    const fin = await api(base, 'POST', `/api/downloads/${second.id}/items/0/finish`, { meta: { title: 'Kept' }, start: 0, end: 3 }, a);
+    assert.equal(fin.status, 200);
+    assert.equal(fin.json.batch.id, second.id);
+    assert.equal((await api(base, 'DELETE', `/api/downloads/${first.id}`, undefined, a)).status, 200);
+    assert.deepEqual((await queueOf(base, a)).batches.map((x) => x.id), [second.id]);
+  });
+});
+
+test('a batch asked to finish by itself saves every song as it came, into a playlist named after the list', needsFfmpeg, async () => {
+  await withServer(async ({ base, server }) => {
+    const auto = { complete: true, finish: true };
+    const one = (await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/list/2?name=Road%20trip', kind: 'list', queue: true, auto })).json.batch;
+    // Another list of the same name goes into the same playlist; one of its songs fails.
+    const two = (await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/list/3?ids=r&name=Road%20trip&fail=2', kind: 'list', queue: true, auto })).json.batch;
+    const song = (await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/solo', kind: 'song', queue: true, auto })).json.batch;
+    const q = await waitFor(async () => {
+      const got = await queueOf(base);
+      return !got.batches.length && got.done.length === 3 && got;
+    }, 'all three finished by themselves', 60000);
+    const done = Object.fromEntries(q.done.map((x) => [x.id, x]));
+    assert.equal(done[one.id].saved, 2);
+    assert.equal(done[two.id].saved, 2);
+    assert.equal(done[two.id].failed.length, 1);
+    assert.equal(done[one.id].playlistId, done[two.id].playlistId);
+    assert.equal(done[song.id].saved, 1);
+    assert.equal(done[song.id].playlistId, null);
+    const lib = (await api(base, 'GET', '/api/library')).json.library;
+    const lists = lib.playlists.filter((p) => p.name.startsWith('Road trip'));
+    assert.equal(lists.length, 1);
+    assert.equal(lists[0].entries.length, 4);
+    assert.equal(lib.songs.length, 5);
+    assert.deepEqual(fs.readdirSync(path.join(server.config.home, 'staging')), []);
+
+    // Auto-complete: a single song the library has already is skipped, with or without finishing.
+    const again = (await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/solo', kind: 'song', queue: true, auto: { complete: true } })).json.batch;
+    const skipped = await waitFor(async () => {
+      const got = await queueOf(base);
+      return got.done.find((x) => x.id === again.id);
+    }, 'the song skipped');
+    assert.equal(skipped.skipped, true);
+    assert.ok(skipped.existing && skipped.existing.id);
+    assert.equal((await api(base, 'GET', '/api/library')).json.library.songs.length, 5);
+    // Without auto, a batch waits for its app as before.
+    await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/v/later', kind: 'song', queue: true });
+    const waiting = await allSettled(base);
+    assert.equal(waiting.items[0].state, 'ready');
+  });
+});
+
+test('a batch kept by a server from before the queue is moved into a folder of its own and stays usable', needsFfmpeg, async () => {
+  const d = dirs();
+  let { server, base } = await start(d);
+  try {
+    await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/list/2', kind: 'list' });
+    const b = await allSettled(base);
+    await server.close();
+    // As 4.3 kept it: right in the profile's folder.
+    const shared = path.join(d.home, 'staging', '_shared');
+    for (const f of fs.readdirSync(path.join(shared, b.id))) fs.renameSync(path.join(shared, b.id, f), path.join(shared, f));
+    fs.rmdirSync(path.join(shared, b.id));
+    ({ server, base } = await start(d));
+    const again = await batchOf(base);
+    assert.equal(again.id, b.id);
+    assert.deepEqual(again.items.map((it) => it.state), ['ready', 'ready']);
+    assert.ok(fs.existsSync(path.join(shared, b.id, 'batch.json')));
+    assert.ok(!fs.existsSync(path.join(shared, 'batch.json')));
+    assert.equal((await api(base, 'GET', '/api/downloads/items/1/peaks')).status, 200);
+    assert.equal((await api(base, 'GET', `/api/downloads/${b.id}/items/1/peaks`)).status, 200);
   } finally {
     await server.close();
   }

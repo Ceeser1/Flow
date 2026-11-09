@@ -111,6 +111,11 @@
             <!-- Where nothing downloads from links: the legal note and how to get yt-dlp (downloadsHelp.js). -->
             <button id="downloadsHelpBtn" class="btn btn--big downloads-help-btn" type="button" hidden data-i18n="window.add.downloadsHelp">Downloads?</button>
           </div>
+          <!-- Settings › Media Management's two (4.4), to switch for each link: a link queued keeps them as they were (add.js). -->
+          <div id="autoRow" class="auto-row">
+            <label class="check"><input id="autoCompleteBox" type="checkbox"/><span data-i18n="settings.media.autoComplete.label">Auto-complete confirmations when adding songs</span></label>
+            <label id="autoFinishLabel" class="check auto-row__sub" hidden><input id="autoFinishBox" type="checkbox"/><span data-i18n="settings.media.autoFinish.label">Automate "Finish All"</span></label>
+          </div>
           <!-- Songs from the computer instead: hidden once something is open. -->
           <div id="localPick" class="local-pick">
             <div class="local-pick__or" data-i18n="common.or">or</div>
@@ -545,6 +550,7 @@
 <script src="app/pages/add.js"></script>
 <script src="app/pages/import.js"></script>
 <script src="app/pages/serverImport.js"></script>
+<script src="app/pages/clientQueue.js"></script>
 <script src="app/pages/songSearch.js"></script>
 <script src="app/downloadsHelp.js"></script>
 <script src="app/pages/playlists.js"></script>

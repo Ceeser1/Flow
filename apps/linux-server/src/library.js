@@ -1128,12 +1128,23 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
    * taken). Made at once, in one change, so two devices finishing songs of
    * the same batch cannot make it twice. Returns its id.
    */
-  function importPlaylist(profileId, { name, mergeInto = null, source = null }) {
+  /**
+   * A download's playlist: into mergeInto, else (byName, a batch that
+   * finishes by itself) the profile's own playlist of that name (not a smart
+   * one, not Favourites), else a new one under a name still free.
+   */
+  function importPlaylist(profileId, {
+    name, mergeInto = null, byName = false, source = null,
+  }) {
     checkProfile(profileId);
     let id = null;
     mutate((d) => {
       const v = prof.view(d, profiles, profileId, profileNames());
       let p = mergeInto ? model.playlistById(v, mergeInto) : null;
+      if (!p && byName) {
+        const wanted = String(name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        p = v.playlists.find((x) => !x.favourites && !x.rules && x.name.toLowerCase() === wanted) || null;
+      }
       if (!p) p = model.createPlaylist(v, model.freePlaylistName(v, name), newId());
       if (source && source.url) model.setPlaylistSource(v, p.id, source);
       id = p.id;

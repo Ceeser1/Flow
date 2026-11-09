@@ -1294,6 +1294,19 @@ const SettingsPanel = {
         when: () => Store.settings.useCookies,
         show: server,
       }) : null,
+      // 4.4: on every app, for the client's downloads and the server's; mirrored under Add Songs' link box.
+      this._row({
+        key: 'autoComplete',
+        label: T('settings.media.autoComplete.label'),
+        desc: T('settings.media.autoComplete.desc'),
+      }),
+      this._row({
+        key: 'autoFinish',
+        label: T('settings.media.autoFinish.label'),
+        desc: T('settings.media.autoFinish.desc'),
+        sub: true,
+        when: () => Store.settings.autoComplete,
+      }),
       here ? this._row({
         key: 'sponsorBlock',
         label: T('settings.media.sponsorBlock.label'),

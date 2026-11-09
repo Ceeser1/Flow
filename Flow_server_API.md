@@ -523,8 +523,8 @@ master admin. Nobody changes their own profile or the master's here.
 | `POST /api/admin/uploads/delete` | `{ songId }` | `{ rev }`: the song deleted for everyone, to the trash; 404 when it is gone already |
 | `GET /api/admin/playlists` | | 4.2.3: every playlist on the server with its owner: `{ playlists: [{ id, name, ownerId, songs, seconds, smart, shared }], owners: [{ id, name, master }] }`. `ownerId` and the owners' ids: a profile, or `"default"` (the Default / Shared). A smart playlist's `songs` and `seconds` are null (the apps work its songs out from its rules) |
 | `POST /api/admin/playlists/owner` | `{ id, owner }` | 4.2.3: the playlist given to another owner: the same playlist (id, songs, rules, sharing), so its followers keep following it; the new owner no longer follows it, and a name it has already gets " (2)": `{ name, rev }`. 404 for a playlist or owner not there; 403 for the master admin's playlists unless the master asks |
-| `GET /api/admin/downloads` | | every profile's server download: `{ batches: [{ key, profileId, profileName, state, name, url, createdAt, songs, saved, open, failed }] }` |
-| `POST /api/admin/downloads/cancel` | `{ key }` | that download cancelled |
+| `GET /api/admin/downloads` | | every profile's server downloads (several each with the queue): `{ batches: [{ key, profileId, profileName, state, name, url, createdAt, songs, saved, open, failed }] }`, `key` the batch's id |
+| `POST /api/admin/downloads/cancel` | `{ key }` | that download cancelled (a profile's id: all of its downloads) |
 | `GET /api/admin/sessions` | | every Active Session: `{ sessions: [...] }` as `/api/sessions` lists them, with `shared` |
 | `POST /api/admin/sessions/end` | `{ id }` | its members are out (told `left`); a host still playing has a session of its own again |
 | `GET /api/admin/trash` | | `{ items: [{ name, at, size, title, artist, by, addedBy, restorable }], bytes }` (`by`: who deleted it, `addedBy`: who added it; names, empty when not known) |
@@ -710,14 +710,19 @@ A guest is never the host: with only guests left, the session ends
 
 Only when `/api/hello` lists `download` (else 501). The server reads a link,
 downloads its songs in the background and keeps them aside until a client
-finishes (trims and names) each one. One batch per profile (without
-profiles, one for everybody).
+finishes (trims and names) each one. Without `downloadQueue` in `/api/hello`
+(servers before 4.4): one batch per profile (without profiles, one for
+everybody). With it a profile may have up to 20 batches, see **The queue**
+below; the routes without `<id>` then mean the profile's oldest one.
 
 | Route | Body | Answer |
 |---|---|---|
-| `GET /api/downloads` | | `{ batch }`, null when there is none |
-| `POST /api/downloads` | `{ url, kind, options, cookies? }` or `{ items, name, options }` | a new batch: `{ batch }`. 409 with one open already |
-| `DELETE /api/downloads` | | cancels the whole batch: `{ batch: null }` |
+| `GET /api/downloads` | | `{ batch }`, null when there is none (the oldest) |
+| `GET /api/downloads?queue=1` | | `{ batch, batches, queue, done }`, see **The queue** |
+| `POST /api/downloads` | `{ url, kind, options, cookies?, queue?, auto? }` or `{ items, name, options, queue?, auto? }` | a new batch: `{ batch }`. 409 with one open already, unless `queue: true` |
+| `DELETE /api/downloads` | | cancels the whole batch (the oldest): `{ batch: null }` |
+| `DELETE /api/downloads/<id>` | | cancels that batch, the profile's own only (404 otherwise) |
+| `/api/downloads/<id>/items/<i>/...` | | each `items` route below, for that batch |
 | `POST /api/downloads/search` | `{ query, page? }` | uploads for a song's name, below; downloads nothing |
 | `GET /api/downloads/items/<i>/peaks` | | `{ peaks }` of a `ready` song |
 | `GET /api/downloads/items/<i>/audio` | | the prepared file, with `Range` (and `?t=`) |
@@ -735,6 +740,30 @@ lines are kept. Or, for uploads picked from a search: `items`, up to 50
 `{ url, title, duration }` (each such a link), and `name` (the search's words):
 the batch is `ready` at once, its `source` `{ url: "", name, kind: "search" }`,
 and no playlist is made unless a finish asks for one.
+
+**The queue** (only with `downloadQueue` in `/api/hello`, 4.4): the batches
+of every profile take turns, oldest first. A new one is `queued` while
+another has the turn (being read, or with songs still waiting to download)
+and starts once that one's last song has started. A batch whose songs have
+all come waits for its client's finish without holding up the others.
+`batch.place` is its place in the queue (1: next, 0: not waiting) and
+`batch.peek` its name and song count, read at once while it waits:
+`{ name, count, single, sourceTotal }`, or `{ error }` (the whole read is
+still its turn's). `GET ?queue=1` adds `batches` (the profile's own, oldest
+first), `queue` (every profile's batches still waiting or downloading, in
+their order: `{ id, own, profileName, name, count, url, single, state
+("queued", "listing" or "downloading"), place, createdAt }`; only `own` ones
+can be cancelled or looked into) and `done`. A client from before the queue
+sees a `queued` batch as `listing`, with "Waiting for its turn" as its
+progress. `auto: { complete, finish }` (a client's "Auto-complete
+confirmations" and "Automate 'Finish All'"; `finish` only with `complete`):
+with `complete` a single song the library has already is skipped; with
+`finish` the batch saves every song as it came once all have come (untrimmed,
+the names read), into a playlist named after the list (the profile's own of
+that name, if it has one; the list's songs the library has go in too), a
+single song into All Songs only, and ends. `done` is what such batches did in
+the last 10 minutes: `[{ id, name, url, single, at, saved, added, failed:
+[{ title, reason }], playlistId, skipped?, existing? }]`.
 
 **Several links at once:** `url` may hold any number of links separated by
 commas (`"https://open.spotify.com/album/a, https://www.youtube.com/playlist?list=b"`;

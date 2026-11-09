@@ -4,13 +4,28 @@
 // and keeps them aside until an app has looked at them, so apps without
 // yt-dlp (a browser, a phone) can add songs too.
 //
-// Each profile has at most one batch (no profile: one shared batch). It lives
-// in <home>/staging/<profile>/, not in the music folder, so the folder scan
-// never sees it: batch.json (written atomically) and the prepared files, each
-// with its waveform's peaks beside it. Nothing of it is in the library until
-// an app finishes a song: then the trim is cut out straight into the music
-// folder, with its names in the tags, and the song added like an upload.
+// A profile may have several batches (4.4, the download queue; no profile:
+// the shared ones). Each lives in <home>/staging/<profile>/<batch id>/, not in
+// the music folder, so the folder scan never sees it: batch.json (written
+// atomically) and the prepared files, each with its waveform's peaks beside
+// it. Nothing of it is in the library until an app finishes a song: then the
+// trim is cut out straight into the music folder, with its names in the tags,
+// and the song added like an upload.
 //
+// The batches of all profiles take turns, oldest first: one is read and its
+// songs downloaded while the next ones wait ('queued'); the next one's turn
+// comes once the one before has no song left waiting to download. A batch
+// whose songs are all downloaded waits for its app's Finish All without
+// holding up the others. A queued link's name and song count are read at
+// once (listing.peek) for the apps' queue lines; the whole read is its turn.
+// A batch asked to finish by itself (auto.finish: the app's "Automate
+// 'Finish All'") saves every song as it came once all are downloaded, into a
+// playlist named after the list (merged into one of the profile's of that
+// name), a single song into All Songs only; what that did stays in `done`
+// for a while for the apps' message. Apps from before the queue see only a
+// profile's oldest batch and cannot start a second (409), as before.
+//
+//   queued       waiting for its turn (4.4).
 //   listing      the link is read in the background (a Spotify, Deezer or
 //                Amazon Music list is looked up on YouTube, which takes a
 //                while); an app polls.
@@ -56,6 +71,13 @@ const MIN_FREE_BYTES = 500 * 1024 * 1024;
 const DAY = 24 * 60 * 60 * 1000;
 // Items still to be dealt with: a batch with none of these left is over.
 const OPEN = new Set(['queued', 'downloading', 'converting', 'ready', 'saving']);
+// Items still coming: a batch with none of these left waits for its Finish All.
+const COMING = new Set(['queued', 'downloading', 'converting']);
+// Batches one profile may have at once (queued, downloading, waiting).
+const QUEUE_MAX = 20;
+// How long what a batch that finished by itself did is told to the apps.
+const DONE_KEEP = 10 * 60 * 1000;
+const isBatchId = (id) => /^[0-9a-f]{12}$/.test(String(id || ''));
 
 class DownloadError extends Error {
   constructor(status, message) {
@@ -125,6 +147,21 @@ function removeQuietly(file) {
   }
 }
 
+function isDir(p) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** What an app asks of a batch's end (4.4): { complete, finish }; finish only with complete. */
+function cleanAuto(a) {
+  const r = a && typeof a === 'object' ? a : {};
+  const complete = !!r.complete;
+  return { complete, finish: complete && !!r.finish };
+}
+
 function freeBytes(dir) {
   try {
     const st = fs.statfsSync(dir);
@@ -150,53 +187,211 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   });
   const lister = createLister({ media, library: () => library.data, lookupInfo: library.lookupInfo || null });
 
-  const batches = new Map();    // profile key -> batch (as batch.json holds it)
-  const progress = new Map();   // `${key}/${index}` -> { frac, text } of the song downloading
-  const running = new Map();    // `${key}/${index}` -> cancel token
-  const listing = new Map();    // profile key -> the listing's cancel group
+  const batches = new Map();    // batch id -> batch (as batch.json holds it)
+  const progress = new Map();   // `${batch id}/${index}` -> { frac, text } of the song downloading
+  const running = new Map();    // `${batch id}/${index}` -> cancel token
+  const listing = new Map();    // batch id -> the listing's cancel group
+  const peeking = new Map();    // batch id -> the quick read's cancel group (peek)
+  const finishing = new Set();  // batch ids finishing by themselves (autoFinish)
+  const done = new Map();       // profile key -> [what a batch that finished by itself did]
   const searching = new Map();  // profile key -> the search's cancel group (search)
   const checking = new Map();   // `${profile key}|${link}` -> the check's cancel group (check)
   let active = 0;
   let stopped = false;
+  // Batches made in the same millisecond still take turns in the order sent.
+  let lastStamp = 0;
+  const stamp = () => {
+    lastStamp = Math.max(Date.now(), lastStamp + 1);
+    return lastStamp;
+  };
 
-  const dirOf = (key) => path.join(root, key);
-  const fileOf = (batch, item) => (item.file ? path.join(dirOf(batch.key), item.file) : null);
-  const peaksOf = (batch, item) => path.join(dirOf(batch.key), `i${item.index}.peaks.json`);
+  const dirOf = (batch) => path.join(root, batch.key, batch.id);
+  const fileOf = (batch, item) => (item.file ? path.join(dirOf(batch), item.file) : null);
+  const peaksOf = (batch, item) => path.join(dirOf(batch), `i${item.index}.peaks.json`);
   // The song's cover, looked for as soon as it is downloaded (item.cover: its
   // version), so the apps show it while the song is trimmed and named; it
   // becomes the song's when finished.
-  const coverOf = (batch, item) => path.join(dirOf(batch.key), `i${item.index}.cover.jpg`);
+  const coverOf = (batch, item) => path.join(dirOf(batch), `i${item.index}.cover.jpg`);
   // One lookup at a time, apart from the downloads: a song is ready without
   // waiting for its cover.
   let coverChain = Promise.resolve();
   // The browser cookies an app sent with the batch (only the link's site's):
   // its yt-dlp runs read them, and they go with the batch's folder.
-  const cookiesOf = (batch) => path.join(dirOf(batch.key), 'cookies.txt');
+  const cookiesOf = (batch) => path.join(dirOf(batch), 'cookies.txt');
   const ytdlpArgs = (batch) => (batch.cookies ? ['--cookies', cookiesOf(batch)] : null);
+  const isAlive = (batch) => batches.get(batch.id) === batch;
+  /** A profile's batches, oldest first. */
+  const batchesOf = (key) => [...batches.values()].filter((b) => b.key === key).sort((a, b) => a.createdAt - b.createdAt);
+  const profileName = (key) => {
+    if (key === keyOf(null)) return 'Default / Shared';
+    const p = config.get().profiles.find((x) => x.id === key);
+    return p ? p.name : '';
+  };
 
   function save(batch) {
-    if (batches.get(batch.key) !== batch) return;
-    fs.mkdirSync(dirOf(batch.key), { recursive: true });
-    writeJsonAtomic(path.join(dirOf(batch.key), 'batch.json'), batch);
+    if (!isAlive(batch)) return;
+    fs.mkdirSync(dirOf(batch), { recursive: true });
+    writeJsonAtomic(path.join(dirOf(batch), 'batch.json'), batch);
   }
 
-  function drop(key, why = 'thrown away') {
-    const batch = batches.get(key);
-    batches.delete(key);
-    const group = listing.get(key);
-    if (group) group.cancel();
-    listing.delete(key);
-    for (const [k, token] of running) {
-      if (k.startsWith(`${key}/`)) token.cancel ? token.cancel() : (token.cancelled = true);
+  function drop(batch, why = 'thrown away') {
+    if (!isAlive(batch)) return;
+    batches.delete(batch.id);
+    for (const map of [listing, peeking]) {
+      const group = map.get(batch.id);
+      if (group) group.cancel();
+      map.delete(batch.id);
     }
-    removeQuietly(dirOf(key));
-    if (batch) log(`Download batch ${batch.source.name ? `"${batch.source.name}" ` : ''}${why}`);
+    for (const [k, token] of running) {
+      if (k.startsWith(`${batch.id}/`)) token.cancel ? token.cancel() : (token.cancelled = true);
+    }
+    removeQuietly(dirOf(batch));
+    // The profile's folder goes with its last batch.
+    try {
+      if (!fs.readdirSync(path.join(root, batch.key)).length) fs.rmdirSync(path.join(root, batch.key));
+    } catch {
+      // Gone already, or something else in it.
+    }
+    log(`Download batch ${batch.source.name ? `"${batch.source.name}" ` : ''}${why}`);
+    turn();
   }
 
   /** Whatever a download that was cut off left behind: partial files of items not ready. */
   function cleanPartial(batch, item) {
-    for (const f of fs.readdirSync(dirOf(batch.key), { withFileTypes: true })) {
-      if (f.isFile() && f.name.startsWith(`i${item.index}_`) && f.name !== item.file) removeQuietly(path.join(dirOf(batch.key), f.name));
+    for (const f of fs.readdirSync(dirOf(batch), { withFileTypes: true })) {
+      if (f.isFile() && f.name.startsWith(`i${item.index}_`) && f.name !== item.file) removeQuietly(path.join(dirOf(batch), f.name));
+    }
+  }
+
+  // ---- taking turns (4.4) ----
+
+  /** The batch that has the turn: being read, or with songs still waiting to download. */
+  const hasTurn = (b) => b.state === 'listing' || (b.state === 'ready' && b.items.some((it) => it.state === 'queued'));
+
+  /** The next queued batch starts once no batch has the turn. */
+  function turn() {
+    if (stopped) return;
+    const all = [...batches.values()];
+    if (all.some(hasTurn)) return;
+    const next = all.filter((b) => b.state === 'queued').sort((a, b) => a.createdAt - b.createdAt)[0];
+    if (!next) return;
+    next.lastActivity = Date.now();
+    if (next.prepared) {
+      // Picked from a search or an Update: its songs are known already.
+      next.state = 'ready';
+      delete next.prepared;
+      save(next);
+      log(`Download batch "${next.source.name}": ${next.items.length} ${next.items.length === 1 ? 'song' : 'songs'}`);
+      pump();
+      settle(next);
+      return;
+    }
+    next.state = 'listing';
+    save(next);
+    startListing(next);
+  }
+
+  /** Where a queued batch stands in the queue of all profiles (1: next), else 0. */
+  function placeOf(batch) {
+    if (batch.state !== 'queued') return 0;
+    return [...batches.values()].filter((b) => b.state === 'queued' && b.createdAt <= batch.createdAt).length;
+  }
+
+  /**
+   * A queued link's name and song count for the apps' queue lines, read at
+   * once (listing.peek) while it waits; the whole read is its turn.
+   */
+  async function startPeek(batch) {
+    const group = groupToken(ytdlpArgs(batch));
+    peeking.set(batch.id, group);
+    try {
+      const got = await lister.peek(batch.source.url, group, { song: batch.single });
+      if (!isAlive(batch)) return;
+      batch.peek = { name: cleanText(got.name, 200), count: got.count, single: got.single, sourceTotal: got.sourceTotal || 0 };
+    } catch (err) {
+      if (!isAlive(batch) || group.cancelled) return;
+      batch.peek = { error: cleanText((err && err.message) || 'The link could not be read.', 300) };
+    } finally {
+      if (peeking.get(batch.id) === group) peeking.delete(batch.id);
+    }
+    save(batch);
+  }
+
+  // ---- finishing by itself (4.4) ----
+
+  /** What a batch that finished by itself did, told to the apps for DONE_KEEP. */
+  function remember(batch, result) {
+    const now = Date.now();
+    const list = (done.get(batch.key) || []).filter((d) => now - d.at < DONE_KEEP);
+    list.push({
+      id: batch.id, name: batch.source.name || '', url: batch.source.url || '', single: !!batch.single, at: now, ...result,
+    });
+    done.set(batch.key, list.slice(-20));
+  }
+
+  /**
+   * A batch whose songs have all come: with auto.complete a single song the
+   * library has already is skipped; with auto.finish every song is saved as
+   * it came (autoFinish). Otherwise it waits for its app.
+   */
+  function settle(batch) {
+    if (!isAlive(batch) || batch.state !== 'ready' || batch.items.some((it) => COMING.has(it.state))) return;
+    const auto = batch.auto || {};
+    if (!auto.complete && !auto.finish) return;
+    const item = batch.items[0];
+    if (batch.single && item && item.state === 'library') {
+      remember(batch, { skipped: true, existing: item.existing || null, saved: 0, added: 0, failed: [] });
+      drop(batch, 'skipped: the song is in the library already');
+      return;
+    }
+    if (auto.finish) autoFinish(batch);
+  }
+
+  async function autoFinish(batch) {
+    if (finishing.has(batch.id)) return;
+    finishing.add(batch.id);
+    const profileId = batch.profileId || null;
+    const playlist = batch.single ? null : { name: batch.source.name, byName: true };
+    const failed = batch.items.filter((it) => it.state === 'failed').map((it) => ({ title: it.title, reason: it.error || '' }));
+    let saved = 0;
+    try {
+      for (const item of batch.items) {
+        if (!isAlive(batch)) return;
+        if (item.state !== 'ready') continue;
+        const known = batch.items.filter((it) => it.state === 'library').map((it) => it.index);
+        try {
+          await finishItem(batch, item, {
+            meta: { ...(item.meta || {}), title: (item.meta && item.meta.title) || item.title },
+            start: 0,
+            end: item.duration,
+            playlist,
+            existing: known,
+          }, { endBatch: false });
+          saved += 1;
+        } catch (err) {
+          failed.push({ title: item.title, reason: (err && err.message) || 'It could not be saved.' });
+        }
+      }
+      if (!isAlive(batch)) return;
+      // Only songs the library has: the playlist is made of them.
+      const known = batch.items.filter((it) => it.state === 'library' && it.existing);
+      if (known.length && playlist) {
+        if (!batch.base) batch.base = Date.now();
+        if (!batch.playlistId) {
+          batch.playlistId = library.importPlaylist(profileId, {
+            name: cleanText(playlist.name, 75) || 'Imported playlist', byName: true, source: { url: batch.source.url, kind: batch.source.kind },
+          });
+        }
+        for (const it of known) {
+          library.addToPlaylists(profileId, it.existing.id, [batch.playlistId], batch.base - it.index * 1000);
+          it.state = 'added';
+        }
+      }
+      const added = batch.items.filter((it) => it.state === 'added').length;
+      remember(batch, { saved, added, failed, playlistId: batch.playlistId || null });
+      drop(batch, `finished by itself (${saved} saved)`);
+    } finally {
+      finishing.delete(batch.id);
     }
   }
 
@@ -211,26 +406,47 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     }
     const profileIds = new Set(library.profileIds());
     for (const key of names) {
-      const batch = readJson(path.join(root, key, 'batch.json'));
-      const ok = batch && batch.key === key && Array.isArray(batch.items) && (key === '_shared' || profileIds.has(key));
-      if (!ok) {
-        removeQuietly(path.join(root, key));
+      const dir = path.join(root, key);
+      if (!(key === '_shared' || profileIds.has(key)) || !isDir(dir)) {
+        removeQuietly(dir);
         continue;
       }
-      // A link that was still being read is read again; songs that were
-      // downloading start over.
-      if (batch.state === 'listing') {
-        batches.set(key, batch);
-        startListing(batch);
-        continue;
+      // A server from before the queue kept the profile's one batch right in
+      // its folder: moved into a folder of its own.
+      const old = readJson(path.join(dir, 'batch.json'));
+      if (old && old.key === key && isBatchId(old.id)) {
+        const into = path.join(dir, old.id);
+        fs.mkdirSync(into, { recursive: true });
+        for (const f of fs.readdirSync(dir)) {
+          if (f !== old.id) fs.renameSync(path.join(dir, f), path.join(into, f));
+        }
+      } else if (fs.existsSync(path.join(dir, 'batch.json'))) {
+        removeQuietly(path.join(dir, 'batch.json'));
       }
-      for (const item of batch.items) {
-        if (item.state === 'downloading' || item.state === 'converting') item.state = 'queued';
-        if (item.state === 'saving') item.state = 'ready';
-        if (item.state === 'queued') cleanPartial(batch, item);
+      for (const id of fs.readdirSync(dir)) {
+        const batch = isBatchId(id) ? readJson(path.join(dir, id, 'batch.json')) : null;
+        if (!(batch && batch.key === key && batch.id === id && Array.isArray(batch.items))) {
+          removeQuietly(path.join(dir, id));
+          continue;
+        }
+        if (!batch.createdAt) batch.createdAt = Date.now();
+        // A link that was still being read waits for its turn again; songs
+        // that were downloading start over.
+        if (batch.state === 'listing') batch.state = 'queued';
+        for (const item of batch.items) {
+          if (item.state === 'downloading' || item.state === 'converting') item.state = 'queued';
+          if (item.state === 'saving') item.state = 'ready';
+          if (item.state === 'queued') cleanPartial(batch, item);
+        }
+        batches.set(id, batch);
+        save(batch);
+        if (batch.state === 'queued' && !batch.peek && !batch.prepared) startPeek(batch);
       }
-      batches.set(key, batch);
-      save(batch);
+      try {
+        if (!fs.readdirSync(dir).length) fs.rmdirSync(dir);
+      } catch {
+        // As drop.
+      }
     }
   }
 
@@ -289,13 +505,13 @@ function createDownloads({ config, library, tools, log = () => {} }) {
 
   async function startListing(batch) {
     const group = groupToken(ytdlpArgs(batch));
-    listing.set(batch.key, group);
+    listing.set(batch.id, group);
     const knownArtists = [...new Set(library.data.songs.map((s) => s.artist).filter(Boolean))];
     const onProgress = (p) => {
       const text = p.text || (p.phase === 'matching'
         ? `Looking up the songs on YouTube: ${p.done} of ${p.total}${p.known ? ` · ${p.known} already in the library` : ''}`
         : '');
-      progress.set(`${batch.key}/list`, { frac: p.total ? p.done / p.total : null, text });
+      progress.set(`${batch.id}/list`, { frac: p.total ? p.done / p.total : null, text });
     };
     try {
       let items;
@@ -338,23 +554,25 @@ function createDownloads({ config, library, tools, log = () => {} }) {
           item.existing = existingInfo(same);
         }
       }
-      if (batches.get(batch.key) !== batch) return;
+      if (!isAlive(batch)) return;
       Object.assign(batch, { state: 'ready', items, truncated, sourceTotal, error: '' });
       if (links) batch.links = links;
       batch.source.name = cleanText(name, 200) || 'Download';
       batch.source.kind = kind;
       log(`Download batch "${batch.source.name}": ${items.length} ${items.length === 1 ? 'song' : 'songs'}`);
     } catch (err) {
-      if (batches.get(batch.key) !== batch || group.cancelled) return;
+      if (!isAlive(batch) || group.cancelled) return;
       batch.state = 'failed';
       batch.error = (err && err.message) || 'The link could not be read.';
     } finally {
-      if (listing.get(batch.key) === group) listing.delete(batch.key);
-      progress.delete(`${batch.key}/list`);
+      if (listing.get(batch.id) === group) listing.delete(batch.id);
+      progress.delete(`${batch.id}/list`);
     }
     batch.lastActivity = Date.now();
     save(batch);
     pump();
+    settle(batch);
+    turn();
   }
 
   // ---- downloading, one song after another ----
@@ -371,14 +589,18 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   function pump() {
     while (!stopped && active < config.get().downloadJobs) {
       const next = nextQueued();
-      if (!next) return;
+      if (!next) break;
       active += 1;
       next.item.state = 'downloading';
       runItem(next.batch, next.item).finally(() => {
         active -= 1;
+        settle(next.batch);
         pump();
       });
     }
+    // The last song of the batch with the turn has started: the next one's
+    // link is read meanwhile.
+    turn();
   }
 
   /**
@@ -387,7 +609,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
    * after it was finished: the song's, unless it has one by then.
    */
   function findCover(batch, item, song) {
-    const alive = () => batches.get(batch.key) === batch && item.state !== 'discarded' && !stopped;
+    const alive = () => isAlive(batch) && item.state !== 'discarded' && !stopped;
     coverChain = coverChain.then(async () => {
       if (!alive()) return;
       const found = await library.lookForCover(song, () => !alive());
@@ -405,7 +627,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   }
 
   async function runItem(batch, item) {
-    const id = `${batch.key}/${item.index}`;
+    const id = `${batch.id}/${item.index}`;
     const token = { cancelled: false, ytdlpArgs: ytdlpArgs(batch) };
     running.set(id, token);
     progress.set(id, { frac: null, text: 'Reading...' });
@@ -414,9 +636,9 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       if (token.cancel) token.cancel();
       else token.cancelled = true;
     }, ITEM_TIMEOUT);
-    const alive = () => batches.get(batch.key) === batch && item.state !== 'discarded';
+    const alive = () => isAlive(batch) && item.state !== 'discarded';
     try {
-      const dir = dirOf(batch.key);
+      const dir = dirOf(batch);
       fs.mkdirSync(dir, { recursive: true });
       if (freeBytes(dir) < MIN_FREE_BYTES) throw new Error('The server is running out of disk space.');
       let probed = item.probed;
@@ -491,12 +713,27 @@ function createDownloads({ config, library, tools, log = () => {} }) {
 
   // ---- what the apps see ----
 
-  function publicBatch(batch) {
+  /**
+   * A batch as the apps see it. legacy: for an app from before the queue,
+   * which knows no 'queued' batch: it reads as one still being read.
+   */
+  function publicBatch(batch, { legacy = false } = {}) {
     if (!batch) return null;
-    const list = progress.get(`${batch.key}/list`);
+    const place = placeOf(batch);
+    let list = progress.get(`${batch.id}/list`);
+    let { state } = batch;
+    if (legacy && state === 'queued') {
+      state = 'listing';
+      list = { frac: null, text: `Waiting for its turn on the server (number ${place} in the queue)...` };
+    }
     return {
       id: batch.id,
-      state: batch.state,
+      state,
+      // 4.4: what the queue lines show while it waits (listing.peek), its place, how it ends.
+      peek: batch.peek || null,
+      place,
+      auto: batch.auto || null,
+      profileId: batch.profileId || null,
       error: batch.error || '',
       source: batch.source,
       single: !!batch.single,
@@ -524,25 +761,76 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         existing: it.existing || null,
         summary: it.summary || '',
         cover: it.cover || '',
-        progress: progress.get(`${batch.key}/${it.index}`) || null,
+        progress: progress.get(`${batch.id}/${it.index}`) || null,
       })),
     };
   }
 
-  function get(profileId) {
-    const batch = batches.get(keyOf(profileId)) || null;
-    // Looked at by its owner: kept for another downloadKeepDays (written at
-    // most once an hour, not at every poll).
-    if (batch && Date.now() - batch.lastActivity > 60 * 60 * 1000) {
+  /** Looked at by its owner: kept for another downloadKeepDays (written at most once an hour, not at every poll). */
+  function touch(batch) {
+    if (Date.now() - batch.lastActivity > 60 * 60 * 1000) {
       batch.lastActivity = Date.now();
       save(batch);
     }
-    return publicBatch(batch);
   }
 
-  function requireBatch(profileId) {
-    const batch = batches.get(keyOf(profileId));
-    if (!batch) throw new DownloadError(404, 'There is no download on the server for this profile.');
+  /**
+   * The queue's lines, every profile's (4.4): each batch still waiting or
+   * downloading, in its order. { id, own, profileName, name, count, url,
+   * state ('queued' | 'listing' | 'downloading'), place }. The batches whose
+   * songs have all come are not in it; their owners see them as theirs.
+   */
+  function queueRows(profileId) {
+    const mine = keyOf(profileId);
+    const order = { listing: 0, downloading: 0, queued: 1 };
+    return [...batches.values()]
+      .map((b) => {
+        let state = null;
+        if (b.state === 'queued' || b.state === 'listing') state = b.state;
+        else if (b.state === 'ready' && b.items.some((it) => COMING.has(it.state))) state = 'downloading';
+        if (!state) return null;
+        const peek = b.peek || {};
+        const count = b.state === 'ready' || b.prepared ? b.items.filter((it) => it.state !== 'discarded').length : (Number(peek.count) || 0);
+        return {
+          id: b.id,
+          own: b.key === mine,
+          profileName: profileName(b.key),
+          name: b.source.name || peek.name || '',
+          count,
+          url: b.source.url || '',
+          single: !!(b.single || peek.single),
+          state,
+          place: placeOf(b),
+          createdAt: b.createdAt,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => order[a.state] - order[b.state] || a.createdAt - b.createdAt);
+  }
+
+  /**
+   * GET /api/downloads: { batch } for an app from before the queue (the
+   * profile's oldest, legacy); with the queue (4.4) also { batches (the
+   * profile's, oldest first), queue (queueRows), done (what its batches that
+   * finished by themselves did, the last DONE_KEEP) }.
+   */
+  function get(profileId, { queue = false } = {}) {
+    const mine = batchesOf(keyOf(profileId));
+    for (const b of mine) touch(b);
+    const out = { batch: publicBatch(mine[0] || null, { legacy: !queue }) };
+    if (!queue) return out;
+    const now = Date.now();
+    out.batches = mine.map((b) => publicBatch(b));
+    out.queue = queueRows(profileId);
+    out.done = (done.get(keyOf(profileId)) || []).filter((d) => now - d.at < DONE_KEEP);
+    return out;
+  }
+
+  /** The profile's batch `id`, or without one (an app from before the queue) its oldest. */
+  function requireBatch(profileId, id = null) {
+    const key = keyOf(profileId);
+    const batch = id ? batches.get(String(id)) : batchesOf(key)[0];
+    if (!batch || batch.key !== key) throw new DownloadError(404, 'There is no such download on the server for this profile.');
     return batch;
   }
 
@@ -559,13 +847,22 @@ function createDownloads({ config, library, tools, log = () => {} }) {
    * only the link's site's cookies are kept. Or, for uploads picked from a
    * search (search), { items: [{ url, title, duration }], name, options }:
    * those songs, with nothing to read first, and no playlist unless asked.
+   * queue: true (an app with the queue, 4.4): one more batch in the queue
+   * even with others of the profile; without it, as before, 409 with one.
+   * auto: { complete, finish } (the app's "Auto-complete confirmations" and
+   * "Automate 'Finish All'"), see settle.
    */
-  function create(profileId, { url, kind, options, cookies, items, name, source } = {}) {
+  function create(profileId, {
+    url, kind, options, cookies, items, name, source, queue = false, auto = null,
+  } = {}) {
     if (config.get().downloads === false) throw new DownloadError(501, 'Downloads are turned off on this server (flow-server --downloads turns them on).');
     if (!tools.canDownload()) throw new DownloadError(501, 'This server cannot download songs: it needs yt-dlp and ffmpeg.');
     const key = keyOf(profileId);
-    if (batches.has(key)) throw new DownloadError(409, 'There is a download on the server already. Finish or cancel it first.');
-    if (items !== undefined) return createPicked(key, profileId, { items, name, options, source: source && source.url ? source : null });
+    const mine = batchesOf(key);
+    if (mine.length && !queue) throw new DownloadError(409, 'There is a download on the server already. Finish or cancel it first.');
+    if (mine.length >= QUEUE_MAX) throw new DownloadError(409, `At most ${QUEUE_MAX} downloads can wait on the server for one profile. Finish or cancel one first.`);
+    const how = cleanAuto(auto);
+    if (items !== undefined) return createPicked(key, profileId, { items, name, options, source: source && source.url ? source : null, auto: how });
     const link = checkLinks(url);
     // Several links are always read as lists (a song among them is one of its songs).
     const many = splitLinks(link).length > 1;
@@ -573,13 +870,15 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       throw new DownloadError(400, 'The browser cookies sent along are not usable.');
     }
     const siteCookies = cookies ? cookiesFor(cookies, cookieSites(link)) : '';
-    const now = Date.now();
+    const now = stamp();
     const batch = {
       id: crypto.randomBytes(6).toString('hex'),
       key,
       profileId: profileId || null,
-      state: 'listing',
+      state: 'queued',
       error: '',
+      auto: how,
+      peek: null,
       single: kind === 'song' && !many,
       source: { url: link, name: '', kind: '' },
       options: cleanOptions(options),
@@ -591,11 +890,13 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       items: [],
       cookies: !!siteCookies,
     };
-    batches.set(key, batch);
+    batches.set(batch.id, batch);
     save(batch);
     if (siteCookies) fs.writeFileSync(cookiesOf(batch), siteCookies, { mode: 0o600 });
-    startListing(batch);
-    return publicBatch(batch);
+    turn();
+    // Its line in the queue gets its name at once (being read now: its read says).
+    if (batch.state === 'queued') startPeek(batch);
+    return publicBatch(batch, { legacy: !queue });
   }
 
   /**
@@ -605,7 +906,9 @@ function createDownloads({ config, library, tools, log = () => {} }) {
    * the playlist, and a song with `existing` (a library song's id) is one of
    * the library's, added to it rather than downloaded.
    */
-  function createPicked(key, profileId, { items, name, options, source }) {
+  function createPicked(key, profileId, {
+    items, name, options, source, auto,
+  }) {
     if (!Array.isArray(items) || !items.length) throw new DownloadError(400, 'Pick at least one song to download.');
     const max = source ? MAX_ITEMS : MAX_PICKED;
     if (items.length > max) throw new DownloadError(400, `At most ${max} songs can be picked at once.`);
@@ -627,13 +930,17 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         status: 'ok',
       }, i);
     });
-    const now = Date.now();
+    const now = stamp();
     const batch = {
       id: crypto.randomBytes(6).toString('hex'),
       key,
       profileId: profileId || null,
-      state: 'ready',
+      // Its songs are known: ready at its turn (see turn).
+      state: 'queued',
+      prepared: true,
       error: '',
+      auto,
+      peek: null,
       single: false,
       source: source
         ? { url: link, name: cleanText(name, 200) || 'Download', kind: cleanText(source.kind, 40) }
@@ -647,10 +954,10 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       items: picked,
       cookies: false,
     };
-    batches.set(key, batch);
+    batches.set(batch.id, batch);
     save(batch);
     log(`Download batch "${batch.source.name}": ${picked.length} ${picked.length === 1 ? 'song' : 'songs'} picked ${source ? 'from its link' : 'from a search'}`);
-    pump();
+    turn();
     return publicBatch(batch);
   }
 
@@ -745,21 +1052,20 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     }
   }
 
-  /** Cancel import: the whole batch, whatever it is doing. */
-  function cancel(profileId) {
-    requireBatch(profileId);
-    drop(keyOf(profileId));
+  /** Cancel import: the whole batch, whatever it is doing. id: which of the profile's (none: its oldest). */
+  function cancel(profileId, id = null) {
+    drop(requireBatch(profileId, id));
   }
 
-  function audioFile(profileId, index) {
-    const batch = requireBatch(profileId);
+  function audioFile(profileId, index, id = null) {
+    const batch = requireBatch(profileId, id);
     const item = requireItem(batch, index);
     if (item.state !== 'ready' || !item.file) throw new DownloadError(409, 'That song is not ready yet.');
     return fileOf(batch, item);
   }
 
-  function peaks(profileId, index) {
-    const batch = requireBatch(profileId);
+  function peaks(profileId, index, id = null) {
+    const batch = requireBatch(profileId, id);
     const item = requireItem(batch, index);
     if (item.state !== 'ready') throw new DownloadError(409, 'That song is not ready yet.');
     const found = readJson(peaksOf(batch, item));
@@ -768,15 +1074,15 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   }
 
   /** The cover found for a song waiting in the batch: its file, or null. */
-  function coverFile(profileId, index) {
-    const batch = requireBatch(profileId);
+  function coverFile(profileId, index, id = null) {
+    const batch = requireBatch(profileId, id);
     const item = requireItem(batch, index);
     const file = coverOf(batch, item);
     return item.cover && item.state === 'ready' && fs.existsSync(file) ? { file, version: item.cover } : null;
   }
 
-  function retry(profileId, index) {
-    const batch = requireBatch(profileId);
+  function retry(profileId, index, id = null) {
+    const batch = requireBatch(profileId, id);
     const item = requireItem(batch, index);
     if (item.state !== 'failed') throw new DownloadError(409, 'Only a song that failed can be tried again.');
     if (!item.url) throw new DownloadError(409, 'This song has no link to try again.');
@@ -791,16 +1097,16 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   /** The batch is over once no song is left to deal with. */
   function endIfDone(batch) {
     if (batch.state !== 'ready' || batch.items.some((it) => OPEN.has(it.state))) return false;
-    drop(batch.key, 'done');
+    drop(batch, 'done');
     return true;
   }
 
   /** One song thrown away (it is not wanted). */
-  function discard(profileId, index) {
-    const batch = requireBatch(profileId);
+  function discard(profileId, index, id = null) {
+    const batch = requireBatch(profileId, id);
     const item = requireItem(batch, index);
     if (item.state === 'saving' || item.state === 'saved') throw new DownloadError(409, 'That song is saved already.');
-    const token = running.get(`${batch.key}/${item.index}`);
+    const token = running.get(`${batch.id}/${item.index}`);
     item.state = 'discarded';
     if (token) token.cancel ? token.cancel() : (token.cancelled = true);
     if (item.file) removeQuietly(fileOf(batch, item));
@@ -810,7 +1116,9 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     batch.lastActivity = Date.now();
     save(batch);
     if (endIfDone(batch)) return null;
-    return publicBatch(batch);
+    // The last song still coming thrown away: the batch may end by itself now.
+    settle(batch);
+    return isAlive(batch) ? publicBatch(batch) : null;
   }
 
   /**
@@ -823,9 +1131,20 @@ function createDownloads({ config, library, tools, log = () => {} }) {
    * same playlists at their places. Resolves { song, batch, playlistId };
    * batch is null once the batch is over.
    */
-  async function finish(profileId, index, body = {}) {
-    const batch = requireBatch(profileId);
+  async function finish(profileId, index, body = {}, id = null) {
+    const batch = requireBatch(profileId, id);
+    if (finishing.has(batch.id)) throw new DownloadError(409, 'This download is being finished by itself already.');
     const item = requireItem(batch, index);
+    return finishItem(batch, item, body, { endBatch: true });
+  }
+
+  /**
+   * finish's work for `item` of `batch` (also autoFinish's, which ends the
+   * batch itself: endBatch false). body.playlist.byName (autoFinish): into the
+   * profile's playlist of that name, if it has one.
+   */
+  async function finishItem(batch, item, body, { endBatch }) {
+    const profileId = batch.profileId || null;
     if (item.state === 'saving' || item.state === 'saved') throw new DownloadError(409, 'That song is being saved already.');
     if (item.state !== 'ready') throw new DownloadError(409, 'That song is not ready yet.');
     const meta = {
@@ -853,6 +1172,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       batch.playlistId = library.importPlaylist(profileId, {
         name: cleanText(body.playlist.name, 75) || batch.source.name || 'Imported playlist',
         mergeInto: body.playlist.mergeInto ? String(body.playlist.mergeInto) : null,
+        byName: !!body.playlist.byName,
         source: batch.single ? null : { url: batch.source.url, kind: batch.source.kind },
       });
     }
@@ -883,7 +1203,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       }
     } catch (err) {
       removeQuietly(tmp);
-      if (batches.get(batch.key) === batch) {
+      if (isAlive(batch)) {
         item.state = 'ready';
         save(batch);
       }
@@ -902,7 +1222,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       other.state = 'added';
     }
     log(`Downloaded and saved: ${[song.artist, song.title].filter(Boolean).join(' - ')}`);
-    if (batches.get(batch.key) !== batch) return { song: { id: song.id }, batch: null, playlistId: batch.playlistId || null };
+    if (!isAlive(batch)) return { song: { id: song.id }, batch: null, playlistId: batch.playlistId || null };
     item.state = 'saved';
     item.songId = song.id;
     item.cover = '';
@@ -912,7 +1232,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     item.file = '';
     batch.lastActivity = Date.now();
     save(batch);
-    const over = endIfDone(batch);
+    const over = endBatch && endIfDone(batch);
     return {
       song: { id: song.id, artist: song.artist, title: song.title, mix: song.mix },
       batch: over ? null : publicBatch(batch),
@@ -923,45 +1243,54 @@ function createDownloads({ config, library, tools, log = () => {} }) {
   /** Batches nobody has looked at for downloadKeepDays, gone. */
   function expire(now = Date.now()) {
     const keep = config.get().downloadKeepDays * DAY;
-    for (const [key, batch] of [...batches]) {
-      if (now - batch.lastActivity > keep) drop(key, 'expired');
+    for (const batch of [...batches.values()]) {
+      if (now - batch.lastActivity > keep) drop(batch, 'expired');
     }
   }
 
   /**
-   * Every profile's batch, for the admins: { key, profileId (null: no
-   * profile's), state, name, url, createdAt, songs, saved, open, failed }.
+   * Every profile's batches, for the admins: { key (the batch's id, which
+   * cancelKey takes), profileId (null: no profile's), state, name, url,
+   * createdAt, songs, saved, open, failed }.
    */
   function all() {
-    return [...batches.values()].map((b) => ({
-      key: b.key,
+    return [...batches.values()].sort((a, b) => a.createdAt - b.createdAt).map((b) => ({
+      key: b.id,
       profileId: b.key === keyOf(null) ? null : b.key,
       state: b.state,
-      name: (b.source && b.source.name) || '',
+      name: (b.source && b.source.name) || (b.peek && b.peek.name) || '',
       url: (b.source && b.source.url) || '',
       createdAt: b.createdAt,
-      songs: b.items.length,
+      songs: b.items.length || (b.peek && Number(b.peek.count)) || 0,
       saved: b.items.filter((it) => it.state === 'saved').length,
       open: b.items.filter((it) => OPEN.has(it.state)).length,
       failed: b.items.filter((it) => it.state === 'failed').length,
     }));
   }
 
-  /** An admin's cancel of any profile's batch (by its key). False: there was none. */
+  /**
+   * An admin's cancel of any profile's batch: by its id (all's key), or a
+   * profile's key for all of its batches (as an admin page from before the
+   * queue sends it). False: there was none.
+   */
   function cancelKey(key) {
-    if (!batches.has(key)) return false;
-    drop(key, 'cancelled by an admin');
+    const one = batches.get(key);
+    const which = one ? [one] : batchesOf(key);
+    if (!which.length) return false;
+    for (const b of which) drop(b, 'cancelled by an admin');
     return true;
   }
 
-  /** A profile deleted: its batch goes with it. */
+  /** A profile deleted: its batches go with it. */
   function dropProfile(profileId) {
-    if (batches.has(keyOf(profileId))) drop(keyOf(profileId));
+    for (const b of batchesOf(keyOf(profileId))) drop(b);
+    done.delete(keyOf(profileId));
   }
 
   load();
   expire();
   pump();
+  turn();
 
   return {
     // Turned on (or never turned off) and the tools are there.
@@ -984,6 +1313,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     stop() {
       stopped = true;
       for (const group of listing.values()) group.cancel();
+      for (const group of peeking.values()) group.cancel();
       for (const group of searching.values()) group.cancel();
       for (const group of checking.values()) group.cancel();
       for (const token of running.values()) token.cancel ? token.cancel() : (token.cancelled = true);

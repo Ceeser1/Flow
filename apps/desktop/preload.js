@@ -80,6 +80,10 @@ contextBridge.exposeInMainWorld('flow', {
   prepareLocal: (items, opts, run) => call('import:download', { items, opts, local: true, run }),
   finishImport: (job, run) => call('import:finish', { job, run }),
   setImportPending: (count) => call('import:pending', count),
+  // Add Songs' Client queue (4.4): a queued link's name and song count, its Cancel, and what closing asks about.
+  peekLink: (id, url, song) => call('download:peek', { id, url, song }),
+  cancelPeek: (id) => call('download:peekCancel', id),
+  setQueuePending: (info) => call('queue:pending', info),
   cancelImport: () => call('import:cancel'),
   onImportProgress: (fn) => ipcRenderer.on('import:progress', (_e, p) => fn(p)),
   openUrl: (url) => call('shell:openUrl', url),

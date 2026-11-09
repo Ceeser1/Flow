@@ -10,6 +10,11 @@
 //
 //   idle -> probing -> downloading -> ready -> (saving) -> idle
 //
+// A link pasted while something is open waits in the Client queue
+// (clientQueue.js) and comes back here at its turn (runEntry), with the
+// "Auto-complete confirmations" and "Automate 'Finish All'" it was queued
+// with (entry.auto): no questions, and saved as it came.
+//
 // The progress frame under the link box (LWClipper's title / bar + Cancel /
 // status line) follows every step. Once the song is ready the trim editor
 // appears: the waveform across the whole width, the trim slider below it and
@@ -30,6 +35,8 @@ const AddPage = {
   _lyricsChain: null,
   slider: null,
   playlistIds: [],
+  // How the song in the editor goes on (its queue entry's auto), or null.
+  auto: null,
   _stopAt: null,     // the preview stops here (the end handle), or null
   _raf: 0,
   _scrubbing: false,
@@ -50,6 +57,7 @@ const AddPage = {
       if (DownloadsHelp.here) this.startDownload();
       else if (!$('serverDownloadBtn').hidden) $('serverDownloadBtn').click();
     });
+    this._initAutoRow();
     $('openFilesBtn').onclick = () => this.openLocal(false);
     $('openFolderBtn').onclick = () => this.openLocal(true);
     this.drawLocalPick();
@@ -120,29 +128,81 @@ const AddPage = {
    * comes back here as `pick` ({ url, title }), downloaded as that one song.
    */
   async startDownload(pick = null) {
-    if (this.phase === 'probing' || this.phase === 'downloading' || this.phase === 'saving') return;
     const url = pick ? pick.url : $('linkInput').value.trim();
     if (!url) {
-      this._showError(T('common.emptyBox'));
+      if (ClientQueue.busy) toast(T('common.emptyBox'), 'error');
+      else this._showError(T('common.emptyBox'));
       $('linkInput').focus();
       return;
     }
     // Several links pasted at once ("a, b, c"): read as one list.
     const many = !pick && this.isLinkList(url);
     if (!pick && !many && this.isSearch(url)) {
+      // The search shows its progress where a download does: not while one runs.
+      if (ClientQueue.busy) {
+        toast(T('add.queue.searchBusy'), 'error');
+        return;
+      }
       SongSearch.open(url, 'client');
       return;
     }
-    if (!await this._clearForNew()) return;
-    // Another link than the one an Update put into the box: no Update.
-    if (ImportPanel.updating && (pick || url !== ImportPanel.updating.url)) ImportPanel.updating = null;
-
-    let kind = pick ? 'song' : (ImportPanel.updating || many ? 'list' : this._linkKind(url));
+    // The link an Update put into the box (any other link: no Update).
+    const updating = !pick && ImportPanel.updating && url === ImportPanel.updating.url ? ImportPanel.updating : null;
+    let kind = pick ? 'song' : (updating || many ? 'list' : this._linkKind(url));
     if (kind === 'ask') {
       kind = await this._askSongOrList(url);
       if (!kind) return;
     }
+    // Started or queued: the box is free for the next one.
+    $('linkInput').value = '';
+    ClientQueue.offer({
+      url, kind, title: pick ? pick.title || '' : '', updating, auto: this.autoNow(),
+    });
+  },
 
+  /**
+   * "Auto-complete confirmations" and "Automate 'Finish All'" as they are
+   * now (Settings › Media Management, or the boxes under the link box): a
+   * link queued keeps them.
+   */
+  autoNow() {
+    const s = Store.settings;
+    const complete = !!s.autoComplete;
+    return { complete, finish: complete && !!s.autoFinish };
+  },
+
+  /** The boxes under the link box: the settings themselves, switched here too. */
+  _initAutoRow() {
+    const main = $('autoCompleteBox');
+    const sub = $('autoFinishBox');
+    const draw = () => {
+      main.checked = !!Store.settings.autoComplete;
+      sub.checked = !!Store.settings.autoFinish;
+      $('autoFinishLabel').hidden = !main.checked;
+    };
+    main.addEventListener('change', () => Store.saveSettings({ autoComplete: main.checked }));
+    sub.addEventListener('change', () => Store.saveSettings({ autoFinish: sub.checked }));
+    Store.onSettings((patch) => {
+      if ('autoComplete' in patch || 'autoFinish' in patch) draw();
+    });
+    draw();
+  },
+
+  /**
+   * A link's turn (ClientQueue): it goes the way it always did, with
+   * entry.auto deciding what is asked. Resolves once it is in the editor or
+   * the import's frames (or done, or given up).
+   */
+  async runEntry(entry) {
+    if (!await this._clearForNew()) return;
+    const { url, kind } = entry;
+    const auto = entry.auto || { complete: false, finish: false };
+    ImportPanel.updating = entry.updating || null;
+    ImportPanel.auto = auto;
+    if (entry.picks) {
+      await ImportPanel.openPicked(entry.name, entry.picks);
+      return;
+    }
     let probed = null;
     let warned = false;
     if (kind === 'list') {
@@ -155,6 +215,11 @@ const AddPage = {
       try {
         const dup = await window.flow.findBySource(url, null);
         if (dup) {
+          // Auto-completed: a song in All Songs already is not downloaded again.
+          if (auto.complete) {
+            toast(T('add.queue.skipped', { song: Util.songLine(dup) }), 'info');
+            return;
+          }
           if (!await this._confirmDuplicateSource(dup)) return;
           warned = true;
         }
@@ -175,7 +240,8 @@ const AddPage = {
     if (!warned && probed.key) {
       try {
         const dup = await window.flow.findBySource(null, probed.key);
-        if (dup && !await this._confirmDuplicateSource(dup)) {
+        if (dup && (auto.complete || !await this._confirmDuplicateSource(dup))) {
+          if (auto.complete) toast(T('add.queue.skipped', { song: Util.songLine(dup) }), 'info');
           this._setPhase('idle');
           $('progressPanel').hidden = true;
           return;
@@ -186,6 +252,7 @@ const AddPage = {
     }
 
     this.probed = probed;
+    this.auto = auto;
     this._setPhase('downloading');
     this._progress({ title: probed.title, frac: null, status: T('add.progress.startingDownload') });
     let media;
@@ -200,6 +267,11 @@ const AddPage = {
     this.lyrics = this.newLyrics();
     this._openEditor();
     this.lookLyrics(this.lyrics, this._names(), media.duration);
+    // Finishing by itself: saved as it came, into All Songs only.
+    if (auto.finish) {
+      await this.finish();
+      return;
+    }
     this._lookupInfo();
   },
 
@@ -252,9 +324,10 @@ const AddPage = {
    * after another, as an import's frames (ImportPanel.openPicked).
    */
   async startPicked(picks, name) {
-    if (this.phase === 'probing' || this.phase === 'downloading' || this.phase === 'saving') return;
-    if (!await this._clearForNew()) return;
-    await ImportPanel.openPicked(name, picks);
+    $('linkInput').value = '';
+    ClientQueue.offer({
+      url: '', kind: 'list', picks, name, auto: this.autoNow(),
+    });
   },
 
   /**
@@ -449,14 +522,12 @@ const AddPage = {
 
   _setPhase(phase) {
     this.phase = phase;
-    const busy = phase === 'probing' || phase === 'downloading' || phase === 'saving';
     const importing = typeof ImportPanel !== 'undefined' && ImportPanel.busy;
-    $('downloadBtn').disabled = busy || importing;
-    $('linkInput').disabled = phase === 'probing' || phase === 'downloading' || importing;
     const ready = phase === 'ready' || phase === 'saving';
     this.editorEl.hidden = !ready;
     this.drawLocalPick();
     if (typeof ServerImport !== 'undefined') ServerImport.drawButtons();
+    if (phase === 'idle' && typeof ClientQueue !== 'undefined') ClientQueue.kick();
     // A playlist import has the footer to itself ("Finish all").
     if (importing || (typeof ImportPanel !== 'undefined' && ImportPanel.ownsFooter)) return;
     $('addFooter').hidden = !ready;
@@ -477,6 +548,7 @@ const AddPage = {
     this.segments = [];
     this._source = null;
     this.lyrics = null;
+    this.auto = null;
     this._drawLyrics();
     this.playlistIds = [];
     this._drawPlaylistButton();
@@ -1003,7 +1075,7 @@ const AddPage = {
     }
     $('edError').textContent = '';
     try {
-      const dup = await window.flow.findByMeta(meta);
+      const dup = this.auto && this.auto.complete ? null : await window.flow.findByMeta(meta);
       if (dup) {
         const ok = await confirmDialog({
           title: T('add.known.title'),
@@ -1038,7 +1110,6 @@ const AddPage = {
       toast(T('add.saved', { song: Util.songLine(song) }), 'success');
       this.media = null;
       this._discard();
-      $('linkInput').value = '';
       $('progressPanel').hidden = true;
       $('linkInput').focus();
     } catch (err) {

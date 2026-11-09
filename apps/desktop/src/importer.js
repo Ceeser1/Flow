@@ -38,7 +38,7 @@ function useLibrary(fn) {
 
 // A downloaded song's album and genre: its list's or page's, else Apple's.
 const lister = createLister({ media, library: () => shownLibrary(), lookupInfo });
-const { list, download, search } = lister;
+const { list, download, search, peek } = lister;
 
 // ---- importing: download everything, then save it all at once ----
 //
@@ -315,4 +315,4 @@ async function finish(job, onProgress) {
   return summary;
 }
 
-module.exports = { list, download, search, listLocal, prepareLocal, finish, groupToken, eachItem, useLibrary };
+module.exports = { list, download, search, peek, listLocal, prepareLocal, finish, groupToken, eachItem, useLibrary };
