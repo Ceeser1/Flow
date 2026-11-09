@@ -349,7 +349,7 @@ async function get(base, route, token) {
 
 test('profiles over the network: make, sign in with a PIN, rename, sign out, delete', async () => {
   await withServer(async ({ base }) => {
-    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'sessions', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
+    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'sessions', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
     await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
     assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null, createProfiles: true });
@@ -1100,6 +1100,53 @@ test('Statistics: start at 0 on the first 3.6 run; a profile listen counts for t
     assert.ok(again.library.data.statistics.since < Date.now());
   } finally {
     await again.close();
+    fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test('playlist groups (4.5): made, filled and renamed by commands, sent as changes, kept over a restart', async () => {
+  const dirs = tempDirs();
+  const open = () => startServer({ home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1' });
+  let server = await open();
+  try {
+    let base = `http://127.0.0.1:${server.port}`;
+    await command(base, [
+      { cid: 'g1', at: 1, type: 'createPlaylist', playlistId: 'p1', name: 'Rock Classics' },
+      { cid: 'g2', at: 2, type: 'createPlaylist', playlistId: 'p2', name: 'Grunge' },
+    ]);
+    const before = (await (await fetch(`${base}/api/library`)).json()).rev;
+    const r = await command(base, [
+      { cid: 'g3', at: 3, type: 'createGroup', groupId: 'rock', name: 'Rock' },
+      { cid: 'g4', at: 4, type: 'setPlaylistGroup', playlistId: 'p1', groupId: 'rock' },
+    ]);
+    assert.deepEqual(r.results.map((x) => x.ok), [true, true]);
+    // Another app's changes since: the group and the playlist that went in, nothing else.
+    const c = await (await fetch(`${base}/api/library?since=${before}`)).json();
+    assert.deepEqual(c.groups.map((g) => g.name), ['Rock']);
+    assert.deepEqual(c.playlists.map((p) => [p.id, p.group]), [['p1', 'rock']]);
+    // A rename of the group sends only the groups.
+    const rev = c.rev;
+    await command(base, [{ cid: 'g5', at: 5, type: 'renameGroup', groupId: 'rock', name: 'Rock & Metal' }]);
+    const c2 = await (await fetch(`${base}/api/library?since=${rev}`)).json();
+    assert.deepEqual(c2.groups.map((g) => g.name), ['Rock & Metal']);
+    assert.deepEqual(c2.playlists, []);
+    // Nothing new: nothing sent.
+    assert.equal((await fetch(`${base}/api/library?since=${c2.rev}`)).status, 204);
+
+    await server.close();
+    server = await open();
+    base = `http://127.0.0.1:${server.port}`;
+    const full = await (await fetch(`${base}/api/library`)).json();
+    assert.deepEqual(full.library.groups.map((g) => [g.id, g.name]), [['rock', 'Rock & Metal']]);
+    assert.equal(full.library.playlists.find((p) => p.id === 'p1').group, 'rock');
+    // Deleting the group leaves its playlist single.
+    const rev2 = full.rev;
+    await command(base, [{ cid: 'g6', at: 6, type: 'deleteGroup', groupId: 'rock' }]);
+    const c3 = await (await fetch(`${base}/api/library?since=${rev2}`)).json();
+    assert.deepEqual(c3.groups, []);
+    assert.deepEqual(c3.playlists.map((p) => [p.id, p.group]), [['p1', undefined]]);
+  } finally {
+    await server.close();
     fs.rmSync(dirs.root, { recursive: true, force: true });
   }
 });

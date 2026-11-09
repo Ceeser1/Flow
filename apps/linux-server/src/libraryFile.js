@@ -23,7 +23,7 @@ const LIBRARY_FILE_SPEC = {
 
 // library.js's state: the stamps of every song, playlist and owner, the stats stamps by owner.
 const STATE_FILE_SPEC = {
-  'stamps.s': 'map', 'stamps.p': 'map', 'stamps.o': 'map', touched: 'map', srev: 'map', 'sstamps.*': 'map', sfloor: 'map',
+  'stamps.s': 'map', 'stamps.p': 'map', 'stamps.o': 'map', 'stamps.g': 'map', touched: 'map', srev: 'map', 'sstamps.*': 'map', sfloor: 'map',
 };
 
 const libraryJournal = (config) => createJournal(fileJournalIo, config.libraryFile, LIBRARY_FILE_SPEC);

@@ -261,11 +261,29 @@
           <span id="sharedCount" class="muted-text"></span>
         </div>
         <table id="sharedTable" class="table table--playlists"></table>
-        <div class="section-head">
-          <h2 class="section-head__title" data-i18n="window.playlists.yours">Your Playlists</h2>
-          <span id="playlistsCount" class="muted-text"></span>
+        <!-- Your Playlists: the ones in no group (a playlist dragged here leaves its group). -->
+        <div id="playlistsSingle" class="drop-area">
+          <div class="section-head">
+            <h2 class="section-head__title" data-i18n="window.playlists.yours">Your Playlists</h2>
+            <span id="playlistsCount" class="muted-text"></span>
+          </div>
+          <table id="playlistsTable" class="table table--playlists"></table>
         </div>
-        <table id="playlistsTable" class="table table--playlists"></table>
+        <!-- Playlist Groups (4.5): folders of playlists, also in the menu. -->
+        <div id="groupsSection">
+          <div class="section-head">
+            <h2 class="section-head__title" data-i18n="window.playlists.groups">Playlist Groups</h2>
+            <span id="groupsCount" class="muted-text"></span>
+          </div>
+          <div class="link-row group-new">
+            <input id="newGroupName" class="input" type="text" maxlength="80"
+                   placeholder="Group name" autocomplete="off" data-i18n-placeholder="window.playlists.groups.name"/>
+            <button id="newGroupBtn" class="btn btn--primary" type="button" data-i18n="window.playlists.groups.add">Add new group</button>
+          </div>
+          <div id="newGroupError" class="form-error"></div>
+          <p id="groupsHint" class="muted-text groups-hint"></p>
+          <div id="groupsList" class="groups"></div>
+        </div>
       </section>
 
       <!-- Followed Playlists -->
@@ -516,6 +534,7 @@
 <script src="app/viz/fountain.js"></script>
 <script src="app/sleepTimer.js"></script>
 <script src="app/songActions.js"></script>
+<script src="app/groups.js"></script>
 <script src="app/nav.js"></script>
 <script src="app/pages/search.js"></script>
 <script src="app/pages/add.js"></script>

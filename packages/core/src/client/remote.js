@@ -158,8 +158,9 @@ function createRemote(env) {
   // the songs or playlists gain a field the server sends (3: addedBy, profileNames;
   // 4: listening, 3.5; 5: statistics, 3.6; 6: album, genre, subGenre, infoLooked, 3.6.3;
   // 7: a playlist's rules, 4.0; 8: songs without stats, the stats, Statistics
-  // and shared playlists' details kept apart, Favourites as a playlist, 4.3).
-  const CACHE_FORMAT = 8;
+  // and shared playlists' details kept apart, Favourites as a playlist, 4.3;
+  // 9: playlist groups, 4.5).
+  const CACHE_FORMAT = 9;
 
   function emptySync(serverId = '') {
     return {
@@ -350,7 +351,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -470,6 +471,8 @@ function createRemote(env) {
       // Smart playlists (4.0): a server from before keeps no rules. Known while
       // it was reached once (the setting is kept while away from it).
       smartPlaylists: !!conn.smartPlaylists,
+      // Playlist groups (4.5): the same, for a server from before.
+      playlistGroups: !!conn.playlistGroups,
       tracked: tracked.list(),
     };
   }
@@ -977,10 +980,11 @@ function createRemote(env) {
         const lyricsSync = Array.isArray(hello.features) && hello.features.includes('lyricsSync');
         const smartPlaylists = Array.isArray(hello.features) && hello.features.includes('smartPlaylists');
         const pair = Array.isArray(hello.features) && hello.features.includes('pair');
+        const playlistGroups = Array.isArray(hello.features) && hello.features.includes('playlistGroups');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -1232,7 +1236,7 @@ function createRemote(env) {
   /**
    * What changed since the copy's revision, merged into it: songs and
    * playlists (its own, Favourites too) new or changed, those gone, the
-   * follows, the playlists followed (with their songs), the profiles' names.
+   * follows, the groups (4.5), the playlists followed (with their songs), the profiles' names.
    */
   function mergeChanges(c) {
     const lib = cache.library || model.emptyLibrary();
@@ -1256,6 +1260,7 @@ function createRemote(env) {
     }
     playlists.push(...changedLists.values());
     const follows = Array.isArray(c.follows) ? c.follows : lib.follows;
+    const groups = Array.isArray(c.groups) ? c.groups : lib.groups;
     const unshared = new Set((c.unshared || []).map(String));
     const changedShared = new Map((c.sharedPlaylists || []).map((p) => [String(p.id), p]));
     const followed = new Set(follows);
@@ -1267,7 +1272,7 @@ function createRemote(env) {
     }
     shared.push(...changedShared.values());
     cache.library = model.sanitize({
-      ...lib, songs, playlists, follows, sharedPlaylists: shared, profileNames: c.profileNames || lib.profileNames,
+      ...lib, songs, playlists, groups, follows, sharedPlaylists: shared, profileNames: c.profileNames || lib.profileNames,
     });
     cache.rev = Number(c.rev);
   }

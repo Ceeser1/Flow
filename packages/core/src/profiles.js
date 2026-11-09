@@ -9,7 +9,7 @@
 //             no profile, called "Default / Shared": its playlists,
 //             favourites and stats are what an app sees while no profile is
 //             signed in.
-//   profiles  { [profileId]: { playlists: [...], songs: { [songId]: { stats, favouriteAt } }, follows: [playlistId], playlistListened: {...}, listening, statistics } }
+//   profiles  { [profileId]: { playlists: [...], groups: [...] (4.5), songs: { [songId]: { stats, favouriteAt } }, follows: [playlistId], playlistListened: {...}, listening, statistics } }
 //
 // Playlists can be shared (playlist.shared): the other profiles, and the
 // Default, then see them read-only in their view (sharedPlaylists) and can
@@ -97,9 +97,9 @@ function cleanProfile(data, raw) {
   // sanitize() already knows how playlists must look and drops entries for
   // songs that are not there.
   const {
-    playlists, follows, playlistListened, listening, statistics,
+    playlists, groups, follows, playlistListened, listening, statistics,
   } = model.sanitize({
-    songs: data.songs, playlists: r.playlists, follows: r.follows, playlistListened: r.playlistListened, listening: r.listening, statistics: r.statistics,
+    songs: data.songs, playlists: r.playlists, groups: r.groups, follows: r.follows, playlistListened: r.playlistListened, listening: r.listening, statistics: r.statistics,
   });
   const known = new Set(data.songs.map((s) => s.id));
   const songs = {};
@@ -111,7 +111,7 @@ function cleanProfile(data, raw) {
     if (hasOwn(kept)) songs[id] = kept;
   }
   return {
-    playlists, songs, follows, playlistListened, listening, statistics,
+    playlists, groups, songs, follows, playlistListened, listening, statistics,
   };
 }
 
@@ -164,10 +164,10 @@ function view(data, profiles, profileId, names = {}) {
   if (!profileId) {
     // The Default's songs carry its stars themselves, as its Favourites list has them.
     syncStars(data.songs, model.favouritesList(data));
-    return { ...data, follows: (data.follows || []).slice(), statistics: copyStatistics(data.statistics), sharedPlaylists };
+    return { ...data, groups: data.groups || [], follows: (data.follows || []).slice(), statistics: copyStatistics(data.statistics), sharedPlaylists };
   }
   const p = profiles[profileId] || {
-    playlists: [], songs: {}, follows: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(),
+    playlists: [], groups: [], songs: {}, follows: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(),
   };
   const fav = model.favouritesList(p);
   const starred = new Map((fav ? fav.entries : []).map((e) => [e.songId, e.addedAt]));
@@ -178,6 +178,7 @@ function view(data, profiles, profileId, names = {}) {
       return { ...s, stats: own ? { ...own.stats } : model.emptyStats(), favouriteAt: starred.get(s.id) || null };
     }),
     playlists: p.playlists,
+    groups: p.groups || [],
     follows: (p.follows || []).slice(),
     playlistListened: { ...(p.playlistListened || {}) },
     listening: copyListening(p.listening),
@@ -196,6 +197,7 @@ function absorb(data, profiles, profileId, v) {
     // The Default's view is a copy of `data`: what commands changed goes back.
     data.songs = v.songs;
     data.playlists = v.playlists;
+    data.groups = v.groups || [];
     data.ignoredFiles = v.ignoredFiles;
     data.follows = v.follows;
     data.playlistListened = v.playlistListened || {};
@@ -223,7 +225,7 @@ function absorb(data, profiles, profileId, v) {
   data.songs = songs;
   data.ignoredFiles = v.ignoredFiles;
   profiles[profileId] = {
-    playlists: v.playlists, songs: own, follows: v.follows, playlistListened: v.playlistListened || {}, listening: v.listening || emptyListening(),
+    playlists: v.playlists, groups: v.groups || [], songs: own, follows: v.follows, playlistListened: v.playlistListened || {}, listening: v.listening || emptyListening(),
     statistics: v.statistics || emptyStatistics(),
   };
   prune(data, profiles);
@@ -268,16 +270,28 @@ function prune(data, profiles) {
  */
 function addProfile(data, profiles, profileId, newId = randomId, now = Date.now()) {
   if (profiles[profileId]) return;
-  const playlists = data.playlists.filter((p) => !p.favourites).map((p) => ({
-    ...p,
-    id: newId(),
-    entries: p.entries.map((e) => ({ ...e })),
-    source: p.source ? { ...p.source } : null,
-    shared: false,
-  }));
+  // The groups too (4.5), under new ids, the copied playlists in them.
+  const groupIds = new Map();
+  const groups = (data.groups || []).map((g) => {
+    const id = newId();
+    groupIds.set(g.id, id);
+    return { ...g, id };
+  });
+  const playlists = data.playlists.filter((p) => !p.favourites).map((p) => {
+    const copy = {
+      ...p,
+      id: newId(),
+      entries: p.entries.map((e) => ({ ...e })),
+      source: p.source ? { ...p.source } : null,
+      shared: false,
+    };
+    if (p.group && groupIds.has(p.group)) copy.group = groupIds.get(p.group);
+    else delete copy.group;
+    return copy;
+  });
   playlists.unshift(favouritesFrom(profileId, [], now));
   profiles[profileId] = {
-    playlists, songs: {}, follows: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(now),
+    playlists, groups, songs: {}, follows: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(now),
   };
 }
 

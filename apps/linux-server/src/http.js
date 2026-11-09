@@ -190,7 +190,8 @@ const PROTOCOL = 2;
 // What this server can do beyond its protocol, for apps that know to ask.
 // admin: /api/admin for admin profiles (admin.js).
 // smartPlaylists: a playlist's rules are kept (4.0). pair: QR codes' pairing codes (4.0).
-const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair'];
+// playlistGroups: the groups' commands and each owner's groups in the library (4.5).
+const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;

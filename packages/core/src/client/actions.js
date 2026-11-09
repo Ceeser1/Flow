@@ -63,6 +63,46 @@ function createActions({
     return change((d) => model.renamePlaylist(d, id, name), 'renamePlaylist', { playlistId: id, name });
   }
 
+  // ---- playlist groups (4.5) ----
+
+  function createGroup(name) {
+    if (!remote.active()) return library.mutate((d) => model.createGroup(d, name, library.newId()));
+    const clean = model.checkGroupName(remote.view(), name);
+    const id = library.newId();
+    remote.command('createGroup', { groupId: id, name: clean });
+    return model.groupById(remote.view(), id);
+  }
+
+  function renameGroup({ id, name }) {
+    return change((d) => model.renameGroup(d, id, name), 'renameGroup', { groupId: id, name });
+  }
+
+  /** The group goes, its playlists stay single. */
+  function deleteGroup(id) {
+    return change((d) => model.deleteGroup(d, id), 'deleteGroup', { groupId: id });
+  }
+
+  /** Playlists into a group, or (groupId '') out of theirs: one or several. */
+  function setPlaylistGroup({ playlistIds, groupId }) {
+    const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).map(String).filter(Boolean);
+    const gid = groupId ? String(groupId) : '';
+    if (!remote.active()) {
+      return library.mutate((d) => {
+        for (const id of ids) model.setPlaylistGroup(d, id, gid);
+      });
+    }
+    // Checked first, as the server would: none goes when one cannot.
+    const v = remote.view();
+    if (gid && !model.groupById(v, gid)) throw new Error(tr('core.library.groupGone', 'That playlist group no longer exists.'));
+    for (const id of ids) {
+      const p = model.playlistById(v, id);
+      if (!p) throw new Error(tr('core.library.playlistGone', 'That playlist no longer exists.'));
+      if (p.favourites) throw new Error(tr('core.library.favouritesFixed', 'Favourites cannot be renamed, deleted or given rules.'));
+    }
+    for (const id of ids) remote.command('setPlaylistGroup', { playlistId: id, groupId: gid });
+    return null;
+  }
+
   // deleteSongs: the songs in no other playlist go too. With a server it decides
   // which (another profile may have them); here a file that cannot be deleted
   // (playing, open elsewhere) keeps its song. Resolves { deleted, kept }, null
@@ -237,6 +277,10 @@ function createActions({
     setPlaylistRules,
     renamePlaylist,
     deletePlaylist,
+    createGroup,
+    renameGroup,
+    deleteGroup,
+    setPlaylistGroup,
     setPlaylistShared,
     setFollowing,
     addSongToPlaylists,

@@ -22,6 +22,8 @@ Flow is made for private use.
 - **Smart playlists** that fill themselves by your rules (artist, genre, most
   played, not heard in a while, …)
 - **Update from source**: a playlist imported from a link picks up its new songs
+- **Playlist groups**: folders of playlists in the menu; drag playlists into them
+  on the PC, and update every imported playlist of a group at once
 - **Your listening trend**: most listened, least skipped, long time no see, …
 - **Continue with similar songs** when a playlist ends
 

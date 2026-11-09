@@ -31,6 +31,11 @@ contextBridge.exposeInMainWorld('flow', {
   setPlaylistRules: (id, rules) => call('library:setPlaylistRules', { id, rules }),
   renamePlaylist: (id, name) => call('library:renamePlaylist', { id, name }),
   deletePlaylist: (id, deleteSongs = false) => call('library:deletePlaylist', { id, deleteSongs }),
+  // Playlist groups (4.5): folders of playlists; deleting one leaves its playlists single.
+  createGroup: (name) => call('library:createGroup', name),
+  renameGroup: (id, name) => call('library:renameGroup', { id, name }),
+  deleteGroup: (id) => call('library:deleteGroup', id),
+  setPlaylistGroup: (playlistIds, groupId) => call('library:setPlaylistGroup', { playlistIds, groupId }),
   setPlaylistShared: (id, shared) => call('library:setPlaylistShared', { id, shared }),
   setFollowing: (id, on) => call('library:setFollowing', { id, on }),
   addSongToPlaylists: (songId, playlistIds) => call('library:addSongToPlaylists', { songId, playlistIds }),

@@ -145,6 +145,14 @@ body.mobile .menu__item { height: 48px; font-size: 15px; }
 /* Settings is an item too, but as tall again as the bar of Android's own buttons under it. */
 body.mobile .menu__item.menu__settings { height: calc(56px + var(--safe-bottom)); }
 body.mobile .menu__sub { height: 44px; font-size: 15px; }
+/* Playlist groups (4.5): the folder's playlists further in; the page's heads finger-sized. */
+body.mobile .menu__sub--in-group { padding-left: 34px; }
+body.mobile .group { padding: 2px 8px; }
+body.mobile .group__head { min-height: 56px; gap: 6px; }
+body.mobile .group__head .actions { gap: 4px; }
+body.mobile .group-new { flex-wrap: wrap; }
+body.mobile .group-pick__row { min-height: 48px; }
+body.mobile .group-add__row { min-height: 44px; }
 body.mobile .menu__subs { flex: none; overflow: visible; }
 body.mobile .menu__chevron--toggle { padding: 12px 8px; margin: 0 -8px 0 -6px; }
 body.mobile .menu__item:hover,

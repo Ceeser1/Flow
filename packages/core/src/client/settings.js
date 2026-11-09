@@ -353,6 +353,8 @@ const DEFAULTS = {
   trendMenuOpen: false,
   // Whether the Shared Playlists section of the Playlists page is open.
   sharedGroupOpen: true,
+  // The playlist groups (4.5) open in the menu and on the Playlists page, by id; closed until opened.
+  openGroups: [],
   // Settings' categories folded shut (their titles), on the computer; and on
   // the phone the category whose screen was open when Settings closed ('' the
   // list), opened again with it.
@@ -550,6 +552,9 @@ function clean(raw) {
   s.followedMenuOpen = s.followedMenuOpen !== false;
   s.trendMenuOpen = s.trendMenuOpen === true;
   s.sharedGroupOpen = s.sharedGroupOpen !== false;
+  s.openGroups = Array.isArray(s.openGroups)
+    ? [...new Set(s.openGroups.filter((id) => typeof id === 'string' && /^[\w-]{1,64}$/.test(id)))].slice(0, 500)
+    : [];
   s.settingsCollapsed = Array.isArray(s.settingsCollapsed)
     ? [...new Set(s.settingsCollapsed.filter((t) => typeof t === 'string' && t && t.length <= 60))].slice(0, 30)
     : [];

@@ -9,7 +9,8 @@
 //            never for a listen, so an app asks "anything new since 41?" and
 //            gets only what changed (changes(), 4.3).
 //   stamps   the revision each song, playlist and owner's follows last
-//            changed at, and that of the profiles' names (4.3).
+//            changed at, and that of the profiles' names (4.3); each
+//            owner's playlist groups too (g, 4.5).
 //   tombs    songs and playlists gone (deleted, or a playlist given to
 //            another owner) with the revision they went at, kept 30 days;
 //            floor: an app whose revision is older than what they reach back
@@ -96,7 +97,8 @@ const DOWNLOADS_DIR = 'Downloads';
 // upload; the upload itself adds the song here.
 const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource', 'setPlaylistRules',
   'addSongToPlaylists', 'addSongsToPlaylist', 'removeFromPlaylist', 'deleteSong', 'editSong',
-  'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'recordAwayListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist']);
+  'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'recordAwayListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist',
+  'createGroup', 'renameGroup', 'deleteGroup', 'setPlaylistGroup']);
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');
@@ -161,7 +163,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     touched: rawState.touched && typeof rawState.touched === 'object' ? rawState.touched : {},
     seen: Array.isArray(rawState.seen) ? rawState.seen.map(String) : [],
     stamps: {
-      s: counts(rs.s), p: counts(rs.p), o: counts(rs.o), n: count(rs.n),
+      s: counts(rs.s), p: counts(rs.p), o: counts(rs.o), g: counts(rs.g), n: count(rs.n),
     },
     tombs: { s: tombList(rt.s, 3), p: tombList(rt.p, 4) },
     floor: count(rawState.floor),
@@ -216,7 +218,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   // a change and stamps what differs with the revision about to be.
 
   const known = {
-    songs: new Map(), lists: new Map(), follows: new Map(), names: '',
+    songs: new Map(), lists: new Map(), follows: new Map(), groups: new Map(), names: '',
   };
 
   /** Every playlist with its owner: [owner, playlist]. */
@@ -231,6 +233,11 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     return [[prof.DEFAULT_OWNER, data.follows || []], ...Object.entries(profiles).map(([id, p]) => [id, p.follows || []])];
   }
 
+  /** Every owner's playlist groups (4.5): [owner, groups]. */
+  function everyGroups() {
+    return [[prof.DEFAULT_OWNER, data.groups || []], ...Object.entries(profiles).map(([id, p]) => [id, p.groups || []])];
+  }
+
   const songCopy = (s) => Object.fromEntries(SONG_FIELDS.map((k) => [k, s[k]]));
   // A function made for the fields (4.3.5: 100 000 songs after every change).
   // eslint-disable-next-line no-new-func
@@ -243,12 +250,13 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     favourites: !!p.favourites,
     source: p.source ? `${p.source.url}\n${p.source.kind}` : '',
     rules: p.rules ? JSON.stringify(p.rules) : '',
+    group: p.group || '',
     entries: p.entries.map((e) => [e.songId, e.addedAt]),
   });
   /** What the apps were told of a list (a listCopy) is still `p` of `owner`, compared as it is (no copy made, 4.3.5). */
   function sameList(a, owner, p) {
     if (a.owner !== owner || a.name !== p.name || a.createdAt !== p.createdAt || a.shared !== !!p.shared || a.favourites !== !!p.favourites
-      || a.source !== (p.source ? `${p.source.url}\n${p.source.kind}` : '') || a.entries.length !== p.entries.length) return false;
+      || a.source !== (p.source ? `${p.source.url}\n${p.source.kind}` : '') || a.group !== (p.group || '') || a.entries.length !== p.entries.length) return false;
     for (let i = 0; i < a.entries.length; i += 1) {
       const e = p.entries[i];
       if (a.entries[i][0] !== e.songId || a.entries[i][1] !== e.addedAt) return false;
@@ -315,6 +323,19 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       if (owners.has(owner)) continue;
       known.follows.delete(owner);
       delete state.stamps.o[owner];
+    }
+    const groupOwners = new Set();
+    for (const [owner, groups] of everyGroups()) {
+      groupOwners.add(owner);
+      const text = JSON.stringify(groups);
+      if (known.groups.get(owner) === text) continue;
+      known.groups.set(owner, text);
+      stamp(state.stamps.g, owner);
+    }
+    for (const owner of [...known.groups.keys()]) {
+      if (groupOwners.has(owner)) continue;
+      known.groups.delete(owner);
+      delete state.stamps.g[owner];
     }
     const names = JSON.stringify(profileNames());
     if (known.names !== names) {
@@ -618,15 +639,16 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   });
   const playlistsOfOwner = (owner) => (owner === prof.DEFAULT_OWNER ? data.playlists : (profiles[owner] || {}).playlists || []);
   const followsOfOwner = (owner) => (owner === prof.DEFAULT_OWNER ? data.follows : (profiles[owner] || {}).follows) || [];
+  const groupsOfOwner = (owner) => (owner === prof.DEFAULT_OWNER ? data.groups : (profiles[owner] || {}).groups) || [];
 
   /**
    * What changed for an app signed in to `profileId` (null: the Default)
    * since the library's revision `since` (4.3, GET /api/library, the live
    * channel): { rev, full, from, songs, deletedSongs, playlists (its own,
-   * Favourites too), deletedPlaylists, follows?, sharedPlaylists (the ones it
+   * Favourites too), deletedPlaylists, follows?, groups? (4.5), sharedPlaylists (the ones it
    * follows, with their songs), unshared (followed ones no longer shared),
    * profileNames? }. Too old, unknown or -1: everything as { rev, full: true,
-   * library: { songs, playlists, follows, sharedPlaylists, profileNames } }.
+   * library: { songs, playlists, groups, follows, sharedPlaylists, profileNames } }.
    * Songs come without stats and stars: those are each owner's (statsChanges,
    * the Favourites list).
    */
@@ -646,6 +668,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     };
     const followsChanged = newer(state.stamps.o, owner);
     if (followsChanged) out.follows = followsOfOwner(owner).slice();
+    if (newer(state.stamps.g, owner)) out.groups = groupsOfOwner(owner).map((g) => ({ ...g }));
     const others = new Map();
     for (const [o, p] of everyList()) if (o !== owner) others.set(p.id, [o, p]);
     for (const id of followsOfOwner(owner)) {
@@ -661,7 +684,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
         rev: out.rev,
         full: true,
         library: {
-          songs: out.songs, playlists: out.playlists, follows: out.follows, sharedPlaylists: out.sharedPlaylists, profileNames: names, ignoredFiles: [],
+          songs: out.songs, playlists: out.playlists, groups: groupsOfOwner(owner).map((g) => ({ ...g })), follows: out.follows, sharedPlaylists: out.sharedPlaylists, profileNames: names, ignoredFiles: [],
         },
       };
     }
@@ -674,7 +697,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   /** Whether changes() found nothing for the app. */
   function noChanges(c) {
     return !c.full && !c.songs.length && !c.playlists.length && !c.sharedPlaylists.length && !c.unshared.length
-      && !c.deletedSongs.length && !c.deletedPlaylists.length && !c.follows && !c.profileNames;
+      && !c.deletedSongs.length && !c.deletedPlaylists.length && !c.follows && !c.groups && !c.profileNames;
   }
 
   /**

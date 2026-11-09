@@ -6,6 +6,13 @@
 // can be closed, All Songs stays); "Your Playlists" below. Favourites is
 // always the first row of those, whatever the sort, and has no actions. The
 // listening trend lists have their own page (trend.js).
+//
+// Playlist Groups (4.5, groups.js) below: a box to make one, then each group
+// as a head (open or closed as in the menu: its name, playlists, songs and
+// length, Update all, Add playlists, Rename, Delete) with its playlists' table
+// under it while open. Your Playlists lists only the playlists in no group.
+// On the computer a playlist's row can be dragged onto a group, or back onto
+// Your Playlists; every playlist also has Move to group.
 
 const PlaylistsPage = {
   sort: { key: null, dir: null },
@@ -29,6 +36,15 @@ const PlaylistsPage = {
     box.addEventListener('input', () => {
       $('newPlaylistError').textContent = '';
     });
+    $('newGroupBtn').onclick = () => this.createGroup();
+    $('newGroupName').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this.createGroup();
+    });
+    $('newGroupName').addEventListener('input', () => {
+      $('newGroupError').textContent = '';
+    });
+    // Dropped on Your Playlists: out of its group.
+    Groups.dropTarget($('playlistsSingle'), '');
     $('sharedHead').onclick = () => {
       Store.saveSettings({ sharedGroupOpen: Store.settings.sharedGroupOpen === false });
       this._loadShared();
@@ -79,6 +95,20 @@ const PlaylistsPage = {
     }
   },
 
+  async createGroup() {
+    const box = $('newGroupName');
+    try {
+      const g = await Groups.create(box.value);
+      box.value = '';
+      $('newGroupError').textContent = '';
+      toast(T('groups.created', { group: g.name }), 'success');
+      this.render();
+    } catch (err) {
+      $('newGroupError').textContent = err.message;
+      box.focus();
+    }
+  },
+
   /**
    * Runs `fn` once the library has playlist `id`: at once, or with the
    * library event that brings it (with a Flow Server it may come after the
@@ -112,9 +142,11 @@ const PlaylistsPage = {
   },
 
   render() {
-    const lists = Util.sortRows(Store.sortedPlaylists(), this.sort, (p, k) => this._value(p, k));
+    // Your Playlists: those in no group (4.5).
+    const singles = Store.singlePlaylists();
+    const lists = Util.sortRows(singles, this.sort, (p, k) => this._value(p, k));
     const rows = [Store.favouritesPlaylist(), ...lists];
-    $('playlistsCount').textContent = Util.plural(Store.sortedPlaylists().length, 'playlist');
+    $('playlistsCount').textContent = Util.plural(singles.length, 'playlist');
 
     // Shared Playlists: All Songs always, the shared ones only while open.
     const open = Store.settings.sharedGroupOpen !== false;
@@ -131,19 +163,105 @@ const PlaylistsPage = {
     this._drawing = true;
     try {
       this._drawTable($('sharedTable'), sharedRows, (p) => this._sharedActions(p), (p) => this._sharedSide(p));
-      this._drawTable($('playlistsTable'), rows, (p) => this._actions(p), null, (p) => this._moreButtons(p));
+      this._drawTable($('playlistsTable'), rows, (p) => this._actions(p), null, (p) => this._moreButtons(p), this._select());
+      this._dragRows($('playlistsTable'));
+      this._drawGroups();
     } finally {
       this._drawing = false;
     }
 
-    const input = document.querySelector('#playlistsTable .rename-input');
+    const input = document.querySelector('#page-playlists .rename-input');
     if (input) {
       input.focus();
       input.select();
     }
   },
 
-  _drawTable(table, rows, actions, side = null, more = null) {
+  /** The phone's bar of chosen playlists: Move to group (4.5). */
+  _select() {
+    if (!Store.canGroup()) return undefined;
+    return {
+      actions: [{
+        icon: Icons.folder,
+        label: T('groups.moveTo'),
+        run: (rows) => Groups.chooseFor(rows.map((p) => p.id)),
+      }],
+    };
+  },
+
+  /** On the computer each playlist's row can be dragged onto a group (4.5). */
+  _dragRows(table) {
+    if (!Groups.canDrag()) return;
+    for (const tr of table.querySelectorAll('tbody tr[data-id]')) Groups.draggable(tr, Store.playlist(tr.dataset.id));
+  },
+
+  /** Playlist Groups (4.5): each group's head, and its playlists while it is open. */
+  _drawGroups() {
+    const section = $('groupsSection');
+    section.hidden = !Store.canGroup();
+    if (section.hidden) return;
+    const groups = Store.groups();
+    $('groupsCount').textContent = groups.length ? Util.plural(groups.length, 'group') : '';
+    const hint = Store.uiMode === 'mobile' ? 'groups.hint.phone' : 'groups.hint';
+    $('groupsHint').textContent = groups.length ? T(hint) : T('groups.hint.none');
+    const box = clear($('groupsList'));
+    for (const g of groups) {
+      const open = Groups.isOpen(g.id);
+      const inside = Store.playlistsInGroup(g.id);
+      const { songs, seconds } = Groups.totals(g.id);
+      const sub = [Util.plural(inside.length, 'playlist'), Util.plural(songs, 'song'), Util.fmtClock(seconds)].join(' · ');
+      const head = h('div.group__head',
+        h('button.group__toggle', {
+          type: 'button',
+          'aria-expanded': String(open),
+          title: open ? T('groups.hide.tooltip', { group: g.name }) : T('groups.show.tooltip', { group: g.name }),
+          onclick: () => {
+            Groups.toggle(g.id);
+            this.render();
+            Nav.drawMenu();
+          },
+        },
+        h('span.menu__chevron' + (open ? '.menu__chevron--open' : ''), { html: Icons.chevron }),
+        h('span.group__icon', { html: Icons.folder }),
+        h('span.group__text', h('span.group__name', g.name), h('span.group__sub', sub))),
+        h('div.actions', ...this._groupButtons(g)));
+      const block = h('div.group' + (open ? '.group--open' : ''), { dataset: { group: g.id } }, head);
+      if (open) {
+        if (inside.length) {
+          const table = h('table.table.table--playlists', { id: `groupTable-${g.id}` });
+          block.appendChild(table);
+          const sorted = Util.sortRows(inside, this.sort, (p, k) => this._value(p, k));
+          this._drawTable(table, sorted, (p) => this._actions(p), null, (p) => this._moreButtons(p), this._select());
+          this._dragRows(table);
+        } else {
+          block.appendChild(h('p.muted-text.group__empty', T(Store.uiMode === 'mobile' ? 'groups.empty.phone' : 'groups.empty')));
+        }
+      }
+      Groups.dropTarget(block, g.id);
+      box.appendChild(block);
+    }
+  },
+
+  /** A group's Update all (its imported playlists), Add playlists, Rename and Delete. */
+  _groupButtons(g) {
+    const buttons = [];
+    const updatable = Groups.updatable(g.id);
+    if (updatable.length && Groups.canUpdate()) {
+      const busy = PlaylistUpdate.isGroupChecking(g.id);
+      buttons.push(iconButton('act.act--blue' + (busy ? '.pl-update--busy' : ''), Icons.refresh,
+        busy ? T('groups.updateAll.checking.tooltip', { group: g.name })
+          : T('groups.updateAll.tooltip', { group: g.name, playlists: Util.plural(updatable.length, 'playlist'), count: updatable.length }),
+        () => PlaylistUpdate.checkAll(g, Groups.updatable(g.id))));
+    }
+    buttons.push(
+      iconButton('act.act--green', Icons.plus, T('groups.add.tooltip', { group: g.name }), () => Groups.addTo(g)),
+      iconButton('act.act--grey', Icons.pencil, T('groups.rename.tooltip', { group: g.name }), () => Groups.rename(g)),
+      iconButton('act.act--red', Icons.x, T('groups.delete.tooltip', { group: g.name }), () => Groups.remove(g)),
+    );
+    return buttons;
+  },
+
+  _drawTable(table, rows, actions, side = null, more = null, select = undefined) {
     renderTable(table, {
       rows,
       sort: this.sort,
@@ -169,6 +287,7 @@ const PlaylistsPage = {
           p.ownerName ? T('common.byOwner', { profile: p.ownerName }) : ''].filter(Boolean).join(' · ')),
         side,
         more: more && ((p) => more(p)),
+        select,
       },
     });
   },
@@ -237,6 +356,8 @@ const PlaylistsPage = {
       p.isRuled
         ? iconButton('act.act--green', Icons.pulse, T('common.editRules'), () => RulesEditor.open({ playlist: Store.playlist(p.id) }))
         : iconButton('act.act--green', Icons.plus, T('common.addSongs'), () => Nav.openPlaylist('all', { pickFor: p.id })),
+      // Into a group, another one or out of it (4.5).
+      Store.canGroup() ? iconButton('act.act--grey', Icons.folder, T('groups.moveTo'), () => Groups.chooseFor([p.id])) : null,
       iconButton('act.act--grey', Icons.pencil, T('playlists.rename'), () => {
         if (document.body.classList.contains('mobile')) {
           this.renameDialog(p);

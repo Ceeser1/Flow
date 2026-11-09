@@ -30,6 +30,11 @@
 //             Kept for a later "update from source".
 //   shared    true: the other profiles on a Flow Server can see the playlist
 //             and follow it. Only its owner can change it.
+//   group     (4.5) the id of the playlist group it is in; left out while it
+//             is in none. One group at most; never Favourites.
+//   groups    (4.5) the owner's playlist groups, folders of playlists in the
+//             menu: [{ id, name, createdAt }], A to Z by name where shown.
+//             A group may be empty; deleting it leaves its playlists single.
 //
 // With profiles (profiles.js) a library also carries what the other profiles
 // share with this one:
@@ -98,7 +103,25 @@ function cleanStats(raw) {
 const INFO_ROUND = 2;
 
 function emptyLibrary() {
-  return { version: 1, songs: [], playlists: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {}, infoRound: INFO_ROUND };
+  return { version: 1, songs: [], playlists: [], groups: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {}, infoRound: INFO_ROUND };
+}
+
+/** The playlist groups (4.5): each once, with a name and an id. */
+function cleanGroups(raw) {
+  const out = [];
+  const seen = new Set();
+  for (const g of Array.isArray(raw) ? raw : []) {
+    if (!g || typeof g !== 'object') continue;
+    const id = String(g.id || '');
+    if (!/^[\w-]{1,64}$/.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      name: String(g.name || '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME) || 'Group',
+      createdAt: Number(g.createdAt) || Date.now(),
+    });
+  }
+  return out;
 }
 
 /** { listId: seconds }: only sensible ids and positive numbers stay. */
@@ -233,6 +256,8 @@ function sanitize(raw) {
       ...(s.lyrics ? { lyrics: String(s.lyrics).slice(0, 40) } : {}),
     });
   }
+  data.groups = cleanGroups(raw.groups);
+  const groupIds = new Set(data.groups.map((g) => g.id));
   const seenLists = new Set();
   for (const p of Array.isArray(raw.playlists) ? raw.playlists : []) {
     if (!p || !p.id || p.id === ALL_SONGS_ID || seenLists.has(p.id)) continue;
@@ -256,6 +281,7 @@ function sanitize(raw) {
       rules,
     };
     if (favourites) list.favourites = true;
+    else if (p.group && groupIds.has(String(p.group))) list.group = String(p.group);
     data.playlists.push(list);
   }
   data.follows = cleanIds(raw.follows);
@@ -415,6 +441,75 @@ function deletePlaylist(data, id) {
   requireOrdinary(data, id);
   data.playlists = data.playlists.filter((p) => p.id !== id);
   if (data.playlistListened) delete data.playlistListened[id];
+}
+
+// ---- playlist groups (4.5) ----
+
+function groupById(data, id) {
+  return (data.groups || []).find((g) => g.id === id) || null;
+}
+
+function requireGroup(data, id) {
+  const g = groupById(data, id);
+  if (!g) throw new Error(tr('core.library.groupGone', 'That playlist group no longer exists.'));
+  return g;
+}
+
+/** The group name trimmed, or an Error saying why it cannot be used. */
+function checkGroupName(data, name, exceptId = null) {
+  const clean = String(name || '').replace(/\s+/g, ' ').trim();
+  if (!clean) throw new Error(tr('core.library.enterGroupName', 'Please enter a name for the group.'));
+  if (clean.length > MAX_NAME) throw new Error(tr('core.library.groupNameTooLong', 'Group names can be at most {max} characters.', { max: MAX_NAME }));
+  const clash = (data.groups || []).find((g) => g.id !== exceptId && g.name.toLowerCase() === clean.toLowerCase());
+  if (clash) throw new Error(tr('core.library.groupExists', 'A group called "{group}" already exists.', { group: clash.name }));
+  return clean;
+}
+
+/** `name`, or "name (2)", "name (3)" ... whichever group name is free. */
+function freeGroupName(data, name) {
+  const base = String(name || '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME - 5) || 'Group';
+  const taken = (n) => (data.groups || []).some((g) => g.name.toLowerCase() === n.toLowerCase());
+  if (!taken(base)) return base;
+  for (let i = 2; ; i += 1) {
+    if (!taken(`${base} (${i})`)) return `${base} (${i})`;
+  }
+}
+
+function createGroup(data, name, id, now = Date.now()) {
+  const group = { id: String(id), name: checkGroupName(data, name), createdAt: now };
+  if (!data.groups) data.groups = [];
+  data.groups.push(group);
+  return group;
+}
+
+function renameGroup(data, id, name) {
+  const g = requireGroup(data, id);
+  g.name = checkGroupName(data, name, id);
+  return g;
+}
+
+/** The group goes; its playlists stay, single again. */
+function deleteGroup(data, id) {
+  requireGroup(data, id);
+  data.groups = data.groups.filter((g) => g.id !== id);
+  for (const p of data.playlists) if (p.group === id) delete p.group;
+}
+
+/** Puts a playlist into a group, or (groupId '' or null) out of the one it is in. */
+function setPlaylistGroup(data, playlistId, groupId) {
+  const p = requireOrdinary(data, playlistId);
+  if (!groupId) {
+    delete p.group;
+    return p;
+  }
+  requireGroup(data, groupId);
+  p.group = String(groupId);
+  return p;
+}
+
+/** The playlists in a group (all of them, smart ones too). */
+function playlistsInGroup(data, id) {
+  return data.playlists.filter((p) => p.group === id);
 }
 
 /**
@@ -751,6 +846,7 @@ module.exports = {
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource, setPlaylistRules, cleanRules, recordAwayListen, favouritesList,
   RULE_FIELDS, RULE_OPS, RULE_SORTS,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
+  cleanGroups, groupById, checkGroupName, freeGroupName, createGroup, renameGroup, deleteGroup, setPlaylistGroup, playlistsInGroup,
   addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta, findSameSong, sameSongIn, sameNames,

@@ -109,7 +109,7 @@ Open to anyone (only the refusals above apply).
 {
   "app": "flow-server",
   "protocol": 2,
-  "features": ["profiles", "admin", "pin", "statistics", "smartPlaylists", "pair", "download", "search", "sessions", "trim", "lyrics", "ownLyrics", "guests"],
+  "features": ["profiles", "admin", "pin", "statistics", "smartPlaylists", "pair", "playlistGroups", "download", "search", "sessions", "trim", "lyrics", "ownLyrics", "guests"],
   "version": "4.0.0",
   "id": "<server id>",
   "name": "Flow Server",
@@ -133,6 +133,8 @@ Open to anyone (only the refusals above apply).
   /api/songs/<id>/lyrics`), from 4.0 `ownLyrics` (`PUT
   /api/songs/<id>/lyrics`) and `guests` while an admin lets guests from other
   servers in (see [Guests from other servers](#guests-from-other-servers)).
+  From 4.5: `playlistGroups` (the groups' commands, `groups` in the library
+  and a playlist's `group`, see Commands).
 - `password`: whether this caller has to sign in.
 - `tailscale`: only at level 2 and up, only to callers on a private network
   that did not come through a proxy.
@@ -190,7 +192,7 @@ Query: `since=<rev>` and `as=<profile id>` (both optional).
 {
   "rev": 412,
   "full": true,
-  "library": { "songs": [...], "playlists": [...], "follows": [...], "sharedPlaylists": [...], "profileNames": {...}, "ignoredFiles": [] },
+  "library": { "songs": [...], "playlists": [...], "groups": [...], "follows": [...], "sharedPlaylists": [...], "profileNames": {...}, "ignoredFiles": [] },
   "profile": { "id": "9f3a1c0b7e2d", "name": "Sam", "pin": false, "createdAt": 1760270000000, "admin": false, "master": false },
   "rules": { "createProfiles": true, "songDelete": "anyone" }
 }
@@ -203,14 +205,15 @@ Query: `since=<rev>` and `as=<profile id>` (both optional).
   "rev": 415, "full": false, "from": 412,
   "songs": [...], "deletedSongs": ["s9"],
   "playlists": [...], "deletedPlaylists": ["p3"],
-  "follows": [...], "sharedPlaylists": [...], "unshared": ["p7"],
+  "follows": [...], "groups": [...], "sharedPlaylists": [...], "unshared": ["p7"],
   "profileNames": {...},
   "profile": {...}, "rules": {...}
 }
 ```
 
 `songs` and `playlists` hold the whole of each one that changed (or is new);
-`follows` and `profileNames` come only when they changed. `profile` is null
+`follows`, `groups` and `profileNames` come only when they changed (`groups`
+whole, all of this profile's). `profile` is null
 without one. `rules` (3.5): the admins' rules as they touch this caller:
 whether it may make profiles, and `songDelete` `"owner"` when only who added
 a song (and the admins) may delete it for everyone. Answers over 1 KB come
@@ -219,7 +222,8 @@ gzipped to a caller that sends `Accept-Encoding: gzip`.
 | Field | |
 |---|---|
 | `songs` | `[{ id, file, title, artist, mix, album, genre, subGenre, infoLooked, duration, format, sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, addedBy, loudness, cover, cut, lyrics? }]`. `file` is relative to the music folder. No stats or stars: those are each profile's own (`GET /api/stats`, Favourites) |
-| `playlists` | `[{ id, name, createdAt, entries: [{ songId, addedAt }], source, shared, rules, favourites? }]`, this profile's own, its Favourites among them |
+| `playlists` | `[{ id, name, createdAt, entries: [{ songId, addedAt }], source, shared, rules, favourites?, group? }]`, this profile's own, its Favourites among them. `group` (4.5): the id of the playlist group it is in, left out while it is in none |
+| `groups` | 4.5: this profile's playlist groups, folders of playlists: `[{ id, name, createdAt }]`. A group may be empty |
 | `sharedPlaylists` | the playlists of others this profile follows, with their songs: `{ id, name, createdAt, entries, ownerId, ownerName, favourites? }` (the others: `GET /api/shared`) |
 | `follows` | ids of the shared playlists this profile follows |
 | `profileNames` | `{ [profileId]: name }`, for the songs' `addedBy` (`"default"`: Default / Shared) |
@@ -318,6 +322,10 @@ app's `client` id too, its live channel does not send those again.
 | `setPlaylistSource` | `playlistId`, `source: { url, kind }` | the link a playlist was imported from |
 | `setPlaylistShared` | `playlistId`, `shared` | other profiles may see and follow it |
 | `followPlaylist` / `unfollowPlaylist` | `playlistId` | another profile's shared playlist |
+| `createGroup` | `groupId`, `name` | 4.5: a new playlist group with the id the client chose; a name taken already gets " (2)". `value`: its id |
+| `renameGroup` | `groupId`, `name` | 4.5 |
+| `deleteGroup` | `groupId` | 4.5: the group goes, its playlists stay (in no group). Always wins, like a delete of a playlist |
+| `setPlaylistGroup` | `playlistId`, `groupId` | 4.5: the playlist into that group (one group at most), or `""` out of the one it is in; `skipped: "gone"` when the group or the playlist is no longer there. Not Favourites |
 | `addSongToPlaylists` | `songId`, `playlistIds` | one song into several playlists |
 | `addSongsToPlaylist` | `playlistId`, `songIds` | several songs into one playlist |
 | `removeFromPlaylist` | `playlistId`, `songId` | |

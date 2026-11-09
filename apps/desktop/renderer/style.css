@@ -1446,6 +1446,91 @@ div.import__frame-head { cursor: default; }
 .pl-head__titlerow { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .pl-head__titlerow .page__title { min-width: 0; }
 
+/* ===== playlist groups (4.5, groups.js) ===== */
+
+/* The menu: a group as a folder below the single playlists, its playlists further in while open. */
+.menu__group .menu__chevron { margin: 0 -4px 0 -6px; }
+.menu__group .menu__sub-icon { color: var(--text-dim); }
+.menu__group .menu__sub-name { font-weight: 600; }
+.menu__sub--in-group { padding-left: 34px; }
+.menu__sub--in-group.menu__sub--active,
+.menu__sub--in-group.menu__sub--playing { padding-left: 33px; }
+
+/* Dragging a playlist (the computer and the web player): where it can go lights up. */
+body.dragging-playlist .menu__group,
+body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s; }
+.drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; background: rgba(90, 140, 220, 0.12) !important; border-radius: 6px; }
+.drop-area { border-radius: var(--radius); }
+
+/* The Playlists page: the box for a new group, then each group's head with its table under it while open. */
+.group-new .input { flex: 1; }
+.groups-hint { margin: 8px 0 10px; font-size: 13px; }
+.groups { display: flex; flex-direction: column; gap: 8px; }
+.group { background: var(--glass); border-radius: var(--radius); padding: 4px 10px; }
+.group--open { padding-bottom: 10px; }
+.group__head { display: flex; align-items: center; gap: 10px; min-height: 46px; }
+.group__toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-bright);
+  cursor: pointer;
+  text-align: left;
+}
+.group__toggle:hover { background: var(--glass-hi); }
+.group__toggle .menu__chevron .icon { width: 16px; height: 16px; }
+.group__icon { display: inline-flex; color: var(--accent-hi); }
+.group__icon .icon { width: 20px; height: 20px; }
+.group__text { display: flex; flex-direction: column; min-width: 0; }
+.group__name { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group__sub { color: var(--text-dim); font-size: 13px; }
+.group .table { margin-top: 4px; }
+.group__empty { margin: 4px 0 6px 34px; font-size: 13px; }
+
+/* Move to group: the groups as rows, "No group", and a new group by name. */
+.modal.modal--group-pick { width: 420px; }
+.group-pick__list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow-y: auto; }
+.group-pick__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  background: var(--glass);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-bright);
+  cursor: pointer;
+  text-align: left;
+}
+.group-pick__row:hover:not(:disabled) { background: var(--glass-hi); border-color: var(--line); }
+.group-pick__row:disabled { cursor: default; opacity: 0.5; }
+.group-pick__row--out { color: var(--text); }
+.group-pick__icon { display: inline-flex; color: var(--accent-hi); }
+.group-pick__row--out .group-pick__icon { color: var(--text-dim); }
+.group-pick__icon .icon { width: 17px; height: 17px; }
+.group-pick__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-pick__count { color: var(--text-dim); font-size: 13px; }
+.group-pick__new { display: flex; gap: 8px; margin-top: 12px; }
+.group-pick__new .input { flex: 1; min-width: 0; }
+
+/* A group's Add playlists: a tick per playlist not in it. */
+.modal.modal--group-add { width: 460px; }
+.group-add__list { display: flex; flex-direction: column; gap: 2px; max-height: 55vh; overflow-y: auto; }
+.group-add__row { display: flex; gap: 10px; padding: 6px 8px; border-radius: 6px; }
+.group-add__row:hover { background: var(--glass); }
+.group-add__icon { display: inline-flex; color: var(--text-dim); }
+.group-add__icon .icon { width: 15px; height: 15px; }
+.group-add__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-add__from { color: var(--text-dim); font-size: 12px; }
+
 /* ===== covers (covers.js) ===== */
 
 /* A song's cover, square, with a note while there is none. */
@@ -1684,6 +1769,11 @@ div.import__frame-head { cursor: default; }
 .act--fav-on, .act--dl-on { background: rgba(245, 190, 60, 0.16); color: #f5be3c; }
 .act--fav-on:hover, .act--dl-on:hover { background: rgba(245, 190, 60, 0.3); border-color: rgba(245, 190, 60, 0.45); }
 .act--open { background: rgba(184, 184, 192, 0.3); border-color: rgba(184, 184, 192, 0.45); color: var(--text-bright); }
+/* A playlist group's Update all (4.5): light blue as Update from source, its icon turning while it reads. */
+.act--blue { background: rgba(140, 200, 244, 0.12); color: #8cc8f4; }
+.act--blue:hover { background: rgba(140, 200, 244, 0.24); border-color: rgba(140, 200, 244, 0.4); }
+.act.pl-update--busy { border-color: rgba(140, 200, 244, 0.5); }
+.act.pl-update--busy .icon { animation: prog-spin 2s linear infinite; }
 
 /* A file saved whole (the phone's own): names and a preview, no trim. */
 .editor--whole .trim-head,

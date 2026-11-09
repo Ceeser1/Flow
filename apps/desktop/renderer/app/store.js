@@ -480,6 +480,39 @@ const Store = {
     return this.library.playlists.filter((p) => !p.favourites).sort((a, b) => Util.compareValues(a.name, b.name));
   },
 
+  /**
+   * Playlist groups (4.5): there without a Flow Server, and on one that keeps
+   * them (a server from before shows every playlist single).
+   */
+  canGroup() {
+    return !this.server.on || !!this.server.playlistGroups;
+  },
+
+  /** The playlist groups, A to Z; none where groups cannot be kept. */
+  groups() {
+    if (!this.canGroup()) return [];
+    return [...(this.library.groups || [])].sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
+  group(id) {
+    return this.canGroup() ? (this.library.groups || []).find((g) => g.id === id) || null : null;
+  },
+
+  /** The group a playlist is in, or null. */
+  groupOf(p) {
+    return p && p.group ? this.group(p.group) : null;
+  },
+
+  /** A group's playlists, A to Z. */
+  playlistsInGroup(id) {
+    return this.sortedPlaylists().filter((p) => p.group === id && this.group(id));
+  },
+
+  /** The playlists in no group, A to Z (Favourites is not one of them). */
+  singlePlaylists() {
+    return this.sortedPlaylists().filter((p) => !this.groupOf(p));
+  },
+
   /** The ones songs can be put into by hand: not the smart ones (their rules pick their songs). */
   editablePlaylists() {
     return this.sortedPlaylists().filter((p) => !p.isRuled);

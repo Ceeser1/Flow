@@ -5458,6 +5458,148 @@ playlists.delete.done.kept
   en.other: {songs} could not be deleted (in use) and stayed
   de.other: {songs} ließen sich nicht löschen (in Benutzung) und blieben
 
+# ===== Playlist groups =====
+
+# Folders of playlists (4.5): in the menu below the single playlists, and on the Playlists page.
+
+groups.created
+  en: Group "{group}" created
+  de: Gruppe „{group}“ erstellt
+
+groups.moveTo
+  en: Move to group
+  de: In Gruppe verschieben
+
+groups.hint
+  en: Drag a playlist from the menu or from Your Playlists onto a group, or use Move to group on the playlist. Dragged back onto Your Playlists it leaves its group.
+  de: Zieh eine Playlist aus dem Menü oder aus Deine Playlists auf eine Gruppe, oder nimm In Gruppe verschieben bei der Playlist. Zurück auf Deine Playlists gezogen verlässt sie ihre Gruppe.
+
+groups.hint.phone
+  en: Put a playlist into a group with Move to group in its menu, or hold several playlists to choose them and move them together.
+  de: Steck eine Playlist mit In Gruppe verschieben in ihrem Menü in eine Gruppe, oder halte mehrere Playlists gedrückt, um sie auszuwählen und zusammen zu verschieben.
+
+groups.hint.none
+  en: A group keeps playlists together, like a folder. It shows in the menu below your playlists.
+  de: Eine Gruppe hält Playlists zusammen, wie ein Ordner. Sie erscheint im Menü unter deinen Playlists.
+
+groups.show.tooltip
+  en: Show the playlists in "{group}"
+  de: Die Playlists in „{group}“ einblenden
+
+groups.hide.tooltip
+  en: Hide the playlists in "{group}"
+  de: Die Playlists in „{group}“ ausblenden
+
+groups.empty
+  en: No playlists in this group yet. Drag one here, or use Add playlists.
+  de: Noch keine Playlists in dieser Gruppe. Zieh eine hierher, oder nimm Playlists hinzufügen.
+
+groups.empty.phone
+  en: No playlists in this group yet. Add some with the + button.
+  de: Noch keine Playlists in dieser Gruppe. Füg welche mit dem + hinzu.
+
+groups.updateAll.tooltip
+  en.one: Update all: read the source of the {playlists} imported into "{group}" again
+  de.one: Alle aktualisieren: die Quelle der {playlists} in „{group}“ neu lesen
+  en.other: Update all: read the sources of the {playlists} imported into "{group}" again
+  de.other: Alle aktualisieren: die Quellen der {playlists} in „{group}“ neu lesen
+
+groups.updateAll.checking.tooltip
+  en: Reading the sources of "{group}"...
+  de: Die Quellen von „{group}“ werden gelesen...
+
+groups.add.tooltip
+  en: Add playlists to "{group}"
+  de: Playlists zu „{group}“ hinzufügen
+
+groups.add.title
+  en: Add playlists to "{group}"
+  de: Playlists zu „{group}“ hinzufügen
+
+groups.add.inGroup
+  en: in {group}
+  de: in {group}
+
+groups.add.button
+  en.one: Add {count} playlist
+  de.one: {count} Playlist hinzufügen
+  en.other: Add {count} playlists
+  de.other: {count} Playlists hinzufügen
+
+groups.add.none
+  en: Every playlist is in "{group}" already.
+  de: Alle Playlists sind schon in „{group}“.
+
+groups.rename.tooltip
+  en: Rename "{group}"
+  de: „{group}“ umbenennen
+
+groups.rename.title
+  en: Rename group
+  de: Gruppe umbenennen
+
+groups.delete.tooltip
+  en: Delete the group "{group}" (its playlists stay)
+  de: Die Gruppe „{group}“ löschen (ihre Playlists bleiben)
+
+groups.delete.title
+  en: Delete group
+  de: Gruppe löschen
+
+groups.delete.text
+  en.one: Delete the group "{group}"? Its {playlists} stays, as a single playlist again.
+  de.one: Die Gruppe „{group}“ löschen? Ihre {playlists} bleibt, wieder als einzelne Playlist.
+  en.other: Delete the group "{group}"? Its {playlists} stay, as single playlists again.
+  de.other: Die Gruppe „{group}“ löschen? Ihre {playlists} bleiben, wieder als einzelne Playlists.
+
+groups.delete.textEmpty
+  en: Delete the group "{group}"? It has no playlists.
+  de: Die Gruppe „{group}“ löschen? Sie hat keine Playlists.
+
+groups.delete.done
+  en: Group "{group}" deleted
+  de: Gruppe „{group}“ gelöscht
+
+groups.moved
+  en: "{playlist}" moved to {group}
+  de: „{playlist}“ nach {group} verschoben
+
+groups.movedMany
+  en: {playlists} moved to {group}
+  de: {playlists} nach {group} verschoben
+
+groups.movedOut
+  en: "{playlist}" is no longer in a group
+  de: „{playlist}“ ist in keiner Gruppe mehr
+
+groups.movedOutMany
+  en: {playlists} are no longer in a group
+  de: {playlists} sind in keiner Gruppe mehr
+
+groups.pick.title
+  en: Move "{playlist}" to a group
+  de: „{playlist}“ in eine Gruppe verschieben
+
+groups.pick.titleMany
+  en: Move {playlists} to a group
+  de: {playlists} in eine Gruppe verschieben
+
+groups.pick.none
+  en: No group
+  de: Keine Gruppe
+
+groups.pick.noGroups
+  en: No groups yet. Name a new one below.
+  de: Noch keine Gruppen. Gib unten einer neuen einen Namen.
+
+groups.pick.newName
+  en: New group
+  de: Neue Gruppe
+
+groups.pick.create
+  en: Create and move
+  de: Erstellen und verschieben
+
 # ===== Smart playlists =====
 
 # Playlists that fill themselves by rules, and the ready-made lists of "Your listening trend".
@@ -6093,6 +6235,25 @@ playlistUpdate.removed
 playlistUpdate.removedThenFailed
   en: {songs} removed from "{playlist}", then: {reason}
   de: {songs} aus „{playlist}“ entfernt, dann: {reason}
+
+# A playlist group's Update all (4.5): its imported playlists read one after another.
+playlistUpdate.group.checking
+  en: Reading the sources of {playlists} in {group}...
+  de: Die Quellen von {playlists} in {group} werden gelesen...
+
+playlistUpdate.group.noChanges
+  en: {group}: no changes in any of its playlists.
+  de: {group}: keine Änderungen in den Playlists.
+
+playlistUpdate.group.someUnchanged
+  en.one: {group}: {playlists} had no changes.
+  de.one: {group}: {playlists} hatte keine Änderungen.
+  en.other: {group}: {playlists} had no changes.
+  de.other: {group}: {playlists} hatten keine Änderungen.
+
+playlistUpdate.group.tooOld
+  en: This Flow Server cannot check playlists for updates yet: update it.
+  de: Dieser Flow Server kann Playlists noch nicht auf Neues prüfen: aktualisiere ihn.
 
 # ===== Add to Playlists =====
 
@@ -7195,6 +7356,12 @@ common.count.playlists
   en.other: {count} playlists
   de.other: {count} Playlists
 
+common.count.groups
+  en.one: {count} group
+  de.one: {count} Gruppe
+  en.other: {count} groups
+  de.other: {count} Gruppen
+
 common.count.sharedPlaylists
   en.one: {count} shared playlist
   de.one: {count} geteilte Playlist
@@ -7460,6 +7627,18 @@ window.playlists.new.smart.tooltip
 window.playlists.yours
   en: Your Playlists
   de: Deine Playlists
+
+window.playlists.groups
+  en: Playlist Groups
+  de: Playlist-Gruppen
+
+window.playlists.groups.name
+  en: Group name
+  de: Name der Gruppe
+
+window.playlists.groups.add
+  en: Add new group
+  de: Neue Gruppe hinzufügen
 
 window.followed.subheading
   en: Playlists you follow
@@ -8441,6 +8620,26 @@ core.library.favouritesFixed
 core.library.playlistGone
   en: That playlist no longer exists.
   de: Diese Playlist gibt es nicht mehr.
+
+core.library.groupGone
+  en: That playlist group no longer exists.
+  de: Diese Gruppe gibt es nicht mehr.
+
+core.library.groupNeedsId
+  en: A new group needs an id.
+  de: Eine neue Gruppe braucht eine ID.
+
+core.library.enterGroupName
+  en: Please enter a name for the group.
+  de: Bitte gib der Gruppe einen Namen.
+
+core.library.groupNameTooLong
+  en: Group names can be at most {max} characters.
+  de: Gruppennamen dürfen höchstens {max} Zeichen lang sein.
+
+core.library.groupExists
+  en: A group called "{group}" already exists.
+  de: Eine Gruppe namens „{group}“ gibt es schon.
 
 core.library.nameTooLong
   en: Playlist names can be at most {max} characters.

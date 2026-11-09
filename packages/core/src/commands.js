@@ -64,6 +64,46 @@ const TYPES = {
       return {};
     },
   },
+  // Playlist groups (4.5). Two apps may each have made a "Rock" group while
+  // apart: the later one becomes "Rock (2)". Deleting a group always wins; a
+  // playlist moved into it meanwhile stays single.
+  createGroup: {
+    keys: () => [],
+    run(d, c) {
+      const id = str(c.groupId);
+      if (!/^[\w-]{1,64}$/.test(id)) throw new Error(tr('core.library.groupNeedsId', 'A new group needs an id.'));
+      if (model.groupById(d, id)) return { skipped: 'exists' };
+      if (!str(c.name).trim()) throw new Error(tr('core.library.enterGroupName', 'Please enter a name for the group.'));
+      const g = model.createGroup(d, model.freeGroupName(d, c.name), id, c.at);
+      return { value: g.id };
+    },
+  },
+  renameGroup: {
+    keys: (c) => [`g:${c.groupId}:name`],
+    run(d, c) {
+      if (!model.groupById(d, str(c.groupId))) return { skipped: 'gone' };
+      model.renameGroup(d, str(c.groupId), c.name);
+      return {};
+    },
+  },
+  deleteGroup: {
+    keys: () => [],
+    run(d, c) {
+      if (!model.groupById(d, str(c.groupId))) return { skipped: 'gone' };
+      model.deleteGroup(d, str(c.groupId));
+      return {};
+    },
+  },
+  setPlaylistGroup: {
+    keys: (c) => [`p:${c.playlistId}:group`],
+    run(d, c) {
+      if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
+      const gid = str(c.groupId);
+      if (gid && !model.groupById(d, gid)) return { skipped: 'gone' };
+      model.setPlaylistGroup(d, str(c.playlistId), gid);
+      return {};
+    },
+  },
   setPlaylistShared: {
     keys: (c) => [`p:${c.playlistId}:shared`],
     run(d, c) {
