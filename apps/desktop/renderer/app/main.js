@@ -38,6 +38,7 @@
   ImportPanel.init();
   ServerImport.init();
   ClientQueue.init();
+  QueuePanels.init();
   SongSearch.init();
   PlaylistsPage.init();
   FollowedPage.init();

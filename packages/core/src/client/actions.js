@@ -225,7 +225,10 @@ function createActions({
   }
 
   const findBySource = ({ url, key }) => model.findBySource(currentLibrary(), { url, key });
-  const findByMeta = (meta) => model.findByMeta(currentLibrary(), meta);
+  // With meta.duration: only a song of the same length (model.findSameSong).
+  const findByMeta = (meta) => (meta && meta.duration
+    ? model.findSameSong(currentLibrary(), meta, meta.duration)
+    : model.findByMeta(currentLibrary(), meta));
 
   return {
     currentLibrary,

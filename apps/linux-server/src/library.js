@@ -1027,7 +1027,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   /**
    * An upload of a song that is here already, or null: the same id (sent
    * twice), the same source, or the same artist, title and mix at the same
-   * length (a copy of a song the server found in its folder).
+   * length (a copy of a song the server found in its folder; model.findSameSong).
    */
   function existingFor(id, meta) {
     const same = model.songById(data, id);
@@ -1036,10 +1036,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       const hit = model.findBySource(data, { key: meta.sourceKey, url: meta.sourceUrl });
       if (hit) return hit;
     }
-    const byName = model.findByMeta(data, { artist: meta.artist, title: meta.title, mix: meta.mix });
-    const d = Number(meta.duration) || 0;
-    if (byName && (!d || !byName.duration || Math.abs(byName.duration - d) < 2)) return byName;
-    return null;
+    return model.findSameSong(data, { artist: meta.artist, title: meta.title, mix: meta.mix }, meta.duration);
   }
 
   /**

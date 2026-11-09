@@ -2,28 +2,28 @@
 
 // The Client queue on Add Songs (4.4): links pasted while this computer is
 // downloading something wait here, one after another, instead of the
-// Download button waiting. Only where songs download here (yt-dlp on the
-// computer); the server has its own queue (serverImport.js).
+// Download button waiting; so do files picked from the computer and a
+// playlist's Update. The server has its own queue (serverImport.js).
 //
 // A link is looked at when it is queued (a song inside a YouTube playlist
 // asks "this song or the whole list?" then), its name and song count are
 // read at once (window.flow.peekLink, listing.peek), and it takes Settings ›
 // Media Management's "Auto-complete confirmations" and "Automate 'Finish
-// All'" as they were then (the boxes under the link box switch them). Its
-// turn comes once Add Songs has nothing open: no song in the editor, no
-// import, no search's results. Then it goes the way a link did before
-// (AddPage.runEntry): read, the checklist (or straight on with Download All
-// when auto-completed), downloaded, trimmed and named (or, finishing by
-// itself, saved as it came).
+// all'" as they were then (the boxes under the link box switch them). Its
+// turn comes once this computer reads and downloads nothing else and no
+// checklist waits for its choice; batches waiting for "Finish all" hold no
+// one up. Then it is a batch of import.js (AddPage.runEntry): read, the
+// checklist (or straight on with Download All when auto-completed),
+// downloaded, then trimmed and named (or, finishing by itself, saved as it
+// came).
 //
-// Entries: { id, url, kind ('song' or 'list'), title (a search's pick),
-// picks + name (several uploads picked from a search), updating (a
-// playlist's Update that put the link into the box), auto: { complete,
-// finish }, peek: null while reading, { name, count, single, sourceTotal },
-// or { error } }. They live in the window only: closing Flow asks first
-// (main.js), naming them. For now the client and the server share the page's
-// one import frame, so a server batch shown there holds this queue up too,
-// and the other way round (the server keeps downloading meanwhile).
+// Entries: { id, url, kind ('song', 'list', 'local' or 'update'), title (a
+// search's pick), picks + name (several uploads picked from a search), local
+// (the files and folders picked), update ({ playlist, listing, server } of a
+// playlist's Update), updating, auto: { complete, finish }, peek: null while
+// reading, { name, count, single, sourceTotal }, or { error } }. They live in
+// the window only: closing Flow asks first (main.js), naming them. The
+// Client queue frame draws them (queuePanels.js).
 
 const ClientQueue = {
   entries: [],
@@ -44,12 +44,12 @@ const ClientQueue = {
     return Store.can('downloadHere') && DownloadsHelp.here;
   },
 
-  /** Something is open on Add Songs: a new link waits for its turn. */
+  /** This computer reads or downloads something, or a checklist waits: a new link waits for its turn. */
   get busy() {
-    return this.running || AddPage.phase !== 'idle' || ImportPanel.state !== 'idle' || SongSearch.state !== 'idle';
+    return this.running || ImportPanel.clientBusy;
   },
 
-  /** fn(entries) whenever the queue changes (D9 draws it). */
+  /** fn(entries) whenever the queue changes (the Client queue frame draws it). */
   onChange(fn) {
     this._listeners.push(fn);
   },
@@ -66,15 +66,16 @@ const ClientQueue = {
     if (typeof ServerImport !== 'undefined') ServerImport.drawButtons();
   },
 
-  /** What an entry is called: its name once read, else its link. */
+  /** What an entry is called: its name once read, else its link (files: their names). */
   label(e) {
     if (e.peek && e.peek.name) return e.peek.name;
+    if (e.local) return e.local.map((p) => String(p).split(/[\\/]/).filter(Boolean).pop() || String(p)).join(', ');
     return e.name || e.title || e.url || '';
   },
 
   /**
-   * A link (or a search's picks) to download: at once when nothing is open
-   * and nothing waits before it, else at the end of the queue.
+   * A link (or a search's picks, files, an Update) to download: at once when
+   * nothing runs here and nothing waits before it, else at the end of the queue.
    */
   offer(entry) {
     const e = { ...entry, id: `q${Date.now().toString(36)}${(this._seq += 1)}`, peek: null };
@@ -90,8 +91,14 @@ const ClientQueue = {
 
   /** A queued link's name and song count, read at once. */
   async _peek(e) {
-    if (e.picks) {
-      e.peek = { name: e.name || '', count: e.picks.length, single: false, sourceTotal: 0 };
+    if (e.picks || e.local || e.update) {
+      let count = 0;
+      if (e.picks) count = e.picks.length;
+      else if (e.update) count = e.update.listing.items.filter((it) => !it.existing).length;
+      const name = e.update ? e.update.playlist.name : (e.local ? this.label(e) : e.name || '');
+      e.peek = {
+        name, count, single: false, sourceTotal: 0, local: !!e.local,
+      };
       this._changed();
       return;
     }
@@ -116,7 +123,7 @@ const ClientQueue = {
     this._changed();
   },
 
-  /** The page may be free now: the next one starts (once things have settled). */
+  /** This computer may be free now: the next one starts (once things have settled). */
   kick() {
     clearTimeout(this._timer);
     this._timer = setTimeout(() => this._next(), 0);

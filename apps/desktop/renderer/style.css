@@ -1318,6 +1318,74 @@ div.import__frame-head { cursor: default; }
 
 .import__buttons .btn { height: 38px; }
 
+/* ===== one panel per batch (import.js, 4.4) ===== */
+
+.import-batches[hidden] { display: none; }
+
+/* The head: the arrow, where it is from, its name with the pencil, how many songs, its link. */
+.import-batch__head { align-items: center; justify-content: flex-start; flex-wrap: nowrap; gap: 8px; cursor: pointer; }
+.import-batch__head .import__source { flex: 1; min-width: 0; }
+.import-batch--collapsed .import-batch__head { margin-bottom: 0; }
+.import-batch__toggle { flex: none; padding: 2px; color: var(--text-dim); }
+.import-batch__toggle .icon { width: 16px; height: 16px; transition: transform 0.15s; transform: rotate(90deg); }
+.import-batch--collapsed .import-batch__toggle .icon { transform: none; }
+.import-batch__toggle[hidden] { display: none; }
+.import-batch__count { color: var(--text-dim); white-space: nowrap; }
+.import__badge--server { background: rgba(110, 200, 140, 0.16); color: var(--green); }
+.import-batch__url {
+  min-width: 0;
+  flex: 1 1 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: 12px;
+  user-select: text;
+}
+/* Its notes (a list cut short, links that failed, how to trim) on a line of their own. */
+.import-batch__notes { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.import-batch__progress { margin: 4px 0 10px; }
+.import-batch__progress[hidden], .import-batch__body[hidden] { display: none; }
+.import-batch--collapsed .import-batch__progress { margin-bottom: 0; }
+
+/* Its footer: stuck to the bottom of the window while the batch is in view. */
+.import-batch__footer {
+  margin: 12px -14px -14px;
+  padding: 10px 14px 12px;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.import-batch__footer[hidden] { display: none; }
+.import-batch--collapsed .import-batch__footer { margin-top: 10px; }
+
+/* ===== the Client queue and Server queue (queuePanels.js) ===== */
+
+.queue-panel__title { color: var(--text-bright); font-weight: 600; margin-bottom: 8px; }
+.queue-panel__rows { display: flex; flex-direction: column; gap: 4px; }
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--well);
+}
+.queue-row__what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-row__profile {
+  margin-right: 8px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(90, 140, 220, 0.18);
+  color: var(--accent-hi);
+  font-size: 12px;
+  font-weight: 600;
+}
+.queue-row__name { color: var(--text-bright); }
+.queue-row__count { color: var(--grey); }
+.queue-row__url { color: var(--text-dim); font-size: 12px; }
+.queue-row__state { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--grey); font-size: 12px; }
+.queue-row__state--bad { color: var(--amber); }
+.queue-row .btn { flex: none; }
+
 /* ===== a song's name searched for (songSearch.js) ===== */
 
 /* The upload's title: opens it on its site, to check before downloading. */
@@ -3236,7 +3304,7 @@ div.import__frame-head { cursor: default; }
 }
 
 /* Above the Add Songs footer (Finish / Finish all) while it shows. */
-body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190px; }
+body:has(#page-add:not([hidden]) .import-batch__footer:not([hidden])) .toasts { bottom: 205px; }
 
 .toast--in { opacity: 1; transform: none; }
 /* The toasts let clicks through; one with a button takes its own. */

@@ -537,3 +537,33 @@ test('a queued link\'s name and song count are read quickly, without looking any
     global.fetch = realFetch;
   }
 });
+
+test('a song the library has by its names at the same length is not downloaded again, only listed as the library\'s', async () => {
+  const { createLister, groupToken } = require('../src/listing');
+  const lib = m.emptyLibrary();
+  m.addSong(lib, { id: 's-four', file: 'Four.mp3', artist: 'Dame', title: 'Four', mix: '', duration: 200 });
+  const downloaded = [];
+  const media = {
+    probe: async (url) => ({
+      url, key: `youtube:${url.slice(-11)}`, title: 'Dame - Four (Official Video)', duration: url.endsWith('longversion') ? 262 : 201.5,
+      guess: { artist: 'Dame', title: 'Four', mix: '' }, thumbnails: [],
+    }),
+    download: async (probed) => {
+      downloaded.push(probed.url);
+      return { path: 'x.opus', duration: probed.duration, summary: '' };
+    },
+  };
+  const lister = createLister({ media, library: () => lib });
+  const seen = [];
+  const sum = await lister.download([
+    { index: 0, title: 'Dame - Four', url: 'https://www.youtube.com/watch?v=otherupload' },
+    { index: 1, title: 'Dame - Four', url: 'https://www.youtube.com/watch?v=longversion' },
+  ], {}, groupToken(), (p) => p.phase === 'item' && p.status !== 'current' && seen.push([p.index, p.status, p.existingId]));
+  assert.deepEqual(seen, [[0, 'library', 's-four'], [1, 'ready', undefined]]);
+  assert.deepEqual(downloaded, ['https://www.youtube.com/watch?v=longversion']);
+  assert.equal(sum.fromLibrary, 1);
+  // Read from a list: the same, by the list's length.
+  assert.equal(m.findSameSong(lib, { artist: 'dame ', title: 'four' }, 197).id, 's-four');
+  assert.equal(m.findSameSong(lib, { artist: 'Dame', title: 'Four' }, 230), null);
+  assert.equal(m.findSameSong(lib, { artist: 'Dame', title: 'Four' }, 0).id, 's-four');
+});

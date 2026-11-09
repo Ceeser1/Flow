@@ -50,8 +50,6 @@ const SongSearch = {
 
   /** Searches for `query` ('client' or 'server', as the button pressed) and lists what it found. */
   async open(query, where) {
-    // A checklist that was never started goes, as for a new link.
-    if (ImportPanel.state === 'review') ImportPanel.close();
     const run = this._drop();
     this.where = where;
     this.state = 'searching';

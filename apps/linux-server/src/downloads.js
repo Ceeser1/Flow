@@ -646,7 +646,11 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         probed = await media.probe(item.url, token, { knownArtists: [] });
         item.probed = probed;
       }
-      const same = library.existingFor(null, { sourceKey: probed.key, sourceUrl: probed.url });
+      // The same upload, or the same song (its names at the same length) from another.
+      const names = item.meta && item.meta.title ? item.meta : probed.guess || {};
+      const same = library.existingFor(null, {
+        sourceKey: probed.key, sourceUrl: probed.url, artist: names.artist, title: names.title, mix: names.mix, duration: probed.duration,
+      });
       if (same) {
         item.state = 'library';
         item.existing = existingInfo(same);

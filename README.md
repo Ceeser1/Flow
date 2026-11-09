@@ -10,7 +10,7 @@ Flow is made for private use.
 
 ### Your library
 - **Add Songs** from a link or a whole playlist, or import the music files
-  you already have
+  you already have; paste more while one downloads and they wait in a queue
 - **Trim** every song on its waveform: cut off intros, outros and silence
 - **Artist, Title and Mix** filled in for you, and easy to correct
 - **Album covers** found automatically and written into the files

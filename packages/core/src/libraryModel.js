@@ -694,6 +694,21 @@ function findByMeta(data, { artist, title, mix }, exceptId = null) {
     && norm(s.artist) === a && norm(s.title) === t && norm(s.mix) === m) || null;
 }
 
+// How far apart two lengths may be for the same song: a list's length (a
+// site's) and the file's differ by a second or two.
+const SAME_LENGTH = 3;
+
+/**
+ * A song the library has already by its names (findByMeta) at the same
+ * length: within SAME_LENGTH seconds, or either length unknown. A download
+ * found in it is not downloaded again.
+ */
+function findSameSong(data, meta, duration) {
+  const hit = meta ? findByMeta(data, meta) : null;
+  const d = Number(duration) || 0;
+  return hit && (!d || !hit.duration || Math.abs(hit.duration - d) <= SAME_LENGTH) ? hit : null;
+}
+
 /**
  * What a Flow Server takes for the same song on upload (its existingFor,
  * without the id): the same source, else the same artist, title and mix at
@@ -738,5 +753,5 @@ module.exports = {
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
   addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
-  findBySource, findByMeta, sameSongIn, sameNames,
+  findBySource, findByMeta, findSameSong, sameSongIn, sameNames,
 };

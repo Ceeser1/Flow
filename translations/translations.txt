@@ -640,11 +640,11 @@ settings.media.autoComplete.desc
   de: Wenn aktiv, wartet ein eingefügter Link nicht auf deine Bestätigung und macht einfach mit den gefundenen Songs, dem Playlist-Namen usw. weiter. Eine Playlist bekommt ihren geladenen Namen und alle ihre Songs, ein einzelner Song kommt in keine Playlist.
 
 settings.media.autoFinish.label
-  en: Automate "Finish All"
+  en: Automate "Finish all"
   de: „Alle abschließen“ automatisieren
 
 settings.media.autoFinish.desc
-  en: If enabled, downloaded batches don't wait for your confirmation to finish all or cancel and simply get finished. If disabled, all batches require you to confirm the selected songs by clicking "Finish All", or you can also cancel the import.
+  en: If enabled, downloaded batches don't wait for your confirmation to finish all or cancel and simply get finished. If disabled, all batches require you to confirm the selected songs by clicking "Finish all", or you can also cancel the import.
   de: Wenn aktiv, warten heruntergeladene Batches nicht darauf, dass du sie abschließt oder abbrichst, sondern werden einfach abgeschlossen. Wenn aus, bestätigst du bei jedem Batch die gewählten Songs mit „Alle abschließen“, oder du brichst den Import ab.
 
 # ── Settings › Jam session ──
@@ -1613,9 +1613,20 @@ import.playlist.everySongOfImport
   en: Every song of this import
   de: Alle Songs dieses Imports
 
-import.playlist.songCount
-  en: {songs} in this list
-  de: {songs} in dieser Liste
+# A batch the Flow Server downloads (next to where it is from)
+import.batch.onServer
+  en: Server
+  de: Server
+
+# The arrow at a batch's left: shows or hides its songs
+import.batch.expand
+  en: Show its songs
+  de: Songs anzeigen
+
+import.batch.collapse
+  en: Hide its songs
+  de: Songs ausblenden
+
 
 import.playlist.updating
   en: Updating "{playlist}": the songs it does not have yet are added to it.
@@ -3541,15 +3552,42 @@ add.queue.skipped
   en: "{song}" is in All Songs already, so it was not downloaded again.
   de: „{song}“ ist schon in Alle Songs und wurde nicht noch einmal geladen.
 
-add.queue.searchBusy
-  en: Something is downloading right now: searching for a song's name has to wait until it is done. A link can be queued meanwhile.
-  de: Gerade wird etwas geladen: Die Suche nach einem Songnamen muss warten, bis es fertig ist. Einen Link kannst du solange einreihen.
+# The frames under the link box: what waits on this computer and on the server
+add.queue.client.title
+  en: Client queue
+  de: Client-Warteschlange
+
+add.queue.server.title
+  en: Server queue
+  de: Server-Warteschlange
+
+# A line's state: its name is still being read, it comes next, it waits
+add.queue.readingName
+  en: Reading its name...
+  de: Name wird gelesen...
+
+add.queue.next
+  en: Next
+  de: Als Nächstes
+
+add.queue.waiting
+  en: Waiting
+  de: Wartet
+
+# Another profile's batch the server works on now
+add.queue.readingNow
+  en: Being read now
+  de: Wird gerade gelesen
+
+add.queue.downloadingNow
+  en: Downloading now
+  de: Wird gerade geladen
 
 serverImport.waitingTurn
-  en: Waiting for its turn on the server (number {place} in the queue)...
-  de: Wartet auf dem Server, bis es dran ist (Nummer {place} in der Warteschlange)...
+  en: Number {place} in the queue
+  de: Nummer {place} in der Warteschlange
 
-# A batch the server finished by itself ("Automate "Finish All"")
+# A batch the server finished by itself ("Automate "Finish all"")
 serverImport.done.saved
   en.one: "{name}": {count} song saved.
   de.one: „{name}“: {count} Song gespeichert.
@@ -3570,26 +3608,14 @@ add.share.nothing
   en: Nothing to add: nothing was shared.
   de: Nichts hinzuzufügen: Es wurde nichts geteilt.
 
-add.importOpen
-  en: A playlist import is still open. Finish it ("Finish all") or cancel it first.
-  de: Ein Playlist-Import ist noch offen. Schließe ihn ab („Alle abschließen“) oder brich ihn ab.
 
 add.progress.startingDownload
   en: Starting download...
   de: Download startet...
 
 # Add Songs › a new link while a song is still open
-add.discard.title
-  en: Discard current song?
-  de: Aktuellen Song verwerfen?
 
-add.discard.text
-  en: The song in the editor has not been saved yet. Download the new link and discard it?
-  de: Der Song im Editor ist noch nicht gespeichert. Neuen Link laden und ihn verwerfen?
 
-add.discard.confirm
-  en: Discard
-  de: Verwerfen
 
 # Add Songs › a link that is a song inside a playlist
 add.songOrPlaylist.title
@@ -3624,6 +3650,10 @@ add.known.title
 add.known.link
   en: This link is already in your library as "{song}". Download it anyway?
   de: Dieser Link ist schon als „{song}“ in deiner Bibliothek. Trotzdem laden?
+
+add.known.same
+  en: "{song}" is already in your library, with the same length. Download it anyway?
+  de: „{song}“ ist schon in deiner Bibliothek, gleich lang. Trotzdem laden?
 
 add.known.link.confirm
   en: Download anyway
@@ -6043,10 +6073,6 @@ playlistUpdate.continue
   en: Continue
   de: Weiter
 
-playlistUpdate.importOpen
-  en: A playlist import is still open on Add Songs. Finish it ("Finish all") or cancel it first.
-  de: Ein Playlist-Import in „Songs hinzufügen“ ist noch offen. Schließe ihn ab („Alle abschließen“) oder brich ab.
-
 playlistUpdate.removed
   en: {songs} removed from "{playlist}".
   de: {songs} aus „{playlist}“ entfernt.
@@ -6523,9 +6549,6 @@ common.saving
   en: Saving...
   de: Wird gespeichert...
 
-common.finish
-  en: Finish
-  de: Abschließen
 
 common.importedPlaylist
   en: Imported playlist

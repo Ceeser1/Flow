@@ -121,10 +121,6 @@ const PlaylistUpdate = {
           label: T('playlistUpdate.continue'),
           kind: 'primary',
           onClick: () => {
-            if (add.checked && added.length && ImportPanel.busy) {
-              toast(T('playlistUpdate.importOpen'), 'error');
-              return false;
-            }
             go = { keep: keep.checked, add: add.checked };
             return true;
           },
@@ -159,8 +155,8 @@ const PlaylistUpdate = {
     }
     if (!go.add || !changes.added.length) return;
     Nav.show('add');
-    if (!await AddPage._clearForNew()) return;
+    // Its checklist at its turn, as any link's (Client queue).
     const p = Store.playlist(list.id);
-    if (p) ImportPanel.openUpdate(p, listing, server);
+    if (p) ClientQueue.offer({ url: p.source.url, kind: 'update', update: { playlist: { id: p.id, name: p.name }, listing, server } });
   },
 };

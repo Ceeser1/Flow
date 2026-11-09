@@ -115,11 +115,13 @@ function trackName(t) {
   return `${t.artists || ''}|${t.title || ''}`.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-/** A song the library already has: same source, else same names. */
-function existingSong(data, { url, key, meta }) {
+/** A song the library already has: same source, else same names at the same length. */
+function existingSong(data, {
+  url, key, meta, duration = 0,
+}) {
   const bySource = (key || url) ? model.findBySource(data, { key, url }) : null;
   if (bySource) return bySource;
-  if (meta && meta.title) return model.findByMeta(data, meta);
+  if (meta && meta.title) return model.findSameSong(data, meta, duration);
   return null;
 }
 
@@ -238,7 +240,9 @@ function createLister({ media, library, lookupInfo = null }) {
         key,
         status: unavailable || !link ? 'unavailable' : 'ok',
         note: unavailable ? title.replace(/[[\]]/g, '') : '',
-        existing: unavailable ? null : existingInfo(existingSong(data, { url: link, key, meta })),
+        existing: unavailable ? null : existingInfo(existingSong(data, {
+          url: link, key, meta, duration: e.duration,
+        })),
       };
     });
     return {
@@ -566,7 +570,7 @@ function createLister({ media, library, lookupInfo = null }) {
         status: t.playable ? 'pending' : 'unavailable',
         note: t.playable ? '' : tr('core.match.notPlayable', 'not playable on {source}', { source }),
         match: null,
-        existing: existingInfo(existingSong(data, { meta })),
+        existing: existingInfo(existingSong(data, { meta, duration: t.duration })),
       };
     });
 
@@ -700,7 +704,9 @@ function createLister({ media, library, lookupInfo = null }) {
             key: p.key || '',
             status: 'ok',
             note: '',
-            existing: existingInfo(model.findBySource(library(), { key: p.key, url: p.url })),
+            existing: existingInfo(existingSong(library(), {
+              key: p.key, url: p.url, meta: p.guess, duration: p.duration,
+            })),
             listUrl: '',
           });
         }
@@ -870,12 +876,15 @@ function createLister({ media, library, lookupInfo = null }) {
   function download(items, opts, group, onProgress, { knownArtists = [] } = {}) {
     return eachItem(items, group, onProgress, async (it, report) => {
       const probed = await withSub(group, (t) => media.probe(it.url, t, { knownArtists }));
-      // Another link to an upload the library already has.
-      const same = model.findBySource(library(), { key: probed.key, url: probed.url });
+      // Another link to an upload the library already has, or the same song
+      // (its names at the same length) from another upload.
+      const fromSource = it.meta && it.meta.title;
+      const same = existingSong(library(), {
+        key: probed.key, url: probed.url, meta: fromSource ? it.meta : probed.guess, duration: probed.duration,
+      });
       if (same) return { existingId: same.id };
       const file = await withSub(group, (t) => media.download(probed, opts,
         (stage, frac, text) => report(frac, text), t));
-      const fromSource = it.meta && it.meta.title;
       const meta = await withInfo(fromSource ? it.meta : { artist: probed.guess.artist, title: probed.guess.title, mix: probed.guess.mix }, probed);
       return {
         media: file,

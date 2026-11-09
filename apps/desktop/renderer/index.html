@@ -156,26 +156,23 @@
           </div>
         </div>
 
-        <!-- A whole playlist: the checklist, then its progress. -->
-        <div id="importPanel" class="panel import" hidden>
-          <div class="import__head">
-            <!-- Where it is from, the playlist's name (editable), notes. -->
-            <div id="importSource" class="import__source"></div>
-          </div>
-          <div id="importWarnings" class="import__warnings" hidden></div>
-          <div id="importToolbar" class="import__toolbar">
-            <button id="importSelectAll" class="link-btn" type="button" data-i18n="window.add.selectAll">Select all</button>
-            <span class="muted-text">·</span>
-            <button id="importSelectNone" class="link-btn" type="button" data-i18n="window.add.selectNone">Select none</button>
-            <span id="importCount" class="import__count"></span>
-          </div>
-          <div id="importList" class="import__list"></div>
-          <div id="importButtons" class="import__buttons">
-            <button id="importCancel" class="btn btn--light-red" type="button" data-i18n="common.cancel">Cancel</button>
-            <button id="importSelected" class="btn btn--light-green" type="button" data-i18n="window.add.downloadSelected">Download Selected</button>
-            <button id="importEverything" class="btn btn--light-grey" type="button" data-i18n="window.add.downloadAll">Download All</button>
-          </div>        </div>
+        <!-- Links waiting for this computer, and the server's queue of every profile (queuePanels.js). -->
+        <div id="clientQueuePanel" class="panel queue-panel" hidden>
+          <div class="queue-panel__title" data-i18n="add.queue.client.title">Client queue</div>
+          <div id="clientQueueRows" class="queue-panel__rows"></div>
+        </div>
+        <div id="serverQueuePanel" class="panel queue-panel" hidden>
+          <div class="queue-panel__title" data-i18n="add.queue.server.title">Server queue</div>
+          <div id="serverQueueRows" class="queue-panel__rows"></div>
+        </div>
 
+        <!-- One panel per batch (import.js): those downloaded, waiting for Finish all, above;
+             those still being read or downloaded at the bottom. -->
+        <div id="importDone" class="import-batches"></div>
+        <div id="importActive" class="import-batches"></div>
+
+        <!-- The trim editor's home while no song's frame has it (add.js openEmbedded). -->
+        <div id="editorHome" hidden>
         <div id="editor" class="panel editor" hidden>
           <div class="meta-grid">
             <!-- The song's cover, found right after its download (covers.js pendingEl). -->
@@ -243,32 +240,6 @@
           </div>
         </div>
 
-        <div id="addFooter" class="add-footer" hidden>
-          <div class="add-footer__left">
-            <!-- One song, or a whole import (then with how far it is). -->
-            <button id="importCancelAll" class="btn btn--light-red" type="button" data-i18n="common.cancelImport">Cancel import</button>
-            <span id="importFooterText" class="muted-text" hidden></span>
-            <!-- Songs that failed to download: tried again, and how that went. -->
-            <button id="importRetryFailed" class="btn btn--small btn--light-green" type="button" hidden data-i18n="window.add.import.retryFailed">Retry failed</button>
-            <span id="importRetryText" class="muted-text" hidden></span>
-          </div>
-          <div class="add-footer__center">
-            <!-- Local files: copy them into the save folder, or move them there. -->
-            <div id="copyMove" class="copy-move" hidden>
-              <button id="copyMoveCopy" class="copy-move__label" type="button" data-i18n="window.add.import.copyFiles">Copy Files</button>
-              <span class="copy-move__switch-wrap">
-                <button id="copyMoveSwitch" class="switch" type="button" role="switch" aria-checked="false"
-                        aria-label="Move the original files instead of copying them" data-i18n-aria-label="window.add.import.moveOriginals.ariaLabel"></button>
-                <span id="copyMoveTip" class="copy-move__tip" role="tooltip"></span>
-              </span>
-              <button id="copyMoveMove" class="copy-move__label" type="button" data-i18n="window.add.import.moveOriginals">Move Originals</button>
-            </div>
-          </div>
-          <div class="add-footer__right">
-            <span id="addPlaylistNames" class="muted-text"></span>
-            <button id="addToPlaylistBtn" class="btn btn--green" type="button"></button>
-            <button id="finishBtn" class="btn btn--primary btn--big" type="button" data-i18n="common.finish">Finish</button>
-          </div>
         </div>
       </section>
 
@@ -551,6 +522,7 @@
 <script src="app/pages/import.js"></script>
 <script src="app/pages/serverImport.js"></script>
 <script src="app/pages/clientQueue.js"></script>
+<script src="app/pages/queuePanels.js"></script>
 <script src="app/pages/songSearch.js"></script>
 <script src="app/downloadsHelp.js"></script>
 <script src="app/pages/playlists.js"></script>

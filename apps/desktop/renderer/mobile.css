@@ -869,6 +869,17 @@ body.mobile .add-footer__right { flex-wrap: wrap; justify-content: flex-end; }
 body.mobile .add-footer__right .btn { height: 48px; flex: 1 1 auto; font-size: 15px; }
 body.mobile .add-footer__right .muted-text { flex: 1 1 100%; }
 
+/* A song's Cancel Edits, Apply Edits and Finish this song: wrapped on a narrow screen. */
+body.mobile .import__frame-foot { flex-wrap: wrap; }
+body.mobile .import__frame-foot .btn { min-width: 0; flex: 1 1 auto; }
+
+/* A batch's footer sits in its panel (import.js). */
+body.mobile .import-batch__footer { margin: 12px -14px -14px; padding: 10px 14px 12px; }
+body.mobile .import-batch__head { flex-wrap: wrap; }
+body.mobile .queue-row { flex-wrap: wrap; }
+body.mobile .queue-row__what { flex: 1 1 100%; white-space: normal; }
+body.mobile .queue-row__state { max-width: none; flex: 1; }
+
 body.mobile .import__buttons { flex-wrap: wrap; }
 body.mobile .import__buttons .btn { flex: 1 1 auto; height: 44px; }
 
@@ -893,7 +904,7 @@ body.mobile .import__buttons .btn { flex: 1 1 auto; height: 44px; }
   body.mobile .add-footer {
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    padding: 6px 16px calc(6px + var(--safe-bottom));
+    padding: 6px 14px;
   }
   body.mobile .add-footer__right { flex-wrap: nowrap; }
   body.mobile .add-footer__right .btn { height: 40px; flex: none; }

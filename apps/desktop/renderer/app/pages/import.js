@@ -1,34 +1,51 @@
 'use strict';
 
-// A whole playlist (or Mix, or Spotify, Deezer or Amazon Music list) on the
-// Add Songs page:
+// Imports on the Add Songs page, one panel per batch (4.4): a playlist (or
+// Mix, or Spotify, Deezer or Amazon Music list), a song, uploads picked from
+// a search, files from the computer, or a batch the Flow Server downloads.
+// Several are on the page at once; ImportPanel (at the end) keeps them, and
+// each one (ImportBatch) goes
 //
-//   listing -> review -> downloading -> trimming -> saving -> (idle)
+//   listing -> review -> downloading -> trimming -> saving -> (gone)
 //
 // listing      the list is read (for Spotify, Deezer and Amazon Music: every
 //              song looked up on YouTube, else SoundCloud, Bandcamp and the
-//              Internet Archive),
-//              shown in the progress frame, with Cancel.
+//              Internet Archive), shown in the batch's progress line, with
+//              Cancel. A song's link is read here too.
 // review       the checklist. Songs already in the library and a playlist name
 //              that is taken are listed as warnings on top, each with a box to
 //              untick. Cancel, Download Selected, Download All.
 // downloading  one song after another into the cache. Every song is a frame;
 //              a downloaded one can be opened right away.
-// trimming     clicking a frame opens the trim editor in it (waveform, cut,
+// trimming     downloaded: the batch folds up to its title (its playlist's
+//              name with the pencil, how many songs, its link) and moves up
+//              the page, above the ones still reading or downloading. Opened,
+//              clicking a frame opens the trim editor in it (waveform, cut,
 //              preview, names) with Cancel Edits, Apply Edits and "Finish this
-//              song"; one frame at a time. "Finish all" at the bottom right
-//              saves every song left with its cut.
+//              song"; one frame at a time on the whole page (the editor moves
+//              to the frame opened). Each batch has its footer: Cancel import
+//              at the left, Add to Playlist and "Finish all" at the right.
 // saving       the songs go into the music folder, All Songs and the playlist.
-//              Then the import is over: the panel empties and a toast sums it
-//              up (with Open playlist), so nothing is left to click away.
+//              Then the batch is over: its panel goes and a toast sums it up
+//              (with Open playlist), so nothing is left to click away.
+//
+// One import task runs on this computer at a time (main.js: reading a list,
+// downloading or preparing its songs); the Client queue (clientQueue.js)
+// hands out the turns, and a batch waiting for "Finish all" holds no one up.
+// Saving needs no turn.
 //
 // "Finish this song" saves one song at once, even while others still
 // download; it leaves the list, and the first one saved makes the playlist.
 // Every song goes into the playlist at its place in the source (job.base,
 // see importer.finish), whatever order they are saved in. Once the last song
-// is saved the import ends by itself. Nothing else reaches the library before
+// is saved the batch ends by itself. Nothing else reaches the library before
 // it is finished; closing the app before that asks first (main.js), since the
 // downloads are only in the cache.
+//
+// A song's link is a batch of one song (openSong): read and downloaded as
+// before, it opens its editor when it is there (unless one is open already),
+// and is saved into All Songs, or into a new playlist with "Create new
+// Playlist" ticked.
 //
 // Local files ("Open local File(s) / Folder") skip the review: a folder is
 // looked through in the listing step (with Cancel), then the files are
@@ -39,19 +56,22 @@
 // one line rather than a frame each.
 //
 // A download on the server ("Download (Server)", serverImport.js) is shown in
-// the same frames (`server`): its songs download there, and are trimmed here
-// with the waveform and the preview from the server; "Finish this song" and
-// "Finish all" save them there, Cancel import throws the batch away there. It
-// outlives the app, so closing asks nothing.
+// the same frames (`server`), one panel per batch of the profile's: its songs
+// download there, and are trimmed here with the waveform and the preview from
+// the server; "Finish this song" and "Finish all" save them there, Cancel
+// import throws the batch away there. It outlives the app, so closing asks
+// nothing. Batches still waiting for their turn are lines of the Server queue
+// instead (queuePanels.js).
 //
 // A song that failed to download has "Try again" in its frame; "Retry failed"
 // in the footer tries every failed one again, one after another, and the
 // footer says how far that is and how many failed again. Here that waits
-// until the list is through; on the server it can be asked any time.
+// until nothing else downloads; on the server it can be asked any time.
 //
-// "Cancel import" ends the whole task at once, whatever step it is in. Every
-// task has a number (`run`) that its progress messages carry; a cancelled
-// task's number is retired, so whatever it still says is ignored.
+// "Cancel import" ends the whole batch at once, whatever step it is in. Every
+// task has a number (`run`, counted for the whole page) that its progress
+// messages carry; a cancelled task's number is retired, so whatever it still
+// says is ignored.
 
 const SOURCE_NAMES = {
   search: T('common.search'), youtube: 'YouTube', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', spotify: 'Spotify', deezer: 'Deezer', 'amazon music': 'Amazon Music', vimeo: 'Vimeo', local: T('common.localFiles'),
@@ -64,39 +84,114 @@ const BULK = {
   subGenre: { label: T('common.info'), box: 'edSubGenre' },
 };
 
-const ImportPanel = {
-  state: 'idle',
-  listing: null,
-  checked: new Set(),     // indexes of new songs ticked
-  keepKnown: new Set(),   // indexes of library songs ticked (added to the list)
-  merge: true,            // add to the playlist of the same name, if there is one
-  job: null,              // source, local: fixed when downloading starts
-  name: '',               // the playlist's name, editable until the songs are saved
-  createList: false,      // local files: make a playlist of them ("Create new Playlist")
-  keepList: true,         // a playlist's songs: make the playlist ("Create new Playlist"); unticked they only go to All Songs
-  playlistIds: [],        // existing playlists every song joins ("Add to Playlist")
-  auto: null,             // a queued link's { complete, finish } (4.4): Download All and Finish all by themselves
-  editingName: false,
-  _nameDraft: '',
-  _nameHint: '',
-  included: [],           // the chosen songs, in order, each with its own state
-  openIndex: null,        // the frame whose editor is open
-  progress: { number: 0, total: 0 },
-  moveOriginals: false,   // local files: move rather than copy them
-  run: 0,                 // the number of the task now running (see above)
-  _dirty: new Set(),      // frames to redraw at the next animation frame
-  _lastProgress: null,    // the latest progress line, drawn with them
-  _flushQueued: false,
-  _chain: null,           // the "Finish this song" saves, one after another
-  server: null,           // a download on the server: { id, single } of its batch
-  retry: null,            // failed songs tried again: { indexes, sending, done, failedAgain }
-  bulkInfo: { album: '', genre: '', subGenre: '' }, // given to every new song without one (_drawBulk)
-  updating: null,         // a playlist's Update (playlistUpdate.js): { id, name, url } of the playlist the songs go into
-  _bulkEl: null,
+// A batch in these states sits at the bottom of the page, under the finished ones.
+const ACTIVE_STATES = ['listing', 'review', 'downloading'];
 
-  /** A list is being read or imported: single-link downloads wait. */
+const ImportBatch = {
+  _init(n) {
+    Object.assign(this, {
+      n,
+      state: 'idle',
+      listing: null,
+      checked: new Set(),     // indexes of new songs ticked
+      keepKnown: new Set(),   // indexes of library songs ticked (added to the list)
+      merge: true,            // add to the playlist of the same name, if there is one
+      job: null,              // source, local: fixed when downloading starts
+      name: '',               // the playlist's name, editable until the songs are saved
+      createList: false,      // local files, picked uploads, one song: make a playlist of them ("Create new Playlist")
+      keepList: true,         // a playlist's songs: make the playlist ("Create new Playlist"); unticked they only go to All Songs
+      playlistIds: [],        // existing playlists every song joins ("Add to Playlist")
+      auto: null,             // a queued link's { complete, finish } (4.4): Download All and Finish all by themselves
+      single: false,          // a song's link downloaded here (openSong)
+      editingName: false,
+      _nameDraft: '',
+      _nameHint: '',
+      _title: '',             // what the head says before the list is read
+      included: [],           // the chosen songs, in order, each with its own state
+      openIndex: null,        // the frame whose editor is open
+      progress: { number: 0, total: 0 },
+      moveOriginals: false,   // local files: move rather than copy them
+      run: 0,                 // the number of the task now running (see above)
+      collapsed: false,       // folded up to its title (finished batches are, at first)
+      _userFolded: false,     // folded or opened by hand: left as it is
+      _task: false,           // this computer's import task runs for it
+      _singleTask: false,     // its one song is read or downloaded (download:probe, download:start)
+      ended: false,
+      _dirty: new Set(),      // frames to redraw at the next animation frame
+      _lastProgress: null,    // the latest progress line, drawn with them
+      _flushQueued: false,
+      _chain: null,           // the "Finish this song" saves, one after another
+      server: null,           // a download on the server: { id, single } of its batch
+      retry: null,            // failed songs tried again: { indexes, sending, done, failedAgain }
+      bulkInfo: { album: '', genre: '', subGenre: '' }, // given to every new song without one (_drawBulk)
+      updating: null,         // a playlist's Update (playlistUpdate.js): { id, name, url } of the playlist the songs go into
+      _bulkEl: null,
+      _nameEl: null,
+      _failSummaryEl: null,
+    });
+    this._build();
+  },
+
+  /** Its panel: head, progress line, checklist or frames, and its own footer. */
+  _build() {
+    const p = {};
+    const part = (spec, name, props, ...kids) => {
+      p[name] = h(spec, props, ...kids);
+      return p[name];
+    };
+    p.toggle = h('button.icon-btn.import-batch__toggle', { type: 'button', html: Icons.chevron });
+    this.el = h('div.panel.import.import-batch', { dataset: { batch: String(this.n) }, hidden: true },
+      h('div.import__head.import-batch__head', { onclick: (e) => this._headClick(e) },
+        p.toggle,
+        part('div.import__source', 'source')),
+      part('div.progress-panel.import-batch__progress', 'progress', { hidden: true },
+        part('div.prog-title', 'progTitle'),
+        h('div.progress-row',
+          part('progress', 'progBar', { max: 1 }),
+          part('button.btn', 'progCancel', { type: 'button', onclick: () => this.cancel() }, T('common.cancel'))),
+        part('div.status-label', 'progStatus'),
+        part('div.error-hint', 'progError', { hidden: true })),
+      part('div.import-batch__body', 'body',
+        part('div.import__warnings', 'warnings', { hidden: true }),
+        part('div.import__toolbar', 'toolbar', { hidden: true },
+          h('button.link-btn', { type: 'button', onclick: () => this._selectAll(true) }, T('window.add.selectAll')),
+          h('span.muted-text', '·'),
+          h('button.link-btn', { type: 'button', onclick: () => this._selectAll(false) }, T('window.add.selectNone')),
+          part('span.import__count', 'count')),
+        part('div.import__list', 'list'),
+        part('div.import__buttons', 'buttons', { hidden: true },
+          h('button.btn.btn--light-red', { type: 'button', onclick: () => this.close() }, T('common.cancel')),
+          part('button.btn.btn--light-green', 'selected', { type: 'button', onclick: () => this.start(false) }, T('window.add.downloadSelected')),
+          part('button.btn.btn--light-grey', 'everything', { type: 'button', onclick: () => this.start(true) }, T('window.add.downloadAll')))),
+      part('div.add-footer.import-batch__footer', 'footer', { hidden: true },
+        h('div.add-footer__left',
+          part('button.btn.btn--light-red', 'cancelAll', { type: 'button', onclick: () => this.cancelAll() }, T('common.cancelImport')),
+          part('span.muted-text', 'footerText'),
+          part('button.btn.btn--small.btn--light-green', 'retryFailed', {
+            type: 'button', hidden: true, onclick: () => this.retryFailed(this.included.filter((it) => it.state === 'failed').map((it) => it.index)),
+          }, T('window.add.import.retryFailed')),
+          part('span.muted-text', 'retryText', { hidden: true })),
+        h('div.add-footer__center',
+          part('div.copy-move', 'copyMove', { hidden: true },
+            part('button.copy-move__label', 'copyMoveCopy', { type: 'button', onclick: () => this._setMove(false) }, T('window.add.import.copyFiles')),
+            h('span.copy-move__switch-wrap',
+              part('button.switch', 'copyMoveSwitch', {
+                type: 'button', 'aria-checked': 'false', 'aria-label': T('window.add.import.moveOriginals.ariaLabel'), onclick: () => this._setMove(!this.moveOriginals),
+              }),
+              part('span.copy-move__tip', 'copyMoveTip')),
+            part('button.copy-move__label.copy-move__label--move', 'copyMoveMove', { type: 'button', onclick: () => this._setMove(true) }, T('window.add.import.moveOriginals')))),
+        h('div.add-footer__right',
+          part('span.muted-text', 'playlistNames'),
+          part('button.btn.btn--green', 'addToPlaylist', { type: 'button', onclick: () => this.choosePlaylists() }),
+          part('button.btn.btn--primary.btn--big', 'finish', { type: 'button', onclick: () => this.finishAll() }, T('import.finishAll')))));
+    p.copyMoveSwitch.setAttribute('role', 'switch');
+    p.copyMoveTip.setAttribute('role', 'tooltip');
+    this.p = p;
+  },
+
+  /** Its checklist is open, or this computer reads or downloads for it: the Client queue waits. */
   get busy() {
-    return ['listing', 'downloading', 'trimming', 'saving'].includes(this.state);
+    return !this.server && ACTIVE_STATES.includes(this.state);
   },
 
   /** The songs are files from the computer, not a playlist. */
@@ -109,58 +204,49 @@ const ImportPanel = {
     return !!(this.listing && this.listing.search);
   },
 
-  /**
-   * The songs make a playlist only when asked to ("Create new Playlist"):
-   * local files, uploads picked from a search, and one song downloaded by
-   * the server.
-   */
-  get optionalList() {
-    return this.local || this.picked || !!(this.server && this.server.single);
+  /** One song: a song's link, here or on the server. */
+  get oneSong() {
+    return this.single || !!(this.server && this.server.single);
   },
 
-  /** The footer at the bottom of the page shows "Finish all". */
+  /**
+   * The songs make a playlist only when asked to ("Create new Playlist"):
+   * local files, uploads picked from a search, and one song.
+   */
+  get optionalList() {
+    return this.local || this.picked || this.oneSong;
+  },
+
+  /** Its footer shows Cancel import and "Finish all". */
   get ownsFooter() {
     return this.state === 'downloading' || this.state === 'trimming' || this.state === 'saving';
   },
 
-  init() {
-    window.flow.onImportProgress((p) => this._onProgress(p));
-    $('importCancel').onclick = () => this.close();
-    $('importSelected').onclick = () => this.start(false);
-    $('importEverything').onclick = () => this.start(true);
-    $('importSelectAll').onclick = () => this._selectAll(true);
-    $('importSelectNone').onclick = () => this._selectAll(false);
-    // Shared with the single song's footer.
-    $('importCancelAll').onclick = () => (this.ownsFooter ? this.cancelAll() : AddPage.cancelSingle());
-    $('copyMoveSwitch').onclick = () => this._setMove(!this.moveOriginals);
-    $('copyMoveCopy').onclick = () => this._setMove(false);
-    $('copyMoveMove').onclick = () => this._setMove(true);
-    $('importRetryFailed').onclick = () => this.retryFailed(this.included.filter((it) => it.state === 'failed').map((it) => it.index));
-    Store.onLibrary(() => {
-      if (this.state !== 'idle' && this.state !== 'listing') this._drawWarnings();
-    });
-  },
+  // ---- opening ----
 
   /**
    * Reads a playlist link and shows its checklist. Resolves the probed song
-   * when the link turned out to be one song, else null.
+   * when the link turned out to be one song (the batch is gone then), else null.
    */
   async open(url) {
     const run = this._newRun();
+    this._title = url;
     this._setState('listing');
-    AddPage._progress({ title: T('import.progress.readingPlaylist'), frac: null, status: url });
+    this._progress({ title: T('import.progress.readingPlaylist'), frac: null, status: url });
     let listing;
+    this._task = true;
     try {
       listing = await window.flow.listImport(url, run);
     } catch (err) {
       if (run !== this.run) return null;
-      this._setState('idle');
-      AddPage._failed(err);
+      this._fail(err, T('import.progress.readingPlaylist'));
       return null;
+    } finally {
+      this._task = false;
     }
     if (run !== this.run) return null;
     if (listing.single) {
-      this._setState('idle');
+      this._end();
       return listing.probed;
     }
     this._review(listing);
@@ -175,7 +261,6 @@ const ImportPanel = {
    * (`server`): the songs ticked are downloaded there (start).
    */
   openUpdate(p, listing, server) {
-    if (this.state !== 'idle') return;
     this._newRun();
     this.updating = { id: p.id, name: p.name, url: p.source.url };
     this._review({ ...listing, local: false, search: false, fromServer: !!server });
@@ -191,8 +276,151 @@ const ImportPanel = {
     this.checked = new Set(listing.items.filter((it) => !it.existing && it.status === 'ok').map((it) => it.index));
     this.keepKnown = new Set(listing.items.filter((it) => it.existing && !it.inTarget).map((it) => it.index));
     this._resetName(listing.name);
-    $('progressPanel').hidden = true;
+    this._hideProgress();
     this._setState('review');
+  },
+
+  /**
+   * A song's link: read (unless `probed` already), checked against the
+   * library (the same link or upload, or the same names at the same length:
+   * asked, or skipped when auto-completed), downloaded, and its editor opened
+   * once it is there. auto.finish saves it as it came, into All Songs.
+   */
+  async openSong(url, { probed = null } = {}) {
+    const auto = this.auto || { complete: false, finish: false };
+    this.single = true;
+    this._title = url;
+    let warned = false;
+    if (!probed) {
+      // A link that is plainly the same (the same YouTube video, the same page).
+      try {
+        const dup = await window.flow.findBySource(url, null);
+        if (dup) {
+          if (auto.complete || !await AddPage._confirmDuplicateSource(dup)) {
+            if (auto.complete) toast(T('add.queue.skipped', { song: Util.songLine(dup) }), 'info');
+            this._end();
+            return;
+          }
+          warned = true;
+        }
+      } catch {
+        // Checking is a courtesy; carry on without it.
+      }
+      this._setState('listing');
+      this._progress({ title: T('common.readingLink'), frac: null, status: url });
+      this._singleTask = true;
+      try {
+        probed = await window.flow.probe(url);
+      } catch (err) {
+        this._singleTask = false;
+        this._fail(err, T('common.readingLink'));
+        return;
+      }
+      this._singleTask = false;
+      if (this.ended) return;
+    }
+    // The same upload under another link (youtu.be vs youtube.com/shorts), or
+    // the same song from another upload: its names at the same length.
+    const checks = [];
+    if (!warned && probed.key) checks.push(() => window.flow.findBySource(null, probed.key).then((dup) => dup && { dup, text: 'add.known.link' }));
+    if (!warned && probed.guess && probed.guess.title) {
+      checks.push(() => window.flow.findByMeta({ ...probed.guess, duration: probed.duration }).then((dup) => dup && { dup, text: 'add.known.same' }));
+    }
+    for (const check of checks) {
+      let found = null;
+      try {
+        found = await check();
+      } catch {
+        // As above.
+      }
+      if (!found) continue;
+      if (auto.complete || !await AddPage._confirmDuplicateSource(found.dup, found.text)) {
+        if (auto.complete) toast(T('add.queue.skipped', { song: Util.songLine(found.dup) }), 'info');
+        this._end();
+        return;
+      }
+      break;
+    }
+    if (this.ended) return;
+
+    const site = String(probed.key || '').split(':')[0].toLowerCase() || 'youtube';
+    const it = {
+      index: 0, title: probed.title, duration: probed.duration, url: probed.url, path: '', meta: null, existingId: null, state: 'current', listUrl: '',
+    };
+    this.listing = {
+      local: false, search: false, single: true, source: site, sourceUrl: probed.url, name: probed.title, truncated: false, items: [it],
+    };
+    this._resetName(probed.title);
+    this.included = [it];
+    this.job = this._newJob({ url: '', kind: site });
+    this.progress = { number: 1, total: 1 };
+    this._setState('downloading');
+    this._progress({ title: probed.title, frac: null, status: T('add.progress.startingDownload') });
+    let media;
+    this._singleTask = true;
+    try {
+      media = await window.flow.download(probed, AddPage.downloadOptions());
+    } catch (err) {
+      this._singleTask = false;
+      if (!this.ended) this._fail(err, probed.title);
+      return;
+    }
+    this._singleTask = false;
+    if (this.ended) {
+      window.flow.discardDownload(media.path).catch(() => {});
+      return;
+    }
+    const g = probed.guess || {};
+    it.state = 'ready';
+    it.media = media;
+    it.song = { title: probed.title, url: probed.url, key: probed.key || '' };
+    it.meta = {
+      artist: g.artist || '', title: g.title || probed.title, mix: g.mix || '', album: g.album || '', genre: g.genre || '', subGenre: g.subGenre || '',
+    };
+    it.artistFromChannel = !!g.artistFromChannel;
+    it.coverKey = media.path;
+    this._lookLyrics(it);
+    this._lookInfo(it);
+    this._hideProgress();
+    this._setState('trimming');
+    ImportPanel._setPending();
+    // Finishing by itself: saved as it came, into All Songs only.
+    if (auto.finish) {
+      await this.finishAll();
+      return;
+    }
+    // Its editor at once, as a song's link always opened it (unless one is open).
+    if (!ImportPanel.editorOwner) this.toggleFrame(0);
+  },
+
+  /**
+   * A song downloaded on its own: the album, genre and Info its page did not
+   * name, from Apple's and Discogs' search, into those still empty (in the
+   * editor's boxes while it is open there).
+   */
+  async _lookInfo(it) {
+    if (!window.flow.lookupInfo || !it.meta) return;
+    const m = it.meta;
+    if (m.album && m.genre && m.subGenre) return;
+    let found;
+    try {
+      found = await window.flow.lookupInfo({
+        artist: m.artist, title: m.title, mix: m.mix, duration: it.media.duration, album: m.album, genre: m.genre, subGenre: m.subGenre,
+      });
+    } catch {
+      return;
+    }
+    if (this.ended || !found || it.state !== 'ready') return;
+    if (this.openIndex === it.index) {
+      for (const [key, box] of [['album', 'edAlbum'], ['genre', 'edGenre'], ['subGenre', 'edSubGenre']]) {
+        if (found[key] && !$(box).value.trim()) $(box).value = found[key];
+      }
+      return;
+    }
+    const meta = { ...it.meta };
+    for (const key of ['album', 'genre', 'subGenre']) if (found[key] && !String(meta[key] || '').trim()) meta[key] = found[key];
+    it.meta = meta;
+    this._redrawFrame(it, false);
   },
 
   /**
@@ -200,7 +428,6 @@ const ImportPanel = {
    * another, each a frame as for a playlist.
    */
   async openLocal(picked) {
-    if (this.state !== 'idle') return;
     const drive = picked.length === 1 && /^([A-Za-z]:[\\/]?|\/)$/.test(picked[0]) ? picked[0] : '';
     if (drive) {
       const ok = await confirmDialog({
@@ -208,28 +435,28 @@ const ImportPanel = {
         message: T('import.drive.text', { drive }),
         confirmLabel: T('import.drive.confirm'),
       });
-      if (!ok || this.state !== 'idle') return;
+      if (!ok) {
+        this._end();
+        return;
+      }
     }
     const run = this._newRun();
+    this._title = picked.length === 1 ? picked[0] : '';
     this._setState('listing');
-    AddPage._progress({ title: T('import.folder.lookingThrough'), frac: null, status: T('import.progress.starting') });
+    this._progress({ title: T('import.folder.lookingThrough'), frac: null, status: T('import.progress.starting') });
     let listing;
+    this._task = true;
     try {
       listing = await window.flow.listLocal(picked, run);
     } catch (err) {
       if (run !== this.run) return;
-      this._setState('idle');
-      if (err.cancelled) {
-        AddPage._failed(err);
-      } else {
-        $('progressPanel').hidden = true;
-        $('progTitle').textContent = '';
-        AddPage._showError(err.message);
-      }
+      this._fail(err, T('import.folder.lookingThrough'));
       return;
+    } finally {
+      this._task = false;
     }
     if (run !== this.run) return;
-    $('progressPanel').hidden = true;
+    this._hideProgress();
     this.listing = listing;
     this.moveOriginals = false;
     this._resetName(listing.name);
@@ -243,7 +470,6 @@ const ImportPanel = {
    * playlist named after the search when "Create new Playlist" is ticked.
    */
   async openPicked(name, picks) {
-    if (this.state !== 'idle') return;
     this.listing = {
       local: false,
       search: true,
@@ -265,71 +491,143 @@ const ImportPanel = {
   },
 
   _newRun() {
-    this.run += 1;
+    this.run = ImportPanel.nextRun();
     return this.run;
   },
 
   /**
-   * Cancel in the progress frame. While a list or folder is read, that ends
-   * the import at once. While downloading it stops there: what is ready so
-   * far stays for trimming.
+   * Cancel in the progress line. While a list, a folder or a song's link is
+   * read, that ends the batch at once. While downloading it stops there: what
+   * is ready so far stays for trimming.
    */
   cancel() {
     if (this.server) {
       // The server still reading the link: the batch goes.
       ServerImport.touch();
       ServerImport.cancelBatch(this.server.id).catch(() => {});
-      this._reset();
-      $('progressPanel').hidden = false;
-      AddPage._failed({ cancelled: true, message: T('common.cancelled') });
+      this._end();
+      toast(T('common.downloadCancelled'), 'info');
       return;
     }
-    window.flow.cancelImport().catch(() => {});
+    if (this._singleTask) {
+      // Its read or download fails as cancelled, which ends the batch.
+      window.flow.cancelDownload().catch(() => {});
+      return;
+    }
+    if (this._task) window.flow.cancelImport().catch(() => {});
     if (this.state !== 'listing') return;
     this._newRun();
-    this._setState('idle');
-    AddPage._failed({ cancelled: true, message: T('common.cancelled') });
+    this._end();
+    toast(T('common.downloadCancelled'), 'info');
   },
 
-  /** Leaves the import (the checklist, or the frames) and empties the panel. */
+  /** Cancel under the checklist: the batch goes. */
   close() {
     if (this.state === 'listing' || this.state === 'downloading' || this.state === 'saving') return;
-    this._reset();
+    this._end();
   },
 
-  /** Back to nothing, whatever state the import is in. */
-  _reset() {
+  /** The batch is over, whatever state it is in: its panel goes. */
+  _end() {
+    if (this.ended) return;
+    const hadFocus = this.el.contains(document.activeElement);
     this._closeEditor(false);
-    this.listing = null;
-    this.included = [];
-    this.job = null;
-    this.server = null;
-    this.retry = null;
-    this.moveOriginals = false;
-    this.bulkInfo = { album: '', genre: '', subGenre: '' };
-    this._bulkEl = null;
-    this.updating = null;
-    this.auto = null;
-    this._resetName('');
-    this._setState('idle');
-    this._setPending();
-    $('progressPanel').hidden = true;
-    $('linkInput').focus();
+    this.ended = true;
+    this.state = 'idle';
+    if (this.server) Covers.forgetServerPending(this.server.id);
+    this.el.remove();
+    ImportPanel.remove(this);
+    ImportPanel.changed();
+    if (hadFocus) $('linkInput').focus();
+  },
+
+  /** Ended by a failure: the error under the link box (a cancel only says so). */
+  _fail(err, title = '') {
+    this._end();
+    if (AddPage.isCancelled(err)) {
+      toast(T('common.downloadCancelled'), 'info');
+      return;
+    }
+    AddPage.showFailure(title, err);
   },
 
   _setState(state) {
+    if (this.ended) return;
+    const was = this.state;
     this.state = state;
-    const reviewing = state === 'review';
-    $('importPanel').hidden = state === 'idle' || state === 'listing';
-    $('importButtons').hidden = !reviewing;
-    $('importToolbar').hidden = !reviewing;
-    AddPage.drawLocalPick();
-    if (typeof ServerImport !== 'undefined') ServerImport.drawButtons();
-    // The page is free again: the next queued link's turn.
-    if (state === 'idle' && typeof ClientQueue !== 'undefined') ClientQueue.kick();
-    this._drawBadge();
+    // Downloaded: folded up to its title, unless opened by hand (or its editor is open).
+    if (!this._userFolded) {
+      if (state === 'trimming' && was !== 'trimming' && was !== 'saving' && this.openIndex === null) this.collapsed = true;
+      else if (ACTIVE_STATES.includes(state)) this.collapsed = false;
+    }
+    this._drawShell();
     this._drawFooter();
     if (state !== 'idle' && state !== 'listing') this.render();
+    else this._drawHead();
+    ImportPanel.changed();
+  },
+
+  /** What of the panel shows in its state, folded or not, and where on the page it sits. */
+  _drawShell() {
+    const p = this.p;
+    const st = this.state;
+    this.el.hidden = st === 'idle';
+    this.el.classList.toggle('import-batch--collapsed', this.collapsed);
+    const foldable = st !== 'idle' && st !== 'listing';
+    p.toggle.hidden = !foldable;
+    p.toggle.title = this.collapsed ? T('import.batch.expand') : T('import.batch.collapse');
+    p.toggle.setAttribute('aria-label', p.toggle.title);
+    p.toggle.setAttribute('aria-expanded', String(!this.collapsed));
+    p.body.hidden = this.collapsed || st === 'listing' || st === 'idle';
+    p.buttons.hidden = st !== 'review';
+    p.toolbar.hidden = st !== 'review';
+    ImportPanel.place(this);
+  },
+
+  /** A click on the head folds or opens the batch (its buttons and boxes do their own). */
+  _headClick(e) {
+    const onToggle = this.p.toggle.contains(e.target);
+    if (!onToggle && e.target.closest('button, input, label, a, select, textarea')) return;
+    if (this.p.toggle.hidden) return;
+    this.toggleCollapsed();
+  },
+
+  /** Folds or opens the batch. A song alone opens straight into its editor. */
+  toggleCollapsed(force) {
+    const want = typeof force === 'boolean' ? force : !this.collapsed;
+    this._userFolded = true;
+    if (want && this.openIndex !== null) this._closeEditor(true);
+    this.collapsed = want;
+    this._drawShell();
+    this._drawHead();
+    if (!want && this.oneSong && this.state === 'trimming' && this.openIndex === null) {
+      const ready = this._ready()[0];
+      if (ready) {
+        this.toggleFrame(ready.index);
+        return;
+      }
+    }
+    if (!want) this._drawList();
+  },
+
+  /** busy: a spinner after the title, for a wait that reports nothing back. */
+  _progress({
+    title, frac, status, cancel = true, busy = false,
+  }) {
+    const p = this.p;
+    p.progress.hidden = false;
+    p.progError.hidden = true;
+    p.progTitle.textContent = title || '';
+    p.progTitle.classList.toggle('prog-title--busy', busy);
+    p.progBar.hidden = false;
+    if (frac === null || frac === undefined) p.progBar.removeAttribute('value');
+    else p.progBar.value = frac;
+    p.progCancel.hidden = !cancel;
+    p.progStatus.textContent = status || '';
+  },
+
+  _hideProgress() {
+    this.p.progress.hidden = true;
   },
 
   /**
@@ -346,7 +644,7 @@ const ImportPanel = {
 
   _flush() {
     this._flushQueued = false;
-    if (this.state !== 'downloading') {
+    if (this.state !== 'downloading' || this.ended) {
       this._dirty.clear();
       this._lastProgress = null;
       return;
@@ -357,50 +655,26 @@ const ImportPanel = {
       this._redrawFrame(it, false);
     }
     this._dirty.clear();
-    if (current && this.openIndex === null) {
-      const node = $('importList').querySelector(`[data-index="${current.index}"]`);
+    if (current && !ImportPanel.editorOwner && !this.collapsed) {
+      const node = this.p.list.querySelector(`[data-index="${current.index}"]`);
       if (node) node.scrollIntoView({ block: 'nearest' });
     }
     this._drawFailSummary();
     this._drawFooter();
-    this._drawBadge();
-    if (this._lastProgress) AddPage._progress(this._lastProgress);
+    ImportPanel._drawBadge();
+    if (this._lastProgress) this._progress(this._lastProgress);
     this._lastProgress = null;
   },
 
-  _drawBadge() {
-    const badge = $('menuAddBadge');
-    if (!badge) return;
-    let text = '';
-    if (this.state === 'listing') text = '...';
-    else if (this.state === 'downloading') text = `${this.progress.number}/${this.progress.total}`;
-    else if (this.state === 'trimming') text = String(this._ready().length);
-    badge.hidden = !text;
-    badge.textContent = text;
-    badge.title = this.state === 'trimming' ? T('import.bar.waiting.tooltip') : T('import.bar.running.tooltip');
-  },
-
-  /** The page's sticky footer: Cancel import and "Finish all" while importing. */
+  /** Its footer: Cancel import and "Finish all" while importing. */
   _drawFooter() {
+    const p = this.p;
     const mine = this.ownsFooter;
-    $('importFooterText').hidden = !mine;
-    this._drawCopyMove(mine && this.local);
-    AddPage._drawPlaylistButton();
-    if (!mine) {
-      $('importRetryFailed').hidden = true;
-      $('importRetryText').hidden = true;
-      $('addFooter').classList.remove('add-footer--retry');
-      // Back to the single song's footer, shown with its editor.
-      const saving = AddPage.phase === 'saving';
-      $('finishBtn').textContent = saving ? T('common.saving') : T('common.finish');
-      $('finishBtn').disabled = saving;
-      $('importCancelAll').disabled = saving;
-      $('addToPlaylistBtn').disabled = saving;
-      $('addFooter').hidden = !(AddPage.phase === 'ready' || saving);
-      return;
-    }
-    $('addToPlaylistBtn').disabled = this.state === 'saving';
-    $('addFooter').hidden = false;
+    p.footer.hidden = !mine;
+    if (!mine) return;
+    this._drawCopyMove(this.local);
+    this._drawPlaylistButton();
+    p.addToPlaylist.disabled = this.state === 'saving';
     const ready = this._ready().length;
     const trimmed = this.included.filter((it) => it.trim && it.state === 'ready').length;
     // Local files that failed are summed up above the frames instead.
@@ -416,14 +690,14 @@ const ImportPanel = {
     if (waiting && this.state === 'downloading') {
       parts.push(T(this.local ? 'import.summary.stillPreparing' : (this.server ? 'import.summary.stillDownloadingOnServer' : 'import.summary.stillDownloading'), { count: waiting }));
     }
-    $('importFooterText').textContent = parts.join(' · ');
+    p.footerText.textContent = parts.join(' · ');
     this._drawRetry(failed);
-    $('finishBtn').textContent = this.state === 'saving' ? T('common.saving') : T('import.finishAll');
+    p.finish.textContent = this.state === 'saving' ? T('common.saving') : T('import.finishAll');
     const anything = ready || this._existingEntries().length;
-    $('finishBtn').disabled = this.state !== 'trimming' || !anything;
-    $('finishBtn').title = this.state === 'downloading'
+    p.finish.disabled = this.state !== 'trimming' || !anything;
+    p.finish.title = this.state === 'downloading'
       ? T(this.local ? 'import.finishAll.notYet.prepared.tooltip' : 'import.finishAll.notYet.downloaded.tooltip') : '';
-    $('importCancelAll').disabled = this.state === 'saving';
+    p.cancelAll.disabled = this.state === 'saving';
   },
 
   /**
@@ -432,9 +706,10 @@ const ImportPanel = {
    */
   _drawRetry(failed) {
     this._settleRetry();
+    const p = this.p;
     const r = this.retry;
     const busy = !!(r && !r.done);
-    const btn = $('importRetryFailed');
+    const btn = p.retryFailed;
     btn.hidden = busy || !failed || !this._canRetry();
     btn.disabled = this.state === 'saving';
     let line = '';
@@ -445,11 +720,10 @@ const ImportPanel = {
     } else if (r && failed && r.failedAgain) {
       line = T('import.progress.retry.failedAgain', { count: r.failedAgain });
     }
-    const text = $('importRetryText');
-    text.textContent = line;
-    text.hidden = !line;
-    text.classList.toggle('import-retry--busy', busy);
-    $('addFooter').classList.toggle('add-footer--retry', !btn.hidden || !!line);
+    p.retryText.textContent = line;
+    p.retryText.hidden = !line;
+    p.retryText.classList.toggle('import-retry--busy', busy);
+    p.footer.classList.toggle('add-footer--retry', !btn.hidden || !!line);
   },
 
   /** A retry is over once none of its songs is waiting or downloading. */
@@ -464,12 +738,13 @@ const ImportPanel = {
 
   /**
    * Failed songs can be downloaded again: on the server any time it is not
-   * saving, here once the list is through (one download task at a time).
+   * saving, here once the list is through and nothing else downloads here
+   * (one import task at a time).
    */
   _canRetry() {
     if (this.local) return false;
     if (this.server) return this.state !== 'saving';
-    return this.state === 'trimming';
+    return this.state === 'trimming' && !this.single && !ImportPanel.clientBusy;
   },
 
   /**
@@ -492,8 +767,8 @@ const ImportPanel = {
     }
     this._drawFooter();
     if (this.server) {
-      const batch = await ServerImport.retry(items.map((it) => it.index));
-      if (this.retry !== r) return;
+      const batch = await ServerImport.retry(items.map((it) => it.index), this.server.id);
+      if (this.retry !== r || this.ended) return;
       r.sending -= 1;
       if (batch) this.syncServer(batch);
       else ServerImport.poll();
@@ -504,19 +779,22 @@ const ImportPanel = {
     const run = this._newRun();
     this.progress = { number: 0, total: items.length };
     this._setState('downloading');
-    AddPage._progress({ title: T('import.progress.downloadingAgain', { songs: Util.plural(items.length, 'song') }), frac: null, status: T('import.progress.starting') });
+    this._progress({ title: T('import.progress.downloadingAgain', { songs: Util.plural(items.length, 'song') }), frac: null, status: T('import.progress.starting') });
+    this._task = true;
     try {
       const list = items.map((it) => ({ index: it.index, title: it.title, url: it.url, path: '', meta: it.meta }));
       await window.flow.downloadImport(list, AddPage.downloadOptions(), run);
     } catch (err) {
       if (run === this.run) toast(err.message, 'error');
+    } finally {
+      this._task = false;
     }
-    // Cancelled with "Cancel import": that has already emptied the panel.
-    if (run !== this.run) return;
+    // Cancelled with "Cancel import": that has already ended the batch.
+    if (run !== this.run || this.ended) return;
     await this._lateStates(items, run);
-    if (run !== this.run) return;
+    if (run !== this.run || this.ended) return;
     this._flush();
-    $('progressPanel').hidden = true;
+    this._hideProgress();
     // Stopped with Cancel: what was not reached can be tried again.
     for (const it of items) {
       if (!it.existingId && (!it.state || it.state === 'current' || it.state === 'cancelled')) {
@@ -526,31 +804,25 @@ const ImportPanel = {
     }
     r.sending -= 1;
     this._setState('trimming');
-    this._setPending();
+    ImportPanel._setPending();
   },
 
   /** Copy Files / Move Originals, in the middle of the footer for local files. */
   _drawCopyMove(shown) {
-    $('copyMove').hidden = !shown || !Store.can('moveOriginals');
-    if (!shown) return;
+    const p = this.p;
+    p.copyMove.hidden = !shown || !Store.can('moveOriginals');
+    if (p.copyMove.hidden) return;
     const move = this.moveOriginals;
-    const sw = $('copyMoveSwitch');
-    sw.setAttribute('aria-checked', String(move));
-    $('copyMoveCopy').classList.toggle('copy-move__label--on', !move);
-    $('copyMoveMove').classList.toggle('copy-move__label--on', move);
-    $('copyMoveMove').classList.add('copy-move__label--move');
+    p.copyMoveSwitch.setAttribute('aria-checked', String(move));
+    p.copyMoveCopy.classList.toggle('copy-move__label--on', !move);
+    p.copyMoveMove.classList.toggle('copy-move__label--on', move);
     const saving = this.state === 'saving';
-    for (const b of [sw, $('copyMoveCopy'), $('copyMoveMove')]) b.disabled = saving;
-    $('copyMoveTip').textContent = T('import.moveOriginals.warning', { folder: Store.musicDir });
+    for (const b of [p.copyMoveSwitch, p.copyMoveCopy, p.copyMoveMove]) b.disabled = saving;
+    p.copyMoveTip.textContent = T('import.moveOriginals.warning', { folder: Store.musicDir });
   },
 
   _ready() {
     return this.included.filter((it) => it.state === 'ready');
-  },
-
-  /** Songs only in the cache, which closing the app would lose (a server's batch stays there). */
-  _setPending() {
-    window.flow.setImportPending(this.state === 'idle' || this.server ? 0 : this._ready().length).catch(() => {});
   },
 
   // ---- the checklist ----
@@ -580,10 +852,10 @@ const ImportPanel = {
   },
 
   /**
-   * Local files (see optionalList) only make a playlist when "Create new
-   * Playlist" is ticked; a playlist's songs unless "Create new Playlist" is
-   * unticked (then they only go to All Songs, each still knowing the
-   * playlist it came from: sourcePlaylistUrl).
+   * Local files, picked uploads and one song (see optionalList) only make a
+   * playlist when "Create new Playlist" is ticked; a playlist's songs unless
+   * "Create new Playlist" is unticked (then they only go to All Songs, each
+   * still knowing the playlist it came from: sourcePlaylistUrl).
    */
   _makesPlaylist() {
     return this.optionalList ? this.createList : this.keepList;
@@ -604,7 +876,7 @@ const ImportPanel = {
   },
 
   /**
-   * The name at the top, changeable until the songs are saved. A playlist's
+   * The name in the head, changeable until the songs are saved. A playlist's
    * is text with a pencil, which turns it into a box with Apply and Cancel
    * (Enter and Escape do the same). Local files have "Create new Playlist"
    * in front: unticked the name is only the list's label, ticked it is a box
@@ -613,7 +885,7 @@ const ImportPanel = {
    * its songs go into the playlist updated.
    */
   _drawName() {
-    const box = $('importNameBox');
+    const box = this._nameEl;
     if (!box) return;
     clear(box);
     // Once a song is saved the playlist exists: it is renamed on its own page.
@@ -694,7 +966,7 @@ const ImportPanel = {
     this._nameHint = '';
     this._drawName();
     requestAnimationFrame(() => {
-      const input = $('importNameBox') && $('importNameBox').querySelector('input');
+      const input = this._nameEl && this._nameEl.querySelector('input');
       if (input) input.select();
     });
   },
@@ -718,56 +990,95 @@ const ImportPanel = {
     this._drawName();
   },
 
-  /** Add to Playlist for a whole import: existing playlists every song joins. */
+  /** Add to Playlist for a whole batch: existing playlists every song joins. */
   async choosePlaylists() {
     const chosen = await pickPlaylists({
       subtitle: this._makesPlaylist() ? T('import.playlist.everySongOf', { playlist: this._finalName() }) : T('import.playlist.everySongOfImport'),
       selectedIds: this.playlistIds,
     });
-    if (chosen === null) return;
+    if (chosen === null || this.ended) return;
     this.playlistIds = chosen;
-    AddPage._drawPlaylistButton();
+    this._drawPlaylistButton();
+  },
+
+  /** The footer's Add to Playlist, with the playlists picked. */
+  _drawPlaylistButton() {
+    const p = this.p;
+    this.playlistIds = this.playlistIds.filter((id) => Store.playlist(id));
+    const names = this.playlistIds.map((id) => Store.playlist(id).name);
+    p.addToPlaylist.innerHTML = Icons.plus + `<span>${names.length ? T('add.addToPlaylist.count', { count: names.length }) : T('common.addToPlaylist')}</span>`;
+    p.addToPlaylist.title = names.length ? names.join(', ') : T(this.oneSong ? 'add.addToPlaylist.song.tooltip' : 'add.addToPlaylist.import.tooltip');
+    p.playlistNames.textContent = names.length ? names.join(', ') : '';
   },
 
   render() {
+    if (!this.listing || this.ended) return;
+    this._drawHead();
+    this._drawWarnings();
+    this._drawList();
+    this._drawCount();
+  },
+
+  /** The link (or links) it came from, for the head; '' for local files and picks. */
+  _url() {
     const l = this.listing;
-    if (!l) return;
+    if (!l) return this._title || '';
+    if (l.local || l.search) return '';
+    return l.sourceUrl || '';
+  },
+
+  /**
+   * The head: where it is from, its name (with the pencil), how many songs,
+   * its link; opened also its notes (a list cut short, links that failed)
+   * and the hint how to trim.
+   */
+  _drawHead() {
+    const head = clear(this.p.source);
+    const l = this.listing;
+    this._nameEl = null;
+    if (!l) {
+      if (this._title) head.appendChild(h('span.import-batch__url', { title: this._title }, this._title));
+      return;
+    }
     const kind = String(l.source || '').toLowerCase();
     const source = SOURCE_NAMES[kind] || l.source || T('common.playlist');
-    const head = clear($('importSource'));
     head.appendChild(h('span.import__badge', source));
-    head.appendChild(h('span.import__name', { id: 'importNameBox' }));
+    // Downloaded by the server: told apart from this computer's.
+    if (this.server) head.appendChild(h('span.import__badge.import__badge--server', T('import.batch.onServer')));
+    this._nameEl = h('span.import__name');
+    head.appendChild(this._nameEl);
     this._drawName();
-    if (this.state === 'review') {
-      head.appendChild(h('span', T('import.playlist.songCount', { songs: Util.plural(l.items.length, 'song') })));
-    }
+    const count = this.state === 'review' ? l.items.length : this.included.length;
+    head.appendChild(h('span.import-batch__count', Util.plural(count, 'song')));
+    const url = this._url();
+    if (url) head.appendChild(h('span.import-batch__url', { title: url }, url));
+    if (this.collapsed) return;
+    const notes = h('div.import-batch__notes');
     if (Array.isArray(l.links) && l.links.length > 1) {
-      head.appendChild(h('span.muted-text', T('import.list.fromLinks', { links: Util.plural(l.links.length, 'link') })));
+      notes.appendChild(h('span.muted-text', T('import.list.fromLinks', { links: Util.plural(l.links.length, 'link') })));
       for (const part of l.links) {
         const text = this._linkNote(part);
-        if (text) head.appendChild(h('span.import__warn-text', text));
+        if (text) notes.appendChild(h('span.import__warn-text', text));
       }
-      if (l.truncated === 'server') head.appendChild(h('span.import__warn-text', T('import.list.serverFirst500')));
+      if (l.truncated === 'server') notes.appendChild(h('span.import__warn-text', T('import.list.serverFirst500')));
     } else if (l.truncated === 'files') {
-      head.appendChild(h('span.import__warn-text', T('import.list.folderHasMore', { count: l.items.length })));
+      notes.appendChild(h('span.import__warn-text', T('import.list.folderHasMore', { count: l.items.length })));
     } else if (l.truncated === 'spotify') {
-      head.appendChild(h('span.import__warn-text', l.sourceTotal > l.items.length
+      notes.appendChild(h('span.import__warn-text', l.sourceTotal > l.items.length
         ? T('import.list.spotifyFirstOfTotal', { count: l.items.length, total: l.sourceTotal })
         : T('import.list.spotifyFirst100')));
     } else if (l.truncated === 'amazon') {
-      head.appendChild(h('span.import__warn-text', T('import.list.amazonFirstN', { count: l.items.length })));
+      notes.appendChild(h('span.import__warn-text', T('import.list.amazonFirstN', { count: l.items.length })));
     } else if (l.truncated === 'mix') {
-      head.appendChild(h('span.import__warn-text', T('import.list.mixFirst50')));
+      notes.appendChild(h('span.import__warn-text', T('import.list.mixFirst50')));
     }
     if (this.state !== 'review') {
       const hint = this._wholeOnly()
         ? T('import.list.hint.phone')
         : T(`import.list.hint.trimOrRename.${this.local ? 'ready' : 'downloaded'}${Store.uiMode === 'mobile' ? '.touch' : ''}`);
-      head.appendChild(h('span.muted-text', hint));
+      notes.appendChild(h('span.muted-text', hint));
     }
-    this._drawWarnings();
-    this._drawList();
-    this._drawCount();
+    if (notes.childNodes.length) head.appendChild(notes);
   },
 
   /** The note for one of several links read as one: it failed, or was cut short; '' when it is fine. */
@@ -785,7 +1096,8 @@ const ImportPanel = {
   },
 
   _drawWarnings() {
-    const box = clear($('importWarnings'));
+    if (this.ended) return;
+    const box = clear(this.p.warnings);
     const rows = [];
     const taken = this.state === 'saving' || this._saved() ? null : this._takenPlaylist();
     if (taken && taken === this._updateTarget()) {
@@ -829,8 +1141,10 @@ const ImportPanel = {
   },
 
   _drawList() {
-    const list = clear($('importList'));
+    if (this.ended) return;
+    const list = clear(this.p.list);
     list.classList.toggle('import__list--frames', this.state !== 'review');
+    this._failSummaryEl = null;
     if (this.state === 'review') {
       const items = this._newItems();
       if (!items.length) {
@@ -845,14 +1159,17 @@ const ImportPanel = {
       list.appendChild(frag);
       return;
     }
+    // Folded: the frames are drawn when it is opened.
+    if (this.collapsed) return;
     // The frames. The open one keeps its editor: it is moved, not redrawn.
     // Clearing the list took the editor out of the document with the old
     // frame, so it is put back by reference. So is the Album and Genre box
     // above them, with what is typed into it.
     const typing = this._bulkEl && this._bulkEl.contains(document.activeElement) ? document.activeElement : null;
     const frag = document.createDocumentFragment();
-    if (this.included.some((it) => !it.existingId)) frag.appendChild(this._drawBulk());
-    frag.appendChild(h('div.import__summary', { id: 'importFailSummary', hidden: true }));
+    if (!this.oneSong && this.included.some((it) => !it.existingId)) frag.appendChild(this._drawBulk());
+    this._failSummaryEl = h('div.import__summary', { hidden: true });
+    frag.appendChild(this._failSummaryEl);
     for (const it of this.included) frag.appendChild(this._frame(it));
     list.appendChild(frag);
     if (typing) typing.focus();
@@ -956,7 +1273,7 @@ const ImportPanel = {
    * audio by their name.
    */
   _drawFailSummary() {
-    const box = $('importFailSummary');
+    const box = this._failSummaryEl;
     if (!box) return;
     const failed = this.local ? this.included.filter((it) => it.state === 'failed') : [];
     clear(box);
@@ -1047,9 +1364,9 @@ const ImportPanel = {
     if (chosen.length) text += ` ${T('import.selection.size', { mb: mb < 10 ? mb.toFixed(1) : Math.round(mb) })}`;
     const known = this._knownItems().filter((it) => this.keepKnown.has(it.index)).length;
     if (known) text += ` ${T('import.selection.fromLibrary', { count: known })}`;
-    $('importCount').textContent = text;
-    $('importSelected').disabled = !chosen.length && !known;
-    $('importEverything').disabled = !usable.length && !this._knownItems().length;
+    this.p.count.textContent = text;
+    this.p.selected.disabled = !chosen.length && !known;
+    this.p.everything.disabled = !usable.length && !this._knownItems().length;
   },
 
   // ---- the frames ----
@@ -1147,17 +1464,24 @@ const ImportPanel = {
     return Covers.pendingEl(it.coverKey || (it.media && it.media.path) || '', 'frame');
   },
 
+  /** Opens a song's frame with the editor in it (closing the one open, in whichever batch). */
   toggleFrame(index) {
     if (this.openIndex === index) {
       this.apply();
       return;
     }
-    this._closeEditor(true);
+    ImportPanel.closeEditor(true);
     const it = this.included.find((x) => x.index === index);
-    if (!it || it.state !== 'ready') return;
+    if (!it || it.state !== 'ready' || this.ended) return;
+    if (this.collapsed) {
+      this.collapsed = false;
+      this._drawShell();
+      this._drawHead();
+    }
     this.openIndex = index;
+    ImportPanel.editorOwner = this;
     this._drawList();
-    const body = $('importList').querySelector(`[data-index="${index}"] .import__frame-body`);
+    const body = this.p.list.querySelector(`[data-index="${index}"] .import__frame-body`);
     AddPage.openEmbedded(body, {
       media: it.media,
       meta: it.meta,
@@ -1195,6 +1519,7 @@ const ImportPanel = {
     const it = this.included.find((x) => x.index === this.openIndex);
     const result = AddPage.closeEmbedded();
     this.openIndex = null;
+    if (ImportPanel.editorOwner === this) ImportPanel.editorOwner = null;
     if (!it || !result) return;
     if (keep) {
       if (result.meta.title) it.meta = result.meta;
@@ -1218,20 +1543,32 @@ const ImportPanel = {
     const source = { url: l.sourceUrl, kind: String(l.source || '').toLowerCase() };
     if (l.fromServer) {
       // An Update read by the server: the songs ticked go there as a batch
-      // that keeps the link, shown in the frames as any of the server's.
+      // that keeps the link, shown in its frames as any of the server's.
       const updating = this.updating;
-      this._reset();
-      this.updating = updating;
+      this._end();
       await ServerImport._create({
         items: chosen.map((it) => ({
           url: it.url, title: it.title, duration: it.duration, key: it.key, meta: it.meta, existing: it.existing ? it.existing.id : undefined, listUrl: it.listUrl,
         })),
         name: l.name,
         source,
-      });
+      }, updating);
       return;
     }
     await this._run(chosen, { source });
+  },
+
+  /** A job's start: base, the playlist time, fixed at the first save; playlistId: the playlist that save made; totals: what every save did, for the toast. */
+  _newJob(source, extra = {}) {
+    return {
+      source,
+      local: false,
+      ...extra,
+      base: 0,
+      playlistId: null,
+      saves: 0,
+      totals: { playlistId: null, name: '', saved: 0, fromLibrary: 0, failed: [], kept: [] },
+    };
   },
 
   /**
@@ -1240,15 +1577,7 @@ const ImportPanel = {
    */
   async _run(chosen, job) {
     const run = this._newRun();
-    // base: the playlist time, fixed at the first save; playlistId: the
-    // playlist that save made; totals: what every save did, for the toast.
-    this.job = {
-      ...job,
-      base: 0,
-      playlistId: null,
-      saves: 0,
-      totals: { playlistId: null, name: '', saved: 0, fromLibrary: 0, failed: [], kept: [] },
-    };
+    this.job = this._newJob(job.source || null, job);
     this.included = chosen.map((it) => ({
       index: it.index,
       title: it.title,
@@ -1265,41 +1594,44 @@ const ImportPanel = {
     this.progress = { number: 0, total: toFetch.length };
     this._setState('downloading');
     if (toFetch.length) {
-      AddPage._progress({
+      this._progress({
         title: job.local ? T('import.progress.openingFiles', { files: Util.plural(toFetch.length, 'file') })
           : (this.picked ? T('import.progress.downloadingSongs', { songs: Util.plural(toFetch.length, 'song') }) : T('import.progress.importing', { playlist: this._finalName() })),
         frac: null,
         status: T('import.progress.starting'),
       });
       const items = toFetch.map((it) => ({ index: it.index, title: it.title, url: it.url, path: it.path, meta: it.meta }));
+      this._task = true;
       try {
         if (job.local) await window.flow.prepareLocal(items, AddPage.downloadOptions(), run);
         else await window.flow.downloadImport(items, AddPage.downloadOptions(), run);
       } catch (err) {
         if (run === this.run) toast(err.message, 'error');
+      } finally {
+        this._task = false;
       }
     }
-    // Cancelled with "Cancel import": that has already emptied the panel.
-    if (run !== this.run) return;
+    // Cancelled with "Cancel import": that has already ended the batch.
+    if (run !== this.run || this.ended) return;
     await this._lateStates(toFetch, run);
-    if (run !== this.run) return;
+    if (run !== this.run || this.ended) return;
     this._flush();
-    $('progressPanel').hidden = true;
+    this._hideProgress();
     // Anything not reached (cancelled) stays out.
     for (const it of this.included) {
       if (!it.existingId && (!it.state || it.state === 'current')) it.state = 'cancelled';
     }
     this._setState('trimming');
-    this._setPending();
+    ImportPanel._setPending();
     // Every song was finished one by one while the rest downloaded.
     if (this._endIfDone()) return;
     // Finishing by itself: every song saved as it came; nothing to save (all failed) ends it too.
     if (this.auto && this.auto.finish) {
       await this.finishAll();
-      if (run === this.run && this.state === 'trimming') {
+      if (!this.ended && this.state === 'trimming') {
         const failed = this.included.filter((it) => it.state === 'failed').length;
         if (failed) toast(T('serverImport.done.failed', { count: failed }), 'error');
-        this._reset();
+        this._end();
       }
       return;
     }
@@ -1398,24 +1730,51 @@ const ImportPanel = {
   },
 
   /**
+   * A song of its own whose names are a library song's: saved only once that
+   * is confirmed (not asked when auto-completed). False when it is not to be saved.
+   */
+  async _confirmNames(it) {
+    if (!this.single || (this.auto && this.auto.complete)) return true;
+    const meta = it.meta && it.meta.title ? it.meta : null;
+    if (!meta) return true;
+    try {
+      const dup = await window.flow.findByMeta(meta);
+      if (!dup) return true;
+      return !!await confirmDialog({
+        title: T('add.known.title'),
+        message: T('add.known.save', { song: Util.songLine(dup) }),
+        confirmLabel: T('add.known.save.confirm'),
+      });
+    } catch {
+      // Checking is a courtesy.
+      return true;
+    }
+  },
+
+  /**
    * "Finish this song": keeps the open frame's edits and saves just that
    * song, into the playlist (made now if this is the first). Saves wait for
    * each other, so the first one's playlist is there for the next.
    */
-  finishOne(index) {
+  async finishOne(index) {
     const it = this.included.find((x) => x.index === index);
-    if (!it || it.state !== 'ready' || this.state === 'saving') return Promise.resolve();
+    if (!it || it.state !== 'ready' || this.state === 'saving') return;
     if (this.openIndex === index) this._closeEditor(true);
+    if (!await this._confirmNames(it)) {
+      this._drawList();
+      return;
+    }
+    if (it.state !== 'ready' || this.ended) return;
     it.state = 'saving';
-    this._redrawFrame(it, false);
+    this._drawList();
     this._drawFooter();
     this._chain = (this._chain || Promise.resolve()).then(() => this._finishOneNow(it));
-    return this._chain;
+    await this._chain;
   },
 
   async _finishOneNow(it) {
     const job = this.job;
-    if (!job) return;
+    if (!job || this.ended) return;
     if (this.server) {
       await this._finishOnServer(it);
       return;
@@ -1430,23 +1789,23 @@ const ImportPanel = {
       toast(T('import.song.notSaved', { song: title, reason: err.message }), 'error');
     }
     // Cancelled meanwhile: what was saved stays saved.
-    if (this.job !== job) return;
+    if (this.job !== job || this.ended) return;
     if (summary) this._record(summary, entries);
     const ok = summary && summary.saved;
     it.state = ok ? 'saved' : 'ready';
     // A saved song just leaves the list (the footer counts it); only trouble gets a toast.
     if (summary && !ok) toast(T('import.song.notSaved', { song: title, reason: (summary.failed[0] || {}).reason || T('import.song.failed') }), 'error');
-    this._setPending();
+    ImportPanel._setPending();
     this._drawName();
     this._drawWarnings();
     this._redrawFrame(it, false);
     this._drawFooter();
-    this._drawBadge();
+    ImportPanel._drawBadge();
     this._endIfDone();
   },
 
   /**
-   * Ends the import once every song is saved (or failed): no song is ready,
+   * Ends the batch once every song is saved (or failed): no song is ready,
    * downloading or being saved, and something was saved. True when it did.
    */
   _endIfDone() {
@@ -1454,24 +1813,31 @@ const ImportPanel = {
     if (this.included.some((it) => it.state === 'ready' || it.state === 'saving')) return false;
     if (this._existingEntries().length) return false;
     this._toastSummary(this.job.totals, !!this.job.local, !!this.job.local && this.moveOriginals);
-    $('progressPanel').hidden = true;
-    this._reset();
+    this._end();
     return true;
   },
 
   /**
    * "Finish all": saves every downloaded song with its cut into the playlist,
-   * and ends the import: whatever happens, the panel empties afterwards.
+   * and ends the batch: whatever happens, its panel goes afterwards.
    */
   async finishAll() {
     if (this.state !== 'trimming') return;
     this._closeEditor(true);
     // A song still being saved by "Finish this song" first.
     await this._chain;
-    if (this.state !== 'trimming') return;
+    if (this.state !== 'trimming' || this.ended) return;
     if (this.server) {
       await this._finishAllOnServer();
       return;
+    }
+    if (this.single) {
+      const it = this._ready()[0];
+      if (it && !await this._confirmNames(it)) {
+        this._drawList();
+        return;
+      }
+      if (this.state !== 'trimming' || this.ended) return;
     }
     const entries = [];
     for (const it of this.included) {
@@ -1488,8 +1854,12 @@ const ImportPanel = {
     this.editingName = false;
     const job = this._jobFor(entries);
     this._setState('saving');
-    AddPage._progress({ title: local ? (move ? T('import.progress.movingFiles') : T('import.progress.copyingFiles')) : T('import.progress.saving', { playlist: job.name }),
-      frac: 0, status: '', cancel: false });
+    this._progress({
+      title: local ? (move ? T('import.progress.movingFiles') : T('import.progress.copyingFiles')) : (job.playlist ? T('import.progress.saving', { playlist: job.name }) : T('common.saving')),
+      frac: 0,
+      status: '',
+      cancel: false,
+    });
     let summary;
     try {
       summary = await window.flow.finishImport(job, this._newRun());
@@ -1500,12 +1870,17 @@ const ImportPanel = {
       this._record(summary, entries);
       this._toastSummary(this.job.totals, local, move);
     } finally {
-      $('progressPanel').hidden = true;
-      this._reset();
+      this._end();
     }
   },
 
   _toastSummary(summary, local, move) {
+    // One song of its own saved into All Songs: by its name, as a song's link always said.
+    if (this.single && !summary.playlistId && summary.saved === 1 && !summary.failed.length) {
+      const it = this.included[0];
+      toast(T('add.saved', { song: Util.songLine(it && it.meta && it.meta.title ? it.meta : { title: this._finalName() }) }), 'success');
+      return;
+    }
     const parts = [];
     if (summary.saved) parts.push(T(local ? (move ? 'import.done.moved' : 'import.done.copied') : 'import.done.saved', { count: summary.saved }));
     if (summary.fromLibrary) parts.push(T(local ? 'common.alreadyInLibrary' : 'import.done.fromLibrary', { count: summary.fromLibrary }));
@@ -1528,9 +1903,9 @@ const ImportPanel = {
   },
 
   /**
-   * Cancel import: ends the whole task at once. Whatever runs is stopped (in
-   * the background; the panel does not wait for it), nothing queued starts,
-   * and what is in the cache is thrown away.
+   * Cancel import: ends the whole batch at once. Whatever runs for it is
+   * stopped (in the background; the panel does not wait for it), nothing
+   * of it starts any more, and what is in the cache is thrown away.
    */
   async cancelAll() {
     const ready = this._ready().length;
@@ -1544,7 +1919,7 @@ const ImportPanel = {
         : ` ${T('import.cancel.nothingSaved')}`;
       const ok = await confirmDialog({
         title: T('common.cancelImport.title'),
-        message: (ready
+        message: this.single && ready ? T('add.cancel.text') : (ready
           ? T(`import.cancel.text${saved ? (local ? '.remainingPrepared' : '.remaining') : (local ? '.prepared' : '')}`, { songs: Util.plural(ready, 'song') })
           : T('import.cancel.text.stop')) + kept + originals,
         confirmLabel: T('common.cancelImport'),
@@ -1552,49 +1927,50 @@ const ImportPanel = {
       });
       if (!ok) return;
     }
-    if (this.state === 'idle' || this.state === 'saving') return;
+    if (this.ended || this.state === 'idle' || this.state === 'saving') return;
     if (this.server) {
       ServerImport.touch();
       ServerImport.cancelBatch(this.server.id).catch((err) => toast(err.message, 'error'));
-      this._closeEditor(false);
-      this._reset();
+      this._end();
       toast(saved ? T('import.server.cancelled.finishedStays', { songs: Util.plural(saved, 'song'), count: saved }) : T('import.server.cancelled'), 'info');
       return;
     }
     // The task's number is retired first: anything it still says is ignored.
     this._newRun();
-    window.flow.cancelImport().catch(() => {});
+    if (this._task) window.flow.cancelImport().catch(() => {});
+    if (this._singleTask) window.flow.cancelDownload().catch(() => {});
     this._closeEditor(false);
     for (const it of this.included) {
       if (it.state === 'ready' && it.media) window.flow.discardDownload(it.media.path).catch(() => {});
     }
-    this._reset();
+    const single = this.single;
+    this._end();
+    if (single) {
+      toast(T('add.cancel.done'), 'info');
+      return;
+    }
     const message = local ? T('import.cancelled.localFiles') : (picked ? T('common.downloadCancelled') : T('import.cancelled.playlist'));
     toast(saved ? T('import.cancelled.finishedStays', { message, songs: Util.plural(saved, 'song'), count: saved }) : message, 'info');
   },
 
   // ---- a download on the server ----
 
-  /** Shows the server's batch: started here, on another device, or before a restart. */
+  /** Shows a batch of the server's: started here, on another device, or before a restart. */
   openServer(batch) {
-    if (!batch || (this.state !== 'idle' && !this.server)) return;
     const saved = batch.items.some((x) => x.state === 'saved' || x.state === 'added');
-    Covers.forgetServerPending();
     this.server = { id: batch.id, single: !!batch.single };
+    this.auto = batch.auto || null;
     this.listing = {
       local: false, search: batch.source.kind === 'search', source: batch.source.kind || 'server', sourceUrl: batch.source.url, name: batch.source.name, truncated: batch.truncated, sourceTotal: batch.sourceTotal || 0, links: batch.links || null, items: [],
     };
+    this._title = batch.source.url || '';
     this.included = [];
     this.moveOriginals = false;
     this._resetName(batch.source.name || '');
-    this.job = {
-      source: { url: batch.source.url, kind: batch.source.kind },
-      local: false,
-      base: 0,
-      playlistId: batch.playlistId || null,
-      saves: saved ? 1 : 0,
-      totals: { playlistId: batch.playlistId || null, name: '', saved: 0, fromLibrary: 0, failed: [], kept: [] },
-    };
+    this.job = this._newJob({ url: batch.source.url, kind: batch.source.kind });
+    this.job.saves = saved ? 1 : 0;
+    this.job.playlistId = batch.playlistId || null;
+    this.job.totals.playlistId = batch.playlistId || null;
     const list = batch.playlistId && Store.playlist(batch.playlistId);
     if (list) {
       this.name = list.name;
@@ -1603,45 +1979,47 @@ const ImportPanel = {
     this.syncServer(batch);
   },
 
-  /**
-   * The server's batch as it is now (null: gone). Frames follow their songs;
-   * a batch finished or cancelled on another device empties the panel.
-   */
-  syncServer(batch, { finishedThere = false } = {}) {
-    if (!this.server) {
-      if (batch && this.state === 'idle') this.openServer(batch);
-      return;
-    }
-    if (!batch || batch.id !== this.server.id) {
-      if (this.state === 'saving') return;
-      this._closeEditor(false);
-      this._reset();
-      // Finished by the server itself (4.4): its own message says what it did.
-      if (!finishedThere) toast(T('import.server.endedElsewhere'), 'info');
-      if (batch) this.openServer(batch);
-      return;
-    }
+  /** The server's batch as it is now. Frames follow their songs. */
+  syncServer(batch) {
+    if (this.ended || !batch) return;
     if (this.state === 'listing' && batch.state === 'ready') {
       this._resetName(batch.source.name);
-      Object.assign(this.listing, { name: batch.source.name, source: batch.source.kind, truncated: batch.truncated, sourceTotal: batch.sourceTotal || 0, links: batch.links || null });
+      Object.assign(this.listing, {
+        name: batch.source.name, source: batch.source.kind, sourceUrl: batch.source.url, truncated: batch.truncated, sourceTotal: batch.sourceTotal || 0, links: batch.links || null,
+      });
       this.server.single = !!batch.single;
     }
     const changed = [];
+    let added = false;
     for (const x of batch.items) {
       const old = this.included.find((i) => i.index === x.index);
       const before = old ? `${old.state}|${old.note}|${old.existingId}|${old.added}` : '';
       const it = this._serverItem(x, old);
-      if (!old) this.included.push(it);
-      else if (before !== `${it.state}|${it.note}|${it.existingId}|${it.added}`) changed.push(it);
+      if (!old) {
+        this.included.push(it);
+        added = true;
+      } else if (before !== `${it.state}|${it.note}|${it.existingId}|${it.added}`) changed.push(it);
       if (x.state === 'saved' || x.state === 'added') this.job.saves = Math.max(this.job.saves, 1);
     }
     if (batch.playlistId) this.job.playlistId = batch.playlistId;
     if (this._applyServerState(batch)) return;
-    for (const it of changed) this._redrawFrame(it, false);
+    if (added && this.state !== 'listing') this.render();
+    else for (const it of changed) this._redrawFrame(it, false);
     this._drawFailSummary();
     this._drawName();
     this._drawFooter();
-    this._drawBadge();
+    ImportPanel._drawBadge();
+  },
+
+  /**
+   * Its batch is no longer on the server: finished or cancelled on another
+   * device, or (`finishedThere`) finished by the server itself, whose own
+   * message says what it did.
+   */
+  serverGone(finishedThere) {
+    if (this.ended || this.state === 'saving') return;
+    this._end();
+    if (!finishedThere) toast(T('import.server.endedElsewhere'), 'info');
   },
 
   /** One song of the batch as a frame's item (`old`: the frame's, kept with its edits). */
@@ -1653,7 +2031,7 @@ const ImportPanel = {
     it.duration = x.duration || it.duration;
     it.reason = x.error || '';
     // Its cover, once the server found one (the frame's box fills in by itself).
-    it.coverKey = `server:${x.index}`;
+    it.coverKey = Covers.serverKey(x.index, this.server.id);
     if (x.cover && x.state === 'ready') Covers.serverPending(x.index, x.cover, this.server.id);
     const doing = x.state === 'converting' ? 'import.song.convertingOnServer' : 'import.song.downloadingOnServer';
     it.note = x.progress && x.progress.text ? T(`${doing}.progress`, { progress: x.progress.text }) : T(doing);
@@ -1696,21 +2074,20 @@ const ImportPanel = {
 
   /**
    * The panel's state from the batch's: reading the link, songs still
-   * coming, or all there. True when it ended the panel (nothing to do).
+   * coming, or all there. True when it ended the batch (nothing to do).
    */
   _applyServerState(batch) {
     if (batch.state === 'failed') {
       // The link could not be read: nothing to keep.
       ServerImport.touch();
       ServerImport.cancelBatch(batch.id).catch(() => {});
-      this._reset();
-      $('progTitle').textContent = T('import.server.couldNotReadLink');
-      AddPage._showError(batch.error || T('import.server.linkNotRead'));
+      this._end();
+      AddPage.showFailure(T('import.server.couldNotReadLink'), new Error(batch.error || T('import.server.linkNotRead')));
       return true;
     }
-    if (batch.state === 'listing') {
+    if (batch.state === 'listing' || batch.state === 'queued') {
       if (this.state !== 'listing') this._setState('listing');
-      AddPage._progress({
+      this._progress({
         title: T('import.progress.readingLinkOnServer'),
         frac: batch.progress ? batch.progress.frac : null,
         status: batch.progress && batch.progress.text ? batch.progress.text : batch.source.url,
@@ -1731,7 +2108,7 @@ const ImportPanel = {
       if (target) {
         const inList = new Set(target.entries.map((e) => e.songId));
         const missing = [...new Set(this.included.map((it) => it.existingId).filter((id) => id && !inList.has(id)))];
-        this._reset();
+        this._end();
         if (missing.length) {
           window.flow.addSongsToPlaylist(target.id, missing)
             .then(() => toast(T('import.server.playlistUpdated', { playlist: target.name, count: missing.length }), 'success'))
@@ -1740,7 +2117,7 @@ const ImportPanel = {
         else toast(T('import.server.upToDate', { playlist: target.name }), 'info');
         return true;
       }
-      this._reset();
+      this._end();
       toast(failed ? T('import.server.nothingDownloaded', { reason: failed.error || T('import.song.failed') }) : T('import.server.allInLibrary'), failed ? 'error' : 'info');
       return true;
     }
@@ -1750,19 +2127,19 @@ const ImportPanel = {
     const current = batch.items.find((x) => x.state === 'downloading' || x.state === 'converting');
     this.progress = { number: current ? all - coming.length + 1 : all, total: all };
     if (this.state !== want) {
-      $('progressPanel').hidden = true;
+      this._hideProgress();
       this._setState(want);
       if (want === 'trimming' && this._endIfDone()) return true;
     }
     if (current) {
-      AddPage._progress({
+      this._progress({
         title: T('import.progress.downloadingOnServer', { number: this.progress.number, total: all, title: current.title }),
         frac: current.progress ? current.progress.frac : null,
         status: current.progress ? current.progress.text : T('import.progress.starting'),
         cancel: false,
       });
     } else if (!coming.length) {
-      $('progressPanel').hidden = true;
+      this._hideProgress();
     }
     return false;
   },
@@ -1788,7 +2165,7 @@ const ImportPanel = {
       r = await window.flow.serverDownloads('finish', { index: it.index, body, batchId: this.server && this.server.id });
     } catch (err) {
       toast(T('import.song.notSaved', { song: Util.songLine(meta), reason: err.message }), 'error');
-      if (this.job === job) {
+      if (this.job === job && !this.ended) {
         it.state = 'ready';
         this._redrawFrame(it, false);
         this._drawFooter();
@@ -1803,7 +2180,7 @@ const ImportPanel = {
       window.flow.setLyrics(r.song.id, lines, true)
         .catch((err) => toast(T('import.song.lyricsNotSaved', { song: Util.songLine(meta), reason: err.message }), 'error'));
     }
-    if (this.job !== job) return;
+    if (this.job !== job || this.ended) return;
     this._record({
       playlistId: r.playlistId,
       name: wantsList ? (job.totals.name || this._finalName()) : '',
@@ -1817,14 +2194,14 @@ const ImportPanel = {
     this._drawWarnings();
     this._redrawFrame(it, false);
     this._drawFooter();
-    this._drawBadge();
+    ImportPanel._drawBadge();
     if (this.state === 'saving') return;
     if (r.batch) {
       this.syncServer(r.batch);
     } else {
       // Every song dealt with: the server closed the batch.
       if (this.state !== 'trimming') this._setState('trimming');
-      if (!this._endIfDone()) this._reset();
+      if (!this._endIfDone()) this._end();
       // The next queued batch (and the buttons) follow at once.
       ServerImport.poll();
       return;
@@ -1840,9 +2217,9 @@ const ImportPanel = {
       return;
     }
     this._setState('saving');
-    for (let n = 0; n < ready.length && this.job; n += 1) {
+    for (let n = 0; n < ready.length && this.job && !this.ended; n += 1) {
       const it = ready[n];
-      AddPage._progress({
+      this._progress({
         title: T('import.progress.savingSong', { number: n + 1, total: ready.length }),
         frac: n / ready.length,
         status: Util.songLine(it.meta && it.meta.title ? it.meta : { title: it.title }),
@@ -1851,26 +2228,25 @@ const ImportPanel = {
       it.state = 'saving';
       await this._finishOnServer(it);
     }
-    if (!this.job) return;
+    if (!this.job || this.ended) return;
     this._toastSummary(this.job.totals, false, false);
-    $('progressPanel').hidden = true;
     ServerImport.touch();
-    this._reset();
+    this._end();
     ServerImport.poll();
   },
 
   _onProgress(p) {
-    if (p.run !== this.run) return;
+    if (p.run !== this.run || this.ended) return;
     if (p.phase === 'scanning' && this.state === 'listing') {
-      AddPage._progress({
+      this._progress({
         title: T('import.folder.lookingThrough'),
         frac: null,
         status: T('import.folder.found', { files: Util.plural(p.found, 'file'), folder: p.dir || '' }),
       });
     } else if (p.phase === 'listing' && this.state === 'listing') {
-      AddPage._progress({ title: T('import.progress.readingPlaylist'), frac: null, status: p.text });
+      this._progress({ title: T('import.progress.readingPlaylist'), frac: null, status: p.text });
     } else if (p.phase === 'matching' && this.state === 'listing') {
-      AddPage._progress({
+      this._progress({
         title: T('import.progress.lookingUpSongs'),
         frac: p.total ? p.done / p.total : null,
         status: [T('import.progress.lookingUp.count', { done: p.done, total: p.total }), p.known && T('common.alreadyInLibrary', { count: p.known }), p.title]
@@ -1889,7 +2265,7 @@ const ImportPanel = {
         this._giveBulk(it);
         it.artistFromChannel = p.song.artistFromChannel;
         this._lookLyrics(it);
-        this._setPending();
+        ImportPanel._setPending();
       }
       if (p.status === 'library') {
         it.existingId = p.existingId;
@@ -1906,7 +2282,7 @@ const ImportPanel = {
       };
       this._scheduleDraw();
     } else if (p.phase === 'saving' && this.state === 'saving') {
-      AddPage._progress({
+      this._progress({
         title: T('import.progress.savingSong', { number: p.number, total: p.total }),
         frac: p.total ? (p.number - 1) / p.total : null,
         status: p.title,
@@ -1915,13 +2291,196 @@ const ImportPanel = {
     }
   },
 
+  /** The download of its one song (download:progress). */
+  _onSongProgress({ frac, text }) {
+    if (this.state !== 'downloading' || this.ended) return;
+    const it = this.included[0];
+    this._progress({ title: it ? it.title : '', frac, status: text });
+  },
+
   /** Redraws one frame, unless it is the open one (its editor stays put). */
   _redrawFrame(it, scroll) {
-    if (this.openIndex === it.index) return;
-    const node = $('importList').querySelector(`[data-index="${it.index}"]`);
+    if (this.openIndex === it.index || this.ended) return;
+    const node = this.p.list.querySelector(`[data-index="${it.index}"]`);
     if (!node) return;
     const fresh = this._frame(it);
     node.replaceWith(fresh);
     if (scroll && this.openIndex === null) fresh.scrollIntoView({ block: 'nearest' });
+  },
+};
+
+/**
+ * The batches on Add Songs: made, placed on the page (finished ones above,
+ * those still reading or downloading at the bottom, each group oldest
+ * first), and told what concerns them all (the progress of this computer's
+ * import task, the server's batches, the one trim editor).
+ */
+const ImportPanel = {
+  batches: [],
+  editorOwner: null,  // the batch whose frame has the trim editor
+  updating: null,     // a playlist's Update whose link AddPage put into the box: { id, name, url }
+  _seq: 0,
+  _run: 0,
+
+  init() {
+    window.flow.onImportProgress((p) => {
+      const b = this.batches.find((x) => x.run === p.run);
+      if (b) b._onProgress(p);
+    });
+    Store.onLibrary(() => {
+      for (const b of this.batches) if (b.state !== 'idle' && b.state !== 'listing') b._drawWarnings();
+    });
+    // The checklist's size estimate follows the MP3 settings.
+    Store.onSettings((patch) => {
+      if (!('alwaysMp3' in patch || 'mp3Quality' in patch)) return;
+      for (const b of this.batches) if (b.state === 'review') b._drawCount();
+    });
+  },
+
+  nextRun() {
+    this._run += 1;
+    return this._run;
+  },
+
+  /** A new batch, not on the page until it has a state. */
+  create({ auto = null, updating = null } = {}) {
+    const b = Object.create(ImportBatch);
+    this._seq += 1;
+    b._init(this._seq);
+    b.auto = auto;
+    b.updating = updating;
+    this.batches.push(b);
+    return b;
+  },
+
+  remove(b) {
+    this.batches = this.batches.filter((x) => x !== b);
+    if (this.editorOwner === b) this.editorOwner = null;
+  },
+
+  /** A batch of this computer's has its checklist open or reads or downloads: the Client queue waits. */
+  get clientBusy() {
+    return this.batches.some((b) => b.busy);
+  },
+
+  /** Compatible name: as clientBusy. */
+  get busy() {
+    return this.clientBusy;
+  },
+
+  /** A batch of the server's is shown, reading or downloading. */
+  get serverComing() {
+    return this.batches.some((b) => b.server && (b.state === 'listing' || b.state === 'downloading'));
+  },
+
+  serverBatch(id) {
+    return this.batches.find((b) => b.server && b.server.id === id) || null;
+  },
+
+  /** Puts a batch's panel where its state belongs, in the order the batches came. */
+  place(b) {
+    if (b.ended || b.state === 'idle') return;
+    const box = ACTIVE_STATES.includes(b.state) ? $('importActive') : $('importDone');
+    if (b.el.parentNode === box) return;
+    const after = [...box.children].find((node) => Number(node.dataset.batch) > b.n);
+    box.insertBefore(b.el, after || null);
+  },
+
+  /** A batch changed state (or went): what depends on all of them follows. */
+  changed() {
+    this._drawBadge();
+    this._setPending();
+    // Retry failed depends on what else downloads here.
+    for (const b of this.batches) if (b.ownsFooter) b._drawFooter();
+    if (typeof ServerImport !== 'undefined') ServerImport.drawButtons();
+    if (typeof ClientQueue !== 'undefined') ClientQueue.kick();
+  },
+
+  /** Closes the trim editor wherever it is open, keeping (`keep`) or dropping its edits. */
+  closeEditor(keep) {
+    const o = this.editorOwner;
+    if (!o) return;
+    o._closeEditor(keep);
+    o._drawList();
+    o._drawFooter();
+  },
+
+  /** The menu's badge: how far the download is, '...' while a list is read, else how many songs wait for Finish. */
+  _drawBadge() {
+    const badge = $('menuAddBadge');
+    if (!badge) return;
+    const down = this.batches.find((b) => b.state === 'downloading');
+    let text = '';
+    let waiting = false;
+    if (down) text = `${down.progress.number}/${down.progress.total}`;
+    else if (this.batches.some((b) => b.state === 'listing')) text = '...';
+    else {
+      const ready = this.batches.reduce((sum, b) => sum + (b.state === 'trimming' ? b._ready().length : 0), 0);
+      if (ready) {
+        text = String(ready);
+        waiting = true;
+      }
+    }
+    badge.hidden = !text;
+    badge.textContent = text;
+    badge.title = waiting ? T('import.bar.waiting.tooltip') : T('import.bar.running.tooltip');
+  },
+
+  /** Songs only in the cache, which closing the app would lose (a server's batch stays there). */
+  _setPending() {
+    const count = this.batches.reduce((sum, b) => sum + (b.server || b.state === 'idle' ? 0 : b._ready().length), 0);
+    window.flow.setImportPending(count).catch(() => {});
+  },
+
+  // ---- what AddPage, ClientQueue and the others open ----
+
+  /** A playlist link: its checklist. Resolves the probed song when it is one song. */
+  open(url, opts = {}) {
+    return this.create(opts).open(url);
+  },
+
+  /** A song's link (or one read already: `probed`). */
+  openSong(url, opts = {}) {
+    return this.create(opts).openSong(url, { probed: opts.probed || null });
+  },
+
+  openLocal(picked) {
+    return this.create().openLocal(picked);
+  },
+
+  openPicked(name, picks, opts = {}) {
+    return this.create(opts).openPicked(name, picks);
+  },
+
+  openUpdate(p, listing, server) {
+    return this.create().openUpdate(p, listing, server);
+  },
+
+  /** A song's download progress (download:progress) goes to the batch downloading its one song. */
+  songProgress(p) {
+    const b = this.batches.find((x) => x._singleTask && x.state === 'downloading');
+    if (b) b._onSongProgress(p);
+  },
+
+  /**
+   * The profile's batches on the server as they are now, oldest first: each
+   * one reading, downloading or waiting for Finish all has its panel (those
+   * still waiting for their turn are the Server queue's lines); a panel whose
+   * batch is gone goes (`finished`: the ids the server finished itself).
+   */
+  syncServer(list, { finished = new Set(), updates = null } = {}) {
+    const shown = (list || []).filter((b) => b && b.state !== 'queued');
+    for (const batch of shown) {
+      const b = this.serverBatch(batch.id);
+      if (b) {
+        b.syncServer(batch);
+        continue;
+      }
+      const fresh = this.create({ updating: updates ? updates(batch.id) : null });
+      fresh.openServer(batch);
+    }
+    for (const b of this.batches.filter((x) => x.server && !shown.some((batch) => batch.id === x.server.id))) {
+      b.serverGone(finished.has(b.server.id));
+    }
   },
 };

@@ -642,8 +642,14 @@ function refuseDuringImport() {
   if (importRunning || importSaves) throw new Error(T('desktop.error.importRunning'));
 }
 
+// A new read or download waits only for the import task itself: songs of
+// another batch may be saved meanwhile (Add Songs has a panel per batch, 4.4).
+function refuseDuringTask() {
+  if (importRunning) throw new Error(T('desktop.error.importRunning'));
+}
+
 handle('download:probe', async (url) => {
-  refuseDuringImport();
+  refuseDuringTask();
   downloadToken = { cancelled: false };
   try {
     return await downloader.probe(url, downloadToken, { knownArtists: knownArtists() });
@@ -664,7 +670,7 @@ let importToken = null;
 let importRunning = false;
 
 function beginImport(run) {
-  refuseDuringImport();
+  refuseDuringTask();
   const token = importer.groupToken();
   importToken = token;
   importRunning = true;

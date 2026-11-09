@@ -19,7 +19,8 @@
 //
 // Covers.pendingEl(key) is the cover of a song on the Add Songs page that is
 // downloaded but not saved yet, found right after its download: key is its
-// cached file, or 'server:<index>' for a song of the server's download.
+// cached file, or 'server:<batch>:<index>' for a song of a server's download
+// (Covers.serverKey).
 
 const Covers = {
   dirs: { local: '', server: '' },
@@ -254,8 +255,13 @@ const Covers = {
   },
 
   /** A song of the server's download whose cover the server found (version): fetched once. */
+  /** The pending key of song `index` of the server's batch `batchId` (several are on the page at once, 4.4). */
+  serverKey(index, batchId = '') {
+    return `server:${batchId}:${index}`;
+  },
+
   serverPending(index, version, batchId = '') {
-    const k = `server:${index}`;
+    const k = this.serverKey(index, batchId);
     if (!version || this._serverAsked.get(k) === version) return;
     this._serverAsked.set(k, version);
     window.flow.serverDownloads('cover', { index, version, batchId }).then((file) => {
@@ -265,10 +271,11 @@ const Covers = {
     });
   },
 
-  /** The server's download batch is gone or new: its songs' covers are forgotten. */
-  forgetServerPending() {
-    for (const k of [...this._pending.keys()]) if (k.startsWith('server:')) this._pending.delete(k);
-    this._serverAsked.clear();
+  /** A server's download batch is gone: its songs' covers are forgotten (all of them without an id). */
+  forgetServerPending(batchId = null) {
+    const start = batchId === null ? 'server:' : `server:${batchId}:`;
+    for (const k of [...this._pending.keys()]) if (k.startsWith(start)) this._pending.delete(k);
+    for (const k of [...this._serverAsked.keys()]) if (k.startsWith(start)) this._serverAsked.delete(k);
   },
 
   /** Whether a song's covers are a Flow Server's (fetched when shown), not Local Files'. */
