@@ -287,7 +287,8 @@ const ImportBatch = {
    * once it is there. auto.finish saves it as it came, into All Songs.
    */
   async openSong(url, { probed = null } = {}) {
-    const auto = this.auto || { complete: false, finish: false };
+    // Read where it is needed: the boxes switched meanwhile count (followAuto).
+    const auto = () => this.auto || { complete: false, finish: false };
     this.single = true;
     this._title = url;
     let warned = false;
@@ -296,8 +297,8 @@ const ImportBatch = {
       try {
         const dup = await window.flow.findBySource(url, null);
         if (dup) {
-          if (auto.complete || !await AddPage._confirmDuplicateSource(dup)) {
-            if (auto.complete) toast(T('add.queue.skipped', { song: Util.songLine(dup) }), 'info');
+          if (auto().complete || !await AddPage._confirmDuplicateSource(dup)) {
+            if (auto().complete) toast(T('add.queue.skipped', { song: Util.songLine(dup) }), 'info');
             this._end();
             return;
           }
@@ -334,8 +335,8 @@ const ImportBatch = {
         // As above.
       }
       if (!found) continue;
-      if (auto.complete || !await AddPage._confirmDuplicateSource(found.dup, found.text)) {
-        if (auto.complete) toast(T('add.queue.skipped', { song: Util.songLine(found.dup) }), 'info');
+      if (auto().complete || !await AddPage._confirmDuplicateSource(found.dup, found.text)) {
+        if (auto().complete) toast(T('add.queue.skipped', { song: Util.songLine(found.dup) }), 'info');
         this._end();
         return;
       }
@@ -385,12 +386,12 @@ const ImportBatch = {
     this._setState('trimming');
     ImportPanel._setPending();
     // Finishing by itself: saved as it came, into All Songs only.
-    if (auto.finish) {
+    if (auto().finish) {
       await this.finishAll();
       return;
     }
     // Its editor at once, as a song's link always opened it (unless one is open).
-    if (!ImportPanel.editorOwner) this.toggleFrame(0);
+    if (!ImportPanel.editorOwner) this.toggleFrame(0, { scroll: false });
   },
 
   /**
@@ -420,7 +421,7 @@ const ImportBatch = {
     const meta = { ...it.meta };
     for (const key of ['album', 'genre', 'subGenre']) if (found[key] && !String(meta[key] || '').trim()) meta[key] = found[key];
     it.meta = meta;
-    this._redrawFrame(it, false);
+    this._redrawFrame(it);
   },
 
   /**
@@ -538,7 +539,8 @@ const ImportBatch = {
     this.el.remove();
     ImportPanel.remove(this);
     ImportPanel.changed();
-    if (hadFocus) $('linkInput').focus();
+    // Without scrolling up to it: the page stays where it is.
+    if (hadFocus) $('linkInput').focus({ preventScroll: true });
   },
 
   /** Ended by a failure: the error under the link box (a cancel only says so). */
@@ -649,16 +651,8 @@ const ImportBatch = {
       this._lastProgress = null;
       return;
     }
-    let current = null;
-    for (const it of this._dirty) {
-      if (it.state === 'current') current = it;
-      this._redrawFrame(it, false);
-    }
+    for (const it of this._dirty) this._redrawFrame(it);
     this._dirty.clear();
-    if (current && !ImportPanel.editorOwner && !this.collapsed) {
-      const node = this.p.list.querySelector(`[data-index="${current.index}"]`);
-      if (node) node.scrollIntoView({ block: 'nearest' });
-    }
     this._drawFailSummary();
     this._drawFooter();
     ImportPanel._drawBadge();
@@ -763,7 +757,7 @@ const ImportBatch = {
     for (const it of items) {
       it.state = null;
       it.reason = '';
-      this._redrawFrame(it, false);
+      this._redrawFrame(it);
     }
     this._drawFooter();
     if (this.server) {
@@ -1259,7 +1253,7 @@ const ImportBatch = {
       }
       if (this._giveBulk(it)) {
         given += 1;
-        this._redrawFrame(it, false);
+        this._redrawFrame(it);
       }
     }
     toast(T(coming ? 'import.bulk.given.alsoComing' : 'import.bulk.given', {
@@ -1444,7 +1438,7 @@ const ImportBatch = {
 
   /** A song just downloaded (or prepared): its lyrics looked up by its names, its frame redrawn when known. */
   _lookLyrics(it) {
-    if (!it.lyrics) it.lyrics = AddPage.newLyrics(() => this._redrawFrame(it, false));
+    if (!it.lyrics) it.lyrics = AddPage.newLyrics(() => this._redrawFrame(it));
     if (it.lyrics && it.media && it.meta) AddPage.lookLyrics(it.lyrics, it.meta, it.media.duration);
   },
 
@@ -1465,7 +1459,7 @@ const ImportBatch = {
   },
 
   /** Opens a song's frame with the editor in it (closing the one open, in whichever batch). */
-  toggleFrame(index) {
+  toggleFrame(index, { scroll = true } = {}) {
     if (this.openIndex === index) {
       this.apply();
       return;
@@ -1493,7 +1487,8 @@ const ImportBatch = {
       sourceUrl: it.song ? it.song.url : '',
       lyrics: it.lyrics || null,
     });
-    body.closest('.import__frame').scrollIntoView({ block: 'nearest' });
+    // Opened by hand: the editor in sight. Opened by itself: the page stays where it is.
+    if (scroll) body.closest('.import__frame').scrollIntoView({ block: 'nearest' });
   },
 
   /** Apply Edits: keeps the open frame's cut and names, and closes it. */
@@ -1798,7 +1793,7 @@ const ImportBatch = {
     ImportPanel._setPending();
     this._drawName();
     this._drawWarnings();
-    this._redrawFrame(it, false);
+    this._redrawFrame(it);
     this._drawFooter();
     ImportPanel._drawBadge();
     this._endIfDone();
@@ -2004,7 +1999,7 @@ const ImportBatch = {
     if (batch.playlistId) this.job.playlistId = batch.playlistId;
     if (this._applyServerState(batch)) return;
     if (added && this.state !== 'listing') this.render();
-    else for (const it of changed) this._redrawFrame(it, false);
+    else for (const it of changed) this._redrawFrame(it);
     this._drawFailSummary();
     this._drawName();
     this._drawFooter();
@@ -2167,7 +2162,7 @@ const ImportBatch = {
       toast(T('import.song.notSaved', { song: Util.songLine(meta), reason: err.message }), 'error');
       if (this.job === job && !this.ended) {
         it.state = 'ready';
-        this._redrawFrame(it, false);
+        this._redrawFrame(it);
         this._drawFooter();
       }
       // The batch may be gone (cancelled on another device): the panel follows.
@@ -2192,7 +2187,7 @@ const ImportBatch = {
     it.state = 'saved';
     this._drawName();
     this._drawWarnings();
-    this._redrawFrame(it, false);
+    this._redrawFrame(it);
     this._drawFooter();
     ImportPanel._drawBadge();
     if (this.state === 'saving') return;
@@ -2299,13 +2294,12 @@ const ImportBatch = {
   },
 
   /** Redraws one frame, unless it is the open one (its editor stays put). */
-  _redrawFrame(it, scroll) {
+  _redrawFrame(it) {
     if (this.openIndex === it.index || this.ended) return;
     const node = this.p.list.querySelector(`[data-index="${it.index}"]`);
     if (!node) return;
     const fresh = this._frame(it);
     node.replaceWith(fresh);
-    if (scroll && this.openIndex === null) fresh.scrollIntoView({ block: 'nearest' });
   },
 };
 
@@ -2454,6 +2448,19 @@ const ImportPanel = {
 
   openUpdate(p, listing, server) {
     return this.create().openUpdate(p, listing, server);
+  },
+
+  /**
+   * "Auto-accept songs lookup" / "Automate 'Finish all'" switched (ClientQueue.followAuto):
+   * this computer's batches still being read take the first (a list read then
+   * goes on with Download All), those not downloaded yet the second.
+   */
+  followAuto(auto) {
+    for (const b of this.batches) {
+      if (b.server || !b.auto || b.ended) continue;
+      if (b.state === 'idle' || b.state === 'listing') b.auto.complete = !!auto.complete;
+      if (b.state === 'idle' || ACTIVE_STATES.includes(b.state)) b.auto.finish = !!auto.finish;
+    }
   },
 
   /** A song's download progress (download:progress) goes to the batch downloading its one song. */

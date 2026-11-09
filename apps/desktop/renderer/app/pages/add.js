@@ -9,8 +9,8 @@
 //
 // A link goes through the Client queue (clientQueue.js): at once when this
 // computer downloads nothing else, else at its turn (runEntry), with the
-// "Auto-complete confirmations" and "Automate 'Finish all'" it was queued
-// with (entry.auto): no questions, and saved as it came.
+// "Auto-accept songs lookup" and "Automate 'Finish all'" as they are at
+// its turn (entry.auto, kept up to date while it waits or is read): no questions, and saved as it came.
 //
 // This holds the trim editor, which opens in the frame of the song being
 // trimmed (openEmbedded): the waveform across the whole width, the trim
@@ -145,7 +145,7 @@ const AddPage = {
   },
 
   /**
-   * "Auto-complete confirmations" and "Automate 'Finish all'" as they are
+   * "Auto-accept songs lookup" and "Automate 'Finish all'" as they are
    * now (Settings › Media Management, or the boxes under the link box): a
    * link queued keeps them.
    */
@@ -162,12 +162,16 @@ const AddPage = {
     const draw = () => {
       main.checked = !!Store.settings.autoComplete;
       sub.checked = !!Store.settings.autoFinish;
-      $('autoFinishLabel').hidden = !main.checked;
+      // Always there, greyed out (and not counted, autoNow) while the box above is unticked.
+      sub.disabled = !main.checked;
+      $('autoFinishLabel').classList.toggle('auto-row__sub--off', !main.checked);
     };
     main.addEventListener('change', () => Store.saveSettings({ autoComplete: main.checked }));
     sub.addEventListener('change', () => Store.saveSettings({ autoFinish: sub.checked }));
     Store.onSettings((patch) => {
-      if ('autoComplete' in patch || 'autoFinish' in patch) draw();
+      if (!('autoComplete' in patch || 'autoFinish' in patch)) return;
+      draw();
+      ClientQueue.followAuto(this.autoNow());
     });
     draw();
   },

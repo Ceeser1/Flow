@@ -853,7 +853,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
    * those songs, with nothing to read first, and no playlist unless asked.
    * queue: true (an app with the queue, 4.4): one more batch in the queue
    * even with others of the profile; without it, as before, 409 with one.
-   * auto: { complete, finish } (the app's "Auto-complete confirmations" and
+   * auto: { complete, finish } (the app's "Auto-accept songs lookup" and
    * "Automate 'Finish All'"), see settle.
    */
   function create(profileId, {

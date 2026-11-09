@@ -632,8 +632,8 @@ settings.media.needsServer
 
 # Also shown right under Add Songs' link box, to switch them for each link
 settings.media.autoComplete.label
-  en: Auto-complete confirmations when adding songs
-  de: Bestätigungen beim Hinzufügen von Songs automatisch erledigen
+  en: Auto-accept songs lookup (Download all)
+  de: Song-Abfrage automatisch annehmen (Alle laden)
 
 settings.media.autoComplete.desc
   en: When enabled, a pasted link does not wait for your confirmation and just proceeds with the given songs, playlist name, etc. A playlist gets all songs with its loaded playlist name and all songs added into it, a single song gets no playlist.

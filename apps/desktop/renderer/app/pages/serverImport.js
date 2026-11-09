@@ -17,7 +17,7 @@
 //   at the next start.
 //
 // With a server that queues (its hello lists "downloadQueue", 4.4) a link is
-// always taken at once, with the "Auto-complete confirmations" and "Automate
+// always taken at once, with the "Auto-accept songs lookup" and "Automate
 // 'Finish all'" of that moment ("Queue Download (Server)" while the server
 // downloads something): the server's batches take turns, and one waiting
 // for "Finish all" holds no one up. The poll brings the queue's lines of

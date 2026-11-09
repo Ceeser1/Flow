@@ -8,8 +8,9 @@
 // A link is looked at when it is queued (a song inside a YouTube playlist
 // asks "this song or the whole list?" then), its name and song count are
 // read at once (window.flow.peekLink, listing.peek), and it takes Settings ›
-// Media Management's "Auto-complete confirmations" and "Automate 'Finish
-// all'" as they were then (the boxes under the link box switch them). Its
+// Media Management's "Auto-accept songs lookup" and "Automate 'Finish
+// all'" (the boxes under the link box switch them) as they are at its turn:
+// switched while it waits or is read, it follows (followAuto). Its
 // turn comes once this computer reads and downloads nothing else and no
 // checklist waits for its choice; batches waiting for "Finish all" hold no
 // one up. Then it is a batch of import.js (AddPage.runEntry): read, the
@@ -112,6 +113,16 @@ const ClientQueue = {
     if (!this.entries.includes(e)) return;
     e.peek = got;
     this._changed();
+  },
+
+  /**
+   * The boxes were switched: every link still waiting takes them as they are
+   * now, and so do the batches of this computer not past that step yet
+   * (ImportPanel.followAuto).
+   */
+  followAuto(auto) {
+    for (const e of this.entries) e.auto = { ...auto };
+    ImportPanel.followAuto(auto);
   },
 
   /** Its Cancel: out of the queue, its reading stopped. */
