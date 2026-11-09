@@ -758,6 +758,57 @@ test('a batch asked to finish by itself saves every song as it came, into a play
   });
 });
 
+test('a list read for an app that chooses its songs waits with its checklist, holds no one up, and downloads only the songs ticked', needsFfmpeg, async () => {
+  await withServer(async ({ base }) => {
+    const hello = (await api(base, 'GET', '/api/hello')).json;
+    assert.ok(hello.features.includes('downloadReview'));
+    const list = (await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/list/3?ids=c&name=Pick%20me', kind: 'list', queue: true, review: true })).json.batch;
+    // Named at once by its quick read, though it is read now.
+    const named = await waitFor(async () => {
+      const got = await queueOf(base);
+      const b = got.batches.find((x) => x.id === list.id);
+      return b && b.peek && b.peek.name && b;
+    }, 'its quick read');
+    assert.equal(named.peek.name, 'Pick me');
+    const review = await waitFor(async () => {
+      const got = await queueOf(base);
+      const b = got.batches.find((x) => x.id === list.id);
+      return b && b.state === 'review' && b;
+    }, 'its checklist');
+    assert.equal(review.items.length, 3);
+    assert.ok(review.items.every((it) => it.state === 'queued' && it.status === 'ok'));
+    // Nothing downloads meanwhile, and the next one is not held up.
+    const next = (await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/list/2?ids=n&name=Next', kind: 'list', queue: true })).json.batch;
+    const nextDone = await waitFor(async () => {
+      const got = await queueOf(base);
+      const b = got.batches.find((x) => x.id === next.id);
+      return b && b.state === 'ready' && b.items.every((it) => it.state === 'ready') && got;
+    }, 'the next batch downloaded', 60000);
+    assert.equal(nextDone.batches.find((x) => x.id === list.id).state, 'review');
+    // Nothing ticked is refused; the songs ticked download, the others go.
+    assert.equal((await api(base, 'POST', `/api/downloads/${list.id}/choose`, { indexes: [] })).status, 400);
+    const chosen = (await api(base, 'POST', `/api/downloads/${list.id}/choose`, { indexes: [0, 2] })).json.batch;
+    assert.equal(chosen.state, 'ready');
+    assert.deepEqual(chosen.items.map((it) => it.index), [0, 2]);
+    assert.ok(chosen.items.every((it) => it.status === undefined && it.match === undefined));
+    assert.equal((await api(base, 'POST', `/api/downloads/${list.id}/choose`, { indexes: [1] })).status, 409);
+    const ready = await waitFor(async () => {
+      const got = await queueOf(base);
+      const b = got.batches.find((x) => x.id === list.id);
+      return b && b.items.every((it) => it.state === 'ready') && b;
+    }, 'the songs ticked downloaded', 60000);
+    assert.deepEqual(ready.items.map((it) => it.index), [0, 2]);
+    // An app that auto-accepts never gets a checklist.
+    const auto = (await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/list/2?ids=a&name=Auto', kind: 'list', queue: true, review: true, auto: { complete: true } })).json.batch;
+    const autoReady = await waitFor(async () => {
+      const got = await queueOf(base);
+      const b = got.batches.find((x) => x.id === auto.id);
+      return b && b.state === 'ready' && b;
+    }, 'the auto-accepted list read');
+    assert.equal(autoReady.items.length, 2);
+  });
+});
+
 test('a batch kept by a server from before the queue is moved into a folder of its own and stays usable', needsFfmpeg, async () => {
   const d = dirs();
   let { server, base } = await start(d);

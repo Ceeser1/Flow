@@ -95,11 +95,16 @@
 //                                      ones: id, own, profileName, name, count, url,
 //                                      state, place), done (what its batches that
 //                                      finished by themselves did lately) }
-//   POST   /api/downloads { url, kind, options, queue, auto }   a new batch: { batch };
+//   POST   /api/downloads { url, kind, options, queue, auto, review }   a new batch: { batch };
 //                                      409 with one already unless queue: true;
 //                                      auto: { complete, finish } (finishes by itself)
 //   DELETE /api/downloads              cancel the whole batch (the oldest)
 //   DELETE /api/downloads/:id          cancel that one (the profile's only)
+//   POST   /api/downloads/:id/choose { indexes }   a list read for an app that
+//                                      chooses its songs (POST with review: true,
+//                                      feature "downloadReview", 4.4.1) waits as
+//                                      state 'review' (its items with status and
+//                                      match); the songs ticked: { batch }
 //   .../api/downloads/:id/items/:i/... as below, for that batch
 //   POST   /api/downloads/check { url }   a playlist's Update (feature "downloadCheck"):
 //                                      its link read, nothing downloaded: { listing }; the
@@ -952,7 +957,7 @@ function createHttpServer({
       // From home at level 3 and 4 no password is asked for, so none is announced.
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
-      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck', 'downloadQueue'] : []), ...(live ? ['sessions'] : []),
+      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck', 'downloadQueue', 'downloadReview'] : []), ...(live ? ['sessions'] : []),
         ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics', 'ownLyrics', 'lyricsSync'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
@@ -1220,6 +1225,11 @@ function createHttpServer({
     if (is('POST', /^\/api\/downloads\/search$/)) {
       const body = await readJsonBody(req);
       return sendJson(res, 200, await downloads.search(profileId, body));
+    }
+    const picked = /^\/api\/downloads\/([0-9a-f]{12})\/choose$/.exec(p);
+    if (picked && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      return sendJson(res, 200, { batch: downloads.choose(profileId, picked[1], body) });
     }
     const one = /^\/api\/downloads\/([0-9a-f]{12})$/.exec(p);
     if (one && req.method === 'DELETE') {

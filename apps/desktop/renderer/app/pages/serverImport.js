@@ -74,7 +74,8 @@ const ServerImport = {
 
   /** The server downloads something now (anyone's): a link given to it waits for its turn. */
   get downloading() {
-    const coming = (b) => b.state === 'queued' || b.state === 'listing' || (b.items || []).some((x) => ['queued', 'downloading', 'converting'].includes(x.state));
+    // A checklist waiting for its choice (review) holds no one up on the server.
+    const coming = (b) => b.state === 'queued' || b.state === 'listing' || (b.state !== 'review' && (b.items || []).some((x) => ['queued', 'downloading', 'converting'].includes(x.state)));
     return this.rows.length > 0 || this.mine.some(coming) || ImportPanel.serverComing;
   },
 
@@ -128,6 +129,18 @@ const ServerImport = {
       this.poll();
       return r;
     });
+  },
+
+  /**
+   * The songs ticked in the checklist of batch `id`, read by the server and
+   * waiting in review (4.4.1): it downloads them at their turn. Resolves the batch.
+   */
+  async choose(id, indexes) {
+    this.touch();
+    const batch = await window.flow.serverDownloads('choose', { batchId: id, indexes });
+    this.touch();
+    this.poll();
+    return batch;
   },
 
   /** Something was done to a batch here: answers that left before it are out of date. */
@@ -260,7 +273,9 @@ const ServerImport = {
     const waited = this.queues && this.downloading;
     let batch;
     try {
-      const queued = this.queues ? { queue: true, auto: AddPage.autoNow() } : {};
+      // review: without "Auto-accept songs lookup" a list read waits for its checklist (4.4.1).
+      const auto = AddPage.autoNow();
+      const queued = this.queues ? { queue: true, auto, review: !auto.complete } : {};
       batch = await window.flow.serverDownloads('create', { ...args, options: AddPage.downloadOptions(), ...queued });
     } catch (err) {
       AddPage._showError(err.message);

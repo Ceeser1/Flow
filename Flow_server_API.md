@@ -747,16 +747,16 @@ another has the turn (being read, or with songs still waiting to download)
 and starts once that one's last song has started. A batch whose songs have
 all come waits for its client's finish without holding up the others.
 `batch.place` is its place in the queue (1: next, 0: not waiting) and
-`batch.peek` its name and song count, read at once while it waits:
-`{ name, count, single, sourceTotal }`, or `{ error }` (the whole read is
-still its turn's). `GET ?queue=1` adds `batches` (the profile's own, oldest
+`batch.peek` its name and song count, read at once (also for a batch read
+right away, while its whole read goes on): `{ name, count, single,
+sourceTotal }`, or `{ error }` (the whole read is still its turn's). `GET ?queue=1` adds `batches` (the profile's own, oldest
 first), `queue` (every profile's batches still waiting or downloading, in
 their order: `{ id, own, profileName, name, count, url, single, state
 ("queued", "listing" or "downloading"), place, createdAt }`; only `own` ones
 can be cancelled or looked into) and `done`. A client from before the queue
 sees a `queued` batch as `listing`, with "Waiting for its turn" as its
-progress. `auto: { complete, finish }` (a client's "Auto-complete
-confirmations" and "Automate 'Finish All'"; `finish` only with `complete`):
+progress. `auto: { complete, finish }` (a client's "Auto-accept songs
+lookup (Download all)" and "Automate 'Finish all'"; `finish` only with `complete`):
 with `complete` a single song the library has already is skipped; with
 `finish` the batch saves every song as it came once all have come (untrimmed,
 the names read), into a playlist named after the list (the profile's own of
@@ -764,6 +764,20 @@ that name, if it has one; the list's songs the library has go in too), a
 single song into All Songs only, and ends. `done` is what such batches did in
 the last 10 minutes: `[{ id, name, url, single, at, saved, added, failed:
 [{ title, reason }], playlistId, skipped?, existing? }]`.
+
+**Choosing the songs** (only with `downloadReview` in `/api/hello`, 4.4.1):
+a new batch with `review: true` (a client's "Auto-accept songs lookup"
+unticked; ignored with `auto.complete`, for a single song and for `items`)
+is `review` once its list is read, instead of `ready`: nothing downloads
+yet, and like a batch waiting for its finish it holds no one up. Its items
+then carry `status` (`"ok"`, `"notfound"` or `"unavailable"`) and `match`
+(the upload a Spotify, Deezer or Amazon Music song was matched to: `{ id,
+url, site, title, channel, duration, quality }`, or null), for the client's
+checklist. `POST /api/downloads/:id/choose { indexes }` sends the songs
+ticked (`queued` ones to download, `library` ones to add to the playlist):
+the others leave the batch, which is `ready` and downloads them at their
+turn (`{ batch }`; 400 with none of its songs, 409 when it is not in
+review). Cancelling it is `DELETE /api/downloads/:id` as for any batch.
 
 **Several links at once:** `url` may hold any number of links separated by
 commas (`"https://open.spotify.com/album/a, https://www.youtube.com/playlist?list=b"`;

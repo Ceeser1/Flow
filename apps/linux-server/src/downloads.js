@@ -16,8 +16,15 @@
 // songs downloaded while the next ones wait ('queued'); the next one's turn
 // comes once the one before has no song left waiting to download. A batch
 // whose songs are all downloaded waits for its app's Finish All without
-// holding up the others. A queued link's name and song count are read at
-// once (listing.peek) for the apps' queue lines; the whole read is its turn.
+// holding up the others. A link's name and song count are read at once
+// (listing.peek) for the apps' queue lines and its panel while the whole
+// read (its turn) goes on.
+//
+// A list read for an app that asked to choose its songs (review: the app's
+// "Auto-accept songs lookup" unticked, 4.4.1) waits as 'review' with its
+// checklist until the app sends the songs ticked (choose); the ones not
+// ticked go. Like a batch waiting for Finish All it holds no one up: its
+// owner may be away. Its songs download once chosen, in the order of age.
 // A batch asked to finish by itself (auto.finish: the app's "Automate
 // 'Finish All'") saves every song as it came once all are downloaded, into a
 // playlist named after the list (merged into one of the profile's of that
@@ -29,6 +36,7 @@
 //   listing      the link is read in the background (a Spotify, Deezer or
 //                Amazon Music list is looked up on YouTube, which takes a
 //                while); an app polls.
+//   review       read, waiting for the app's choice of songs (4.4.1).
 //   ready        the list is known. Its songs download one after another:
 //                queued -> downloading -> converting -> ready (or failed).
 //                Songs the library has already are 'library', not downloaded.
@@ -469,6 +477,20 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     return typeof item.listUrl === 'string' ? item.listUrl : batch.source.url;
   }
 
+  /** The upload a list's song was matched to, as the apps' checklist shows it. */
+  function matchOf(m) {
+    if (!m || typeof m !== 'object') return null;
+    return {
+      id: cleanText(m.id, 100),
+      url: cleanText(m.url, 2000),
+      site: cleanText(m.site, 40),
+      title: cleanText(m.title, 200),
+      channel: cleanText(m.channel, 200),
+      duration: Number(m.duration) || 0,
+      quality: cleanText(m.quality, 20),
+    };
+  }
+
   function itemOf(it, i) {
     let state = 'queued';
     let error = '';
@@ -496,6 +518,10 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       // Of several links read as one (listing.listMany): the link it was found
       // in, the playlist it came from once saved. Without it, the batch's link.
       ...(typeof it.listUrl === 'string' ? { listUrl: it.listUrl } : {}),
+      // For the checklist of a batch in review: the list's word on the song
+      // and the upload it was matched to (dropped once the songs are chosen).
+      status: ['ok', 'notfound', 'unavailable'].includes(it.status) ? it.status : 'ok',
+      match: matchOf(it.match),
       state,
       error,
       file: '',
@@ -555,11 +581,14 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         }
       }
       if (!isAlive(batch)) return;
-      Object.assign(batch, { state: 'ready', items, truncated, sourceTotal, error: '' });
+      // A list for an app that chooses its songs waits for its choice (choose).
+      const state = batch.review && !batch.single ? 'review' : 'ready';
+      if (state === 'ready') for (const item of items) delete item.match;
+      Object.assign(batch, { state, items, truncated, sourceTotal, error: '' });
       if (links) batch.links = links;
       batch.source.name = cleanText(name, 200) || 'Download';
       batch.source.kind = kind;
-      log(`Download batch "${batch.source.name}": ${items.length} ${items.length === 1 ? 'song' : 'songs'}`);
+      log(`Download batch "${batch.source.name}": ${items.length} ${items.length === 1 ? 'song' : 'songs'}${state === 'review' ? ', waiting for its songs to be chosen' : ''}`);
     } catch (err) {
       if (!isAlive(batch) || group.cancelled) return;
       batch.state = 'failed';
@@ -763,6 +792,8 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         meta: it.meta,
         artistFromChannel: !!it.artistFromChannel,
         existing: it.existing || null,
+        // The checklist's (4.4.1, review only).
+        ...(batch.state === 'review' ? { status: it.status || 'ok', match: it.match || null } : {}),
         summary: it.summary || '',
         cover: it.cover || '',
         progress: progress.get(`${batch.id}/${it.index}`) || null,
@@ -854,10 +885,12 @@ function createDownloads({ config, library, tools, log = () => {} }) {
    * queue: true (an app with the queue, 4.4): one more batch in the queue
    * even with others of the profile; without it, as before, 409 with one.
    * auto: { complete, finish } (the app's "Auto-accept songs lookup" and
-   * "Automate 'Finish All'"), see settle.
+   * "Automate 'Finish All'"), see settle. review: true (an app with the
+   * checklist, 4.4.1, "Auto-accept songs lookup" unticked): a list waits for
+   * its songs to be chosen (choose) once read.
    */
   function create(profileId, {
-    url, kind, options, cookies, items, name, source, queue = false, auto = null,
+    url, kind, options, cookies, items, name, source, queue = false, auto = null, review = false,
   } = {}) {
     if (config.get().downloads === false) throw new DownloadError(501, 'Downloads are turned off on this server (flow-server --downloads turns them on).');
     if (!tools.canDownload()) throw new DownloadError(501, 'This server cannot download songs: it needs yt-dlp and ffmpeg.');
@@ -882,6 +915,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       state: 'queued',
       error: '',
       auto: how,
+      review: !!review && !how.complete,
       peek: null,
       single: kind === 'song' && !many,
       source: { url: link, name: '', kind: '' },
@@ -898,9 +932,33 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     save(batch);
     if (siteCookies) fs.writeFileSync(cookiesOf(batch), siteCookies, { mode: 0o600 });
     turn();
-    // Its line in the queue gets its name at once (being read now: its read says).
-    if (batch.state === 'queued') startPeek(batch);
+    // Its name and song count at once, for its line in the queue or, read now,
+    // its panel while the whole read (a Spotify list's look-up) goes on.
+    startPeek(batch);
     return publicBatch(batch, { legacy: !queue });
+  }
+
+  /**
+   * The songs ticked in the checklist of a batch in review (4.4.1): { indexes }
+   * of its songs to download and of the library's to add to its playlist;
+   * the others go. Its songs then download at their turn.
+   */
+  function choose(profileId, id, { indexes } = {}) {
+    const batch = requireBatch(profileId, id);
+    if (batch.state !== 'review') throw new DownloadError(409, 'The songs of this download are chosen already.');
+    const want = new Set((Array.isArray(indexes) ? indexes : []).map(Number).filter(Number.isInteger));
+    const items = batch.items.filter((it) => want.has(it.index) && (it.state === 'queued' || it.state === 'library'));
+    if (!items.length) throw new DownloadError(400, 'Pick at least one song to download.');
+    for (const it of items) delete it.match;
+    batch.items = items;
+    batch.state = 'ready';
+    batch.lastActivity = Date.now();
+    save(batch);
+    log(`Download batch "${batch.source.name}": ${items.length} ${items.length === 1 ? 'song' : 'songs'} chosen`);
+    pump();
+    settle(batch);
+    turn();
+    return publicBatch(batch);
   }
 
   /**
@@ -1301,6 +1359,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     available: () => config.get().downloads !== false && tools.canDownload(),
     get,
     create,
+    choose,
     check,
     search,
     cancel,

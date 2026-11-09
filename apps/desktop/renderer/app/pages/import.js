@@ -122,6 +122,9 @@ const ImportBatch = {
       _flushQueued: false,
       _chain: null,           // the "Finish this song" saves, one after another
       server: null,           // a download on the server: { id, single } of its batch
+      _peekName: '',          // a server's batch being read: the name and song count its quick read gave
+      _peekCount: 0,
+      _chosen: false,         // a server's checklist sent (4.4.1): its review is over
       retry: null,            // failed songs tried again: { indexes, sending, done, failedAgain }
       bulkInfo: { album: '', genre: '', subGenre: '' }, // given to every new song without one (_drawBulk)
       updating: null,         // a playlist's Update (playlistUpdate.js): { id, name, url } of the playlist the songs go into
@@ -522,9 +525,13 @@ const ImportBatch = {
     toast(T('common.downloadCancelled'), 'info');
   },
 
-  /** Cancel under the checklist: the batch goes. */
+  /** Cancel under the checklist: the batch goes (a server's checklist: there too). */
   close() {
     if (this.state === 'listing' || this.state === 'downloading' || this.state === 'saving') return;
+    if (this.server && this.state === 'review') {
+      ServerImport.touch();
+      ServerImport.cancelBatch(this.server.id).catch((err) => toast(err.message, 'error'));
+    }
     this._end();
   },
 
@@ -1036,13 +1043,16 @@ const ImportBatch = {
     }
     const kind = String(l.source || '').toLowerCase();
     const source = SOURCE_NAMES[kind] || l.source || T('common.playlist');
-    head.appendChild(h('span.import__badge', source));
+    // A server's batch whose site is not known yet: its Server tag says enough.
+    if (!(this.server && kind === 'server')) head.appendChild(h('span.import__badge', source));
     // Downloaded by the server: told apart from this computer's.
     if (this.server) head.appendChild(h('span.import__badge.import__badge--server', T('import.batch.onServer')));
     this._nameEl = h('span.import__name');
     head.appendChild(this._nameEl);
     this._drawName();
-    const count = this.state === 'review' ? l.items.length : this.included.length;
+    let count = this.state === 'review' ? l.items.length : this.included.length;
+    // A server's batch being read: the count its quick read gave.
+    if (this.state === 'listing' && this._peekCount) count = this._peekCount;
     head.appendChild(h('span.import-batch__count', Util.plural(count, 'song')));
     const url = this._url();
     if (url) head.appendChild(h('span.import-batch__url', { title: url }, url));
@@ -1535,6 +1545,10 @@ const ImportBatch = {
       return it.status === 'ok' && (everything || this.checked.has(it.index));
     });
     if (!chosen.length) return;
+    if (this.server) {
+      await this._chooseOnServer(chosen);
+      return;
+    }
     const source = { url: l.sourceUrl, kind: String(l.source || '').toLowerCase() };
     if (l.fromServer) {
       // An Update read by the server: the songs ticked go there as a batch
@@ -1977,8 +1991,15 @@ const ImportBatch = {
   /** The server's batch as it is now. Frames follow their songs. */
   syncServer(batch) {
     if (this.ended || !batch) return;
+    // Read, waiting for its songs to be chosen (4.4.1): its checklist, once.
+    if (batch.state === 'review') {
+      if (this.state !== 'review' && !this._chosen) this._serverReview(batch);
+      return;
+    }
     if (this.state === 'listing' && batch.state === 'ready') {
+      const keep = this._keptName();
       this._resetName(batch.source.name);
+      if (keep) this.name = keep;
       Object.assign(this.listing, {
         name: batch.source.name, source: batch.source.kind, sourceUrl: batch.source.url, truncated: batch.truncated, sourceTotal: batch.sourceTotal || 0, links: batch.links || null,
       });
@@ -2004,6 +2025,66 @@ const ImportBatch = {
     this._drawName();
     this._drawFooter();
     ImportPanel._drawBadge();
+  },
+
+  /** A name given by hand while the list was read: kept over the one the read brings. */
+  _keptName() {
+    return this.name && this.name !== this._peekName ? this.name : '';
+  },
+
+  /**
+   * A server's batch read for a choice (review, 4.4.1): its songs as the
+   * checklist's, the same as a list read here (Download Selected, Download
+   * All, Cancel), with the songs ticked sent back (_chooseOnServer).
+   */
+  _serverReview(batch) {
+    const keep = this._keptName();
+    const items = batch.items.map((x) => ({
+      index: x.index,
+      title: x.title,
+      duration: x.duration,
+      url: x.url,
+      key: '',
+      meta: x.meta || null,
+      existing: x.state === 'library' && x.existing ? x.existing : null,
+      status: x.state === 'failed' ? (x.status && x.status !== 'ok' ? x.status : 'unavailable') : 'ok',
+      note: x.error || '',
+      match: x.match || null,
+    }));
+    this.server.single = !!batch.single;
+    this.included = [];
+    this._review({
+      ...this.listing,
+      local: false,
+      search: false,
+      name: batch.source.name,
+      source: batch.source.kind,
+      sourceUrl: batch.source.url,
+      truncated: batch.truncated,
+      sourceTotal: batch.sourceTotal || 0,
+      links: batch.links || null,
+      items,
+    });
+    if (keep) {
+      this.name = keep;
+      this._drawHead();
+    }
+  },
+
+  /** The songs ticked in a server's checklist go there; it downloads them at their turn. */
+  async _chooseOnServer(chosen) {
+    this._chosen = true;
+    let batch;
+    try {
+      batch = await ServerImport.choose(this.server.id, chosen.map((it) => it.index));
+    } catch (err) {
+      this._chosen = false;
+      toast(err.message, 'error');
+      return;
+    }
+    if (this.ended || !batch) return;
+    // Straight on to its frames, keeping the name and ticks of the checklist.
+    this.syncServer(batch);
   },
 
   /**
@@ -2082,6 +2163,15 @@ const ImportBatch = {
     }
     if (batch.state === 'listing' || batch.state === 'queued') {
       if (this.state !== 'listing') this._setState('listing');
+      // Its name and song count from the quick read, while the whole read goes on.
+      const peek = batch.peek && !batch.peek.error ? batch.peek : null;
+      if (peek && ((peek.name || '') !== this._peekName || (Number(peek.count) || 0) !== this._peekCount)) {
+        if (!this._keptName() && peek.name) this.name = peek.name;
+        this._peekName = peek.name || '';
+        this._peekCount = Number(peek.count) || 0;
+        if (this.listing && !this.listing.name) this.listing.name = this._peekName;
+        this._drawHead();
+      }
       this._progress({
         title: T('import.progress.readingLinkOnServer'),
         frac: batch.progress ? batch.progress.frac : null,

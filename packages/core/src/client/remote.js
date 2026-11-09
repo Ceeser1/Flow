@@ -350,7 +350,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -444,6 +444,8 @@ function createRemote(env) {
       downloadCheck: status.state === 'online' && conn.downloads && conn.downloadCheck,
       // It keeps several batches per profile, taking turns (4.4, the Server queue).
       downloadQueue: status.state === 'online' && conn.downloads && conn.downloadQueue,
+      // A list read waits for its songs to be chosen (4.4.1, the server's checklist).
+      downloadReview: status.state === 'online' && conn.downloads && conn.downloadReview,
       // The server cuts its songs' files (Edit's trim).
       trim: status.state === 'online' && conn.trim,
       // Connected through the Tailscale address (away from home).
@@ -964,6 +966,7 @@ function createRemote(env) {
         const search = Array.isArray(hello.features) && hello.features.includes('search');
         const downloadCheck = Array.isArray(hello.features) && hello.features.includes('downloadCheck');
         const downloadQueue = Array.isArray(hello.features) && hello.features.includes('downloadQueue');
+        const downloadReview = Array.isArray(hello.features) && hello.features.includes('downloadReview');
         const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
@@ -977,7 +980,7 @@ function createRemote(env) {
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -3572,7 +3575,8 @@ function createRemote(env) {
    * (4.4): queue resolves { batches, queue, done } (null where there is none
    * to ask); args.batchId names the batch the others are about (none: the
    * profile's oldest); create takes queue: true and auto ({ complete,
-   * finish }).
+   * finish }), and review: true (4.4.1, downloadReview) for a list that
+   * waits for its songs to be chosen: choose ({ batchId, indexes }).
    */
   async function serverDownloads(action, args = {}) {
     if ((action === 'get' || action === 'queue') && (!active() || status.state !== 'online' || !conn.downloads)) return null;
@@ -3594,6 +3598,8 @@ function createRemote(env) {
         const json = items ? { items, name, options, source: source || undefined } : { url, kind, options, cookies: cookies || undefined };
         // Queued behind what the server is doing, finishing by itself as asked.
         if (conn.downloadQueue && args.queue) Object.assign(json, { queue: true, auto: args.auto || undefined });
+        // Read, it waits for the songs ticked in the checklist (choose).
+        if (conn.downloadReview && args.review && !items) json.review = true;
         return (await call('/api/downloads', { method: 'POST', json })).batch;
       }
       // A playlist's Update: its link read on the server, nothing downloaded ({ url, cookies }).
@@ -3603,6 +3609,12 @@ function createRemote(env) {
         return (await call('/api/downloads/check', { method: 'POST', json, timeout: 15 * 60 * 1000 })).listing;
       }
       if (action === 'cancel') return (await call(`/api/downloads${batchId ? `/${batchId}` : ''}`, { method: 'DELETE' })).batch;
+      // The songs ticked in the checklist of a batch in review (4.4.1).
+      if (action === 'choose') {
+        if (!batchId || !conn.downloadReview) throw new Error(tr('connection.unknownDownloadAction', 'Unknown download action {action}.', { action }));
+        const indexes = (Array.isArray(args.indexes) ? args.indexes : []).map(Number).filter(Number.isInteger);
+        return (await call(`/api/downloads/${batchId}/choose`, { method: 'POST', json: { indexes } })).batch;
+      }
       // A song's name typed instead of a link: { query, artist, title, page, results }.
       if (action === 'search') {
         if (!conn.search) throw new Error(tr('connection.tooOld.songSearch', 'This Flow Server cannot search for songs by name yet: update it, or paste a link.'));
