@@ -123,3 +123,37 @@ test('a restore: the backup\'s names and lists, the files as they are now, songs
     songs: 4, back: 1, missing: 1, kept: 1,
   });
 });
+
+test('4.3.5: a backup is listed from the details beside it, and a big weekly one is packed apart', async () => {
+  const dir = tempDir();
+  try {
+    let songs = 3;
+    const store = backup.createBackupStore({
+      dir, kind: 'app', collect: () => ({ library: { songs: Array.from({ length: songs }, (_, i) => ({ id: `s${i}`, title: 'x'.repeat(200) })), playlists: [] } }),
+    });
+    const made = store.make('manual');
+    const file = path.join(dir, made.name);
+    assert.ok(fs.existsSync(`${file}.info`));
+    // The backup itself unreadable (same size): still listed from its details, so it was not read.
+    fs.writeFileSync(file, Buffer.alloc(fs.statSync(file).size, 1));
+    const again = backup.createBackupStore({ dir, kind: 'app', collect: () => ({}) });
+    assert.deepEqual(again.list().map((b) => [b.name, b.songs]), [[made.name, 3]]);
+    // A backup from before (no details): read once, its details written beside it.
+    fs.rmSync(dir, { recursive: true, force: true });
+    const first = store.make('manual');
+    fs.rmSync(path.join(dir, `${first.name}.info`));
+    assert.equal(backup.createBackupStore({ dir, kind: 'app', collect: () => ({}) }).list()[0].songs, 3);
+    assert.ok(fs.existsSync(path.join(dir, `${first.name}.info`)));
+    // Big: weekly() answers at once and the backup comes once packed.
+    fs.rmSync(dir, { recursive: true, force: true });
+    songs = 30000;
+    assert.equal(store.weekly(), null);
+    assert.equal(store.weekly(), null, 'not twice while packing');
+    for (let i = 0; i < 100 && !store.list().length; i += 1) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(store.list().length, 1);
+    assert.equal(store.list()[0].songs, 30000);
+    assert.equal(store.read(store.list()[0].name).library.songs.length, 30000);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

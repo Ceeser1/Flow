@@ -232,7 +232,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   }
 
   const songCopy = (s) => Object.fromEntries(SONG_FIELDS.map((k) => [k, s[k]]));
-  const sameSong = (a, s) => SONG_FIELDS.every((k) => a[k] === s[k]);
+  // A function made for the fields (4.3.5: 100 000 songs after every change).
+  // eslint-disable-next-line no-new-func
+  const sameSong = new Function('a', 's', `return ${SONG_FIELDS.map((k) => `a[${JSON.stringify(k)}] === s[${JSON.stringify(k)}]`).join(' && ')};`);
   const listCopy = (owner, p) => ({
     owner,
     name: p.name,
@@ -243,21 +245,25 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     rules: p.rules ? JSON.stringify(p.rules) : '',
     entries: p.entries.map((e) => [e.songId, e.addedAt]),
   });
-  function sameList(a, b) {
-    if (a.owner !== b.owner || a.name !== b.name || a.createdAt !== b.createdAt || a.shared !== b.shared || a.favourites !== b.favourites
-      || a.source !== b.source || a.rules !== b.rules || a.entries.length !== b.entries.length) return false;
+  /** What the apps were told of a list (a listCopy) is still `p` of `owner`, compared as it is (no copy made, 4.3.5). */
+  function sameList(a, owner, p) {
+    if (a.owner !== owner || a.name !== p.name || a.createdAt !== p.createdAt || a.shared !== !!p.shared || a.favourites !== !!p.favourites
+      || a.source !== (p.source ? `${p.source.url}\n${p.source.kind}` : '') || a.entries.length !== p.entries.length) return false;
     for (let i = 0; i < a.entries.length; i += 1) {
-      if (a.entries[i][0] !== b.entries[i][0] || a.entries[i][1] !== b.entries[i][1]) return false;
+      const e = p.entries[i];
+      if (a.entries[i][0] !== e.songId || a.entries[i][1] !== e.addedAt) return false;
     }
-    return true;
+    return a.rules === (p.rules ? JSON.stringify(p.rules) : '');
   }
 
   /**
    * Compares the library to what the apps were told: what differs is stamped
-   * with `rev` (null: only remembered, at the start). Answers whether anything did.
+   * with `rev` (null: only remembered, at the start). Answers whether anything
+   * did, and the ids of the songs gone ({ changed, gone }).
    */
   function track(rev) {
     let changed = false;
+    const goneSongs = [];
     const now = Date.now();
     const stamp = (map, id) => {
       changed = true;
@@ -271,8 +277,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       known.songs.set(s.id, songCopy(s));
       stamp(state.stamps.s, s.id);
     }
-    for (const id of [...known.songs.keys()]) {
+    for (const id of known.songs.size === ids.size ? [] : [...known.songs.keys()]) {
       if (ids.has(id)) continue;
+      goneSongs.push(id);
       known.songs.delete(id);
       delete state.stamps.s[id];
       changed = true;
@@ -281,9 +288,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     const lists = new Set();
     for (const [owner, p] of everyList()) {
       lists.add(p.id);
-      const copy = listCopy(owner, p);
       const was = known.lists.get(p.id);
-      if (was && sameList(was, copy)) continue;
+      if (was && sameList(was, owner, p)) continue;
+      const copy = listCopy(owner, p);
       // Given to another owner: gone from the one it was with.
       if (was && was.owner !== owner && rev !== null) state.tombs.p.push([p.id, rev, now, was.owner]);
       known.lists.set(p.id, copy);
@@ -315,7 +322,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       changed = true;
       if (rev !== null) state.stamps.n = rev;
     }
-    return changed;
+    return { changed, gone: goneSongs };
   }
   track(null);
 
@@ -325,16 +332,12 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
    * its cover along.
    */
   function mutate(fn) {
-    const before = data.songs.filter((s) => s.cover && s.cover !== cover.NO_COVER).map((s) => s.id);
     const result = fn(data);
     prof.prune(data, profiles);
-    const changed = track(state.rev + 1);
+    const { changed, gone } = track(state.rev + 1);
     if (changed) state.rev += 1;
     save();
-    if (before.length) {
-      const now = new Set(data.songs.map((s) => s.id));
-      for (const id of before) if (!now.has(id)) covers.remove(id);
-    }
+    for (const id of gone) covers.remove(id);
     if (changed) for (const l of listeners) l(state.rev);
     return result;
   }
@@ -409,7 +412,14 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
 
   // ---- files ----
 
+  // Most files are under the music folder as written: their path cut, without
+  // path.relative's work (4.3.5: 100 000 songs in the whole library's answer).
+  const under = musicDir ? path.resolve(musicDir) + path.sep : null;
   function relative(file) {
+    if (under && typeof file === 'string' && file.startsWith(under) && !file.includes(`${path.sep}..`)) {
+      const cut = file.slice(under.length);
+      return path.sep === '/' ? cut : cut.split(path.sep).join('/');
+    }
     const rel = path.relative(musicDir, file);
     return rel.startsWith('..') ? path.basename(file) : rel.split(path.sep).join('/');
   }
@@ -1182,7 +1192,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     const ignored = new Set(data.ignoredFiles);
     const fresh = [];
     let unsettled = 0;
-    for (const file of listAudioFiles(musicDir)) {
+    const listing = listAudioFiles(musicDir);
+    for (const file of listing) {
       if (known.has(file) || ignored.has(file.toLowerCase())) continue;
       try {
         const st = fs.statSync(file);
@@ -1218,7 +1229,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     }
     // Gone: its file missing while the music folder is there (a song in a
     // subfolder deleted by hand too).
-    const gone = data.songs.filter((s) => !fs.existsSync(s.file));
+    // Only those the listing lacks are looked for (100 000 songs: not a look at each file, 4.3.5).
+    const listed = new Set(listing);
+    const gone = data.songs.filter((s) => !listed.has(s.file) && !fs.existsSync(s.file));
     const moves = [];
     const left = [...gone];
     for (const s of [...fresh]) {

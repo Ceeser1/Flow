@@ -550,7 +550,10 @@ each. A backup holds `library.json` (the songs' names, album, genre, Info,
 trims and who added them, the playlists, favourites, follows and listening
 stats, Statistics included) and the profiles part of `server.json` (names,
 PIN hashes, admin flags): never the songs' files, the covers, the trash, the
-password, the level or a device's token.
+password, the level or a device's token. Beside each backup a small
+`<name>.info` holds its details (when, why, how many songs, playlists and
+profiles; 4.3.5), so listing the backups reads none of them whole; a big
+library's weekly backup is packed while the server goes on answering.
 
 A restore puts the backup's song names, playlists, favourites, follows and
 stats back, each song keeping its file as it is now (trimmed, renamed);

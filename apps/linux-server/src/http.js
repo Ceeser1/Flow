@@ -210,16 +210,32 @@ function cors(res) {
 // Answers larger than this go compressed to an app that takes gzip (4.3).
 const GZIP_FROM = 1024;
 
+// Answers larger than this are packed beside the server's work (4.3.5: the
+// whole library of 100 000 songs, 40 MB, took a third of a second in one go).
+const GZIP_APART = 256 * 1024;
+
 function sendJson(res, status, value) {
-  let body = Buffer.from(JSON.stringify(value));
+  const body = Buffer.from(JSON.stringify(value));
   const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', Vary: 'Accept-Encoding' };
-  if (body.length > GZIP_FROM && /\bgzip\b/.test(String((res.req && res.req.headers['accept-encoding']) || ''))) {
-    body = zlib.gzipSync(body, { level: 6 });
-    headers['Content-Encoding'] = 'gzip';
+  const send = (out, gzipped) => {
+    if (gzipped) headers['Content-Encoding'] = 'gzip';
+    headers['Content-Length'] = out.length;
+    res.writeHead(status, headers);
+    res.end(out);
+  };
+  if (body.length <= GZIP_FROM || !/\bgzip\b/.test(String((res.req && res.req.headers['accept-encoding']) || ''))) {
+    send(body, false);
+    return;
   }
-  headers['Content-Length'] = body.length;
-  res.writeHead(status, headers);
-  res.end(body);
+  if (body.length < GZIP_APART) {
+    send(zlib.gzipSync(body, { level: 6 }), true);
+    return;
+  }
+  zlib.gzip(body, { level: 6 }, (err, packed) => {
+    if (res.destroyed) return;
+    if (err) send(body, false);
+    else send(packed, true);
+  });
 }
 
 function readJsonBody(req) {
