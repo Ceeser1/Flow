@@ -12,7 +12,9 @@
 // source), with "Keep songs removed from the playlist" and "Add new songs to
 // the playlist", both ticked. Continue takes the removed ones out of the
 // playlist when the first is unticked, and with the second opens Add Songs
-// with the list read (not read a second time) as its checklist.
+// with the list read (not read a second time) as its checklist. Continue
+// says what the ticks will do: "Continue (Adding: X, Removing: Y)", only
+// the part that applies, or "Continue (no change)" (it then just closes).
 
 const PlaylistUpdate = {
   checking: new Set(), // ids of the playlists whose link is being read
@@ -118,7 +120,7 @@ const PlaylistUpdate = {
       buttons: [
         { label: T('playlistUpdate.cancel') },
         {
-          label: T('playlistUpdate.continue'),
+          label: T('playlistUpdate.continue.none'),
           kind: 'primary',
           onClick: () => {
             go = { keep: keep.checked, add: add.checked };
@@ -130,10 +132,16 @@ const PlaylistUpdate = {
         if (go) this._continue(list, listing, server, changes, go);
       },
     });
-    // Continue only while it would do something.
+    // Continue says what the ticks will change.
     const cont = handle.el.querySelector('.modal__footer .btn--primary');
     const draw = () => {
-      cont.disabled = (keep.checked || !removed.length) && (!add.checked || !added.length);
+      const adding = add.checked ? added.length : 0;
+      const removing = keep.checked ? 0 : removed.length;
+      let text = 'playlistUpdate.continue.none';
+      if (adding && removing) text = 'playlistUpdate.continue.both';
+      else if (adding) text = 'playlistUpdate.continue.adding';
+      else if (removing) text = 'playlistUpdate.continue.removing';
+      cont.textContent = T(text, { added: adding, removed: removing });
     };
     keep.addEventListener('change', draw);
     add.addEventListener('change', draw);

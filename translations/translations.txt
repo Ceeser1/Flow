@@ -6069,9 +6069,22 @@ playlistUpdate.cancel
   en: Cancel Playlist Update
   de: Playlist-Update abbrechen
 
-playlistUpdate.continue
-  en: Continue
-  de: Weiter
+# Continue says what the ticks above it will change.
+playlistUpdate.continue.both
+  en: Continue (Adding: {added}, Removing: {removed})
+  de: Weiter (Hinzufügen: {added}, Entfernen: {removed})
+
+playlistUpdate.continue.adding
+  en: Continue (Adding: {added})
+  de: Weiter (Hinzufügen: {added})
+
+playlistUpdate.continue.removing
+  en: Continue (Removing: {removed})
+  de: Weiter (Entfernen: {removed})
+
+playlistUpdate.continue.none
+  en: Continue (no change)
+  de: Weiter (keine Änderung)
 
 playlistUpdate.removed
   en: {songs} removed from "{playlist}".
