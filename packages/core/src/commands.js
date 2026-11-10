@@ -94,10 +94,12 @@ const TYPES = {
       return {};
     },
   },
+  // A playlist of its own, or (4.5.1) one it follows; one no longer followed is skipped.
   setPlaylistGroup: {
     keys: (c) => [`p:${c.playlistId}:group`],
     run(d, c) {
-      if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
+      const id = str(c.playlistId);
+      if (!model.playlistById(d, id) && !(d.follows || []).includes(id)) return { skipped: 'gone' };
       const gid = str(c.groupId);
       if (gid && !model.groupById(d, gid)) return { skipped: 'gone' };
       model.setPlaylistGroup(d, str(c.playlistId), gid);

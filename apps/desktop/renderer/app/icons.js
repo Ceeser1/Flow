@@ -16,6 +16,8 @@ const Icons = (() => {
     download: img('download'),
     add: img('add'),
     share: img('share'),
+    // A playlist you follow (4.5.1), green (style.css).
+    followed: img('followed'),
     shuffle: img('shuffle'),
     playlists: svg('<path d="M4 6h12M4 11h12M4 16h7"/><circle cx="17" cy="17" r="3"/><path d="M20 17V6h2"/>'),
     // A folder: a playlist group (4.5).

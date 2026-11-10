@@ -248,6 +248,8 @@ function prune(data, profiles) {
   for (const p of Object.values(profiles)) for (const l of p.playlists) lists.add(l.id);
   data.follows = (data.follows || []).filter((id) => lists.has(id));
   for (const p of Object.values(profiles)) p.follows = (p.follows || []).filter((id) => lists.has(id));
+  // And out of the groups it was put into (4.5.1).
+  for (const owner of [data, ...Object.values(profiles)]) model.keepFollowedInGroups(owner.groups, owner.follows);
   // Time listened to a list goes when the list is gone, or is another
   // profile's and no longer followed (All Songs, Favourites and the Listen
   // behaviour lists are always there).
@@ -275,7 +277,10 @@ function addProfile(data, profiles, profileId, newId = randomId, now = Date.now(
   const groups = (data.groups || []).map((g) => {
     const id = newId();
     groupIds.set(g.id, id);
-    return { ...g, id };
+    // Without the Default's follows (4.5.1): a new profile follows nothing.
+    const copy = { ...g, id };
+    delete copy.followed;
+    return copy;
   });
   const playlists = data.playlists.filter((p) => !p.favourites).map((p) => {
     const copy = {

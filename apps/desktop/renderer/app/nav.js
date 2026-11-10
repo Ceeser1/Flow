@@ -30,6 +30,10 @@ const Nav = {
     this._allPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
     $('menuAllSongs').appendChild(this._allPlaying);
     this._entry('menuPlaylists', T('common.playlists'), 'playlistsMenuOpen');
+    this._entry('menuGroups', T('common.playlistGroups'), 'groupsMenuOpen', { icon: Icons.folder });
+    // The speaker while one of the groups' lists plays and they are folded away.
+    this._groupsPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
+    $('menuGroups').appendChild(this._groupsPlaying);
     this._entry('menuFollowed', T('common.followedPlaylists'), 'followedMenuOpen');
     this._entry('menuSessions', T('common.activeJams'), 'sessionsMenuOpen', { icon: Icons.sessions });
     $('menuSessions').appendChild(h('span.menu__badge', { id: 'menuSessionsBadge', hidden: true }));
@@ -44,12 +48,17 @@ const Nav = {
     $('menuAdd').onclick = () => this.show('add');
     $('menuAllSongs').onclick = () => this.openPlaylist('all');
     $('menuPlaylists').onclick = () => this.show('playlists');
+    // Playlist Groups: the Playlists page at its groups.
+    $('menuGroups').onclick = () => this.show('playlists', { at: 'groups' });
     $('menuFollowed').onclick = () => this.show('followed');
     $('menuSessions').onclick = () => this.show('sessions');
     $('menuTrend').onclick = () => this.show('trend');
     // A playlist dragged anywhere on the Playlists entry or its list but a group leaves its group (4.5).
     Groups.dropTarget($('menuPlaylistList'), '');
     Groups.dropTarget($('menuPlaylists'), '');
+    // And on Followed Playlists (4.5.1), as a followed one leaves its group.
+    Groups.dropTarget($('menuFollowedList'), '');
+    Groups.dropTarget($('menuFollowed'), '');
     Store.onLibrary(() => this.drawMenu());
     Store.onServer(() => this.drawMenu());
     Player.onChange(() => this.drawMenu());
@@ -165,9 +174,11 @@ const Nav = {
     $('menuSessions').classList.toggle('menu__item--active', this.page === 'sessions');
     $('menuTrend').classList.toggle('menu__item--active', this.page === 'trend');
     const playlistsOpen = this._open('playlistsMenuOpen');
+    const groupsOpen = this._open('groupsMenuOpen');
     const followedOpen = this._open('followedMenuOpen');
     const trendOpen = this._open('trendMenuOpen');
     this._drawArrow('playlistsMenuOpen', playlistsOpen, T('nav.section.what.playlists'));
+    this._drawArrow('groupsMenuOpen', groupsOpen, T('nav.section.what.playlistGroups'));
     this._drawArrow('followedMenuOpen', followedOpen, T('nav.section.what.followedPlaylists'));
     this._drawArrow('trendMenuOpen', trendOpen, T('nav.section.what.listeningTrend'));
     $('menuPlaylistList').hidden = !playlistsOpen;
@@ -183,8 +194,8 @@ const Nav = {
         title: p.name,
         onclick: () => this.openPlaylist(p.id),
       },
-      // Downloaded Songs has its icon before its name.
-      p.isDevice ? h('span.menu__sub-icon', { html: listIcon(p) }) : null,
+      // Downloaded Songs has its icon before its name, a followed playlist its green one (4.5.1).
+      p.isDevice || p.isShared ? h('span.menu__sub-icon', { html: listIcon(p) }) : null,
       h('span.menu__sub-name', p.menuName || p.name),
       playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null);
     };
@@ -203,12 +214,7 @@ const Nav = {
     const fromPlaying = froms.some((p) => p.id === Player.contextId);
     this._allPlaying.hidden = !Player.isPlaying || !(Player.contextId === 'all' || (fromPlaying && !allOpen));
 
-    // Favourites, the single playlists, then each playlist group (4.5) as a
-    // folder: a click opens or closes it (remembered per device, as on the
-    // Playlists page). Closed, it shows the speaker while one of its lists
-    // plays and its bar while one of them is open. On the computer a
-    // playlist can be dragged onto a folder, or onto the single ones to
-    // leave its group (groups.js).
+    // Playlists: Favourites, then the playlists in no group.
     const list = clear($('menuPlaylistList'));
     list.appendChild(item(Store.favouritesPlaylist()));
     for (const p of Store.singlePlaylists()) {
@@ -216,7 +222,22 @@ const Nav = {
       Groups.draggable(el, p);
       list.appendChild(el);
     }
-    for (const g of Store.groups()) {
+
+    // Playlist Groups (4.5; their own entry since 4.5.1): each group as a
+    // folder, a click opens or closes it (remembered per device, as on the
+    // Playlists page). Closed, it shows the speaker while one of its lists
+    // plays and its bar while one of them is open. Followed playlists can
+    // be in them too. On the computer a playlist can be dragged onto a
+    // folder, or onto the single ones to leave its group (groups.js).
+    const groups = Store.groups();
+    $('menuGroups').hidden = !Store.canGroup();
+    this._arrows.groupsMenuOpen.hidden = !groups.length;
+    $('menuGroupsList').hidden = !Store.canGroup() || !groups.length || !groupsOpen;
+    const groupList = clear($('menuGroupsList'));
+    const inGroups = new Set(groups.flatMap((g) => Store.playlistsInGroup(g.id).map((p) => p.id)));
+    this._groupsPlaying.hidden = groupsOpen || !Player.isPlaying || !inGroups.has(Player.contextId);
+    $('menuGroups').classList.toggle('menu__item--active', this.page === 'playlist' && !groupsOpen && inGroups.has(this.playlistId));
+    for (const g of groups) {
       const inside = Store.playlistsInGroup(g.id);
       const open = Groups.isOpen(g.id);
       const playing = !open && inside.some((p) => Player.contextId === p.id && Player.isPlaying);
@@ -238,23 +259,30 @@ const Nav = {
       h('span.menu__sub-name', g.name),
       playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null);
       Groups.dropTarget(folder, g.id);
-      list.appendChild(folder);
+      groupList.appendChild(folder);
       if (!open) continue;
       for (const p of inside) {
         const el = item(p);
         el.classList.add('menu__sub--in-group');
         Groups.draggable(el, p);
         Groups.dropTarget(el, g.id);
-        list.appendChild(el);
+        groupList.appendChild(el);
       }
     }
 
-    // Followed Playlists: a main entry of its own, only while one is followed.
+    // Followed Playlists: a main entry of its own, only while one is
+    // followed; under it the ones in no group (4.5.1).
     const followed = Store.followedPlaylists();
+    const singleFollowed = Store.singleFollowed();
     $('menuFollowed').hidden = !followed.length;
-    $('menuFollowedList').hidden = !followed.length || !followedOpen;
+    this._arrows.followedMenuOpen.hidden = !singleFollowed.length;
+    $('menuFollowedList').hidden = !singleFollowed.length || !followedOpen;
     const followedList = clear($('menuFollowedList'));
-    for (const p of followed) followedList.appendChild(item(p));
+    for (const p of singleFollowed) {
+      const el = item(p);
+      Groups.draggable(el, p);
+      followedList.appendChild(el);
+    }
 
     // Active Sessions: only while another device plays on the server, or this one has company.
     $('menuSessions').hidden = !Session.visible;

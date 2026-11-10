@@ -12,7 +12,10 @@
 // length, Update all, Add playlists, Rename, Delete) with its playlists' table
 // under it while open. Your Playlists lists only the playlists in no group.
 // On the computer a playlist's row can be dragged onto a group, or back onto
-// Your Playlists; every playlist also has Move to group.
+// Your Playlists; every playlist also has Move to group. Since 4.5.1 the
+// playlists others share can go into groups too (a Flow Server that keeps
+// that): followed ones show in their group, and one not followed yet is
+// followed as it goes in (dragged from Shared Playlists, or its folder).
 
 const PlaylistsPage = {
   sort: { key: null, dir: null },
@@ -45,6 +48,8 @@ const PlaylistsPage = {
     });
     // Dropped on Your Playlists: out of its group.
     Groups.dropTarget($('playlistsSingle'), '');
+    // And on Shared Playlists (4.5.1), as a followed one leaves its group.
+    Groups.dropTarget($('sharedTable'), '');
     $('sharedHead').onclick = () => {
       Store.saveSettings({ sharedGroupOpen: Store.settings.sharedGroupOpen === false });
       this._loadShared();
@@ -65,10 +70,12 @@ const PlaylistsPage = {
     $('newSmartBtn').hidden = !!Store.server.on && !Store.server.smartPlaylists;
   },
 
-  show() {
+  /** opts.at 'groups': scrolled to Playlist Groups (the menu's entry, 4.5.1). */
+  show(opts = {}) {
     this.renaming = null;
     this._loadShared();
     this.render();
+    if (opts.at === 'groups' && !$('groupsSection').hidden) $('groupsSection').scrollIntoView({ block: 'start' });
   },
 
   /**
@@ -162,7 +169,11 @@ const PlaylistsPage = {
     // must not start another redraw in the middle of this one.
     this._drawing = true;
     try {
-      this._drawTable($('sharedTable'), sharedRows, (p) => this._sharedActions(p), (p) => this._sharedSide(p));
+      // On the phone Follow is at the end of the row, or with Move to group (4.5.1) in its More.
+      const grouping = Store.canGroupFollowed();
+      this._drawTable($('sharedTable'), sharedRows, (p) => this._sharedActions(p), grouping ? null : (p) => this._sharedSide(p),
+        grouping ? (p) => this._sharedMore(p) : null);
+      this._dragRows($('sharedTable'));
       this._drawTable($('playlistsTable'), rows, (p) => this._actions(p), null, (p) => this._moreButtons(p), this._select());
       this._dragRows($('playlistsTable'));
       this._drawGroups();
@@ -331,26 +342,62 @@ const PlaylistsPage = {
 
   /**
    * A shared playlist can only be changed by whoever shared it, so its Actions
-   * are Follow and Unfollow. All Songs has none.
+   * are Follow and Unfollow, and (4.5.1) Move to group, which follows one
+   * not followed yet. All Songs has none.
    */
   _sharedActions(p) {
     if (p.isAll) return h('span.muted', '');
+    return h('div.actions', this._followButton(p), this._sharedGroupButton(p));
+  },
+
+  _followButton(p) {
     const on = Store.isFollowing(p.id);
-    return h('div.actions', h('button.btn.btn--small' + (on ? '' : '.btn--primary'), {
+    return h('button.btn.btn--small' + (on ? '' : '.btn--primary'), {
       type: 'button',
       title: on ? T('common.unfollow.tooltip', { playlist: p.name }) : T('playlists.follow.tooltip', { playlist: p.name }),
       onclick: () => attempt(() => window.flow.setFollowing(p.id, !on)),
-    }, on ? T('common.unfollow') : T('common.follow')));
+    }, on ? T('common.unfollow') : T('common.follow'));
+  },
+
+  /** A shared playlist's Move to group (4.5.1), where the server keeps followed ones in groups. */
+  _sharedGroupButton(p) {
+    if (!Store.canGroupFollowed()) return null;
+    return iconButton('act.act--grey', Icons.folder, T('groups.moveTo'), () => Groups.chooseFor([p.id]));
+  },
+
+  /** The phone's sheet of a shared playlist: Follow or Unfollow, and Move to group (4.5.1). */
+  _sharedMore(p) {
+    if (p.isAll) return null;
+    const on = Store.isFollowing(p.id);
+    return [
+      { icon: on ? Icons.x : Icons.plus, label: on ? T('common.unfollow') : T('common.follow'), kind: on ? 'danger' : '', onClick: () => attempt(() => window.flow.setFollowing(p.id, !on)) },
+      this._sharedGroupButton(p),
+    ];
   },
 
   _actions(p) {
     if (p.isFavourites) return h('span.muted', '');
+    // A followed playlist in a group (4.5.1): Move to group, Remove from group and Unfollow.
+    if (p.isShared) return h('div.actions', this._sharedGroupButton(p), this._removeFromGroupButton(p), this._followButton(p));
     return h('div.actions', ...this._moreButtons(p));
+  },
+
+  /**
+   * In a group's table (4.5.1): the red folder, out of the group. Yours goes
+   * back to Your Playlists, a followed one to Followed Playlists.
+   */
+  _removeFromGroupButton(p) {
+    if (!Store.groupOf(p)) return null;
+    return iconButton('act.act--red', Icons.folder, T('groups.removeFrom'), () => Groups.move([p.id], ''));
   },
 
   /** Add Songs, Rename and Delete; on the phone in a sheet, where Rename asks in a dialog. */
   _moreButtons(p) {
     if (p.isFavourites) return null;
+    if (p.isShared) {
+      return [this._sharedGroupButton(p), this._removeFromGroupButton(p),
+        iconButton('act.act--red', Icons.x, T('common.unfollow'), () => attempt(() => window.flow.setFollowing(p.id, false)))];
+    }
     return [
       // A smart playlist's songs come from its rules.
       p.isRuled
@@ -366,6 +413,8 @@ const PlaylistsPage = {
         this.renaming = p.id;
         this.render();
       }),
+      // In a group (4.5.1): out of it, before Delete.
+      this._removeFromGroupButton(p),
       iconButton('act.act--red', Icons.x, T('common.delete'), () => this.remove(p)),
     ];
   },
@@ -379,7 +428,7 @@ const PlaylistsPage = {
   /** The phone's Follow / Unfollow at the end of a shared playlist's row. */
   _sharedSide(p) {
     if (p.isAll) return h('span');
-    return this._sharedActions(p).firstChild;
+    return this._followButton(p);
   },
 
   async remove(p) {

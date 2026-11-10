@@ -133,3 +133,60 @@ test('each profile has its own groups; a new profile copies the Default\'s', () 
   assert.equal(again.anna.groups[0].name, 'Anna Rock');
   assert.equal(again.anna.playlists.find((p) => p.name === 'Rock Classics').group, again.anna.groups[0].id);
 });
+
+test('followed playlists go into groups too (4.5.1): one group at most, out again when unfollowed', () => {
+  const l = { data: lib(), profiles: {} };
+  prof.addProfile(l.data, l.profiles, 'anna', () => 'a1');
+  prof.addProfile(l.data, l.profiles, 'ben', () => 'b1');
+  // Anna shares a playlist, Ben follows it and puts it into his group.
+  run(l, 'anna', { type: 'createPlaylist', playlistId: 'pa', name: 'Evening' });
+  run(l, 'anna', { type: 'setPlaylistShared', playlistId: 'pa', shared: true });
+  run(l, 'ben', { type: 'createGroup', groupId: 'gb', name: 'Chill' });
+  run(l, 'ben', { type: 'createGroup', groupId: 'gc', name: 'Night' });
+  // Not followed: skipped.
+  assert.deepEqual(run(l, 'ben', { type: 'setPlaylistGroup', playlistId: 'pa', groupId: 'gb' }), { skipped: 'gone' });
+  run(l, 'ben', { type: 'followPlaylist', playlistId: 'pa' });
+  run(l, 'ben', { type: 'setPlaylistGroup', playlistId: 'pa', groupId: 'gb' });
+  let ben = prof.view(l.data, l.profiles, 'ben');
+  assert.deepEqual(ben.groups.find((g) => g.id === 'gb').followed, ['pa']);
+  assert.equal(m.groupOfFollowed(ben, 'pa').id, 'gb');
+  // Anna's playlist itself is not changed.
+  assert.equal(prof.view(l.data, l.profiles, 'anna').playlists.find((p) => p.id === 'pa').group, undefined);
+  // Moved: out of the other group.
+  run(l, 'ben', { type: 'setPlaylistGroup', playlistId: 'pa', groupId: 'gc' });
+  ben = prof.view(l.data, l.profiles, 'ben');
+  assert.equal(ben.groups.find((g) => g.id === 'gb').followed, undefined);
+  assert.deepEqual(ben.groups.find((g) => g.id === 'gc').followed, ['pa']);
+  // Kept through a save and load.
+  const again = prof.sanitizeProfiles(l.data, JSON.parse(JSON.stringify(l.profiles)));
+  assert.deepEqual(again.ben.groups.find((g) => g.id === 'gc').followed, ['pa']);
+  // Out of its group with No group, and when unfollowed.
+  run(l, 'ben', { type: 'setPlaylistGroup', playlistId: 'pa', groupId: '' });
+  assert.equal(m.groupOfFollowed(prof.view(l.data, l.profiles, 'ben'), 'pa'), null);
+  run(l, 'ben', { type: 'setPlaylistGroup', playlistId: 'pa', groupId: 'gb' });
+  run(l, 'ben', { type: 'unfollowPlaylist', playlistId: 'pa' });
+  assert.equal(m.groupOfFollowed(prof.view(l.data, l.profiles, 'ben'), 'pa'), null);
+  // Deleted by its owner: gone from the group as from the follows.
+  run(l, 'ben', { type: 'followPlaylist', playlistId: 'pa' });
+  run(l, 'ben', { type: 'setPlaylistGroup', playlistId: 'pa', groupId: 'gb' });
+  run(l, 'anna', { type: 'deletePlaylist', playlistId: 'pa' });
+  ben = prof.view(l.data, l.profiles, 'ben');
+  assert.deepEqual(ben.follows, []);
+  assert.equal(ben.groups.find((g) => g.id === 'gb').followed, undefined);
+});
+
+test('sanitize keeps a followed playlist in one group only, and only while followed (4.5.1)', () => {
+  const d = m.sanitize({
+    ...lib(),
+    follows: ['x1', 'x2'],
+    groups: [{ id: 'g1', name: 'A', followed: ['x1', 'x3'] }, { id: 'g2', name: 'B', followed: ['x1', 'x2'] }],
+  });
+  assert.deepEqual(d.groups.map((g) => g.followed), [['x1'], ['x2']]);
+});
+
+test('a new profile copies the Default groups without its followed playlists (4.5.1)', () => {
+  const l = { data: lib(), profiles: {} };
+  l.data.groups = [{ id: 'g1', name: 'Rock', createdAt: 1, followed: ['x1'] }];
+  prof.addProfile(l.data, l.profiles, 'anna', () => 'n1');
+  assert.equal(l.profiles.anna.groups[0].followed, undefined);
+});

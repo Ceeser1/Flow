@@ -96,6 +96,8 @@ function createActions({
     if (gid && !model.groupById(v, gid)) throw new Error(tr('core.library.groupGone', 'That playlist group no longer exists.'));
     for (const id of ids) {
       const p = model.playlistById(v, id);
+      // A followed one (4.5.1), on a server that keeps them in groups.
+      if (!p && (v.follows || []).includes(id) && remote.status().followedInGroups) continue;
       if (!p) throw new Error(tr('core.library.playlistGone', 'That playlist no longer exists.'));
       if (p.favourites) throw new Error(tr('core.library.favouritesFixed', 'Favourites cannot be renamed, deleted or given rules.'));
     }

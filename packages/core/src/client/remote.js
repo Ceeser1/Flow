@@ -351,7 +351,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -473,6 +473,8 @@ function createRemote(env) {
       smartPlaylists: !!conn.smartPlaylists,
       // Playlist groups (4.5): the same, for a server from before.
       playlistGroups: !!conn.playlistGroups,
+      // Followed playlists in groups too (4.5.1).
+      followedInGroups: !!conn.followedInGroups,
       tracked: tracked.list(),
     };
   }
@@ -981,10 +983,11 @@ function createRemote(env) {
         const smartPlaylists = Array.isArray(hello.features) && hello.features.includes('smartPlaylists');
         const pair = Array.isArray(hello.features) && hello.features.includes('pair');
         const playlistGroups = Array.isArray(hello.features) && hello.features.includes('playlistGroups');
+        const followedInGroups = Array.isArray(hello.features) && hello.features.includes('followedInGroups');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);

@@ -5159,6 +5159,10 @@ nav.section.what.followedPlaylists
   en: the followed playlists
   de: Gefolgte Playlists
 
+nav.section.what.playlistGroups
+  en: the playlist groups
+  de: die Playlist-Gruppen
+
 nav.section.what.listeningTrend
   en: the listening trend lists
   de: Hörtrend-Listen
@@ -5471,8 +5475,12 @@ groups.moveTo
   de: In Gruppe verschieben
 
 groups.hint
-  en: Drag a playlist from the menu or from Your Playlists onto a group, or use Move to group on the playlist. Dragged back onto Your Playlists it leaves its group.
-  de: Zieh eine Playlist aus dem Menü oder aus Deine Playlists auf eine Gruppe, oder nimm In Gruppe verschieben bei der Playlist. Zurück auf Deine Playlists gezogen verlässt sie ihre Gruppe.
+  en: Drag a playlist from the menu or from above onto a group, or use the Move to group button at the right. Playlists dragged out get removed from the group.
+  de: Zieh eine Playlist aus dem Menü oder von oben auf eine Gruppe, oder nimm rechts den Knopf In Gruppe verschieben. Herausgezogene Playlists werden aus der Gruppe entfernt.
+
+groups.removeFrom
+  en: Remove from group
+  de: Aus der Gruppe entfernen
 
 groups.hint.phone
   en: Put a playlist into a group with Move to group in its menu, or hold several playlists to choose them and move them together.
@@ -5567,6 +5575,10 @@ groups.moved
 groups.movedMany
   en: {playlists} moved to {group}
   de: {playlists} nach {group} verschoben
+
+groups.followedMoved
+  en: You follow "{playlist}" now, in {group}
+  de: Du folgst „{playlist}“ jetzt, in {group}
 
 groups.movedOut
   en: "{playlist}" is no longer in a group
@@ -6947,6 +6959,10 @@ common.statistics
 common.followedPlaylists
   en: Followed Playlists
   de: Gefolgte Playlists
+
+common.playlistGroups
+  en: Playlist Groups
+  de: Playlist-Gruppen
 
 common.activeJams
   en: Active Jams

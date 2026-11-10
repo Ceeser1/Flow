@@ -2,8 +2,8 @@
 
 // Followed Playlists: the playlists other profiles share and this one follows.
 // A main entry in the menu, there only while at least one is followed. They
-// can be opened and played but only their owner changes them, so the one
-// action is Unfollow.
+// can be opened and played but only their owner changes them, so the actions
+// are Unfollow and (4.5.1, where the server keeps it) Move to group.
 
 const FollowedPage = {
   sort: { key: null, dir: null },
@@ -63,18 +63,27 @@ const FollowedPage = {
           label: T('common.actions'),
           sortable: false,
           cls: 'col-actions',
-          render: (p) => h('div.actions', h('button.btn.btn--small', {
-            type: 'button',
-            title: T('common.unfollow.tooltip', { playlist: p.name }),
-            onclick: () => attempt(() => window.flow.setFollowing(p.id, false)),
-          }, T('common.unfollow'))),
+          render: (p) => h('div.actions',
+            Store.canGroupFollowed() ? iconButton('act.act--grey', Icons.folder, T('groups.moveTo'), () => Groups.chooseFor([p.id])) : null,
+            h('button.btn.btn--small', {
+              type: 'button',
+              title: T('common.unfollow.tooltip', { playlist: p.name }),
+              onclick: () => attempt(() => window.flow.setFollowing(p.id, false)),
+            }, T('common.unfollow'))),
         },
       ],
       mobile: {
         ...listRowSpec((p) => [p.ownerName ? T('common.byOwner', { profile: p.ownerName }) : '', Util.plural(p.entries.length, 'song'),
           Util.fmtClock(Store.totalDuration(p.id))].filter(Boolean).join(' · ')),
-        more: (p) => [{ icon: Icons.x, label: T('common.unfollow'), kind: 'danger', onClick: () => attempt(() => window.flow.setFollowing(p.id, false)) }],
+        more: (p) => [
+          Store.canGroupFollowed() ? { icon: Icons.folder, label: T('groups.moveTo'), onClick: () => Groups.chooseFor([p.id]) } : null,
+          { icon: Icons.x, label: T('common.unfollow'), kind: 'danger', onClick: () => attempt(() => window.flow.setFollowing(p.id, false)) },
+        ],
       },
     });
+    // On the computer a row can be dragged onto a group in the menu (4.5.1).
+    if (Groups.canDrag()) {
+      for (const tr of $('followedTable').querySelectorAll('tbody tr[data-id]')) Groups.draggable(tr, Store.playlist(tr.dataset.id));
+    }
   },
 };

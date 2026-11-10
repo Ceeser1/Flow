@@ -268,9 +268,13 @@ const Store = {
 
   _shared(p) {
     const owner = this.profileName(p.ownerId) || p.ownerName;
+    // A followed one carries the group this profile put it into (4.5.1).
+    const g = this.canGroupFollowed() && this.isFollowing(p.id)
+      ? (this.library.groups || []).find((x) => (x.followed || []).includes(p.id)) : null;
     return {
       // "James' Favorites" for a name ending in s.
       ...p, ownerName: owner, isShared: true, ...(p.favourites ? { name: T(/s$/i.test(owner) ? 'common.favouritesOf.s' : 'common.favouritesOf', { profile: owner }) } : {}),
+      ...(g ? { group: g.id } : {}),
     };
   },
 
@@ -291,6 +295,11 @@ const Store = {
   /** The shared playlists this profile follows, A to Z. */
   followedPlaylists() {
     return this.sharedPlaylists().filter((p) => this.isFollowing(p.id));
+  },
+
+  /** The followed playlists in no group (4.5.1), A to Z: the menu's Followed Playlists. */
+  singleFollowed() {
+    return this.followedPlaylists().filter((p) => !this.groupOf(p));
   },
 
   /** Seconds this profile has listened to a list (as the one playing), 0 for none. */
@@ -488,6 +497,22 @@ const Store = {
     return !this.server.on || !!this.server.playlistGroups;
   },
 
+  /** Followed playlists can be put into groups too (4.5.1): a Flow Server that keeps them there. */
+  canGroupFollowed() {
+    return !!this.server.on && !!this.server.playlistGroups && !!this.server.followedInGroups;
+  },
+
+  /**
+   * Whether a playlist can go into a group: one of yours (not Favourites),
+   * or (4.5.1) one another profile shares where the server keeps that (one
+   * not followed yet is followed as it goes in, Groups.move).
+   */
+  canBeGrouped(p) {
+    if (!p || !this.canGroup()) return false;
+    if (p.isShared) return this.canGroupFollowed();
+    return !p.isFavourites && !p.favourites && !!this.library.playlists.find((x) => x.id === p.id);
+  },
+
   /** The playlist groups, A to Z; none where groups cannot be kept. */
   groups() {
     if (!this.canGroup()) return [];
@@ -503,9 +528,13 @@ const Store = {
     return p && p.group ? this.group(p.group) : null;
   },
 
-  /** A group's playlists, A to Z. */
+  /** A group's playlists, A to Z: your own, and (4.5.1) the followed ones put into it. */
   playlistsInGroup(id) {
-    return this.sortedPlaylists().filter((p) => p.group === id && this.group(id));
+    if (!this.group(id)) return [];
+    const own = this.sortedPlaylists().filter((p) => p.group === id);
+    const followed = this.canGroupFollowed() ? this.followedPlaylists().filter((p) => p.group === id) : [];
+    if (!followed.length) return own;
+    return [...own, ...followed].sort((a, b) => Util.compareValues(a.name, b.name));
   },
 
   /** The playlists in no group, A to Z (Favourites is not one of them). */

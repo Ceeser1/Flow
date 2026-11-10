@@ -346,9 +346,11 @@ const DEFAULTS = {
   // The listen in progress when the app closed, carried on at the next start
   // if the same song is still loaded: { songId, listened }.
   listenSession: null,
-  // Whether the lists under the menu's Playlists, Followed Playlists and Your
-  // listening trend entries show (the trend lists closed until opened).
+  // Whether the lists under the menu's Playlists, Playlist Groups (4.5.1),
+  // Followed Playlists and Your listening trend entries show (the trend
+  // lists closed until opened).
   playlistsMenuOpen: true,
+  groupsMenuOpen: true,
   followedMenuOpen: true,
   trendMenuOpen: false,
   // Whether the Shared Playlists section of the Playlists page is open.
@@ -549,6 +551,7 @@ function clean(raw) {
     ? { songId: String(ls.songId), listened: Math.max(0, Number(ls.listened) || 0) }
     : null;
   s.playlistsMenuOpen = s.playlistsMenuOpen !== false;
+  s.groupsMenuOpen = s.groupsMenuOpen !== false;
   s.followedMenuOpen = s.followedMenuOpen !== false;
   s.trendMenuOpen = s.trendMenuOpen === true;
   s.sharedGroupOpen = s.sharedGroupOpen !== false;

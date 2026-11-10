@@ -69,6 +69,7 @@ button, input, select { font: inherit; color: inherit; }
 .icon--note { -webkit-mask-image: url(../images/note.png); mask-image: url(../images/note.png); -webkit-mask-size: 82%; mask-size: 82%; }
 .icon--search { -webkit-mask-image: url(../images/search.png); mask-image: url(../images/search.png); -webkit-mask-size: 82%; mask-size: 82%; }
 .icon--share { -webkit-mask-image: url(../images/share.png); mask-image: url(../images/share.png); -webkit-mask-size: 82%; mask-size: 82%; }
+.icon--followed { -webkit-mask-image: url(../images/followed.png); mask-image: url(../images/followed.png); color: var(--green); }
 .icon--shuffle { -webkit-mask-image: url(../images/shuffle.png); mask-image: url(../images/shuffle.png); }
 
 /* ===== layout ===== */

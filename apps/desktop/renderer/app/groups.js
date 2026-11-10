@@ -1,9 +1,13 @@
 'use strict';
 
-// Playlist groups (4.5): folders of playlists, in the menu below the single
-// playlists and on the Playlists page below Your Playlists. A playlist is in
-// one group at most; deleting a group leaves its playlists single. Each
-// profile has its own (with a Flow Server that keeps them, Store.canGroup).
+// Playlist groups (4.5): folders of playlists, in the menu as Playlist Groups
+// between Playlists and Followed Playlists (4.5.1) and on the Playlists page
+// below Your Playlists. A playlist is in one group at most; deleting a group
+// leaves its playlists single. Each profile has its own (with a Flow Server
+// that keeps them, Store.canGroup). Playlists you follow can go into them
+// too (4.5.1, Store.canGroupFollowed): your groups hold them for you, the
+// playlists stay their owners'. A shared playlist not followed yet that is
+// put into a group is followed with it.
 //
 // Here: making, renaming and deleting a group, "Move to group" (a playlist's
 // own, or several chosen at once on the phone), "Add playlists" into a group,
@@ -43,9 +47,9 @@ const Groups = {
     return { songs, seconds };
   },
 
-  /** Its imported playlists: the ones Update all reads again. */
+  /** Its imported playlists of your own: the ones Update all reads again (a followed one is its owner's). */
   updatable(id) {
-    return Store.playlistsInGroup(id).filter((p) => p.source && /^https?:\/\//i.test(p.source.url || '') && !p.isRuled);
+    return Store.playlistsInGroup(id).filter((p) => !p.isShared && p.source && /^https?:\/\//i.test(p.source.url || '') && !p.isRuled);
   },
 
   /** Whether a link can be read again here at all (yt-dlp here, or a Flow Server that downloads). */
@@ -87,20 +91,24 @@ const Groups = {
 
   // ---- moving playlists ----
 
-  /** Puts playlists into a group ('' out of theirs), and says so. */
-  async move(playlistIds, groupId) {
+  /** Puts playlists into a group ('' out of theirs), and says so (`made`: a group just made, maybe not listed yet). */
+  async move(playlistIds, groupId, made = null) {
     const ids = playlistIds.filter((id) => {
       const p = Store.playlist(id);
-      return p && !p.isFavourites && !p.favourites && (p.group || '') !== (groupId || '');
+      return Store.canBeGrouped(p) && (p.group || '') !== (groupId || '');
     });
     if (!ids.length) return;
     await attempt(async () => {
+      // A shared one not followed yet is followed first (4.5.1).
+      const toFollow = groupId ? ids.filter((id) => Store.playlist(id).isShared && !Store.isFollowing(id)) : [];
+      for (const id of toFollow) await window.flow.setFollowing(id, true);
       await window.flow.setPlaylistGroup(ids, groupId || '');
-      const g = groupId ? Store.group(groupId) : null;
+      const g = groupId ? Store.group(groupId) || made : null;
       if (g) this.open(g.id);
       const one = ids.length === 1 ? Store.playlist(ids[0]) : null;
       let text;
-      if (g) text = one ? T('groups.moved', { playlist: one.name, group: g.name }) : T('groups.movedMany', { playlists: Util.plural(ids.length, 'playlist'), group: g.name });
+      if (g && one && toFollow.length) text = T('groups.followedMoved', { playlist: one.name, group: g.name });
+      else if (g) text = one ? T('groups.moved', { playlist: one.name, group: g.name }) : T('groups.movedMany', { playlists: Util.plural(ids.length, 'playlist'), group: g.name });
       else text = one ? T('groups.movedOut', { playlist: one.name }) : T('groups.movedOutMany', { playlists: Util.plural(ids.length, 'playlist') });
       toast(text, 'success');
     });
@@ -111,7 +119,7 @@ const Groups = {
    * already greyed), "No group" for those in one, and a new group by name.
    */
   chooseFor(playlistIds) {
-    const lists = playlistIds.map((id) => Store.playlist(id)).filter((p) => p && !p.isFavourites && !p.favourites);
+    const lists = playlistIds.map((id) => Store.playlist(id)).filter((p) => Store.canBeGrouped(p));
     if (!lists.length) return Promise.resolve(false);
     return new Promise((resolve) => {
       let done = false;
@@ -135,12 +143,13 @@ const Groups = {
       const error = h('div.form-error');
       const makeNew = async () => {
         try {
-          const g = await this.create(input.value, lists.map((p) => p.id));
+          // Shared ones not followed yet are followed as they go in (4.5.1).
+          const ids = lists.map((p) => p.id);
+          const g = await this.create(input.value, []);
           if (!g) return;
           done = true;
           handle.close();
-          toast(lists.length === 1 ? T('groups.moved', { playlist: lists[0].name, group: g.name })
-            : T('groups.movedMany', { playlists: Util.plural(lists.length, 'playlist'), group: g.name }), 'success');
+          await this.move(ids, g.id, g);
           resolve(true);
         } catch (err) {
           error.textContent = err.message;
@@ -169,9 +178,10 @@ const Groups = {
     });
   },
 
-  /** "Add playlists" of a group: every playlist not in it, ticked ones go in. */
+  /** "Add playlists" of a group: every playlist not in it (followed ones too, 4.5.1), ticked ones go in. */
   addTo(g) {
-    const lists = Store.sortedPlaylists().filter((p) => p.group !== g.id);
+    const followed = Store.canGroupFollowed() ? Store.followedPlaylists() : [];
+    const lists = [...Store.sortedPlaylists(), ...followed].filter((p) => p.group !== g.id);
     if (!lists.length) {
       toast(T('groups.add.none', { group: g.name }), 'info');
       return;
@@ -185,6 +195,7 @@ const Groups = {
         row: h('label.check.group-add__row', box,
           h('span.group-add__icon', { html: listIcon(p) }),
           h('span.group-add__name', p.name),
+          p.isShared && p.ownerName ? h('span.group-add__from', T('common.byOwner', { profile: p.ownerName })) : null,
           from ? h('span.group-add__from', T('groups.add.inGroup', { group: from.name })) : null),
       };
     });
@@ -218,7 +229,7 @@ const Groups = {
 
   /** Lets a playlist's row or menu entry be dragged onto a group. */
   draggable(el, p) {
-    if (!p || p.isFavourites || p.favourites || !Store.playlist(p.id) || !this.canDrag()) return;
+    if (!Store.canBeGrouped(p) || !this.canDrag()) return;
     el.draggable = true;
     el.addEventListener('dragstart', (e) => {
       this.dragging = { id: p.id, from: p.group || '' };

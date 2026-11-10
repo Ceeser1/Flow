@@ -349,7 +349,7 @@ async function get(base, route, token) {
 
 test('profiles over the network: make, sign in with a PIN, rename, sign out, delete', async () => {
   await withServer(async ({ base }) => {
-    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'sessions', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
+    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sessions', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
     await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
     assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null, createProfiles: true });
@@ -1102,6 +1102,40 @@ test('Statistics: start at 0 on the first 3.6 run; a profile listen counts for t
     await again.close();
     fs.rmSync(dirs.root, { recursive: true, force: true });
   }
+});
+
+test('followed playlists in groups (4.5.1): kept in the follower groups, sent as their change', async () => {
+  await withServer(async ({ base }) => {
+    const hello = (await get(base, '/api/hello')).json;
+    assert.ok(hello.features.includes('followedInGroups'));
+    const anna = (await post(base, '/api/profiles', { name: 'Anna', pin: '1111', device: 'pc' })).json;
+    const ben = (await post(base, '/api/profiles', { name: 'Ben', device: 'phone' })).json;
+    const as = (t) => ({ Authorization: `Bearer ${t}` });
+    await command(base, [
+      { cid: 'a1', at: Date.now(), type: 'createPlaylist', playlistId: 'pa', name: 'Evening' },
+      { cid: 'a2', at: Date.now(), type: 'setPlaylistShared', playlistId: 'pa', shared: true },
+    ], as(anna.token));
+    await command(base, [{ cid: 'b1', at: Date.now(), type: 'createGroup', groupId: 'gb', name: 'Chill' }], as(ben.token));
+    const before = (await get(base, '/api/library', ben.token)).json.rev;
+    // Followed and put into the group in one go, as the app does for one dragged in.
+    const r = await command(base, [
+      { cid: 'b2', at: Date.now(), type: 'followPlaylist', playlistId: 'pa' },
+      { cid: 'b3', at: Date.now(), type: 'setPlaylistGroup', playlistId: 'pa', groupId: 'gb' },
+    ], as(ben.token));
+    assert.deepEqual(r.results.map((x) => x.ok), [true, true]);
+    const answer = (await get(base, `/api/library?since=${before}`, ben.token)).json;
+    const c = answer.full ? answer.library : answer;
+    assert.deepEqual(c.follows, ['pa']);
+    assert.deepEqual(c.groups.map((g) => [g.id, g.followed]), [['gb', ['pa']]]);
+    // Anna's own playlist and groups are not touched.
+    const annaLib = (await get(base, '/api/library', anna.token)).json.library;
+    assert.equal(annaLib.playlists.find((p) => p.id === 'pa').group, undefined);
+    assert.deepEqual(annaLib.groups, []);
+    // Unfollowed: out of the group.
+    await command(base, [{ cid: 'b4', at: Date.now(), type: 'unfollowPlaylist', playlistId: 'pa' }], as(ben.token));
+    const benLib = (await get(base, '/api/library', ben.token)).json.library;
+    assert.deepEqual(benLib.groups.map((g) => [g.id, g.followed]), [['gb', undefined]]);
+  });
 });
 
 test('playlist groups (4.5): made, filled and renamed by commands, sent as changes, kept over a restart', async () => {
