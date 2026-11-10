@@ -1451,6 +1451,10 @@ div.import__frame-head { cursor: default; }
 
 /* The menu: a group as a folder below the single playlists, its playlists further in while open. */
 .menu__group .menu__chevron { margin: 0 -4px 0 -6px; }
+/* The arrow and the folder open and close the group, its name opens its page (4.5.2). */
+.menu__group-toggle { display: inline-flex; align-items: center; gap: 8px; flex: none; margin: -4px 0 -4px -4px; padding: 4px; border-radius: 6px; }
+.menu__group-toggle:hover { background: var(--glass-hi); }
+.menu__group-toggle:hover .menu__sub-icon { color: var(--text-bright); }
 .menu__group .menu__sub-icon { color: var(--text-dim); }
 .menu__group .menu__sub-name { font-weight: 600; }
 .menu__sub--in-group { padding-left: 34px; }
@@ -3860,3 +3864,44 @@ body.mobile .switch-where { text-align: left; }
 /* Song Details: the song's words without times, and Edit / Add Lyrics under them. */
 .details__lyrics { white-space: pre-wrap; color: var(--text); padding: 10px 0 0; user-select: text; line-height: 1.5; max-height: 320px; overflow-y: auto; }
 .details__lyrics--none { color: var(--text-dim); }
+
+/* ===== a playlist group's page (4.5.2, group.js) ===== */
+
+/* Its playlists, each a frame: the head opens and closes it, open it shows its songs in a box that scrolls. */
+.gframes { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding-bottom: 16px; }
+.gframe { background: var(--glass); border-radius: var(--radius); padding: 4px 10px; }
+.gframe--open { padding-bottom: 10px; }
+.gframe__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.gframe__head:hover { background: var(--glass-hi); }
+.gframe__head .menu__chevron .icon { width: 16px; height: 16px; }
+.gframe__icon { display: inline-flex; color: var(--text-dim); }
+.gframe__icon .icon { width: 18px; height: 18px; }
+.gframe__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.gframe__name { font-size: 16px; font-weight: 700; color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gframe__sub { color: var(--text-dim); font-size: 13px; }
+.gframe__buttons { display: flex; align-items: center; gap: 8px; flex: none; }
+.gframe__buttons .btn--play,
+.gframe__buttons .toggle { height: 32px; font-size: 13px; }
+.gframe__buttons .btn--play { padding: 0 16px 0 12px; }
+.gframe__buttons .toggle { padding: 0 12px 0 8px; }
+/* Share (or Following) at the right end, a little apart. */
+.gframe__share { margin-left: 10px; }
+.gframe__songs {
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
+  margin-top: 6px;
+  border-radius: var(--radius);
+  background: var(--well);
+}
+.gframe__table { margin: 0; }
+.gframe__table th { position: sticky; top: 0; z-index: 1; }
+.gframe__empty { margin: 4px 0 6px 34px; font-size: 13px; }
+#grOfflineNote:empty { display: none; }

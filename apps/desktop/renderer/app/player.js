@@ -489,6 +489,19 @@ const Player = {
     this._play();
   },
 
+  /**
+   * Goes on with the song playing, now as part of another list (4.5.2: a
+   * group's Shuffle turned on while one of its playlists plays): what comes
+   * next is drawn from that list.
+   */
+  carryOnIn(contextId) {
+    if (this.remote || !this.currentId || this.contextId === contextId) return;
+    this.contextId = contextId;
+    this.queue.start(contextId, this.idsOf(contextId), this.currentId);
+    this._updateMediaSession();
+    this._emit();
+  },
+
   /** A playlist's own Play button: a new queue from its top (or a random song). */
   togglePlaylist(contextId) {
     if (this.remote) {
@@ -1321,9 +1334,11 @@ const Player = {
     }
     // The time also counts for the list that was playing, if the song is in it
     // (one queued from elsewhere is not).
-    const list = contextId ? Store.playlist(contextId) : null;
+    let list = contextId ? Store.playlist(contextId) : null;
+    // A group played as one list (4.5.2): the time counts for its playlist holding the song.
+    if (list && list.isGroupList) list = Store.playlistsInGroup(list.groupId).find((p) => (p.entries || []).some((e) => e.songId === songId)) || null;
     const inList = !!list && list.entries.some((e) => e.songId === songId);
-    window.flow.recordListen(songId, listened, duration, inList ? contextId : null, jamMember).catch(() => {});
+    window.flow.recordListen(songId, listened, duration, inList ? list.id : null, jamMember).catch(() => {});
   },
 
   _sessionToKeep() {

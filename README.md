@@ -24,7 +24,9 @@ Flow is made for private use.
 - **Update from source**: a playlist imported from a link picks up its new songs
 - **Playlist groups**: folders of playlists in the menu; drag playlists into them
   on the PC (followed playlists too), and update every imported playlist of a
-  group at once
+  group at once. Each group has its own page: its playlists as frames that
+  open and close, one search for all of them, Play (a random playlist, or with
+  Shuffle songs from all of them) and Download for the whole group
 - **Your listening trend**: most listened, least skipped, long time no see, …
 - **Continue with similar songs** when a playlist ends
 

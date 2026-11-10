@@ -16,6 +16,8 @@ const FROM_PREFIX = 'from:';
 const DEFAULT_PROFILE = 'default';
 // Downloaded Songs (with a Flow Server): every song with a file on this device.
 const DEVICE_ID = 'device';
+// A playlist group played as one list (4.5.2): "group:<id>", every song of its playlists.
+const GROUP_PREFIX = 'group:';
 
 /** A list's entries are still `songs` (the same ids, `at` the same date) in the same order. */
 function sameEntries(entries, songs, at) {
@@ -243,6 +245,7 @@ const Store = {
     if (SmartLists.isSmart(id)) return this.smartPlaylist(id);
     if (id === GUEST_ID) return this.guestPlaylist();
     if (String(id).startsWith(FROM_PREFIX)) return this.fromPlaylist(id.slice(FROM_PREFIX.length));
+    if (String(id).startsWith(GROUP_PREFIX)) return this.groupPlaylist(id.slice(GROUP_PREFIX.length));
     const own = this.library.playlists.find((p) => p.id === id);
     if (own) return own;
     // A playlist another profile shares: to read, not to change.
@@ -526,6 +529,35 @@ const Store = {
   /** The group a playlist is in, or null. */
   groupOf(p) {
     return p && p.group ? this.group(p.group) : null;
+  },
+
+  /**
+   * A group as one list to play (4.5.2, the group page's Play with Shuffle):
+   * the songs of all its playlists, each once, in the order of the
+   * playlists A to Z. Kept while the library stays, so its rows do too.
+   */
+  groupPlaylist(groupId) {
+    const g = this.group(groupId);
+    if (!g) return null;
+    const kept = (this._groupLists || (this._groupLists = new Map())).get(groupId);
+    if (kept && kept.lib === this.library && kept.name === g.name) return kept.list;
+    const inside = this.playlistsInGroup(groupId);
+    const seen = new Set();
+    const entries = [];
+    for (const p of inside) {
+      for (const e of p.entries || []) {
+        if (seen.has(e.songId)) continue;
+        seen.add(e.songId);
+        entries.push(e);
+      }
+    }
+    // The same entries as before while the songs are: its rows (rowsOf) stay too.
+    const same = kept && kept.list.entries.length === entries.length && kept.list.entries.every((e, i) => e === entries[i]);
+    const list = {
+      id: GROUP_PREFIX + groupId, name: g.name, entries: same ? kept.list.entries : entries, isGroupList: true, groupId,
+    };
+    this._groupLists.set(groupId, { lib: this.library, name: g.name, list });
+    return list;
   },
 
   /** A group's playlists, A to Z: your own, and (4.5.1) the followed ones put into it. */

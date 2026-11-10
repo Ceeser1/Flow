@@ -1052,3 +1052,25 @@ body.mobile .modal--admin-ips { width: auto; }
 body.mobile .rules__row { grid-template-columns: 1fr 1fr auto; }
 body.mobile .rules__row > :nth-child(3) { grid-column: 1 / 3; grid-row: 2; }
 body.mobile .rules__row > :nth-child(4) { grid-column: 3; grid-row: 1; }
+
+/* A playlist group's page (4.5.2): Play at the left, Shuffle and Download as icons at the right;
+   each frame's head with its name above its buttons, those as icons. */
+body.mobile #grPlay { order: 1; padding: 0 24px 0 20px; }
+body.mobile #grShuffle { order: 2; margin-left: auto; }
+body.mobile #grOffline { order: 3; }
+body.mobile #grOfflineNote { order: 4; }
+body.mobile :is(#grShuffle, #grOffline) { width: 44px; padding: 0; justify-content: center; flex: none; }
+body.mobile :is(#grShuffle, #grOffline) .icon { width: 20px; height: 20px; }
+body.mobile #grOffline.toggle--on { color: #f5be3c; border-color: rgba(245, 190, 60, 0.5); background: rgba(245, 190, 60, 0.16); }
+body.mobile .gframe { padding: 2px 8px; }
+body.mobile .gframe--open { padding-bottom: 8px; }
+body.mobile .gframe__head { flex-wrap: wrap; gap: 6px 10px; padding: 8px 4px; }
+body.mobile .gframe__buttons { flex: 1 1 100%; padding-left: 30px; }
+body.mobile .gframe__buttons .toggle,
+body.mobile .gframe__buttons .btn--play { height: 40px; border-radius: 20px; }
+body.mobile .gframe__buttons .btn--play { width: 40px; padding: 0; justify-content: center; }
+body.mobile .gframe__buttons .toggle { width: 40px; padding: 0; justify-content: center; }
+body.mobile .gframe__buttons .icon { width: 18px; height: 18px; }
+body.mobile .gframe__share { margin-left: auto; }
+body.mobile .gframe__offline.toggle--on { color: #f5be3c; border-color: rgba(245, 190, 60, 0.5); background: rgba(245, 190, 60, 0.16); }
+body.mobile .gframe__songs { max-height: 60vh; background: none; }

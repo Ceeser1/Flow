@@ -5,6 +5,7 @@
 const Nav = {
   page: null,
   playlistId: null,
+  groupId: null, // the group page's group (4.5.2)
   // The pages shown before this one ({ page, playlistId }), for the phone's
   // Back; the last is the one Back returns to.
   history: [],
@@ -121,8 +122,9 @@ const Nav = {
     if (page !== 'playlist' && typeof PlaylistPage !== 'undefined') PlaylistPage.pickFor = null;
     // The preview belongs to the Add Songs page and stops when it is left.
     if (this.page === 'add' && page !== 'add') AddPage.audio.pause();
-    const at = { page, playlistId: page === 'playlist' ? this.playlistId : null };
-    if (this._at && !opts.back && (this._at.page !== at.page || this._at.playlistId !== at.playlistId)) {
+    if (page === 'group') this.groupId = opts.groupId || this.groupId;
+    const at = { page, playlistId: page === 'playlist' ? this.playlistId : null, groupId: page === 'group' ? this.groupId : null };
+    if (this._at && !opts.back && (this._at.page !== at.page || this._at.playlistId !== at.playlistId || this._at.groupId !== at.groupId)) {
       this.history.push(this._at);
       if (this.history.length > 50) this.history.shift();
     }
@@ -136,6 +138,7 @@ const Nav = {
     else if (page === 'add') AddPage.show(opts);
     else if (page === 'playlists') PlaylistsPage.show(opts);
     else if (page === 'followed') FollowedPage.show(opts);
+    else if (page === 'group') GroupPage.show(this.groupId, opts);
     else if (page === 'sessions') SessionsPage.show(opts);
     else if (page === 'trend') TrendPage.show(opts);
     else if (page === 'playlist') PlaylistPage.show(this.playlistId, opts);
@@ -146,6 +149,12 @@ const Nav = {
   back() {
     while (this.history.length) {
       const prev = this.history.pop();
+      // A group deleted since is skipped (4.5.2).
+      if (prev.page === 'group') {
+        if (!Store.group(prev.groupId)) continue;
+        this.show('group', { back: true, groupId: prev.groupId });
+        return true;
+      }
       if (prev.page !== 'playlist') {
         this.show(prev.page, { back: true });
         return true;
@@ -159,7 +168,18 @@ const Nav = {
     return false;
   },
 
+  /** A playlist group's page (4.5.2). */
+  openGroup(id, opts = {}) {
+    if (!Store.group(id)) return;
+    this.show('group', { ...opts, groupId: id });
+  },
+
   openPlaylist(id, opts = {}) {
+    // A group played as one list (the player's "from ...") opens its group's page.
+    if (String(id || '').startsWith(GROUP_PREFIX) && Store.group(id.slice(GROUP_PREFIX.length))) {
+      this.openGroup(id.slice(GROUP_PREFIX.length), opts);
+      return;
+    }
     this.playlistId = Store.playlist(id) ? id : 'all';
     Store.saveSettings({ lastPlaylistId: this.playlistId });
     this.show('playlist', opts);
@@ -240,22 +260,29 @@ const Nav = {
     for (const g of groups) {
       const inside = Store.playlistsInGroup(g.id);
       const open = Groups.isOpen(g.id);
-      const playing = !open && inside.some((p) => Player.contextId === p.id && Player.isPlaying);
-      const active = !open && this.page === 'playlist' && inside.some((p) => p.id === this.playlistId);
+      // The group played as one list (4.5.2), or (closed) one of its playlists.
+      const asOne = GROUP_PREFIX + g.id;
+      const playing = Player.isPlaying && (Player.contextId === asOne || (!open && inside.some((p) => Player.contextId === p.id)));
+      const active = (this.page === 'group' && this.groupId === g.id) || (!open && this.page === 'playlist' && inside.some((p) => p.id === this.playlistId));
+      // The arrow and the folder open and close it; its name opens its page (4.5.2).
+      const toggle = (e) => {
+        e.stopPropagation();
+        Groups.toggle(g.id);
+        this.drawMenu();
+        if (this.page === 'playlists') PlaylistsPage.render();
+      };
+      const toggleTitle = open ? T('groups.hide.tooltip', { group: g.name }) : T('groups.show.tooltip', { group: g.name });
       const folder = h('button.menu__sub.menu__group'
         + (active ? '.menu__sub--active' : '')
         + (playing ? '.menu__sub--playing' : ''), {
         type: 'button',
-        title: open ? T('groups.hide.tooltip', { group: g.name }) : T('groups.show.tooltip', { group: g.name }),
+        title: T('groups.open.tooltip', { group: g.name }),
         'aria-expanded': String(open),
-        onclick: () => {
-          Groups.toggle(g.id);
-          this.drawMenu();
-          if (this.page === 'playlists') PlaylistsPage.render();
-        },
+        onclick: () => this.openGroup(g.id),
       },
-      h('span.menu__chevron' + (open ? '.menu__chevron--open' : ''), { html: Icons.chevron }),
-      h('span.menu__sub-icon', { html: Icons.folder }),
+      h('span.menu__group-toggle', { role: 'button', title: toggleTitle, 'aria-label': toggleTitle, onclick: toggle },
+        h('span.menu__chevron' + (open ? '.menu__chevron--open' : ''), { html: Icons.chevron }),
+        h('span.menu__sub-icon', { html: Icons.folder })),
       h('span.menu__sub-name', g.name),
       playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null);
       Groups.dropTarget(folder, g.id);

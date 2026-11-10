@@ -21,6 +21,7 @@ const Mobile = {
     add: T('common.addSongs'),
     playlists: T('common.playlists'),
     followed: T('common.followedPlaylists'),
+    group: T('common.playlistGroups'),
     sessions: T('common.activeSessions'),
     trend: T('common.yourListeningTrend'),
   },
@@ -467,7 +468,8 @@ const Mobile = {
 
   _onPlayingList() {
     const list = this._playingList();
-    return !list || (Nav.page === 'playlist' && Nav.playlistId === list);
+    return !list || (Nav.page === 'playlist' && Nav.playlistId === list)
+      || (Nav.page === 'group' && list === GROUP_PREFIX + Nav.groupId);
   },
 
   // ---- what the phone does not have ----

@@ -5498,6 +5498,64 @@ groups.show.tooltip
   en: Show the playlists in "{group}"
   de: Die Playlists in „{group}“ einblenden
 
+groups.open.tooltip
+  en: Open the page of "{group}"
+  de: Die Seite von „{group}“ öffnen
+
+# A playlist group's page (4.5.2): its playlists as frames that open and close
+
+group.search.placeholder
+  en: Search all playlists in {group}
+  de: Alle Playlists in {group} durchsuchen
+
+group.empty
+  en: This group has no playlists yet. Put some into it on the Playlists page.
+  de: Diese Gruppe hat noch keine Playlists. Steck welche auf der Seite Playlists hinein.
+
+group.frame.show.tooltip
+  en: Show the songs of "{playlist}"
+  de: Die Songs von „{playlist}“ einblenden
+
+group.frame.hide.tooltip
+  en: Hide the songs of "{playlist}"
+  de: Die Songs von „{playlist}“ ausblenden
+
+group.frame.play.tooltip
+  en: Play "{playlist}"
+  de: „{playlist}“ abspielen
+
+group.download.tooltip
+  en: Keep all {count} playlists of this group on this device too
+  de: Alle {count} Playlists dieser Gruppe auch auf diesem Gerät behalten
+
+group.download.on.tooltip
+  en: All {count} playlists of this group are kept on this device. Click to stop keeping them
+  de: Alle {count} Playlists dieser Gruppe werden auf diesem Gerät behalten. Klick, um sie nicht mehr zu behalten
+
+group.download.text.computer
+  en: Download all {songs} of the playlists in {group} to this computer? New songs of them come down too.
+  de: Alle {songs} der Playlists in {group} auf diesen Computer laden? Neue Songs daraus kommen auch.
+
+group.download.text.phone
+  en: Download all {songs} of the playlists in {group} to this phone? New songs of them come down too.
+  de: Alle {songs} der Playlists in {group} auf dieses Handy laden? Neue Songs daraus kommen auch.
+
+group.download.text.browser
+  en: Download all {songs} of the playlists in {group} to this browser? New songs of them come down too.
+  de: Alle {songs} der Playlists in {group} in diesen Browser laden? Neue Songs daraus kommen auch.
+
+group.download.stop.text.computer
+  en: The playlists in {group} are no longer kept on this computer: their downloaded songs are deleted here (except those another download holds). They still play from the server.
+  de: Die Playlists in {group} werden nicht mehr auf diesem Computer gehalten: Ihre geladenen Songs werden hier gelöscht (außer ein anderer Download hält sie). Vom Server spielen sie weiter.
+
+group.download.stop.text.phone
+  en: The playlists in {group} are no longer kept on this phone: their downloaded songs are deleted here (except those another download holds). They still play from the server.
+  de: Die Playlists in {group} werden nicht mehr auf diesem Handy gehalten: Ihre geladenen Songs werden hier gelöscht (außer ein anderer Download hält sie). Vom Server spielen sie weiter.
+
+group.download.stop.text.browser
+  en: The playlists in {group} are no longer kept in this browser: their downloaded songs are deleted here (except those another download holds). They still play from the server.
+  de: Die Playlists in {group} werden nicht mehr in diesem Browser gehalten: Ihre geladenen Songs werden hier gelöscht (außer ein anderer Download hält sie). Vom Server spielen sie weiter.
+
 groups.hide.tooltip
   en: Hide the playlists in "{group}"
   de: Die Playlists in „{group}“ ausblenden
@@ -7684,6 +7742,14 @@ window.playlist.update.tooltip
 window.playlist.shuffle.tooltip
   en: Play in random order
   de: In zufälliger Reihenfolge abspielen
+
+window.group.play.tooltip
+  en: Play one of its playlists, picked at random; with Shuffle on, the songs of all of them
+  de: Eine ihrer Playlists abspielen, zufällig gewählt; mit Zufällig an die Songs aller Playlists
+
+window.group.shuffle.tooltip
+  en: Play in random order: with it on, Play draws each song from all the playlists of the group
+  de: In zufälliger Reihenfolge abspielen: damit zieht Abspielen jeden Song aus allen Playlists der Gruppe
 
 window.playlist.offline.tooltip
   en: Keep this playlist's songs on this computer, to play without the server

@@ -42,6 +42,7 @@
   SongSearch.init();
   PlaylistsPage.init();
   FollowedPage.init();
+  GroupPage.init();
   SessionsPage.init();
   TrendPage.init();
   PlaylistPage.init();

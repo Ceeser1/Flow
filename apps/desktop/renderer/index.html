@@ -300,6 +300,36 @@
         <table id="followedTable" class="table table--playlists"></table>
       </section>
 
+      <!-- A playlist group (4.5.2, group.js): its playlists as frames that open and close. -->
+      <section id="page-group" class="page page--playlist page--group" hidden>
+        <div class="pl-top">
+        <div class="pl-head">
+          <div class="pl-head__titlerow">
+            <h1 id="grTitle" class="page__title"></h1>
+          </div>
+          <div class="pl-head__row">
+            <span id="grMeta" class="pl-meta"></span>
+            <button id="grPlay" class="btn btn--play" type="button"
+                    title="Play one of its playlists, picked at random; with Shuffle on, the songs of all of them" data-i18n-title="window.group.play.tooltip"></button>
+            <button id="grShuffle" class="toggle" type="button" aria-pressed="false"
+                    title="Play in random order: with it on, Play draws each song from all the playlists of the group" data-i18n-title="window.group.shuffle.tooltip"></button>
+            <button id="grOffline" class="toggle" type="button" aria-pressed="false" hidden></button>
+            <span id="grOfflineNote" class="pl-meta" hidden></span>
+          </div>
+        </div>
+        <div class="pl-search-row">
+          <div class="search-box">
+            <span id="grSearchIcon" class="search-box__icon"></span>
+            <input id="grSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false" />
+          </div>
+          <span id="grFiltered" class="muted-text"></span>
+        </div>
+        </div>
+        <div id="grEmpty" class="empty" hidden><p id="grEmptyText"></p></div>
+        <div id="grFrames" class="gframes"></div>
+        <div id="grNoMatch" class="empty empty--small" hidden data-i18n="window.playlist.noMatches">No songs match the search.</div>
+      </section>
+
       <!-- Your listening trend -->
       <section id="page-trend" class="page page--playlists" hidden>
         <h1 class="page__title" data-i18n="common.yourListeningTrend">Your listening trend</h1>
@@ -549,6 +579,7 @@
 <script src="app/downloadsHelp.js"></script>
 <script src="app/pages/playlists.js"></script>
 <script src="app/pages/followed.js"></script>
+<script src="app/pages/group.js"></script>
 <script src="app/pages/sessions.js"></script>
 <script src="app/pages/trend.js"></script>
 <script src="app/pages/playlist.js"></script>
