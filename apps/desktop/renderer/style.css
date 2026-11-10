@@ -3886,10 +3886,11 @@ body.mobile .switch-where { text-align: left; }
 .gframe__icon .icon { width: 18px; height: 18px; }
 /* The name with room for a long one, the buttons right beside it, Share at the right end. */
 .gframe__text { display: flex; flex-direction: column; min-width: 140px; flex: 0 1 340px; }
-.gframe__line { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.gframe__playing { display: inline-flex; flex: none; color: var(--green); }
+.gframe__playing { display: inline-flex; flex: none; color: var(--green); margin-left: -4px; }
 .gframe__playing[hidden] { display: none; }
-.gframe__playing .icon { width: 16px; height: 16px; }
+/* The speaker's room (its 18 px and the gap, less its pull to the icon) taken from the name's. */
+.gframe__head--playing .gframe__text { flex-basis: 316px; }
+.gframe__playing .icon { width: 18px; height: 18px; }
 .gframe__name { font-size: 16px; font-weight: 700; color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gframe__sub { color: var(--text-dim); font-size: 13px; }
 .gframe__buttons { display: flex; align-items: center; gap: 8px; flex: none; }

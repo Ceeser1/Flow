@@ -254,7 +254,7 @@ const GroupPage = {
     const seconds = Store.durationOf(p);
     const play = h('button.btn.btn--play.gframe__play', { type: 'button', onclick: () => Player.togglePlaylist(p.id) });
     const shuffle = h('button.toggle.gframe__shuffle', { type: 'button', title: T('window.playlist.shuffle.tooltip'), onclick: () => Player.setShuffle(!Player.queue.shuffle) });
-    // The speaker in front of its name while a song of it plays (_drawPlayState).
+    // The speaker beside its icon while a song of it plays (_drawPlayState).
     const playing = h('span.gframe__playing', { html: Icons.speaker, title: T('common.playing'), hidden: true });
     this._frames.set(p.id, {
       play, shuffle, count, playing, songs: new Set((p.entries || []).map((e) => e.songId)),
@@ -277,8 +277,10 @@ const GroupPage = {
     },
     h('span.menu__chevron' + (open ? '.menu__chevron--open' : ''), { html: Icons.chevron }),
     h('span.gframe__icon', { html: listIcon(p) }),
+    // The speaker right beside its icon while a song of it plays, its name and numbers moved over.
+    playing,
     h('span.gframe__text',
-      h('span.gframe__line', playing, h('span.gframe__name', { title: p.name }, p.name)),
+      h('span.gframe__name', { title: p.name }, p.name),
       h('span.gframe__sub', [Util.plural(count, 'song'), Util.fmtClock(seconds), p.ownerName ? T('common.byOwner', { profile: p.ownerName }) : ''].filter(Boolean).join(' · '))),
     h('span.gframe__buttons', play, shuffle, this._offlineButton(p)),
     this._shareButton(p));
@@ -409,6 +411,8 @@ const GroupPage = {
       // Playing: a song of it, played from it or from the whole group.
       f.playing.hidden = !(Player.isPlaying && Player.currentId && f.songs.has(Player.currentId)
         && (Player.contextId === id || Player.contextId === this.listId));
+      // Its name's room as much narrower, so the buttons stay lined up with the other frames'.
+      f.playing.parentNode.classList.toggle('gframe__head--playing', !f.playing.hidden);
       const on = Player.contextId === id && !!Player.currentId && Player.isPlaying;
       f.play.innerHTML = label(on);
       f.play.title = on ? T('common.pause') : T('group.frame.play.tooltip', { playlist: (Store.playlist(id) || {}).name || '' });
