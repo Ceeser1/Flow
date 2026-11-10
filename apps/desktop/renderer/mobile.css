@@ -1065,12 +1065,14 @@ body.mobile #grOffline.toggle--on { color: #f5be3c; border-color: rgba(245, 190,
 body.mobile .gframe { padding: 2px 8px; }
 body.mobile .gframe--open { padding-bottom: 8px; }
 body.mobile .gframe__head { flex-wrap: wrap; gap: 6px 10px; padding: 8px 4px; }
-body.mobile .gframe__buttons { flex: 1 1 100%; padding-left: 30px; }
+body.mobile .gframe__text { flex: 1 1 70%; }
+body.mobile .gframe__buttons { flex: 1 1 auto; padding-left: 30px; }
 body.mobile .gframe__buttons .toggle,
 body.mobile .gframe__buttons .btn--play { height: 40px; border-radius: 20px; }
 body.mobile .gframe__buttons .btn--play { width: 40px; padding: 0; justify-content: center; }
 body.mobile .gframe__buttons .toggle { width: 40px; padding: 0; justify-content: center; }
 body.mobile .gframe__buttons .icon { width: 18px; height: 18px; }
-body.mobile .gframe__share { margin-left: auto; }
+body.mobile .gframe__share { margin-left: auto; width: 40px; height: 40px; border-radius: 20px; padding: 0; justify-content: center; }
+body.mobile .gframe__share .icon { width: 18px; height: 18px; }
 body.mobile .gframe__offline.toggle--on { color: #f5be3c; border-color: rgba(245, 190, 60, 0.5); background: rgba(245, 190, 60, 0.16); }
 body.mobile .gframe__songs { max-height: 60vh; background: none; }

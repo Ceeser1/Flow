@@ -3884,7 +3884,8 @@ body.mobile .switch-where { text-align: left; }
 .gframe__head .menu__chevron .icon { width: 16px; height: 16px; }
 .gframe__icon { display: inline-flex; color: var(--text-dim); }
 .gframe__icon .icon { width: 18px; height: 18px; }
-.gframe__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+/* The name with room for a long one, the buttons right beside it, Share at the right end. */
+.gframe__text { display: flex; flex-direction: column; min-width: 140px; flex: 0 1 340px; }
 .gframe__name { font-size: 16px; font-weight: 700; color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gframe__sub { color: var(--text-dim); font-size: 13px; }
 .gframe__buttons { display: flex; align-items: center; gap: 8px; flex: none; }
@@ -3892,14 +3893,13 @@ body.mobile .switch-where { text-align: left; }
 .gframe__buttons .toggle { height: 32px; font-size: 13px; }
 .gframe__buttons .btn--play { padding: 0 16px 0 12px; }
 .gframe__buttons .toggle { padding: 0 12px 0 8px; }
-/* Share (or Following) at the right end, a little apart. */
-.gframe__share { margin-left: 10px; }
+.gframe__share { margin-left: auto; flex: none; height: 32px; font-size: 13px; padding: 0 12px 0 8px; }
+/* Its songs as on the playlist's own page, in a box that scrolls (the column names stay on top). */
 .gframe__songs {
-  max-height: min(420px, 55vh);
+  max-height: min(460px, 60vh);
   overflow-y: auto;
   margin-top: 6px;
   border-radius: var(--radius);
-  background: var(--well);
 }
 .gframe__table { margin: 0; }
 .gframe__table th { position: sticky; top: 0; z-index: 1; }

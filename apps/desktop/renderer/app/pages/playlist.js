@@ -579,13 +579,13 @@ const PlaylistPage = {
    * what the columns shown add up to, so every one shown makes the others
    * a little narrower. Title takes what is left.
    */
-  _shareColumns(keys) {
+  _shareColumns(keys, table = $('plTable')) {
     const weights = {
       title: 45, artist: 35, album: 25, genre: 15, subGenre: 15, mix: 20, from: 22,
     };
     const shown = ['title', 'artist', ...keys];
     const total = shown.reduce((sum, k) => sum + weights[k], 0);
-    for (const k of shown) if (k !== 'title') $('plTable').style.setProperty(`--w-${k}`, String(weights[k] / total));
+    for (const k of shown) if (k !== 'title') table.style.setProperty(`--w-${k}`, String(weights[k] / total));
   },
 
   /**
@@ -595,9 +595,8 @@ const PlaylistPage = {
    * (maximized, then back) it would still report the old width, and Title,
    * which takes what is left, would be squeezed to nothing.
    */
-  _sizeColumns() {
-    const table = $('plTable');
-    const width = $('plTableWrap').clientWidth;
+  _sizeColumns(table = $('plTable'), wrap = $('plTableWrap')) {
+    const width = wrap.clientWidth;
     if (!width) return;
     const fixed = parseFloat(getComputedStyle(table).getPropertyValue('--fixed')) || 0;
     table.style.setProperty('--rest', Math.max(0, width - fixed) + 'px');
@@ -626,13 +625,13 @@ const PlaylistPage = {
    * have Add to Playlists, leftmost. While adding songs to a
    * playlist, its + takes Add to Queue's place, which moves into More.
    */
-  _actions(row, pickTarget, pickSet) {
+  _actions(row, pickTarget, pickSet, listId = this.id, playButtons = this._playButtons) {
     const song = row.song;
-    const play = iconButton('act.act--green', Icons.play, T('common.play'), () => Player.toggleSong(song.id, this.id));
-    this._playButtons.set(song.id, play);
+    const play = iconButton('act.act--green', Icons.play, T('common.play'), () => Player.toggleSong(song.id, listId));
+    playButtons.set(song.id, play);
     const queue = () => iconButton('act.act--green', Icons.plus, T('common.addToQueue'), () => Player.addToQueue(song.id));
     const more = () => {
-      const buttons = this._moreButtons(song);
+      const buttons = this._moreButtons(song, listId);
       if (pickTarget) buttons.unshift(queue());
       return buttons;
     };
@@ -658,8 +657,8 @@ const PlaylistPage = {
   },
 
   /** More's buttons for a song (on the phone, its action sheet). */
-  _moreButtons(song) {
-    const listId = this.id;
+  /** `listId`: the list the song is shown in (a group page's frame shows another than this page's). */
+  _moreButtons(song, listId = this.id) {
     // Another server's song (a guest in its session): it plays and queues there, nothing more.
     if (song.foreign) return [];
     // A song here that is not the server's (Downloaded Songs) only plays, and can be deleted from here.
@@ -681,7 +680,7 @@ const PlaylistPage = {
     } else if (this._picksItself(listId)) {
       buttons.push(iconButton('act.act--red', Icons.x, T('playlist.song.removeFromPlaylists'), () => this.removeFromLists(song)));
     } else if (listId !== FAVOURITES_ID && !readOnly) {
-      buttons.push(iconButton('act.act--red', Icons.x, T('playlist.song.removeFromPlaylist'), () => this.removeFromList(song)));
+      buttons.push(iconButton('act.act--red', Icons.x, T('playlist.song.removeFromPlaylist'), () => this.removeFromList(song, listId)));
     }
     // All Songs and the listening trend lists: put the song into playlists from here, the leftmost button.
     if (Store.isAllSongs(listId) || this._picksItself(listId)) buttons.unshift(SongActions.playlistButton(song));
@@ -764,10 +763,10 @@ const PlaylistPage = {
     }
   },
 
-  async removeFromList(song) {
-    const p = Store.playlist(this.id);
+  async removeFromList(song, listId = this.id) {
+    const p = Store.playlist(listId);
     await attempt(async () => {
-      await window.flow.removeFromPlaylist(this.id, song.id);
+      await window.flow.removeFromPlaylist(listId, song.id);
       toast(p ? T('playlist.remove.done', { song: song.title, playlist: p.name }) : T('playlist.remove.done.thePlaylist', { song: song.title }), 'success');
     });
   },

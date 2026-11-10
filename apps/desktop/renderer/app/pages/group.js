@@ -3,10 +3,12 @@
 // A playlist group's page (4.5.2), opened by the group's name in the menu.
 // At the top its name, its songs and length all together, Play, Shuffle and
 // Download, and below them a search box looking through every playlist in
-// it. Then each playlist as a frame of its own: its name, songs and length,
-// Play, Shuffle and Download, and Share (or Following) at the right; a click
-// on its head opens or closes it, and open it shows its songs in a box of
-// their own that scrolls. The page itself scrolls once the frames do not fit.
+// it. Then each playlist as a frame of its own: its name (with room for a
+// long one), songs and length, Play, Shuffle and Download beside it, and
+// Share (or Following) at the right; a click on its head opens or closes it,
+// and open it shows its songs as its own page does (the same columns, sorting
+// and buttons, playlist.js) in a box of their own that scrolls. The page
+// itself scrolls once the frames do not fit.
 //
 // The group's Play picks one of its playlists at random and plays it; with
 // Shuffle on it plays the whole group as one list instead (Store's
@@ -19,7 +21,8 @@ const GroupPage = {
   filter: '',
   // The playlists open on this page, per group (while the app runs): group id -> Set of playlist ids.
   _open: new Map(),
-  _playButtons: new Map(), // song id -> its row's Play
+  _playButtons: new Map(), // playlist id -> (song id -> its row's Play)
+  _sorts: new Map(), // playlist id -> its frame's sort (while the app runs)
   _frames: new Map(), // playlist id -> { play, shuffle } of its head, for the play state
 
   init() {
@@ -195,19 +198,30 @@ const GroupPage = {
       : here === rows.length ? T('playlist.download.state.allDownloaded') : T('playlist.download.state.someDownloaded', { done: here, count: rows.length });
   },
 
-  /** The songs of a playlist the search finds (all of them without one). */
+  _sortOf(p) {
+    if (!this._sorts.has(p.id)) this._sorts.set(p.id, { key: null, dir: null });
+    return this._sorts.get(p.id);
+  },
+
+  /** The songs of a playlist as its page orders them (its frame's sort), those the search finds. */
   _rowsOf(p, words) {
-    const rows = Store.rowsOf(p.id).slice().sort((a, b) => b.addedAt - a.addedAt);
+    const rows = PlaylistPage._ordered(p.id, this._sortOf(p));
     if (!words.length) return rows;
     return rows.filter((r) => Util.hasWords(Util.titleHay(r.song), words));
   },
 
   renderFrames() {
     const box = $('grFrames');
-    // The song lists' own scroll places, kept over the redraw.
+    // The page's place and the song lists' own, kept over the redraw (a
+    // library change while songs come down redraws it often). The frames
+    // keep their height meanwhile, so the page is never shorter for a moment.
+    const pages = $('pages');
+    const pageTop = pages.scrollTop;
     const scrolled = new Map([...box.querySelectorAll('.gframe__songs')].map((n) => [n.dataset.id, n.scrollTop]));
+    box.style.minHeight = `${box.offsetHeight}px`;
     releaseCovers([box]);
     clear(box);
+    const draws = [];
     this._playButtons = new Map();
     this._frames = new Map();
     const lists = this._lists();
@@ -222,8 +236,12 @@ const GroupPage = {
       if (words.length && !rows.length) continue;
       found += rows.length;
       shown += 1;
-      box.appendChild(this._frame(p, rows, words.length > 0 || this._isOpen(p), scrolled.get(p.id) || 0));
+      box.appendChild(this._frame(p, rows, words.length > 0 || this._isOpen(p), scrolled.get(p.id) || 0, draws));
     }
+    // The open frames' songs, now that their boxes are in the page and can measure where their rows show.
+    for (const draw of draws) draw();
+    box.style.minHeight = '';
+    pages.scrollTop = pageTop;
     $('grEmpty').hidden = lists.length > 0;
     $('grEmptyText').textContent = T('group.empty');
     $('grNoMatch').hidden = !words.length || shown > 0 || !lists.length;
@@ -231,7 +249,7 @@ const GroupPage = {
     this._drawPlayState();
   },
 
-  _frame(p, rows, open, scrollTop) {
+  _frame(p, rows, open, scrollTop, draws) {
     const count = Store.songCount(p);
     const seconds = Store.durationOf(p);
     const play = h('button.btn.btn--play.gframe__play', { type: 'button', onclick: () => Player.togglePlaylist(p.id) });
@@ -256,9 +274,10 @@ const GroupPage = {
     h('span.menu__chevron' + (open ? '.menu__chevron--open' : ''), { html: Icons.chevron }),
     h('span.gframe__icon', { html: listIcon(p) }),
     h('span.gframe__text',
-      h('span.gframe__name', p.name),
+      h('span.gframe__name', { title: p.name }, p.name),
       h('span.gframe__sub', [Util.plural(count, 'song'), Util.fmtClock(seconds), p.ownerName ? T('common.byOwner', { profile: p.ownerName }) : ''].filter(Boolean).join(' · '))),
-    h('span.gframe__buttons', play, shuffle, this._offlineButton(p), this._shareButton(p)));
+    h('span.gframe__buttons', play, shuffle, this._offlineButton(p)),
+    this._shareButton(p));
     const frame = h('div.gframe' + (open ? '.gframe--open' : ''), { dataset: { id: p.id } }, head);
     if (!open) return frame;
     if (!rows.length) {
@@ -266,14 +285,12 @@ const GroupPage = {
       return frame;
     }
     const songs = h('div.gframe__songs', { dataset: { id: p.id } });
-    const table = h('table.table.table--songs.gframe__table');
+    const table = h('table.table.table--songs.gframe__table', { dataset: { id: p.id } });
     songs.appendChild(table);
     frame.appendChild(songs);
-    // Drawn once the box is in the page, so it can measure where its rows show.
-    requestAnimationFrame(() => {
-      if (!songs.isConnected) return;
-      songs.scrollTop = scrollTop;
+    draws.push(() => {
       this._songTable(table, songs, p, rows);
+      songs.scrollTop = scrollTop;
     });
     return frame;
   },
@@ -309,52 +326,45 @@ const GroupPage = {
     return btn;
   },
 
-  /** A playlist's songs in its frame's own scrolling box; they play in that playlist. */
+  /**
+   * A playlist's songs in its frame's own scrolling box, as its page shows
+   * them: the same columns (those Settings shows too), sorting and buttons;
+   * they play in that playlist.
+   */
   _songTable(table, scroller, p, rows) {
     const playSong = (song) => {
       if (Player.currentId === song.id && Player.contextId === p.id && Player.isPlaying) return;
       Player.toggleSong(song.id, p.id);
     };
-    const more = (song) => {
-      const buttons = [PlaylistPage._favButton(song)];
-      if (Store.server.on && Store.can('offline')) buttons.push(PlaylistPage._downloadButton(song));
-      buttons.push(iconButton('act.act--grey', Icons.search, T('common.songDetails'), () => SongDetails.open(song.id)));
-      // A playlist of yours (not a smart one): the song out of it.
-      if (!p.isShared && !p.isRuled) {
-        buttons.push(iconButton('act.act--red', Icons.x, T('playlist.song.removeFromPlaylist'), () => attempt(async () => {
-          await window.flow.removeFromPlaylist(p.id, song.id);
-          toast(T('common.removedFrom', { playlist: p.name }), 'success');
-        })));
-      }
-      return buttons;
-    };
+    const buttons = new Map();
+    this._playButtons.set(p.id, buttons);
+    const extra = PlaylistPage._extraColumns(false);
+    PlaylistPage._shareColumns(extra.map((c) => c.key), table);
+    const sort = this._sortOf(p);
     renderTable(table, {
       rows,
-      sort: null,
+      sort,
       rowKey: (r) => r.song.id,
-      onSort: () => {},
+      onSort: (key) => {
+        this._sorts.set(p.id, Util.cycleSort(sort, key));
+        this.renderFrames();
+      },
       onRowDblClick: (r) => Player.load(r.song.id, p.id),
       scroller,
       scrollTop: scroller.scrollTop,
       onRowsAdded: (trs) => {
         if (Player.currentId && trs.some((tr) => tr.dataset.id === Player.currentId)) this._drawPlayState();
       },
+      onRowsRemoved: (trs) => {
+        for (const tr of trs) buttons.delete(tr.dataset.id);
+      },
       columns: [
-        { key: 'title', label: T('common.title'), sortable: false, cls: 'col-title', render: (r) => PlaylistPage._title(r.song), onClick: (r) => playSong(r.song) },
-        { key: 'artist', label: T('common.artist'), sortable: false, cls: 'col-artist', render: (r) => h('span', { title: r.song.artist }, r.song.artist) },
-        { key: 'duration', label: T('common.duration'), sortable: false, cls: 'col-num', render: (r) => Util.fmtClock(r.song.duration) },
-        {
-          key: 'actions',
-          label: T('common.actions'),
-          sortable: false,
-          cls: 'col-actions',
-          render: (r) => {
-            const play = iconButton('act.act--green', Icons.play, T('common.play'), () => Player.toggleSong(r.song.id, p.id));
-            this._playButtons.set(`${p.id}\u0000${r.song.id}`, play);
-            const queue = iconButton('act.act--green', Icons.plus, T('common.addToQueue'), () => Player.addToQueue(r.song.id));
-            return SongActions.cell([queue, play], () => more(r.song));
-          },
-        },
+        { key: 'title', label: T('common.title'), cls: 'col-title', render: (r) => PlaylistPage._title(r.song), onClick: (r) => playSong(r.song) },
+        { key: 'artist', label: T('common.artist'), cls: 'col-artist', render: (r) => h('span', { title: r.song.artist }, r.song.artist) },
+        ...extra,
+        { key: 'duration', label: T('common.duration'), cls: 'col-num', render: (r) => Util.fmtClock(r.song.duration) },
+        { key: 'added', label: T('common.added'), cls: 'col-date', render: (r) => Util.fmtDate(r.addedAt) },
+        { key: 'actions', label: T('common.actions'), sortable: false, cls: 'col-actions', render: (r) => PlaylistPage._actions(r, null, null, p.id, buttons) },
       ],
       mobile: {
         lead: (r) => Covers.el(r.song),
@@ -363,9 +373,14 @@ const GroupPage = {
         mark: (r) => (Store.server.on && Store.can('offline') && r.song.file ? Icons.download : ''),
         sheetTitle: (r) => Util.songLine(r.song),
         tap: (r) => playSong(r.song),
-        more: (r) => [iconButton('act.act--green', Icons.plus, T('common.addToQueue'), () => Player.addToQueue(r.song.id)), ...more(r.song)],
+        more: (r) => [iconButton('act.act--green', Icons.plus, T('common.addToQueue'), () => Player.addToQueue(r.song.id)), ...PlaylistPage._moreButtons(r.song, p.id)],
       },
     });
+    PlaylistPage._sizeColumns(table, scroller);
+    if (!scroller._sized) {
+      scroller._sized = true;
+      new ResizeObserver(() => PlaylistPage._sizeColumns(table, scroller)).observe(scroller);
+    }
     this._drawPlayState();
   },
 
@@ -401,13 +416,14 @@ const GroupPage = {
         tr.classList.toggle('row--current', tr.dataset.id === Player.currentId && (Player.contextId === listId || Player.contextId === this.listId));
       }
     }
-    for (const [key, btn] of this._playButtons) {
-      const [listId, songId] = key.split('\u0000');
-      const on = songId === Player.currentId && Player.isPlaying && Player.contextId === listId;
-      if (!!btn._playing === on) continue;
-      btn._playing = on;
-      btn.innerHTML = on ? Icons.pause : Icons.play;
-      btn.title = on ? T('common.pause') : T('common.play');
+    for (const [listId, buttons] of this._playButtons) {
+      for (const [songId, btn] of buttons) {
+        const on = songId === Player.currentId && Player.isPlaying && Player.contextId === listId;
+        if (!!btn._playing === on) continue;
+        btn._playing = on;
+        btn.innerHTML = on ? Icons.pause : Icons.play;
+        btn.title = on ? T('common.pause') : T('common.play');
+      }
     }
   },
 };
