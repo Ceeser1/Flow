@@ -313,8 +313,10 @@
                     title="Play one of its playlists, picked at random; with Shuffle on, the songs of all of them" data-i18n-title="window.group.play.tooltip"></button>
             <button id="grShuffle" class="toggle" type="button" aria-pressed="false"
                     title="Play in random order: with it on, Play draws each song from all the playlists of the group" data-i18n-title="window.group.shuffle.tooltip"></button>
-            <button id="grOffline" class="toggle" type="button" aria-pressed="false" hidden></button>
+            <span id="grShuffleHint" class="pl-hint" data-i18n="window.group.shuffle.hint">Shuffling the group picks random songs from any playlist inside, mixing all together</span>
+            <!-- At the row's right end, its note before it. -->
             <span id="grOfflineNote" class="pl-meta" hidden></span>
+            <button id="grOffline" class="toggle" type="button" aria-pressed="false" hidden></button>
           </div>
         </div>
         <div class="pl-search-row">

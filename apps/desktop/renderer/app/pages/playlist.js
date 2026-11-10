@@ -625,9 +625,9 @@ const PlaylistPage = {
    * have Add to Playlists, leftmost. While adding songs to a
    * playlist, its + takes Add to Queue's place, which moves into More.
    */
-  _actions(row, pickTarget, pickSet, listId = this.id, playButtons = this._playButtons) {
+  _actions(row, pickTarget, pickSet, listId = this.id, playButtons = this._playButtons, onPlay = null) {
     const song = row.song;
-    const play = iconButton('act.act--green', Icons.play, T('common.play'), () => Player.toggleSong(song.id, listId));
+    const play = iconButton('act.act--green', Icons.play, T('common.play'), () => (onPlay ? onPlay(song) : Player.toggleSong(song.id, listId)));
     playButtons.set(song.id, play);
     const queue = () => iconButton('act.act--green', Icons.plus, T('common.addToQueue'), () => Player.addToQueue(song.id));
     const more = () => {

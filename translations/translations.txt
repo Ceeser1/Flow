@@ -5520,6 +5520,10 @@ group.frame.hide.tooltip
   en: Hide the songs of "{playlist}"
   de: Die Songs von „{playlist}“ ausblenden
 
+group.frame.shuffle.tooltip
+  en: Play "{playlist}" in random order (its own Shuffle, apart from the group's and the other playlists')
+  de: „{playlist}“ in zufälliger Reihenfolge abspielen (sein eigenes Zufällig, getrennt von dem der Gruppe und der anderen Playlists)
+
 group.frame.play.tooltip
   en: Play "{playlist}"
   de: „{playlist}“ abspielen
@@ -7750,6 +7754,10 @@ window.group.play.tooltip
 window.group.shuffle.tooltip
   en: Play in random order: with it on, Play draws each song from all the playlists of the group
   de: In zufälliger Reihenfolge abspielen: damit zieht Abspielen jeden Song aus allen Playlists der Gruppe
+
+window.group.shuffle.hint
+  en: Shuffling the group picks random songs from any playlist inside, mixing all together
+  de: Mischen der Gruppe wählt zufällige Songs aus allen Playlists darin und mischt alles zusammen
 
 window.playlist.offline.tooltip
   en: Keep this playlist's songs on this computer, to play without the server

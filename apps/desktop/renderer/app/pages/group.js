@@ -10,11 +10,15 @@
 // and buttons, playlist.js) in a box of their own that scrolls. The page
 // itself scrolls once the frames do not fit.
 //
-// The group's Play picks one of its playlists at random and plays it; with
-// Shuffle on it plays the whole group as one list instead (Store's
-// "group:<id>"), so each next song is drawn from all of its playlists.
-// Turning Shuffle on here while one of its playlists plays carries on in the
-// whole group. The playlist a song plays from has the speaker before its name. Download marks every playlist in it to be kept on this device.
+// The group and each of its playlists have a Shuffle of their own (kept per
+// device, settings listShuffle): a list started here plays with its own, and
+// while it plays its Shuffle is the player's. The group's Play picks one of
+// its playlists at random and plays it; with the group's Shuffle on it plays
+// the whole group as one list instead (Store's "group:<id>"), so each next
+// song is drawn from all of its playlists. Pressed while something else plays
+// (one of its playlists started by its own Play too), it starts anew with a
+// new queue; only while the group itself plays it pauses and carries on. The
+// playlist a song plays from has the speaker beside its icon. Download marks every playlist in it to be kept on this device.
 
 const GroupPage = {
   id: null,
@@ -23,6 +27,7 @@ const GroupPage = {
   _open: new Map(),
   _playButtons: new Map(), // playlist id -> (song id -> its row's Play)
   _sorts: new Map(), // playlist id -> its frame's sort (while the app runs)
+  _picked: new Map(), // group id -> the playlist its Play picked, while that plays
   _frames: new Map(), // playlist id -> { play, shuffle } of its head, for the play state
 
   init() {
@@ -59,6 +64,7 @@ const GroupPage = {
       if (Nav.page === 'group') this.render();
     });
     Player.onChange(() => {
+      this._followPlayer();
       if (Nav.page === 'group') this._drawPlayState();
     });
   },
@@ -93,38 +99,129 @@ const GroupPage = {
     this.renderFrames();
   },
 
-  /** Whether this group, or one of its playlists, is the list playing (or paused). */
+  /**
+   * Whether the group itself is the list playing (or paused): the whole
+   * group, or the playlist its Play picked.
+   */
   _groupActive() {
     if (!Player.currentId) return false;
-    return Player.contextId === this.listId || this._lists().some((p) => p.id === Player.contextId);
+    return Player.contextId === this.listId || (!!Player.contextId && this._picked.get(this.id) === Player.contextId);
+  },
+
+  // ---- each list's own Shuffle ----
+
+  /** A list's Shuffle here: the player's while it plays, else its own kept one. */
+  shuffleOf(listId) {
+    if (Player.currentId && Player.contextId === listId) return !!Player.queue.shuffle;
+    return !!(Store.settings.listShuffle || {})[listId];
+  },
+
+  _keepShuffle(listId, on) {
+    const all = { ...(Store.settings.listShuffle || {}) };
+    if (!!all[listId] === on) return;
+    if (on) all[listId] = true;
+    else delete all[listId];
+    Store.saveSettings({ listShuffle: all });
+  },
+
+  /** A list's Shuffle turned: kept, and the player's too while that list plays. */
+  setShuffleOf(listId, on) {
+    this._keepShuffle(listId, on);
+    if (Player.currentId && Player.contextId === listId) Player.setShuffle(on);
+    else this._drawPlayState();
+  },
+
+  /**
+   * The player's Shuffle turned (its own button too) while a list of a group
+   * plays: that list keeps it. The group's pick is forgotten once something
+   * else plays.
+   */
+  _followPlayer() {
+    // The Shuffle set for a list about to start is not the one playing's.
+    if (this._switching || !Player.currentId || !Player.contextId) return;
+    const ctx = String(Player.contextId);
+    for (const [gid, pid] of this._picked) if (pid !== ctx) this._picked.delete(gid);
+    const ours = ctx.startsWith(GROUP_PREFIX) ? !!Store.group(ctx.slice(GROUP_PREFIX.length)) : !!Store.groupOf(Store.playlist(ctx));
+    if (ours) this._keepShuffle(ctx, !!Player.queue.shuffle);
+  },
+
+  /** The player's Shuffle set to a list's own, for that list to start with. */
+  _shuffleFor(listId) {
+    const on = this.shuffleOf(listId);
+    if (!!Player.queue.shuffle === on) return;
+    this._switching = true;
+    try {
+      Player.setShuffle(on);
+    } finally {
+      this._switching = false;
+    }
+  },
+
+  /** A list started here anew (a new queue), with its own Shuffle; `songId`: from that song. */
+  _start(listId, songId = null) {
+    this._shuffleFor(listId);
+    if (songId) {
+      Player.load(songId, listId);
+      return;
+    }
+    // Loaded already but paused: a new queue from it all the same.
+    if (Player.contextId === listId) Player.contextId = null;
+    Player.togglePlaylist(listId);
+  },
+
+  /** A playlist's own Play: pauses and carries on while it plays, else starts it anew. */
+  playList(listId) {
+    if (Player.currentId && Player.contextId === listId) {
+      Player.toggle();
+      return;
+    }
+    this._picked.delete(this.id);
+    this._start(listId);
+  },
+
+  /** A song of a frame: in its playlist, with that playlist's Shuffle when it starts the list. */
+  playSong(song, listId) {
+    if (Player.contextId !== listId) this._shuffleFor(listId);
+    Player.toggleSong(song.id, listId);
   },
 
   // ---- the group's buttons ----
 
   /**
-   * Play: pauses or carries on while the group (or one of its playlists)
-   * plays; otherwise one of its playlists at random, or with Shuffle on the
-   * whole group as one list.
+   * Play: pauses or carries on while the group itself plays; otherwise
+   * anew, with a new queue: with the group's Shuffle on the whole group as
+   * one list, else one of its playlists at random (with its own Shuffle).
    */
   play() {
     if (this._groupActive()) {
       Player.toggle();
       return;
     }
-    if (Player.queue.shuffle) {
-      if (Store.rowsOf(this.listId).length) Player.togglePlaylist(this.listId);
+    this._picked.delete(this.id);
+    if (this.shuffleOf(this.listId)) {
+      if (Store.rowsOf(this.listId).length) this._start(this.listId);
       return;
     }
     const lists = this._lists().filter((p) => Store.rowsOf(p.id).length);
     if (!lists.length) return;
-    Player.togglePlaylist(lists[Math.floor(Math.random() * lists.length)].id);
+    const pick = lists[Math.floor(Math.random() * lists.length)].id;
+    this._start(pick);
+    this._picked.set(this.id, pick);
+    this._drawPlayState();
   },
 
-  /** Shuffle (the player's); turned on while one of its playlists plays, the whole group goes on. */
+  /**
+   * The group's own Shuffle. Turned on while its Play's pick plays, the
+   * whole group carries on with the song playing.
+   */
   shuffle() {
-    const on = !Player.queue.shuffle;
-    Player.setShuffle(on);
-    if (on && Player.currentId && this._lists().some((p) => p.id === Player.contextId)) Player.carryOnIn(this.listId);
+    const on = !this.shuffleOf(this.listId);
+    const picked = this._picked.get(this.id);
+    this.setShuffleOf(this.listId, on);
+    if (on && picked && Player.currentId && Player.contextId === picked) {
+      Player.carryOnIn(this.listId);
+      Player.setShuffle(true);
+    }
   },
 
   /** The playlists Download can keep here: yours, and the ones you follow. */
@@ -252,8 +349,8 @@ const GroupPage = {
   _frame(p, rows, open, scrollTop, draws) {
     const count = Store.songCount(p);
     const seconds = Store.durationOf(p);
-    const play = h('button.btn.btn--play.gframe__play', { type: 'button', onclick: () => Player.togglePlaylist(p.id) });
-    const shuffle = h('button.toggle.gframe__shuffle', { type: 'button', title: T('window.playlist.shuffle.tooltip'), onclick: () => Player.setShuffle(!Player.queue.shuffle) });
+    const play = h('button.btn.btn--play.gframe__play', { type: 'button', onclick: () => this.playList(p.id) });
+    const shuffle = h('button.toggle.gframe__shuffle', { type: 'button', title: T('group.frame.shuffle.tooltip', { playlist: p.name }), onclick: () => this.setShuffleOf(p.id, !this.shuffleOf(p.id)) });
     // The speaker beside its icon while a song of it plays (_drawPlayState).
     const playing = h('span.gframe__playing', { html: Icons.speaker, title: T('common.playing'), hidden: true });
     this._frames.set(p.id, {
@@ -340,7 +437,7 @@ const GroupPage = {
   _songTable(table, scroller, p, rows) {
     const playSong = (song) => {
       if (Player.currentId === song.id && Player.contextId === p.id && Player.isPlaying) return;
-      Player.toggleSong(song.id, p.id);
+      this.playSong(song, p.id);
     };
     const buttons = new Map();
     this._playButtons.set(p.id, buttons);
@@ -355,7 +452,7 @@ const GroupPage = {
         this._sorts.set(p.id, Util.cycleSort(sort, key));
         this.renderFrames();
       },
-      onRowDblClick: (r) => Player.load(r.song.id, p.id),
+      onRowDblClick: (r) => this._start(p.id, r.song.id),
       scroller,
       scrollTop: scroller.scrollTop,
       onRowsAdded: (trs) => {
@@ -370,7 +467,7 @@ const GroupPage = {
         ...extra,
         { key: 'duration', label: T('common.duration'), cls: 'col-num', render: (r) => Util.fmtClock(r.song.duration) },
         { key: 'added', label: T('common.added'), cls: 'col-date', render: (r) => Util.fmtDate(r.addedAt) },
-        { key: 'actions', label: T('common.actions'), sortable: false, cls: 'col-actions', render: (r) => PlaylistPage._actions(r, null, null, p.id, buttons) },
+        { key: 'actions', label: T('common.actions'), sortable: false, cls: 'col-actions', render: (r) => PlaylistPage._actions(r, null, null, p.id, buttons, (song) => this.playSong(song, p.id)) },
       ],
       mobile: {
         lead: (r) => Covers.el(r.song),
@@ -398,15 +495,14 @@ const GroupPage = {
       : (on ? Icons.pause : Icons.play) + `<span>${on ? T('common.pause') : T('common.play')}</span>`);
     $('grPlay').innerHTML = (playing ? Icons.pause : Icons.play) + `<span>${playing ? T('common.pause') : T('common.play')}</span>`;
     $('grPlay').disabled = !Store.rowsOf(this.listId).length;
-    const shuffle = Player.queue.shuffle;
-    const drawShuffle = (btn, mobileIcon) => {
+    const drawShuffle = (btn, mobileIcon, shuffle) => {
       btn.classList.toggle('toggle--on', shuffle);
       btn.setAttribute('aria-pressed', String(shuffle));
       btn.setAttribute('aria-label', T('common.shuffle'));
       btn.innerHTML = mobileIcon ? Icons.shuffle
         : `<span class="toggle__box">${shuffle ? Icons.check : ''}</span>${Icons.shuffle}<span>${T('common.shuffle')}</span>`;
     };
-    drawShuffle($('grShuffle'), Store.uiMode === 'mobile');
+    drawShuffle($('grShuffle'), Store.uiMode === 'mobile', this.shuffleOf(this.listId));
     for (const [id, f] of this._frames) {
       // Playing: a song of it, played from it or from the whole group.
       f.playing.hidden = !(Player.isPlaying && Player.currentId && f.songs.has(Player.currentId)
@@ -418,7 +514,7 @@ const GroupPage = {
       f.play.title = on ? T('common.pause') : T('group.frame.play.tooltip', { playlist: (Store.playlist(id) || {}).name || '' });
       f.play.setAttribute('aria-label', on ? T('common.pause') : T('common.play'));
       f.play.disabled = !f.count;
-      drawShuffle(f.shuffle, Store.uiMode === 'mobile');
+      drawShuffle(f.shuffle, Store.uiMode === 'mobile', this.shuffleOf(id));
     }
     // The song playing marked in the list it plays from.
     for (const node of document.querySelectorAll('#grFrames .gframe')) {

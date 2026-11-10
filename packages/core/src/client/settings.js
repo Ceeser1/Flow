@@ -357,6 +357,9 @@ const DEFAULTS = {
   sharedGroupOpen: true,
   // The playlist groups (4.5) open in the menu and on the Playlists page, by id; closed until opened.
   openGroups: [],
+  // A group's page (4.5.2): the lists with Shuffle on there, each its own
+  // (a playlist's id, or "group:<id>" for the whole group's).
+  listShuffle: {},
   // Settings' categories folded shut (their titles), on the computer; and on
   // the phone the category whose screen was open when Settings closed ('' the
   // list), opened again with it.
@@ -558,6 +561,8 @@ function clean(raw) {
   s.openGroups = Array.isArray(s.openGroups)
     ? [...new Set(s.openGroups.filter((id) => typeof id === 'string' && /^[\w-]{1,64}$/.test(id)))].slice(0, 500)
     : [];
+  const shuffled = s.listShuffle && typeof s.listShuffle === 'object' && !Array.isArray(s.listShuffle) ? s.listShuffle : {};
+  s.listShuffle = Object.fromEntries(Object.keys(shuffled).filter((k) => shuffled[k] === true && /^(group:)?[\w-]{1,64}$/.test(k)).slice(0, 500).map((k) => [k, true]));
   s.settingsCollapsed = Array.isArray(s.settingsCollapsed)
     ? [...new Set(s.settingsCollapsed.filter((t) => typeof t === 'string' && t && t.length <= 60))].slice(0, 30)
     : [];

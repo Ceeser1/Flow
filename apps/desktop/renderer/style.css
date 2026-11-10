@@ -3910,3 +3910,8 @@ body.mobile .switch-where { text-align: left; }
 .gframe__table th { position: sticky; top: 0; z-index: 1; }
 .gframe__empty { margin: 4px 0 6px 34px; font-size: 13px; }
 #grOfflineNote:empty { display: none; }
+/* The group's Shuffle with its hint beside it; Download (and its note) at the row's right end. */
+.pl-hint { color: var(--text-dim); font-size: 13px; max-width: 300px; line-height: 1.3; }
+#page-group .pl-head__row #grOfflineNote { margin-left: auto; }
+#page-group .pl-head__row #grOffline { margin-left: auto; }
+#page-group .pl-head__row #grOfflineNote:not(:empty):not([hidden]) + #grOffline { margin-left: 0; }

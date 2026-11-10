@@ -1058,7 +1058,9 @@ body.mobile .rules__row > :nth-child(4) { grid-column: 3; grid-row: 1; }
 body.mobile #grPlay { order: 1; padding: 0 24px 0 20px; }
 body.mobile #grShuffle { order: 2; margin-left: auto; }
 body.mobile #grOffline { order: 3; }
-body.mobile #grOfflineNote { order: 4; }
+body.mobile #grOfflineNote { order: 4; margin-left: 0; }
+body.mobile #grShuffleHint { order: 5; flex: 1 1 100%; max-width: none; }
+body.mobile #page-group .pl-head__row #grOffline { margin-left: 0; }
 body.mobile :is(#grShuffle, #grOffline) { width: 44px; padding: 0; justify-content: center; flex: none; }
 body.mobile :is(#grShuffle, #grOffline) .icon { width: 20px; height: 20px; }
 body.mobile #grOffline.toggle--on { color: #f5be3c; border-color: rgba(245, 190, 60, 0.5); background: rgba(245, 190, 60, 0.16); }
