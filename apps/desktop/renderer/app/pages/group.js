@@ -14,8 +14,9 @@
 // device, settings listShuffle): a list started here plays with its own, and
 // while it plays its Shuffle is the player's. The group's Play picks one of
 // its playlists at random and plays it; with the group's Shuffle on it plays
-// the whole group as one list instead (Store's "group:<id>"), so each next
-// song is drawn from all of its playlists. Pressed while something else plays
+// the whole group as one list instead (Store's "group:<id>"), each next song
+// a random song of a random one of its playlists (queue.js poolsOf), so a
+// short playlist comes up as often as a long one. Pressed while something else plays
 // (one of its playlists started by its own Play too), it starts anew with a
 // new queue; only while the group itself plays it pauses and carries on. The
 // playlist a song plays from has the speaker beside its icon. Download marks every playlist in it to be kept on this device.
@@ -31,6 +32,12 @@ const GroupPage = {
   _frames: new Map(), // playlist id -> { play, shuffle } of its head, for the play state
 
   init() {
+    // A group's mix is shuffled by its playlists: each song a random song of a random one (queue.js).
+    Player.queue.poolsOf = (contextId) => {
+      const id = String(contextId || '');
+      if (!id.startsWith(GROUP_PREFIX)) return null;
+      return Store.playlistsInGroup(id.slice(GROUP_PREFIX.length)).map((p) => Store.rowsOf(p.id).map((r) => r.song.id));
+    };
     $('grSearchIcon').innerHTML = Icons.search;
     let typed = 0;
     $('grSearch').addEventListener('input', () => {
@@ -362,7 +369,9 @@ const GroupPage = {
       'aria-expanded': String(open),
       title: open ? T('group.frame.hide.tooltip', { playlist: p.name }) : T('group.frame.show.tooltip', { playlist: p.name }),
       onclick: (e) => {
-        if (e.target.closest('button')) return;
+        // A button of the head (Play, Shuffle ...) never opens or closes it: also when
+        // its press redrew the button first, so the node clicked is no longer in the page.
+        if (!e.currentTarget.contains(e.target) || e.target.closest('button')) return;
         this._toggleFrame(p);
       },
       onkeydown: (e) => {
