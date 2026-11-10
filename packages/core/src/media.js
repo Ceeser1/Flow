@@ -22,6 +22,7 @@ const { guessFromInfo } = require('./titleParser');
 const { planFor, ffmpegArgsFor } = require('./formats');
 const tags = require('./tags');
 const { coverUrlsFromInfo, ffmpegRun, imageSize } = require('./cover');
+const { tr } = require('./lang');
 
 const { tagArgs } = tags;
 
@@ -59,7 +60,7 @@ function downloadStatusLine(got, total, speed, eta) {
   if (total) parts.push(`${((got || 0) / total * 100).toFixed(1)}%   ${mb(got)} / ${mb(total)}`);
   else parts.push(mb(got));
   if (speed) parts.push(`${(speed / 1048576).toFixed(1)} MB/s`);
-  if (eta !== null && eta !== undefined) parts.push(`ETA ${Math.round(eta)}s`);
+  if (eta !== null && eta !== undefined) parts.push(tr('core.download.eta', 'ETA {seconds}s', { seconds: Math.round(eta) }));
   return parts.join('   ');
 }
 
@@ -79,47 +80,51 @@ function parseProgress(line) {
 function ytDlpError(stderrTail) {
   const errors = stderrTail.filter((l) => /^ERROR:/.test(l)).map((l) => l.replace(/^ERROR:\s*/, ''));
   const text = (errors.length ? errors : stderrTail.slice(-4)).join('\n');
-  if (/Unsupported URL/i.test(text)) return 'This site is not supported.';
-  if (/HTTP Error 404/i.test(text)) return 'Nothing was found at this link (error 404).';
-  if (/HTTP Error 403/i.test(text)) return 'The site refused the download (error 403). Try again later.';
-  if (/HTTP Error 429/i.test(text)) return 'The site is limiting requests right now (error 429). Try again later.';
-  if (/Private video|This video is private/i.test(text)) return 'This video is private.';
-  if (/Video unavailable|not available/i.test(text)) return 'This video is not available.';
+  if (/Unsupported URL/i.test(text)) return tr('core.ytdlp.unsupported', 'This site is not supported.');
+  if (/HTTP Error 404/i.test(text)) return tr('core.ytdlp.error404', 'Nothing was found at this link (error 404).');
+  if (/HTTP Error 403/i.test(text)) return tr('core.ytdlp.error403', 'The site refused the download (error 403). Try again later.');
+  if (/HTTP Error 429/i.test(text)) return tr('core.ytdlp.error429', 'The site is limiting requests right now (error 429). Try again later.');
+  if (/Private video|This video is private/i.test(text)) return tr('core.ytdlp.private', 'This video is private.');
+  if (/Video unavailable|not available/i.test(text)) return tr('core.ytdlp.unavailable', 'This video is not available.');
   if (/Sign in to confirm your age/i.test(text)) {
-    return 'This video is age restricted and needs a signed-in account (Settings, Media Management: browser session-cookies).';
+    return tr('core.ytdlp.ageRestricted', 'This video is age restricted and needs a signed-in account (Settings, Media Management: browser session-cookies).');
   }
   if (/The page needs to be reloaded/i.test(text)) {
-    return 'YouTube turned down the signed-in visit ("the page needs to be reloaded"). Open youtube.com in the browser once, or turn browser cookies off in Settings.';
+    return tr('core.ytdlp.reloadPage', 'YouTube turned down the signed-in visit ("the page needs to be reloaded"). Open youtube.com in the browser once, or turn browser cookies off in Settings.');
   }
   if (/Sign in to confirm you.re not a bot/i.test(text)) {
-    return 'YouTube wants a signed-in visitor right now ("confirm you\'re not a bot"). Settings, Media Management: browser session-cookies.';
+    return tr('core.ytdlp.notABot', 'YouTube wants a signed-in visitor right now ("confirm you\'re not a bot"). Settings, Media Management: browser session-cookies.');
   }
   // Browser cookies (--cookies-from-browser, or a server's cookie file).
   const noDb = /could not find (\w+) cookies database/i.exec(text);
-  if (noDb) return `No ${noDb[1][0].toUpperCase()}${noDb[1].slice(1)} cookies were found on this computer. Pick another browser in Settings, or turn browser cookies off.`;
+  if (noDb) {
+    return tr('core.ytdlp.noCookies', 'No {browser} cookies were found on this computer. Pick another browser in Settings, or turn browser cookies off.', {
+      browser: `${noDb[1][0].toUpperCase()}${noDb[1].slice(1)}`,
+    });
+  }
   if (/Could not copy .* cookie database/i.test(text)) {
-    return 'The browser\'s cookies cannot be read while it is open. Close the browser and try again, or pick Firefox in Settings.';
+    return tr('core.ytdlp.cookiesOpen', 'The browser\'s cookies cannot be read while it is open. Close the browser and try again, or pick Firefox in Settings.');
   }
   if (/Failed to decrypt with DPAPI|app.?bound/i.test(text)) {
-    return 'This browser keeps its cookies locked so yt-dlp cannot read them (Chrome, Edge and Brave on Windows). Firefox works: pick it in Settings, or turn browser cookies off.';
+    return tr('core.ytdlp.cookiesLocked', 'This browser keeps its cookies locked so yt-dlp cannot read them (Chrome, Edge and Brave on Windows). Firefox works: pick it in Settings, or turn browser cookies off.');
   }
-  if (/invalid Netscape format cookies file|cookies file.*(not|invalid)/i.test(text)) return 'The browser cookies sent along could not be read.';
+  if (/invalid Netscape format cookies file|cookies file.*(not|invalid)/i.test(text)) return tr('core.ytdlp.cookieFileBad', 'The browser cookies sent along could not be read.');
   if (/getaddrinfo|Failed to resolve|Unable to download webpage.*(timed out|Errno)/i.test(text)) {
-    return 'Could not reach the site. Please check the internet connection.';
+    return tr('core.ytdlp.unreachable', 'Could not reach the site. Please check the internet connection.');
   }
-  return text || 'yt-dlp could not read this link.';
+  return text || tr('core.link.ytdlpCouldNotRead', 'yt-dlp could not read this link.');
 }
 
 /** What the Add Songs page needs from yt-dlp's info about one song. */
 function probedFrom(info, url, rawUrl, knownArtists = []) {
   if (info.is_live || info.live_status === 'is_live') {
-    throw new Error('Live streams cannot be downloaded.');
+    throw new Error(tr('core.link.liveStream', 'Live streams cannot be downloaded.'));
   }
   return {
     url: info.webpage_url || url,
     pastedUrl: String(rawUrl || '').trim(),
     key: sourceKey(info.extractor_key || info.extractor, info.id),
-    title: String(info.title || info.fulltitle || 'Untitled'),
+    title: String(info.title || info.fulltitle || tr('common.untitled', 'Untitled')),
     duration: Number(info.duration) || 0,
     site: String(info.extractor_key || info.extractor || ''),
     guess: guessFromInfo(info, { knownArtists }),
@@ -251,7 +256,7 @@ function createMedia({
         if (m && duration > 0 && onFrac) onFrac(Math.min(1, Number(m[1]) / 1e6 / duration));
       }, cancelToken, null, runOpts);
     if (result.exitCode !== 0) {
-      throw new Error('ffmpeg failed:\n' + result.stderrTail.slice(-4).join('\n'));
+      throw new Error(`${tr('core.download.ffmpegFailed', 'ffmpeg failed:')}\n${result.stderrTail.slice(-4).join('\n')}`);
     }
   }
 
@@ -267,7 +272,7 @@ function createMedia({
     try {
       return JSON.parse(out);
     } catch {
-      throw new Error('Could not read this link.');
+      throw new Error(tr('core.link.couldNotRead', 'Could not read this link.'));
     }
   }
 
@@ -278,7 +283,7 @@ function createMedia({
    */
   async function probe(rawUrl, cancelToken, { knownArtists = [] } = {}) {
     const url = normalizeUrl(rawUrl);
-    if (!url) throw new Error('That does not look like a link.');
+    if (!url) throw new Error(tr('core.link.notALink', 'That does not look like a link.'));
     const info = await readJson(['--no-playlist', '-I', '1', '-j', url], cancelToken);
     return probedFrom(info, url, rawUrl, knownArtists);
   }
@@ -288,19 +293,30 @@ function createMedia({
    * `src` itself is left alone. Resolves { media, info } where info is what
    * ffprobe said about `src`.
    */
-  async function prepare(src, outStem, opts, report, cancelToken, { duration: guess = 0, lead = '', noAudio }) {
+  async function prepare(src, outStem, opts, report, cancelToken, { duration: guess = 0, downloaded = false, noAudio }) {
     const stopIfCancelled = () => {
       if (cancelToken && cancelToken.cancelled) throw new ProcessCancelledError();
     };
     stopIfCancelled();
     const info = await probeAudio(src, cancelToken);
     stopIfCancelled();
-    if (!info.codec) throw new Error(noAudio);
+    if (!info.codec) {
+      // Marked, so the window can sum such files up without reading the (translated) message.
+      const err = new Error(noAudio);
+      err.noAudio = true;
+      throw err;
+    }
     const plan = planFor(info, opts);
     const duration = info.duration || guess || 0;
     let startText;
-    if (plan.action === 'copy') startText = `${lead}${plan.source}: no conversion needed, keeping it as .${plan.ext}`;
-    else startText = `${lead}${plan.source}: converting to ${plan.target}...`;
+    const words = { source: plan.source, target: plan.target, ext: plan.ext };
+    if (plan.action === 'copy') {
+      startText = downloaded ? tr('core.prepare.keep.downloaded', 'Downloaded {source}: no conversion needed, keeping it as .{ext}', words)
+        : tr('core.prepare.keep', '{source}: no conversion needed, keeping it as .{ext}', words);
+    } else {
+      startText = downloaded ? tr('core.prepare.convert.downloaded', 'Downloaded {source}: converting to {target}...', words)
+        : tr('core.prepare.convert', '{source}: converting to {target}...', words);
+    }
     report('prepare', plan.action === 'copy' ? null : 0, startText);
 
     const out = `${outStem}.${plan.ext}`;
@@ -311,8 +327,8 @@ function createMedia({
     const final = await probeAudio(out, cancelToken);
     stopIfCancelled();
     const summary = plan.action === 'copy'
-      ? `Ready: ${plan.source}, kept as .${plan.ext}`
-      : `Ready: converted ${plan.source} to ${plan.target}`;
+      ? tr('core.prepare.ready.kept', 'Ready: {source}, kept as .{ext}', words)
+      : tr('core.prepare.ready.converted', 'Ready: converted {source} to {target}', words);
     const media = {
       path: out,
       duration: final.duration || duration,
@@ -326,7 +342,7 @@ function createMedia({
   }
 
   async function fetchAndPrepare(probed, opts, report, cancelToken, { exe, dir, stem }) {
-    report('download', null, 'Starting download...');
+    report('download', null, tr('add.progress.startingDownload', 'Starting download...'));
     const result = await runYtDlp(exe, [
       '--no-playlist', '-I', '1',
       '-f', FORMAT_SELECTOR,
@@ -345,11 +361,11 @@ function createMedia({
 
     const downloaded = filesStartingWith(dir, `${stem}.src.`)
       .filter((f) => !/\.(part|ytdl|temp)$/i.test(f) && !/\.part-Frag/i.test(f));
-    if (!downloaded.length) throw new Error('The download finished but no file turned up.');
+    if (!downloaded.length) throw new Error(tr('core.download.noFile', 'The download finished but no file turned up.'));
     const src = path.join(dir, downloaded[0]);
     try {
       const { media } = await prepare(src, path.join(dir, stem), opts, report, cancelToken,
-        { duration: probed.duration, lead: 'Downloaded ', noAudio: 'The download has no audio in it.' });
+        { duration: probed.duration, downloaded: true, noAudio: tr('core.download.noAudio', 'The download has no audio in it.') });
       return media;
     } finally {
       removeQuietly(src);
@@ -393,7 +409,7 @@ function createMedia({
     };
     try {
       const { media, info } = await prepare(file, path.join(dir, stem), opts, report, cancelToken,
-        { noAudio: 'This file has no audio in it.' });
+        { noAudio: tr('common.error.fileHasNoAudio', 'This file has no audio in it.') });
       return { media, tags: info.tags };
     } catch (err) {
       for (const f of filesStartingWith(dir, stem + '.')) removeQuietly(path.join(dir, f));
@@ -447,7 +463,7 @@ function createMedia({
     const cut = [];
     if (start > EDGE) cut.push('-ss', start.toFixed(3));
     if (!duration || end < duration - EDGE) cut.push('-to', end.toFixed(3));
-    if (!cut.length) throw new Error('There is nothing to trim.');
+    if (!cut.length) throw new Error(tr('core.trim.nothing', 'There is nothing to trim.'));
     const codec = ext === 'flac' ? ['-c:a', 'flac', '-compression_level', '5'] : ['-c', 'copy'];
     try {
       await runFfmpeg([...cut, '-i', file, '-map', '0:a:0', ...codec, '-map_metadata', '0', dest], end - start, null, cancelToken);
@@ -458,7 +474,7 @@ function createMedia({
     const info = await probeAudio(dest);
     if (!info.codec) {
       removeQuietly(dest);
-      throw new Error('The trimmed file has no audio in it.');
+      throw new Error(tr('core.trim.noAudio', 'The trimmed file has no audio in it.'));
     }
     return { duration: info.duration || (end - start) };
   }
@@ -535,7 +551,7 @@ function createMedia({
           return;
         }
         if (code !== 0 && index === 0) {
-          reject(new Error(stderr.join('').trim() || 'ffmpeg could not read any audio.'));
+          reject(new Error(stderr.join('').trim() || tr('core.download.ffmpegNoAudio', 'ffmpeg could not read any audio.')));
           return;
         }
         const flat = new Array(buckets * 2);

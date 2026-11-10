@@ -13,12 +13,14 @@
 
 const { createRemote } = require('@flow/core/client/remote');
 const { createActions } = require('@flow/core/client/actions');
+const vizPicture = require('@flow/core/client/vizPicture');
 const { createPrivateStats } = require('@flow/core/client/privateStats');
 const { createLyricsClient } = require('@flow/core/client/lyrics');
 const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
 const { encode: encodeQr } = require('@flow/core/qr');
 const { createGuestLink } = require('@flow/core/client/guest');
 const caps = require('@flow/core/client/caps');
+const { createViewChannel } = require('@flow/core/client/viewChannel');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const {
   platform, plugin, audio, fileUrl, fs, path, info,
@@ -56,10 +58,19 @@ function start() {
   // ---- the clients ----
 
   let remote = null;
-  const env = createEnv({ tellCovers: (scope, ids) => emit('covers:updated', { scope, ids, dirs: coverDirs() }) });
+  const env = createEnv({ tellCovers: (scope, ids, size) => emit('covers:updated', { scope, ids, size, dirs: coverDirs() }) });
   const { settings, library, covers } = env;
   settings.load();
   library.load();
+  // Covers from before 4.3.1 into the two sizes (Local Files'), or gone (a server's).
+  try {
+    covers.convertLegacy((id) => {
+      const s = library.get().songs.find((x) => x.id === id);
+      return s ? s.cover : '';
+    });
+  } catch {
+    // Tried again at the next start.
+  }
   remote = createRemote(env);
   // The Statistics of everything heard on this phone (privateStats.js).
   const privateStats = createPrivateStats({
@@ -72,7 +83,7 @@ function start() {
   });
   // A song's lyrics (4.0): the server's, else LRCLIB's through the page's
   // fetch, which cannot name Flow as its User-Agent; kept in the Lyrics
-  // folder (4.0.1), only that with Settings' "Fetch/Sync Lyrics" off.
+  // folder (4.0), only that with Settings' "Fetch/Sync Lyrics" off.
   const lyricsClient = createLyricsClient({
     remote,
     library,
@@ -80,8 +91,8 @@ function start() {
     jsonFiles: env.jsonFiles,
     fetchOn: () => settings.get('lyricsOn') !== false,
     syncEveryMs: 15 * 60 * 1000,
-    // Copies of a server's songs have the server's lyrics.
-    skip: (id) => remote.active() && remote.isServerCopy(id),
+    // Local Files songs that are a server's too (copies, or uploaded and kept) have the server's lyrics.
+    skip: (id) => remote.active() && (remote.isServerCopy(id) || !!remote.serverSongOf(id)),
     onChange: () => emit('lyrics:changed'),
     fetch: (...args) => fetch(...args),
     agent: false,
@@ -133,15 +144,22 @@ function start() {
     return { local: covers.dirOf(covers.LOCAL), server: remote ? remote.coverDir() : '' };
   }
 
+  // The library on its way to the window: whole at its start, then only what changed (4.3.3).
+  const toWindow = createViewChannel((msg) => emit('library:changed', msg));
+  // The window's first library, numbered: the next change fits it.
+  const startLibrary = () => {
+    const lib = actions.currentLibrary();
+    return { library: lib, librarySeq: toWindow.start(lib) };
+  };
   library.onChange((data) => {
-    if (!remote.active()) emit('library:changed', data);
+    if (!remote.active()) toWindow.update(data);
   });
-  // Every Local Files song's lyrics in the background (4.0.1): now, and soon after a change.
+  // Every Local Files song's lyrics in the background (4.0): now, and soon after a change.
   library.onChange(() => lyricsClient.fillSoon());
   lyricsClient.fillSoon();
 
   remote.init({
-    onView: (view) => emit('library:changed', view),
+    onView: (view) => toWindow.update(view),
     onStatus: (st) => emit('server:status', st),
     onNotice: (text, kind) => emit('server:notice', { text, kind }),
     onSettings: (patch) => emit('settings:changed', patch),
@@ -209,7 +227,7 @@ function start() {
         uiMode: 'mobile',
         // The Equalizer from Android 9 on (its DynamicsProcessing).
         caps: platform === 'ios' ? caps.IOS : { ...caps.ANDROID, soundEq: (info().sdk || 0) >= 28 },
-        library: actions.currentLibrary(),
+        ...startLibrary(),
         server: remote.status(),
         settings: settings.all(),
         musicDir: '',
@@ -233,7 +251,7 @@ function start() {
       }
       if (remote.active() !== wasRemote) {
         emit('covers:updated', { scope: '', ids: null, dirs: coverDirs() });
-        emit('library:changed', actions.currentLibrary());
+        toWindow.whole(actions.currentLibrary());
       }
       return next;
     }),
@@ -242,6 +260,11 @@ function start() {
       return true;
     },
     onLibraryChanged: on('library:changed'),
+    // A change that did not fit: the library comes whole through onLibraryChanged.
+    libraryWhole: call(() => {
+      toWindow.whole(actions.currentLibrary());
+      return true;
+    }),
     onFolderScanned: nothing,
 
     createPlaylist: call((name) => actions.createPlaylist(name)),
@@ -249,6 +272,10 @@ function start() {
     setPlaylistRules: call((id, rules) => actions.setPlaylistRules({ id, rules })),
     renamePlaylist: call((id, name) => actions.renamePlaylist({ id, name })),
     deletePlaylist: call((id, deleteSongs = false) => actions.deletePlaylist({ id, deleteSongs })),
+    createGroup: call((name) => actions.createGroup(name)),
+    renameGroup: call((id, name) => actions.renameGroup({ id, name })),
+    deleteGroup: call((id) => actions.deleteGroup(id)),
+    setPlaylistGroup: call((playlistIds, groupId) => actions.setPlaylistGroup({ playlistIds, groupId })),
     setPlaylistShared: call((id, shared) => actions.setPlaylistShared({ id, shared })),
     setFollowing: call((id, isOn) => actions.setFollowing({ id, on: isOn })),
     addSongToPlaylists: call((songId, playlistIds) => actions.addSongToPlaylists({ songId, playlistIds })),
@@ -262,6 +289,9 @@ function start() {
     privateStatistics: call(() => privateStats.get()),
     onPrivateStatistics: on('stats:private'),
     removeTrackedProfile: call((serverId, profileId) => remote.removeTracked(serverId, profileId)),
+    serverStatistics: call(() => remote.loadStatistics()),
+    loadShared: call(() => remote.loadShared()),
+    openShared: call((id) => remote.openShared(id)),
     recordListen: call((songId, listened, duration, contextId, jamMember) => actions.recordListen({
       songId, listened, duration, contextId, jamMember: !!jamMember,
     })),
@@ -286,15 +316,14 @@ function start() {
     pickLocalFiles: call(() => local.pick(false)),
     // A visualizer's picture (as the desktop's viz:savePicture), in Flow's files.
     saveVizPicture: call((name, bytes) => {
-      if (!/^[a-z][\w-]{0,40}$/i.test(String(name || ''))) throw new Error('Not a picture name.');
-      if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > 30e6) throw new Error('Not a picture.');
+      const ext = vizPicture.check(name, bytes, 60);
       const dir = path.join(info().files, 'Visualizer');
       if (fs.exists(dir)) {
-        for (const old of fs.list(dir)) if (old.name.startsWith(`${name}-`) && old.name.endsWith('.jpg')) fs.remove(path.join(dir, old.name));
+        for (const old of fs.list(dir)) if (vizPicture.keptBefore(old.name, name)) fs.remove(path.join(dir, old.name));
       } else {
         fs.mkdir(dir);
       }
-      const file = path.join(dir, `${name}-${Date.now().toString(36)}.jpg`);
+      const file = path.join(dir, `${name}-${Date.now().toString(36)}.${ext}`);
       fs.writeBytes(file, bytes);
       return file;
     }),
@@ -307,6 +336,10 @@ function start() {
       return summary;
     }),
     setImportPending: call(nothing),
+    // Add Songs' Client queue (4.4) is the computer's only: nothing downloads here.
+    peekLink: call(nothing),
+    cancelPeek: call(nothing),
+    setQueuePending: call(nothing),
     cancelImport: call(() => local.cancel()),
     onImportProgress: on('import:progress'),
     openUrl: call((url) => {
@@ -391,11 +424,14 @@ function start() {
       }
       return String((r && r.text) || '');
     }),
-    wantCovers: call((ids) => {
-      if (remote.active()) remote.wantCovers(ids);
+    wantCovers: call((ids, size) => {
+      if (remote.active()) remote.wantCovers(ids, size);
     }),
-    coverStats: call(() => ({ local: covers.localStore().size(), server: remote.active() ? remote.coverStats() : null })),
-    clearCoverCache: call(() => remote.clearCoverCache()),
+    coverStats: call(() => ({
+      local: { small: covers.localStore().size('small'), big: covers.localStore().size('big') },
+      server: remote.active() ? remote.coverStats() : null,
+    })),
+    clearCoverCache: call((size) => remote.clearCoverCache(size === 'small' || size === 'big' ? size : null)),
     onCoversUpdated: on('covers:updated'),
     stagedCover: call((cachePath) => local.stagedCover(cachePath)),
     onCoverStaged: on('cover:staged'),

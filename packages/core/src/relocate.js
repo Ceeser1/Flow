@@ -5,16 +5,17 @@
 // test/relocate.test.js; library.js does the moving.
 
 const path = require('path');
+const { tr } = require('./lang');
 
 const same = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 const inside = (child, parent) => path.resolve(child).toLowerCase().startsWith(path.resolve(parent).toLowerCase() + path.sep);
 
 /** Throws, saying why, when the songs cannot move from `oldDir` to `newDir`. */
 function checkTarget(oldDir, newDir) {
-  if (!newDir || !path.isAbsolute(newDir)) throw new Error('Please choose a folder.');
-  if (same(oldDir, newDir)) throw new Error('That is already the folder the songs are saved in.');
-  if (inside(newDir, oldDir)) throw new Error('The new folder cannot be inside the current one.');
-  if (inside(oldDir, newDir)) throw new Error('The new folder cannot contain the current one.');
+  if (!newDir || !path.isAbsolute(newDir)) throw new Error(tr('core.folder.choose', 'Please choose a folder.'));
+  if (same(oldDir, newDir)) throw new Error(tr('core.folder.same', 'That is already the folder the songs are saved in.'));
+  if (inside(newDir, oldDir)) throw new Error(tr('core.folder.inside', 'The new folder cannot be inside the current one.'));
+  if (inside(oldDir, newDir)) throw new Error(tr('core.folder.contains', 'The new folder cannot contain the current one.'));
 }
 
 /**

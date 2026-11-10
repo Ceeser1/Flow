@@ -148,7 +148,7 @@ test('the filler with LRCLIB out of reach: stops, waits, that song only at the n
   }
 });
 
-test('own lyrics (4.0.1): written in an app, kept for good, taken back to the looked-up ones', async () => {
+test('own lyrics (4.0): written in an app, kept for good, taken back to the looked-up ones', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-lyrics-test-'));
   const asked = [];
   const server = await startServer({
@@ -220,7 +220,7 @@ test('a lookup running while lyrics are written keeps the written ones', async (
   }
 });
 
-test('the apps\' copies (4.0.1): the stamps of the songs with lyrics kept, then those lyrics', async () => {
+test('the apps\' copies (4.0): the stamps of the songs with lyrics kept, then those lyrics', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-lyrics-test-'));
   const server = await startServer({
     home: path.join(root, 'home'),
@@ -249,6 +249,12 @@ test('the apps\' copies (4.0.1): the stamps of the songs with lyrics kept, then 
     await call('/api/songs/bbb222/lyrics');
     const first = (await call('/api/lyrics')).json.songs;
     assert.deepEqual(Object.keys(first).sort(), ['aaa111', 'bbb222'], 'found or not, not the one never asked for');
+    // 4.3.1: each song carries its stamp in the library, so an app asks for its lyrics only when they changed.
+    const stampsNow = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return Object.fromEntries((await call('/api/library')).json.library.songs.map((s) => [s.id, s.lyrics]));
+    };
+    assert.deepEqual(await stampsNow(), { aaa111: first.aaa111, bbb222: first.bbb222, ccc333: undefined });
     const got = (await call('/api/lyrics', 'POST', { ids: ['aaa111', 'bbb222', 'ccc333', 'nope'] })).json.lyrics;
     assert.deepEqual(Object.keys(got).sort(), ['aaa111', 'bbb222']);
     assert.equal(got.aaa111.plain, 'In my dreams');
@@ -261,6 +267,7 @@ test('the apps\' copies (4.0.1): the stamps of the songs with lyrics kept, then 
     const next = (await call('/api/lyrics')).json.songs;
     assert.notEqual(next.aaa111, first.aaa111);
     assert.equal(next.bbb222, undefined);
+    assert.deepEqual(await stampsNow(), { aaa111: next.aaa111, bbb222: undefined, ccc333: undefined });
     assert.equal((await call('/api/lyrics', 'POST', { ids: ['aaa111'] })).json.lyrics.aaa111.own, true);
   } finally {
     await server.close();

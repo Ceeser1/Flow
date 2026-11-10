@@ -2,8 +2,8 @@
 
 // Followed Playlists: the playlists other profiles share and this one follows.
 // A main entry in the menu, there only while at least one is followed. They
-// can be opened and played but only their owner changes them, so the one
-// action is Unfollow.
+// can be opened and played but only their owner changes them, so the actions
+// are Unfollow and (4.5.1, where the server keeps it) Move to group.
 
 const FollowedPage = {
   sort: { key: null, dir: null },
@@ -47,34 +47,43 @@ const FollowedPage = {
       columns: [
         {
           key: 'name',
-          label: 'Name',
+          label: T('common.name'),
           cls: 'col-name',
           render: (p) => h('button.link-cell', { type: 'button', onclick: () => Nav.openPlaylist(p.id) },
             h('span.link-cell__icon', { html: listIcon(p) }),
             h('span.link-cell__name', p.name)),
         },
-        { key: 'owner', label: 'Owner', cls: 'col-owner', render: (p) => p.ownerName || '' },
-        { key: 'songs', label: 'Songs', cls: 'col-num', render: (p) => String(p.entries.length) },
-        { key: 'duration', label: 'Duration', cls: 'col-num', render: (p) => Util.fmtClock(Store.totalDuration(p.id)) },
+        { key: 'owner', label: T('followed.column.owner'), cls: 'col-owner', render: (p) => p.ownerName || '' },
+        { key: 'songs', label: T('common.songs'), cls: 'col-num', render: (p) => String(p.entries.length) },
+        { key: 'duration', label: T('common.duration'), cls: 'col-num', render: (p) => Util.fmtClock(Store.totalDuration(p.id)) },
         // Your own time listening to it, as the list playing; gone when you unfollow.
-        { key: 'listened', label: 'Listen Duration', cls: 'col-listened', render: (p) => Util.fmtClock(Store.listenedTo(p.id)) },
+        { key: 'listened', label: T('common.listenDuration'), cls: 'col-listened', render: (p) => Util.fmtClock(Store.listenedTo(p.id)) },
         {
           key: 'actions',
-          label: 'Actions',
+          label: T('common.actions'),
           sortable: false,
           cls: 'col-actions',
-          render: (p) => h('div.actions', h('button.btn.btn--small', {
-            type: 'button',
-            title: `Stop following "${p.name}"`,
-            onclick: () => attempt(() => window.flow.setFollowing(p.id, false)),
-          }, 'Unfollow')),
+          render: (p) => h('div.actions',
+            Store.canGroupFollowed() ? iconButton('act.act--grey', Icons.folder, T('groups.moveTo'), () => Groups.chooseFor([p.id])) : null,
+            h('button.btn.btn--small', {
+              type: 'button',
+              title: T('common.unfollow.tooltip', { playlist: p.name }),
+              onclick: () => attempt(() => window.flow.setFollowing(p.id, false)),
+            }, T('common.unfollow'))),
         },
       ],
       mobile: {
-        ...listRowSpec((p) => [p.ownerName ? `by ${p.ownerName}` : '', Util.plural(p.entries.length, 'song'),
+        ...listRowSpec((p) => [p.ownerName ? T('common.byOwner', { profile: p.ownerName }) : '', Util.plural(p.entries.length, 'song'),
           Util.fmtClock(Store.totalDuration(p.id))].filter(Boolean).join(' · ')),
-        more: (p) => [{ icon: Icons.x, label: 'Unfollow', kind: 'danger', onClick: () => attempt(() => window.flow.setFollowing(p.id, false)) }],
+        more: (p) => [
+          Store.canGroupFollowed() ? { icon: Icons.folder, label: T('groups.moveTo'), onClick: () => Groups.chooseFor([p.id]) } : null,
+          { icon: Icons.x, label: T('common.unfollow'), kind: 'danger', onClick: () => attempt(() => window.flow.setFollowing(p.id, false)) },
+        ],
       },
     });
+    // On the computer a row can be dragged onto a group in the menu (4.5.1).
+    if (Groups.canDrag()) {
+      for (const tr of $('followedTable').querySelectorAll('tbody tr[data-id]')) Groups.draggable(tr, Store.playlist(tr.dataset.id));
+    }
   },
 };

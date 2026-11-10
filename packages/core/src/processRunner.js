@@ -9,7 +9,7 @@ const readline = require('readline');
 
 class ProcessCancelledError extends Error {
   constructor() {
-    super('Cancelled.');
+    super('Canceled.');
     this.cancelled = true;
   }
 }

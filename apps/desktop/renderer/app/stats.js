@@ -28,7 +28,7 @@ const Stats = {
     this._node = h('div.stats');
     this._picked = null;
     this._editing = null;
-    return [h('h3.settings__section', 'Statistics'), this._node];
+    return [h('h3.settings__section', T('common.statistics')), this._node];
   },
 
   /** Fetches the Private Statistics and draws (Settings opened). */
@@ -47,6 +47,19 @@ const Stats = {
       // Drawn without them.
     }
     this.draw();
+  },
+
+  _serverAt: 0,
+
+  /**
+   * The profile's totals fetched from the Flow Server (4.3: only while this
+   * category shows, never in the background); they arrive with the status.
+   */
+  loadServer() {
+    if (!Store.server.on || Store.server.state !== 'online' || !window.flow.serverStatistics) return;
+    if (Date.now() - this._serverAt < 2000) return;
+    this._serverAt = Date.now();
+    window.flow.serverStatistics().catch(() => {});
   },
 
   /** Drawn again in a moment: a playing song changes the numbers often. */
@@ -72,7 +85,7 @@ const Stats = {
     const old = this._node.querySelector('.stats__scroll');
     const scrolled = old && old.dataset.shows === this._shows() ? old.scrollLeft : 0;
     clear(this._node).append(
-      this._block('All tracked Profiles', this._list(list, shown, mobile)),
+      this._block(T('stats.allTrackedProfiles'), this._list(list, shown, mobile)),
       this._block(Statistics.title(shown, Store.settings.serverNames),
         // Two columns side by side; one list on phones.
         h('div.stats__facts', ...Statistics.facts(shown).map((rows) => h('dl.admin__facts', ...rows.flatMap(([k, v]) => [h('dt', k), h('dd', v)])))),
@@ -85,7 +98,7 @@ const Stats = {
 
   /** What the graph shows: Monthly, or Daily and its month. */
   _shows() {
-    return this._mode === 'daily' ? `daily ${this._month || ''}` : 'monthly';
+    return this._mode === 'daily' ? T('stats.activity.dailyOf', { month: this._month || '' }) : 'monthly';
   },
 
   _block(title, ...body) {
@@ -108,17 +121,17 @@ const Stats = {
 
   _list(list, shown, mobile) {
     const head = h('div.stats__trow.stats__trow--head',
-      h('span.stats__tcell', 'Server'), h('span.stats__tcell', 'Profile'), h('span.stats__tcell.stats__tact', 'Action'));
+      h('span.stats__tcell', T('common.server')), h('span.stats__tcell', T('common.profile')), h('span.stats__tcell.stats__tact', T('stats.profiles.column.action')));
     const rows = list.map((x) => {
       const remove = h('button.btn.btn--small', {
         type: 'button',
         disabled: !x.removable,
-        title: x.current ? 'In use: log out of it first' : (x.id === Statistics.PRIVATE ? 'This app\'s own: it always counts' : ''),
+        title: x.current ? T('stats.profiles.inUse.tooltip') : (x.id === Statistics.PRIVATE ? T('stats.profiles.own.tooltip') : ''),
         onclick: (e) => {
           e.stopPropagation();
           this._remove(x);
         },
-      }, 'Remove');
+      }, T('common.remove'));
       const row = h('div.stats__trow' + (x === shown ? '.stats__trow--on' : ''), {
         role: 'button',
         tabIndex: 0,
@@ -134,8 +147,8 @@ const Stats = {
           this.draw();
         },
       },
-      x.id === Statistics.PRIVATE ? h('span.stats__tcell', mobile ? 'This app' : 'This app, every server') : this._serverCell(x),
-      h('span.stats__tcell', h('span.cell-title', x.profile), x.current ? h('span.admin__badge.admin__badge--you', 'in use') : null),
+      x.id === Statistics.PRIVATE ? h('span.stats__tcell', mobile ? T('stats.profiles.thisApp') : T('stats.profiles.thisAppEveryServer')) : this._serverCell(x),
+      h('span.stats__tcell', h('span.cell-title', x.profile), x.current ? h('span.admin__badge.admin__badge--you', T('stats.profiles.inUse')) : null),
       h('span.stats__tcell.stats__tact', remove));
       return row;
     });
@@ -154,7 +167,7 @@ const Stats = {
       }, 'stats__name');
       return h('span.stats__tcell', input, tick);
     }
-    const edit = iconButton('act.act--grey.stats__rename', Icons.pencil, `Rename "${name.name}" on ${Store.here}`, (e) => {
+    const edit = iconButton('act.act--grey.stats__rename', Icons.pencil, T(`common.renameServer.tooltip.${Store.hereKey}`, { server: name.name }), (e) => {
       e.stopPropagation();
       this._editing = x.id;
       this.draw(true);
@@ -168,18 +181,16 @@ const Stats = {
 
   async _remove(x) {
     const answer = await confirmDialog({
-      title: 'Remove tracked Profile',
-      message: `Remove "${x.profile}" on ${Util.serverName(Store.settings.serverNames, x.serverId, x.server).name} from this app? Its statistics kept here are deleted, with its listens `
-        + 'not sent to the server yet, and it is no longer kept up to date. What the server has stays: logging in to it '
-        + 'again brings its statistics back.',
-      confirmLabel: 'Remove',
+      title: T('stats.profiles.remove.title'),
+      message: T('stats.profiles.remove.text', { profile: x.profile, server: Util.serverName(Store.settings.serverNames, x.serverId, x.server).name }),
+      confirmLabel: T('common.remove'),
       danger: true,
     });
     if (!answer) return;
     await this._do(async () => {
       await window.flow.removeTrackedProfile(x.serverId, x.profileId);
       if (this._picked === x.id) this._picked = null;
-      toast(`"${x.profile}" removed`, 'info');
+      toast(T('stats.profiles.removed', { profile: x.profile }), 'info');
     });
   },
 
@@ -188,7 +199,7 @@ const Stats = {
   _hours(hours) {
     if (!(hours > 0)) return '';
     if (hours < 0.1) return '<0.1 h';
-    return hours >= 10 ? `${Math.round(hours)} h` : `${hours.toFixed(1)} h`;
+    return T('stats.time.hours', { hours: hours >= 10 ? Math.round(hours) : I18n.num(hours, 1) });
   },
 
   /** Activity's heading, Monthly / Daily on its right. */
@@ -204,13 +215,13 @@ const Stats = {
         this.draw();
       },
     }, label);
-    return h('div.stats__ahead', h('h4.stats__head', 'Activity'),
-      h('div.stats__modes', mode('monthly', 'Monthly'), mode('daily', 'Daily')));
+    return h('div.stats__ahead', h('h4.stats__head', T('stats.activity.heading')),
+      h('div.stats__modes', mode('monthly', T('stats.activity.monthly')), mode('daily', T('stats.activity.daily'))));
   },
 
   /** A line's number: 0.5 h, 10 h. */
   _step(hours, step) {
-    return `${step < 1 ? hours.toFixed(1) : Math.round(hours)} h`;
+    return T('stats.time.hours', { hours: step < 1 ? I18n.num(hours, 1) : Math.round(hours) });
   },
 
   /**
@@ -230,11 +241,12 @@ const Stats = {
     const col = (m) => {
       const share = scale.top ? Math.min(1, m.hours / scale.top) : 0;
       const bar = this._bar(share, mobile ? 136 : 156, m.isTotal ? '.stats__bar--year' : '');
-      const hours = this._hours(m.hours) || (m.isTotal ? '0 h' : '');
-      let title = `${m.title || `${m.name} ${m.year}`}: ${hours || 'nothing'} listened`;
-      if (m.isYear) title = `${m.year}: ${hours} listened`;
+      const hours = this._hours(m.hours) || (m.isTotal ? T('stats.time.hours', { hours: 0 }) : '');
+      const month = m.title || T('stats.activity.monthName', { month: m.name, year: m.year });
+      let title = hours ? T('stats.activity.month.tooltip', { month, hours }) : T('stats.activity.month.nothing.tooltip', { month });
+      if (m.isYear) title = T('stats.activity.year.tooltip', { year: m.year, hours });
       const open = !daily && !m.isTotal;
-      if (open) title += ' - click for its days';
+      if (open) title += ` ${T('stats.activity.clickForDays')}`;
       return h('div.stats__month' + (m.isTotal ? '.stats__month--year' : '') + (open ? '.stats__month--open' : ''), {
         title,
         dataset: { key: m.key },

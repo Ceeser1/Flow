@@ -277,17 +277,16 @@
 
   Visualizer.add({
     id: 'radar',
-    name: 'Radar',
-    desc: 'A sonar screen whose sweep goes round once a bar, painting the spectrum into its glow, each beat and hit leaving a contact',
+    name: T('viz.radar.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6-6"/><circle cx="15" cy="15" r="1"/></svg>',
     gl: true,
     stereo: true,
     create: (canvas) => new Radar(canvas),
     options: [
-      { type: 'choice', key: 'raBack', label: 'Background', choices: [['none', 'None'], ['wood', 'Wood'], ['black', 'Black'], ['silver', 'Silver']] },
-      { type: 'choice', key: 'raColors', label: 'Phosphor', choices: [['green', 'Green'], ['amber', 'Amber'], ['blue', 'Blue']], color: { value: 'custom', key: 'raColor', presets: Visualizer.OWN_PRESETS } },
-      { type: 'slider', key: 'raTrail', label: 'Glow', min: 25, max: 200, step: 5 },
+      { type: 'choice', key: 'raBack', label: T('viz.shared.background'), choices: [['none', T('viz.radar.setting.background.none')], ['wood', T('viz.shared.wood')], ['black', T('common.color.black')], ['silver', T('viz.shared.silver')]] },
+      { type: 'choice', key: 'raColors', label: T('viz.shared.phosphor'), choices: [['green', T('common.color.green')], ['amber', T('viz.shared.amber')], ['blue', T('common.color.blue')]], color: { value: 'custom', key: 'raColor', presets: Visualizer.OWN_PRESETS } },
+      { type: 'slider', key: 'raTrail', label: T('viz.radar.setting.glow'), min: 25, max: 200, step: 5 },
     ],
   });
 })();

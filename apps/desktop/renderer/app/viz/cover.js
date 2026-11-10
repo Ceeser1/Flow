@@ -7,9 +7,10 @@
 //
 //   const cover = new VizCover(gl, { standIn: 'record' });
 //   each frame: if (cover.update()) the song changed (cover.song: it, or null)
-//   cover.tex, cover.loaded, cover.colors ([primary, secondary] rgb 0..1)
+//   cover.tex, cover.loaded, cover.width, cover.height, cover.colors ([primary, secondary] rgb 0..1)
 //
-// VizCover.Picture: a picture picked in a cogwheel, the same way (Halo's).
+// VizCover.Picture: a picture picked in a cogwheel, the same way (Halo's),
+// or a video playing.
 
 const VizCover = (() => {
   function hsv(h, s, v) {
@@ -147,6 +148,8 @@ const VizCover = (() => {
       this.key = null;
       this.song = null;
       this.loaded = false;
+      this.width = 1;
+      this.height = 1;
       this.colors = [[0.6, 0.4, 1], [1, 0.5, 0.8]];
     }
 
@@ -154,7 +157,9 @@ const VizCover = (() => {
     update() {
       const id = Player.currentId;
       const song = id ? Store.song(id) || (Player.remote ? { ...Player.remote.state, id } : null) : null;
-      const src = song ? Covers.src(song) : '';
+      // The big cover (512 x 512), the thumbnail standing in until it is here.
+      const list = song ? Covers.candidates(song, 'big') : [];
+      const src = list[0] || '';
       const key = `${id}|${src}`;
       if (key === this.key) return false;
       this.key = key;
@@ -181,22 +186,37 @@ const VizCover = (() => {
         }
         this.colors = pal || [hsv(hue, 0.6, 1), hsv((hue + 0.1) % 1, 0.5, 1)];
       };
-      img.onerror = fallback;
+      let at = 0;
+      img.onerror = () => {
+        if (this.key !== key) return;
+        if (at === 0) Covers.askBig(song);
+        at += 1;
+        if (at < list.length) img.src = list[at];
+        else fallback();
+      };
       img.src = src;
       return true;
     }
 
     _upload(source) {
       upload(this.gl, this.tex, source);
+      this.width = source.naturalWidth || source.width || 1;
+      this.height = source.naturalHeight || source.height || 1;
       this.loaded = true;
     }
   }
 
-  /** An image into a texture, with its mipmaps. */
+  /**
+   * An image into a texture, with its mipmaps: its colour premultiplied by
+   * its alpha, so that its see-through edges blend into nothing instead of
+   * into black (the same for a picture without any).
+   */
   function upload(gl, tex, source) {
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -206,8 +226,14 @@ const VizCover = (() => {
 
   /**
    * A picture picked in a cogwheel (a file Flow keeps, by its path): as a
-   * texture once loaded, and its colours (null when it has hardly any).
-   *   each frame: picture.want(path); picture.loaded, .tex, .width, .height, .colors
+   * texture once loaded, and its colours (null when it has hardly any); a
+   * PNG has see-through parts of its own (clear: Flow keeps a picture as a
+   * PNG only then). An MP4 or WebM is a video instead: muted, at the place
+   * a clock says (follow: the song's time, over and over, standing still
+   * while it does), its texture each new frame of it (tick), without
+   * mipmaps, no colours.
+   *   each frame: picture.want(path); picture.follow(seconds, playing); picture.tick(); picture.loaded, .tex, .width, .height, .colors, .clear
+   *   picture.close() when done: the video stopped
    */
   class Picture {
     constructor(gl) {
@@ -218,13 +244,22 @@ const VizCover = (() => {
       this.width = 1;
       this.height = 1;
       this.colors = null;
+      this.clear = false;
+      this.video = null;
+      this.fresh = false;     // the video showing a frame not uploaded yet
     }
 
     want(path) {
       if (path === this.path) return;
+      this._stop();
       this.path = path;
       this.loaded = false;
+      this.clear = /\.png$/i.test(path || '');
       if (!path) return;
+      if (/\.(mp4|webm)$/i.test(path)) {
+        this._play(path);
+        return;
+      }
       const img = new Image();
       img.onload = () => {
         if (this.path !== path) return;
@@ -241,6 +276,98 @@ const VizCover = (() => {
       // Gone (deleted by hand): the song's cover instead.
       img.onerror = () => {};
       img.src = Util.fileUrl(path);
+    }
+
+    /**
+     * The video at a clock's place (seconds, over and over by its length),
+     * paused while the clock stands still: a little faster or slower while
+     * it is close, put there when it is not.
+     */
+    follow(seconds, playing) {
+      const v = this.video;
+      const len = v ? v.duration : 0;
+      if (!(len > 0) || !Number.isFinite(len)) return;
+      const want = ((seconds % len) + len) % len;
+      let off = want - v.currentTime;
+      // The shorter way round the loop.
+      if (off > len / 2) off -= len;
+      else if (off < -len / 2) off += len;
+      if (!playing) {
+        if (!v.paused) v.pause();
+        if (Math.abs(off) > 0.02 && !v.seeking) v.currentTime = want;
+        return;
+      }
+      let rate = 1;
+      if (Math.abs(off) > 0.3) {
+        if (!v.seeking) v.currentTime = want;
+      } else if (Math.abs(off) > 0.03) rate = 1 + Math.max(-0.1, Math.min(0.1, off));
+      if (Math.abs(v.playbackRate - rate) > 0.005) v.playbackRate = rate;
+      if (v.paused) v.play().catch(() => {});
+    }
+
+    /** The video's newest frame into the texture, when it has one. */
+    tick() {
+      if (!this.video || !this.fresh) return;
+      this.fresh = false;
+      const gl = this.gl;
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.video);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      if (!this.loaded) {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        this.loaded = true;
+      }
+    }
+
+    close() {
+      this._stop();
+      this.path = null;
+      this.loaded = false;
+    }
+
+    _play(path) {
+      const v = document.createElement('video');
+      v.muted = true;
+      v.loop = true;
+      v.playsInline = true;
+      v.preload = 'auto';
+      this.video = v;
+      this.colors = null;
+      const frame = () => {
+        if (this.video !== v) return;
+        this.fresh = true;
+        v.requestVideoFrameCallback(frame);
+      };
+      v.addEventListener('loadeddata', () => {
+        if (this.video !== v) return;
+        this.width = v.videoWidth || 1;
+        this.height = v.videoHeight || 1;
+        this.fresh = true;
+        v.requestVideoFrameCallback(frame);
+      }, { once: true });
+      // Put somewhere else while paused: that frame too.
+      v.addEventListener('seeked', () => {
+        if (this.video === v) this.fresh = true;
+      });
+      // Gone or unplayable: the song's cover instead.
+      v.addEventListener('error', () => {});
+      // Played by follow, not before.
+      v.src = Util.fileUrl(path);
+    }
+
+    _stop() {
+      const v = this.video;
+      if (!v) return;
+      this.video = null;
+      this.fresh = false;
+      v.pause();
+      v.removeAttribute('src');
+      v.load();
     }
   }
 

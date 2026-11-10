@@ -339,15 +339,14 @@
 
   Visualizer.add({
     id: 'vinyl',
-    name: 'Vinyl',
-    desc: "A record turning once a bar, the song's cover as its label, the grooves the stylus has played keeping the music in rings of light",
+    name: T('viz.vinyl.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="12" r="8"/><circle cx="10" cy="12" r="2.5"/><path d="M20 3l-4 9-3 1"/></svg>',
     gl: true,
     create: (canvas) => new Vinyl(canvas),
     options: [
-      { type: 'choice', key: 'vnPlinth', label: 'Turntable', choices: [['wood', 'Wood'], ['black', 'Black'], ['silver', 'Silver']] },
-      { type: 'choice', key: 'vnColors', label: 'Grooves', choices: [['music', "The music's colours"], ['silver', 'Silver']], color: { value: 'custom', key: 'vnColor', presets: Visualizer.OWN_PRESETS } },
+      { type: 'choice', key: 'vnPlinth', label: T('viz.vinyl.setting.turntable'), choices: [['wood', T('viz.shared.wood')], ['black', T('common.color.black')], ['silver', T('viz.shared.silver')]] },
+      { type: 'choice', key: 'vnColors', label: T('viz.vinyl.setting.grooves'), choices: [['music', T('viz.vinyl.setting.grooves.music')], ['silver', T('viz.shared.silver')]], color: { value: 'custom', key: 'vnColor', presets: Visualizer.OWN_PRESETS } },
     ],
   });
 })();

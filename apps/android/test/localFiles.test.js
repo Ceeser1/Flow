@@ -66,13 +66,11 @@ function setup({ serverOn = false, serverSongs = [] } = {}) {
   const told = [];
   const covers = {
     LOCAL: 'local',
-    localStore: () => ({
-      take: (id, file) => {
-        fs.rename(file, `/data/files/Covers/local/${id}.jpg`);
-        coverStore.set(id, 'abcd12');
-        return 'abcd12';
-      },
-    }),
+    takeLocal: (id, file) => {
+      fs.rename(file, `/data/files/Covers/local/${id}.jpg`);
+      coverStore.set(id, 'abcd12');
+      return 'abcd12';
+    },
     tell: (scope, list) => told.push([scope, ...list]),
   };
   const exporter = {

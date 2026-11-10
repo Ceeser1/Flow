@@ -1,14 +1,18 @@
 {
   "name": "flow",
-  "version": "4.0.0",
+  "version": "4.5.2",
   "description": "Music player for songs downloaded from YouTube, SoundCloud, Vimeo and more",
   "main": "main.js",
   "private": true,
   "scripts": {
+    "strings": "node scripts/build-strings.js",
+    "prestart": "node scripts/build-strings.js",
     "start": "electron .",
     "test": "node --test",
     "icon": "electron scripts/make-icon.js",
+    "predist": "node scripts/build-strings.js",
     "dist": "electron-builder --win nsis",
+    "predist:linux": "node scripts/build-strings.js",
     "dist:linux": "electron-builder --linux -c.directories.output=../linux-client/dist -c.extraMetadata.homepage=https://github.com/Ceeser1/Flow"
   },
   "dependencies": {

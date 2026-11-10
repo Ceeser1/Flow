@@ -20,7 +20,7 @@ const QueueView = {
     this.listEl = h('div.queue');
     const redraw = () => this.draw();
     this.modal = Modal.open({
-      title: 'Queue',
+      title: T('common.queue'),
       className: 'modal--queue',
       drawer: true,
       body: [this.listEl],
@@ -54,16 +54,16 @@ const QueueView = {
     const q = Player.queue;
 
     const current = Player.currentId ? Store.song(Player.currentId) : null;
-    box.appendChild(h('div.queue__head', 'Now playing'));
+    box.appendChild(h('div.queue__head', T('common.nowPlaying')));
     box.appendChild(current
       ? this._row(current, { now: true })
-      : h('div.queue__empty', 'Nothing is playing.'));
+      : h('div.queue__empty', T('common.nothingIsPlaying')));
 
     const manual = q.manual.map((id) => Store.song(id));
     if (manual.some(Boolean)) {
       box.appendChild(h('div.queue__head',
-        h('span', 'Next in queue'),
-        h('button.link-btn.queue__clear', { type: 'button', onclick: () => Player.clearQueue() }, 'Clear')));
+        h('span', T('queue.nextInQueue')),
+        h('button.link-btn.queue__clear', { type: 'button', onclick: () => Player.clearQueue() }, T('common.clear'))));
       manual.forEach((song, i) => {
         if (song) box.appendChild(this._row(song, { part: 'manual', index: i }));
       });
@@ -76,19 +76,19 @@ const QueueView = {
       const similar = (i) => q.dj && q.dj.has(q.auto[i]);
       if (!similar(0)) {
         box.appendChild(h('div.queue__head',
-          h('span', `Next from ${listName}`),
-          q.shuffle ? h('span.queue__note', 'shuffled') : null));
+          h('span', T('queue.nextFrom', { list: listName })),
+          q.shuffle ? h('span.queue__note', T('queue.shuffled')) : null));
       }
       let headed = false;
       auto.forEach((song, i) => {
         if (similar(i) && !headed) {
           headed = true;
-          box.appendChild(h('div.queue__head', h('span', 'Then similar songs')));
+          box.appendChild(h('div.queue__head', h('span', T('queue.thenSimilar'))));
         }
         if (song) box.appendChild(this._row(song, { part: 'auto', index: i }));
       });
     } else if (!manual.some(Boolean)) {
-      box.appendChild(h('div.queue__empty', 'The queue is empty. Play a playlist, or add songs with "Add to Queue".'));
+      box.appendChild(h('div.queue__empty', T('queue.empty')));
     }
   },
 
@@ -105,7 +105,7 @@ const QueueView = {
         h('span.queue__dur', Util.fmtClock(song.duration)));
     }
     const row = h('div.queue__row', {
-      title: `Play "${song.title}" now, or drag it to another place`,
+      title: T('queue.song.play.tooltip', { song: song.title }),
       dataset: { part, index: String(index) },
       onclick: (e) => {
         if (this._justDragged || e.target.closest('button')) return;
@@ -117,7 +117,7 @@ const QueueView = {
     Covers.el(song),
     text,
     h('span.queue__dur', Util.fmtClock(song.duration)),
-    iconButton('act.act--red.queue__remove', Icons.x, 'Remove from the queue', () => Player.removeFromQueue(part, index)));
+    iconButton('act.act--red.queue__remove', Icons.x, T('queue.song.remove'), () => Player.removeFromQueue(part, index)));
     row.addEventListener('pointerdown', (e) => this._press(e, row));
     // The phone's own menu on a long press.
     row.addEventListener('contextmenu', (e) => {

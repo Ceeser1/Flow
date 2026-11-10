@@ -1,19 +1,24 @@
 'use strict';
 
-// Add Songs: paste a link, download, trim, name, pick playlists, Finish.
-// A link to a whole playlist (or a Spotify, Deezer or Amazon Music list) goes
-// to import.js instead,
-// which shows a checklist and imports untrimmed. Files from the computer
-// ("Open local File(s)" / "Open local Folder") go there too, straight to the
-// trimming step. Words instead of a link (a song's name) are searched for
-// (songSearch.js), and the upload picked is downloaded here as its link.
+// Add Songs: paste a link (or several, or a song's name), and it is
+// downloaded, trimmed, named and saved. Every link is a batch of import.js
+// (a playlist with its checklist, a song as a batch of one song); files from
+// the computer ("Open local File(s)" / "Open local Folder") too. Words
+// instead of a link (a song's name) are searched for (songSearch.js), and
+// the upload picked comes back here as its link.
 //
-//   idle -> probing -> downloading -> ready -> (saving) -> idle
+// A link goes through the Client queue (clientQueue.js): at once when this
+// computer downloads nothing else, else at its turn (runEntry), with the
+// "Auto-accept songs lookup" and "Automate 'Finish all'" as they are at
+// its turn (entry.auto, kept up to date while it waits or is read): no questions, and saved as it came.
 //
-// The progress frame under the link box (LWClipper's title / bar + Cancel /
-// status line) follows every step. Once the song is ready the trim editor
-// appears: the waveform across the whole width, the trim slider below it and
-// a preview player, so the cut can be heard before it is saved.
+// This holds the trim editor, which opens in the frame of the song being
+// trimmed (openEmbedded): the waveform across the whole width, the trim
+// slider below it and a preview player, so the cut can be heard before it
+// is saved. The progress frame under the link box (LWClipper's title / bar +
+// Cancel / status line) is the search's, and shows what failed.
+//
+//   phase: idle -> ready (the editor open in a frame) -> idle
 
 const AddPage = {
   phase: 'idle',
@@ -24,12 +29,11 @@ const AddPage = {
   // coloured in the waveform while the settings ask for them.
   segments: [],
   _source: null,     // { key, url } of the song in the editor, for those
-  // The lyrics of the song in the editor (4.0.1, newLyrics): a playlist's
+  // The lyrics of the song in the editor (4.0, newLyrics): a playlist's
   // song's are its frame's (import.js), shown here while it is open.
   lyrics: null,
   _lyricsChain: null,
   slider: null,
-  playlistIds: [],
   _stopAt: null,     // the preview stops here (the end handle), or null
   _raf: 0,
   _scrubbing: false,
@@ -50,27 +54,21 @@ const AddPage = {
       if (DownloadsHelp.here) this.startDownload();
       else if (!$('serverDownloadBtn').hidden) $('serverDownloadBtn').click();
     });
+    this._initAutoRow();
     $('openFilesBtn').onclick = () => this.openLocal(false);
     $('openFolderBtn').onclick = () => this.openLocal(true);
+    this.drawLocalPick();
+    // The progress frame is the search's (a batch has its own).
     $('progCancel').onclick = () => {
       if (SongSearch.busy) SongSearch.cancel();
-      else if (ImportPanel.busy) ImportPanel.cancel();
-      else window.flow.cancelDownload();
     };
-    window.flow.onDownloadProgress((p) => this._onProgress(p));
+    window.flow.onDownloadProgress((p) => ImportPanel.songProgress(p));
 
-    // The checklist's size estimate follows the MP3 settings.
     Store.onSettings((patch) => {
-      if (('alwaysMp3' in patch || 'mp3Quality' in patch) && ImportPanel.state === 'review') ImportPanel._drawCount();
       if ('sponsorBlock' in patch || 'sponsorBlockIntros' in patch) this._loadSegments();
     });
 
     this._initEditor();
-
-    // Shared with a whole import, which then picks playlists for every song.
-    $('addToPlaylistBtn').onclick = () => (ImportPanel.ownsFooter ? ImportPanel.choosePlaylists() : this.choosePlaylists());
-    this._drawPlaylistButton();
-    $('finishBtn').onclick = () => (ImportPanel.ownsFooter ? ImportPanel.finishAll() : this.finish());
 
     // The phone's Share > Flow.
     if (window.flow.onShare) window.flow.onShare((s) => this.shared(s));
@@ -93,7 +91,7 @@ const AddPage = {
    */
   shared({ url, text }) {
     if (!url) {
-      toast(text ? 'Nothing to add: what was shared has no link in it.' : 'Nothing to add: nothing was shared.', 'error');
+      toast(text ? T('add.share.noLink') : T('add.share.nothing'), 'error');
       return;
     }
     Nav.show('add', { shared: true });
@@ -119,85 +117,94 @@ const AddPage = {
    * comes back here as `pick` ({ url, title }), downloaded as that one song.
    */
   async startDownload(pick = null) {
-    if (this.phase === 'probing' || this.phase === 'downloading' || this.phase === 'saving') return;
     const url = pick ? pick.url : $('linkInput').value.trim();
     if (!url) {
-      this._showError('Paste a link, or type the name of a song, into the box first.');
+      if (ClientQueue.busy) toast(T('common.emptyBox'), 'error');
+      else this._showError(T('common.emptyBox'));
       $('linkInput').focus();
       return;
     }
-    if (!pick && this.isSearch(url)) {
+    // Several links pasted at once ("a, b, c"): read as one list.
+    const many = !pick && this.isLinkList(url);
+    if (!pick && !many && this.isSearch(url)) {
       SongSearch.open(url, 'client');
       return;
     }
-    if (!await this._clearForNew()) return;
-    // Another link than the one an Update put into the box: no Update.
-    if (ImportPanel.updating && (pick || url !== ImportPanel.updating.url)) ImportPanel.updating = null;
-
-    let kind = pick ? 'song' : (ImportPanel.updating ? 'list' : this._linkKind(url));
+    // The link an Update put into the box (any other link: no Update).
+    const updating = !pick && ImportPanel.updating && url === ImportPanel.updating.url ? ImportPanel.updating : null;
+    let kind = pick ? 'song' : (updating || many ? 'list' : this._linkKind(url));
     if (kind === 'ask') {
       kind = await this._askSongOrList(url);
       if (!kind) return;
     }
+    // Started or queued: the box is free for the next one.
+    $('linkInput').value = '';
+    ClientQueue.offer({
+      url, kind, title: pick ? pick.title || '' : '', updating, auto: this.autoNow(),
+    });
+  },
 
-    let probed = null;
-    let warned = false;
-    if (kind === 'list') {
-      // Playlists get their checklist; a link that turns out to be one song
-      // comes back as that song, already read.
-      probed = await ImportPanel.open(url);
-      if (!probed) return;
-    } else {
-      // A link that is plainly the same (the same YouTube video, the same page).
-      try {
-        const dup = await window.flow.findBySource(url, null);
-        if (dup) {
-          if (!await this._confirmDuplicateSource(dup)) return;
-          warned = true;
-        }
-      } catch {
-        // Checking is a courtesy; carry on without it.
-      }
-      this._setPhase('probing');
-      this._progress({ title: 'Reading link...', frac: null, status: url });
-      try {
-        probed = await window.flow.probe(url);
-      } catch (err) {
-        this._failed(err);
-        return;
-      }
-    }
+  /**
+   * "Auto-accept songs lookup" and "Automate 'Finish all'" as they are
+   * now (Settings › Media Management, or the boxes under the link box): a
+   * link queued keeps them.
+   */
+  autoNow() {
+    const s = Store.settings;
+    const complete = !!s.autoComplete;
+    return { complete, finish: complete && !!s.autoFinish };
+  },
 
-    // The same song under a different link (youtu.be vs youtube.com/shorts).
-    if (!warned && probed.key) {
-      try {
-        const dup = await window.flow.findBySource(null, probed.key);
-        if (dup && !await this._confirmDuplicateSource(dup)) {
-          this._setPhase('idle');
-          $('progressPanel').hidden = true;
-          return;
-        }
-      } catch {
-        // As above.
-      }
-    }
+  /** The boxes under the link box: the settings themselves, switched here too. */
+  _initAutoRow() {
+    const main = $('autoCompleteBox');
+    const sub = $('autoFinishBox');
+    const draw = () => {
+      main.checked = !!Store.settings.autoComplete;
+      sub.checked = !!Store.settings.autoFinish;
+      // Always there, greyed out (and not counted, autoNow) while the box above is unticked.
+      sub.disabled = !main.checked;
+      $('autoFinishLabel').classList.toggle('auto-row__sub--off', !main.checked);
+    };
+    main.addEventListener('change', () => Store.saveSettings({ autoComplete: main.checked }));
+    sub.addEventListener('change', () => Store.saveSettings({ autoFinish: sub.checked }));
+    Store.onSettings((patch) => {
+      if (!('autoComplete' in patch || 'autoFinish' in patch)) return;
+      draw();
+      ClientQueue.followAuto(this.autoNow());
+    });
+    draw();
+  },
 
-    this.probed = probed;
-    this._setPhase('downloading');
-    this._progress({ title: probed.title, frac: null, status: 'Starting download...' });
-    let media;
-    try {
-      media = await window.flow.download(probed, this.downloadOptions());
-    } catch (err) {
-      this._failed(err);
+  /**
+   * A link's turn (ClientQueue): its batch (import.js), read and downloaded
+   * as it always was, with entry.auto deciding what is asked. Resolves once
+   * the batch has its checklist or is downloaded (or done, or given up).
+   */
+  async runEntry(entry) {
+    const opts = { auto: entry.auto || { complete: false, finish: false }, updating: entry.updating || null };
+    if (entry.update) {
+      const { playlist, listing, server } = entry.update;
+      const p = Store.playlist(playlist.id);
+      if (p) ImportPanel.openUpdate(p, listing, server);
       return;
     }
-    this.media = media;
-    this._progress({ title: probed.title, frac: 1, status: media.summary, cancel: false });
-    this.lyrics = this.newLyrics();
-    this._openEditor();
-    this.lookLyrics(this.lyrics, this._names(), media.duration);
-    this._lookupInfo();
+    if (entry.local) {
+      await ImportPanel.openLocal(entry.local);
+      return;
+    }
+    if (entry.picks) {
+      await ImportPanel.openPicked(entry.name, entry.picks, opts);
+      return;
+    }
+    if (entry.kind === 'list') {
+      // Playlists get their checklist; a link that turns out to be one song
+      // comes back as that song, already read.
+      const probed = await ImportPanel.open(entry.url, opts);
+      if (probed) await ImportPanel.openSong(entry.url, { ...opts, probed });
+      return;
+    }
+    await ImportPanel.openSong(entry.url, opts);
   },
 
   /**
@@ -210,37 +217,7 @@ const AddPage = {
     const url = p && p.source && p.source.url;
     if (!url || !ServerImport.available) return;
     Nav.show('add');
-    if (!await this._clearForNew()) return;
-    $('linkInput').value = url;
-    ImportPanel.updating = { id: p.id, name: p.name, url };
-    await ServerImport._create({ url, kind: 'list' });
-  },
-
-  /**
-   * A song downloaded on its own: the album, genre and Info its page did not
-   * name, from Apple's and Discogs' search, into the boxes still empty (one
-   * typed into stays).
-   */
-  async _lookupInfo() {
-    const m = this.media;
-    if (!window.flow.lookupInfo || this.embedded || !m) return;
-    const album = $('edAlbum').value.trim();
-    const genre = $('edGenre').value.trim();
-    const subGenre = $('edSubGenre').value.trim();
-    if (album && genre && subGenre) return;
-    let found;
-    try {
-      found = await window.flow.lookupInfo({
-        artist: $('edArtist').value.trim(), title: $('edTitle').value.trim(), mix: $('edMix').value.trim(), duration: m.duration,
-        album, genre, subGenre,
-      });
-    } catch {
-      return;
-    }
-    if (this.media !== m || this.embedded || !found) return;
-    if (found.album && !$('edAlbum').value.trim()) $('edAlbum').value = found.album;
-    if (found.genre && !$('edGenre').value.trim()) $('edGenre').value = found.genre;
-    if (found.subGenre && !$('edSubGenre').value.trim()) $('edSubGenre').value = found.subGenre;
+    await ServerImport._create({ url, kind: 'list' }, { id: p.id, name: p.name, url });
   },
 
   /**
@@ -249,42 +226,16 @@ const AddPage = {
    * after another, as an import's frames (ImportPanel.openPicked).
    */
   async startPicked(picks, name) {
-    if (this.phase === 'probing' || this.phase === 'downloading' || this.phase === 'saving') return;
-    if (!await this._clearForNew()) return;
-    await ImportPanel.openPicked(name, picks);
-  },
-
-  /**
-   * Before a new download: a song in the editor is thrown away (once that is
-   * confirmed), a checklist never started and search results go. False when
-   * it cannot start now (an import still open, or the song kept).
-   */
-  async _clearForNew() {
-    if (this.editorReady) {
-      const ok = await confirmDialog({
-        title: 'Discard current song?',
-        message: 'The song in the editor has not been saved yet. Download the new link and discard it?',
-        confirmLabel: 'Discard',
-        danger: true,
-      });
-      if (!ok) return false;
-    }
-    if (ImportPanel.busy) {
-      this._showError('A playlist import is still open. Finish it ("Finish all") or cancel it first.');
-      return false;
-    }
-    if (ImportPanel.state === 'review') ImportPanel.close();
-    SongSearch.close();
-    this._discard();
-    $('progressPanel').hidden = true;
-    return true;
+    $('linkInput').value = '';
+    ClientQueue.offer({
+      url: '', kind: 'list', picks, name, auto: this.autoNow(),
+    });
   },
 
   // ---- local files ----
 
-  /** "Open local File(s)" / "Open local Folder": the picked ones go to import.js. */
+  /** "Open local File(s)" / "Open local Folder": the picked ones are a batch, at their turn (Client queue). */
   async openLocal(folder) {
-    if (this.phase !== 'idle' || ImportPanel.state !== 'idle') return;
     let picked;
     try {
       picked = folder ? await window.flow.pickLocalFolder() : await window.flow.pickLocalFiles();
@@ -292,16 +243,15 @@ const AddPage = {
       this._showError(err.message);
       return;
     }
-    if (!picked || this.phase !== 'idle' || ImportPanel.state !== 'idle') return;
+    if (!picked || !picked.length) return;
     $('progressPanel').hidden = true;
     $('progTitle').textContent = '';
-    await ImportPanel.openLocal(picked);
+    ClientQueue.offer({ url: '', kind: 'local', local: picked });
   },
 
-  /** The "or" and the local buttons, only while nothing else is open. */
+  /** The "or" and the local buttons (never in the web player). */
   drawLocalPick() {
-    const importing = typeof ImportPanel !== 'undefined' && ImportPanel.state !== 'idle';
-    $('localPick').hidden = this.phase !== 'idle' || importing;
+    $('localPick').hidden = !Store.can('localFiles');
   },
 
   /**
@@ -320,6 +270,24 @@ const AddPage = {
       return true;
     }
     return !/\.[a-z]{2,}$/i.test(host) && !/^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  },
+
+  /**
+   * Several links pasted at once, split at the commas, spaces around them
+   * ignored: the links of any site, each once, when the box holds two or
+   * more, else [the text]. The same as @flow/core/text splitLinks, which
+   * reads them.
+   */
+  splitLinks(text) {
+    const raw = String(text || '').trim();
+    if (!raw.includes(',')) return raw ? [raw] : [];
+    const linkish = /^(?:spotify:\S+|[a-z][a-z0-9+.-]*:\/\/\S+|[^\s/:,]+\.[a-z]{2,}(?::\d+)?(?:[/?#]\S*)?)$/i;
+    const parts = [...new Set(raw.split(',').map((p) => p.trim()).filter(Boolean))];
+    return parts.length > 1 && parts.every((p) => linkish.test(p)) ? parts : [raw];
+  },
+
+  isLinkList(text) {
+    return this.splitLinks(text).length > 1;
   },
 
   /**
@@ -358,33 +326,28 @@ const AddPage = {
     return new Promise((resolve) => {
       let answer = null;
       Modal.open({
-        title: 'Song or playlist?',
+        title: T('add.songOrPlaylist.title'),
         className: 'modal--small',
         body: [h('p.modal__text', mix
-          ? 'This song was opened from a YouTube Mix. A Mix is made up for you and never ends; importing it lists its first 50 songs.'
-          : 'This link is a song inside a playlist. Download just this song, or import the whole playlist?')],
+          ? T('add.songOrPlaylist.mix')
+          : T('add.songOrPlaylist.playlist'))],
         buttons: [
-          { label: 'Cancel' },
-          { label: mix ? 'Import the Mix' : 'Whole playlist', onClick: () => { answer = 'list'; } },
-          { label: 'This song only', kind: 'primary', onClick: () => { answer = 'song'; } },
+          { label: T('common.cancel') },
+          { label: mix ? T('add.songOrPlaylist.importMix') : T('add.songOrPlaylist.wholePlaylist'), onClick: () => { answer = 'list'; } },
+          { label: T('add.songOrPlaylist.songOnly'), kind: 'primary', onClick: () => { answer = 'song'; } },
         ],
         onClose: () => resolve(answer),
       });
     });
   },
 
-  async _confirmDuplicateSource(song) {
+  async _confirmDuplicateSource(song, text = 'add.known.link') {
     const ok = await confirmDialog({
-      title: 'Already in your library',
-      message: `This link is already in your library as "${Util.songLine(song)}". Download it anyway?`,
-      confirmLabel: 'Download anyway',
+      title: T('add.known.title'),
+      message: T(text, { song: Util.songLine(song) }),
+      confirmLabel: T('add.known.link.confirm'),
     });
     return !!ok;
-  },
-
-  _onProgress({ stage, frac, text }) {
-    if (this.phase !== 'downloading') return;
-    this._progress({ title: this.probed ? this.probed.title : '', frac, status: text, stage });
   },
 
   /** busy: a spinner after the title, for a wait that reports nothing back. */
@@ -401,24 +364,39 @@ const AddPage = {
     $('progStatus').textContent = status || '';
   },
 
+  /** A task's failure that says it was cancelled. */
+  isCancelled(err) {
+    return !!(err && (err.cancelled || /^Cancelled\.?$/.test(err.message) || err.message === T('common.cancelled')));
+  },
+
+  /** In the progress frame: what failed (`title`) and why. */
+  showFailure(title, err) {
+    // The search's own line stays while it runs: a toast then.
+    if (SongSearch.busy) {
+      toast(err ? err.message : T('common.wentWrong'), 'error');
+      return;
+    }
+    this._progress({ title, frac: null, status: '', cancel: false });
+    this._failed(err);
+  },
+
   _failed(err) {
-    const cancelled = err && (err.cancelled || /^Cancelled\.?$/.test(err.message));
-    this._setPhase('idle');
     $('progBar').hidden = true;
     $('progCancel').hidden = true;
-    if (cancelled) {
-      $('progStatus').textContent = 'Cancelled.';
+    $('progTitle').classList.remove('prog-title--busy');
+    if (this.isCancelled(err)) {
+      $('progStatus').textContent = T('common.cancelled');
       $('progError').hidden = true;
     } else {
-      $('progStatus').textContent = 'Download failed.';
-      this._showError(err ? err.message : 'Something went wrong.');
+      $('progStatus').textContent = T('common.downloadFailed');
+      this._showError(err ? err.message : T('common.wentWrong'));
     }
   },
 
   _showError(message) {
     $('progressPanel').hidden = false;
     $('progTitle').classList.remove('prog-title--busy');
-    if (this.phase === 'idle' && !$('progTitle').textContent) {
+    if (!SongSearch.busy && !$('progTitle').textContent) {
       $('progBar').hidden = true;
       $('progCancel').hidden = true;
     }
@@ -426,42 +404,10 @@ const AddPage = {
     $('progError').hidden = false;
   },
 
+  /** The editor's phase: 'ready' while it is open in a song's frame, else 'idle'. */
   _setPhase(phase) {
     this.phase = phase;
-    const busy = phase === 'probing' || phase === 'downloading' || phase === 'saving';
-    const importing = typeof ImportPanel !== 'undefined' && ImportPanel.busy;
-    $('downloadBtn').disabled = busy || importing;
-    $('linkInput').disabled = phase === 'probing' || phase === 'downloading' || importing;
-    const ready = phase === 'ready' || phase === 'saving';
-    this.editorEl.hidden = !ready;
-    this.drawLocalPick();
-    if (typeof ServerImport !== 'undefined') ServerImport.drawButtons();
-    // A playlist import has the footer to itself ("Finish all").
-    if (importing || (typeof ImportPanel !== 'undefined' && ImportPanel.ownsFooter)) return;
-    $('addFooter').hidden = !ready;
-    $('finishBtn').disabled = phase === 'saving';
-    $('addToPlaylistBtn').disabled = phase === 'saving';
-    $('importCancelAll').disabled = phase === 'saving';
-    $('finishBtn').textContent = phase === 'saving' ? 'Saving...' : 'Finish';
-  },
-
-  /** Throws away the cached download and empties the editor. */
-  _discard() {
-    if (this.embedded) this.closeEmbedded();
-    this._stopPreview(true);
-    if (this.media) window.flow.discardDownload(this.media.path).catch(() => {});
-    this.media = null;
-    this.probed = null;
-    this.peaks = null;
-    this.segments = [];
-    this._source = null;
-    this.lyrics = null;
-    this._drawLyrics();
-    this.playlistIds = [];
-    this._drawPlaylistButton();
-    this._setPhase('idle');
-    $('progTitle').textContent = '';
-    $('progError').hidden = true;
+    this.editorEl.hidden = phase !== 'ready';
   },
 
   // ---- the editor ----
@@ -481,9 +427,9 @@ const AddPage = {
     };
     this.slider.onDragStateChange = (factor) => {
       const hint = $('trimHint');
-      if (factor === FINE_CTRL) hint.textContent = 'Fine: 100x';
-      else if (factor === FINE_SHIFT) hint.textContent = 'Fine: 10x';
-      else hint.textContent = 'Hold Shift while dragging for 10x finer control, Ctrl for 100x';
+      if (factor === FINE_CTRL) hint.textContent = T('common.trim.fine100');
+      else if (factor === FINE_SHIFT) hint.textContent = T('common.trim.fine10');
+      else hint.textContent = T('common.trim.hint');
       hint.classList.toggle('hint--active', factor !== 1);
     };
 
@@ -612,9 +558,9 @@ const AddPage = {
   /** Closes the embedded editor: { start, end, meta } as it was left. */
   closeEmbedded() {
     if (!this.embedded) return null;
-    // Back to its own place on the page first (hidden below): its boxes are
-    // only found by id while it is in the document.
-    $('importPanel').after(this.editorEl);
+    // Back to its own place on the page first (hidden): its boxes are only
+    // found by id while it is in the document.
+    $('editorHome').appendChild(this.editorEl);
     const result = this.media ? {
       start: this.slider.start,
       end: this.slider.end,
@@ -678,7 +624,7 @@ const AddPage = {
     this.peaks = null;
     if (whole) return;
     $('waveStatus').hidden = false;
-    $('waveStatus').textContent = 'Drawing waveform...';
+    $('waveStatus').textContent = T('common.drawingWaveform');
     requestAnimationFrame(() => this._redraw());
     try {
       // Kept with the song: the lyrics editor's waveform waits for the same one.
@@ -689,12 +635,12 @@ const AddPage = {
       $('waveStatus').hidden = true;
     } catch (err) {
       if (this.media !== m) return;
-      $('waveStatus').textContent = 'Could not draw the waveform, but the song can still be trimmed.';
+      $('waveStatus').textContent = T('common.trim.waveformFailed');
     }
     this._redraw();
   },
 
-  // ---- its lyrics (4.0.1) ----
+  // ---- its lyrics (4.0) ----
 
   /** The artist, title and mix in the boxes. */
   _names() {
@@ -735,7 +681,7 @@ const AddPage = {
       try {
         if (meta.title) data = await window.flow.lookupLyrics({ artist: meta.artist, title: meta.title, duration });
       } catch (err) {
-        error = (err && err.message) || 'The lyrics could not be looked up.';
+        error = (err && err.message) || T('add.lyrics.lookupFailed');
       }
       if (entry.key !== key || entry.own) return;
       const words = !!(data && data.found && (data.synced || String(data.plain || '').trim()));
@@ -781,28 +727,28 @@ const AddPage = {
       this._lyricsChanged(e);
     };
     if (e.state === 'looking') {
-      box.append(h('span.ed-lyrics__label', LyricsEdit.spinner(), 'Looking for lyrics...'));
+      box.append(h('span.ed-lyrics__label', LyricsEdit.spinner(), T('common.lookingForLyrics')));
       return;
     }
     const found = e.state === 'found';
     box.append(LyricsEdit.badge(found));
     if (found) {
-      box.append(h('span.ed-lyrics__label', e.own ? 'Your lyrics:' : 'Found lyrics:'),
-        btn('Show', () => LyricsEdit.show({ title: heading(), data: e.data, duration })));
+      box.append(h('span.ed-lyrics__label', e.own ? T('add.lyrics.yours') : T('add.lyrics.found')),
+        btn(T('common.show'), () => LyricsEdit.show({ title: heading(), data: e.data, duration })));
     } else if (e.state === 'error') {
-      box.append(h('span.ed-lyrics__label', e.error), btn('Try again', () => this.lookLyrics(e, this._names(), duration)));
+      box.append(h('span.ed-lyrics__label', e.error), btn(T('common.tryAgain'), () => this.lookLyrics(e, this._names(), duration)));
     } else {
-      box.append(h('span.ed-lyrics__label', 'No lyrics found'));
+      box.append(h('span.ed-lyrics__label', T('common.noLyricsFound')));
     }
     if (!LyricsEdit.available) return;
     // For LRCLIB: the names in the boxes now, and the downloaded file's length (the lines are on it).
     const song = () => ({ ...this._names(), album: $('edAlbum').value.trim(), duration });
     if (found) {
-      box.append(btn('Edit Lyrics', () => LyricsEdit.edit({
+      box.append(btn(T('common.editLyrics'), () => LyricsEdit.edit({
         title: heading(), data: e.data, duration, onSave, player, song,
       }), '.btn--light-green'));
     } else {
-      box.append(btn('Add Lyrics', () => LyricsEdit.add({
+      box.append(btn(T('common.addLyrics'), () => LyricsEdit.add({
         title: heading(), onSave, player, song,
       }), '.btn--light-green'));
     }
@@ -831,7 +777,7 @@ const AddPage = {
     $('startField').value = Util.fmtPrecise(s.start);
     $('endField').value = Util.fmtPrecise(s.end);
     const total = this.media ? this.media.duration : 0;
-    $('spanLabel').textContent = `Selection: ${Util.fmtPrecise(s.end - s.start)}   of   ${Util.fmtPrecise(total)}`;
+    $('spanLabel').textContent = T('common.trim.selection', { selection: Util.fmtPrecise(s.end - s.start), total: Util.fmtPrecise(total) });
   },
 
   _redraw() {
@@ -857,13 +803,14 @@ const AddPage = {
     this.volSlider.value = String(Math.round(v * 100));
     this.volSlider.style.setProperty('--fill', (v * 100) + '%');
     this.volBtn.innerHTML = v === 0 ? Icons.mute : (v < 0.5 ? Icons.volumeLow : Icons.volume);
-    this.volBtn.title = v === 0 ? 'Unmute' : 'Mute';
+    this.volBtn.title = v === 0 ? T('common.unmute') : T('common.mute');
   },
 
   _drawPreviewButton() {
     const playing = !this.audio.paused;
     $('previewPlay').innerHTML = playing ? Icons.pause : Icons.play;
-    $('previewPlay').title = (playing ? 'Pause' : 'Play') + (Store.can('keyboard') ? ' (Space)' : '');
+    const action = playing ? T('common.pause') : T('common.play');
+    $('previewPlay').title = Store.can('keyboard') ? T('common.spaceKeyHint', { action }) : action;
   },
 
   // ---- the preview ----
@@ -921,110 +868,6 @@ const AddPage = {
     if (unload) {
       this.audio.removeAttribute('src');
       this.audio.load();
-    }
-  },
-
-  // ---- playlists and saving ----
-
-  async choosePlaylists() {
-    const chosen = await pickPlaylists({
-      subtitle: [$('edTitle').value, $('edArtist').value].filter(Boolean).join(' - '),
-      selectedIds: this.playlistIds,
-    });
-    if (chosen === null) return;
-    this.playlistIds = chosen;
-    this._drawPlaylistButton();
-  },
-
-  /** The footer's Add to Playlist, for this song or for the whole import that has the footer. */
-  _drawPlaylistButton() {
-    const forImport = typeof ImportPanel !== 'undefined' && ImportPanel.ownsFooter;
-    const owner = forImport ? ImportPanel : this;
-    owner.playlistIds = owner.playlistIds.filter((id) => Store.playlist(id));
-    const names = owner.playlistIds.map((id) => Store.playlist(id).name);
-    $('addToPlaylistBtn').innerHTML = Icons.plus + `<span>Add to Playlist${names.length ? ` (${names.length})` : ''}</span>`;
-    $('addToPlaylistBtn').title = names.length ? names.join(', ')
-      : (forImport ? 'Choose playlists for every song of this import' : 'Choose playlists for this song');
-    $('addPlaylistNames').textContent = names.length ? names.join(', ') : '';
-  },
-
-  /** Cancel import for one downloaded song: throws it away. */
-  async cancelSingle() {
-    if (!this.editorReady || this.embedded) return;
-    const ok = await confirmDialog({
-      title: 'Cancel import?',
-      message: 'Throw away the downloaded song? Nothing of it is saved.',
-      confirmLabel: 'Cancel import',
-      danger: true,
-    });
-    if (!ok || !this.editorReady || this.embedded) return;
-    this._discard();
-    $('progressPanel').hidden = true;
-    $('linkInput').focus();
-    toast('Download thrown away', 'info');
-  },
-
-  async finish() {
-    if (!this.editorReady) return;
-    const meta = {
-      artist: $('edArtist').value.trim(),
-      title: $('edTitle').value.trim(),
-      mix: $('edMix').value.trim(),
-      album: $('edAlbum').value.trim(),
-      genre: $('edGenre').value.trim(),
-      subGenre: $('edSubGenre').value.trim(),
-    };
-    if (!meta.title) {
-      $('edError').textContent = 'Please enter a title.';
-      $('edTitle').focus();
-      return;
-    }
-    $('edError').textContent = '';
-    try {
-      const dup = await window.flow.findByMeta(meta);
-      if (dup) {
-        const ok = await confirmDialog({
-          title: 'Already in your library',
-          message: `"${Util.songLine(dup)}" is already in your library. Save this one as well?`,
-          confirmLabel: 'Save anyway',
-        });
-        if (!ok) return;
-      }
-    } catch {
-      // Checking is a courtesy.
-    }
-
-    const m = this.media;
-    const job = {
-      cachePath: m.path,
-      start: this.slider.start,
-      end: this.slider.end,
-      duration: m.duration,
-      ...meta,
-      sourceUrl: this.probed ? this.probed.url : '',
-      sourceKey: this.probed ? this.probed.key : '',
-      playlistIds: this.playlistIds,
-      // Written here: moved to the song as trimmed.
-      lyrics: this.lyrics && this.lyrics.own ? LyricsEdit.cut(this.lyrics.own, this.slider.start, this.slider.end) : null,
-    };
-    // Let go of the cached file: it is read by ffmpeg and then deleted.
-    const position = this.audio.currentTime;
-    this._stopPreview(true);
-    this._setPhase('saving');
-    try {
-      const song = await window.flow.finishSong(job);
-      toast(`Saved "${Util.songLine(song)}"`, 'success');
-      this.media = null;
-      this._discard();
-      $('linkInput').value = '';
-      $('progressPanel').hidden = true;
-      $('linkInput').focus();
-    } catch (err) {
-      toast(err.message, 'error');
-      this._setPhase('ready');
-      this.audio.src = Util.fileUrl(m.path);
-      this.audio.currentTime = position;
-      this._redraw();
     }
   },
 };

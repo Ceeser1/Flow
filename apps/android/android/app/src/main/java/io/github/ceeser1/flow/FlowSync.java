@@ -165,6 +165,23 @@ public class FlowSync {
         }
     }
 
+    /** Adds text to the end of a file (made when missing): a big file's changes (4.3.4, @flow/core/journalFile). */
+    @JavascriptInterface
+    public String appendText(String path, String text) {
+        try {
+            File dest = file(path);
+            File dir = dest.getParentFile();
+            if (dir != null && !dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot make " + dir);
+            try (FileOutputStream out = new FileOutputStream(dest, true)) {
+                out.write((text == null ? "" : text).getBytes(StandardCharsets.UTF_8));
+                out.getFD().sync();
+            }
+            return "";
+        } catch (Exception e) {
+            return error(e);
+        }
+    }
+
     @JavascriptInterface
     public String readBase64(String path) {
         try {

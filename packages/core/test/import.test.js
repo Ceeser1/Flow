@@ -60,6 +60,148 @@ test('the embed page gives the name and each song', () => {
   assert.equal(albumPage.tracks[0].album, 'Discovery');
 });
 
+test('a Spotify playlist\'s own page tells how many songs it has', () => {
+  assert.equal(spotify.parseSongCount('<meta name="music:song_count" content="254"/>'), 254);
+  assert.equal(spotify.parseSongCount('<meta property="og:title" content="Rammstein Complete"/>'), 0);
+  assert.equal(spotify.parseSongCount(''), 0);
+});
+
+test('a full Spotify page warns with the real number of songs, or not at all when it is the whole list', async () => {
+  const { createLister, groupToken } = require('../src/listing');
+  // Songs not playable on Spotify need no search, so nothing goes to YouTube.
+  const trackList = Array.from({ length: 100 }, (_, i) => ({ title: `Song ${i + 1}`, subtitle: 'Band', duration: 200000, isPlayable: false }));
+  const embed = (type) => `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: { pageProps: { state: { data: { entity: { type, name: 'Long list', trackList } } } } },
+  })}</script>`;
+  const lister = createLister({ media: {}, library: () => m.emptyLibrary() });
+  const realFetch = global.fetch;
+  const run = async (link, countPage) => {
+    const asked = [];
+    global.fetch = async (url) => {
+      asked.push(String(url).replace('https://open.spotify.com/', ''));
+      if (/\/embed\//.test(url)) return { ok: true, status: 200, text: async () => embed(/album/.test(url) ? 'album' : 'playlist') };
+      if (countPage instanceof Error) throw countPage;
+      return { ok: true, status: 200, text: async () => countPage };
+    };
+    try {
+      return { asked, listing: await lister.list(link, groupToken(), () => {}) };
+    } finally {
+      global.fetch = realFetch;
+    }
+  };
+  const count = (n) => `<meta name="music:song_count" content="${n}"/>`;
+
+  const long = await run('https://open.spotify.com/playlist/0SOay3RkjojjevrF5lHMON', count(254));
+  assert.equal(long.listing.items.length, 100);
+  assert.equal(long.listing.truncated, 'spotify');
+  assert.equal(long.listing.sourceTotal, 254);
+  assert.deepEqual(long.asked, ['embed/playlist/0SOay3RkjojjevrF5lHMON', 'playlist/0SOay3RkjojjevrF5lHMON']);
+
+  const whole = await run('https://open.spotify.com/playlist/0SOay3RkjojjevrF5lHMON', count(100));
+  assert.equal(whole.listing.truncated, false);
+  assert.ok(!('sourceTotal' in whole.listing));
+
+  // The count cannot be read: the warning without a number, as before.
+  for (const page of [new Error('offline'), '<html></html>']) {
+    const unknown = await run('https://open.spotify.com/playlist/0SOay3RkjojjevrF5lHMON', page);
+    assert.equal(unknown.listing.truncated, 'spotify');
+    assert.ok(!('sourceTotal' in unknown.listing));
+  }
+
+  // An album's page has no count, so it is not asked.
+  const album = await run('https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy', count(254));
+  assert.equal(album.listing.truncated, 'spotify');
+  assert.deepEqual(album.asked, ['embed/album/4aawyAB9vmqN3uQ7FjRGTy']);
+});
+
+test('several links pasted at once: split at the commas, of any site, spaces ignored', () => {
+  const { splitLinks, isLinkList, joinLinks } = require('../src/text');
+  const { cookieSites, cookiesFor } = require('../src/cookies');
+  assert.deepEqual(splitLinks('https://open.spotify.com/album/a, https://open.spotify.com/album/b'),
+    ['https://open.spotify.com/album/a', 'https://open.spotify.com/album/b']);
+  // Spaces around them, empty parts and the same link twice do not count; sites mix.
+  assert.deepEqual(splitLinks(' youtube.com/playlist?list=PL1 ,, https://soundcloud.com/x/sets/y,spotify:album:abc ,youtube.com/playlist?list=PL1 '),
+    ['youtube.com/playlist?list=PL1', 'https://soundcloud.com/x/sets/y', 'spotify:album:abc']);
+  // One link, words with a comma, and a link with a comma of its own are not several.
+  assert.deepEqual(splitLinks('https://open.spotify.com/album/a'), ['https://open.spotify.com/album/a']);
+  assert.equal(isLinkList('Linkin Park, Numb'), false);
+  assert.equal(isLinkList('https://example.com/a,b'), false);
+  assert.equal(isLinkList('https://a.com/x, https://b.com/y'), true);
+  // As many as are pasted.
+  const many = Array.from({ length: 40 }, (_, i) => `https://open.spotify.com/album/${i}`);
+  assert.equal(splitLinks(many.join(',')).length, 40);
+  assert.equal(joinLinks(splitLinks(` ${many.join(' , ')} `)), many.join(', '));
+  // Each link's site's cookies (a Spotify list's songs come from YouTube).
+  assert.deepEqual(cookieSites('https://open.spotify.com/album/a, https://soundcloud.com/x/sets/y, https://youtu.be/abc'), ['youtube.com', 'soundcloud.com']);
+  const file = '.youtube.com\tTRUE\t/\tTRUE\t0\tA\t1\n.soundcloud.com\tTRUE\t/\tTRUE\t0\tB\t2\n.other.com\tTRUE\t/\tTRUE\t0\tC\t3\n';
+  assert.equal(cookiesFor(file, ['youtube.com', 'soundcloud.com']).split('\n').filter((l) => l.includes('\t')).length, 2);
+});
+
+test('several links are read as one list: the first one\'s name, each song with its link, repeats and failed links left out', async () => {
+  const { createLister, groupToken } = require('../src/listing');
+  // Songs the library has by name need no search, so nothing goes to YouTube.
+  const lib = m.emptyLibrary();
+  for (const title of ['One', 'Two', 'Three']) m.addSong(lib, { id: `s-${title}`, file: `${title}.mp3`, artist: 'Dame', title, mix: '' });
+  const embed = (name, titles) => `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: { pageProps: { state: { data: { entity: { type: 'album', name, trackList: titles.map((t) => ({ title: t, subtitle: 'Dame', duration: 200000, isPlayable: true })) } } } } },
+  })}</script>`;
+  const pages = { '3EcC7Tb6Vm8RfAa8AiWoHC': embed('Album A', ['One', 'Two']), '4TxErgYLqeRWaV5A7AwQLU': embed('Album B', ['Two', 'Three']) };
+  const ytList = 'https://www.youtube.com/playlist?list=PLx';
+  const media = {
+    readJson: async (args) => {
+      const url = args[args.length - 1];
+      if (url !== ytList) throw new Error('not here');
+      return {
+        _type: 'playlist', title: 'Upload list', extractor_key: 'YoutubeTab', webpage_url: ytList,
+        entries: [
+          { id: 'v4', title: 'Dame - Four', ie_key: 'Youtube', url: 'https://www.youtube.com/watch?v=v4', duration: 200 },
+          { id: 'v4', title: 'Dame - Four', ie_key: 'Youtube', url: 'https://www.youtube.com/watch?v=v4', duration: 200 },
+        ],
+      };
+    },
+  };
+  const lister = createLister({ media, library: () => lib });
+  const realFetch = global.fetch;
+  global.fetch = async (url) => {
+    const id = (String(url).match(/\/embed\/album\/(\w+)/) || [])[1];
+    if (!pages[id]) return { ok: false, status: 404, text: async () => '' };
+    return { ok: true, status: 200, text: async () => pages[id] };
+  };
+  const texts = [];
+  try {
+    const A = 'https://open.spotify.com/album/3EcC7Tb6Vm8RfAa8AiWoHC';
+    const B = 'https://open.spotify.com/album/4TxErgYLqeRWaV5A7AwQLU';
+    const C = 'https://open.spotify.com/album/0Xb1rjEVxP1gOhdY1oakIZ';
+    const l = await lister.list(` ${A} ,${C}, ${B},${ytList}`, groupToken(), (p) => p.text && texts.push(p.text));
+    assert.equal(l.name, 'Album A');
+    assert.equal(l.source, 'Spotify');
+    assert.equal(l.sourceUrl, `${A}, ${C}, ${B}, ${ytList}`);
+    assert.deepEqual(l.items.map((it) => it.title), ['Dame - One', 'Dame - Two', 'Dame - Three', 'Dame - Four']);
+    assert.deepEqual(l.items.map((it) => it.index), [0, 1, 2, 3]);
+    assert.deepEqual(l.items.map((it) => it.listUrl), [A, A, B, ytList]);
+    assert.deepEqual(l.items.slice(0, 3).map((it) => it.existing.id), ['s-One', 's-Two', 's-Three']);
+    assert.equal(l.truncated, 'links');
+    assert.deepEqual(l.links.map((p) => [p.url, p.name, p.songs, p.listed, !!p.error]), [
+      [A, 'Album A', 2, 2, false], [C, '', 0, 0, true], [B, 'Album B', 1, 2, false], [ytList, 'Upload list', 1, 2, false],
+    ]);
+    assert.ok(texts.includes('Link 1 of 4: Reading the Spotify playlist...'));
+    assert.ok(texts.some((t) => t.startsWith('Link 4 of 4: ')));
+
+    // All of them whole: nothing cut short.
+    const whole = await lister.list(`${A}, ${B}`, groupToken(), () => {});
+    assert.equal(whole.truncated, false);
+    assert.deepEqual(whole.items.map((it) => it.listUrl), [A, A, B]);
+    // One link alone is read as before: no notes per link, no link per song.
+    const alone = await lister.list(A, groupToken(), () => {});
+    assert.ok(!('links' in alone));
+    assert.ok(alone.items.every((it) => !('listUrl' in it)));
+    // None can be read: the first one's error.
+    await assert.rejects(lister.list(`${C}, https://open.spotify.com/album/7Gmj5b3Fnzl17l432Qbr49`, groupToken(), () => {}));
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
 test('the search uses the first artist and the plain title', () => {
   assert.equal(spotify.searchQuery({ artists: 'KAROL G, Judeline', title: 'BbY WOW (feat. Someone)' }), 'KAROL G - BbY WOW');
   assert.equal(spotify.searchQuery({ artists: 'Queen', title: 'Bohemian Rhapsody - Remastered 2011' }), 'Queen - Bohemian Rhapsody');
@@ -333,4 +475,95 @@ test('lists found on YouTube by name: Spotify, Deezer, Amazon Music', () => {
   assert.equal(isNameOnlyList('https://www.amazon.de/dp/B0CXY9HZV6'), false);
   assert.equal(isNameOnlyList('https://www.youtube.com/playlist?list=PL1'), false);
   assert.equal(isNameOnlyList(''), false);
+});
+
+test('a queued link\'s name and song count are read quickly, without looking anything up (peek)', async () => {
+  const { createLister, groupToken } = require('../src/listing');
+  const trackList = (n) => Array.from({ length: n }, (_, i) => ({ title: `Song ${i + 1}`, subtitle: 'Band', duration: 200000, isPlayable: true }));
+  const embed = (name, n) => `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: { pageProps: { state: { data: { entity: { type: 'playlist', name, trackList: trackList(n) } } } } },
+  })}</script>`;
+  const asked = [];
+  const media = {
+    readJson: async (args) => {
+      asked.push(args);
+      const url = args[args.length - 1];
+      if (url.includes('list=PLx')) {
+        return { _type: 'playlist', title: 'Road trip', extractor_key: 'YoutubeTab', entries: [{ id: 'a' }, { id: 'b' }, null, { id: 'c' }] };
+      }
+      if (url.includes('bad')) throw new Error('unreadable');
+      return { _type: 'video', title: 'Massive Attack - Teardrop', extractor_key: 'Youtube' };
+    },
+  };
+  const lister = createLister({ media, library: () => m.emptyLibrary() });
+  const realFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (/\/embed\/playlist\/7LoNg/.test(url)) return { ok: true, status: 200, text: async () => embed('Long list', 100) };
+    if (/\/embed\/playlist\/5hOrT/.test(url)) return { ok: true, status: 200, text: async () => embed('Short list', 12) };
+    if (/open\.spotify\.com\/playlist\/7LoNg/.test(url)) return { ok: true, status: 200, text: async () => '<meta name="music:song_count" content="254"/>' };
+    if (/api\.deezer\.com\/playlist\/77/.test(url)) return { ok: true, status: 200, json: async () => ({ title: 'Deep cuts', nb_tracks: 41 }), text: async () => JSON.stringify({ title: 'Deep cuts', nb_tracks: 41 }) };
+    throw new Error(`not asked for: ${url}`);
+  };
+  try {
+    const sp = await lister.peek('https://open.spotify.com/playlist/5hOrTlIsTaAaAaAaAaAaAa', groupToken());
+    assert.deepEqual(sp, { name: 'Short list', count: 12, single: false, source: 'Spotify', sourceTotal: 0 });
+    const long = await lister.peek('https://open.spotify.com/playlist/7LoNgLiStAaAaAaAaAaAaA', groupToken());
+    assert.equal(long.count, 100);
+    assert.equal(long.sourceTotal, 254);
+
+    const yt = await lister.peek('https://www.youtube.com/playlist?list=PLx', groupToken());
+    assert.deepEqual(yt, { name: 'Road trip', count: 3, single: false, source: 'Youtube', sourceTotal: 0 });
+    assert.ok(asked[0].includes('--flat-playlist'));
+
+    // One song: its title, 1; "This song only" reads it without its list.
+    const one = await lister.peek('https://www.youtube.com/watch?v=abc', groupToken());
+    assert.deepEqual([one.name, one.count, one.single], ['Massive Attack - Teardrop', 1, true]);
+    await lister.peek('https://www.youtube.com/watch?v=abc&list=PLx', groupToken(), { song: true });
+    assert.ok(asked[asked.length - 1].includes('--no-playlist'));
+
+    const dz = await lister.peek('https://www.deezer.com/playlist/77', groupToken());
+    assert.deepEqual([dz.name, dz.count, dz.single, dz.source], ['Deep cuts', 41, false, 'Deezer']);
+
+    // Several links: the first list's name, the counts added up, one unreadable left out.
+    const many = await lister.peek('https://www.youtube.com/watch?v=abc, https://open.spotify.com/playlist/5hOrTlIsTaAaAaAaAaAaAa, https://bad.example.com/x', groupToken());
+    assert.deepEqual([many.name, many.count, many.single], ['Short list', 13, false]);
+    await assert.rejects(lister.peek('https://bad.example.com/x, https://bad.example.com/y', groupToken()), /unreadable/);
+    await assert.rejects(lister.peek('https://open.spotify.com/track/abc', groupToken()), /Single Spotify songs/);
+    // Cancelled: no answer.
+    const g = groupToken();
+    g.cancel();
+    await assert.rejects(lister.peek('https://open.spotify.com/playlist/5hOrTlIsTaAaAaAaAaAaAa', g));
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
+test('a song the library has by its names at the same length is not downloaded again, only listed as the library\'s', async () => {
+  const { createLister, groupToken } = require('../src/listing');
+  const lib = m.emptyLibrary();
+  m.addSong(lib, { id: 's-four', file: 'Four.mp3', artist: 'Dame', title: 'Four', mix: '', duration: 200 });
+  const downloaded = [];
+  const media = {
+    probe: async (url) => ({
+      url, key: `youtube:${url.slice(-11)}`, title: 'Dame - Four (Official Video)', duration: url.endsWith('longversion') ? 262 : 201.5,
+      guess: { artist: 'Dame', title: 'Four', mix: '' }, thumbnails: [],
+    }),
+    download: async (probed) => {
+      downloaded.push(probed.url);
+      return { path: 'x.opus', duration: probed.duration, summary: '' };
+    },
+  };
+  const lister = createLister({ media, library: () => lib });
+  const seen = [];
+  const sum = await lister.download([
+    { index: 0, title: 'Dame - Four', url: 'https://www.youtube.com/watch?v=otherupload' },
+    { index: 1, title: 'Dame - Four', url: 'https://www.youtube.com/watch?v=longversion' },
+  ], {}, groupToken(), (p) => p.phase === 'item' && p.status !== 'current' && seen.push([p.index, p.status, p.existingId]));
+  assert.deepEqual(seen, [[0, 'library', 's-four'], [1, 'ready', undefined]]);
+  assert.deepEqual(downloaded, ['https://www.youtube.com/watch?v=longversion']);
+  assert.equal(sum.fromLibrary, 1);
+  // Read from a list: the same, by the list's length.
+  assert.equal(m.findSameSong(lib, { artist: 'dame ', title: 'four' }, 197).id, 's-four');
+  assert.equal(m.findSameSong(lib, { artist: 'Dame', title: 'Four' }, 230), null);
+  assert.equal(m.findSameSong(lib, { artist: 'Dame', title: 'Four' }, 0).id, 's-four');
 });

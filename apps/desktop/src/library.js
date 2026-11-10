@@ -1,6 +1,7 @@
 'use strict';
 
-// The library on disk: library.json, saved after every change, and the scan
+// The library on disk: library.json, saved as its changes (library.json.log,
+// @flow/core/journalFile) after every change, and the scan
 // that keeps it in step with the Music\FlowPlayer folder. The rules themselves
 // live in libraryModel.js.
 
@@ -9,18 +10,17 @@ const path = require('path');
 const paths = require('./paths');
 const tools = require('./tools');
 const model = require('@flow/core/libraryModel');
-const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
+const { fileJournalIo } = require('@flow/core/jsonFile');
+const { createJournal, LIBRARY_SPEC } = require('@flow/core/journalFile');
 const { createLocalLibrary } = require('@flow/core/client/localLibrary');
 const { metaFromFile, findMoved } = require('@flow/core/fileMeta');
 const { AUDIO_EXTS } = require('@flow/core/formats');
 const { checkTarget, planMoves } = require('@flow/core/relocate');
 const { parseFlowId } = require('@flow/core/tags');
+const { tr } = require('@flow/core/lang');
 
 // The library itself, shared with the Android app; saved to library.json here.
-const local = createLocalLibrary({
-  read: () => readJson(paths.libraryFile()),
-  write: (data) => writeJsonAtomic(paths.libraryFile(), data),
-});
+const local = createLocalLibrary({ journal: createJournal(fileJournalIo, () => paths.libraryFile(), LIBRARY_SPEC) });
 const {
   load, get, save, onChange, mutate, newId,
 } = local;
@@ -313,7 +313,7 @@ async function relocate(newDir, onProgress = () => {}) {
   try {
     fs.mkdirSync(target, { recursive: true });
   } catch {
-    throw new Error(`The folder ${target} could not be created.`);
+    throw new Error(tr('desktop.error.folderNotCreated', 'The folder {folder} could not be created.', { folder: target }));
   }
   unwatch();
   try {
@@ -329,7 +329,7 @@ async function relocate(newDir, onProgress = () => {}) {
           moveFile(from, to);
           done.set(from.toLowerCase(), to);
         } catch (err) {
-          failed.push({ file: from, reason: err.code === 'EBUSY' || err.code === 'EPERM' ? 'in use by another program' : err.message });
+          failed.push({ file: from, reason: err.code === 'EBUSY' || err.code === 'EPERM' ? tr('desktop.error.inUse', 'in use by another program') : err.message });
         }
         // Let the window hear about the progress between files.
         await new Promise((resolve) => setImmediate(resolve));

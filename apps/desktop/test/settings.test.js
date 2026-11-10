@@ -194,6 +194,10 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.settingsCategory, '');
   assert.deepEqual(settings.clean({ settingsCollapsed: ['General', 'General', 3, '', 'Flow Server'] }).settingsCollapsed, ['General', 'Flow Server']);
   assert.deepEqual(settings.clean({ settingsCollapsed: 'General' }).settingsCollapsed, []);
+  // Administration's parts opened (all shut at first).
+  assert.deepEqual(d.adminOpen, []);
+  assert.deepEqual(settings.clean({ adminOpen: ['trash', 'trash', 'Trash', 3, '', 'uploads'] }).adminOpen, ['trash', 'uploads']);
+  assert.deepEqual(settings.clean({ adminOpen: 'trash' }).adminOpen, []);
   assert.equal(settings.clean({ settingsCategory: 'App' }).settingsCategory, 'App');
   assert.equal(settings.clean({ settingsCategory: 7 }).settingsCategory, '');
   // Bars' colours: Lime by default, the old Winamp and Equalizer left behind.
@@ -221,6 +225,14 @@ test('settings are kept within their ranges', () => {
   assert.equal(d.hlCoverFile, '');
   assert.equal(d.hlWiggle, true);
   assert.equal(d.hlPulse, true);
+  assert.equal(d.hlOutline, true);
+  // How much it wiggles and pulses (0-200%), its size and the spectrum's (50-150%), 100% by default.
+  assert.deepEqual([d.hlWiggleAmount, d.hlPulseAmount, d.hlCoverScale, d.hlScale], [100, 100, 100, 100]);
+  assert.equal(settings.clean({ hlWiggleAmount: 250 }).hlWiggleAmount, 200);
+  assert.equal(settings.clean({ hlPulseAmount: 0 }).hlPulseAmount, 0);
+  assert.equal(settings.clean({ hlCoverScale: 20 }).hlCoverScale, 50);
+  assert.equal(settings.clean({ hlScale: 152 }).hlScale, 150);
+  assert.equal(settings.clean({ hlOutline: false }).hlOutline, false);
   // Halo's Spin is gone: a saved one is dropped.
   assert.equal(d.hlSpin, undefined);
   assert.equal('hlSpin' in settings.clean({ hlSpin: true }), false);

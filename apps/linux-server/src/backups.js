@@ -18,6 +18,7 @@ const PROFILE_FIELDS = ['id', 'name', 'createdAt', 'pin', 'admin', 'master', 'di
 
 /** What a backup keeps of a profile in server.json. */
 const profileEntry = (p) => Object.fromEntries(PROFILE_FIELDS.map((k) => [k, p[k]]));
+const lists = (list) => (Array.isArray(list) ? list.filter((p) => !(p && p.favourites)).length : 0);
 
 /** A store for the server at `home`, made from its files alone (flow-server backup, the tests). */
 function storeFor(config, collect, log) {
@@ -27,9 +28,9 @@ function storeFor(config, collect, log) {
     collect,
     summary: (payload) => ({
       songs: (payload.library.songs || []).length,
-      // The Default / Shared's and every profile's.
-      playlists: (payload.library.playlists || []).length + Object.values(payload.library.profiles || {})
-        .reduce((n, part) => n + ((part && part.playlists) || []).length, 0),
+      // The Default / Shared's and every profile's; their Favourites (4.3) are not counted.
+      playlists: lists(payload.library.playlists) + Object.values(payload.library.profiles || {})
+        .reduce((n, part) => n + lists(part && part.playlists), 0),
       profiles: (payload.profiles || []).length,
     }),
     log,

@@ -11,6 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { readJson, writeJsonAtomic } = require('@flow/core/jsonFile');
+const { readLibrary, writeLibrary } = require('./libraryFile');
 
 // Windows' paths are the same in any case ("c:\Users" and "C:\Users").
 const key = (file) => (process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file));
@@ -50,7 +51,7 @@ function problem(from, to) {
 /** What a move would take: { songs, files } (songs: the library's songs whose file is in `from`). */
 function plan(config, from) {
   const dir = path.resolve(from);
-  const raw = readJson(config.libraryFile) || {};
+  const raw = readLibrary(config) || {};
   const songs = (raw.songs || []).filter((s) => s && typeof s.file === 'string' && inside(dir, s.file) && fs.existsSync(s.file)).length;
   return { songs, files: fs.existsSync(dir) ? filesIn(dir).length : 0 };
 }
@@ -130,7 +131,7 @@ function moveMusic({ config, from, log = () => {} }) {
 
   // The library, then the trash's records: only what moved changes.
   let songs = 0;
-  const raw = readJson(config.libraryFile);
+  const raw = readLibrary(config);
   if (raw && Array.isArray(raw.songs)) {
     for (const s of raw.songs) {
       const to = s && typeof s.file === 'string' && moved.get(key(s.file));
@@ -144,7 +145,7 @@ function moveMusic({ config, from, log = () => {} }) {
         return to ? to.toLowerCase() : f;
       });
     }
-    writeJsonAtomic(config.libraryFile, raw);
+    writeLibrary(config, raw);
   }
   const trashFile = path.join(config.home, 'trash.json');
   const trash = readJson(trashFile);

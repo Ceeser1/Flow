@@ -8,6 +8,7 @@
 
 const { createSettings, cloudsOffOnce } = require('@flow/core/client/settings');
 const { createLocalLibrary } = require('@flow/core/client/localLibrary');
+const { createJournal, LIBRARY_SPEC } = require('@flow/core/journalFile');
 const {
   platform, fs, path, plugin, info, secrets, isMetered,
 } = require('./native');
@@ -23,6 +24,25 @@ function readJson(file) {
 }
 
 const writeJson = (file, value) => fs.writeText(file, JSON.stringify(value));
+
+/**
+ * A big file kept as its changes (@flow/core/journalFile) by full path; a phone
+ * app without appendText writes it whole, as before.
+ */
+const journalIo = () => ({
+  read: readJson,
+  write: writeJson,
+  readText: (p) => fs.readText(p),
+  writeText: (p, text) => fs.writeText(p, text),
+  ...(fs.canAppend() ? { appendText: (p, text) => fs.appendText(p, text) } : {}),
+  remove: (p) => {
+    try {
+      fs.remove(p);
+    } catch {
+      // Not there.
+    }
+  },
+});
 
 /** A server's answer to the discovery question (as @flow/core/discovery parseReply). */
 function parseReply(text, address) {
@@ -58,10 +78,7 @@ function createEnv({ tellCovers }) {
   // Local Files: songs kept on the phone, downloaded from a server or added
   // from the phone's own files (localFiles.js). Only Flow puts files in its
   // Music folder, so there is nothing to scan.
-  const library = createLocalLibrary({
-    read: () => readJson(file('library.json')),
-    write: (data) => writeJson(file('library.json'), data),
-  });
+  const library = createLocalLibrary({ journal: createJournal(journalIo(), file('library.json'), LIBRARY_SPEC) });
   library.quietly = async (fn) => fn();
   library.scan = async () => ({ added: 0, removed: 0, moved: 0 });
 
@@ -79,6 +96,9 @@ function createEnv({ tellCovers }) {
     jsonFiles: {
       read: (name) => readJson(file(name)),
       write: (name, value) => writeJson(file(name), value),
+      readText: (name) => fs.readText(file(name)),
+      writeText: (name, text) => fs.writeText(file(name), text),
+      ...(fs.canAppend() ? { appendText: (name, text) => fs.appendText(file(name), text) } : {}),
       remove: (name) => {
         try {
           fs.remove(file(name));

@@ -226,17 +226,16 @@
 
   Visualizer.add({
     id: 'warp',
-    name: 'Warp',
-    desc: 'Flying through the stars, rushing on with every beat; each star shines with its part of the spectrum, and big drops jump to hyperspace',
+    name: T('viz.warp.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 12l-8-6M12 12l8-6M12 12l-8 6M12 12l8 6M12 12V3M12 12v9M12 12H2M12 12h10"/></svg>',
     gl: true,
     create: (canvas) => new Warp(canvas),
     options: [
-      { type: 'slider', key: 'wpSpeed', label: 'Speed', min: 25, max: 300, step: 5 },
-      { type: 'slider', key: 'wpCount', label: 'Stars', min: 25, max: 200, step: 5 },
-      { type: 'choice', key: 'wpColor', label: 'Colors', choices: [['white', 'White'], ['spectrum', 'Spectrum'], ['nebula', 'Nebula']] },
-      { type: 'check', key: 'wpJumps', label: 'Hyperspace jumps' },
+      { type: 'slider', key: 'wpSpeed', label: T('viz.shared.speed'), min: 25, max: 300, step: 5 },
+      { type: 'slider', key: 'wpCount', label: T('viz.shared.stars'), min: 25, max: 200, step: 5 },
+      { type: 'choice', key: 'wpColor', label: T('viz.shared.colors'), choices: [['white', T('common.color.white')], ['spectrum', T('common.spectrum')], ['nebula', T('viz.warp.setting.colors.nebula')]] },
+      { type: 'check', key: 'wpJumps', label: T('viz.warp.setting.hyperspaceJumps') },
     ],
   });
 })();

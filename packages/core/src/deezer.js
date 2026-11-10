@@ -1,5 +1,7 @@
 'use strict';
 
+const { tr } = require('./lang');
+
 // Deezer playlists, albums and songs, by way of YouTube, the way Spotify lists
 // are (spotify.js): Deezer's audio is copy protected and yt-dlp refuses it, so
 // only the track list comes from Deezer and each song is then looked up on
@@ -34,11 +36,11 @@ async function resolveShortLink(ref) {
   try {
     res = await fetch(ref.short, { redirect: 'follow' });
   } catch {
-    throw new Error('Could not reach Deezer. Please check the internet connection.');
+    throw new Error(tr('core.deezer.unreachable', 'Could not reach Deezer. Please check the internet connection.'));
   }
   const found = parseDeezerUrl(res.url)
     || parseDeezerUrl((/https?:\/\/(?:www\.)?deezer\.com\/[^\s"'<>]+/i.exec(await res.text()) || [''])[0]);
-  if (!found || found.short) throw new Error('This Deezer link does not lead to a playlist, album or song.');
+  if (!found || found.short) throw new Error(tr('core.deezer.notAList', 'This Deezer link does not lead to a playlist, album or song.'));
   return found;
 }
 
@@ -66,19 +68,19 @@ async function getJson(url) {
   try {
     res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
   } catch {
-    throw new Error('Could not reach Deezer. Please check the internet connection.');
+    throw new Error(tr('core.deezer.unreachable', 'Could not reach Deezer. Please check the internet connection.'));
   }
-  if (!res.ok) throw new Error(`Deezer refused the request (error ${res.status}). Try again later.`);
+  if (!res.ok) throw new Error(tr('core.deezer.refused', 'Deezer refused the request (error {status}). Try again later.', { status: res.status }));
   let data;
   try {
     data = await res.json();
   } catch {
-    throw new Error('Deezer\'s answer could not be read. Deezer may have changed it.');
+    throw new Error(tr('core.deezer.unreadable', 'Deezer\'s answer could not be read. Deezer may have changed it.'));
   }
   if (data && data.error) {
-    if (data.error.code === 800) throw new Error('Nothing was found at this Deezer link. Is the playlist public?');
-    if (data.error.code === 4) throw new Error('Deezer asks to wait a moment. Try again in a few seconds.');
-    throw new Error(`Deezer refused the request: ${data.error.message || data.error.type || 'unknown error'}.`);
+    if (data.error.code === 800) throw new Error(tr('core.deezer.nothingFound', 'Nothing was found at this Deezer link. Is the playlist public?'));
+    if (data.error.code === 4) throw new Error(tr('core.deezer.wait', 'Deezer asks to wait a moment. Try again in a few seconds.'));
+    throw new Error(tr('core.deezer.refusedWhy', 'Deezer refused the request: {reason}.', { reason: data.error.message || data.error.type || tr('core.deezer.unknownError', 'unknown error') }));
   }
   return data;
 }
@@ -106,8 +108,23 @@ async function fetchDeezer(ref, isCancelled = () => false) {
     raw.push(...data);
   }
   const tracks = raw.filter(Boolean).map((t) => trackOf(t, albumArtist, albumName)).filter((t) => t.title);
-  if (!tracks.length) throw new Error('This Deezer list has no songs that can be read.');
-  return { name: String(info.title || 'Deezer playlist'), url, tracks };
+  if (!tracks.length) throw new Error(tr('core.deezer.noSongs', 'This Deezer list has no songs that can be read.'));
+  return { name: String(info.title || tr('core.deezer.playlist', 'Deezer playlist')), url, tracks };
 }
 
-module.exports = { parseDeezerUrl, resolveShortLink, fetchDeezer, trackOf };
+/**
+ * A list's name and song count without its songs (a queued link's line,
+ * listing.peek): one request. A song is its names and 1.
+ */
+async function peekDeezer(ref) {
+  const info = await getJson(`${API}/${ref.type}/${ref.id}`);
+  if (ref.type === 'track') {
+    const t = trackOf(info);
+    return { name: `${t.artists} - ${t.title}`, count: 1 };
+  }
+  return { name: String(info.title || tr('core.deezer.playlist', 'Deezer playlist')), count: Math.min(Number(info.nb_tracks) || 0, MAX_SONGS) };
+}
+
+module.exports = {
+  parseDeezerUrl, resolveShortLink, fetchDeezer, peekDeezer, trackOf,
+};

@@ -10,6 +10,8 @@
 //
 //   list()      reads the list without downloading anything and marks what is
 //               already in the library.
+//   peek()      only its name and how many songs it has, quickly (a queued
+//               link's line, 4.4).
 //   download()  fetches the chosen songs one after another into the cache.
 //   search()    the uploads that can be a song whose name was typed instead of
 //               a link (songSearch.js); the one picked is downloaded as a link.
@@ -26,8 +28,9 @@ const amazonMusic = require('./amazonMusic');
 const otherSites = require('./otherSites');
 const songSearch = require('./songSearch');
 const { parseTitle, cleanUploader } = require('./titleParser');
-const { normalizeListUrl, sourceKey } = require('./text');
+const { normalizeListUrl, sourceKey, splitLinks, joinLinks } = require('./text');
 const { fillInfo } = require('./songInfo');
+const { tr } = require('./lang');
 
 const SEARCH_RESULTS = 5;
 const SEARCH_PARALLEL = 4;
@@ -38,7 +41,6 @@ const MIX_LIMIT = 50;
 // downloaded (SoundCloud's uploads by labels often cannot: DRM).
 const READ_TRIES = 2;
 const QUALITY_RANK = { good: 2, shaky: 1, none: 0 };
-const SEARCHED_SITES = 'YouTube, SoundCloud, Bandcamp or the Internet Archive';
 // Words typed instead of a link (search): YouTube's results asked for (a
 // page's worth), the YouTube Music songs read for their artist and length;
 // with "Search for more", the other sites' hits read (for their lengths, and
@@ -82,7 +84,7 @@ function groupToken(ytdlpArgs = null) {
 }
 
 function cancelled() {
-  const err = new Error('Cancelled.');
+  const err = new Error(tr('common.cancelled', 'Canceled.'));
   err.cancelled = true;
   return err;
 }
@@ -108,11 +110,18 @@ function removeQuietly(file) {
 
 const UNAVAILABLE_RE = /^\[(private|deleted|unavailable)( video)?\]$/i;
 
-/** A song the library already has: same source, else same names. */
-function existingSong(data, { url, key, meta }) {
+/** A Spotify (Deezer, Amazon) song by its names, the same in each of its lists. */
+function trackName(t) {
+  return `${t.artists || ''}|${t.title || ''}`.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/** A song the library already has: same source, else same names at the same length. */
+function existingSong(data, {
+  url, key, meta, duration = 0,
+}) {
   const bySource = (key || url) ? model.findBySource(data, { key, url }) : null;
   if (bySource) return bySource;
-  if (meta && meta.title) return model.findByMeta(data, meta);
+  if (meta && meta.title) return model.findSameSong(data, meta, duration);
   return null;
 }
 
@@ -152,7 +161,7 @@ async function eachItem(items, group, onProgress, fetchOne) {
       phase: 'download', index: it.index, number: n + 1, total: items.length, title: it.title, frac, text,
     });
     onProgress({ phase: 'item', index: it.index, status: 'current' });
-    report(null, 'Reading...');
+    report(null, tr('core.listing.reading', 'Reading...'));
     try {
       const got = await fetchOne(it, report);
       if (group.cancelled) {
@@ -176,7 +185,9 @@ async function eachItem(items, group, onProgress, fetchOne) {
         break;
       }
       summary.failed += 1;
-      onProgress({ phase: 'item', index: it.index, status: 'failed', reason: (err && err.message) || 'failed' });
+      onProgress({
+        phase: 'item', index: it.index, status: 'failed', reason: (err && err.message) || tr('import.song.failed', 'failed'), noAudio: !!(err && err.noAudio),
+      });
     }
   }
   return summary;
@@ -191,7 +202,7 @@ async function eachItem(items, group, onProgress, fetchOne) {
 function createLister({ media, library, lookupInfo = null }) {
   /** A yt-dlp playlist (YouTube, SoundCloud, Bandcamp ...) as checklist items. */
   async function listWithYtDlp(url, group, onProgress) {
-    onProgress({ phase: 'listing', text: 'Reading the playlist...' });
+    onProgress({ phase: 'listing', text: tr('core.listing.readingPlaylist', 'Reading the playlist...') });
     // A YouTube Mix is made up as it goes and runs to hundreds of songs: only
     // its start is taken.
     const mix = /[?&]list=RD/.test(url);
@@ -203,19 +214,19 @@ function createLister({ media, library, lookupInfo = null }) {
 
     let entries = Array.isArray(info.entries) ? info.entries.filter(Boolean) : [];
     if (entries.some((e) => /Tab$/i.test(String(e.ie_key || '')) || e._type === 'playlist')) {
-      throw new Error('This link holds several lists (a channel?). Open the list you want, e.g. its Videos tab, and paste that link.');
+      throw new Error(tr('core.link.severalLists', 'This link holds several lists (a channel?). Open the list you want, e.g. its Videos tab, and paste that link.'));
     }
     // SoundCloud's quick listing often leaves the titles out; read it fully then.
     const untitled = entries.filter((e) => !e.title).length;
     if (entries.length && untitled > entries.length / 2) {
-      onProgress({ phase: 'listing', text: `Reading ${entries.length} songs...` });
+      onProgress({ phase: 'listing', text: tr('core.listing.readingSongs', 'Reading {count} songs...', { count: entries.length }) });
       info = await read(false);
       entries = Array.isArray(info.entries) ? info.entries.filter(Boolean) : [];
     }
 
     const data = library();
     const items = entries.map((e, index) => {
-      const title = String(e.title || e.fulltitle || `Song ${index + 1}`);
+      const title = String(e.title || e.fulltitle || tr('core.link.songNumber', 'Song {number}', { number: index + 1 }));
       const link = e.webpage_url || e.url || '';
       const key = e.id ? sourceKey(e.ie_key || e.extractor_key || info.extractor_key || '', e.id) : '';
       const unavailable = UNAVAILABLE_RE.test(title.trim());
@@ -229,13 +240,15 @@ function createLister({ media, library, lookupInfo = null }) {
         key,
         status: unavailable || !link ? 'unavailable' : 'ok',
         note: unavailable ? title.replace(/[[\]]/g, '') : '',
-        existing: unavailable ? null : existingInfo(existingSong(data, { url: link, key, meta })),
+        existing: unavailable ? null : existingInfo(existingSong(data, {
+          url: link, key, meta, duration: e.duration,
+        })),
       };
     });
     return {
-      source: String(info.extractor_key || info.extractor || 'playlist').replace(/Tab$|Playlist$|Set$/i, '') || 'Playlist',
+      source: String(info.extractor_key || info.extractor || 'playlist').replace(/Tab$|Playlist$|Set$/i, '') || tr('common.playlist', 'Playlist'),
       sourceUrl: info.webpage_url || url,
-      name: String(info.title || 'Imported playlist'),
+      name: String(info.title || tr('common.importedPlaylist', 'Imported playlist')),
       truncated: mix && items.length >= MIX_LIMIT ? 'mix' : false,
       items,
     };
@@ -467,7 +480,7 @@ function createLister({ media, library, lookupInfo = null }) {
    */
   async function search(text, group, { page = 0, more = false } = {}) {
     const parsed = songSearch.parseQuery(text);
-    if (!parsed.query) throw new Error('Type the name of a song, or paste a link.');
+    if (!parsed.query) throw new Error(tr('core.link.typeOrPaste', 'Type the name of a song, or paste a link.'));
     const p = more ? 1 : Math.max(0, Math.floor(Number(page) || 0));
     let found = [];
     if (p === 0) found = await searchYouTube(parsed, group);
@@ -482,45 +495,67 @@ function createLister({ media, library, lookupInfo = null }) {
   }
 
   /** A Spotify playlist or album, each song looked up on YouTube. */
-  async function listSpotify(ref, url, group, onProgress) {
-    onProgress({ phase: 'listing', text: 'Reading the Spotify playlist...' });
+  async function listSpotify(ref, url, group, onProgress, seen = null) {
+    onProgress({ phase: 'listing', text: tr('core.listing.readingSpotify', 'Reading the Spotify playlist...') });
     const page = await spotify.fetchSpotify(ref);
     if (group.cancelled) throw cancelled();
+    // A full page may be the whole list or its start: the playlist's own
+    // page tells (0 when it cannot, and the warning says "the first 100").
+    let truncated = false;
+    let sourceTotal = 0;
+    if (page.tracks.length >= SPOTIFY_PAGE_LIMIT) {
+      sourceTotal = await spotify.fetchSongCount(ref);
+      if (group.cancelled) throw cancelled();
+      truncated = sourceTotal && sourceTotal <= page.tracks.length ? false : 'spotify';
+      if (!truncated) sourceTotal = 0;
+    }
     return listByName(page, {
       source: 'Spotify',
       sourceUrl: `https://open.spotify.com/${ref.type}/${ref.id}`,
-      truncated: page.tracks.length >= SPOTIFY_PAGE_LIMIT ? 'spotify' : false,
-    }, group, onProgress);
+      truncated,
+      sourceTotal,
+    }, group, onProgress, seen);
   }
 
   /** A Deezer playlist, album or song, each song looked up on YouTube. */
-  async function listDeezer(ref, url, group, onProgress) {
-    onProgress({ phase: 'listing', text: 'Reading the Deezer playlist...' });
+  async function listDeezer(ref, url, group, onProgress, seen = null) {
+    onProgress({ phase: 'listing', text: tr('core.listing.readingDeezer', 'Reading the Deezer playlist...') });
     const page = await deezer.fetchDeezer(await deezer.resolveShortLink(ref), () => group.cancelled);
     if (group.cancelled) throw cancelled();
-    return listByName(page, { source: 'Deezer', sourceUrl: page.url, truncated: false }, group, onProgress);
+    return listByName(page, { source: 'Deezer', sourceUrl: page.url, truncated: false }, group, onProgress, seen);
   }
 
   /** An Amazon Music playlist, album or song, each song looked up on YouTube. */
-  async function listAmazonMusic(ref, url, group, onProgress) {
-    onProgress({ phase: 'listing', text: 'Reading the Amazon Music playlist...' });
+  async function listAmazonMusic(ref, url, group, onProgress, seen = null) {
+    onProgress({ phase: 'listing', text: tr('core.listing.readingAmazon', 'Reading the Amazon Music playlist...') });
     const page = await amazonMusic.fetchAmazonMusic(ref, () => group.cancelled, (done, total) => {
-      onProgress({ phase: 'listing', text: `Reading the Amazon Music playlist: song ${done} of ${total}...` });
+      onProgress({ phase: 'listing', text: tr('core.listing.readingAmazon.song', 'Reading the Amazon Music playlist: song {done} of {total}...', { done, total }) });
     });
     if (group.cancelled) throw cancelled();
     return listByName(page, {
       source: 'Amazon Music',
       sourceUrl: amazonMusic.pageUrl(ref),
       truncated: page.total > page.tracks.length ? 'amazon' : false,
-    }, group, onProgress);
+    }, group, onProgress, seen);
   }
 
   /**
    * A list known by its songs' names only (page: { name, tracks: [{ title,
    * artists, duration, playable }] }), each song looked for (findSong).
+   * seen: of several links read together (listMany), the names of the songs
+   * the links before listed, which are left out here (not looked for twice);
+   * this list's are added to it. `listed` is then how many the page had.
    */
-  async function listByName(page, { source, sourceUrl, truncated }, group, onProgress) {
-    const tracks = page.tracks;
+  async function listByName(page, { source, sourceUrl, truncated, sourceTotal = 0 }, group, onProgress, seen = null) {
+    let tracks = page.tracks;
+    if (seen) {
+      tracks = tracks.filter((t) => {
+        const name = trackName(t);
+        if (seen.has(name)) return false;
+        seen.add(name);
+        return true;
+      });
+    }
     const data = library();
     const items = tracks.map((t, index) => {
       const meta = { ...parseTitle(`${t.artists} - ${t.title}`), album: String(t.album || ''), genre: '', subGenre: '' };
@@ -533,9 +568,9 @@ function createLister({ media, library, lookupInfo = null }) {
         url: '',
         key: '',
         status: t.playable ? 'pending' : 'unavailable',
-        note: t.playable ? '' : `not playable on ${source}`,
+        note: t.playable ? '' : tr('core.match.notPlayable', 'not playable on {source}', { source }),
         match: null,
-        existing: existingInfo(existingSong(data, { meta })),
+        existing: existingInfo(existingSong(data, { meta, duration: t.duration })),
       };
     });
 
@@ -563,7 +598,7 @@ function createLister({ media, library, lookupInfo = null }) {
         if (it.status === 'pending') {
           if (!pick || !pick.cand || pick.quality === 'none') {
             it.status = 'notfound';
-            it.note = pick && pick.cand ? `closest upload is ${Math.round(pick.diff)} s off` : `nothing found on ${SEARCHED_SITES}`;
+            it.note = pick && pick.cand ? tr('core.match.closestOff', 'closest upload is {seconds} s off', { seconds: Math.round(pick.diff) }) : tr('core.match.nothingFound', 'nothing found on YouTube, SoundCloud, Bandcamp or the Internet Archive');
             if (pick && pick.cand) it.match = { ...pick.cand, diff: pick.diff, quality: 'none', site: pick.site };
           } else {
             it.status = 'ok';
@@ -581,30 +616,235 @@ function createLister({ media, library, lookupInfo = null }) {
     };
     await Promise.all(Array.from({ length: SEARCH_PARALLEL }, worker));
 
-    return { source, sourceUrl, name: page.name, truncated, items };
+    const out = { source, sourceUrl, name: page.name, truncated, items };
+    if (seen) out.listed = page.tracks.length;
+    // How many songs the list has where it came from, when more than are listed.
+    if (truncated && sourceTotal > items.length) out.sourceTotal = sourceTotal;
+    return out;
   }
 
   /**
    * Reads a playlist link. Resolves { single: true, probed } when the link is
    * one song after all, or the listing: { source, sourceUrl, name, truncated,
-   * items: [{ index, title, duration, url, key, status, note, meta?, track?,
-   * match?, existing? }] }. status is 'ok', 'unavailable' or 'notfound'.
+   * sourceTotal?, items: [{ index, title, duration, url, key, status, note,
+   * meta?, track?, match?, existing? }] }. status is 'ok', 'unavailable' or
+   * 'notfound'. sourceTotal: how many songs the list has where it came from,
+   * when more than are listed (a Spotify playlist's).
    */
   async function list(rawUrl, group, onProgress, { knownArtists = [] } = {}) {
+    const links = splitLinks(rawUrl);
+    if (links.length > 1) return listMany(links, group, onProgress, { knownArtists });
+    return listOne(rawUrl, group, onProgress, { knownArtists });
+  }
+
+  /** One link of list(); seen as for listByName. */
+  async function listOne(rawUrl, group, onProgress, { knownArtists = [] } = {}, seen = null) {
     const ref = spotify.parseSpotifyUrl(rawUrl);
-    if (ref) return listSpotify(ref, rawUrl, group, onProgress);
+    if (ref) return listSpotify(ref, rawUrl, group, onProgress, seen);
     if (spotify.isSpotifyTrackUrl(rawUrl)) {
-      throw new Error('Single Spotify songs cannot be downloaded. Paste a Spotify playlist or album link, or the song\'s YouTube link.');
+      throw new Error(tr('core.spotify.singleSong', 'Single Spotify songs cannot be downloaded. Paste a Spotify playlist or album link, or the song\'s YouTube link.'));
     }
     const dz = deezer.parseDeezerUrl(rawUrl);
-    if (dz) return listDeezer(dz, rawUrl, group, onProgress);
+    if (dz) return listDeezer(dz, rawUrl, group, onProgress, seen);
     const amazon = amazonMusic.parseAmazonMusicUrl(rawUrl);
-    if (amazon) return listAmazonMusic(amazon, rawUrl, group, onProgress);
+    if (amazon) return listAmazonMusic(amazon, rawUrl, group, onProgress, seen);
     const url = normalizeListUrl(rawUrl);
-    if (!url) throw new Error('That does not look like a link.');
+    if (!url) throw new Error(tr('core.link.notALink', 'That does not look like a link.'));
     const listing = await listWithYtDlp(url, group, onProgress);
     if (listing.single) return { single: true, probed: media.probedFrom(listing.info, url, rawUrl, knownArtists) };
     return listing;
+  }
+
+  /**
+   * Several links pasted at once (text.splitLinks), read one after another
+   * as one list: its name is the first link's, and each song keeps the link
+   * it was found in (listUrl, the playlist it came from once saved; '' for a
+   * link that is one song). A song an earlier link listed already is left
+   * out (by its names for a Spotify, Deezer or Amazon list, else by its
+   * upload). A link that cannot be read is skipped; only when none can is
+   * that an error. sourceUrl is all the links again (joinLinks), so a
+   * playlist's Update reads them all together. links: what each link gave,
+   * [{ url, name, songs, listed, truncated, sourceTotal, single?, error? }];
+   * truncated is 'links' when one failed or was cut short (an Update then
+   * removes nothing), and onProgress's texts say which link is being read.
+   */
+  async function listMany(links, group, onProgress, { knownArtists = [] } = {}) {
+    const seen = new Set();
+    const keys = new Set();
+    const items = [];
+    const parts = [];
+    let first = null;
+    for (let n = 0; n < links.length; n += 1) {
+      if (group.cancelled) throw cancelled();
+      const which = { number: n + 1, total: links.length };
+      const report = (p) => onProgress(p.phase === 'listing'
+        ? { ...p, text: tr('core.listing.linkOf', 'Link {number} of {total}: {text}', { ...which, text: p.text || '' }) }
+        : { ...p, link: n + 1, links: links.length });
+      let got;
+      try {
+        got = await listOne(links[n], group, report, { knownArtists }, seen);
+      } catch (err) {
+        if (group.cancelled) throw cancelled();
+        parts.push({
+          url: links[n], name: '', songs: 0, listed: 0, truncated: false, sourceTotal: 0,
+          error: (err && err.message) || tr('core.link.couldNotRead', 'The link could not be read.'),
+        });
+        continue;
+      }
+      if (got.single) {
+        const p = got.probed;
+        const fresh = !(p.key && keys.has(p.key));
+        if (fresh) {
+          if (p.key) keys.add(p.key);
+          items.push({
+            index: items.length,
+            title: p.title,
+            duration: p.duration,
+            url: p.url,
+            key: p.key || '',
+            status: 'ok',
+            note: '',
+            existing: existingInfo(existingSong(library(), {
+              key: p.key, url: p.url, meta: p.guess, duration: p.duration,
+            })),
+            listUrl: '',
+          });
+        }
+        parts.push({ url: links[n], name: p.title, songs: fresh ? 1 : 0, listed: 1, truncated: false, sourceTotal: 0, single: true });
+        continue;
+      }
+      if (!first) first = got;
+      const url = got.sourceUrl || links[n];
+      let songs = 0;
+      for (const it of got.items) {
+        // A name list's songs were sorted out by their names already (seen);
+        // a yt-dlp list's are known by their uploads, else by their titles.
+        if (it.key && keys.has(it.key)) continue;
+        if (!it.track && !it.key) {
+          const name = String(it.title || '').toLowerCase();
+          if (seen.has(name)) continue;
+          seen.add(name);
+        }
+        if (it.key) keys.add(it.key);
+        items.push({ ...it, index: items.length, listUrl: url });
+        songs += 1;
+      }
+      parts.push({
+        url,
+        name: got.name,
+        songs,
+        listed: got.listed || got.items.length,
+        truncated: got.truncated || false,
+        sourceTotal: Number(got.sourceTotal) || 0,
+      });
+    }
+    if (!items.length) {
+      const failed = parts.find((p) => p.error);
+      if (failed) throw new Error(failed.error);
+    }
+    const one = parts.find((p) => !p.error);
+    return {
+      source: first ? first.source : 'Playlist',
+      sourceUrl: joinLinks(parts.map((p) => p.url)),
+      name: first ? first.name : ((one && one.name) || tr('common.importedPlaylist', 'Imported playlist')),
+      truncated: parts.some((p) => p.error || p.truncated) ? 'links' : false,
+      links: parts,
+      items,
+    };
+  }
+
+  /**
+   * A link's name and song count, quickly and without looking anything up
+   * on YouTube (4.4: a queued link's line in the Client or Server queue; the
+   * whole read stays for its turn, list()). { name, count, single, source,
+   * sourceTotal }: single for a link that is one song (count 1, name its
+   * title); sourceTotal as list()'s, a Spotify playlist's songs in all when
+   * its embed page lists only the first 100. opts.song: the link is to be
+   * read as one song (YouTube's watch?v=...&list=... answered "This song
+   * only"). Several links pasted at once: the first list's name, the counts
+   * added up; one that cannot be read is left out, unless none can.
+   */
+  async function peek(rawUrl, group, { song = false } = {}) {
+    const links = song ? [String(rawUrl || '').trim()] : splitLinks(rawUrl);
+    if (links.length > 1) {
+      let first = null;
+      let count = 0;
+      let error = null;
+      for (const link of links) {
+        if (group.cancelled) throw cancelled();
+        try {
+          const got = await peekOne(link, group, {});
+          if (!first || (first.single && !got.single)) first = got;
+          count += got.count;
+        } catch (err) {
+          if (group.cancelled) throw cancelled();
+          error = error || err;
+        }
+      }
+      if (!first) throw error || new Error(tr('core.link.couldNotRead', 'The link could not be read.'));
+      return {
+        name: first.name, count, single: false, source: first.source, sourceTotal: 0,
+      };
+    }
+    return peekOne(links[0] || '', group, { song });
+  }
+
+  async function peekOne(rawUrl, group, { song }) {
+    const done = (got) => {
+      if (group.cancelled) throw cancelled();
+      return {
+        name: String(got.name || '').trim() || tr('common.importedPlaylist', 'Imported playlist'),
+        count: Math.max(0, Number(got.count) || 0),
+        single: !!got.single,
+        source: got.source || '',
+        sourceTotal: Number(got.sourceTotal) || 0,
+      };
+    };
+    const ref = spotify.parseSpotifyUrl(rawUrl);
+    if (ref) {
+      const page = await spotify.fetchSpotify(ref);
+      let sourceTotal = 0;
+      if (page.tracks.length >= SPOTIFY_PAGE_LIMIT) {
+        const all = await spotify.fetchSongCount(ref);
+        if (all > page.tracks.length) sourceTotal = all;
+      }
+      return done({
+        name: page.name, count: page.tracks.length, source: 'Spotify', sourceTotal,
+      });
+    }
+    if (spotify.isSpotifyTrackUrl(rawUrl)) {
+      throw new Error(tr('core.spotify.singleSong', 'Single Spotify songs cannot be downloaded. Paste a Spotify playlist or album link, or the song\'s YouTube link.'));
+    }
+    const dz = deezer.parseDeezerUrl(rawUrl);
+    if (dz) {
+      const r = await deezer.resolveShortLink(dz);
+      const got = await deezer.peekDeezer(r);
+      return done({ ...got, single: r.type === 'track', source: 'Deezer' });
+    }
+    const amazon = amazonMusic.parseAmazonMusicUrl(rawUrl);
+    if (amazon) {
+      const got = await amazonMusic.peekAmazonMusic(amazon);
+      return done({ ...got, single: got.count === 1 && (amazon.type === 'track' || !!amazon.trackId), source: 'Amazon Music' });
+    }
+    const url = song ? String(rawUrl || '').trim() : normalizeListUrl(rawUrl);
+    if (!url) throw new Error(tr('core.link.notALink', 'That does not look like a link.'));
+    // As listWithYtDlp reads it: a Mix only up to its start.
+    const mix = !song && /[?&]list=RD/.test(url);
+    const args = song
+      ? ['--no-playlist', '-J', url]
+      : ['--flat-playlist', '--yes-playlist', ...(mix ? ['-I', `1:${MIX_LIMIT}`] : []), '-J', url];
+    const info = await withSub(group, (t) => media.readJson(args, t));
+    if (info._type !== 'playlist') {
+      return done({
+        name: info.title || info.fulltitle || '', count: 1, single: true, source: info.extractor_key || info.extractor || '',
+      });
+    }
+    const entries = Array.isArray(info.entries) ? info.entries.filter(Boolean) : [];
+    return done({
+      name: info.title || '',
+      count: entries.length || Number(info.playlist_count) || 0,
+      source: String(info.extractor_key || info.extractor || '').replace(/Tab$|Playlist$|Set$/i, ''),
+    });
   }
 
   /**
@@ -636,12 +876,15 @@ function createLister({ media, library, lookupInfo = null }) {
   function download(items, opts, group, onProgress, { knownArtists = [] } = {}) {
     return eachItem(items, group, onProgress, async (it, report) => {
       const probed = await withSub(group, (t) => media.probe(it.url, t, { knownArtists }));
-      // Another link to an upload the library already has.
-      const same = model.findBySource(library(), { key: probed.key, url: probed.url });
+      // Another link to an upload the library already has, or the same song
+      // (its names at the same length) from another upload.
+      const fromSource = it.meta && it.meta.title;
+      const same = existingSong(library(), {
+        key: probed.key, url: probed.url, meta: fromSource ? it.meta : probed.guess, duration: probed.duration,
+      });
       if (same) return { existingId: same.id };
       const file = await withSub(group, (t) => media.download(probed, opts,
         (stage, frac, text) => report(frac, text), t));
-      const fromSource = it.meta && it.meta.title;
       const meta = await withInfo(fromSource ? it.meta : { artist: probed.guess.artist, title: probed.guess.title, mix: probed.guess.mix }, probed);
       return {
         media: file,
@@ -661,7 +904,7 @@ function createLister({ media, library, lookupInfo = null }) {
   }
 
   return {
-    list, download, search, withInfo, listWithYtDlp, listSpotify, listDeezer, listAmazonMusic, matchOnYouTube, findSong,
+    list, listMany, peek, download, search, withInfo, listWithYtDlp, listSpotify, listDeezer, listAmazonMusic, matchOnYouTube, findSong,
   };
 }
 

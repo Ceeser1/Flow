@@ -27,6 +27,7 @@
 // playlist away and leaves the songs to the server's answer.
 
 const model = require('./libraryModel');
+const { tr } = require('./lang');
 
 function str(v) {
   return String(v === undefined || v === null ? '' : v);
@@ -44,9 +45,9 @@ const TYPES = {
     keys: () => [],
     run(d, c) {
       const id = str(c.playlistId);
-      if (!id) throw new Error('A new playlist needs an id.');
+      if (!id) throw new Error(tr('core.library.playlistNeedsId', 'A new playlist needs an id.'));
       if (model.playlistById(d, id)) return { skipped: 'exists' };
-      if (!str(c.name).trim()) throw new Error('Please enter a name for the playlist.');
+      if (!str(c.name).trim()) throw new Error(tr('core.library.enterPlaylistName', 'Please enter a name for the playlist.'));
       // Two apps may each have made a "Chill" while apart: the later one
       // becomes "Chill (2)" rather than getting lost.
       const p = model.createPlaylist(d, model.freePlaylistName(d, c.name), id, c.at);
@@ -60,6 +61,48 @@ const TYPES = {
     run(d, c) {
       if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
       model.renamePlaylist(d, str(c.playlistId), c.name);
+      return {};
+    },
+  },
+  // Playlist groups (4.5). Two apps may each have made a "Rock" group while
+  // apart: the later one becomes "Rock (2)". Deleting a group always wins; a
+  // playlist moved into it meanwhile stays single.
+  createGroup: {
+    keys: () => [],
+    run(d, c) {
+      const id = str(c.groupId);
+      if (!/^[\w-]{1,64}$/.test(id)) throw new Error(tr('core.library.groupNeedsId', 'A new group needs an id.'));
+      if (model.groupById(d, id)) return { skipped: 'exists' };
+      if (!str(c.name).trim()) throw new Error(tr('core.library.enterGroupName', 'Please enter a name for the group.'));
+      const g = model.createGroup(d, model.freeGroupName(d, c.name), id, c.at);
+      return { value: g.id };
+    },
+  },
+  renameGroup: {
+    keys: (c) => [`g:${c.groupId}:name`],
+    run(d, c) {
+      if (!model.groupById(d, str(c.groupId))) return { skipped: 'gone' };
+      model.renameGroup(d, str(c.groupId), c.name);
+      return {};
+    },
+  },
+  deleteGroup: {
+    keys: () => [],
+    run(d, c) {
+      if (!model.groupById(d, str(c.groupId))) return { skipped: 'gone' };
+      model.deleteGroup(d, str(c.groupId));
+      return {};
+    },
+  },
+  // A playlist of its own, or (4.5.1) one it follows; one no longer followed is skipped.
+  setPlaylistGroup: {
+    keys: (c) => [`p:${c.playlistId}:group`],
+    run(d, c) {
+      const id = str(c.playlistId);
+      if (!model.playlistById(d, id) && !(d.follows || []).includes(id)) return { skipped: 'gone' };
+      const gid = str(c.groupId);
+      if (gid && !model.groupById(d, gid)) return { skipped: 'gone' };
+      model.setPlaylistGroup(d, str(c.playlistId), gid);
       return {};
     },
   },
@@ -159,7 +202,7 @@ const TYPES = {
     run(d, c) {
       if (!model.songById(d, str(c.songId))) return { skipped: 'gone' };
       const meta = { artist: str(c.artist).trim(), title: str(c.title).trim(), mix: str(c.mix).trim() };
-      if (!meta.title) throw new Error('Please enter a title.');
+      if (!meta.title) throw new Error(tr('common.enterTitle', 'Please enter a title.'));
       // Apps from before albums and genres send neither: the song keeps its own.
       if (c.album !== undefined) meta.album = str(c.album);
       if (c.genre !== undefined) meta.genre = str(c.genre);
@@ -224,7 +267,7 @@ const TYPES = {
       if (!s) return { skipped: 'gone' };
       if (s.cut === model.cleanCut(c.cut)) return { skipped: 'repeat' };
       const len = Number(c.end) - Number(c.start);
-      if (!(len > 0)) throw new Error('The trim is empty.');
+      if (!(len > 0)) throw new Error(tr('core.trim.empty', 'The trim is empty.'));
       model.updateSong(d, s.id, { duration: len, cut: c.cut, loudness: null });
       return {};
     },
@@ -254,7 +297,7 @@ const COMMAND_TYPES = Object.keys(TYPES);
 function applyCommand(data, cmd, touched = null, scope = null, ctx = null) {
   const c = cmd || {};
   const type = TYPES[c.type];
-  if (!type) throw new Error(`Unknown command "${str(c.type)}".`);
+  if (!type) throw new Error(tr('core.library.unknownCommand', 'Unknown command "{command}".', { command: str(c.type) }));
   const at = Number(c.at) || Date.now();
   const cc = { ...c, at };
   // A change older than the last one to the same thing is skipped. For a

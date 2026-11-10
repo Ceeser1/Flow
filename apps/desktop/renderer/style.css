@@ -69,6 +69,7 @@ button, input, select { font: inherit; color: inherit; }
 .icon--note { -webkit-mask-image: url(../images/note.png); mask-image: url(../images/note.png); -webkit-mask-size: 82%; mask-size: 82%; }
 .icon--search { -webkit-mask-image: url(../images/search.png); mask-image: url(../images/search.png); -webkit-mask-size: 82%; mask-size: 82%; }
 .icon--share { -webkit-mask-image: url(../images/share.png); mask-image: url(../images/share.png); -webkit-mask-size: 82%; mask-size: 82%; }
+.icon--followed { -webkit-mask-image: url(../images/followed.png); mask-image: url(../images/followed.png); color: var(--green); }
 .icon--shuffle { -webkit-mask-image: url(../images/shuffle.png); mask-image: url(../images/shuffle.png); }
 
 /* ===== layout ===== */
@@ -466,6 +467,12 @@ button, input, select { font: inherit; color: inherit; }
 
 .link-row { display: flex; gap: 10px; }
 .link-row .input { flex: 1; }
+/* Auto-accept songs lookup and Automate "Finish all" right under the link box (4.4). */
+.auto-row { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 10px; font-size: 13px; color: var(--text-dim); }
+.auto-row .check { color: inherit; }
+.auto-row[hidden], .auto-row__sub[hidden] { display: none; }
+/* Automate "Finish all" without Auto-accept: greyed out as in Settings. */
+.auto-row__sub--off { opacity: 0.45; cursor: default; }
 /* "Downloads?" alone in the row, where the link box was (downloadsHelp.js). */
 .downloads-help-btn { margin: 0 auto; }
 /* Download (Client) without yt-dlp: greyed out, but a click opens the legal note. */
@@ -1314,6 +1321,74 @@ div.import__frame-head { cursor: default; }
 
 .import__buttons .btn { height: 38px; }
 
+/* ===== one panel per batch (import.js, 4.4) ===== */
+
+.import-batches[hidden] { display: none; }
+
+/* The head: the arrow, where it is from, its name with the pencil, how many songs, its link. */
+.import-batch__head { align-items: center; justify-content: flex-start; flex-wrap: nowrap; gap: 8px; cursor: pointer; }
+.import-batch__head .import__source { flex: 1; min-width: 0; }
+.import-batch--collapsed .import-batch__head { margin-bottom: 0; }
+.import-batch__toggle { flex: none; padding: 2px; color: var(--text-dim); }
+.import-batch__toggle .icon { width: 16px; height: 16px; transition: transform 0.15s; transform: rotate(90deg); }
+.import-batch--collapsed .import-batch__toggle .icon { transform: none; }
+.import-batch__toggle[hidden] { display: none; }
+.import-batch__count { color: var(--text-dim); white-space: nowrap; }
+.import__badge--server { background: rgba(110, 200, 140, 0.16); color: var(--green); }
+.import-batch__url {
+  min-width: 0;
+  flex: 1 1 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: 12px;
+  user-select: text;
+}
+/* Its notes (a list cut short, links that failed, how to trim) on a line of their own. */
+.import-batch__notes { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.import-batch__progress { margin: 4px 0 10px; }
+.import-batch__progress[hidden], .import-batch__body[hidden] { display: none; }
+.import-batch--collapsed .import-batch__progress { margin-bottom: 0; }
+
+/* Its footer: stuck to the bottom of the window while the batch is in view. */
+.import-batch__footer {
+  margin: 12px -14px -14px;
+  padding: 10px 14px 12px;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.import-batch__footer[hidden] { display: none; }
+.import-batch--collapsed .import-batch__footer { margin-top: 10px; }
+
+/* ===== the Client queue and Server queue (queuePanels.js) ===== */
+
+.queue-panel__title { color: var(--text-bright); font-weight: 600; margin-bottom: 8px; }
+.queue-panel__rows { display: flex; flex-direction: column; gap: 4px; }
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--well);
+}
+.queue-row__what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-row__profile {
+  margin-right: 8px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(90, 140, 220, 0.18);
+  color: var(--accent-hi);
+  font-size: 12px;
+  font-weight: 600;
+}
+.queue-row__name { color: var(--text-bright); }
+.queue-row__count { color: var(--grey); }
+.queue-row__url { color: var(--text-dim); font-size: 12px; }
+.queue-row__state { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--grey); font-size: 12px; }
+.queue-row__state--bad { color: var(--amber); }
+.queue-row .btn { flex: none; }
+
 /* ===== a song's name searched for (songSearch.js) ===== */
 
 /* The upload's title: opens it on its site, to check before downloading. */
@@ -1372,6 +1447,95 @@ div.import__frame-head { cursor: default; }
 .pl-head__titlerow { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .pl-head__titlerow .page__title { min-width: 0; }
 
+/* ===== playlist groups (4.5, groups.js) ===== */
+
+/* The menu: a group as a folder below the single playlists, its playlists further in while open. */
+.menu__group .menu__chevron { margin: 0 -4px 0 -6px; }
+/* The arrow and the folder open and close the group, its name opens its page (4.5.2). */
+.menu__group-toggle { display: inline-flex; align-items: center; gap: 8px; flex: none; margin: -4px 0 -4px -4px; padding: 4px; border-radius: 6px; }
+.menu__group-toggle:hover { background: var(--glass-hi); }
+.menu__group-toggle:hover .menu__sub-icon { color: var(--text-bright); }
+.menu__group .menu__sub-icon { color: var(--text-dim); }
+.menu__group .menu__sub-name { font-weight: 600; }
+.menu__sub--in-group { padding-left: 34px; }
+.menu__sub--in-group.menu__sub--active,
+.menu__sub--in-group.menu__sub--playing { padding-left: 33px; }
+
+/* Dragging a playlist (the computer and the web player): where it can go lights up. */
+body.dragging-playlist .menu__group,
+body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s; }
+.drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; background: rgba(90, 140, 220, 0.12) !important; border-radius: 6px; }
+.drop-area { border-radius: var(--radius); }
+
+/* The Playlists page: the box for a new group, then each group's head with its table under it while open. */
+.group-new .input { flex: 1; }
+.groups-hint { margin: 8px 0 10px; font-size: 13px; }
+.groups { display: flex; flex-direction: column; gap: 8px; }
+.group { background: var(--glass); border-radius: var(--radius); padding: 4px 10px; }
+.group--open { padding-bottom: 10px; }
+.group__head { display: flex; align-items: center; gap: 10px; min-height: 46px; }
+.group__toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-bright);
+  cursor: pointer;
+  text-align: left;
+}
+.group__toggle:hover { background: var(--glass-hi); }
+.group__toggle .menu__chevron .icon { width: 16px; height: 16px; }
+.group__icon { display: inline-flex; color: var(--accent-hi); }
+.group__icon .icon { width: 20px; height: 20px; }
+.group__text { display: flex; flex-direction: column; min-width: 0; }
+.group__name { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group__sub { color: var(--text-dim); font-size: 13px; }
+.group .table { margin-top: 4px; }
+.group__empty { margin: 4px 0 6px 34px; font-size: 13px; }
+
+/* Move to group: the groups as rows, "No group", and a new group by name. */
+.modal.modal--group-pick { width: 420px; }
+.group-pick__list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow-y: auto; }
+.group-pick__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  background: var(--glass);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-bright);
+  cursor: pointer;
+  text-align: left;
+}
+.group-pick__row:hover:not(:disabled) { background: var(--glass-hi); border-color: var(--line); }
+.group-pick__row:disabled { cursor: default; opacity: 0.5; }
+.group-pick__row--out { color: var(--text); }
+.group-pick__icon { display: inline-flex; color: var(--accent-hi); }
+.group-pick__row--out .group-pick__icon { color: var(--red); }
+.group-pick__icon .icon { width: 17px; height: 17px; }
+.group-pick__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-pick__count { color: var(--text-dim); font-size: 13px; }
+.group-pick__new { display: flex; gap: 8px; margin-top: 12px; }
+.group-pick__new .input { flex: 1; min-width: 0; }
+
+/* A group's Add playlists: a tick per playlist not in it. */
+.modal.modal--group-add { width: 460px; }
+.group-add__list { display: flex; flex-direction: column; gap: 2px; max-height: 55vh; overflow-y: auto; }
+.group-add__row { display: flex; gap: 10px; padding: 6px 8px; border-radius: 6px; }
+.group-add__row:hover { background: var(--glass); }
+.group-add__icon { display: inline-flex; color: var(--text-dim); }
+.group-add__icon .icon { width: 15px; height: 15px; }
+.group-add__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-add__from { color: var(--text-dim); font-size: 12px; }
+
 /* ===== covers (covers.js) ===== */
 
 /* A song's cover, square, with a note while there is none. */
@@ -1392,6 +1556,9 @@ div.import__frame-head { cursor: default; }
 .cover--row { width: 30px; height: 30px; }
 .cover--result { width: 32px; height: 32px; border-radius: 6px; }
 .cover--frame { width: 36px; height: 36px; border-radius: 5px; }
+/* The fixed-size ones are laid out on their own: a picture loading, failing
+   or swapped never makes a long list measure all its rows again. */
+.cover--row, .cover--result, .cover--frame, .cover--bar, .cover--editor { contain: strict; }
 
 /* A song list's Title: the cover, then the title. */
 .title-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -1475,6 +1642,8 @@ div.import__frame-head { cursor: default; }
 .cell-title { color: var(--text-bright); }
 .row--current .cell-title { color: var(--green); }
 /* The whole Title cell plays the song (playlist.js), and says so on hover. */
+/* A long list's spacers (windowRows): the rows not drawn, as tall as they would be. */
+.table tr.vspace td { height: auto; padding: 0; border: 0; background: none !important; }
 .table td.cell--play { cursor: pointer; }
 .table td.cell--play:hover .cell-title { text-decoration: underline; text-underline-offset: 3px; }
 
@@ -1605,6 +1774,11 @@ div.import__frame-head { cursor: default; }
 .act--fav-on, .act--dl-on { background: rgba(245, 190, 60, 0.16); color: #f5be3c; }
 .act--fav-on:hover, .act--dl-on:hover { background: rgba(245, 190, 60, 0.3); border-color: rgba(245, 190, 60, 0.45); }
 .act--open { background: rgba(184, 184, 192, 0.3); border-color: rgba(184, 184, 192, 0.45); color: var(--text-bright); }
+/* A playlist group's Update all (4.5): light blue as Update from source, its icon turning while it reads. */
+.act--blue { background: rgba(140, 200, 244, 0.12); color: #8cc8f4; }
+.act--blue:hover { background: rgba(140, 200, 244, 0.24); border-color: rgba(140, 200, 244, 0.4); }
+.act.pl-update--busy { border-color: rgba(140, 200, 244, 0.5); }
+.act.pl-update--busy .icon { animation: prog-spin 2s linear infinite; }
 
 /* A file saved whole (the phone's own): names and a preview, no trim. */
 .editor--whole .trim-head,
@@ -1797,6 +1971,37 @@ div.import__frame-head { cursor: default; }
   gap: 14px;
   margin-bottom: 10px;
 }
+/* "Artist: Dame" picked on the Search page, its X shows all songs again. */
+.pl-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 40%;
+  height: 28px;
+  padding: 0 4px 0 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-bright);
+  font-size: 13px;
+}
+.pl-field[hidden] { display: none; }
+.pl-field__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-field__x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.pl-field__x:hover { color: var(--text-bright); background: rgba(255, 255, 255, 0.08); }
+.pl-field__x .icon { width: 14px; height: 14px; }
 
 .empty {
   padding: 50px 20px;
@@ -2394,13 +2599,17 @@ div.import__frame-head { cursor: default; }
   background: linear-gradient(#34343c, #34343c) right bottom / calc(100% - 26px) 1px no-repeat border-box;
 }
 .settings__row--sub:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden]))::after { top: 19px; }
-
 .settings__row--off .settings__left,
 .settings__row--off .settings__right,
 /* Greyed out with its button still bright (Lyrics Cache). */
 .settings__row--dim .settings__left,
 .settings__row--dim .settings__note,
 .settings__row--unset:not(.settings__row--keep) .settings__right { opacity: 0.45; }
+/* Unticked, only the numbers grey out: the Clear button stays as it is (the covers rows). */
+.settings__row--btns.settings__row--off .settings__right,
+.settings__row--btns.settings__row--unset .settings__right { opacity: 1; }
+.settings__row--btns.settings__row--off .settings__note,
+.settings__row--btns.settings__row--unset .settings__note { opacity: 0.45; }
 
 .settings__left { min-width: 0; }
 .settings__label { font-weight: 600; color: var(--text-bright); }
@@ -2803,8 +3012,9 @@ div.import__frame-head { cursor: default; }
   opacity: 0;
   transition: max-width 0.35s ease, opacity 0.25s, padding 0.35s;
 }
-/* As wide as the window allows, clear of the close button at the right. */
-.viz-cfg--open .viz-cfg__body { max-width: calc(100vw - 220px); padding: 0 28px 0 6px; opacity: 1; }
+/* As wide as the window allows, clear of the close button at the right;
+   what does not fit scrolled to sideways (the wheel, a finger). */
+.viz-cfg--open .viz-cfg__body { max-width: calc(100vw - 220px); padding: 0 28px 0 6px; opacity: 1; overflow-x: auto; scrollbar-width: none; }
 .viz-cfg__item { display: flex; align-items: center; gap: 10px; }
 .viz-cfg__swatch {
   width: 30px;
@@ -3191,7 +3401,7 @@ div.import__frame-head { cursor: default; }
 }
 
 /* Above the Add Songs footer (Finish / Finish all) while it shows. */
-body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190px; }
+body:has(#page-add:not([hidden]) .import-batch__footer:not([hidden])) .toasts { bottom: 205px; }
 
 .toast--in { opacity: 1; transform: none; }
 /* The toasts let clicks through; one with a button takes its own. */
@@ -3227,6 +3437,22 @@ body:has(#page-add:not([hidden]) #addFooter:not([hidden])) .toasts { bottom: 190
 .server-chip--busy .server-chip__dot { background: #d8b45a; }
 .server-chip--error .server-chip__dot { background: var(--red); }
 .server-chip--offline .server-chip__dot { background: #6a6a74; }
+
+/* The web player's server line: the chip, and Logout at the right under the settings button. */
+.server-row { display: flex; align-items: center; gap: 4px; margin: -10px 0 14px; }
+.server-row[hidden] { display: none; }
+.server-row .server-chip { flex: 1; min-width: 0; margin: 0; }
+.server-logout {
+  flex: none;
+  padding: 3px 8px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.server-logout:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
 
 .settings__input { width: 220px; height: 30px; }
 .profile-control { flex-wrap: wrap; justify-content: flex-end; }
@@ -3373,9 +3599,30 @@ body.mobile .switch-where { text-align: left; }
 .admin__top { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 .admin__warn { flex: 1; margin: 0; color: var(--amber); font-size: 12px; line-height: 1.45; }
 .admin__block { padding: 10px 0 12px; border-bottom: 1px solid #34343c; }
-.admin__head { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-bright); }
+/* A part's heading folds it away with a click (adminOpen, kept). */
+.admin__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-bright);
+  text-align: left;
+  cursor: pointer;
+}
+.admin__head:hover { color: #b3cdf4; }
+.admin__body { margin-top: 8px; }
+.admin__body[hidden] { display: none; }
+.admin__item--row > .btn { flex: none; }
 .admin__bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .admin__bar .admin__search { flex: 1; }
+.admin__bar--top { margin: 0 0 8px; }
 .admin__facts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -3443,6 +3690,12 @@ body.mobile .switch-where { text-align: left; }
 .admin__item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .admin__item-main { color: var(--text); overflow-wrap: anywhere; }
 .admin__item-sub { color: var(--text-dim); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.admin__item--playlist { flex-wrap: wrap; row-gap: 6px; }
+.admin__playlist { flex: 1 1 200px; min-width: 0; }
+.admin__playlist-name { font-weight: 600; }
+.admin__playlist-fact { color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.admin__owner { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; color: var(--text-dim); }
+.admin__owner-select { max-width: 200px; }
 
 .admin__rules { display: flex; flex-direction: column; gap: 8px; }
 .admin__rule { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 12px; }
@@ -3454,7 +3707,7 @@ body.mobile .switch-where { text-align: left; }
 .admin__ips th { text-align: left; color: var(--text-dim); font-weight: 600; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
 .admin__ips td { padding: 4px 8px 4px 0; border-bottom: 1px solid #2c2c33; user-select: text; overflow-wrap: anywhere; }
 
-/* ---- Lyrics written or edited by hand (lyricsEdit.js, 4.0.1) ---- */
+/* ---- Lyrics written or edited by hand (lyricsEdit.js, 4.0) ---- */
 
 /* "Lyrics" after a downloaded song's title: a green ring with a tick, or a red one with a cross. */
 .lyrics-badge {
@@ -3611,3 +3864,54 @@ body.mobile .switch-where { text-align: left; }
 /* Song Details: the song's words without times, and Edit / Add Lyrics under them. */
 .details__lyrics { white-space: pre-wrap; color: var(--text); padding: 10px 0 0; user-select: text; line-height: 1.5; max-height: 320px; overflow-y: auto; }
 .details__lyrics--none { color: var(--text-dim); }
+
+/* ===== a playlist group's page (4.5.2, group.js) ===== */
+
+/* Its playlists, each a frame: the head opens and closes it, open it shows its songs in a box that scrolls. */
+.gframes { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding-bottom: 16px; }
+.gframe { background: var(--glass); border-radius: var(--radius); padding: 4px 10px; }
+.gframe--open { padding-bottom: 10px; }
+.gframe__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.gframe__head:hover { background: var(--glass-hi); }
+.gframe__head .menu__chevron .icon { width: 16px; height: 16px; }
+.gframe__icon { display: inline-flex; color: var(--text-dim); }
+.gframe__icon .icon { width: 18px; height: 18px; }
+/* The name with room for a long one, the buttons right beside it, Share at the right end. */
+.gframe__text { display: flex; flex-direction: column; min-width: 140px; flex: 0 1 340px; }
+.gframe__playing { display: inline-flex; flex: none; color: var(--green); margin-left: -4px; }
+.gframe__playing[hidden] { display: none; }
+/* The speaker's room (its 18 px and the gap, less its pull to the icon) taken from the name's. */
+.gframe__head--playing .gframe__text { flex-basis: 316px; }
+.gframe__playing .icon { width: 18px; height: 18px; }
+.gframe__name { font-size: 16px; font-weight: 700; color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gframe__sub { color: var(--text-dim); font-size: 13px; }
+.gframe__buttons { display: flex; align-items: center; gap: 8px; flex: none; }
+.gframe__buttons .btn--play,
+.gframe__buttons .toggle { height: 32px; font-size: 13px; }
+.gframe__buttons .btn--play { padding: 0 16px 0 12px; }
+.gframe__buttons .toggle { padding: 0 12px 0 8px; }
+.gframe__share { margin-left: auto; flex: none; height: 32px; font-size: 13px; padding: 0 12px 0 8px; }
+/* Its songs as on the playlist's own page, in a box that scrolls (the column names stay on top). */
+.gframe__songs {
+  max-height: min(460px, 60vh);
+  overflow-y: auto;
+  margin-top: 6px;
+  border-radius: var(--radius);
+}
+.gframe__table { margin: 0; }
+.gframe__table th { position: sticky; top: 0; z-index: 1; }
+.gframe__empty { margin: 4px 0 6px 34px; font-size: 13px; }
+#grOfflineNote:empty { display: none; }
+/* The group's Shuffle with its hint beside it; Download (and its note) at the row's right end. */
+.pl-hint { color: var(--text-dim); font-size: 13px; max-width: 300px; line-height: 1.3; }
+#page-group .pl-head__row #grOfflineNote { margin-left: auto; }
+#page-group .pl-head__row #grOffline { margin-left: auto; }
+#page-group .pl-head__row #grOfflineNote:not(:empty):not([hidden]) + #grOffline { margin-left: 0; }

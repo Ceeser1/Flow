@@ -492,6 +492,10 @@ profiles. Apps older than 3.6 still count, but say nothing of Jams.
 An admin profile gets Administration as the last category of the apps'
 Settings: the server at a glance, every profile (when made, last seen, the
 songs it added, time listened, the IP addresses and devices it came from),
+every playlist on the server with its songs, length and owner (from 4.2.3;
+picking another owner gives the playlist to that profile or the Default /
+Shared, its followers keep it, and a name the new owner has already gets
+"(2)"; the master admin's playlists only the master can give away),
 the failed logins (wrong PINs and passwords), every profile's server
 downloads and the Active Sessions, the trash (deleted songs come back as
 they were, playlists and stats included), and the rules: who may make
@@ -516,12 +520,26 @@ node apps/linux-server/src/main.js profiles add "Carla"         # a new profile 
 ```
 
 `FLOW_PROFILE_PIN` gives the PIN without asking. The failed logins are kept
-in `failed-signins.json`, deleted songs in `trash.json` (both in the
-server's home), next to `server.json`.
+in `failed-signins.json`, the songs the apps uploaded (who, when, from which
+address) in `uploads.json`, deleted songs in `trash.json` (all in the
+server's home), next to `server.json`. Administration's **Recent uploads**
+lists the uploaded songs still on the server, newest first, each with a
+Delete button (to the trash, for everyone).
 
 From 4.0 the rules also have **Allow guests in home network
 sessions/jams** (off until ticked; see Active Sessions below). Unticking it ends
 every guest's place at once.
+
+## The library's files
+
+The library is `library.json` in the server's home, with what the apps were
+last told in `state.json`. From 4.3.4 a change (a star, a listen, a rename)
+adds a line to `library.json.log` and `state.json.log` instead of writing the
+whole file again (some 80 MB with 100 000 songs); the whole file is written
+again once its log has grown to a quarter of it, and the log starts over.
+Keep each file with its `.log` when copying the home by hand (stop the server
+first); the server and its commands (backup, restore, move-music, tag-songs)
+read both.
 
 ## Backups
 
@@ -532,7 +550,10 @@ each. A backup holds `library.json` (the songs' names, album, genre, Info,
 trims and who added them, the playlists, favourites, follows and listening
 stats, Statistics included) and the profiles part of `server.json` (names,
 PIN hashes, admin flags): never the songs' files, the covers, the trash, the
-password, the level or a device's token.
+password, the level or a device's token. Beside each backup a small
+`<name>.info` holds its details (when, why, how many songs, playlists and
+profiles; 4.3.5), so listing the backups reads none of them whole; a big
+library's weekly backup is packed while the server goes on answering.
 
 A restore puts the backup's song names, playlists, favourites, follows and
 stats back, each song keeping its file as it is now (trimmed, renamed);
@@ -636,7 +657,7 @@ report changes.
 | `GET /api/songs/<id>/cover?v=<version>` | the song's cover (JPEG), 404 when it has none; `song.cover` in the library is its version (`-`: none found, `null`: not looked at yet), and with the current one in `?v=` it may be cached for good; `ETag` / `If-None-Match` too |
 | `PUT /api/songs/<id>/cover` | an app's cover for a song (a JPEG body, at most 4 MB; made 512 x 512 when it is not) → `{ cover }`; kept only when the song has none yet |
 | `GET /api/songs/<id>/lyrics` | the song's lyrics (4.0, `lyrics` in the features): `{ lyrics: { found, synced, plain, instrumental, source } }`, `synced` the lines with their times, `source` `LRCLIB`, `lyrics.ovh` or `own`; 502 when LRCLIB cannot be reached |
-| `PUT /api/songs/<id>/lyrics` | lyrics written or edited in an app (4.0.1, `ownLyrics` in the features), body `{ lines: [{ t, end, text }] }`: kept for good (`own`), never looked up again; `{ lines: null }` takes them away (looked up again); 400 when only some lines have times |
+| `PUT /api/songs/<id>/lyrics` | lyrics written or edited in an app (4.0, `ownLyrics` in the features), body `{ lines: [{ t, end, text }] }`: kept for good (`own`), never looked up again; `{ lines: null }` takes them away (looked up again); 400 when only some lines have times |
 | `POST /api/pair` | `{ password }` (4.0, `pair`): a one-time pairing code for a QR code → `{ code, expiresIn }` (`''` without a server password); 403 for a wrong password |
 | `POST /api/pair/redeem` | `{ code }` → `{ password }`, once, within 10 minutes (open to anyone); 404 for a code used or too old |
 | `GET /api/sessions/songs/<id>/audio` | a song a guest brought into this app's session (4.0), with Range |

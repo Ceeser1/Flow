@@ -10,6 +10,7 @@ const { createLibrary } = require('./library');
 const { createHttpServer, PROTOCOL } = require('./http');
 const { createDownloads } = require('./downloads');
 const { createLive } = require('./live');
+const { createPush } = require('./push');
 const { createSessions } = require('./sessions');
 const { createActivity } = require('./activity');
 const { createBackups } = require('./backups');
@@ -68,12 +69,26 @@ async function startServer(opts = {}) {
   const backups = createBackups({ config, library, log });
   // The songs' lyrics from LRCLIB, kept once looked up; with fillLyrics,
   // every song's in the background, one every few seconds.
+  // Each song in the library carries the stamp of its lyrics (4.3.1): the
+  // apps ask for a song's only when it changed. Looked at after every change
+  // of the library (a rename asks for others) and of the lyrics.
+  let stampTimer = null;
+  const stampLyrics = () => {
+    if (stampTimer) return;
+    stampTimer = setTimeout(() => {
+      if (stampTimer === -1) return;
+      stampTimer = null;
+      library.setLyricsStamps(lyrics.index(library.data.songs));
+    }, 200);
+  };
   const lyrics = createLyricsStore({
-    dir: path.join(config.home, 'lyrics'), lookup: opts.lookupLyrics, log, pauseMs: opts.lyricsPauseMs,
+    dir: path.join(config.home, 'lyrics'), lookup: opts.lookupLyrics, log, pauseMs: opts.lyricsPauseMs, onChange: stampLyrics,
   });
+  // The library's changes go to the apps on their live channels (4.3).
+  const push = createPush({ library, live, delayMs: opts.pushDelayMs });
   const fillLyrics = () => (opts.fillLyrics ? lyrics.fill(() => library.data.songs) : null);
   const server = createHttpServer({
-    config, library, version, log, tailscale: () => tailscale, downloads, live, sessions, activity, backups, lyrics,
+    config, library, version, log, tailscale: () => tailscale, downloads, live, sessions, activity, backups, lyrics, push,
   });
 
   const port = opts.port !== undefined ? opts.port : config.get().port;
@@ -103,8 +118,10 @@ async function startServer(opts = {}) {
   backups.checkRequest();
   backups.weekly();
   lyrics.sweep(new Set(library.data.songs.map((s) => s.id)));
+  library.setLyricsStamps(lyrics.index(library.data.songs));
   fillLyrics();
   library.onChange(fillLyrics);
+  library.onChange(stampLyrics);
   const timers = [
     setInterval(() => library.scan().catch(() => {}), RESCAN_MS),
     setInterval(() => library.emptyTrash(), TRASH_MS),
@@ -131,9 +148,12 @@ async function startServer(opts = {}) {
     close() {
       if (discovery) discovery.close();
       for (const t of timers) clearInterval(t);
+      clearTimeout(stampTimer);
+      stampTimer = -1;
       downloads.stop();
       backups.stop();
       sessions.stop();
+      push.stop();
       const lyricsDone = lyrics.stop();
       live.close();
       // Its ffmpeg runs still going end first: they hold files in the music folder.
@@ -166,7 +186,8 @@ function sessionLibrary(library) {
     songExists: (id) => songIds().has(id),
     playlist(profileId, ref) {
       const v = library.snapshot(profileId && library.profileIds().includes(profileId) ? profileId : null);
-      const wanted = (p) => (ref.id ? p.id === ref.id : p.name.toLowerCase() === String(ref.name || '').toLowerCase());
+      // 'favourites': the profile's Favourites playlist, as the apps call it (4.3).
+      const wanted = (p) => (ref.id ? p.id === ref.id || (ref.id === 'favourites' && !!p.favourites) : p.name.toLowerCase() === String(ref.name || '').toLowerCase());
       if (ref.id === model.ALL_SONGS_ID || (!ref.id && String(ref.name || '').toLowerCase() === model.ALL_SONGS_NAME.toLowerCase())) {
         const songs = v.songs.slice().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
         return { id: model.ALL_SONGS_ID, name: model.ALL_SONGS_NAME, ids: songs.map((s) => s.id) };

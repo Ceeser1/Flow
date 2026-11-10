@@ -13,7 +13,7 @@ const RulesEditor = {
       const rules = playlist && playlist.rules
         ? JSON.parse(JSON.stringify(playlist.rules))
         : { match: 'all', conditions: [{ field: 'genre', op: 'is', value: '' }], sort: 'added', limit: 0 };
-      const nameBox = h('input.input', { type: 'text', value: playlist ? playlist.name : name, placeholder: 'Name', maxLength: 80 });
+      const nameBox = h('input.input', { type: 'text', value: playlist ? playlist.name : name, placeholder: T('common.name'), maxLength: 80 });
       nameBox.spellcheck = false;
       const select = (options, value, onChange) => {
         const node = h('select.select', ...options.map(([v, label]) => h('option', { value: v }, label)));
@@ -21,7 +21,7 @@ const RulesEditor = {
         node.addEventListener('change', () => onChange(node.value));
         return node;
       };
-      const match = select([['all', 'all'], ['any', 'any']], rules.match, (v) => {
+      const match = select([['all', T('rules.editor.match.all')], ['any', T('rules.editor.match.any')]], rules.match, (v) => {
         rules.match = v;
         count();
       });
@@ -31,14 +31,14 @@ const RulesEditor = {
 
       const count = () => {
         const n = PlaylistRules.evaluate(Store.library.songs, rules).length;
-        counted.textContent = `${Util.plural(n, 'song')} ${n === 1 ? 'matches' : 'match'} now`;
+        counted.textContent = T('rules.editor.matchesNow', { songs: Util.plural(n, 'song'), count: n });
       };
 
       const row = (c) => {
         const kind = () => PlaylistRules.kindOf(c.field);
         const value = () => {
           if (kind() === 'bool') {
-            return select([['yes', 'yes'], ['no', 'no']], c.value === false ? 'no' : 'yes', (v) => {
+            return select([['yes', T('common.yes')], ['no', T('rules.editor.no')]], c.value === false ? 'no' : 'yes', (v) => {
               c.value = v === 'yes';
               count();
             });
@@ -47,7 +47,7 @@ const RulesEditor = {
             type: kind() === 'text' ? 'text' : 'number',
             value: String(c.value ?? ''),
             min: kind() === 'text' ? undefined : 0,
-            placeholder: kind() === 'date' ? 'days' : '',
+            placeholder: kind() === 'date' ? T('rules.editor.days.placeholder') : '',
           });
           box.spellcheck = false;
           box.addEventListener('input', () => {
@@ -73,7 +73,7 @@ const RulesEditor = {
             c.op = v;
             count();
           });
-          const remove = iconButton('icon-btn.rules__remove', Icons.x, 'Take this condition out', () => {
+          const remove = iconButton('icon-btn.rules__remove', Icons.x, T('rules.editor.removeCondition'), () => {
             rules.conditions = rules.conditions.filter((x) => x !== c);
             node.remove();
             count();
@@ -94,11 +94,11 @@ const RulesEditor = {
           list.appendChild(row(c));
           count();
         },
-      }, '+ Add condition');
+      }, T('rules.editor.addCondition'));
       const sort = select(PlaylistRules.SORTS, rules.sort, (v) => {
         rules.sort = v;
       });
-      const limit = h('input.input.rules__limit', { type: 'number', min: 0, value: String(rules.limit || ''), placeholder: 'no limit' });
+      const limit = h('input.input.rules__limit', { type: 'number', min: 0, value: String(rules.limit || ''), placeholder: T('rules.editor.atMost.placeholder') });
       limit.addEventListener('input', () => {
         rules.limit = Math.max(0, Math.floor(Number(limit.value) || 0));
         count();
@@ -107,25 +107,25 @@ const RulesEditor = {
 
       let answer = null;
       Modal.open({
-        title: playlist ? `Rules of ${playlist.name}` : 'New smart playlist',
+        title: playlist ? T('rules.editor.title.edit', { playlist: playlist.name }) : T('rules.editor.title.new'),
         className: 'modal--rules',
         body: [
-          h('label.form-row', h('span.form-label', 'Name'), nameBox),
-          h('div.rules__match', h('span', 'Songs that match'), match, h('span', 'of these:')),
+          h('label.form-row', h('span.form-label', T('common.name')), nameBox),
+          h('div.rules__match', h('span', T('rules.editor.match.before')), match, h('span', T('rules.editor.match.after'))),
           list,
           add,
           h('div.rules__end',
-            h('label.rules__field', h('span', 'Order'), sort),
-            h('label.rules__field', h('span', 'At most'), limit, h('span', 'songs'))),
+            h('label.rules__field', h('span', T('rules.editor.order')), sort),
+            h('label.rules__field', h('span', T('rules.editor.atMost')), limit, h('span', T('rules.editor.atMost.songs')))),
           counted,
-          h('p.settings__note', 'A smart playlist fills itself from your library and keeps up as it changes. Its songs cannot be added or taken out by hand.'),
+          h('p.settings__note', T('rules.editor.desc')),
           error,
         ],
         focus: playlist ? null : 'input',
         buttons: [
-          { label: 'Cancel' },
+          { label: T('common.cancel') },
           {
-            label: playlist ? 'Save' : 'Create',
+            label: playlist ? T('common.save') : T('common.create'),
             kind: 'primary',
             onClick: async () => {
               error.textContent = '';

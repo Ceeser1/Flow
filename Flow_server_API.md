@@ -108,8 +108,8 @@ Open to anyone (only the refusals above apply).
 ```json
 {
   "app": "flow-server",
-  "protocol": 1,
-  "features": ["profiles", "admin", "pin", "statistics", "smartPlaylists", "pair", "download", "search", "sessions", "trim", "lyrics", "ownLyrics", "guests"],
+  "protocol": 2,
+  "features": ["profiles", "admin", "pin", "statistics", "smartPlaylists", "pair", "playlistGroups", "followedInGroups", "download", "search", "sessions", "trim", "lyrics", "ownLyrics", "guests"],
   "version": "4.0.0",
   "id": "<server id>",
   "name": "Flow Server",
@@ -123,16 +123,19 @@ Open to anyone (only the refusals above apply).
 - `features`: `profiles` always; `admin` from 3.5 (the
   [Administration](#administration) routes); `pin` from 3.5.1 (a profile
   changes its own PIN, `POST /api/profiles/pin`); `statistics` from 3.6 (the
-  library's `statistics` totals; an app shows the server as outdated
+  Statistics totals, `GET /api/statistics` from 4.3; an app shows the server as outdated
   without it); `download` when the server can download
   songs itself (yt-dlp and ffmpeg there, not turned off), and with it
   `search` (searching by a song's name; older servers lack it); `sessions` for
   Active Sessions; `trim` when ffmpeg is there. From 4.0: `smartPlaylists`
   (a playlist's `rules` kept, see Commands), `pair` (pairing codes for QR
   codes, see [Pairing](#pairing-qr-codes)), `lyrics` (`GET
-  /api/songs/<id>/lyrics`), from 4.0.1 `ownLyrics` (`PUT
+  /api/songs/<id>/lyrics`), from 4.0 `ownLyrics` (`PUT
   /api/songs/<id>/lyrics`) and `guests` while an admin lets guests from other
   servers in (see [Guests from other servers](#guests-from-other-servers)).
+  From 4.5: `playlistGroups` (the groups' commands, `groups` in the library
+  and a playlist's `group`, see Commands). From 4.5.1: `followedInGroups`
+  (followed playlists in groups too, a group's `followed`).
 - `password`: whether this caller has to sign in.
 - `tailscale`: only at level 2 and up, only to callers on a private network
   that did not come through a proxy.
@@ -168,44 +171,108 @@ address and, when the server has a password, a one-time `code` in its place:
 
 ## Library
 
+From protocol 2 (4.3) the library travels as what changed: the server keeps
+a revision (`rev`) that moves with every change an app shows (a song's
+names, a playlist, a follow, a profile's name), never with a listen. An app
+keeps a copy, asks for what changed since its `rev`, and gets the rest
+pushed on its [live channel](#live-channel). The stats of the songs travel
+apart (`GET /api/stats`), the Statistics totals and the playlists others
+share only when an app shows them. Songs or playlists gone are remembered for
+30 days; an app further back than that gets everything again.
+
 ### GET /api/library
 
 Query: `since=<rev>` and `as=<profile id>` (both optional).
 
-- 204 with no body when `since` is the current `rev` and `as` is the profile
-  this token is signed in to (empty for none): nothing changed.
-- Otherwise 200:
+- 204 with no body when nothing changed since `since` for the profile this
+  token is signed in to, and `as` is that profile (empty for none).
+- Without `since`, with one too old (or unknown), or with another `as`
+  (the app switched profiles): everything, as one library.
 
 ```json
 {
   "rev": 412,
-  "library": { ... },
+  "full": true,
+  "library": { "songs": [...], "playlists": [...], "groups": [...], "follows": [...], "sharedPlaylists": [...], "profileNames": {...}, "ignoredFiles": [] },
   "profile": { "id": "9f3a1c0b7e2d", "name": "Sam", "pin": false, "createdAt": 1760270000000, "admin": false, "master": false },
   "rules": { "createProfiles": true, "songDelete": "anyone" }
 }
 ```
 
-`profile` is null without one. `rules` (3.5): the admins' rules as they touch
-this caller: whether it may make profiles, and `songDelete` `"owner"` when
-only who added a song (and the admins) may delete it for everyone.
-`library`, as the signed-in profile sees it:
+- Otherwise what changed since `since`:
+
+```json
+{
+  "rev": 415, "full": false, "from": 412,
+  "songs": [...], "deletedSongs": ["s9"],
+  "playlists": [...], "deletedPlaylists": ["p3"],
+  "follows": [...], "groups": [...], "sharedPlaylists": [...], "unshared": ["p7"],
+  "profileNames": {...},
+  "profile": {...}, "rules": {...}
+}
+```
+
+`songs` and `playlists` hold the whole of each one that changed (or is new);
+`follows`, `groups` and `profileNames` come only when they changed (`groups`
+whole, all of this profile's). `profile` is null
+without one. `rules` (3.5): the admins' rules as they touch this caller:
+whether it may make profiles, and `songDelete` `"owner"` when only who added
+a song (and the admins) may delete it for everyone. Answers over 1 KB come
+gzipped to a caller that sends `Accept-Encoding: gzip`.
 
 | Field | |
 |---|---|
-| `songs` | `[{ id, file, title, artist, mix, duration, format, sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, addedBy, stats, favouriteAt, loudness, cover, cut, ... }]`. `file` is relative to the music folder. `stats` and `favouriteAt` are this profile's. |
-| `playlists` | `[{ id, name, createdAt, entries: [{ songId, addedAt }], source, shared }]`, this profile's own |
-| `sharedPlaylists` | other profiles' shared playlists, read-only: `{ id, name, createdAt, entries, ownerId, ownerName }` |
+| `songs` | `[{ id, file, title, artist, mix, album, genre, subGenre, infoLooked, duration, format, sourceUrl, sourceKey, sourcePlaylistUrl, addedAt, addedBy, loudness, cover, cut, lyrics? }]`. `file` is relative to the music folder. No stats or stars: those are each profile's own (`GET /api/stats`, Favourites) |
+| `playlists` | `[{ id, name, createdAt, entries: [{ songId, addedAt }], source, shared, rules, favourites?, group? }]`, this profile's own, its Favourites among them. `group` (4.5): the id of the playlist group it is in, left out while it is in none |
+| `groups` | 4.5: this profile's playlist groups, folders of playlists: `[{ id, name, createdAt, followed? }]`. A group may be empty. `followed` (4.5.1): the ids of the playlists this profile follows that it put into the group (another profile's playlist has no `group` of the follower's); each in one group at most, gone when unfollowed |
+| `sharedPlaylists` | the playlists of others this profile follows, with their songs: `{ id, name, createdAt, entries, ownerId, ownerName, favourites? }` (the others: `GET /api/shared`) |
 | `follows` | ids of the shared playlists this profile follows |
-| `playlistListened` | seconds listened per list: `{ [playlistId \| "all" \| "favourites" \| "smart:..."]: seconds }` |
-| `listening` | when and what this profile listened to (3.5, for the Statistics): `{ days: { "YYYY-MM-DD": seconds }, grid: [168 seconds, Monday 0-1 o'clock first], songMonths: { "YYYY-MM": { songId: seconds } }, run, late, longest }`; `run` / `longest`: the current and the longest listening session `{ start, end, seconds }` (songs with gaps of at most 10 minutes), `late`: the session of listens that arrived after newer ones (an app that was offline) |
-| `statistics` | this profile's Statistics totals (3.6): `{ since, seconds, listens, months: { "YYYY-MM": seconds } }`. `since`: when they started (the server's first run of 3.6, or when the profile was made); `listens`: listens of 30 seconds or more. They only grow: deleting songs does not lower them |
 | `profileNames` | `{ [profileId]: name }`, for the songs' `addedBy` (`"default"`: Default / Shared) |
 
-- `stats`: `{ plays, stops, skips, sessions, listened, lastPlayedAt }`.
 - `cover`: the cover's version (see [covers](#get-apisongsidcover)), `"-"`
   when none was found, null when not looked for yet.
-- "All Songs" and "Favourites" are not stored: all songs, and the songs with
-  a `favouriteAt`.
+- `lyrics` (4.3.1): the stamp of the lyrics the server keeps for the song
+  (found or not), left out while it keeps none. It changes when they do, so
+  an app keeps a copy and asks for a song's lyrics only when its stamp is
+  not the copy's.
+- "All Songs" is not stored: all songs. Favourites (4.3) are a playlist of
+  each owner's own (`favourites: true`, id `fav-<profile id>`, `fav-default`
+  for the Default / Shared): shared, followed and downloaded like any other,
+  but never renamed, deleted, given rules or given to another owner. Star a
+  song with `setFavourite` or by adding it to that list; others see it as
+  "Sam's Favorites".
+
+### GET /api/stats
+
+Query: `since=<stats rev>` (optional). The signed-in profile's songs' stats,
+with a revision of their own that moves with every listen it counts:
+
+```json
+{ "rev": 88, "full": false, "from": 86, "songs": { "s1": { "plays": 4, "stops": 0, "skips": 1, "sessions": 5, "listened": 1210, "lastPlayedAt": 1760270000000 } }, "playlistListened": { "p1": 3600 } }
+```
+
+Without `since` (or too old): all songs that have any (`full: true`).
+`playlistListened` (seconds listened per list: `{ [playlistId | "all" |
+"favourites" | "smart:..."]: seconds }`) comes when it changed.
+
+### GET /api/statistics
+
+→ `{ "statistics": { since, seconds, listens, months, days, sessions, run, late, longest }, "srev": 88 }`:
+the signed-in profile's Statistics totals (3.6), for when an app shows them.
+`since`: when they started (the server's first run of 3.6, or when the
+profile was made); `listens`: listens of 30 seconds or more. They only grow:
+deleting songs does not lower them. `srev`: the stats revision they are at.
+
+### GET /api/shared
+
+→ `{ "playlists": [{ id, name, createdAt, ownerId, ownerName, favourites?, songCount, seconds }] }`:
+the playlists the others share with this profile, by their details only.
+
+### GET /api/shared/\<id\>
+
+→ `{ "playlist": { id, name, createdAt, entries, ownerId, ownerName, favourites? } }`:
+one of them with its songs (404 when it is no longer shared). One the profile
+follows comes with the library and stays in step there instead.
 
 ### POST /api/rescan
 
@@ -228,7 +295,12 @@ Send up to 5000 at once:
 }
 ```
 
-→ `{ "rev": 414, "results": [{ "cid": "c-001", "ok": true, "value": "p-roadtrip" }, { "cid": "c-002", "ok": true }] }`
+→ `{ "rev": 414, "srev": 88, "results": [{ "cid": "c-001", "ok": true, "value": "p-roadtrip" }, { "cid": "c-002", "ok": true }] }`
+
+With the copy's revisions in the body (`"rev": 412, "srev": 87`, 4.3) the
+answer also carries what changed since: `changes` (as `GET
+/api/library?since=`) and `stats` (as `GET /api/stats?since=`). With the
+app's `client` id too, its live channel does not send those again.
 
 - `cid`: unique per command. A command sent twice (its answer got lost)
   counts once; the second gets `skipped: "repeat"`.
@@ -251,12 +323,16 @@ Send up to 5000 at once:
 | `setPlaylistSource` | `playlistId`, `source: { url, kind }` | the link a playlist was imported from |
 | `setPlaylistShared` | `playlistId`, `shared` | other profiles may see and follow it |
 | `followPlaylist` / `unfollowPlaylist` | `playlistId` | another profile's shared playlist |
+| `createGroup` | `groupId`, `name` | 4.5: a new playlist group with the id the client chose; a name taken already gets " (2)". `value`: its id |
+| `renameGroup` | `groupId`, `name` | 4.5 |
+| `deleteGroup` | `groupId` | 4.5: the group goes, its playlists stay (in no group). Always wins, like a delete of a playlist |
+| `setPlaylistGroup` | `playlistId`, `groupId` | 4.5: the playlist into that group (one group at most), or `""` out of the one it is in; `skipped: "gone"` when the group or the playlist is no longer there. Not Favourites. From 4.5.1 also a playlist this profile follows (kept in the group's `followed`); one not followed is `skipped: "gone"`, so an app follows it first (`followPlaylist`, then this, in one batch) |
 | `addSongToPlaylists` | `songId`, `playlistIds` | one song into several playlists |
 | `addSongsToPlaylist` | `playlistId`, `songIds` | several songs into one playlist |
 | `removeFromPlaylist` | `playlistId`, `songId` | |
 | `deleteSong` | `songId` | for everyone; the file goes to `.flow-trash` for 30 days, the song with it (an admin can restore it). With the rule `songDelete: "owner"` only the profile that added it and the admins may (`ok: false` with the reason otherwise; `deletePlaylist` then keeps those songs) |
 | `editSong` | `songId`, `artist`, `title`, `mix` | new names (title required); the file is renamed and its tags rewritten |
-| `setFavourite` | `songId`, `on` | |
+| `setFavourite` | `songId`, `on` | into the profile's Favourites playlist, or out of it |
 | `setLoudness` | `songId`, `loudness` | the measured loudness, for Equalize volume |
 | `setDuration` | `songId`, `duration` | only when the server doesn't know the length (`skipped: "known"` otherwise) |
 | `recordListen` | `songId`, `listened`, `duration`, `contextId?`, `tz?`, `jamMember?` | a listen: `listened` seconds heard of `duration`; counted into the profile's stats, `listening` and `statistics`. `tz`: the app's `Date.getTimezoneOffset()`, for the day and hour it was heard (the server's own without it). From a profile it counts for the Default / Shared too (its stats and `statistics`), unless `jamMember: true` (3.6: the app was a member of a Jam, whose host's listen counts there); a Jam member on the Default counts nowhere (`skipped: "jam"`) |
@@ -343,14 +419,33 @@ seconds; the uncut file goes to the trash.
 
 ### GET /api/songs/\<id\>/cover
 
-The cover, a 512 x 512 JPEG; 404 when it has none. With `?v=<version>` (the
-song's `cover` field) it may be cached for good. `ETag` / `If-None-Match`
-work (304).
+The cover in one of two sizes (4.3.1), both WebP: 512 x 512 (`?size=big`,
+the default) or its 128 x 128 thumbnail (`?size=small`); 404 when it has
+none. A cover from before 4.3.1 (a 512 x 512 JPEG) is served as it is for
+both sizes until the server has made it into the two (in the background,
+checked at every start; its version stays). With `?v=<version>` (the song's
+`cover` field) it may be cached for good. `ETag` / `If-None-Match` work
+(304; the thumbnail's ETag ends in `-s`). The `Content-Type` is the
+picture's.
+
+### POST /api/covers
+
+4.3.1. Several covers in one answer, for the rows a list shows: `{ ids:
+[...] (at most 100), size: "small" | "big" }`. The answer is binary
+(`application/octet-stream`): a 4-byte big-endian length, a JSON index
+`[{ id, v, n }]` (the song, its cover's version, the picture's length) of
+that length, then the pictures one after another in that order. Songs
+without a cover (or unknown ids) are left out.
 
 ### PUT /api/songs/\<id\>/cover
 
-The body is a JPEG (at most 4 MB; made 512 x 512 with ffmpeg if it is not).
-Kept only when the song has no cover yet. → `{ "cover": "<version>", "rev": 417 }`
+The body is the 512 x 512 cover, a WebP kept as it is, or another picture
+(at most 4 MB) made into the two sizes with ffmpeg. Without ffmpeg only a
+512 x 512 picture is taken, and shown for both sizes. Kept only when the
+song has no cover yet. → `{ "cover": "<version>", "rev": 417 }`. With
+`?size=small` the body is its 128 x 128 WebP thumbnail (4.3.1, sent after
+the big one; 415 otherwise), answered with the song's `cover`; without one
+the server makes it from the big one.
 
 ### GET /api/songs/\<id\>/lyrics
 
@@ -373,7 +468,7 @@ LRCLIB cannot be reached.
 
 ### PUT /api/songs/\<id\>/lyrics
 
-From 4.0.1 (`ownLyrics` in the features). Lyrics written or edited in an
+From 4.0 (`ownLyrics` in the features). Lyrics written or edited in an
 app, kept for good: never looked up again, whatever the song is renamed to.
 
 ```json
@@ -433,8 +528,12 @@ master admin. Nobody changes their own profile or the master's here.
 | `POST /api/admin/profiles/<id>/admin` | `{ admin }` | *master*: an admin made or taken back; 409 to make one of a profile without a PIN |
 | `GET /api/admin/signins` | | `{ failures: [{ at, kind: "pin" \| "password", profileId, profileName, ip, device }] }`, the newest 500 |
 | `POST /api/admin/signins/clear` | | |
-| `GET /api/admin/downloads` | | every profile's server download: `{ batches: [{ key, profileId, profileName, state, name, url, createdAt, songs, saved, open, failed }] }` |
-| `POST /api/admin/downloads/cancel` | `{ key }` | that download cancelled |
+| `GET /api/admin/uploads` | | `{ uploads: [{ songId, title, artist, mix, at, by, ip, device }] }`: the songs the apps uploaded that are still on the server, newest first (the newest 100); `by` is the profile's name |
+| `POST /api/admin/uploads/delete` | `{ songId }` | `{ rev }`: the song deleted for everyone, to the trash; 404 when it is gone already |
+| `GET /api/admin/playlists` | | 4.2.3: every playlist on the server with its owner: `{ playlists: [{ id, name, ownerId, songs, seconds, smart, shared }], owners: [{ id, name, master }] }`. `ownerId` and the owners' ids: a profile, or `"default"` (the Default / Shared). A smart playlist's `songs` and `seconds` are null (the apps work its songs out from its rules) |
+| `POST /api/admin/playlists/owner` | `{ id, owner }` | 4.2.3: the playlist given to another owner: the same playlist (id, songs, rules, sharing), so its followers keep following it; the new owner no longer follows it, and a name it has already gets " (2)": `{ name, rev }`. 404 for a playlist or owner not there; 403 for the master admin's playlists unless the master asks |
+| `GET /api/admin/downloads` | | every profile's server downloads (several each with the queue): `{ batches: [{ key, profileId, profileName, state, name, url, createdAt, songs, saved, open, failed }] }`, `key` the batch's id |
+| `POST /api/admin/downloads/cancel` | `{ key }` | that download cancelled (a profile's id: all of its downloads) |
 | `GET /api/admin/sessions` | | every Active Session: `{ sessions: [...] }` as `/api/sessions` lists them, with `shared` |
 | `POST /api/admin/sessions/end` | `{ id }` | its members are out (told `left`); a host still playing has a session of its own again |
 | `GET /api/admin/trash` | | `{ items: [{ name, at, size, title, artist, by, addedBy, restorable }], bytes }` (`by`: who deleted it, `addedBy`: who added it; names, empty when not known) |
@@ -448,7 +547,7 @@ master admin. Nobody changes their own profile or the master's here.
 
 ## Live channel
 
-### GET /api/live?client=\<install id\>&device=\<name\>
+### GET /api/live?client=\<install id\>&device=\<name\>&rev=\<rev\>&srev=\<stats rev\>
 
 A Server-Sent Events stream (`text/event-stream`), kept open while the app
 is connected; the server pushes events on it as they happen. One per app: a
@@ -458,15 +557,29 @@ signing in, only that app may open its channel (403).
 
 ```
 event: hello
-data: {"client":"a1b2c3d4e5f6","serverTime":1760270000000,"pingMs":10000}
+data: {"client":"a1b2c3d4e5f6","serverTime":1760270000000,"pingMs":15000}
 
-: ping 1760270010000
+: ping 1760270015000
+
+event: library
+data: {"rev":416,"full":false,"from":415,"songs":[...],"playlists":[],...}
+
+event: stats
+data: {"rev":89,"full":false,"from":88,"songs":{"s1":{...}}}
 
 event: sessions
 data: {"sessions":[...]}
 ```
 
-- `hello` first, then a `: ping` comment every 10 seconds.
+- `hello` first, then a `: ping` comment every 15 seconds (4.3; 10 before).
+- `rev` and `srev` (4.3): the revisions of the app's copy. From them on the
+  server sends `library` (as `GET /api/library?since=`) and `stats` (as
+  `GET /api/stats?since=`) whenever something this profile sees changes,
+  at once for what is missing when the channel opens. Changes quickly one
+  after another come together (within about 2 seconds). `{ "rev": 420,
+  "stale": true }` when too much is missing: ask `GET /api/library` (or
+  `/api/stats`). Without them (or `-1`) none are sent. A channel whose profile
+  changes (signed out of it) gets none until opened again.
 - The token is checked again at each ping: a changed password or an ended
   session closes the stream with `end { reason: "auth" }`. Other reasons:
   `replaced`, `shutdown`.
@@ -606,14 +719,19 @@ A guest is never the host: with only guests left, the session ends
 
 Only when `/api/hello` lists `download` (else 501). The server reads a link,
 downloads its songs in the background and keeps them aside until a client
-finishes (trims and names) each one. One batch per profile (without
-profiles, one for everybody).
+finishes (trims and names) each one. Without `downloadQueue` in `/api/hello`
+(servers before 4.4): one batch per profile (without profiles, one for
+everybody). With it a profile may have up to 20 batches, see **The queue**
+below; the routes without `<id>` then mean the profile's oldest one.
 
 | Route | Body | Answer |
 |---|---|---|
-| `GET /api/downloads` | | `{ batch }`, null when there is none |
-| `POST /api/downloads` | `{ url, kind, options, cookies? }` or `{ items, name, options }` | a new batch: `{ batch }`. 409 with one open already |
-| `DELETE /api/downloads` | | cancels the whole batch: `{ batch: null }` |
+| `GET /api/downloads` | | `{ batch }`, null when there is none (the oldest) |
+| `GET /api/downloads?queue=1` | | `{ batch, batches, queue, done }`, see **The queue** |
+| `POST /api/downloads` | `{ url, kind, options, cookies?, queue?, auto? }` or `{ items, name, options, queue?, auto? }` | a new batch: `{ batch }`. 409 with one open already, unless `queue: true` |
+| `DELETE /api/downloads` | | cancels the whole batch (the oldest): `{ batch: null }` |
+| `DELETE /api/downloads/<id>` | | cancels that batch, the profile's own only (404 otherwise) |
+| `/api/downloads/<id>/items/<i>/...` | | each `items` route below, for that batch |
 | `POST /api/downloads/search` | `{ query, page? }` | uploads for a song's name, below; downloads nothing |
 | `GET /api/downloads/items/<i>/peaks` | | `{ peaks }` of a `ready` song |
 | `GET /api/downloads/items/<i>/audio` | | the prepared file, with `Range` (and `?t=`) |
@@ -631,6 +749,58 @@ lines are kept. Or, for uploads picked from a search: `items`, up to 50
 `{ url, title, duration }` (each such a link), and `name` (the search's words):
 the batch is `ready` at once, its `source` `{ url: "", name, kind: "search" }`,
 and no playlist is made unless a finish asks for one.
+
+**The queue** (only with `downloadQueue` in `/api/hello`, 4.4): the batches
+of every profile take turns, oldest first. A new one is `queued` while
+another has the turn (being read, or with songs still waiting to download)
+and starts once that one's last song has started. A batch whose songs have
+all come waits for its client's finish without holding up the others.
+`batch.place` is its place in the queue (1: next, 0: not waiting) and
+`batch.peek` its name and song count, read at once (also for a batch read
+right away, while its whole read goes on): `{ name, count, single,
+sourceTotal }`, or `{ error }` (the whole read is still its turn's). `GET ?queue=1` adds `batches` (the profile's own, oldest
+first), `queue` (every profile's batches still waiting or downloading, in
+their order: `{ id, own, profileName, name, count, url, single, state
+("queued", "listing" or "downloading"), place, createdAt }`; only `own` ones
+can be cancelled or looked into) and `done`. A client from before the queue
+sees a `queued` batch as `listing`, with "Waiting for its turn" as its
+progress. `auto: { complete, finish }` (a client's "Auto-accept songs
+lookup (Download all)" and "Automate 'Finish all'"; `finish` only with `complete`):
+with `complete` a single song the library has already is skipped; with
+`finish` the batch saves every song as it came once all have come (untrimmed,
+the names read), into a playlist named after the list (the profile's own of
+that name, if it has one; the list's songs the library has go in too), a
+single song into All Songs only, and ends. `done` is what such batches did in
+the last 10 minutes: `[{ id, name, url, single, at, saved, added, failed:
+[{ title, reason }], playlistId, skipped?, existing? }]`.
+
+**Choosing the songs** (only with `downloadReview` in `/api/hello`, 4.4.1):
+a new batch with `review: true` (a client's "Auto-accept songs lookup"
+unticked; ignored with `auto.complete`, for a single song and for `items`)
+is `review` once its list is read, instead of `ready`: nothing downloads
+yet, and like a batch waiting for its finish it holds no one up. Its items
+then carry `status` (`"ok"`, `"notfound"` or `"unavailable"`) and `match`
+(the upload a Spotify, Deezer or Amazon Music song was matched to: `{ id,
+url, site, title, channel, duration, quality }`, or null), for the client's
+checklist. `POST /api/downloads/:id/choose { indexes }` sends the songs
+ticked (`queued` ones to download, `library` ones to add to the playlist):
+the others leave the batch, which is `ready` and downloads them at their
+turn (`{ batch }`; 400 with none of its songs, 409 when it is not in
+review). Cancelling it is `DELETE /api/downloads/:id` as for any batch.
+
+**Several links at once:** `url` may hold any number of links separated by
+commas (`"https://open.spotify.com/album/a, https://www.youtube.com/playlist?list=b"`;
+spaces around them do not count), of any sites, each checked as one link is.
+They are read one after another as one list (`kind` is then always `list`):
+the batch's `source.url` is all of them again (`a, b`), its `name` the first
+link's list's, and each song saved keeps the link it was found in as its
+`sourcePlaylistUrl` (the playlist made keeps all of them as its source, so
+its Update reads them all together). A song an earlier link listed already
+is left out. A link that cannot be read is skipped (its entry in `links` has
+an `error`); only when none can, the batch fails. A playlist's Update
+(`POST /api/downloads/check`) takes the same text and answers each item
+with its `listUrl`; send that back in the `items` of the batch of the songs
+ticked.
 
 **Searching by name** (only with `search` in `/api/hello`): `query` is a
 song's name as typed (`"Linkin Park - Numb"`, "Artist - Title" split at the
@@ -665,7 +835,7 @@ the upload picked as a new batch with `kind: "song"`, or several as `items`.
 {
   "id": "...", "state": "ready", "error": "",
   "source": { "url": "...", "name": "Road trip", "kind": "spotify" },
-  "single": false, "truncated": false,
+  "single": false, "truncated": false, "sourceTotal": 0, "links": null,
   "options": { "alwaysMp3": false, "quality": 192, "keepMp3": true },
   "cookies": false, "playlistId": null, "createdAt": 0, "expiresAt": 0,
   "progress": null,
@@ -684,6 +854,15 @@ the upload picked as a new batch with `kind: "song"`, or several as `items`.
 - Item `state`: `queued`, `downloading` (with `progress: { frac, text }`),
   `converting`, `ready`, `failed` (`error`), `library` (the library has it
   already; `existing` says which), `saving`, `saved`, `added`, `discarded`.
+- `truncated`: `false`, or why the list is cut short: `spotify` (Spotify's
+  page shows only the first 100 songs), `amazon`, `mix` (a YouTube Mix's
+  first 50), `server` (more than 500). `sourceTotal`: how many songs the list
+  has where it came from (a Spotify playlist), when more than are listed, else
+  0. Of several links: `links` (else null) is what each gave,
+  `[{ url, name, songs, listed, truncated, sourceTotal, single?, error? }]`
+  (`songs` those taken, `listed` those the link had, before the ones an
+  earlier link had), and `truncated` is `links` when one failed or was cut
+  short (`server` past 500).
 - At most 500 songs a batch. A batch nobody looks at for 30 days is thrown
   away.
 
@@ -717,7 +896,7 @@ this datagram to UDP port 7878 (always 7878, whatever the server's port):
 Each server that hears it answers the sender directly:
 
 ```json
-{"app":"flow-server","id":"<server id>","name":"Flow Server","port":7878,"protocol":1}
+{"app":"flow-server","id":"<server id>","name":"Flow Server","port":7878,"protocol":2}
 ```
 
 From 4.0 the answer also has `"guests": true` while the server lets guests

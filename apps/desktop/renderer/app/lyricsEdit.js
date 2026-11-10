@@ -1,6 +1,6 @@
 'use strict';
 
-// Lyrics written or edited by hand (4.0.1), for a song of the library (Song
+// Lyrics written or edited by hand (4.0), for a song of the library (Song
 // Details) or one just downloaded (Add Songs). Three popups:
 //  - show: the song's lines, each with its times "from - to";
 //  - edit: each line's From and To boxes (mm:ss:ms) and its words, lines
@@ -18,7 +18,7 @@
 // the millisecond. Every song starts with a line of music (no words, a note)
 // until the first line is sung.
 //
-// LRCLIB (4.0.1): Search LRCLIB picks lyrics from its search into the editor
+// LRCLIB (4.0): Search LRCLIB picks lyrics from its search into the editor
 // (_search), Publish to LRCLIB gives the lines there to everyone (_publish).
 
 const LyricsEdit = {
@@ -106,7 +106,7 @@ const LyricsEdit = {
 
   /** "Artist - Title (Mix)", the popups' first line. */
   heading(song) {
-    const line = [song.artist, song.title || 'Untitled'].filter(Boolean).join(' - ');
+    const line = [song.artist, song.title || T('common.untitled')].filter(Boolean).join(' - ');
     return song.mix ? `${line} (${song.mix})` : line;
   },
 
@@ -121,8 +121,8 @@ const LyricsEdit = {
   /** "Lyrics" with a green circled tick (found) or a red circled cross (none), for after a song's title. */
   badge(found) {
     return h(`span.lyrics-badge.lyrics-badge--${found ? 'yes' : 'no'}`, {
-      title: found ? 'Lyrics found' : 'No lyrics found',
-      html: `${found ? Icons.circleCheck : Icons.circleX}<span>Lyrics</span>`,
+      title: found ? T('lyrics.badge.found.tooltip') : T('common.noLyricsFound'),
+      html: `${found ? Icons.circleCheck : Icons.circleX}<span>${T('common.lyrics')}</span>`,
     });
   },
 
@@ -137,24 +137,24 @@ const LyricsEdit = {
         h('span.lyrics-show__text' + (r.text.trim() ? '' : '.lyrics-show__text--pause'), r.text.trim() ? r.text : (timed ? '♪' : ''))));
     }
     Modal.open({
-      title: 'Lyrics',
+      title: T('common.lyrics'),
       className: 'modal--lyrics-show',
       body: [
         h('div.lyrics-show__song', title),
-        timed ? null : h('div.lyrics-show__note', 'These lyrics have no times.'),
+        timed ? null : h('div.lyrics-show__note', T('common.lyricsNoTimes')),
         list,
         h('div.lyrics-show__source', this.sourceLine(data)),
       ],
-      buttons: [{ label: 'Close', kind: 'primary' }],
+      buttons: [{ label: T('common.close'), kind: 'primary' }],
     });
   },
 
   /** Where the lyrics came from, in a few words. */
   sourceLine(data) {
     if (!data || !data.found) return '';
-    if (data.own) return data.synced ? 'Lyrics written in Flow' : 'Lyrics written in Flow, without times';
+    if (data.own) return data.synced ? T('lyrics.source.ownTimed') : T('lyrics.source.ownUntimed');
     const from = data.source || 'LRCLIB';
-    return data.synced ? `Lyrics from ${from}` : `Lyrics from ${from}, without their times for this song`;
+    return data.synced ? T('lyrics.source.fromTimed', { source: from }) : T('lyrics.source.fromUntimed', { source: from });
   },
 
   /**
@@ -166,7 +166,7 @@ const LyricsEdit = {
     title, data, duration = 0, onSave, player = null, song = null,
   }) {
     return this._editor({
-      title, rows: this.rows(data, duration), own: !!(data && data.own), onSave, heading: 'Edit Lyrics', player, duration, song,
+      title, rows: this.rows(data, duration), own: !!(data && data.own), onSave, heading: T('common.editLyrics'), player, duration, song,
     });
   },
 
@@ -180,9 +180,9 @@ const LyricsEdit = {
    * Flow", "No Lyrics" (Song Edit's Lyrics row).
    */
   summary(data) {
-    if (!this.hasWords(data)) return 'No Lyrics';
-    const kind = data.synced ? 'Timed Lyrics' : 'No Timed Lyrics';
-    return `${kind} ${data.own ? 'written in Flow' : `from ${data.source || 'LRCLIB'}`}`;
+    if (!this.hasWords(data)) return T('lyrics.summary.none');
+    const kind = data.synced ? 'timed' : 'untimed';
+    return data.own ? T(`lyrics.summary.${kind}Own`) : T(`lyrics.summary.${kind}From`, { source: data.source || 'LRCLIB' });
   },
 
   /**
@@ -196,7 +196,7 @@ const LyricsEdit = {
     const onSave = async (lines) => {
       await window.flow.setLyrics(song.id, lines);
       Lyrics.forget(song.id);
-      toast(lines ? `Lyrics of "${title}" saved` : `Your lyrics of "${title}" removed`, 'success');
+      toast(lines ? T('lyricsEditor.saved', { song: title }) : T('lyricsEditor.removed', { song: title }), 'success');
       saved();
     };
     const player = {
@@ -231,7 +231,7 @@ const LyricsEdit = {
     title, onSave, player = null, song = null,
   }) {
     return this._editor({
-      title, rows: [], own: false, onSave, heading: 'Add Lyrics', player, song,
+      title, rows: [], own: false, onSave, heading: T('common.addLyrics'), player, song,
     });
   },
 
@@ -258,7 +258,7 @@ const LyricsEdit = {
         .map((row) => row.querySelectorAll('.lyrics-edit__time')[1])
         .find((b) => !b.value.trim());
       if (!to) {
-        error.textContent = grid.firstElementChild ? 'Every line has its To already.' : 'Split the lyrics into lines first.';
+        error.textContent = grid.firstElementChild ? T('lyricsEditor.insertTime.allSet') : T('lyricsEditor.insertTime.splitFirst');
         return;
       }
       error.textContent = '';
@@ -279,15 +279,15 @@ const LyricsEdit = {
     };
     grid.addEventListener('input', ed.changed);
     const paste = h('textarea.input.lyrics-edit__paste', {
-      placeholder: 'Paste the lyrics here, one line per row.', spellcheck: 'false', rows: '10',
+      placeholder: T('lyricsEditor.paste.placeholder'), spellcheck: 'false', rows: '10',
     });
-    const split = h('button.btn.btn--light-green', { type: 'button', onclick: () => fromPaste() }, 'Split into lines');
+    const split = h('button.btn.btn--light-green', { type: 'button', onclick: () => fromPaste() }, T('lyricsEditor.paste.split'));
     const pasteBox = h('div.lyrics-edit__paste-box', paste, h('div.lyrics-edit__paste-foot', split));
     const head = h('div.lyrics-edit__head',
-      h('span', 'From'), h('span'), h('span', 'To'), h('span', 'Lyrics'), h('span'), h('span'));
+      h('span', T('lyricsEditor.column.from')), h('span'), h('span', T('lyricsEditor.column.to')), h('span', T('common.lyrics')), h('span'), h('span'));
     const addLine = h('button.btn.btn--small', {
       type: 'button',
-      html: `${Icons.plus}<span>Add line</span>`,
+      html: `${Icons.plus}<span>${T('lyricsEditor.addLine')}</span>`,
       onclick: () => {
         // Starting where the last line ends.
         const last = grid.lastElementChild;
@@ -300,7 +300,7 @@ const LyricsEdit = {
     });
     // Every line earlier or later by the time given (lyrics that start too soon or too late).
     const by = h('input.input.lyrics-edit__shift-by', {
-      type: 'text', placeholder: '00:000', spellcheck: 'false', 'aria-label': 'Time to add or subtract (ss:ms)',
+      type: 'text', placeholder: '00:000', spellcheck: 'false', 'aria-label': T('lyricsEditor.shift.amount.ariaLabel'),
     });
     const shiftBtn = (label, sign) => h('button.btn.btn--small', {
       type: 'button',
@@ -312,7 +312,7 @@ const LyricsEdit = {
       },
     }, label);
     const shift = h('div.lyrics-edit__shift',
-      h('span', 'Add/Subtract time to all lines:'), by, shiftBtn('Add', 1), shiftBtn('Sub', -1));
+      h('span', T('lyricsEditor.shift.label')), by, shiftBtn(T('lyricsEditor.shift.add'), 1), shiftBtn(T('lyricsEditor.shift.subtract'), -1));
     const table = h('div.lyrics-edit__table', head, grid, h('div.lyrics-edit__foot', addLine, shift));
 
     const showRows = (list) => {
@@ -330,7 +330,7 @@ const LyricsEdit = {
       while (lines.length && !lines[lines.length - 1]) lines.pop();
       const kept = lines.filter((l, i) => l || lines[i - 1]);
       if (!kept.length) {
-        error.textContent = 'Paste or type the lyrics into the box first.';
+        error.textContent = T('lyricsEditor.paste.first');
         return;
       }
       error.textContent = '';
@@ -345,7 +345,7 @@ const LyricsEdit = {
     // Lyrics picked from LRCLIB's search take the place of the lines here.
     const search = window.flow.searchLyrics ? h('button.btn.btn--small', {
       type: 'button',
-      html: `${Icons.search}<span>Search LRCLIB</span>`,
+      html: `${Icons.search}<span>${T('lyricsEditor.searchLrclib')}</span>`,
       onclick: () => this._search({
         song: song ? song() : null,
         length: length(),
@@ -353,9 +353,9 @@ const LyricsEdit = {
           const worded = [...grid.querySelectorAll('.lyrics-edit__text')].some((b) => b.value.trim());
           if (!table.hidden && worded) {
             const ok = await confirmDialog({
-              title: 'Replace the lines?',
-              message: 'The lines in the editor make way for the lyrics picked. They are kept once you save.',
-              confirmLabel: 'Replace',
+              title: T('lyricsEditor.replace.title'),
+              message: T('lyricsEditor.replace.text'),
+              confirmLabel: T('lyricsEditor.replace.confirm'),
             });
             if (!ok) return false;
           }
@@ -367,19 +367,15 @@ const LyricsEdit = {
     }) : null;
 
     const hint = h('div.hint-label.lyrics-edit__hint',
-      'Times as mm:ss:ms (minutes, seconds, milliseconds); drag one left or right to change it. '
-      + 'A line\'s To is the next line\'s From. Insert Time puts the place played into the first empty To. '
-      + 'Saving fills an empty time from the line beside it, and the last To with the song\'s end. '
-      + 'Leave every time empty to keep the words without times. + or Enter adds a line after one, '
-      + 'a line without words is music (♪).');
+      T('lyricsEditor.help'));
     const buttons = [];
     if (window.flow.publishLyrics && song) {
       buttons.push({
-        label: 'Publish to LRCLIB',
+        label: T('lyricsEditor.publish.title'),
         align: 'left',
         onClick: () => {
           if (table.hidden) {
-            error.textContent = 'Split the lyrics into lines first.';
+            error.textContent = T('lyricsEditor.insertTime.splitFirst');
             return false;
           }
           this._fill(grid, length());
@@ -387,7 +383,7 @@ const LyricsEdit = {
           const lines = this._read(grid, error);
           if (lines === undefined) return false;
           if (!lines.some((r) => r.text)) {
-            error.textContent = 'Write the lyrics first.';
+            error.textContent = T('common.writeLyricsFirst');
             return false;
           }
           this._publish({ song: song(), length: length(), lines });
@@ -397,14 +393,14 @@ const LyricsEdit = {
     }
     if (own) {
       buttons.push({
-        label: 'Remove my lyrics',
+        label: T('lyricsEditor.removeMine'),
         kind: 'light-red',
         align: 'left',
         onClick: async () => {
           const ok = await confirmDialog({
-            title: 'Remove your lyrics?',
-            message: 'The lyrics written for this song go, and Flow looks for its lyrics again.',
-            confirmLabel: 'Remove',
+            title: T('lyricsEditor.removeMine.title'),
+            message: T('lyricsEditor.removeMine.text'),
+            confirmLabel: T('common.remove'),
             danger: true,
           });
           if (!ok) return false;
@@ -412,8 +408,8 @@ const LyricsEdit = {
         },
       });
     }
-    buttons.push({ label: 'Cancel' }, {
-      label: 'Save',
+    buttons.push({ label: T('common.cancel') }, {
+      label: T('common.save'),
       kind: 'primary',
       onClick: () => {
         // Still at the pasting: the words split into lines first.
@@ -432,7 +428,7 @@ const LyricsEdit = {
       try {
         await onSave(lines);
       } catch (err) {
-        error.textContent = (err && err.message) || 'The lyrics could not be saved.';
+        error.textContent = (err && err.message) || T('lyricsEditor.saveFailed');
         return false;
       }
       return true;
@@ -448,10 +444,10 @@ const LyricsEdit = {
       buttons,
       focus: rows.length ? '.lyrics-edit__time' : '.lyrics-edit__paste',
       confirmDismiss: async () => state() === opened || !!(await confirmDialog({
-        title: 'Undo changes?',
-        message: 'Do you really want to undo recent changes?',
-        confirmLabel: 'Undo changes',
-        cancelLabel: 'Keep editing',
+        title: T('lyricsEditor.undo.title'),
+        message: T('lyricsEditor.undo.text'),
+        confirmLabel: T('lyricsEditor.undo.confirm'),
+        cancelLabel: T('lyricsEditor.undo.keepEditing'),
         danger: true,
       })),
       onClose: () => {
@@ -475,11 +471,11 @@ const LyricsEdit = {
   _search({ song, length, onPick }) {
     const words = song ? [song.artist, song.title].filter(Boolean).join(' ') : '';
     const box = h('input.input.lyrics-search__q', {
-      type: 'text', value: words, placeholder: 'Artist and title', spellcheck: 'false', 'aria-label': 'Search LRCLIB',
+      type: 'text', value: words, placeholder: T('lyricsEditor.search.placeholder'), spellcheck: 'false', 'aria-label': T('lyricsEditor.searchLrclib'),
     });
-    const go = h('button.btn.btn--small', { type: 'button' }, 'Search');
+    const go = h('button.btn.btn--small', { type: 'button' }, T('lyricsEditor.search.button'));
     const list = h('div.lyrics-search__list');
-    const empty = () => h('div.lyrics-search__empty', 'Pick one of the results to see its lyrics.');
+    const empty = () => h('div.lyrics-search__empty', T('lyricsEditor.search.pickOne'));
     const preview = h('div.lyrics-search__preview', empty());
     const note = h('div.lyrics-search__note');
     let picked = null;
@@ -493,7 +489,7 @@ const LyricsEdit = {
           h('span.lyrics-show__text' + (l.text ? '' : '.lyrics-show__text--pause'), l.text || '♪')))
         : String(r.plain).split(/\r?\n/).map((text) => h('div.lyrics-show__row', h('span.lyrics-show__text', text)));
       clear(preview).append(
-        r.synced ? '' : h('div.lyrics-show__note', 'These lyrics have no times.'),
+        r.synced ? '' : h('div.lyrics-show__note', T('common.lyricsNoTimes')),
         h('div.lyrics-show__lines', ...lines),
       );
       if (use) use.disabled = false;
@@ -503,22 +499,23 @@ const LyricsEdit = {
       picked = null;
       if (use) use.disabled = true;
       note.textContent = '';
-      clear(list).append(h('div.lyrics-search__empty', this.spinner(), 'Searching LRCLIB...'));
+      clear(list).append(h('div.lyrics-search__empty', this.spinner(), T('lyricsEditor.search.searching')));
       clear(preview).append(empty());
       let found;
       try {
         found = await window.flow.searchLyrics(params);
       } catch (err) {
-        if (mine === seq) clear(list).append(h('div.lyrics-search__empty.form-error', (err && err.message) || 'LRCLIB could not be asked.'));
+        if (mine === seq) clear(list).append(h('div.lyrics-search__empty.form-error', (err && err.message) || T('lyricsEditor.search.failed')));
         return;
       }
       if (mine !== seq) return;
       clear(list);
       if (!found.length) {
-        list.append(h('div.lyrics-search__empty', 'Nothing found. Try other words.'));
+        list.append(h('div.lyrics-search__empty', T('lyricsEditor.search.nothingFound')));
         return;
       }
-      note.textContent = `${found.length} found${length ? `; this song is ${this._length(length)} long` : ''}`;
+      note.textContent = length ? T('lyricsEditor.search.found.withLength', { count: found.length, length: this._length(length) })
+        : T('lyricsEditor.search.found', { count: found.length });
       for (const r of found) {
         const gap = length && r.duration ? Math.round(r.duration - length) : 0;
         const row = h('button.lyrics-search__item', { type: 'button' },
@@ -526,7 +523,7 @@ const LyricsEdit = {
           h('div.lyrics-search__meta',
             h('span', [r.album, r.duration ? `${this._length(r.duration)}${gap ? ` (${gap > 0 ? '+' : ''}${gap} s)` : ''}` : '']
               .filter(Boolean).join(' · ')),
-            h(`span.lyrics-search__kind${r.synced ? '.lyrics-search__kind--timed' : ''}`, r.synced ? 'Timed' : 'Words only')));
+            h(`span.lyrics-search__kind${r.synced ? '.lyrics-search__kind--timed' : ''}`, r.synced ? T('lyricsEditor.search.timed') : T('lyricsEditor.search.wordsOnly'))));
         row.addEventListener('click', () => show(r, row));
         row.addEventListener('dblclick', () => use && use.click());
         list.appendChild(row);
@@ -537,15 +534,15 @@ const LyricsEdit = {
       if (e.key === 'Enter') run({ q: box.value, duration: length });
     });
     const modal = Modal.open({
-      title: 'Search LRCLIB',
+      title: T('lyricsEditor.searchLrclib'),
       className: 'modal--lyrics-search',
       body: [
         h('div.lyrics-search__bar', box, go),
         note,
         h('div.lyrics-search__panes', list, preview),
       ],
-      buttons: [{ label: 'Cancel' }, {
-        label: 'Use these lyrics',
+      buttons: [{ label: T('common.cancel') }, {
+        label: T('lyricsEditor.search.use'),
         kind: 'primary',
         onClick: async () => {
           if (!picked) return false;
@@ -570,42 +567,41 @@ const LyricsEdit = {
       const input = h('input.input', { type: 'text', value: value || '', spellcheck: 'false' });
       return { input, row: h('label.lyrics-publish__field', h('span', label), input) };
     };
-    const title = field('Title', song.title);
-    const artist = field('Artist', song.artist);
-    const album = field('Album', song.album);
+    const title = field(T('common.title'), song.title);
+    const artist = field(T('common.artist'), song.artist);
+    const album = field(T('common.album'), song.album);
     const timed = lines.some((r) => r.t !== null);
     const sung = lines.filter((r) => r.text).length;
     const status = h('div.lyrics-publish__status');
     const error = h('div.form-error');
     const modal = Modal.open({
-      title: 'Publish to LRCLIB',
+      title: T('lyricsEditor.publish.title'),
       className: 'modal--lyrics-publish',
       body: [
-        h('p.lyrics-publish__text', 'Your lyrics go to LRCLIB (lrclib.net) for everyone: Flow, other music players and their users find '
-          + 'them by the song\'s names and length. LRCLIB keeps them for good; they cannot be taken back from here.'),
+        h('p.lyrics-publish__text', T('lyricsEditor.publish.text')),
         title.row, artist.row, album.row,
-        h('div.lyrics-publish__field', h('span', 'Length'), h('span.lyrics-publish__value', this._length(length))),
-        h('div.lyrics-publish__field', h('span', 'Lyrics'),
-          h('span.lyrics-publish__value', `${Util.plural(sung, 'line')} ${timed ? 'with times' : 'without times'}`)),
+        h('div.lyrics-publish__field', h('span', T('common.length')), h('span.lyrics-publish__value', this._length(length))),
+        h('div.lyrics-publish__field', h('span', T('common.lyrics')),
+          h('span.lyrics-publish__value', T(timed ? 'lyricsEditor.publish.lines.timed' : 'lyricsEditor.publish.lines.untimed', { lines: Util.plural(sung, 'line') }))),
         status,
         error,
       ],
-      buttons: [{ label: 'Cancel' }, {
-        label: 'Publish',
+      buttons: [{ label: T('common.cancel') }, {
+        label: T('lyricsEditor.publish.confirm'),
         kind: 'primary',
         onClick: async () => {
           error.textContent = '';
-          clear(status).append(this.spinner(), 'Solving LRCLIB\'s challenge and sending the lyrics. This can take a minute...');
+          clear(status).append(this.spinner(), T('lyricsEditor.publish.sending'));
           try {
             await window.flow.publishLyrics({
               title: title.input.value, artist: artist.input.value, album: album.input.value, duration: length, lines,
             });
           } catch (err) {
             clear(status);
-            error.textContent = (err && err.message) || 'The lyrics could not be published.';
+            error.textContent = (err && err.message) || T('lyricsEditor.publish.failed');
             return false;
           }
-          toast(`Lyrics of "${[artist.input.value.trim(), title.input.value.trim()].filter(Boolean).join(' - ')}" published to LRCLIB`, 'success');
+          toast(T('lyricsEditor.publish.done', { song: [artist.input.value.trim(), title.input.value.trim()].filter(Boolean).join(' - ') }), 'success');
           return true;
         },
       }],
@@ -639,12 +635,12 @@ const LyricsEdit = {
     const box = (t, label) => h('input.input.lyrics-edit__time', {
       type: 'text', value: this.fmt(t), placeholder: 'mm:ss:ms', spellcheck: 'false', 'aria-label': label,
     });
-    const from = box(r.t, 'From');
-    const to = box(r.end, 'To');
+    const from = box(r.t, T('lyricsEditor.column.from'));
+    const to = box(r.end, T('lyricsEditor.column.to'));
     const text = h('input.input.lyrics-edit__text', {
-      type: 'text', value: r.text, spellcheck: 'false', maxlength: '500', 'aria-label': 'Lyrics',
+      type: 'text', value: r.text, spellcheck: 'false', maxlength: '500', 'aria-label': T('common.lyrics'),
     });
-    const words = h('div.lyrics-edit__words', h('span.lyrics-edit__note', { html: Icons.library, title: 'Music, no words' }), text);
+    const words = h('div.lyrics-edit__words', h('span.lyrics-edit__note', { html: Icons.library, title: T('lyricsEditor.line.music.tooltip') }), text);
     const row = h('div.lyrics-edit__row', from, h('span.lyrics-edit__dash', '-'), to, words);
     // An empty line after this one, filling the time between them when both are known.
     const addAfter = () => {
@@ -659,10 +655,10 @@ const LyricsEdit = {
       return added;
     };
     row.append(
-      iconButton('icon-btn.lyrics-edit__add', Icons.plus, 'Add a line after this one', () => {
+      iconButton('icon-btn.lyrics-edit__add', Icons.plus, T('lyricsEditor.line.add'), () => {
         addAfter().querySelector('.lyrics-edit__text').focus();
       }),
-      iconButton('icon-btn.lyrics-edit__remove', Icons.x, 'Take this line out', () => {
+      iconButton('icon-btn.lyrics-edit__remove', Icons.x, T('lyricsEditor.line.remove'), () => {
         // A From without a To goes on to the next line when that has no From.
         const after = row.nextElementSibling && row.nextElementSibling.querySelector('.lyrics-edit__time');
         if (after && !after.value.trim() && !to.value.trim() && Number.isFinite(this.parse(from.value))) {
@@ -716,7 +712,7 @@ const LyricsEdit = {
    * it is empty.
    */
   _scrub(b, start) {
-    b.title = 'Click to type, drag left or right to change (Shift: finer)';
+    b.title = T('lyricsEditor.line.time.tooltip');
     // Its selected text is not dragged away (a drag while typing selects).
     b.addEventListener('dragstart', (e) => e.preventDefault());
     b.addEventListener('mousedown', (e) => {
@@ -757,21 +753,21 @@ const LyricsEdit = {
    * after the song's end, or the first line would end before 0.
    */
   _shift(grid, by, duration) {
-    if (!Number.isFinite(by) || by === 0) return 'Write the time to add or subtract as ss:ms, e.g. 01:500.';
+    if (!Number.isFinite(by) || by === 0) return T('lyricsEditor.shift.error.format');
     const rows = [...grid.querySelectorAll('.lyrics-edit__row')];
     const times = rows.flatMap((row) => [...row.querySelectorAll('.lyrics-edit__time')].map((b, k) => ({
       b, k, t: this.parse(b.value), row,
     }))).filter((x) => Number.isFinite(x.t));
     const froms = times.filter((x) => x.k === 0).map((x) => x.t);
     const tos = times.filter((x) => x.k === 1).map((x) => x.t);
-    if (!froms.length && !tos.length) return 'The lines have no times to move.';
+    if (!froms.length && !tos.length) return T('lyricsEditor.shift.error.noTimes');
     // ss:ms as typed (mm:ss:ms from a minute on).
     const amount = Math.abs(by) < 60 ? this.fmt(Math.abs(by)).slice(3) : this.fmt(Math.abs(by));
     if (by > 0 && duration && froms.length && Math.max(...froms) + by > duration) {
-      return `Adding ${amount} would start the last line after the end of the song (${this.fmt(duration)}).`;
+      return T('lyricsEditor.shift.error.pastEnd', { amount, end: this.fmt(duration) });
     }
     if (by < 0 && tos.length && Math.min(...tos) + by < 0) {
-      return `Subtracting ${amount} would end the first line before the start of the song.`;
+      return T('lyricsEditor.shift.error.beforeStart', { amount });
     }
     const intro = rows[0] && !rows[0].querySelector('.lyrics-edit__text').value.trim() ? rows[0] : null;
     for (const x of times) {
@@ -863,21 +859,21 @@ const LyricsEdit = {
     const canvas = h('canvas.lyrics-edit__wave');
     const playhead = h('div.playhead.playhead--audio');
     const status = h('div.audio-status.lyrics-edit__wave-status');
-    const playBtn = h('button.round-btn.round-btn--main', { type: 'button', title: 'Play' });
+    const playBtn = h('button.round-btn.round-btn--main', { type: 'button', title: T('common.play') });
     const skip = (by) => h('button.round-btn', {
       type: 'button',
-      title: by < 0 ? '5 seconds back' : '5 seconds on',
+      title: by < 0 ? T('lyricsEditor.player.back5') : T('lyricsEditor.player.forward5'),
       html: `<span class="skip-label">${by < 0 ? '-5' : '+5'}</span>`,
       onclick: () => seek(audio.currentTime + by, true),
     });
     const insert = insertTime && h('button.btn.btn--small.lyrics-edit__insert', {
       type: 'button',
-      title: 'The place played into the first empty To',
+      title: T('lyricsEditor.player.insertTime.tooltip'),
       onclick: () => insertTime(audio.currentTime || 0),
-    }, 'Insert Time');
+    }, T('lyricsEditor.player.insertTime'));
     const clock = h('span.lyrics-edit__clock');
     const speed = h('input.volume-slider.lyrics-edit__speed', {
-      type: 'range', min: 20, max: 120, step: 20, value: 100, 'aria-label': 'Playback speed',
+      type: 'range', min: 20, max: 120, step: 20, value: 100, 'aria-label': T('lyricsEditor.player.speed.ariaLabel'),
     });
     const speedValue = h('span.lyrics-edit__speed-value');
     let realPitch = true;
@@ -888,8 +884,8 @@ const LyricsEdit = {
         drawPitch();
       },
     }, text);
-    const slowed = pitchBtn('Match', false);
-    const real = pitchBtn('Real', true);
+    const slowed = pitchBtn(T('lyricsEditor.player.pitch.match'), false);
+    const real = pitchBtn(T('lyricsEditor.player.pitch.real'), true);
     const zoomNote = h('span.lyrics-edit__zoom');
     // Zoomed in: a scroll bar under the waveform, its thumb the part shown.
     const thumb = h('div.lyrics-edit__scroll-thumb');
@@ -898,9 +894,9 @@ const LyricsEdit = {
       h('div.lyrics-edit__wave-wrap', canvas, playhead, status),
       scrollbar,
       h('div.lyrics-edit__transport', skip(-5), playBtn, skip(5), insert, clock,
-        h('label.lyrics-edit__speed-box', h('span', 'Playback Speed:'), speed, speedValue),
-        h('div.lyrics-edit__speed-box', h('span', 'Pitch:'),
-          h('div.lyrics-edit__pitch', { role: 'group', 'aria-label': 'Pitch' }, slowed, real)), zoomNote));
+        h('label.lyrics-edit__speed-box', h('span', T('lyricsEditor.player.speed.label')), speed, speedValue),
+        h('div.lyrics-edit__speed-box', h('span', T('lyricsEditor.player.pitch.label')),
+          h('div.lyrics-edit__pitch', { role: 'group', 'aria-label': T('lyricsEditor.player.pitch.ariaLabel') }, slowed, real)), zoomNote));
 
     let duration = known;
     // The part of the song the waveform shows, in seconds: all of it, or less zoomed in.
@@ -938,7 +934,7 @@ const LyricsEdit = {
       status.textContent = text;
       status.hidden = !text;
     };
-    if (!src) setStatus(`Not on ${Store.here}, and the server cannot be reached: the song cannot be played.`);
+    if (!src) setStatus(T(`lyricsEditor.player.notPlayable.${Store.web ? 'browser' : 'computer'}`));
 
     const draw = () => {
       if (gone) return;
@@ -954,8 +950,8 @@ const LyricsEdit = {
       view = { a: at, b: at + len };
       const zoomed = len < duration - 0.001;
       // Short (the transport row is full); how to move and go back in its tooltip.
-      zoomNote.textContent = zoomed ? `Zoom ${(duration / len).toFixed(1)}x` : 'Use mouse wheel to zoom';
-      zoomNote.title = zoomed ? 'Shift + wheel or the bar below moves along, a double-click shows the whole song' : '';
+      zoomNote.textContent = zoomed ? T('lyricsEditor.player.zoom', { zoom: (duration / len).toFixed(1) }) : T('lyricsEditor.player.zoom.hint');
+      zoomNote.title = zoomed ? T('lyricsEditor.player.zoom.tooltip') : '';
       scrollbar.hidden = !zoomed;
       if (zoomed) {
         thumb.style.left = `${(at / duration) * 100}%`;
@@ -993,7 +989,7 @@ const LyricsEdit = {
     };
     const drawPlay = () => {
       playBtn.innerHTML = audio.paused ? Icons.play : Icons.pause;
-      playBtn.title = audio.paused ? 'Play' : 'Pause';
+      playBtn.title = audio.paused ? T('common.play') : T('common.pause');
     };
     // `show`: the part shown moves to the new place if it is outside it (-5 / +5).
     const seek = (t, show = false) => {
@@ -1105,20 +1101,20 @@ const LyricsEdit = {
         if (src) setStatus('');
         return;
       }
-      setStatus('Drawing waveform...');
+      setStatus(T('common.drawingWaveform'));
       Promise.resolve().then(loadPeaks).then((got) => {
         if (gone) return;
         peaks = got || null;
-        setStatus(peaks ? '' : 'No waveform for this song, but it can still be played.');
+        setStatus(peaks ? '' : T('lyricsEditor.waveform.none'));
         draw();
       }, () => {
-        if (!gone) setStatus('Could not draw the waveform, but the song can still be played.');
+        if (!gone) setStatus(T('lyricsEditor.waveform.failed'));
       });
     };
     // The song's length: as given, else the audio's own.
     if (duration || !src) getPeaks();
     else {
-      setStatus('Reading the song...');
+      setStatus(T('common.readingSong'));
       audio.addEventListener('loadedmetadata', () => {
         if (gone || duration || !Number.isFinite(audio.duration)) return;
         duration = audio.duration;
@@ -1235,14 +1231,14 @@ const LyricsEdit = {
       const end = this.parse(to.value);
       from.classList.toggle('input--bad', Number.isNaN(t));
       to.classList.toggle('input--bad', Number.isNaN(end) || (end !== null && t !== null && end <= t));
-      if (Number.isNaN(t) || Number.isNaN(end)) bad = bad || 'A time cannot be read: write it as mm:ss:ms, e.g. 01:23:450.';
-      else if (end !== null && t !== null && end <= t) bad = bad || 'A line ends before it starts: its "To" must come after its "From".';
-      else if (end !== null && t === null && text) bad = bad || 'A line has a "To" but no "From".';
+      if (Number.isNaN(t) || Number.isNaN(end)) bad = bad || T('lyricsEditor.error.badTime');
+      else if (end !== null && t !== null && end <= t) bad = bad || T('lyricsEditor.error.endsBeforeStart');
+      else if (end !== null && t === null && text) bad = bad || T('lyricsEditor.error.toWithoutFrom');
       lines.push({ t: Number.isNaN(t) ? null : t, end: Number.isNaN(end) ? null : end, text });
     }
     const worded = lines.filter((r) => r.text);
     if (!bad && worded.some((r) => r.t !== null) && worded.some((r) => r.t === null)) {
-      bad = 'Give every line with words its "From" time, or leave every time empty.';
+      bad = T('common.lyricsMissingFrom');
       for (const row of grid.querySelectorAll('.lyrics-edit__row')) {
         const [from] = row.querySelectorAll('.lyrics-edit__time');
         if (!from.value.trim() && row.querySelector('.lyrics-edit__text').value.trim()) from.classList.add('input--bad');

@@ -18,6 +18,7 @@ const settings = require('./settings');
 const covers = require('./covers');
 const { tagArgs, flowIdText } = require('@flow/core/tags');
 const { albumFor } = require('@flow/core/libraryModel');
+const { tr } = require('@flow/core/lang');
 
 function samePath(a, b) {
   return !!a && !!b && path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
@@ -61,7 +62,7 @@ async function retagSong(song, meta) {
   const dest = uniquePath(songFileStem(meta.artist, meta.title, meta.mix), ext, song.file);
   const tmp = path.join(path.dirname(dest), `.flow-retag-${Date.now()}.${ext}`);
   try {
-    const picture = song.cover && song.cover !== '-' ? covers.localStore().read(song.id) : null;
+    const picture = song.cover && song.cover !== '-' ? await covers.tagPicture(song.id) : null;
     const ok = await media.rewriteTags(song.file, tmp, {
       meta: {
         ...meta,
@@ -101,7 +102,7 @@ async function trimSong(song, start, end, { keep = true } = {}) {
       if (keep) await shell.trashItem(song.file);
       else fs.rmSync(song.file);
     } catch {
-      throw new Error('The file could not be replaced. It may be open in another program.');
+      throw new Error(tr('desktop.error.fileNotReplaced', 'The file could not be replaced. It may be open in another program.'));
     }
     fs.renameSync(tmp, song.file);
     return { duration };

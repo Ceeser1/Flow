@@ -145,6 +145,14 @@ body.mobile .menu__item { height: 48px; font-size: 15px; }
 /* Settings is an item too, but as tall again as the bar of Android's own buttons under it. */
 body.mobile .menu__item.menu__settings { height: calc(56px + var(--safe-bottom)); }
 body.mobile .menu__sub { height: 44px; font-size: 15px; }
+/* Playlist groups (4.5): the folder's playlists further in; the page's heads finger-sized. */
+body.mobile .menu__sub--in-group { padding-left: 34px; }
+body.mobile .group { padding: 2px 8px; }
+body.mobile .group__head { min-height: 56px; gap: 6px; }
+body.mobile .group__head .actions { gap: 4px; }
+body.mobile .group-new { flex-wrap: wrap; }
+body.mobile .group-pick__row { min-height: 48px; }
+body.mobile .group-add__row { min-height: 44px; }
 body.mobile .menu__subs { flex: none; overflow: visible; }
 body.mobile .menu__chevron--toggle { padding: 12px 8px; margin: 0 -8px 0 -6px; }
 body.mobile .menu__item:hover,
@@ -869,6 +877,17 @@ body.mobile .add-footer__right { flex-wrap: wrap; justify-content: flex-end; }
 body.mobile .add-footer__right .btn { height: 48px; flex: 1 1 auto; font-size: 15px; }
 body.mobile .add-footer__right .muted-text { flex: 1 1 100%; }
 
+/* A song's Cancel Edits, Apply Edits and Finish this song: wrapped on a narrow screen. */
+body.mobile .import__frame-foot { flex-wrap: wrap; }
+body.mobile .import__frame-foot .btn { min-width: 0; flex: 1 1 auto; }
+
+/* A batch's footer sits in its panel (import.js). */
+body.mobile .import-batch__footer { margin: 12px -14px -14px; padding: 10px 14px 12px; }
+body.mobile .import-batch__head { flex-wrap: wrap; }
+body.mobile .queue-row { flex-wrap: wrap; }
+body.mobile .queue-row__what { flex: 1 1 100%; white-space: normal; }
+body.mobile .queue-row__state { max-width: none; flex: 1; }
+
 body.mobile .import__buttons { flex-wrap: wrap; }
 body.mobile .import__buttons .btn { flex: 1 1 auto; height: 44px; }
 
@@ -893,7 +912,7 @@ body.mobile .import__buttons .btn { flex: 1 1 auto; height: 44px; }
   body.mobile .add-footer {
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    padding: 6px 16px calc(6px + var(--safe-bottom));
+    padding: 6px 14px;
   }
   body.mobile .add-footer__right { flex-wrap: nowrap; }
   body.mobile .add-footer__right .btn { height: 40px; flex: none; }
@@ -914,19 +933,19 @@ body.mobile .import__buttons .btn { flex: 1 1 auto; height: 44px; }
 body.mobile .modal--song-edit { width: 100%; }
 body.mobile .song-edit__input { width: 100%; }
 
-/* ---- the first start (welcome.js) ---- */
+/* ---- the first start (welcome.js): the phone's, and the web player's in both layouts ---- */
 
-body.mobile .welcome {
+body:is(.mobile, .web) .welcome {
   position: fixed;
   inset: 0;
   z-index: 60;
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  padding: calc(var(--safe-top) + 24px) 24px calc(var(--safe-bottom) + 12px);
+  padding: calc(var(--safe-top, 0px) + 24px) 24px calc(var(--safe-bottom, 0px) + 12px);
   overflow-y: auto;
 }
-body.mobile .welcome__inner {
+body:is(.mobile, .web) .welcome__inner {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -938,12 +957,12 @@ body.mobile .welcome__inner {
   width: 100%;
   margin: 0 auto;
 }
-body.mobile .welcome__icon { width: 84px; height: 84px; border-radius: 20px; }
-body.mobile .welcome__title { margin: 4px 0 0; font-size: 26px; color: var(--text-bright); }
-body.mobile .welcome__text { margin: 0; color: var(--text-dim); font-size: 15px; line-height: 1.45; }
-body.mobile .welcome__status { margin: 10px 0 0; color: var(--text); font-size: 15px; line-height: 1.45; min-height: 22px; }
-body.mobile .welcome__status--error { color: var(--red); }
-body.mobile .welcome__status--busy::before {
+body:is(.mobile, .web) .welcome__icon { width: 84px; height: 84px; border-radius: 20px; }
+body:is(.mobile, .web) .welcome__title { margin: 4px 0 0; font-size: 26px; color: var(--text-bright); }
+body:is(.mobile, .web) .welcome__text { margin: 0; color: var(--text-dim); font-size: 15px; line-height: 1.45; }
+body:is(.mobile, .web) .welcome__status { margin: 10px 0 0; color: var(--text); font-size: 15px; line-height: 1.45; min-height: 22px; }
+body:is(.mobile, .web) .welcome__status--error { color: var(--red); }
+body:is(.mobile, .web) .welcome__status--busy::before {
   content: '';
   display: inline-block;
   width: 13px;
@@ -955,14 +974,14 @@ body.mobile .welcome__status--busy::before {
   border-radius: 50%;
   animation: prog-spin 0.8s linear infinite;
 }
-body.mobile .welcome__form { width: 100%; display: flex; flex-direction: column; gap: 14px; text-align: left; }
-body.mobile .welcome__form[hidden] { display: none; }
-body.mobile .welcome__label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--text-dim); }
-body.mobile .welcome__input { width: 100%; height: 48px; font-size: 16px; }
-body.mobile .welcome__connect { height: 48px; font-size: 16px; }
-body.mobile .welcome__hint { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.4; text-align: center; }
-body.mobile .welcome__again { align-self: center; height: 42px; }
-body.mobile .welcome__skip {
+body:is(.mobile, .web) .welcome__form { width: 100%; display: flex; flex-direction: column; gap: 14px; text-align: left; }
+body:is(.mobile, .web) .welcome__form[hidden] { display: none; }
+body:is(.mobile, .web) .welcome__label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--text-dim); }
+body:is(.mobile, .web) .welcome__input { width: 100%; height: 48px; font-size: 16px; }
+body:is(.mobile, .web) .welcome__connect { height: 48px; font-size: 16px; }
+body:is(.mobile, .web) .welcome__hint { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.4; text-align: center; }
+body:is(.mobile, .web) .welcome__again { align-self: center; height: 42px; }
+body:is(.mobile, .web) .welcome__skip {
   align-self: center;
   margin-top: 12px;
   padding: 12px 20px;
@@ -996,6 +1015,10 @@ body.mobile .stats__mode { height: 32px; padding: 0 14px; font-size: 13px; }
 /* The bars and the lines over them: as high as each other (style.css's 156px on the PC). */
 body.mobile .stats__graph .stats__barbox,
 body.mobile .stats__grid { height: 136px; }
+/* A finger's height to open or close a part by. */
+body.mobile .admin__block { padding: 0; }
+body.mobile .admin__head { min-height: 46px; font-size: 14px; }
+body.mobile .admin__body { margin-top: 0; padding-bottom: 12px; }
 body.mobile .admin__plist { display: flex; flex-direction: column; margin-top: 8px; }
 body.mobile .admin__plist > .admin__scroll { padding: 0 10px; }
 body.mobile .admin__prow { border-bottom: 1px solid #34343c; }
@@ -1029,3 +1052,29 @@ body.mobile .modal--admin-ips { width: auto; }
 body.mobile .rules__row { grid-template-columns: 1fr 1fr auto; }
 body.mobile .rules__row > :nth-child(3) { grid-column: 1 / 3; grid-row: 2; }
 body.mobile .rules__row > :nth-child(4) { grid-column: 3; grid-row: 1; }
+
+/* A playlist group's page (4.5.2): Play at the left, Shuffle and Download as icons at the right;
+   each frame's head with its name above its buttons, those as icons. */
+body.mobile #grPlay { order: 1; padding: 0 24px 0 20px; }
+body.mobile #grShuffle { order: 2; margin-left: auto; }
+body.mobile #grOffline { order: 3; }
+body.mobile #grOfflineNote { order: 4; margin-left: 0; }
+body.mobile #grShuffleHint { order: 5; flex: 1 1 100%; max-width: none; }
+body.mobile #page-group .pl-head__row #grOffline { margin-left: 0; }
+body.mobile :is(#grShuffle, #grOffline) { width: 44px; padding: 0; justify-content: center; flex: none; }
+body.mobile :is(#grShuffle, #grOffline) .icon { width: 20px; height: 20px; }
+body.mobile #grOffline.toggle--on { color: #f5be3c; border-color: rgba(245, 190, 60, 0.5); background: rgba(245, 190, 60, 0.16); }
+body.mobile .gframe { padding: 2px 8px; }
+body.mobile .gframe--open { padding-bottom: 8px; }
+body.mobile .gframe__head { flex-wrap: wrap; gap: 6px 10px; padding: 8px 4px; }
+body.mobile .gframe__text { flex: 1 1 70%; }
+body.mobile .gframe__buttons { flex: 1 1 auto; padding-left: 30px; }
+body.mobile .gframe__buttons .toggle,
+body.mobile .gframe__buttons .btn--play { height: 40px; border-radius: 20px; }
+body.mobile .gframe__buttons .btn--play { width: 40px; padding: 0; justify-content: center; }
+body.mobile .gframe__buttons .toggle { width: 40px; padding: 0; justify-content: center; }
+body.mobile .gframe__buttons .icon { width: 18px; height: 18px; }
+body.mobile .gframe__share { margin-left: auto; width: 40px; height: 40px; border-radius: 20px; padding: 0; justify-content: center; }
+body.mobile .gframe__share .icon { width: 18px; height: 18px; }
+body.mobile .gframe__offline.toggle--on { color: #f5be3c; border-color: rgba(245, 190, 60, 0.5); background: rgba(245, 190, 60, 0.16); }
+body.mobile .gframe__songs { max-height: 60vh; background: none; }

@@ -5,17 +5,30 @@
 // library, which is when the pages redraw.
 
 const ALL_SONGS_ID = 'all';
-const ALL_SONGS_NAME = 'All Songs';
+const ALL_SONGS_NAME = T('common.allSongs');
 const FAVOURITES_ID = 'favourites';
 // The songs of another server's session this app is a guest in (4.0).
 const GUEST_ID = 'guest:songs';
-const FAVOURITES_NAME = 'Favourites';
+const FAVOURITES_NAME = T('common.favourites');
 // "All Songs from <profile>": the songs one profile of the Flow Server added.
 const FROM_PREFIX = 'from:';
 // The Default / Shared's id as a song's addedBy (@flow/core/profiles DEFAULT_OWNER).
 const DEFAULT_PROFILE = 'default';
 // Downloaded Songs (with a Flow Server): every song with a file on this device.
 const DEVICE_ID = 'device';
+// A playlist group played as one list (4.5.2): "group:<id>", every song of its playlists.
+const GROUP_PREFIX = 'group:';
+
+/** A list's entries are still `songs` (the same ids, `at` the same date) in the same order. */
+function sameEntries(entries, songs, at) {
+  if (entries.length !== songs.length) return false;
+  for (let i = 0; i < songs.length; i += 1) {
+    const e = entries[i];
+    const s = songs[i];
+    if (e.songId !== s.id || e.addedAt !== at(s)) return false;
+  }
+  return true;
+}
 
 const Store = {
   library: { songs: [], playlists: [], ignoredFiles: [] },
@@ -34,7 +47,6 @@ const Store = {
   // The Flow Server's state (remote.js publicStatus); `on` false without one.
   server: { on: false, state: 'off', offline: [] },
   songsById: new Map(),
-  smart: {}, // the listening trend lists: id -> song ids, best match first
   holding: new Map(), // song id -> your own playlists ({ id, name }) that hold it, A to Z
   // A guest in another server's session (4.0): that server's songs, to show,
   // queue and play along with (Session sets them): id -> song (foreign: true).
@@ -44,17 +56,61 @@ const Store = {
   sessionSongs: new Map(),
   _listeners: [],
 
-  setLibrary(lib) {
+  /**
+   * The library as the app sends it (4.3.3): whole ({ library, seq }), or
+   * what changed since the one numbered `base` ({ patch, base, seq },
+   * LibraryPatch), so the songs that stay are the same objects and keep
+   * what was worked out for them (search, sort keys). One that does not fit
+   * (a change missed) has it sent whole.
+   */
+  takeLibrary(msg) {
+    if (!msg) return;
+    if (!msg.patch) {
+      this._librarySeq = msg.seq;
+      this.setLibrary(msg.library || { songs: [], playlists: [], ignoredFiles: [] });
+      return;
+    }
+    if (msg.base !== this._librarySeq) {
+      if (!this._askedWhole && window.flow.libraryWhole) {
+        this._askedWhole = true;
+        window.flow.libraryWhole().catch(() => {}).finally(() => { this._askedWhole = false; });
+      }
+      return;
+    }
+    this._librarySeq = msg.seq;
+    this.setLibrary(LibraryPatch.apply(this.library, msg.patch), msg.patch);
+  },
+  _librarySeq: 0,
+
+  /** steps: what changed since the library before (a patch), when that is how it came. */
+  setLibrary(lib, steps = null) {
     this.library = lib;
     // The songs here that are not the server's (Downloaded Songs) can be played and queued too.
-    this.songsById = new Map([...lib.songs, ...(lib.deviceSongs || [])].map((s) => [s.id, s]));
+    // A patch changes only its songs (100 000: the map is not made again).
+    const songSteps = steps && steps.filter((s) => s[1].length === 1 && (s[1][0] === 'songs' || s[1][0] === 'deviceSongs'));
+    if (songSteps && songSteps.every((s) => s[0] === 'list')) {
+      for (const [, , s] of songSteps) for (const id of s.gone || []) this.songsById.delete(id);
+      for (const [, [p], s] of songSteps) {
+        const list = lib[p] || [];
+        // The changed songs where the patch says they are now, else looked for.
+        const at = s.order ? [] : s.at || [];
+        const missed = (s.put || []).some((x, n) => {
+          const song = list[at[n]];
+          if (!song || song.id !== x.id) return true;
+          this.songsById.set(song.id, song);
+          return false;
+        });
+        if (missed) for (const song of list) if (this.songsById.get(song.id) !== song) this.songsById.set(song.id, song);
+      }
+    } else {
+      this.songsById = new Map([...lib.songs, ...(lib.deviceSongs || [])].map((s) => [s.id, s]));
+    }
     // Smart playlists (4.0): their songs are the ones their rules pick, now.
     for (const p of lib.playlists) {
       if (!p.rules) continue;
       p.entries = PlaylistRules.evaluate(lib.songs, p.rules).map((s) => ({ songId: s.id, addedAt: s.addedAt }));
       p.isRuled = true;
     }
-    this.smart = SmartLists.compute(lib.songs, lib.playlists.filter((p) => !p.isRuled));
     this.holding = new Map();
     for (const p of this.editablePlaylists()) {
       for (const e of p.entries) {
@@ -63,6 +119,32 @@ const Store = {
       }
     }
     for (const fn of this._listeners) fn(lib);
+    this._prepare(lib);
+  },
+
+  /**
+   * While nothing else runs: each song's folded names and title, its title's and
+   * artist's sort keys made (Util.songHay, songSortKey), so the first search
+   * or sort of a long library does not wait for 100 000 of them.
+   */
+  _prepare(lib) {
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(() => fn({ timeRemaining: () => 8 }), 50));
+    let at = 0;
+    const step = (deadline) => {
+      if (this.library !== lib) return;
+      const songs = lib.songs;
+      while (at < songs.length && deadline.timeRemaining() > 2) {
+        for (let k = 0; k < 200 && at < songs.length; k += 1, at += 1) {
+          const s = songs[at];
+          Util.songHay(s);
+          Util.titleHay(s);
+          Util.songSortKey(s, 'title');
+          Util.songSortKey(s, 'artist');
+        }
+      }
+      if (at < songs.length) idle(step, { timeout: 2000 });
+    };
+    idle(step, { timeout: 2000 });
   },
 
   /** Whether this app can do `cap` (@flow/core/client/caps); its controls are hidden when not. */
@@ -70,14 +152,25 @@ const Store = {
     return this.caps[cap] !== false;
   },
 
-  /** Whether this app runs on a phone (Android or iPhone). */
+  /** Whether this app runs on a phone (Android or iPhone, or the web player in a phone's layout). */
   get phone() {
-    return this.platform === 'android' || this.platform === 'ios';
+    return this.platform === 'android' || this.platform === 'ios' || (this.platform === 'web' && this.uiMode === 'mobile');
   },
 
-  /** The device as the window names it: "this phone" or "this computer". */
+  /** Whether this is the web player (apps/web): a page in a browser. */
+  get web() {
+    return this.platform === 'web';
+  },
+
+  /** The device as the window names it: "this phone", "this browser" or "this computer". */
   get here() {
-    return this.phone ? 'this phone' : 'this computer';
+    return T(`common.this${this.hereKey[0].toUpperCase()}${this.hereKey.slice(1)}`);
+  },
+
+  /** 'computer', 'phone' or 'browser': the end of the keys whose sentence names this device (German changes its case). */
+  get hereKey() {
+    if (this.web) return 'browser';
+    return this.phone ? 'phone' : 'computer';
   },
 
   onLibrary(fn) {
@@ -152,11 +245,12 @@ const Store = {
     if (SmartLists.isSmart(id)) return this.smartPlaylist(id);
     if (id === GUEST_ID) return this.guestPlaylist();
     if (String(id).startsWith(FROM_PREFIX)) return this.fromPlaylist(id.slice(FROM_PREFIX.length));
+    if (String(id).startsWith(GROUP_PREFIX)) return this.groupPlaylist(id.slice(GROUP_PREFIX.length));
     const own = this.library.playlists.find((p) => p.id === id);
     if (own) return own;
     // A playlist another profile shares: to read, not to change.
     const shared = (this.library.sharedPlaylists || []).find((p) => p.id === id);
-    return shared ? { ...shared, isShared: true } : null;
+    return shared ? this._shared(shared) : null;
   },
 
   /** With a Flow Server that has profiles: playlists can be shared with the others and followed. */
@@ -164,11 +258,37 @@ const Store = {
     return !!this.server.on && !!this.server.profilesSupported;
   },
 
-  /** The playlists other profiles share, A to Z. */
+  /**
+   * The playlists other profiles share, A to Z. Another profile's Favourites
+   * (4.3) is "Anna's Favourites". One not followed and not opened yet comes
+   * by its details only (partial: songCount and seconds instead of its songs).
+   */
   sharedPlaylists() {
     return (this.library.sharedPlaylists || [])
-      .map((p) => ({ ...p, isShared: true }))
+      .map((p) => this._shared(p))
       .sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
+  _shared(p) {
+    const owner = this.profileName(p.ownerId) || p.ownerName;
+    // A followed one carries the group this profile put it into (4.5.1).
+    const g = this.canGroupFollowed() && this.isFollowing(p.id)
+      ? (this.library.groups || []).find((x) => (x.followed || []).includes(p.id)) : null;
+    return {
+      // "James' Favorites" for a name ending in s.
+      ...p, ownerName: owner, isShared: true, ...(p.favourites ? { name: T(/s$/i.test(owner) ? 'common.favouritesOf.s' : 'common.favouritesOf', { profile: owner }) } : {}),
+      ...(g ? { group: g.id } : {}),
+    };
+  },
+
+  /** How many songs a list has, also one known only by its details. */
+  songCount(p) {
+    return p.partial ? p.songCount || 0 : p.entries.length;
+  },
+
+  /** A list's length in seconds, also one known only by its details. */
+  durationOf(p) {
+    return p.partial ? p.seconds || 0 : this.totalDuration(p.id);
   },
 
   isFollowing(id) {
@@ -180,6 +300,11 @@ const Store = {
     return this.sharedPlaylists().filter((p) => this.isFollowing(p.id));
   },
 
+  /** The followed playlists in no group (4.5.1), A to Z: the menu's Followed Playlists. */
+  singleFollowed() {
+    return this.followedPlaylists().filter((p) => !this.groupOf(p));
+  },
+
   /** Seconds this profile has listened to a list (as the one playing), 0 for none. */
   listenedTo(id) {
     return Number((this.library.playlistListened || {})[id]) || 0;
@@ -189,6 +314,22 @@ const Store = {
    * A listening trend list, shaped like a playlist. Read-only; its entries
    * are in rank order and carry the download date as when they were added.
    */
+  /**
+   * The listening trend lists: id -> song ids, best match first. Worked out
+   * when one is shown or played, once per library (100 000 songs: some 200 ms).
+   */
+  get smart() {
+    if (!this._smart || this._smart.lib !== this.library) {
+      this._smart = { lib: this.library, lists: SmartLists.compute(this.library.songs, this.library.playlists.filter((p) => !p.isRuled)) };
+    }
+    return this._smart.lists;
+  },
+
+  /** The trend lists by their names only (the menu), without working them out. */
+  smartNames() {
+    return SmartLists.LISTS.map((l) => ({ id: l.id, name: l.name, desc: l.desc, isSmart: true }));
+  },
+
   smartPlaylist(id) {
     const def = SmartLists.LISTS.find((l) => l.id === id);
     if (!def) return null;
@@ -213,7 +354,7 @@ const Store = {
     if (!this.foreign.size) return null;
     return {
       id: GUEST_ID,
-      name: `Songs on ${this.foreignName || 'the other server'}`,
+      name: T('common.songsOn', { server: this.foreignName || T('common.songsOn.otherServer') }),
       entries: [...this.foreign.values()].map((s) => ({ songId: s.id, addedAt: 0 })),
       isGuest: true,
     };
@@ -221,29 +362,50 @@ const Store = {
 
   /** All Songs, shaped like a playlist whose entries were added on download. */
   allSongsPlaylist() {
-    return {
+    // Made once per library (a long one is asked for often while drawing),
+    // and kept while its songs and their dates stay (a star, a rename).
+    const kept = this._allSongs;
+    if (kept && kept.lib === this.library) return kept.list;
+    const songs = this.library.songs;
+    if (kept && sameEntries(kept.list.entries, songs, (s) => s.addedAt)) {
+      kept.lib = this.library;
+      return kept.list;
+    }
+    const list = {
       id: ALL_SONGS_ID,
       name: ALL_SONGS_NAME,
-      entries: this.library.songs.map((s) => ({ songId: s.id, addedAt: s.addedAt })),
+      entries: songs.map((s) => ({ songId: s.id, addedAt: s.addedAt })),
       isAll: true,
     };
+    this._allSongs = { lib: this.library, list };
+    return list;
   },
 
   /**
    * Downloaded Songs, first under All Songs while a Flow Server is in use:
    * every song with a file on this device, the server's (downloaded, or
    * uploaded from here) and the rest (copies of another server's songs, songs
-   * not uploaded: lib.deviceSongs, which only play). Null without a server.
+   * not uploaded: lib.deviceSongs, which only play). Null without a server,
+   * and in an app that keeps no songs (the web player).
    */
   devicePlaylist() {
-    if (!this.server.on) return null;
+    if (!this.server.on || !this.can('localFiles')) return null;
+    // Made once per library, as All Songs.
+    const kept = this._deviceList;
+    if (kept && kept.lib === this.library) return kept.list;
     const songs = [...this.library.songs.filter((s) => s.file), ...(this.library.deviceSongs || [])];
-    return {
+    if (kept && sameEntries(kept.list.entries, songs, (s) => s.addedAt)) {
+      kept.lib = this.library;
+      return kept.list;
+    }
+    const list = {
       id: DEVICE_ID,
-      name: 'Downloaded Songs',
+      name: T('common.downloadedSongs'),
       entries: songs.map((s) => ({ songId: s.id, addedAt: s.addedAt })),
       isDevice: true,
     };
+    this._deviceList = { lib: this.library, list };
+    return list;
   },
 
   /** All Songs or a part of it ("All Songs from ..."): the lists whose songs can be deleted from the library. */
@@ -267,11 +429,23 @@ const Store = {
    */
   fromPlaylist(profileId) {
     const name = this.profileName(profileId);
-    const entries = this.library.songs
-      .filter((s) => s.addedBy === profileId)
-      .map((s) => ({ songId: s.id, addedAt: s.addedAt }));
+    const entries = this._addedBy().get(profileId) || [];
     if (!name || !entries.length) return null;
-    return { id: FROM_PREFIX + profileId, name: `All Songs from ${name}`, menuName: `from ${name}`, entries, isFrom: true };
+    return { id: FROM_PREFIX + profileId, name: T('common.allSongsFrom', { profile: name }), menuName: T('common.allSongsFrom.menu', { profile: name }), entries, isFrom: true };
+  },
+
+  /** profile id -> the entries of the songs it added, once per library (in one pass). */
+  _addedBy() {
+    if (this._added && this._added.lib === this.library) return this._added.map;
+    const map = new Map();
+    for (const s of this.library.songs) {
+      if (!s.addedBy) continue;
+      let list = map.get(s.addedBy);
+      if (!list) map.set(s.addedBy, (list = []));
+      list.push({ songId: s.id, addedAt: s.addedAt });
+    }
+    this._added = { lib: this.library, map };
+    return map;
   },
 
   /** The profile songs added now count as added by: the one signed in to, else the Default / Shared. */
@@ -285,13 +459,19 @@ const Store = {
    */
   fromPlaylists() {
     const profiles = Object.keys(this.library.profileNames || {}).some((id) => id !== DEFAULT_PROFILE);
-    const ids = new Set(this.library.songs.map((s) => s.addedBy).filter((id) => id && (profiles || id !== DEFAULT_PROFILE)));
+    const ids = [...this._addedBy().keys()].filter((id) => profiles || id !== DEFAULT_PROFILE);
     return [...ids].map((id) => this.fromPlaylist(id)).filter(Boolean)
       .sort((a, b) => Util.compareValues(a.menuName, b.menuName));
   },
 
-  /** The favourite songs, shaped like a playlist whose entries were added when made one. */
+  /**
+   * The favourite songs, shaped like a playlist whose entries were added when
+   * made one. On a Flow Server (4.3) it is a playlist of the profile's own
+   * (favourites: true), shared and downloaded like the others.
+   */
   favouritesPlaylist() {
+    const own = this.library.playlists.find((p) => p.favourites);
+    if (own) return { ...own, name: FAVOURITES_NAME, isFavourites: true };
     return {
       id: FAVOURITES_ID,
       name: FAVOURITES_NAME,
@@ -307,9 +487,91 @@ const Store = {
     return [this.allSongsPlaylist(), this.favouritesPlaylist(), ...this.smartPlaylists()];
   },
 
-  /** User playlists by name, A to Z. */
+  /** User playlists by name, A to Z (Favourites is one of the app's own lists). */
   sortedPlaylists() {
-    return this.library.playlists.slice().sort((a, b) => Util.compareValues(a.name, b.name));
+    return this.library.playlists.filter((p) => !p.favourites).sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
+  /**
+   * Playlist groups (4.5): there without a Flow Server, and on one that keeps
+   * them (a server from before shows every playlist single).
+   */
+  canGroup() {
+    return !this.server.on || !!this.server.playlistGroups;
+  },
+
+  /** Followed playlists can be put into groups too (4.5.1): a Flow Server that keeps them there. */
+  canGroupFollowed() {
+    return !!this.server.on && !!this.server.playlistGroups && !!this.server.followedInGroups;
+  },
+
+  /**
+   * Whether a playlist can go into a group: one of yours (not Favourites),
+   * or (4.5.1) one another profile shares where the server keeps that (one
+   * not followed yet is followed as it goes in, Groups.move).
+   */
+  canBeGrouped(p) {
+    if (!p || !this.canGroup()) return false;
+    if (p.isShared) return this.canGroupFollowed();
+    return !p.isFavourites && !p.favourites && !!this.library.playlists.find((x) => x.id === p.id);
+  },
+
+  /** The playlist groups, A to Z; none where groups cannot be kept. */
+  groups() {
+    if (!this.canGroup()) return [];
+    return [...(this.library.groups || [])].sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
+  group(id) {
+    return this.canGroup() ? (this.library.groups || []).find((g) => g.id === id) || null : null;
+  },
+
+  /** The group a playlist is in, or null. */
+  groupOf(p) {
+    return p && p.group ? this.group(p.group) : null;
+  },
+
+  /**
+   * A group as one list to play (4.5.2, the group page's Play with Shuffle):
+   * the songs of all its playlists, each once, in the order of the
+   * playlists A to Z. Kept while the library stays, so its rows do too.
+   */
+  groupPlaylist(groupId) {
+    const g = this.group(groupId);
+    if (!g) return null;
+    const kept = (this._groupLists || (this._groupLists = new Map())).get(groupId);
+    if (kept && kept.lib === this.library && kept.name === g.name) return kept.list;
+    const inside = this.playlistsInGroup(groupId);
+    const seen = new Set();
+    const entries = [];
+    for (const p of inside) {
+      for (const e of p.entries || []) {
+        if (seen.has(e.songId)) continue;
+        seen.add(e.songId);
+        entries.push(e);
+      }
+    }
+    // The same entries as before while the songs are: its rows (rowsOf) stay too.
+    const same = kept && kept.list.entries.length === entries.length && kept.list.entries.every((e, i) => e === entries[i]);
+    const list = {
+      id: GROUP_PREFIX + groupId, name: g.name, entries: same ? kept.list.entries : entries, isGroupList: true, groupId,
+    };
+    this._groupLists.set(groupId, { lib: this.library, name: g.name, list });
+    return list;
+  },
+
+  /** A group's playlists, A to Z: your own, and (4.5.1) the followed ones put into it. */
+  playlistsInGroup(id) {
+    if (!this.group(id)) return [];
+    const own = this.sortedPlaylists().filter((p) => p.group === id);
+    const followed = this.canGroupFollowed() ? this.followedPlaylists().filter((p) => p.group === id) : [];
+    if (!followed.length) return own;
+    return [...own, ...followed].sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
+  /** The playlists in no group, A to Z (Favourites is not one of them). */
+  singlePlaylists() {
+    return this.sortedPlaylists().filter((p) => !this.groupOf(p));
   },
 
   /** The ones songs can be put into by hand: not the smart ones (their rules pick their songs). */
@@ -318,19 +580,44 @@ const Store = {
   },
 
   /** Songs of a playlist as rows: the song plus when it was added to this list. */
+  /** A list's rows ({ song, addedAt }), the same array while its entries and the library stay: never to be changed. */
   rowsOf(playlistId) {
     const p = this.playlist(playlistId);
     if (!p) return [];
+    const kept = this._rowsKept.get(p.entries);
+    if (kept && kept.lib === this.library) return kept.rows;
+    // A library changed elsewhere (a song of another list starred): the same
+    // rows while each is its song as it was, so their order stays worked out.
+    const old = kept ? kept.rows : null;
+    let same = !!old;
     const rows = [];
     for (const e of p.entries) {
       const song = this.song(e.songId);
-      if (song) rows.push({ song, addedAt: e.addedAt });
+      if (!song) continue;
+      const o = old ? old[rows.length] : null;
+      if (o && o.song === song && o.addedAt === e.addedAt) {
+        rows.push(o);
+      } else {
+        same = false;
+        rows.push({ song, addedAt: e.addedAt });
+      }
     }
+    if (same && rows.length === old.length) {
+      kept.lib = this.library;
+      return old;
+    }
+    this._rowsKept.set(p.entries, { lib: this.library, rows });
     return rows;
   },
+  _rowsKept: new WeakMap(),
+  _durations: new WeakMap(), // a list's rows (rowsOf) -> their length in seconds
 
   totalDuration(playlistId) {
-    return this.rowsOf(playlistId).reduce((sum, r) => sum + (r.song.duration || 0), 0);
+    const rows = this.rowsOf(playlistId);
+    if (this._durations.has(rows)) return this._durations.get(rows);
+    const total = rows.reduce((sum, r) => sum + (r.song.duration || 0), 0);
+    this._durations.set(rows, total);
+    return total;
   },
 
   /**

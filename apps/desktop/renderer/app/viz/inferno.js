@@ -640,19 +640,18 @@
 
   Visualizer.add({
     id: 'inferno',
-    name: 'Inferno',
-    desc: 'The spectrum on fire in front of a burning forest: every band feeds the flames above it, the kicks make them flare, sparks fly',
+    name: T('viz.inferno.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c4 0 7-3 7-7 0-5-4-7-5-12-2 3-2 5-1 7-2-1-3-3-3-5-3 3-5 6-5 10 0 4 3 7 7 7z"/></svg>',
     gl: true,
     create: (canvas) => new Inferno(canvas),
     options: [
-      { type: 'choice', key: 'ifColor', label: 'Flames', choices: [['fire', 'Fire'], ['blue', 'Blue'], ['green', 'Toxic'], ['purple', 'Purple'], ['rainbow', 'Rainbow']] },
-      { type: 'slider', key: 'ifFlameHeight', label: 'Height', min: 25, max: 150, step: 5 },
-      { type: 'choice', key: 'ifLayout', label: 'Bass', choices: [['centre', 'In the middle'], ['across', 'On the left']] },
-      { type: 'check', key: 'ifEmbers', label: 'Sparks' },
-      { type: 'check', key: 'ifForest', label: 'Forest' },
-      { type: 'choice', key: 'ifScale', label: 'Render scale', choices: VizGL.SCALES },
+      { type: 'choice', key: 'ifColor', label: T('viz.inferno.setting.flames'), choices: [['fire', T('viz.shared.fire')], ['blue', T('common.color.blue')], ['green', T('viz.inferno.setting.flames.green')], ['purple', T('common.color.purple')], ['rainbow', T('common.color.rainbow')]] },
+      { type: 'slider', key: 'ifFlameHeight', label: T('common.height'), min: 25, max: 150, step: 5 },
+      { type: 'choice', key: 'ifLayout', label: T('viz.shared.bass'), choices: [['centre', T('viz.shared.inTheMiddle')], ['across', T('viz.shared.onTheLeft')]] },
+      { type: 'check', key: 'ifEmbers', label: T('viz.shared.sparks') },
+      { type: 'check', key: 'ifForest', label: T('viz.inferno.setting.forest') },
+      { type: 'choice', key: 'ifScale', label: T('viz.shared.renderScale'), choices: VizGL.SCALES },
     ],
   });
 })();

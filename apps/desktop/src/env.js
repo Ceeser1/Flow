@@ -9,6 +9,7 @@ const http = require('http');
 const https = require('https');
 const os = require('os');
 const path = require('path');
+const zlib = require('zlib');
 const { safeStorage } = require('electron');
 const paths = require('./paths');
 const settings = require('./settings');
@@ -16,10 +17,12 @@ const library = require('./library');
 const exporter = require('./exporter');
 const network = require('./network');
 const covers = require('./covers');
-const { coverVersion } = require('@flow/core/cover');
-const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
+const {
+  writeJsonAtomic, readJson, writeTextAtomic, readText,
+} = require('@flow/core/jsonFile');
 const discovery = require('@flow/core/discovery');
 const { OfflineError } = require('@flow/core/client/common');
+const { tr } = require('@flow/core/lang');
 
 // ---- the passwords and PINs, kept encrypted ----
 
@@ -48,20 +51,22 @@ function decrypt(stored) {
 
 /**
  * One request. `body` may be JSON (`json`) or a file (`file`, streamed up);
- * `saveTo` streams the answer into a file. Resolves { status, json }.
+ * `saveTo` streams the answer into a file. Resolves { status, json }, and
+ * with `binary` the answer's bytes too ({ status, json, bytes }: covers, 4.3.1).
  * Unreachable, timed out or cut off: OfflineError.
  */
-function request(base, pathname, { method = 'GET', json, file, saveTo, token, timeout = 15000, onProgress } = {}) {
+function request(base, pathname, { method = 'GET', json, file, saveTo, binary = false, token, timeout = 15000, onProgress } = {}) {
   return new Promise((resolve, reject) => {
     let url;
     try {
       url = new URL(base + pathname);
     } catch {
-      reject(new Error('That is not an address.'));
+      reject(new Error(tr('common.error.notAnAddress', 'That is not an address.')));
       return;
     }
     const lib = url.protocol === 'https:' ? https : http;
-    const headers = { Accept: 'application/json' };
+    // A large answer comes compressed (4.3: the library).
+    const headers = { Accept: 'application/json', 'Accept-Encoding': 'gzip' };
     if (token) headers.Authorization = `Bearer ${token}`;
     let payload = null;
     if (json !== undefined) {
@@ -83,20 +88,33 @@ function request(base, pathname, { method = 'GET', json, file, saveTo, token, ti
         });
         res.pipe(out);
         out.on('finish', () => {
-          if (total && got !== total) reject(new OfflineError('The download was cut off.'));
+          if (total && got !== total) reject(new OfflineError(tr('common.error.downloadCutOff', 'The download was cut off.')));
           else resolve({ status: 200, json: null });
         });
         out.on('error', (err) => reject(err));
         res.on('aborted', () => {
           out.destroy();
-          reject(new OfflineError('The download was cut off.'));
+          reject(new OfflineError(tr('common.error.downloadCutOff', 'The download was cut off.')));
         });
         return;
       }
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
-        const text = Buffer.concat(chunks).toString('utf8');
+        let raw = Buffer.concat(chunks);
+        if (/gzip/i.test(String(res.headers['content-encoding'] || ''))) {
+          try {
+            raw = zlib.gunzipSync(raw);
+          } catch {
+            reject(new OfflineError(tr('desktop.error.connectionCutOff', 'The connection was cut off.')));
+            return;
+          }
+        }
+        if (binary && res.statusCode === 200) {
+          resolve({ status: 200, json: null, bytes: raw });
+          return;
+        }
+        const text = raw.toString('utf8');
         let body = null;
         try {
           body = text ? JSON.parse(text) : null;
@@ -105,9 +123,9 @@ function request(base, pathname, { method = 'GET', json, file, saveTo, token, ti
         }
         resolve({ status: res.statusCode, json: body });
       });
-      res.on('aborted', () => reject(new OfflineError('The connection was cut off.')));
+      res.on('aborted', () => reject(new OfflineError(tr('desktop.error.connectionCutOff', 'The connection was cut off.'))));
     });
-    req.setTimeout(timeout, () => req.destroy(new OfflineError('The server did not answer in time.')));
+    req.setTimeout(timeout, () => req.destroy(new OfflineError(tr('common.error.noAnswerInTime', 'The server did not answer in time.'))));
     req.on('error', (err) => reject(err instanceof OfflineError ? err : new OfflineError(err.message)));
     if (payload) req.end(payload);
     else if (file) {
@@ -154,17 +172,6 @@ function stream(url, { headers }, on) {
 
 const rootFile = (name) => path.join(paths.ensure(paths.rootDir()), name);
 
-/** Each Flow Server's covers, by server id: the folders under Covers but Local Files' own. */
-function coverServerIds() {
-  let names = [];
-  try {
-    names = fs.readdirSync(paths.coversDir(), { withFileTypes: true });
-  } catch {
-    names = [];
-  }
-  return names.filter((e) => e.isDirectory() && e.name !== covers.LOCAL).map((e) => e.name);
-}
-
 module.exports = {
   settings,
   library,
@@ -175,14 +182,17 @@ module.exports = {
     copyToLocal: covers.copyToLocal,
     copyToServer: covers.copyToServer,
     tell: covers.tell,
-    versionOf: coverVersion,
-    serverIds: coverServerIds,
-    removeServer: (id) => fs.rmSync(path.join(paths.coversDir(), id), { recursive: true, force: true }),
+    serverIds: covers.serverIds,
+    removeServer: covers.removeServer,
   },
   // The client's own files (server-library.json, server-sync.json, server-others.json).
+  // The text calls are for the big ones kept as their changes (@flow/core/journalFile).
   jsonFiles: {
     read: (name) => readJson(rootFile(name)),
     write: (name, value) => writeJsonAtomic(rootFile(name), value),
+    readText: (name) => readText(rootFile(name)),
+    writeText: (name, text) => writeTextAtomic(rootFile(name), text),
+    appendText: (name, text) => fs.appendFileSync(rootFile(name), text, 'utf8'),
     remove: (name) => fs.rmSync(rootFile(name), { force: true }),
   },
   // The Lyrics folder's files, as @flow/core/client/lyricsFolder takes them.

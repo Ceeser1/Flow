@@ -280,18 +280,17 @@
 
   Visualizer.add({
     id: 'scope',
-    name: 'Scope',
-    desc: "An analog oscilloscope's glowing screen: left against right, a goniometer, the waveform, or a ring",
+    name: T('viz.scope.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M5 12c2-6 4-6 5 0s3 6 5 0 3-6 4 0"/></svg>',
     gl: true,
     stereo: true,
     create: (canvas) => new Scope(canvas),
     options: [
-      { type: 'choice', key: 'scMode', label: 'Mode', choices: [['xy', 'XY'], ['gonio', 'Goniometer'], ['wave', 'Wave'], ['polar', 'Polar']] },
-      { type: 'color', key: 'scColor', label: 'Phosphor', presets: PRESETS },
-      { type: 'slider', key: 'scPersist', label: 'Persistence', min: 0, max: 100, step: 5 },
-      { type: 'check', key: 'scGrid', label: 'Grid' },
+      { type: 'choice', key: 'scMode', label: T('viz.scope.setting.mode'), choices: [['xy', 'XY'], ['gonio', T('viz.scope.setting.mode.gonio')], ['wave', T('viz.shared.wave')], ['polar', T('viz.scope.setting.mode.polar')]] },
+      { type: 'color', key: 'scColor', label: T('viz.shared.phosphor'), presets: PRESETS },
+      { type: 'slider', key: 'scPersist', label: T('viz.scope.setting.persistence'), min: 0, max: 100, step: 5 },
+      { type: 'check', key: 'scGrid', label: T('viz.shared.grid') },
     ],
   });
 })();

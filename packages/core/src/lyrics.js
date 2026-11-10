@@ -9,7 +9,7 @@
 // What a lookup answers, and what is kept:
 //   { found, synced: [{ t, text }] | null, plain, instrumental, source }
 // source: where the words came from, "LRCLIB", "lyrics.ovh", or "own" for
-// lyrics written or edited in Flow (4.0.1, ownLyrics: `own` set, kept for
+// lyrics written or edited in Flow (4.0, ownLyrics: `own` set, kept for
 // good, never looked up again, whatever the song is renamed to).
 // synced: each line with the second it starts at (an own line also with the
 // second it ends at, `end`, when it was given one). Lines in step with the
@@ -17,9 +17,10 @@
 // trimmed differently would be out of step): else only the plain text.
 //
 // Also LRCLIB's search for picking lyrics by hand (searchLyrics) and
-// publishing lyrics written in Flow there (publishLyrics, 4.0.1).
+// publishing lyrics written in Flow there (publishLyrics, 4.0).
 
 const { agentName } = require('./agent');
+const { tr } = require('./lang');
 
 const BASE = 'https://lrclib.net/api';
 const OVH = 'https://api.lyrics.ovh/v1';
@@ -72,7 +73,7 @@ function parseLrc(text) {
 /** LRCLIB's answer `res` that is not ok as an Error, with `retryAfter` (seconds) when it is busy and says how long. */
 function lrclibError(res) {
   const busy = res.status === 429 || res.status === 503;
-  const err = new Error(busy ? 'LRCLIB is busy right now. Try again in a moment.' : `LRCLIB answered ${res.status}.`);
+  const err = new Error(busy ? tr('core.lyrics.lrclibBusy', 'LRCLIB is busy right now. Try again in a moment.') : tr('core.lyrics.lrclibAnswered', 'LRCLIB answered {status}.', { status: res.status }));
   const after = busy && res.headers && typeof res.headers.get === 'function' ? res.headers.get('retry-after') : null;
   if (after !== null && after !== '' && Number(after) >= 0) err.retryAfter = Math.min(RETRY_AFTER_MAX, Number(after));
   return err;
@@ -210,7 +211,7 @@ async function lookupOnce(song, { fetch: get = globalThis.fetch, timeoutMs = 100
         headers: headersFor(agent), signal: AbortSignal.timeout(timeoutMs),
       });
       if (res.status === 404) continue;
-      if (!res.ok) throw new Error(`lyrics.ovh answered ${res.status}.`);
+      if (!res.ok) throw new Error(tr('core.lyrics.ovhAnswered', 'lyrics.ovh answered {status}.', { status: res.status }));
       const plain = ovhText((await res.json()).lyrics);
       if (plain) {
         return {
@@ -225,7 +226,7 @@ async function lookupOnce(song, { fetch: get = globalThis.fetch, timeoutMs = 100
 }
 
 /**
- * Lyrics written or edited by hand (4.0.1) as kept: `rows` [{ t, end, text }]
+ * Lyrics written or edited by hand (4.0) as kept: `rows` [{ t, end, text }]
  * in any order, t and end in seconds or null (none given). Every line with
  * words has its start time, or none has (then only the words are kept). Null
  * when no line has words (the song's own lyrics then go: looked up again).
@@ -249,7 +250,7 @@ function ownLyrics(rows) {
       found: true, synced: null, plain, instrumental: false, source: 'own', own: true,
     };
   }
-  if (timed.length < worded.length) throw new Error('Give every line with words its "From" time, or leave every time empty.');
+  if (timed.length < worded.length) throw new Error(tr('common.lyricsMissingFrom', 'Give every line with words its "From" time, or leave every time empty.'));
   // An empty line with a time is a pause; one without, nothing.
   const synced = list.filter((r) => r.t !== null).sort((a, b) => a.t - b.t)
     .map((r) => (r.end !== null && r.end > r.t ? { t: r.t, end: r.end, text: r.text } : { t: r.t, text: r.text }));
@@ -258,7 +259,7 @@ function ownLyrics(rows) {
   };
 }
 
-// ---- picking by hand and publishing (4.0.1) ----
+// ---- picking by hand and publishing (4.0) ----
 
 /**
  * LRCLIB's search, for lyrics picked by hand: `q` (any words), else `title`
@@ -283,7 +284,7 @@ async function searchLyrics({
   try {
     res = await get(`${BASE}/search?${params}`, { headers: headersFor(agent), signal: AbortSignal.timeout(timeoutMs) });
   } catch {
-    throw new Error('LRCLIB cannot be reached right now.');
+    throw new Error(tr('core.lyrics.lrclibUnreachable', 'LRCLIB cannot be reached right now.'));
   }
   if (!res.ok) throw lrclibError(res);
   const list = await res.json();
@@ -340,12 +341,16 @@ async function publishLyrics({
 }, {
   fetch: get = globalThis.fetch, agent = true, solve, timeoutMs = 30000,
 } = {}) {
-  const need = [[title, 'title'], [artist, 'artist'], [album, 'album']].find(([v]) => !String(v || '').trim());
-  if (need) throw new Error(`LRCLIB needs the song's ${need[1]}.`);
+  const need = [
+    [title, 'core.lyrics.lrclibNeedsTitle', 'LRCLIB needs the song\'s title.'],
+    [artist, 'core.lyrics.lrclibNeedsArtist', 'LRCLIB needs the song\'s artist.'],
+    [album, 'core.lyrics.lrclibNeedsAlbum', 'LRCLIB needs the song\'s album.'],
+  ].find(([v]) => !String(v || '').trim());
+  if (need) throw new Error(tr(need[1], need[2]));
   const own = ownLyrics(lines);
-  if (!own) throw new Error('Write the lyrics first.');
+  if (!own) throw new Error(tr('common.writeLyricsFirst', 'Write the lyrics first.'));
   const seconds = Math.round(Number(duration) || 0);
-  if (!(seconds > 0)) throw new Error('LRCLIB needs the song\'s length.');
+  if (!(seconds > 0)) throw new Error(tr('core.lyrics.lrclibNeedsLength', 'LRCLIB needs the song\'s length.'));
   const post = async (route, body, headers = {}) => {
     let res;
     try {
@@ -356,16 +361,16 @@ async function publishLyrics({
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {
-      throw new Error('LRCLIB cannot be reached right now.');
+      throw new Error(tr('core.lyrics.lrclibUnreachable', 'LRCLIB cannot be reached right now.'));
     }
     if (res.ok) return res.json().catch(() => null);
     const said = await res.json().catch(() => null);
     if (res.status === 429 || res.status === 503 || !said || !said.message) throw lrclibError(res);
-    throw new Error(`LRCLIB did not take them: ${said.message}`);
+    throw new Error(tr('core.lyrics.lrclibRefused', 'LRCLIB did not take them: {reason}', { reason: said.message }));
   };
   const challenge = await post('request-challenge');
   if (!challenge || !challenge.prefix || !/^[0-9a-f]+$/i.test(String(challenge.target || ''))) {
-    throw new Error('LRCLIB sent a challenge Flow cannot read.');
+    throw new Error(tr('common.lrclibChallengeUnreadable', 'LRCLIB sent a challenge Flow cannot read.'));
   }
   const nonce = await solve(String(challenge.prefix), String(challenge.target));
   await post('publish', {

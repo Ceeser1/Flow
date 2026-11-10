@@ -14,6 +14,22 @@
 // can. What the window shows is the server's library with the waiting
 // commands applied on top, so a change shows at once either way.
 //
+// Only what changed travels (4.3, protocol 2): the copy keeps the library's
+// revision, and the server sends what changed since (GET /api/library?since=,
+// the answer to the app's own commands, and pushed on the live channel the
+// moment it happens). The profile's songs' stats are a copy of their own with
+// a revision of their own (GET /api/stats), so a listen never sends the
+// library again; its Statistics totals are fetched when Settings shows them,
+// the playlists other profiles share by their details when Shared Playlists
+// shows (one opened: its songs then). The live channel is also what tells the
+// app the server is there: lost, the server is asked once, and without an
+// answer the app is offline. Only while the channel cannot open does the app
+// ask for changes itself, once a minute.
+//
+// Favourites (4.3) are a playlist of the profile's own on the server
+// (fav-<owner>); the window knows it as 'favourites' (FAV), and the commands
+// naming it go with its real id.
+//
 // The Local Files folder (Music\FlowPlayer) keeps its own library.json, as
 // without a server. It is where songs downloaded here wait to go up to the
 // server, and where the songs of playlists marked for download are kept. The
@@ -23,7 +39,8 @@
 //   listMap   local playlist id -> server playlist id
 //   snapshot  the Local Files library as it was at the last synchronization,
 //             so the next one knows what changed there since: songs added or
-//             removed by hand, a playlist made while the server was off.
+//             removed by hand (removed ones stay on the server), a playlist
+//             made while the server was off.
 //   offline   the playlists marked for download (one's own, or followed ones
 //             another profile shares); 'all' stands for All Songs: every song
 //             of the server, kept in step with it
@@ -54,9 +71,11 @@
 // songs gone meanwhile are only forgotten, never deleted on it. A file that
 // another server's songs are tied to is never deleted for this one.
 //
-// Covers: every song's comes down in the background into Covers\<server id>
-// (covers.js), and stays there across restarts and server switches; one
-// goes when its song is gone from that server.
+// Covers (4.3.1): each song's in two sizes into Covers\<server id> (the
+// app's covers.js), fetched when the window shows them (thumbnails for the
+// lists, several in one request; the 512 x 512 one with the high-res
+// setting), the offline songs' in advance; they stay across restarts and
+// server switches, one goes when its song is gone from that server.
 //
 // Statistics (3.6): each profile signed in to here keeps a row in
 // tracked-profiles.json (trackedProfiles.js) with its Statistics as the
@@ -75,6 +94,7 @@
 // songs here while another profile is signed in (offlineKeep).
 
 const model = require('../libraryModel');
+const { tr } = require('../lang');
 // The Default / Shared's id as a song's addedBy (profiles.js DEFAULT_OWNER,
 // which loads Node's crypto).
 const DEFAULT_OWNER = 'default';
@@ -82,8 +102,13 @@ const { applyCommand } = require('../commands');
 const { songFileStem } = require('../text');
 const { serverBaseUrl: baseUrl, isTailscaleAddress } = require('../address');
 const { OfflineError, AuthError, randomHex } = require('./common');
+const { unpackCovers } = require('../coverPack');
 const { makeLink, parseLink } = require('./share');
 const { createTrackedProfiles } = require('./trackedProfiles');
+const LibraryPatch = require('../libraryPatch');
+const {
+  createJournal, within, LIBRARY_SPEC, STATISTICS_SPEC,
+} = require('../journalFile');
 
 /**
  * The client of one app. `env`: settings, library (Local Files), covers,
@@ -92,7 +117,9 @@ const { createTrackedProfiles } = require('./trackedProfiles');
  * it fetches a song's audio ('vorbis=0': an iPhone, which cannot play Ogg
  * Vorbis, gets such a song as Opus); convertUploads: uploads carry the
  * "Always convert" choice (alwaysMp3, mp3Quality, keepMp3) for the server to
- * convert them by (a phone, which has no ffmpeg; the PC converts its own).
+ * convert them by (a phone, which has no ffmpeg; the PC converts its own);
+ * streamCovers: the window shows covers straight from the server (the web
+ * player, which keeps no files), so none come down here.
  */
 function createRemote(env) {
   const {
@@ -105,8 +132,12 @@ function createRemote(env) {
   const FROM = 'from:';
   // A song here that is not this server's (Downloaded Songs): 'device:' + its Local Files id.
   const DEVICE = 'device:';
-  const PROTOCOL = 1;
-  const POLL_MS = 10000;
+  // 2 (4.3): what changed, the stats apart, Favourites as a playlist, pushed changes.
+  const PROTOCOL = 2;
+  // Only while the live channel is down: the changes asked for this often.
+  const POLL_MS = 60000;
+  // The window's id of the profile's Favourites playlist (the server's is fav-<owner>).
+  const FAV = 'favourites';
   // While on the remote address, how often home is tried again.
   const HOME_RETRY_MS = 2 * 60 * 1000;
   const RETRY_MS = [3000, 5000, 10000, 20000, 30000, 60000];
@@ -126,8 +157,10 @@ function createRemote(env) {
   // another format is shown at start but fetched whole again. Raise it whenever
   // the songs or playlists gain a field the server sends (3: addedBy, profileNames;
   // 4: listening, 3.5; 5: statistics, 3.6; 6: album, genre, subGenre, infoLooked, 3.6.3;
-  // 7: a playlist's rules, 4.0).
-  const CACHE_FORMAT = 7;
+  // 7: a playlist's rules, 4.0; 8: songs without stats, the stats, Statistics
+  // and shared playlists' details kept apart, Favourites as a playlist, 4.3;
+  // 9: playlist groups, 4.5).
+  const CACHE_FORMAT = 9;
 
   function emptySync(serverId = '') {
     return {
@@ -198,14 +231,63 @@ function createRemote(env) {
     return Object.entries(loadOthers()).some(([id, o]) => id !== sync.serverId && o.sync.fetched[lid]);
   }
 
-  function loadCache() {
-    const raw = jsonFiles.read(CACHE_FILE);
-    if (!raw || typeof raw !== 'object' || !raw.library) return { serverId: '', rev: -1, library: null, profile: '' };
-    const rev = raw.format === CACHE_FORMAT ? Number(raw.rev) : -1;
-    return { serverId: String(raw.serverId || ''), rev, library: model.sanitize(raw.library), profile: String(raw.profile || '') };
+  /**
+   * The copy kept: { serverId, rev, library, profile, stats, statistics, shared }.
+   * stats { rev, owner, songs: { id: stats }, playlistListened }: the profile's
+   * (owner: its id, '' the Default); statistics { srev, data } once fetched;
+   * shared [details] of the playlists others share, as last fetched.
+   */
+  function emptyCache(serverId = '') {
+    return {
+      serverId, rev: -1, library: null, profile: '', stats: emptyStatsCopy(), statistics: null, shared: null,
+    };
   }
 
-  let cache = { serverId: '', rev: -1, library: null, profile: '' };
+  function emptyStatsCopy(owner = '') {
+    return {
+      rev: -1, owner, songs: {}, playlistListened: {},
+    };
+  }
+
+  function cleanStatsCopy(raw) {
+    if (!raw || typeof raw !== 'object') return emptyStatsCopy();
+    const songs = {};
+    for (const [id, st] of Object.entries(raw.songs && typeof raw.songs === 'object' ? raw.songs : {})) songs[id] = model.sanitize({ songs: [{ id, file: 'x', stats: st }] }).songs[0].stats;
+    return {
+      rev: Number.isFinite(Number(raw.rev)) ? Number(raw.rev) : -1,
+      owner: String(raw.owner || ''),
+      songs,
+      playlistListened: model.sanitize({ playlistListened: raw.playlistListened }).playlistListened,
+    };
+  }
+
+  // The copy is saved as its changes (4.3.4, journalFile.js): a star adds a
+  // line to server-library.json.log instead of writing the whole copy again.
+  const cacheJournal = createJournal(jsonFiles, CACHE_FILE, {
+    ...within('library', LIBRARY_SPEC), 'stats.songs': 'map', ...within('statistics.data', STATISTICS_SPEC),
+  });
+
+  function loadCache() {
+    const raw = cacheJournal.load();
+    if (!raw || typeof raw !== 'object' || !raw.library) return emptyCache();
+    // A copy of another format is shown at start but fetched whole again.
+    const same = raw.format === CACHE_FORMAT;
+    const st = raw.statistics && typeof raw.statistics === 'object' ? raw.statistics : null;
+    return {
+      serverId: String(raw.serverId || ''),
+      rev: same ? Number(raw.rev) : -1,
+      library: model.sanitize(raw.library),
+      profile: String(raw.profile || ''),
+      stats: same ? cleanStatsCopy(raw.stats) : emptyStatsCopy(),
+      statistics: same && st ? { srev: Number(st.srev) || 0, owner: String(st.owner || ''), data: model.sanitize({ statistics: st.data }).statistics } : null,
+      shared: same && Array.isArray(raw.shared) ? model.sanitize({ sharedPlaylists: raw.shared.map((p) => ({ ...p, entries: [], partial: true })) }).sharedPlaylists : null,
+    };
+  }
+
+  let cache = emptyCache();
+  // Shared playlists opened but not followed (4.3): their songs as fetched
+  // when opened, for this run only (fetched again at the next open).
+  const sharedOpen = new Map();
   let sync = emptySync();
   let loaded = false;
 
@@ -226,7 +308,7 @@ function createRemote(env) {
 
   function saveCache() {
     try {
-      jsonFiles.write(CACHE_FILE, { ...cache, format: CACHE_FORMAT });
+      cacheJournal.save({ ...cache, format: CACHE_FORMAT });
     } catch {
       // Only the copy for starting offline; the server still has it all.
     }
@@ -235,6 +317,10 @@ function createRemote(env) {
   // ---- the passwords and PINs, kept encrypted ----
 
   const { encrypt, decrypt } = secrets;
+  // The server's token. An app whose secrets can keep it (the web player:
+  // until Logout or the browser clears it) signs in with it again later,
+  // without the password; the others keep it only encrypted.
+  const keepToken = secrets.keep || encrypt;
 
   // ---- talking to the server ----
 
@@ -254,8 +340,8 @@ function createRemote(env) {
   /** A JSON route that must answer 2xx: its body, or an Error saying why not. */
   async function call(pathname, opts = {}) {
     const r = await request(conn.base, pathname, { token: conn.token, ...opts });
-    if (r.status === 401) throw new AuthError((r.json && r.json.error) || 'This server needs its password.');
-    if (r.status < 200 || r.status >= 300) throw new Error((r.json && r.json.error) || `The server answered ${r.status}.`);
+    if (r.status === 401) throw new AuthError((r.json && r.json.error) || tr('connection.needsPassword', 'This server needs its password.'));
+    if (r.status < 200 || r.status >= 300) throw new Error((r.json && r.json.error) || tr('common.serverAnswered', 'The server answered {status}.', { status: r.status }));
     return r.json;
   }
 
@@ -265,12 +351,13 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
     message: '',
     transfer: '', // "Uploading 3 of 12: ..." while songs go up or down
+    transferUp: false, // the transfer is an upload
     note: '', // why songs wait (a metered connection), or '' 
     syncing: false,
     searching: false, // looking for a server on the network
@@ -334,6 +421,7 @@ function createRemote(env) {
       state: active() ? status.state : 'off',
       message: status.message,
       transfer: status.transfer,
+      transferUp: status.transferUp,
       note: status.note,
       syncing: status.syncing,
       searching: status.searching,
@@ -355,6 +443,10 @@ function createRemote(env) {
       search: status.state === 'online' && conn.downloads && conn.search,
       // It reads a playlist's link for its Update without downloading anything.
       downloadCheck: status.state === 'online' && conn.downloads && conn.downloadCheck,
+      // It keeps several batches per profile, taking turns (4.4, the Server queue).
+      downloadQueue: status.state === 'online' && conn.downloads && conn.downloadQueue,
+      // A list read waits for its songs to be chosen (4.4.1, the server's checklist).
+      downloadReview: status.state === 'online' && conn.downloads && conn.downloadReview,
       // The server cuts its songs' files (Edit's trim).
       trim: status.state === 'online' && conn.trim,
       // Connected through the Tailscale address (away from home).
@@ -379,6 +471,10 @@ function createRemote(env) {
       // Smart playlists (4.0): a server from before keeps no rules. Known while
       // it was reached once (the setting is kept while away from it).
       smartPlaylists: !!conn.smartPlaylists,
+      // Playlist groups (4.5): the same, for a server from before.
+      playlistGroups: !!conn.playlistGroups,
+      // Followed playlists in groups too (4.5.1).
+      followedInGroups: !!conn.followedInGroups,
       tracked: tracked.list(),
     };
   }
@@ -437,19 +533,111 @@ function createRemote(env) {
     return { type: 'addSong', at: cmd.at, playlistIds: cmd.playlistIds, song: { ...local, id: cmd.songId, addedBy: currentProfile() || DEFAULT_OWNER } };
   }
 
+  // Commands counted in the stats (and the Statistics totals), not the library.
+  const LISTENS = new Set(['recordListen', 'recordAwayListen']);
+
+  /** The stats copy is the signed-in profile's. */
+  const statsOurs = () => cache.stats.owner === currentProfile() && cache.stats.rev >= 0;
+  /** The Statistics totals kept are the signed-in profile's. */
+  const statisticsOurs = () => !!cache.statistics && cache.statistics.owner === currentProfile();
+
+  /**
+   * A listen the copy has not heard yet, shown at once: in its song's stats
+   * and the time listened to its list (`song`), and in the Statistics
+   * totals (`totals`), each only where the copy lacks it.
+   */
+  function previewListen(d, c, { song, totals }) {
+    if (!song && !totals) return;
+    const s = c.type === 'recordListen' ? model.songById(d, String(c.songId)) : null;
+    if (c.type === 'recordListen' && !s) return;
+    const target = {
+      ...model.emptyLibrary(),
+      songs: s ? [song ? s : { ...s, stats: { ...s.stats } }] : [],
+      playlists: song ? d.playlists : [],
+      sharedPlaylists: song ? d.sharedPlaylists : [],
+      follows: d.follows,
+      playlistListened: song ? d.playlistListened : {},
+      statistics: totals ? d.statistics : model.emptyLibrary().statistics,
+    };
+    try {
+      applyCommand(target, c);
+    } catch {
+      // The server will say.
+    }
+  }
+
+  /** The playlists others share, for the window: those followed (with their songs), then the rest by their details. */
+  function sharedForView(d) {
+    const names = d.profileNames || {};
+    const followed = new Set(d.follows || []);
+    const out = d.sharedPlaylists.filter((p) => followed.has(p.id));
+    const have = new Set(out.map((p) => p.id));
+    for (const p of cache.shared || []) {
+      if (have.has(p.id)) continue;
+      have.add(p.id);
+      const open = sharedOpen.get(p.id);
+      out.push(open ? JSON.parse(JSON.stringify(open)) : { ...p, entries: [] });
+    }
+    // A profile renamed: its name as the library has it now.
+    for (const p of out) if (names[p.ownerId]) p.ownerName = names[p.ownerId];
+    return out;
+  }
+
+  /**
+   * A copy of the library for the window to change freely (commands tried on
+   * it): its songs and playlists one by one (a song's fields are plain values
+   * but its stats, set anew below; a playlist's entries are added to), the
+   * rest whole. 100 000 songs: some 30 ms, where a copy through JSON took 0.5 s.
+   */
+  function viewCopy(src) {
+    const list = (p) => ({
+      ...p, entries: p.entries.map((e) => ({ ...e })), source: LibraryPatch.clone(p.source), rules: LibraryPatch.clone(p.rules),
+    });
+    const d = {};
+    for (const [k, v] of Object.entries(src)) {
+      if (k === 'songs') d.songs = v.map((s) => ({ ...s }));
+      else if (k === 'playlists' || k === 'sharedPlaylists') d[k] = v.map(list);
+      else d[k] = LibraryPatch.clone(v);
+    }
+    return d;
+  }
+
   function buildView() {
-    const d = JSON.parse(JSON.stringify(cache.library || model.emptyLibrary()));
+    const d = viewCopy(cache.library || model.emptyLibrary());
+    // The profile's own stats and time listened to each list (kept apart, 4.3).
+    const st = statsOurs() ? cache.stats : null;
+    for (const s of d.songs) s.stats = st && st.songs[s.id] ? { ...st.songs[s.id] } : model.emptyStats();
+    d.playlistListened = st ? { ...st.playlistListened } : {};
+    d.statistics = statisticsOurs() ? JSON.parse(JSON.stringify(cache.statistics.data)) : model.emptyLibrary().statistics;
+    // Favourites: the window's 'favourites', and each song's star from it.
+    const fav = d.playlists.find((p) => p.favourites);
+    if (fav) {
+      fav.id = FAV;
+      fav.name = 'Favourites';
+    }
+    const starred = new Map((fav ? fav.entries : []).map((e) => [e.songId, e.addedAt]));
+    for (const s of d.songs) s.favouriteAt = starred.get(s.id) || null;
+    d.sharedPlaylists = sharedForView(d);
     // Sent but not in the copy yet (its answer came before the library did),
     // then everything still waiting.
-    const pending = [...sync.sent.filter((x) => x.rev > cache.rev).map((x) => x.cmd), ...sync.queue.filter(mine)];
-    for (const c of pending) {
+    const apply = (c) => {
       const cmd = c.type === 'upload' ? uploadAsAddSong(c) : c;
-      if (!cmd) continue;
+      if (!cmd) return;
       try {
         applyCommand(d, cmd);
       } catch {
         // The server will say what was wrong with it.
       }
+    };
+    const newer = (x, rev) => !(Number(x.srev) <= rev);
+    for (const x of sync.sent) {
+      if (LISTENS.has(x.cmd.type)) {
+        previewListen(d, x.cmd, { song: !st || newer(x, cache.stats.rev), totals: statisticsOurs() && newer(x, cache.statistics.srev) });
+      } else if (x.rev > cache.rev) apply(x.cmd);
+    }
+    for (const c of sync.queue.filter(mine)) {
+      if (LISTENS.has(c.type)) previewListen(d, c, { song: true, totals: statisticsOurs() });
+      else apply(c);
     }
     const copies = localCopies(d);
     const shown = new Set();
@@ -478,9 +666,10 @@ function createRemote(env) {
       profileId: p.id,
       profileName: p.name,
       createdAt: p.createdAt,
-      statistics: d.statistics,
       addedSongs: d.songs.filter((s) => s.addedBy === p.id).length,
     };
+    // Its totals once fetched (4.3: when Settings shows them); until then the row keeps its own.
+    if (statisticsOurs()) row.statistics = d.statistics;
     // Whether it keeps Statistics is only known while connected.
     if (online) row.supported = !!conn.statistics;
     if (tracked.update(row, { online })) emitStatus();
@@ -492,7 +681,7 @@ function createRemote(env) {
    * changes). Not the one signed in to.
    */
   function removeTracked(serverId, profileId) {
-    if (serverId === sync.serverId && profileId === currentProfile()) throw new Error('The profile in use cannot be removed. Log out of it first.');
+    if (serverId === sync.serverId && profileId === currentProfile()) throw new Error(tr('connection.profiles.inUse', 'The profile in use cannot be removed. Log out of it first.'));
     const ours = (c) => (c.profile || '') === profileId && c.type !== 'upload' && !SHARED_TYPES.has(c.type);
     if (serverId === sync.serverId) {
       sync.queue = sync.queue.filter((c) => !ours(c));
@@ -524,11 +713,13 @@ function createRemote(env) {
       }
     }
     return library.get().songs.filter((s) => !shown.has(s.id)).map((s) => ({
-      ...JSON.parse(JSON.stringify(s)), id: DEVICE + s.id, localId: s.id, isDevice: true, servers: on.get(s.id) || [],
+      ...LibraryPatch.clone(s), id: DEVICE + s.id, localId: s.id, isDevice: true, servers: on.get(s.id) || [],
     }));
   }
 
   let viewTimer = null;
+  // The window is sent only what changed (main.js, client/viewChannel.js):
+  // a change it does not show (a cover written into a song's file) sends nothing.
   function refreshView() {
     clearTimeout(viewTimer);
     viewTimer = setTimeout(() => {
@@ -582,12 +773,16 @@ function createRemote(env) {
       }
     }
     if (back) heldSinceAway = holdAwayChanges();
-    cache = { serverId: id, rev: -1, library: null, profile: '' };
+    cache = emptyCache(id);
     saveOthers();
     saveSync();
     saveCache();
-    if (back) hooks.onNotice(`Back with "${back.sync.serverName || 'this Flow Server'}": its playlists marked for download and its waiting changes are as you left them.`, 'info');
-    else if (hadOther) hooks.onNotice('This is a different Flow Server than before. Your Local Files will be synchronized with it.', 'info');
+    if (back) {
+      hooks.onNotice(back.sync.serverName
+        ? tr('connection.notice.backWith', 'Back with "{server}": its playlists marked for download and its waiting changes are as you left them.', { server: back.sync.serverName })
+        : tr('connection.notice.backWith.unnamed', 'Back with this Flow Server: its playlists marked for download and its waiting changes are as you left them.'), 'info');
+    }
+    else if (hadOther) hooks.onNotice(tr('connection.notice.differentServer', 'This is a different Flow Server than before. Your Local Files will be synchronized with it.'), 'info');
   }
 
   // Songs held back on coming back to a server (holdAwayChanges): asked about once connected.
@@ -626,11 +821,11 @@ function createRemote(env) {
   async function login(base) {
     const s = settings.all();
     const pw = decrypt(s.serverSecret);
-    if (!pw) throw new AuthError('This server needs its password. Enter it under "Server Password".');
+    if (!pw) throw new AuthError(tr('connection.needsPassword.enterIt', 'This server needs its password. Enter it under "Server Password".'));
     const r = await request(base, '/api/login', { method: 'POST', json: { password: pw, device: device.name(), client: clientId() }, timeout: 20000 });
-    if (r.status === 401) throw new AuthError('Wrong password.');
-    if (r.status !== 200 || !r.json || !r.json.token) throw new Error((r.json && r.json.error) || 'The server did not let Flow sign in.');
-    sync.token = encrypt(r.json.token);
+    if (r.status === 401) throw new AuthError(tr('connection.wrongPassword', 'Wrong password.'));
+    if (r.status !== 200 || !r.json || !r.json.token) throw new Error((r.json && r.json.error) || tr('connection.signInRefused', 'The server did not let Flow sign in.'));
+    sync.token = keepToken(r.json.token);
     runToken = r.json.token;
     saveSync();
     return r.json.token;
@@ -666,7 +861,7 @@ function createRemote(env) {
         method: 'POST', json: { profileId: was.id, pin, device: device.name(), client: clientId() }, token, timeout: 20000,
       });
       if (r.status === 200 && r.json && r.json.token) {
-        sync.token = encrypt(r.json.token);
+        sync.token = keepToken(r.json.token);
         runToken = r.json.token;
         saveSync();
         return r.json.token;
@@ -691,7 +886,7 @@ function createRemote(env) {
   function adoptToken(token) {
     if (!token || token === runToken) return;
     runToken = token;
-    sync.token = encrypt(token);
+    sync.token = keepToken(token);
     saveSync();
     if (status.state !== 'online') return;
     conn.token = token;
@@ -720,7 +915,7 @@ function createRemote(env) {
         try {
           base = baseUrl(address);
         } catch {
-          problem = problem || ['error', `"${address}" is not an address Flow understands.`];
+          problem = problem || ['error', tr('connection.notAnAddress', '"{address}" is not an address Flow understands.', { address })];
           continue;
         }
         let hello;
@@ -728,18 +923,18 @@ function createRemote(env) {
           const r = await request(base, '/api/hello', { timeout: via === 'home' ? 2500 : 8000 });
           hello = r.json;
         } catch {
-          if (!problem || problem[0] === 'offline') problem = ['offline', 'The server cannot be reached.'];
+          if (!problem || problem[0] === 'offline') problem = ['offline', tr('common.unreachable', 'The server cannot be reached.')];
           continue;
         }
         if (gen !== generation) return false;
         if (!hello || hello.app !== 'flow-server') {
-          problem = ['error', `${address} answers, but it is not a Flow Server.`];
+          problem = ['error', tr('connection.notAFlowServer', '{address} answers, but it is not a Flow Server.', { address })];
           continue;
         }
         if (hello.protocol !== PROTOCOL) {
           problem = ['error', hello.protocol > PROTOCOL
-            ? 'The server is newer than this Flow. Update Flow to use it.'
-            : 'The server is older than this Flow. Update the Flow Server.'];
+            ? tr('connection.serverNewer', 'The server is newer than this Flow. Update Flow to use it.')
+            : tr('connection.serverOlder', 'The server is older than this Flow. Update the Flow Server.')];
           continue;
         }
         adoptServer(String(hello.id || base));
@@ -749,12 +944,15 @@ function createRemote(env) {
         }
         // Without a password the token only says which profile this is. Where
         // there is one, Flow signs in with it at every start: only a token got
-        // in this run counts, never the one kept from the last.
-        let token = hello.password ? runToken : decrypt(sync.token);
+        // in this run counts, never the one kept from the last. Except where
+        // the token is kept (keepToken): the server's no to it (the probe)
+        // asks for the password.
+        let token = hello.password && !secrets.keep ? runToken : decrypt(sync.token);
         try {
           if (hello.password) {
             if (token) {
-              const probe = await request(base, `/api/library?since=${cache.rev}`, { token, timeout: 15000 });
+              // The smallest answer that needs the sign-in.
+              const probe = await request(base, '/api/time', { token, timeout: 15000 });
               if (probe.status === 401) token = '';
             }
             if (!token) token = await login(base);
@@ -772,6 +970,8 @@ function createRemote(env) {
         const downloads = Array.isArray(hello.features) && hello.features.includes('download');
         const search = Array.isArray(hello.features) && hello.features.includes('search');
         const downloadCheck = Array.isArray(hello.features) && hello.features.includes('downloadCheck');
+        const downloadQueue = Array.isArray(hello.features) && hello.features.includes('downloadQueue');
+        const downloadReview = Array.isArray(hello.features) && hello.features.includes('downloadReview');
         const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
@@ -782,10 +982,12 @@ function createRemote(env) {
         const lyricsSync = Array.isArray(hello.features) && hello.features.includes('lyricsSync');
         const smartPlaylists = Array.isArray(hello.features) && hello.features.includes('smartPlaylists');
         const pair = Array.isArray(hello.features) && hello.features.includes('pair');
+        const playlistGroups = Array.isArray(hello.features) && hello.features.includes('playlistGroups');
+        const followedInGroups = Array.isArray(hello.features) && hello.features.includes('followedInGroups');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -807,9 +1009,9 @@ function createRemote(env) {
       if (gen !== generation) return false;
       conn.base = '';
       conn.token = '';
-      let [state, message] = problem || ['offline', 'The server cannot be reached.'];
+      let [state, message] = problem || ['offline', tr('common.unreachable', 'The server cannot be reached.')];
       if (state === 'offline' && isTailscaleAddress(own.remote)) {
-        message = 'The server cannot be reached. Away from home, Tailscale has to be on at this PC.';
+        message = tr('connection.unreachable.tailscale', 'The server cannot be reached. Away from home, Tailscale has to be on at this PC.');
       }
       setState(state, message);
       // A wrong password is not tried over and over; a changed setting tries again.
@@ -856,13 +1058,13 @@ function createRemote(env) {
   function fillRemote(hello) {
     if (!hello || sync.remoteFilled || settings.get('serverRemote')) return;
     let address = publicUrlOf(hello);
-    let notice = `Remote Server set to ${address}, the server's address on the internet, for when you are away from home.`;
+    let notice = tr('connection.notice.remoteSet.internet', 'Remote Server set to {address}, the server\'s address on the internet, for when you are away from home.', { address });
     const ts = hello.tailscale;
     if (!address && ts) {
       const port = Math.round(Number(ts.port));
       if (typeof ts.ip !== 'string' || !isTailscaleAddress(ts.ip) || !(port > 0 && port < 65536)) return;
       address = `${ts.ip}:${port}`;
-      notice = `Remote Server set to ${address}, the server's Tailscale address, for when you are away from home. Tailscale has to be on at this PC then too.`;
+      notice = tr('connection.notice.remoteSet.tailscale', 'Remote Server set to {address}, the server\'s Tailscale address, for when you are away from home. Tailscale has to be on at this PC then too.', { address });
     }
     if (!address) return;
     settings.set({ serverRemote: address });
@@ -902,12 +1104,12 @@ function createRemote(env) {
       sync.homeFilled = true;
       saveSync();
       hooks.onSettings({ serverHome: address });
-      hooks.onNotice(`Found the Flow Server "${found[0].name}" on this network. Home Server set to ${address}.`, 'info');
+      hooks.onNotice(tr('connection.notice.foundOne', 'Found the Flow Server "{server}" on this network. Home Server set to {address}.', { server: found[0].name, address }), 'info');
       reconfigure({ serverHome: address });
       return;
     }
     if (found.length > 1) {
-      hooks.onNotice(`Found ${found.length} Flow Servers on this network (${found.map((f) => `"${f.name}" at ${f.ip}:${f.port}`).join(', ')}). Enter the one you want as the Home Server.`, 'info');
+      hooks.onNotice(tr('connection.notice.foundMany', 'Found {count} Flow Servers on this network ({servers}). Enter the one you want as the Home Server.', { count: found.length, servers: found.map((f) => tr('connection.notice.foundMany.entry', '"{server}" at {address}', { server: f.name, address: `${f.ip}:${f.port}` })).join(', ') }), 'info');
     }
     emitStatus();
   }
@@ -944,13 +1146,16 @@ function createRemote(env) {
         // Still away from home.
       }
     }
-    try {
-      const changed = await refresh();
-      if (sync.queue.length) flushSoon();
-      if (changed) afterServerChange();
-    } catch (err) {
-      wentWrong(err);
-      return;
+    // The live channel brings the changes; only without it are they asked for (4.3).
+    if (!status.live) {
+      try {
+        const changed = await refresh();
+        if (sync.queue.length) flushSoon();
+        if (changed) afterServerChange();
+      } catch (err) {
+        wentWrong(err);
+        return;
+      }
     }
     schedulePoll();
   }
@@ -970,39 +1175,229 @@ function createRemote(env) {
     if (err instanceof OfflineError) {
       clearTimeout(pollTimer);
       conn.base = '';
-      setState('offline', 'The server cannot be reached.');
+      setState('offline', tr('common.unreachable', 'The server cannot be reached.'));
       scheduleRetry();
       return;
     }
     hooks.onNotice(err.message, 'error');
   }
 
-  /** Fetches the server's library when it changed. Resolves true when it did. */
+  /** The copy is this server's and the signed-in profile's: what changed since its revision can be asked for. */
+  const copyOurs = () => !!cache.library && cache.serverId === sync.serverId && cache.profile === currentProfile() && cache.rev >= 0;
+
+  /**
+   * What changed on the server since the copy (4.3: GET /api/library?since=,
+   * the whole library when there is no copy or it is too old), and the
+   * profile's stats since theirs. Resolves true when the library changed.
+   */
   async function refresh() {
     // `as`: the profile the copy is of. Signed in to another since, the server
     // sends the whole library even when nothing changed.
-    const since = cache.library ? `?since=${cache.rev}&as=${encodeURIComponent(cache.profile)}` : '';
-    const r = await request(conn.base, `/api/library${since}`, { token: conn.token, timeout: 30000 });
-    if (r.status === 401) throw new AuthError('Signed out.');
-    if (r.status === 204) return false;
-    if (r.status !== 200 || !r.json || !r.json.library) throw new Error((r.json && r.json.error) || `The server answered ${r.status}.`);
+    const since = cache.library && cache.serverId === sync.serverId ? `?since=${cache.rev}&as=${encodeURIComponent(cache.profile)}` : '';
+    const r = await request(conn.base, `/api/library${since}`, { token: conn.token, timeout: 60000 });
+    if (r.status === 401) throw new AuthError(tr('connection.signedOut', 'Signed out.'));
+    if (r.status === 204) {
+      await refreshStats();
+      return false;
+    }
+    if (r.status !== 200 || !r.json || (r.json.full && !r.json.library)) throw new Error((r.json && r.json.error) || tr('common.serverAnswered', 'The server answered {status}.', { status: r.status }));
     const profile = cleanProfile(r.json.profile);
     const before = sync.profile;
     if (before && (!profile || profile.id !== before.id)) {
       // Deleted or signed out on the server, by another device.
-      hooks.onNotice(`You are no longer logged in as "${before.name}": the profile was deleted or signed out on the server.`, 'info');
+      hooks.onNotice(tr('connection.notice.profileGone', 'You are no longer logged in as "{profile}": the profile was deleted or signed out on the server.', { profile: before.name }), 'info');
       loadProfiles().catch(() => {});
     }
     sync.profile = profile;
     if (r.json.rules && typeof r.json.rules === 'object') {
       status.rules = { ...status.rules, songDelete: r.json.rules.songDelete === 'owner' ? 'owner' : 'anyone' };
     }
-    cache = { serverId: sync.serverId, rev: Number(r.json.rev), library: model.sanitize(r.json.library), profile: currentProfile() };
-    sync.sent = sync.sent.filter((x) => x.rev > cache.rev);
+    if (r.json.full) {
+      const owner = currentProfile();
+      cache = {
+        ...cache,
+        serverId: sync.serverId,
+        rev: Number(r.json.rev),
+        library: model.sanitize(r.json.library),
+        profile: owner,
+        // Another profile's (or another server's) are of no use now.
+        stats: cache.stats.owner === owner && cache.serverId === sync.serverId ? cache.stats : emptyStatsCopy(owner),
+        statistics: statisticsOurs() && cache.serverId === sync.serverId ? cache.statistics : null,
+        shared: cache.profile === owner && cache.serverId === sync.serverId ? cache.shared : null,
+      };
+    } else {
+      mergeChanges(r.json);
+    }
+    await refreshStats();
+    pruneSent();
     saveCache();
     saveSync();
     refreshView();
     return true;
+  }
+
+  /**
+   * What changed since the copy's revision, merged into it: songs and
+   * playlists (its own, Favourites too) new or changed, those gone, the
+   * follows, the groups (4.5), the playlists followed (with their songs), the profiles' names.
+   */
+  function mergeChanges(c) {
+    const lib = cache.library || model.emptyLibrary();
+    const goneSongs = new Set((c.deletedSongs || []).map(String));
+    const changedSongs = new Map((c.songs || []).map((s) => [String(s.id), s]));
+    const songs = [];
+    for (const s of lib.songs) {
+      if (goneSongs.has(s.id)) continue;
+      const now = changedSongs.get(s.id);
+      songs.push(now || s);
+      changedSongs.delete(s.id);
+    }
+    songs.push(...changedSongs.values());
+    const goneLists = new Set((c.deletedPlaylists || []).map(String));
+    const changedLists = new Map((c.playlists || []).map((p) => [String(p.id), p]));
+    const playlists = [];
+    for (const p of lib.playlists) {
+      if (goneLists.has(p.id)) continue;
+      playlists.push(changedLists.get(p.id) || p);
+      changedLists.delete(p.id);
+    }
+    playlists.push(...changedLists.values());
+    const follows = Array.isArray(c.follows) ? c.follows : lib.follows;
+    const groups = Array.isArray(c.groups) ? c.groups : lib.groups;
+    const unshared = new Set((c.unshared || []).map(String));
+    const changedShared = new Map((c.sharedPlaylists || []).map((p) => [String(p.id), p]));
+    const followed = new Set(follows);
+    const shared = [];
+    for (const p of lib.sharedPlaylists) {
+      if (unshared.has(p.id) || !followed.has(p.id)) continue;
+      shared.push(changedShared.get(p.id) || p);
+      changedShared.delete(p.id);
+    }
+    shared.push(...changedShared.values());
+    cache.library = model.sanitize({
+      ...lib, songs, playlists, groups, follows, sharedPlaylists: shared, profileNames: c.profileNames || lib.profileNames,
+    });
+    cache.rev = Number(c.rev);
+  }
+
+  /**
+   * Changes the server sent on its own (the live channel) or with an answer:
+   * merged when they start where the copy is (or before it, overlapping),
+   * skipped when the copy has them already, and the copy asked for afresh
+   * when some are missing in between (or the server says too many are).
+   */
+  function takeChanges(c) {
+    if (!c || !copyOurs()) return false;
+    if (c.stale || Number(c.from) > cache.rev) {
+      refresh().catch(wentWrong);
+      return false;
+    }
+    if (Number(c.rev) <= cache.rev) return false;
+    mergeChanges(c);
+    pruneSent();
+    saveCache();
+    saveSync();
+    refreshView();
+    return true;
+  }
+
+  // ---- the profile's stats (4.3) ----
+
+  /** The profile's stats since the copy's (all of them for a copy of another profile's, or none). */
+  async function refreshStats() {
+    const owner = currentProfile();
+    const since = cache.stats.owner === owner && cache.stats.rev >= 0 ? `?since=${cache.stats.rev}` : '';
+    const s = await call(`/api/stats${since}`, { timeout: 60000 });
+    applyStats(s, owner);
+  }
+
+  function applyStats(s, owner = currentProfile()) {
+    if (!s) return;
+    if (s.full) cache.stats = cleanStatsCopy({ rev: s.rev, owner, songs: s.songs, playlistListened: s.playlistListened });
+    else {
+      const clean = cleanStatsCopy({ songs: s.songs, playlistListened: s.playlistListened });
+      Object.assign(cache.stats.songs, clean.songs);
+      if (s.playlistListened) cache.stats.playlistListened = clean.playlistListened;
+      cache.stats.rev = Number(s.rev);
+    }
+  }
+
+  /** Stats pushed or answered: taken as the library's changes are (takeChanges). */
+  function takeStats(s) {
+    if (!s || !statsOurs()) return false;
+    if (s.stale || Number(s.from) > cache.stats.rev) {
+      refreshStats().then(() => {
+        pruneSent();
+        saveCache();
+        refreshView();
+      }).catch(() => {});
+      return false;
+    }
+    if (Number(s.rev) <= cache.stats.rev) return false;
+    applyStats(s);
+    pruneSent();
+    saveCache();
+    refreshView();
+    return true;
+  }
+
+  /**
+   * The sent commands the copy has now go: a change once the library's
+   * revision reaches its answer's, a listen once the stats (and the
+   * Statistics totals, when kept) have it.
+   */
+  function pruneSent() {
+    const before = sync.sent.length;
+    sync.sent = sync.sent.filter((x) => {
+      if (!LISTENS.has(x.cmd.type)) return x.rev > cache.rev;
+      const srev = Number(x.srev);
+      if (!Number.isFinite(srev)) return false;
+      return srev > cache.stats.rev || (statisticsOurs() && srev > cache.statistics.srev);
+    });
+    if (sync.sent.length !== before) saveSync();
+  }
+
+  /** The profile's Statistics totals (4.3: fetched when Settings shows them), kept for when the server is away. */
+  async function loadStatistics() {
+    if (!active() || status.state !== 'online' || !conn.statistics) return null;
+    const r = await call('/api/statistics', { timeout: 30000 });
+    cache.statistics = { srev: Number(r.srev) || 0, owner: currentProfile(), data: model.sanitize({ statistics: r.statistics }).statistics };
+    pruneSent();
+    saveCache();
+    buildView();
+    hooks.onView(view);
+    emitStatus();
+    return cache.statistics.data;
+  }
+
+  // ---- the playlists others share (4.3) ----
+
+  /** Their details (name, owner, number of songs, length), fetched when Shared Playlists shows them. */
+  async function loadShared() {
+    if (!active() || status.state !== 'online' || !conn.profiles) return null;
+    const r = await call('/api/shared', { timeout: 30000 });
+    cache.shared = model.sanitize({ sharedPlaylists: (r.playlists || []).map((p) => ({ ...p, entries: [], partial: true })) }).sharedPlaylists;
+    saveCache();
+    refreshView();
+    return cache.shared;
+  }
+
+  /** One of them with its songs, opened (fetched at every open; one followed is kept in step instead). */
+  async function openShared(id) {
+    if (!active() || status.state !== 'online' || !conn.profiles) return null;
+    let r;
+    try {
+      r = await call(`/api/shared/${encodeURIComponent(id)}`, { timeout: 30000 });
+    } catch (err) {
+      sharedOpen.delete(id);
+      if (cache.shared) cache.shared = cache.shared.filter((p) => p.id !== id);
+      refreshView();
+      throw err;
+    }
+    const [p] = model.sanitize({ songs: (cache.library || model.emptyLibrary()).songs, sharedPlaylists: [r.playlist] }).sharedPlaylists;
+    if (p) sharedOpen.set(id, p);
+    refreshView();
+    return p || null;
   }
 
   // ---- commands ----
@@ -1024,6 +1419,23 @@ function createRemote(env) {
     refreshView();
     flushSoon();
     return result.value;
+  }
+
+  /** The server's id of the profile's Favourites playlist ('' without one). */
+  function favouritesId() {
+    const p = cache.library && cache.library.playlists.find((x) => x.favourites);
+    return p ? p.id : '';
+  }
+
+  /** A command as the server takes it: the window's 'favourites' as the server's id of that playlist. */
+  function outgoing(c) {
+    const real = favouritesId();
+    if (!real) return c;
+    const fix = (id) => (id === FAV ? real : id);
+    const out = { ...c };
+    if (out.playlistId !== undefined) out.playlistId = fix(out.playlistId);
+    if (Array.isArray(out.playlistIds)) out.playlistIds = out.playlistIds.map(fix);
+    return out;
   }
 
   /** Every id a command refers to, renamed (an upload the server gave another id). */
@@ -1048,7 +1460,7 @@ function createRemote(env) {
     const first = problems[0];
     const more = problems.length - 1;
     problems.length = 0;
-    hooks.onNotice(`${first}${more ? ` (and ${more} more)` : ''}`, 'error');
+    hooks.onNotice(more ? tr('connection.notice.andMore', '{notice} (and {count} more)', { notice: first, count: more }) : first, 'error');
   }
 
   function flushSoon(delay = 50) {
@@ -1089,16 +1501,22 @@ function createRemote(env) {
         if (!batch.length) return;
         const sending = batch;
         batch = [];
-        const res = await call('/api/commands', { method: 'POST', json: { commands: sending }, timeout: 60000 });
+        // With the copy's revisions: the answer brings what changed since (4.3).
+        const json = { commands: sending.map(outgoing), client: clientId() };
+        if (copyOurs()) json.rev = cache.rev;
+        if (statsOurs()) json.srev = cache.stats.rev;
+        const res = await call('/api/commands', { method: 'POST', json, timeout: 60000 });
+        if (res.stats) takeStats(res.stats);
+        if (res.changes) takeChanges(res.changes);
         const byCid = new Map((res.results || []).map((r) => [r.cid, r]));
         const done = new Set();
         for (const c of sending) {
           const r = byCid.get(c.cid);
           if (!r) continue;
           done.add(c.cid);
-          if (r.ok) sync.sent.push({ cmd: c, rev: res.rev });
+          if (r.ok) sync.sent.push({ cmd: c, rev: res.rev, srev: res.srev });
           if (r.ok && Array.isArray(r.deletedSongs)) deleted.push(...r.deletedSongs.map(String));
-          if (!r.ok) problems.push(`The server did not take a change: ${r.error}`);
+          if (!r.ok) problems.push(tr('sync.problem.changeRefused', 'The server did not take a change: {reason}', { reason: r.error }));
         }
         sync.queue = sync.queue.filter((c) => !done.has(c.cid));
         saveSync();
@@ -1153,13 +1571,18 @@ function createRemote(env) {
         }
         status.transfer = '';
         status.note = blocked.size
-          ? `${blocked.size} ${blocked.size === 1 ? 'song waits' : 'songs wait'} to be uploaded until the connection is not metered.`
+          ? tr('sync.uploadsWaitMetered', blocked.size === 1 ? '{count} song waits to be uploaded until the connection is not metered.'
+            : '{count} songs wait to be uploaded until the connection is not metered.', { count: blocked.size })
           : '';
         if (trimsWaiting) {
-          status.note = `${status.note ? `${status.note} ` : ''}${trimsWaiting} ${trimsWaiting === 1 ? 'trim waits' : 'trims wait'} for the server: update it (and give it ffmpeg) to trim songs.`;
+          status.note = `${status.note ? `${status.note} ` : ''}${tr('sync.trimsWait', trimsWaiting === 1 ? '{count} trim waits for the server: update it (and give it ffmpeg) to trim songs.'
+            : '{count} trims wait for the server: update it (and give it ffmpeg) to trim songs.', { count: trimsWaiting })}`;
         }
         if (!sync.queue.some(mine)) status.lastSync = Date.now();
-        await refresh();
+        // The answers brought what changed, and the live channel brings the
+        // rest (an upload's song); without the channel it is asked for.
+        if (!status.live) await refresh();
+        pruneSent();
         afterServerChange();
       } catch (err) {
         status.transfer = '';
@@ -1188,19 +1611,20 @@ function createRemote(env) {
    */
   async function trimOne(cmd) {
     const s = model.songById(getView(), cmd.songId);
-    const label = s ? [s.artist, s.title].filter(Boolean).join(' - ') : 'A song';
-    status.transfer = `Trimming on the server: ${label}`;
+    const label = s ? [s.artist, s.title].filter(Boolean).join(' - ') : tr('sync.aSong', 'A song');
+    status.transfer = tr('sync.transfer.trimming', 'Trimming on the server: {song}', { song: label });
+    status.transferUp = false;
     emitStatus();
     const r = await request(conn.base, `/api/songs/${encodeURIComponent(cmd.songId)}/trim`, {
       method: 'POST', json: { start: cmd.start, end: cmd.end, base: cmd.base || '', cut: cmd.cut }, token: conn.token, timeout: 5 * 60 * 1000,
     });
-    if (r.status === 401) throw new AuthError('Signed out.');
+    if (r.status === 401) throw new AuthError(tr('connection.signedOut', 'Signed out.'));
     sync.queue = sync.queue.filter((c) => c.cid !== cmd.cid);
     if (r.status === 200 && r.json) {
       if (!r.json.skipped) sync.sent.push({ cmd, rev: Number(r.json.rev) });
-      if (r.json.skipped === 'changed') problems.push(`"${label}" was trimmed on another device meanwhile, so this trim was not applied.`);
+      if (r.json.skipped === 'changed') problems.push(tr('sync.trimmedElsewhere', '"{song}" was trimmed on another device meanwhile, so this trim was not applied.', { song: label }));
     } else {
-      problems.push(`The server could not trim "${label}": ${(r.json && r.json.error) || `it answered ${r.status}`}`);
+      problems.push(tr('sync.trimFailed', 'The server could not trim "{song}": {reason}', { song: label, reason: (r.json && r.json.error) || tr('sync.trimFailed.answered', 'it answered {status}', { status: r.status }) }));
     }
     saveSync();
   }
@@ -1218,9 +1642,9 @@ function createRemote(env) {
    */
   async function trimSong(songId, { start, end }) {
     const s = model.songById(getView(), songId);
-    if (!s) throw new Error('That song no longer exists.');
+    if (!s) throw new Error(tr('common.songGone', 'That song no longer exists.'));
     if (status.state === 'online' && !conn.trim) {
-      throw new Error('This Flow Server cannot trim songs. Update it, and install ffmpeg on it (sudo apt install ffmpeg).');
+      throw new Error(tr('common.serverCannotTrim', 'This Flow Server cannot trim songs. Update it, and install ffmpeg on it (sudo apt install ffmpeg).'));
     }
     const base = s.cut || '';
     const cut = newCutId();
@@ -1273,12 +1697,12 @@ function createRemote(env) {
   }
 
   /**
-   * A server song's own lyrics (4.0.1): `lines` [{ t, end, text }], or null
+   * A server song's own lyrics (4.0): `lines` [{ t, end, text }], or null
    * to give it looked-up ones again. Resolves them as the server keeps them.
    */
   async function setSongLyrics(songId, lines) {
-    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached right now.');
-    if (!conn.ownLyrics) throw new Error('This Flow Server is too old to keep lyrics written here: it needs an update.');
+    if (!active() || status.state !== 'online') throw new Error(tr('connection.unreachableNow', 'The server cannot be reached right now.'));
+    if (!conn.ownLyrics) throw new Error(tr('connection.tooOld.lyrics', 'This Flow Server is too old to keep lyrics written here: it needs an update.'));
     return (await call(`/api/songs/${encodeURIComponent(songId)}/lyrics`, { method: 'PUT', json: { lines }, timeout: 30000 })).lyrics;
   }
 
@@ -1296,26 +1720,20 @@ function createRemote(env) {
       await call(`/api/songs/${encodeURIComponent(serverId)}/lyrics`, { method: 'PUT', json: { lines }, timeout: 30000 });
     } catch (err) {
       if (err instanceof AuthError) throw err;
-      problems.push(`The lyrics of "${[local.artist, local.title].filter(Boolean).join(' - ')}" could not be sent: ${err.message}`);
+      problems.push(tr('sync.lyricsNotSent', 'The lyrics of "{song}" could not be sent: {reason}', { song: [local.artist, local.title].filter(Boolean).join(' - '), reason: err.message }));
     }
   }
 
-  // The app's lyrics client keeps copies of the server's (4.0.1): told when its library changed.
+  // The app's lyrics client keeps copies of the server's (4.0): told when its library changed.
   let lyricsSyncHook = () => {};
   function useLyricsSync(fn) {
     lyricsSyncHook = fn;
   }
 
-  /**
-   * The server's songs with lyrics kept and their stamps, for copies kept
-   * here: { serverId, songs: { id: stamp } }; null when it cannot say
-   * (offline, or from before copies).
-   */
-  async function lyricsIndex() {
-    if (!active() || status.state !== 'online' || !conn.lyricsSync || !sync.serverId) return null;
-    const serverId = sync.serverId;
-    const r = await call('/api/lyrics', { timeout: 60000 });
-    return serverId === sync.serverId ? { serverId, songs: (r && r.songs) || {} } : null;
+  // ...and when a Local Files song's file went (its lyrics there go too).
+  let forgotHook = () => {};
+  function useForgotLocal(fn) {
+    forgotHook = fn;
   }
 
   /** The lyrics of up to 200 of the server's songs: { id: { ...lyrics, v } }, those it keeps. */
@@ -1330,7 +1748,7 @@ function createRemote(env) {
   }
 
   async function songPeaks(songId) {
-    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached.');
+    if (!active() || status.state !== 'online') throw new Error(tr('common.unreachable', 'The server cannot be reached.'));
     return (await call(`/api/songs/${encodeURIComponent(songId)}/peaks`, { timeout: 120000 })).peaks;
   }
 
@@ -1351,7 +1769,8 @@ function createRemote(env) {
     for (const { lid, there } of stale) {
       if (status.state !== 'online' || !active() || !(await transfersAllowed())) break;
       const label = [there.artist, there.title].filter(Boolean).join(' - ');
-      status.transfer = `Downloading the trimmed song: ${label}`;
+      status.transfer = tr('sync.transfer.downloadingTrimmed', 'Downloading the trimmed song: {song}', { song: label });
+      status.transferUp = false;
       emitStatus();
       // Trimmed here since the look began: nothing to replace.
       const now = model.songById(library.get(), lid);
@@ -1360,8 +1779,8 @@ function createRemote(env) {
       const tmp = files.join(files.dirname(now.file), `.flow-download-${randomHex(5)}${files.extname(now.file)}`);
       try {
         const r = await request(conn.base, audioPath(there.id), { token: conn.token, saveTo: tmp, timeout: 60000 });
-        if (r.status === 401) throw new AuthError('Signed out.');
-        if (r.status !== 200) throw new Error((r.json && r.json.error) || `the server answered ${r.status}`);
+        if (r.status === 401) throw new AuthError(tr('connection.signedOut', 'Signed out.'));
+        if (r.status !== 200) throw new Error((r.json && r.json.error) || tr('connection.serverAnswered.lower', 'the server answered {status}', { status: r.status }));
         await library.quietly(async () => {
           const s = model.songById(library.get(), lid);
           if (!s) return;
@@ -1381,7 +1800,7 @@ function createRemote(env) {
           status.transfer = '';
           throw err;
         }
-        problems.push(`The trimmed "${label}" could not be downloaded: ${err.message}`);
+        problems.push(tr('sync.trimmedNotDownloaded', 'The trimmed "{song}" could not be downloaded: {reason}', { song: label, reason: err.message }));
       } finally {
         files.rm(tmp, { force: true });
       }
@@ -1441,7 +1860,8 @@ function createRemote(env) {
       return;
     }
     const label = [local.artist, local.title].filter(Boolean).join(' - ');
-    status.transfer = `Uploading ${number} of ${total}: ${label}`;
+    status.transfer = tr('sync.transfer.uploading', 'Uploading {number} of {total}: {song}', { number, total, song: label });
+    status.transferUp = true;
     emitStatus();
     const meta = {
       title: local.title,
@@ -1471,7 +1891,7 @@ function createRemote(env) {
       Object.assign(meta, {
         favouriteAt: local.favouriteAt,
         stats: local.stats,
-        playlistIds: (cmd.playlistIds || []).filter((pid) => model.playlistById(getView(), pid)),
+        playlistIds: (cmd.playlistIds || []).filter((pid) => model.playlistById(getView(), pid)).map((pid) => (pid === FAV ? favouritesId() || pid : pid)),
       });
     }
     const r = await request(conn.base, `/api/songs/${encodeURIComponent(cmd.songId)}?meta=${encodeURIComponent(JSON.stringify(meta))}`, {
@@ -1480,17 +1900,19 @@ function createRemote(env) {
       token: conn.token,
       timeout: 120000,
       onProgress: (f) => {
-        status.transfer = `Uploading ${number} of ${total} (${Math.round(f * 100)}%): ${label}`;
+        status.transfer = tr('sync.transfer.uploading.percent', 'Uploading {number} of {total} ({percent}%): {song}', {
+          number, total, percent: Math.round(f * 100), song: label,
+        });
         emitStatus();
       },
     });
-    if (r.status === 401) throw new AuthError('Signed out.');
+    if (r.status === 401) throw new AuthError(tr('connection.signedOut', 'Signed out.'));
     if (r.status !== 200 || !r.json) {
       // Refused for good (a format the server does not take, no room): the song
       // stays here only, and the reason is told.
       drop();
       delete sync.songMap[cmd.localId];
-      problems.push(`"${label}" could not be uploaded: ${(r.json && r.json.error) || `the server answered ${r.status}`}`);
+      problems.push(tr('sync.uploadFailed', '"{song}" could not be uploaded: {reason}', { song: label, reason: (r.json && r.json.error) || tr('connection.serverAnswered.lower', 'the server answered {status}', { status: r.status }) }));
       return;
     }
     const serverId = String(r.json.id);
@@ -1527,14 +1949,21 @@ function createRemote(env) {
     }
   }
 
-  /** A Local Files song's cover after it, when it has one (the server keeps its own if it found one first). */
+  /**
+   * A Local Files song's cover after it, when it has one (the server keeps its
+   * own if it found one first): the 512 x 512 one, then its thumbnail.
+   */
   async function uploadCover(local, serverId) {
-    if (!local.cover || local.cover === '-' || !covers.localStore().has(local.id)) return;
+    const store = covers.localStore();
+    if (!local.cover || local.cover === '-' || !store.has(local.id, 'big')) return;
     try {
-      const r = await request(conn.base, `/api/songs/${encodeURIComponent(serverId)}/cover`, {
-        method: 'PUT', file: covers.localStore().file(local.id), token: conn.token, timeout: 30000,
-      });
-      if (r.status === 200 && r.json && r.json.cover === local.cover) covers.copyToServer(local.id, sync.serverId, serverId);
+      const at = `/api/songs/${encodeURIComponent(serverId)}/cover`;
+      const r = await request(conn.base, at, { method: 'PUT', file: store.file(local.id, 'big'), token: conn.token, timeout: 30000 });
+      if (!(r.status === 200 && r.json && r.json.cover === local.cover)) return;
+      if (store.has(local.id, 'small')) {
+        await request(conn.base, `${at}?size=small`, { method: 'PUT', file: store.file(local.id, 'small'), token: conn.token, timeout: 30000 }).catch(() => null);
+      }
+      covers.copyToServer(local.id, sync.serverId, serverId);
     } catch {
       // The server looks for one itself.
     }
@@ -1607,6 +2036,20 @@ function createRemote(env) {
       library.mutate((d) => model.removeSong(d, lid, !deleteFile));
       removed = true;
     });
+    // Its file gone (uploaded with "Keep local files" off, or a copy no longer
+    // needed): its cover and lyrics here go along (4.3.1).
+    if (removed && deleteFile) {
+      try {
+        covers.localStore().remove(lid);
+      } catch {
+        // Swept later.
+      }
+      try {
+        forgotHook(lid);
+      } catch {
+        // Swept later.
+      }
+    }
     if (!removed) {
       // Not gone after all: still tied to the server as before.
       if (before.sid) sync.songMap[lid] = before.sid;
@@ -1619,7 +2062,8 @@ function createRemote(env) {
 
   /**
    * Queues what changed in Local Files since the last synchronization: songs
-   * added go up, songs removed are deleted on the server, names, favourites and
+   * added go up, songs removed only let go of their copy here (they stay on
+   * the server), names, favourites and
    * playlists follow. `onlyNew`: only additions (a song just downloaded goes
    * up even while "Synchronize local changes" is off). `playlistsFor`: server
    * playlists a new song goes into (the ones picked when downloading it).
@@ -1678,18 +2122,15 @@ function createRemote(env) {
     if (!onlyNew) {
       for (const lid of Object.keys(snap.songs)) {
         if (localIds.has(lid)) continue;
-        // Removed from the folder by hand (or deleted while the server was off).
-        const sid = sync.songMap[lid];
+        // Removed from the folder by hand (or deleted while the server was
+        // off): only the copy here is gone, as with "Delete from this
+        // computer". The song stays on the server, in its playlists; only
+        // the song's X deletes it there (deleteSong). An upload still
+        // waiting for it has nothing left to send.
         delete snap.songs[lid];
         delete sync.songMap[lid];
         delete sync.fetched[lid];
-        if (!sid) continue;
-        const waiting = sync.queue.find((c) => c.type === 'upload' && c.localId === lid);
-        if (waiting) sync.queue = sync.queue.filter((c) => c !== waiting);
-        else if (!Object.values(sync.songMap).includes(sid)) {
-          q('deleteSong', { songId: sid });
-          count += 1;
-        }
+        sync.queue = sync.queue.filter((c) => !(c.type === 'upload' && c.localId === lid));
       }
     }
 
@@ -1921,7 +2362,8 @@ function createRemote(env) {
       if (gone.length && (gone.length <= 20 || gone.length < mapped / 2)) {
         for (const [lid] of gone) await forgetLocal(lid, { deleteFile: true });
       } else if (gone.length) {
-        status.note = `${gone.length} songs are missing on the server. Their files were kept here.`;
+        status.note = tr('sync.missingOnServer', gone.length === 1 ? '{count} song is missing on the server. Its file was kept here.'
+          : '{count} songs are missing on the server. Their files were kept here.', { count: gone.length });
         emitStatus();
       }
 
@@ -1943,7 +2385,8 @@ function createRemote(env) {
 
   // ---- playlists marked for download ----
 
-  const DOWNLOADS_WAIT = ' to be downloaded until the connection is not metered.';
+  // The note telling that downloads wait for a connection that is not metered, while it shows.
+  let downloadsWaitNote = '';
 
   /** Every song of the marked playlists without a copy here comes down. */
   async function downloadOffline() {
@@ -1965,11 +2408,14 @@ function createRemote(env) {
         if (s && !sync.queue.some((c) => c.type === 'upload' && c.songId === s.id)) want.push(s);
       }
     }
-    if (status.note.endsWith(DOWNLOADS_WAIT)) status.note = '';
+    if (downloadsWaitNote && status.note === downloadsWaitNote) status.note = '';
+    downloadsWaitNote = '';
     if (!want.length) {
       emitStatus();
       return;
     }
+    // Their covers first, in batches (each song's copy takes them).
+    if (await transfersAllowed()) await ensureCovers(want.map((s) => s.id));
     let number = 0;
     for (const s of want) {
       if (status.state !== 'online' || !active()) break;
@@ -1977,17 +2423,22 @@ function createRemote(env) {
       if (!(await transfersAllowed())) {
         const left = want.length - number;
         status.transfer = '';
-        status.note = `${left} ${left === 1 ? 'song waits' : 'songs wait'}${DOWNLOADS_WAIT}`;
+        status.note = tr('sync.downloadsWaitMetered', left === 1 ? '{count} song waits to be downloaded until the connection is not metered.'
+          : '{count} songs wait to be downloaded until the connection is not metered.', { count: left });
+        downloadsWaitNote = status.note;
         emitStatus();
         return;
       }
       number += 1;
       const label = [s.artist, s.title].filter(Boolean).join(' - ');
-      status.transfer = `Downloading ${number} of ${want.length}: ${label}`;
+      status.transfer = tr('sync.transfer.downloading', 'Downloading {number} of {total}: {song}', { number, total: want.length, song: label });
+      status.transferUp = false;
       emitStatus();
       try {
         await fetchSong(s, (f) => {
-          status.transfer = `Downloading ${number} of ${want.length} (${Math.round(f * 100)}%): ${label}`;
+          status.transfer = tr('sync.transfer.downloading.percent', 'Downloading {number} of {total} ({percent}%): {song}', {
+            number, total: want.length, percent: Math.round(f * 100), song: label,
+          });
           emitStatus();
         });
       } catch (err) {
@@ -1996,7 +2447,7 @@ function createRemote(env) {
           wentWrong(err);
           return;
         }
-        problems.push(`"${label}" could not be downloaded: ${err.message}`);
+        problems.push(tr('sync.downloadFailed', '"{song}" could not be downloaded: {reason}', { song: label, reason: err.message }));
       }
       // The window hears of each song as it arrives.
       refreshView();
@@ -2005,16 +2456,17 @@ function createRemote(env) {
     emitStatus();
   }
 
-  /** One server song into Local Files, as a copy. */
+  /** One server song into Local Files, as a copy (its covers with it). */
   async function fetchSong(s, onProgress) {
+    await ensureCovers([s.id]);
     const ext = String(s.format || 'mp3').toLowerCase();
     const tmp = files.join(paths.musicDir(), `.flow-download-${randomHex(5)}.${ext}`);
     try {
       const r = await request(conn.base, audioPath(s.id), {
         token: conn.token, saveTo: tmp, timeout: 60000, onProgress,
       });
-      if (r.status === 401) throw new AuthError('Signed out.');
-      if (r.status !== 200) throw new Error((r.json && r.json.error) || `the server answered ${r.status}`);
+      if (r.status === 401) throw new AuthError(tr('connection.signedOut', 'Signed out.'));
+      if (r.status !== 200) throw new Error((r.json && r.json.error) || tr('connection.serverAnswered.lower', 'the server answered {status}', { status: r.status }));
       await library.quietly(async () => {
         const dest = exporter.uniquePath(songFileStem(s.artist, s.title, s.mix), ext);
         files.rename(tmp, dest);
@@ -2067,18 +2519,24 @@ function createRemote(env) {
 
   // ---- covers ----
   //
-  // Every cover comes down, COVER_JOBS at a time, those the window asks for
-  // first (rows on screen whose cover is not here yet: wantCovers). Away from
-  // home on a metered connection only those, unless transfers are allowed.
+  // 4.3.1: a server's covers come when the window shows them, never all at
+  // once. The rows on screen once the list stops (or almost: the window's
+  // covers.js) ask for their 128 x 128 thumbnails, COVER_BATCH in one request
+  // (POST /api/covers); Details, the visualizers, the lock screen and the
+  // next song ask for the 512 x 512 one, fetched only with the setting
+  // "Download high resolution covers" (one kept already is shown anyway).
+  // The songs kept here for offline (playlists marked for download, songs
+  // downloaded by hand) get their thumbnails in advance, so they show without
+  // the server. A cover here whose version (recorded in the store's index)
+  // is not the song's is fetched again when shown.
 
-  const COVER_JOBS = 3;
-  const coverHave = new Map(); // `${serverId}/${songId}` -> version of the file here
-  const coverFailed = new Set(); // could not be had this run
-  let coverTodo = [];
-  let coverWanted = [];
-  let coverBulk = false;
+  const COVER_BATCH = 100;
+  const COVER_JOBS = 2;
+  const coverFailed = new Set(); // `${size}/${songId}` that could not be had this run
+  const coverWanted = { small: [], big: [] };
   let coverRunning = 0;
-  let coverArrived = [];
+  let coverSingles = false; // a server without POST /api/covers (one at a time there)
+  let coverArrived = { small: [], big: [] };
   let coverTellTimer = null;
 
   /** Where the window finds this server's covers: '' without a server. */
@@ -2086,68 +2544,99 @@ function createRemote(env) {
     return active() && sync.serverId ? covers.dirOf(sync.serverId) : '';
   }
 
-  /** The version of the cover file here, hashed once and then remembered. */
-  function versionHere(store, id) {
-    const key = `${sync.serverId}/${id}`;
-    if (coverHave.has(key)) return coverHave.get(key);
-    const jpeg = store.read(id);
-    const v = jpeg ? covers.versionOf(jpeg) : '';
-    coverHave.set(key, v);
-    return v;
+  const wantsCover = (s) => !!(s && s.cover && s.cover !== '-');
+  const coverSize = (size) => (size === 'big' ? 'big' : 'small');
+  const highRes = () => settings.get('highResCovers') !== false;
+  // "Cover thumbnails cache" unticked: no thumbnails asked for (those kept still show).
+  const thumbs = () => settings.get('thumbCovers') !== false;
+  const fetchesSize = (size) => (size === 'big' ? highRes() : thumbs());
+
+  /** The server's songs kept for offline (their covers and lyrics in advance): the copies here, and the marked playlists'. */
+  function offlineIds() {
+    const ids = new Set();
+    for (const lid of Object.keys(sync.fetched || {})) if (sync.songMap[lid]) ids.add(sync.songMap[lid]);
+    for (const sid of Object.keys(sync.kept || {})) ids.add(sid);
+    if (sync.offline.length) {
+      const v = getView();
+      for (const pid of sync.offline) for (const sid of markedSongs(pid, v)) ids.add(sid);
+    }
+    return ids;
   }
 
-  const wantsCover = (s) => !!(s && s.cover && s.cover !== '-');
-
-  /** After every look at the server's library: which covers to fetch, which to drop. */
+  /**
+   * After every look at the server's library: the covers of songs gone go,
+   * and the songs kept for offline get the thumbnails they lack (and their
+   * big covers with the high-res setting), when transfers are allowed.
+   */
   async function coverSync() {
-    if (status.state !== 'online' || !cache.library || cache.serverId !== sync.serverId || !sync.serverId) return;
+    if (env.streamCovers || status.state !== 'online' || !cache.library || cache.serverId !== sync.serverId || !sync.serverId) return;
     const store = covers.storeOf(sync.serverId);
     const songs = cache.library.songs;
-    const known = new Set(songs.map((x) => x.id));
-    for (const id of store.ids()) {
-      if (known.has(id)) continue;
-      store.remove(id);
-      coverHave.delete(`${sync.serverId}/${id}`);
-    }
-    coverTodo = songs.filter((x) => wantsCover(x) && !coverFailed.has(x.id) && versionHere(store, x.id) !== x.cover).map((x) => x.id);
-    coverBulk = await transfersAllowed();
+    store.sweep(new Set(songs.map((x) => x.id)));
+    const offline = offlineIds();
+    if (!offline.size || !(await transfersAllowed())) return;
+    const lacking = (size) => songs.filter((x) => offline.has(x.id) && wantsCover(x) && !coverFailed.has(`${size}/${x.id}`)
+      && store.version(x.id, size) !== x.cover).map((x) => x.id);
+    if (thumbs()) queueCovers(lacking('small'), 'small', { first: false });
+    if (highRes()) queueCovers(lacking('big'), 'big', { first: false });
+  }
+
+  function queueCovers(ids, size, { first = true } = {}) {
+    const list = coverWanted[size];
+    const fresh = ids.filter((id) => !list.includes(id));
+    coverWanted[size] = first ? [...fresh, ...list] : [...list, ...fresh];
     pumpCovers();
   }
 
-  /** The window shows these songs and has no cover file for them yet. */
-  function wantCovers(ids) {
+  /**
+   * The window shows these songs and has no fitting cover file for them:
+   * 'small' (a list's rows) or 'big' (Details, a visualizer, the song playing
+   * or next). A big one is fetched only with the high-res setting, a small
+   * one only with the thumbnails' (both ticked at first); one here
+   * already (the right version) is told to the window at once.
+   */
+  function wantCovers(ids, size = 'small') {
+    const sz = coverSize(size);
     const list = (Array.isArray(ids) ? ids : []).map(String).filter((id) => /^[\w-]{1,64}$/.test(id));
-    if (!list.length) return;
-    coverWanted = [...new Set([...list, ...coverWanted])].slice(0, 300);
-    pumpCovers();
+    if (!list.length || env.streamCovers || !sync.serverId || !cache.library) return;
+    const store = covers.storeOf(sync.serverId);
+    const here = [];
+    const fetch = [];
+    for (const id of list) {
+      const song = model.songById(cache.library, id);
+      if (!wantsCover(song)) continue;
+      if (store.version(id, sz) === song.cover) here.push(id);
+      else if (fetchesSize(sz)) fetch.push(id);
+    }
+    if (here.length) covers.tell(sync.serverId, here, sz);
+    if (fetch.length) queueCovers(fetch.slice(0, 300), sz);
   }
 
-  function nextCover() {
+  /** The next songs to fetch covers for: { size, songs }, or null. Thumbnails first. */
+  function nextCovers() {
     const lib = cache.library;
     if (!lib || !sync.serverId) return null;
     const store = covers.storeOf(sync.serverId);
-    const ok = (id) => {
-      const song = model.songById(lib, id);
-      return wantsCover(song) && !coverFailed.has(id) && versionHere(store, id) !== song.cover ? song : null;
-    };
-    while (coverWanted.length) {
-      const song = ok(coverWanted.shift());
-      if (song) return song;
-    }
-    while (coverBulk && coverTodo.length) {
-      const song = ok(coverTodo.shift());
-      if (song) return song;
+    for (const size of ['small', 'big']) {
+      const songs = [];
+      const max = coverSingles ? 1 : COVER_BATCH;
+      while (coverWanted[size].length && songs.length < max) {
+        const id = coverWanted[size].shift();
+        const song = model.songById(lib, id);
+        if (wantsCover(song) && !coverFailed.has(`${size}/${id}`) && store.version(id, size) !== song.cover && !songs.includes(song)) songs.push(song);
+      }
+      if (songs.length) return { size, songs };
     }
     return null;
   }
 
   function pumpCovers() {
     while (coverRunning < COVER_JOBS && status.state === 'online') {
-      const song = nextCover();
-      if (!song) return;
+      const next = nextCovers();
+      if (!next) return;
       coverRunning += 1;
-      fetchCover(song).catch(() => {
-        coverFailed.add(song.id);
+      fetchCovers(next).catch(() => {
+        for (const s of next.songs) coverFailed.add(`${next.size}/${s.id}`);
       }).finally(() => {
         coverRunning -= 1;
         pumpCovers();
@@ -2155,59 +2644,101 @@ function createRemote(env) {
     }
   }
 
-  async function fetchCover(song) {
+  /** Covers that arrived reach the window together (many at once as one message). */
+  function coversArrived(size, ids) {
+    coverArrived[size].push(...ids);
+    if (coverTellTimer) return;
+    coverTellTimer = setTimeout(() => {
+      coverTellTimer = null;
+      const arrived = coverArrived;
+      coverArrived = { small: [], big: [] };
+      for (const sz of ['small', 'big']) if (arrived[sz].length) covers.tell(sync.serverId, arrived[sz], sz);
+    }, 150);
+  }
+
+  /** A JPEG or a WebP. */
+  const isPicture = (b) => !!b && b.length > 12 && ((b[0] === 0xff && b[1] === 0xd8)
+    || (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50));
+
+  /** One batch of one size: the server's answer (packCovers) into the store. */
+  async function fetchCovers({ size, songs }) {
     const serverId = sync.serverId;
     const store = covers.storeOf(serverId);
-    files.mkdir(store.dir);
-    const tmp = files.join(store.dir, `.${song.id}.${randomHex(4)}.tmp`);
-    try {
-      const r = await request(conn.base, `/api/songs/${encodeURIComponent(song.id)}/cover?v=${encodeURIComponent(song.cover)}`, {
-        token: conn.token, saveTo: tmp, timeout: 30000,
+    if (coverSingles) {
+      const song = songs[0];
+      const r = await request(conn.base, `/api/songs/${encodeURIComponent(song.id)}/cover?v=${encodeURIComponent(song.cover)}&size=${size}`, {
+        token: conn.token, binary: true, timeout: 30000,
       });
-      if (r.status !== 200 || serverId !== sync.serverId) {
-        coverFailed.add(song.id);
+      if (serverId !== sync.serverId) return;
+      if (r.status !== 200 || !isPicture(r.bytes)) {
+        coverFailed.add(`${size}/${song.id}`);
         return;
       }
-      const jpeg = files.read(tmp);
-      if (jpeg.length < 4 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) {
-        coverFailed.add(song.id);
-        return;
+      store.write(song.id, size, r.bytes, song.cover);
+      coversArrived(size, [song.id]);
+      return;
+    }
+    const r = await request(conn.base, '/api/covers', {
+      method: 'POST', json: { ids: songs.map((s) => s.id), size }, token: conn.token, binary: true, timeout: 60000,
+    });
+    if (serverId !== sync.serverId) return;
+    if (r.status === 404 || r.status === 405) {
+      // No batches there: one at a time.
+      coverSingles = true;
+      coverWanted[size].unshift(...songs.map((s) => s.id));
+      return;
+    }
+    if (r.status !== 200 || !r.bytes) throw new Error(`HTTP ${r.status}`);
+    const got = new Set();
+    for (const item of unpackCovers(r.bytes)) {
+      const song = songs.find((s) => s.id === item.id);
+      if (!song || !isPicture(item.bytes)) continue;
+      store.write(item.id, size, item.bytes, item.v || song.cover);
+      got.add(item.id);
+    }
+    for (const s of songs) if (!got.has(s.id)) coverFailed.add(`${size}/${s.id}`);
+    if (got.size) coversArrived(size, [...got]);
+  }
+
+  /** The covers of these server songs here before they are needed (a song downloaded: its copy takes them). */
+  async function ensureCovers(ids) {
+    if (env.streamCovers || !sync.serverId || !cache.library || status.state !== 'online') return;
+    const store = covers.storeOf(sync.serverId);
+    for (const size of ['small', 'big'].filter(fetchesSize)) {
+      const songs = ids.map((id) => model.songById(cache.library, id)).filter((s) => wantsCover(s) && store.version(s.id, size) !== s.cover);
+      for (let i = 0; i < songs.length; i += COVER_BATCH) {
+        await fetchCovers({ size, songs: songs.slice(i, i + COVER_BATCH) }).catch(() => {});
       }
-      const version = store.write(song.id, jpeg);
-      coverHave.set(`${serverId}/${song.id}`, version);
-      coverArrived.push(song.id);
-      if (!coverTellTimer) {
-        // Many at once reach the window as one message.
-        coverTellTimer = setTimeout(() => {
-          coverTellTimer = null;
-          const ids = coverArrived;
-          coverArrived = [];
-          covers.tell(sync.serverId, ids);
-        }, 250);
-      }
-    } finally {
-      files.rm(tmp, { force: true });
     }
   }
 
-  /** The servers' covers kept here (count, bytes; current: this server's), and how many still come. */
+  /**
+   * The servers' covers kept here, by size: { small, big: { count, bytes,
+   * current } } (current: this server's count); count and bytes for both.
+   */
   function coverStats() {
-    let count = 0;
-    let current = 0;
-    let bytes = 0;
+    const out = { small: { count: 0, bytes: 0, current: 0 }, big: { count: 0, bytes: 0, current: 0 } };
     for (const id of covers.serverIds()) {
-      const size = covers.storeOf(id).size();
-      bytes += size.bytes;
-      count += size.count;
-      if (id === sync.serverId) current = size.count;
+      for (const size of ['small', 'big']) {
+        const n = covers.storeOf(id).size(size);
+        out[size].count += n.count;
+        out[size].bytes += n.bytes;
+        if (id === sync.serverId) out[size].current = n.count;
+      }
     }
-    return { count, current, bytes, waiting: coverTodo.length + coverWanted.length };
+    return { ...out, count: out.small.count, bytes: out.small.bytes + out.big.bytes, current: out.small.current };
   }
 
-  /** "Clear cover cache": every server's covers go; this server's come down again. */
-  function clearCoverCache() {
-    for (const id of covers.serverIds()) covers.removeServer(id);
-    coverHave.clear();
+  /**
+   * Settings' Clear: every server's covers of one size go ('small': the
+   * thumbnails, 'big': the high-res ones, null: both). Shown again, they are
+   * fetched again; the offline songs' at once.
+   */
+  function clearCoverCache(size = null) {
+    for (const id of covers.serverIds()) {
+      if (size === 'small' || size === 'big') covers.storeOf(id).clear(size);
+      else covers.removeServer(id);
+    }
     coverFailed.clear();
     coverSync().catch(() => {});
     return coverStats();
@@ -2216,6 +2747,11 @@ function createRemote(env) {
   /** A Local Files song that is a copy of one of the server's (its cover comes from there). */
   function isServerCopy(lid) {
     return !!sync.fetched[lid];
+  }
+
+  /** The server's song a Local Files song went to or came from (uploaded, or downloaded here), or ''. */
+  function serverSongOf(lid) {
+    return active() ? String((sync.songMap || {})[lid] || '') : '';
   }
 
   /** The Local Files song a server's song came from or went to (uploaded, or downloaded here), or ''. */
@@ -2253,7 +2789,8 @@ function createRemote(env) {
         saveSync();
         queueLocalChanges();
       } else {
-        hooks.onNotice(`Your ${count} Local Files songs stay here. Synchronize now in Settings uploads them to "${conn.name}".`, 'info');
+        hooks.onNotice(tr('connection.notice.localFilesStay', count === 1 ? 'Your Local Files song stays here. Synchronize now in Settings uploads it to "{server}".'
+          : 'Your {count} Local Files songs stay here. Synchronize now in Settings uploads them to "{server}".', { count, server: conn.name }), 'info');
       }
     })().finally(() => { asking = null; });
     return asking;
@@ -2296,10 +2833,10 @@ function createRemote(env) {
    * server's music folder looked through, and the marked playlists downloaded.
    */
   async function syncNow() {
-    if (!active()) throw new Error('Tick "Use a Flow Server" and enter an address first.');
+    if (!active()) throw new Error(tr('connection.tickUseServerAndAddress', 'Tick "Use a Flow Server" and enter an address first.'));
     if (status.state !== 'online') {
       await connect();
-      if (status.state !== 'online') throw new Error(status.message || 'The server cannot be reached.');
+      if (status.state !== 'online') throw new Error(status.message || tr('common.unreachable', 'The server cannot be reached.'));
     }
     status.syncing = true;
     emitStatus();
@@ -2322,11 +2859,15 @@ function createRemote(env) {
 
   // ---- the live channel ----
   //
-  // While connected to a server that has Active Sessions, one stream stays open
-  // (GET /api/live, Server-Sent Events) on which the server tells this app
-  // what happens at once: a session paused, a join asked for. Every event goes
-  // to the window (hooks.onLive). A dropped stream is opened again after a
-  // moment; one silent for longer than three pings is taken for dead.
+  // While connected, one stream stays open (GET /api/live, Server-Sent Events)
+  // on which the server tells this app what happens at once: the library's
+  // and the stats' changes (4.3: `library`, `stats`, taken here), a session
+  // paused, a join asked for (those go to the window, hooks.onLive). It opens
+  // with the copy's revisions, so the server sends what is missing at once.
+  // One silent for a ping and five seconds more is taken for dead (4.3: it is
+  // what tells the server is there): lost, the server is asked once; no
+  // answer, and the app is offline; an answer, and the stream is opened again
+  // after a moment (the changes are asked for once a minute meanwhile).
 
   const LIVE_RETRY_MS = [1000, 2000, 5000, 10000, 20000];
   const live = {
@@ -2334,7 +2875,7 @@ function createRemote(env) {
     step: 0,
     retryTimer: null,
     watchdog: null,
-    pingMs: 10000,
+    pingMs: 15000,
     // Server time minus this machine's: from the stream's greeting at first,
     // then measured (syncClock) once a minute, for devices playing in step.
     offset: 0,
@@ -2368,7 +2909,7 @@ function createRemote(env) {
   }
 
   function liveWanted() {
-    return active() && status.state === 'online' && conn.sessions && !!conn.base;
+    return active() && status.state === 'online' && !!conn.base;
   }
 
   function stopLive() {
@@ -2401,7 +2942,10 @@ function createRemote(env) {
     if (!liveWanted()) return;
     let url;
     try {
-      url = new URL(`${conn.base}/api/live?client=${encodeURIComponent(clientId())}&device=${encodeURIComponent(device.name())}`);
+      // The copy's revisions (4.3): the server sends what changed since.
+      const rev = copyOurs() ? cache.rev : -1;
+      const srev = statsOurs() ? cache.stats.rev : -1;
+      url = new URL(`${conn.base}/api/live?client=${encodeURIComponent(clientId())}&device=${encodeURIComponent(device.name())}&rev=${rev}&srev=${srev}`);
     } catch {
       return;
     }
@@ -2419,7 +2963,7 @@ function createRemote(env) {
         }
         if (statusCode === 401) {
           live.req = null;
-          wentWrong(new AuthError('Signed out.'));
+          wentWrong(new AuthError(tr('connection.signedOut', 'Signed out.')));
           return false;
         }
         if (statusCode !== 200) {
@@ -2461,7 +3005,7 @@ function createRemote(env) {
       clearTimeout(live.watchdog);
       live.watchdog = setTimeout(() => {
         if (mineNow()) req.close(new Error('silent'));
-      }, live.pingMs * 3 + 5000);
+      }, live.pingMs + 5000);
     }
     function lost() {
       if (!mineNow()) return;
@@ -2472,14 +3016,36 @@ function createRemote(env) {
         emitStatus();
         hooks.onLive({ type: 'down', data: {} });
       }
-      retryLive();
+      // Is the server still there? Asked once: no answer, and it is offline.
+      checkAfterLost();
     }
   }
 
+  let checking = null;
+  /** The live channel was lost: the server asked for what changed; reached, the channel opens again soon. */
+  function checkAfterLost() {
+    if (checking || !liveWanted()) return;
+    checking = refresh().then(() => {
+      retryLive();
+      schedulePoll();
+    }).catch((err) => wentWrong(err)).finally(() => {
+      checking = null;
+    });
+  }
+
   function liveEvent(type, data) {
+    // The library's and the stats' changes (4.3) are this client's.
+    if (type === 'library') {
+      if (takeChanges(data)) afterServerChange();
+      return;
+    }
+    if (type === 'stats') {
+      takeStats(data);
+      return;
+    }
     if (type === 'hello') {
       live.step = 0;
-      live.pingMs = Math.max(1000, Number(data.pingMs) || 10000);
+      live.pingMs = Math.max(1000, Number(data.pingMs) || 15000);
       if (Number.isFinite(Number(data.serverTime))) live.offset = Number(data.serverTime) - Date.now();
       status.live = true;
       emitStatus();
@@ -2497,7 +3063,7 @@ function createRemote(env) {
       }
       if (data.reason === 'auth') {
         stopLive();
-        wentWrong(new AuthError('Signed out.'));
+        wentWrong(new AuthError(tr('connection.signedOut', 'Signed out.')));
         return;
       }
       if (data.reason === 'replaced') return;
@@ -2513,8 +3079,8 @@ function createRemote(env) {
    * with the server's reason.
    */
   async function sessions(body) {
-    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached right now.');
-    if (!conn.sessions) throw new Error('This Flow Server is too old for Active Sessions. Update it first.');
+    if (!active() || status.state !== 'online') throw new Error(tr('connection.unreachableNow', 'The server cannot be reached right now.'));
+    if (!conn.sessions) throw new Error(tr('connection.tooOld.sessions', 'This Flow Server is too old for Active Sessions. Update it first.'));
     try {
       if (!body) return await call(`/api/sessions?client=${encodeURIComponent(clientId())}`, { timeout: 10000 });
       return await call('/api/sessions', { method: 'POST', json: { ...body, client: clientId() }, timeout: 10000 });
@@ -2629,7 +3195,7 @@ function createRemote(env) {
    */
   async function switchServer(id) {
     const entry = loadOthers()[id];
-    if (!entry || id === sync.serverId) throw new Error('Flow has not used that server on this device.');
+    if (!entry || id === sync.serverId) throw new Error(tr('connection.switch.notUsedHere', 'Flow has not used that server on this device.'));
     const a = entry.sync.addresses;
     const name = entry.sync.serverName || 'Flow Server';
     let found = false;
@@ -2645,7 +3211,9 @@ function createRemote(env) {
       }
     }
     if (!found) {
-      throw new Error(`"${name}" cannot be reached right now${status.state === 'online' ? `, so Flow stays with "${conn.name}"` : ''}.`);
+      throw new Error(status.state === 'online'
+        ? tr('connection.switch.unreachable.staying', '"{server}" cannot be reached right now, so Flow stays with "{current}".', { server: name, current: conn.name })
+        : tr('connection.switch.unreachable', '"{server}" cannot be reached right now.', { server: name }));
     }
     await sendWaiting();
     // No Home address of its own: the search for one would find this home's server instead.
@@ -2679,7 +3247,7 @@ function createRemote(env) {
    * the other app is asked for the password.
    */
   async function shareLink() {
-    if (!active() || status.state !== 'online') throw new Error('Flow is not connected to its server right now.');
+    if (!active() || status.state !== 'online') throw new Error(tr('connection.notConnected', 'Flow is not connected to its server right now.'));
     const s = settings.all();
     let code = '';
     const pw = decrypt(s.serverSecret);
@@ -2691,7 +3259,7 @@ function createRemote(env) {
       home = ip ? home.replace(/^[^:/]+/, ip) : '';
     }
     const remote = s.serverRemoteOn !== false ? String(s.serverRemote || '') : '';
-    if (!home && !remote) throw new Error('This server has no address another device could use. Enter its Home address (as the other device reaches it) first.');
+    if (!home && !remote) throw new Error(tr('connection.share.noAddress', 'This server has no address another device could use. Enter its Home address (as the other device reaches it) first.'));
     return {
       link: makeLink({
         id: sync.serverId, name: conn.name, home, remote, code,
@@ -2708,7 +3276,7 @@ function createRemote(env) {
    */
   async function connectLink(text) {
     const l = parseLink(text);
-    if (!l) throw new Error('That is not a link to a Flow Server.');
+    if (!l) throw new Error(tr('connection.link.notFlow', 'That is not a link to a Flow Server.'));
     let password = null;
     if (l.code) {
       for (const address of [l.home, l.remote].filter(Boolean)) {
@@ -2723,9 +3291,9 @@ function createRemote(env) {
           password = String(r.json.password || '');
           break;
         }
-        throw new Error((r.json && r.json.error) || `"${l.name}" answered ${r.status}.`);
+        throw new Error((r.json && r.json.error) || tr('connection.link.answered', '"{server}" answered {status}.', { server: l.name, status: r.status }));
       }
-      if (password === null) throw new Error(`"${l.name}" cannot be reached from here right now. Try on its home network, or ask for a new QR code.`);
+      if (password === null) throw new Error(tr('connection.link.unreachable', '"{server}" cannot be reached from here right now. Try on its home network, or ask for a new QR code.', { server: l.name }));
     }
     if (sync.serverId && sync.serverId !== l.id) await sendWaiting();
     // No Home address of its own: the search for one would find this home's server instead.
@@ -2747,7 +3315,7 @@ function createRemote(env) {
   /** Marks a server playlist for download, or no longer. */
   async function setOffline(pid, on) {
     const all = isAllList(pid);
-    if (on && !all && !markedList(getView(), pid)) throw new Error('Only All Songs, your own playlists and the ones you follow can be downloaded.');
+    if (on && !all && !markedList(getView(), pid)) throw new Error(tr('songs.error.onlyOwnDownloads', 'Only All Songs, your own playlists and the ones you follow can be downloaded.'));
     if (on && !sync.offline.includes(pid)) sync.offline.push(pid);
     if (!on) sync.offline = sync.offline.filter((x) => x !== pid);
     if (on && !all) sync.offlineKeep[pid] = { profile: currentProfile(), songs: markedSongs(pid, getView()) };
@@ -2825,10 +3393,10 @@ function createRemote(env) {
    * dropped, see dropUnneededCopies).
    */
   async function downloadSong(songId) {
-    if (!active()) throw new Error('Tick "Use a Flow Server" first.');
-    if (status.state !== 'online') throw new Error('The server cannot be reached right now. A song can only be downloaded while it can.');
+    if (!active()) throw new Error(tr('connection.tickUseServer', 'Tick "Use a Flow Server" first.'));
+    if (status.state !== 'online') throw new Error(tr('songs.error.downloadUnreachable', 'The server cannot be reached right now. A song can only be downloaded while it can.'));
     const song = model.songById(getView(), songId);
-    if (!song) throw new Error('That song is not on the server.');
+    if (!song) throw new Error(tr('songs.error.notOnServer', 'That song is not on the server.'));
     if (localCopies().has(songId)) {
       sync.kept[songId] = true;
       saveSync();
@@ -2838,18 +3406,19 @@ function createRemote(env) {
     // Marked before the copy exists: a synchronization in between must not drop it as unneeded.
     sync.kept[songId] = true;
     saveSync();
-    status.transfer = `Downloading: ${label}`;
+    status.transfer = tr('sync.transfer.downloadingOne', 'Downloading: {song}', { song: label });
+    status.transferUp = false;
     emitStatus();
     try {
       await fetchSong(song, (f) => {
-        status.transfer = `Downloading (${Math.round(f * 100)}%): ${label}`;
+        status.transfer = tr('sync.transfer.downloadingOne.percent', 'Downloading ({percent}%): {song}', { percent: Math.round(f * 100), song: label });
         emitStatus();
       });
     } catch (err) {
       delete sync.kept[songId];
       saveSync();
       if (err instanceof OfflineError || err instanceof AuthError) wentWrong(err);
-      throw new Error(`"${label}" could not be downloaded: ${err.message}`);
+      throw new Error(tr('sync.downloadFailed', '"{song}" could not be downloaded: {reason}', { song: label, reason: err.message }));
     } finally {
       status.transfer = '';
       emitStatus();
@@ -2863,7 +3432,7 @@ function createRemote(env) {
    * download holds the song), or lost for good (it has not gone up yet).
    */
   async function removeDownload(songId) {
-    if (!active()) throw new Error('Tick "Use a Flow Server" first.');
+    if (!active()) throw new Error(tr('connection.tickUseServer', 'Tick "Use a Flow Server" first.'));
     const lids = Object.entries(sync.songMap).filter(([, sid]) => sid === songId).map(([lid]) => lid);
     // A copy here only taken for it (not tied to it): its file goes, as from Downloaded Songs.
     const loose = !lids.length && localCopies().get(songId);
@@ -2873,10 +3442,10 @@ function createRemote(env) {
       return;
     }
     if (sync.queue.some((c) => c.type === 'upload' && c.songId === songId)) {
-      throw new Error('This song has not been uploaded to the server yet. Its file here is the only copy.');
+      throw new Error(tr('songs.error.notUploadedYet', 'This song has not been uploaded to the server yet. Its file here is the only copy.'));
     }
     if (sync.offline.some((pid) => markedSongs(pid, getView()).includes(songId))) {
-      throw new Error('This song is in a playlist marked for download (or All Songs is), so it would come straight back. Unmark that in Settings first.');
+      throw new Error(tr('songs.error.markedForDownload', 'This song is in a playlist marked for download (or All Songs is), so it would come straight back. Unmark that in Settings first.'));
     }
     delete sync.kept[songId];
     saveSync();
@@ -2893,7 +3462,7 @@ function createRemote(env) {
       if (!(await forgetLocal(lid, { deleteFile: true }))) {
         sync.kept[songId] = true;
         saveSync();
-        throw new Error('The song\'s file is in use (playing?). Try again once it has stopped.');
+        throw new Error(tr('songs.error.fileInUse', 'The song\'s file is in use (playing?). Try again once it has stopped.'));
       }
     }
     refreshView();
@@ -2906,7 +3475,7 @@ function createRemote(env) {
    * were deleted, and how many are in use (playing) and stay for now.
    */
   async function removeAllDownloads() {
-    if (!active()) throw new Error('Tick "Use a Flow Server" first.');
+    if (!active()) throw new Error(tr('connection.tickUseServer', 'Tick "Use a Flow Server" first.'));
     sync.offline = [];
     sync.offlineKeep = {};
     sync.kept = {};
@@ -2938,11 +3507,11 @@ function createRemote(env) {
    */
   async function removeDeviceSong(songId) {
     const id = String(songId || '');
-    if (!id.startsWith(DEVICE)) throw new Error('That song is not one of this device\'s own.');
+    if (!id.startsWith(DEVICE)) throw new Error(tr('songs.error.notOwn', 'That song is not one of this device\'s own.'));
     const lid = id.slice(DEVICE.length);
     const song = model.songById(library.get(), lid);
     if (!song) return;
-    if (sync.songMap[lid]) throw new Error('That song is on this server: delete it from here with its Download button.');
+    if (sync.songMap[lid]) throw new Error(tr('songs.error.isOnServer', 'That song is on this server: delete it from here with its Download button.'));
     await deleteHere(song);
     refreshView();
   }
@@ -2960,7 +3529,7 @@ function createRemote(env) {
       library.mutate((d) => model.removeSong(d, lid, false));
       gone = true;
     });
-    if (!gone) throw new Error('The song\'s file is in use (playing?). Try again once it has stopped.');
+    if (!gone) throw new Error(tr('songs.error.fileInUse', 'The song\'s file is in use (playing?). Try again once it has stopped.'));
     for (const o of Object.values(loadOthers())) {
       delete o.sync.songMap[lid];
       delete o.sync.fetched[lid];
@@ -2981,12 +3550,12 @@ function createRemote(env) {
   async function songAudio(songId) {
     const here = localFileOf(songId);
     if (here) return { file: here, temp: false };
-    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached.');
+    if (!active() || status.state !== 'online') throw new Error(tr('common.unreachable', 'The server cannot be reached.'));
     files.mkdir(paths.cacheDir());
     const tmp = files.join(paths.cacheDir(), `.flow-audio-${randomHex(5)}`);
     try {
       const r = await request(conn.base, audioPath(songId), { token: conn.token, saveTo: tmp, timeout: 60000 });
-      if (r.status !== 200) throw new Error(`the server answered ${r.status}`);
+      if (r.status !== 200) throw new Error(tr('connection.serverAnswered.lower', 'the server answered {status}', { status: r.status }));
     } catch (err) {
       files.rm(tmp, { force: true });
       throw err;
@@ -2996,45 +3565,67 @@ function createRemote(env) {
 
   // ---- downloads by the server ("Download (Server)" on Add Songs) ----
   //
-  // The server keeps one batch per profile (apps/linux-server/src/downloads.js) and
+  // The server keeps one batch per profile (apps/linux-server/src/downloads.js),
+  // or with downloadQueue (4.4) several taking turns with every profile's, and
   // the window polls it while Add Songs is open. None of it goes through Local
   // Files: a song finished there is the server's at once, like any other.
 
   function requireDownloads() {
-    if (!active() || status.state !== 'online') throw new Error('The server cannot be reached right now.');
-    if (!conn.downloads) throw new Error('This Flow Server does not download songs.');
+    if (!active() || status.state !== 'online') throw new Error(tr('connection.unreachableNow', 'The server cannot be reached right now.'));
+    if (!conn.downloads) throw new Error(tr('connection.noDownloads', 'This Flow Server does not download songs.'));
   }
 
   /**
    * One request about the server's download batch. action: get, create
    * ({ url, kind, options }), cancel, peaks ({ index }), finish ({ index, body }),
    * retry ({ index }), discard ({ index }). Resolves the batch (null: none), or
-   * for peaks the peaks, for finish { song, batch }.
+   * for peaks the peaks, for finish { song, batch }. With the server's queue
+   * (4.4): queue resolves { batches, queue, done } (null where there is none
+   * to ask); args.batchId names the batch the others are about (none: the
+   * profile's oldest); create takes queue: true and auto ({ complete,
+   * finish }), and review: true (4.4.1, downloadReview) for a list that
+   * waits for its songs to be chosen: choose ({ batchId, indexes }).
    */
   async function serverDownloads(action, args = {}) {
-    if (action === 'get' && (!active() || status.state !== 'online' || !conn.downloads)) return null;
+    if ((action === 'get' || action === 'queue') && (!active() || status.state !== 'online' || !conn.downloads)) return null;
+    if (action === 'queue' && !conn.downloadQueue) return null;
     requireDownloads();
-    const item = `/api/downloads/items/${Math.max(0, Math.floor(Number(args.index) || 0))}`;
+    const batchId = conn.downloadQueue && /^[0-9a-f]{12}$/.test(String(args.batchId || '')) ? String(args.batchId) : '';
+    const item = `/api/downloads${batchId ? `/${batchId}` : ''}/items/${Math.max(0, Math.floor(Number(args.index) || 0))}`;
     try {
       if (action === 'get') return (await call('/api/downloads')).batch;
+      if (action === 'queue') {
+        const r = await call('/api/downloads?queue=1');
+        return { batches: r.batches || [], queue: r.queue || [], done: r.done || [] };
+      }
       // create: cookies, the link's site's browser cookies (or none). Or items
       // and name: uploads picked from a search, several at once; with source
       // ({ url, kind }), the songs ticked in a playlist's Update.
       if (action === 'create') {
         const { url, kind, options, cookies, items, name, source } = args;
         const json = items ? { items, name, options, source: source || undefined } : { url, kind, options, cookies: cookies || undefined };
+        // Queued behind what the server is doing, finishing by itself as asked.
+        if (conn.downloadQueue && args.queue) Object.assign(json, { queue: true, auto: args.auto || undefined });
+        // Read, it waits for the songs ticked in the checklist (choose).
+        if (conn.downloadReview && args.review && !items) json.review = true;
         return (await call('/api/downloads', { method: 'POST', json })).batch;
       }
       // A playlist's Update: its link read on the server, nothing downloaded ({ url, cookies }).
       if (action === 'check') {
-        if (!conn.downloadCheck) throw new Error('This Flow Server cannot check a playlist for updates yet: update it.');
+        if (!conn.downloadCheck) throw new Error(tr('connection.tooOld.playlistUpdates', 'This Flow Server cannot check a playlist for updates yet: update it.'));
         const json = { url: args.url, cookies: args.cookies || undefined };
         return (await call('/api/downloads/check', { method: 'POST', json, timeout: 15 * 60 * 1000 })).listing;
       }
-      if (action === 'cancel') return (await call('/api/downloads', { method: 'DELETE' })).batch;
+      if (action === 'cancel') return (await call(`/api/downloads${batchId ? `/${batchId}` : ''}`, { method: 'DELETE' })).batch;
+      // The songs ticked in the checklist of a batch in review (4.4.1).
+      if (action === 'choose') {
+        if (!batchId || !conn.downloadReview) throw new Error(tr('connection.unknownDownloadAction', 'Unknown download action {action}.', { action }));
+        const indexes = (Array.isArray(args.indexes) ? args.indexes : []).map(Number).filter(Number.isInteger);
+        return (await call(`/api/downloads/${batchId}/choose`, { method: 'POST', json: { indexes } })).batch;
+      }
       // A song's name typed instead of a link: { query, artist, title, page, results }.
       if (action === 'search') {
-        if (!conn.search) throw new Error('This Flow Server cannot search for songs by name yet: update it, or paste a link.');
+        if (!conn.search) throw new Error(tr('connection.tooOld.songSearch', 'This Flow Server cannot search for songs by name yet: update it, or paste a link.'));
         return await call('/api/downloads/search', { method: 'POST', json: { query: args.query, page: Number(args.page) || 0 }, timeout: 120000 });
       }
       if (action === 'peaks') return (await call(`${item}/peaks`, { timeout: 30000 })).peaks;
@@ -3056,7 +3647,7 @@ function createRemote(env) {
       if (err instanceof OfflineError || err instanceof AuthError) wentWrong(err);
       throw err;
     }
-    throw new Error(`Unknown download action ${action}.`);
+    throw new Error(tr('connection.unknownDownloadAction', 'Unknown download action {action}.', { action }));
   }
 
   /**
@@ -3073,8 +3664,7 @@ function createRemote(env) {
     try {
       const r = await request(conn.base, `${item}/cover?v=${v}`, { token: conn.token, saveTo: tmp, timeout: 30000 });
       if (r.status !== 200) return '';
-      const head = files.read(tmp).subarray(0, 2);
-      if (head[0] !== 0xff || head[1] !== 0xd8) return '';
+      if (!isPicture(files.read(tmp).subarray(0, 16))) return '';
       files.rename(tmp, file);
       return file;
     } finally {
@@ -3126,9 +3716,9 @@ function createRemote(env) {
   }
 
   function requireProfiles() {
-    if (!active()) throw new Error('Tick "Use a Flow Server" first.');
-    if (status.state !== 'online') throw new Error('The server cannot be reached right now. Profiles can only be changed while it can.');
-    if (!conn.profiles) throw new Error('This Flow Server is too old for profiles. Update it first.');
+    if (!active()) throw new Error(tr('connection.tickUseServer', 'Tick "Use a Flow Server" first.'));
+    if (status.state !== 'online') throw new Error(tr('connection.profiles.unreachable', 'The server cannot be reached right now. Profiles can only be changed while it can.'));
+    if (!conn.profiles) throw new Error(tr('connection.tooOld.profiles', 'This Flow Server is too old for profiles. Update it first.'));
   }
 
   /**
@@ -3149,11 +3739,13 @@ function createRemote(env) {
   async function switchProfile(token, profile, pin = '') {
     if (token !== undefined) {
       conn.token = token;
-      sync.token = encrypt(token);
+      sync.token = keepToken(token);
       runToken = token;
-      // The old token is gone on the server: the live channel opens with the new one.
-      startLive();
     }
+    // The old token is gone on the server, and the copy's revisions are
+    // another profile's: the live channel opens again once the copy is this one's.
+    stopLive();
+    sharedOpen.clear();
     sync.profile = cleanProfile(profile);
     sync.logoutPending = false;
     // Kept encrypted, so the next start can sign in to it again (restoreProfile).
@@ -3163,7 +3755,11 @@ function createRemote(env) {
     cache = { ...cache, rev: -1, profile: currentProfile() };
     saveSync();
     saveCache();
-    await refresh();
+    try {
+      await refresh();
+    } finally {
+      startLive();
+    }
     await loadProfiles().catch(() => {});
     afterServerChange();
     emitStatus();
@@ -3220,8 +3816,8 @@ function createRemote(env) {
   /** The signed-in profile's PIN changed from `pin` to `newPin` ('': none). */
   async function changePin(pin, newPin) {
     requireProfiles();
-    if (!conn.pin) throw new Error('This Flow Server is too old to change a PIN. Update it first.');
-    if (!currentProfile()) throw new Error('Log in to a profile first.');
+    if (!conn.pin) throw new Error(tr('connection.tooOld.changePin', 'This Flow Server is too old to change a PIN. Update it first.'));
+    if (!currentProfile()) throw new Error(tr('connection.profiles.loginFirst', 'Log in to a profile first.'));
     const r = await call('/api/profiles/pin', { method: 'POST', json: { pin: String(pin || ''), newPin: String(newPin || '') } });
     sync.profile = cleanProfile({ ...sync.profile, ...r.profile });
     // The next start signs in with the new one (restoreProfile).
@@ -3236,7 +3832,7 @@ function createRemote(env) {
   async function deleteProfile() {
     requireProfiles();
     const gone = currentProfile();
-    if (!gone) throw new Error('Log in to a profile first.');
+    if (!gone) throw new Error(tr('connection.profiles.loginFirst', 'Log in to a profile first.'));
     // A song renamed or deleted in it still counts.
     await sendWaiting();
     await call('/api/profiles/delete', { method: 'POST', json: {} });
@@ -3257,8 +3853,8 @@ function createRemote(env) {
    */
   async function admin(route, body) {
     requireProfiles();
-    if (!conn.admin) throw new Error('This Flow Server is too old for Administration. Update it first.');
-    if (!/^[\w/-]{1,120}$/.test(String(route || ''))) throw new Error('No such page in Administration.');
+    if (!conn.admin) throw new Error(tr('connection.tooOld.admin', 'This Flow Server is too old for Administration. Update it first.'));
+    if (!/^[\w/-]{1,120}$/.test(String(route || ''))) throw new Error(tr('connection.admin.noSuchPage', 'No such page in Administration.'));
     const r = await call(`/api/admin/${route}`, body === undefined ? { timeout: 30000 } : { method: 'POST', json: body, timeout: 60000 });
     // What the admins change can change what this app sees (a song back
     // from the trash, a rule): fetched now rather than at the next poll.
@@ -3280,7 +3876,7 @@ function createRemote(env) {
     if (r.token) {
       conn.token = r.token;
       runToken = r.token;
-      sync.token = encrypt(r.token);
+      sync.token = keepToken(r.token);
       saveSync();
       // The live channel opened with the old token, which the server no longer knows.
       startLive();
@@ -3301,10 +3897,11 @@ function createRemote(env) {
   return {
     init, active, reconfigure, setSecret, stop, adoptToken,
     coverDir, wantCovers, coverStats, clearCoverCache, isServerCopy, localOf,
-    trimSong, trimmedHere, songPeaks, songLyrics, setSongLyrics, useOwnLyrics, useLyricsSync, lyricsIndex, lyricsOf, serverId, newCutId,
+    trimSong, trimmedHere, songPeaks, songLyrics, setSongLyrics, useOwnLyrics, useLyricsSync, useForgotLocal, lyricsOf, offlineIds, serverSongOf, serverId, newCutId,
     status: publicStatus, view: getView, command, syncNow, serverDownloads, setOffline, downloadSong, removeDownload, removeAllDownloads, removeDeviceSong, switchServer, forgetServer, pushNew, pushImport, deleteSong, localFileOf, songAudio, sessions, leaveSession,
     loadProfiles, loginProfile, createProfile, logoutProfile, renameProfile, changePin, deleteProfile,
     admin, changeServerPassword, removeTracked, shareLink, connectLink,
+    loadStatistics, loadShared, openShared,
   };
 }
 

@@ -611,18 +611,17 @@
 
   Visualizer.add({
     id: 'fountain',
-    name: 'Fountain Show',
-    desc: 'A row of lit water jets on a pool at night, each a band rising as high as it sounds, the bass jets bursting up on the kicks',
+    name: T('viz.fountain.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18M12 20V7M12 7c0-2 2-4 5-3M12 7c0-2-2-4-5-3M8 20c0-3-2-6-4-6M16 20c0-3 2-6 4-6"/></svg>',
     gl: true,
     create: (canvas) => new Fountain(canvas),
     options: [
-      { type: 'choice', key: 'fnColors', label: 'Lights', choices: [['rainbow', 'Rainbow'], ['notes', 'By the chords'], ['white', 'Warm white'], ['blue', 'Blue']] },
-      { type: 'choice', key: 'fnLayout', label: 'Bass', choices: [['middle', 'In the middle'], ['left', 'On the left']] },
-      { type: 'slider', key: 'fnJets', label: 'Jets', min: 16, max: MAX_JETS, step: 4, unit: '' },
-      { type: 'slider', key: 'fnGravity', label: 'Gravity', min: 50, max: 200, step: 5, format: (v) => `${(v / 100).toFixed(2)} G` },
-      { type: 'check', key: 'fnRipples', label: 'Ripples' },
+      { type: 'choice', key: 'fnColors', label: T('viz.fountain.setting.lights'), choices: [['rainbow', T('common.color.rainbow')], ['notes', T('viz.fountain.setting.lights.notes')], ['white', T('viz.fountain.setting.lights.white')], ['blue', T('common.color.blue')]] },
+      { type: 'choice', key: 'fnLayout', label: T('viz.shared.bass'), choices: [['middle', T('viz.shared.inTheMiddle')], ['left', T('viz.shared.onTheLeft')]] },
+      { type: 'slider', key: 'fnJets', label: T('viz.fountain.setting.jets'), min: 16, max: MAX_JETS, step: 4, unit: '' },
+      { type: 'slider', key: 'fnGravity', label: T('viz.fountain.setting.gravity'), min: 50, max: 200, step: 5, format: (v) => `${(v / 100).toFixed(2)} G` },
+      { type: 'check', key: 'fnRipples', label: T('viz.fountain.setting.ripples') },
     ],
   });
 })();

@@ -42,7 +42,7 @@ function addTrimNudges(slider, startGroup, endGroup) {
   if (!document.body.classList.contains('mobile')) return;
   const nudge = (isStart, by) => h('button.btn.trim-nudge', {
     type: 'button',
-    'aria-label': `${isStart ? 'Start' : 'End'} ${by > 0 ? '+' : '-'}0.1 seconds`,
+    'aria-label': T(isStart ? 'common.trim.nudge.start' : 'common.trim.nudge.end', { sign: by > 0 ? '+' : '-' }),
     onclick: () => {
       if (isStart) slider.setStart(Math.round((slider.start + by) * 1000) / 1000);
       else slider.setEnd(Math.round((slider.end + by) * 1000) / 1000);

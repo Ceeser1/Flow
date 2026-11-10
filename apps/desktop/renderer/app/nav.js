@@ -5,6 +5,7 @@
 const Nav = {
   page: null,
   playlistId: null,
+  groupId: null, // the group page's group (4.5.2)
   // The pages shown before this one ({ page, playlistId }), for the phone's
   // Back; the last is the one Back returns to.
   history: [],
@@ -22,31 +23,43 @@ const Nav = {
     const sizes = new ResizeObserver(edges);
     sizes.observe(pages);
     for (const node of pages.querySelectorAll('.page')) sizes.observe(node);
-    $('menuSearch').innerHTML = Icons.search + '<span>Search</span>';
-    $('menuAdd').innerHTML = Icons.add + '<span>Add Songs</span>'
-      + '<span id="menuAddBadge" class="menu__badge" hidden title="Playlist import running"></span>';
-    this._entry('menuAllSongs', 'All Songs', 'allSongsMenuOpen', { icon: Icons.library });
+    $('menuSearch').innerHTML = Icons.search + `<span>${T('common.search')}</span>`;
+    $('menuAdd').innerHTML = Icons.add + `<span>${T('common.addSongs')}</span>`
+      + `<span id="menuAddBadge" class="menu__badge" hidden title="${T('import.bar.running.tooltip')}"></span>`;
+    this._entry('menuAllSongs', T('common.allSongs'), 'allSongsMenuOpen', { icon: Icons.library });
     // The speaker while All Songs plays, or a part of it that is folded away.
-    this._allPlaying = h('span.menu__playing', { html: Icons.speaker, title: 'Playing' });
+    this._allPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
     $('menuAllSongs').appendChild(this._allPlaying);
-    this._entry('menuPlaylists', 'Playlists', 'playlistsMenuOpen');
-    this._entry('menuFollowed', 'Followed Playlists', 'followedMenuOpen');
-    this._entry('menuSessions', 'Active Jams', 'sessionsMenuOpen', { icon: Icons.sessions });
+    this._entry('menuPlaylists', T('common.playlists'), 'playlistsMenuOpen');
+    this._entry('menuGroups', T('common.playlistGroups'), 'groupsMenuOpen', { icon: Icons.folder });
+    // The speaker while one of the groups' lists plays and they are folded away.
+    this._groupsPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
+    $('menuGroups').appendChild(this._groupsPlaying);
+    this._entry('menuFollowed', T('common.followedPlaylists'), 'followedMenuOpen');
+    this._entry('menuSessions', T('common.activeJams'), 'sessionsMenuOpen', { icon: Icons.sessions });
     $('menuSessions').appendChild(h('span.menu__badge', { id: 'menuSessionsBadge', hidden: true }));
-    this._entry('menuTrend', 'Your listening trend', 'trendMenuOpen', {
+    this._entry('menuTrend', T('common.yourListeningTrend'), 'trendMenuOpen', {
       icon: '<img class="menu__img" src="../images/trend.png" alt="" />',
       shut: true,
     });
     // The speaker while one of its lists plays and they are folded away.
-    this._trendPlaying = h('span.menu__playing', { html: Icons.speaker, title: 'Playing' });
+    this._trendPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
     $('menuTrend').appendChild(this._trendPlaying);
     $('menuSearch').onclick = () => this.show('search');
     $('menuAdd').onclick = () => this.show('add');
     $('menuAllSongs').onclick = () => this.openPlaylist('all');
     $('menuPlaylists').onclick = () => this.show('playlists');
+    // Playlist Groups: the Playlists page at its groups.
+    $('menuGroups').onclick = () => this.show('playlists', { at: 'groups' });
     $('menuFollowed').onclick = () => this.show('followed');
     $('menuSessions').onclick = () => this.show('sessions');
     $('menuTrend').onclick = () => this.show('trend');
+    // A playlist dragged anywhere on the Playlists entry or its list but a group leaves its group (4.5).
+    Groups.dropTarget($('menuPlaylistList'), '');
+    Groups.dropTarget($('menuPlaylists'), '');
+    // And on Followed Playlists (4.5.1), as a followed one leaves its group.
+    Groups.dropTarget($('menuFollowedList'), '');
+    Groups.dropTarget($('menuFollowed'), '');
     Store.onLibrary(() => this.drawMenu());
     Store.onServer(() => this.drawMenu());
     Player.onChange(() => this.drawMenu());
@@ -87,10 +100,16 @@ const Nav = {
     return this._shut[key] ? Store.settings[key] === true : Store.settings[key] !== false;
   },
 
+  /** A jam's song for its tooltip: "Title - Artist", "Paused: " in front while it is. */
+  _jamSong(s) {
+    const line = s.song.artist ? `${s.song.title} - ${s.song.artist}` : s.song.title;
+    return s.playing ? line : `${T('common.paused')} ${line}`;
+  },
+
   _drawArrow(key, open, what) {
     const arrow = this._arrows[key];
     arrow.classList.toggle('menu__chevron--open', open);
-    arrow.title = open ? `Hide ${what}` : `Show ${what}`;
+    arrow.title = open ? T('nav.section.hide.tooltip', { what }) : T('nav.section.show.tooltip', { what });
     arrow.setAttribute('aria-expanded', String(open));
   },
 
@@ -103,8 +122,9 @@ const Nav = {
     if (page !== 'playlist' && typeof PlaylistPage !== 'undefined') PlaylistPage.pickFor = null;
     // The preview belongs to the Add Songs page and stops when it is left.
     if (this.page === 'add' && page !== 'add') AddPage.audio.pause();
-    const at = { page, playlistId: page === 'playlist' ? this.playlistId : null };
-    if (this._at && !opts.back && (this._at.page !== at.page || this._at.playlistId !== at.playlistId)) {
+    if (page === 'group') this.groupId = opts.groupId || this.groupId;
+    const at = { page, playlistId: page === 'playlist' ? this.playlistId : null, groupId: page === 'group' ? this.groupId : null };
+    if (this._at && !opts.back && (this._at.page !== at.page || this._at.playlistId !== at.playlistId || this._at.groupId !== at.groupId)) {
       this.history.push(this._at);
       if (this.history.length > 50) this.history.shift();
     }
@@ -118,6 +138,7 @@ const Nav = {
     else if (page === 'add') AddPage.show(opts);
     else if (page === 'playlists') PlaylistsPage.show(opts);
     else if (page === 'followed') FollowedPage.show(opts);
+    else if (page === 'group') GroupPage.show(this.groupId, opts);
     else if (page === 'sessions') SessionsPage.show(opts);
     else if (page === 'trend') TrendPage.show(opts);
     else if (page === 'playlist') PlaylistPage.show(this.playlistId, opts);
@@ -128,6 +149,12 @@ const Nav = {
   back() {
     while (this.history.length) {
       const prev = this.history.pop();
+      // A group deleted since is skipped (4.5.2).
+      if (prev.page === 'group') {
+        if (!Store.group(prev.groupId)) continue;
+        this.show('group', { back: true, groupId: prev.groupId });
+        return true;
+      }
       if (prev.page !== 'playlist') {
         this.show(prev.page, { back: true });
         return true;
@@ -141,7 +168,18 @@ const Nav = {
     return false;
   },
 
+  /** A playlist group's page (4.5.2). */
+  openGroup(id, opts = {}) {
+    if (!Store.group(id)) return;
+    this.show('group', { ...opts, groupId: id });
+  },
+
   openPlaylist(id, opts = {}) {
+    // A group played as one list (the player's "from ...") opens its group's page.
+    if (String(id || '').startsWith(GROUP_PREFIX) && Store.group(id.slice(GROUP_PREFIX.length))) {
+      this.openGroup(id.slice(GROUP_PREFIX.length), opts);
+      return;
+    }
     this.playlistId = Store.playlist(id) ? id : 'all';
     Store.saveSettings({ lastPlaylistId: this.playlistId });
     this.show('playlist', opts);
@@ -156,11 +194,13 @@ const Nav = {
     $('menuSessions').classList.toggle('menu__item--active', this.page === 'sessions');
     $('menuTrend').classList.toggle('menu__item--active', this.page === 'trend');
     const playlistsOpen = this._open('playlistsMenuOpen');
+    const groupsOpen = this._open('groupsMenuOpen');
     const followedOpen = this._open('followedMenuOpen');
     const trendOpen = this._open('trendMenuOpen');
-    this._drawArrow('playlistsMenuOpen', playlistsOpen, 'the playlists');
-    this._drawArrow('followedMenuOpen', followedOpen, 'the followed playlists');
-    this._drawArrow('trendMenuOpen', trendOpen, 'the listening trend lists');
+    this._drawArrow('playlistsMenuOpen', playlistsOpen, T('nav.section.what.playlists'));
+    this._drawArrow('groupsMenuOpen', groupsOpen, T('nav.section.what.playlistGroups'));
+    this._drawArrow('followedMenuOpen', followedOpen, T('nav.section.what.followedPlaylists'));
+    this._drawArrow('trendMenuOpen', trendOpen, T('nav.section.what.listeningTrend'));
     $('menuPlaylistList').hidden = !playlistsOpen;
 
     // The list playing has the speaker, and its bar on the left stays green.
@@ -174,10 +214,10 @@ const Nav = {
         title: p.name,
         onclick: () => this.openPlaylist(p.id),
       },
-      // Downloaded Songs has its icon before its name.
-      p.isDevice ? h('span.menu__sub-icon', { html: listIcon(p) }) : null,
+      // Downloaded Songs has its icon before its name, a followed playlist its green one (4.5.1).
+      p.isDevice || p.isShared ? h('span.menu__sub-icon', { html: listIcon(p) }) : null,
       h('span.menu__sub-name', p.menuName || p.name),
-      playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null);
+      playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null);
     };
 
     // All Songs: with a Flow Server, under it Downloaded Songs (every song on
@@ -186,7 +226,7 @@ const Nav = {
     const device = Store.devicePlaylist();
     const froms = [...(device ? [device] : []), ...Store.fromPlaylists()];
     const allOpen = this._open('allSongsMenuOpen');
-    this._drawArrow('allSongsMenuOpen', allOpen, 'Downloaded Songs and who added the songs');
+    this._drawArrow('allSongsMenuOpen', allOpen, T('nav.section.what.downloaded'));
     this._arrows.allSongsMenuOpen.hidden = !froms.length;
     $('menuAllSongsList').hidden = !froms.length || !allOpen;
     const allList = clear($('menuAllSongsList'));
@@ -194,26 +234,92 @@ const Nav = {
     const fromPlaying = froms.some((p) => p.id === Player.contextId);
     this._allPlaying.hidden = !Player.isPlaying || !(Player.contextId === 'all' || (fromPlaying && !allOpen));
 
+    // Playlists: Favourites, then the playlists in no group.
     const list = clear($('menuPlaylistList'));
     list.appendChild(item(Store.favouritesPlaylist()));
-    for (const p of Store.sortedPlaylists()) list.appendChild(item(p));
+    for (const p of Store.singlePlaylists()) {
+      const el = item(p);
+      Groups.draggable(el, p);
+      list.appendChild(el);
+    }
 
-    // Followed Playlists: a main entry of its own, only while one is followed.
+    // Playlist Groups (4.5; their own entry since 4.5.1): each group as a
+    // folder, a click opens or closes it (remembered per device, as on the
+    // Playlists page). Closed, it shows the speaker while one of its lists
+    // plays and its bar while one of them is open. Followed playlists can
+    // be in them too. On the computer a playlist can be dragged onto a
+    // folder, or onto the single ones to leave its group (groups.js).
+    const groups = Store.groups();
+    $('menuGroups').hidden = !Store.canGroup();
+    this._arrows.groupsMenuOpen.hidden = !groups.length;
+    $('menuGroupsList').hidden = !Store.canGroup() || !groups.length || !groupsOpen;
+    const groupList = clear($('menuGroupsList'));
+    const inGroups = new Set(groups.flatMap((g) => Store.playlistsInGroup(g.id).map((p) => p.id)));
+    this._groupsPlaying.hidden = groupsOpen || !Player.isPlaying || !inGroups.has(Player.contextId);
+    $('menuGroups').classList.toggle('menu__item--active', this.page === 'playlist' && !groupsOpen && inGroups.has(this.playlistId));
+    for (const g of groups) {
+      const inside = Store.playlistsInGroup(g.id);
+      const open = Groups.isOpen(g.id);
+      // The group played as one list (4.5.2), or (closed) one of its playlists.
+      const asOne = GROUP_PREFIX + g.id;
+      const playing = Player.isPlaying && (Player.contextId === asOne || (!open && inside.some((p) => Player.contextId === p.id)));
+      const active = (this.page === 'group' && this.groupId === g.id) || (!open && this.page === 'playlist' && inside.some((p) => p.id === this.playlistId));
+      // The arrow and the folder open and close it; its name opens its page (4.5.2).
+      const toggle = (e) => {
+        e.stopPropagation();
+        Groups.toggle(g.id);
+        this.drawMenu();
+        if (this.page === 'playlists') PlaylistsPage.render();
+      };
+      const toggleTitle = open ? T('groups.hide.tooltip', { group: g.name }) : T('groups.show.tooltip', { group: g.name });
+      const folder = h('button.menu__sub.menu__group'
+        + (active ? '.menu__sub--active' : '')
+        + (playing ? '.menu__sub--playing' : ''), {
+        type: 'button',
+        title: T('groups.open.tooltip', { group: g.name }),
+        'aria-expanded': String(open),
+        onclick: () => this.openGroup(g.id),
+      },
+      h('span.menu__group-toggle', { role: 'button', title: toggleTitle, 'aria-label': toggleTitle, onclick: toggle },
+        h('span.menu__chevron' + (open ? '.menu__chevron--open' : ''), { html: Icons.chevron }),
+        h('span.menu__sub-icon', { html: Icons.folder })),
+      h('span.menu__sub-name', g.name),
+      playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null);
+      Groups.dropTarget(folder, g.id);
+      groupList.appendChild(folder);
+      if (!open) continue;
+      for (const p of inside) {
+        const el = item(p);
+        el.classList.add('menu__sub--in-group');
+        Groups.draggable(el, p);
+        Groups.dropTarget(el, g.id);
+        groupList.appendChild(el);
+      }
+    }
+
+    // Followed Playlists: a main entry of its own, only while one is
+    // followed; under it the ones in no group (4.5.1).
     const followed = Store.followedPlaylists();
+    const singleFollowed = Store.singleFollowed();
     $('menuFollowed').hidden = !followed.length;
-    $('menuFollowedList').hidden = !followed.length || !followedOpen;
+    this._arrows.followedMenuOpen.hidden = !singleFollowed.length;
+    $('menuFollowedList').hidden = !singleFollowed.length || !followedOpen;
     const followedList = clear($('menuFollowedList'));
-    for (const p of followed) followedList.appendChild(item(p));
+    for (const p of singleFollowed) {
+      const el = item(p);
+      Groups.draggable(el, p);
+      followedList.appendChild(el);
+    }
 
     // Active Sessions: only while another device plays on the server, or this one has company.
     $('menuSessions').hidden = !Session.visible;
     const others = Session.others().length;
     $('menuSessionsBadge').hidden = !others;
     $('menuSessionsBadge').textContent = String(others);
-    $('menuSessionsBadge').title = `${Util.plural(others, 'other device')} playing`;
+    $('menuSessionsBadge').title = T('nav.jams.othersPlaying.tooltip', { devices: Util.plural(others, 'other device'), count: others });
     // Under it the sessions, as the playlists: one opens the page at it.
     const sessionsOpen = this._open('sessionsMenuOpen');
-    this._drawArrow('sessionsMenuOpen', sessionsOpen, 'the jams');
+    this._drawArrow('sessionsMenuOpen', sessionsOpen, T('nav.section.what.jams'));
     $('menuSessionsList').hidden = !Session.visible || !sessionsOpen;
     const sessionList = clear($('menuSessionsList'));
     if (Session.visible && sessionsOpen) {
@@ -222,7 +328,7 @@ const Nav = {
       if (Session.guest && guestList) {
         sessionList.appendChild(h('button.menu__sub', {
           type: 'button',
-          title: `${guestList.name}: queue them, or start one, in the session`,
+          title: T('nav.jams.guestQueue.tooltip', { session: guestList.name }),
           onclick: () => this.openPlaylist(GUEST_ID),
         }, h('span.menu__sub-name', guestList.name)));
       }
@@ -230,31 +336,32 @@ const Nav = {
       const sessions = [...Session.list].sort((a, b) => a.name.localeCompare(b.name));
       for (const s of sessions) {
         // Its tag as on the page, kept whole when a long name is cut.
-        const tag = s.host.client === Store.server.clientId ? 'You' : s.id === inId ? 'Joined' : '';
-        const song = s.song ? `${s.playing ? '' : 'Paused: '}${s.song.title}${s.song.artist ? ` - ${s.song.artist}` : ''}` : 'Nothing loaded';
+        const tag = s.host.client === Store.server.clientId ? T('common.you') : s.id === inId ? T('common.joined') : '';
+        const song = s.song ? this._jamSong(s) : T('common.nothingLoaded');
+        const lower = s.host.client === Store.server.clientId ? T('common.you.lower') : T('nav.jams.tag.joined.lower');
         sessionList.appendChild(h('button.menu__sub' + (s.playing ? '.menu__sub--playing' : ''), {
           type: 'button',
-          title: `${s.name}${tag ? ` (${tag.toLowerCase()})` : ''}\n${song}`,
+          title: tag ? `${s.name} (${lower})\n${song}` : `${s.name}\n${song}`,
           onclick: () => this.show('sessions', { sessionId: s.id }),
         },
         h('span.menu__sub-name', s.name),
         tag ? h('span.session-tag', tag) : null,
-        s.playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null));
+        s.playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null));
       }
       // Other servers' sessions on this network, as "Server - Device": one opens the page at it (Join as guest).
       const nearby = Store.can('guests') ? Session.nearby.flatMap((n) => n.sessions.map((s) => ({ s, n, label: `${n.name} - ${Session.deviceOf(s)}` }))) : [];
       nearby.sort((a, b) => a.label.localeCompare(b.label));
       for (const { s, n, label } of nearby) {
         const joined = !!Session.guest && Session.guest.serverId === n.id && s.id === inId;
-        const song = s.song ? `${s.playing ? '' : 'Paused: '}${s.song.title}${s.song.artist ? ` - ${s.song.artist}` : ''}` : 'Nothing loaded';
+        const song = s.song ? this._jamSong(s) : T('common.nothingLoaded');
         sessionList.appendChild(h('button.menu__sub' + (s.playing ? '.menu__sub--playing' : ''), {
           type: 'button',
-          title: `${s.name}, on the server ${n.name}${joined ? ' (joined)' : ''}\n${song}`,
+          title: T(joined ? 'nav.jams.nearby.joined.tooltip' : 'nav.jams.nearby.tooltip', { session: s.name, server: n.name, song }),
           onclick: () => this.show('sessions', { sessionId: s.id }),
         },
         h('span.menu__sub-name', label),
-        joined ? h('span.session-tag', 'Joined') : null,
-        s.playing ? h('span.menu__playing', { html: Icons.speaker, title: 'Playing' }) : null));
+        joined ? h('span.session-tag', T('common.joined')) : null,
+        s.playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null));
       }
     }
 
@@ -263,7 +370,7 @@ const Nav = {
     $('menuTrend').hidden = !trendOn;
     $('menuTrendList').hidden = !trendOn || !trendOpen;
     const trendList = clear($('menuTrendList'));
-    for (const p of Store.smartPlaylists()) trendList.appendChild(item(p));
+    for (const p of Store.smartNames()) trendList.appendChild(item(p));
     this._trendPlaying.hidden = trendOpen || !(SmartLists.isSmart(Player.contextId) && Player.isPlaying);
   },
 };

@@ -55,6 +55,9 @@ const fs = {
   /** The file's text, or null when it is not there. */
   readText: (p) => sync().readText(p),
   writeText: (p, text) => done(sync().writeText(p, text)),
+  /** Adds text to the end of a file (4.3.4); only where canAppend() (the iPhone's has no such call yet). */
+  appendText: (p, text) => done(sync().appendText(p, text)),
+  canAppend: () => !!globalThis.FlowSync && typeof globalThis.FlowSync.appendText === 'function',
   /** The file's bytes (Uint8Array), or null. */
   readBytes: (p) => {
     const b64 = sync().readBase64(p);

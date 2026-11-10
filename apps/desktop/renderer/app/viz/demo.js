@@ -134,13 +134,15 @@
       if (this.textFor === id) return this.text;
       this.textFor = id;
       const song = id ? Store.song(id) || (Player.remote ? Player.remote.state : null) : null;
-      const now = song ? `NOW PLAYING: ${song.title || 'UNTITLED'}${song.artist ? ` BY ${song.artist}` : ''}` : 'FLOW';
+      const title = song ? song.title || T('viz.drawn.demo.untitled') : '';
+      const now = !song ? 'FLOW' : song.artist ? T('viz.drawn.demo.nowPlayingBy', { title, artist: song.artist }) : T('viz.drawn.demo.nowPlaying', { title });
       // The tempo and the key once they are known.
       const a = VizAudio;
       const notes = a._notes;
-      const key = notes && notes.key >= 0 && notes.clarity > 0.3 ? ` IN ${Notes.keyName(notes.key, notes.minor).replace('#', ' SHARP')}` : '';
-      const beat = a.sure > 0.4 && a.bpm ? ` *** ${Math.round(a.bpm)} BPM${key}` : '';
-      this.text = `${now}${beat} *** FLOW MUSIC VISUALIZER *** GREETINGS TO EVERYONE STILL LISTENING ***     `.toUpperCase().replace(/[^ -`]/g, '?');
+      const key = notes && notes.key >= 0 && notes.clarity > 0.3
+        ? ` ${T('viz.drawn.demo.key', { key: Notes.keyName(notes.key, notes.minor).replace('#', ` ${T('viz.drawn.demo.sharp')}`) })}` : '';
+      const beat = a.sure > 0.4 && a.bpm ? ` ${`*** ${Math.round(a.bpm)} BPM${key}`}` : '';
+      this.text = `${T('viz.drawn.demo.scroller', { nowPlaying: now, beat })}     `.toUpperCase().replace(/[^ -`]/g, '?');
       return this.text;
     }
 
@@ -280,17 +282,16 @@
 
   Visualizer.add({
     id: 'demo',
-    name: 'Demo',
-    desc: 'In the manner of the Amiga and C64 demos: a plasma, copper bars bouncing on the beat and a sine scroller with the song, its tempo and key',
+    name: T('viz.demo.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="square"><path d="M3 7h18M3 11h18M3 15h18"/><path d="M5 19l2-2 2 2 2-2 2 2 2-2 2 2 2-2"/></svg>',
     create: (canvas) => new Demo(canvas),
     options: [
-      { type: 'choice', key: 'dmBack', label: 'Behind', choices: [['plasma', 'Plasma'], ['stars', 'Stars']] },
-      { type: 'choice', key: 'dmPalette', label: 'Palette', choices: [['amiga', 'Amiga'], ['c64', 'C64'], ['neon', 'Neon']], when: (s) => s.dmBack !== 'stars' },
-      { type: 'check', key: 'dmCopper', label: 'Copper bars' },
-      { type: 'check', key: 'dmScroller', label: 'Scroller' },
-      { type: 'check', key: 'dmCrt', label: 'CRT' },
+      { type: 'choice', key: 'dmBack', label: T('viz.demo.setting.behind'), choices: [['plasma', T('viz.plasma.name')], ['stars', T('viz.shared.stars')]] },
+      { type: 'choice', key: 'dmPalette', label: T('viz.demo.setting.palette'), choices: [['amiga', 'Amiga'], ['c64', 'C64'], ['neon', T('viz.shared.neon')]], when: (s) => s.dmBack !== 'stars' },
+      { type: 'check', key: 'dmCopper', label: T('viz.demo.setting.copperBars') },
+      { type: 'check', key: 'dmScroller', label: T('viz.demo.setting.scroller') },
+      { type: 'check', key: 'dmCrt', label: T('viz.demo.setting.crt') },
     ],
   });
 })();

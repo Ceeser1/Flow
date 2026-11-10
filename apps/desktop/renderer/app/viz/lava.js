@@ -154,17 +154,16 @@
 
   Visualizer.add({
     id: 'lava',
-    name: 'Blobs',
-    desc: 'Glossy liquid blobs drifting and melting into each other as in a lava lamp, each swelling with its part of the music',
+    name: T('viz.lava.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l2 8-2 10H9L7 11z"/><circle cx="12" cy="9" r="1.6"/><path d="M10 15a2 2 0 0 0 4 0"/></svg>',
     gl: true,
     create: (canvas) => new Lava(canvas),
     options: [
-      { type: 'choice', key: 'lvColors', label: 'Colors', choices: [['lava', 'Lava'], ['neon', 'Neon'], ['ocean', 'Ocean'], ['candy', 'Candy'], ['chrome', 'Chrome']] },
-      { type: 'slider', key: 'lvBlobs', label: 'Blobs', min: 4, max: 16, step: 1, unit: '' },
-      { type: 'slider', key: 'lvSpeed', label: 'Drift', min: 25, max: 300, step: 5 },
-      { type: 'check', key: 'lvGloss', label: 'Gloss' },
+      { type: 'choice', key: 'lvColors', label: T('viz.shared.colors'), choices: [['lava', T('viz.lava.setting.colors.lava')], ['neon', T('viz.shared.neon')], ['ocean', T('viz.lava.setting.colors.ocean')], ['candy', T('viz.lava.setting.colors.candy')], ['chrome', T('viz.lava.setting.colors.chrome')]] },
+      { type: 'slider', key: 'lvBlobs', label: T('viz.lava.name'), min: 4, max: 16, step: 1, unit: '' },
+      { type: 'slider', key: 'lvSpeed', label: T('viz.lava.setting.drift'), min: 25, max: 300, step: 5 },
+      { type: 'check', key: 'lvGloss', label: T('viz.lava.setting.gloss') },
     ],
   });
 })();

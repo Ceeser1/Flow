@@ -33,7 +33,8 @@ function h(spec, props, ...children) {
 }
 
 function clear(node) {
-  while (node.firstChild) node.removeChild(node.firstChild);
+  // All at once (a long list's rows one by one took many times as long).
+  node.textContent = '';
   return node;
 }
 
@@ -46,7 +47,10 @@ function iconButton(cls, icon, title, onclick) {
 function listIcon(p) {
   if (p.isAll || p.isFrom) return Icons.library;
   if (p.isDevice) return Icons.download;
-  if (p.isFavourites) return Icons.star;
+  // One you follow (4.5.1): the green followed icon.
+  if (p.isShared && Store.isFollowing(p.id)) return Icons.followed;
+  // Yours, or another profile's shared with you (4.3).
+  if (p.isFavourites || p.favourites) return Icons.star;
   return p.isSmart || p.isRuled ? Icons.pulse : Icons.list;
 }
 

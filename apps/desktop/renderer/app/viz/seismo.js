@@ -543,18 +543,17 @@
 
   Visualizer.add({
     id: 'seismo',
-    name: 'Seismograph',
-    desc: "A chart recorder's pens trembling on paper running past, one for each part of the spectrum, kicked into swings by what jumps out, a marker ticking off the beats",
+    name: T('viz.seismo.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h3l1-3 2 6 1-3h3"/><path d="M2 16h2l2-5 2 9 2-7 1 3h1"/><path d="M15 4v16"/><path d="M15 8h6M15 16h6"/></svg>',
     gl: true,
     sharp: true,
     create: (canvas) => new Seismograph(canvas),
     options: [
-      { type: 'choice', key: 'szPaper', label: 'Paper', choices: [['green', 'Green grid'], ['red', 'Red grid'], ['blue', 'Blue grid']] },
-      { type: 'choice', key: 'szInk', label: 'Ink', choices: [['classic', 'A colour each'], ['black', 'Black']], color: { value: 'custom', key: 'szColor', presets: Visualizer.OWN_PRESETS } },
-      { type: 'slider', key: 'szPens', label: 'Pens', min: 4, max: 12, step: 1, unit: '' },
-      { type: 'slider', key: 'szSpeed', label: 'Paper speed', min: 50, max: 200, step: 10 },
+      { type: 'choice', key: 'szPaper', label: T('viz.seismo.setting.paper'), choices: [['green', T('viz.seismo.setting.paper.green')], ['red', T('viz.seismo.setting.paper.red')], ['blue', T('viz.seismo.setting.paper.blue')]] },
+      { type: 'choice', key: 'szInk', label: T('viz.shared.ink'), choices: [['classic', T('viz.seismo.setting.ink.classic')], ['black', T('common.color.black')]], color: { value: 'custom', key: 'szColor', presets: Visualizer.OWN_PRESETS } },
+      { type: 'slider', key: 'szPens', label: T('viz.seismo.setting.pens'), min: 4, max: 12, step: 1, unit: '' },
+      { type: 'slider', key: 'szSpeed', label: T('viz.seismo.setting.paperSpeed'), min: 50, max: 200, step: 10 },
     ],
   });
 })();

@@ -13,9 +13,23 @@
 //   POST /api/pair/redeem { code }      open to anyone: the password, once: { password }; 404
 //                                      for a code used or too old
 //   GET  /api/library [?since=rev&as=profileId]
-//                                      { rev, library, profile }, or 204 when
-//                                      nothing changed for that profile
-//   POST /api/commands { commands }    { rev, results }  (see @flow/core/commands)
+//                                      what changed for the profile since its copy's
+//                                      revision (4.3, library.js changes): { rev, full,
+//                                      songs, playlists, ..., profile, rules }; all of it
+//                                      (full) without since or when too old; 204 when
+//                                      nothing did. Songs come without stats and stars.
+//   GET  /api/stats [?since=srev]      the profile's songs' stats since its stats
+//                                      revision (4.3, statsChanges): { rev, full, songs,
+//                                      playlistListened? }
+//   GET  /api/statistics               { statistics, srev }: the profile's Statistics totals
+//   GET  /api/shared                   { playlists }: the playlists others share, by their
+//                                      details (name, owner, songCount, seconds; 4.3)
+//   GET  /api/shared/:id               { playlist }: one of them with its songs
+//   POST /api/commands { commands, rev?, srev?, client? }
+//                                      { rev, srev, results } (see @flow/core/commands); with
+//                                      the app's revisions also what changed since
+//                                      (changes, stats), which its live channel then
+//                                      does not send again
 //   PUT  /api/songs/:id?meta=...       upload a song; the body is the file:
 //                                      { existing, id, rev, names? }. One the
 //                                      server has already is not taken: its
@@ -49,10 +63,18 @@
 //                                      the "trim" feature): { song, rev } or
 //                                      { skipped: 'gone' | 'repeat' | 'changed', rev };
 //                                      403 for a song another profile uploaded
-//   GET  /api/songs/:id/cover[?v=]     the song's cover (JPEG); with ?v= its
-//                                      current version, cached for good
-//   PUT  /api/songs/:id/cover          an app's cover for a song that has none;
-//                                      the body is the JPEG: { cover }
+//   GET  /api/songs/:id/cover[?v=&size=]  the song's cover (4.3.1: WebP, size
+//                                      big 512 x 512 or small 128 x 128); with ?v=
+//                                      its current version, cached for good
+//   POST /api/covers { ids, size }     several covers in one answer (4.3.1, at most
+//                                      100): the body is a 4-byte length, a JSON
+//                                      index [{ id, v, n }] and the pictures one
+//                                      after another (cover.packCovers)
+//   PUT  /api/songs/:id/cover[?size=]  an app's cover for a song that has none;
+//                                      the body is the picture: { cover }. A WebP
+//                                      512 x 512 is kept as it is (its 128 x 128
+//                                      follows with ?size=small); anything else
+//                                      is made into both
 //   POST /api/rescan                   look through the music folder again
 //   GET  /api/live?client=<id>&device=<name>
 //                                      the app's live channel: events as they
@@ -63,10 +85,27 @@
 //   POST /api/sessions { type, ... }   taking part in them (sessions.js)
 //
 // Downloads by the server (downloads.js; only when /api/hello lists the
-// "download" feature), one batch per profile:
-//   GET    /api/downloads              { batch } (null: none)
-//   POST   /api/downloads { url, kind, options }   a new batch: { batch }, 409 with one already
-//   DELETE /api/downloads              cancel the whole batch
+// "download" feature). Without the "downloadQueue" feature (servers before
+// 4.4) one batch per profile, and the routes below without :id are that
+// one; with it a profile may have several, taking turns with every
+// profile's, and :id (12 hex) names one of them:
+//   GET    /api/downloads              { batch } (null: none; the oldest)
+//   GET    /api/downloads?queue=1      also { batches (the profile's), queue
+//                                      (every profile's waiting and downloading
+//                                      ones: id, own, profileName, name, count, url,
+//                                      state, place), done (what its batches that
+//                                      finished by themselves did lately) }
+//   POST   /api/downloads { url, kind, options, queue, auto, review }   a new batch: { batch };
+//                                      409 with one already unless queue: true;
+//                                      auto: { complete, finish } (finishes by itself)
+//   DELETE /api/downloads              cancel the whole batch (the oldest)
+//   DELETE /api/downloads/:id          cancel that one (the profile's only)
+//   POST   /api/downloads/:id/choose { indexes }   a list read for an app that
+//                                      chooses its songs (POST with review: true,
+//                                      feature "downloadReview", 4.4.1) waits as
+//                                      state 'review' (its items with status and
+//                                      match); the songs ticked: { batch }
+//   .../api/downloads/:id/items/:i/... as below, for that batch
 //   POST   /api/downloads/check { url }   a playlist's Update (feature "downloadCheck"):
 //                                      its link read, nothing downloaded: { listing }; the
 //                                      songs ticked come back as POST /api/downloads
@@ -124,6 +163,7 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const zlib = require('zlib');
 const http = require('http');
 const path = require('path');
 const { URL } = require('url');
@@ -144,16 +184,20 @@ const { createAdminRoutes } = require('./admin');
 const { createPairing, LIFE_MS: PAIR_LIFE_MS } = require('./pairing');
 const { createGuests } = require('./guests');
 
-const PROTOCOL = 1;
-// What this server can do beyond protocol 1, for apps that know to ask.
+// 2 (4.3): the library comes as what changed (GET /api/library?since=), the
+// stats apart from it, Favourites as playlists, changes pushed on the live channel.
+const PROTOCOL = 2;
+// What this server can do beyond its protocol, for apps that know to ask.
 // admin: /api/admin for admin profiles (admin.js).
 // smartPlaylists: a playlist's rules are kept (4.0). pair: QR codes' pairing codes (4.0).
-const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair'];
+// playlistGroups: the groups' commands and each owner's groups in the library (4.5).
+// followedInGroups: followed playlists put into groups too, kept in the group's followed (4.5.1).
+const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;
-// Level 3 and 4 sessions: an app polls every few seconds while it is open, so
-// the idle time only ends the session of an app that was closed or asleep.
+// Level 3 and 4 sessions: an open app keeps its live channel, whose token is checked
+// at every ping, so the idle time only ends the session of an app that was closed or asleep.
 const SESSION_IDLE = 30 * 60 * 1000;
 const SESSION_MAX = 24 * 60 * 60 * 1000;
 
@@ -182,10 +226,35 @@ function cors(res) {
   res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
 }
 
+// Answers larger than this go compressed to an app that takes gzip (4.3).
+const GZIP_FROM = 1024;
+
+// Answers larger than this are packed beside the server's work (4.3.5: the
+// whole library of 100 000 songs, 40 MB, took a third of a second in one go).
+const GZIP_APART = 256 * 1024;
+
 function sendJson(res, status, value) {
   const body = Buffer.from(JSON.stringify(value));
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length, 'Cache-Control': 'no-store' });
-  res.end(body);
+  const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', Vary: 'Accept-Encoding' };
+  const send = (out, gzipped) => {
+    if (gzipped) headers['Content-Encoding'] = 'gzip';
+    headers['Content-Length'] = out.length;
+    res.writeHead(status, headers);
+    res.end(out);
+  };
+  if (body.length <= GZIP_FROM || !/\bgzip\b/.test(String((res.req && res.req.headers['accept-encoding']) || ''))) {
+    send(body, false);
+    return;
+  }
+  if (body.length < GZIP_APART) {
+    send(zlib.gzipSync(body, { level: 6 }), true);
+    return;
+  }
+  zlib.gzip(body, { level: 6 }, (err, packed) => {
+    if (res.destroyed) return;
+    if (err) send(body, false);
+    else send(packed, true);
+  });
 }
 
 function readJsonBody(req) {
@@ -265,7 +334,8 @@ function sendFile(req, res, file) {
  */
 function sendCover(req, res, url, found) {
   if (!found) throw new HttpError(404, 'This song has no cover.');
-  const etag = `"${found.version}"`;
+  // The two sizes of one version are two pictures.
+  const etag = `"${found.version}${url.searchParams.get('size') === 'small' ? '-s' : ''}"`;
   const headers = {
     'Content-Type': 'image/jpeg',
     ETag: etag,
@@ -282,10 +352,14 @@ function sendCover(req, res, url, found) {
   } catch {
     throw new HttpError(404, 'This song has no cover.');
   }
+  headers['Content-Type'] = cover.pictureType(body);
   headers['Content-Length'] = body.length;
   res.writeHead(200, headers);
   res.end(req.method === 'HEAD' ? undefined : body);
 }
+
+/** The size a cover is asked for in: 'small' (128) or 'big' (512, also when left out). */
+const coverSize = (url) => (url.searchParams.get('size') === 'small' || url.searchParams.get('size') === '128' ? 'small' : 'big');
 
 /** A request's body, at most `max` bytes. */
 function readBody(req, max) {
@@ -369,7 +443,7 @@ const isLoopback = (ip) => ip === '::1' || /^127\./.test(ip);
 
 function createHttpServer({
   config, library, version, log = () => {}, tailscale = () => null, downloads = null, live = null, sessions = null, activity = null, backups = null,
-  lyrics = null,
+  lyrics = null, push = null,
 }) {
   const throttle = createThrottle();
   // QR codes' pairing codes, in memory only.
@@ -382,7 +456,7 @@ function createHttpServer({
   }) : null;
   // What is noted about the profiles for the admins (activity.js); left out by tests that need none.
   const note = activity || {
-    created() {}, seen() {}, left() {}, failed() {},
+    created() {}, seen() {}, left() {}, failed() {}, uploaded() {},
   };
   // An app gone from its live channel was last seen then.
   if (live) {
@@ -546,7 +620,9 @@ function createHttpServer({
     live,
     sessions,
     backups,
-    activity: activity || { lastSeen: (p) => p.lastSeenAt || 0, failed() {}, failures: () => [], clearFailures() {} },
+    activity: activity || {
+      lastSeen: (p) => p.lastSeenAt || 0, failed() {}, failures: () => [], clearFailures() {}, uploads: () => [],
+    },
     tools,
     version,
     startedAt,
@@ -777,7 +853,7 @@ function createHttpServer({
     });
   }
 
-  async function upload(req, res, url, id, profileId) {
+  async function upload(req, res, url, id, profileId, { ip, device }) {
     let meta;
     try {
       meta = JSON.parse(url.searchParams.get('meta') || '{}');
@@ -813,6 +889,7 @@ function createHttpServer({
     }
     const song = library.addUploaded(tmp, id, meta, meta.playlistIds, profileId);
     log(`Uploaded: ${[song.artist, song.title].filter(Boolean).join(' - ')}`);
+    note.uploaded(song.id, { profileId: profileId || '', ip, device });
     sendJson(res, 200, { existing: false, id: song.id, rev: library.rev });
   }
 
@@ -821,20 +898,47 @@ function createHttpServer({
    * (the server's own search may have found one first). A JPEG; one that is
    * not 512 x 512 is made so with ffmpeg, when there is one.
    */
-  async function uploadCover(req, res, id) {
+  async function uploadCover(req, res, id, size) {
     if (!library.data.songs.some((s) => s.id === id)) {
       req.resume();
       throw new HttpError(404, 'That song is not on the server.');
     }
-    let jpeg = await readBody(req, MAX_COVER);
-    const size = cover.imageSize(jpeg);
-    if (!size || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new HttpError(415, 'A cover is a JPEG picture.');
-    if ((size.width !== cover.SIZE || size.height !== cover.SIZE) && tools.ffmpeg()) {
-      jpeg = await cover.makeSquare(tools.ffmpeg(), jpeg);
-      if (!jpeg) throw new HttpError(415, 'The picture could not be read.');
+    const picture = await readBody(req, MAX_COVER);
+    const dims = cover.imageSize(picture);
+    if (!dims) throw new HttpError(415, 'A cover is a picture (WebP, JPEG or PNG).');
+    // 4.3.1: the app's own thumbnail of the cover it sent just before.
+    if (size === 'small') {
+      if (!cover.isWebp(picture) || dims.width !== cover.THUMB || dims.height !== cover.THUMB) throw new HttpError(415, 'A thumbnail is a WebP of 128 x 128.');
+      return sendJson(res, 200, { cover: library.setThumbnail(id, picture), rev: library.rev });
     }
-    const version = library.setCover(id, jpeg, { onlyIfNone: true });
+    // A WebP of the right size is kept as it is; anything else is made into both sizes.
+    // Without ffmpeg (nothing could be made of it) a 512 x 512 picture is kept as it is too.
+    const square = dims.width === cover.SIZE && dims.height === cover.SIZE;
+    const ready = square && (cover.isWebp(picture) || !tools.ffmpeg());
+    if (!ready && !tools.ffmpeg()) throw new HttpError(415, 'This server needs ffmpeg to take that picture.');
+    const version = await library.setCover(id, ready ? null : picture, { onlyIfNone: true, big: ready ? picture : null });
+    if (!version) throw new HttpError(415, 'The picture could not be read.');
     sendJson(res, 200, { cover: version, rev: library.rev });
+  }
+
+  /** Several covers in one answer (POST /api/covers): what the apps' lists show, as they come into sight. */
+  async function coverBatch(req, res) {
+    const body = await readJsonBody(req);
+    const size = body && (body.size === 'small' || body.size === 128) ? 'small' : 'big';
+    const items = [];
+    for (const id of (Array.isArray(body && body.ids) ? body.ids : []).slice(0, 100).map(String)) {
+      if (!cover.ID_RE.test(id)) continue;
+      const found = library.coverOf(id, size);
+      if (!found) continue;
+      try {
+        items.push({ id, v: found.version, bytes: fs.readFileSync(found.file) });
+      } catch {
+        // Gone meanwhile: not in this answer.
+      }
+    }
+    const packed = cover.packCovers(items);
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': packed.length, 'Cache-Control': 'no-store' });
+    res.end(packed);
   }
 
   async function route(req, res) {
@@ -855,7 +959,7 @@ function createHttpServer({
       // From home at level 3 and 4 no password is asked for, so none is announced.
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
-      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck'] : []), ...(live ? ['sessions'] : []),
+      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck', 'downloadQueue', 'downloadReview'] : []), ...(live ? ['sessions'] : []),
         ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics', 'ownLyrics', 'lyricsSync'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
@@ -902,14 +1006,26 @@ function createHttpServer({
       // switched, or its profile was deleted) gets the whole library, even
       // at the same revision.
       const as = url.searchParams.get('as') || '';
-      if (since !== null && Number(since) === library.rev && as === (profileId || '')) {
+      const same = as === (profileId || '');
+      const c = library.changes(profileId, since === null || !same ? -1 : Number(since));
+      if (library.noChanges(c)) {
         res.writeHead(204);
         res.end();
         return;
       }
-      return sendJson(res, 200, {
-        rev: library.rev, library: library.snapshot(profileId), profile: publicProfile(profile), rules: rulesFor(profile),
-      });
+      return sendJson(res, 200, { ...c, profile: publicProfile(profile), rules: rulesFor(profile) });
+    }
+    if (is('GET', /^\/api\/stats$/)) {
+      const since = url.searchParams.get('since');
+      return sendJson(res, 200, library.statsChanges(profileId, since === null ? -1 : Number(since)));
+    }
+    if (is('GET', /^\/api\/statistics$/)) return sendJson(res, 200, library.statisticsOf(profileId));
+    if (is('GET', /^\/api\/shared$/)) return sendJson(res, 200, { playlists: library.sharedDetails(profileId) });
+    const shm = /^\/api\/shared\/([\w-]{1,64})$/.exec(p);
+    if (shm && is('GET', /./)) {
+      const one = library.sharedOne(profileId, shm[1]);
+      if (!one) throw new HttpError(404, 'That playlist is no longer shared.');
+      return sendJson(res, 200, { playlist: one });
     }
     if (is('GET', /^\/api\/live$/)) return openLive(req, res, url, client, entry);
     if (is('GET', /^\/api\/time$/)) return sendJson(res, 200, { time: Date.now() });
@@ -934,7 +1050,22 @@ function createHttpServer({
     }
     if (is('POST', /^\/api\/commands$/)) {
       const body = await readJsonBody(req);
-      return sendJson(res, 200, library.runCommands(body.commands, profileId, { admin: !!(profile && profile.admin) }));
+      const result = library.runCommands(body.commands, profileId, { admin: !!(profile && profile.admin) });
+      // What changed since the app's copy goes back with the answer (4.3), and not again on its live channel.
+      const known = (v) => v !== undefined && v !== null && Number.isFinite(Number(v)) && Number(v) >= 0;
+      if (known(body.rev) && Number(body.rev) < result.rev) {
+        const c = library.changes(profileId, Number(body.rev));
+        if (!c.full) result.changes = c;
+      }
+      if (known(body.srev) && Number(body.srev) < result.srev) {
+        const s = library.statsChanges(profileId, Number(body.srev));
+        if (!s.full) result.stats = s;
+      }
+      if (push) {
+        const app = (entry && entry.client) || (CLIENT_ID.test(String(body.client || '')) ? String(body.client) : '');
+        push.caughtUp(app, { rev: result.changes ? result.rev : null, srev: result.stats ? result.srev : null });
+      }
+      return sendJson(res, 200, result);
     }
     if (p.startsWith('/api/admin/')) {
       const me = profileOf(entry);
@@ -1008,10 +1139,11 @@ function createHttpServer({
       return sendJson(res, 200, { ...(r.song ? { song: { ...r.song, file: '' } } : {}), skipped: r.skipped, rev: library.rev });
     }
     m = /^\/api\/songs\/([\w-]{1,64})\/cover$/.exec(p);
-    if (m && (req.method === 'GET' || req.method === 'HEAD')) return sendCover(req, res, url, library.coverOf(m[1]));
-    if (m && req.method === 'PUT') return uploadCover(req, res, m[1]);
+    if (m && (req.method === 'GET' || req.method === 'HEAD')) return sendCover(req, res, url, library.coverOf(m[1], coverSize(url)));
+    if (m && req.method === 'PUT') return uploadCover(req, res, m[1], coverSize(url));
+    if (is('POST', /^\/api\/covers$/)) return coverBatch(req, res);
     m = /^\/api\/songs\/([\w-]{1,64})$/.exec(p);
-    if (m && req.method === 'PUT') return upload(req, res, url, m[1], profileId);
+    if (m && req.method === 'PUT') return upload(req, res, url, m[1], profileId, { ip: client.ip, device: entry ? entry.device : '' });
     if (p.startsWith('/api/downloads')) return downloadRoute(req, res, p, profileId, url);
     throw new HttpError(404, 'Nothing here.');
   }
@@ -1047,8 +1179,13 @@ function createHttpServer({
       }
       return now;
     };
+    // The revisions of the app's copy (4.3): its changes come on the channel from there.
+    const num = (key) => {
+      const v = url.searchParams.get(key);
+      return v === null || v === '' || !Number.isFinite(Number(v)) ? -1 : Number(v);
+    };
     live.open(req, res, {
-      client: id, ...first, probe: url.searchParams.get('probe') === '1', check,
+      client: id, ...first, probe: url.searchParams.get('probe') === '1', check, rev: num('rev'), srev: num('srev'), syncProfile: first.profileId,
     });
   }
 
@@ -1074,7 +1211,7 @@ function createHttpServer({
   async function downloadRoute(req, res, p, profileId, url) {
     if (!downloads) throw new HttpError(404, 'This server does not download songs.');
     const is = (method, pattern) => (method === req.method || (method === 'GET' && req.method === 'HEAD')) && pattern.test(p);
-    if (is('GET', /^\/api\/downloads$/)) return sendJson(res, 200, { batch: downloads.get(profileId) });
+    if (is('GET', /^\/api\/downloads$/)) return sendJson(res, 200, downloads.get(profileId, { queue: url.searchParams.get('queue') === '1' }));
     if (is('POST', /^\/api\/downloads$/)) {
       const body = await readJsonBody(req);
       return sendJson(res, 200, { batch: downloads.create(profileId, body) });
@@ -1091,19 +1228,29 @@ function createHttpServer({
       const body = await readJsonBody(req);
       return sendJson(res, 200, await downloads.search(profileId, body));
     }
-    const m = /^\/api\/downloads\/items\/(\d{1,4})(?:\/(peaks|audio|cover|finish|retry))?$/.exec(p);
+    const picked = /^\/api\/downloads\/([0-9a-f]{12})\/choose$/.exec(p);
+    if (picked && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      return sendJson(res, 200, { batch: downloads.choose(profileId, picked[1], body) });
+    }
+    const one = /^\/api\/downloads\/([0-9a-f]{12})$/.exec(p);
+    if (one && req.method === 'DELETE') {
+      downloads.cancel(profileId, one[1]);
+      return sendJson(res, 200, { batch: null });
+    }
+    const m = /^\/api\/downloads(?:\/([0-9a-f]{12}))?\/items\/(\d{1,4})(?:\/(peaks|audio|cover|finish|retry))?$/.exec(p);
     if (!m) throw new HttpError(404, 'Nothing here.');
-    const [, index, what] = m;
-    if (what === 'peaks' && is('GET', /./)) return sendJson(res, 200, { peaks: downloads.peaks(profileId, index) });
-    if (what === 'audio' && is('GET', /./)) return sendFile(req, res, downloads.audioFile(profileId, index));
-    if (what === 'cover' && is('GET', /./)) return sendCover(req, res, url, downloads.coverFile(profileId, index));
+    const [, id = null, index, what] = m;
+    if (what === 'peaks' && is('GET', /./)) return sendJson(res, 200, { peaks: downloads.peaks(profileId, index, id) });
+    if (what === 'audio' && is('GET', /./)) return sendFile(req, res, downloads.audioFile(profileId, index, id));
+    if (what === 'cover' && is('GET', /./)) return sendCover(req, res, url, downloads.coverFile(profileId, index, id));
     if (what === 'finish' && req.method === 'POST') {
       const body = await readJsonBody(req);
-      const result = await downloads.finish(profileId, index, body);
+      const result = await downloads.finish(profileId, index, body, id);
       return sendJson(res, 200, { ...result, rev: library.rev });
     }
-    if (what === 'retry' && req.method === 'POST') return sendJson(res, 200, { batch: downloads.retry(profileId, index) });
-    if (!what && req.method === 'DELETE') return sendJson(res, 200, { batch: downloads.discard(profileId, index) });
+    if (what === 'retry' && req.method === 'POST') return sendJson(res, 200, { batch: downloads.retry(profileId, index, id) });
+    if (!what && req.method === 'DELETE') return sendJson(res, 200, { batch: downloads.discard(profileId, index, id) });
     throw new HttpError(404, 'Nothing here.');
   }
 

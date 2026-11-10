@@ -231,16 +231,15 @@
 
   Visualizer.add({
     id: 'coral',
-    name: 'Coral',
-    desc: 'Living patterns of coral, cells or mazes growing over the screen, seeded by the kicks, swelling and receding with the bass',
+    name: T('viz.coral.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-8M12 14c-3 0-5-2-5-5V5M12 14c3 0 5-2 5-5V3M7 9H4V6M17 8h3V5M12 14V9"/></svg>',
     gl: true,
     create: (canvas) => new Coral(canvas),
     options: [
-      { type: 'choice', key: 'crKind', label: 'Growth', choices: [['coral', 'Coral'], ['maze', 'Maze'], ['spots', 'Spots']] },
-      { type: 'choice', key: 'crColors', label: 'Colours', choices: [['reef', 'Reef'], ['neon', 'Neon'], ['lichen', 'Lichen']] },
-      { type: 'slider', key: 'crSpeed', label: 'Growing', min: 25, max: 300, step: 5 },
+      { type: 'choice', key: 'crKind', label: T('viz.coral.setting.growth'), choices: [['coral', T('viz.coral.name')], ['maze', T('viz.coral.setting.growth.maze')], ['spots', T('viz.coral.setting.growth.spots')]] },
+      { type: 'choice', key: 'crColors', label: T('viz.shared.colors'), choices: [['reef', T('viz.coral.setting.colours.reef')], ['neon', T('viz.shared.neon')], ['lichen', T('viz.coral.setting.colours.lichen')]] },
+      { type: 'slider', key: 'crSpeed', label: T('viz.coral.setting.growing'), min: 25, max: 300, step: 5 },
     ],
   });
 })();

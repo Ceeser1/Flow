@@ -224,7 +224,7 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
         const id = library.newId();
         const pic = staged.get(cachePath);
         staged.delete(cachePath);
-        const cover = pic && fs.exists(pic.file) ? covers.localStore().take(id, pic.file) : '';
+        const cover = pic && fs.exists(pic.file) ? covers.takeLocal(id, pic.file) : '';
         library.mutate((d) => {
           model.addSong(d, {
             id,

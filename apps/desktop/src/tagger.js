@@ -45,7 +45,7 @@ function createTagger({ skip = () => false } = {}) {
     try {
       // The folder watch waits meanwhile: the copy is no song of its own.
       await library.quietly(async () => {
-        const picture = coverNow && coverNow !== NO_COVER ? covers.localStore().read(s.id) : null;
+        const picture = coverNow && coverNow !== NO_COVER ? await covers.tagPicture(s.id) : null;
         ok = await media.rewriteTags(file, out, {
           meta: {
             title: s.title, artist: s.artist, mix: s.mix, album: s.album, genre: s.genre, subGenre: s.subGenre, sourceUrl: s.sourceUrl,

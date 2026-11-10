@@ -94,12 +94,16 @@ test('songs without a cover get one: their thumbnail, the picture in the file, e
 
     const got = await fetch(`${base}/api/songs/${songs.Teardrop.id}/cover`);
     assert.equal(got.status, 200);
-    const jpeg = Buffer.from(await got.arrayBuffer());
-    assert.equal(jpeg[0], 0xff);
-    assert.equal(jpeg[1], 0xd8);
+    // 4.3.1: WebP, 512 x 512 and its 128 x 128 thumbnail.
+    const { imageSize, isWebp } = require('@flow/core/cover');
+    const webp = Buffer.from(await got.arrayBuffer());
+    assert.ok(isWebp(webp));
+    assert.deepEqual(imageSize(webp), { width: 512, height: 512 });
+    const thumb = Buffer.from(await (await fetch(`${base}/api/songs/${songs.Teardrop.id}/cover?size=small`)).arrayBuffer());
+    assert.deepEqual(imageSize(thumb), { width: 128, height: 128 });
     assert.deepEqual(server.library.coverCounts(), { total: 4, have: 2, todo: 1 });
     // Songs that were there before are not written by themselves (flow-server tag-songs does that).
-    assert.equal(songs.Teardrop.tagged, null);
+    assert.equal(server.library.data.songs.find((s) => s.id === songs.Teardrop.id).tagged, null);
     const full = (id) => server.library.data.songs.find((s) => s.id === id).file;
     assert.equal(tagsOf(full(songs.Teardrop.id)).flowid, undefined);
   } finally {

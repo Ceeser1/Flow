@@ -14,6 +14,7 @@
 // heard here counts there too, whatever library it was from.
 
 const model = require('../libraryModel');
+const { tr } = require('../lang');
 
 function createActions({
   remote, library, files, retag = null, trim = null, privateStats = null,
@@ -39,7 +40,7 @@ function createActions({
   /** A smart playlist (4.0): its songs are the ones its rules pick (playlistRules.js in the window). */
   function createSmartPlaylist({ name, rules }) {
     const clean = model.cleanRules(rules);
-    if (!clean) throw new Error('A smart playlist needs its rules.');
+    if (!clean) throw new Error(tr('songs.error.smartNeedsRules', 'A smart playlist needs its rules.'));
     if (!remote.active()) {
       return library.mutate((d) => {
         const p = model.createPlaylist(d, name, library.newId());
@@ -54,12 +55,54 @@ function createActions({
 
   function setPlaylistRules({ id, rules }) {
     const clean = model.cleanRules(rules);
-    if (!clean) throw new Error('A smart playlist needs its rules.');
+    if (!clean) throw new Error(tr('songs.error.smartNeedsRules', 'A smart playlist needs its rules.'));
     return change((d) => model.setPlaylistRules(d, id, clean), 'setPlaylistRules', { playlistId: id, rules: clean });
   }
 
   function renamePlaylist({ id, name }) {
     return change((d) => model.renamePlaylist(d, id, name), 'renamePlaylist', { playlistId: id, name });
+  }
+
+  // ---- playlist groups (4.5) ----
+
+  function createGroup(name) {
+    if (!remote.active()) return library.mutate((d) => model.createGroup(d, name, library.newId()));
+    const clean = model.checkGroupName(remote.view(), name);
+    const id = library.newId();
+    remote.command('createGroup', { groupId: id, name: clean });
+    return model.groupById(remote.view(), id);
+  }
+
+  function renameGroup({ id, name }) {
+    return change((d) => model.renameGroup(d, id, name), 'renameGroup', { groupId: id, name });
+  }
+
+  /** The group goes, its playlists stay single. */
+  function deleteGroup(id) {
+    return change((d) => model.deleteGroup(d, id), 'deleteGroup', { groupId: id });
+  }
+
+  /** Playlists into a group, or (groupId '') out of theirs: one or several. */
+  function setPlaylistGroup({ playlistIds, groupId }) {
+    const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).map(String).filter(Boolean);
+    const gid = groupId ? String(groupId) : '';
+    if (!remote.active()) {
+      return library.mutate((d) => {
+        for (const id of ids) model.setPlaylistGroup(d, id, gid);
+      });
+    }
+    // Checked first, as the server would: none goes when one cannot.
+    const v = remote.view();
+    if (gid && !model.groupById(v, gid)) throw new Error(tr('core.library.groupGone', 'That playlist group no longer exists.'));
+    for (const id of ids) {
+      const p = model.playlistById(v, id);
+      // A followed one (4.5.1), on a server that keeps them in groups.
+      if (!p && (v.follows || []).includes(id) && remote.status().followedInGroups) continue;
+      if (!p) throw new Error(tr('core.library.playlistGone', 'That playlist no longer exists.'));
+      if (p.favourites) throw new Error(tr('core.library.favouritesFixed', 'Favourites cannot be renamed, deleted or given rules.'));
+    }
+    for (const id of ids) remote.command('setPlaylistGroup', { playlistId: id, groupId: gid });
+    return null;
   }
 
   // deleteSongs: the songs in no other playlist go too. With a server it decides
@@ -98,7 +141,7 @@ function createActions({
   }
 
   function setFollowing({ id, on }) {
-    if (!remote.active()) throw new Error('Following playlists needs a Flow Server.');
+    if (!remote.active()) throw new Error(tr('songs.error.followNeedsServer', 'Following playlists needs a Flow Server.'));
     const result = remote.command(on ? 'followPlaylist' : 'unfollowPlaylist', { playlistId: id });
     // Unfollowed: its downloaded songs go too, unless another downloaded
     // playlist (or All Songs) still holds them.
@@ -122,12 +165,12 @@ function createActions({
     if (remote.active()) return remote.deleteSong(songId, !!deleteFile);
     return library.quietly(() => {
       const song = model.songById(library.get(), songId);
-      if (!song) throw new Error('That song no longer exists.');
+      if (!song) throw new Error(tr('common.songGone', 'That song no longer exists.'));
       if (deleteFile && files.exists(song.file)) {
         try {
           files.rm(song.file);
         } catch {
-          throw new Error('The file could not be deleted. It may be open in another program.');
+          throw new Error(tr('songs.error.fileNotDeleted', 'The file could not be deleted. It may be open in another program.'));
         }
       }
       return library.mutate((d) => model.removeSong(d, songId, !deleteFile));
@@ -138,7 +181,7 @@ function createActions({
     songId, artist, title, mix, album, genre, subGenre,
   }) {
     const meta = { artist: String(artist || '').trim(), title: String(title || '').trim(), mix: String(mix || '').trim() };
-    if (!meta.title) throw new Error('Please enter a title.');
+    if (!meta.title) throw new Error(tr('common.enterTitle', 'Please enter a title.'));
     if (album !== undefined) meta.album = String(album || '').trim();
     if (genre !== undefined) meta.genre = String(genre || '').trim();
     if (subGenre !== undefined) meta.subGenre = String(subGenre || '').trim();
@@ -146,14 +189,14 @@ function createActions({
     if (remote.active()) return remote.command('editSong', { songId, ...meta });
     return library.quietly(async () => {
       const song = model.songById(library.get(), songId);
-      if (!song) throw new Error('That song no longer exists.');
+      if (!song) throw new Error(tr('common.songGone', 'That song no longer exists.'));
       let file = song.file;
       let written = false;
       if (retag && files.exists(song.file)) {
         try {
           ({ file, written } = await retag(song, meta));
         } catch {
-          throw new Error('The file could not be renamed. It may be open in another program.');
+          throw new Error(tr('songs.error.fileNotRenamed', 'The file could not be renamed. It may be open in another program.'));
         }
       }
       return library.mutate((d) => {
@@ -170,13 +213,13 @@ function createActions({
   // that is one of a server's goes there too once it is connected.
   function trimSong({ songId, start, end }) {
     const span = { start: Math.max(0, Number(start) || 0), end: Number(end) || 0 };
-    if (!(span.end - span.start >= 0.5)) throw new Error('The trim is too short.');
+    if (!(span.end - span.start >= 0.5)) throw new Error(tr('songs.error.trimTooShort', 'The trim is too short.'));
     if (remote.active()) return remote.trimSong(songId, span);
-    if (!trim) throw new Error('Songs on this device can only be trimmed through a Flow Server.');
+    if (!trim) throw new Error(tr('songs.error.trimNeedsServer', 'Songs on this device can only be trimmed through a Flow Server.'));
     return library.quietly(async () => {
       const song = model.songById(library.get(), songId);
-      if (!song) throw new Error('That song no longer exists.');
-      if (!files.exists(song.file)) throw new Error('The song\'s file is missing.');
+      if (!song) throw new Error(tr('common.songGone', 'That song no longer exists.'));
+      if (!files.exists(song.file)) throw new Error(tr('songs.error.fileMissing', 'The song\'s file is missing.'));
       const base = song.cut;
       const cut = remote.newCutId();
       const { duration } = await trim(song, span.start, span.end);
@@ -224,7 +267,10 @@ function createActions({
   }
 
   const findBySource = ({ url, key }) => model.findBySource(currentLibrary(), { url, key });
-  const findByMeta = (meta) => model.findByMeta(currentLibrary(), meta);
+  // With meta.duration: only a song of the same length (model.findSameSong).
+  const findByMeta = (meta) => (meta && meta.duration
+    ? model.findSameSong(currentLibrary(), meta, meta.duration)
+    : model.findByMeta(currentLibrary(), meta));
 
   return {
     currentLibrary,
@@ -233,6 +279,10 @@ function createActions({
     setPlaylistRules,
     renamePlaylist,
     deletePlaylist,
+    createGroup,
+    renameGroup,
+    deleteGroup,
+    setPlaylistGroup,
     setPlaylistShared,
     setFollowing,
     addSongToPlaylists,

@@ -20,6 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const { tr } = require('./lang');
 
 const KEEP = 6;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -40,18 +41,24 @@ function pack(doc) {
   return zlib.gzipSync(Buffer.from(JSON.stringify(doc), 'utf8'));
 }
 
+// A weekly backup bigger than this is packed beside the server's work (4.3.5:
+// 100 000 songs took a second and more of gzip in one go).
+const PACK_APART = 4 * 1024 * 1024;
+// Beside each backup its details (<name>.info), so listing them reads no backup whole.
+const infoFile = (file) => `${file}.info`;
+
 /** A backup file's content, or an Error saying it is none. */
 function unpack(buf) {
   let doc;
   try {
     doc = JSON.parse(zlib.gunzipSync(buf).toString('utf8'));
   } catch {
-    throw new Error('That file is not a Flow backup (or it is damaged).');
+    throw new Error(tr('core.backup.notBackupDamaged', 'That file is not a Flow backup (or it is damaged).'));
   }
   if (!doc || doc.app !== 'flow-backup' || !doc.library || typeof doc.library !== 'object') {
-    throw new Error('That file is not a Flow backup.');
+    throw new Error(tr('core.backup.notBackup', 'That file is not a Flow backup.'));
   }
-  if (Number(doc.format) > FORMAT) throw new Error('That backup was made by a newer Flow. Update Flow first.');
+  if (Number(doc.format) > FORMAT) throw new Error(tr('core.backup.newer', 'That backup was made by a newer Flow. Update Flow first.'));
   return doc;
 }
 
@@ -86,6 +93,16 @@ function createBackupStore({
     if (cached && cached.mtime === st.mtimeMs) return cached.info;
     let info = null;
     try {
+      const side = JSON.parse(fs.readFileSync(infoFile(file), 'utf8'));
+      if (side && side.name === name && side.size === st.size) info = side;
+    } catch {
+      info = null;
+    }
+    if (info) {
+      infoCache.set(name, { mtime: st.mtimeMs, info });
+      return info;
+    }
+    try {
       const doc = unpack(fs.readFileSync(file));
       const s = doc.summary || {};
       info = {
@@ -97,6 +114,12 @@ function createBackupStore({
         playlists: Number(s.playlists) || 0,
         profiles: Number(s.profiles) || 0,
       };
+      // A backup from before 4.3.5: its details kept beside it from now on.
+      try {
+        fs.writeFileSync(infoFile(file), JSON.stringify(info));
+      } catch {
+        // Read whole again next time.
+      }
     } catch {
       info = null;
     }
@@ -118,6 +141,7 @@ function createBackupStore({
       if (kept.has(b.name)) continue;
       try {
         fs.rmSync(path.join(dir, b.name), { force: true });
+        fs.rmSync(infoFile(path.join(dir, b.name)), { force: true });
         infoCache.delete(b.name);
       } catch {
         // Kept a while longer.
@@ -126,22 +150,44 @@ function createBackupStore({
   }
 
   /** A new backup of what is there now. Returns its info. */
-  function make(reason = 'manual', protect = '') {
+  /** What a backup of now holds, as text: { at, doc, text }. */
+  function prepare(reason) {
     const payload = collect();
     const at = now();
     const doc = {
       app: 'flow-backup', format: FORMAT, kind, createdAt: at, reason: REASONS.includes(reason) ? reason : 'manual', summary: summary(payload), ...payload,
     };
+    return { at, doc, text: Buffer.from(JSON.stringify(doc), 'utf8') };
+  }
+
+  /** The packed backup written, with its details beside it. Returns its info. */
+  function finish({ at, doc }, packed, protect) {
     fs.mkdirSync(dir, { recursive: true });
     let name = fileName(at);
     for (let n = 2; fs.existsSync(path.join(dir, name)); n += 1) name = fileName(at).replace('.json.gz', `-${n}.json.gz`);
     const file = path.join(dir, name);
-    fs.writeFileSync(`${file}.tmp`, pack(doc));
+    fs.writeFileSync(`${file}.tmp`, packed);
     fs.renameSync(`${file}.tmp`, file);
+    const s = doc.summary || {};
+    try {
+      fs.writeFileSync(infoFile(file), JSON.stringify({
+        name, createdAt: at, reason: doc.reason, size: packed.length, songs: Number(s.songs) || 0, playlists: Number(s.playlists) || 0, profiles: Number(s.profiles) || 0,
+      }));
+    } catch {
+      // Read from the backup itself when listed.
+    }
     prune(protect);
     log(`Backup made: ${name}`);
     return infoOf(name);
   }
+
+  function make(reason = 'manual', protect = '') {
+    const p = prepare(reason);
+    return finish(p, zlib.gzipSync(p.text), protect);
+  }
+
+  // A big weekly backup being packed: no second one meanwhile.
+  let packing = false;
 
   /** Whether the newest backup is a week old (or there is none). */
   function due() {
@@ -151,10 +197,24 @@ function createBackupStore({
 
   /** The weekly backup, when it is due. Returns its info, or null. */
   function weekly() {
-    if (!due()) return null;
+    if (packing || !due()) return null;
     try {
-      return make('weekly');
+      const p = prepare('weekly');
+      if (p.text.length < PACK_APART) return finish(p, zlib.gzipSync(p.text), '');
+      // Big: packed beside the server's work, written once done (answers null now).
+      packing = true;
+      zlib.gzip(p.text, (err, packed) => {
+        packing = false;
+        try {
+          if (err) throw err;
+          finish(p, packed, '');
+        } catch (e) {
+          log(`The weekly backup failed: ${e.message}`);
+        }
+      });
+      return null;
     } catch (err) {
+      packing = false;
       log(`The weekly backup failed: ${err.message}`);
       return null;
     }
@@ -162,12 +222,12 @@ function createBackupStore({
 
   /** A backup's content by its name, or an Error. */
   function read(name) {
-    if (!isName(name)) throw new Error('There is no such backup.');
+    if (!isName(name)) throw new Error(tr('core.backup.none', 'There is no such backup.'));
     let buf;
     try {
       buf = fs.readFileSync(path.join(dir, name));
     } catch {
-      throw new Error('That backup is gone.');
+      throw new Error(tr('core.backup.gone', 'That backup is gone.'));
     }
     return unpack(buf);
   }
@@ -182,7 +242,8 @@ function defaultSummary(payload) {
   const profiles = lib.profiles && typeof lib.profiles === 'object' ? Object.keys(lib.profiles).length : 0;
   return {
     songs: Array.isArray(lib.songs) ? lib.songs.length : 0,
-    playlists: Array.isArray(lib.playlists) ? lib.playlists.length : 0,
+    // Each owner's Favourites (4.3) is not counted as a playlist.
+    playlists: Array.isArray(lib.playlists) ? lib.playlists.filter((p) => !(p && p.favourites)).length : 0,
     profiles,
   };
 }

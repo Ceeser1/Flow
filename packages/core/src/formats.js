@@ -13,6 +13,8 @@
 //     MP3" asks for): the iPhone cannot play it, and an MP3 plays everywhere.
 //   - Anything else becomes MP3 at the chosen quality.
 
+const { tr } = require('./lang');
+
 const MP3_QUALITIES = [64, 96, 128, 160, 192, 224, 256, 320];
 const DEFAULT_MP3_QUALITY = 192;
 
@@ -64,11 +66,12 @@ function describeSource(codec, formatName, bitRate) {
   const c = String(codec || '').toLowerCase();
   const kbps = bitRate ? Math.round(bitRate / 1000) : 0;
   const rate = kbps ? ` ~${kbps} kbit/s` : '';
-  if (isPcm(c)) return isAiff(formatName) ? 'AIFF (lossless)' : 'WAV (lossless)';
-  if (c === 'flac') return 'FLAC (lossless)';
-  if (LOSSLESS_TO_FLAC[c]) return `${LOSSLESS_TO_FLAC[c]} (lossless)`;
+  const lossless = (format) => tr('core.format.lossless', '{format} (lossless)', { format });
+  if (isPcm(c)) return lossless(isAiff(formatName) ? 'AIFF' : 'WAV');
+  if (c === 'flac') return lossless('FLAC');
+  if (LOSSLESS_TO_FLAC[c]) return lossless(LOSSLESS_TO_FLAC[c]);
   if (KEEP[c]) return KEEP[c].name + rate;
-  return (c ? c.toUpperCase() : 'Unknown format') + rate;
+  return (c ? c.toUpperCase() : tr('core.link.unknownFormat', 'Unknown format')) + rate;
 }
 
 /**

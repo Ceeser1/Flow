@@ -57,19 +57,26 @@ const VIZ_OPTIONS = {
   ksLook: ['choice', 'kaleido', ['auto', 'kaleido', 'vortex', 'tunnel', 'starburst']],
   ksEvery: ['range', 30, 10, 120, 5],
   ksTrails: ['range', 100, 25, 200, 5],
-  // Halo: the spectrum as bars, a line or dots, the colours (the cover's, rainbow, by the notes, or one of its own; Warm
+  // Halo: the spectrum as bars, a line or dots, and its size (percent, the
+  // cover growing with it), the colours (the cover's, rainbow, by the notes, or one of its own; Warm
   // white became that), the sparks (and how many, percent; 10% the amount
   // there always were), the background (the cover blurred, or a
-  // picture picked), the title. The cover in the middle is the song's or a
-  // picture picked, wiggling and pulsing; the pictures are copies Flow keeps
+  // picture or a video picked), the title. The cover in the middle is the song's or a
+  // picture picked, its size (percent), wiggling and pulsing (each how much,
+  // percent), its outline; the pictures are copies Flow keeps
   // (hlCoverFile, hlBackFile).
   hlStyle: ['choice', 'bars', ['bars', 'line', 'dots']],
+  hlScale: ['range', 100, 50, 150, 5],
   hlColors: ['choice', 'cover', ['cover', 'rainbow', 'notes', 'custom']],
   hlColor: ['color', '#3484f4'],
   hlCover: ['choice', 'original', ['original', 'pick']],
   hlCoverFile: ['file', ''],
+  hlCoverScale: ['range', 100, 50, 150, 5],
   hlWiggle: ['bool', true],
+  hlWiggleAmount: ['range', 100, 0, 200, 5],
   hlPulse: ['bool', true],
+  hlPulseAmount: ['range', 100, 0, 200, 5],
+  hlOutline: ['bool', true],
   hlParticles: ['bool', true],
   hlSparkAmount: ['range', 100, 0, 200, 5],
   hlBackground: ['bool', true],
@@ -339,13 +346,20 @@ const DEFAULTS = {
   // The listen in progress when the app closed, carried on at the next start
   // if the same song is still loaded: { songId, listened }.
   listenSession: null,
-  // Whether the lists under the menu's Playlists, Followed Playlists and Your
-  // listening trend entries show (the trend lists closed until opened).
+  // Whether the lists under the menu's Playlists, Playlist Groups (4.5.1),
+  // Followed Playlists and Your listening trend entries show (the trend
+  // lists closed until opened).
   playlistsMenuOpen: true,
+  groupsMenuOpen: true,
   followedMenuOpen: true,
   trendMenuOpen: false,
   // Whether the Shared Playlists section of the Playlists page is open.
   sharedGroupOpen: true,
+  // The playlist groups (4.5) open in the menu and on the Playlists page, by id; closed until opened.
+  openGroups: [],
+  // A group's page (4.5.2): the lists with Shuffle on there, each its own
+  // (a playlist's id, or "group:<id>" for the whole group's).
+  listShuffle: {},
   // Settings' categories folded shut (their titles), on the computer; and on
   // the phone the category whose screen was open when Settings closed ('' the
   // list), opened again with it.
@@ -353,12 +367,17 @@ const DEFAULTS = {
   settingsCategory: '',
   // The Music Visualizer's categories folded shut in Settings (their ids).
   vizCollapsed: [],
+  // Administration's parts opened in Settings (their ids, admin.js); the rest stay shut.
+  adminOpen: [],
   // The sleep timer running, kept so a restart still shows (and can cancel)
   // the shutdown Windows has been told about: { endsAt, shutdownAt, ended },
   // times in ms, shutdownAt null without a shutdown.
   sleepTimer: null,
 
   // ---- the Settings window ----
+  // The texts' language (i18n.js): '' for the device's, or 'en' / 'de'. Kept
+  // on this device only.
+  language: '',
   // Where songs are saved; '' is Music\FlowPlayer.
   musicDir: '',
   // With alwaysMp3: leave MP3s as they are instead of encoding them again.
@@ -373,6 +392,12 @@ const DEFAULTS = {
   // music video's non-music parts red.
   sponsorBlock: false,
   sponsorBlockIntros: false,
+  // 4.4, Add Songs: a link goes on without asking (the checklist's Download All,
+  // its name kept; a single song into All Songs), and with autoFinish its songs
+  // are saved as they came once downloaded (Finish All). Each queued link
+  // keeps them as they were when it was queued.
+  autoComplete: false,
+  autoFinish: false,
   // The next song starts this long before the current one ends, faded over.
   crossfade: true,
   crossfadeSeconds: 3,
@@ -450,8 +475,16 @@ const DEFAULTS = {
   serverSecret: '',
   // Downloads and uploads on a metered connection too (a phone's hotspot).
   serverMetered: false,
-  // Songs downloaded here stay here after going up to the server.
+  // Songs downloaded here stay here after going up to the server (with their
+  // covers and lyrics); off, all of a song's files here go once it is up.
   serverKeepFiles: true,
+  // A Flow Server's 128 x 128 cover thumbnails fetched for the lists (and the
+  // offline songs'); off, none are asked for and only those kept are shown.
+  thumbCovers: true,
+  // A Flow Server's covers in 512 x 512 too (Details, the visualizers, the
+  // lock screen), fetched when shown; off, only those kept already are used
+  // and the 128 x 128 ones stand in.
+  highResCovers: true,
   // Songs added to or removed from the Local Files folder by hand go to the
   // server by themselves; otherwise only with "Synchronize now".
   serverAutoSync: true,
@@ -521,14 +554,23 @@ function clean(raw) {
     ? { songId: String(ls.songId), listened: Math.max(0, Number(ls.listened) || 0) }
     : null;
   s.playlistsMenuOpen = s.playlistsMenuOpen !== false;
+  s.groupsMenuOpen = s.groupsMenuOpen !== false;
   s.followedMenuOpen = s.followedMenuOpen !== false;
   s.trendMenuOpen = s.trendMenuOpen === true;
   s.sharedGroupOpen = s.sharedGroupOpen !== false;
+  s.openGroups = Array.isArray(s.openGroups)
+    ? [...new Set(s.openGroups.filter((id) => typeof id === 'string' && /^[\w-]{1,64}$/.test(id)))].slice(0, 500)
+    : [];
+  const shuffled = s.listShuffle && typeof s.listShuffle === 'object' && !Array.isArray(s.listShuffle) ? s.listShuffle : {};
+  s.listShuffle = Object.fromEntries(Object.keys(shuffled).filter((k) => shuffled[k] === true && /^(group:)?[\w-]{1,64}$/.test(k)).slice(0, 500).map((k) => [k, true]));
   s.settingsCollapsed = Array.isArray(s.settingsCollapsed)
     ? [...new Set(s.settingsCollapsed.filter((t) => typeof t === 'string' && t && t.length <= 60))].slice(0, 30)
     : [];
   s.settingsCategory = typeof s.settingsCategory === 'string' ? s.settingsCategory.slice(0, 60) : '';
   s.vizCollapsed = Array.isArray(s.vizCollapsed) ? [...new Set(s.vizCollapsed.filter((c) => VIZ_CATEGORY_IDS.includes(c)))] : [];
+  s.adminOpen = Array.isArray(s.adminOpen)
+    ? [...new Set(s.adminOpen.filter((t) => typeof t === 'string' && /^[a-z]{1,20}$/.test(t)))].slice(0, 20)
+    : [];
   const st = s.sleepTimer;
   const endsAt = st && typeof st === 'object' ? Number(st.endsAt) : NaN;
   const shutdownAt = st && Number.isFinite(Number(st.shutdownAt)) && st.shutdownAt !== null ? Number(st.shutdownAt) : null;
@@ -550,7 +592,7 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 100 && v)
     .slice(0, 100));
   for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
-    'sponsorBlock', 'sponsorBlockIntros', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix']) s[key] = s[key] === true;
+    'sponsorBlock', 'sponsorBlockIntros', 'autoComplete', 'autoFinish', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix']) s[key] = s[key] === true;
   if (!s.dcScale75) {
     s.dcScale = '75';
     s.dcScale75 = true;
@@ -565,8 +607,9 @@ function clean(raw) {
   // And Halo's Spin (the round cover turning).
   delete s.hlSpin;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
+  if (!['', 'en', 'de'].includes(s.language)) s.language = '';
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
-    'serverKeepFiles', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
+    'serverKeepFiles', 'thumbCovers', 'highResCovers', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;
   }

@@ -2,7 +2,8 @@
 
 // The live channel: one stream per app (Server-Sent Events), kept open while
 // the app is connected, on which the server tells it what happens right away
-// (a session's pause, a join request) instead of waiting for its next poll.
+// (a session's pause, a join request, the library's changes: push.js, 4.3)
+// instead of the app asking again and again.
 // The apps talk back with ordinary requests (POST /api/sessions).
 //
 //   GET /api/live?client=<install id>
@@ -14,7 +15,9 @@
 // token is checked again: a password changed, a session of level 3 or 4 run
 // out, and the stream ends with `end` { reason: 'auth' }.
 
-const PING_MS = 10000;
+// 15 s (4.3; was 10 s): the channel is also what tells the apps the server is
+// there, so a dead one is noticed within a ping and a few seconds.
+const PING_MS = 15000;
 // More apps than any household has: a stream costs little, but not nothing.
 const MAX_STREAMS = 200;
 

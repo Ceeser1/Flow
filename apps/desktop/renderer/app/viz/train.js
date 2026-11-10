@@ -646,16 +646,15 @@
 
   Visualizer.add({
     id: 'train',
-    name: 'Night Train',
-    desc: 'Looking out of a train at night: the land rushing by in layers with the tempo, a telegraph pole on every beat, crossings flashing and stations passing, a cup of tea rippling on the table',
+    name: T('viz.train.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="3"/><path d="M3 13l5-4 4 3 4-5 5 4M7 21h3M14 21h3"/></svg>',
     gl: true,
     create: (canvas) => new NightTrain(canvas),
     options: [
-      { type: 'choice', key: 'ntWeather', label: 'Weather', choices: [['clear', 'Clear'], ['rain', 'Rain'], ['snow', 'Snow']] },
-      { type: 'check', key: 'ntCup', label: 'A cup of tea' },
-      { type: 'choice', key: 'ntScale', label: 'Render scale', choices: VizGL.SCALES },
+      { type: 'choice', key: 'ntWeather', label: T('viz.shared.weather'), choices: [['clear', T('viz.shared.clear')], ['rain', T('viz.shared.rain')], ['snow', T('viz.train.setting.weather.snow')]] },
+      { type: 'check', key: 'ntCup', label: T('viz.train.setting.aCupOfTea') },
+      { type: 'choice', key: 'ntScale', label: T('viz.shared.renderScale'), choices: VizGL.SCALES },
     ],
   });
 })();

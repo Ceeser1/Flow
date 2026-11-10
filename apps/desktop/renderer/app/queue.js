@@ -26,6 +26,11 @@
 // the queue though they are not in the list. A song of the list picked by
 // hand, or a list started, goes back to the list.
 //
+// A list made of several (a playlist group's mix, 4.5.2: `poolsOf(contextId)`
+// gives its playlists' songs) is shuffled by its parts: each song drawn is a
+// random song of a random one of them, so a short playlist plays as often as
+// a long one; no song is drawn again until every song has been.
+//
 // Every call that may add songs is handed the list as it is shown right now
 // (`ids`), so a new sort or search counts from the next song added. Without
 // shuffle the list is followed from `cursor`, the last song taken from it,
@@ -51,6 +56,33 @@
       this.continueWith = null; // (seedIds, avoid) => similar song ids, or null: lists start over
       this.dj = new Set();   // songs continueWith added
       this.djOn = false;     // the list has played through: similar songs follow
+      this.poolsOf = null;   // contextId => the song ids of each of its parts, or null: one list
+    }
+
+    /**
+     * The parts of the list playing (poolsOf), each only with songs still in
+     * `ids`; null for a list of one part.
+     */
+    _pools(ids) {
+      const pools = this.poolsOf ? this.poolsOf(this.contextId) : null;
+      if (!pools || !pools.length) return null;
+      const present = new Set(ids);
+      const kept = pools.map((p) => p.filter((x) => present.has(x))).filter((p) => p.length);
+      return kept.length ? kept : null;
+    }
+
+    /**
+     * One song drawn: from a list of parts, a random part first (of those
+     * with a song `ok` lets through), then a random song of it.
+     */
+    _draw(ids, ok) {
+      const pools = this._pools(ids);
+      if (!pools) {
+        const pool = ids.filter(ok);
+        return pool.length ? this._pick(pool) : null;
+      }
+      const open = pools.map((p) => p.filter(ok)).filter((p) => p.length);
+      return open.length ? this._pick(this._pick(open)) : null;
     }
 
     /** The next similar song (continueWith), or null. */
@@ -82,20 +114,19 @@
       }
       if (this.shuffle) {
         const queued = new Set(this.auto);
-        let pool = ids.filter((x) => !this.used.has(x) && !queued.has(x) && x !== this.currentId);
-        if (!pool.length && this.continueWith) {
+        let id = this._draw(ids, (x) => !this.used.has(x) && !queued.has(x) && x !== this.currentId);
+        if (!id && this.continueWith) {
           this.djOn = true;
           return this._similar();
         }
-        if (!pool.length) {
+        if (!id) {
           // Every song has had its turn: a new round.
           this.used.clear();
-          pool = ids.filter((x) => !queued.has(x) && x !== this.currentId);
-          // A list shorter than the queue: the song playing comes round again.
-          if (!pool.length) pool = ids.filter((x) => !queued.has(x));
+          id = this._draw(ids, (x) => !queued.has(x) && x !== this.currentId)
+            // A list shorter than the queue: the song playing comes round again.
+            || this._draw(ids, (x) => !queued.has(x));
         }
-        if (!pool.length) return null;
-        const id = this._pick(pool);
+        if (!id) return null;
         this.used.add(id);
         return id;
       }
@@ -138,7 +169,7 @@
       this.used = new Set();
       this.dj.clear();
       this.djOn = false;
-      const first = startId || (!ids.length ? null : (this.shuffle ? this._pick(ids) : ids[0]));
+      const first = startId || (!ids.length ? null : (this.shuffle ? this._draw(ids, () => true) : ids[0]));
       if (!first) return null;
       if (this.currentId && this.currentId !== first) this._remember(this.currentId);
       this.currentId = first;

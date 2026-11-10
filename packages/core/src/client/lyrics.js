@@ -1,13 +1,18 @@
 'use strict';
 
 // A song's lyrics for the window (4.0, @flow/core/lyrics), kept in the Lyrics
-// folder (4.0.1, lyricsFolder.js). A Flow Server's song: the server's (it
-// looks them up once and keeps them), a copy kept here; every copy of the
-// server's comes down in the background (sync: those whose stamp changed).
+// folder (4.0, lyricsFolder.js). A Flow Server's song: the server's (it
+// looks them up once and keeps them), fetched when the song plays (or a
+// little before, as the next song) and a copy kept here; the song carries
+// the stamp of the server's (4.3.1, song.lyrics), and while the copy here is
+// that one it is used without asking. One copy per song: a server song with
+// a Local Files copy (uploaded from here and kept, or downloaded) keeps the
+// server's in that copy's file; the songs kept for offline get theirs in
+// advance (sync).
 // Every other song (Local Files, Downloaded Songs), and a server's while the
 // server cannot say (out of reach, or from before lyrics): looked up on
 // LRCLIB (else lyrics.ovh) here and kept. Lyrics written or edited in the
-// app (4.0.1, set): a server's song's on the server, any other's here for
+// app (4.0, set): a server's song's on the server, any other's here for
 // good (Clear lyrics cache leaves them). LRCLIB still busy or out of reach
 // after all its tries (@flow/core/lyrics RETRY): "No lyrics found", kept an
 // hour (`partial`), then looked up again.
@@ -18,10 +23,11 @@
 
 const lyrics = require('../lyrics');
 const { LOCAL } = require('./lyricsFolder');
+const { tr } = require('../lang');
 
 // Before the Lyrics folder (4.0): every song's in one file of the app's own.
 const OLD_FILE = 'lyrics.json';
-// The server's copies: how many asked for at once.
+// The offline songs' copies: how many asked for at once.
 const SYNC_BATCH = 200;
 // Another look at the server's after its library changed, at most this often.
 const SYNC_GAP_MS = 5000;
@@ -84,12 +90,24 @@ function createLyricsClient({
     return s ? { song: s, server: false } : null;
   }
 
-  /** A copy of the server's answer: `v` its stamp ('' from a server before stamps: fetched again by sync). */
+  /**
+   * Where a server song's copy is kept: its Local Files copy's file when it
+   * has one (one copy per song), else the server's folder. { scope, id }.
+   */
+  function placeOf(serverId, songId) {
+    const localId = remote && remote.localOf ? remote.localOf(songId) : '';
+    return localId ? { scope: LOCAL, id: localId } : { scope: serverId, id: songId };
+  }
+
+  /** A copy of the server's answer: `v` its stamp. Own lyrics of the Local Files copy stay (with the stamp, asked no more). */
   function keepCopy(serverId, songId, r, v = '') {
     if (!serverId) return;
+    const at = placeOf(serverId, songId);
     try {
-      folder.write(serverId, songId, { ...r, server: true, v });
-      stamps.set(`${serverId}/${songId}`, v);
+      const here = at.scope === LOCAL ? folder.read(LOCAL, at.id) : null;
+      if (here && here.own && !r.own) folder.write(LOCAL, at.id, { ...here, v });
+      else folder.write(at.scope, at.id, { ...r, server: true, v });
+      stamps.set(`${at.scope}/${at.id}`, v);
     } catch {
       // Asked for again.
     }
@@ -129,7 +147,7 @@ function createLyricsClient({
   /** A Local Files song's (also a server song's copy here while the server cannot say). */
   function ofLocal(localId, song) {
     const k = folder.read(LOCAL, localId);
-    if (lyrics.stillGood(k, song)) return Promise.resolve(lyrics.clean(k));
+    if (lyrics.stillGood(k, song) || (k && k.server)) return Promise.resolve(lyrics.clean(k));
     if (!fetchOn()) return Promise.resolve({ ...lyrics.NONE });
     return lookUp(LOCAL, localId, song);
   }
@@ -141,18 +159,21 @@ function createLyricsClient({
     const localId = song.localId || (remote.localOf ? remote.localOf(song.id) : '');
     const localKept = localId ? folder.read(LOCAL, localId) : null;
     const ownHere = localKept && localKept.own ? localKept : null;
+    const copy = localId ? localKept : (serverId ? folder.read(serverId, song.id) : null);
+    // The copy here is the server's as it is now (its stamp): no need to ask.
+    const stamp = String(song.lyrics || '');
+    if (stamp && copy && (copy.server || copy.own) && String(copy.v || '') === stamp) return lyrics.clean(copy);
     // The server's answer, fetching on or off (what it keeps is the user's
-    // own library); kept here only with fetching on.
+    // own library); kept here only with fetching on (own ones get its stamp).
     const r = await remote.songLyrics(song.id);
     if (r) {
       const { v, ...rest } = r;
-      if (fetchOn()) keepCopy(serverId, song.id, rest, String(v || ''));
+      if (fetchOn() || ownHere) keepCopy(serverId, song.id, rest, String(v || ''));
       if (ownHere && !r.own) return lyrics.clean(ownHere);
-      return lyrics.clean(r);
+      return lyrics.clean(rest);
     }
     // The server cannot say (or is not asked): own ones of its Local Files copy, a copy kept, else looked up here.
     if (ownHere) return lyrics.clean(ownHere);
-    const copy = serverId ? folder.read(serverId, song.id) : null;
     if (copy && (copy.server || lyrics.stillGood(copy, song))) return lyrics.clean(copy);
     if (!fetchOn()) {
       if (usable(copy, song)) return lyrics.clean(copy);
@@ -185,14 +206,14 @@ function createLyricsClient({
       });
     }
     const found = songOf(String(id || ''));
-    if (!found) throw new Error('That song is not here any more.');
+    if (!found) throw new Error(tr('songs.error.songNotHere', 'That song is not here any more.'));
     const { song, server } = found;
     if (server) return ofServer(song);
     return ofLocal(song.localId || song.id, song);
   }
 
   /**
-   * A song's own lyrics (4.0.1): `lines` [{ t, end, text }] as
+   * A song's own lyrics (4.0): `lines` [{ t, end, text }] as
    * lyrics.ownLyrics takes them, or null to let them go (looked up again).
    * Resolves them as get does. A server's song's go to the server; `server`:
    * the id is the server's, of a song it may not have told about yet (just
@@ -200,7 +221,7 @@ function createLyricsClient({
    */
   async function set(id, lines, { server: onServer = false } = {}) {
     const found = songOf(String(id || '')) || (onServer && remote ? { song: { id: String(id) }, server: true } : null);
-    if (!found) throw new Error('That song is not here any more.');
+    if (!found) throw new Error(tr('songs.error.songNotHere', 'That song is not here any more.'));
     const { song, server } = found;
     if (server) {
       const { v, ...r } = await remote.setSongLyrics(song.id, lines);
@@ -247,12 +268,13 @@ function createLyricsClient({
 
   // ---- the server's copies ----
 
-  /** The stamp of the copy here, read once and then remembered. */
+  /** The stamp of a server song's copy here, read once and then remembered. */
   function stampHere(serverId, songId) {
-    const key = `${serverId}/${songId}`;
+    const at = placeOf(serverId, songId);
+    const key = `${at.scope}/${at.id}`;
     if (!stamps.has(key)) {
-      const k = folder.read(serverId, songId);
-      stamps.set(key, k && k.server ? String(k.v || '') : '');
+      const k = folder.read(at.scope, at.id);
+      stamps.set(key, k && (k.server || k.own) ? String(k.v || '') : '');
     }
     return stamps.get(key);
   }
@@ -261,11 +283,14 @@ function createLyricsClient({
   let again = false;
 
   /**
-   * Brings the copies of the server's lyrics up to date: those whose stamp
-   * changed come down, those of songs gone from the server go.
+   * After the server's library changed (4.3.1): the copies of songs gone
+   * from it go, a copy kept twice from before (the server's folder and the
+   * song's Local Files copy) once, and the songs kept here for offline get
+   * the lyrics they lack (those whose stamp changed), many at once. Every
+   * other song's come when it plays.
    */
   function sync() {
-    if (!remote || !remote.lyricsIndex || !fetchOn()) return Promise.resolve();
+    if (!remote || !remote.lyricsOf || !remote.serverId || !fetchOn()) return Promise.resolve();
     if (syncing) {
       again = true;
       return syncing;
@@ -273,18 +298,20 @@ function createLyricsClient({
     syncing = (async () => {
       do {
         again = false;
-        const index = await remote.lyricsIndex().catch(() => null);
-        if (!index || !fetchOn()) return;
-        const { serverId, songs } = index;
-        const there = new Set((remote.view().songs || []).filter((s) => !s.isDevice).map((s) => s.id));
+        const serverId = remote.serverId();
+        if (!serverId || !remote.active() || !fetchOn()) return;
+        const songs = (remote.view().songs || []).filter((s) => !s.isDevice);
+        const there = new Set(songs.map((s) => s.id));
         if (there.size) {
           for (const id of folder.ids(serverId)) {
-            if (there.has(id) || songs[id]) continue;
+            const local = remote.localOf ? remote.localOf(id) : '';
+            if (there.has(id) && !(local && folder.read(LOCAL, local))) continue;
             folder.remove(serverId, id);
             stamps.delete(`${serverId}/${id}`);
           }
         }
-        const want = Object.keys(songs).filter((id) => stampHere(serverId, id) !== songs[id]);
+        const offline = remote.offlineIds ? remote.offlineIds() : new Set();
+        const want = songs.filter((s) => offline.has(s.id) && s.lyrics && stampHere(serverId, s.id) !== s.lyrics).map((s) => s.id);
         for (let i = 0; i < want.length; i += SYNC_BATCH) {
           if (!fetchOn() || remote.serverId() !== serverId) return;
           const got = await remote.lyricsOf(want.slice(i, i + SYNC_BATCH));
@@ -314,12 +341,20 @@ function createLyricsClient({
     if (syncTimer.unref) syncTimer.unref();
   }
   if (remote && remote.useLyricsSync) remote.useLyricsSync(syncSoon);
+  // A Local Files song whose file went (uploaded with "Keep local files" off): its lyrics here go too.
+  if (remote && remote.useForgotLocal) {
+    remote.useForgotLocal((lid) => {
+      folder.remove(LOCAL, lid);
+      stamps.delete(`${LOCAL}/${lid}`);
+      settledKeys.delete(lid);
+    });
+  }
   if (syncEveryMs > 0) {
     const t = setInterval(() => sync(), syncEveryMs);
     if (t.unref) t.unref();
   }
 
-  // ---- every Local Files song's, in the background (4.0.1) ----
+  // ---- every Local Files song's, in the background (4.0) ----
   //
   // The songs without an answer kept that settles them (@flow/core/lyrics
   // settled) looked up one after another, fillPauseMs apart, as the server
@@ -399,7 +434,7 @@ function createLyricsClient({
     if (fillTimer.unref) fillTimer.unref();
   }
 
-  // ---- picked by hand and published (4.0.1) ----
+  // ---- picked by hand and published (4.0) ----
 
   /** LRCLIB's search (lyrics.searchLyrics): lyrics to pick by hand. */
   function search(params) {
@@ -429,9 +464,10 @@ function createLyricsClient({
   }
 
   /**
-   * { count, bytes, none, left }: the songs with lyrics kept here, the room
-   * every file takes, the songs none were found for, and how many the filler
-   * still looks up.
+   * { count, bytes, none, left }: the songs with lyrics kept here (each song
+   * once, however many copies: a server song and its Local Files copy are
+   * one), the room every file takes, the songs none were found for, and how
+   * many the filler still looks up.
    */
   function stats() {
     if (!swept) {
@@ -441,7 +477,16 @@ function createLyricsClient({
         // Looked at again when cleared.
       }
     }
-    return { ...folder.size(), left: fillLeft };
+    const size = folder.size();
+    const serverId = remote && remote.active() && remote.serverId ? remote.serverId() : '';
+    const songs = new Set();
+    for (const scope of folder.scopes()) {
+      for (const id of folder.foundIds(scope)) {
+        const local = scope === serverId && remote.localOf ? remote.localOf(id) : '';
+        songs.add(local ? `${LOCAL}/${local}` : `${scope}/${id}`);
+      }
+    }
+    return { ...size, count: songs.size, left: fillLeft };
   }
 
   /** Clear lyrics cache: all but those written here for Local Files songs; the server's come down again. */
@@ -465,8 +510,13 @@ function createLyricsClient({
     return stats();
   }
 
+  /** A song coming next (4.3.1): its lyrics made ready now, so they show at once (kept as get keeps them). */
+  function prepare(id) {
+    return get(id).catch(() => null);
+  }
+
   return {
-    get, set, keepOwn, ownLines, lookup, sync, fill, fillSoon, search, publish, stats, clear,
+    get, prepare, set, keepOwn, ownLines, lookup, sync, fill, fillSoon, search, publish, stats, clear,
   };
 }
 

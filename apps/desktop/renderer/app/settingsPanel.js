@@ -9,28 +9,28 @@
 // (Store.previewSettings) and are saved when let go.
 
 const EQ_SCHEMES = [
-  ['spectrum', 'Spectrum'],
-  ['rainbow', 'Rainbow'],
-  ['greyscale', 'Greyscale'],
-  ['white', 'White'],
-  ['red', 'Red'],
-  ['green', 'Green'],
-  ['yellow', 'Yellow'],
-  ['blue', 'Blue'],
-  ['purple', 'Purple'],
-  ['black', 'Black'],
+  ['spectrum', T('common.spectrum')],
+  ['rainbow', T('common.color.rainbow')],
+  ['greyscale', T('common.color.greyscale')],
+  ['white', T('common.color.white')],
+  ['red', T('common.color.red')],
+  ['green', T('common.color.green')],
+  ['yellow', T('settings.appVisuals.colorScheme.yellow')],
+  ['blue', T('common.color.blue')],
+  ['purple', T('common.color.purple')],
+  ['black', T('common.color.black')],
 ];
 
 // The clouds: each its own colour, or all one (the equalizer's solid ones).
 const CLOUD_SCHEMES = [
-  ['rainbow', 'Rainbow'],
+  ['rainbow', T('common.color.rainbow')],
   ...EQ_SCHEMES.filter(([v]) => !['spectrum', 'rainbow', 'greyscale'].includes(v)),
 ];
 
 function fmtBytes(bytes) {
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${Math.round(bytes / 1e6)} MB`;
-  return `${Math.max(0, Math.round(bytes / 1e3))} KB`;
+  if (bytes >= 1e9) return T('common.size.gigabytes', { size: I18n.num(bytes / 1e9, 1) });
+  if (bytes >= 1e6) return T('common.size.megabytes', { size: Math.round(bytes / 1e6) });
+  return T('common.size.kilobytes', { size: Math.max(0, Math.round(bytes / 1e3)) });
 }
 
 // Limit framerate's steps (frames a second; 0: no limit).
@@ -65,7 +65,7 @@ const SettingsPanel = {
       if (this.modal) Stats.soon();
       if (this.modal && this._jamNote) this._jamNote();
     });
-    // Lyrics kept, or the background lookups moved on (4.0.1).
+    // Lyrics kept, or the background lookups moved on (4.0).
     if (window.flow.onLyricsChanged) {
       window.flow.onLyricsChanged(() => {
         if (this.modal) this._drawLyrics();
@@ -81,44 +81,49 @@ const SettingsPanel = {
     if (this.modal) return;
     this._refresh = [];
     const body = h('div.settings', ...this._sections([
-      h('h3.settings__section', 'General'),
+      h('h3.settings__section', T('settings.general.heading')),
+      // Only where the app keeps the choice itself (the desktop app) for now.
+      typeof window.flow.language === 'string' ? this._row({
+        label: T('settings.general.language.label'),
+        desc: T('settings.general.language.desc'),
+        right: this._languageSelect(),
+      }) : null,
       Store.can('outputDevices') ? this._row({
-        label: 'Output device',
-        desc: 'Where the music plays from.',
+        label: T('common.outputDevice'),
+        desc: T('settings.general.output.desc'),
         right: this._outputSelect(),
       }) : null,
       Store.can('systemOutput') ? this._row({
-        label: 'Output device',
-        desc: 'Where the music plays from: this phone, headphones or a Bluetooth speaker. The phone chooses it; Change opens its chooser.',
+        label: T('common.outputDevice'),
+        desc: T('settings.general.systemOutput.desc'),
         right: this._systemOutput(),
       }) : null,
       Store.can('songTransition') ? this._row({
         key: 'crossfade',
-        label: 'Song Transition',
-        desc: 'Smoothly transition between songs for the set time.',
-        right: this._slider({ key: 'crossfadeSeconds', name: 'Song Transition length', min: 0.1, max: 10, step: 0.1, format: (v) => `${v.toFixed(1)} s`, when: () => Store.settings.crossfade }),
+        label: T('settings.general.songTransition.label'),
+        desc: T('settings.general.songTransition.desc'),
+        right: this._slider({ key: 'crossfadeSeconds', name: T('settings.general.songTransition.slider.name'), min: 0.1, max: 10, step: 0.1, format: (v) => `${I18n.num(v, 1)} s`, when: () => Store.settings.crossfade }),
       }) : null,
       this._row({
         key: 'normalize',
-        label: 'Equalize volume',
-        desc: 'Play all songs at an equal volume. It reduces loud spikes and makes quiet songs louder.',
+        label: T('settings.general.equalizeVolume.label'),
+        desc: T('settings.general.equalizeVolume.desc'),
         right: this._measuredNode = h('span.settings__note'),
       }),
       this._row({
         key: 'showTrend',
-        label: 'Show listening trends',
-        desc: 'If disabled, your listening trend category will be hidden in the menu and the search.',
+        label: T('settings.general.listeningTrends.label'),
+        desc: T('settings.general.listeningTrends.desc'),
       }),
       this._row({
         key: 'autoDj',
-        label: 'Continue with similar songs',
-        desc: 'When the list playing has played through, songs like the last ones you heard follow (the same artists, genre, Info '
-          + 'or album, those you listen to most first) instead of the list starting over. The Queue shows them as "Then similar songs".',
+        label: T('settings.general.similarSongs.label'),
+        desc: T('settings.general.similarSongs.desc'),
       }),
       // The phone's lists have no columns.
       Store.phone ? null : this._row({
-        label: 'Show filterable columns for Songs',
-        desc: 'Extra columns in All Songs and the playlists. Each can be sorted by a click on its heading, and the search finds what is in it.',
+        label: T('settings.general.songColumns.label'),
+        desc: T('settings.general.songColumns.desc'),
         right: this._columnTicks(),
       }),
 
@@ -132,74 +137,74 @@ const SettingsPanel = {
 
       // The clouds everywhere; what listens to the music (their bass, the
       // equalizer, the visualizers) only where the page hears it (effects).
-      h('h3.settings__section', 'App Visuals'),
-      Store.phone ? h('div.settings__desc.settings__intro', 'Using background visuals for the app will drain your battery a bit faster than without.') : null,
+      h('h3.settings__section', T('settings.appVisuals.heading')),
+      Store.phone ? h('div.settings__desc.settings__intro', T('settings.appVisuals.batteryNote')) : null,
       this._row({
         key: 'cloudsOn',
-        label: 'Enable Background Clouds',
-        desc: 'Slowly drifting clouds of colour behind the pages.',
-        right: this._slider({ key: 'cloudsIntensity', label: 'Intensity', when: () => Store.settings.cloudsOn }),
+        label: T('settings.appVisuals.clouds.label'),
+        desc: T('settings.appVisuals.clouds.desc'),
+        right: this._slider({ key: 'cloudsIntensity', label: T('settings.appVisuals.clouds.intensity.label'), when: () => Store.settings.cloudsOn }),
       }),
       Store.can('effects') ? this._row({
         key: 'cloudsBass',
-        label: 'React to Bass',
-        desc: 'The clouds swell and brighten on kicks and bass notes.',
+        label: T('settings.appVisuals.clouds.reactToBass.label'),
+        desc: T('settings.appVisuals.clouds.reactToBass.desc'),
         sub: true,
         when: () => Store.settings.cloudsOn,
-        right: this._slider({ key: 'cloudsBassAmount', label: 'Strength', when: () => Store.settings.cloudsOn && Store.settings.cloudsBass }),
+        right: this._slider({ key: 'cloudsBassAmount', label: T('settings.appVisuals.clouds.reactToBass.strength.label'), when: () => Store.settings.cloudsOn && Store.settings.cloudsBass }),
       }) : null,
       this._row({
-        label: 'Clouds color scheme',
-        desc: 'Rainbow gives each cloud a random color as it comes.',
+        label: T('settings.appVisuals.clouds.colorScheme.label'),
+        desc: T('settings.appVisuals.clouds.colorScheme.desc'),
         sub: true,
         when: () => Store.settings.cloudsOn,
         right: this._select({ key: 'cloudsColors', options: CLOUD_SCHEMES, when: () => Store.settings.cloudsOn }),
       }),
       this._row({
-        label: 'Clouds amount',
-        desc: 'How many clouds drift at once.',
+        label: T('settings.appVisuals.clouds.amount.label'),
+        desc: T('settings.appVisuals.clouds.amount.desc'),
         sub: true,
         when: () => Store.settings.cloudsOn,
-        right: this._slider({ key: 'cloudsAmount', label: 'Amount', min: 0, max: 100, step: 10, when: () => Store.settings.cloudsOn }),
+        right: this._slider({ key: 'cloudsAmount', label: T('settings.appVisuals.clouds.amount.slider.label'), min: 0, max: 100, step: 10, when: () => Store.settings.cloudsOn }),
       }),
 
       ...(Store.can('effects') ? [
       this._row({
         key: 'eqOn',
-        label: 'Enable Background Equalizer',
-        desc: 'The music\'s frequencies glowing up from the player bar.',
-        right: this._slider({ key: 'eqHeight', label: 'Height', when: () => Store.settings.eqOn }),
+        label: T('settings.appVisuals.equalizer.label'),
+        desc: T('settings.appVisuals.equalizer.desc'),
+        right: this._slider({ key: 'eqHeight', label: T('common.height'), when: () => Store.settings.eqOn }),
       }),
       this._row({
-        label: 'Visibility',
-        desc: 'How strongly the equalizer is visible.',
+        label: T('settings.appVisuals.equalizer.visibility.label'),
+        desc: T('settings.appVisuals.equalizer.visibility.desc'),
         sub: true,
         when: () => Store.settings.eqOn,
-        right: this._slider({ key: 'eqVisibility', label: 'Alpha', when: () => Store.settings.eqOn }),
+        right: this._slider({ key: 'eqVisibility', label: T('settings.appVisuals.equalizer.visibility.alpha.label'), when: () => Store.settings.eqOn }),
       }),
       this._row({
         key: 'eqShine',
-        label: 'Outer Shine',
-        desc: 'A glow around the bars, reaching further the taller they are.',
+        label: T('settings.appVisuals.equalizer.outerShine.label'),
+        desc: T('settings.appVisuals.equalizer.outerShine.desc'),
         sub: true,
         when: () => Store.settings.eqOn,
-        right: this._slider({ key: 'eqShineSpread', label: 'Spread', when: () => Store.settings.eqOn && Store.settings.eqShine }),
+        right: this._slider({ key: 'eqShineSpread', label: T('settings.appVisuals.equalizer.outerShine.spread.label'), when: () => Store.settings.eqOn && Store.settings.eqShine }),
       }),
       this._row({
-        label: 'Equalizer color scheme',
-        desc: 'Spectrum colors bars by their height. Rainbow runs colors across the bars. Greyscale turns them whiter the taller they are.',
+        label: T('settings.appVisuals.equalizer.colorScheme.label'),
+        desc: T('settings.appVisuals.equalizer.colorScheme.desc'),
         sub: true,
         when: () => Store.settings.eqOn,
         right: this._select({ key: 'eqColors', options: EQ_SCHEMES, when: () => Store.settings.eqOn }),
       }),
 
-      h('h3.settings__section', 'Music Visualizer'),
+      h('h3.settings__section', T('settings.visualizer.heading')),
       this._visualizerRow([
         ...this._frameRateRows(),
         this._row({
           key: 'vizLyrics',
-          label: 'Show Lyrics in visualizers',
-          desc: 'The line being sung and the next one at the bottom of a full-screen visualizer, for songs whose lyrics have their times. A song starting without them says so there for a few seconds.',
+          label: T('settings.visualizer.showLyrics.label'),
+          desc: T('settings.visualizer.showLyrics.desc'),
         }),
         this._randomEachRow(),
       ]),
@@ -218,11 +223,11 @@ const SettingsPanel = {
     // opened from was, and goes back there with the X or a swipe to the left.
     const mobile = document.body.classList.contains('mobile');
     this.modal = Modal.open({
-      title: 'Settings',
+      title: T('common.settings'),
       className: 'modal--settings',
       drawer: mobile,
       body: [body],
-      buttons: mobile ? [] : [{ label: 'Close', kind: 'primary' }],
+      buttons: mobile ? [] : [{ label: T('common.close'), kind: 'primary' }],
       onClose: () => {
         this.modal = null;
         this._refresh = [];
@@ -232,7 +237,7 @@ const SettingsPanel = {
     });
     if (mobile) {
       const modal = this.modal;
-      this._backBtn = iconButton('modal__back', Icons.chevronLeft, 'Back', () => this.back());
+      this._backBtn = iconButton('modal__back', Icons.chevronLeft, T('common.back'), () => this.back());
       this._backBtn.hidden = true;
       modal.el.querySelector('.modal__head').prepend(this._backBtn);
       Mobile.swipeToClose(modal, ['left']);
@@ -248,6 +253,7 @@ const SettingsPanel = {
     this._drawServer();
     this._drawAdmin(true);
     Stats.load();
+    if (this._shows(T('common.statistics'))) Stats.loadServer();
     // Profiles made or renamed on other devices since.
     if (Store.server.on && Store.server.state === 'online') window.flow.profiles().catch(() => {});
   },
@@ -281,7 +287,7 @@ const SettingsPanel = {
       const title = node.childNodes[0].textContent;
       const chevron = h('span.settings__chevron', { html: Icons.chevron });
       node.prepend(chevron);
-      Object.assign(node, { tabIndex: 0, title: 'Show or hide this category' });
+      Object.assign(node, { tabIndex: 0, title: T('settings.window.category.toggle.tooltip') });
       node.setAttribute('role', 'button');
       const own = h('div.settings__group-rows');
       rows = own;
@@ -299,6 +305,7 @@ const SettingsPanel = {
         else shut.add(title);
         Store.saveSettings({ settingsCollapsed: [...shut] });
         draw();
+        if (!shut.has(title)) this._opened(title);
       };
       node.addEventListener('click', toggle);
       node.addEventListener('keydown', (e) => {
@@ -355,10 +362,27 @@ const SettingsPanel = {
     this._screenList.hidden = !!title;
     for (const g of this._screenGroups) g.hidden = g.dataset.title !== title;
     const head = this.modal && this.modal.el.querySelector('.modal__title');
-    if (head) head.textContent = title || 'Settings';
+    if (head) head.textContent = title || T('common.settings');
     if (this._backBtn) this._backBtn.hidden = !title;
     const body = this.modal && this.modal.el.querySelector('.modal__body');
     if (body) body.scrollTop = 0;
+    if (title) this._opened(title);
+  },
+
+  /**
+   * Whether a category shows: on the phone its screen is open, elsewhere it is
+   * not folded shut. Statistics and Administration fetch from the server only
+   * while they show (4.3).
+   */
+  _shows(title) {
+    if (document.body.classList.contains('mobile')) return this._screen === title;
+    return !(Store.settings.settingsCollapsed || []).includes(title);
+  },
+
+  /** A category came into view: what it shows from the server is fetched now. */
+  _opened(title) {
+    if (title === T('common.statistics')) Stats.loadServer();
+    if (title === T('admin.heading') && Store.server.admin) Admin.load();
   },
 
   /**
@@ -369,7 +393,7 @@ const SettingsPanel = {
     const on = !!Store.server.admin;
     const was = this._adminOn;
     this._adminOn = on;
-    const title = 'Administration';
+    const title = T('admin.heading');
     if (document.body.classList.contains('mobile')) {
       const btn = [...this._screenList.querySelectorAll('.settings__category')].find((x) => x.textContent === title);
       if (btn) btn.hidden = !on;
@@ -379,7 +403,7 @@ const SettingsPanel = {
       const group = head && head.closest('.settings__group');
       if (group) group.hidden = !on;
     }
-    if (on && (force || !was)) Admin.load();
+    if (on && (force || !was) && this._shows(title)) Admin.load();
   },
 
   /** The phone's Back while Settings is open: from a category to the list. False on the list. */
@@ -408,7 +432,7 @@ const SettingsPanel = {
 
     const { MIN_BANDS, MAX_BANDS } = SoundEq;
     const bands = h('input.volume-slider.settings__slider', {
-      type: 'range', min: MIN_BANDS, max: MAX_BANDS, step: 1, value: Store.settings.soundEqBands, 'aria-label': 'Audio bands',
+      type: 'range', min: MIN_BANDS, max: MAX_BANDS, step: 1, value: Store.settings.soundEqBands, 'aria-label': T('settings.equalizer.bands.label'),
     });
     const bandsValue = h('span.settings__value');
     const drawBands = () => {
@@ -433,8 +457,8 @@ const SettingsPanel = {
       base = null;
     });
 
-    const preset = h('select.select', { 'aria-label': 'Sound Equalizer' });
-    for (const id of SoundEq.CHOICES) preset.appendChild(h('option', { value: id }, id === 'custom' ? 'Custom' : SoundEq.PRESETS[id].name));
+    const preset = h('select.select', { 'aria-label': T('settings.equalizer.preset.label') });
+    for (const id of SoundEq.CHOICES) preset.appendChild(h('option', { value: id }, id === 'custom' ? T('settings.equalizer.preset.custom') : SoundEq.PRESETS[id].name));
     preset.addEventListener('change', () => {
       const patch = { soundEqPreset: preset.value };
       // Custom the first time: the curve shown until then, to change from.
@@ -443,7 +467,7 @@ const SettingsPanel = {
     });
 
     const canvas = h('canvas.sound-eq__canvas', {
-      tabIndex: 0, 'aria-label': 'Equalizer curve: Left and Right pick a band, Up and Down raise or lower it',
+      tabIndex: 0, 'aria-label': T('settings.equalizer.curve.ariaLabel'),
     });
     const readout = h('span.sound-eq__readout');
     // The phone's: the point picked and how far it is zoomed in above the curve
@@ -453,10 +477,10 @@ const SettingsPanel = {
       ? h('div.sound-eq',
         h('div.sound-eq__head', readout, zoomNode),
         canvas,
-        h('div.sound-eq__note', 'Put a finger on a point and drag it up or down. A double tap puts it back to 0 dB.'),
-        h('div.sound-eq__note', `Pinch to zoom in or out (up to ${MAX_ZOOM * 100}%), slide left or right to move along.`))
+        h('div.sound-eq__note', T('settings.equalizer.curve.help.touch')),
+        h('div.sound-eq__note', T('settings.equalizer.curve.help.pinch', { percent: MAX_ZOOM * 100 })))
       : h('div.sound-eq', canvas,
-        h('div.sound-eq__info', readout, h('span', 'Drag a point up or down (Shift: finer). A double-click puts it back to 0 dB.')));
+        h('div.sound-eq__info', readout, h('span', T('settings.equalizer.curve.help.mouse'))));
 
     // Room for the dB at the left and the Hz under it.
     const PAD = { l: 38, r: 14, t: 10, b: 22 };
@@ -566,7 +590,7 @@ const SettingsPanel = {
       });
       ctx.restore();
       readout.textContent = hot >= 0 ? `${fmtHz(fs[hot])}: ${fmtDb(gains[hot])}` : '';
-      zoomNode.textContent = `Zoom ${Math.round(zoomOf() * 100)}%`;
+      zoomNode.textContent = T('settings.equalizer.curve.zoom', { percent: Math.round(zoomOf() * 100) });
       canvas.classList.toggle('sound-eq__canvas--hot', hot >= 0 || !!drag);
     };
 
@@ -789,15 +813,15 @@ const SettingsPanel = {
     });
 
     return [
-      h('h3.settings__section', 'Equalizer'),
+      h('h3.settings__section', T('settings.equalizer.heading')),
       this._row({
-        label: 'Audio bands',
-        desc: 'How many frequencies get separated for fidelity.',
+        label: T('settings.equalizer.bands.label'),
+        desc: T('settings.equalizer.bands.desc'),
         right: h('div.settings__control', bands, bandsValue),
       }),
       this._row({
-        label: 'Sound Equalizer',
-        desc: 'A ready-made curve, or Custom: your own points. Moving a point makes the curve shown your Custom one.',
+        label: T('settings.equalizer.preset.label'),
+        desc: T('settings.equalizer.preset.desc'),
         right: preset,
       }),
       graph,
@@ -807,12 +831,12 @@ const SettingsPanel = {
   /** The Android app's own: its version, and help for playing on with the screen off. */
   _appRows() {
     return [
-      h('h3.settings__section', 'App'),
-      this._row({ label: 'Version', desc: `Flow ${Store.version || ''}`.trim() }),
+      h('h3.settings__section', T('settings.app.heading')),
+      this._row({ label: T('settings.app.version.label'), desc: `Flow ${Store.version || ''}`.trim() }),
       Store.can('batteryHelp') ? this._row({
-        label: 'Playing with the screen off',
-        desc: 'How to keep the phone from stopping Flow in the background.',
-        right: h('button.btn.btn--small', { type: 'button', onclick: () => BackgroundHelp.open() }, 'Show'),
+        label: T('settings.app.screenOff.label'),
+        desc: T('settings.app.screenOff.desc'),
+        right: h('button.btn.btn--small', { type: 'button', onclick: () => BackgroundHelp.open() }, T('common.show')),
       }) : null,
     ];
   },
@@ -858,11 +882,11 @@ const SettingsPanel = {
       return h('label.check', box, h('span', label));
     };
     return h('div.settings__ticks',
-      tick('colAlbum', 'Album'), tick('colGenre', 'Genre'), tick('colSubGenre', 'Info'), tick('colMix', 'Mix'));
+      tick('colAlbum', T('common.album')), tick('colGenre', T('common.genre')), tick('colSubGenre', T('common.info')), tick('colMix', T('common.mix')));
   },
 
   /** A slider with its value beside it. Percent 1-100 unless told otherwise. */
-  _slider({ key, label = '', name = label, min = 1, max = 100, step = 1, format = (v) => `${Math.round(v)}%`, when }) {
+  _slider({ key, label = '', name = label, min = 1, max = 100, step = 1, format = (v) => T('common.percent', { percent: Math.round(v) }), when }) {
     // `name`: what a screen reader calls it (its label when it shows one).
     const input = h('input.volume-slider.settings__slider', { type: 'range', min, max, step, value: Store.settings[key], 'aria-label': name || null });
     const value = h('span.settings__value');
@@ -879,6 +903,23 @@ const SettingsPanel = {
     draw();
     if (when) this._refresh.push(() => { input.disabled = !when(); });
     return h('div.settings__control', label ? h('span.settings__caption', label) : null, input, value);
+  },
+
+  /** The texts' language: the device's (named), English or Deutsch. The window reloads to switch. */
+  _languageSelect() {
+    // Each language by its own name, the same in every language.
+    const NAMES = { en: 'English', de: 'Deutsch' };
+    const select = h('select.select', { 'aria-label': T('settings.general.language.label') },
+      h('option', { value: '' }, T('settings.general.language.device', { language: NAMES[I18n.resolve('')] })),
+      ...I18n.LANGUAGES.map((l) => h('option', { value: l }, NAMES[l] || l)));
+    select.value = Store.settings.language || '';
+    select.addEventListener('change', async () => {
+      const choice = select.value;
+      await Store.saveSettings({ language: choice });
+      I18n.remember(choice);
+      if (I18n.resolve(choice) !== I18n.lang) (window.flow.reload || (() => window.location.reload()))();
+    });
+    return select;
   },
 
   _select({ key, options, when }) {
@@ -922,7 +963,7 @@ const SettingsPanel = {
       const el = h('button.viz-tile' + (v.ready ? '' : '.viz-tile--soon'), {
         type: 'button',
         disabled: !v.ready,
-        title: v.ready ? v.desc : 'Coming soon',
+        title: v.ready ? undefined : T('settings.visualizer.comingSoon.tooltip'),
         dataset: { id: v.id },
         onclick: () => {
           Store.saveSettings({ visualizer: v.id });
@@ -930,7 +971,7 @@ const SettingsPanel = {
           draw();
           this._refreshAll();
         },
-      }, art, h('span.viz-tile__name', v.name), v.ready ? null : h('span.viz-tile__soon', 'Soon'));
+      }, art, h('span.viz-tile__name', v.name), v.ready ? null : h('span.viz-tile__soon', T('settings.visualizer.comingSoon.badge')));
       all.push(el);
       return el;
     };
@@ -938,16 +979,16 @@ const SettingsPanel = {
     const shuffle = VIZ_RANDOM_GLYPH;
     const groups = VIZ_CATEGORIES.map((cat) => {
       const members = cat.ids.map((id) => byId.get(id)).filter(Boolean);
-      const random = { id: `random-${cat.id}`, name: 'Random', ready: true, desc: `A different one of the ${cat.name} each time`, glyph: shuffle };
+      const random = { id: `random-${cat.id}`, name: T('settings.visualizer.random.name'), ready: true, glyph: shuffle };
       const grid = h('div.viz-picker', tile(random), ...members.map(tile));
       const chevron = h('span.settings__chevron', { html: Icons.chevron });
       const note = h('span.viz-cat__note');
-      const head = h('div.viz-cat', { tabIndex: 0, title: 'Show or hide this category' }, chevron, h('span', cat.name), note);
+      const head = h('div.viz-cat', { tabIndex: 0, title: T('settings.window.category.toggle.tooltip') }, chevron, h('span', cat.name), note);
       head.setAttribute('role', 'button');
       const shut = () => Store.settings.vizCollapsed.includes(cat.id);
       notes.push(() => {
         const chosen = Store.settings.visualizer === random.id ? random : members.find((v) => v.id === Store.settings.visualizer);
-        note.textContent = shut() && chosen ? `${chosen.name} chosen` : cat.desc;
+        note.textContent = shut() && chosen ? T('settings.visualizer.chosen', { name: chosen.name }) : cat.desc;
       });
       const fold = () => {
         grid.hidden = shut();
@@ -973,10 +1014,10 @@ const SettingsPanel = {
       return h('div.viz-cat-group', head, grid);
     });
     draw();
-    const preview = h('button.btn.btn--small', { type: 'button', onclick: () => Visualizer.open() }, 'Preview selected');
+    const preview = h('button.btn.btn--small', { type: 'button', onclick: () => Visualizer.open() }, T('settings.visualizer.previewSelected'));
     const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', 'Select your Music Visualizer'),
-      h('div.settings__desc', 'Opens in full screen from the visualizer button in the player bar. Escape or the X closes it; the Up and Down arrow keys switch to the one before or after.'));
+      h('div.settings__label.settings__label--plain', T('settings.visualizer.select.heading')),
+      h('div.settings__desc', T('settings.visualizer.select.desc')));
     return h('div.settings__viz',
       h('div.settings__row.settings__row--flat', left, h('div.settings__right', preview)),
       ...above,
@@ -991,7 +1032,7 @@ const SettingsPanel = {
    */
   _frameRateRows() {
     const values = VIZ_FPS;
-    const input = h('input.volume-slider.settings__slider', { type: 'range', min: 0, max: values.length - 1, step: 1, 'aria-label': 'Framerate limit' });
+    const input = h('input.volume-slider.settings__slider', { type: 'range', min: 0, max: values.length - 1, step: 1, 'aria-label': T('settings.visualizer.limitFramerate.slider.name') });
     const value = h('span.settings__value');
     const detected = h('span.settings__note');
     let hz = 0;
@@ -1008,7 +1049,7 @@ const SettingsPanel = {
       input.disabled = vsync || !Store.settings.vizFpsOn;
       if (control) control.classList.toggle('settings__control--off', vsync && Store.settings.vizFpsOn);
       input.style.setProperty('--fill', `${(Number(input.value) / (values.length - 1)) * 100}%`);
-      detected.textContent = hz ? `${hz} Hz detected` : '';
+      detected.textContent = hz ? T('settings.visualizer.vsync.detected', { hz }) : '';
     };
     input.addEventListener('input', () => {
       Store.previewSettings({ vizFps: values[Number(input.value)] });
@@ -1024,14 +1065,14 @@ const SettingsPanel = {
     return [
       this._row({
         key: 'vizFpsOn',
-        label: 'Limit framerate',
-        desc: 'Set the framerate limit for visualizers to save GPU power consumption.',
+        label: T('settings.visualizer.limitFramerate.label'),
+        desc: T('settings.visualizer.limitFramerate.desc'),
         right: h('div.settings__control', input, value),
       }),
       this._row({
         key: 'vizVsync',
-        label: 'V-Sync (detect monitor refresh rate)',
-        desc: 'Set the limit to draw as many frames as your monitor can show automatically.',
+        label: T('settings.visualizer.vsync.label'),
+        desc: T('settings.visualizer.vsync.desc'),
         sub: true,
         when: () => Store.settings.vizFpsOn,
         right: detected,
@@ -1044,13 +1085,13 @@ const SettingsPanel = {
     const random = () => Store.settings.visualizer.startsWith('random');
     const row = this._row({
       key: 'vizRandomEach',
-      label: 'Random for every new song',
-      desc: 'When a new song starts playing a new random visualizer from the selected category is chosen. Keeps full screen.',
+      label: T('settings.visualizer.randomEverySong.label'),
+      desc: T('settings.visualizer.randomEverySong.desc'),
       when: random,
     });
     const name = row.querySelector('.settings__label span');
     this._refresh.push(() => {
-      name.textContent = random() ? 'Random for every new song' : "Random for every new song (requires 'Random' in any category)";
+      name.textContent = random() ? T('settings.visualizer.randomEverySong.label') : T('settings.visualizer.randomEverySong.needsRandom');
     });
     return row;
   },
@@ -1070,18 +1111,19 @@ const SettingsPanel = {
     }
     this._refresh.push(draw);
     return h('div.settings__output', name,
-      h('button.btn.btn--small', { type: 'button', onclick: () => window.flow.chooseOutput().catch(() => {}) }, 'Change'));
+      h('button.btn.btn--small', { type: 'button', onclick: () => window.flow.chooseOutput().catch(() => {}) }, T('common.change')));
   },
 
   _outputSelect() {
     const select = h('select.select');
     const fill = () => {
       clear(select);
-      select.appendChild(h('option', { value: '' }, `${Output.defaultName}${Output.defaultLabel ? ` (${Output.defaultLabel})` : ''}`));
+      select.appendChild(h('option', { value: '' }, Output.defaultLabel
+        ? `${Output.defaultName} (${Output.defaultLabel})` : Output.defaultName));
       for (const d of Output.devices) select.appendChild(h('option', { value: d.deviceId }, d.label));
       const s = Store.settings;
       const chosen = s.outputDevice ? Output._chosen() : null;
-      if (s.outputDevice && !chosen) select.appendChild(h('option', { value: s.outputDevice }, `${s.outputDeviceLabel || 'Chosen device'} (not there)`));
+      if (s.outputDevice && !chosen) select.appendChild(h('option', { value: s.outputDevice }, T('settings.general.output.notThere', { device: s.outputDeviceLabel || T('settings.general.output.chosenDevice') })));
       select.value = chosen ? chosen.deviceId : s.outputDevice;
     };
     select.addEventListener('change', () => Output.choose(select.value));
@@ -1100,7 +1142,7 @@ const SettingsPanel = {
       const chosen = Store.settings.cookiesBrowser;
       if (chosen && !shown.some((b) => b.id === chosen)) {
         const b = list.find((x) => x.id === chosen);
-        if (b) shown.push({ ...b, name: `${b.name} (not found)` });
+        if (b) shown.push({ ...b, name: T('settings.media.cookies.browserNotFound', { browser: b.name }) });
       }
       for (const b of shown) select.appendChild(h('option', { value: b.id }, b.name));
       if (chosen) select.value = chosen;
@@ -1119,7 +1161,7 @@ const SettingsPanel = {
     const estimate = h('span.settings__note');
     const draw = () => {
       const mb = (Number(select.value) * 1000 / 8) * Store.averageDuration() / 1e6;
-      estimate.textContent = `about ${mb.toFixed(1)} MB per song`;
+      estimate.textContent = T('settings.media.quality.perSong', { mb: mb.toFixed(1) });
     };
     select.addEventListener('change', () => {
       Store.saveSettings({ mp3Quality: Number(select.value) });
@@ -1127,7 +1169,7 @@ const SettingsPanel = {
     });
     draw();
     this._refresh.push(() => { select.disabled = !Store.settings.alwaysMp3; });
-    return h('div.settings__control', h('span.settings__caption', 'At quality'), select, h('span', 'kbit/s'), estimate);
+    return h('div.settings__control', h('span.settings__caption', T('settings.media.quality.label')), select, h('span', 'kbit/s'), estimate);
   },
 
   // ---- Use a Flow Server ----
@@ -1145,34 +1187,39 @@ const SettingsPanel = {
     const main = this._row({
       key: 'serverOn',
       right: this._shareNode,
-      label: 'Use a Flow Server',
-      desc: 'Use the library on a Flow Server. Songs can be streamed from it and changes made here go to it. '
-        + 'When turned on, your local files get uploaded to the server as well.',
+      label: T('settings.server.use.label'),
+      desc: T('settings.server.use.desc') + ' '
+        + (Store.can('localFiles') ? T('settings.server.use.desc.localFilesUploaded') : T('settings.server.use.desc.browserOnlyServer')),
     });
     main.querySelector('.settings__left').appendChild(this._serverNode);
-    this._syncBtn = h('button.btn.btn--small', { type: 'button', onclick: () => this._syncNow() }, 'Synchronize now');
+    this._syncBtn = h('button.btn.btn--small', { type: 'button', onclick: () => this._syncNow() }, T('settings.server.syncNow'));
     const rows = [
       h('h3.settings__section', 'Flow Server'),
       main,
       this._row({
         key: 'serverHomeOn',
-        label: 'Home Server in WiFi/LAN',
-        desc: 'Flow connects to your home server or finds the server in your local network itself if UDP discovery is enabled.',
+        label: T('settings.server.home.label'),
+        desc: T('settings.server.home.desc'),
         sub: true,
         when: on,
-        right: this._textField({ key: 'serverHome', placeholder: '192.168.0.63:7878', when: on }),
+        right: this._textField({
+          key: 'serverHome', placeholder: '192.168.0.63:7878', when: on, address: true,
+        }),
       }),
       this._row({
         key: 'serverRemoteOn',
-        label: 'Remote Server',
-        desc: 'Fallback if no home server is found or you are away. Enter an IP:Port or a website connected to the server.',
+        label: T('settings.server.remote.label'),
+        desc: T('settings.server.remote.desc'),
         sub: true,
         when: on,
-        right: this._textField({ key: 'serverRemote', placeholder: '100.101.102.103:7878 or flow.example.com', when: on }),
+        right: this._textField({
+          key: 'serverRemote', placeholder: T('settings.server.remote.placeholder'), when: on, address: true,
+        }),
       }),
       this._row({
-        label: 'Server Password (if the server is password protected)',
-        desc: 'Flow keeps it encrypted on your device.',
+        label: T('settings.server.password.label'),
+        // The web player keeps it in the browser's session (apps/web/src/storage.js).
+        desc: Store.web ? T('settings.server.password.keptInBrowser') : T('settings.server.password.keptEncrypted'),
         sub: true,
         when: on,
         right: this._secretField(on),
@@ -1195,87 +1242,104 @@ const SettingsPanel = {
     const here = Store.can('downloadHere');
     const sync = this._row({
       key: 'serverAutoSync',
-      label: 'Synchronize local changes',
-      desc: 'Songs added to or removed from local files go to the server by themselves. '
-        + 'If disabled, only the button will sync local changes.',
+      label: T('settings.server.syncLocal.label'),
+      desc: T('settings.server.syncLocal.desc'),
       when: server,
       right: this._syncBtn,
     });
     // The button beside the box works whether or not the box is ticked.
     sync.classList.add('settings__row--keep');
+    // The web player keeps no songs, downloads or covers: only what it plays from the server.
+    const keeps = Store.can('localFiles');
+    let storage = null;
+    if (Store.can('musicFolder')) storage = this._savedSongsRow();
+    else if (Store.can('offline')) storage = this._storageRow();
     return [
-      h('h3.settings__section', 'Media Management'),
-      Store.can('musicFolder') ? this._savedSongsRow() : this._storageRow(),
-      this._coversRow(),
+      h('h3.settings__section', T('settings.media.heading')),
+      storage,
+      keeps ? this._coversRow() : null,
+      this._highResRow(keeps),
       this._row({
         key: 'lyricsOn',
-        label: 'Fetch/Sync Lyrics',
-        desc: 'If enabled, songs get their lyrics looked up, saved and synchronized if connected to a server.',
+        label: T('settings.media.lyrics.label'),
+        desc: T('settings.media.lyrics.desc'),
       }),
       this._lyricsRow(),
       Store.can('backups') ? this._backupsRow() : null,
-      this._row({
+      !Store.can('offline') ? null : this._row({
         key: 'serverMetered',
-        label: 'Allow downloads on mobile internet',
-        desc: 'If the app detects a metered connection/mobile internet, it will not download marked-to-download songs '
-          + 'from the Flow Server if it\'s not allowed. Streaming songs always works.',
+        label: T('settings.media.meteredDownloads.label'),
+        desc: T('settings.media.meteredDownloads.desc'),
         when: server,
         show: () => !!Store.settings.serverRemote && Store.settings.serverRemoteOn !== false,
       }),
-      this._row({
+      !keeps ? null : this._row({
         key: 'serverKeepFiles',
-        label: 'Keep local files after server upload',
-        desc: 'If disabled, your local songs will be removed after they got uploaded to the server, '
-          + 'unless you have these songs marked to be downloaded.',
+        label: T('settings.media.keepLocalAfterUpload.label'),
+        desc: T('settings.media.keepLocalAfterUpload.desc'),
         when: server,
       }),
-      sync,
+      keeps ? sync : null,
       here ? this._row({
         key: 'useCookies',
-        label: 'Use browser session-cookies for downloading',
-        desc: 'Downloads may be blocked by age restrictions or sites may only serve content to signed-in users. '
-          + 'Pick your browser to use its session cookies so such websites can know you are allowed to find/see '
-          + 'what you are looking for.',
+        label: T('settings.media.cookies.label'),
+        desc: T('settings.media.cookies.desc'),
         right: this._cookieBrowser(),
       }) : null,
       here ? this._row({
         key: 'shareCookies',
-        label: 'Share session cookies with the server',
-        desc: 'When enabled the Download (Server) button will pass -only the required- session cookies to the '
-          + 'Flow Server for this action.',
+        label: T('settings.media.shareCookies.label'),
+        desc: T('settings.media.shareCookies.desc'),
         sub: true,
         when: () => Store.settings.useCookies,
         show: server,
       }) : null,
+      // 4.4: on every app, for the client's downloads and the server's; mirrored under Add Songs' link box.
+      this._row({
+        key: 'autoComplete',
+        label: T('settings.media.autoComplete.label'),
+        desc: T('settings.media.autoComplete.desc'),
+      }),
+      this._row({
+        key: 'autoFinish',
+        label: T('settings.media.autoFinish.label'),
+        desc: T('settings.media.autoFinish.desc'),
+        sub: true,
+        when: () => Store.settings.autoComplete,
+      }),
       here ? this._row({
         key: 'sponsorBlock',
-        label: 'Use Sponsorblock for Youtube',
-        desc: 'Shows sponsored segments as yellow in the trim.',
+        label: T('settings.media.sponsorBlock.label'),
+        desc: T('settings.media.sponsorBlock.desc'),
       }) : null,
       here ? this._row({
         key: 'sponsorBlockIntros',
-        label: 'Try to detect intros/outros, marked red in the trim',
-        desc: 'A music video\'s non-music parts (talk, skits, credits) count as these too.',
+        label: T('settings.media.sponsorBlock.intros.label'),
+        desc: T('settings.media.sponsorBlock.intros.desc'),
         sub: true,
         when: () => Store.settings.sponsorBlock,
       }) : null,
       // A phone converts nothing itself: the server does, for its uploads and Download (Server).
       this._row({
         key: 'alwaysMp3',
-        label: here ? 'Always convert downloads into MP3' : 'Upload songs to the server as MP3',
-        desc: here ? 'Otherwise songs are kept in the format they come in.'
-          : 'Songs you upload from your phone to the server using local files or using the Download (Server) button '
-            + 'get converted into MP3 at the chosen quality by the server if enabled. Songs downloaded to this phone are not changed.',
+        label: here ? T('settings.media.convertMp3.desktop.label') : T('settings.media.convertMp3.server.label'),
+        desc: here ? T('settings.media.convertMp3.keepFormat.desc') : this._serverMp3Desc(keeps),
         right: this._mp3Quality(),
       }),
       this._row({
         key: 'keepMp3',
-        label: 'Ignore files that are already in .mp3 format',
-        desc: 'Leaves MP3s as they are instead of encoding them again at the quality above.',
+        label: T('settings.media.convertMp3.ignoreMp3.label'),
+        desc: T('settings.media.convertMp3.ignoreMp3.desc'),
         sub: true,
         when: () => Store.settings.alwaysMp3,
       }),
     ];
+  },
+
+  /** What "Upload songs to the server as MP3" does where the server converts (the phone; the web player: only its downloads). */
+  _serverMp3Desc(keeps) {
+    if (!keeps) return T('settings.media.convertMp3.server.desc.web');
+    return T('settings.media.convertMp3.server.desc.phone');
   },
 
   // ---- Jam session ----
@@ -1287,30 +1351,28 @@ const SettingsPanel = {
     // categories are made, so folding it keeps working by its title).
     const note = h('span.settings__section-note');
     this._jamNote = () => {
-      note.textContent = on() && Store.server.state === 'online' ? '' : '(requires a Flow server connection)';
+      note.textContent = on() && Store.server.state === 'online' ? '' : T('settings.media.needsServer');
     };
     this._refresh.push(this._jamNote);
     return [
-      h('h3.settings__section', 'Jam session', note),
+      h('h3.settings__section', T('settings.jam.heading'), note),
       this._row({
         key: 'sessionShare',
-        label: 'Share your jam session on the server',
-        desc: 'Let other devices connected to the same server see your session and they can request to join your jam.',
+        label: T('settings.jam.share.label'),
+        desc: T('settings.jam.share.desc'),
         when: on,
       }),
       this._row({
         key: 'sessionAutoAccept',
-        label: 'Accept jam join requests automatically',
-        desc: 'If enabled, you do not get requests from users who want to join your jam, they can just join. '
-          + 'Guests from other Flow Servers are still asked about.',
+        label: T('settings.jam.autoAccept.label'),
+        desc: T('settings.jam.autoAccept.desc'),
         sub: true,
         when: () => on() && Store.settings.sessionShare,
       }),
       this._row({
         key: 'sessionAllowVolume',
-        label: 'Devices in my Active Session may change my volume',
-        desc: 'Devices that joined what you play can pause, skip, start and queue songs. Ticked, they can also turn '
-          + 'your volume up and down.',
+        label: T('settings.jam.guestVolume.label'),
+        desc: T('settings.jam.guestVolume.desc'),
         when: on,
       }),
       this._outputDelayRow(on),
@@ -1324,22 +1386,27 @@ const SettingsPanel = {
     // Redrawn when the output or its delay changes (one listener, set up in init).
     this._delayFill = () => {
       c.sync();
-      const label = Output.builtin ? 'this phone\'s speaker' : Output.label();
-      which.textContent = label ? ` Kept for each output; this is ${label}.` : '';
+      const label = Output.builtin ? T('settings.jam.outputDelay.phoneSpeaker') : Output.label();
+      which.textContent = label ? ` ${T('settings.jam.outputDelay.keptPerOutput', { output: label })}` : '';
     };
     this._delayFill();
     this._refresh.push(() => { c.slider.disabled = !on() || !Store.settings.outputDelayOn; });
     return this._row({
       key: 'outputDelayOn',
-      label: 'Output delay (Sync speakers at Jams)',
+      label: T('output.delay.heading'),
       desc: h('span', Output.DELAY_NOTE, which),
       right: h('div.settings__control', c.slider, c.value),
       when: on,
     });
   },
 
-  /** A text box saved when left (or on Enter). */
-  _textField({ key, placeholder, when }) {
+  /**
+   * A text box saved when left (or on Enter). address: a Flow Server's, which
+   * gets https:// in front where it means https (Util.serverAddress).
+   */
+  _textField({
+    key, placeholder, when, address = false,
+  }) {
     const input = h('input.input.settings__input', {
       type: 'text', value: Store.settings[key] || '', placeholder, spellcheck: false, autocomplete: 'off',
     });
@@ -1351,8 +1418,9 @@ const SettingsPanel = {
         QrShare.connect(v);
         return;
       }
-      input.value = v;
-      if (v !== (Store.settings[key] || '')) Store.saveSettings({ [key]: v });
+      const done = address ? Util.serverAddress(v) : v;
+      input.value = done;
+      if (done !== (Store.settings[key] || '')) Store.saveSettings({ [key]: done });
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') input.blur();
@@ -1372,7 +1440,7 @@ const SettingsPanel = {
   _secretField(when) {
     const MASK = '••••••';
     const input = h('input.input.settings__input', {
-      type: 'password', placeholder: 'Password', autocomplete: 'new-password', spellcheck: false,
+      type: 'password', placeholder: T('common.password'), autocomplete: 'new-password', spellcheck: false,
     });
     let stored = !!Store.server.hasSecret;
     const draw = () => {
@@ -1411,9 +1479,9 @@ const SettingsPanel = {
     let text;
     let kind = 'off';
     if (!s.serverOn) text = '';
-    else if (s.serverHomeOn === false && s.serverRemoteOn === false) text = 'Both the Home and the Remote Server are unticked. Tick one to connect.';
-    else if (st.searching && !s.serverHome && s.serverHomeOn !== false) text = 'Looking for a Flow Server on this network...';
-    else if (!(s.serverHomeOn !== false && s.serverHome) && !(s.serverRemoteOn !== false && s.serverRemote)) text = 'No Flow Server found on this network. Enter the home or remote address below.';
+    else if (s.serverHomeOn === false && s.serverRemoteOn === false) text = T('settings.server.state.bothUnticked');
+    else if (st.searching && !s.serverHome && s.serverHomeOn !== false) text = T('settings.server.state.looking');
+    else if (!(s.serverHomeOn !== false && s.serverHome) && !(s.serverRemoteOn !== false && s.serverRemote)) text = T('settings.server.state.notFound');
     else ({ text, kind } = ServerChip.describe(st));
     const lines = [text, st.on ? st.transfer : '', st.on ? st.note : ''].filter(Boolean);
     clear(this._serverNode);
@@ -1421,7 +1489,7 @@ const SettingsPanel = {
     for (const line of lines) this._serverNode.appendChild(h('div', line));
     if (this._syncBtn) {
       this._syncBtn.disabled = st.state !== 'online' || !!st.syncing;
-      this._syncBtn.textContent = st.syncing ? 'Synchronizing...' : 'Synchronize now';
+      this._syncBtn.textContent = st.syncing ? T('settings.server.syncing') : T('settings.server.syncNow');
     }
     if (this._syncSecret) this._syncSecret();
     this._drawProfile();
@@ -1433,8 +1501,8 @@ const SettingsPanel = {
     if (!this._shareNode) return;
     const online = Store.server.on && Store.server.state === 'online';
     clear(this._shareNode).append(...[
-      Store.can('scanQr') ? h('button.btn.btn--small', { type: 'button', title: 'Connect to a Flow Server by its QR code', onclick: () => QrShare.scan() }, 'Scan') : null,
-      online ? h('button.btn.btn--small', { type: 'button', title: 'Show this server as a QR code for another app', onclick: () => QrShare.open() }, 'Share') : null,
+      Store.can('scanQr') ? h('button.btn.btn--small', { type: 'button', title: T('settings.server.scan.tooltip'), onclick: () => QrShare.scan() }, T('settings.server.scan.button')) : null,
+      online ? h('button.btn.btn--small', { type: 'button', title: T('settings.server.share.tooltip'), onclick: () => QrShare.open() }, T('common.share')) : null,
     ].filter(Boolean));
   },
 
@@ -1453,9 +1521,8 @@ const SettingsPanel = {
     this._switch = { picked: '', busy: '', key: '', editing: '' };
     this._switchNode = h('div.settings__control.switch-control');
     const row = this._row({
-      label: 'Switch server',
-      desc: 'Servers used on this device. Each keeps its downloads, waiting changes, profile and password for when you come back. '
-        + 'Pick one and press Switch.',
+      label: T('settings.server.switch.label'),
+      desc: T('settings.server.switch.desc'),
       show: () => this._knownServers().length > 0,
       right: this._switchNode,
     });
@@ -1490,13 +1557,13 @@ const SettingsPanel = {
     const other = !picked.current;
     const named = (x) => Util.serverName(names, x.id, x.name);
     const select = h('select.select.switch-select', { disabled: !!p.busy || !!p.editing },
-      ...list.map((x) => h('option', { value: x.id }, x.current ? `${named(x).label} - in use` : named(x).label)));
+      ...list.map((x) => h('option', { value: x.id }, x.current ? T('settings.server.switch.inUse', { server: named(x).label }) : named(x).label)));
     select.value = picked.id;
     select.addEventListener('change', () => {
       p.picked = select.value;
       this._drawSwitch(true);
     });
-    const forget = iconButton('act.act--grey', Icons.x, `Forget "${named(picked).name}"`, () => this._forgetServer(picked));
+    const forget = iconButton('act.act--grey', Icons.x, T('settings.server.switch.forget.tooltip', { server: named(picked).name }), () => this._forgetServer(picked));
     forget.disabled = !!p.busy || !other || !!p.editing;
     let edit;
     let action;
@@ -1508,17 +1575,17 @@ const SettingsPanel = {
       };
       ({ input: action, tick: edit } = this._nameBox(named(picked), done, 'switch-name'));
     } else {
-      edit = iconButton('act.act--grey', Icons.pencil, `Rename "${named(picked).name}" on ${Store.here}`, () => {
+      edit = iconButton('act.act--grey', Icons.pencil, T(`common.renameServer.tooltip.${Store.hereKey}`, { server: named(picked).name }), () => {
         p.editing = picked.id;
         this._drawSwitch(true);
       });
       edit.disabled = !!p.busy;
       action = h('button.btn.btn--small', {
         type: 'button', disabled: !!p.busy || !(other || off), onclick: () => this._switchTo(picked),
-      }, p.busy ? 'Connecting...' : 'Switch');
+      }, p.busy ? T('common.connecting') : T('settings.server.switch.button'));
     }
     node.append(
-      h('span.settings__note.switch-where', [picked.address, picked.profile ? `as ${picked.profile}` : ''].filter(Boolean).join(' · ')),
+      h('span.settings__note.switch-where', [picked.address, picked.profile ? T('settings.server.switch.asProfile', { profile: picked.profile }) : ''].filter(Boolean).join(' · ')),
       select,
       edit,
       action,
@@ -1533,7 +1600,7 @@ const SettingsPanel = {
    */
   _nameBox(name, done, cls) {
     const input = h(`input.input.server-name.${cls}`, {
-      type: 'text', maxLength: 80, spellcheck: false, value: name.name, placeholder: name.original, 'aria-label': `Name for "${name.original}"`,
+      type: 'text', maxLength: 80, spellcheck: false, value: name.name, placeholder: name.original, 'aria-label': T('settings.server.switch.rename.ariaLabel', { server: name.original }),
       // Escape is the box's (Keys leaves Settings open).
       dataset: { ownEscape: '' },
     });
@@ -1556,7 +1623,7 @@ const SettingsPanel = {
     });
     input.addEventListener('click', (e) => e.stopPropagation());
     input.addEventListener('blur', () => finish(input.value));
-    const tick = iconButton('act.act--green', Icons.check, 'Keep the name', (e) => {
+    const tick = iconButton('act.act--green', Icons.check, T('settings.server.switch.rename.keep'), (e) => {
       e.stopPropagation();
       finish(input.value);
     });
@@ -1599,15 +1666,14 @@ const SettingsPanel = {
     // Not switched: the one in use is picked again.
     if (!ok) this._switch.picked = '';
     this._drawSwitch();
-    if (ok) toast(`Switching to "${Util.serverName(Store.settings.serverNames, s.id, s.name).name}"`, 'success');
+    if (ok) toast(T('settings.server.switch.switching', { server: Util.serverName(Store.settings.serverNames, s.id, s.name).name }), 'success');
   },
 
   async _forgetServer(s) {
     const ok = await confirmDialog({
-      title: 'Forget server',
-      message: `Forget "${Util.serverName(Store.settings.serverNames, s.id, s.name).name}" on ${Store.here}? It is no longer offered here, and what was waiting to go to it is dropped. `
-        + 'Songs downloaded from it stay (under Downloaded Songs); the server and your profile on it are not touched.',
-      confirmLabel: 'Forget',
+      title: T('settings.server.switch.forget.title'),
+      message: T(`settings.server.switch.forget.text.${Store.hereKey}`, { server: Util.serverName(Store.settings.serverNames, s.id, s.name).name }),
+      confirmLabel: T('settings.server.switch.forget.confirm'),
       danger: true,
     });
     if (!ok) return;
@@ -1627,8 +1693,8 @@ const SettingsPanel = {
     this._prof = { picked: '', busy: false, key: '' };
     this._profileNode = h('div.settings__control.profile-control');
     return this._row({
-      label: 'Profile',
-      desc: 'Each profile has its own playlists, favourites and stats. Uploaded songs are shared.',
+      label: T('common.profile'),
+      desc: T('settings.server.profile.desc'),
       sub: true,
       when: () => Store.settings.serverOn,
       right: this._profileNode,
@@ -1652,9 +1718,9 @@ const SettingsPanel = {
     clear(node);
     if (!ready) {
       let text = '';
-      if (st.profile) text = `Logged in as ${st.profile.name}`;
-      else if (st.on && st.state === 'online' && !st.profilesSupported) text = 'Update the Flow Server to use profiles.';
-      else if (st.on) text = 'Available while connected to the server.';
+      if (st.profile) text = T('settings.server.profile.loggedIn', { profile: st.profile.name });
+      else if (st.on && st.state === 'online' && !st.profilesSupported) text = T('settings.server.profile.updateServer');
+      else if (st.on) text = T('settings.server.profile.onlyWhileConnected');
       node.append(h('span.settings__note', text));
       // Logout works away from the server too (it is told at the next connection).
       if (st.on && st.profile) node.append(this._logoutButton(st.profile));
@@ -1669,20 +1735,20 @@ const SettingsPanel = {
     const btn = (label, onclick, extra = '') => h('button.btn.btn--small' + extra, { type: 'button', disabled: p.busy, onclick }, label);
     // Square, as in a song's More menu, and like it slides its tray out to the
     // left over the row (closed by any of its buttons, or a click elsewhere).
-    const more = iconButton('act.act--grey', Icons.more, 'More', () => {
+    const more = iconButton('act.act--grey', Icons.more, T('common.more'), () => {
       if (SongActions.anchor === more) {
         SongActions.close();
         return;
       }
       SongActions.open(more, [
-        btn('Edit Name', () => this._editProfileName(profile)),
-        btn('Change PIN', () => this._changeProfilePin(profile)),
-        btn('Delete Profile', () => this._deleteProfile(profile), '.btn--danger'),
+        btn(T('settings.server.profile.editName'), () => this._editProfileName(profile)),
+        btn(T('settings.server.profile.changePin'), () => this._changeProfilePin(profile)),
+        btn(T('common.deleteProfile'), () => this._deleteProfile(profile), '.btn--danger'),
       ], 'act-tray--settings');
     });
     more.disabled = p.busy;
     node.append(
-      h('span.profile-who', 'Logged in as ', h('strong', profile.name)),
+      h('span.profile-who', T('settings.server.profile.loggedInAs.prefix'), ' ', h('strong', profile.name)),
       this._logoutButton(profile),
       more,
     );
@@ -1694,52 +1760,52 @@ const SettingsPanel = {
       disabled: this._prof.busy,
       onclick: () => this._profileDo(async () => {
         await window.flow.profileLogout();
-        toast(`Logged out of "${profile.name}"`, 'info');
+        toast(T('settings.server.profile.loggedOut', { profile: profile.name }), 'info');
       }),
-    }, 'Logout');
+    }, T('common.logout'));
   },
 
   /** The current PIN box: none to type while the profile has none. */
   _currentPinField(profile) {
     return {
-      key: 'pin', label: 'Current PIN', type: 'password', disabled: !profile.pin, placeholder: profile.pin ? '' : 'No PIN set',
+      key: 'pin', label: T('settings.server.profile.rename.currentPin'), type: 'password', disabled: !profile.pin, placeholder: profile.pin ? '' : T('settings.server.profile.rename.currentPin.placeholder'),
     };
   },
 
   _editProfileName(profile) {
     return formDialog({
-      title: 'Change Profile Name',
-      confirmLabel: 'Submit',
+      title: T('settings.server.profile.rename.title'),
+      confirmLabel: T('common.confirm'),
       fields: [
         this._currentPinField(profile),
-        { key: 'name', label: 'New Name', value: profile.name, maxLength: 40 },
+        { key: 'name', label: T('settings.server.profile.rename.newName'), value: profile.name, maxLength: 40 },
       ],
       submit: async ({ pin, name }) => {
         const renamed = await window.flow.profileRename(name, pin);
-        toast(`Profile renamed to "${renamed.name}"`, 'success');
+        toast(T('settings.server.profile.rename.done', { profile: renamed.name }), 'success');
       },
     });
   },
 
   _changeProfilePin(profile) {
     // An admin keeps a PIN (only a profile with one is an admin); the master's has 4 characters.
-    let hint = 'Leave empty for none';
-    if (profile.master) hint = 'At least 4 characters';
-    else if (profile.admin) hint = 'An admin needs one';
+    let hint = T('settings.server.profile.changePin.hint.empty');
+    if (profile.master) hint = T('settings.server.profile.changePin.hint.length');
+    else if (profile.admin) hint = T('settings.server.profile.changePin.hint.admin');
     return formDialog({
-      title: 'Change PIN',
-      confirmLabel: 'Submit',
+      title: T('settings.server.profile.changePin'),
+      confirmLabel: T('common.confirm'),
       fields: [
         this._currentPinField(profile),
-        { key: 'newPin', label: 'New PIN', type: 'password', placeholder: hint },
-        { key: 'confirm', label: 'Confirm new PIN', type: 'password' },
+        { key: 'newPin', label: T('settings.server.profile.changePin.newPin'), type: 'password', placeholder: hint },
+        { key: 'confirm', label: T('settings.server.profile.changePin.confirmPin'), type: 'password' },
       ],
       submit: async ({ pin, newPin, confirm }) => {
-        if (newPin !== confirm) throw new Error('The two PINs are not the same.');
-        if (!newPin && profile.admin) throw new Error('An admin profile needs a PIN.');
-        if (!newPin && !profile.pin) throw new Error('Enter a PIN.');
+        if (newPin !== confirm) throw new Error(T('settings.server.profile.create.error.notSame'));
+        if (!newPin && profile.admin) throw new Error(T('settings.server.profile.changePin.error.adminNeedsPin'));
+        if (!newPin && !profile.pin) throw new Error(T('settings.server.profile.changePin.error.enterPin'));
         const now = await window.flow.profilePin(pin, newPin);
-        toast(now.pin ? 'Your PIN was changed' : 'Your profile has no PIN now', 'success');
+        toast(now.pin ? T('settings.server.profile.changePin.done') : T('settings.server.profile.changePin.removed'), 'success');
       },
     });
   },
@@ -1748,18 +1814,18 @@ const SettingsPanel = {
     // The server's first profile becomes its admin, so it needs a PIN.
     const first = !(Store.server.profiles || []).length;
     return formDialog({
-      title: 'Create new Profile',
-      confirmLabel: 'Create',
+      title: T('settings.server.profile.create.title'),
+      confirmLabel: T('common.create'),
       fields: [
-        { key: 'name', label: 'Profile Name', maxLength: 40 },
-        { key: 'pin', label: 'Your PIN', type: 'password', placeholder: first ? 'Needed: the first profile becomes the admin' : 'Optional' },
-        { key: 'confirm', label: 'Confirm PIN', type: 'password' },
+        { key: 'name', label: T('settings.server.profile.create.name'), maxLength: 40 },
+        { key: 'pin', label: T('settings.server.profile.create.pin'), type: 'password', placeholder: first ? T('settings.server.profile.create.pin.placeholder.firstIsAdmin') : T('settings.server.profile.create.pin.placeholder.optional') },
+        { key: 'confirm', label: T('settings.server.profile.create.confirmPin'), type: 'password' },
       ],
       submit: async ({ name, pin, confirm }) => {
-        if (pin !== confirm) throw new Error('The two PINs are not the same.');
-        if (first && !pin) throw new Error('The first profile becomes this server\'s admin, so it needs a PIN.');
+        if (pin !== confirm) throw new Error(T('settings.server.profile.create.error.notSame'));
+        if (first && !pin) throw new Error(T('settings.server.profile.create.error.firstNeedsPin'));
         const made = await window.flow.profileCreate(name, pin);
-        toast(`Profile "${made.name}" made. Logged in as ${made.name}.`, 'success');
+        toast(T('settings.server.profile.create.done', { profile: made.name, profile: made.name }), 'success');
       },
     });
   },
@@ -1769,9 +1835,9 @@ const SettingsPanel = {
     if (p.picked && !profiles.some((x) => x.id === p.picked)) p.picked = '';
     const picked = profiles.find((x) => x.id === p.picked) || null;
     const select = h('select.select.profile-select', { disabled: p.busy },
-      h('option', { value: '' }, 'Default / Shared'),
+      h('option', { value: '' }, T('settings.server.profile.pick.shared')),
       ...profiles.map((x) => h('option', { value: x.id }, x.name)),
-      mayCreate ? h('option', { value: '+new' }, '+ New') : null);
+      mayCreate ? h('option', { value: '+new' }, T('settings.server.profile.pick.new')) : null);
     select.value = p.picked;
     select.addEventListener('change', () => {
       if (select.value === '+new') {
@@ -1785,7 +1851,7 @@ const SettingsPanel = {
     });
     const pin = h('input.input.settings__input.profile-pin', {
       type: 'password',
-      placeholder: picked && !picked.pin ? 'No PIN' : 'PIN',
+      placeholder: picked && !picked.pin ? T('settings.server.profile.pin.placeholder.none') : 'PIN',
       autocomplete: 'new-password',
       spellcheck: false,
       disabled: p.busy || !(picked && picked.pin),
@@ -1794,14 +1860,14 @@ const SettingsPanel = {
       if (!picked) return undefined;
       return this._profileDo(async () => {
         const now = await window.flow.profileLogin(picked.id, pin.value);
-        toast(`Logged in as ${now.name}`, 'success');
+        toast(T('settings.server.profile.loggedIn', { profile: now.name }), 'success');
       });
     };
     pin.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') go();
     });
     node.append(select, pin,
-      h('button.btn.btn--small', { type: 'button', disabled: p.busy || !picked, onclick: go }, 'Login'));
+      h('button.btn.btn--small', { type: 'button', disabled: p.busy || !picked, onclick: go }, T('settings.server.profile.login')));
     if (picked && picked.pin) requestAnimationFrame(() => pin.focus());
   },
 
@@ -1821,23 +1887,22 @@ const SettingsPanel = {
 
   async _deleteProfile(profile) {
     const answer = await confirmDialog({
-      title: 'Delete Profile',
-      message: `Delete the profile "${profile.name}"? All its playlists, favourites and listening stats will be gone, `
-        + 'on every device. The songs stay for everyone.',
-      confirmLabel: 'Delete',
+      title: T('common.deleteProfile'),
+      message: T('settings.server.profile.delete.text', { profile: profile.name }),
+      confirmLabel: T('common.delete'),
       danger: true,
     });
     if (!answer) return;
     await this._profileDo(async () => {
       await window.flow.profileDelete();
-      toast(`Profile "${profile.name}" deleted`, 'info');
+      toast(T('common.profileDeleted', { profile: profile.name }), 'info');
     });
   },
 
   _syncNow() {
     return attempt(async () => {
       const r = await window.flow.syncNow();
-      toast(r.sent ? `Synchronized: ${Util.plural(r.sent, 'change')} from Local Files sent` : 'Synchronized', 'success');
+      toast(r.sent ? T('settings.server.synced.withChanges', { changes: Util.plural(r.sent, 'change') }) : T('settings.server.synced'), 'success');
     });
   },
 
@@ -1846,10 +1911,11 @@ const SettingsPanel = {
   _savedSongsRow() {
     this._statsNode = h('span.settings__note', '...');
     this._pathNode = h('div.settings__desc.settings__path');
-    const open = h('button.btn.btn--small', { type: 'button', onclick: () => this._openFolder() }, 'Open');
-    const change = h('button.btn.btn--small', { type: 'button', onclick: () => this._changeFolder(change) }, 'Change');
+    const open = h('button.btn.btn--small', { type: 'button', onclick: () => this._openFolder() }, T('settings.localFiles.open'));
+    const change = h('button.btn.btn--small', { type: 'button', onclick: () => this._changeFolder(change) }, T('common.change'));
     const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', 'Local Files'),
+      h('div.settings__label.settings__label--plain', T('common.localFiles')),
+      h('div.settings__desc', T('settings.localFiles.desc')),
       this._pathNode);
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._statsNode, open, change)));
   },
@@ -1857,12 +1923,12 @@ const SettingsPanel = {
   async _drawStats() {
     // No Local Files row where the folder is not the user's to see (the phone).
     if (!Store.can('musicFolder')) return;
-    this._pathNode.textContent = `Location: ${Store.musicDir}`;
+    this._pathNode.textContent = T('settings.localFiles.location', { folder: Store.musicDir });
     this._pathNode.title = Store.musicDir;
     try {
       const st = await window.flow.folderStats();
       Store.musicDir = st.dir;
-      this._pathNode.textContent = `Location: ${st.dir}`;
+      this._pathNode.textContent = T('settings.localFiles.location', { folder: st.dir });
       this._pathNode.title = st.dir;
       this._statsNode.textContent = `${Util.plural(st.count, 'song')} · ${fmtBytes(st.bytes)}`;
     } catch {
@@ -1871,28 +1937,63 @@ const SettingsPanel = {
   },
 
   /**
-   * Covers: how many this computer keeps and the room they take (with a
-   * server: the servers' covers kept here, which can be cleared).
+   * Covers (4.3.1): whether a server's thumbnails are fetched for the lists,
+   * the thumbnails kept here and the room they take (with a server: the
+   * servers' ones, which can be cleared; they come again as lists are
+   * scrolled).
    */
   _coversRow() {
     this._coversNode = h('span.settings__note');
     this._clearCovers = h('button.btn.btn--small', {
       type: 'button',
-      title: 'Delete the covers downloaded from Flow Servers. Those of this server come down again.',
+      title: T('settings.coverCache.clear.tooltip'),
       onclick: () => attempt(async () => {
-        await window.flow.clearCoverCache();
-        toast('Cover cache cleared: the covers come down again', 'success');
+        await window.flow.clearCoverCache('small');
+        toast(T('settings.coverCache.cleared'), 'success');
         this._drawCovers();
       }),
-    }, 'Clear cover cache');
-    const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', 'Cover Cache'),
-      h('div.settings__desc', 'Covers are found by the client or server, synchronized automatically.'));
-    return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._coversNode, this._clearCovers)));
+    }, T('settings.coverCache.clear'));
+    const row = this._row({
+      key: 'thumbCovers',
+      label: T('settings.coverCache.heading'),
+      desc: T('settings.coverCache.desc'),
+      right: h('div.settings__control', this._coversNode, this._clearCovers),
+    });
+    // Unticked, its Clear button still looks and works as it is.
+    row.classList.add('settings__row--btns');
+    return row;
   },
 
   /**
-   * Lyrics (4.0.1): how many the Lyrics folder keeps and the room they take,
+   * "Download high resolution covers (512px)", a setting of its own (4.3.1):
+   * off, only those kept already are shown. Its big covers kept here, and
+   * "Clear big cover cache" for the servers' (no question: they are only
+   * fetched again when shown). The web player keeps none: the tick alone.
+   */
+  _highResRow(keeps) {
+    this._bigNode = keeps ? h('span.settings__note') : null;
+    this._clearBig = keeps ? h('button.btn.btn--small', {
+      type: 'button',
+      title: T('settings.coverCache.highRes.clear.tooltip'),
+      onclick: () => attempt(async () => {
+        await window.flow.clearCoverCache('big');
+        Covers.refresh(null);
+        toast(T('settings.coverCache.highRes.cleared'), 'success');
+        this._drawCovers();
+      }),
+    }, T('settings.coverCache.highRes.clear')) : null;
+    const row = this._row({
+      key: 'highResCovers',
+      label: T('settings.coverCache.highRes.label'),
+      desc: T('settings.coverCache.highRes.desc'),
+      right: keeps ? h('div.settings__control', this._bigNode, this._clearBig) : null,
+    });
+    row.classList.add('settings__row--btns');
+    return row;
+  },
+
+  /**
+   * Lyrics (4.0): how many the Lyrics folder keeps and the room they take,
    * under Fetch/Sync Lyrics. Clearing leaves those written in Flow for Local
    * Files songs; a server's come down again.
    */
@@ -1900,18 +2001,17 @@ const SettingsPanel = {
     this._lyricsNode = h('span.settings__note');
     const clearBtn = h('button.btn.btn--small', {
       type: 'button',
-      title: 'Delete the lyrics kept here, except those written in Flow for Local Files songs. Those of a server come down again.',
+      title: T('settings.lyricsCache.clear.tooltip'),
       onclick: () => attempt(async () => {
         await window.flow.clearLyricsCache();
-        toast('Lyrics cache cleared', 'success');
+        toast(T('settings.lyricsCache.cleared'), 'success');
         Lyrics.forgetAll();
         this._drawLyrics();
       }),
-    }, 'Clear lyrics cache');
+    }, T('settings.lyricsCache.clear'));
     const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', 'Lyrics Cache'),
-      h('div.settings__desc', 'Lyrics are found by the client or server, or manually added using Flow. '
-        + 'Synchronized automatically if "Fetch/Sync Lyrics" is enabled.'));
+      h('div.settings__label.settings__label--plain', T('settings.lyricsCache.heading')),
+      h('div.settings__desc', T('settings.lyricsCache.desc')));
     const row = h('div.settings__row.settings__row--sub', left, h('div.settings__right', h('div.settings__control', this._lyricsNode, clearBtn)));
     // Greyed out under Fetch/Sync Lyrics unticked, Clear lyrics cache still there to click.
     this._refresh.push(() => row.classList.toggle('settings__row--dim', Store.settings.lyricsOn === false));
@@ -1924,8 +2024,9 @@ const SettingsPanel = {
       const st = await window.flow.lyricsStats();
       if (!this._lyricsNode) return;
       // How many, the room they take, and while every song's are looked up, how many still are.
-      this._lyricsNode.textContent = `${st.count} lyrics · ${fmtBytes(st.bytes)}${st.left ? ` · looking up ${st.left} more` : ''}`;
-      this._lyricsNode.title = st.none ? `No lyrics found for ${Util.plural(st.none, 'song')}` : '';
+      this._lyricsNode.textContent = st.left ? T('settings.lyricsCache.size.lookingUp', { count: st.count, size: fmtBytes(st.bytes), left: st.left })
+        : T('settings.lyricsCache.size', { count: st.count, size: fmtBytes(st.bytes) });
+      this._lyricsNode.title = st.none ? T('settings.lyricsCache.noneFound.tooltip', { songs: Util.plural(st.none, 'song') }) : '';
     } catch {
       this._lyricsNode.textContent = '';
     }
@@ -1944,44 +2045,43 @@ const SettingsPanel = {
         const b = this._backupList.find((x) => x.name === pick.value);
         if (!b) return;
         const ok = await confirmDialog({
-          title: 'Restore backup',
-          message: `Put Local Files back as they were on ${Util.fmtDate(b.createdAt)}? Song names, playlists, favourites and stats `
-            + 'go back to how they were then; songs added since stay, songs whose files are gone stay out. What is there now is backed up first.',
-          confirmLabel: 'Restore',
+          title: T('common.restoreBackup'),
+          message: T('settings.backups.restore.text', { date: Util.fmtDate(b.createdAt) }),
+          confirmLabel: T('common.restore'),
           kind: 'light-red',
         });
         if (!ok) return;
         const r = await window.flow.restoreBackup(b.name);
-        toast(`Backup restored: ${Util.plural(r.songs, 'song')}${r.missing ? `, ${r.missing} without their files left out` : ''}`, 'success');
+        toast(r.missing ? T('settings.backups.restored.someMissing', { songs: Util.plural(r.songs, 'song'), missing: r.missing })
+          : T('settings.backups.restored', { songs: Util.plural(r.songs, 'song') }), 'success');
         this._drawBackups();
       }),
-    }, 'Restore');
+    }, T('common.restore'));
     const make = h('button.btn.btn--small', {
       type: 'button',
       onclick: () => attempt(async () => {
         await window.flow.makeBackup();
-        toast('Backup made', 'success');
+        toast(T('common.backupMade'), 'success');
         this._drawBackups();
       }),
-    }, 'Back up now');
+    }, T('common.backUpNow'));
     this._backupList = [];
     this._backupPick = pick;
     this._backupRestore = restore;
     this._drawBackups();
     const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', 'Backups'),
-      h('div.settings__desc', 'The song names, playlists, favourites and stats of Local Files are backed up every week, '
-        + 'the last 6 kept. Never the song files themselves.'));
+      h('div.settings__label.settings__label--plain', T('common.backups')),
+      h('div.settings__desc', T('settings.backups.desc')));
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', pick, restore, make)));
   },
 
   async _drawBackups() {
     const list = await window.flow.backups().catch(() => []);
-    const why = { weekly: '', manual: ' (by hand)', restore: ' (before a restore)' };
+    const why = { manual: 'settings.backups.entry.byHand', restore: 'settings.backups.entry.beforeRestore' };
     this._backupList = list;
     clear(this._backupPick).append(...(list.length
-      ? list.map((b) => h('option', { value: b.name }, `${Util.fmtDate(b.createdAt)}${why[b.reason] || ''}`))
-      : [h('option', { value: '' }, 'No backups yet')]));
+      ? list.map((b) => { const date = Util.fmtDate(b.createdAt); return h('option', { value: b.name }, why[b.reason] ? T(why[b.reason], { date }) : date); })
+      : [h('option', { value: '' }, T('common.noBackups'))]));
     this._backupPick.disabled = !list.length;
     this._backupRestore.disabled = !list.length;
   },
@@ -1992,11 +2092,10 @@ const SettingsPanel = {
     this._removeDownloads = h('button.btn.btn--small', {
       type: 'button',
       onclick: () => this._removeAllDownloads(),
-    }, 'Remove downloads');
+    }, T('settings.songStorage.removeDownloads'));
     const left = h('div.settings__left',
-      h('div.settings__label.settings__label--plain', 'Song Storage'),
-      h('div.settings__desc', 'The songs kept on this phone, and how much room they take. Remove downloads deletes '
-        + 'the Flow Server\'s songs kept here and unmarks every playlist\'s Download; they still play from the server.'));
+      h('div.settings__label.settings__label--plain', T('settings.songStorage.heading')),
+      h('div.settings__desc', T('settings.songStorage.desc')));
     return h('div.settings__row', left, h('div.settings__right', h('div.settings__control', this._storageNode, this._removeDownloads)));
   },
 
@@ -2006,7 +2105,7 @@ const SettingsPanel = {
       const st = await window.flow.storageStats();
       if (!this._storageNode) return;
       const parts = [`${Util.plural(st.songs, 'song')} · ${fmtBytes(st.bytes)}`];
-      if (st.downloaded && st.downloaded < st.songs) parts.push(`${st.downloaded} downloaded`);
+      if (st.downloaded && st.downloaded < st.songs) parts.push(T('settings.songStorage.stats.downloaded', { count: st.downloaded }));
       this._storageNode.textContent = parts.join(', ');
       this._removeDownloads.hidden = !Store.server.on || !(st.downloaded || (Store.server.offline || []).length);
     } catch {
@@ -2016,17 +2115,16 @@ const SettingsPanel = {
 
   async _removeAllDownloads() {
     const ok = await confirmDialog({
-      title: 'Remove downloads?',
-      message: 'The Flow Server\'s songs kept on this phone are deleted here, and no playlist is downloaded any more. '
-        + 'They stay on the server and play from there while it can be reached.',
-      confirmLabel: 'Remove',
+      title: T('settings.songStorage.removeDownloads.title'),
+      message: T('settings.songStorage.removeDownloads.text'),
+      confirmLabel: T('common.remove'),
       danger: true,
     });
     if (!ok) return;
     await attempt(async () => {
       const r = await window.flow.removeAllDownloads();
-      toast(r.inUse ? `Removed ${Util.plural(r.removed, 'song')}; ${r.inUse} playing now ${r.inUse === 1 ? 'goes' : 'go'} later`
-        : `Removed ${Util.plural(r.removed, 'song')} from this phone`, 'success');
+      toast(r.inUse ? T('settings.songStorage.removed.someLater', { songs: Util.plural(r.removed, 'song'), inUse: r.inUse, count: r.inUse })
+        : T('settings.songStorage.removed', { songs: Util.plural(r.removed, 'song') }), 'success');
     });
     this._drawStorage();
   },
@@ -2034,13 +2132,17 @@ const SettingsPanel = {
   async _drawCovers() {
     if (!this._coversNode) return;
     this._clearCovers.hidden = !Store.server.on;
+    if (this._clearBig) this._clearBig.hidden = !Store.server.on;
     try {
       const st = await window.flow.coverStats();
       const here = Store.server.on ? st.server : st.local;
       if (!here || !this._coversNode) return;
-      this._coversNode.textContent = `${Util.plural(here.count, 'cover')} · ${fmtBytes(here.bytes)}`;
+      const line = (n) => (n ? `${Util.plural(n.count, 'cover')} · ${fmtBytes(n.bytes)}` : '');
+      this._coversNode.textContent = line(here.small);
+      if (this._bigNode) this._bigNode.textContent = line(here.big);
     } catch {
       this._coversNode.textContent = '';
+      if (this._bigNode) this._bigNode.textContent = '';
     }
   },
 
@@ -2049,16 +2151,16 @@ const SettingsPanel = {
     const songs = Store.library.songs;
     const done = songs.filter((s) => s.loudness !== null && s.loudness !== undefined).length;
     this._measuredNode.textContent = !songs.length ? ''
-      : done >= songs.length ? (songs.length === 1 ? 'The song is measured' : `All ${songs.length} songs measured`)
+      : done >= songs.length ? (songs.length === 1 ? T('settings.general.equalizeVolume.measured.one') : T('settings.general.equalizeVolume.measured.all', { count: songs.length }))
         // With a server, songs only streamed are measured by the server (with ffmpeg).
-        : `${done} of ${songs.length} songs measured${Store.settings.normalize && !Store.server.on && Store.can('measureLoudness') ? '...' : ''}`;
+        : `${T('settings.general.equalizeVolume.measured.progress', { done, total: songs.length })}${Store.settings.normalize && !Store.server.on && Store.can('measureLoudness') ? '...' : ''}`;
   },
 
   _openFolder() {
     return attempt(async () => {
       // Resolves to an error message, or '' once Explorer has it.
       const problem = await window.flow.openMusicFolder();
-      if (problem) toast(`Could not open ${Store.musicDir}: ${problem}`, 'error');
+      if (problem) toast(T('settings.localFiles.openFailed', { folder: Store.musicDir, problem }), 'error');
     });
   },
 
@@ -2077,27 +2179,25 @@ const SettingsPanel = {
     if (!dir) return;
     const count = Store.library.songs.length;
     const ok = await confirmDialog({
-      title: 'Move your songs?',
-      message: `Flow will save songs in ${dir} from now on, and move ${count === 1 ? 'the song' : `all ${count} songs`} `
-        + `(with their subfolders) there from ${Store.musicDir}. Playlists and statistics stay as they are.`,
-      confirmLabel: 'Move songs',
+      title: T('settings.localFiles.move.title'),
+      message: T(count === 1 ? 'settings.localFiles.move.text.one' : 'settings.localFiles.move.text.many', { folder: dir, count, oldFolder: Store.musicDir }),
+      confirmLabel: T('settings.localFiles.move.confirm'),
     });
     if (!ok) return;
 
     button.disabled = true;
     const token = Player.currentId ? Player.release(Player.currentId) : null;
     this._onProgress = ({ done, total }) => {
-      if (this._statsNode) this._statsNode.textContent = total ? `Moving ${done} of ${total}...` : 'Moving...';
+      if (this._statsNode) this._statsNode.textContent = total ? T('settings.localFiles.move.progress', { done, total }) : T('settings.localFiles.move.moving');
     };
     try {
       const result = await window.flow.moveMusicFolder(dir);
       Store.musicDir = result.dir;
       Store.settings.musicDir = result.dir;
       if (result.failed.length) {
-        toast(`${Util.plural(result.moved, 'song')} moved. ${result.failed.length} could not be moved `
-          + `(${result.failed[0].reason}) and stay where they were.`, 'error');
+        toast(T('settings.localFiles.move.partly', { songs: Util.plural(result.moved, 'song'), failed: result.failed.length, count: result.failed.length, reason: result.failed[0].reason }), 'error');
       } else {
-        toast(`${Util.plural(result.moved, 'song')} moved to ${result.dir}`, 'success');
+        toast(T('settings.localFiles.move.done', { songs: Util.plural(result.moved, 'song'), folder: result.dir }), 'success');
       }
     } catch (err) {
       toast(err.message, 'error');

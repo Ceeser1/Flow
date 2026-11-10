@@ -1310,17 +1310,16 @@
 
   Visualizer.add({
     id: 'deepsea',
-    name: 'Deep Sea',
-    desc: 'Glowing jellyfish drifting up past a coral reef and an underwater cliff, a wreck far below, fish crossing now and then, all beating with the music',
+    name: T('viz.deepsea.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a8 8 0 0 1 16 0z"/><path d="M7 11c0 3-1 5 0 9M10 11c0 3 1 6 0 10M14 11c0 3-1 6 0 10M17 11c0 3 1 5 0 9"/></svg>',
     gl: true,
     create: (canvas) => new DeepSea(canvas),
     options: [
-      { type: 'choice', key: 'dsColors', label: 'Colours', choices: [['aurora', 'Aurora'], ['ember', 'Ember'], ['ice', 'Ice'], ['rainbow', 'Rainbow']] },
-      { type: 'slider', key: 'dsCount', label: 'Jellyfish', min: 3, max: MAX, step: 1, unit: '' },
-      { type: 'check', key: 'dsLight', label: 'Light from above' },
-      { type: 'check', key: 'dsFish', label: 'Fish' },
+      { type: 'choice', key: 'dsColors', label: T('viz.shared.colors'), choices: [['aurora', T('viz.aurora.name')], ['ember', T('viz.deepsea.setting.colours.ember')], ['ice', T('viz.shared.ice')], ['rainbow', T('common.color.rainbow')]] },
+      { type: 'slider', key: 'dsCount', label: T('viz.deepsea.setting.jellyfish'), min: 3, max: MAX, step: 1, unit: '' },
+      { type: 'check', key: 'dsLight', label: T('viz.deepsea.setting.lightFromAbove') },
+      { type: 'check', key: 'dsFish', label: T('viz.deepsea.setting.fish') },
     ],
   });
 })();

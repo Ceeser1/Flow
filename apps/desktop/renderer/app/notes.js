@@ -19,10 +19,11 @@
 // stands out from the next its clarity.
 
 (function (root, factory) {
-  const api = factory(typeof module === 'object' && module.exports ? require('./spectrum') : root.Spectrum);
+  const node = typeof module === 'object' && module.exports;
+  const api = factory(node ? require('./spectrum') : root.Spectrum, node ? require('./i18n').t : root.T);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.Notes = api;
-}(typeof self !== 'undefined' ? self : this, (Spectrum) => {
+}(typeof self !== 'undefined' ? self : this, (Spectrum, T) => {
   const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
   const MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
@@ -97,9 +98,12 @@
       return NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
     }
 
-    /** "A minor" for a key. */
+    /** "A minor" for a key ("a-Moll" in German, with German note names: B is H). */
     static keyName(tonic, minor) {
-      return tonic < 0 ? '' : `${NAMES[tonic]} ${minor ? 'minor' : 'major'}`;
+      if (tonic < 0) return '';
+      // German writes a minor key's note small ("a-Moll"), hence its own list.
+      const note = T(minor ? 'viz.drawn.notes.minor' : 'viz.drawn.notes').split(' ')[tonic] || NAMES[tonic];
+      return T(minor ? 'viz.drawn.key.minor' : 'viz.drawn.key.major', { note });
     }
 
     /** The newest samples (at least inputLength), dt seconds since the last call. Silence: null. */

@@ -30,4 +30,41 @@ function readJson(file) {
   return null;
 }
 
-module.exports = { writeJsonAtomic, readJson };
+/**
+ * Text written as writeJsonAtomic writes, for big files (4.3.4): the previous
+ * one becomes the .bak by a rename instead of a copy, so 80 MB are written
+ * once and not three times.
+ */
+function writeTextAtomic(file, text) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, text, 'utf8');
+  try {
+    if (fs.existsSync(file)) fs.renameSync(file, file + '.bak');
+  } catch {
+    // A missing backup is no reason to fail the save itself.
+  }
+  fs.renameSync(tmp, file);
+}
+
+/** A file's text, or null when it is not there. */
+function readText(file) {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/** A journal's way to its files by their full paths (journalFile.js). */
+const fileJournalIo = {
+  read: readJson,
+  write: writeJsonAtomic,
+  readText,
+  writeText: writeTextAtomic,
+  appendText: (file, text) => fs.appendFileSync(file, text, 'utf8'),
+  remove: (file) => fs.rmSync(file, { force: true }),
+};
+
+module.exports = {
+  writeJsonAtomic, readJson, writeTextAtomic, readText, fileJournalIo,
+};

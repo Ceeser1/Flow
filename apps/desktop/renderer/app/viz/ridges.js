@@ -188,17 +188,16 @@
 
   Visualizer.add({
     id: 'ridges',
-    name: 'Ridges',
-    desc: 'In the manner of Unknown Pleasures: the last few seconds of the music as ridgelines flowing away, each hiding those behind',
+    name: T('viz.ridges.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h5l2-3 2 4 2-2h7M3 13h5l1-2 2 5 2-6 2 3h6M3 18h5l2-1 2 3 2-3 2 1h5"/></svg>',
     gl: true,
     create: (canvas) => new Ridges(canvas),
     options: [
-      { type: 'choice', key: 'rdColor', label: 'Colors', choices: [['white', 'White'], ['neon', 'Neon'], ['heat', 'Heat']], color: { value: 'custom', key: 'rdOwnColor', presets: Visualizer.OWN_PRESETS } },
-      { type: 'slider', key: 'rdRows', label: 'Lines', min: 20, max: 120, step: 5, unit: '' },
-      { type: 'slider', key: 'rdSpeed', label: 'Speed', min: 25, max: 200, step: 5 },
-      { type: 'choice', key: 'rdSource', label: 'Shows', choices: [['spectrum', 'Spectrum'], ['wave', 'Waveform']] },
+      { type: 'choice', key: 'rdColor', label: T('viz.shared.colors'), choices: [['white', T('common.color.white')], ['neon', T('viz.shared.neon')], ['heat', T('viz.ridges.setting.colors.heat')]], color: { value: 'custom', key: 'rdOwnColor', presets: Visualizer.OWN_PRESETS } },
+      { type: 'slider', key: 'rdRows', label: T('viz.shared.lines'), min: 20, max: 120, step: 5, unit: '' },
+      { type: 'slider', key: 'rdSpeed', label: T('viz.shared.speed'), min: 25, max: 200, step: 5 },
+      { type: 'choice', key: 'rdSource', label: T('viz.ridges.setting.shows'), choices: [['spectrum', T('common.spectrum')], ['wave', T('viz.waveform.name')]] },
     ],
   });
 })();

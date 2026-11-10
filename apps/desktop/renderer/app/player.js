@@ -115,7 +115,7 @@ const Player = {
   listName(contextId = this.contextId) {
     if (!contextId) return '';
     const list = this.lists.get(contextId);
-    if (list) return list.name || 'Session';
+    if (list) return list.name || T('player.session');
     const p = Store.playlist(contextId);
     return p ? p.name : '';
   },
@@ -214,6 +214,11 @@ const Player = {
       this._countListening();
       this._drawTime();
       this._maybeFade();
+      this._prepareNext();
+    });
+    // The song's big cover arrived (or is known to load now): the lock screen shows it.
+    Covers.onArrived((ids) => {
+      if (this.currentId && (!ids || ids.includes(this.currentId))) this._updateMediaSession();
     });
     // A jump is not listening: the next update starts counting afresh.
     e.on('seeking', () => {
@@ -241,9 +246,9 @@ const Player = {
       if (!this.currentId || !e.loaded) return;
       const song = Store.song(this.currentId);
       if ((status === 401 || status === 403) && song && !song.file && this._signedOut(song)) return;
-      let why = song && !song.file ? 'The server could not send it.' : 'The file may have been moved or deleted.';
-      if (kind === 'format') why = `This phone cannot play this file${song && song.format ? ` (.${song.format})` : ''}.`;
-      toast(`Could not play "${song ? song.title : 'this song'}". ${why}`, 'error');
+      let why = song && !song.file ? T('common.serverFailed') : T('player.toast.couldNotPlay.fileGone');
+      if (kind === 'format') why = song && song.format ? T('player.toast.couldNotPlay.phoneFormat.withType', { format: song.format }) : T('player.toast.couldNotPlay.phoneFormat');
+      toast(T('player.toast.couldNotPlay', { song: song ? song.title : T('player.toast.couldNotPlay.thisSong'), reason: why }), 'error');
       this._emit();
     });
     // The song coming in cannot be played: no transition, the current one
@@ -425,7 +430,7 @@ const Player = {
   },
 
   _unreachable(song) {
-    if (song) toast(`"${song.title}" is on the server, which cannot be reached right now, and is not downloaded.`, 'error');
+    if (song) toast(T('player.toast.unreachableNotDownloaded', { song: song.title }), 'error');
   },
 
   /** The song let go of for a rename (release), until it is loaded again. */
@@ -482,6 +487,19 @@ const Player = {
       this._updateMediaSession();
     }
     this._play();
+  },
+
+  /**
+   * Goes on with the song playing, now as part of another list (4.5.2: a
+   * group's Shuffle turned on while one of its playlists plays): what comes
+   * next is drawn from that list.
+   */
+  carryOnIn(contextId) {
+    if (this.remote || !this.currentId || this.contextId === contextId) return;
+    this.contextId = contextId;
+    this.queue.start(contextId, this.idsOf(contextId), this.currentId);
+    this._updateMediaSession();
+    this._emit();
   },
 
   /** A playlist's own Play button: a new queue from its top (or a random song). */
@@ -609,11 +627,11 @@ const Player = {
     const song = Store.song(songId);
     if (!song) return;
     if (this._remoteDo('queueAdd', { songId })) {
-      toast(`Added "${song.title}" to the queue of ${Session.sessionName(Session.mine.session.id)}`, 'success');
+      toast(T('player.toast.queuedInSession', { song: song.title, session: Session.sessionName(Session.mine.session.id) }), 'success');
       return;
     }
     this.queue.add(songId);
-    toast(`Added "${song.title}" to the queue`, 'success');
+    toast(T('player.toast.queued', { song: song.title }), 'success');
     this._emit();
   },
 
@@ -786,7 +804,7 @@ const Player = {
   _remotePlaySong(songId, contextId) {
     if (!Store.song(songId)) return;
     const context = contextId || 'all';
-    this._remoteDo('playSong', { songId, ids: this.idsOf(context), contextName: this.listName(context) || 'All Songs', contextId: context });
+    this._remoteDo('playSong', { songId, ids: this.idsOf(context), contextName: this.listName(context) || T('common.allSongs'), contextId: context });
   },
 
   /**
@@ -1142,7 +1160,7 @@ const Player = {
       was.timer = setTimeout(() => {
         if (this._signIn !== was || !was.waiting) return;
         this._signIn = null;
-        toast(`Could not play "${song.title}". Flow could not sign in to the server again.`, 'error');
+        toast(T('player.toast.couldNotPlay.signIn', { song: song.title }), 'error');
       }, 60000);
       this._emit();
       return true;
@@ -1224,14 +1242,38 @@ const Player = {
     this._emit();
   },
 
-  /** What the system shows of a song (the phone's notification and lock screen). */
+  /** What the system shows of a song (the phone's notification and lock screen): its big cover once here. */
   _meta(song) {
     return {
       title: song.mix ? `${song.title} (${song.mix})` : song.title,
       artist: song.artist || '',
       album: this.listName() || 'Flow',
-      artwork: Store.coverSrc(song),
+      artwork: Covers.bestBig(song),
     };
+  },
+
+  // A few seconds before a song ends, the next one's big cover (and lyrics) is made ready.
+  PREPARE_S: 12,
+  _preparedFor: '',
+
+  /** The song that plays next here ('' for none, or along with a host). */
+  _peekNext() {
+    if (this.remote || !this.currentId) return '';
+    const ahead = new PlayQueue(this.queue.random, this.queue.limit);
+    ahead.restore(this.queue.snapshot());
+    ahead.continueWith = this.queue.continueWith;
+    return ahead.next(this.contextId ? this.idsOf(this.contextId) : []) || '';
+  },
+
+  _prepareNext() {
+    if (this.remote || this.repeat || !this.currentId || this._preparedFor === this.currentId) return;
+    const d = this.engine.duration || 0;
+    if (!d || d - (this.engine.time || 0) > this.PREPARE_S) return;
+    this._preparedFor = this.currentId;
+    const next = Store.song(this._peekNext());
+    if (!next) return;
+    Covers.probeBig(next);
+    if (typeof Lyrics !== 'undefined' && Lyrics.prepare) Lyrics.prepare(next);
   },
 
   // ---- equalize volume ----
@@ -1292,9 +1334,11 @@ const Player = {
     }
     // The time also counts for the list that was playing, if the song is in it
     // (one queued from elsewhere is not).
-    const list = contextId ? Store.playlist(contextId) : null;
+    let list = contextId ? Store.playlist(contextId) : null;
+    // A group played as one list (4.5.2): the time counts for its playlist holding the song.
+    if (list && list.isGroupList) list = Store.playlistsInGroup(list.groupId).find((p) => (p.entries || []).some((e) => e.songId === songId)) || null;
     const inList = !!list && list.entries.some((e) => e.songId === songId);
-    window.flow.recordListen(songId, listened, duration, inList ? contextId : null, jamMember).catch(() => {});
+    window.flow.recordListen(songId, listened, duration, inList ? list.id : null, jamMember).catch(() => {});
   },
 
   _sessionToKeep() {
@@ -1337,6 +1381,9 @@ const Player = {
       const song = this.currentId && Store.song(this.currentId);
       if (song) attempt(() => window.flow.setFavourite(song.id, !song.favouriteAt));
     };
+    // "from <playlist>", the name in its own span (window.player.from).
+    const [before, after = ''] = T('window.player.from', { playlist: '\u0000' }).split('\u0000');
+    $('playerFrom').replaceChildren(before, $('playerFromName'), after);
     $('playerFrom').onclick = () => {
       if (this.contextId && Store.playlist(this.contextId)) Nav.openPlaylist(this.contextId);
     };
@@ -1419,11 +1466,11 @@ const Player = {
     const bar = $('player');
     bar.classList.toggle('player--empty', !song);
     bar.classList.toggle('player--remote', !!this.remote);
-    $('playerTitle').textContent = song ? Util.songLine(song) : 'Nothing playing';
+    $('playerTitle').textContent = song ? Util.songLine(song) : T('common.nothingPlaying');
     $('playerTitle').title = song ? Util.songLine(song) : '';
     // The phone's player (mobile.js): the title alone, the artist and mix below it.
     if ($('playerSub')) {
-      if (song) $('playerTitle').textContent = song.title || 'Untitled';
+      if (song) $('playerTitle').textContent = song.title || T('common.untitled');
       $('playerSub').textContent = song ? [song.artist, song.mix ? `(${song.mix})` : ''].filter(Boolean).join(' - ') : '';
     }
     // The cover only changes with the song (or its cover): drawn again, it would flicker.
@@ -1438,13 +1485,14 @@ const Player = {
     const playing = this.isPlaying;
     $('btnPlay').innerHTML = playing ? Icons.pause : Icons.play;
     // The key's name only where there is a keyboard (TalkBack reads the title on the phone).
-    $('btnPlay').title = (playing ? 'Pause' : 'Play') + (Store.can('keyboard') ? ' (Space)' : '');
+    const action = playing ? T('common.pause') : T('common.play');
+    $('btnPlay').title = Store.can('keyboard') ? T('common.spaceKeyHint', { action }) : action;
     for (const id of ['btnPrev', 'btnNext', 'btnBack10', 'btnFwd10']) $(id).disabled = !song;
-    const toggles = [['btnShuffle', this.queue.shuffle, 'Shuffle'], ['btnRepeat', this.repeat, 'Repeat this song']];
+    const toggles = [['btnShuffle', this.queue.shuffle, T('common.shuffle')], ['btnRepeat', this.repeat, T('common.repeatThisSong')]];
     for (const [id, on, label] of toggles) {
       $(id).classList.toggle('sq-btn--on', on);
       $(id).setAttribute('aria-pressed', String(on));
-      $(id).title = `${label}: ${on ? 'on' : 'off'}`;
+      $(id).title = T(on ? 'player.toggle.on' : 'player.toggle.off', { toggle: label });
     }
     // Only for a song of this library (not one newer on a session's host, nor
     // one of Downloaded Songs that is not the server's: it only plays).
@@ -1453,13 +1501,13 @@ const Player = {
     $('btnFavourite').disabled = !known || !!known.isDevice;
     $('btnFavourite').classList.toggle('sq-btn--fav-on', fav);
     $('btnFavourite').setAttribute('aria-pressed', String(fav));
-    $('btnFavourite').title = fav ? 'Unfavourite' : 'Favourite';
+    $('btnFavourite').title = fav ? T('common.unfavourite') : T('common.favourite');
     if ($('btnFavourite').dataset.icon !== String(fav)) {
       $('btnFavourite').dataset.icon = String(fav);
       $('btnFavourite').innerHTML = fav ? Icons.starFilled : Icons.star;
     }
     const queued = this.queue.manual.length;
-    $('btnQueue').title = queued ? `Queue (${queued} added by you)` : 'Queue';
+    $('btnQueue').title = queued ? T('player.queue.addedByYou', { count: queued }) : T('common.queue');
     this._drawTime();
     this._drawVolume();
   },
@@ -1489,13 +1537,13 @@ const Player = {
     const hosts = this._hostVolume();
     // Without a volume of its own (the phone's is its buttons), only the host's.
     $('volWrap').hidden = hosts ? false : (!!this.remote && !this.remote.here) || !Store.can('volume');
-    $('volWrap').title = hosts ? 'The host\'s volume' : '';
+    $('volWrap').title = hosts ? T('player.hostVolume.tooltip') : '';
     const v = this._shownVolume();
     $('volSlider').value = String(Math.round(v * 100));
     $('volSlider').style.setProperty('--fill', (v * 100) + '%');
     $('volValue').textContent = Math.round(v * 100) + '%';
     $('volBtn').innerHTML = v === 0 ? Icons.mute : (v < 0.5 ? Icons.volumeLow : Icons.volume);
-    $('volBtn').title = v === 0 ? 'Unmute' : 'Mute';
+    $('volBtn').title = v === 0 ? T('common.unmute') : T('common.mute');
     if (!hosts) for (const fn of this._volumeListeners) fn(v);
   },
 

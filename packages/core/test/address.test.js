@@ -2,17 +2,38 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { serverBaseUrl, isTailscaleAddress, isPrivateIp } = require('../src/address');
+const {
+  serverBaseUrl, meansHttps, completeAddress, isTailscaleAddress, isPrivateIp,
+} = require('../src/address');
 
 test('a server address as typed becomes the base for its requests', () => {
   assert.equal(serverBaseUrl('192.168.0.63:7878'), 'http://192.168.0.63:7878');
   assert.equal(serverBaseUrl(' 192.168.0.63 '), 'http://192.168.0.63:7878');
-  assert.equal(serverBaseUrl('flow.example.com'), 'http://flow.example.com:7878');
+  assert.equal(serverBaseUrl('flow.example.com'), 'https://flow.example.com');
+  assert.equal(serverBaseUrl('ceeser.de/flow'), 'https://ceeser.de/flow');
+  assert.equal(serverBaseUrl('flow.example.com:7878'), 'http://flow.example.com:7878');
+  assert.equal(serverBaseUrl('raspberrypi'), 'http://raspberrypi:7878');
+  assert.equal(serverBaseUrl('http://flow.example.com'), 'http://flow.example.com:7878');
   assert.equal(serverBaseUrl('https://flow.example.com'), 'https://flow.example.com');
   assert.equal(serverBaseUrl('https://example.com/flow/'), 'https://example.com/flow');
   assert.equal(serverBaseUrl('http://pi.local:8000'), 'http://pi.local:8000');
   assert.equal(serverBaseUrl(''), '');
   assert.throws(() => serverBaseUrl('http://'));
+});
+
+test('without http:// or https://, a website\'s name means https, a server at home plain http', () => {
+  for (const a of ['ceeser.de', 'ceeser.de/flow', 'flow-test.duckdns.org', 'music.example.com:443', 'Music.Example.com/flow/', 'flow.example.com?x=1']) {
+    assert.equal(meansHttps(a), true, a);
+  }
+  for (const a of ['192.168.0.61:7878', '192.168.0.61', '[fd7a::1]:7878', 'fe80::1', 'localhost', 'localhost:7878', 'raspberrypi',
+    'pi.local', 'pi.lan', 'pi.home.arpa', 'pi.tail1234.ts.net', 'flow.example.com:7878', 'flow.example.com:80', '100.101.102.103',
+    'http://ceeser.de', 'https://ceeser.de', '', '   ']) {
+    assert.equal(meansHttps(a), false, a);
+  }
+  assert.equal(completeAddress(' ceeser.de/flow '), 'https://ceeser.de/flow');
+  assert.equal(completeAddress('192.168.0.61:7878'), '192.168.0.61:7878');
+  assert.equal(completeAddress('http://ceeser.de/flow'), 'http://ceeser.de/flow');
+  assert.equal(completeAddress(''), '');
 });
 
 test('Tailscale addresses are told apart from the rest', () => {

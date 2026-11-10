@@ -1,6 +1,6 @@
 'use strict';
 
-// The Lyrics folder (4.0.1), next to Covers in Flow's music folder: a file
+// The Lyrics folder (4.0), next to Covers in Flow's music folder: a file
 // for each song, by scope as the covers are:
 //
 //   local/<song id>.json        Local Files' songs: looked up here, or written in Flow
@@ -77,6 +77,17 @@ function createLyricsFolder({ dir, fs, join }) {
     return [...out];
   }
 
+  /** The songs with lyrics found kept in `scope` (not those none were found for). */
+  function foundIds(scope) {
+    if (!ID.test(String(scope || ''))) return [];
+    const out = [];
+    for (const e of list(join(dir(), scope))) {
+      const m = !e.dir && FILE.exec(e.name);
+      if (m && !m[2]) out.push(m[1]);
+    }
+    return out;
+  }
+
   /** local and the servers' ids. */
   function scopes() {
     return list(dir()).filter((e) => e.dir && ID.test(e.name)).map((e) => e.name);
@@ -109,7 +120,7 @@ function createLyricsFolder({ dir, fs, join }) {
   }
 
   return {
-    read, write, remove, ids, scopes, removeScope, size,
+    read, write, remove, ids, foundIds, scopes, removeScope, size,
   };
 }
 

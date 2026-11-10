@@ -341,6 +341,38 @@ test('deleting a profile, with or without the songs it added', async () => {
   });
 });
 
+test('the songs uploaded last: who, when and from where, and deleted from the list', async () => {
+  await withServer(async ({ base, server, dirs }) => {
+    const { tAnna, tBen, songId } = await annaAndBen(base);
+    const other = await upload(base, 'up2', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 }, tAnna);
+    // Sent twice: one entry.
+    await upload(base, 'up2', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 }, tAnna);
+    assert.equal((await get(base, '/api/admin/uploads', tBen)).status, 403);
+    let list = (await get(base, '/api/admin/uploads', tAnna)).json.uploads;
+    assert.deepEqual(list.map((u) => [u.songId, u.title, u.artist, u.by, u.ip, u.device]), [
+      [other.json.id, 'Teardrop', 'Massive Attack', 'Anna', '127.0.0.1', 'PC'],
+      [songId, 'Glory Box', 'Portishead', 'Ben', '127.0.0.1', 'Phone'],
+    ]);
+    assert.ok(list[0].at >= list[1].at);
+    // Not in the songs every app gets.
+    const lib = (await get(base, '/api/library', tBen)).json.library;
+    assert.equal(JSON.stringify(lib).includes('127.0.0.1'), false);
+
+    const del = await post(base, '/api/admin/uploads/delete', { songId }, tAnna);
+    assert.equal(del.status, 200);
+    assert.equal(server.library.data.songs.some((s) => s.id === songId), false);
+    assert.equal(fs.readdirSync(path.join(dirs.music, '.flow-trash')).length, 1);
+    const trash = (await get(base, '/api/admin/trash', tAnna)).json.items;
+    assert.equal(trash[0].by, 'Anna');
+    list = (await get(base, '/api/admin/uploads', tAnna)).json.uploads;
+    assert.deepEqual(list.map((u) => u.songId), [other.json.id]);
+    assert.equal((await post(base, '/api/admin/uploads/delete', { songId }, tAnna)).status, 404);
+    // Kept over a restart.
+    const again = createActivity({ config: server.config });
+    assert.deepEqual(again.uploads().map((u) => u.songId), [other.json.id, songId]);
+  });
+});
+
 test('only the master admin makes admins', async () => {
   await withServer(async ({ base, server }) => {
     const { tAnna, tBen, benId } = await annaAndBen(base);
@@ -419,9 +451,9 @@ test('a deleted song comes back from the trash as it was', async () => {
     assert.equal(back.json.songId, songId);
     const lib = (await get(base, '/api/library', tAnna)).json.library;
     assert.deepEqual(lib.playlists.find((p) => p.id === 'pa').entries.map((e) => e.songId), [other.json.id, songId], 'in its place');
-    assert.ok(lib.songs.find((s) => s.id === songId).favouriteAt, 'still a favourite');
+    assert.ok(lib.playlists.find((p) => p.favourites).entries.some((e) => e.songId === songId), 'still in her Favourites');
     const bens = (await get(base, '/api/library', tBen)).json.library.songs.find((s) => s.id === songId);
-    assert.equal(bens.stats.listened, 300, 'the listens kept');
+    assert.equal((await get(base, '/api/stats', tBen)).json.songs[songId].listened, 300, 'the listens kept');
     assert.ok(fs.existsSync(path.join(dirs.music, bens.file)));
     trash = (await get(base, '/api/admin/trash', tAnna)).json;
     assert.equal(trash.items.length, 0);
@@ -543,5 +575,52 @@ test('the rule "only admins make profiles"', async () => {
     assert.ok(carla.pin && server.library.profileIds().includes(carla.id));
     assert.equal(carla.createdIp, '127.0.0.1');
     assert.equal((await post(base, '/api/admin/profiles', { name: 'carla' }, tAnna)).status, 409);
+  });
+});
+
+test('All Playlists: every playlist with its owner, and given to another', async () => {
+  await withServer(async ({ base, server }) => {
+    const { tAnna, tBen, benId, songId } = await annaAndBen(base);
+    const annaId = (await get(base, '/api/admin/profiles', tAnna)).json.me;
+    await commands(base, [
+      { type: 'createPlaylist', playlistId: 'b1', name: 'Rainy days' },
+      { type: 'addSongsToPlaylist', playlistId: 'b1', songIds: [songId] },
+    ], tBen);
+    await commands(base, [{ type: 'createPlaylist', playlistId: 'a1', name: 'Rainy days' }], tAnna);
+    assert.equal((await get(base, '/api/admin/playlists', tBen)).status, 403, 'no admin');
+
+    const r = (await get(base, '/api/admin/playlists', tAnna)).json;
+    assert.deepEqual(r.playlists.map((p) => [p.id, p.name, p.ownerId, p.songs, p.seconds]).sort(), [
+      ['a1', 'Rainy days', annaId, 0, 0],
+      ['b1', 'Rainy days', benId, 1, 300],
+    ]);
+    assert.deepEqual(r.owners.map((o) => o.name), ['Default / Shared', 'Anna', 'Ben']);
+
+    // Ben's to Anna, who has a list of that name.
+    const rev = server.library.rev;
+    const moved = await post(base, '/api/admin/playlists/owner', { id: 'b1', owner: annaId }, tAnna);
+    assert.equal(moved.status, 200);
+    assert.equal(moved.json.name, 'Rainy days (2)');
+    assert.ok(server.library.rev > rev, 'the apps hear of it');
+    const anna = (await get(base, '/api/library', tAnna)).json.library;
+    const ordinary = (list) => list.filter((p) => !p.favourites);
+    assert.deepEqual(ordinary(anna.playlists).map((p) => [p.id, p.name, p.entries.length]), [['a1', 'Rainy days', 0], ['b1', 'Rainy days (2)', 1]]);
+    assert.deepEqual(ordinary((await get(base, '/api/library', tBen)).json.library.playlists), []);
+    // To the Default / Shared.
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'b1', owner: 'default' }, tAnna)).status, 200);
+    assert.deepEqual(ordinary(server.library.data.playlists).map((p) => p.id), ['b1']);
+
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'nothing', owner: annaId }, tAnna)).status, 404);
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'a1', owner: 'nobody' }, tAnna)).status, 404);
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'a1', owner: benId }, tBen)).status, 403);
+
+    // The master's playlists only by the master.
+    server.config.set({ profiles: server.config.get().profiles.map((p) => (p.id === benId ? { ...p, master: true } : p)) });
+    await commands(base, [{ type: 'createPlaylist', playlistId: 'b3', name: 'Mine' }], tBen);
+    const refused = await post(base, '/api/admin/playlists/owner', { id: 'b3', owner: annaId }, tAnna);
+    assert.equal(refused.status, 403);
+    assert.match(refused.json.error, /master/);
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'a1', owner: benId }, tAnna)).status, 200, 'given to the master is fine');
+    assert.equal((await post(base, '/api/admin/playlists/owner', { id: 'b3', owner: annaId }, tBen)).status, 200);
   });
 });

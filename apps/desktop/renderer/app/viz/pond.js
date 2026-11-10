@@ -452,18 +452,17 @@
 
   Visualizer.add({
     id: 'pond',
-    name: 'Rainy Pond',
-    desc: 'A garden pond seen from above: the beats falling into it as rings of ripples, koi swimming under lily pads, the sun dancing on the bottom',
+    name: T('viz.pond.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="10"/></svg>',
     gl: true,
     create: (canvas) => new Pond(canvas),
     options: [
-      { type: 'choice', key: 'pdLook', label: '', choices: [['alternate', 'Alternate'], ['day', 'Day'], ['night', 'Night']] },
-      { type: 'slider', key: 'pdRainAmount', label: 'Rain intensity', min: 50, max: 150, step: 5 },
-      { type: 'check', key: 'pdKoi', label: 'Koi' },
-      { type: 'check', key: 'pdPads', label: 'Lily pads' },
-      { type: 'check', key: 'pdRain', label: 'Treble rain' },
+      { type: 'choice', key: 'pdLook', label: '', choices: [['alternate', T('viz.pond.setting.look.alternate')], ['day', T('viz.pond.setting.look.day')], ['night', T('viz.pond.setting.look.night')]] },
+      { type: 'slider', key: 'pdRainAmount', label: T('viz.pond.setting.rainIntensity'), min: 50, max: 150, step: 5 },
+      { type: 'check', key: 'pdKoi', label: T('viz.pond.setting.koi') },
+      { type: 'check', key: 'pdPads', label: T('viz.pond.setting.lilyPads') },
+      { type: 'check', key: 'pdRain', label: T('viz.pond.setting.trebleRain') },
     ],
   });
 })();

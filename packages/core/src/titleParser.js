@@ -133,14 +133,15 @@ function stripTrailingNoise(text) {
 
 /**
  * Pulls every (...) and [...] out of a title. Mix brackets are kept, noise
- * brackets dropped, and anything else (a subtitle, a year) stays in the title.
+ * brackets dropped, and anything else (a subtitle, a year) stays in the
+ * title, except in square ones: "[asdf]", "[Bass Boosted]" are tags, dropped.
  * `latin` says the title is written in Latin letters, which makes a bracket in
  * another script a translation of the name next to it: "NewJeans (뉴진스)".
  */
 function extractBrackets(text, latin = false) {
   const mixes = [];
   let feat = '';
-  const rest = String(text || '').replace(/\s*[([{【]([^()[\]{}【】]*)[)\]}】]/g, (whole, inner) => {
+  const rest = String(text || '').replace(/\s*([([{【])([^()[\]{}【】]*)[)\]}】]/g, (whole, open, inner) => {
     const featMatch = /^\s*(?:feat\.?|ft\.?|featuring)\s+(.+)$/i.exec(inner);
     if (featMatch) {
       feat = tidy(featMatch[1]);
@@ -153,10 +154,23 @@ function extractBrackets(text, latin = false) {
       if (cleaned) mixes.push(cleaned);
       return '';
     }
-    if (isNoise(inner)) return '';
+    if (open === '[' || open === '【' || isNoise(inner)) return '';
     return whole;
   });
   return { rest: tidy(rest), mixes, feat };
+}
+
+/**
+ * The title tag of a file Flow did not name itself, cleaned as a title from
+ * a link is: its clutter brackets and square ones dropped, a mix in
+ * brackets handed back as the mix, a "feat." as feat. "Song (Extended Mix)
+ * [asdf]" -> { title: 'Song', mix: 'Extended Mix', feat: '' }.
+ */
+function cleanTitleTag(text) {
+  const latin = /[A-Za-z]/.test(String(text || '').replace(/[([{【][^)\]}】]*[)\]}】]/g, ''));
+  const { rest, mixes, feat } = extractBrackets(text, latin);
+  const t = splitFeat(rest);
+  return { title: tidy(t.text) || tidy(text), mix: tidy(mixes.join(', ')), feat: t.feat || feat };
 }
 
 /** Removes a trailing " ft. Somebody" from a text and hands it back separately. */
@@ -415,4 +429,4 @@ function guessFromInfo(info, opts = {}) {
   };
 }
 
-module.exports = { guessFromInfo, parseTitle, cleanUploader, sameName };
+module.exports = { guessFromInfo, parseTitle, cleanUploader, sameName, cleanTitleTag, withFeat };

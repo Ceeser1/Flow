@@ -358,8 +358,7 @@
 
   Visualizer.add({
     id: 'orb',
-    name: 'Orb',
-    desc: 'A sphere of light the music pushes out of shape, the bass round its middle and the highs at its poles, a ring of sparks around it',
+    name: T('viz.orb.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="6"/><ellipse cx="12" cy="12" rx="10.5" ry="3"/></svg>',
     gl: true,
@@ -367,11 +366,11 @@
     sharp: true,
     create: (canvas) => new Orb(canvas),
     options: [
-      { type: 'choice', key: 'obStyle', label: 'Surface', choices: [['dots', 'Dots'], ['wire', 'Wireframe']] },
-      { type: 'choice', key: 'obColors', label: 'Colors', choices: [['aurora', 'Aurora'], ['rainbow', 'Rainbow']], color: { value: 'custom', key: 'obColor', presets: Visualizer.OWN_PRESETS } },
-      { type: 'slider', key: 'obSpin', label: 'Turning', min: 0, max: 200, step: 5 },
-      { type: 'check', key: 'obRing', label: 'Ring' },
-      { type: 'check', key: 'obZoom', label: 'Bass Zoom', amount: { key: 'obZoomAmount', min: 0, max: 100, step: 5 } },
+      { type: 'choice', key: 'obStyle', label: T('viz.orb.setting.surface'), choices: [['dots', T('viz.shared.dots')], ['wire', T('viz.orb.setting.surface.wire')]] },
+      { type: 'choice', key: 'obColors', label: T('viz.shared.colors'), choices: [['aurora', T('viz.aurora.name')], ['rainbow', T('common.color.rainbow')]], color: { value: 'custom', key: 'obColor', presets: Visualizer.OWN_PRESETS } },
+      { type: 'slider', key: 'obSpin', label: T('viz.shared.turning'), min: 0, max: 200, step: 5 },
+      { type: 'check', key: 'obRing', label: T('viz.orb.setting.ring') },
+      { type: 'check', key: 'obZoom', label: T('viz.orb.setting.bassZoom'), amount: { key: 'obZoomAmount', min: 0, max: 100, step: 5 } },
     ],
   });
 })();

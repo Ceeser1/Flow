@@ -2,13 +2,17 @@
 
 // Settings' last category, for an admin profile on a Flow Server (3.5): the
 // server at a glance, its profiles (a sortable table; on the phone each opens
-// with a tap), the failed sign-ins, every profile's server downloads and the
-// Active Sessions, the trash, the backups (4.0; restored by the master admin
-// only), the admins' rules, and for the master admin the server password. Everything comes from the server's /api/admin (its
-// admin.js) through window.flow.admin, fetched when Settings opens, after
-// every change made here, and with Refresh.
+// with a tap), every playlist with its owner (4.2.3: the owner changed there),
+// the songs uploaded last, the failed sign-ins, every profile's
+// server downloads and the Active Sessions, the trash, the backups (4.0;
+// restored by the master admin only), the admins' rules, and for the master
+// admin the server password. Each part opens and closes with a click on its
+// heading (adminOpen, kept; all shut at first). Everything comes from the
+// server's /api/admin (its admin.js) through window.flow.admin, fetched when
+// it shows (4.3: Settings opened with it unfolded, or it unfolded; on the
+// phone its screen opened), after every change made here, and with Refresh.
 
-// The lists (profiles, failed logins, downloads, sessions, trash) show this many rows, then scroll.
+// The lists (profiles, uploads, failed logins, downloads, sessions, trash) show this many rows, then scroll.
 const ROWS = 5;
 
 const Admin = {
@@ -17,6 +21,7 @@ const Admin = {
   _loading: false,
   _sort: { key: 'name', dir: 'asc' },
   _query: '',
+  _playlistQuery: '',
   _opened: new Set(), // the phone's profiles opened with a tap
   _fits: [], // the scrolling lists' measuring, run as draw() puts them in
 
@@ -24,21 +29,21 @@ const Admin = {
   rows() {
     this._node = h('div.admin');
     this._data = null;
-    return [h('h3.settings__section', 'Administration'), this._node];
+    return [h('h3.settings__section', T('admin.heading')), this._node];
   },
 
   /** Fetches everything afresh and draws it (only for an admin). */
   async load() {
     if (!this._node || !Store.server.admin || this._loading) return;
     this._loading = true;
-    if (!this._data) this._drawNote('Loading...');
+    if (!this._data) this._drawNote(T('admin.loading'));
     const get = (route) => window.flow.admin(route).catch((err) => ({ error: (err && err.message) || String(err) }));
     try {
-      const [server, profiles, signins, downloads, sessions, trash, backups, rules] = await Promise.all([
-        get('server'), get('profiles'), get('signins'), get('downloads'), get('sessions'), get('trash'), get('backups'), get('rules'),
+      const [server, profiles, playlists, uploads, signins, downloads, sessions, trash, backups, rules] = await Promise.all([
+        get('server'), get('profiles'), get('playlists'), get('uploads'), get('signins'), get('downloads'), get('sessions'), get('trash'), get('backups'), get('rules'),
       ]);
       this._data = {
-        server, profiles, signins, downloads, sessions, trash, backups, rules,
+        server, profiles, playlists, uploads, signins, downloads, sessions, trash, backups, rules,
       };
     } finally {
       this._loading = false;
@@ -121,8 +126,8 @@ const Admin = {
     const mobile = document.body.classList.contains('mobile');
     const me = Store.server.profile;
     const top = h('div.admin__top',
-      me && !me.pin ? h('p.admin__warn', 'Your profile has no PIN: anyone who can reach this server can log in to it and use Administration.') : null,
-      h('button.btn.btn--small', { type: 'button', onclick: () => this.load() }, 'Refresh'));
+      me && !me.pin ? h('p.admin__warn', T('admin.noPinWarning')) : null,
+      h('button.btn.btn--small', { type: 'button', onclick: () => this.load() }, T('admin.refresh')));
     // Drawn afresh after every change, in the same place: the phone's WebView
     // scrolls Settings to the top when the focused control (a rule's select
     // just picked) is taken out, so the focus leaves it first without scrolling.
@@ -136,22 +141,46 @@ const Admin = {
     // append() writes a null as the text "null": the master's block is left out instead.
     clear(this._node).append(...[
       top,
-      this._block('Overview', this._overview(d.server)),
-      this._block('Profiles', this._profiles(d.profiles, mobile)),
-      this._block('Failed logins', this._failures(d.signins)),
-      this._block('Server downloads', this._downloads(d.downloads)),
-      this._block('Active Sessions', this._sessions(d.sessions)),
-      this._block('Trash', this._trash(d.trash)),
-      this._block('Backups', this._backups(d.backups)),
-      this._block('Server rules', this._rules(d.rules, d.server.name)),
-      Store.server.master ? this._block('Server password', this._password(d.server)) : null,
+      this._block('overview', T('admin.part.overview'), this._overview(d.server)),
+      this._block('profiles', T('admin.part.profiles'), this._profiles(d.profiles, mobile)),
+      this._block('playlists', T('admin.part.allPlaylists'), this._playlists(d.playlists)),
+      this._block('uploads', T('admin.part.recentUploads'), this._uploads(d.uploads)),
+      this._block('signins', T('admin.part.failedLogins'), this._failures(d.signins)),
+      this._block('downloads', T('admin.part.serverDownloads'), this._downloads(d.downloads)),
+      this._block('sessions', T('common.activeSessions'), this._sessions(d.sessions)),
+      this._block('trash', T('admin.part.trash'), this._trash(d.trash)),
+      this._block('backups', T('common.backups'), this._backups(d.backups)),
+      this._block('rules', T('admin.part.serverRules'), this._rules(d.rules, d.server.name)),
+      Store.server.master ? this._block('password', T('admin.part.serverPassword'), this._password(d.server)) : null,
     ].filter(Boolean));
     for (const fit of this._fits) fit();
     if (scroller) scroller.scrollTop = scrolled;
   },
 
-  _block(title, ...body) {
-    return h('section.admin__block', h('h4.admin__head', title), ...body);
+  /**
+   * A part under its heading, which opens and closes it (open as left last
+   * time: adminOpen, kept). A scrolling list in it measures itself once it
+   * shows (_scrollRows).
+   */
+  _block(id, title, ...body) {
+    const open = () => Store.settings.adminOpen.includes(id);
+    const chevron = h('span.settings__chevron', { html: Icons.chevron });
+    const head = h('button.admin__head', { type: 'button', title: T('admin.part.toggle.tooltip') }, chevron, h('span', title));
+    const rows = h('div.admin__body', ...body);
+    const fold = () => {
+      rows.hidden = !open();
+      chevron.classList.toggle('settings__chevron--down', !open());
+      head.setAttribute('aria-expanded', String(open()));
+    };
+    head.addEventListener('click', () => {
+      const now = new Set(Store.settings.adminOpen);
+      if (now.has(id)) now.delete(id);
+      else now.add(id);
+      Store.saveSettings({ adminOpen: [...now] });
+      fold();
+    });
+    fold();
+    return h('section.admin__block', head, rows);
   },
 
   _failed(part) {
@@ -162,21 +191,21 @@ const Admin = {
 
   _overview(o) {
     if (o.error) return this._failed(o);
-    const disk = o.disk && o.disk.size > 0 ? this._disk(o.disk) : 'unknown';
+    const disk = o.disk && o.disk.size > 0 ? this._disk(o.disk) : T('admin.overview.disk.unknown');
     const pairs = [
-      ['Server', `${o.name} (version ${o.version})`],
-      ['Running since', Util.fmtDate(o.startedAt)],
-      ['Songs', String(o.songs)],
-      ['Profiles', String(o.profiles)],
-      ['Music folder', fmtBytes(o.musicBytes)],
-      ['Trash', fmtBytes(o.trashBytes)],
-      ['Disk', disk],
-      ['yt-dlp', o.ytdlp || 'not installed'],
-      ['ffmpeg', o.ffmpeg ? 'installed' : 'not installed'],
-      ['Server downloads', o.downloads ? 'on' : 'off'],
-      ['Level', o.level ? String(o.level) : 'not chosen'],
-      ['Password', o.password ? 'yes' : 'none'],
-      ['Master admin', o.master || 'none (set on the server: flow-server admin master <name>)'],
+      [T('common.server'), T('admin.overview.server.value', { server: o.name, version: o.version })],
+      [T('admin.overview.runningSince'), Util.fmtDate(o.startedAt)],
+      [T('common.songs'), String(o.songs)],
+      [T('admin.part.profiles'), String(o.profiles)],
+      [T('admin.overview.musicFolder'), fmtBytes(o.musicBytes)],
+      [T('admin.part.trash'), fmtBytes(o.trashBytes)],
+      [T('admin.overview.disk'), disk],
+      ['yt-dlp', o.ytdlp || T('admin.overview.tools.notInstalled')],
+      ['ffmpeg', o.ffmpeg ? T('admin.overview.tools.installed') : T('admin.overview.tools.notInstalled')],
+      [T('admin.part.serverDownloads'), o.downloads ? T('admin.overview.serverDownloads.on') : T('admin.overview.serverDownloads.off')],
+      [T('admin.overview.level'), o.level ? String(o.level) : T('admin.overview.level.notChosen')],
+      [T('common.password'), o.password ? T('common.yes') : T('admin.overview.password.none')],
+      [T('admin.overview.masterAdmin'), o.master || T('admin.overview.masterAdmin.none')],
     ];
     return h('dl.admin__facts', ...pairs.flatMap(([k, v]) => [h('dt', k), h('dd', v)]));
   },
@@ -186,16 +215,16 @@ const Admin = {
     const used = Math.max(0, size - free);
     const pct = Math.min(100, (used / size) * 100);
     const level = pct >= 95 ? 'crit' : pct >= 90 ? 'high' : pct >= 75 ? 'warn' : pct >= 50 ? 'mid' : 'ok';
-    return h('span.admin__disk', { title: `${Math.round(pct)} % used, ${fmtBytes(free)} free` },
+    return h('span.admin__disk', { title: T('admin.overview.disk.tooltip', { percent: Math.round(pct), free: fmtBytes(free) }) },
       h(`span.admin__diskbar.admin__diskbar--${level}`, h('span.admin__diskfill', { style: `width: ${pct.toFixed(1)}%` })),
-      `${fmtBytes(used)} / ${fmtBytes(size)} used`);
+      T('admin.overview.disk.used', { used: fmtBytes(used), size: fmtBytes(size) }));
   },
 
   // ---- Profiles ----
 
   _lastSeen(v) {
-    if (v === 'now') return 'now';
-    return v ? Util.fmtDate(v) : 'never';
+    if (v === 'now') return T('admin.profiles.lastSeen.now');
+    return v ? Util.fmtDate(v) : T('admin.profiles.lastSeen.never');
   },
 
   _sortValue(p, key) {
@@ -206,10 +235,10 @@ const Admin = {
 
   _badges(p, meId) {
     const marks = [
-      p.id === meId ? ['you', 'you'] : null,
-      p.master ? ['master admin', 'master'] : p.admin ? ['admin', 'admin'] : null,
-      p.disabled ? ['disabled', 'off'] : null,
-      p.pin ? null : ['no PIN', 'nopin'],
+      p.id === meId ? [T('common.you.lower'), 'you'] : null,
+      p.master ? [T('admin.profiles.badge.masterAdmin'), 'master'] : p.admin ? [T('admin.profiles.badge.admin'), 'admin'] : null,
+      p.disabled ? [T('admin.profiles.badge.disabled'), 'off'] : null,
+      p.pin ? null : [T('admin.profiles.badge.noPin'), 'nopin'],
     ].filter(Boolean);
     return marks.map(([text, kind]) => h(`span.admin__badge.admin__badge--${kind}`, text));
   },
@@ -217,13 +246,13 @@ const Admin = {
   _profiles(list, mobile) {
     if (list.error) return this._failed(list);
     const search = h('input.input.settings__input.admin__search', {
-      type: 'search', placeholder: 'Search profiles', value: this._query, spellcheck: false, autocomplete: 'off',
+      type: 'search', placeholder: T('admin.profiles.search.placeholder'), value: this._query, spellcheck: false, autocomplete: 'off',
     });
     const holder = h('div.admin__profiles');
     const draw = () => {
       const rows = Util.sortRows(list.profiles.filter((p) => Util.matches(this._query, p.name)), this._sort, (p, k) => this._sortValue(p, k));
       clear(holder);
-      if (!rows.length) holder.append(h('p.settings__note', this._query ? 'No profile has that name.' : 'No profiles yet.'));
+      if (!rows.length) holder.append(h('p.settings__note', this._query ? T('admin.profiles.noMatch') : T('admin.profiles.none')));
       else if (mobile) holder.append(this._profileList(rows, list.me, draw));
       else holder.append(this._profileTable(rows, list.me, draw));
     };
@@ -232,17 +261,17 @@ const Admin = {
       draw();
     });
     draw();
-    const add = h('button.btn.btn--small', { type: 'button', onclick: () => this._newProfile() }, 'New profile');
+    const add = h('button.btn.btn--small', { type: 'button', onclick: () => this._newProfile() }, T('admin.profiles.new.title'));
     return h('div', h('div.admin__bar', search, add), holder);
   },
 
   _columns() {
     return [
-      { key: 'name', label: 'Name', cls: 'admin__col-name' },
-      { key: 'createdAt', label: 'Created', cls: 'admin__col-date' },
-      { key: 'lastSeen', label: 'Last seen', cls: 'admin__col-seen' },
-      { key: 'addedSongs', label: 'Songs', cls: 'admin__col-num' },
-      { key: 'seconds', label: 'Time listened', cls: 'admin__col-time' },
+      { key: 'name', label: T('common.name'), cls: 'admin__col-name' },
+      { key: 'createdAt', label: T('common.created'), cls: 'admin__col-date' },
+      { key: 'lastSeen', label: T('admin.profiles.column.lastSeen'), cls: 'admin__col-seen' },
+      { key: 'addedSongs', label: T('common.songs'), cls: 'admin__col-num' },
+      { key: 'seconds', label: T('common.timeListened'), cls: 'admin__col-time' },
     ];
   },
 
@@ -251,7 +280,7 @@ const Admin = {
     const columns = [
       ...this._columns().map((c) => ({ ...c, render: (p) => this._cell(p, c.key, meId) })),
       {
-        key: 'actions', label: 'Actions', sortable: false, cls: 'admin__col-actions', render: (p) => this._actions(p, meId),
+        key: 'actions', label: T('common.actions'), sortable: false, cls: 'admin__col-actions', render: (p) => this._actions(p, meId),
       },
     ];
     renderTable(table, {
@@ -278,7 +307,7 @@ const Admin = {
 
   /** The PC's one button (⋯): every action for the profile in a window. */
   _actions(p, meId) {
-    return h('div.actions', iconButton('act.act--grey', Icons.more, 'Actions', () => this._moreDialog(p, meId)));
+    return h('div.actions', iconButton('act.act--grey', Icons.more, T('common.actions'), () => this._moreDialog(p, meId)));
   },
 
   /** The phone's list: each profile's name, opening with a tap onto its numbers and buttons. */
@@ -303,7 +332,7 @@ const Admin = {
       if (!open) return h('div.admin__prow' + (p.disabled ? '.admin__row--off' : ''), name);
       const facts = h('dl.admin__facts',
         ...columns.filter((c) => c.key !== 'name').flatMap((c) => [h('dt', c.label), h('dd', this._cell(p, c.key, meId))]),
-        h('dt', 'Logged in on'), h('dd', Util.plural(p.devices, 'device')));
+        h('dt', T('admin.profiles.loggedInOn')), h('dd', Util.plural(p.devices, 'device')));
       const buttons = this._buttons(p, meId);
       return h('div.admin__prow.admin__prow--open' + (p.disabled ? '.admin__row--off' : ''), name, facts, buttons);
     });
@@ -325,20 +354,20 @@ const Admin = {
       },
     }, label);
     const first = [
-      btn('Connection History', () => this._showIps(p)),
-      !locked && p.pin ? btn('Reset PIN', () => this._removePin(p)) : null,
-      !locked && p.devices ? btn('Log out everywhere', () => this._signOut(p)) : null,
+      btn(T('admin.profiles.button.connectionHistory'), () => this._showIps(p)),
+      !locked && p.pin ? btn(T('admin.profiles.resetPin.title'), () => this._removePin(p)) : null,
+      !locked && p.devices ? btn(T('admin.profiles.logOut.title'), () => this._signOut(p)) : null,
     ].filter(Boolean);
     // Only a profile with a PIN can be made an admin: greyed out, saying why.
-    const makeAdmin = Store.server.master && !p.master ? btn(p.admin ? 'Revoke Admin' : 'Make Admin', () => this._setAdmin(p)) : null;
+    const makeAdmin = Store.server.master && !p.master ? btn(p.admin ? T('admin.profiles.revokeAdmin.title') : T('admin.profiles.makeAdmin.title'), () => this._setAdmin(p)) : null;
     if (makeAdmin && !p.admin && !p.pin) {
       makeAdmin.disabled = true;
-      makeAdmin.title = 'Only a profile with a PIN can be an admin.';
+      makeAdmin.title = T('admin.profiles.button.makeAdmin.needsPin.tooltip');
     }
     const second = [
       makeAdmin,
-      !locked ? btn(p.disabled ? 'Enable' : 'Disable', () => this._disable(p)) : null,
-      !locked ? btn('Delete Profile', () => this._delete(p), '.btn--danger') : null,
+      !locked ? btn(p.disabled ? T('admin.profiles.button.enable') : T('admin.profiles.button.disable'), () => this._disable(p)) : null,
+      !locked ? btn(T('common.deleteProfile'), () => this._delete(p), '.btn--danger') : null,
     ].filter(Boolean);
     return h('div.admin__pgroups', h('div.admin__pactions', ...first), second.length ? h('div.admin__pactions', ...second) : null);
   },
@@ -349,7 +378,7 @@ const Admin = {
       title: p.name,
       className: 'modal--small',
       body: [this._buttons(p, meId, () => handle.close())],
-      buttons: [{ label: 'Close' }],
+      buttons: [{ label: T('common.close') }],
     });
   },
 
@@ -358,79 +387,79 @@ const Admin = {
     if (!r) return;
     const rows = r.ips.map((e) => h('tr', h('td', e.ip), h('td', e.device || ''), h('td', Util.fmtDate(e.at))));
     Modal.open({
-      title: `${p.name}: Connection History`,
+      title: T('admin.profiles.history.title', { profile: p.name }),
       className: 'modal--admin-ips',
       body: [
-        h('p.modal__text', 'Made from: ', h('strong', r.createdIp || 'not recorded (made before Flow 3.5)')),
+        h('p.modal__text', T('admin.profiles.history.madeFrom'), ' ', h('strong', r.createdIp || T('admin.profiles.history.madeFrom.unknown'))),
         rows.length
-          ? h('table.admin__ips', h('thead', h('tr', h('th', 'IP'), h('th', 'Device'), h('th', 'Last time'))), h('tbody', ...rows))
-          : h('p.settings__note', 'No connections recorded yet.'),
-        h('p.settings__note', `The newest ${r.ips.length} of up to 100.`),
+          ? h('table.admin__ips', h('thead', h('tr', h('th', 'IP'), h('th', T('admin.profiles.history.column.device')), h('th', T('admin.profiles.history.column.lastTime')))), h('tbody', ...rows))
+          : h('p.settings__note', T('admin.profiles.history.none')),
+        h('p.settings__note', T('admin.profiles.history.newest', { count: r.ips.length })),
       ],
-      buttons: [{ label: 'Close', kind: 'primary' }],
+      buttons: [{ label: T('common.close'), kind: 'primary' }],
     });
   },
 
   async _delete(p) {
     const answer = await confirmDialog({
-      title: 'Delete Profile',
-      message: `Do you really want to delete the profile ${p.name}?`,
-      confirmLabel: 'Delete',
+      title: T('common.deleteProfile'),
+      message: T('admin.profiles.delete.text', { profile: p.name }),
+      confirmLabel: T('common.delete'),
       danger: true,
-      checkbox: { label: 'Also delete all songs that belong to this profile' },
+      checkbox: { label: T('admin.profiles.delete.alsoSongs') },
     });
     if (!answer) return;
     let deleted = 0;
     await this._do(async () => {
       ({ deletedSongs: deleted } = await window.flow.admin(`profiles/${p.id}/delete`, { songs: answer.checked }));
     });
-    toast(answer.checked ? `Profile "${p.name}" and ${Util.plural(deleted, 'song')} deleted` : `Profile "${p.name}" deleted`, 'info');
+    toast(answer.checked ? T('admin.profiles.delete.done.withSongs', { profile: p.name, songs: Util.plural(deleted, 'song') }) : T('common.profileDeleted', { profile: p.name }), 'info');
   },
 
   async _removePin(p) {
     // A profile without a PIN cannot be an admin: the server takes that away too.
-    const admin = p.admin ? ` ${p.name} is an admin: admin will be revoked too, since a profile without a PIN cannot be an admin.` : '';
-    if (!(await this._confirm('Reset PIN', `Reset the PIN of ${p.name}? It then has none: anyone can log in to it, and set a new one in Settings under Profile with Change PIN.${admin}`, 'Reset PIN'))) return;
-    await this._do(() => window.flow.admin(`profiles/${p.id}/pin`, {}), p.admin ? `${p.name} has no PIN now and is no admin any more` : `${p.name} has no PIN now`);
+    const admin = p.admin ? ` ${T('admin.profiles.resetPin.text.adminToo', { profile: p.name })}` : '';
+    if (!(await this._confirm(T('admin.profiles.resetPin.title'), T('admin.profiles.resetPin.text', { profile: p.name }) + admin, T('admin.profiles.resetPin.title')))) return;
+    await this._do(() => window.flow.admin(`profiles/${p.id}/pin`, {}), p.admin ? T('admin.profiles.resetPin.done.noAdmin', { profile: p.name }) : T('admin.profiles.resetPin.done', { profile: p.name }));
   },
 
   async _signOut(p) {
-    if (!(await this._confirm('Log out everywhere', `Log ${p.name} out on all ${Util.plural(p.devices, 'device')}? They stay on the server, without a profile.`, 'Log out'))) return;
-    await this._do(() => window.flow.admin(`profiles/${p.id}/signout`, {}), `${p.name} logged out everywhere`);
+    if (!(await this._confirm(T('admin.profiles.logOut.title'), T('admin.profiles.logOut.text', { profile: p.name, count: p.devices }), T('common.logout')))) return;
+    await this._do(() => window.flow.admin(`profiles/${p.id}/signout`, {}), T('admin.profiles.logOut.done', { profile: p.name }));
   },
 
   async _disable(p) {
     const off = !p.disabled;
-    if (off && !(await this._confirm('Disable profile', `Disable ${p.name}? Nobody can log in to it until it is enabled again; its devices are logged out. Nothing of it is deleted.`, 'Disable', true))) return;
-    await this._do(() => window.flow.admin(`profiles/${p.id}/disable`, { disabled: off }), off ? `${p.name} disabled` : `${p.name} enabled`);
+    if (off && !(await this._confirm(T('admin.profiles.disable.title'), T('admin.profiles.disable.text', { profile: p.name }), T('admin.profiles.button.disable'), true))) return;
+    await this._do(() => window.flow.admin(`profiles/${p.id}/disable`, { disabled: off }), off ? T('admin.profiles.disable.done', { profile: p.name }) : T('admin.profiles.enable.done', { profile: p.name }));
   },
 
   async _setAdmin(p) {
     const on = !p.admin;
     const message = on
-      ? `Make ${p.name} an admin? It can then see and change everything here except the server password.`
-      : `Revoke admin from ${p.name}? It then no longer sees Administration.`;
-    if (!(await this._confirm(on ? 'Make Admin' : 'Revoke Admin', message, on ? 'Make Admin' : 'Revoke', on ? false : 'light-red'))) return;
-    await this._do(() => window.flow.admin(`profiles/${p.id}/admin`, { admin: on }), on ? `${p.name} is an admin now` : `${p.name} is no admin any more`);
+      ? T('admin.profiles.makeAdmin.text', { profile: p.name })
+      : T('admin.profiles.revokeAdmin.text', { profile: p.name });
+    if (!(await this._confirm(on ? T('admin.profiles.makeAdmin.title') : T('admin.profiles.revokeAdmin.title'), message, on ? T('admin.profiles.makeAdmin.title') : T('admin.profiles.revokeAdmin.confirm'), on ? false : 'light-red'))) return;
+    await this._do(() => window.flow.admin(`profiles/${p.id}/admin`, { admin: on }), on ? T('admin.profiles.makeAdmin.done', { profile: p.name }) : T('admin.profiles.revokeAdmin.done', { profile: p.name }));
   },
 
   _newProfile() {
-    const name = h('input.input', { type: 'text', placeholder: 'Name', maxLength: 40, spellcheck: false, autocomplete: 'off' });
-    const pin = h('input.input', { type: 'password', placeholder: 'PIN (optional)', autocomplete: 'new-password' });
+    const name = h('input.input', { type: 'text', placeholder: T('common.name'), maxLength: 40, spellcheck: false, autocomplete: 'off' });
+    const pin = h('input.input', { type: 'password', placeholder: T('admin.profiles.new.pin.placeholder'), autocomplete: 'new-password' });
     Modal.open({
-      title: 'New profile',
+      title: T('admin.profiles.new.title'),
       className: 'modal--small',
       focus: 'input',
-      body: [h('p.modal__text', 'A profile for someone else. You stay logged in as yourself.'), h('div.admin__form', name, pin)],
+      body: [h('p.modal__text', T('admin.profiles.new.desc')), h('div.admin__form', name, pin)],
       buttons: [
-        { label: 'Cancel' },
+        { label: T('common.cancel') },
         {
-          label: 'Create',
+          label: T('common.create'),
           kind: 'primary',
           onClick: async () => {
             const made = await attempt(() => window.flow.admin('profiles', { name: name.value, pin: pin.value }));
             if (!made) return false;
-            toast(`Profile "${made.profile.name}" made`, 'success');
+            toast(T('admin.profiles.new.done', { profile: made.profile.name }), 'success');
             this.load();
             return true;
           },
@@ -439,22 +468,102 @@ const Admin = {
     });
   },
 
+  // ---- All Playlists ----
+
+  /**
+   * Every playlist on the server, by name: its songs and length (a smart
+   * one's are worked out by the apps), and its owner to pick, which gives it
+   * to that profile (or the Default / Shared). The search finds names and
+   * owners. The master's playlists only the master can give away.
+   */
+  _playlists(r) {
+    // A server from before 4.2.3 has no such list.
+    if (r.error) return /nothing here/i.test(r.error) ? h('p.settings__note', T('admin.playlists.serverTooOld')) : this._failed(r);
+    if (!r.playlists.length) return h('p.settings__note', T('admin.playlists.none'));
+    const ownerName = new Map(r.owners.map((o) => [o.id, o.id === 'default' ? T('settings.server.profile.pick.shared') : o.name]));
+    const masters = new Set(r.owners.filter((o) => o.master).map((o) => o.id));
+    const byName = r.playlists.slice().sort((a, b) => Util.fold(a.name).localeCompare(Util.fold(b.name))
+      || Util.fold(ownerName.get(a.ownerId) || '').localeCompare(Util.fold(ownerName.get(b.ownerId) || '')));
+    const row = (p) => {
+      const select = h('select.select.admin__owner-select', { 'aria-label': T('admin.playlists.owner.ariaLabel', { playlist: p.name }) },
+        ...r.owners.map((o) => h('option', { value: o.id }, ownerName.get(o.id))));
+      select.value = p.ownerId;
+      if (masters.has(p.ownerId) && !Store.server.master) {
+        select.disabled = true;
+        select.title = T('admin.playlists.owner.masterOnly.tooltip');
+      }
+      select.addEventListener('change', () => this._giveAway(p, select.value, ownerName.get(select.value)));
+      const facts = p.smart ? [T('window.playlists.new.smart')] : [Util.plural(p.songs, 'song'), Util.fmtClock(p.seconds)];
+      return h('li.admin__item.admin__item--row.admin__item--playlist',
+        h('span.admin__item-main.admin__playlist', ...this._parts([h('span.admin__playlist-name', p.name), ...facts.map((f) => h('span.admin__playlist-fact', f))])),
+        h('label.admin__owner', h('span', T('admin.playlists.owner')), select));
+    };
+    const search = h('input.input.settings__input.admin__search', {
+      type: 'search', placeholder: T('admin.playlists.search.placeholder'), value: this._playlistQuery, spellcheck: false, autocomplete: 'off',
+    });
+    const holder = h('div');
+    const draw = () => {
+      const rows = byName.filter((p) => Util.matches(this._playlistQuery, p.name, ownerName.get(p.ownerId) || ''));
+      clear(holder).append(rows.length ? this._list(rows.map(row)) : h('p.settings__note', T('admin.playlists.noMatch')));
+    };
+    search.addEventListener('input', () => {
+      this._playlistQuery = search.value;
+      draw();
+    });
+    draw();
+    return h('div', h('div.admin__bar.admin__bar--top', search), holder);
+  },
+
+  /** A playlist given to another owner; a name the owner has already gets "(2)" (the server says). */
+  async _giveAway(p, ownerId, ownerName) {
+    let r = null;
+    await this._do(async () => {
+      r = await window.flow.admin('playlists/owner', { id: p.id, owner: ownerId });
+    });
+    if (!r) return;
+    toast(r.name && r.name !== p.name
+      ? T('admin.playlists.given.renamed', { playlist: p.name, profile: ownerName, name: r.name })
+      : T('admin.playlists.given', { playlist: p.name, profile: ownerName }), 'success');
+  },
+
+  // ---- Recent uploads ----
+
+  _uploads(r) {
+    // A server from before 4.1 keeps no such list.
+    if (r.error) return /nothing here/i.test(r.error) ? h('p.settings__note', T('admin.uploads.serverTooOld')) : this._failed(r);
+    if (!r.uploads.length) return h('p.settings__note', T('admin.uploads.none'));
+    return this._list(r.uploads.map((u) => {
+      const name = Util.songLine(u);
+      return h('li.admin__item.admin__item--row',
+        h('span.admin__item-text',
+          h('span.admin__item-main', name),
+          h('span.admin__item-sub', { title: u.device ? T('admin.uploads.fromDevice.tooltip', { device: u.device }) : '' }, ...this._parts([T('admin.trash.addedBy', { profile: u.by }), Util.fmtDate(u.at), u.ip]))),
+        h('button.btn.btn--small.btn--danger', {
+          type: 'button',
+          onclick: async () => {
+            if (!(await this._confirm(T('common.deleteSong'), T('admin.uploads.delete.text', { song: name }), T('common.delete'), true))) return;
+            await this._do(() => window.flow.admin('uploads/delete', { songId: u.songId }), T('common.songDeleted', { song: u.title }));
+          },
+        }, T('common.delete')));
+    }));
+  },
+
   // ---- Failed logins ----
 
   _failures(r) {
     if (r.error) return this._failed(r);
-    if (!r.failures.length) return h('p.settings__note', 'None.');
+    if (!r.failures.length) return h('p.settings__note', T('admin.failedLogins.none'));
     const shown = r.failures.slice(0, 100);
     const rows = shown.map((f) => h('li.admin__item',
-      h('span.admin__item-main', f.kind === 'pin' ? `Wrong PIN for ${f.profileName || 'a deleted profile'}` : 'Wrong server password'),
+      h('span.admin__item-main', f.kind === 'pin' ? T('admin.failedLogins.wrongPin', { profile: f.profileName || T('admin.failedLogins.wrongPin.deletedProfile') }) : T('admin.failedLogins.wrongPassword')),
       h('span.admin__item-sub', ...this._parts([Util.fmtDate(f.at), f.ip, f.device]))));
-    const more = r.failures.length > shown.length ? h('p.settings__note', `The newest ${shown.length} of ${r.failures.length}.`) : null;
+    const more = r.failures.length > shown.length ? h('p.settings__note', T('admin.failedLogins.newest', { shown: shown.length, total: r.failures.length })) : null;
     const clearBtn = h('button.btn.btn--small', {
       type: 'button',
       onclick: async () => {
-        if (await this._confirm('Clear the list', 'Forget every failed login?', 'Clear')) await this._do(() => window.flow.admin('signins/clear', {}));
+        if (await this._confirm(T('admin.failedLogins.clear'), T('admin.failedLogins.clear.text'), T('common.clear'))) await this._do(() => window.flow.admin('signins/clear', {}));
       },
-    }, 'Clear the list');
+    }, T('admin.failedLogins.clear'));
     return h('div', this._list(rows), more, h('div.admin__bar', clearBtn));
   },
 
@@ -462,63 +571,63 @@ const Admin = {
 
   _downloads(r) {
     if (r.error) return this._failed(r);
-    if (!r.batches.length) return h('p.settings__note', 'No server downloads running.');
+    if (!r.batches.length) return h('p.settings__note', T('admin.downloads.none'));
     return this._list(r.batches.map((b) => h('li.admin__item.admin__item--row',
       h('span.admin__item-text',
-        h('span.admin__item-main', `${b.profileName}: ${b.name || b.url || 'a download'}`),
-        h('span.admin__item-sub', ...(b.state === 'listing' ? ['Reading the link...']
-          : this._parts([`${b.saved} of ${b.songs} saved, ${b.open} still open${b.failed ? `, ${b.failed} failed` : ''}`, `since ${Util.fmtDate(b.createdAt)}`])))),
+        h('span.admin__item-main', `${b.profileName}: ${b.name || b.url || T('admin.downloads.entry.unnamed')}`),
+        h('span.admin__item-sub', ...(b.state === 'listing' ? [T('common.readingLink')]
+          : this._parts([T(b.failed ? 'admin.downloads.progress.withFailed' : 'admin.downloads.progress', { saved: b.saved, songs: b.songs, open: b.open, failed: b.failed }), T('admin.downloads.since', { date: Util.fmtDate(b.createdAt) })])))),
       h('button.btn.btn--small', {
         type: 'button',
         onclick: async () => {
-          if (!(await this._confirm('Cancel download', `Cancel ${b.profileName}'s server download, with every song in it not saved yet?`, 'Cancel download', true))) return;
-          await this._do(() => window.flow.admin('downloads/cancel', { key: b.key }), 'Download cancelled');
+          if (!(await this._confirm(T('admin.downloads.cancel.title'), T('admin.downloads.cancel.text', { profile: b.profileName }), T('admin.downloads.cancel.title'), true))) return;
+          await this._do(() => window.flow.admin('downloads/cancel', { key: b.key }), T('common.downloadCancelled'));
         },
-      }, 'Cancel'))));
+      }, T('common.cancel')))));
   },
 
   _sessions(r) {
     if (r.error) return this._failed(r);
-    if (!r.sessions.length) return h('p.settings__note', 'Nothing is playing on the server right now.');
+    if (!r.sessions.length) return h('p.settings__note', T('admin.sessions.none'));
     return this._list(r.sessions.map((s) => h('li.admin__item.admin__item--row',
       h('span.admin__item-text',
         h('span.admin__item-main', s.name),
         h('span.admin__item-sub', ...this._parts([
-          s.song ? Util.songLine(s.song) : 'nothing playing',
-          s.playing ? 'playing' : 'paused',
+          s.song ? Util.songLine(s.song) : T('admin.sessions.nothingPlaying'),
+          s.playing ? T('admin.sessions.playing') : T('admin.sessions.paused'),
           Util.plural(s.listeners, 'listener'),
-          s.shared ? '' : 'not shared',
+          s.shared ? '' : T('admin.sessions.notShared'),
         ]))),
       s.listeners ? h('button.btn.btn--small', {
         type: 'button',
         onclick: async () => {
-          if (!(await this._confirm('End session', `End "${s.name}"? Everyone listening along is out; the host plays on alone.`, 'End session', true))) return;
-          await this._do(() => window.flow.admin('sessions/end', { id: s.id }), 'Session ended');
+          if (!(await this._confirm(T('admin.sessions.end.title'), T('admin.sessions.end.text', { session: s.name }), T('admin.sessions.end.title'), true))) return;
+          await this._do(() => window.flow.admin('sessions/end', { id: s.id }), T('admin.sessions.end.done'));
         },
-      }, 'End') : null)));
+      }, T('admin.sessions.end')) : null)));
   },
 
   // ---- Trash ----
 
   _trash(r) {
     if (r.error) return this._failed(r);
-    if (!r.items.length) return h('p.settings__note', 'The trash is empty. Deleted songs stay in it for 30 days.');
+    if (!r.items.length) return h('p.settings__note', T('admin.trash.empty.note'));
     const rows = r.items.map((t) => h('li.admin__item.admin__item--row',
       h('span.admin__item-text',
         h('span.admin__item-main', t.artist ? `${t.title} - ${t.artist}` : t.title),
-        h('span.admin__item-sub', ...this._parts([t.by ? `Deleted by ${t.by}` : 'Deleted', Util.fmtDate(t.at), t.addedBy ? `Added by ${t.addedBy}` : '']))),
+        h('span.admin__item-sub', ...this._parts([t.by ? T('admin.trash.deletedBy', { profile: t.by }) : T('admin.trash.deleted'), Util.fmtDate(t.at), t.addedBy ? T('admin.trash.addedBy', { profile: t.addedBy }) : '']))),
       h('button.btn.btn--small', {
         type: 'button',
-        onclick: () => this._do(() => window.flow.admin('trash/restore', { name: t.name }), `"${t.title}" is back`),
-      }, 'Restore')));
+        onclick: () => this._do(() => window.flow.admin('trash/restore', { name: t.name }), T('admin.trash.restored', { song: t.title })),
+      }, T('common.restore'))));
     const empty = h('button.btn.btn--small.btn--danger', {
       type: 'button',
       onclick: async () => {
-        if (!(await this._confirm('Empty trash', `Delete all ${Util.plural(r.items.length, 'file')} in the trash for good (${fmtBytes(r.bytes)})?`, 'Empty trash', true))) return;
-        await this._do(() => window.flow.admin('trash/empty', {}), 'Trash emptied');
+        if (!(await this._confirm(T('admin.trash.emptyTrash'), T('admin.trash.emptyTrash.text', { files: Util.plural(r.items.length, 'file'), size: fmtBytes(r.bytes) }), T('admin.trash.emptyTrash'), true))) return;
+        await this._do(() => window.flow.admin('trash/empty', {}), T('admin.trash.emptyTrash.done'));
       },
-    }, 'Empty trash');
-    return h('div', h('p.settings__note', `${Util.plural(r.items.length, 'file')}, ${fmtBytes(r.bytes)}. Each one is deleted for good 30 days after it was deleted.`),
+    }, T('admin.trash.emptyTrash'));
+    return h('div', h('p.settings__note', T('admin.trash.summary', { files: Util.plural(r.items.length, 'file'), size: fmtBytes(r.bytes) })),
       this._list(rows), h('div.admin__bar', empty));
   },
 
@@ -526,9 +635,9 @@ const Admin = {
 
   _backups(r) {
     // A server from before 4.0 has none.
-    if (r.error) return /nothing here/i.test(r.error) ? h('p.settings__note', 'This Flow Server makes no backups yet. Update it first.') : this._failed(r);
+    if (r.error) return /nothing here/i.test(r.error) ? h('p.settings__note', T('admin.backups.serverTooOld')) : this._failed(r);
     const master = Store.server.master;
-    const why = { weekly: 'Weekly', manual: 'Made by hand', restore: 'Made before a restore' };
+    const why = { weekly: T('admin.backups.reason.weekly'), manual: T('admin.backups.reason.manual'), restore: T('admin.backups.reason.restore') };
     const rows = r.backups.map((b) => h('li.admin__item.admin__item--row',
       h('span.admin__item-text',
         h('span.admin__item-main', Util.fmtDate(b.createdAt)),
@@ -537,20 +646,17 @@ const Admin = {
       master ? h('button.btn.btn--small', {
         type: 'button',
         onclick: async () => {
-          if (!(await this._confirm('Restore backup', `Put the library back as it was on ${Util.fmtDate(b.createdAt)}? `
-            + 'Song names, playlists, favourites, stats and profiles go back to how they were then; songs added since stay. '
-            + 'What is there now is backed up first.', 'Restore', 'light-red'))) return;
-          await this._do(() => window.flow.admin('backups/restore', { name: b.name }), 'Backup restored');
+          if (!(await this._confirm(T('common.restoreBackup'), T('admin.backups.restore.text', { date: Util.fmtDate(b.createdAt) }), T('common.restore'), 'light-red'))) return;
+          await this._do(() => window.flow.admin('backups/restore', { name: b.name }), T('admin.backups.restored'));
         },
-      }, 'Restore') : null));
+      }, T('common.restore')) : null));
     const make = h('button.btn.btn--small', {
       type: 'button',
-      onclick: () => this._do(() => window.flow.admin('backups/make', {}), 'Backup made'),
-    }, 'Back up now');
-    const note = `The server backs up its library's data every week and keeps the last ${r.keep}: song names, playlists, favourites, `
-      + `stats and profiles, never the song files.${master ? '' : ' Only the master admin can restore one.'}`;
+      onclick: () => this._do(() => window.flow.admin('backups/make', {}), T('common.backupMade')),
+    }, T('common.backUpNow'));
+    const note = T('admin.backups.desc', { count: r.keep }) + (master ? '' : ` ${T('admin.backups.desc.onlyMaster')}`);
     return h('div', h('p.settings__note', note),
-      r.backups.length ? this._list(rows) : h('p.settings__note', 'No backups yet.'), h('div.admin__bar', make));
+      r.backups.length ? this._list(rows) : h('p.settings__note', T('common.noBackups')), h('div.admin__bar', make));
   },
 
   // ---- Server rules ----
@@ -560,25 +666,24 @@ const Admin = {
     const select = (key, options) => {
       const node = h('select.select', ...options.map(([v, label]) => h('option', { value: v }, label)));
       node.value = r[key];
-      node.addEventListener('change', () => this._do(() => window.flow.admin('rules', { [key]: node.value }), 'Saved'));
+      node.addEventListener('change', () => this._do(() => window.flow.admin('rules', { [key]: node.value }), T('admin.saved')));
       return node;
     };
     // Guests from other servers (4.0): a server from before has no such rule.
     const guests = r.guests === undefined ? null : h('input', { type: 'checkbox', checked: !!r.guests });
-    if (guests) guests.addEventListener('change', () => this._do(() => window.flow.admin('rules', { guests: guests.checked }), 'Saved'));
+    if (guests) guests.addEventListener('change', () => this._do(() => window.flow.admin('rules', { guests: guests.checked }), T('admin.saved')));
     // Guests find the sessions only through the network search: without it the rule does nothing.
     const unfound = !!guests && r.discovery === false;
     if (unfound) guests.disabled = true;
     return h('div.admin__rules',
-      h('label.admin__rule', h('span', 'Who may make new profiles'),
-        select('profileCreation', [['anyone', 'Everyone'], ['admins', 'Only admins']])),
-      h('label.admin__rule', h('span', 'Who may delete songs for everyone'),
-        select('songDelete', [['anyone', 'Everyone'], ['owner', 'Only who added it, and admins']])),
+      h('label.admin__rule', h('span', T('admin.rules.newProfiles')),
+        select('profileCreation', [['anyone', T('admin.rules.newProfiles.everyone')], ['admins', T('admin.rules.newProfiles.onlyAdmins')]])),
+      h('label.admin__rule', h('span', T('admin.rules.deleteSongs')),
+        select('songDelete', [['anyone', T('admin.rules.newProfiles.everyone')], ['owner', T('admin.rules.deleteSongs.ownerAndAdmins')]])),
       guests ? h(`label.check.admin__guests${unfound ? '.admin__guests--off' : ''}`, guests,
-        h('span', 'Allow guests in home network sessions/jams',
-          unfound ? h('span.admin__guests-note', ` (Server '${serverName || 'this server'}' has UDP discovery disabled)`) : null,
-          h('span.admin__item-sub', 'Allow Flow apps connected to another server while being in this server\'s home network to see '
-            + 'active sessions so they can request to join as guests (no server password or profile/PIN needed, only for this jam session).'))) : null);
+        h('span', T('admin.rules.guests'),
+          unfound ? h('span.admin__guests-note', ` ${serverName ? T('admin.rules.guests.discoveryOff', { server: serverName }) : T('admin.rules.guests.discoveryOff.unnamed')}`) : null,
+          h('span.admin__item-sub', T('admin.rules.guests.desc')))) : null);
   },
 
   // ---- Server password (master admin) ----
@@ -586,32 +691,32 @@ const Admin = {
   _password(o) {
     if (o.error) return this._failed(o);
     const field = (placeholder) => h('input.input', { type: 'password', placeholder, autocomplete: 'new-password' });
-    const current = o.password ? field('Current password') : null;
-    const next = field('New password');
-    const again = field('New password again');
+    const current = o.password ? field(T('admin.password.current')) : null;
+    const next = field(T('admin.password.new'));
+    const again = field(T('admin.password.newAgain'));
     const change = h('button.btn.btn--small.btn--primary', {
       type: 'button',
       onclick: async () => {
         if (next.value !== again.value) {
-          toast('The two new passwords do not match.', 'error');
+          toast(T('admin.password.notMatching'), 'error');
           return;
         }
-        if (!(await this._confirm('Change password', 'Change the server password? Every other device has to enter the new one.', 'Change'))) return;
-        await this._do(() => window.flow.changeServerPassword({ current: current ? current.value : '', password: next.value }), 'Password changed');
+        if (!(await this._confirm(T('admin.password.change'), T('admin.password.change.text'), T('common.change')))) return;
+        await this._do(() => window.flow.changeServerPassword({ current: current ? current.value : '', password: next.value }), T('admin.password.changed'));
       },
-    }, o.password ? 'Change password' : 'Set password');
+    }, o.password ? T('admin.password.change') : T('admin.password.set'));
     const remove = o.password && !(o.level >= 3) ? h('button.btn.btn--small', {
       type: 'button',
       onclick: async () => {
-        if (!(await this._confirm('Remove password', 'Remove the server password? Anyone who can reach the server can then use it.', 'Remove', true))) return;
-        await this._do(() => window.flow.changeServerPassword({ current: current ? current.value : '', remove: true }), 'Password removed');
+        if (!(await this._confirm(T('admin.password.remove'), T('admin.password.remove.text'), T('common.remove'), true))) return;
+        await this._do(() => window.flow.changeServerPassword({ current: current ? current.value : '', remove: true }), T('admin.password.removed'));
       },
-    }, 'Remove password') : null;
+    }, T('admin.password.remove')) : null;
     const rule = o.level >= 3
-      ? 'Reachable from the internet: at least 8 characters with a lower-case letter, an upper-case letter and a number.'
-      : 'At least 4 characters.';
+      ? T('admin.password.rule.internet')
+      : T('admin.password.rule.short');
     return h('div',
-      h('p.settings__note', `${rule} Every other device has to enter the new password once; this one carries on.`),
+      h('p.settings__note', T('admin.password.rule.note', { rule })),
       h('div.admin__form', current, next, again),
       h('div.admin__bar', change, remove));
   },

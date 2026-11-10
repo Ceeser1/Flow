@@ -507,23 +507,22 @@
   Visualizer.add({
     id: 'synthwave',
     name: 'Synthwave',
-    desc: 'A flight through neon mountains made of the music, rushing on with every beat and glowing on the kicks',
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="4"/><path d="M2 20l6-8 3 4 2-2 4 6"/>'
       + '<path d="M15 16l2-3 5 7"/></svg>',
     gl: true,
     create: (canvas) => new Synthwave(canvas),
     options: [
-      { type: 'color', key: 'synColor', label: 'Wireframe color', presets: PRESETS },
-      { type: 'slider', key: 'synSpeed', label: 'Speed', min: 50, max: 150, step: 5 },
+      { type: 'color', key: 'synColor', label: T('viz.synthwave.setting.wireframeColor'), presets: PRESETS },
+      { type: 'slider', key: 'synSpeed', label: T('viz.shared.speed'), min: 50, max: 150, step: 5 },
       {
         type: 'check',
         key: 'synBumps',
-        label: 'Ground bumps',
+        label: T('viz.synthwave.setting.groundBumps'),
         group: [
-          { type: 'check', key: 'synBobbing', label: 'Camera bobbing', amount: amount('synBobbingAmount') },
-          { type: 'check', key: 'synCameraTilt', label: 'Camera tilt', amount: amount('synCameraTiltAmount') },
-          { type: 'check', key: 'synCarTilt', label: 'Car tilt', amount: amount('synCarTiltAmount') },
+          { type: 'check', key: 'synBobbing', label: T('viz.synthwave.setting.cameraBobbing'), amount: amount('synBobbingAmount') },
+          { type: 'check', key: 'synCameraTilt', label: T('viz.synthwave.setting.cameraTilt'), amount: amount('synCameraTiltAmount') },
+          { type: 'check', key: 'synCarTilt', label: T('viz.synthwave.setting.carTilt'), amount: amount('synCarTiltAmount') },
         ],
       },
     ],

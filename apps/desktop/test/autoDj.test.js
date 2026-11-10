@@ -79,3 +79,29 @@ test('with shuffle: similar songs once every song of the list had its turn', () 
   assert.ok(q.dj.has(q.auto[1]));
   assert.ok(!list.includes(q.auto[1]));
 });
+
+test('a list of several parts (a group\'s mix, 4.5.2) is shuffled by its parts: a random part, then a random song of it', () => {
+  // A long playlist and a short one: drawn from all songs at once, the long one would fill the queue.
+  const long = Array.from({ length: 90 }, (_, i) => `long${i}`);
+  const short = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 's10'];
+  const all = [...long, ...short];
+  let n = 0;
+  const q = new PlayQueue(() => { n = (n * 9301 + 49297) % 233280; return n / 233280; }, 20);
+  q.shuffle = true;
+  q.poolsOf = (ctx) => (ctx === 'group:g' ? [long, short] : null);
+  q.start('group:g', all);
+  const drawn = [q.currentId, ...q.auto];
+  const fromShort = drawn.filter((x) => short.includes(x)).length;
+  // About half from each (10 of 21 here), never far from it.
+  assert.ok(fromShort >= 6 && fromShort <= 15, `short ${fromShort} of ${drawn.length}`);
+  assert.equal(new Set(drawn).size, drawn.length, 'no song twice');
+  // Played on: the short one used up, then only the long one's songs, then a new round.
+  for (let i = 0; i < 100; i += 1) q.next(all);
+  assert.ok(all.includes(q.currentId));
+  // Without parts (another list) it is one list as before.
+  const q2 = new PlayQueue(() => 0, 20);
+  q2.shuffle = true;
+  q2.poolsOf = () => null;
+  q2.start('pl', ['a', 'b', 'c']);
+  assert.equal(q2.currentId, 'a');
+});

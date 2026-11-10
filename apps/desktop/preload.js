@@ -12,11 +12,17 @@ async function call(channel, arg) {
 }
 
 contextBridge.exposeInMainWorld('flow', {
+  // The texts' language chosen in Settings ('' for the device's), read once: i18n.js needs it before anything is drawn.
+  language: ipcRenderer.sendSync('i18n:language'),
+  reload: () => ipcRenderer.send('app:reload'),
   init: () => call('app:init'),
   setSettings: (patch) => call('settings:set', patch),
   // For the window closing, where an async call may not get out in time.
   setSettingsNow: (patch) => ipcRenderer.sendSync('settings:setSync', patch),
+  // { library, seq } whole, or { patch, base, seq }: what changed (4.3.3, @flow/core/client/viewChannel).
   onLibraryChanged: (fn) => ipcRenderer.on('library:changed', (_e, data) => fn(data)),
+  // A change that did not fit: the library comes whole through onLibraryChanged.
+  libraryWhole: () => call('library:whole'),
   onFolderScanned: (fn) => ipcRenderer.on('library:scanned', (_e, result) => fn(result)),
 
   createPlaylist: (name) => call('library:createPlaylist', name),
@@ -25,6 +31,11 @@ contextBridge.exposeInMainWorld('flow', {
   setPlaylistRules: (id, rules) => call('library:setPlaylistRules', { id, rules }),
   renamePlaylist: (id, name) => call('library:renamePlaylist', { id, name }),
   deletePlaylist: (id, deleteSongs = false) => call('library:deletePlaylist', { id, deleteSongs }),
+  // Playlist groups (4.5): folders of playlists; deleting one leaves its playlists single.
+  createGroup: (name) => call('library:createGroup', name),
+  renameGroup: (id, name) => call('library:renameGroup', { id, name }),
+  deleteGroup: (id) => call('library:deleteGroup', id),
+  setPlaylistGroup: (playlistIds, groupId) => call('library:setPlaylistGroup', { playlistIds, groupId }),
   setPlaylistShared: (id, shared) => call('library:setPlaylistShared', { id, shared }),
   setFollowing: (id, on) => call('library:setFollowing', { id, on }),
   addSongToPlaylists: (songId, playlistIds) => call('library:addSongToPlaylists', { songId, playlistIds }),
@@ -39,6 +50,9 @@ contextBridge.exposeInMainWorld('flow', {
   privateStatistics: () => call('stats:private'),
   onPrivateStatistics: (fn) => ipcRenderer.on('stats:private', (_e, data) => fn(data)),
   removeTrackedProfile: (serverId, profileId) => call('stats:removeTracked', { serverId, profileId }),
+  serverStatistics: () => call('stats:server'),
+  loadShared: () => call('shared:list'),
+  openShared: (id) => call('shared:open', id),
   recordListen: (songId, listened, duration, contextId, jamMember) => call('library:recordListen', {
     songId, listened, duration, contextId, jamMember: !!jamMember,
   }),
@@ -64,13 +78,17 @@ contextBridge.exposeInMainWorld('flow', {
   cancelSearch: () => call('search:cancel'),
   downloadImport: (items, opts, run) => call('import:download', { items, opts, run }),
   pickLocalFiles: () => call('local:pickFiles'),
-  // A visualizer's picture picked in its cogwheel (a JPEG's bytes): kept, its path back.
+  // A visualizer's picture picked in its cogwheel (a JPEG's or PNG's bytes, or an MP4's or WebM's): kept, its path back.
   saveVizPicture: (name, bytes) => call('viz:savePicture', { name, bytes }),
   pickLocalFolder: () => call('local:pickFolder'),
   listLocal: (picked, run) => call('import:listLocal', { picked, run }),
   prepareLocal: (items, opts, run) => call('import:download', { items, opts, local: true, run }),
   finishImport: (job, run) => call('import:finish', { job, run }),
   setImportPending: (count) => call('import:pending', count),
+  // Add Songs' Client queue (4.4): a queued link's name and song count, its Cancel, and what closing asks about.
+  peekLink: (id, url, song) => call('download:peek', { id, url, song }),
+  cancelPeek: (id) => call('download:peekCancel', id),
+  setQueuePending: (info) => call('queue:pending', info),
   cancelImport: () => call('import:cancel'),
   onImportProgress: (fn) => ipcRenderer.on('import:progress', (_e, p) => fn(p)),
   openUrl: (url) => call('shell:openUrl', url),
@@ -120,17 +138,17 @@ contextBridge.exposeInMainWorld('flow', {
   lookupInfo: (song) => call('song:lookupInfo', song),
   // A song's lyrics (4.0): { found, synced: [{ t, text }] | null, plain, instrumental }.
   lyrics: (songId) => call('song:lyrics', songId),
-  // Lyrics written or edited here (4.0.1): lines [{ t, end, text }], or null to
+  // Lyrics written or edited here (4.0): lines [{ t, end, text }], or null to
   // look them up again; server: songId is a server's song just saved there.
   setLyrics: (songId, lines, server = false) => call('song:setLyrics', { songId, lines, server }),
   // A song just downloaded, by its names: { artist, title, duration }.
   lookupLyrics: (meta) => call('song:lookupLyrics', meta),
-  // Settings' Lyrics cache (4.0.1): { count, none, bytes, left }; Clear lyrics cache resolves them after.
+  // Settings' Lyrics cache (4.0): { count, none, bytes, left }; Clear lyrics cache resolves them after.
   lyricsStats: () => call('lyrics:stats'),
   clearLyricsCache: () => call('lyrics:clear'),
-  // Lyrics kept, or the background lookups moved on (4.0.1).
+  // Lyrics kept, or the background lookups moved on (4.0).
   onLyricsChanged: (fn) => ipcRenderer.on('lyrics:changed', () => fn()),
-  // LRCLIB (4.0.1): its search ({ q } or { title, artist, album, duration }),
+  // LRCLIB (4.0): its search ({ q } or { title, artist, album, duration }),
   // and lyrics written here published there ({ title, artist, album, duration, lines }).
   searchLyrics: (params) => call('lyrics:search', params),
   publishLyrics: (meta) => call('lyrics:publish', meta),
@@ -148,9 +166,9 @@ contextBridge.exposeInMainWorld('flow', {
   connectLink: (text) => call('server:connectLink', text),
   qr: (text) => call('qr:encode', text),
   // Covers: files in Music\FlowPlayer\Covers (Store.coverSrc).
-  wantCovers: (ids) => call('covers:want', ids),
+  wantCovers: (ids, size = 'small') => call('covers:want', { ids, size }),
   coverStats: () => call('covers:stats'),
-  clearCoverCache: () => call('covers:clear'),
+  clearCoverCache: (size) => call('covers:clear', size),
   onCoversUpdated: (fn) => ipcRenderer.on('covers:updated', (_e, info) => fn(info)),
   // Add Songs: the cover of a song downloaded but not saved yet ({ file, version } or null).
   stagedCover: (cachePath) => call('covers:staged', cachePath),

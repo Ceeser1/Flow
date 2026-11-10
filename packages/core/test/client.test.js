@@ -72,6 +72,24 @@ test('a file name without folder and extension, on any system', () => {
   assert.equal(meta.title, 'Porcelain');
 });
 
+test("a file's title tag is cleaned like a name, unless Flow wrote it", () => {
+  const { metaFromFile } = require('../src/fileMeta');
+  const names = (tags) => {
+    const m = metaFromFile('/x/whatever.mp3', tags);
+    return [m.artist, m.title, m.mix];
+  };
+  assert.deepEqual(names({ title: 'Numb [asdf]', artist: 'Linkin Park' }), ['Linkin Park', 'Numb', '']);
+  assert.deepEqual(names({ title: 'Strobe (Original Mix) [Free Download]', artist: 'deadmau5' }), ['deadmau5', 'Strobe', 'Original Mix']);
+  assert.deepEqual(names({ title: 'Song (feat. Singer) [Official Video]', artist: 'Artist' }), ['Artist feat. Singer', 'Song', '']);
+  // A mix tag and a mix in the title both kept, the same one once.
+  assert.deepEqual(names({ title: 'Song (Live)', artist: 'A', mix: 'Extended' }), ['A', 'Song', 'Extended, Live']);
+  assert.deepEqual(names({ title: 'Song (Remix)', artist: 'A', mix: 'remix' }), ['A', 'Song', 'remix']);
+  // Flow's own file (its flowid): its names as Flow wrote them.
+  assert.deepEqual(names({ title: 'Song (Live) [2010]', artist: 'A', flowid: 'lib1:song1' }), ['A', 'Song (Live) [2010]', '']);
+  // No title tag: from the file name, as before.
+  assert.deepEqual(metaFromFile('/x/Muse - Uprising [abc].mp3').title, 'Uprising');
+});
+
 test('random ids are hex of the length asked for', () => {
   const { randomHex } = require('../src/client/common');
   assert.match(randomHex(8), /^[0-9a-f]{16}$/);

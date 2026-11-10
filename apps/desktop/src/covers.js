@@ -1,19 +1,27 @@
 'use strict';
 
-// Covers on this computer, in Music\FlowPlayer\Covers (paths.coversDir):
+// Covers on this computer, in Music\FlowPlayer\Covers (paths.coversDir), in
+// two sizes since 4.3.1 (@flow/core/client/coverStore):
 //
-//   local\<song id>.jpg      Local Files' songs. Songs without one get one in
-//                            the background, one at a time (@flow/core/cover:
-//                            the song's thumbnail, the picture in its file,
-//                            YouTube Music, else the video's thumbnail).
-//   <server id>\<song id>.jpg  a Flow Server's, downloaded from it by remote.js
-//                            (all of them, in the background) and kept across
-//                            restarts and server switches. One goes only when
-//                            its song is gone from that server.
+//   local\thumbnails\<song id>.webp   Local Files' songs, 128 x 128 and
+//   local\high_res\<song id>.webp     512 x 512, both made at once from the
+//                                     picture found (cover.makeCoverPair).
+//                                     Songs without one get one in the
+//                                     background, one at a time (the song's
+//                                     thumbnail, the picture in its file,
+//                                     YouTube Music, else the video's).
+//   <server id>\thumbnails\...        a Flow Server's, fetched by remote.js
+//   <server id>\high_res\...          when they are shown (the big ones only
+//                                     with "Download high resolution covers",
+//                                     or kept from before), and kept across
+//                                     restarts and server switches.
 //
-// song.cover is the version of the file (its hash), so a file here is
-// checked against the library by hashing it. The window shows covers as files
-// (Store.coverSrc); it hears of new ones through onUpdated.
+// song.cover is the version of the picture (the start of the big one's
+// SHA-1, the same on the server), which each folder's index.json records for
+// its files. Covers from before 4.3.1 (<scope>\<song id>.jpg): Local Files'
+// are made into the two keeping their version, a server's go (they are
+// fetched again when shown). The window shows covers as files
+// (Covers.src); it hears of new ones through onUpdated.
 //
 // A song downloaded on the Add Songs page gets its cover looked for as soon
 // as it is downloaded (stage), kept beside its cached file while it is
@@ -22,6 +30,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const paths = require('./paths');
 const tools = require('./tools');
 const settings = require('./settings');
@@ -30,7 +39,9 @@ const { createMedia } = require('@flow/core/media');
 const library = require('./library');
 const model = require('@flow/core/libraryModel');
 const cover = require('@flow/core/cover');
+const { createCoverStore } = require('@flow/core/client/coverStore');
 const { isNameOnlyList } = require('@flow/core/text');
+const { tr } = require('@flow/core/lang');
 
 const LOCAL = 'local';
 const BATCH = 10;
@@ -39,11 +50,129 @@ const BATCH_MS = 5000;
 // downloads rate-limited by YouTube.
 const PAUSE_MS = 1000;
 
+// ---- the folders ----
+
+/** A file written whole or not at all (a temporary file renamed over it). */
+function writeAtomic(dest, data) {
+  const tmp = `${dest}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  fs.writeFileSync(tmp, data);
+  try {
+    fs.renameSync(tmp, dest);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
+}
+
+/** The store's way to this computer's files. */
+const io = {
+  join: path.join,
+  list(dir) {
+    return fs.readdirSync(dir, { withFileTypes: true }).map((e) => {
+      let size = 0;
+      if (!e.isDirectory()) {
+        try {
+          size = fs.statSync(path.join(dir, e.name)).size;
+        } catch {
+          size = 0;
+        }
+      }
+      return { name: e.name, dir: e.isDirectory(), size };
+    });
+  },
+  readText(p) {
+    try {
+      return fs.readFileSync(p, 'utf8');
+    } catch {
+      return null;
+    }
+  },
+  writeText: (p, text) => writeAtomic(p, text),
+  appendText: (p, text) => fs.appendFileSync(p, text, 'utf8'),
+  writeBytes: (p, bytes) => writeAtomic(p, bytes),
+  readBytes: (p) => fs.readFileSync(p),
+  remove: (p, { recursive = false } = {}) => fs.rmSync(p, { force: true, recursive }),
+  mkdir: (p) => fs.mkdirSync(p, { recursive: true }),
+  rename(from, to) {
+    try {
+      fs.renameSync(from, to);
+    } catch (err) {
+      if (err.code !== 'EXDEV') throw err;
+      fs.copyFileSync(from, to);
+      fs.rmSync(from, { force: true });
+    }
+  },
+  copy: (from, to) => fs.copyFileSync(from, to),
+  exists: (p) => fs.existsSync(p),
+};
+
+const stores = new Map(); // scope -> its store, made once (its indexes read once)
+
+/** The folder of a scope's covers ('local' or a server id). */
+function dirOf(scope) {
+  return path.join(paths.coversDir(), scope);
+}
+
 const storeOf = (scope) => {
-  if (!/^[\w-]{1,64}$/.test(String(scope || ''))) throw new Error('Not a cover folder.');
-  return cover.createCoverStore(path.join(paths.coversDir(), scope));
+  if (!/^[\w-]{1,64}$/.test(String(scope || ''))) throw new Error(tr('desktop.error.notCoverFolder', 'Not a cover folder.'));
+  const dir = dirOf(scope);
+  const known = stores.get(scope);
+  if (known && known.dir === dir) return known;
+  if (known) known.flush();
+  const store = createCoverStore(dir, io);
+  stores.set(scope, store);
+  return store;
 };
 const localStore = () => storeOf(LOCAL);
+
+/** Each Flow Server's covers, by server id: the folders under Covers but Local Files' own. */
+function serverIds() {
+  let names = [];
+  try {
+    names = fs.readdirSync(paths.coversDir(), { withFileTypes: true });
+  } catch {
+    names = [];
+  }
+  return names.filter((e) => e.isDirectory() && e.name !== LOCAL && /^[\w-]{1,64}$/.test(e.name)).map((e) => e.name);
+}
+
+/** A server's covers all gone (both sizes). */
+function removeServer(id) {
+  const store = stores.get(id);
+  if (store) store.forget();
+  stores.delete(id);
+  fs.rmSync(dirOf(id), { recursive: true, force: true });
+}
+
+/** Pending index writes saved (quitting). */
+function flush() {
+  for (const store of stores.values()) store.flush();
+}
+
+/**
+ * The two sizes of a picture (a JPEG found, a song file's): made in one go.
+ * Without ffmpeg (or when it fails) a JPEG or WebP is kept as it is for both.
+ */
+async function pairOf(picture) {
+  const pair = await cover.makeCoverPair(tools.findFfmpeg(), picture).catch(() => null);
+  if (pair) return pair;
+  const bytes = typeof picture === 'string' ? fs.readFileSync(picture) : picture;
+  return cover.isJpeg(bytes) || cover.isWebp(bytes) ? { big: bytes, small: bytes } : null;
+}
+
+/** Both sizes into a store as `v` (the big one's version when none is given): the version. */
+function writePair(store, id, pair, v = cover.coverVersion(pair.big)) {
+  store.write(id, 'big', pair.big, v);
+  store.write(id, 'small', pair.small, v);
+  return v;
+}
+
+/** A Local Files song's cover as a JPEG, for its file's tags: from the big one. */
+async function tagPicture(songId) {
+  const store = localStore();
+  const picture = store.read(songId, 'big') || store.read(songId, 'small');
+  return picture ? cover.toJpeg(tools.findFfmpeg(), picture).catch(() => null) : null;
+}
 
 let updated = () => {};
 
@@ -69,23 +198,18 @@ function lookups() {
 const awaiting = new Set();
 let fillerRun = () => {};
 
-/** fn(scope, ids): covers that arrived or changed ('local' or a server id). */
+/** fn(scope, ids, size): covers that arrived or changed ('local' or a server id; size: 'small', 'big' or null for both). */
 function onUpdated(fn) {
   updated = fn;
 }
 
-function tell(scope, ids) {
+function tell(scope, ids, size = null) {
   if (!ids.length) return;
   try {
-    updated(scope, ids);
+    updated(scope, ids, size);
   } catch {
     // The window may be gone.
   }
-}
-
-/** The folder the window builds a song's cover file from. */
-function dirOf(scope) {
-  return path.join(paths.coversDir(), scope);
 }
 
 // ---- Local Files ----
@@ -106,9 +230,11 @@ function setVersions(results, { onlyIfNone = false } = {}) {
   tell(LOCAL, results.filter((r) => r.version && r.version !== cover.NO_COVER).map((r) => r.id));
 }
 
-/** A cover found for a Local Files song, kept: its version. */
-function keepLocal(songId, jpeg) {
-  const version = localStore().write(songId, jpeg);
+/** A cover found for a Local Files song (a picture, or a file of one), kept in both sizes: its version, or null. */
+async function keepLocal(songId, picture) {
+  const pair = await pairOf(picture);
+  if (!pair) return null;
+  const version = writePair(localStore(), songId, pair);
   setVersions([{ id: songId, version }]);
   return version;
 }
@@ -120,8 +246,7 @@ function keepLocal(songId, jpeg) {
 async function takeFromFile(songId, file) {
   const jpeg = await cover.embeddedCover(tools.findFfmpeg(), file).catch(() => null);
   if (!jpeg || !model.songById(library.get(), songId)) return false;
-  keepLocal(songId, jpeg);
-  return true;
+  return !!(await keepLocal(songId, jpeg));
 }
 
 /**
@@ -152,8 +277,11 @@ function createFiller({ skip = () => false } = {}) {
       embedded: () => (fs.existsSync(s.file) ? cover.embeddedCover(ffmpeg, s.file) : null),
       cancelled: () => stopped,
     });
-    if (r.jpeg) return localStore().write(s.id, r.jpeg);
-    if (r.retry) {
+    if (r.jpeg) {
+      const pair = await pairOf(r.jpeg);
+      if (pair) return writePair(localStore(), s.id, pair);
+    }
+    if (r.retry || r.jpeg) {
       later.add(s.id);
       return null;
     }
@@ -169,7 +297,7 @@ function createFiller({ skip = () => false } = {}) {
     running = true;
     let results = [];
     let lastSave = Date.now();
-    const flush = () => {
+    const flushResults = () => {
       const batch = results;
       results = [];
       lastSave = Date.now();
@@ -185,11 +313,11 @@ function createFiller({ skip = () => false } = {}) {
         }
         if (version) results.push({ id: s.id, version });
         else later.add(s.id);
-        if (results.length >= BATCH || Date.now() - lastSave > BATCH_MS) flush();
+        if (results.length >= BATCH || Date.now() - lastSave > BATCH_MS) flushResults();
         await new Promise((resolve) => setTimeout(resolve, PAUSE_MS));
       }
     } finally {
-      flush();
+      flushResults();
       running = false;
     }
     if (again) {
@@ -205,6 +333,7 @@ function createFiller({ skip = () => false } = {}) {
     stop() {
       stopped = true;
       stageStopped = true;
+      legacyStopped = true;
     },
   };
   fillerRun = filler.run;
@@ -299,7 +428,7 @@ function adoptStaged(cachePath, songId, { wait = true } = {}) {
   const key = stageKey(cachePath);
   const entry = staged.get(key);
   staged.delete(key);
-  const take = () => {
+  const take = async () => {
     const file = stagedFile(cachePath);
     let jpeg = null;
     try {
@@ -311,13 +440,12 @@ function adoptStaged(cachePath, songId, { wait = true } = {}) {
     }
     const song = model.songById(library.get(), songId);
     if (!song || (song.cover && song.cover !== cover.NO_COVER)) return false;
-    keepLocal(songId, jpeg);
-    return true;
+    return !!(await keepLocal(songId, jpeg).catch(() => null));
   };
-  if (!entry || entry.done) return Promise.resolve(take());
+  if (!entry || entry.done) return take();
   if (!wait) {
     entry.dropped = true;
-    return Promise.resolve(take());
+    return take();
   }
   entry.adopted = true;
   awaiting.add(songId);
@@ -328,21 +456,53 @@ function adoptStaged(cachePath, songId, { wait = true } = {}) {
   });
 }
 
+// ---- covers from before 4.3.1 ----
+
+let legacyStopped = false;
+
+/**
+ * Local Files' old covers (local\<id>.jpg) made into the two sizes, one at a
+ * time in the background, keeping the song's version (the same picture);
+ * one of no song goes. A server's old ones go: they are fetched when shown.
+ */
+async function convertLegacy() {
+  for (const id of serverIds()) {
+    for (const old of storeOf(id).legacy()) fs.rmSync(old.file, { force: true });
+  }
+  const store = localStore();
+  for (const old of store.legacy()) {
+    if (legacyStopped) return;
+    const song = model.songById(library.get(), old.id);
+    if (song && song.cover && song.cover !== cover.NO_COVER && !store.has(old.id, 'small')) {
+      const pair = await pairOf(old.file).catch(() => null);
+      if (legacyStopped) return;
+      if (pair) {
+        writePair(store, old.id, pair, song.cover);
+        tell(LOCAL, [old.id]);
+      }
+    }
+    fs.rmSync(old.file, { force: true });
+  }
+}
+
 /**
  * Local Files' covers in step with its songs: a song gone takes its cover
  * along (watching every change), a cover of no song is swept at the start,
- * and a song whose cover file went missing is looked for again.
+ * old covers are made into the two sizes, and a song whose cover file went
+ * missing is looked for again.
  */
 function watchLocal() {
   const withCover = () => new Set(library.get().songs.filter((s) => s.cover && s.cover !== cover.NO_COVER).map((s) => s.id));
   const store = localStore();
   store.sweep(new Set(library.get().songs.map((s) => s.id)));
-  const lost = library.get().songs.filter((s) => s.cover && s.cover !== cover.NO_COVER && !store.has(s.id)).map((s) => s.id);
+  const old = new Set(store.legacy().map((x) => x.id));
+  const lost = library.get().songs.filter((s) => s.cover && s.cover !== cover.NO_COVER && !store.has(s.id, 'small') && !store.has(s.id, 'big') && !old.has(s.id)).map((s) => s.id);
   if (lost.length) {
     library.mutate((d) => {
       for (const id of lost) if (model.songById(d, id)) model.setCover(d, id, null);
     });
   }
+  convertLegacy().catch(() => {}).finally(() => fillerRun());
   let known = withCover();
   library.onChange((data) => {
     const now = new Set(data.songs.map((s) => s.id));
@@ -351,22 +511,19 @@ function watchLocal() {
   });
 }
 
-/** A server song's cover copied to its copy in Local Files (a playlist downloaded): the version, or null. */
+/** A server song's covers copied to its copy in Local Files (a playlist downloaded): the version, or null. */
 function copyToLocal(serverId, serverSongId, localId) {
   try {
-    const jpeg = storeOf(serverId).read(serverSongId);
-    return jpeg ? localStore().write(localId, jpeg) : null;
+    return storeOf(serverId).copyTo(serverSongId, localStore(), localId) || null;
   } catch {
     return null;
   }
 }
 
-/** A Local Files song's cover as a server song's (it was uploaded): true when copied. */
+/** A Local Files song's covers as a server song's (it was uploaded): true when copied. */
 function copyToServer(localId, serverId, serverSongId) {
   try {
-    const jpeg = localStore().read(localId);
-    if (!jpeg) return false;
-    storeOf(serverId).write(serverSongId, jpeg);
+    if (!localStore().copyTo(localId, storeOf(serverId), serverSongId)) return false;
     tell(serverId, [serverSongId]);
     return true;
   } catch {
@@ -383,6 +540,11 @@ function moveFolder(oldMusicDir, newMusicDir, name = paths.COVERS) {
   const from = path.join(oldMusicDir, name);
   const to = path.join(newMusicDir, name);
   if (!fs.existsSync(from)) return;
+  if (name === paths.COVERS) {
+    flush();
+    for (const store of stores.values()) store.forget();
+    stores.clear();
+  }
   try {
     if (!fs.existsSync(to)) {
       fs.renameSync(from, to);
@@ -400,6 +562,7 @@ function moveFolder(oldMusicDir, newMusicDir, name = paths.COVERS) {
 }
 
 module.exports = {
-  LOCAL, storeOf, localStore, dirOf, onUpdated, tell, keepLocal, takeFromFile, createFiller, watchLocal,
+  LOCAL, storeOf, localStore, dirOf, serverIds, removeServer, flush, pairOf, writePair, tagPicture,
+  onUpdated, tell, keepLocal, takeFromFile, createFiller, watchLocal,
   copyToLocal, copyToServer, moveFolder, stage, stagedCover, dropStaged, adoptStaged, onStaged,
 };

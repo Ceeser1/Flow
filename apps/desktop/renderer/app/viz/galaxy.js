@@ -227,17 +227,16 @@
 
   Visualizer.add({
     id: 'galaxy',
-    name: 'Galaxy',
-    desc: 'A spiral galaxy turning, the music running through it in rings: the bass in the core, the highs at the rim',
+    name: T('viz.galaxy.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 12c0-3 3-5 6-3M12 12c0 3-3 5-6 3M12 12c3 0 5 3 3 6M12 12c-3 0-5-3-3-6"/><circle cx="12" cy="12" r="1"/></svg>',
     gl: true,
     create: (canvas) => new Galaxy(canvas),
     options: [
-      { type: 'choice', key: 'gxArms', label: 'Arms', choices: [['2', '2'], ['3', '3'], ['4', '4'], ['6', '6']] },
-      { type: 'choice', key: 'gxColors', label: 'Colors', choices: [['classic', 'Classic'], ['neon', 'Neon'], ['fire', 'Fire'], ['ice', 'Ice']] },
-      { type: 'slider', key: 'gxSpin', label: 'Turning', min: 0, max: 300, step: 5 },
-      { type: 'choice', key: 'gxView', label: 'View', choices: [['face', 'From above'], ['slant', 'Slanted'], ['edge', 'Edge on']] },
+      { type: 'choice', key: 'gxArms', label: T('viz.galaxy.setting.arms'), choices: [['2', '2'], ['3', '3'], ['4', '4'], ['6', '6']] },
+      { type: 'choice', key: 'gxColors', label: T('viz.shared.colors'), choices: [['classic', T('viz.shared.classic')], ['neon', T('viz.shared.neon')], ['fire', T('viz.shared.fire')], ['ice', T('viz.shared.ice')]] },
+      { type: 'slider', key: 'gxSpin', label: T('viz.shared.turning'), min: 0, max: 300, step: 5 },
+      { type: 'choice', key: 'gxView', label: T('viz.shared.view'), choices: [['face', T('viz.shared.fromAbove')], ['slant', T('viz.shared.slanted')], ['edge', T('viz.shared.edgeOn')]] },
     ],
   });
 })();

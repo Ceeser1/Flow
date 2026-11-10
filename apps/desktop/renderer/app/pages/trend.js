@@ -41,17 +41,17 @@ const TrendPage = {
       columns: [
         {
           key: 'name',
-          label: 'Name',
+          label: T('common.name'),
           cls: 'col-name',
           render: (p) => h('button.link-cell', { type: 'button', onclick: () => Nav.openPlaylist(p.id) },
             h('span.link-cell__icon', { html: listIcon(p) }),
             h('span.link-cell__name', p.name)),
         },
-        { key: 'desc', label: 'Made from', cls: 'col-owner', render: (p) => h('span.muted-text', p.desc || '') },
-        { key: 'songs', label: 'Songs', cls: 'col-num', render: (p) => String(p.entries.length) },
-        { key: 'duration', label: 'Duration', cls: 'col-num', render: (p) => Util.fmtClock(Store.totalDuration(p.id)) },
+        { key: 'desc', label: T('trend.column.madeFrom'), cls: 'col-owner', render: (p) => h('span.muted-text', p.desc || '') },
+        { key: 'songs', label: T('common.songs'), cls: 'col-num', render: (p) => String(p.entries.length) },
+        { key: 'duration', label: T('common.duration'), cls: 'col-num', render: (p) => Util.fmtClock(Store.totalDuration(p.id)) },
         // Your own time listening to it, as the list playing.
-        { key: 'listened', label: 'Listen Duration', cls: 'col-listened', render: (p) => Util.fmtClock(Store.listenedTo(p.id)) },
+        { key: 'listened', label: T('common.listenDuration'), cls: 'col-listened', render: (p) => Util.fmtClock(Store.listenedTo(p.id)) },
       ],
       mobile: listRowSpec((p) => [p.desc || '', Util.plural(p.entries.length, 'song')].filter(Boolean).join(' · ')),
     });

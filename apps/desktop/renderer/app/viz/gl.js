@@ -378,30 +378,32 @@ const VizGL = {
       prog = this.program(gl, `
         layout(location = 0) in vec2 pos;
         layout(location = 1) in vec4 color;
-        layout(location = 2) in float across;
+        layout(location = 2) in vec2 across;
         uniform vec2 res;
         out vec4 c;
-        out float x;
+        out vec2 x;
         void main() {
           c = color;
           x = across;
           gl_Position = vec4(pos.x / res.x * 2.0 - 1.0, 1.0 - pos.y / res.y * 2.0, 0.0, 1.0);
         }`, `
         in vec4 c;
-        in float x;
+        in vec2 x;
         out vec4 o;
         void main() {
-          float f = max(0.0, 1.0 - x * x);
+          // x: across a line (along it 0), or out from a dot's middle.
+          float f = max(0.0, 1.0 - dot(x, x));
           f *= f;
           o = vec4(c.rgb * c.a * f, c.a * f);
         }`);
       this._lines.set(gl, prog);
     }
-    const stream = this.stream(gl, [[0, 2], [1, 4], [2, 1]], capacity);
+    const stream = this.stream(gl, [[0, 2], [1, 4], [2, 2]], capacity);
     const d = stream.data;
-    // One vertex at k: its place, colour, alpha and side (s, across it).
-    // Nothing made per call: Ridges and Seismograph add thousands a frame.
-    const vertex = (k, x, y, r, g, b, al, s) => {
+    // One vertex at k: its place, colour, alpha and side (s, across it; t,
+    // along it, 0 but on a dot). Nothing made per call: Ridges and
+    // Seismograph add thousands a frame.
+    const vertex = (k, x, y, r, g, b, al, s, t = 0) => {
       d[k] = x;
       d[k + 1] = y;
       d[k + 2] = r;
@@ -409,6 +411,7 @@ const VizGL = {
       d[k + 4] = b;
       d[k + 5] = al;
       d[k + 6] = s;
+      d[k + 7] = t;
     };
     // seg's and tri's numbers on their way in: they themselves are small
     // enough to be inlined where they are called, and hand them over in here
@@ -429,22 +432,41 @@ const VizGL = {
       const len = Spectrum.hypot(x1 - x0, y1 - y0) || 1;
       const nx = (-(y1 - y0) / len) * width;
       const ny = ((x1 - x0) / len) * width;
-      const k = l.count * 7;
+      const k = l.count * 8;
       vertex(k, x0 + nx, y0 + ny, r, g, b, a, 1);
-      vertex(k + 7, x0 - nx, y0 - ny, r, g, b, a, -1);
-      vertex(k + 14, x1 + nx, y1 + ny, r, g, b, a1, 1);
-      vertex(k + 21, x1 + nx, y1 + ny, r, g, b, a1, 1);
-      vertex(k + 28, x0 - nx, y0 - ny, r, g, b, a, -1);
-      vertex(k + 35, x1 - nx, y1 - ny, r, g, b, a1, -1);
+      vertex(k + 8, x0 - nx, y0 - ny, r, g, b, a, -1);
+      vertex(k + 16, x1 + nx, y1 + ny, r, g, b, a1, 1);
+      vertex(k + 24, x1 + nx, y1 + ny, r, g, b, a1, 1);
+      vertex(k + 32, x0 - nx, y0 - ny, r, g, b, a, -1);
+      vertex(k + 40, x1 - nx, y1 - ny, r, g, b, a1, -1);
+      l.count += 6;
+    };
+    // A dot: a square round it, falling off from its middle (arg: x, y, radius, a).
+    const dotFrom = (rgb) => {
+      if (l.count > capacity - 6) return;
+      const x = arg[0];
+      const y = arg[1];
+      const rad = arg[2];
+      const a = arg[3];
+      const r = rgb[0];
+      const g = rgb[1];
+      const b = rgb[2];
+      const k = l.count * 8;
+      vertex(k, x - rad, y - rad, r, g, b, a, -1, -1);
+      vertex(k + 8, x + rad, y - rad, r, g, b, a, 1, -1);
+      vertex(k + 16, x - rad, y + rad, r, g, b, a, -1, 1);
+      vertex(k + 24, x - rad, y + rad, r, g, b, a, -1, 1);
+      vertex(k + 32, x + rad, y - rad, r, g, b, a, 1, -1);
+      vertex(k + 40, x + rad, y + rad, r, g, b, a, 1, 1);
       l.count += 6;
     };
     const triFrom = (rgb) => {
       if (l.count > capacity - 3) return;
-      const k = l.count * 7;
+      const k = l.count * 8;
       const a = arg[6];
       vertex(k, arg[0], arg[1], rgb[0], rgb[1], rgb[2], a, 0);
-      vertex(k + 7, arg[2], arg[3], rgb[0], rgb[1], rgb[2], a, 0);
-      vertex(k + 14, arg[4], arg[5], rgb[0], rgb[1], rgb[2], a, 0);
+      vertex(k + 8, arg[2], arg[3], rgb[0], rgb[1], rgb[2], a, 0);
+      vertex(k + 16, arg[4], arg[5], rgb[0], rgb[1], rgb[2], a, 0);
       l.count += 3;
     };
     const l = {
@@ -470,9 +492,13 @@ const VizGL = {
         arg[6] = a;
         triFrom(rgb);
       },
-      /** A round dot: a short segment as long as it is wide. */
+      /** A round dot, soft from its middle out to `radius`. */
       dot(x, y, radius, rgb, a) {
-        l.seg(x - radius * 0.5, y, x + radius * 0.5, y, radius, rgb, a);
+        arg[0] = x;
+        arg[1] = y;
+        arg[2] = radius;
+        arg[3] = a;
+        dotFrom(rgb);
       },
       draw(w, h) {
         if (!l.count) return;

@@ -177,16 +177,15 @@
 
   Visualizer.add({
     id: 'spectrogram',
-    name: 'Spectrogram',
-    desc: 'The music as a heat map flowing past: pitch up the screen, time across, every kick, note and cymbal leaving its mark',
+    name: T('viz.spectrogram.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M6 17h3M11 17h2M15 17h3M6 13h2M10 13h5M7 9h2M13 9h3M9 6h1"/></svg>',
     gl: true,
     create: (canvas) => new Spectrogram(canvas),
     options: [
-      { type: 'choice', key: 'sgColors', label: 'Colors', choices: [['inferno', 'Inferno'], ['magma', 'Magma'], ['viridis', 'Viridis'], ['ice', 'Ice'], ['grey', 'Grey']] },
-      { type: 'slider', key: 'sgSpeed', label: 'Speed', min: 25, max: 300, step: 5 },
-      { type: 'check', key: 'sgGrid', label: 'Octaves' },
+      { type: 'choice', key: 'sgColors', label: T('viz.shared.colors'), choices: [['inferno', 'Inferno'], ['magma', 'Magma'], ['viridis', 'Viridis'], ['ice', T('viz.shared.ice')], ['grey', T('viz.spectrogram.setting.colors.grey')]] },
+      { type: 'slider', key: 'sgSpeed', label: T('viz.shared.speed'), min: 25, max: 300, step: 5 },
+      { type: 'check', key: 'sgGrid', label: T('viz.spectrogram.setting.octaves') },
     ],
   });
 })();

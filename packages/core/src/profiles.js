@@ -9,7 +9,7 @@
 //             no profile, called "Default / Shared": its playlists,
 //             favourites and stats are what an app sees while no profile is
 //             signed in.
-//   profiles  { [profileId]: { playlists: [...], songs: { [songId]: { stats, favouriteAt } }, follows: [playlistId], playlistListened: {...}, listening, statistics } }
+//   profiles  { [profileId]: { playlists: [...], groups: [...] (4.5), songs: { [songId]: { stats, favouriteAt } }, follows: [playlistId], playlistListened: {...}, listening, statistics } }
 //
 // Playlists can be shared (playlist.shared): the other profiles, and the
 // Default, then see them read-only in their view (sharedPlaylists) and can
@@ -22,6 +22,12 @@
 //
 // A new profile starts with a copy of the Default / Shared playlists (each with
 // an id of its own). Favourites and stats stay with the Default.
+//
+// Favourites (4.3) are a playlist of each owner's own (FAV_PREFIX + owner id,
+// favourites: true), shared and followed like any other; a song's favouriteAt
+// in a view is when it went into that list. Before 4.3 they were each song's
+// favouriteAt (the Default's in data.songs, a profile's in its songs):
+// ensureFavourites turns those into the lists once.
 
 const crypto = require('crypto');
 const model = require('./libraryModel');
@@ -34,9 +40,55 @@ const randomId = () => crypto.randomBytes(6).toString('hex');
 // What a song has once per profile; everything else about it is shared.
 const OWN = ['stats', 'favouriteAt'];
 
+// The id of an owner's Favourites playlist.
+const FAV_PREFIX = 'fav-';
+const favId = (ownerId) => `${FAV_PREFIX}${ownerId}`;
+
 function hasOwn(entry) {
   const st = entry.stats || {};
   return !!(entry.favouriteAt || st.sessions || st.plays || st.stops || st.skips || st.listened || st.lastPlayedAt);
+}
+
+/** An owner's Favourites playlist made from songs' favouriteAt (by star time): [{ id, favouriteAt }]. */
+function favouritesFrom(ownerId, starred, now = Date.now()) {
+  const entries = starred.filter((x) => x.favouriteAt).sort((a, b) => a.favouriteAt - b.favouriteAt)
+    .map((x) => ({ songId: x.id, addedAt: x.favouriteAt }));
+  return {
+    id: favId(ownerId), name: 'Favourites', createdAt: entries.length ? entries[0].addedAt : now, entries, source: null, shared: false, rules: null, favourites: true,
+  };
+}
+
+/**
+ * Every owner gets its Favourites playlist (4.3), made once from the songs'
+ * favouriteAt; a profile's songs keep only their stats after it, and the
+ * Default's songs carry the list's times. Answers whether anything changed.
+ */
+function ensureFavourites(data, profiles, now = Date.now()) {
+  let changed = false;
+  if (!model.favouritesList(data)) {
+    data.playlists.unshift(favouritesFrom(DEFAULT_OWNER, data.songs, now));
+    changed = true;
+  }
+  syncStars(data.songs, model.favouritesList(data));
+  for (const [id, p] of Object.entries(profiles)) {
+    if (!model.favouritesList(p)) {
+      p.playlists.unshift(favouritesFrom(id, Object.entries(p.songs).map(([sid, e]) => ({ id: sid, favouriteAt: e.favouriteAt })), now));
+      changed = true;
+    }
+    for (const [sid, e] of Object.entries(p.songs)) {
+      if (e.favouriteAt === undefined) continue;
+      delete e.favouriteAt;
+      changed = true;
+      if (!hasOwn(e)) delete p.songs[sid];
+    }
+  }
+  return changed;
+}
+
+/** Songs' favouriteAt set from a Favourites playlist (when each went in), null for the rest. */
+function syncStars(songs, fav) {
+  const at = new Map((fav ? fav.entries : []).map((e) => [e.songId, e.addedAt]));
+  for (const s of songs) s.favouriteAt = at.get(s.id) || null;
 }
 
 /** One profile's part, repaired against the library's songs. */
@@ -45,9 +97,9 @@ function cleanProfile(data, raw) {
   // sanitize() already knows how playlists must look and drops entries for
   // songs that are not there.
   const {
-    playlists, follows, playlistListened, listening, statistics,
+    playlists, groups, follows, playlistListened, listening, statistics,
   } = model.sanitize({
-    songs: data.songs, playlists: r.playlists, follows: r.follows, playlistListened: r.playlistListened, listening: r.listening, statistics: r.statistics,
+    songs: data.songs, playlists: r.playlists, groups: r.groups, follows: r.follows, playlistListened: r.playlistListened, listening: r.listening, statistics: r.statistics,
   });
   const known = new Set(data.songs.map((s) => s.id));
   const songs = {};
@@ -59,7 +111,7 @@ function cleanProfile(data, raw) {
     if (hasOwn(kept)) songs[id] = kept;
   }
   return {
-    playlists, songs, follows, playlistListened, listening, statistics,
+    playlists, groups, songs, follows, playlistListened, listening, statistics,
   };
 }
 
@@ -92,6 +144,7 @@ function sharedFor(data, profiles, names, viewerId) {
         entries: p.entries.map((e) => ({ ...e })),
         ownerId,
         ownerName,
+        ...(p.favourites ? { favourites: true } : {}),
       });
     }
   };
@@ -108,17 +161,24 @@ function sharedFor(data, profiles, names, viewerId) {
  */
 function view(data, profiles, profileId, names = {}) {
   const sharedPlaylists = sharedFor(data, profiles, names, profileId || null);
-  if (!profileId) return { ...data, follows: (data.follows || []).slice(), statistics: copyStatistics(data.statistics), sharedPlaylists };
+  if (!profileId) {
+    // The Default's songs carry its stars themselves, as its Favourites list has them.
+    syncStars(data.songs, model.favouritesList(data));
+    return { ...data, groups: data.groups || [], follows: (data.follows || []).slice(), statistics: copyStatistics(data.statistics), sharedPlaylists };
+  }
   const p = profiles[profileId] || {
-    playlists: [], songs: {}, follows: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(),
+    playlists: [], groups: [], songs: {}, follows: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(),
   };
+  const fav = model.favouritesList(p);
+  const starred = new Map((fav ? fav.entries : []).map((e) => [e.songId, e.addedAt]));
   return {
     ...data,
     songs: data.songs.map((s) => {
       const own = p.songs[s.id];
-      return { ...s, stats: own ? { ...own.stats } : model.emptyStats(), favouriteAt: own ? own.favouriteAt : null };
+      return { ...s, stats: own ? { ...own.stats } : model.emptyStats(), favouriteAt: starred.get(s.id) || null };
     }),
     playlists: p.playlists,
+    groups: p.groups || [],
     follows: (p.follows || []).slice(),
     playlistListened: { ...(p.playlistListened || {}) },
     listening: copyListening(p.listening),
@@ -137,6 +197,7 @@ function absorb(data, profiles, profileId, v) {
     // The Default's view is a copy of `data`: what commands changed goes back.
     data.songs = v.songs;
     data.playlists = v.playlists;
+    data.groups = v.groups || [];
     data.ignoredFiles = v.ignoredFiles;
     data.follows = v.follows;
     data.playlistListened = v.playlistListened || {};
@@ -157,13 +218,14 @@ function absorb(data, profiles, profileId, v) {
       shared.favouriteAt = null;
     }
     songs.push(shared);
-    const mine = { stats: vs.stats, favouriteAt: vs.favouriteAt };
+    // Its star is in the profile's Favourites list.
+    const mine = { stats: vs.stats };
     if (hasOwn(mine)) own[vs.id] = mine;
   }
   data.songs = songs;
   data.ignoredFiles = v.ignoredFiles;
   profiles[profileId] = {
-    playlists: v.playlists, songs: own, follows: v.follows, playlistListened: v.playlistListened || {}, listening: v.listening || emptyListening(),
+    playlists: v.playlists, groups: v.groups || [], songs: own, follows: v.follows, playlistListened: v.playlistListened || {}, listening: v.listening || emptyListening(),
     statistics: v.statistics || emptyStatistics(),
   };
   prune(data, profiles);
@@ -186,6 +248,8 @@ function prune(data, profiles) {
   for (const p of Object.values(profiles)) for (const l of p.playlists) lists.add(l.id);
   data.follows = (data.follows || []).filter((id) => lists.has(id));
   for (const p of Object.values(profiles)) p.follows = (p.follows || []).filter((id) => lists.has(id));
+  // And out of the groups it was put into (4.5.1).
+  for (const owner of [data, ...Object.values(profiles)]) model.keepFollowedInGroups(owner.groups, owner.follows);
   // Time listened to a list goes when the list is gone, or is another
   // profile's and no longer followed (All Songs, Favourites and the Listen
   // behaviour lists are always there).
@@ -208,15 +272,31 @@ function prune(data, profiles) {
  */
 function addProfile(data, profiles, profileId, newId = randomId, now = Date.now()) {
   if (profiles[profileId]) return;
-  const playlists = data.playlists.map((p) => ({
-    ...p,
-    id: newId(),
-    entries: p.entries.map((e) => ({ ...e })),
-    source: p.source ? { ...p.source } : null,
-    shared: false,
-  }));
+  // The groups too (4.5), under new ids, the copied playlists in them.
+  const groupIds = new Map();
+  const groups = (data.groups || []).map((g) => {
+    const id = newId();
+    groupIds.set(g.id, id);
+    // Without the Default's follows (4.5.1): a new profile follows nothing.
+    const copy = { ...g, id };
+    delete copy.followed;
+    return copy;
+  });
+  const playlists = data.playlists.filter((p) => !p.favourites).map((p) => {
+    const copy = {
+      ...p,
+      id: newId(),
+      entries: p.entries.map((e) => ({ ...e })),
+      source: p.source ? { ...p.source } : null,
+      shared: false,
+    };
+    if (p.group && groupIds.has(p.group)) copy.group = groupIds.get(p.group);
+    else delete copy.group;
+    return copy;
+  });
+  playlists.unshift(favouritesFrom(profileId, [], now));
   profiles[profileId] = {
-    playlists, songs: {}, follows: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(now),
+    playlists, groups, songs: {}, follows: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(now),
   };
 }
 
@@ -274,4 +354,73 @@ function ownerSummary(data, profiles, ownerId) {
   return { addedSongs: data.songs.filter((s) => s.addedBy === ownerId).length, ...listenTotals(stats) };
 }
 
-module.exports = { ownerSummary, startStatistics, songsOfOthers, sanitizeProfiles, view, absorb, prune, addProfile, removeProfile, sharedFor, DEFAULT_OWNER, DEFAULT_NAME };
+/** The playlists of an owner (a profile, or DEFAULT_OWNER), or null for one that is not there. */
+function playlistsOf(data, profiles, ownerId) {
+  if (ownerId === DEFAULT_OWNER) return data.playlists;
+  return profiles[ownerId] ? profiles[ownerId].playlists : null;
+}
+
+/** Who has `playlistId`: DEFAULT_OWNER, a profile id, or null for no one. */
+function playlistOwner(data, profiles, playlistId) {
+  if (data.playlists.some((p) => p.id === playlistId)) return DEFAULT_OWNER;
+  for (const [id, p] of Object.entries(profiles)) if (p.playlists.some((l) => l.id === playlistId)) return id;
+  return null;
+}
+
+/**
+ * Every playlist on the server with its owner, for the Administration's All
+ * Playlists: [{ id, name, ownerId, songs, seconds, smart, shared }]. A smart
+ * playlist's songs are the apps' to work out from its rules (songs and
+ * seconds null).
+ */
+function allPlaylists(data, profiles) {
+  const length = new Map(data.songs.map((s) => [s.id, Number(s.duration) || 0]));
+  const row = (ownerId, p) => {
+    const smart = !!p.rules;
+    return {
+      id: p.id,
+      name: p.name,
+      ownerId,
+      songs: smart ? null : p.entries.length,
+      seconds: smart ? null : Math.round(p.entries.reduce((n, e) => n + (length.get(e.songId) || 0), 0)),
+      smart,
+      shared: !!p.shared,
+    };
+  };
+  // Each owner's Favourites stays its own: not listed to be given away.
+  const ordinary = (p) => !p.favourites;
+  return [
+    ...data.playlists.filter(ordinary).map((p) => row(DEFAULT_OWNER, p)),
+    ...Object.entries(profiles).flatMap(([id, pr]) => pr.playlists.filter(ordinary).map((p) => row(id, p))),
+  ];
+}
+
+/**
+ * Gives a playlist to another owner (a profile, or DEFAULT_OWNER): the same
+ * playlist, id, songs, rules, source and sharing, so whoever follows it still
+ * does, now in the new owner's playlists (at their end). The new owner no
+ * longer follows it (it is its own); a name it has already gets "(2)". The
+ * old owner's time listened to it goes (prune), as with any list it lost.
+ * Answers its name there; throws for a playlist or owner not there.
+ */
+function movePlaylist(data, profiles, playlistId, toOwner) {
+  const from = playlistOwner(data, profiles, playlistId);
+  if (!from) throw new Error('That playlist no longer exists.');
+  const target = playlistsOf(data, profiles, toOwner);
+  if (!target) throw new Error('That profile no longer exists.');
+  const source = playlistsOf(data, profiles, from);
+  const playlist = source.find((p) => p.id === playlistId);
+  if (playlist.favourites) throw new Error('Favourites always stay with their profile.');
+  if (from === toOwner) return playlist.name;
+  source.splice(source.indexOf(playlist), 1);
+  playlist.name = model.freePlaylistName({ playlists: target }, playlist.name);
+  target.push(playlist);
+  const owner = toOwner === DEFAULT_OWNER ? data : profiles[toOwner];
+  owner.follows = (owner.follows || []).filter((id) => id !== playlistId);
+  prune(data, profiles);
+  return playlist.name;
+}
+
+module.exports = {
+  allPlaylists, playlistOwner, movePlaylist, ownerSummary, startStatistics, songsOfOthers, sanitizeProfiles, view, absorb, prune, addProfile, removeProfile, sharedFor, ensureFavourites, favId, FAV_PREFIX, DEFAULT_OWNER, DEFAULT_NAME,
+};

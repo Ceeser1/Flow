@@ -42,6 +42,8 @@ const DESKTOP = {
   guests: true,
   // Settings' Equalizer shapes the sound (here in Web Audio, on Android in its player).
   soundEq: true,
+  // Songs of this device's own: Add Songs' "Open local File(s)" / "Open local Folder", Local Files.
+  localFiles: true,
 };
 
 const ANDROID = {
@@ -81,4 +83,36 @@ const IOS = {
   soundEq: false,
 };
 
-module.exports = { DESKTOP, ANDROID, IOS };
+// The web player (apps/web): a page in a browser that only plays a Flow
+// Server's songs. Nothing of the device's own, nothing kept for offline; the
+// page hears the music (Web Audio), so the visualizers and the Equalizer are
+// there. uiMode 'mobile' (a phone's browser) leaves out what the phone's
+// layout has no room for (main.js of apps/web).
+const WEB = {
+  downloadHere: false,
+  outputDevices: false,
+  systemOutput: false,
+  shutdown: false,
+  musicFolder: false,
+  effects: true,
+  keyboard: true,
+  localTrim: false,
+  moveOriginals: false,
+  offline: false,
+  volume: true,
+  songTransition: true,
+  measureLoudness: false,
+  batteryHelp: false,
+  // Safari has no Vorbis decoder: the page asks the browser (main.js of apps/web).
+  vorbis: true,
+  backups: false,
+  scanQr: false,
+  // Other servers are found on the home network, which a browser cannot search.
+  guests: false,
+  soundEq: true,
+  localFiles: false,
+};
+
+module.exports = {
+  DESKTOP, ANDROID, IOS, WEB,
+};

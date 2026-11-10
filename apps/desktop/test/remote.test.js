@@ -116,6 +116,31 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.throws(() => remote.command('createPlaylist', { playlistId: '', name: 'No id' }));
   });
 
+  await t.test('a song deleted from the folder by hand stays on the server; only its X deletes it there', async () => {
+    const file = path.join(process.env.FLOW_MUSIC, 'Massive Attack - Teardrop.mp3');
+    fs.writeFileSync(file, FAKE_MP3);
+    library.mutate((d) => model.addSong(d, {
+      id: 'tear1', file, title: 'Teardrop', artist: 'Massive Attack', mix: '', duration: 330, format: 'mp3', addedAt: Date.now(),
+    }));
+    await remote.syncNow();
+    await until(async () => (await serverLibrary(one.base)).songs.some((s) => s.id === 'tear1'), 'the upload');
+    remote.command('addSongsToPlaylist', { playlistId: 'eve1', songIds: ['tear1'] });
+    const inEvening = async () => (await serverLibrary(one.base)).playlists.find((p) => p.id === 'eve1').entries.some((e) => e.songId === 'tear1');
+    await until(inEvening, 'the song in the playlist');
+
+    fs.rmSync(file);
+    await remote.syncNow();
+    assert.equal(remote.status().queued, 0);
+    assert.ok((await serverLibrary(one.base)).songs.some((s) => s.id === 'tear1'));
+    assert.ok(await inEvening());
+    // Streamed from now on: still in the view, no copy here.
+    assert.ok(model.songById(remote.view(), 'tear1'));
+    assert.equal(remote.localFileOf('tear1'), null);
+
+    await remote.deleteSong('tear1', false);
+    await until(async () => !(await serverLibrary(one.base)).songs.some((s) => s.id === 'tear1'), 'the delete');
+  });
+
   await t.test('a song only the server has: downloaded, and dropped again', async () => {
     const meta = { title: 'Glory Box', artist: 'Portishead', format: 'mp3', duration: 301 };
     const r = await fetch(`${one.base}/api/songs/glory1?meta=${encodeURIComponent(JSON.stringify(meta))}`, { method: 'PUT', body: FAKE_MP3 });
@@ -218,6 +243,9 @@ test('a Flow Server as the library, step by step', async (t) => {
     const night = (await remote.loadProfiles()).find((p) => p.name === 'Night Listener');
     await remote.loginProfile(night.id, '4321');
     assert.equal(remote.status().statistics, true);
+    // Its totals come when Settings shows them (4.3), not with the library.
+    assert.equal(remote.status().tracked.some((r) => r.profileId === night.id && r.statistics.seconds), false);
+    assert.equal((await remote.loadStatistics()).seconds, 0);
     remote.command('recordListen', {
       songId: 'roads1', listened: 120, duration: 305, tz: 0,
     });
@@ -229,14 +257,44 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.equal(row.supported, true);
     assert.equal(row.statistics.listens, 1);
     assert.ok(row.statistics.since > 0);
-    await until(async () => (await serverLibrary(one.base, remote.status().token)).statistics.seconds === 120, 'the listen on the server');
+    const totals = async () => (await (await fetch(`${one.base}/api/statistics`, { headers: { Authorization: `Bearer ${remote.status().token}` } })).json()).statistics;
+    await until(async () => (await totals()).seconds === 120, 'the listen on the server');
+    // Its stats came back as the song's, the library itself unchanged.
+    await until(() => remote.view().songs.find((s) => s.id === 'roads1').stats.sessions === 1, 'the stats of the song');
     assert.throws(() => remote.removeTracked(row.serverId, night.id), /in use/);
     await remote.logoutProfile();
     // The Default heard it too; it gets no row of its own.
+    await remote.loadStatistics();
     assert.equal(remote.view().statistics.seconds, 120);
     assert.deepEqual(remote.status().tracked.map((r) => r.profileId), [night.id]);
     remote.removeTracked(row.serverId, night.id);
     assert.deepEqual(remote.status().tracked, []);
+  });
+
+  await t.test('4.3: a change made elsewhere arrives on the live channel; Favourites is a playlist', async () => {
+    await until(() => remote.status().live, 'the live channel');
+    // Another device renames the song: pushed here, no asking.
+    const r = await fetch(`${one.base}/api/commands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commands: [{ cid: 'elsewhere-1', at: Date.now(), type: 'editSong', songId: 'roads1', artist: 'Portishead', title: 'Roads', mix: 'Pushed' }] }),
+    });
+    assert.equal(r.status, 200);
+    await until(() => remote.view().songs.find((s) => s.id === 'roads1').mix === 'Pushed', 'the pushed rename', 3000);
+    // The star puts it into Favourites, the window's 'favourites', the server's fav-default.
+    remote.command('setFavourite', { songId: 'roads1', on: true });
+    assert.ok(remote.view().songs.find((s) => s.id === 'roads1').favouriteAt, 'starred at once');
+    assert.deepEqual(model.playlistById(remote.view(), 'favourites').entries.map((e) => e.songId), ['roads1']);
+    const fav = async () => (await serverLibrary(one.base)).playlists.find((p) => p.favourites);
+    await until(async () => (await fav()).entries.length === 1, 'the star on the server');
+    assert.equal((await fav()).id, 'fav-default');
+    // Shared like any playlist of its own.
+    remote.command('setPlaylistShared', { playlistId: 'favourites', shared: true });
+    await until(() => one.server.library.data.playlists.find((p) => p.favourites).shared, 'Favourites shared');
+    remote.command('setPlaylistShared', { playlistId: 'favourites', shared: false });
+    remote.command('setFavourite', { songId: 'roads1', on: false });
+    await until(async () => (await fav()).entries.length === 0 && !one.server.library.data.playlists.find((p) => p.favourites).shared, 'back as it was');
+    assert.equal(remote.view().songs.find((s) => s.id === 'roads1').favouriteAt, null);
   });
 
   await t.test('Administration: an admin profile, the rules, the master changing the password', async () => {

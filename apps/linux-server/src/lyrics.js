@@ -5,8 +5,12 @@
 // before that, then kept in <home>/lyrics/<song id>.json (none found: asked
 // again after a week when an app asks; the song renamed or trimmed: at
 // once). One lookup at a time per song, however many apps ask. Lyrics
-// written or edited in an app (4.0.1, put) are kept for good instead. The
-// apps keep copies of them (4.0.1, index and many: GET / POST /api/lyrics).
+// written or edited in an app (4.0, put) are kept for good instead. The
+// apps keep copies of them: each song in the library carries the stamp of
+// its lyrics (4.3.1, index; server.js), so an app asks for a song's only
+// when it is played and its copy is not that one (or for many at once, the
+// songs it keeps for offline: POST /api/lyrics). onChange(id): a song's
+// lyrics kept anew.
 
 const fs = require('fs');
 const path = require('path');
@@ -21,8 +25,18 @@ const FAIL_WAIT_MS = 10 * 60 * 1000;
 
 /** dir: where they are kept; lookup: how a song's are found (the tests' fake); pauseMs, failWaitMs: the filler's. */
 function createLyricsStore({
-  dir, lookup = lyrics.lookupLyrics, log = () => {}, pauseMs = PAUSE_MS, failWaitMs = FAIL_WAIT_MS,
+  dir, lookup = lyrics.lookupLyrics, log = () => {}, pauseMs = PAUSE_MS, failWaitMs = FAIL_WAIT_MS, onChange = () => {},
 }) {
+  const changed = (id) => {
+    // Its file is looked at again for its stamp (index).
+    seen.delete(id);
+    if (have) have.add(id);
+    try {
+      onChange(id);
+    } catch {
+      // The next look at the stamps.
+    }
+  };
   const running = new Map();
   const fileOf = (id) => path.join(dir, `${id}.json`);
 
@@ -40,6 +54,7 @@ function createLyricsStore({
         if (now && now.own) return lyrics.clean(now);
         fs.mkdirSync(dir, { recursive: true });
         writeJsonAtomic(fileOf(song.id), lyrics.toKeep(found, song));
+        changed(song.id);
         return lyrics.clean(found);
       } catch (err) {
         log(`Lyrics of "${song.title}" could not be looked up: ${err.message}`);
@@ -64,34 +79,57 @@ function createLyricsStore({
     failed.delete(song.id);
     if (!own) {
       fs.rmSync(fileOf(song.id), { force: true });
+      changed(song.id);
       return get(song).catch(() => ({ ...lyrics.NONE }));
     }
     fs.mkdirSync(dir, { recursive: true });
     writeJsonAtomic(fileOf(song.id), lyrics.toKeep(own, song));
+    changed(song.id);
     return Promise.resolve(lyrics.clean(own));
   }
 
   // For the apps' copies (index, many): each file's stamp (its size and time)
-  // and what it was kept for, read once a stamp.
+  // and what it was kept for, looked at once (4.3.5): this store writes every
+  // one of them and forgets the stamp when it does (changed). A file put in
+  // by hand is seen at the next start. NONE: no file for that song.
   const seen = new Map();
+  const NONE = { none: true };
+  // The songs with a file, from one listing of the folder at the first look (100 000 songs: no look at each).
+  let have = null;
+
+  /** At the first look, which songs have a file at all: one listing instead of a look per song (100 000 songs). */
+  function listOnce() {
+    if (have) return;
+    let names = [];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      names = [];
+    }
+    have = new Set(names.filter((n) => n.endsWith('.json')).map((n) => n.slice(0, -5)));
+  }
 
   /** The answer kept for `song` that still stands for its names (or own), with its stamp; null without one. */
   function keptFor(song) {
     if (!song || !ID.test(String(song.id))) return null;
-    let st;
-    try {
-      st = fs.statSync(fileOf(song.id));
-    } catch {
-      return null;
-    }
-    const stamp = `${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}`;
+    listOnce();
     let s = seen.get(song.id);
-    if (!s || s.stamp !== stamp) {
-      const kept = readJson(fileOf(song.id));
-      if (!kept) return null;
-      s = { stamp, key: kept.key, own: kept.own === true };
+    if (!s) {
+      if (!have.has(song.id)) {
+        s = NONE;
+      } else {
+        let st = null;
+        try {
+          st = fs.statSync(fileOf(song.id));
+        } catch {
+          st = null;
+        }
+        const kept = st && readJson(fileOf(song.id));
+        s = kept ? { stamp: `${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}`, key: kept.key, own: kept.own === true } : NONE;
+      }
       seen.set(song.id, s);
     }
+    if (s === NONE) return null;
     return s.own || s.key === lyrics.lyricsKey(song) ? s : null;
   }
 
@@ -126,7 +164,9 @@ function createLyricsStore({
     }
     for (const name of names) {
       const id = name.replace(/\.json(\.bak|\.tmp)?$/, '');
-      if (!ids.has(id)) fs.rmSync(path.join(dir, name), { force: true });
+      if (ids.has(id)) continue;
+      fs.rmSync(path.join(dir, name), { force: true });
+      seen.delete(id);
     }
   }
 

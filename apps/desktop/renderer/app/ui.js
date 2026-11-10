@@ -21,7 +21,7 @@ const Modal = {
   open({
     title, body, buttons = [], className = '', onClose, focus, drawer = false, sheet = false, sticky = false, confirmDismiss = null,
   }) {
-    const closeBtn = iconButton('modal__close', Icons.x, 'Close', () => handle.close());
+    const closeBtn = iconButton('modal__close', Icons.x, T('common.close'), () => handle.close());
     const footer = h('div.modal__footer');
     const box = h('div.modal' + (className ? '.' + className : ''), { role: 'dialog', 'aria-modal': 'true', tabIndex: -1 },
       h('div.modal__head', h('h2.modal__title', title), closeBtn),
@@ -115,7 +115,7 @@ const Modal = {
  * { checked } on yes and null on no.
  */
 function confirmDialog({
-  title, message, confirmLabel = 'OK', cancelLabel = 'Cancel', danger = false, kind = '', checkbox = null,
+  title, message, confirmLabel = T('common.ok'), cancelLabel = T('common.cancel'), danger = false, kind = '', checkbox = null,
 }) {
   return new Promise((resolve) => {
     let box = null;
@@ -179,7 +179,7 @@ function actionSheet({ title, subtitle = '', items }) {
 }
 
 /** Asks for a line of text; resolves it, or null when cancelled. */
-function promptDialog({ title, value = '', confirmLabel = 'OK', maxLength = 150 }) {
+function promptDialog({ title, value = '', confirmLabel = T('common.ok'), maxLength = 150 }) {
   return new Promise((resolve) => {
     const input = h('input.input', { type: 'text', value, maxLength, spellcheck: false });
     let answer = null;
@@ -189,7 +189,7 @@ function promptDialog({ title, value = '', confirmLabel = 'OK', maxLength = 150 
       body: [input],
       focus: 'input',
       buttons: [
-        { label: 'Cancel' },
+        { label: T('common.cancel') },
         { label: confirmLabel, kind: 'primary', onClick: () => { answer = input.value; } },
       ],
       onClose: () => resolve(answer),
@@ -209,7 +209,7 @@ function promptDialog({ title, value = '', confirmLabel = 'OK', maxLength = 150 
  * confirm button (or Enter); what it throws is shown in the popup, which stays
  * open, else it closes. Resolves what submit returned, or null when cancelled.
  */
-function formDialog({ title, fields, confirmLabel = 'Submit', submit }) {
+function formDialog({ title, fields, confirmLabel = T('common.confirm'), submit }) {
   return new Promise((resolve) => {
     const error = h('div.form-error');
     const boxes = {};
@@ -234,7 +234,7 @@ function formDialog({ title, fields, confirmLabel = 'Submit', submit }) {
       body: [...rows, error],
       focus: 'input:not(:disabled)',
       buttons: [
-        { label: 'Cancel' },
+        { label: T('common.cancel') },
         {
           label: confirmLabel,
           kind: 'primary',
@@ -327,6 +327,136 @@ async function attempt(fn) {
   }
 }
 
+// ---- long lists ----
+
+/**
+ * A long list drawn only where it shows: the rows on screen and a screen
+ * above and below them are in the page, two spacers stand for the rest,
+ * and scrolling swaps rows in and out (only those coming in are made), so
+ * 100 000 rows cost what 60 do. Every row is as tall as the first one drawn.
+ *
+ * scroller: the element that scrolls; holder: where the rows go (after
+ * what is in it already); count, makeRow(i); spacer(): an empty row of the
+ * holder's kind; height: a row's height until one is measured; hint: where
+ * the list is { top: the scroller's scrollTop, offset: the holder's top in
+ * it, height } (a list drawn again keeps its place without measuring the
+ * page while it is changing); onAdded(nodes), onRemoved(nodes).
+ * Returns { stop(), offset, height }.
+ */
+function windowRows({ scroller, holder, count, makeRow, spacer, height, hint = {}, onAdded, onRemoved }) {
+  const top = spacer();
+  const bottom = spacer();
+  holder.append(top, bottom);
+  const drawn = [];
+  let start = 0;
+  let end = 0;
+  let rowH = hint.height || height;
+  let offset = Number.isFinite(hint.offset) ? hint.offset : 0;
+  let frame = 0;
+  let live = true;
+
+  const range = (scrollTop, view) => {
+    const first = Math.floor((scrollTop - offset) / rowH);
+    const screen = Math.max(1, Math.ceil(view / rowH));
+    const clamp = (n) => Math.max(0, Math.min(count, n));
+    return [clamp(first - screen), clamp(first + screen * 2 + 1)];
+  };
+
+  function show([s, e]) {
+    if (s === start && e === end) return;
+    const gone = [];
+    if (s >= end || e <= start) {
+      gone.push(...drawn.splice(0));
+      start = s;
+      end = s;
+    } else {
+      while (start < s) {
+        gone.push(drawn.shift());
+        start += 1;
+      }
+      while (end > e) {
+        gone.push(drawn.pop());
+        end -= 1;
+      }
+    }
+    for (const n of gone) n.remove();
+    const added = [];
+    if (s < start) {
+      const fresh = [];
+      for (let i = s; i < start; i += 1) fresh.push(makeRow(i));
+      top.after(...fresh);
+      drawn.unshift(...fresh);
+      added.push(...fresh);
+      start = s;
+    }
+    if (e > end) {
+      const fresh = [];
+      for (let i = end; i < e; i += 1) fresh.push(makeRow(i));
+      bottom.before(...fresh);
+      drawn.push(...fresh);
+      added.push(...fresh);
+      end = e;
+    }
+    top.style.height = `${start * rowH}px`;
+    bottom.style.height = `${(count - end) * rowH}px`;
+    if (gone.length && onRemoved) onRemoved(gone);
+    if (added.length && onAdded) onAdded(added);
+  }
+
+  const place = () => top.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+
+  // Once a frame while scrolling: where the list is now, measured.
+  function update() {
+    frame = 0;
+    if (!live || !holder.isConnected) return;
+    const view = scroller.clientHeight;
+    // Hidden (another page shows): nothing to measure.
+    if (!view || !top.getClientRects().length) return;
+    let again = false;
+    if (drawn.length) {
+      const h0 = drawn[0].getBoundingClientRect().height;
+      if (h0 > 0 && Math.abs(h0 - rowH) > 0.01) {
+        rowH = h0;
+        again = true;
+      }
+    }
+    const was = offset;
+    offset = place();
+    if (Math.abs(offset - was) > 1) again = true;
+    show(range(scroller.scrollTop, view));
+    // Measured anew (a row's height, the list's place): once more to be sure.
+    if (again) soon();
+  }
+  function soon() {
+    if (!frame && live) frame = requestAnimationFrame(update);
+  }
+  scroller.addEventListener('scroll', soon, { passive: true });
+  window.addEventListener('resize', soon);
+  show(range(Number.isFinite(hint.top) ? hint.top : 0, window.innerHeight));
+  soon();
+  return {
+    stop() {
+      live = false;
+      scroller.removeEventListener('scroll', soon);
+      window.removeEventListener('resize', soon);
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+    },
+    get offset() {
+      return offset;
+    },
+    get height() {
+      return rowH;
+    },
+  };
+}
+
+/** The cover boxes in nodes leaving the page let go (Covers watches them while their pictures come). */
+function releaseCovers(nodes) {
+  if (typeof Covers === 'undefined' || !Covers.release) return;
+  for (const n of nodes) Covers.release(n);
+}
+
 // ---- sortable table ----
 
 /**
@@ -334,13 +464,28 @@ async function attempt(fn) {
  * render(row), onClick(row) }]; onClick makes the whole cell clickable
  * (buttons in it keep their own clicks). `sort` is { key, dir } and onSort(key) is called with the
  * clicked column. rowKey(row) goes on each <tr> as data-id.
+ *
+ * scroller: the element the page scrolls in; given, only the rows where
+ * the list shows are in the page (windowRows), scrollTop: where it is
+ * scrolled (known from its scroll events, not measured while drawing).
+ * onRowsAdded(trs), onRowsRemoved(trs): rows coming in and going.
  */
-function renderTable(table, { columns, rows, sort, onSort, rowKey, rowClass, onRowDblClick, mobile }) {
+function renderTable(table, {
+  columns, rows, sort, onSort, rowKey, rowClass, onRowDblClick, mobile, scroller, scrollTop, onRowsAdded, onRowsRemoved,
+}) {
+  // A list drawn before: where it was, then let go.
+  const before = table._rows;
+  const hint = before ? { top: scrollTop, offset: before.offset, height: before.height } : { top: scrollTop };
+  if (before) before.stop();
+  table._rows = null;
   // The phone draws the rows as a touch list instead (touchList.js).
   if (mobile && document.body.classList.contains('mobile')) {
-    TouchList.render(table, { columns, rows, sort, onSort, rowKey, rowClass, ...mobile });
+    TouchList.render(table, {
+      columns, rows, sort, onSort, rowKey, rowClass, scroller, hint, onRowsAdded, onRowsRemoved, ...mobile,
+    });
     return;
   }
+  releaseCovers([table]);
   clear(table);
   const headRow = h('tr');
   for (const col of columns) {
@@ -350,14 +495,13 @@ function renderTable(table, { columns, rows, sort, onSort, rowKey, rowClass, onR
     const th = h('th' + (col.cls ? '.' + col.cls : ''),
       sortable ? h('button.th-sort' + (active ? '.th-sort--active' : ''), {
         type: 'button',
-        title: 'Sort by ' + col.label,
+        title: T('common.sortBy', { column: col.label }),
         onclick: () => onSort(col.key),
       }, h('span', col.label), h('span.th-arrow', arrow)) : h('span.th-plain', col.label));
     headRow.appendChild(th);
   }
   const tbody = h('tbody');
-  const frag = document.createDocumentFragment();
-  for (const row of rows) {
+  const makeRow = (row) => {
     const tr = h('tr', { dataset: { id: rowKey(row) } });
     const extra = rowClass ? rowClass(row) : '';
     if (extra) tr.className = extra;
@@ -376,11 +520,30 @@ function renderTable(table, { columns, rows, sort, onSort, rowKey, rowClass, onR
         if (!e.target.closest('button')) onRowDblClick(row);
       });
     }
-    frag.appendChild(tr);
-  }
-  tbody.appendChild(frag);
+    return tr;
+  };
   table.appendChild(h('thead', headRow));
   table.appendChild(tbody);
+  if (!scroller) {
+    const frag = document.createDocumentFragment();
+    for (const row of rows) frag.appendChild(makeRow(row));
+    tbody.appendChild(frag);
+    return;
+  }
+  table._rows = windowRows({
+    scroller,
+    holder: tbody,
+    count: rows.length,
+    makeRow: (i) => makeRow(rows[i]),
+    spacer: () => h('tr.vspace', { 'aria-hidden': 'true' }, h('td', { colSpan: columns.length })),
+    height: 41,
+    hint,
+    onAdded: onRowsAdded,
+    onRemoved: (trs) => {
+      releaseCovers(trs);
+      if (onRowsRemoved) onRowsRemoved(trs);
+    },
+  });
 }
 
 // ---- dialogs ----
@@ -390,19 +553,19 @@ function renderTable(table, { columns, rows, sort, onSort, rowKey, rowClass, onR
  * green, ticked, and cannot be changed. Offers a box to create a new list
  * right there. Resolves the chosen ids (without the locked ones), or null.
  */
-function pickPlaylists({ title = 'Add to Playlist', subtitle = '', lockedIds = [], selectedIds = [] }) {
+function pickPlaylists({ title = T('common.addToPlaylist'), subtitle = '', lockedIds = [], selectedIds = [] }) {
   return new Promise((resolve) => {
     const locked = new Set(lockedIds);
     const selected = new Set(selectedIds.filter((id) => !locked.has(id)));
     const list = h('div.picker__list');
-    const nameBox = h('input.input', { type: 'text', placeholder: 'New playlist name', maxLength: 80 });
+    const nameBox = h('input.input', { type: 'text', placeholder: T('pickPlaylists.newName.placeholder'), maxLength: 80 });
     const error = h('div.form-error');
 
     const draw = () => {
       clear(list);
       const lists = Store.editablePlaylists();
       if (!lists.length) {
-        list.appendChild(h('div.picker__empty', 'No playlists yet. Create one above.'));
+        list.appendChild(h('div.picker__empty', T('pickPlaylists.none')));
         return;
       }
       for (const p of lists) {
@@ -415,7 +578,7 @@ function pickPlaylists({ title = 'Add to Playlist', subtitle = '', lockedIds = [
         list.appendChild(h('label.picker__row' + (isLocked ? '.picker__row--locked' : ''),
           box,
           h('span.picker__name', p.name),
-          h('span.picker__meta', isLocked ? 'Already added' : Util.plural(p.entries.length, 'song'))));
+          h('span.picker__meta', isLocked ? T('pickPlaylists.alreadyAdded') : Util.plural(p.entries.length, 'song'))));
       }
     };
 
@@ -449,13 +612,13 @@ function pickPlaylists({ title = 'Add to Playlist', subtitle = '', lockedIds = [
       sheet: document.body.classList.contains('mobile'),
       body: [
         subtitle ? h('p.modal__subtitle', subtitle) : null,
-        h('div.picker__create', nameBox, h('button.btn', { type: 'button', onclick: create }, 'Create')),
+        h('div.picker__create', nameBox, h('button.btn', { type: 'button', onclick: create }, T('common.create'))),
         error,
         list,
       ],
       buttons: [
-        { label: 'Cancel' },
-        { label: 'Save', kind: 'primary', onClick: () => { result = [...selected]; } },
+        { label: T('common.cancel') },
+        { label: T('common.save'), kind: 'primary', onClick: () => { result = [...selected]; } },
       ],
       onClose: () => {
         unsubscribe();

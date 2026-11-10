@@ -17,12 +17,13 @@ const Mobile = {
 
   // The top bar's name for each page (a playlist shows its own).
   TITLES: {
-    search: 'Search',
-    add: 'Add Songs',
-    playlists: 'Playlists',
-    followed: 'Followed Playlists',
-    sessions: 'Active Sessions',
-    trend: 'Your listening trend',
+    search: T('common.search'),
+    add: T('common.addSongs'),
+    playlists: T('common.playlists'),
+    followed: T('common.followedPlaylists'),
+    group: T('common.playlistGroups'),
+    sessions: T('common.activeSessions'),
+    trend: T('common.yourListeningTrend'),
   },
 
   init() {
@@ -59,7 +60,7 @@ const Mobile = {
   // ---- top bar ----
 
   _buildBar() {
-    const menuBtn = iconButton('mbar__menu', Icons.menu, 'Menu', () => this.openDrawer());
+    const menuBtn = iconButton('mbar__menu', Icons.menu, T('mobile.menu'), () => this.openDrawer());
     this._title = h('div.mbar__title');
     $('pages').before(h('header.mbar', { id: 'mobileBar' }, menuBtn, this._title));
   },
@@ -88,7 +89,7 @@ const Mobile = {
     menu.appendChild(h('button.menu__item.menu__settings', {
       id: 'menuSettingsRow',
       type: 'button',
-      html: Icons.cog + '<span>Settings</span>',
+      html: `${Icons.cog}<span>${T('common.settings')}</span>`,
       onclick: () => {
         this.closeDrawer();
         SettingsPanel.open();
@@ -113,7 +114,7 @@ const Mobile = {
   _buildPlayer() {
     const bar = $('player');
     const take = (...ids) => ids.map((id) => $(id));
-    const collapse = iconButton('mp__collapse', Icons.chevronLeft, 'Back to the list', () => this.collapsePlayer());
+    const collapse = iconButton('mp__collapse', Icons.chevronLeft, T('mobile.backToList'), () => this.collapsePlayer());
     collapse.id = 'playerCollapse';
     const parts = [
       collapse,
@@ -467,7 +468,8 @@ const Mobile = {
 
   _onPlayingList() {
     const list = this._playingList();
-    return !list || (Nav.page === 'playlist' && Nav.playlistId === list);
+    return !list || (Nav.page === 'playlist' && Nav.playlistId === list)
+      || (Nav.page === 'group' && list === GROUP_PREFIX + Nav.groupId);
   },
 
   // ---- what the phone does not have ----
