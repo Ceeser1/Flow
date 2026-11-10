@@ -1515,7 +1515,7 @@ body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s;
 .group-pick__row:disabled { cursor: default; opacity: 0.5; }
 .group-pick__row--out { color: var(--text); }
 .group-pick__icon { display: inline-flex; color: var(--accent-hi); }
-.group-pick__row--out .group-pick__icon { color: var(--text-dim); }
+.group-pick__row--out .group-pick__icon { color: var(--red); }
 .group-pick__icon .icon { width: 17px; height: 17px; }
 .group-pick__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-pick__count { color: var(--text-dim); font-size: 13px; }

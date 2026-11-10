@@ -377,25 +377,17 @@ const PlaylistsPage = {
 
   _actions(p) {
     if (p.isFavourites) return h('span.muted', '');
-    // A followed playlist in a group (4.5.1): Move to group, Remove from group and Unfollow.
-    if (p.isShared) return h('div.actions', this._sharedGroupButton(p), this._removeFromGroupButton(p), this._followButton(p));
+    // A followed playlist in a group (4.5.1): Move to group and Unfollow.
+    if (p.isShared) return h('div.actions', this._sharedGroupButton(p), this._followButton(p));
     return h('div.actions', ...this._moreButtons(p));
   },
 
-  /**
-   * In a group's table (4.5.1): the red folder, out of the group. Yours goes
-   * back to Your Playlists, a followed one to Followed Playlists.
-   */
-  _removeFromGroupButton(p) {
-    if (!Store.groupOf(p)) return null;
-    return iconButton('act.act--red', Icons.folder, T('groups.removeFrom'), () => Groups.move([p.id], ''));
-  },
 
   /** Add Songs, Rename and Delete; on the phone in a sheet, where Rename asks in a dialog. */
   _moreButtons(p) {
     if (p.isFavourites) return null;
     if (p.isShared) {
-      return [this._sharedGroupButton(p), this._removeFromGroupButton(p),
+      return [this._sharedGroupButton(p),
         iconButton('act.act--red', Icons.x, T('common.unfollow'), () => attempt(() => window.flow.setFollowing(p.id, false)))];
     }
     return [
@@ -413,9 +405,7 @@ const PlaylistsPage = {
         this.renaming = p.id;
         this.render();
       }),
-      // In a group (4.5.1): out of it, before Delete.
-      this._removeFromGroupButton(p),
-      iconButton('act.act--red', Icons.x, T('common.delete'), () => this.remove(p)),
+      iconButton('act.act--red', Icons.x, T('playlists.delete.tooltip'), () => this.remove(p)),
     ];
   },
 

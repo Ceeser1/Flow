@@ -5430,6 +5430,10 @@ playlists.delete.title
   en: Delete playlist
   de: Playlist löschen
 
+playlists.delete.tooltip
+  en: Delete Playlist
+  de: Playlist löschen
+
 playlists.delete.text
   en: Do you really want to delete the playlist "{playlist}"?
   de: Willst du die Playlist „{playlist}“ wirklich löschen?
@@ -5595,10 +5599,6 @@ groups.pick.title
 groups.pick.titleMany
   en: Move {playlists} to a group
   de: {playlists} in eine Gruppe verschieben
-
-groups.pick.none
-  en: No group
-  de: Keine Gruppe
 
 groups.pick.noGroups
   en: No groups yet. Name a new one below.

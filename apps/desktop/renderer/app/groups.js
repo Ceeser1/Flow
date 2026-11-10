@@ -116,7 +116,8 @@ const Groups = {
 
   /**
    * "Move to group": the groups to choose from (the one they are all in
-   * already greyed), "No group" for those in one, and a new group by name.
+   * already greyed), "Remove from group" (its X red) for those in one, and a
+   * new group by name.
    */
   chooseFor(playlistIds) {
     const lists = playlistIds.map((id) => Store.playlist(id)).filter((p) => Store.canBeGrouped(p));
@@ -137,7 +138,7 @@ const Groups = {
       h('span.group-pick__count', Util.plural(Store.playlistsInGroup(g.id).length, 'playlist'))));
       if (lists.some((p) => p.group && Store.group(p.group))) {
         rows.push(h('button.group-pick__row.group-pick__row--out', { type: 'button', onclick: () => pick('') },
-          h('span.group-pick__icon', { html: Icons.x }), h('span.group-pick__name', T('groups.pick.none'))));
+          h('span.group-pick__icon', { html: Icons.x }), h('span.group-pick__name', T('groups.removeFrom'))));
       }
       const input = h('input.input', { type: 'text', maxLength: 80, placeholder: T('groups.pick.newName'), autocomplete: 'off' });
       const error = h('div.form-error');
