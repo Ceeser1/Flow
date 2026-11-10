@@ -14,7 +14,7 @@
 // Shuffle on it plays the whole group as one list instead (Store's
 // "group:<id>"), so each next song is drawn from all of its playlists.
 // Turning Shuffle on here while one of its playlists plays carries on in the
-// whole group. Download marks every playlist in it to be kept on this device.
+// whole group. The playlist a song plays from has the speaker before its name. Download marks every playlist in it to be kept on this device.
 
 const GroupPage = {
   id: null,
@@ -254,7 +254,11 @@ const GroupPage = {
     const seconds = Store.durationOf(p);
     const play = h('button.btn.btn--play.gframe__play', { type: 'button', onclick: () => Player.togglePlaylist(p.id) });
     const shuffle = h('button.toggle.gframe__shuffle', { type: 'button', title: T('window.playlist.shuffle.tooltip'), onclick: () => Player.setShuffle(!Player.queue.shuffle) });
-    this._frames.set(p.id, { play, shuffle, count });
+    // The speaker in front of its name while a song of it plays (_drawPlayState).
+    const playing = h('span.gframe__playing', { html: Icons.speaker, title: T('common.playing'), hidden: true });
+    this._frames.set(p.id, {
+      play, shuffle, count, playing, songs: new Set((p.entries || []).map((e) => e.songId)),
+    });
     const head = h('div.gframe__head', {
       role: 'button',
       tabIndex: 0,
@@ -274,7 +278,7 @@ const GroupPage = {
     h('span.menu__chevron' + (open ? '.menu__chevron--open' : ''), { html: Icons.chevron }),
     h('span.gframe__icon', { html: listIcon(p) }),
     h('span.gframe__text',
-      h('span.gframe__name', { title: p.name }, p.name),
+      h('span.gframe__line', playing, h('span.gframe__name', { title: p.name }, p.name)),
       h('span.gframe__sub', [Util.plural(count, 'song'), Util.fmtClock(seconds), p.ownerName ? T('common.byOwner', { profile: p.ownerName }) : ''].filter(Boolean).join(' · '))),
     h('span.gframe__buttons', play, shuffle, this._offlineButton(p)),
     this._shareButton(p));
@@ -402,6 +406,9 @@ const GroupPage = {
     };
     drawShuffle($('grShuffle'), Store.uiMode === 'mobile');
     for (const [id, f] of this._frames) {
+      // Playing: a song of it, played from it or from the whole group.
+      f.playing.hidden = !(Player.isPlaying && Player.currentId && f.songs.has(Player.currentId)
+        && (Player.contextId === id || Player.contextId === this.listId));
       const on = Player.contextId === id && !!Player.currentId && Player.isPlaying;
       f.play.innerHTML = label(on);
       f.play.title = on ? T('common.pause') : T('group.frame.play.tooltip', { playlist: (Store.playlist(id) || {}).name || '' });
