@@ -2517,8 +2517,7 @@ const ImportBatch = {
     if (this.openIndex === it.index || this.ended) return;
     const node = this.p.list.querySelector(`[data-index="${it.index}"]`);
     if (!node) return;
-    const fresh = this._frame(it);
-    node.replaceWith(fresh);
+    replaceNode(node, this._frame(it));
   },
 };
 

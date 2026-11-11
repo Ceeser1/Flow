@@ -1478,7 +1478,7 @@ body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s;
 .groups { display: flex; flex-direction: column; gap: 8px; }
 .group { background: var(--glass); border-radius: var(--radius); padding: 4px 10px; }
 .group--open { padding-bottom: 10px; }
-.group__head { display: flex; align-items: center; gap: 10px; min-height: 46px; }
+.group__head { display: flex; align-items: center; gap: 10px; min-height: 40px; }
 .group__toggle {
   display: flex;
   align-items: center;
@@ -1497,9 +1497,10 @@ body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s;
 .group__toggle .menu__chevron .icon { width: 16px; height: 16px; }
 .group__icon { display: inline-flex; color: var(--accent-hi); }
 .group__icon .icon { width: 20px; height: 20px; }
-.group__text { display: flex; flex-direction: column; min-width: 0; }
+/* One line (4.5.4): its name, then its details a little to the right. */
+.group__text { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
 .group__name { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.group__sub { color: var(--text-dim); font-size: 13px; }
+.group__sub { color: var(--text-dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .group .table { margin-top: 4px; }
 .group__empty { margin: 4px 0 6px 34px; font-size: 13px; }
 
@@ -1510,11 +1511,13 @@ body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s;
 .search-box--section .search-box__input:focus { background: rgba(0, 0, 0, 0.36); }
 /* Your Playlists and Playlist Groups (4.5.4): a line above each, and the box for a new
    one at the right of its head. */
-.playlists-part { margin-top: 24px; border-top: 1px solid var(--line); }
+.playlists-part { margin-top: 24px; border-top: 2px solid #4a4a54; }
+/* Straight like the other (Your Playlists is a drop place, rounded for its light while dragged). */
+.playlists-part.drop-area:not(.drop-target) { border-radius: 0; }
 .playlists-part > .section-head:first-child { margin-top: 16px; }
 #page-playlists .section-head { flex-wrap: wrap; row-gap: 8px; }
 .section-new { display: flex; align-items: center; gap: 8px; margin-left: auto; align-self: center; }
-.section-new .input { width: 190px; }
+.section-new .input { width: 380px; min-width: 0; flex: 0 1 380px; }
 .section-new__error { margin: -4px 0 8px; text-align: right; }
 .search-box--section[hidden] { display: none; }
 .list-limit.list-limit--scrolls { overflow-y: auto; overscroll-behavior: contain; border-radius: var(--radius); }

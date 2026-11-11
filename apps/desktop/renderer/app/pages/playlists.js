@@ -492,7 +492,10 @@ const PlaylistsPage = {
 
   _nameCell(p) {
     if (this.renaming === p.id) {
-      const input = h('input.input.rename-input', { type: 'text', value: p.name, maxLength: 80 });
+      // Its Escape is its own (4.5.4): the window's blurred it first, and a blur saves.
+      const input = h('input.input.rename-input', {
+        type: 'text', value: p.name, maxLength: 80, 'data-own-escape': true,
+      });
       let done = false;
       const finish = async (save) => {
         if (done) return;

@@ -33,9 +33,131 @@ function h(spec, props, ...children) {
 }
 
 function clear(node) {
+  // A box being typed in is kept over the redraw (4.5.4): see Typing.
+  const typing = Typing.leaving(node);
   // All at once (a long list's rows one by one took many times as long).
   node.textContent = '';
+  if (typing) Typing.restore(node, typing);
   return node;
+}
+
+/**
+ * The box you type in, kept over redraws (4.5.4). Pages draw their parts
+ * again whenever the library, the player or a download changes, and a box
+ * being typed in (a playlist's new name, a song's names in Add Songs, a
+ * search...) came back as it was first drawn: the letters typed gone, its
+ * focus too, or all of it selected so the next letter replaced it. Now,
+ * when a part holding the focused box is cleared, the same box drawn again
+ * (found by its place: the rows' ids, else each element's kind and turn)
+ * gets the text typed, the caret where it was and the focus back, once the
+ * drawing is done. A box not drawn again (the editing ended) is let go.
+ */
+const Typing = {
+  /** What is being typed inside `node`, about to be cleared; null when nothing is. */
+  leaving(node) {
+    const el = document.activeElement;
+    if (!el || el === document.body || !isTypingTarget(el) || el.tagName === 'SELECT' || el.isContentEditable || !node.contains(el)) return null;
+    let start = null;
+    let end = null;
+    let dir = 'none';
+    try {
+      start = el.selectionStart;
+      end = el.selectionEnd;
+      dir = el.selectionDirection || 'none';
+    } catch {
+      // A number box has no caret to read.
+    }
+    return { path: this._path(node, el), value: el.value, start, end, dir };
+  },
+
+  /** Once the part is drawn again: the same box gets what was typed back. */
+  restore(node, typing) {
+    let tries = 0;
+    const put = () => {
+      if (!node.isConnected) return;
+      const el = this._find(node, typing.path);
+      if (!el) {
+        // Drawn a frame later, maybe; after that it is gone.
+        if (tries++ < 1) requestAnimationFrame(put);
+        return;
+      }
+      if (el.disabled || el.readOnly) return;
+      // Something else took the focus meanwhile (a click): leave it there.
+      const now = document.activeElement;
+      if (now && now !== el && now !== document.body && !node.contains(now)) return;
+      if (el.value !== typing.value) {
+        el.value = typing.value;
+        // Whatever the page keeps of it hears the text again.
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      if (document.activeElement !== el) el.focus({ preventScroll: true });
+      if (typing.start !== null) {
+        try {
+          el.setSelectionRange(typing.start, typing.end, typing.dir);
+        } catch {
+          // A box without a caret.
+        }
+      }
+    };
+    queueMicrotask(put);
+  },
+
+  /** An element's name among its brothers: its id or row key, else its kind and its turn among those of its kind. */
+  _key(el) {
+    const id = this._idOf(el);
+    if (id) return { id };
+    const kind = this._kindOf(el);
+    let turn = 0;
+    for (let n = el.previousElementSibling; n; n = n.previousElementSibling) {
+      if (!this._idOf(n) && this._kindOf(n) === kind) turn += 1;
+    }
+    return { kind, turn };
+  },
+
+  _idOf(el) {
+    const d = el.dataset || {};
+    const id = el.id || d.id || d.key || d.group || d.rowKey;
+    return id ? String(id) : '';
+  },
+
+  _kindOf(el) {
+    return `${el.tagName}.${el.classList[0] || ''}`;
+  },
+
+  _path(node, el) {
+    const path = [];
+    for (let n = el; n && n !== node; n = n.parentElement) path.unshift(this._key(n));
+    return path;
+  },
+
+  _find(node, path) {
+    let at = node;
+    for (const step of path) {
+      let found = null;
+      let turn = 0;
+      for (const child of at.children) {
+        const id = this._idOf(child);
+        if (step.id) {
+          if (id === step.id) found = child;
+        } else if (!id && this._kindOf(child) === step.kind) {
+          if (turn === step.turn) found = child;
+          turn += 1;
+        }
+        if (found) break;
+      }
+      if (!found) return null;
+      at = found;
+    }
+    return isTypingTarget(at) ? at : null;
+  },
+};
+
+/** Puts `fresh` where `old` was, a box being typed in kept as clear() does. */
+function replaceNode(old, fresh) {
+  const typing = Typing.leaving(old);
+  old.replaceWith(fresh);
+  if (typing) Typing.restore(fresh, typing);
+  return fresh;
 }
 
 /** A button holding an icon, with a tooltip. */
