@@ -27,6 +27,7 @@ const model = require('@flow/core/libraryModel');
 const tools = require('./src/tools');
 const downloader = require('./src/downloader');
 const importer = require('./src/importer');
+const keptDownloads = require('./src/keptDownloads');
 const exporter = require('./src/exporter');
 const waveform = require('./src/waveform');
 const loudness = require('./src/loudness');
@@ -51,10 +52,6 @@ const { createViewChannel } = require('@flow/core/client/viewChannel');
 
 let mainWindow = null;
 let downloadToken = null;
-// Imported songs downloaded but not saved yet (the window says how many).
-let importPending = 0;
-// Links waiting in Add Songs' Client queue (4.4): { count, names }.
-let queuePending = { count: 0, names: [] };
 // Measures the songs' loudness in the background while "Equalize volume" is on.
 const loudnessFiller = loudness.createFiller(library, model, () => settings.get('normalize'));
 // Finds covers for Local Files songs in the background; copies of a server's
@@ -153,30 +150,9 @@ function createWindow() {
   if (settings.get('windowMaximized') && !MOBILE_UI) mainWindow.maximize();
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
-  mainWindow.on('close', (e) => {
-    // Imported songs not yet saved live in the cache, which the next start
-    // empties: ask before throwing them away.
-    if (importPending > 0 || queuePending.count > 0) {
-      // Links waiting in the Client queue are never downloaded then: named.
-      const queued = queuePending.count > 0
-        ? [T('desktop.quit.queued', { count: queuePending.count }), ...queuePending.names.slice(0, 5).map((n) => `- ${n}`)].join('\n')
-        : '';
-      const choice = dialog.showMessageBoxSync(mainWindow, {
-        type: 'warning',
-        title: 'Flow',
-        message: importPending > 0 ? T('desktop.quit.text', { count: importPending }) : T('desktop.quit.queuedOnly', { count: queuePending.count }),
-        detail: [importPending > 0 ? T('desktop.quit.detail') : '', queued].filter(Boolean).join('\n\n'),
-        buttons: [T('common.back'), T('desktop.quit.quitAnyway')],
-        defaultId: 0,
-        cancelId: 0,
-      });
-      if (choice === 0) {
-        e.preventDefault();
-        return;
-      }
-      importPending = 0;
-      queuePending = { count: 0, names: [] };
-    }
+  // Imported songs not saved yet and links waiting in the Client queue are
+  // kept over a restart (4.5.3, keptDownloads.js): closing asks nothing.
+  mainWindow.on('close', () => {
     if (!MOBILE_UI) {
       settings.set({
         windowBounds: mainWindow.getNormalBounds(),
@@ -839,13 +815,28 @@ async function finishImport(job, onProgress) {
   return summary;
 }
 
-handle('import:pending', (count) => {
-  importPending = Math.max(0, Number(count) || 0);
-});
+// How many songs wait to be saved and which links wait in the Client queue:
+// before 4.5.3 closing asked about them; now they are kept (downloads:save).
+handle('import:pending', () => {});
+handle('queue:pending', () => {});
 
-handle('queue:pending', (info) => {
-  const names = Array.isArray(info && info.names) ? info.names.map((n) => String(n || '').slice(0, 200)) : [];
-  queuePending = { count: Math.max(0, Number(info && info.count) || 0), names };
+// Add Songs' downloads kept over a restart (4.5.3): the window sends them at
+// every change, once more as it closes (sync, so it lands before the window
+// goes), and reads them back once it has started.
+handle('downloads:save', (state) => keptDownloads.save(state));
+ipcMain.on('downloads:saveSync', (e, state) => {
+  try {
+    keptDownloads.save(state);
+  } catch {
+    // The last one sent stays.
+  }
+  e.returnValue = true;
+});
+handle('downloads:load', () => {
+  const kept = keptDownloads.load();
+  if (!kept) return null;
+  importer.allowLocal(kept.originals);
+  return kept.state;
 });
 
 // A link put into Add Songs' Client queue (4.4): its name and song count at
@@ -1081,7 +1072,8 @@ app.whenReady().then(() => {
   useLanguage();
   if (settings.get('musicDir')) paths.setMusicDir(settings.get('musicDir'));
   library.load();
-  downloader.clearCache();
+  // But for the songs of the batches kept over the restart (4.5.3).
+  downloader.clearCache(keptDownloads.cacheFiles());
   remote.init({
     onView: (view) => toWindow.update(view),
     onStatus: (st) => sendToWindow('server:status', st),

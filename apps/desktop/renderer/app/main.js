@@ -39,6 +39,8 @@
   ServerImport.init();
   ClientQueue.init();
   QueuePanels.init();
+  // After the Client queue and the batches: what was kept over the restart comes back (4.5.3).
+  KeptDownloads.init();
   SongSearch.init();
   PlaylistsPage.init();
   FollowedPage.init();

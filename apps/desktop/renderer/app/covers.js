@@ -221,6 +221,18 @@ const Covers = {
     return String(key || '').toLowerCase();
   },
 
+  /** A song not saved yet kept over a restart (4.5.3): its cover found before, asked for once. */
+  async askStaged(cachePath) {
+    if (!cachePath || !window.flow.stagedCover || this._pending.has(this._pendingKey(cachePath))) return;
+    let r = null;
+    try {
+      r = await window.flow.stagedCover(cachePath);
+    } catch {
+      return;
+    }
+    if (r && r.file) this._setPending(cachePath, this._address(r.file, `v=${encodeURIComponent(r.version)}`));
+  },
+
   /** The cover box of a song not saved yet (the note until its cover is found). */
   pendingEl(key, size = 'row') {
     const k = this._pendingKey(key);

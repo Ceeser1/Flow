@@ -97,6 +97,11 @@ contextBridge.exposeInMainWorld('flow', {
   peekLink: (id, url, song) => call('download:peek', { id, url, song }),
   cancelPeek: (id) => call('download:peekCancel', id),
   setQueuePending: (info) => call('queue:pending', info),
+  // Add Songs' downloads kept over a restart (4.5.3): sent at every change, once
+  // more (sync) as the window closes, and read back once it has started.
+  saveDownloads: (state) => call('downloads:save', state),
+  saveDownloadsNow: (state) => ipcRenderer.sendSync('downloads:saveSync', state),
+  loadDownloads: () => call('downloads:load'),
   cancelImport: () => call('import:cancel'),
   onImportProgress: (fn) => ipcRenderer.on('import:progress', (_e, p) => fn(p)),
   openUrl: (url) => call('shell:openUrl', url),

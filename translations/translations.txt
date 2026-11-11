@@ -1493,6 +1493,9 @@ import.progress.downloadingAgain
   en: Downloading {songs} again
   de: Erneuter Download von {songs}
 
+import.progress.resuming
+  en: Carrying on with {songs} cut off when Flow closed
+  de: Weiter mit {songs}, die beim Schließen von Flow abgebrochen wurden
 import.progress.openingFiles
   en: Opening {files}
   de: Öffnen von {files}
@@ -1826,6 +1829,10 @@ import.song.cancelled
   en: canceled
   de: abgebrochen
 
+# A song cut off downloading when Flow closed (4.5.3): it downloads again by itself
+import.song.interrupted
+  en: Cut off when Flow closed. It downloads again by itself.
+  de: Beim Schließen von Flow abgebrochen. Er lädt von selbst noch einmal.
 import.song.preparing
   en: preparing...
   de: wird vorbereitet...
@@ -3551,6 +3558,12 @@ add.queue.added.client
   en: Added to the Client queue.
   de: Zur Client-Warteschlange hinzugefügt.
 
+# At the start: the downloads of this computer kept over the restart are back (4.5.3)
+add.kept.restored
+  en.one: Back from last time: {batches} and {links} in the Client queue
+  de.one: Zurück vom letzten Mal: {batches} und {links} in der Client-Warteschlange
+  en.other: Back from last time: {batches} and {links} in the Client queue
+  de.other: Zurück vom letzten Mal: {batches} und {links} in der Client-Warteschlange
 add.queue.added.server
   en: Added to the Server queue.
   de: Zur Server-Warteschlange hinzugefügt.
@@ -7516,6 +7529,11 @@ common.count.links
   en.other: {count} links
   de.other: {count} Links
 
+common.count.imports
+  en.one: {count} import
+  de.one: {count} Import
+  en.other: {count} imports
+  de.other: {count} Importe
 common.count.playlists
   en.one: {count} playlist
   de.one: {count} Playlist
@@ -8303,33 +8321,6 @@ desktop.window.sleepTimer
 desktop.window.activeSessions
   en: Flow: Active Sessions
   de: Flow: Aktive Sessions
-
-# Windows and dialogs › closing Flow with imported songs not saved
-desktop.quit.text
-  en.one: {count} imported song is not saved yet.
-  de.one: {count} importierter Song ist ungespeichert.
-  en.other: {count} imported songs are not saved yet.
-  de.other: {count} importierte Songs sind ungespeichert.
-
-desktop.quit.detail
-  en: They are only kept until Flow closes. Go back and press "Finish all" to save them, or quit and lose them.
-  de: Sie bleiben nur, bis Flow schließt. Geh zurück und drücke „Alle abschließen“ zum Speichern, oder beende und verliere sie.
-
-desktop.quit.queued
-  en.one: {count} link in the Client queue will not be downloaded:
-  de.one: {count} Link in der Client-Warteschlange wird nicht geladen:
-  en.other: {count} links in the Client queue will not be downloaded:
-  de.other: {count} Links in der Client-Warteschlange werden nicht geladen:
-
-desktop.quit.queuedOnly
-  en.one: {count} link is still waiting in the Client queue.
-  de.one: {count} Link wartet noch in der Client-Warteschlange.
-  en.other: {count} links are still waiting in the Client queue.
-  de.other: {count} Links warten noch in der Client-Warteschlange.
-
-desktop.quit.quitAnyway
-  en: Quit anyway
-  de: Trotzdem beenden
 
 # Windows and dialogs › picking files and folders
 desktop.pick.musicFolder.title

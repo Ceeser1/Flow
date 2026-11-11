@@ -39,8 +39,9 @@
 // Every song goes into the playlist at its place in the source (job.base,
 // see importer.finish), whatever order they are saved in. Once the last song
 // is saved the batch ends by itself. Nothing else reaches the library before
-// it is finished; closing the app before that asks first (main.js), since the
-// downloads are only in the cache.
+// it is finished. Closing the app loses nothing (4.5.3, keptDownloads.js): every batch
+// of this computer's is kept with its songs in the cache and comes back at
+// the next start, the songs cut off downloading again by themselves.
 //
 // A song's link is a batch of one song (openSong): read and downloaded as
 // before, it opens its editor when it is there (unless one is open already),
@@ -777,23 +778,36 @@ const ImportBatch = {
       ServerImport.schedule();
       return;
     }
+    if (!await this._downloadAgain(items, T('import.progress.downloadingAgain', { songs: Util.plural(items.length, 'song') }))) return;
+    r.sending -= 1;
+    this._setState('trimming');
+    ImportPanel._setPending();
+  },
+
+  /**
+   * Songs of this computer's batch fetched once more (Retry failed, or those
+   * cut off by a restart): downloaded again, or for local files prepared
+   * again. False when the batch was cancelled meanwhile.
+   */
+  async _downloadAgain(items, title) {
     const run = this._newRun();
     this.progress = { number: 0, total: items.length };
     this._setState('downloading');
-    this._progress({ title: T('import.progress.downloadingAgain', { songs: Util.plural(items.length, 'song') }), frac: null, status: T('import.progress.starting') });
+    this._progress({ title, frac: null, status: T('import.progress.starting') });
     this._task = true;
     try {
-      const list = items.map((it) => ({ index: it.index, title: it.title, url: it.url, path: '', meta: it.meta }));
-      await window.flow.downloadImport(list, AddPage.downloadOptions(), run);
+      const list = items.map((it) => ({ index: it.index, title: it.title, url: it.url, path: this.local ? it.path || '' : '', meta: it.meta }));
+      if (this.local) await window.flow.prepareLocal(list, AddPage.downloadOptions(), run);
+      else await window.flow.downloadImport(list, AddPage.downloadOptions(), run);
     } catch (err) {
       if (run === this.run) toast(err.message, 'error');
     } finally {
       this._task = false;
     }
     // Cancelled with "Cancel import": that has already ended the batch.
-    if (run !== this.run || this.ended) return;
+    if (run !== this.run || this.ended) return false;
     await this._lateStates(items, run);
-    if (run !== this.run || this.ended) return;
+    if (run !== this.run || this.ended) return false;
     this._flush();
     this._hideProgress();
     // Stopped with Cancel: what was not reached can be tried again.
@@ -803,9 +817,124 @@ const ImportBatch = {
         it.reason = it.reason || T('import.song.cancelled');
       }
     }
-    r.sending -= 1;
+    return true;
+  },
+
+  // ---- kept over a restart (4.5.3, keptDownloads.js) ----
+
+  /** The batch as kept: what it was choosing, its songs with their cuts and names (plain data). */
+  _keep() {
+    const item = (it) => {
+      const out = {};
+      for (const [key, value] of Object.entries(it)) {
+        if (key === 'lyrics' || typeof value === 'function' || (value && typeof value === 'object' && value.nodeType)) continue;
+        out[key] = value;
+      }
+      if (it.lyrics && it.lyrics.own) out.ownLyrics = it.lyrics.own;
+      return out;
+    };
+    return {
+      state: this.state,
+      entry: this.entry || null,
+      auto: this.auto,
+      updating: this.updating,
+      single: this.single,
+      listing: this.listing,
+      checked: [...this.checked],
+      keepKnown: [...this.keepKnown],
+      name: this.name,
+      merge: this.merge,
+      createList: this.createList,
+      keepList: this.keepList,
+      playlistIds: this.playlistIds,
+      moveOriginals: this.moveOriginals,
+      bulkInfo: this.bulkInfo,
+      job: this.job,
+      included: this.included.map(item),
+    };
+  },
+
+  /**
+   * Back as it was kept: its checklist, or its songs (those saved as Flow
+   * closed gone from the cache: saved). Resolves the indexes of the songs
+   * cut off downloading, which download again at their turn (_resume).
+   */
+  _restore(k) {
+    this._newRun();
+    this.single = !!k.single;
+    const choices = () => {
+      this.name = typeof k.name === 'string' ? k.name : this.name;
+      this.merge = k.merge !== false;
+      this.createList = !!k.createList;
+      this.keepList = k.keepList !== false;
+      this.playlistIds = Array.isArray(k.playlistIds) ? k.playlistIds : [];
+      this.moveOriginals = !!k.moveOriginals;
+      if (k.bulkInfo) this.bulkInfo = { ...this.bulkInfo, ...k.bulkInfo };
+    };
+    if (k.state === 'review') {
+      this._review(k.listing);
+      this.checked = new Set(k.checked || []);
+      this.keepKnown = new Set(k.keepKnown || []);
+      choices();
+      this.render();
+      return [];
+    }
+    this.listing = k.listing;
+    choices();
+    this.job = k.job || this._newJob(null);
+    const cut = [];
+    this.included = (k.included || []).map((raw) => {
+      const it = { ...raw };
+      delete it.ownLyrics;
+      delete it.missing;
+      const done = it.state === 'ready' || it.state === 'saving';
+      if (done && raw.missing) it.state = 'saved';
+      else if (it.state === 'saving') it.state = 'ready';
+      else if (!it.existingId && (!it.state || it.state === 'current' || (it.state === 'failed' && it.interrupted))) {
+        it.state = 'failed';
+        it.interrupted = true;
+        it.reason = T('import.song.interrupted');
+        cut.push(it.index);
+      }
+      if (it.state === 'ready') {
+        it.lyrics = AddPage.newLyrics(() => this._redrawFrame(it));
+        if (it.lyrics && raw.ownLyrics) it.lyrics.own = raw.ownLyrics;
+        this._lookLyrics(it);
+        Covers.askStaged(it.coverKey || (it.media && it.media.path) || '');
+      }
+      return it;
+    });
     this._setState('trimming');
     ImportPanel._setPending();
+    return cut;
+  },
+
+  /** Its songs cut off by the restart, downloaded again (the Client queue's turn for it). */
+  async _resume(indexes) {
+    if (this.ended || this.state !== 'trimming') return;
+    const items = this.included.filter((it) => indexes.includes(it.index) && it.interrupted && it.state === 'failed');
+    if (!items.length) return;
+    for (const it of items) {
+      it.state = null;
+      it.reason = '';
+      it.interrupted = false;
+      this._redrawFrame(it);
+    }
+    if (!await this._downloadAgain(items, T('import.progress.resuming', { songs: Util.plural(items.length, 'song') }))) return;
+    this._setState('trimming');
+    ImportPanel._setPending();
+    if (this._endIfDone()) return;
+    if (this.auto && this.auto.finish) await this.finishAll();
+  },
+
+  /** Its resume taken out of the Client queue: the songs stay failed, to be tried again by hand. */
+  _dropResume(indexes) {
+    for (const it of this.included) {
+      if (!indexes.includes(it.index) || !it.interrupted) continue;
+      it.interrupted = false;
+      this._redrawFrame(it);
+    }
+    this._drawFooter();
   },
 
   /** Copy Files / Move Originals, in the middle of the footer for local files. */
@@ -2426,13 +2555,18 @@ const ImportPanel = {
     return this._run;
   },
 
-  /** A new batch, not on the page until it has a state. */
+  /**
+   * A new batch, not on the page until it has a state. `entry`: the Client
+   * queue's entry it was made for (ClientQueue._run), to start it again when
+   * Flow closed while it was still being read (4.5.3).
+   */
   create({ auto = null, updating = null } = {}) {
     const b = Object.create(ImportBatch);
     this._seq += 1;
     b._init(this._seq);
     b.auto = auto;
     b.updating = updating;
+    b.entry = this.entry || null;
     this.batches.push(b);
     return b;
   },
@@ -2440,6 +2574,23 @@ const ImportPanel = {
   remove(b) {
     this.batches = this.batches.filter((x) => x !== b);
     if (this.editorOwner === b) this.editorOwner = null;
+    KeptDownloads.schedule();
+  },
+
+  /**
+   * A batch kept over a restart (4.5.3, keptDownloads.js): back on the page
+   * as it was. Resolves { entry } for one still being read then (its entry
+   * goes to the front of the Client queue), { resume: { batch, indexes } }
+   * for one whose songs were cut off downloading, else null.
+   */
+  restore(k) {
+    const kept = ['review', 'downloading', 'trimming', 'saving'];
+    // Still being read, or its one song downloading: started again from its link.
+    if (!k.listing || !kept.includes(k.state) || (k.single && k.state === 'downloading')) return k.entry ? { entry: k.entry } : null;
+    const b = this.create({ auto: k.auto || null, updating: k.updating || null });
+    b.entry = k.entry || null;
+    const indexes = b._restore(k);
+    return indexes.length ? { resume: { batch: b, indexes } } : null;
   },
 
   /** A batch of this computer's has its checklist open or reads or downloads: the Client queue waits. */
@@ -2474,6 +2625,7 @@ const ImportPanel = {
   changed() {
     this._drawBadge();
     this._setPending();
+    KeptDownloads.schedule();
     // Retry failed depends on what else downloads here.
     for (const b of this.batches) if (b.ownsFooter) b._drawFooter();
     if (typeof ServerImport !== 'undefined') ServerImport.drawButtons();
@@ -2514,6 +2666,7 @@ const ImportPanel = {
   _setPending() {
     const count = this.batches.reduce((sum, b) => sum + (b.server || b.state === 'idle' ? 0 : b._ready().length), 0);
     window.flow.setImportPending(count).catch(() => {});
+    KeptDownloads.schedule();
   },
 
   // ---- what AddPage, ClientQueue and the others open ----
