@@ -176,7 +176,7 @@ function sharedIds(data, profiles) {
  */
 function groupLists(part, g, shared) {
   const ids = [];
-  for (const p of part.playlists || []) if (p.group === g.id && p.shared) ids.push(p.id);
+  for (const p of part.playlists || []) if (model.inGroup(p, g.id) && p.shared) ids.push(p.id);
   for (const id of g.followed || []) if (shared.has(id) && !ids.includes(id)) ids.push(id);
   return ids;
 }
@@ -365,8 +365,10 @@ function addProfile(data, profiles, profileId, newId = randomId, now = Date.now(
       source: p.source ? { ...p.source } : null,
       shared: false,
     };
-    if (p.group && groupIds.has(p.group)) copy.group = groupIds.get(p.group);
-    else delete copy.group;
+    const inGroups = (p.groups || []).filter((id) => groupIds.has(id)).map((id) => groupIds.get(id));
+    delete copy.group;
+    if (inGroups.length) copy.groups = inGroups;
+    else delete copy.groups;
     return copy;
   });
   playlists.unshift(favouritesFrom(profileId, [], now));

@@ -105,6 +105,46 @@ function createActions({
     return null;
   }
 
+  /**
+   * Playlists into one more group (4.5.3), keeping their other groups. A
+   * server from before keeps one group per playlist: there it is a move.
+   */
+  function addToGroup({ playlistIds, groupId }) {
+    return groupChange(playlistIds, groupId, true);
+  }
+
+  /** Playlists out of one of their groups (4.5.3), their other groups kept. */
+  function removeFromGroup({ playlistIds, groupId }) {
+    return groupChange(playlistIds, groupId, false);
+  }
+
+  function groupChange(playlistIds, groupId, add) {
+    const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).map(String).filter(Boolean);
+    const gid = String(groupId || '');
+    if (!remote.active()) {
+      return library.mutate((d) => {
+        for (const id of ids) {
+          if (add) model.addPlaylistToGroup(d, id, gid);
+          else model.removePlaylistFromGroup(d, id, gid);
+        }
+      });
+    }
+    const v = remote.view();
+    if (add && !model.groupById(v, gid)) throw new Error(tr('core.library.groupGone', 'That playlist group no longer exists.'));
+    for (const id of ids) {
+      const p = model.playlistById(v, id);
+      if (!p && (v.follows || []).includes(id) && remote.status().followedInGroups) continue;
+      if (!p) throw new Error(tr('core.library.playlistGone', 'That playlist no longer exists.'));
+      if (p.favourites) throw new Error(tr('core.library.favouritesFixed', 'Favourites cannot be renamed, deleted or given rules.'));
+    }
+    const multi = remote.status().multiGroups;
+    for (const id of ids) {
+      if (multi) remote.command(add ? 'addPlaylistToGroup' : 'removePlaylistFromGroup', { playlistId: id, groupId: gid });
+      else remote.command('setPlaylistGroup', { playlistId: id, groupId: add ? gid : '' });
+    }
+    return null;
+  }
+
   // deleteSongs: the songs in no other playlist go too. With a server it decides
   // which (another profile may have them); here a file that cannot be deleted
   // (playing, open elsewhere) keeps its song. Resolves { deleted, kept }, null
@@ -301,6 +341,8 @@ function createActions({
     renameGroup,
     deleteGroup,
     setPlaylistGroup,
+    addToGroup,
+    removeFromGroup,
     setPlaylistShared,
     setFollowing,
     setGroupShared,

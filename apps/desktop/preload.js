@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('flow', {
   renameGroup: (id, name) => call('library:renameGroup', { id, name }),
   deleteGroup: (id) => call('library:deleteGroup', id),
   setPlaylistGroup: (playlistIds, groupId) => call('library:setPlaylistGroup', { playlistIds, groupId }),
+  // Several groups per playlist (4.5.3): one more group, or out of one.
+  addToGroup: (playlistIds, groupId) => call('library:addToGroup', { playlistIds, groupId }),
+  removeFromGroup: (playlistIds, groupId) => call('library:removeFromGroup', { playlistIds, groupId }),
   setPlaylistShared: (id, shared) => call('library:setPlaylistShared', { id, shared }),
   setFollowing: (id, on) => call('library:setFollowing', { id, on }),
   // Shared groups (4.5.3): a group shared with its playlists, and one the others share followed.

@@ -159,7 +159,7 @@ const GroupPage = {
     if (this._switching || !Player.currentId || !Player.contextId) return;
     const ctx = String(Player.contextId);
     for (const [gid, pid] of this._picked) if (pid !== ctx) this._picked.delete(gid);
-    const ours = ctx.startsWith(GROUP_PREFIX) ? !!Store.group(ctx.slice(GROUP_PREFIX.length)) : !!Store.groupOf(Store.playlist(ctx));
+    const ours = ctx.startsWith(GROUP_PREFIX) ? !!Store.group(ctx.slice(GROUP_PREFIX.length)) : Store.groupsOf(Store.playlist(ctx)).length > 0;
     if (ours) this._keepShuffle(ctx, !!Player.queue.shuffle);
   },
 

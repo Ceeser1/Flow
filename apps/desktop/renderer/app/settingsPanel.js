@@ -120,6 +120,12 @@ const SettingsPanel = {
         label: T('settings.general.similarSongs.label'),
         desc: T('settings.general.similarSongs.desc'),
       }),
+      // Also under the Playlist Groups head on the Playlists page (4.5.3).
+      Store.canGroup() ? this._row({
+        key: 'groupedHideInMenu',
+        label: T('settings.general.groupedHideInMenu.label'),
+        desc: T('settings.general.groupedHideInMenu.desc'),
+      }) : null,
       // The phone's lists have no columns.
       Store.phone ? null : this._row({
         label: T('settings.general.songColumns.label'),

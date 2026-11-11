@@ -271,13 +271,13 @@ const Store = {
 
   _shared(p) {
     const owner = this.profileName(p.ownerId) || p.ownerName;
-    // A followed one carries the group this profile put it into (4.5.1).
-    const g = this.canGroupFollowed() && this.isFollowing(p.id)
-      ? (this.library.groups || []).find((x) => (x.followed || []).includes(p.id)) : null;
+    // A followed one carries the groups this profile put it into (4.5.1; several, 4.5.3).
+    const inGroups = this.canGroupFollowed() && this.isFollowing(p.id)
+      ? (this.library.groups || []).filter((x) => (x.followed || []).includes(p.id)).map((x) => x.id) : [];
     return {
       // "James' Favorites" for a name ending in s.
       ...p, ownerName: owner, isShared: true, ...(p.favourites ? { name: T(/s$/i.test(owner) ? 'common.favouritesOf.s' : 'common.favouritesOf', { profile: owner }) } : {}),
-      ...(g ? { group: g.id } : {}),
+      ...(inGroups.length ? { groups: inGroups } : {}),
     };
   },
 
@@ -315,9 +315,13 @@ const Store = {
     return !((this.library.groupSkips || {})[groupId] || []).includes(playlistId);
   },
 
-  /** The followed playlists in no group (4.5.1), A to Z: the menu's Followed Playlists. */
+  /**
+   * The menu's Followed Playlists, A to Z: those in no group of yours (4.5.1),
+   * or all of them with "Playlists added to groups hide in the menu" off (4.5.3).
+   */
   singleFollowed() {
-    return this.followedPlaylists().filter((p) => !this.groupOf(p));
+    const all = this.followedPlaylists();
+    return this.settings.groupedHideInMenu === false ? all : all.filter((p) => !this.groupsOf(p).length);
   },
 
   /** Seconds this profile has listened to a list (as the one playing), 0 for none. */
@@ -577,10 +581,10 @@ const Store = {
     return (this.library.groups || []).find((g) => g.id === id) || this.followedGroups().find((g) => g.id === id) || null;
   },
 
-  /** The group of yours a playlist is in, or null. */
-  groupOf(p) {
-    if (!p || !p.group || !this.canGroup()) return null;
-    return (this.library.groups || []).find((g) => g.id === p.group) || null;
+  /** The groups of yours a playlist is in (4.5.3: several), A to Z; [] for none. */
+  groupsOf(p) {
+    if (!p || !p.groups || !p.groups.length || !this.canGroup()) return [];
+    return this.groups().filter((g) => p.groups.includes(g.id));
   },
 
   /**
@@ -618,15 +622,20 @@ const Store = {
     if (!g) return [];
     // A followed group (4.5.3): the playlists its owner has in it, but those unfollowed there.
     if (g.isShared) return this.listsOfSharedGroup(g).filter((p) => this.isFollowingInGroup(id, p.id));
-    const own = this.sortedPlaylists().filter((p) => p.group === id);
-    const followed = this.canGroupFollowed() ? this.followedPlaylists().filter((p) => p.group === id) : [];
+    const own = this.sortedPlaylists().filter((p) => (p.groups || []).includes(id));
+    const followed = this.canGroupFollowed() ? this.followedPlaylists().filter((p) => (p.groups || []).includes(id)) : [];
     if (!followed.length) return own;
     return [...own, ...followed].sort((a, b) => Util.compareValues(a.name, b.name));
   },
 
-  /** The playlists in no group, A to Z (Favourites is not one of them). */
-  singlePlaylists() {
-    return this.sortedPlaylists().filter((p) => !this.groupOf(p));
+  /**
+   * The menu's Playlists, A to Z (Favourites is not one of them): those in
+   * no group, or all of them with "Playlists added to groups hide in the
+   * menu" off (4.5.3). The Playlists page lists all in Your Playlists.
+   */
+  menuPlaylists() {
+    const all = this.sortedPlaylists();
+    return this.settings.groupedHideInMenu === false ? all : all.filter((p) => !this.groupsOf(p).length);
   },
 
   /** The ones songs can be put into by hand: not the smart ones (their rules pick their songs). */

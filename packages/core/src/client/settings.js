@@ -418,6 +418,9 @@ const DEFAULTS = {
   // "Continue with similar songs" when the list playing has played through
   // (4.0, autoDj.js), instead of it starting over.
   autoDj: false,
+  // Playlists added to groups hide in the menu's Playlists (and Followed
+  // Playlists), shown only inside their groups there (4.5.3).
+  groupedHideInMenu: true,
   // The song lists' optional columns (All Songs, the playlists), each one
   // sortable and searched: Album, Genre, Info (subGenre) and Mix; Album
   // unless turned off, the others when asked.
@@ -608,7 +611,7 @@ function clean(raw) {
   delete s.hlSpin;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   if (!['', 'en', 'de'].includes(s.language)) s.language = '';
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'groupedHideInMenu', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'thumbCovers', 'highResCovers', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;

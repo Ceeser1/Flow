@@ -65,6 +65,8 @@ const Nav = {
     Player.onChange(() => this.drawMenu());
     Session.onChange(() => this.drawMenu());
     Store.onSettings((patch) => {
+      // Playlists added to groups shown under Playlists too, or not (4.5.3).
+      if ('groupedHideInMenu' in patch) this.drawMenu();
       if (!('showTrend' in patch)) return;
       // Hidden while its page or one of its lists is open: back to All Songs.
       if (!patch.showTrend && (this.page === 'trend' || (this.page === 'playlist' && SmartLists.isSmart(this.playlistId)))) {
@@ -234,10 +236,11 @@ const Nav = {
     const fromPlaying = froms.some((p) => p.id === Player.contextId);
     this._allPlaying.hidden = !Player.isPlaying || !(Player.contextId === 'all' || (fromPlaying && !allOpen));
 
-    // Playlists: Favourites, then the playlists in no group.
+    // Playlists: Favourites, then the playlists in no group (all of them with
+    // "Playlists added to groups hide in the menu" off, 4.5.3).
     const list = clear($('menuPlaylistList'));
     list.appendChild(item(Store.favouritesPlaylist()));
-    for (const p of Store.singlePlaylists()) {
+    for (const p of Store.menuPlaylists()) {
       const el = item(p);
       Groups.draggable(el, p);
       list.appendChild(el);
@@ -296,7 +299,7 @@ const Nav = {
       for (const p of inside) {
         const el = item(p);
         el.classList.add('menu__sub--in-group');
-        Groups.draggable(el, p);
+        Groups.draggable(el, p, followedOne ? '' : g.id);
         if (!followedOne) Groups.dropTarget(el, g.id);
         groupList.appendChild(el);
       }

@@ -159,8 +159,9 @@ function createRemote(env) {
   // 4: listening, 3.5; 5: statistics, 3.6; 6: album, genre, subGenre, infoLooked, 3.6.3;
   // 7: a playlist's rules, 4.0; 8: songs without stats, the stats, Statistics
   // and shared playlists' details kept apart, Favourites as a playlist, 4.3;
-  // 9: playlist groups, 4.5; 10: shared groups and the groups followed, 4.5.3).
-  const CACHE_FORMAT = 10;
+  // 9: playlist groups, 4.5; 10: shared groups and the groups followed, 4.5.3;
+  // 11: a playlist's groups, several, 4.5.3).
+  const CACHE_FORMAT = 11;
 
   function emptySync(serverId = '') {
     return {
@@ -351,7 +352,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, sharedGroups: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, sharedGroups: false, multiGroups: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -477,6 +478,8 @@ function createRemote(env) {
       followedInGroups: !!conn.followedInGroups,
       // Groups shared and followed (4.5.3).
       sharedGroups: !!conn.sharedGroups,
+      // A playlist in several groups (4.5.3).
+      multiGroups: !!conn.multiGroups,
       tracked: tracked.list(),
     };
   }
@@ -994,10 +997,11 @@ function createRemote(env) {
         const playlistGroups = Array.isArray(hello.features) && hello.features.includes('playlistGroups');
         const followedInGroups = Array.isArray(hello.features) && hello.features.includes('followedInGroups');
         const sharedGroups = Array.isArray(hello.features) && hello.features.includes('sharedGroups');
+        const multiGroups = Array.isArray(hello.features) && hello.features.includes('multiGroups');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, sharedGroups, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, sharedGroups, multiGroups, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);

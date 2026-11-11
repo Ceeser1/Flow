@@ -10,9 +10,12 @@
 // Playlist Groups (4.5, groups.js) below: a box to make one, then each group
 // as a head (open or closed as in the menu: its name, playlists, songs and
 // length, Update all, Add playlists, Rename, Delete) with its playlists' table
-// under it while open. Your Playlists lists only the playlists in no group.
-// On the computer a playlist's row can be dragged onto a group, or back onto
-// Your Playlists; every playlist also has Move to group. Since 4.5.1 the
+// under it while open. Since 4.5.3 a playlist can be in several groups and
+// Your Playlists lists them all (the setting "Playlists added to groups hide
+// in the menu", mirrored under the Playlist Groups head, only touches the
+// menu). On the computer a playlist's row can be dragged onto a group (into
+// it too), or out of a group's table onto Your Playlists (out of that group);
+// every playlist also has Add to group. Since 4.5.1 the
 // playlists others share can go into groups too (a Flow Server that keeps
 // that): followed ones show in their group, and one not followed yet is
 // followed as it goes in (dragged from Shared Playlists, or its folder).
@@ -56,6 +59,11 @@ const PlaylistsPage = {
     });
     $('newGroupName').addEventListener('input', () => {
       $('newGroupError').textContent = '';
+    });
+    // The setting of Settings › General, mirrored here (4.5.3).
+    $('groupedHideInMenu').addEventListener('change', () => Store.saveSettings({ groupedHideInMenu: $('groupedHideInMenu').checked }));
+    Store.onSettings((patch) => {
+      if ('groupedHideInMenu' in patch) $('groupedHideInMenu').checked = Store.settings.groupedHideInMenu !== false;
     });
     this._initSearch('sharedSearch', 'shared');
     this._initSearch('playlistsSearch', 'yours');
@@ -200,8 +208,8 @@ const PlaylistsPage = {
     // The lists' own scrolling, kept over the redraw.
     const scrolled = new Map([...document.querySelectorAll('#page-playlists .list-limit')].map((n) => [n.id || n.dataset.group, n.scrollTop]));
 
-    // Your Playlists: those in no group (4.5).
-    const singles = Store.singlePlaylists();
+    // Your Playlists: all of them, also those in groups (4.5.3).
+    const singles = Store.sortedPlaylists();
     const yours = this._words('yours');
     const lists = Util.sortRows(singles.filter((p) => this._found(p, yours)), this.sort, (p, k) => this._value(p, k));
     const fav = Store.favouritesPlaylist();
@@ -304,10 +312,10 @@ const PlaylistsPage = {
     };
   },
 
-  /** On the computer each playlist's row can be dragged onto a group (4.5). */
-  _dragRows(table) {
+  /** On the computer each playlist's row can be dragged onto a group (4.5); `from`: the group whose table it is in. */
+  _dragRows(table, from = '') {
     if (!Groups.canDrag()) return;
-    for (const tr of table.querySelectorAll('tbody tr[data-id]')) Groups.draggable(tr, Store.playlist(tr.dataset.id));
+    for (const tr of table.querySelectorAll('tbody tr[data-id]')) Groups.draggable(tr, Store.playlist(tr.dataset.id), from);
   },
 
   /** Playlist Groups (4.5): each group's head, and its playlists while it is open. */
@@ -320,6 +328,7 @@ const PlaylistsPage = {
     const hint = Store.uiMode === 'mobile' ? 'groups.hint.phone' : 'groups.hint';
     $('groupsHint').textContent = groups.length ? T(hint) : T('groups.hint.none');
     $('groupsSearchBox').hidden = !groups.length;
+    $('groupedHideInMenu').checked = Store.settings.groupedHideInMenu !== false;
     const words = this._words('groups');
     const box = clear($('groupsList'));
     let shown = 0;
@@ -358,7 +367,7 @@ const PlaylistsPage = {
           block.appendChild(lists);
           const sorted = Util.sortRows(found, this.sort, (p, k) => this._value(p, k));
           this._drawTable(table, sorted, (p) => this._actions(p), null, (p) => this._moreButtons(p), this._select());
-          this._dragRows(table);
+          this._dragRows(table, g.id);
         } else {
           block.appendChild(h('p.muted-text.group__empty', T(Store.uiMode === 'mobile' ? 'groups.empty.phone' : 'groups.empty')));
         }

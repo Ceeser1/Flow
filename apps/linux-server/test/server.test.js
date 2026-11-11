@@ -349,7 +349,7 @@ async function get(base, route, token) {
 
 test('profiles over the network: make, sign in with a PIN, rename, sign out, delete', async () => {
   await withServer(async ({ base }) => {
-    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'sessions', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
+    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'multiGroups', 'sessions', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
     await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
     assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null, createProfiles: true });
@@ -1129,7 +1129,7 @@ test('followed playlists in groups (4.5.1): kept in the follower groups, sent as
     assert.deepEqual(c.groups.map((g) => [g.id, g.followed]), [['gb', ['pa']]]);
     // Anna's own playlist and groups are not touched.
     const annaLib = (await get(base, '/api/library', anna.token)).json.library;
-    assert.equal(annaLib.playlists.find((p) => p.id === 'pa').group, undefined);
+    assert.equal(annaLib.playlists.find((p) => p.id === 'pa').groups, undefined);
     assert.deepEqual(annaLib.groups, []);
     // Unfollowed: out of the group.
     await command(base, [{ cid: 'b4', at: Date.now(), type: 'unfollowPlaylist', playlistId: 'pa' }], as(ben.token));
@@ -1165,7 +1165,7 @@ test('shared groups (4.5.3): shared with their playlists, seen and followed by t
     assert.deepEqual(made.results.map((x) => x.ok), Array(8).fill(true));
     let a = await lib(anna);
     assert.equal(a.groups[0].shared, true);
-    assert.deepEqual(a.playlists.filter((p) => p.group === 'ga').map((p) => [p.id, p.shared]), [['pa1', true], ['pa2', true]]);
+    assert.deepEqual(a.playlists.filter((p) => (p.groups || []).includes('ga')).map((p) => [p.id, p.shared]), [['pa1', true], ['pa2', true]]);
     assert.deepEqual(a.sharedGroups, [], 'her own group is not one the others share with her');
 
     // Carl sees it, with the shared playlists in it (Anna's and the one she follows).
@@ -1239,7 +1239,7 @@ test('playlist groups (4.5): made, filled and renamed by commands, sent as chang
     // Another app's changes since: the group and the playlist that went in, nothing else.
     const c = await (await fetch(`${base}/api/library?since=${before}`)).json();
     assert.deepEqual(c.groups.map((g) => g.name), ['Rock']);
-    assert.deepEqual(c.playlists.map((p) => [p.id, p.group]), [['p1', 'rock']]);
+    assert.deepEqual(c.playlists.map((p) => [p.id, p.groups]), [['p1', ['rock']]]);
     // A rename of the group sends only the groups.
     const rev = c.rev;
     await command(base, [{ cid: 'g5', at: 5, type: 'renameGroup', groupId: 'rock', name: 'Rock & Metal' }]);
@@ -1254,13 +1254,23 @@ test('playlist groups (4.5): made, filled and renamed by commands, sent as chang
     base = `http://127.0.0.1:${server.port}`;
     const full = await (await fetch(`${base}/api/library`)).json();
     assert.deepEqual(full.library.groups.map((g) => [g.id, g.name]), [['rock', 'Rock & Metal']]);
-    assert.equal(full.library.playlists.find((p) => p.id === 'p1').group, 'rock');
+    assert.deepEqual(full.library.playlists.find((p) => p.id === 'p1').groups, ['rock']);
+    // Several groups (4.5.3): into one more, sent as the playlist's change; out of one, the other kept.
+    const rev1 = full.rev;
+    await command(base, [
+      { cid: 'm1', at: 7, type: 'createGroup', groupId: 'grunge', name: 'Grunge' },
+      { cid: 'm2', at: 8, type: 'addPlaylistToGroup', playlistId: 'p1', groupId: 'grunge' },
+    ]);
+    const cm = await (await fetch(`${base}/api/library?since=${rev1}`)).json();
+    assert.deepEqual(cm.playlists.map((p) => [p.id, p.groups]), [['p1', ['rock', 'grunge']]]);
+    await command(base, [{ cid: 'm3', at: 9, type: 'removePlaylistFromGroup', playlistId: 'p1', groupId: 'grunge' }]);
+    assert.deepEqual((await (await fetch(`${base}/api/library`)).json()).library.playlists.find((p) => p.id === 'p1').groups, ['rock']);
     // Deleting the group leaves its playlist single.
     const rev2 = full.rev;
     await command(base, [{ cid: 'g6', at: 6, type: 'deleteGroup', groupId: 'rock' }]);
     const c3 = await (await fetch(`${base}/api/library?since=${rev2}`)).json();
-    assert.deepEqual(c3.groups, []);
-    assert.deepEqual(c3.playlists.map((p) => [p.id, p.group]), [['p1', undefined]]);
+    assert.deepEqual(c3.groups.map((g) => g.id), ['grunge']);
+    assert.deepEqual(c3.playlists.map((p) => [p.id, p.groups]), [['p1', undefined]]);
   } finally {
     await server.close();
     fs.rmSync(dirs.root, { recursive: true, force: true });

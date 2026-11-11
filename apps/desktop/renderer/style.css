@@ -1472,6 +1472,10 @@ body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s;
 /* The Playlists page: the box for a new group, then each group's head with its table under it while open. */
 .group-new .input { flex: 1; }
 .groups-hint { margin: 8px 0 10px; font-size: 13px; }
+/* The setting mirrored under the Playlist Groups head (4.5.3). */
+.groups-setting { margin: -2px 0 12px; }
+.groups-setting .check { font-size: 14px; color: var(--text-bright); }
+.groups-setting__desc { margin: 2px 0 0 26px; font-size: 13px; max-width: 760px; }
 .groups { display: flex; flex-direction: column; gap: 8px; }
 .group { background: var(--glass); border-radius: var(--radius); padding: 4px 10px; }
 .group--open { padding-bottom: 10px; }
@@ -1663,6 +1667,15 @@ body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s;
 .table--songs tbody tr.row--current td { background: linear-gradient(rgba(120, 200, 140, 0.14), rgba(120, 200, 140, 0.14)) rgba(0, 0, 0, 0.14); }
 .table--songs tbody tr.row--current:hover td { background: linear-gradient(rgba(120, 200, 140, 0.2), rgba(120, 200, 140, 0.2)) rgba(0, 0, 0, 0.14); }
 .row--pinned td { background: rgba(90, 140, 220, 0.06); }
+/* Shared Playlists and Your Playlists (4.5.3): each row a shade darker, as the songs are;
+   All Songs / Favourites and a shared group's row tinted over it, lighter under the pointer. */
+#sharedTable tbody td,
+#playlistsTable tbody td { background: rgba(0, 0, 0, 0.14); }
+#sharedTable tbody tr.row--pinned td,
+#playlistsTable tbody tr.row--pinned td { background: linear-gradient(rgba(90, 140, 220, 0.06), rgba(90, 140, 220, 0.06)) rgba(0, 0, 0, 0.14); }
+#sharedTable tbody tr.row--sgroup td { background: linear-gradient(rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.035)) rgba(0, 0, 0, 0.14); }
+#sharedTable tbody tr:hover td,
+#playlistsTable tbody tr:hover td { background: rgba(255, 255, 255, 0.035); }
 /* A session chosen in the menu, for a moment (pages/sessions.js). */
 .row--lit td,
 .mrow.row--lit,

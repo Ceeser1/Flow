@@ -142,6 +142,26 @@ const TYPES = {
       return {};
     },
   },
+  // Several groups (4.5.3): one more group for a playlist, or out of one, the others kept.
+  addPlaylistToGroup: {
+    keys: (c) => [`p:${c.playlistId}:g:${c.groupId}`],
+    run(d, c) {
+      const id = str(c.playlistId);
+      if (!model.playlistById(d, id) && !(d.follows || []).includes(id)) return { skipped: 'gone' };
+      if (!model.groupById(d, str(c.groupId))) return { skipped: 'gone' };
+      model.addPlaylistToGroup(d, id, str(c.groupId));
+      return {};
+    },
+  },
+  removePlaylistFromGroup: {
+    keys: (c) => [`p:${c.playlistId}:g:${c.groupId}`],
+    run(d, c) {
+      const id = str(c.playlistId);
+      if (!model.playlistById(d, id) && !(d.follows || []).includes(id)) return { skipped: 'gone' };
+      model.removePlaylistFromGroup(d, id, str(c.groupId));
+      return {};
+    },
+  },
   setPlaylistShared: {
     keys: (c) => [`p:${c.playlistId}:shared`],
     run(d, c) {

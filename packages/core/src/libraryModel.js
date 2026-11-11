@@ -30,15 +30,16 @@
 //             Kept for a later "update from source".
 //   shared    true: the other profiles on a Flow Server can see the playlist
 //             and follow it. Only its owner can change it.
-//   group     (4.5) the id of the playlist group it is in; left out while it
-//             is in none. One group at most; never Favourites.
+//   groups    (4.5.3; 4.5 had `group`, one id) the ids of the playlist groups
+//             it is in, left out while it is in none. Several at once; never
+//             Favourites.
 //   groups    (4.5) the owner's playlist groups, folders of playlists in the
 //             menu: [{ id, name, createdAt, followed? }], A to Z by name
 //             where shown. A group may be empty; deleting it leaves its
 //             playlists single. followed (4.5.1): the ids of the playlists
 //             this owner follows that it put into the group (a followed
-//             playlist is another profile's, so its group is kept here, by
-//             whoever follows it); one group at most, only while followed.
+//             playlist is another profile's, so its groups are kept here, by
+//             whoever follows it); in several groups too (4.5.3), only while followed.
 //             shared (4.5.3): the other profiles see the group, with the
 //             shared playlists in it, and can follow it. Sharing a group
 //             shares the owner's playlists in it, and one put into it later.
@@ -180,17 +181,15 @@ function cleanSharedGroups(raw) {
 
 /**
  * The followed playlists in the groups (4.5.1): only ones still followed
- * (`follows`), each in one group at most (the first that has it). With
- * `shared` (4.5.3, the server: the ids of every playlist shared now), one
- * its owner no longer shares leaves the group too (the follow waits).
+ * (`follows`); in several groups too (4.5.3). With `shared` (4.5.3, the
+ * server: the ids of every playlist shared now), one its owner no longer
+ * shares leaves the groups too (the follow waits).
  */
 function keepFollowedInGroups(groups, follows, shared = null) {
   const followed = new Set(follows || []);
-  const placed = new Set();
   for (const g of groups || []) {
     if (!g.followed) continue;
-    const ids = g.followed.filter((id) => followed.has(id) && !placed.has(id) && (!shared || shared.has(id)));
-    for (const id of ids) placed.add(id);
+    const ids = g.followed.filter((id) => followed.has(id) && (!shared || shared.has(id)));
     if (ids.length) g.followed = ids;
     else delete g.followed;
   }
@@ -353,7 +352,11 @@ function sanitize(raw) {
       rules,
     };
     if (favourites) list.favourites = true;
-    else if (p.group && groupIds.has(String(p.group))) list.group = String(p.group);
+    else {
+      // Several groups (4.5.3); a library from before has one, `group`.
+      const inGroups = cleanIds([...(Array.isArray(p.groups) ? p.groups : []), ...(p.group ? [p.group] : [])]).filter((id) => groupIds.has(id));
+      if (inGroups.length) list.groups = inGroups;
+    }
     data.playlists.push(list);
   }
   data.follows = cleanIds(raw.follows);
@@ -638,28 +641,45 @@ function setGroupShared(data, id, shared) {
     return g;
   }
   g.shared = true;
-  for (const p of data.playlists) if (p.group === id && !p.rules && !p.favourites) p.shared = true;
+  for (const p of data.playlists) if (inGroup(p, id) && !p.rules && !p.favourites) p.shared = true;
   return g;
 }
 
-/** The group goes; its playlists stay, single again. */
+/** Whether an own playlist is in group `id` (4.5.3: one of its groups). */
+function inGroup(p, id) {
+  return !!p.groups && p.groups.includes(id);
+}
+
+/** The group goes; its playlists stay (in their other groups, or single again). */
 function deleteGroup(data, id) {
   requireGroup(data, id);
   data.groups = data.groups.filter((g) => g.id !== id);
-  for (const p of data.playlists) if (p.group === id) delete p.group;
+  for (const p of data.playlists) if (inGroup(p, id)) leaveGroup(p, id);
 }
 
-/** The group a playlist this owner follows is in (4.5.1), or null. */
+function leaveGroup(p, id) {
+  p.groups = (p.groups || []).filter((g) => g !== id);
+  if (!p.groups.length) delete p.groups;
+}
+
+/** The first group a playlist this owner follows is in (4.5.1), or null. */
 function groupOfFollowed(data, playlistId) {
   return (data.groups || []).find((g) => (g.followed || []).includes(playlistId)) || null;
 }
 
+/** Whether the playlist is one this owner follows rather than its own (4.5.1). */
+function isFollowedOne(data, playlistId) {
+  return !playlistById(data, playlistId) && (data.follows || []).includes(playlistId);
+}
+
 /**
- * Puts a playlist into a group, or (groupId '' or null) out of the one it is
- * in: one of the owner's own, or (4.5.1) one it follows.
+ * Puts a playlist into group `groupId` only, or (groupId '' or null) out of
+ * every group: one of the owner's own, or (4.5.1) one it follows. The
+ * "move" of the apps from before 4.5.3; they now add and take out one group
+ * at a time (addPlaylistToGroup, removePlaylistFromGroup).
  */
 function setPlaylistGroup(data, playlistId, groupId) {
-  if (!playlistById(data, playlistId) && (data.follows || []).includes(playlistId)) {
+  if (isFollowedOne(data, playlistId)) {
     if (groupId) requireGroup(data, groupId);
     for (const g of data.groups || []) {
       if (!g.followed) continue;
@@ -667,25 +687,49 @@ function setPlaylistGroup(data, playlistId, groupId) {
       if (!g.followed.length) delete g.followed;
     }
     if (!groupId) return null;
-    const g = groupById(data, groupId);
-    g.followed = [...(g.followed || []), String(playlistId)];
+    return addPlaylistToGroup(data, playlistId, groupId);
+  }
+  const p = requireOrdinary(data, playlistId);
+  delete p.groups;
+  if (!groupId) return p;
+  return addPlaylistToGroup(data, playlistId, groupId);
+}
+
+/**
+ * Puts a playlist into one more group (4.5.3), keeping the groups it is in:
+ * one of the owner's own (into a shared group it is shared too), or one it follows.
+ */
+function addPlaylistToGroup(data, playlistId, groupId) {
+  const g = requireGroup(data, groupId);
+  if (isFollowedOne(data, playlistId)) {
+    if (!(g.followed || []).includes(playlistId)) g.followed = [...(g.followed || []), String(playlistId)];
     return g;
   }
   const p = requireOrdinary(data, playlistId);
-  if (!groupId) {
-    delete p.group;
-    return p;
-  }
-  const g = requireGroup(data, groupId);
-  p.group = String(groupId);
+  if (!inGroup(p, g.id)) p.groups = [...(p.groups || []), g.id];
   // Into a shared group: shared too (4.5.3).
   if (g.shared && !p.rules) p.shared = true;
   return p;
 }
 
+/** Takes a playlist out of one of its groups (4.5.3); its other groups keep it. */
+function removePlaylistFromGroup(data, playlistId, groupId) {
+  if (isFollowedOne(data, playlistId)) {
+    const g = groupById(data, groupId);
+    if (g && g.followed) {
+      g.followed = g.followed.filter((id) => id !== playlistId);
+      if (!g.followed.length) delete g.followed;
+    }
+    return g;
+  }
+  const p = requireOrdinary(data, playlistId);
+  leaveGroup(p, groupId);
+  return p;
+}
+
 /** The playlists in a group (all of them, smart ones too). */
 function playlistsInGroup(data, id) {
-  return data.playlists.filter((p) => p.group === id);
+  return data.playlists.filter((p) => inGroup(p, id));
 }
 
 /**
@@ -1023,7 +1067,7 @@ module.exports = {
   RULE_FIELDS, RULE_OPS, RULE_SORTS,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
   sharedGroupById, followedIds, followedInGroup, isFollowed, setGroupPlaylistFollowed, followGroup, unfollowGroup, setGroupShared, cleanSharedGroups, cleanSkips,
-  cleanGroups, keepFollowedInGroups, groupOfFollowed, groupById, checkGroupName, freeGroupName, createGroup, renameGroup, deleteGroup, setPlaylistGroup, playlistsInGroup,
+  cleanGroups, keepFollowedInGroups, groupOfFollowed, inGroup, addPlaylistToGroup, removePlaylistFromGroup, groupById, checkGroupName, freeGroupName, createGroup, renameGroup, deleteGroup, setPlaylistGroup, playlistsInGroup,
   addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta, findSameSong, sameSongIn, sameNames,

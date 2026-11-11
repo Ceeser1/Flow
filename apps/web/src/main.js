@@ -276,6 +276,8 @@ function start() {
     renameGroup: call((id, name) => actions.renameGroup({ id, name })),
     deleteGroup: call((id) => actions.deleteGroup(id)),
     setPlaylistGroup: call((playlistIds, groupId) => actions.setPlaylistGroup({ playlistIds, groupId })),
+    addToGroup: call((playlistIds, groupId) => actions.addToGroup({ playlistIds, groupId })),
+    removeFromGroup: call((playlistIds, groupId) => actions.removeFromGroup({ playlistIds, groupId })),
     setPlaylistShared: call((id, shared) => actions.setPlaylistShared({ id, shared })),
     setFollowing: call((id, isOn) => actions.setFollowing({ id, on: isOn })),
     setGroupShared: call((id, shared) => actions.setGroupShared({ id, shared })),

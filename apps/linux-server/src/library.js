@@ -99,7 +99,7 @@ const DOWNLOADS_DIR = 'Downloads';
 const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource', 'setPlaylistRules',
   'addSongToPlaylists', 'addSongsToPlaylist', 'removeFromPlaylist', 'deleteSong', 'editSong',
   'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'recordAwayListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist',
-  'createGroup', 'renameGroup', 'deleteGroup', 'setPlaylistGroup', 'setGroupShared', 'followGroup', 'unfollowGroup', 'setGroupPlaylistFollowed']);
+  'createGroup', 'renameGroup', 'deleteGroup', 'setPlaylistGroup', 'setGroupShared', 'followGroup', 'unfollowGroup', 'setGroupPlaylistFollowed', 'addPlaylistToGroup', 'removePlaylistFromGroup']);
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');
@@ -253,13 +253,13 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     favourites: !!p.favourites,
     source: p.source ? `${p.source.url}\n${p.source.kind}` : '',
     rules: p.rules ? JSON.stringify(p.rules) : '',
-    group: p.group || '',
+    groups: (p.groups || []).join('\n'),
     entries: p.entries.map((e) => [e.songId, e.addedAt]),
   });
   /** What the apps were told of a list (a listCopy) is still `p` of `owner`, compared as it is (no copy made, 4.3.5). */
   function sameList(a, owner, p) {
     if (a.owner !== owner || a.name !== p.name || a.createdAt !== p.createdAt || a.shared !== !!p.shared || a.favourites !== !!p.favourites
-      || a.source !== (p.source ? `${p.source.url}\n${p.source.kind}` : '') || a.group !== (p.group || '') || a.entries.length !== p.entries.length) return false;
+      || a.source !== (p.source ? `${p.source.url}\n${p.source.kind}` : '') || a.groups !== (p.groups || []).join('\n') || a.entries.length !== p.entries.length) return false;
     for (let i = 0; i < a.entries.length; i += 1) {
       const e = p.entries[i];
       if (a.entries[i][0] !== e.songId || a.entries[i][1] !== e.addedAt) return false;

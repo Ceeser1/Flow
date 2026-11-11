@@ -91,6 +91,13 @@ settings.general.similarSongs.desc
   en: When the list playing has played through, songs like the last ones you heard follow (the same artists, genre, Info or album, those you listen to most first) instead of the list starting over. The Queue shows them as "Then similar songs".
   de: Ist die laufende Liste durchgespielt, folgen statt eines Neustarts Songs wie die zuletzt gehörten (gleiche Interpreten, Genre, Info oder Album, meistgehörte zuerst). Die Warteschlange zeigt sie als „Dann ähnliche Songs“.
 
+settings.general.groupedHideInMenu.label
+  en: Playlists added to groups hide in the menu
+  de: Playlists in Gruppen im Menü ausblenden
+
+settings.general.groupedHideInMenu.desc
+  en: If enabled, playlists added to groups will only show inside the Playlist Group(s) in the menu. All stay visible on the playlists site under 'Your Playlists'. If disabled, each playlist added to group(s) still shows as a single playlist in the menu under 'Playlists'.
+  de: Wenn aktiviert, erscheinen Playlists, die Gruppen hinzugefügt wurden, im Menü nur in ihren Playlist-Gruppen. Auf der Seite Playlists bleiben alle unter „Deine Playlists“ sichtbar. Wenn deaktiviert, erscheint jede Playlist in Gruppen im Menü auch weiterhin einzeln unter „Playlists“.
 settings.general.songColumns.label
   en: Show filterable columns for Songs
   de: Filterbare Spalten für Songs anzeigen
@@ -5475,20 +5482,20 @@ groups.created
   de: Gruppe „{group}“ erstellt
 
 groups.moveTo
-  en: Move to group
-  de: In Gruppe verschieben
+  en: Add to group
+  de: Zu Gruppe hinzufügen
 
 groups.hint
-  en: Drag a playlist from the menu or from above onto a group, or use the Move to group button at the right. Playlists dragged out get removed from the group.
-  de: Zieh eine Playlist aus dem Menü oder von oben auf eine Gruppe, oder nimm rechts den Knopf In Gruppe verschieben. Herausgezogene Playlists werden aus der Gruppe entfernt.
+  en: Drag a playlist from the menu or from above onto a group, or use the Add to group button at the right. A playlist can be in several groups. Dragged out of a group, it is removed from that group.
+  de: Zieh eine Playlist aus dem Menü oder von oben auf eine Gruppe, oder nimm rechts den Knopf Zu Gruppe hinzufügen. Eine Playlist kann in mehreren Gruppen sein. Aus einer Gruppe herausgezogen, wird sie aus dieser Gruppe entfernt.
 
 groups.removeFrom
   en: Remove from group
   de: Aus der Gruppe entfernen
 
 groups.hint.phone
-  en: Put a playlist into a group with Move to group in its menu, or hold several playlists to choose them and move them together.
-  de: Steck eine Playlist mit In Gruppe verschieben in ihrem Menü in eine Gruppe, oder halte mehrere Playlists gedrückt, um sie auszuwählen und zusammen zu verschieben.
+  en: Put a playlist into groups with Add to group in its menu, or hold several playlists to choose them and add them together. A playlist can be in several groups.
+  de: Steck eine Playlist mit Zu Gruppe hinzufügen in ihrem Menü in Gruppen, oder halte mehrere Playlists gedrückt, um sie auszuwählen und zusammen hinzuzufügen. Eine Playlist kann in mehreren Gruppen sein.
 
 groups.hint.none
   en: A group keeps playlists together, like a folder. It shows in the menu below your playlists.
@@ -5699,10 +5706,10 @@ groups.delete.title
   de: Gruppe löschen
 
 groups.delete.text
-  en.one: Delete the group "{group}"? Its {playlists} stays, as a single playlist again.
-  de.one: Die Gruppe „{group}“ löschen? Ihre {playlists} bleibt, wieder als einzelne Playlist.
-  en.other: Delete the group "{group}"? Its {playlists} stay, as single playlists again.
-  de.other: Die Gruppe „{group}“ löschen? Ihre {playlists} bleiben, wieder als einzelne Playlists.
+  en.one: Delete the group "{group}"? Its {playlists} stays, in your playlists and its other groups.
+  de.one: Die Gruppe „{group}“ löschen? Ihre {playlists} bleibt, bei deinen Playlists und in ihren anderen Gruppen.
+  en.other: Delete the group "{group}"? Its {playlists} stay, in your playlists and their other groups.
+  de.other: Die Gruppe „{group}“ löschen? Ihre {playlists} bleiben, bei deinen Playlists und in ihren anderen Gruppen.
 
 groups.delete.textEmpty
   en: Delete the group "{group}"? It has no playlists.
@@ -5713,32 +5720,32 @@ groups.delete.done
   de: Gruppe „{group}“ gelöscht
 
 groups.moved
-  en: "{playlist}" moved to {group}
-  de: „{playlist}“ nach {group} verschoben
+  en: "{playlist}" added to {group}
+  de: „{playlist}“ zu {group} hinzugefügt
 
 groups.movedMany
-  en: {playlists} moved to {group}
-  de: {playlists} nach {group} verschoben
+  en: {playlists} added to {group}
+  de: {playlists} zu {group} hinzugefügt
 
 groups.followedMoved
   en: You follow "{playlist}" now, in {group}
   de: Du folgst „{playlist}“ jetzt, in {group}
 
 groups.movedOut
-  en: "{playlist}" is no longer in a group
-  de: „{playlist}“ ist in keiner Gruppe mehr
+  en: "{playlist}" removed from {group}
+  de: „{playlist}“ aus {group} entfernt
 
 groups.movedOutMany
-  en: {playlists} are no longer in a group
-  de: {playlists} sind in keiner Gruppe mehr
+  en: {playlists} removed from {group}
+  de: {playlists} aus {group} entfernt
 
 groups.pick.title
-  en: Move "{playlist}" to a group
-  de: „{playlist}“ in eine Gruppe verschieben
+  en: Groups of "{playlist}"
+  de: Gruppen von „{playlist}“
 
 groups.pick.titleMany
-  en: Move {playlists} to a group
-  de: {playlists} in eine Gruppe verschieben
+  en: Groups of {playlists}
+  de: Gruppen von {playlists}
 
 groups.pick.noGroups
   en: No groups yet. Name a new one below.
@@ -5749,9 +5756,12 @@ groups.pick.newName
   de: Neue Gruppe
 
 groups.pick.create
-  en: Create and move
-  de: Erstellen und verschieben
+  en: Create
+  de: Erstellen
 
+groups.pick.done
+  en: Done
+  de: Fertig
 # ===== Smart playlists =====
 
 # Playlists that fill themselves by rules, and the ready-made lists of "Your listening trend".
