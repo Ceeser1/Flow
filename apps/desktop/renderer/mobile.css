@@ -150,10 +150,13 @@ body.mobile .menu__sub--in-group { padding-left: 34px; }
 body.mobile .group { padding: 2px 8px; }
 body.mobile .group__head { min-height: 56px; gap: 6px; }
 body.mobile .group__head .actions { gap: 4px; }
-body.mobile .group-new { flex-wrap: wrap; }
-/* The Playlists page's searches (4.5.3) on a line of their own under each head. */
+/* The Playlists page: the box for a new playlist or group on a line of its own under its head (4.5.4), the searches full wide. */
 body.mobile #page-playlists .section-head { flex-wrap: wrap; }
-body.mobile .section-head .search-box--section { flex-basis: 100%; max-width: none; margin-left: 0; }
+body.mobile .section-new { flex: 1 1 100%; flex-wrap: wrap; margin-left: 0; }
+body.mobile .section-new .input { flex: 1 1 100%; width: auto; height: 44px; }
+body.mobile .section-new .btn { flex: 1 1 auto; height: 44px; }
+body.mobile .section-new__error { margin: 0 0 8px; text-align: left; }
+body.mobile .search-box--section { max-width: none; }
 body.mobile .search-box--section .search-box__input { height: 38px; font-size: 15px; }
 /* A shared group's row: its arrow and folder in front; its playlists further in. */
 body.mobile .sgroup__lead { gap: 2px; background: none; width: 52px; }

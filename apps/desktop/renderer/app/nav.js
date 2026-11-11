@@ -188,6 +188,8 @@ const Nav = {
   },
 
   drawMenu() {
+    // Not while a playlist is dragged onto a group (4.5.4): once it is dropped.
+    if (Groups.holdWhileDragging('menu', () => this.drawMenu())) return;
     $('menuSearch').classList.toggle('menu__item--active', this.page === 'search');
     $('menuAdd').classList.toggle('menu__item--active', this.page === 'add');
     $('menuAllSongs').classList.toggle('menu__item--active', this.page === 'playlist' && this.playlistId === 'all');

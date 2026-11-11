@@ -25,6 +25,7 @@
 const Groups = {
   DRAG_TYPE: 'application/x-flow-playlist',
   dragging: null, // the playlist being dragged: { id, from (its group id or '') }
+  _afterDrag: new Map(), // redraws held back while a playlist is dragged (4.5.4)
 
   isOpen(id) {
     return (Store.settings.openGroups || []).includes(id);
@@ -36,7 +37,7 @@ const Groups = {
     Store.saveSettings({ openGroups: open });
   },
 
-  /** Opens a group (a playlist was just put into it), without closing one. */
+  /** Opens a group (one just made on the Playlists page), without closing one. */
   open(id) {
     if (!this.isOpen(id)) Store.saveSettings({ openGroups: [...(Store.settings.openGroups || []), id] });
   },
@@ -68,7 +69,6 @@ const Groups = {
   async create(name, playlistIds = []) {
     const g = await window.flow.createGroup(name);
     if (!g) return null;
-    this.open(g.id);
     if (playlistIds.length) await window.flow.addToGroup(playlistIds, g.id);
     return g;
   },
@@ -143,7 +143,8 @@ const Groups = {
   /**
    * Puts playlists into one more group, keeping their other groups, and says
    * so (`made`: a group just made, maybe not listed yet). A shared one not
-   * followed yet is followed first (4.5.1).
+   * followed yet is followed first (4.5.1). The group stays open or closed
+   * as it was (4.5.4).
    */
   async add(playlistIds, groupId, made = null) {
     const ids = playlistIds.filter((id) => {
@@ -156,7 +157,6 @@ const Groups = {
       for (const id of toFollow) await window.flow.setFollowing(id, true);
       await window.flow.addToGroup(ids, groupId);
       const g = Store.group(groupId) || made;
-      if (g) this.open(g.id);
       const one = ids.length === 1 ? Store.playlist(ids[0]) : null;
       const name = g ? g.name : '';
       let text;
@@ -327,12 +327,39 @@ const Groups = {
       document.body.classList.add('dragging-playlist');
     });
     el.addEventListener('dragend', () => this._endDrag());
+    // Its end heard here too, should its row be gone by then.
+    if (!this._endHeard) {
+      this._endHeard = true;
+      document.addEventListener('dragend', () => {
+        if (this.dragging) this._endDrag();
+      });
+    }
   },
 
   _endDrag() {
     this.dragging = null;
     document.body.classList.remove('dragging-playlist');
-    for (const n of document.querySelectorAll('.drop-target')) n.classList.remove('drop-target');
+    for (const n of document.querySelectorAll('.drop-target')) {
+      clearTimeout(n._dropLeave);
+      n.classList.remove('drop-target');
+    }
+    // What wanted to be drawn meanwhile, once.
+    const held = [...this._afterDrag.values()];
+    this._afterDrag.clear();
+    for (const fn of held) fn();
+  },
+
+  /**
+   * While a playlist is dragged the menu and the Playlists page are not
+   * drawn again (4.5.4): a library or player change meanwhile put new rows
+   * under the pointer, so the page flickered and the folder lit up lost its
+   * light. Returns true when `fn` is held back for the drag's end (under
+   * `key`, once).
+   */
+  holdWhileDragging(key, fn) {
+    if (!this.dragging) return false;
+    this._afterDrag.set(key, fn);
+    return true;
   },
 
   /**
@@ -352,13 +379,18 @@ const Groups = {
       if (!wants()) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = groupId ? 'copy' : 'move';
+      clearTimeout(el._dropLeave);
       if (!el.classList.contains('drop-target')) {
         for (const n of document.querySelectorAll('.drop-target')) n.classList.remove('drop-target');
         el.classList.add('drop-target');
       }
     });
+    // Left: unlit a moment later, unless the pointer is still over it (a
+    // leave also comes between its own parts, sometimes without saying where to).
     el.addEventListener('dragleave', (e) => {
-      if (!el.contains(e.relatedTarget)) el.classList.remove('drop-target');
+      if (el.contains(e.relatedTarget)) return;
+      clearTimeout(el._dropLeave);
+      el._dropLeave = setTimeout(() => el.classList.remove('drop-target'), 120);
     });
     el.addEventListener('drop', (e) => {
       if (!this.dragging) return;

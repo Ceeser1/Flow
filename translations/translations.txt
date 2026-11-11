@@ -7805,6 +7805,10 @@ window.playlists.new.add
   en: Add new playlist
   de: Neue Playlist hinzufügen
 
+window.playlists.new.addSmart
+  en: Add smart playlist
+  de: Smarte Playlist hinzufügen
+
 window.playlists.new.smart
   en: Smart playlist
   de: Smarte Playlist

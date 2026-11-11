@@ -249,52 +249,57 @@
       <!-- Playlists -->
       <section id="page-playlists" class="page page--playlists" hidden>
         <h1 class="page__title" data-i18n="common.playlists">Playlists</h1>
-        <div class="panel">
-          <div class="link-row">
-            <input id="newPlaylistName" class="input input--big" type="text" maxlength="80"
-                   placeholder="Name" autocomplete="off"  data-i18n-placeholder="common.name"/>
-            <button id="newPlaylistBtn" class="btn btn--primary btn--big" type="button" data-i18n="window.playlists.new.add">Add new playlist</button>
-            <button id="newSmartBtn" class="btn btn--big" type="button"
-                    title="A playlist that fills itself with the songs matching its rules" data-i18n="window.playlists.new.smart" data-i18n-title="window.playlists.new.smart.tooltip">Smart playlist</button>
-          </div>
-          <div id="newPlaylistError" class="form-error"></div>
-        </div>
-        <!-- Each list shows 10 entries at most, then scrolls in its box, and has a search of its own (4.5.3). -->
+        <!-- Each list shows 10 entries at most, then scrolls in its box, and has a search of its own
+             (4.5.3) under its head (4.5.4). -->
         <div class="section-head">
           <button id="sharedHead" class="section-head__btn" type="button"></button>
           <span id="sharedCount" class="muted-text"></span>
-          <div class="search-box search-box--section">
-            <span class="search-box__icon"></span>
-            <input id="sharedSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false"
-                   placeholder="Search shared playlists and groups" data-i18n-placeholder="window.playlists.search.shared" />
-          </div>
+        </div>
+        <div class="search-box search-box--section">
+          <span class="search-box__icon"></span>
+          <input id="sharedSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false"
+                 placeholder="Search shared playlists and groups" data-i18n-placeholder="window.playlists.search.shared" />
         </div>
         <div id="sharedBox" class="list-limit"><table id="sharedTable" class="table table--playlists"></table></div>
         <p id="sharedNoMatch" class="muted-text list-nomatch" hidden data-i18n="window.playlists.search.none">Nothing here matches the search.</p>
-        <!-- Your Playlists: the ones in no group (a playlist dragged here leaves its group). -->
-        <div id="playlistsSingle" class="drop-area">
+        <!-- Your Playlists: a new one made at its head's right (4.5.4); a playlist dragged here leaves its group. -->
+        <div id="playlistsSingle" class="drop-area playlists-part">
           <div class="section-head">
             <h2 class="section-head__title" data-i18n="window.playlists.yours">Your Playlists</h2>
             <span id="playlistsCount" class="muted-text"></span>
-            <div class="search-box search-box--section">
-              <span class="search-box__icon"></span>
-              <input id="playlistsSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false"
-                     placeholder="Search your playlists" data-i18n-placeholder="window.playlists.search.yours" />
+            <div class="section-new">
+              <input id="newPlaylistName" class="input" type="text" maxlength="80"
+                     placeholder="Name" autocomplete="off"  data-i18n-placeholder="common.name"/>
+              <button id="newPlaylistBtn" class="btn btn--primary" type="button" data-i18n="window.playlists.new.add">Add new playlist</button>
+              <button id="newSmartBtn" class="btn" type="button"
+                      title="A playlist that fills itself with the songs matching its rules" data-i18n="window.playlists.new.addSmart" data-i18n-title="window.playlists.new.smart.tooltip">Add smart playlist</button>
             </div>
+          </div>
+          <div id="newPlaylistError" class="form-error section-new__error"></div>
+          <div class="search-box search-box--section">
+            <span class="search-box__icon"></span>
+            <input id="playlistsSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false"
+                   placeholder="Search your playlists" data-i18n-placeholder="window.playlists.search.yours" />
           </div>
           <div id="playlistsBox" class="list-limit"><table id="playlistsTable" class="table table--playlists"></table></div>
           <p id="playlistsNoMatch" class="muted-text list-nomatch" hidden data-i18n="window.playlists.search.none">Nothing here matches the search.</p>
         </div>
-        <!-- Playlist Groups (4.5): folders of playlists, also in the menu. -->
-        <div id="groupsSection">
+        <!-- Playlist Groups (4.5): folders of playlists, also in the menu; a new one made at its head's right (4.5.4). -->
+        <div id="groupsSection" class="playlists-part">
           <div class="section-head">
             <h2 class="section-head__title" data-i18n="window.playlists.groups">Playlist Groups</h2>
             <span id="groupsCount" class="muted-text"></span>
-            <div id="groupsSearchBox" class="search-box search-box--section">
-              <span class="search-box__icon"></span>
-              <input id="groupsSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false"
-                     placeholder="Search groups and their playlists" data-i18n-placeholder="window.playlists.search.groups" />
+            <div class="section-new">
+              <input id="newGroupName" class="input" type="text" maxlength="80"
+                     placeholder="Group name" autocomplete="off" data-i18n-placeholder="window.playlists.groups.name"/>
+              <button id="newGroupBtn" class="btn btn--primary" type="button" data-i18n="window.playlists.groups.add">Add new group</button>
             </div>
+          </div>
+          <div id="newGroupError" class="form-error section-new__error"></div>
+          <div id="groupsSearchBox" class="search-box search-box--section">
+            <span class="search-box__icon"></span>
+            <input id="groupsSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false"
+                   placeholder="Search groups and their playlists" data-i18n-placeholder="window.playlists.search.groups" />
           </div>
           <!-- Settings › General's "Playlists added to groups hide in the menu", mirrored (4.5.3). -->
           <div class="groups-setting">
@@ -302,12 +307,6 @@
               <span data-i18n="settings.general.groupedHideInMenu.label">Playlists added to groups hide in the menu</span></label>
             <div class="muted-text groups-setting__desc" data-i18n="settings.general.groupedHideInMenu.desc"></div>
           </div>
-          <div class="link-row group-new">
-            <input id="newGroupName" class="input" type="text" maxlength="80"
-                   placeholder="Group name" autocomplete="off" data-i18n-placeholder="window.playlists.groups.name"/>
-            <button id="newGroupBtn" class="btn btn--primary" type="button" data-i18n="window.playlists.groups.add">Add new group</button>
-          </div>
-          <div id="newGroupError" class="form-error"></div>
           <p id="groupsHint" class="muted-text groups-hint"></p>
           <div id="groupsList" class="groups list-limit"></div>
           <p id="groupsNoMatch" class="muted-text list-nomatch" hidden data-i18n="window.playlists.search.none">Nothing here matches the search.</p>

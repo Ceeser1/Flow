@@ -1,9 +1,11 @@
 'use strict';
 
-// Playlists: create one at the top; both tables also show when each was created
-// and how long you have listened to it; "Shared Playlists" (All Songs, and the
-// playlists other profiles share, which can be followed or not; the section
-// can be closed, All Songs stays); "Your Playlists" below. Favourites is
+// Playlists: both tables also show when each was created and how long you
+// have listened to it; "Shared Playlists" (All Songs, and the playlists
+// other profiles share, which can be followed or not; the section can be
+// closed, All Songs stays); "Your Playlists" below, a line above it, a new
+// one made by the box at its head's right (4.5.4; on the phone under it), as
+// is a new group at Playlist Groups'. Each search is under its head. Favourites is
 // always the first row of those, whatever the sort, and has no actions. The
 // listening trend lists have their own page (trend.js).
 //
@@ -153,6 +155,8 @@ const PlaylistsPage = {
       const g = await Groups.create(box.value);
       box.value = '';
       $('newGroupError').textContent = '';
+      // Made here it opens, for playlists to be dragged in (4.5.4: only here).
+      Groups.open(g.id);
       toast(T('groups.created', { group: g.name }), 'success');
       this.render();
     } catch (err) {
@@ -205,6 +209,10 @@ const PlaylistsPage = {
   },
 
   render() {
+    // Not while a playlist is dragged onto a group (4.5.4): once it is dropped.
+    if (Groups.holdWhileDragging('playlists', () => {
+      if (Nav.page === 'playlists') this.render();
+    })) return;
     // The lists' own scrolling, kept over the redraw.
     const scrolled = new Map([...document.querySelectorAll('#page-playlists .list-limit')].map((n) => [n.id || n.dataset.group, n.scrollTop]));
 

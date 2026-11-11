@@ -1,6 +1,6 @@
 {
   "name": "flow",
-  "version": "4.5.3",
+  "version": "4.5.4",
   "description": "Music player for songs downloaded from YouTube, SoundCloud, Vimeo and more",
   "main": "main.js",
   "private": true,
