@@ -445,7 +445,11 @@ const PlaylistsPage = {
       ],
       mobile: {
         ...spec,
-        lead: (p) => (isGroup(p) ? this._sharedGroupLead(p) : spec.lead(p)),
+        lead: (p) => {
+          if (isGroup(p)) return this._sharedGroupLead(p);
+          // Inside a shared group: its followed icon there (4.5.3).
+          return p.inSharedGroup ? h('span.mrow__icon', { html: listIcon(p, p.inSharedGroup) }) : spec.lead(p);
+        },
         sub: (p) => (isGroup(p)
           ? [Util.plural(p.lists.length, 'playlist'), T('common.byOwner', { profile: p.group.ownerName })].join(' · ') : spec.sub(p)),
         tap: (p) => (isGroup(p) ? this._toggleSharedGroup(p.group) : spec.tap(p)),
@@ -510,7 +514,7 @@ const PlaylistsPage = {
       return input;
     }
     return h('button.link-cell', { type: 'button', onclick: () => Nav.openPlaylist(p.id) },
-      h('span.link-cell__icon', { html: listIcon(p) }),
+      h('span.link-cell__icon', { html: listIcon(p, p.inSharedGroup) }),
       h('span.link-cell__name', p.name),
       p.ownerName ? h('span.link-cell__by', T('common.byOwner', { profile: p.ownerName })) : null);
   },

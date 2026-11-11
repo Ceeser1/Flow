@@ -206,7 +206,8 @@ const Nav = {
     $('menuPlaylistList').hidden = !playlistsOpen;
 
     // The list playing has the speaker, and its bar on the left stays green.
-    const item = (p) => {
+    // `groupId`: the group it shows in (its followed icon, 4.5.3).
+    const item = (p, groupId = null) => {
       const active = this.page === 'playlist' && this.playlistId === p.id;
       const playing = Player.contextId === p.id && Player.isPlaying;
       return h('button.menu__sub'
@@ -217,7 +218,7 @@ const Nav = {
         onclick: () => this.openPlaylist(p.id),
       },
       // Downloaded Songs has its icon before its name, a followed playlist its green one (4.5.1).
-      p.isDevice || p.isShared ? h('span.menu__sub-icon', { html: listIcon(p) }) : null,
+      p.isDevice || p.isShared ? h('span.menu__sub-icon', { html: listIcon(p, groupId) }) : null,
       h('span.menu__sub-name', p.menuName || p.name),
       playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null);
     };
@@ -297,7 +298,7 @@ const Nav = {
       groupList.appendChild(folder);
       if (!open) continue;
       for (const p of inside) {
-        const el = item(p);
+        const el = item(p, g.id);
         el.classList.add('menu__sub--in-group');
         Groups.draggable(el, p, followedOne ? '' : g.id);
         if (!followedOne) Groups.dropTarget(el, g.id);

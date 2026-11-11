@@ -417,7 +417,7 @@ const GroupPage = {
       },
     },
     h('span.menu__chevron' + (open ? '.menu__chevron--open' : ''), { html: Icons.chevron }),
-    h('span.gframe__icon', { html: listIcon(p) }),
+    h('span.gframe__icon', { html: listIcon(p, this.id) }),
     // The speaker right beside its icon while a song of it plays, its name and numbers moved over.
     playing,
     h('span.gframe__text',

@@ -43,12 +43,15 @@ function iconButton(cls, icon, title, onclick) {
   return h('button.' + cls, { type: 'button', title, 'aria-label': title, html: icon, onclick });
 }
 
-/** The icon beside a playlist's name: which kind of list it is. */
-function listIcon(p) {
+/**
+ * The icon beside a playlist's name: which kind of list it is. `groupId`:
+ * the group it shows in, where a group you follow counts its own follow (4.5.3).
+ */
+function listIcon(p, groupId = null) {
   if (p.isAll || p.isFrom) return Icons.library;
   if (p.isDevice) return Icons.download;
-  // One you follow (4.5.1): the green followed icon.
-  if (p.isShared && Store.isFollowing(p.id)) return Icons.followed;
+  // One you follow (4.5.1), or follow inside the followed group it shows in (4.5.3): the green followed icon.
+  if (p.isShared && (Store.isFollowing(p.id) || (groupId && Store.isFollowingInGroup(groupId, p.id)))) return Icons.followed;
   // Yours, or another profile's shared with you (4.3).
   if (p.isFavourites || p.favourites) return Icons.star;
   return p.isSmart || p.isRuled ? Icons.pulse : Icons.list;
