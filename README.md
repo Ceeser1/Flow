@@ -26,7 +26,8 @@ Flow is made for private use.
   on the PC (followed playlists too), and update every imported playlist of a
   group at once. Each group has its own page: its playlists as frames that
   open and close, one search for all of them, Play (a random playlist, or with
-  Shuffle songs from all of them) and Download for the whole group
+  Shuffle songs from all of them) and Download for the whole group.
+  Groups can be shared with the other profiles, who can follow them
 - **Your listening trend**: most listened, least skipped, long time no see, …
 - **Continue with similar songs** when a playlist ends
 

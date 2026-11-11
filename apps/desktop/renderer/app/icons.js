@@ -49,6 +49,9 @@ const Icons = (() => {
     sessions: svg('<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.1a5 5 0 0 1 5 4.9"/>'),
     pulse: svg('<path d="M3 12h4l3-7 4 14 3-7h4"/>'),
     folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+    // A shared group you follow (4.5.3): the folder in green with a green + inside it (style.css).
+    folderFollowed: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/>')
+      .replace('class="icon"', 'class="icon icon--followed-group"'),
     moon: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
     more: svg('<circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/>', true),    speaker: svg('<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>'),
     menu: svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),

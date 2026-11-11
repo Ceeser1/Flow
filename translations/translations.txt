@@ -5564,10 +5564,88 @@ groups.hide.tooltip
   en: Hide the playlists in "{group}"
   de: Die Playlists in „{group}“ ausblenden
 
+# Shared groups (4.5.3): a group shared with the other profiles, its playlists with it
+
+groups.sharedMark
+  en: Shared
+  de: Geteilt
+
+groups.share.tooltip
+  en: Share "{group}" with the other profiles. Its playlists get shared with it.
+  de: „{group}“ mit den anderen Profilen teilen. Ihre Playlists werden mit geteilt.
+
+groups.share.on.tooltip
+  en: "{group}" is shared with the other profiles. Click to stop sharing it
+  de: „{group}“ ist mit den anderen Profilen geteilt. Klick, um sie nicht mehr zu teilen
+
+groups.shared
+  en: Group "{group}" shared
+  de: Gruppe „{group}“ geteilt
+
+groups.shared.withLists
+  en.one: Group "{group}" shared, and {playlists} in it along with it
+  de.one: Gruppe „{group}“ geteilt, samt {playlists} darin
+  en.other: Group "{group}" shared, and {playlists} in it along with it
+  de.other: Gruppe „{group}“ geteilt, samt {playlists} darin
+
+groups.unshared
+  en: Group "{group}" is no longer shared
+  de: Gruppe „{group}“ wird nicht mehr geteilt
+
+groups.unshared.listsStay
+  en: Group "{group}" is no longer shared. Its playlists stay shared; you can stop sharing each one on its own page.
+  de: Gruppe „{group}“ wird nicht mehr geteilt. Ihre Playlists bleiben geteilt; jede kannst du auf ihrer eigenen Seite nicht mehr teilen.
+
+# A group another profile shares: in Shared Playlists, and once followed at the bottom of the menu's Playlist Groups
+
+groups.follow
+  en: Follow Group
+  de: Gruppe folgen
+
+groups.unfollow
+  en: Unfollow Group
+  de: Gruppe entfolgen
+
+groups.follow.tooltip
+  en: Follow "{group}" by {profile}: it shows in the menu under Playlist Groups
+  de: „{group}“ von {profile} folgen: Sie erscheint im Menü unter Playlist-Gruppen
+
+groups.unfollow.tooltip
+  en: Stop following "{group}"
+  de: „{group}“ nicht mehr folgen
+
+groups.followed
+  en: You follow "{group}" by {profile} now. It is in the menu under Playlist Groups
+  de: Du folgst jetzt „{group}“ von {profile}. Sie ist im Menü unter Playlist-Gruppen
+
+groups.unfollowed
+  en: You no longer follow "{group}"
+  de: Du folgst „{group}“ nicht mehr
+
+groups.followed.open.tooltip
+  en: Open the page of "{group}", shared by {profile}
+  de: Die Seite von „{group}“ öffnen, geteilt von {profile}
 groups.empty
   en: No playlists in this group yet. Drag one here, or use Add playlists.
   de: Noch keine Playlists in dieser Gruppe. Zieh eine hierher, oder nimm Playlists hinzufügen.
 
+# A playlist inside a group you follow: followed there or not, for that group only
+
+groups.inGroup.unfollow.tooltip
+  en: Stop following "{playlist}" in {group} (only in this group)
+  de: „{playlist}“ in {group} nicht mehr folgen (nur in dieser Gruppe)
+
+groups.inGroup.follow.tooltip
+  en: Follow "{playlist}" in {group} again
+  de: „{playlist}“ in {group} wieder folgen
+
+groups.inGroup.unfollowed
+  en: You no longer follow "{playlist}" in {group}
+  de: Du folgst „{playlist}“ in {group} nicht mehr
+
+groups.inGroup.followed
+  en: You follow "{playlist}" in {group} again
+  de: Du folgst „{playlist}“ in {group} wieder
 groups.empty.phone
   en: No playlists in this group yet. Add some with the + button.
   de: Noch keine Playlists in dieser Gruppe. Füg welche mit dem + hinzu.
@@ -7446,6 +7524,11 @@ common.count.sharedPlaylists
   en.other: {count} shared playlists
   de.other: {count} geteilte Playlists
 
+common.count.sharedGroups
+  en.one: {count} shared group
+  de.one: {count} geteilte Gruppe
+  en.other: {count} shared groups
+  de.other: {count} geteilte Gruppen
 common.count.profiles
   en.one: {count} profile
   de.one: {count} Profil
@@ -7718,6 +7801,23 @@ window.playlists.groups.add
   en: Add new group
   de: Neue Gruppe hinzufügen
 
+# Each category's search box on the Playlists page (4.5.3)
+
+window.playlists.search.shared
+  en: Search shared playlists and groups
+  de: Geteilte Playlists und Gruppen durchsuchen
+
+window.playlists.search.yours
+  en: Search your playlists
+  de: Deine Playlists durchsuchen
+
+window.playlists.search.groups
+  en: Search groups and their playlists
+  de: Gruppen und ihre Playlists durchsuchen
+
+window.playlists.search.none
+  en: Nothing here matches the search.
+  de: Hier passt nichts zur Suche.
 window.followed.subheading
   en: Playlists you follow
   de: Playlists, denen du folgst
@@ -8751,10 +8851,20 @@ core.library.noLongerShared
   en: That playlist is no longer shared.
   de: Diese Playlist wird nicht mehr geteilt.
 
+core.library.ownGroupNotFollowed
+  en: Your own groups are always yours; there is nothing to follow.
+  de: Deine eigenen Gruppen gehören immer dir; da gibt es nichts zu folgen.
+
+core.library.groupNoLongerShared
+  en: That group is no longer shared.
+  de: Diese Gruppe wird nicht mehr geteilt.
 core.library.smartByRules
   en: A smart playlist picks its songs by its rules: they cannot be added by hand.
   de: Eine smarte Playlist wählt ihre Songs nach Regeln: Von Hand lassen sie sich nicht hinzufügen.
 
+core.library.groupNotFollowed
+  en: You do not follow that group.
+  de: Du folgst dieser Gruppe nicht.
 core.folder.choose
   en: Please choose a folder.
   de: Bitte wähle einen Ordner.

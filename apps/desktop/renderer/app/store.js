@@ -300,6 +300,21 @@ const Store = {
     return this.sharedPlaylists().filter((p) => this.isFollowing(p.id));
   },
 
+  /** Whether another profile's playlist is followed: itself, or in a group followed (4.5.3). */
+  followsList(id) {
+    if (this.isFollowing(id)) return true;
+    return this.followedGroups().some((g) => this.isFollowingInGroup(g.id, id));
+  },
+
+  /**
+   * Whether a playlist is followed inside a shared group you follow (4.5.3):
+   * all of them are until unfollowed there, which counts for that group only.
+   */
+  isFollowingInGroup(groupId, playlistId) {
+    if (!this.isFollowingGroup(groupId)) return false;
+    return !((this.library.groupSkips || {})[groupId] || []).includes(playlistId);
+  },
+
   /** The followed playlists in no group (4.5.1), A to Z: the menu's Followed Playlists. */
   singleFollowed() {
     return this.followedPlaylists().filter((p) => !this.groupOf(p));
@@ -516,19 +531,56 @@ const Store = {
     return !p.isFavourites && !p.favourites && !!this.library.playlists.find((x) => x.id === p.id);
   },
 
+  /** Groups can be shared and followed (4.5.3): a Flow Server with profiles that keeps that. */
+  canShareGroups() {
+    return this.canShare() && this.canGroup() && !!this.server.sharedGroups;
+  },
+
+  /**
+   * The groups other profiles share (4.5.3), A to Z: { id, name, createdAt,
+   * ownerId, ownerName, playlists (ids), isShared }.
+   */
+  sharedGroups() {
+    if (!this.canShareGroups()) return [];
+    return (this.library.sharedGroups || [])
+      .map((g) => ({ ...g, ownerName: this.profileName(g.ownerId) || g.ownerName, isShared: true }))
+      .sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
+  isFollowingGroup(id) {
+    return (this.library.groupFollows || []).includes(id);
+  },
+
+  /** The shared groups this profile follows (4.5.3), A to Z: at the bottom of the menu's Playlist Groups. */
+  followedGroups() {
+    return this.sharedGroups().filter((g) => this.isFollowingGroup(g.id));
+  },
+
+  /**
+   * A shared group's playlists the window knows (4.5.3), A to Z: with their
+   * songs when followed, else by their details once Shared Playlists fetched them.
+   */
+  listsOfSharedGroup(g) {
+    return (g.playlists || []).map((id) => this.playlist(id)).filter(Boolean)
+      .sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
   /** The playlist groups, A to Z; none where groups cannot be kept. */
   groups() {
     if (!this.canGroup()) return [];
     return [...(this.library.groups || [])].sort((a, b) => Util.compareValues(a.name, b.name));
   },
 
+  /** One of your groups, or (4.5.3) a shared one you follow (isShared: its owner's, to read). */
   group(id) {
-    return this.canGroup() ? (this.library.groups || []).find((g) => g.id === id) || null : null;
+    if (!this.canGroup()) return null;
+    return (this.library.groups || []).find((g) => g.id === id) || this.followedGroups().find((g) => g.id === id) || null;
   },
 
-  /** The group a playlist is in, or null. */
+  /** The group of yours a playlist is in, or null. */
   groupOf(p) {
-    return p && p.group ? this.group(p.group) : null;
+    if (!p || !p.group || !this.canGroup()) return null;
+    return (this.library.groups || []).find((g) => g.id === p.group) || null;
   },
 
   /**
@@ -562,7 +614,10 @@ const Store = {
 
   /** A group's playlists, A to Z: your own, and (4.5.1) the followed ones put into it. */
   playlistsInGroup(id) {
-    if (!this.group(id)) return [];
+    const g = this.group(id);
+    if (!g) return [];
+    // A followed group (4.5.3): the playlists its owner has in it, but those unfollowed there.
+    if (g.isShared) return this.listsOfSharedGroup(g).filter((p) => this.isFollowingInGroup(id, p.id));
     const own = this.sortedPlaylists().filter((p) => p.group === id);
     const followed = this.canGroupFollowed() ? this.followedPlaylists().filter((p) => p.group === id) : [];
     if (!followed.length) return own;

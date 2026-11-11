@@ -259,24 +259,42 @@
           </div>
           <div id="newPlaylistError" class="form-error"></div>
         </div>
+        <!-- Each list shows 10 entries at most, then scrolls in its box, and has a search of its own (4.5.3). -->
         <div class="section-head">
           <button id="sharedHead" class="section-head__btn" type="button"></button>
           <span id="sharedCount" class="muted-text"></span>
+          <div class="search-box search-box--section">
+            <span class="search-box__icon"></span>
+            <input id="sharedSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false"
+                   placeholder="Search shared playlists and groups" data-i18n-placeholder="window.playlists.search.shared" />
+          </div>
         </div>
-        <table id="sharedTable" class="table table--playlists"></table>
+        <div id="sharedBox" class="list-limit"><table id="sharedTable" class="table table--playlists"></table></div>
+        <p id="sharedNoMatch" class="muted-text list-nomatch" hidden data-i18n="window.playlists.search.none">Nothing here matches the search.</p>
         <!-- Your Playlists: the ones in no group (a playlist dragged here leaves its group). -->
         <div id="playlistsSingle" class="drop-area">
           <div class="section-head">
             <h2 class="section-head__title" data-i18n="window.playlists.yours">Your Playlists</h2>
             <span id="playlistsCount" class="muted-text"></span>
+            <div class="search-box search-box--section">
+              <span class="search-box__icon"></span>
+              <input id="playlistsSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false"
+                     placeholder="Search your playlists" data-i18n-placeholder="window.playlists.search.yours" />
+            </div>
           </div>
-          <table id="playlistsTable" class="table table--playlists"></table>
+          <div id="playlistsBox" class="list-limit"><table id="playlistsTable" class="table table--playlists"></table></div>
+          <p id="playlistsNoMatch" class="muted-text list-nomatch" hidden data-i18n="window.playlists.search.none">Nothing here matches the search.</p>
         </div>
         <!-- Playlist Groups (4.5): folders of playlists, also in the menu. -->
         <div id="groupsSection">
           <div class="section-head">
             <h2 class="section-head__title" data-i18n="window.playlists.groups">Playlist Groups</h2>
             <span id="groupsCount" class="muted-text"></span>
+            <div id="groupsSearchBox" class="search-box search-box--section">
+              <span class="search-box__icon"></span>
+              <input id="groupsSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false"
+                     placeholder="Search groups and their playlists" data-i18n-placeholder="window.playlists.search.groups" />
+            </div>
           </div>
           <div class="link-row group-new">
             <input id="newGroupName" class="input" type="text" maxlength="80"
@@ -285,7 +303,8 @@
           </div>
           <div id="newGroupError" class="form-error"></div>
           <p id="groupsHint" class="muted-text groups-hint"></p>
-          <div id="groupsList" class="groups"></div>
+          <div id="groupsList" class="groups list-limit"></div>
+          <p id="groupsNoMatch" class="muted-text list-nomatch" hidden data-i18n="window.playlists.search.none">Nothing here matches the search.</p>
         </div>
       </section>
 
@@ -314,6 +333,8 @@
             <button id="grShuffle" class="toggle" type="button" aria-pressed="false"
                     title="Play in random order: with it on, Play draws each song from all the playlists of the group" data-i18n-title="window.group.shuffle.tooltip"></button>
             <span id="grShuffleHint" class="pl-hint" data-i18n="window.group.shuffle.hint">Shuffling the group picks random songs from any playlist inside, mixing all together</span>
+            <!-- Share for a group of yours, Unfollow Group for one another profile shares (4.5.3). -->
+            <button id="grShare" class="toggle" type="button" aria-pressed="false" hidden></button>
             <!-- At the row's right end, its note before it. -->
             <span id="grOfflineNote" class="pl-meta" hidden></span>
             <button id="grOffline" class="toggle" type="button" aria-pressed="false" hidden></button>

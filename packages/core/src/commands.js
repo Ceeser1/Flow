@@ -106,6 +106,42 @@ const TYPES = {
       return {};
     },
   },
+  // Sharing a group (4.5.3): its playlists are shared with it.
+  setGroupShared: {
+    keys: (c) => [`g:${c.groupId}:shared`],
+    run(d, c) {
+      if (!model.groupById(d, str(c.groupId))) return { skipped: 'gone' };
+      model.setGroupShared(d, str(c.groupId), !!c.shared);
+      return {};
+    },
+  },
+  // Following a group another profile shares (4.5.3).
+  followGroup: {
+    keys: (c) => [`fg:${c.groupId}`],
+    run(d, c) {
+      const id = str(c.groupId);
+      // Unshared or deleted since: the follow waits for nothing.
+      if (!model.sharedGroupById(d, id) && !model.groupById(d, id)) return { skipped: 'gone' };
+      model.followGroup(d, id);
+      return {};
+    },
+  },
+  // A playlist followed or not inside a group it follows (4.5.3): for that group only.
+  setGroupPlaylistFollowed: {
+    keys: (c) => [`fg:${c.groupId}:${c.playlistId}`],
+    run(d, c) {
+      if (!(d.groupFollows || []).includes(str(c.groupId))) return { skipped: 'gone' };
+      model.setGroupPlaylistFollowed(d, str(c.groupId), str(c.playlistId), !!c.on);
+      return {};
+    },
+  },
+  unfollowGroup: {
+    keys: (c) => [`fg:${c.groupId}`],
+    run(d, c) {
+      model.unfollowGroup(d, str(c.groupId));
+      return {};
+    },
+  },
   setPlaylistShared: {
     keys: (c) => [`p:${c.playlistId}:shared`],
     run(d, c) {

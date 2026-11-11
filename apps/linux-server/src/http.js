@@ -192,7 +192,8 @@ const PROTOCOL = 2;
 // smartPlaylists: a playlist's rules are kept (4.0). pair: QR codes' pairing codes (4.0).
 // playlistGroups: the groups' commands and each owner's groups in the library (4.5).
 // followedInGroups: followed playlists put into groups too, kept in the group's followed (4.5.1).
-const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups'];
+// sharedGroups: groups shared (with their playlists) and followed, sharedGroups and groupFollows in the library (4.5.3).
+const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;

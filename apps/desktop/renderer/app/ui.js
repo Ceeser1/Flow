@@ -546,6 +546,39 @@ function renderTable(table, {
   });
 }
 
+/**
+ * A list in `box` showing `n` entries at most (4.5.3, the Playlists page):
+ * with more, the box is as tall as its first `n` (`selector`: its entries)
+ * and scrolls, the column names staying on top. Only while it shows (it
+ * cannot measure hidden); drawn again once shown.
+ */
+function limitRows(box, selector, n = 10) {
+  const rows = box.querySelectorAll(selector);
+  if (rows.length <= n || !box.offsetParent) {
+    box.style.maxHeight = '';
+    box.classList.remove('list-limit--scrolls');
+    return;
+  }
+  const top = box.getBoundingClientRect().top - box.scrollTop;
+  box.style.maxHeight = `${Math.ceil(rows[n].getBoundingClientRect().top - top)}px`;
+  box.classList.add('list-limit--scrolls');
+  // On a touch screen it scrolls only from its middle half: a swipe on its
+  // outer quarters moves the page past it (as Administration's lists do).
+  if (box._edgeSwipes) return;
+  box._edgeSwipes = true;
+  box.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    const r = box.getBoundingClientRect();
+    const x = (e.touches[0].clientX - r.left) / r.width;
+    box.classList.toggle('list-limit--page', x < 0.25 || x > 0.75);
+  }, { passive: false });
+  const lift = (e) => {
+    if (!e.touches.length) box.classList.remove('list-limit--page');
+  };
+  box.addEventListener('touchend', lift);
+  box.addEventListener('touchcancel', lift);
+}
+
 // ---- dialogs ----
 
 /**

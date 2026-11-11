@@ -249,7 +249,11 @@ const Nav = {
     // plays and its bar while one of them is open. Followed playlists can
     // be in them too. On the computer a playlist can be dragged onto a
     // folder, or onto the single ones to leave its group (groups.js).
-    const groups = Store.groups();
+    // The shared groups followed (4.5.3) come last, with the green folder, to
+    // open and play but not to change (nothing is dropped onto them).
+    const own = Store.groups();
+    const followedGroups = Store.followedGroups();
+    const groups = [...own, ...followedGroups];
     $('menuGroups').hidden = !Store.canGroup();
     this._arrows.groupsMenuOpen.hidden = !groups.length;
     $('menuGroupsList').hidden = !Store.canGroup() || !groups.length || !groupsOpen;
@@ -258,6 +262,7 @@ const Nav = {
     this._groupsPlaying.hidden = groupsOpen || !Player.isPlaying || !inGroups.has(Player.contextId);
     $('menuGroups').classList.toggle('menu__item--active', this.page === 'playlist' && !groupsOpen && inGroups.has(this.playlistId));
     for (const g of groups) {
+      const followedOne = !!g.isShared;
       const inside = Store.playlistsInGroup(g.id);
       const open = Groups.isOpen(g.id);
       // The group played as one list (4.5.2), or (closed) one of its playlists.
@@ -276,23 +281,23 @@ const Nav = {
         + (active ? '.menu__sub--active' : '')
         + (playing ? '.menu__sub--playing' : ''), {
         type: 'button',
-        title: T('groups.open.tooltip', { group: g.name }),
+        title: followedOne ? T('groups.followed.open.tooltip', { group: g.name, profile: g.ownerName }) : T('groups.open.tooltip', { group: g.name }),
         'aria-expanded': String(open),
         onclick: () => this.openGroup(g.id),
       },
       h('span.menu__group-toggle', { role: 'button', title: toggleTitle, 'aria-label': toggleTitle, onclick: toggle },
         h('span.menu__chevron' + (open ? '.menu__chevron--open' : ''), { html: Icons.chevron }),
-        h('span.menu__sub-icon', { html: Icons.folder })),
+        h('span.menu__sub-icon', { html: followedOne ? Icons.folderFollowed : Icons.folder })),
       h('span.menu__sub-name', g.name),
       playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null);
-      Groups.dropTarget(folder, g.id);
+      if (!followedOne) Groups.dropTarget(folder, g.id);
       groupList.appendChild(folder);
       if (!open) continue;
       for (const p of inside) {
         const el = item(p);
         el.classList.add('menu__sub--in-group');
         Groups.draggable(el, p);
-        Groups.dropTarget(el, g.id);
+        if (!followedOne) Groups.dropTarget(el, g.id);
         groupList.appendChild(el);
       }
     }

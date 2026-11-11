@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('flow', {
   setPlaylistGroup: (playlistIds, groupId) => call('library:setPlaylistGroup', { playlistIds, groupId }),
   setPlaylistShared: (id, shared) => call('library:setPlaylistShared', { id, shared }),
   setFollowing: (id, on) => call('library:setFollowing', { id, on }),
+  // Shared groups (4.5.3): a group shared with its playlists, and one the others share followed.
+  setGroupShared: (id, shared) => call('library:setGroupShared', { id, shared }),
+  setGroupFollowing: (id, on) => call('library:setGroupFollowing', { id, on }),
+  // A playlist inside a followed group, followed there or no longer (that group only).
+  setGroupPlaylistFollowed: (groupId, playlistId, on) => call('library:setGroupPlaylistFollowed', { groupId, playlistId, on }),
   addSongToPlaylists: (songId, playlistIds) => call('library:addSongToPlaylists', { songId, playlistIds }),
   addSongsToPlaylist: (playlistId, songIds) => call('library:addSongsToPlaylist', { playlistId, songIds }),
   removeFromPlaylist: (playlistId, songId) => call('library:removeFromPlaylist', { playlistId, songId }),

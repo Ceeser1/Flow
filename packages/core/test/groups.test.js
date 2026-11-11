@@ -190,3 +190,121 @@ test('a new profile copies the Default groups without its followed playlists (4.
   prof.addProfile(l.data, l.profiles, 'anna', () => 'n1');
   assert.equal(l.profiles.anna.groups[0].followed, undefined);
 });
+
+test('a shared group (4.5.3): its playlists shared with it, seen and followed by the others', () => {
+  const l = { data: lib(), profiles: {} };
+  for (const id of ['anna', 'ben', 'carl']) prof.addProfile(l.data, l.profiles, id, (() => { let n = 0; return () => `${id}${n++}`; })());
+  const names = { anna: 'Anna', ben: 'Ben', carl: 'Carl' };
+  run(l, 'anna', { type: 'createPlaylist', playlistId: 'pa', name: 'Evening' });
+  run(l, 'anna', { type: 'createPlaylist', playlistId: 'ps', name: 'Most heard', rules: { match: 'all', conditions: [{ field: 'plays', op: 'gt', value: 3 }] } });
+  run(l, 'anna', { type: 'createGroup', groupId: 'ga', name: 'Moods' });
+  run(l, 'anna', { type: 'setPlaylistGroup', playlistId: 'pa', groupId: 'ga' });
+  run(l, 'anna', { type: 'setPlaylistGroup', playlistId: 'ps', groupId: 'ga' });
+  // Ben's shared playlist, followed by Anna and put into her group.
+  run(l, 'ben', { type: 'createPlaylist', playlistId: 'pb', name: 'Jazz' });
+  run(l, 'ben', { type: 'setPlaylistShared', playlistId: 'pb', shared: true });
+  run(l, 'anna', { type: 'followPlaylist', playlistId: 'pb' });
+  run(l, 'anna', { type: 'setPlaylistGroup', playlistId: 'pb', groupId: 'ga' });
+  run(l, 'anna', { type: 'setGroupShared', groupId: 'ga', shared: true });
+  let anna = prof.view(l.data, l.profiles, 'anna', names);
+  assert.equal(anna.groups[0].shared, true);
+  assert.equal(anna.playlists.find((p) => p.id === 'pa').shared, true, 'shared with the group');
+  assert.equal(anna.playlists.find((p) => p.id === 'ps').shared, false, 'a smart one cannot be');
+  assert.equal(prof.view(l.data, l.profiles, 'ben', names).playlists.find((p) => p.id === 'pb').group, undefined, 'Ben\'s list untouched');
+  // A playlist put in later is shared too.
+  run(l, 'anna', { type: 'createPlaylist', playlistId: 'pa2', name: 'Morning' });
+  run(l, 'anna', { type: 'setPlaylistGroup', playlistId: 'pa2', groupId: 'ga' });
+  assert.equal(prof.view(l.data, l.profiles, 'anna').playlists.find((p) => p.id === 'pa2').shared, true);
+
+  // Carl sees the group with its shared playlists (not the smart one), and follows it.
+  let carl = prof.view(l.data, l.profiles, 'carl', names);
+  assert.deepEqual(carl.sharedGroups.map((g) => [g.id, g.ownerName, g.playlists]), [['ga', 'Anna', ['pa', 'pa2', 'pb']]]);
+  assert.deepEqual(anna.sharedGroups, [], 'not her own');
+  assert.throws(() => run(l, 'anna', { type: 'followGroup', groupId: 'ga' }), /always yours/);
+  run(l, 'carl', { type: 'followGroup', groupId: 'ga' });
+  carl = prof.view(l.data, l.profiles, 'carl', names);
+  assert.deepEqual(carl.groupFollows, ['ga']);
+  assert.deepEqual(carl.follows, []);
+  assert.ok(m.isFollowed(carl, 'pa') && m.isFollowed(carl, 'pb'));
+  assert.ok(!m.isFollowed(carl, 'ps'));
+  assert.deepEqual([...m.followedIds(carl)].sort(), ['pa', 'pa2', 'pb']);
+  // Listening to one of its playlists counts, as for one followed.
+  run(l, 'anna', { type: 'addSongsToPlaylist', playlistId: 'pa', songIds: ['s1'] });
+  run(l, 'carl', { type: 'recordListen', songId: 's1', listened: 200, duration: 380, contextId: 'pa' });
+  assert.equal(prof.view(l.data, l.profiles, 'carl').playlistListened.pa, 200);
+  // Kept through a save and load.
+  const again = prof.sanitizeProfiles(l.data, JSON.parse(JSON.stringify(l.profiles)));
+  assert.deepEqual([again.anna.groups[0].shared, again.carl.groupFollows], [true, ['ga']]);
+
+  // Ben stops sharing Jazz: Anna's group loses it, her follow waits.
+  run(l, 'ben', { type: 'setPlaylistShared', playlistId: 'pb', shared: false });
+  anna = prof.view(l.data, l.profiles, 'anna', names);
+  assert.equal(anna.groups[0].followed, undefined);
+  assert.deepEqual(anna.follows, ['pb']);
+  assert.deepEqual(prof.view(l.data, l.profiles, 'carl', names).sharedGroups[0].playlists, ['pa', 'pa2']);
+  // No longer shared: the others no longer see it, its playlists stay shared, the follow waits.
+  run(l, 'anna', { type: 'setGroupShared', groupId: 'ga', shared: false });
+  carl = prof.view(l.data, l.profiles, 'carl', names);
+  assert.deepEqual([carl.sharedGroups, carl.groupFollows], [[], ['ga']]);
+  assert.equal(prof.view(l.data, l.profiles, 'anna').playlists.find((p) => p.id === 'pa').shared, true);
+  assert.equal(carl.playlistListened.pa, undefined, 'no longer followed: its time goes');
+  // Deleted: the follow goes.
+  run(l, 'anna', { type: 'deleteGroup', groupId: 'ga' });
+  assert.deepEqual(prof.view(l.data, l.profiles, 'carl').groupFollows, []);
+});
+
+test('a new profile copies the Default groups unshared (4.5.3); sanitize keeps shared groups and group follows', () => {
+  const l = { data: lib(), profiles: {} };
+  l.data.groups = [{ id: 'g1', name: 'Rock', createdAt: 1, shared: true }];
+  prof.addProfile(l.data, l.profiles, 'anna', () => 'n1');
+  assert.equal(l.profiles.anna.groups[0].shared, undefined);
+  const d = m.sanitize({
+    ...lib(),
+    groups: [{ id: 'g1', name: 'A', shared: true }, { id: 'g2', name: 'B', shared: 'yes' }],
+    groupFollows: ['x', 'x', ''],
+    sharedGroups: [{ id: 'sg', name: ' Mix ', ownerId: 'ben', ownerName: 'Ben', playlists: ['p', 'p', 'q'] }, { id: 'bad id!' }],
+  });
+  assert.deepEqual(d.groups.map((g) => g.shared), [true, undefined]);
+  assert.deepEqual(d.groupFollows, ['x']);
+  assert.deepEqual(d.sharedGroups.map((g) => [g.id, g.name, g.playlists]), [['sg', 'Mix', ['p', 'q']]]);
+});
+
+test('a playlist unfollowed inside a followed group (4.5.3): only for that group; followed by itself apart', () => {
+  const l = { data: lib(), profiles: {} };
+  for (const id of ['anna', 'ben', 'carl']) prof.addProfile(l.data, l.profiles, id, (() => { let n = 0; return () => `${id}${n++}`; })());
+  // Ben's Jazz is in his shared group and, followed by Anna, in hers.
+  run(l, 'ben', { type: 'createPlaylist', playlistId: 'pb', name: 'Jazz' });
+  run(l, 'ben', { type: 'createGroup', groupId: 'gb', name: 'Ben Mix' });
+  run(l, 'ben', { type: 'setPlaylistGroup', playlistId: 'pb', groupId: 'gb' });
+  run(l, 'ben', { type: 'setGroupShared', groupId: 'gb', shared: true });
+  run(l, 'anna', { type: 'createPlaylist', playlistId: 'pa', name: 'Evening' });
+  run(l, 'anna', { type: 'createGroup', groupId: 'ga', name: 'Moods' });
+  run(l, 'anna', { type: 'setPlaylistGroup', playlistId: 'pa', groupId: 'ga' });
+  run(l, 'anna', { type: 'followPlaylist', playlistId: 'pb' });
+  run(l, 'anna', { type: 'setPlaylistGroup', playlistId: 'pb', groupId: 'ga' });
+  run(l, 'anna', { type: 'setGroupShared', groupId: 'ga', shared: true });
+  run(l, 'carl', { type: 'followGroup', groupId: 'ga' });
+  run(l, 'carl', { type: 'followGroup', groupId: 'gb' });
+  const carl = () => prof.view(l.data, l.profiles, 'carl');
+  const ga = () => carl().sharedGroups.find((g) => g.id === 'ga');
+  // Unfollowed in Anna's group: still followed through Ben's.
+  run(l, 'carl', { type: 'setGroupPlaylistFollowed', groupId: 'ga', playlistId: 'pb', on: false });
+  assert.deepEqual(m.followedInGroup(carl(), ga()), ['pa']);
+  assert.ok(m.isFollowed(carl(), 'pb'));
+  run(l, 'carl', { type: 'setGroupPlaylistFollowed', groupId: 'gb', playlistId: 'pb', on: false });
+  assert.ok(!m.isFollowed(carl(), 'pb'));
+  assert.deepEqual(carl().follows, []);
+  // Followed by itself: in follows (Followed Playlists), the groups as they were.
+  run(l, 'carl', { type: 'followPlaylist', playlistId: 'pb' });
+  assert.deepEqual(carl().follows, ['pb']);
+  assert.deepEqual(carl().groupSkips, { ga: ['pb'], gb: ['pb'] });
+  // Followed in the group again.
+  run(l, 'carl', { type: 'setGroupPlaylistFollowed', groupId: 'ga', playlistId: 'pb', on: true });
+  assert.deepEqual(m.followedInGroup(carl(), ga()), ['pa', 'pb']);
+  // Kept over a save and load; gone with the group's follow.
+  assert.deepEqual(prof.sanitizeProfiles(l.data, JSON.parse(JSON.stringify(l.profiles))).carl.groupSkips, { gb: ['pb'] });
+  run(l, 'carl', { type: 'unfollowGroup', groupId: 'gb' });
+  assert.deepEqual(carl().groupSkips, {});
+  // Not followed: nothing to unfollow inside.
+  assert.deepEqual(run(l, 'carl', { type: 'setGroupPlaylistFollowed', groupId: 'gb', playlistId: 'pb', on: false }), { skipped: 'gone' });
+});

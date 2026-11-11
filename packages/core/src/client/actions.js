@@ -149,6 +149,24 @@ function createActions({
     return result;
   }
 
+  // Sharing a group (4.5.3), its playlists with it, and following one the others share.
+  function setGroupShared({ id, shared }) {
+    return change((d) => model.setGroupShared(d, id, !!shared), 'setGroupShared', { groupId: id, shared: !!shared });
+  }
+
+  function setGroupFollowing({ id, on }) {
+    if (!remote.active()) throw new Error(tr('songs.error.followNeedsServer', 'Following playlists needs a Flow Server.'));
+    // Unfollowed: its playlists' downloaded songs go too, as they are no
+    // longer followed (remote.js, rememberMarked), unless followed apart.
+    return remote.command(on ? 'followGroup' : 'unfollowGroup', { groupId: id });
+  }
+
+  /** A playlist inside a group it follows, followed there or no longer (for that group only). */
+  function setGroupPlaylistFollowed({ groupId, playlistId, on }) {
+    if (!remote.active()) throw new Error(tr('songs.error.followNeedsServer', 'Following playlists needs a Flow Server.'));
+    return remote.command('setGroupPlaylistFollowed', { groupId, playlistId, on: !!on });
+  }
+
   function addSongToPlaylists({ songId, playlistIds }) {
     return change((d) => model.addSongToPlaylists(d, songId, playlistIds), 'addSongToPlaylists', { songId, playlistIds });
   }
@@ -285,6 +303,9 @@ function createActions({
     setPlaylistGroup,
     setPlaylistShared,
     setFollowing,
+    setGroupShared,
+    setGroupFollowing,
+    setGroupPlaylistFollowed,
     addSongToPlaylists,
     addSongsToPlaylist,
     removeFromPlaylist,

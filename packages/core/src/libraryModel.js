@@ -39,6 +39,9 @@
 //             this owner follows that it put into the group (a followed
 //             playlist is another profile's, so its group is kept here, by
 //             whoever follows it); one group at most, only while followed.
+//             shared (4.5.3): the other profiles see the group, with the
+//             shared playlists in it, and can follow it. Sharing a group
+//             shares the owner's playlists in it, and one put into it later.
 //
 // With profiles (profiles.js) a library also carries what the other profiles
 // share with this one:
@@ -53,6 +56,17 @@
 //                    heard, listens, per month; never lowered by deleting songs
 //   sharedPlaylists  the other profiles' shared playlists, for reading:
 //                    { id, name, createdAt, entries, ownerId, ownerName }
+//   groupFollows     (4.5.3) ids of the shared groups this profile follows
+//   groupSkips       (4.5.3) { [groupId]: playlist ids } the playlists this
+//                    profile unfollowed inside a group it follows: that follow
+//                    counts only for its group (the same playlist in another
+//                    followed group stays, and one followed by itself is in
+//                    follows, under Followed Playlists)
+//   sharedGroups     (4.5.3) the other profiles' shared groups, for reading:
+//                    { id, name, createdAt, ownerId, ownerName, playlists }
+//                    (playlists: the ids of the shared ones in it, the owner's
+//                    and those it follows). A followed group's playlists come
+//                    with their songs, as the followed playlists do.
 //   profileNames     { [profileId]: name } of the server's profiles (and the
 //                    Default / Shared), for the songs' addedBy ("All Songs from ...")
 //
@@ -107,7 +121,7 @@ function cleanStats(raw) {
 const INFO_ROUND = 2;
 
 function emptyLibrary() {
-  return { version: 1, songs: [], playlists: [], groups: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {}, infoRound: INFO_ROUND };
+  return { version: 1, songs: [], playlists: [], groups: [], ignoredFiles: [], follows: [], groupFollows: [], groupSkips: {}, sharedPlaylists: [], sharedGroups: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {}, infoRound: INFO_ROUND };
 }
 
 /** The playlist groups (4.5): each once, with a name and an id. */
@@ -126,21 +140,56 @@ function cleanGroups(raw) {
     };
     const followed = cleanIds(g.followed);
     if (followed.length) group.followed = followed;
+    if (g.shared === true) group.shared = true;
     out.push(group);
+  }
+  return out;
+}
+
+/** { groupId: playlist ids } (4.5.3): only sensible ids, none empty. */
+function cleanSkips(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [id, list] of Object.entries(raw)) {
+    const ids = cleanIds(list);
+    if (/^[\w-]{1,64}$/.test(id) && ids.length) out[id] = ids;
+  }
+  return out;
+}
+
+/** The other profiles' shared groups (4.5.3), as the server sent them. */
+function cleanSharedGroups(raw) {
+  const out = [];
+  const seen = new Set();
+  for (const g of Array.isArray(raw) ? raw : []) {
+    if (!g || typeof g !== 'object') continue;
+    const id = String(g.id || '');
+    if (!/^[\w-]{1,64}$/.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      name: String(g.name || '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME) || 'Group',
+      createdAt: Number(g.createdAt) || Date.now(),
+      ownerId: String(g.ownerId || ''),
+      ownerName: String(g.ownerName || ''),
+      playlists: cleanIds(g.playlists),
+    });
   }
   return out;
 }
 
 /**
  * The followed playlists in the groups (4.5.1): only ones still followed
- * (`follows`), each in one group at most (the first that has it).
+ * (`follows`), each in one group at most (the first that has it). With
+ * `shared` (4.5.3, the server: the ids of every playlist shared now), one
+ * its owner no longer shares leaves the group too (the follow waits).
  */
-function keepFollowedInGroups(groups, follows) {
+function keepFollowedInGroups(groups, follows, shared = null) {
   const followed = new Set(follows || []);
   const placed = new Set();
   for (const g of groups || []) {
     if (!g.followed) continue;
-    const ids = g.followed.filter((id) => followed.has(id) && !placed.has(id));
+    const ids = g.followed.filter((id) => followed.has(id) && !placed.has(id) && (!shared || shared.has(id)));
     for (const id of ids) placed.add(id);
     if (ids.length) g.followed = ids;
     else delete g.followed;
@@ -309,6 +358,9 @@ function sanitize(raw) {
   }
   data.follows = cleanIds(raw.follows);
   keepFollowedInGroups(data.groups, data.follows);
+  data.groupFollows = cleanIds(raw.groupFollows);
+  data.groupSkips = cleanSkips(raw.groupSkips);
+  data.sharedGroups = cleanSharedGroups(raw.sharedGroups);
   data.playlistListened = cleanListened(raw.playlistListened);
   data.listening = cleanListening(raw.listening);
   data.statistics = cleanStatistics(raw.statistics);
@@ -455,6 +507,66 @@ function followPlaylist(data, id) {
   data.follows = cleanIds([...(data.follows || []), id]);
 }
 
+/** Another profile's shared group (4.5.3), or null. */
+function sharedGroupById(data, id) {
+  return (data.sharedGroups || []).find((g) => g.id === id) || null;
+}
+
+/**
+ * The playlists this profile follows (4.5.3): those it follows itself, and
+ * those in the shared groups it follows. A Set of ids.
+ */
+function followedIds(data) {
+  const out = new Set(data.follows || []);
+  const groups = new Set(data.groupFollows || []);
+  for (const g of data.sharedGroups || []) if (groups.has(g.id)) for (const id of followedInGroup(data, g)) out.add(id);
+  return out;
+}
+
+/** A followed shared group's playlists this profile follows in it: all but those unfollowed there (4.5.3). */
+function followedInGroup(data, g) {
+  const skipped = (data.groupSkips || {})[g.id] || [];
+  return skipped.length ? g.playlists.filter((id) => !skipped.includes(id)) : g.playlists.slice();
+}
+
+/** Whether another profile's playlist is followed: by itself, or in a followed group (4.5.3). */
+function isFollowed(data, id) {
+  if ((data.follows || []).includes(id)) return true;
+  const groups = data.groupFollows || [];
+  return groups.length > 0 && (data.sharedGroups || []).some((g) => groups.includes(g.id) && followedInGroup(data, g).includes(id));
+}
+
+/**
+ * Follows a playlist inside a group this profile follows (4.5.3), or no
+ * longer: only for that group; the follow of the playlist itself and those
+ * of other groups stay as they are.
+ */
+function setGroupPlaylistFollowed(data, groupId, playlistId, on) {
+  if (!(data.groupFollows || []).includes(groupId)) throw new Error(tr('core.library.groupNotFollowed', 'You do not follow that group.'));
+  const skips = { ...(data.groupSkips || {}) };
+  const ids = (skips[groupId] || []).filter((id) => id !== playlistId);
+  if (!on) ids.push(String(playlistId));
+  if (ids.length) skips[groupId] = ids;
+  else delete skips[groupId];
+  data.groupSkips = skips;
+}
+
+/** Follows a group another profile shares (4.5.3). Your own cannot be followed. */
+function followGroup(data, id) {
+  if (groupById(data, id)) throw new Error(tr('core.library.ownGroupNotFollowed', 'Your own groups are always yours; there is nothing to follow.'));
+  if (!sharedGroupById(data, id)) throw new Error(tr('core.library.groupNoLongerShared', 'That group is no longer shared.'));
+  data.groupFollows = cleanIds([...(data.groupFollows || []), id]);
+}
+
+function unfollowGroup(data, id) {
+  data.groupFollows = (data.groupFollows || []).filter((x) => x !== id);
+  // What was unfollowed inside it goes with it: followed again, it is whole.
+  if (data.groupSkips && data.groupSkips[id]) {
+    data.groupSkips = { ...data.groupSkips };
+    delete data.groupSkips[id];
+  }
+}
+
 function unfollowPlaylist(data, id) {
   data.follows = (data.follows || []).filter((x) => x !== id);
   // Out of its group too (4.5.1).
@@ -514,6 +626,22 @@ function renameGroup(data, id, name) {
   return g;
 }
 
+/**
+ * Shares a group with the other profiles (4.5.3), or no longer. Shared, every
+ * playlist of the owner's in it is shared too (a smart one cannot be, so it
+ * stays the owner's alone); no longer shared, they stay as they are.
+ */
+function setGroupShared(data, id, shared) {
+  const g = requireGroup(data, id);
+  if (!shared) {
+    delete g.shared;
+    return g;
+  }
+  g.shared = true;
+  for (const p of data.playlists) if (p.group === id && !p.rules && !p.favourites) p.shared = true;
+  return g;
+}
+
 /** The group goes; its playlists stay, single again. */
 function deleteGroup(data, id) {
   requireGroup(data, id);
@@ -548,8 +676,10 @@ function setPlaylistGroup(data, playlistId, groupId) {
     delete p.group;
     return p;
   }
-  requireGroup(data, groupId);
+  const g = requireGroup(data, groupId);
   p.group = String(groupId);
+  // Into a shared group: shared too (4.5.3).
+  if (g.shared && !p.rules) p.shared = true;
   return p;
 }
 
@@ -725,8 +855,8 @@ function addListenedTo(data, listId, songId, seconds) {
   const builtIn = listId === ALL_SONGS_ID || listId === 'favourites' || listId.startsWith('smart:');
   const list = builtIn ? null : (playlistById(data, listId) || sharedPlaylistById(data, listId));
   if (!builtIn && (!list || !list.entries.some((e) => e.songId === songId))) return;
-  // Another profile's list only counts while it is followed.
-  if (list && !playlistById(data, listId) && !(data.follows || []).includes(listId)) return;
+  // Another profile's list only counts while it is followed (itself, or its shared group, 4.5.3).
+  if (list && !playlistById(data, listId) && !isFollowed(data, listId)) return;
   if (!data.playlistListened || typeof data.playlistListened !== 'object') data.playlistListened = {};
   data.playlistListened[listId] = (data.playlistListened[listId] || 0) + seconds;
 }
@@ -892,6 +1022,7 @@ module.exports = {
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource, setPlaylistRules, cleanRules, recordAwayListen, favouritesList,
   RULE_FIELDS, RULE_OPS, RULE_SORTS,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
+  sharedGroupById, followedIds, followedInGroup, isFollowed, setGroupPlaylistFollowed, followGroup, unfollowGroup, setGroupShared, cleanSharedGroups, cleanSkips,
   cleanGroups, keepFollowedInGroups, groupOfFollowed, groupById, checkGroupName, freeGroupName, createGroup, renameGroup, deleteGroup, setPlaylistGroup, playlistsInGroup,
   addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,

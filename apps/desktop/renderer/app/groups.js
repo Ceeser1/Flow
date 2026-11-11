@@ -16,6 +16,10 @@
 // playlist is dragged from the menu or the Playlists page onto a group, or
 // back onto the single playlists. The phone has no dragging (a long press
 // already chooses rows there), only Move to group.
+//
+// 4.5.3: a group of yours can be shared (its playlists with it), and one
+// another profile shares can be followed; a playlist inside a group you
+// follow can be unfollowed there, for that group only.
 
 const Groups = {
   DRAG_TYPE: 'application/x-flow-playlist',
@@ -86,6 +90,45 @@ const Groups = {
     await attempt(async () => {
       await window.flow.deleteGroup(g.id);
       toast(T('groups.delete.done', { group: g.name }), 'success');
+    });
+  },
+
+  // ---- sharing and following (4.5.3) ----
+
+  /**
+   * Shares a group of yours with the other profiles, its playlists with it
+   * (and each put into it later), or no longer: then its playlists stay
+   * shared, each can be stopped on its own page.
+   */
+  async setShared(g, on) {
+    const own = Store.playlistsInGroup(g.id).filter((p) => !p.isShared);
+    const newly = on ? own.filter((p) => !p.shared && !p.isRuled).length : 0;
+    await attempt(async () => {
+      await window.flow.setGroupShared(g.id, on);
+      let text;
+      if (!on) text = own.some((p) => p.shared) ? T('groups.unshared.listsStay', { group: g.name }) : T('groups.unshared', { group: g.name });
+      else text = newly ? T('groups.shared.withLists', { group: g.name, playlists: Util.plural(newly, 'playlist'), count: newly }) : T('groups.shared', { group: g.name });
+      toast(text, 'success');
+    });
+  },
+
+  /** Follows a group another profile shares, or no longer. */
+  async setFollowing(g, on) {
+    await attempt(async () => {
+      await window.flow.setGroupFollowing(g.id, on);
+      toast(T(on ? 'groups.followed' : 'groups.unfollowed', { group: g.name, profile: g.ownerName }), 'success');
+    });
+  },
+
+  /**
+   * A playlist followed or not inside a group you follow (4.5.3): for that
+   * group only (followed by itself, or in another group, it stays).
+   */
+  async setFollowingIn(groupId, p, on) {
+    const g = Store.sharedGroups().find((x) => x.id === groupId);
+    await attempt(async () => {
+      await window.flow.setGroupPlaylistFollowed(groupId, p.id, on);
+      toast(T(on ? 'groups.inGroup.followed' : 'groups.inGroup.unfollowed', { playlist: p.name, group: g ? g.name : '' }), 'success');
     });
   },
 

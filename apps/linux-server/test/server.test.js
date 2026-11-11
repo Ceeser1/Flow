@@ -349,7 +349,7 @@ async function get(base, route, token) {
 
 test('profiles over the network: make, sign in with a PIN, rename, sign out, delete', async () => {
   await withServer(async ({ base }) => {
-    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sessions', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
+    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'sessions', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
     await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
     assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null, createProfiles: true });
@@ -1135,6 +1135,88 @@ test('followed playlists in groups (4.5.1): kept in the follower groups, sent as
     await command(base, [{ cid: 'b4', at: Date.now(), type: 'unfollowPlaylist', playlistId: 'pa' }], as(ben.token));
     const benLib = (await get(base, '/api/library', ben.token)).json.library;
     assert.deepEqual(benLib.groups.map((g) => [g.id, g.followed]), [['gb', undefined]]);
+  });
+});
+
+test('shared groups (4.5.3): shared with their playlists, seen and followed by the others, losing what is unshared', async () => {
+  await withServer(async ({ base }) => {
+    assert.ok((await get(base, '/api/hello')).json.features.includes('sharedGroups'));
+    const anna = (await post(base, '/api/profiles', { name: 'Anna', pin: '1111', device: 'pc' })).json;
+    const ben = (await post(base, '/api/profiles', { name: 'Ben', device: 'phone' })).json;
+    const carl = (await post(base, '/api/profiles', { name: 'Carl', device: 'web' })).json;
+    const as = (t) => ({ Authorization: `Bearer ${t}` });
+    const lib = async (who) => (await get(base, '/api/library', who.token)).json.library;
+    await command(base, [
+      { cid: 'b1', at: Date.now(), type: 'createPlaylist', playlistId: 'pb', name: 'Jazz' },
+      { cid: 'b2', at: Date.now(), type: 'setPlaylistShared', playlistId: 'pb', shared: true },
+    ], as(ben.token));
+    const made = await command(base, [
+      { cid: 'a1', at: Date.now(), type: 'createPlaylist', playlistId: 'pa1', name: 'Evening' },
+      { cid: 'a2', at: Date.now(), type: 'createPlaylist', playlistId: 'pa2', name: 'Morning' },
+      { cid: 'a3', at: Date.now(), type: 'createGroup', groupId: 'ga', name: 'Moods' },
+      { cid: 'a4', at: Date.now(), type: 'setPlaylistGroup', playlistId: 'pa1', groupId: 'ga' },
+      // Ben's Jazz, followed and in Anna's group.
+      { cid: 'a5', at: Date.now(), type: 'followPlaylist', playlistId: 'pb' },
+      { cid: 'a6', at: Date.now(), type: 'setPlaylistGroup', playlistId: 'pb', groupId: 'ga' },
+      { cid: 'a7', at: Date.now(), type: 'setGroupShared', groupId: 'ga', shared: true },
+      // Put in after the group was shared: shared with it.
+      { cid: 'a8', at: Date.now(), type: 'setPlaylistGroup', playlistId: 'pa2', groupId: 'ga' },
+    ], as(anna.token));
+    assert.deepEqual(made.results.map((x) => x.ok), Array(8).fill(true));
+    let a = await lib(anna);
+    assert.equal(a.groups[0].shared, true);
+    assert.deepEqual(a.playlists.filter((p) => p.group === 'ga').map((p) => [p.id, p.shared]), [['pa1', true], ['pa2', true]]);
+    assert.deepEqual(a.sharedGroups, [], 'her own group is not one the others share with her');
+
+    // Carl sees it, with the shared playlists in it (Anna's and the one she follows).
+    let c = await lib(carl);
+    assert.deepEqual(c.sharedGroups.map((g) => [g.id, g.name, g.ownerName, g.playlists]), [['ga', 'Moods', 'Anna', ['pa1', 'pa2', 'pb']]]);
+    assert.deepEqual(c.sharedPlaylists, [], 'nothing followed yet');
+    const before = (await get(base, '/api/library', carl.token)).json.rev;
+    const f = await command(base, [{ cid: 'c1', at: Date.now(), type: 'followGroup', groupId: 'ga' }], as(carl.token));
+    assert.equal(f.results[0].ok, true);
+    // Its playlists come along (as followed ones do), without being followed one by one.
+    const answer = (await get(base, `/api/library?since=${before}&as=${carl.profile.id}`, carl.token)).json;
+    assert.equal(answer.full, false, 'only what changed');
+    const since = answer;
+    assert.deepEqual(since.groupFollows, ['ga']);
+    assert.deepEqual(since.follows, []);
+    assert.deepEqual(since.sharedPlaylists.map((p) => p.id).sort(), ['pa1', 'pa2', 'pb']);
+    // Jazz unfollowed inside the group: only there; it no longer comes along, the others do.
+    const rev0 = (await get(base, '/api/library', carl.token)).json.rev;
+    await command(base, [{ cid: 'c2', at: Date.now(), type: 'setGroupPlaylistFollowed', groupId: 'ga', playlistId: 'pb', on: false }], as(carl.token));
+    const skipped = (await get(base, `/api/library?since=${rev0}&as=${carl.profile.id}`, carl.token)).json;
+    assert.deepEqual([skipped.full, skipped.groupSkips, skipped.follows], [false, { ga: ['pb'] }, []]);
+    assert.deepEqual((await lib(carl)).sharedPlaylists.map((p) => p.id).sort(), ['pa1', 'pa2']);
+    await command(base, [{ cid: 'c3', at: Date.now(), type: 'setGroupPlaylistFollowed', groupId: 'ga', playlistId: 'pb', on: true }], as(carl.token));
+    assert.deepEqual((await lib(carl)).sharedPlaylists.map((p) => p.id).sort(), ['pa1', 'pa2', 'pb']);
+    // Ben sees his own Jazz inside it.
+    assert.deepEqual((await lib(ben)).sharedGroups[0].playlists, ['pa1', 'pa2', 'pb']);
+    // Anna's own group cannot be followed by herself.
+    const own = await command(base, [{ cid: 'a9', at: Date.now(), type: 'followGroup', groupId: 'ga' }], as(anna.token));
+    assert.equal(own.results[0].ok, false);
+
+    // Anna stops sharing one of hers: the others no longer see it in the group.
+    const rev = (await get(base, '/api/library', carl.token)).json.rev;
+    await command(base, [{ cid: 'a10', at: Date.now(), type: 'setPlaylistShared', playlistId: 'pa2', shared: false }], as(anna.token));
+    const later = (await get(base, `/api/library?since=${rev}&as=${carl.profile.id}`, carl.token)).json;
+    assert.deepEqual(later.sharedGroups[0].playlists, ['pa1', 'pb']);
+    // Ben stops sharing Jazz: Anna's group loses it (her follow waits).
+    await command(base, [{ cid: 'b3', at: Date.now(), type: 'setPlaylistShared', playlistId: 'pb', shared: false }], as(ben.token));
+    a = await lib(anna);
+    assert.equal(a.groups[0].followed, undefined);
+    assert.deepEqual(a.follows, ['pb']);
+    c = await lib(carl);
+    assert.deepEqual(c.sharedGroups[0].playlists, ['pa1']);
+    assert.deepEqual(c.sharedPlaylists.map((p) => p.id), ['pa1']);
+
+    // No longer shared: the follow waits; deleted: it goes.
+    await command(base, [{ cid: 'a11', at: Date.now(), type: 'setGroupShared', groupId: 'ga', shared: false }], as(anna.token));
+    c = await lib(carl);
+    assert.deepEqual([c.sharedGroups, c.groupFollows, c.sharedPlaylists], [[], ['ga'], []]);
+    assert.equal((await lib(anna)).playlists.find((p) => p.id === 'pa1').shared, true, 'its playlists stay shared');
+    await command(base, [{ cid: 'a12', at: Date.now(), type: 'deleteGroup', groupId: 'ga' }], as(anna.token));
+    assert.deepEqual((await lib(carl)).groupFollows, []);
   });
 });
 

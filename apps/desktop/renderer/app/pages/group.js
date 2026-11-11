@@ -20,6 +20,11 @@
 // (one of its playlists started by its own Play too), it starts anew with a
 // new queue; only while the group itself plays it pauses and carries on. The
 // playlist a song plays from has the speaker beside its icon. Download marks every playlist in it to be kept on this device.
+//
+// Share (4.5.3) shares a group of yours with the other profiles, its
+// playlists with it. A group another profile shares and you follow opens
+// here too (its folder in the menu is green): its owner's playlists, to
+// play and download, with Unfollow Group instead of Share.
 
 const GroupPage = {
   id: null,
@@ -59,6 +64,12 @@ const GroupPage = {
     $('grPlay').onclick = () => this.play();
     $('grShuffle').onclick = () => this.shuffle();
     $('grOffline').onclick = () => this.download();
+    $('grShare').onclick = () => {
+      const g = Store.group(this.id);
+      if (!g) return;
+      if (g.isShared) Groups.setFollowing(g, false);
+      else Groups.setShared(g, !g.shared);
+    };
     Store.onLibrary(() => {
       if (Nav.page !== 'group') return;
       if (!Store.group(this.id)) {
@@ -237,7 +248,7 @@ const GroupPage = {
   },
 
   _canOffline(p) {
-    return Store.server.on && Store.can('offline') && !p.isRuled && !p.isSmart && (!p.isShared || Store.isFollowing(p.id));
+    return Store.server.on && Store.can('offline') && !p.isRuled && !p.isSmart && (!p.isShared || Store.followsList(p.id));
   },
 
   /** Download: every playlist in it kept here (or, all of them kept, none any more). */
@@ -274,10 +285,34 @@ const GroupPage = {
     const lists = this._lists();
     const rows = Store.rowsOf(this.listId);
     const seconds = rows.reduce((sum, r) => sum + (r.song.duration || 0), 0);
-    $('grMeta').textContent = `${Util.plural(lists.length, 'playlist')} · ${Util.plural(rows.length, 'song')} · ${Util.fmtClock(seconds)}`;
+    $('grMeta').textContent = [Util.plural(lists.length, 'playlist'), Util.plural(rows.length, 'song'), Util.fmtClock(seconds),
+      g.isShared ? T('common.byOwner', { profile: g.ownerName }) : ''].filter(Boolean).join(' · ');
     $('grSearch').placeholder = T('group.search.placeholder', { group: g.name });
+    this._drawShare(g);
     this._drawOffline(rows);
     this.renderFrames();
+  },
+
+  /** Share (a group of yours) or Unfollow Group (one you follow), where the server keeps shared groups (4.5.3). */
+  _drawShare(g) {
+    const btn = $('grShare');
+    btn.hidden = !Store.canShareGroups();
+    if (btn.hidden) return;
+    if (g.isShared) {
+      // A plain button: the group is someone else's, there is nothing to tick.
+      btn.className = 'btn gr-unfollow';
+      btn.removeAttribute('aria-pressed');
+      btn.title = T('groups.unfollow.tooltip', { group: g.name });
+      btn.textContent = T('groups.unfollow');
+      return;
+    }
+    const on = !!g.shared;
+    btn.className = 'toggle' + (on ? ' toggle--on' : '');
+    btn.setAttribute('aria-pressed', String(on));
+    btn.title = T(on ? 'groups.share.on.tooltip' : 'groups.share.tooltip', { group: g.name });
+    btn.setAttribute('aria-label', T('common.share'));
+    btn.innerHTML = Store.uiMode === 'mobile' ? Icons.share
+      : `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.share}<span>${T('common.share')}</span>`;
   },
 
   _drawOffline(rows) {
@@ -422,9 +457,25 @@ const GroupPage = {
     return btn;
   },
 
-  /** Share for a playlist of yours, Following for one you follow (both need a server with profiles). */
+  /**
+   * Share for a playlist of yours, Following for one you follow (both need a
+   * server with profiles). In a group you follow (4.5.3) Following is that
+   * group's: turned off, the playlist leaves this group only.
+   */
   _shareButton(p) {
     if (!Store.canShare() || p.isRuled || p.isFavourites) return null;
+    const g = Store.group(this.id);
+    if (g && g.isShared && p.isShared) {
+      const btn = h('button.toggle.toggle--on.gframe__share', {
+        type: 'button',
+        'aria-pressed': 'true',
+        title: T('groups.inGroup.unfollow.tooltip', { playlist: p.name, group: g.name }),
+        onclick: () => Groups.setFollowingIn(g.id, p, false),
+      });
+      btn.innerHTML = Store.uiMode === 'mobile' ? Icons.share
+        : `<span class="toggle__box">${Icons.check}</span>${Icons.share}<span>${T('playlist.follow.following')}</span>`;
+      return btn;
+    }
     const mine = !p.isShared;
     const on = mine ? !!p.shared : Store.isFollowing(p.id);
     const btn = h('button.toggle.gframe__share' + (on ? '.toggle--on' : ''), {

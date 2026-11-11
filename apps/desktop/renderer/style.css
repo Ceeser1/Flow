@@ -70,6 +70,8 @@ button, input, select { font: inherit; color: inherit; }
 .icon--search { -webkit-mask-image: url(../images/search.png); mask-image: url(../images/search.png); -webkit-mask-size: 82%; mask-size: 82%; }
 .icon--share { -webkit-mask-image: url(../images/share.png); mask-image: url(../images/share.png); -webkit-mask-size: 82%; mask-size: 82%; }
 .icon--followed { -webkit-mask-image: url(../images/followed.png); mask-image: url(../images/followed.png); color: var(--green); }
+/* A shared group you follow (4.5.3): its folder and the + inside it green, wherever it shows. */
+.icon.icon--followed-group { color: var(--green) !important; }
 .icon--shuffle { -webkit-mask-image: url(../images/shuffle.png); mask-image: url(../images/shuffle.png); }
 
 /* ===== layout ===== */
@@ -1497,6 +1499,33 @@ body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s;
 .group__sub { color: var(--text-dim); font-size: 13px; }
 .group .table { margin-top: 4px; }
 .group__empty { margin: 4px 0 6px 34px; font-size: 13px; }
+
+/* The Playlists page (4.5.3): each category's search at the right of its head; each
+   list at most 10 entries tall (ui.js limitRows), then it scrolls in its box. */
+.section-head .search-box--section { margin-left: auto; max-width: 260px; align-self: center; }
+.search-box--section .search-box__input { height: 30px; font-size: 13px; }
+.search-box--section[hidden] { display: none; }
+.list-limit.list-limit--scrolls { overflow-y: auto; overscroll-behavior: contain; border-radius: var(--radius); }
+.list-limit.list-limit--scrolls .table th { background: #1b1b1f; }
+/* Touched on an outer quarter: the swipe scrolls the page instead (ui.js). */
+.list-limit.list-limit--page { overflow-y: hidden; overscroll-behavior: auto; }
+.groups.list-limit--scrolls { padding-right: 4px; }
+.list-nomatch { margin: 6px 0 0; font-size: 13px; }
+/* A group shared by another profile in Shared Playlists: its arrow and name open it, its playlists further in. */
+.sgroup { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; }
+.sgroup__toggle {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 24px; height: 24px; margin-left: -6px; padding: 0;
+  background: none; border: none; border-radius: 4px; cursor: pointer;
+}
+.sgroup__toggle:hover { background: var(--glass-hi); }
+.sgroup__toggle:hover .menu__chevron { color: var(--text-bright); }
+.sgroup__name .link-cell__icon { color: var(--accent-hi); }
+.table tbody tr.row--sgroup td { background: rgba(255, 255, 255, 0.035); }
+.row--in-sgroup .col-name { padding-left: 40px; }
+/* The share button of a group shared (on): it stays lit. */
+.act.act--blue.act--on { background: rgba(140, 200, 244, 0.28); border-color: rgba(140, 200, 244, 0.5); }
+#page-group .gr-unfollow { height: 34px; }
 
 /* Move to group: the groups as rows, "No group", and a new group by name. */
 .modal.modal--group-pick { width: 420px; }
