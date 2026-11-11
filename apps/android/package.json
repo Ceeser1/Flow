@@ -1,6 +1,6 @@
 {
   "name": "flow-android",
-  "version": "4.5.4",
+  "version": "4.5.5",
   "description": "Flow for Android: the desktop renderer in a Capacitor shell",
   "private": true,
   "scripts": {

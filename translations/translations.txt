@@ -106,6 +106,95 @@ settings.general.songColumns.desc
   en: Extra columns in All Songs and the playlists. Each can be sorted by a click on its heading, and the Search page finds what is in it.
   de: Zusätzliche Spalten in „Alle Songs“ und den Playlists. Jede lässt sich per Klick auf ihre Überschrift sortieren, und die Seite „Suche“ findet ihren Inhalt.
 
+settings.general.keybinds.label
+  en: Keybinds / Shortcuts
+  de: Tastenbelegung / Tastenkürzel
+
+settings.general.keybinds.desc
+  en: Flow has some shortcuts to navigate
+  de: Flow hat einige Tastenkürzel zum Navigieren
+
+settings.general.keybinds.show
+  en: Show Keybinds
+  de: Tastenkürzel anzeigen
+
+# The window Show Keybinds opens (4.5.5): each key, then what it does.
+keybinds.title
+  en: Keybinds / Shortcuts
+  de: Tastenbelegung / Tastenkürzel
+
+keybinds.key.space
+  en: Space
+  de: Leertaste
+
+keybinds.key.ctrl
+  en: Ctrl
+  de: Strg
+
+keybinds.key.alt
+  en: Alt
+  de: Alt
+
+keybinds.key.esc
+  en: Esc
+  de: Esc
+
+keybinds.key.mouseBack
+  en: Mouse back button
+  de: Maustaste Zurück
+
+keybinds.key.mouseForward
+  en: Mouse forward button
+  de: Maustaste Vor
+
+keybinds.key.mediaKeys
+  en: Media keys
+  de: Medientasten
+
+keybinds.playPause
+  en: Play or pause
+  de: Abspielen oder pausieren
+
+keybinds.skip
+  en: 10 seconds back or forward (on Add Songs in the song being edited)
+  de: 10 Sekunden zurück oder vor (unter „Songs hinzufügen“ im Song, der gerade bearbeitet wird)
+
+keybinds.prevNext
+  en: Previous or next song
+  de: Vorheriger oder nächster Song
+
+keybinds.volume
+  en: Volume up or down by 5 %
+  de: Lautstärke um 5 % lauter oder leiser
+
+keybinds.backForward
+  en: Back or forward through the pages and playlists you opened
+  de: Zurück oder vor durch die Seiten und Playlists, die du geöffnet hast
+
+keybinds.mouse
+  en: The same with the mouse
+  de: Dasselbe mit der Maus
+
+keybinds.visualizer
+  en: In the full-screen visualizer: the one before or after it
+  de: Im Vollbild-Visualizer: der davor oder danach
+
+keybinds.search
+  en: Open Search
+  de: Suche öffnen
+
+keybinds.escape
+  en: Close a window or the visualizer, or stop editing a name
+  de: Ein Fenster oder den Visualizer schließen oder das Bearbeiten eines Namens beenden
+
+keybinds.media
+  en: Play, pause, next and previous song, also while Flow is in the background
+  de: Abspielen, Pause, nächster und vorheriger Song, auch wenn Flow im Hintergrund ist
+
+keybinds.note
+  en: The keys do nothing while you type in a box, except Ctrl+F and Esc.
+  de: Während du in ein Feld tippst, tun die Tasten nichts, außer Strg+F und Esc.
+
 # ── Settings › App Visuals ──
 
 settings.appVisuals.heading

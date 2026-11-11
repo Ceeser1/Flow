@@ -6,10 +6,15 @@ const Nav = {
   page: null,
   playlistId: null,
   groupId: null, // the group page's group (4.5.2)
-  // The pages shown before this one ({ page, playlistId }), for the phone's
-  // Back; the last is the one Back returns to.
+  // The pages shown before this one ({ page, playlistId, groupId, scroll }),
+  // for Back (the phone's, the mouse's side button, Alt+Left); the last is
+  // the one Back returns to. `ahead`: those Back left, for Forward (4.5.5),
+  // emptied once another page is opened. 50 each; `scroll` is how far the
+  // page was scrolled when it was left, and it opens there again.
   history: [],
+  ahead: [],
   _at: null,
+  STEPS: 50,
 
   init() {
     // The main scroll bar's track reaches the window's top once the page is scrolled, and stops where
@@ -20,6 +25,8 @@ const Nav = {
       pages.classList.toggle('pages--end', pages.scrollTop + pages.clientHeight >= pages.scrollHeight - 1);
     };
     pages.addEventListener('scroll', edges, { passive: true });
+    this._initSideButtons();
+    this._initBrowserHistory();
     const sizes = new ResizeObserver(edges);
     sizes.observe(pages);
     for (const node of pages.querySelectorAll('.page')) sizes.observe(node);
@@ -126,9 +133,18 @@ const Nav = {
     if (this.page === 'add' && page !== 'add') AddPage.audio.pause();
     if (page === 'group') this.groupId = opts.groupId || this.groupId;
     const at = { page, playlistId: page === 'playlist' ? this.playlistId : null, groupId: page === 'group' ? this.groupId : null };
-    if (this._at && !opts.back && (this._at.page !== at.page || this._at.playlistId !== at.playlistId || this._at.groupId !== at.groupId)) {
-      this.history.push(this._at);
-      if (this.history.length > 50) this.history.shift();
+    const moved = this._at && (this._at.page !== at.page || this._at.playlistId !== at.playlistId || this._at.groupId !== at.groupId);
+    if (moved) {
+      // Where it was left, to come back to (4.5.5).
+      this._at.scroll = $('pages').scrollTop;
+      if (opts.back) this._keep(this.ahead, this._at);
+      else {
+        this._keep(this.history, this._at);
+        if (!opts.forward) {
+          this.ahead = [];
+          this._browserStep();
+        }
+      }
     }
     this._at = at;
     this.page = page;
@@ -145,27 +161,114 @@ const Nav = {
     else if (page === 'trend') TrendPage.show(opts);
     else if (page === 'playlist') PlaylistPage.show(this.playlistId, opts);
     this.drawMenu();
+    if (opts.scroll) this._scrollTo(opts.scroll);
+  },
+
+  _keep(list, at) {
+    list.push(at);
+    if (list.length > this.STEPS) list.shift();
+  },
+
+  /**
+   * Back or Forward opened a page: scrolled to where it was left, once the
+   * page is tall enough (a long list may grow over a few frames).
+   */
+  _scrollTo(top) {
+    const pages = $('pages');
+    let tries = 0;
+    const go = () => {
+      pages.scrollTop = top;
+      if (Math.abs(pages.scrollTop - top) > 1 && tries++ < 20) requestAnimationFrame(go);
+    };
+    go();
+    requestAnimationFrame(go);
+  },
+
+  /** The mouse's side buttons (4.5.5): back and forward, not with a popup or the visualizer open. */
+  _initSideButtons() {
+    // The web player's browser does them itself, into its history (_initBrowserHistory).
+    if (Store.web) return;
+    const side = (e) => e.button === 3 || e.button === 4;
+    for (const type of ['mousedown', 'auxclick']) {
+      window.addEventListener(type, (e) => {
+        if (side(e)) e.preventDefault();
+      }, true);
+    }
+    window.addEventListener('mouseup', (e) => {
+      if (!side(e)) return;
+      e.preventDefault();
+      if (Modal.top() || Visualizer.shown) return;
+      if (e.button === 3) this.back();
+      else this.forward();
+    }, true);
+  },
+
+  /**
+   * The web player (4.5.5): each page opened is a step in the browser's
+   * history too, so its Back and Forward (its buttons, the mouse's side
+   * buttons, Alt+arrows) go through Flow's pages instead of leaving it.
+   */
+  _initBrowserHistory() {
+    if (!Store.web || !window.history || !window.history.pushState) return;
+    this._browserAt = 0;
+    try {
+      window.history.replaceState({ flowStep: 0 }, '');
+    } catch {
+      return;
+    }
+    window.addEventListener('popstate', (e) => {
+      const step = e.state && typeof e.state.flowStep === 'number' ? e.state.flowStep : null;
+      if (step === null) return;
+      const back = step < this._browserAt;
+      this._browserAt = step;
+      if (Modal.top()) Modal.top().dismiss();
+      if (back) this.back({ browser: true });
+      else this.forward({ browser: true });
+    });
+  },
+
+  _browserStep() {
+    if (this._browserAt === undefined) return;
+    this._browserAt += 1;
+    try {
+      window.history.pushState({ flowStep: this._browserAt }, '');
+    } catch {
+      // A browser that refuses: Flow's own steps still work.
+    }
   },
 
   /** Goes back to the page shown before this one; false when there is none. */
-  back() {
-    while (this.history.length) {
-      const prev = this.history.pop();
-      // A group deleted since is skipped (4.5.2).
-      if (prev.page === 'group') {
-        if (!Store.group(prev.groupId)) continue;
-        this.show('group', { back: true, groupId: prev.groupId });
+  back(opts = {}) {
+    return this._walk(this.history, { back: true }, opts);
+  },
+
+  /** Forward again to the page Back left (4.5.5); false when there is none. */
+  forward(opts = {}) {
+    return this._walk(this.ahead, { forward: true }, opts);
+  },
+
+  /**
+   * One step through `list`: the last place in it that still exists (a
+   * playlist or a group deleted since is skipped), opened where it was
+   * scrolled. On the web player a step of Flow's own (not the browser's)
+   * moves the browser's history along with it.
+   */
+  _walk(list, how, opts) {
+    while (list.length) {
+      const to = list.pop();
+      if (to.page === 'group' && !Store.group(to.groupId)) continue;
+      if (to.page === 'playlist' && !Store.playlist(to.playlistId)) continue;
+      if (Store.web && !opts.browser && this._browserAt !== undefined) {
+        // The browser's step instead, which comes back here as its popstate.
+        list.push(to);
+        window.history.go(how.back ? -1 : 1);
         return true;
       }
-      if (prev.page !== 'playlist') {
-        this.show(prev.page, { back: true });
-        return true;
-      }
-      // A playlist deleted since is skipped.
-      if (Store.playlist(prev.playlistId)) {
-        this.openPlaylist(prev.playlistId, { back: true });
-        return true;
-      }
+      const o = { ...how, scroll: to.scroll || 0 };
+      if (to.page === 'group') this.show('group', { ...o, groupId: to.groupId });
+      else if (to.page === 'playlist') this.openPlaylist(to.playlistId, o);
+      else this.show(to.page, o);
+      return true;
     }
     return false;
   },

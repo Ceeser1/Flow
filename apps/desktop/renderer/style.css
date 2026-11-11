@@ -3968,3 +3968,27 @@ body.mobile .switch-where { text-align: left; }
 #page-group .pl-head__row #grOfflineNote { margin-left: auto; }
 #page-group .pl-head__row #grOffline { margin-left: auto; }
 #page-group .pl-head__row #grOfflineNote:not(:empty):not([hidden]) + #grOffline { margin-left: 0; }
+
+/* ===== Keybinds / Shortcuts (4.5.5, keys.js showList) ===== */
+.modal.modal--keybinds { width: min(620px, 100%); }
+.keybinds { width: 100%; border-collapse: collapse; }
+.keybinds td { padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.keybinds tr:last-child td { border-bottom: none; }
+.keybinds__keys { white-space: nowrap; width: 1%; padding-right: 18px !important; }
+.keybinds__what { color: var(--text); }
+.keybinds__combo { display: inline-flex; align-items: center; gap: 3px; color: var(--text-dim); }
+.keybinds__or { margin: 0 6px; color: var(--text-dim); }
+.keybinds__key {
+  display: inline-block;
+  min-width: 24px;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text-bright);
+  font: 600 12px/18px inherit;
+  font-family: inherit;
+  text-align: center;
+}
+.keybinds__note { margin-top: 12px; }

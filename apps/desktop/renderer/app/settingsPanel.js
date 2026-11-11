@@ -132,6 +132,12 @@ const SettingsPanel = {
         desc: T('settings.general.songColumns.desc'),
         right: this._columnTicks(),
       }),
+      // Every key Flow has, in a window (4.5.5); a phone has no keyboard.
+      Store.phone ? null : this._row({
+        label: T('settings.general.keybinds.label'),
+        desc: T('settings.general.keybinds.desc'),
+        right: h('button.btn.btn--small.keybinds-btn', { type: 'button', onclick: () => Keys.showList() }, T('settings.general.keybinds.show')),
+      }),
 
       ...(Store.can('soundEq') ? this._soundEqRows() : []),
 
