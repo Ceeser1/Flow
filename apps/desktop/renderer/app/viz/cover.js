@@ -194,6 +194,9 @@ const VizCover = (() => {
         if (at < list.length) img.src = list[at];
         else fallback();
       };
+      // A Flow Server's cover on a page of another address (a web player hosted
+      // elsewhere than its server): asked for as one WebGL may read.
+      if (/^https?:/i.test(src)) img.crossOrigin = 'anonymous';
       img.src = src;
       return true;
     }

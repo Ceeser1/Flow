@@ -100,7 +100,7 @@
 
   class Moire {
     constructor(canvas) {
-      const gl = VizGL.context(canvas, { antialias: false });
+      const gl = VizGL.context(canvas);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
       this.prog = VizGL.program(gl, VizGL.SCREEN_VS, FS);

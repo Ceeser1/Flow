@@ -14,6 +14,8 @@
 // distance, over a floor with a faint grid.
 
 (() => {
+  // Its WebGL's options (VizGL.context), said to Visualizer.add too (gl).
+  const CONTEXT = { depth: true, antialias: true };
   const COLS = 40;
   const MAX_ROWS = 60;
   const TOP = 9;            // a full bar's height, in cells
@@ -134,7 +136,7 @@
 
   class Skyline {
     constructor(canvas) {
-      const gl = VizGL.context(canvas, { depth: true, antialias: true });
+      const gl = VizGL.context(canvas, CONTEXT);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
       this.bar = VizGL.program(gl, BAR_VS, BAR_FS);
@@ -302,7 +304,7 @@
     name: T('viz.skyline.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V11h3v10M10 21V6h4v15M16 21v-7h3v7"/></svg>',
-    gl: true,
+    gl: CONTEXT,
     create: (canvas) => new Skyline(canvas),
     options: [
       { type: 'choice', key: 'skColors', label: T('viz.shared.colors'), choices: [['classic', T('viz.shared.classic')], ['neon', T('viz.shared.neon')], ['ice', T('viz.shared.ice')], ['fire', T('viz.shared.fire')]], color: { value: 'custom', key: 'skColor', presets: Visualizer.OWN_PRESETS } },

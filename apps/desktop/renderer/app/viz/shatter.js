@@ -17,6 +17,8 @@
 // worked out for each shard here, to know when the last has gone.
 
 (() => {
+  // Its WebGL's options (VizGL.context), said to Visualizer.add too (gl).
+  const CONTEXT = { antialias: true };
   const FLY_BEATS = 3;      // flying at the speed they broke with, then faster
   const NEW_BEATS = 2;      // the new pane coming forward behind them
   const WAVE = 0.25;        // the break's delay per pane unit from the impact
@@ -103,7 +105,7 @@
 
   class Shatter {
     constructor(canvas) {
-      const gl = VizGL.context(canvas, { antialias: true });
+      const gl = VizGL.context(canvas, CONTEXT);
       if (!gl) throw new Error('no WebGL 2');
       this.gl = gl;
       this.bg = VizGL.program(gl, VizGL.SCREEN_VS, BG_FS);
@@ -331,7 +333,7 @@
     name: T('viz.shatter.name'),
     glyph: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h12l-3 6 4 3-7 9H3z"/><path d="M18 4l3-1M19 9l3 1M18 15l2 3"/></svg>',
-    gl: true,
+    gl: CONTEXT,
     create: (canvas) => new Shatter(canvas),
     options: [
       { type: 'slider', key: 'shPieces', label: T('viz.shatter.setting.shards'), min: 4, max: 20, step: 1, unit: '' },
