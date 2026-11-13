@@ -676,8 +676,11 @@
       const showShip = set('lhShip') && s.on ? 1 : 0;
       const pitch = kind.rock * Math.sin(this.age * 0.9) * (0.4 + 0.6 * this.swell);
 
-      // The stars at the screen's own size, however large the rest is drawn.
-      this.stars.draw(0, 0, this.fullW, this.fullH, this.age, a.kick * playing);
+      // The stars at the screen's own size, however large the rest is drawn:
+      // above the horizon (0.42 up the screen, the shader's HORIZON), the
+      // only place the sky asks for them.
+      const low = Math.floor(0.42 * this.fullH);
+      this.stars.draw(0, low, this.fullW, this.fullH - low, this.age, a.kick * playing);
       gl.disable(gl.BLEND);
       this.view.into();
       gl.useProgram(this.prog.p);

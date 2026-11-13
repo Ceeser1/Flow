@@ -33,14 +33,17 @@ const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slic
 /**
  * spec: the parts compared item by item (libraryPatch.js); everything else
  * of the value is compared whole. logShare: how big the log may grow against
- * the whole before the whole is written again.
+ * the whole before the whole is written again. rows (4.6): the parts whose
+ * rows are kept themselves, locked, instead of a copy of them (libraryPatch.js
+ * createDiffer): for a value whose owner never writes into a row it saved or
+ * loaded, but puts another in its place. What load() gives is locked there too.
  */
-function createJournal(io, file, spec, { logShare = 0.25, logMin = LOG_MIN } = {}) {
+function createJournal(io, file, spec, { logShare = 0.25, logMin = LOG_MIN, rows = null } = {}) {
   // The file's name, or a function giving it (a folder known only later).
   const nameOf = typeof file === 'function' ? file : () => file;
   const logOf = () => `${nameOf()}.log`;
   const canLog = !!(io.readText && io.writeText && io.appendText);
-  const differ = LibraryPatch.createDiffer(spec);
+  const differ = LibraryPatch.createDiffer(spec, { rows });
   let id = '';
   let logBytes = 0;
   let wholeBytes = 0;
@@ -192,7 +195,14 @@ const LIBRARY_SPEC = {
   songs: 'list', playlists: 'list', sharedPlaylists: 'list', ...within('listening', LISTENING_SPEC), ...within('statistics', STATISTICS_SPEC),
 };
 
+// The parts of a library whose rows a journal can keep themselves, locked,
+// instead of a copy (4.6, createJournal's `rows`): its songs and playlists.
+// For a library changed through libraryModel.js, which puts another row in a
+// locked one's place.
+const LIBRARY_ROWS = ['songs', 'playlists', 'sharedPlaylists'];
+
 module.exports.within = within;
 module.exports.LIBRARY_SPEC = LIBRARY_SPEC;
+module.exports.LIBRARY_ROWS = LIBRARY_ROWS;
 module.exports.STATISTICS_SPEC = STATISTICS_SPEC;
 module.exports.LISTENING_SPEC = LISTENING_SPEC;

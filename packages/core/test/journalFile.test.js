@@ -133,3 +133,62 @@ test('the name may be given later, by a function', () => {
   j.save(lib(2));
   assert.ok(io.files.has('b/x.json') && io.files.has('b/x.json.log'));
 });
+
+// ---- rows kept themselves, locked (4.6) ----
+
+test('with rows kept themselves the files end the same as with a copy of everything', () => {
+  const ROWS = ['songs', 'playlists'];
+  const a = memIo();
+  const b = memIo();
+  const whole = createJournal(a, 'library.json', LIBRARY_SPEC, { logMin: 4000 });
+  const rows = createJournal(b, 'library.json', LIBRARY_SPEC, { logMin: 4000, rows: ROWS });
+  const v = lib(60);
+  whole.save(v);
+  rows.save(v);
+  assert.ok(Object.isFrozen(v.songs[0]), 'a saved row is locked');
+  let wholes = 0;
+  for (let r = 0; r < 300; r += 1) {
+    const k = r % 6;
+    const i = (r * 7) % v.songs.length;
+    // As an owner of locked rows changes them: another row in its place.
+    if (k === 0) v.songs[i] = { ...v.songs[i], title: `Song ${i} v${r}` };
+    if (k === 1) v.songs[i] = { ...v.songs[i], stats: { plays: r } };
+    if (k === 2) v.songs.push({ id: `n${r}`, title: `New ${r}`, stats: { plays: 0 } });
+    if (k === 3) v.songs.splice(i, 1);
+    if (k === 4) v.playlists[0] = { ...v.playlists[0], entries: [...v.playlists[0].entries, { songId: v.songs[i].id, addedAt: r }] };
+    if (k === 5) {
+      v.follows.push(`f${r}`);
+      v.listening.days[`d${r % 9}`] = r;
+    }
+    whole.save(v);
+    rows.save(v);
+    const strip = (t) => t.replace(/"_journal":"[^"]*"/, '').replace(/"journal":"[^"]*"/, '');
+    assert.equal(strip(b.files.get('library.json')), strip(a.files.get('library.json')), `round ${r}: the whole`);
+    assert.equal(strip(b.files.get('library.json.log')), strip(a.files.get('library.json.log')), `round ${r}: the log`);
+    if (rows.stats().whole > wholes) wholes = rows.stats().whole;
+  }
+  assert.ok(wholes > 1, 'the whole was written again in between');
+  assert.ok(rows.stats().lines > 50, 'and lines were added');
+  // Read again, it is what was saved.
+  const again = createJournal(b, 'library.json', LIBRARY_SPEC, { rows: ROWS }).load();
+  assert.deepEqual(again, JSON.parse(JSON.stringify(v)));
+});
+
+test('with rows kept themselves: what load() gives is locked, and rows made from it anew are saved without a line', () => {
+  const io = memIo();
+  const first = createJournal(io, 'library.json', LIBRARY_SPEC, { rows: ['songs', 'playlists'] });
+  first.save(lib(20));
+  const j = createJournal(io, 'library.json', LIBRARY_SPEC, { rows: ['songs', 'playlists'] });
+  const raw = j.load();
+  assert.ok(Object.isFrozen(raw.songs[0]) && Object.isFrozen(raw.playlists[0].entries));
+  // The owner makes its rows from what was read (libraryModel.sanitize does).
+  const mine = { ...raw, songs: raw.songs.map((s) => ({ ...s, stats: { ...s.stats } })), playlists: raw.playlists.map((p) => ({ ...p, entries: p.entries.map((e) => ({ ...e })) })) };
+  const before = io.appended;
+  j.save(mine);
+  assert.equal(io.appended, before, 'the same in them: no line');
+  mine.songs[3] = { ...mine.songs[3], title: 'Changed' };
+  j.save(mine);
+  assert.equal(io.appended, before + 1);
+  assert.match(io.files.get('library.json.log').trim().split('\n').pop(), /"Changed"/);
+  assert.equal(createJournal(io, 'library.json', LIBRARY_SPEC).load().songs[3].title, 'Changed');
+});

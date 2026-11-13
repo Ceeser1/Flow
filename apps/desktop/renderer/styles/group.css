@@ -1,0 +1,76 @@
+/* Flow: a playlist group's page, and the Keybinds window. A part of the stylesheet (style.css first, then these in the order index.html links them). */
+
+/* ===== a playlist group's page (4.5.2, group.js) ===== */
+
+/* Its playlists, each a frame: the head opens and closes it, open it shows its songs in a box that scrolls. */
+.gframes { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding-bottom: 16px; }
+.gframe { background: var(--glass); border-radius: var(--radius); padding: 4px 10px; }
+.gframe--open { padding-bottom: 10px; }
+.gframe__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.gframe__head:hover { background: var(--glass-hi); }
+.gframe__head .menu__chevron .icon { width: 16px; height: 16px; }
+.gframe__icon { display: inline-flex; color: var(--text-dim); }
+.gframe__icon .icon { width: 18px; height: 18px; }
+/* The name with room for a long one, the buttons right beside it, Share at the right end. */
+.gframe__text { display: flex; flex-direction: column; min-width: 140px; flex: 0 1 340px; }
+.gframe__playing { display: inline-flex; flex: none; color: var(--green); margin-left: -4px; }
+.gframe__playing[hidden] { display: none; }
+/* The speaker's room (its 18 px and the gap, less its pull to the icon) taken from the name's. */
+.gframe__head--playing .gframe__text { flex-basis: 316px; }
+.gframe__playing .icon { width: 18px; height: 18px; }
+.gframe__name { font-size: 16px; font-weight: 700; color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gframe__sub { color: var(--text-dim); font-size: 13px; }
+.gframe__buttons { display: flex; align-items: center; gap: 8px; flex: none; }
+.gframe__buttons .btn--play,
+.gframe__buttons .toggle { height: 32px; font-size: 13px; }
+.gframe__buttons .btn--play { padding: 0 16px 0 12px; }
+.gframe__buttons .toggle { padding: 0 12px 0 8px; }
+.gframe__share { margin-left: auto; flex: none; height: 32px; font-size: 13px; padding: 0 12px 0 8px; }
+/* Its songs as on the playlist's own page, in a box that scrolls (the column names stay on top). */
+.gframe__songs {
+  max-height: min(460px, 60vh);
+  overflow-y: auto;
+  margin-top: 6px;
+  border-radius: var(--radius);
+}
+.gframe__table { margin: 0; }
+.gframe__table th { position: sticky; top: 0; z-index: 1; }
+.gframe__empty { margin: 4px 0 6px 34px; font-size: 13px; }
+#grOfflineNote:empty { display: none; }
+/* The group's Shuffle with its hint beside it; Download (and its note) at the row's right end. */
+.pl-hint { color: var(--text-dim); font-size: 13px; max-width: 300px; line-height: 1.3; }
+#page-group .pl-head__row #grOfflineNote { margin-left: auto; }
+#page-group .pl-head__row #grOffline { margin-left: auto; }
+#page-group .pl-head__row #grOfflineNote:not(:empty):not([hidden]) + #grOffline { margin-left: 0; }
+
+/* ===== Keybinds / Shortcuts (4.5.5, keys.js showList) ===== */
+.modal.modal--keybinds { width: min(620px, 100%); }
+.keybinds { width: 100%; border-collapse: collapse; }
+.keybinds td { padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.keybinds tr:last-child td { border-bottom: none; }
+.keybinds__keys { white-space: nowrap; width: 1%; padding-right: 18px !important; }
+.keybinds__what { color: var(--text); }
+.keybinds__combo { display: inline-flex; align-items: center; gap: 3px; color: var(--text-dim); }
+.keybinds__or { margin: 0 6px; color: var(--text-dim); }
+.keybinds__key {
+  display: inline-block;
+  min-width: 24px;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text-bright);
+  font: 600 12px/18px inherit;
+  font-family: inherit;
+  text-align: center;
+}
+.keybinds__note { margin-top: 12px; }

@@ -1,0 +1,178 @@
+/* Flow: the Sleep Timer popup, and toasts. A part of the stylesheet (style.css first, then these in the order index.html links them). */
+
+/* ---- the Sleep Timer popup (sleepTimer.js) ---- */
+
+.modal--sleep { width: 640px; }
+.sleep__shutdown { margin: 4px 0 16px; }
+.sleep__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sleep__preset { min-width: 72px; }
+.sleep__sep { width: 1px; height: 24px; background: var(--line); margin: 0 4px; }
+.sleep__custom-label { display: inline-flex; align-items: center; gap: 8px; color: var(--text-dim); }
+.sleep__custom { width: 76px; }
+
+/* Song Details is laid out like Settings: a small heading with a line under it
+   per section, then rows with the name on the left, its value on the right. */
+.details__section { padding: 0 0 6px; }
+.details__section:first-child { padding-bottom: 12px; }
+
+.details__title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  color: var(--text-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.details__meta { color: var(--grey); user-select: text; }
+.details__tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 18px;
+  margin-top: 8px;
+  color: var(--text-bright);
+  user-select: text;
+}
+.details__tag { min-width: 0; overflow-wrap: anywhere; }
+.details__tag-label { color: var(--text-dim); margin-right: 6px; }
+
+/* The cover centred above the title, a third of the popup wide; the names
+   under it centred with it. */
+.details__head { text-align: center; }
+.cover--big { display: flex; width: 33%; height: auto; margin: 2px auto 14px; border-radius: 8px; }
+.cover--big .cover__note .icon { width: 36%; height: 36%; }
+
+.details__heading {
+  margin: 14px 0 2px;
+  padding-bottom: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-bright);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Lyrics: where they came from after the name, Edit (or Add) at the right. */
+.details__heading--split { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.details__heading--split .btn { text-transform: none; letter-spacing: normal; margin: -4px 0 -2px; }
+.details__heading-note { font-weight: 400; color: var(--text-dim); text-transform: none; letter-spacing: normal; }
+
+.details__section:nth-child(2) .details__heading { margin-top: 2px; }
+
+.details__chips { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; }
+.details__row { margin-top: 12px; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px 0 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  color: var(--text-dim);
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.chip span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip:hover { border-color: #50505a; color: var(--text-bright); }
+
+.chip__box {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #6a6a74;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chip__box .icon { width: 12px; height: 12px; stroke-width: 3; }
+
+.chip--on {
+  color: var(--green);
+  border-color: rgba(120, 200, 140, 0.5);
+  background: rgba(120, 200, 140, 0.1);
+}
+
+.chip--on:hover { border-color: rgba(220, 120, 120, 0.6); color: var(--red); }
+.chip--on .chip__box { background: var(--green); border-color: var(--green); color: #1e1e22; }
+.chip--on:hover .chip__box { background: var(--red); border-color: var(--red); }
+
+.details__grid {
+  display: grid;
+  /* The labels say what each count is, so they get the wider side. */
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+
+/* Each row has a thin line under it, as in Settings: both of its cells carry it. */
+.details__label,
+.details__value { padding: 10px 0; border-bottom: 1px solid #34343c; }
+.details__label { color: var(--text-dim); }
+.details__label { display: flex; flex-direction: column; justify-content: center; }
+.details__value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-left: 20px;
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+.details__url { text-align: right; overflow-wrap: anywhere; user-select: text; }
+/* Source: the names are short, the links get the rest of the width. */
+.details__grid--source { grid-template-columns: max-content minmax(0, 1fr); }
+.details__grid--source .details__label { white-space: nowrap; }
+
+/* ===== toasts ===== */
+
+.toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 130px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+/* Always one line, as wide as the message needs; only one wider than the
+   window is cut short, with "...". */
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100vw - 40px);
+  white-space: nowrap;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #33333b;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  color: var(--text-bright);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s, transform 0.2s;
+  user-select: text;
+}
+
+/* Above the Add Songs footer (Finish / Finish all) while it shows. */
+body:has(#page-add:not([hidden]) .import-batch__footer:not([hidden])) .toasts { bottom: 205px; }
+
+.toast--in { opacity: 1; transform: none; }
+/* The toasts let clicks through; one with a button takes its own. */
+.toast > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.toast--action { pointer-events: auto; }
+.toast__action { flex: none; font-weight: 600; }
+.toast--success { border-left-color: var(--green); }
+.toast--error { border-left-color: var(--red); }

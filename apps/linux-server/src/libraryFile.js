@@ -26,7 +26,14 @@ const STATE_FILE_SPEC = {
   'stamps.s': 'map', 'stamps.p': 'map', 'stamps.o': 'map', 'stamps.g': 'map', touched: 'map', srev: 'map', 'sstamps.*': 'map', sfloor: 'map',
 };
 
-const libraryJournal = (config) => createJournal(fileJournalIo, config.libraryFile, LIBRARY_FILE_SPEC);
+// The parts whose rows the running server's journal keeps themselves, locked,
+// instead of a copy (4.6, libraryPatch.js createDiffer): the songs, every
+// owner's playlists and each profile's own stats of the songs. The server
+// changes those only by putting another row in their place (libraryModel.js).
+const LIBRARY_FILE_ROWS = ['songs', 'playlists', 'profiles.*.songs', 'profiles.*.playlists'];
+
+/** rows: for the running server (see above); the commands beside it read and write the file as plain values. */
+const libraryJournal = (config, { rows = false } = {}) => createJournal(fileJournalIo, config.libraryFile, LIBRARY_FILE_SPEC, rows ? { rows: LIBRARY_FILE_ROWS } : {});
 const stateJournal = (config) => createJournal(fileJournalIo, config.stateFile, STATE_FILE_SPEC);
 
 /** library.json as it stands, its log applied (null when there is none). */
@@ -40,5 +47,5 @@ function writeLibrary(config, value) {
 }
 
 module.exports = {
-  LIBRARY_FILE_SPEC, STATE_FILE_SPEC, libraryJournal, stateJournal, readLibrary, writeLibrary,
+  LIBRARY_FILE_SPEC, LIBRARY_FILE_ROWS, STATE_FILE_SPEC, libraryJournal, stateJournal, readLibrary, writeLibrary,
 };

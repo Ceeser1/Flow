@@ -30,6 +30,102 @@ function sameEntries(entries, songs, at) {
   return true;
 }
 
+// A song's fields no list shows: a listen counted, its loudness measured, its
+// tags written, its info or lyrics looked up, and its cover (Covers puts a new
+// picture into the boxes showing it by itself). A change of only these leaves
+// every list as it is drawn.
+const QUIET_SONG_FIELDS = ['stats', 'loudness', 'tagged', 'infoLooked', 'cover', 'lyrics'];
+// The parts of the library that are lists of songs.
+const SONG_PARTS = ['songs', 'deviceSongs'];
+
+/**
+ * What a change of the library changed, for Store.onLibrary's listeners
+ * (fn(library, change)), so that each part of the window draws again only
+ * for what it shows: a page whose songs, playlists and names are as they
+ * were stays as it is drawn.
+ *
+ *   whole        everything may differ (the library came whole, not as a patch)
+ *   before       the library as it was
+ *   parts        the library's parts touched ('songs', 'playlists', 'follows' ...)
+ *   came, went   songs were added, or are gone
+ *   moved        the songs' order changed
+ *   ids          the songs that changed (not those that came or went)
+ *   fields       the fields in which they differ from before
+ *   alike        the songs (as they were) that changed only in what no list shows
+ */
+function libraryChange(before, steps, songsBefore) {
+  const c = {
+    whole: !steps,
+    before,
+    parts: new Set(),
+    came: false,
+    went: false,
+    moved: false,
+    ids: new Set(),
+    fields: new Set(),
+    alike: [],
+
+    /** The songs themselves changed: some came, went or moved, or one differs in a field that is not one of `ignore`. */
+    songs(ignore = QUIET_SONG_FIELDS) {
+      if (this.whole || this.came || this.went || this.moved) return true;
+      for (const f of this.fields) if (!ignore.includes(f)) return true;
+      return false;
+    },
+
+    /** One of the songs that stayed differs in one of `fields`. */
+    field(...fields) {
+      return this.whole || fields.some((f) => this.fields.has(f));
+    },
+
+    /** One of these parts of the library changed (a part that is a list of songs: in any way). */
+    part(...names) {
+      return this.whole || names.some((n) => this.parts.has(n));
+    },
+
+    /** Something other than the songs changed: a playlist, a group, what is followed, the profiles' names ... */
+    rest() {
+      if (this.whole) return true;
+      for (const p of this.parts) if (!SONG_PARTS.includes(p)) return true;
+      return false;
+    },
+
+    /** Nothing a list of songs or playlists shows changed. */
+    quiet() {
+      return !this.songs() && !this.rest();
+    },
+  };
+  for (const [kind, path, arg] of steps || []) {
+    const part = String(path[0]);
+    c.parts.add(part);
+    if (!SONG_PARTS.includes(part) || path.length !== 1) continue;
+    // Set or deleted whole: any of its songs may differ.
+    if (kind !== 'list' || !arg) {
+      c.came = true;
+      c.went = true;
+      continue;
+    }
+    if (arg.gone && arg.gone.length) c.went = true;
+    if (arg.order) c.moved = true;
+    for (const x of arg.put || []) {
+      const old = songsBefore.get(x.id);
+      if (!old) {
+        c.came = true;
+        continue;
+      }
+      c.ids.add(x.id);
+      let shown = false;
+      const differs = (k) => {
+        c.fields.add(k);
+        if (!QUIET_SONG_FIELDS.includes(k)) shown = true;
+      };
+      for (const k in x) if (old[k] !== x[k] && !LibraryPatch.same(old[k], x[k])) differs(k);
+      for (const k in old) if (!(k in x) && old[k] !== undefined) differs(k);
+      if (!shown) c.alike.push(old);
+    }
+  }
+  return c;
+}
+
 const Store = {
   library: { songs: [], playlists: [], ignoredFiles: [] },
   settings: {},
@@ -84,6 +180,8 @@ const Store = {
 
   /** steps: what changed since the library before (a patch), when that is how it came. */
   setLibrary(lib, steps = null) {
+    // What changed, told to the listeners: worked out against the songs as they were.
+    const change = libraryChange(this.library, steps, this.songsById);
     this.library = lib;
     // The songs here that are not the server's (Downloaded Songs) can be played and queued too.
     // A patch changes only its songs (100 000: the map is not made again).
@@ -105,6 +203,12 @@ const Store = {
     } else {
       this.songsById = new Map([...lib.songs, ...(lib.deviceSongs || [])].map((s) => [s.id, s]));
     }
+    // A song that changed only in what no list shows looks as before (Store.look): a row drawn for it stays.
+    for (const old of change.alike) {
+      const look = this._looks.get(old);
+      const now = this.songsById.get(old.id);
+      if (look && now && now !== old) this._looks.set(now, look);
+    }
     // Smart playlists (4.0): their songs are the ones their rules pick, now.
     for (const p of lib.playlists) {
       if (!p.rules) continue;
@@ -118,8 +222,33 @@ const Store = {
         this.holding.get(e.songId).push({ id: p.id, name: p.name });
       }
     }
-    for (const fn of this._listeners) fn(lib);
+    for (const fn of this._listeners) fn(lib, change);
     this._prepare(lib);
+  },
+
+  /**
+   * A song as the lists show it, as a value to compare (4.6): the same
+   * number while the song is the same object, and carried over when it
+   * changed only in what no list shows (a listen counted, its loudness
+   * measured, a cover: QUIET_SONG_FIELDS). A row drawn for a song stays
+   * while this does (renderTable's shows); what the row does later must
+   * therefore ask for the song again (Store.song) where it needs those fields.
+   */
+  look(song) {
+    let n = this._looks.get(song);
+    if (!n) {
+      n = (this._lookCount += 1);
+      this._looks.set(song, n);
+    }
+    return n;
+  },
+  _looks: new WeakMap(),
+  _lookCount: 0,
+
+  /** The listeners told that the songs known changed without the library doing so (a session's or another server's songs). */
+  _tellWhole() {
+    const change = libraryChange(this.library, null, this.songsById);
+    for (const fn of this._listeners) fn(this.library, change);
   },
 
   /**
@@ -228,14 +357,14 @@ const Store = {
     if (key === this._sessionSongsKey) return;
     this._sessionSongsKey = key;
     this.sessionSongs = new Map((songs || []).map((s) => [s.id, { ...s, file: '', foreign: true, cover: null }]));
-    for (const fn of this._listeners) fn(this.library);
+    this._tellWhole();
   },
 
   /** Another server's songs (a guest in its session), or none (null). */
   setForeign(songs, name = '') {
     this.foreign = new Map((songs || []).map((s) => [s.id, { ...s, file: '', foreign: true }]));
     this.foreignName = name;
-    for (const fn of this._listeners) fn(this.library);
+    this._tellWhole();
   },
 
   playlist(id) {

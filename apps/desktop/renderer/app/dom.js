@@ -42,6 +42,101 @@ function clear(node) {
 }
 
 /**
+ * Makes `fresh` (nodes, in their order) the children of `node`, touching
+ * only what differs, so a list drawn again with nothing changed is not
+ * touched at all: nothing blinks, the pointer's row stays lit, a tooltip
+ * stays up, and the page is not laid out again.
+ *
+ * A child that is one of `fresh` already stays where it is (or moves to its
+ * place). With `alike` (the default), a child that looks the same as the
+ * fresh node for its place (the same element, attributes and text all the
+ * way down) stays too, and the fresh one is not used: what such a node does
+ * when clicked must therefore go by what it shows (an id, a name), not by
+ * something that can change while it looks the same; and it is not for
+ * lists holding ticks or boxes typed in, whose state is not part of how
+ * they look to this comparison. `unused(fresh)` and `gone(old)` hear of
+ * each node not put in and each one taken out.
+ */
+function setChildren(node, fresh, { alike = true, unused = null, gone = null } = {}) {
+  // A box being typed in inside a child that goes is kept as clear() keeps it.
+  const typing = Typing.leaving(node);
+  const focused = typing ? document.activeElement : null;
+  const coming = new Set(fresh);
+  // How far ahead an old child is looked for among the fresh ones before it is given up.
+  const LOOK = 3;
+  let at = node.firstChild;
+  for (let i = 0; i < fresh.length; i += 1) {
+    const f = fresh[i];
+    for (;;) {
+      if (at === f) {
+        at = at.nextSibling;
+        break;
+      }
+      // The end, or one of the fresh ones whose place comes later: this one goes before it.
+      if (!at || coming.has(at)) {
+        node.insertBefore(f, at);
+        break;
+      }
+      if (alike && at.isEqualNode(f)) {
+        if (unused) unused(f);
+        at = at.nextSibling;
+        break;
+      }
+      // The one there may stand in for one of the next few: then this one is new, and goes before it.
+      let waits = false;
+      if (alike) {
+        for (let k = 1; k <= LOOK && i + k < fresh.length && !waits; k += 1) waits = at.isEqualNode(fresh[i + k]);
+      }
+      if (waits) {
+        node.insertBefore(f, at);
+        break;
+      }
+      const old = at;
+      at = at.nextSibling;
+      node.removeChild(old);
+      if (gone) gone(old);
+    }
+  }
+  while (at) {
+    const old = at;
+    at = at.nextSibling;
+    node.removeChild(old);
+    if (gone) gone(old);
+  }
+  if (typing && !node.contains(focused)) Typing.restore(node, typing);
+  return node;
+}
+
+/**
+ * More properties for an object made in another file: a long script is split
+ * into parts (4.6), each adding its methods to the one object. Getters and
+ * setters stay what they are.
+ */
+function extend(target, part) {
+  Object.defineProperties(target, Object.getOwnPropertyDescriptors(part));
+  return target;
+}
+
+/** A node's text, set only when it differs: a part drawn again with nothing changed is not touched. */
+function setText(node, text) {
+  const value = String(text);
+  if (node.textContent !== value) node.textContent = value;
+  return node;
+}
+
+/**
+ * A node's html (an icon and its label), set only when it differs from what
+ * was set here last. For nodes whose html is always set through this.
+ */
+function setHtml(node, html) {
+  if (node._html !== html) {
+    node.innerHTML = html;
+    node._html = html;
+  }
+  return node;
+}
+
+/**
  * The box you type in, kept over redraws (4.5.4). Pages draw their parts
  * again whenever the library, the player or a download changes, and a box
  * being typed in (a playlist's new name, a song's names in Add Songs, a

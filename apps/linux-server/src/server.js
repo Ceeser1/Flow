@@ -86,6 +86,13 @@ async function startServer(opts = {}) {
   });
   // The library's changes go to the apps on their live channels (4.3).
   const push = createPush({ library, live, delayMs: opts.pushDelayMs });
+  // And that the downloads changed (4.6, feature "downloadsLive"): an app
+  // showing them asks for them then (GET /api/downloads?queue=1), instead of
+  // every few seconds. Nothing of the batches is in the event: what an app
+  // may see of them is decided where it asks.
+  downloads.onChange(() => {
+    for (const c of live.clients()) if (!c.probe) live.send(c.client, 'downloads', {});
+  });
   const fillLyrics = () => (opts.fillLyrics ? lyrics.fill(() => library.data.songs) : null);
   const server = createHttpServer({
     config, library, version, log, tailscale: () => tailscale, downloads, live, sessions, activity, backups, lyrics, push,

@@ -43,8 +43,17 @@ const SearchPage = {
     for (const btn of $('searchFilter').children) {
       btn.addEventListener('click', () => this._showPart(btn.dataset.part));
     }
-    Store.onLibrary(() => {
-      if (Nav.page === 'search') this.render();
+    // Drawn again only for what it shows. A song's cover, loudness or tags
+    // change nothing here (Covers puts a new picture in by itself); a listen
+    // counted, a star or a playlist changed can only change the Playlists
+    // column (how many songs a list has, and how long it is).
+    Store.onLibrary((lib, change) => {
+      const songs = change.songs();
+      // Nothing the index holds changed: it is the new library's too.
+      if (!songs && this._idx && this._idx.lib === change.before) this._idx.lib = lib;
+      if (Nav.page !== 'search') return;
+      if (songs) this.render();
+      else if (change.rest() || change.field('stats')) this._drawLists();
     });
     Store.onSettings((patch) => {
       if ('showTrend' in patch && Nav.page === 'search') this.render();
@@ -61,21 +70,32 @@ const SearchPage = {
     box.select();
   },
 
-  render() {
+  /**
+   * The Playlists column: the lists whose name holds what was typed, the
+   * listening trend lists only while they are shown (Settings; not worked
+   * out while hidden).
+   */
+  _drawLists() {
     const q = $('searchInput').value;
-
-    // Playlists, the listening trend lists only while they are shown (Settings)
     const trend = Store.settings.showTrend !== false;
-    const lists = [...Store.builtInPlaylists(), ...Store.sortedPlaylists()]
-      .filter((p) => (trend || !SmartLists.isSmart(p.id)) && Util.matches(q, p.name));
-    this._fill('searchPlaylists', 'searchPlaylistsCount', lists, (p) => h('button.result', {
+    const lists = [Store.allSongsPlaylist(), Store.favouritesPlaylist(), ...(trend ? Store.smartPlaylists() : []), ...Store.sortedPlaylists()]
+      .filter((p) => Util.matches(q, p.name))
+      .map((p) => ({ p, icon: listIcon(p), meta: `${Util.plural(p.entries.length, 'song')} · ${Util.fmtClock(Store.totalDuration(p.id))}` }));
+    this._fill('searchPlaylists', 'searchPlaylistsCount', lists, ({ p, icon, meta }) => h('button.result', {
       type: 'button',
       onclick: () => Nav.openPlaylist(p.id),
     },
-    h('span.result__icon', { html: listIcon(p) }),
+    h('span.result__icon', { html: icon }),
     h('span.result__text',
       h('span.result__title', { title: fullName(p.name) }, shortName(p.name)),
-      h('span.result__meta', `${Util.plural(p.entries.length, 'song')} · ${Util.fmtClock(Store.totalDuration(p.id))}`))));
+      h('span.result__meta', meta))),
+    ({ p, icon, meta }) => `${p.id}\n${p.name}\n${meta}\n${icon}`);
+  },
+
+  render() {
+    const q = $('searchInput').value;
+
+    this._drawLists();
 
     // Songs, newest first like All Songs
     const idx = this._index();
@@ -84,7 +104,9 @@ const SearchPage = {
     // A song plays on a click anywhere on it: its cover, its names, Play on
     // the right; [+] before Play adds it to the queue instead. A div rather
     // than a button, as it holds buttons.
-    this._fill('searchSongs', 'searchSongsCount', songs, (s) => {
+    this._fill('searchSongs', 'searchSongsCount', songs, (found) => {
+      // The song as it is now (the index may hold it from before a listen was counted).
+      const s = Store.song(found.id) || found;
       const play = () => Player.toggleSong(s.id, 'all');
       const name = s.title + (s.mix ? ` (${s.mix})` : '');
       const row = h('div.result.result--song', {
@@ -112,7 +134,7 @@ const SearchPage = {
         play();
       }));
       return row;
-    });
+    }, (s) => `${s.id}\n${s.title}\n${s.mix}\n${s.artist}\n${s.duration}`);
     this._markPlaying();
 
     // Artists: the artists of the songs found, each once, with how many songs they have
@@ -125,21 +147,24 @@ const SearchPage = {
     h('span.result__icon.result__avatar', a.name.slice(0, 1).toUpperCase()),
     h('span.result__text',
       h('span.result__title', { title: fullName(a.name) }, shortName(a.name)),
-      h('span.result__meta', Util.plural(a.count, 'song')))));
+      h('span.result__meta', Util.plural(a.count, 'song')))),
+    (a) => `${a.key}\n${a.name}\n${a.count}`);
 
     // Albums, Genres, Info and Mixes the same way. An album shows
     // the cover of a song on it, and its artist when all its songs share one.
     for (const col of SEARCH_NAMES) {
+      const album = col.key === 'album';
+      const artistOf = (n) => (album && n.artists.size === 1 ? shortName(n.song.artist) : '');
       this._fill(col.list, col.count, this._names(col.key, words), (n) => h('button.result', {
         type: 'button',
         title: T('search.tag.tooltip', { name: n.name }),
         onclick: () => Nav.openPlaylist('all', { filter: '', field: { key: col.key, value: n.name } }),
       },
-      col.key === 'album' ? Covers.el(n.song, 'result') : h('span.result__icon.result__avatar.result__avatar--name', n.name.slice(0, 1).toUpperCase()),
+      album ? Covers.el(Store.song(n.song.id) || n.song, 'result') : h('span.result__icon.result__avatar.result__avatar--name', n.name.slice(0, 1).toUpperCase()),
       h('span.result__text',
         h('span.result__title', { title: fullName(n.name) }, shortName(n.name)),
-        h('span.result__meta', [col.key === 'album' && n.artists.size === 1 ? shortName(n.song.artist) : '', Util.plural(n.count, 'song')]
-          .filter(Boolean).join(' · ')))));
+        h('span.result__meta', [artistOf(n), Util.plural(n.count, 'song')].filter(Boolean).join(' · ')))),
+      (n) => `${n.folded}\n${n.name}\n${n.count}\n${artistOf(n)}\n${album ? n.song.id : ''}`);
     }
   },
 
@@ -237,31 +262,60 @@ const SearchPage = {
   // Long lists are cut off: nobody scrolls through 5000 buttons, they type more.
   // The first ones of each column are drawn at once, the rest right after (a
   // letter typed meanwhile starts over), so typing never waits for them.
-  _fill(listId, countId, items, draw, limit = 300) {
+  //
+  // keyOf(item): what the item's row shows, as text. A row drawn before for
+  // the same text stays as it is, in the page or put back where it belongs:
+  // only the rows that are new or differ are made, and a column whose rows
+  // are all as before is not touched at all (nothing blinks, no picture
+  // loads again). What a row does when clicked goes by what it shows.
+  _fill(listId, countId, items, draw, keyOf, limit = 300) {
     const list = $(listId);
-    releaseCovers([list]);
-    clear(list);
     list._job = (list._job || 0) + 1;
     const job = list._job;
-    $(countId).textContent = items.length ? String(items.length) : '';
+    const count = items.length ? String(items.length) : '';
+    if ($(countId).textContent !== count) $(countId).textContent = count;
+    const shown = items.length > limit ? items.slice(0, limit) : items;
+    const keys = shown.map(keyOf);
+    // The rows drawn before that are shown again are kept, the others let go.
+    const wanted = new Set(keys);
+    const rows = new Map();
+    for (const [key, node] of list._rows || []) {
+      if (wanted.has(key)) rows.set(key, node);
+      else releaseCovers([node]);
+    }
+    list._rows = rows;
+    // The line under the rows: nothing found, or how many more there are.
+    const note = (cls, text) => {
+      const old = list._note;
+      if (old && old.className === cls && old.textContent === text) return old;
+      list._note = h(`div.${cls}`, text);
+      return list._note;
+    };
     if (!items.length) {
-      list.appendChild(h('div.results__empty', T('search.noMatches')));
+      setChildren(list, [note('results__empty', T('search.noMatches'))], { alike: false });
       return;
     }
-    const shown = items.length > limit ? items.slice(0, limit) : items;
-    const end = items.length > limit ? h('div.results__more', T('search.more', { count: items.length - limit })) : null;
+    const end = items.length > limit ? note('results__more', T('search.more', { count: items.length - limit })) : null;
+    const nodes = [];
     let at = 0;
+    // The rows from `at` on: those kept at once, those to be made while there
+    // is time (the first time: the first 24; after that for `ms`, one at least).
     const part = (ms) => {
       const started = performance.now();
-      const frag = document.createDocumentFragment();
-      while (at < shown.length && (at < 24 || performance.now() - started < ms)) {
-        frag.appendChild(draw(shown[at]));
+      let made = 0;
+      while (at < shown.length) {
+        let node = rows.get(keys[at]);
+        if (!node) {
+          if (ms ? made > 0 && performance.now() - started >= ms : made >= 24) break;
+          node = draw(shown[at]);
+          rows.set(keys[at], node);
+          made += 1;
+        }
+        nodes.push(node);
         at += 1;
       }
-      if (end) list.insertBefore(frag, end);
-      else list.appendChild(frag);
+      setChildren(list, end ? [...nodes, end] : nodes, { alike: false });
     };
-    if (end) list.appendChild(end);
     part(0);
     const more = () => {
       if (list._job !== job || !list.isConnected) return;

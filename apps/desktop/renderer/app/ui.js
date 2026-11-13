@@ -341,17 +341,25 @@ async function attempt(fn) {
  * the list is { top: the scroller's scrollTop, offset: the holder's top in
  * it, height } (a list drawn again keeps its place without measuring the
  * page while it is changing); onAdded(nodes), onRemoved(nodes).
- * Returns { stop(), offset, height }.
+ *
+ * keep: { top, bottom }, the spacers of the list drawn before in this holder
+ * (4.6): it is drawn again in place. makeRow may then hand out rows that are
+ * in the page already (rowKeeper); those stay untouched where they are, the
+ * new ones come in between them, and whatever else stood between the
+ * spacers goes (its going is the caller's to tell).
+ * Returns { stop(), offset, height, top, bottom, nodes() }.
  */
-function windowRows({ scroller, holder, count, makeRow, spacer, height, hint = {}, onAdded, onRemoved }) {
-  const top = spacer();
-  const bottom = spacer();
-  holder.append(top, bottom);
+function windowRows({ scroller, holder, count, makeRow, spacer, height, hint = {}, onAdded, onRemoved, keep = null }) {
+  const top = keep ? keep.top : spacer();
+  const bottom = keep ? keep.bottom : spacer();
+  if (!keep) holder.append(top, bottom);
   const drawn = [];
   let start = 0;
   let end = 0;
   let rowH = hint.height || height;
   let offset = Number.isFinite(hint.offset) ? hint.offset : 0;
+  // How much of the list shows, as measured last (a list drawn again starts with the rows it had, not with a window's worth).
+  let viewH = hint.view || 0;
   let frame = 0;
   let live = true;
 
@@ -403,6 +411,22 @@ function windowRows({ scroller, holder, count, makeRow, spacer, height, hint = {
     if (added.length && onAdded) onAdded(added);
   }
 
+  /** The first rows over a list drawn before: only what differs is touched. */
+  function showOver([s, e]) {
+    const lead = [];
+    for (let n = holder.firstChild; n && n !== top; n = n.nextSibling) lead.push(n);
+    const rows = [];
+    for (let i = s; i < e; i += 1) rows.push(makeRow(i));
+    const added = rows.filter((n) => n.parentNode !== holder);
+    setChildren(holder, [...lead, top, ...rows, bottom], { alike: false });
+    drawn.push(...rows);
+    start = s;
+    end = e;
+    top.style.height = `${start * rowH}px`;
+    bottom.style.height = `${(count - end) * rowH}px`;
+    if (added.length && onAdded) onAdded(added);
+  }
+
   const place = () => top.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
 
   // Once a frame while scrolling: where the list is now, measured.
@@ -412,6 +436,7 @@ function windowRows({ scroller, holder, count, makeRow, spacer, height, hint = {
     const view = scroller.clientHeight;
     // Hidden (another page shows): nothing to measure.
     if (!view || !top.getClientRects().length) return;
+    viewH = view;
     let again = false;
     if (drawn.length) {
       const h0 = drawn[0].getBoundingClientRect().height;
@@ -432,9 +457,20 @@ function windowRows({ scroller, holder, count, makeRow, spacer, height, hint = {
   }
   scroller.addEventListener('scroll', soon, { passive: true });
   window.addEventListener('resize', soon);
-  show(range(Number.isFinite(hint.top) ? hint.top : 0, window.innerHeight));
+  const first = range(Number.isFinite(hint.top) ? hint.top : 0, viewH || window.innerHeight);
+  if (keep) showOver(first);
+  else show(first);
   soon();
   return {
+    top,
+    bottom,
+    get view() {
+      return viewH;
+    },
+    /** The rows in the page now. */
+    nodes() {
+      return drawn.slice();
+    },
     stop() {
       live = false;
       scroller.removeEventListener('scroll', soon);
@@ -457,6 +493,118 @@ function releaseCovers(nodes) {
   for (const n of nodes) Covers.release(n);
 }
 
+// ---- rows that stay ----
+
+/** Two lists of values, each the same as its turn in the other. */
+function sameValues(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * Two rows' data the same all the way down: the same value, or lists and
+ * plain objects holding the same (what the library did not change is the
+ * same object as before, so this is quick).
+ */
+function sameDeep(a, b, depth = 8) {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || depth <= 0) return false;
+  const list = Array.isArray(a);
+  if (list !== Array.isArray(b)) return false;
+  if (list) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) if (!sameDeep(a[i], b[i], depth - 1)) return false;
+    return true;
+  }
+  const proto = Object.getPrototypeOf(a);
+  if (proto !== Object.getPrototypeOf(b) || (proto !== Object.prototype && proto !== null)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const k of keys) {
+    if (!(k in b) || !sameDeep(a[k], b[k], depth - 1)) return false;
+  }
+  return true;
+}
+
+/**
+ * A list drawn again in place (4.6): the rows in the page (`old`, each with
+ * its key as data-id) are handed out again for the rows that still show the
+ * same, so only what changed is made and put into the page: the rest is not
+ * touched (nothing blinks, a cover stays, the pointer's row stays lit).
+ *
+ * shows(row): what a row shows beyond its key, as a list of values (its
+ * song, its date ...); a row drawn before with all of them the same (===)
+ * stays. Without it, or with `usable` false (the columns or the list
+ * changed), every row is made anew. make(row) makes one. gone(nodes) hears
+ * of the old rows not used again: at once those that cannot be, one whose
+ * values differ just before its row is made anew, the rest at done().
+ *
+ * drawn (without shows; for short lists whose rows go by much of the
+ * library, a playlist's follows, groups, updates ...): every row is made,
+ * and the one in the page stays when the new one came out the same (its
+ * html) from the same data (sameDeep), so what its buttons were made with
+ * still holds; the new one is then dropped. Not for rows with ticks, whose
+ * state is not in their html; a box being typed in stays as it is.
+ * Returns { row(row) -> its node, done(), kept: how many stayed }.
+ */
+function rowKeeper({ old, usable, rowKey, shows, drawn = false, make, gone }) {
+  const byKey = new Map();
+  const out = [];
+  const asDrawn = drawn && !shows;
+  for (const node of old) {
+    const key = node.dataset.id;
+    const known = asDrawn ? node._drawnAs !== undefined : !!(shows && node._shows);
+    if (usable && known && !byKey.has(key)) byKey.set(key, node);
+    else out.push(node);
+  }
+  if (out.length) gone(out);
+  const keeper = {
+    kept: 0,
+    row(row) {
+      const key = String(rowKey(row));
+      const node = byKey.get(key);
+      if (asDrawn) {
+        const fresh = make(row);
+        const html = fresh.outerHTML;
+        if (node) {
+          byKey.delete(key);
+          if (node._drawnAs === html && sameDeep(node._row, row)) {
+            node._row = row;
+            keeper.kept += 1;
+            releaseCovers([fresh]);
+            return node;
+          }
+          gone([node]);
+        }
+        fresh._row = row;
+        fresh._drawnAs = html;
+        return fresh;
+      }
+      const values = shows ? shows(row) : null;
+      if (node) {
+        byKey.delete(key);
+        if (sameValues(node._shows, values)) {
+          // What its clicks go by: the row as it is now.
+          node._row = row;
+          keeper.kept += 1;
+          return node;
+        }
+        gone([node]);
+      }
+      const fresh = make(row);
+      fresh._row = row;
+      fresh._shows = values;
+      return fresh;
+    },
+    done() {
+      if (byKey.size) gone([...byKey.values()]);
+      byKey.clear();
+    },
+  };
+  return keeper;
+}
+
 // ---- sortable table ----
 
 /**
@@ -468,41 +616,76 @@ function releaseCovers(nodes) {
  * scroller: the element the page scrolls in; given, only the rows where
  * the list shows are in the page (windowRows), scrollTop: where it is
  * scrolled (known from its scroll events, not measured while drawing).
- * onRowsAdded(trs), onRowsRemoved(trs): rows coming in and going.
+ * onRowsAdded(trs), onRowsRemoved(trs): rows coming in and going (also the
+ * rows of the list drawn before that are not used again).
+ *
+ * Drawn again, the table stays in the page (4.6): its head while the columns
+ * and the sort are the same, and with shows(row) every row that still shows
+ * the same (rowKeeper). `look`: what all rows share beyond the columns (the
+ * list they are of, a mode); changed, every row is made anew. A row that
+ * stays keeps what its cells were drawn with, so `shows` and `look` must
+ * hold everything render() and rowClass() go by; its clicks (onClick,
+ * onRowDblClick, onSort) are the ones given last. `drawn` instead of shows
+ * (a short list): a row stays when it is made the same again (rowKeeper).
  */
 function renderTable(table, {
-  columns, rows, sort, onSort, rowKey, rowClass, onRowDblClick, mobile, scroller, scrollTop, onRowsAdded, onRowsRemoved,
+  columns, rows, sort, onSort, rowKey, rowClass, onRowDblClick, mobile, scroller, scrollTop, onRowsAdded, onRowsRemoved, shows = null, look = '', drawn = false,
 }) {
   // A list drawn before: where it was, then let go.
   const before = table._rows;
-  const hint = before ? { top: scrollTop, offset: before.offset, height: before.height } : { top: scrollTop };
+  const hint = before ? { top: scrollTop, offset: before.offset, height: before.height, view: before.view } : { top: scrollTop };
   if (before) before.stop();
   table._rows = null;
   // The phone draws the rows as a touch list instead (touchList.js).
   if (mobile && document.body.classList.contains('mobile')) {
+    table._drawn = null;
     TouchList.render(table, {
-      columns, rows, sort, onSort, rowKey, rowClass, scroller, hint, onRowsAdded, onRowsRemoved, ...mobile,
+      columns, rows, sort, onSort, rowKey, rowClass, scroller, hint, onRowsAdded, onRowsRemoved, shows, look, drawn, before, ...mobile,
     });
     return;
   }
-  releaseCovers([table]);
-  clear(table);
-  const headRow = h('tr');
-  for (const col of columns) {
-    const sortable = col.sortable !== false;
-    const active = sortable && sort && sort.key === col.key;
-    const arrow = active ? (sort.dir === 'asc' ? '▲' : '▼') : '';
-    const th = h('th' + (col.cls ? '.' + col.cls : ''),
-      sortable ? h('button.th-sort' + (active ? '.th-sort--active' : ''), {
-        type: 'button',
-        title: T('common.sortBy', { column: col.label }),
-        onclick: () => onSort(col.key),
-      }, h('span', col.label), h('span.th-arrow', arrow)) : h('span.th-plain', col.label));
-    headRow.appendChild(th);
+  // What the clicks go by, in the head and the rows that stay too: the list as it is now.
+  table._now = { onSort, onRowDblClick, columns: new Map(columns.map((c) => [c.key, c])) };
+  const cols = JSON.stringify(columns.map((c) => [c.key, c.label, c.cls || '', c.sortable !== false, !!c.onClick]));
+  const headLook = `${cols}\n${sort && sort.key ? `${sort.key}:${sort.dir}` : ''}`;
+  const rowLook = `${cols}\n${onRowDblClick ? 1 : 0}\n${look}`;
+  const gone = (trs) => {
+    releaseCovers(trs);
+    if (onRowsRemoved) onRowsRemoved(trs);
+  };
+
+  // The table as drawn before, still in the page: it stays, and what differs is put into it.
+  const was = table._drawn;
+  const fits = !!(was && was.thead.parentNode === table && was.tbody.parentNode === table);
+  let thead = fits ? was.thead : null;
+  let tbody = fits ? was.tbody : null;
+  if (!fits) {
+    if (before && onRowsRemoved) onRowsRemoved(before.nodes());
+    releaseCovers([table]);
+    clear(table);
+    thead = h('thead');
+    tbody = h('tbody');
+    table.append(thead, tbody);
   }
-  const tbody = h('tbody');
+  if (!fits || was.head !== headLook) {
+    const headRow = h('tr');
+    for (const col of columns) {
+      const sortable = col.sortable !== false;
+      const active = sortable && sort && sort.key === col.key;
+      const arrow = active ? (sort.dir === 'asc' ? '▲' : '▼') : '';
+      const th = h('th' + (col.cls ? '.' + col.cls : ''),
+        sortable ? h('button.th-sort' + (active ? '.th-sort--active' : ''), {
+          type: 'button',
+          title: T('common.sortBy', { column: col.label }),
+          onclick: () => table._now.onSort(col.key),
+        }, h('span', col.label), h('span.th-arrow', arrow)) : h('span.th-plain', col.label));
+      headRow.appendChild(th);
+    }
+    clear(thead).appendChild(headRow);
+  }
   const makeRow = (row) => {
     const tr = h('tr', { dataset: { id: rowKey(row) } });
+    tr._row = row;
     const extra = rowClass ? rowClass(row) : '';
     if (extra) tr.className = extra;
     for (const col of columns) {
@@ -510,40 +693,64 @@ function renderTable(table, {
       const td = h('td' + (col.cls ? '.' + col.cls : '') + (col.onClick ? '.cell--play' : ''), content);
       if (col.onClick) {
         td.addEventListener('click', (e) => {
-          if (!e.target.closest('button')) col.onClick(row);
+          if (e.target.closest('button')) return;
+          const c = table._now.columns.get(col.key);
+          if (c && c.onClick) c.onClick(tr._row);
         });
       }
       tr.appendChild(td);
     }
     if (onRowDblClick) {
       tr.addEventListener('dblclick', (e) => {
-        if (!e.target.closest('button')) onRowDblClick(row);
+        if (!e.target.closest('button') && table._now.onRowDblClick) table._now.onRowDblClick(tr._row);
       });
     }
     return tr;
   };
-  table.appendChild(h('thead', headRow));
-  table.appendChild(tbody);
+  // The spacers of the long list drawn before, where this one goes between again.
+  const spacers = scroller && fits && before && before.top.parentNode === tbody && before.bottom.parentNode === tbody
+    ? { top: before.top, bottom: before.bottom } : null;
+  const old = !fits ? [] : before ? before.nodes() : [...tbody.children].filter((tr) => '_row' in tr);
+  const keeper = rowKeeper({
+    old,
+    usable: fits && was.rows === rowLook && (!scroller || !!spacers),
+    rowKey,
+    shows,
+    drawn,
+    make: makeRow,
+    gone,
+  });
+  table._drawn = { thead, tbody, head: headLook, rows: rowLook };
   if (!scroller) {
-    const frag = document.createDocumentFragment();
-    for (const row of rows) frag.appendChild(makeRow(row));
-    tbody.appendChild(frag);
+    const trs = rows.map((row) => keeper.row(row));
+    keeper.done();
+    if (keeper.kept) {
+      setChildren(tbody, trs, { alike: false });
+    } else {
+      // None stays: all out and all in at once.
+      clear(tbody);
+      const frag = document.createDocumentFragment();
+      for (const tr of trs) frag.appendChild(tr);
+      tbody.appendChild(frag);
+    }
     return;
   }
+  if (!spacers) clear(tbody);
   table._rows = windowRows({
     scroller,
     holder: tbody,
     count: rows.length,
-    makeRow: (i) => makeRow(rows[i]),
+    makeRow: (i) => keeper.row(rows[i]),
     spacer: () => h('tr.vspace', { 'aria-hidden': 'true' }, h('td', { colSpan: columns.length })),
     height: 41,
     hint,
     onAdded: onRowsAdded,
-    onRemoved: (trs) => {
-      releaseCovers(trs);
-      if (onRowsRemoved) onRowsRemoved(trs);
-    },
+    onRemoved: gone,
+    keep: spacers,
   });
+  // The rows of before that are not among the first ones now.
+  keeper.done();
+  if (spacers) spacers.top.firstChild.colSpan = spacers.bottom.firstChild.colSpan = columns.length;
 }
 
 /**

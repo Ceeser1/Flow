@@ -832,3 +832,56 @@ test('a batch kept by a server from before the queue is moved into a folder of i
     await server.close();
   }
 });
+
+test('the apps are told on their live channels when the downloads change', needsFfmpeg, async () => {
+  await withServer(async ({ base }) => {
+    assert.ok((await api(base, 'GET', '/api/hello')).json.features.includes('downloadsLive'));
+    // An app's live channel, read as it comes: the events' types, in their order.
+    const stop = new AbortController();
+    const live = await fetch(`${base}/api/live?client=client-desk0001&device=Desk`, { signal: stop.signal });
+    assert.equal(live.status, 200);
+    const events = [];
+    const reader = live.body.getReader();
+    const text = new TextDecoder();
+    let buffer = '';
+    const reading = (async () => {
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) return;
+          buffer += text.decode(value, { stream: true });
+          let cut;
+          while ((cut = buffer.indexOf('\n\n')) >= 0) {
+            const type = (/^event: (.+)$/m.exec(buffer.slice(0, cut)) || [])[1];
+            buffer = buffer.slice(cut + 2);
+            if (type) events.push(type);
+          }
+        }
+      } catch {
+        // Closed below.
+      }
+    })();
+    try {
+      await waitFor(() => events.includes('hello'), 'the channel');
+      assert.ok(!events.includes('downloads'));
+      // A list that finishes by itself: told while it is read and downloaded, and once more when it is gone.
+      const made = await api(base, 'POST', '/api/downloads', { url: 'https://fake.test/list/2?ids=t&name=Told', kind: 'list', queue: true, auto: { complete: true, finish: true } });
+      assert.equal(made.status, 200);
+      await waitFor(() => events.includes('downloads'), 'the first word of it');
+      await waitFor(async () => (await api(base, 'GET', '/api/library')).json.library.songs.length === 2, 'its songs saved');
+      await waitFor(async () => (await api(base, 'GET', '/api/downloads?queue=1')).json.batches.length === 0, 'the batch gone');
+      const told = events.filter((e) => e === 'downloads').length;
+      // Asked right after the last word, the batch is gone: nothing is left to wait for.
+      await new Promise((r) => setTimeout(r, 400));
+      assert.equal((await api(base, 'GET', '/api/downloads?queue=1')).json.batches.length, 0);
+      assert.ok(told >= 2, `told ${told} times`);
+      // And nothing more once nothing changes.
+      const after = events.filter((e) => e === 'downloads').length;
+      await new Promise((r) => setTimeout(r, 1500));
+      assert.equal(events.filter((e) => e === 'downloads').length, after);
+    } finally {
+      stop.abort();
+      await reading;
+    }
+  });
+});

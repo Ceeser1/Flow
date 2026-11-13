@@ -41,7 +41,8 @@
     uniform int n;
     uniform float jx[${MAX_JETS}], jl[${MAX_JETS}];
     uniform vec3 jc[${MAX_JETS}];
-    // The ripples: x (uv), age (seconds), size 0..1 (how high the burst went), its jet.
+    // The ripples still spreading: x (uv), how wide its ring is now, how high
+    // its crests, its jet (the two worked out once a frame, not at each pixel).
     uniform int nr;
     uniform vec4 rips[${MAX_RIPPLES}];
     out vec4 o;
@@ -79,7 +80,8 @@
       if (uv.y >= wl) {
         col = sky(uv);
         col += texture(drops, uv).rgb + texture(glowA, uv).rgb * 0.8 + texture(glowB, uv).rgb * 1.3 + texture(mist, uv).rgb;
-      } else {
+      } else if (uv.y >= ledge) {
+        // (Under the ledge's top the stone covers the water: not worked out there.)
         float d = wl - uv.y;
         // Ripples, smaller far off (by the line) and larger near.
         float z = 0.02 / (d + 0.004);
@@ -97,9 +99,7 @@
         for (int i = 0; i < ${MAX_RIPPLES}; i++) {
           if (i >= nr) break;
           vec4 R = rips[i];
-          float t = R.y / (4.0 + 7.5 * R.z);
-          if (t >= 1.0) continue;
-          float rx = 0.01 + (0.12 + 1.3 * R.z) * pow(t, 0.75);
+          float rx = R.y;
           float ry = rx * 0.3;
           vec2 q = vec2((uv.x - R.x) * aspect / rx, (d - ry * 0.6) / ry);
           float e = length(q);
@@ -108,9 +108,7 @@
           // The crests: about five across the ring's width, sharp enough to see however small.
           float k = min(30.0, 0.5 * ry * res.y);
           float env = smoothstep(1.04, 0.97, e) * smoothstep(0.15, 0.55, e) * exp(-clamp(1.0 - e, 0.0, 1.0) * 1.6);
-          // Flatter as it spreads: the same water moved round an ever longer ring.
-          float amp = (0.35 + 0.65 * R.z) * pow(1.0 - t, 1.5) * sqrt(0.15 / (0.15 + rx));
-          float s = cos((1.0 - e) * k) * env * amp;
+          float s = cos((1.0 - e) * k) * env * R.z;
           slope += s;
           bend += s * q / max(e, 0.001) * vec2(rx * 0.16 / aspect, ry * 0.3);
           ripc += jc[int(R.w)] * max(0.0, s);
@@ -388,7 +386,7 @@
       }
       // The lamps' colours.
       const colors = set('fnColors');
-      const chord = colors === 'notes' && a.playing ? a.noteHue() : null;
+      const chord = colors === 'notes' && a.playing ? a.noteHue(1 / 30) : null;
       if (chord) this.chordHue = this.chordHue === undefined ? chord.hue : this.chordHue + ((((chord.hue - this.chordHue + 1.5) % 1) - 0.5) * Math.min(1, dt * 3 * chord.strength));
       const amb = [0, 0, 0];
       for (const jet of jets) {
@@ -547,7 +545,8 @@
         gl.bindVertexArray(null);
         gl.disable(gl.BLEND);
       }
-      VizGL.blur(gl, this.ma, this.mb, this.ma, 1.5);
+      // (No mist: it is black as cleared, blurred or not.)
+      if (kept) VizGL.blur(gl, this.ma, this.mb, this.ma, 1.5);
 
       // The glow of the water.
       VizGL.blur(gl, this.s, this.qa, this.qb, 1.3);
@@ -596,14 +595,21 @@
       gl.uniform1fv(u.jl, jl);
       gl.uniform3fv(u.jc, jc);
       rips.fill(0);
+      let nr = 0;
       for (let i = 0; i < this.ripples.length; i += 1) {
         const r = this.ripples[i];
-        rips[i * 4] = r.x;
-        rips[i * 4 + 1] = r.age;
-        rips[i * 4 + 2] = r.high;
-        rips[i * 4 + 3] = Math.min(r.j, jets.length - 1);
+        // How far through its life: the ring wider, its crests flatter as it
+        // spreads (the same water moved round an ever longer ring).
+        const t = r.age / (4 + 7.5 * r.high);
+        if (t >= 1) continue;
+        const rx = 0.01 + (0.12 + 1.3 * r.high) * t ** 0.75;
+        rips[nr * 4] = r.x;
+        rips[nr * 4 + 1] = rx;
+        rips[nr * 4 + 2] = (0.35 + 0.65 * r.high) * (1 - t) ** 1.5 * Math.sqrt(0.15 / (0.15 + rx));
+        rips[nr * 4 + 3] = Math.min(r.j, jets.length - 1);
+        nr += 1;
       }
-      gl.uniform1i(u.nr, this.ripples.length);
+      gl.uniform1i(u.nr, nr);
       gl.uniform4fv(u.rips, rips);
       VizGL.screen(gl);
     }

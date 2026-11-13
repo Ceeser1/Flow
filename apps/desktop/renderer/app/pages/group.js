@@ -70,8 +70,10 @@ const GroupPage = {
       if (g.isShared) Groups.setFollowing(g, false);
       else Groups.setShared(g, !g.shared);
     };
-    Store.onLibrary(() => {
+    Store.onLibrary((lib, change) => {
       if (Nav.page !== 'group') return;
+      // Nothing its lists show changed: it stays as it is drawn.
+      if (change.quiet()) return;
       if (!Store.group(this.id)) {
         Nav.show('playlists');
         return;
@@ -281,12 +283,12 @@ const GroupPage = {
   render() {
     const g = Store.group(this.id);
     if (!g) return;
-    $('grTitle').textContent = g.name;
+    setText($('grTitle'), g.name);
     const lists = this._lists();
     const rows = Store.rowsOf(this.listId);
     const seconds = rows.reduce((sum, r) => sum + (r.song.duration || 0), 0);
-    $('grMeta').textContent = [Util.plural(lists.length, 'playlist'), Util.plural(rows.length, 'song'), Util.fmtClock(seconds),
-      g.isShared ? T('common.byOwner', { profile: g.ownerName }) : ''].filter(Boolean).join(' · ');
+    setText($('grMeta'), [Util.plural(lists.length, 'playlist'), Util.plural(rows.length, 'song'), Util.fmtClock(seconds),
+      g.isShared ? T('common.byOwner', { profile: g.ownerName }) : ''].filter(Boolean).join(' · '));
     $('grSearch').placeholder = T('group.search.placeholder', { group: g.name });
     this._drawShare(g);
     this._drawOffline(rows);
@@ -303,7 +305,8 @@ const GroupPage = {
       btn.className = 'btn gr-unfollow';
       btn.removeAttribute('aria-pressed');
       btn.title = T('groups.unfollow.tooltip', { group: g.name });
-      btn.textContent = T('groups.unfollow');
+      setText(btn, T('groups.unfollow'));
+      btn._html = undefined;
       return;
     }
     const on = !!g.shared;
@@ -311,8 +314,8 @@ const GroupPage = {
     btn.setAttribute('aria-pressed', String(on));
     btn.title = T(on ? 'groups.share.on.tooltip' : 'groups.share.tooltip', { group: g.name });
     btn.setAttribute('aria-label', T('common.share'));
-    btn.innerHTML = Store.uiMode === 'mobile' ? Icons.share
-      : `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.share}<span>${T('common.share')}</span>`;
+    setHtml(btn, Store.uiMode === 'mobile' ? Icons.share
+      : `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.share}<span>${T('common.share')}</span>`);
   },
 
   _drawOffline(rows) {
@@ -327,14 +330,14 @@ const GroupPage = {
     btn.setAttribute('aria-pressed', String(on));
     btn.title = T(on ? 'group.download.on.tooltip' : 'group.download.tooltip', { count: lists.length });
     if (Store.uiMode === 'mobile') {
-      btn.innerHTML = Icons.download;
+      setHtml(btn, Icons.download);
       btn.setAttribute('aria-label', btn.title);
     } else {
-      btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.download}<span>${T('common.download')}</span>`;
+      setHtml(btn, `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.download}<span>${T('common.download')}</span>`);
     }
     const here = rows.filter((r) => r.song.file).length;
-    note.textContent = !rows.length || !lists.some((p) => Store.isOffline(p.id)) ? ''
-      : here === rows.length ? T('playlist.download.state.allDownloaded') : T('playlist.download.state.someDownloaded', { done: here, count: rows.length });
+    setText(note, !rows.length || !lists.some((p) => Store.isOffline(p.id)) ? ''
+      : here === rows.length ? T('playlist.download.state.allDownloaded') : T('playlist.download.state.someDownloaded', { done: here, count: rows.length }));
   },
 
   _sortOf(p) {
@@ -351,17 +354,20 @@ const GroupPage = {
 
   renderFrames() {
     const box = $('grFrames');
-    // The page's place and the song lists' own, kept over the redraw (a
-    // library change while songs come down redraws it often). The frames
-    // keep their height meanwhile, so the page is never shorter for a moment.
+    // Drawn again in place (4.6): a playlist's frame stays in the page (its
+    // own scrolling with it), its head while it comes out the same, and its
+    // song list keeps the rows that show the same; only what changed is put
+    // in anew (a library change while songs come down draws it often). The
+    // page's place is kept, and the frames keep their height meanwhile.
     const pages = $('pages');
     const pageTop = pages.scrollTop;
-    const scrolled = new Map([...box.querySelectorAll('.gframe__songs')].map((n) => [n.dataset.id, n.scrollTop]));
     box.style.minHeight = `${box.offsetHeight}px`;
-    releaseCovers([box]);
-    clear(box);
+    // Another group's frames are not this one's, also of a playlist in both.
+    const was = this._drawnFor === this.id
+      ? new Map([...box.children].filter((n) => n._frame).map((n) => [n.dataset.id, n])) : new Map();
+    this._drawnFor = this.id;
     const draws = [];
-    this._playButtons = new Map();
+    const frames = [];
     this._frames = new Map();
     const lists = this._lists();
     const words = Util.queryWords(this.filter);
@@ -375,29 +381,37 @@ const GroupPage = {
       if (words.length && !rows.length) continue;
       found += rows.length;
       shown += 1;
-      box.appendChild(this._frame(p, rows, words.length > 0 || this._isOpen(p), scrolled.get(p.id) || 0, draws));
+      frames.push(this._frame(p, rows, words.length > 0 || this._isOpen(p), was.get(p.id), draws));
     }
+    // The Play buttons of song lists no longer in the page are let go.
+    const withSongs = new Set(frames.filter((f) => f._frame.kind === 'songs').map((f) => f.dataset.id));
+    for (const id of [...this._playButtons.keys()]) if (!withSongs.has(id)) this._playButtons.delete(id);
+    setChildren(box, frames, { alike: false, gone: (node) => releaseCovers([node]) });
     // The open frames' songs, now that their boxes are in the page and can measure where their rows show.
     for (const draw of draws) draw();
     box.style.minHeight = '';
     pages.scrollTop = pageTop;
     $('grEmpty').hidden = lists.length > 0;
-    $('grEmptyText').textContent = T('group.empty');
+    setText($('grEmptyText'), T('group.empty'));
     $('grNoMatch').hidden = !words.length || shown > 0 || !lists.length;
-    $('grFiltered').textContent = words.length && lists.length ? T('playlist.showing', { shown: found, count: total }) : '';
+    setText($('grFiltered'), words.length && lists.length ? T('playlist.showing', { shown: found, count: total }) : '');
     this._drawPlayState();
   },
 
-  _frame(p, rows, open, scrollTop, draws) {
+  /**
+   * A playlist's frame: `was`, the one in the page, when it is of the same
+   * kind (closed, open with songs, open and empty), else a new one. Its head
+   * is made each time and put in only when it came out differently, or from
+   * a playlist that changed (what its buttons were made with).
+   */
+  _frame(p, rows, open, was, draws) {
     const count = Store.songCount(p);
     const seconds = Store.durationOf(p);
     const play = h('button.btn.btn--play.gframe__play', { type: 'button', onclick: () => this.playList(p.id) });
     const shuffle = h('button.toggle.gframe__shuffle', { type: 'button', title: T('group.frame.shuffle.tooltip', { playlist: p.name }), onclick: () => this.setShuffleOf(p.id, !this.shuffleOf(p.id)) });
     // The speaker beside its icon while a song of it plays (_drawPlayState).
     const playing = h('span.gframe__playing', { html: Icons.speaker, title: T('common.playing'), hidden: true });
-    this._frames.set(p.id, {
-      play, shuffle, count, playing, songs: new Set((p.entries || []).map((e) => e.songId)),
-    });
+    const songsOf = new Set((p.entries || []).map((e) => e.songId));
     const head = h('div.gframe__head', {
       role: 'button',
       tabIndex: 0,
@@ -425,20 +439,47 @@ const GroupPage = {
       h('span.gframe__sub', [Util.plural(count, 'song'), Util.fmtClock(seconds), p.ownerName ? T('common.byOwner', { profile: p.ownerName }) : ''].filter(Boolean).join(' · '))),
     h('span.gframe__buttons', play, shuffle, this._offlineButton(p)),
     this._shareButton(p));
-    const frame = h('div.gframe' + (open ? '.gframe--open' : ''), { dataset: { id: p.id } }, head);
-    if (!open) return frame;
-    if (!rows.length) {
-      frame.appendChild(h('p.muted-text.gframe__empty', T('playlist.empty.playlist')));
-      return frame;
+    const kind = !open ? 'closed' : rows.length ? 'songs' : 'empty';
+    const html = head.outerHTML;
+    let frame = was && was._frame.kind === kind ? was : null;
+    if (frame) {
+      const f = frame._frame;
+      if (f.html === html && sameDeep(f.p, p)) {
+        // The head in the page stays, with its buttons (the play state is drawn into them).
+        this._frames.set(p.id, {
+          play: f.play, shuffle: f.shuffle, count, playing: f.playing, songs: songsOf,
+        });
+      } else {
+        frame.replaceChild(head, frame.firstChild);
+        Object.assign(f, {
+          html, p, play, shuffle, playing,
+        });
+        this._frames.set(p.id, {
+          play, shuffle, count, playing, songs: songsOf,
+        });
+      }
+    } else {
+      frame = h('div.gframe' + (open ? '.gframe--open' : ''), { dataset: { id: p.id } }, head);
+      frame._frame = {
+        kind, html, p, play, shuffle, playing,
+      };
+      this._frames.set(p.id, {
+        play, shuffle, count, playing, songs: songsOf,
+      });
+      if (kind === 'empty') frame.appendChild(h('p.muted-text.gframe__empty', T('playlist.empty.playlist')));
+      if (kind === 'songs') {
+        const songs = h('div.gframe__songs', { dataset: { id: p.id } });
+        const table = h('table.table.table--songs.gframe__table', { dataset: { id: p.id } });
+        songs.appendChild(table);
+        frame.appendChild(songs);
+        frame._frame.songs = songs;
+        frame._frame.table = table;
+      }
     }
-    const songs = h('div.gframe__songs', { dataset: { id: p.id } });
-    const table = h('table.table.table--songs.gframe__table', { dataset: { id: p.id } });
-    songs.appendChild(table);
-    frame.appendChild(songs);
-    draws.push(() => {
-      this._songTable(table, songs, p, rows);
-      songs.scrollTop = scrollTop;
-    });
+    if (kind === 'songs') {
+      const { songs, table } = frame._frame;
+      draws.push(() => this._songTable(table, songs, p, rows));
+    }
     return frame;
   },
 
@@ -499,8 +540,10 @@ const GroupPage = {
       if (Player.currentId === song.id && Player.contextId === p.id && Player.isPlaying) return;
       this.playSong(song, p.id);
     };
-    const buttons = new Map();
+    // The Play buttons of the rows that stay are kept with them.
+    const buttons = this._playButtons.get(p.id) || new Map();
     this._playButtons.set(p.id, buttons);
+    const offline = !!(Store.server.on && Store.can('offline'));
     const extra = PlaylistPage._extraColumns(false);
     PlaylistPage._shareColumns(extra.map((c) => c.key), table);
     const sort = this._sortOf(p);
@@ -508,8 +551,11 @@ const GroupPage = {
       rows,
       sort,
       rowKey: (r) => r.song.id,
+      // As the playlist's own page: a row shows its song as the lists show it and when it was added.
+      shows: (r) => [Store.look(r.song), r.addedAt],
+      look: [p.id, offline ? 1 : 0].join('\u0000'),
       onSort: (key) => {
-        this._sorts.set(p.id, Util.cycleSort(sort, key));
+        this._sorts.set(p.id, Util.cycleSort(this._sortOf(p), key));
         this.renderFrames();
       },
       onRowDblClick: (r) => this._start(p.id, r.song.id),
@@ -539,6 +585,8 @@ const GroupPage = {
         more: (r) => [iconButton('act.act--green', Icons.plus, T('common.addToQueue'), () => Player.addToQueue(r.song.id)), ...PlaylistPage._moreButtons(r.song, p.id)],
       },
     });
+    // Buttons of rows that went without a word (the table made anew).
+    for (const [songId, btn] of buttons) if (!btn.isConnected) buttons.delete(songId);
     PlaylistPage._sizeColumns(table, scroller);
     if (!scroller._sized) {
       scroller._sized = true;
@@ -553,14 +601,14 @@ const GroupPage = {
     const playing = active && Player.isPlaying;
     const label = (on) => (Store.uiMode === 'mobile' ? (on ? Icons.pause : Icons.play)
       : (on ? Icons.pause : Icons.play) + `<span>${on ? T('common.pause') : T('common.play')}</span>`);
-    $('grPlay').innerHTML = (playing ? Icons.pause : Icons.play) + `<span>${playing ? T('common.pause') : T('common.play')}</span>`;
+    setHtml($('grPlay'), (playing ? Icons.pause : Icons.play) + `<span>${playing ? T('common.pause') : T('common.play')}</span>`);
     $('grPlay').disabled = !Store.rowsOf(this.listId).length;
     const drawShuffle = (btn, mobileIcon, shuffle) => {
       btn.classList.toggle('toggle--on', shuffle);
       btn.setAttribute('aria-pressed', String(shuffle));
       btn.setAttribute('aria-label', T('common.shuffle'));
-      btn.innerHTML = mobileIcon ? Icons.shuffle
-        : `<span class="toggle__box">${shuffle ? Icons.check : ''}</span>${Icons.shuffle}<span>${T('common.shuffle')}</span>`;
+      setHtml(btn, mobileIcon ? Icons.shuffle
+        : `<span class="toggle__box">${shuffle ? Icons.check : ''}</span>${Icons.shuffle}<span>${T('common.shuffle')}</span>`);
     };
     drawShuffle($('grShuffle'), Store.uiMode === 'mobile', this.shuffleOf(this.listId));
     for (const [id, f] of this._frames) {
@@ -570,7 +618,7 @@ const GroupPage = {
       // Its name's room as much narrower, so the buttons stay lined up with the other frames'.
       f.playing.parentNode.classList.toggle('gframe__head--playing', !f.playing.hidden);
       const on = Player.contextId === id && !!Player.currentId && Player.isPlaying;
-      f.play.innerHTML = label(on);
+      setHtml(f.play, label(on));
       f.play.title = on ? T('common.pause') : T('group.frame.play.tooltip', { playlist: (Store.playlist(id) || {}).name || '' });
       f.play.setAttribute('aria-label', on ? T('common.pause') : T('common.play'));
       f.play.disabled = !f.count;

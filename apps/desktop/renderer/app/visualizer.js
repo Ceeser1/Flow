@@ -129,6 +129,8 @@ const Visualizer = {
 
     const close = iconButton('viz-full__close', Icons.x, Store.can('keyboard') ? T('viz.close.withKey') : T('common.close'), () => this.close());
     this.el = h('div.viz-full', close);
+    // The lyrics go over it: their ticker starts (it rests while nothing needs it).
+    if (typeof Lyrics !== 'undefined') setTimeout(() => Lyrics.wake(), 0);
     // Anywhere, the player bar included, since that is over the layer; but
     // on the Queue (a drawer over it) they get out of the way instead.
     this._onPointer = (e) => {
@@ -218,6 +220,11 @@ const Visualizer = {
     if (this.stage) this.stage.remove();
     this.stage = null;
     this.canvas = null;
+    // Bars' background and gradient, made for its canvas.
+    this._back = null;
+    this._grad = null;
+    this._gradCtx = null;
+    this._gradFill = null;
   },
 
   /** All of them in Settings' order: the categories', then any in none of them. */
@@ -307,6 +314,7 @@ const Visualizer = {
     this.el.remove();
     this.el = null;
     this._closedAt = performance.now();
+    if (typeof Lyrics !== 'undefined') Lyrics.wake();
   },
 
   /**
@@ -465,15 +473,25 @@ const Visualizer = {
   },
 
   _background(ctx, w, hgt) {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, w, hgt);
-    // Winamp's faint dotted grid.
-    ctx.fillStyle = 'rgba(80, 80, 90, 0.35)';
-    const step = Math.round(hgt / 8);
-    const dot = Math.max(1, Math.round(hgt / 500));
-    for (let y = step; y < hgt; y += step) {
-      for (let x = 0; x < w; x += dot * 6) ctx.fillRect(x, y, dot * 2, dot);
+    // Drawn once for the size (a thousand and more dots), then only copied.
+    let back = this._back;
+    if (!back || back.width !== w || back.height !== hgt) {
+      back = document.createElement('canvas');
+      back.width = w;
+      back.height = hgt;
+      this._back = back;
+      const b = back.getContext('2d', { alpha: false });
+      b.fillStyle = '#000';
+      b.fillRect(0, 0, w, hgt);
+      // Winamp's faint dotted grid.
+      b.fillStyle = 'rgba(80, 80, 90, 0.35)';
+      const step = Math.round(hgt / 8);
+      const dot = Math.max(1, Math.round(hgt / 500));
+      for (let y = step; y < hgt; y += step) {
+        for (let x = 0; x < w; x += dot * 6) b.fillRect(x, y, dot * 2, dot);
+      }
     }
+    ctx.drawImage(back, 0, 0);
   },
 
   /** The bars' colours from the floor (0) to the top (1), as a gradient's stops. */
@@ -511,8 +529,15 @@ const Visualizer = {
     const scheme = set.brColors;
     let grad = null;
     if (scheme !== 'rainbow') {
-      grad = ctx.createLinearGradient(0, floor, 0, floor - full);
-      for (const [at, colour] of this._barStops(scheme)) grad.addColorStop(at, colour);
+      // The same gradient until the colours or the size change.
+      const key = `${scheme}|${scheme === 'custom' ? this.setting('brColor') : ''}|${floor}|${full}`;
+      if (this._grad !== key || this._gradCtx !== ctx) {
+        this._grad = key;
+        this._gradCtx = ctx;
+        this._gradFill = ctx.createLinearGradient(0, floor, 0, floor - full);
+        for (const [at, colour] of this._barStops(scheme)) this._gradFill.addColorStop(at, colour);
+      }
+      grad = this._gradFill;
     }
     const led = set.brStyle === 'led';
     const cap = Math.max(2, Math.round(hgt / 90));

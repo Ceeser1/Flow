@@ -125,6 +125,7 @@ const VizAudio = {
   PACE_MS: 2000,
   LOCK_MS: 1000,
   FOLD_BPM: 95,        // for pace and rush, a tempo under this counts double
+  NOTES_HZ: 75,        // the notes are worked out at most this often (notes())
 
   /** Ready for a visualizer opening; stereo when it wants both channels. */
   reset({ stereo = false } = {}) {
@@ -336,6 +337,10 @@ const VizAudio = {
    */
   notes(every = 0) {
     if (!this._notes) this._notes = new Notes({ sampleRate: Equalizer.ctx ? Equalizer.ctx.sampleRate : 48000 });
+    // Never more often than NOTES_HZ: its window is 170 ms long, so on a fast
+    // screen (144, 240 Hz) every frame's would be all but the same as the
+    // last, at a third of a millisecond each.
+    if (every < 1 / this.NOTES_HZ) every = 1 / this.NOTES_HZ;
     if (this._notesAt !== this.frames) {
       let dt = this._dt;
       if (every > 0) {
@@ -356,10 +361,11 @@ const VizAudio = {
    * A colour for the harmony sounding: the chroma's pitch classes laid round
    * the circle of fifths (so related chords get related hues: C red, G
    * orange, D yellow ...) and averaged. { hue 0..1, strength 0..1 }: how
-   * clearly one harmony stands out.
+   * clearly one harmony stands out. every: as notes(), for a hue that only
+   * glides after it.
    */
-  noteHue() {
-    const c = this.notes().chroma;
+  noteHue(every = 0) {
+    const c = this.notes(every).chroma;
     let x = 0;
     let y = 0;
     let sum = 0;

@@ -8,8 +8,9 @@ const TrendPage = {
   sort: { key: null, dir: null },
 
   init() {
-    Store.onLibrary(() => {
-      if (Nav.page === 'trend') this.render();
+    // Its lists follow what was listened to: drawn again for a listen too, not for a cover or loudness.
+    Store.onLibrary((lib, change) => {
+      if (Nav.page === 'trend' && (!change.quiet() || change.field('stats'))) this.render();
     });
   },
 
@@ -32,6 +33,8 @@ const TrendPage = {
     renderTable($('trendTable'), {
       rows: Util.sortRows(lists, this.sort, (p, k) => this._value(p, k)),
       sort: this.sort,
+      // A row stays when it is drawn the same again (4.6).
+      drawn: true,
       rowKey: (p) => p.id,
       onSort: (key) => {
         this.sort = Util.cycleSort(this.sort, key);

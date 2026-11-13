@@ -1,0 +1,208 @@
+/* Flow: Settings. A part of the stylesheet (style.css first, then these in the order index.html links them). */
+
+/* ===== Settings: every row is the setting on the left, its value on the right ===== */
+
+.settings { display: flex; flex-direction: column; }
+
+.settings__section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 2px;
+  padding-bottom: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* A light shade of the accent blue, so the categories stand out. */
+  color: #8db2ea;
+  border-bottom: 1px solid var(--line);
+}
+.settings__group:first-child > .settings__section { margin-top: 2px; }
+.settings__section:hover { color: #b3cdf4; }
+/* A heading that folds nothing away (Edit Song). */
+.settings__section--static { cursor: default; }
+.settings__section--static:hover { color: #8db2ea; }
+.settings__section-note { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text-dim); }
+.settings__chevron { display: inline-flex; transform: rotate(-90deg); transition: transform 0.15s; }
+.settings__chevron .icon { width: 14px; height: 14px; }
+.settings__chevron--down { transform: rotate(90deg); }
+.settings__group-rows { display: flex; flex-direction: column; }
+.settings__group-rows[hidden] { display: none; }
+
+.settings__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 0;
+  border-bottom: 1px solid #34343c;
+}
+
+/* A setting that belongs to the one above: indented, with a corner mark.
+   Its line starts under the parent's tick box, or, past a sub-setting
+   before it, at that one's corner. A sub-setting that is not there (hidden)
+   draws nothing; one past it still connects. */
+.settings__row:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden])) { position: relative; }
+.settings__row--sub { padding-left: 26px; position: relative; }
+.settings__row--sub::before,
+.settings__row:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden]))::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  border-left: 1px solid #5a5a64;
+}
+.settings__row--sub::before {
+  top: -1px;
+  width: 10px;
+  height: 20px;
+  border-bottom: 1px solid #5a5a64;
+}
+.settings__row:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden]))::after { top: 30px; bottom: -1px; }
+/* Where the connecting line runs down past a row's divider, the divider starts
+   right of the line (at the sub-settings' own indent) instead of crossing it. */
+.settings__row:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden])),
+.settings__row--sub:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden])) {
+  border-bottom-color: transparent;
+  background: linear-gradient(#34343c, #34343c) right bottom / calc(100% - 26px) 1px no-repeat border-box;
+}
+.settings__row--sub:has(+ .settings__row--sub:not([hidden]), + [hidden] + .settings__row--sub:not([hidden]))::after { top: 19px; }
+.settings__row--off .settings__left,
+.settings__row--off .settings__right,
+/* Greyed out with its button still bright (Lyrics Cache). */
+.settings__row--dim .settings__left,
+.settings__row--dim .settings__note,
+.settings__row--unset:not(.settings__row--keep) .settings__right { opacity: 0.45; }
+/* Unticked, only the numbers grey out: the Clear button stays as it is (the covers rows). */
+.settings__row--btns.settings__row--off .settings__right,
+.settings__row--btns.settings__row--unset .settings__right { opacity: 1; }
+.settings__row--btns.settings__row--off .settings__note,
+.settings__row--btns.settings__row--unset .settings__note { opacity: 0.45; }
+
+.settings__left { min-width: 0; }
+.settings__label { font-weight: 600; color: var(--text-bright); }
+.settings__label--plain { padding: 1px 0; }
+.settings__desc { margin-top: 3px; color: var(--text-dim); font-size: 12px; line-height: 1.45; }
+/* Under a tick box, the text lines up with the name, not the box. */
+.check + .settings__desc { padding-left: 23px; }
+.settings__path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+
+.settings__right { display: flex; justify-content: flex-end; }
+.settings__control { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.settings__caption { color: var(--text-dim); font-size: 12px; }
+.settings__value { width: 44px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+.settings__note { color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.settings__slider { width: 160px; }
+/* Settings > Equalizer's curve (soundEq.js): the graph across the whole row. */
+.sound-eq { padding: 12px 0 14px; border-bottom: 1px solid #34343c; }
+.sound-eq__canvas { display: block; width: 100%; height: 240px; background: rgba(0, 0, 0, 0.22); border-radius: 8px; touch-action: none; outline: none; }
+.sound-eq__canvas:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.sound-eq__canvas--hot { cursor: ns-resize; }
+.sound-eq__info { display: flex; justify-content: space-between; gap: 16px; margin-top: 6px; font-size: 12px; color: var(--text-dim); }
+.sound-eq__readout { color: var(--text); font-variant-numeric: tabular-nums; }
+/* The phone's: the point picked and the zoom above the curve, the notes under it. */
+.sound-eq__head { display: flex; justify-content: space-between; gap: 16px; min-height: 16px; margin-bottom: 6px; font-size: 12px; }
+.sound-eq__zoom { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.sound-eq__note { margin-top: 6px; font-size: 12px; color: var(--text-dim); }
+.settings__slider:disabled { cursor: default; }
+.settings__control--off { opacity: 0.45; }
+/* The Add to Playlists dialog: like Settings, the app's own background at 93%
+   and rows divided by thin lines instead of a box of their own. */
+.modal--picker { width: 440px; height: min(560px, 100%); background: rgba(30, 30, 34, 0.93); }
+.modal--picker .picker__list { background: none; border: none; border-radius: 0; padding: 0; }
+.modal--picker .picker__row { border-radius: 0; padding: 10px 2px; border-bottom: 1px solid #34343c; }
+.modal--picker .picker__row:hover { background: rgba(255, 255, 255, 0.04); }
+.modal--picker .picker__row--locked,
+.modal--picker .picker__row--locked:hover { background: rgba(120, 200, 140, 0.07); }
+
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 6px;
+}
+
+.modal__title { margin: 0; font-size: 17px; color: var(--text-bright); }
+
+.modal__close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.modal__close:hover { color: var(--text-bright); background: #3a3a42; }
+
+.modal__body {
+  padding: 8px 16px 12px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+/* Given the focus only to keep it from jumping (Administration's draw). */
+.modal__body:focus { outline: none; }
+
+.modal__text { margin: 4px 0 8px; line-height: 1.5; user-select: text; }
+.modal__subtitle { margin: 0 0 12px; color: var(--text-dim); user-select: text; }
+.modal__check { margin-top: 6px; }
+
+.modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--line);
+}
+/* Buttons given align: 'left' (ui.js) at the left, the others staying right. */
+.modal__footer .modal__left + .btn:not(.modal__left) { margin-left: auto; }
+
+.picker__create { display: flex; gap: 8px; }
+.picker__create .input { flex: 1; }
+
+.picker__list {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #242429;
+  padding: 4px;
+}
+
+.picker__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.picker__row:hover { background: #2f2f36; }
+.picker__row input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+
+.picker__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-bright);
+}
+
+.picker__meta { color: var(--text-dim); font-size: 12px; }
+
+.picker__row--locked { cursor: default; background: rgba(120, 200, 140, 0.07); }
+.picker__row--locked:hover { background: rgba(120, 200, 140, 0.07); }
+.picker__row--locked .picker__name,
+.picker__row--locked .picker__meta { color: rgba(120, 200, 140, 0.6); }
+.picker__row--locked input { accent-color: var(--green); opacity: 0.55; }
+
+.picker__empty { padding: 30px 10px; text-align: center; color: var(--text-dim); }

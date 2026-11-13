@@ -43,9 +43,31 @@ function walk(dir, rel = '') {
   return out;
 }
 
+/**
+ * The window's stylesheet is kept in parts (style.css, then styles/*.css in
+ * the order index.html links them; 4.6). A website sends them as one file:
+ * joined into style.css in that order, with the one link left.
+ */
+function mergeStyles(out) {
+  const indexFile = path.join(out, 'index.html');
+  const html = fs.readFileSync(indexFile, 'utf8');
+  const link = /^[ \t]*<link rel="stylesheet" href="(style\.css|styles\/[^"]+\.css)" \/>\r?\n/gm;
+  const files = [];
+  html.replace(link, (m, href) => {
+    files.push(href);
+    return m;
+  });
+  if (files.length < 2) return;
+  if (files[0] !== 'style.css') throw new Error('index.html changed: style.css is not its first stylesheet.');
+  fs.writeFileSync(path.join(out, 'style.css'), files.map((f) => fs.readFileSync(path.join(out, f), 'utf8')).join('\n'));
+  fs.rmSync(path.join(out, 'styles'), { recursive: true, force: true });
+  fs.writeFileSync(indexFile, html.replace(link, (m, href) => (href === 'style.css' ? m : '')));
+}
+
 function build({ out = path.join(root, 'dist') } = {}) {
   fs.rmSync(out, { recursive: true, force: true });
   fs.cpSync(path.join(desktop, 'renderer'), out, { recursive: true });
+  mergeStyles(out);
   fs.cpSync(path.join(desktop, 'images'), path.join(out, 'images'), {
     recursive: true,
     filter: (src) => !src.endsWith('.psd'),

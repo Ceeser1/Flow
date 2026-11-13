@@ -45,7 +45,13 @@ const SongDetails = {
       draw();
     };
 
-    const redraw = () => draw();
+    // Drawn again only for what it shows (4.6; it was for every change of the
+    // library): this song changed or is gone, or something else than songs
+    // did (the playlists it is in).
+    const redraw = (lib, change) => {
+      if (change && !change.whole && !change.ids.has(songId) && !change.went && !change.rest()) return;
+      draw();
+    };
     Store.onLibrary(redraw);
     draw();
     if (window.flow.lyrics) load();

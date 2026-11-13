@@ -1,0 +1,168 @@
+/* Flow: Song Details, the Queue, sessions nearby, the QR code, a smart playlist's rules and the Lyrics drawer. A part of the stylesheet (style.css first, then these in the order index.html links them). */
+
+/* ===== song details ===== */
+
+.modal--details { width: 580px; background: rgba(30, 30, 34, 0.93); }
+
+/* ---- the Queue popup (queueView.js) ---- */
+
+/* Darker than the other popups (about the page's own #1e1e22), at 90%: the
+   page shows through a little. */
+.modal--queue { width: min(460px, 100%); background: rgba(28, 28, 32, 0.9); }
+.queue { display: flex; flex-direction: column; gap: 2px; }
+
+.queue__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 12px 0 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.queue__head:first-child { margin-top: 2px; }
+.queue__note { text-transform: none; font-weight: 400; letter-spacing: 0; }
+.queue__clear { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.queue__empty { padding: 8px 10px; color: var(--text-dim); }
+
+.queue__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.queue__row:hover { background: var(--glass-hi); }
+
+/* The grab handle in front of the song under the pointer (dragging, queueView.js). */
+.queue__grab { width: 26px; flex: none; display: flex; justify-content: center; }
+.queue__grab img { width: 26px; height: 26px; display: block; opacity: 0; pointer-events: none; }
+.queue__row:hover .queue__grab img { opacity: 0.6; }
+.queue__row[data-part] { cursor: grab; }
+
+/* While dragging: the others slide aside, the one held floats over them. */
+.queue--dragging .queue__row { transition: transform 0.15s ease; }
+.queue--dragging .queue__row:hover:not(.queue__row--dragging) { background: none; }
+.queue--dragging .queue__remove { visibility: hidden !important; }
+.queue__row--dragging,
+.queue--dragging .queue__row.queue__row--dragging {
+  position: relative;
+  z-index: 2;
+  transition: none;
+  cursor: grabbing;
+  background: #3a3a44;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.queue__row--dragging .queue__grab img { opacity: 1; }
+.queue__row--now { cursor: default; background: rgba(120, 200, 140, 0.08); }
+.queue__row--now:hover { background: rgba(120, 200, 140, 0.08); }
+.queue__row--now .queue__title { color: var(--green); }
+.queue__num { width: 22px; text-align: right; color: var(--text-dim); font-variant-numeric: tabular-nums; flex: none; }
+.queue__icon { width: 22px; display: flex; justify-content: flex-end; color: var(--green); flex: none; }
+.queue__icon .icon { width: 16px; height: 16px; }
+.queue__text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.queue__title, .queue__artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue__title { color: var(--text-bright); }
+.queue__artist { color: var(--text-dim); font-size: 12px; }
+.queue__dur { color: var(--text-dim); font-variant-numeric: tabular-nums; flex: none; }
+.queue__remove { visibility: hidden; }
+.queue__row:hover .queue__remove { visibility: visible; }
+
+/* ---- Active Sessions of other servers nearby (sessions.js, 4.0) ---- */
+
+.sessions-nearby { margin-top: 28px; }
+.nearby__server { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line, #33333b); border-radius: 10px; background: rgba(255, 255, 255, 0.02); }
+.nearby__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 700; margin-bottom: 8px; }
+.nearby__list { display: flex; flex-direction: column; gap: 4px; }
+.nearby__row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 6px; }
+.nearby__row:hover { background: rgba(255, 255, 255, 0.04); }
+.nearby__icon .icon { width: 16px; height: 16px; opacity: 0.8; }
+.nearby__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.nearby__name { font-weight: 600; }
+.nearby__song { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin__guests { margin-top: 10px; align-items: flex-start; }
+.admin__guests .admin__item-sub { display: block; margin-top: 2px; }
+.admin__guests--off { opacity: 0.5; cursor: default; }
+.admin__guests-note { color: var(--text-dim); }
+
+/* ---- a server shared as a QR code (qrShare.js) ---- */
+
+.share-control { gap: 8px; }
+.modal--qr { width: min(420px, 100%); }
+.qr__frame { display: flex; justify-content: center; margin: 4px 0 12px; }
+.qr__code { width: min(300px, 100%); height: auto; image-rendering: pixelated; border-radius: 8px; }
+.qr__bar { display: flex; justify-content: center; }
+
+/* ---- a smart playlist's rules (rulesEditor.js) ---- */
+
+.modal--rules { width: min(680px, 100%); }
+.rules__match { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; }
+.rules__list { display: flex; flex-direction: column; gap: 8px; }
+.rules__row { display: grid; grid-template-columns: 1.1fr 1.1fr 1.3fr auto; gap: 8px; align-items: center; }
+.rules__row .select, .rules__row .input { width: 100%; min-width: 0; }
+.rules__add { align-self: flex-start; margin: 10px 0 4px; }
+.rules__end { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; }
+.rules__field { display: flex; align-items: center; gap: 8px; }
+.rules__limit { width: 90px; }
+.rules__count { margin-top: 14px; font-weight: 600; color: var(--text-bright); }
+
+/* ---- the Lyrics drawer (lyrics.js) ---- */
+
+.modal--lyrics { width: min(520px, 100%); background: rgba(28, 28, 32, 0.92); }
+.lyrics { display: flex; flex-direction: column; gap: 12px; }
+.lyrics__song { font-size: 13px; color: var(--text-dim); }
+.lyrics__note { color: var(--text-dim); padding: 12px 0; }
+.lyrics__lines { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 35vh; }
+.lyrics__line {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #8d8d98;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin: 0 -6px;
+  transition: color 0.25s;
+}
+.lyrics__line--timed { cursor: pointer; }
+.lyrics__line--timed:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.lyrics__line--pause { color: #5c5c66; }
+.lyrics__line--now,
+.lyrics__line--now:hover { color: #fff; text-shadow: 0 0 18px rgba(255, 255, 255, 0.25); }
+.lyrics__source { font-size: 11px; color: var(--text-dim); margin-top: -30vh; }
+
+/* The line being sung and the next, over a full-screen visualizer; clear of the player bar. */
+.viz-lyrics {
+  position: absolute;
+  left: 50%;
+  /* The centre of the line playing; the next sits below it (lyrics.js places both). */
+  bottom: calc(150px + 1.5em);
+  z-index: 2;
+  width: min(90vw, 1200px);
+  height: 0;
+  transform: translateX(-50%);
+  font-size: clamp(22px, 2.6vw, 42px);
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.9);
+}
+/* Moving up a row takes 0.2 s, as long as Lyrics.VIZ_LEAD (done as the line is sung). */
+.viz-lyrics__line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: 1.3em;
+  line-height: 1.3;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
+  transition: transform 0.2s ease-out, opacity 0.2s linear, color 0.2s linear;
+}
+.viz-lyrics__line--now { color: #fff; }
+.viz-lyrics__hint { animation: viz-lyrics-hint 8s ease-in forwards; }
+@keyframes viz-lyrics-hint { from { opacity: 1; } to { opacity: 0; } }

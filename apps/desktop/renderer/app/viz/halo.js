@@ -255,7 +255,7 @@
       const mode = set.hlColors;
       let target = (pic && pic.colors) || this.cover.colors;
       if (mode === 'notes') {
-        const chord = a.playing ? a.noteHue() : null;
+        const chord = a.playing ? a.noteHue(1 / 30) : null;
         if (chord) this.chordHue = this.chordHue === undefined ? chord.hue : this.chordHue + ((((chord.hue - this.chordHue + 1.5) % 1) - 0.5) * Math.min(1, dt * 3 * chord.strength));
         const hue = this.chordHue === undefined ? 0.6 : this.chordHue;
         target = [hsv(wrap(hue), 0.75, 1), hsv(wrap(hue + 0.1), 0.6, 1)];

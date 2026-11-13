@@ -35,7 +35,6 @@ contextBridge.exposeInMainWorld('flow', {
   createGroup: (name) => call('library:createGroup', name),
   renameGroup: (id, name) => call('library:renameGroup', { id, name }),
   deleteGroup: (id) => call('library:deleteGroup', id),
-  setPlaylistGroup: (playlistIds, groupId) => call('library:setPlaylistGroup', { playlistIds, groupId }),
   // Several groups per playlist (4.5.3): one more group, or out of one.
   addToGroup: (playlistIds, groupId) => call('library:addToGroup', { playlistIds, groupId }),
   removeFromGroup: (playlistIds, groupId) => call('library:removeFromGroup', { playlistIds, groupId }),
@@ -66,8 +65,6 @@ contextBridge.exposeInMainWorld('flow', {
   }),
   findBySource: (url, key) => call('library:findBySource', { url, key }),
   findByMeta: (meta) => call('library:findByMeta', meta),
-  rescan: () => call('library:rescan'),
-  showSong: (songId) => call('shell:showSong', songId),
   openMusicFolder: () => call('shell:openMusicFolder'),
   openToolsFolder: () => call('tools:openFolder'),
   toolStatus: () => call('tools:status'),
@@ -117,7 +114,6 @@ contextBridge.exposeInMainWorld('flow', {
   sponsorSegments: (key, url) => call('sponsor:segments', { key, url }),
 
   // A Flow Server (Settings: Use a Flow Server).
-  serverStatus: () => call('server:status'),
   setServerSecret: (text) => call('server:setSecret', text),
   syncNow: () => call('server:syncNow'),
   setOffline: (playlistId, on) => call('server:setOffline', { playlistId, on }),
@@ -147,7 +143,6 @@ contextBridge.exposeInMainWorld('flow', {
   // The live channel's events: { type, data } (Active Sessions).
   onServerLive: (fn) => ipcRenderer.on('server:live', (_e, ev) => fn(ev)),
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),
-  finishSong: (job) => call('song:finish', job),
   lookupInfo: (song) => call('song:lookupInfo', song),
   // A song's lyrics (4.0): { found, synced: [{ t, text }] | null, plain, instrumental }.
   lyrics: (songId) => call('song:lyrics', songId),

@@ -317,9 +317,16 @@ const Groups = {
    */
   draggable(el, p, from = '') {
     if (!Store.canBeGrouped(p) || !this.canDrag()) return;
+    // A row that stayed in the page since it was drawn last (4.6) is set up
+    // already: only where it is dragged from is told again.
+    el._dragFrom = from;
+    if (el._dragOf === p.id) return;
+    el._dragOf = p.id;
     el.draggable = true;
     el.addEventListener('dragstart', (e) => {
-      this.dragging = { id: p.id, from, groups: [...(p.groups || [])] };
+      // The groups it is in now: its row may have stayed in the page since it was drawn.
+      const now = Store.playlist(p.id) || p;
+      this.dragging = { id: p.id, from: el._dragFrom, groups: [...(now.groups || [])] };
       e.dataTransfer.effectAllowed = 'copyMove';
       e.dataTransfer.setData(this.DRAG_TYPE, p.id);
       // Some text too, or a browser may not start the drag at all.

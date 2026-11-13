@@ -1086,12 +1086,15 @@
 
     /** A point of the jellyfish's own frame on the screen, into out (x, y). */
     _world(j, lx, ly, out) {
-      const ux = Math.sin(j.tilt);
-      const uy = -Math.cos(j.tilt);
-      const rx = Math.cos(j.tilt);
-      const ry = Math.sin(j.tilt);
-      out[0] = j.x + rx * lx + ux * ly;
-      out[1] = j.y + ry * lx + uy * ly;
+      // Its tilt's sine and cosine kept while it leans the same way: this is
+      // asked a hundred times a jellyfish a frame.
+      if (j.tiltOf !== j.tilt) {
+        j.tiltOf = j.tilt;
+        j.sin = Math.sin(j.tilt);
+        j.cos = Math.cos(j.tilt);
+      }
+      out[0] = j.x + j.cos * lx + j.sin * ly;
+      out[1] = j.y + j.sin * lx - j.cos * ly;
       return out;
     }
 

@@ -36,10 +36,21 @@ const ClientQueue = {
   _seq: 0,
   _timer: 0,
 
-  init() {
-    // A safety net for a turn no state change announced (a dialog closed, say).
-    setInterval(() => {
-      if (this.entries.length) this.kick();
+  init() {},
+
+  /**
+   * A safety net for a turn no state change announced (a dialog closed,
+   * say): every 3 seconds, only while links wait (4.6; it ran all the time).
+   */
+  _net() {
+    if (this._netTimer || !this.entries.length) return;
+    this._netTimer = setInterval(() => {
+      if (!this.entries.length) {
+        clearInterval(this._netTimer);
+        this._netTimer = 0;
+        return;
+      }
+      this.kick();
     }, 3000);
   },
 
@@ -59,6 +70,7 @@ const ClientQueue = {
   },
 
   _changed() {
+    this._net();
     for (const fn of this._listeners) {
       try {
         fn(this.entries);

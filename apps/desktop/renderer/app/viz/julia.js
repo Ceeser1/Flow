@@ -108,7 +108,7 @@
       this.turn += dt * 0.03 * (a.playing ? a.pace : 0.2);
       const target = 2.6 - 0.35 * (a.playing ? a.bass : 0) - 0.15 * a.throb;
       this.zoom += (target - this.zoom) * Math.min(1, dt * 3);
-      const nh = a.noteHue();
+      const nh = a.noteHue(1 / 20); // the hue glides after it: 20 a second do
       if (nh.strength > 0.15) {
         let d = nh.hue - this.hue;
         d -= Math.round(d);

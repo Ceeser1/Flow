@@ -8,7 +8,7 @@
 
 const { createSettings, cloudsOffOnce } = require('@flow/core/client/settings');
 const { createLocalLibrary } = require('@flow/core/client/localLibrary');
-const { createJournal, LIBRARY_SPEC } = require('@flow/core/journalFile');
+const { createJournal, LIBRARY_SPEC, LIBRARY_ROWS } = require('@flow/core/journalFile');
 const {
   platform, fs, path, plugin, info, secrets, isMetered,
 } = require('./native');
@@ -78,7 +78,8 @@ function createEnv({ tellCovers }) {
   // Local Files: songs kept on the phone, downloaded from a server or added
   // from the phone's own files (localFiles.js). Only Flow puts files in its
   // Music folder, so there is nothing to scan.
-  const library = createLocalLibrary({ journal: createJournal(journalIo(), file('library.json'), LIBRARY_SPEC) });
+  // The journal keeps the songs and playlists themselves, locked once saved (4.6): no second copy of the library.
+  const library = createLocalLibrary({ journal: createJournal(journalIo(), file('library.json'), LIBRARY_SPEC, { rows: LIBRARY_ROWS }) });
   library.quietly = async (fn) => fn();
   library.scan = async () => ({ added: 0, removed: 0, moved: 0 });
 

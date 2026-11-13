@@ -72,6 +72,23 @@ const Covers = {
     Store.onSettings((patch) => {
       if ('highResCovers' in patch || 'thumbCovers' in patch) setTimeout(() => this.refresh(null));
     });
+    // A song got another cover (or its first): the boxes showing it take it
+    // in by themselves, so no list has to be drawn again for a cover. After
+    // the pages have followed the change (they may have drawn their rows anew).
+    Store.onLibrary((lib, change) => {
+      if (change.whole || !change.fields.has('cover')) return;
+      const ids = change.ids;
+      queueMicrotask(() => this.songsChanged(ids));
+    });
+  },
+
+  /** The boxes showing these songs (a Set of ids) look for their picture again, as the songs are now. */
+  songsChanged(ids) {
+    if (!ids || !ids.size) return;
+    for (const box of document.querySelectorAll('.cover[data-cover-id]')) {
+      const id = box.dataset.coverId;
+      if (id && ids.has(id)) this._fill(box, Store.song(id));
+    }
   },
 
   /** fn(ids, size): covers arrived (the player and the visualizers take a big one in). */

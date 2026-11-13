@@ -173,6 +173,8 @@ function createWindow() {
   });
   mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
 
+  // Only with FLOW_TRACE_REDRAWS set: what makes the pages draw again, into that file.
+  require('./src/redrawTrace').attach(mainWindow);
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
@@ -438,7 +440,6 @@ handle('library:deletePlaylist', (arg) => actions.deletePlaylist(arg));
 handle('library:createGroup', (name) => actions.createGroup(name));
 handle('library:renameGroup', (arg) => actions.renameGroup(arg));
 handle('library:deleteGroup', (id) => actions.deleteGroup(id));
-handle('library:setPlaylistGroup', (arg) => actions.setPlaylistGroup(arg));
 handle('library:addToGroup', (arg) => actions.addToGroup(arg));
 handle('library:removeFromGroup', (arg) => actions.removeFromGroup(arg));
 handle('library:setPlaylistShared', (arg) => actions.setPlaylistShared(arg));
@@ -463,11 +464,9 @@ handle('shared:list', () => remote.loadShared());
 handle('shared:open', (id) => remote.openShared(id));
 handle('library:findBySource', (arg) => actions.findBySource(arg));
 handle('library:findByMeta', (meta) => actions.findByMeta(meta));
-handle('library:rescan', () => library.scan());
 
 // ---- the Flow Server (Settings: Use a Flow Server) ----
 
-handle('server:status', () => remote.status());
 handle('server:setSecret', (text) => remote.setSecret(text));
 handle('server:syncNow', () => remote.syncNow());
 handle('server:setOffline', ({ playlistId, on }) => remote.setOffline(playlistId, !!on));
@@ -518,11 +517,6 @@ handle('server:downloads', async ({ action, ...args }) => {
 // The browsers the cookies can come from (Settings, Media Management).
 handle('cookies:browsers', () => cookieJar.browsers());
 
-handle('shell:showSong', (songId) => {
-  const file = remote.active() ? remote.localFileOf(songId) : (model.songById(library.get(), songId) || {}).file;
-  if (file && fs.existsSync(file)) shell.showItemInFolder(file);
-  else shell.openPath(paths.musicDir());
-});
 handle('shell:openMusicFolder', () => shell.openPath(paths.musicDir()));
 // "Downloads?" on Add Songs: where yt-dlp(.exe) goes, and whether it is there now.
 handle('tools:openFolder', () => shell.openPath(tools.toolsDir()));
@@ -1007,59 +1001,6 @@ handle('sponsor:segments', ({ key, url }) => sponsorSegments(key, url));
 
 // One song's album, genre and Info from Apple's and Discogs' search, for Add Songs' editor.
 handle('song:lookupInfo', (song) => lookupInfo(song || {}));
-
-handle('song:finish', (job) => library.quietly(async () => {
-  const meta = {
-    artist: String(job.artist || '').trim(),
-    title: String(job.title || '').trim(),
-    mix: String(job.mix || '').trim(),
-    album: String(job.album || '').trim(),
-    genre: String(job.genre || '').trim(),
-    subGenre: String(job.subGenre || '').trim(),
-  };
-  if (!meta.title) throw new Error(T('common.enterTitle'));
-  const saved = await exporter.saveSong({
-    cachePath: job.cachePath, start: job.start, end: job.end, duration: job.duration,
-    ...meta, sourceUrl: job.sourceUrl,
-  });
-  const song = {
-    id: library.newId(),
-    file: saved.file,
-    ...meta,
-    // Its editor looked them up; an empty album is the title.
-    infoLooked: true,
-    duration: saved.duration,
-    format: saved.format,
-    sourceUrl: String(job.sourceUrl || ''),
-    sourceKey: String(job.sourceKey || ''),
-    addedAt: Date.now(),
-    // Its file gets its flowid and cover once the cover is settled (tagger.js).
-    tagged: '',
-  };
-  library.mutate((d) => {
-    model.addSong(d, song);
-    const lists = (job.playlistIds || []).filter((id) => model.playlistById(d, id));
-    model.addSongToPlaylists(d, song.id, lists, song.addedAt);
-  });
-  privateStats.added(1);
-  // Lyrics written for it in Add Songs, before the upload reads them.
-  if (job.lyrics) {
-    try {
-      lyricsClient.keepOwn(song.id, job.lyrics);
-    } catch {
-      // Only some lines with times: the editor does not let that through.
-    }
-  }
-  // Its cover, found while it was trimmed (or once it is found).
-  covers.adoptStaged(job.cachePath, song.id).catch(() => {});
-  // With a server it goes up now, into the server playlists picked for it.
-  if (remote.active()) remote.pushNew({ [song.id]: job.playlistIds || [] });
-  fs.rmSync(job.cachePath, { force: true });
-  loudnessFiller.run();
-  coverFiller.run();
-  infoFiller.run();
-  return song;
-}));
 
 // ---- startup ----
 

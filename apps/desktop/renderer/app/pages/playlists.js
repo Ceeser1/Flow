@@ -79,8 +79,9 @@ const PlaylistsPage = {
       this._loadShared();
       this.render();
     };
-    Store.onLibrary(() => {
-      if (Nav.page === 'playlists') this.render();
+    // Not for what it does not show (a song's cover, loudness, a listen that changed no list's time).
+    Store.onLibrary((lib, change) => {
+      if (Nav.page === 'playlists' && !change.quiet()) this.render();
     });
     Store.onServer(() => {
       if (Nav.page === 'playlists') this.render();
@@ -235,7 +236,8 @@ const PlaylistsPage = {
     $('sharedHead').className = `section-head__btn${open ? ' section-head__btn--open' : ''}`;
     $('sharedHead').setAttribute('aria-expanded', String(open));
     $('sharedHead').title = open ? T('playlists.shared.hide.tooltip') : T('playlists.shared.show.tooltip');
-    clear($('sharedHead')).append(h('span.menu__chevron', { html: Icons.chevron }), h('span', T('playlists.shared.heading')));
+    // Its arrow and name are put in once: open or closed shows by its class.
+    if (!$('sharedHead').firstChild) $('sharedHead').append(h('span.menu__chevron', { html: Icons.chevron }), h('span', T('playlists.shared.heading')));
     const groupCount = Store.sharedGroups().length;
     $('sharedCount').textContent = Store.canShare()
       ? [Util.plural(sharedAll.length, 'shared playlist'), groupCount ? Util.plural(groupCount, 'shared group') : ''].filter(Boolean).join(' · ') : '';
@@ -270,8 +272,10 @@ const PlaylistsPage = {
       if (top) node.scrollTop = top;
     }
 
+    // The rename box as it comes: its row stays over later redraws (4.6), and
+    // what is being typed in it is then left alone.
     const input = document.querySelector('#page-playlists .rename-input');
-    if (input) {
+    if (input && document.activeElement !== input) {
       input.focus();
       input.select();
     }
@@ -338,7 +342,11 @@ const PlaylistsPage = {
     $('groupsSearchBox').hidden = !groups.length;
     $('groupedHideInMenu').checked = Store.settings.groupedHideInMenu !== false;
     const words = this._words('groups');
-    const box = clear($('groupsList'));
+    // Each group's block stays in the page when it is drawn the same again
+    // from the same data (4.6): only a group something changed in is put in anew.
+    const box = $('groupsList');
+    const was = new Map([...box.children].filter((n) => n._drawnAs !== undefined).map((n) => [n.dataset.group, n]));
+    const blocks = [];
     let shown = 0;
     for (const g of groups) {
       const inside = Store.playlistsInGroup(g.id);
@@ -380,9 +388,19 @@ const PlaylistsPage = {
           block.appendChild(h('p.muted-text.group__empty', T(Store.uiMode === 'mobile' ? 'groups.empty.phone' : 'groups.empty')));
         }
       }
+      const html = block.outerHTML;
+      const data = [g, found, open, inside.length, songs, seconds];
+      const old = was.get(g.id);
+      if (old && old._drawnAs === html && sameDeep(old._data, data)) {
+        blocks.push(old);
+        continue;
+      }
+      block._drawnAs = html;
+      block._data = data;
       Groups.dropTarget(block, g.id);
-      box.appendChild(block);
+      blocks.push(block);
     }
+    setChildren(box, blocks, { alike: false });
     $('groupsNoMatch').hidden = !words.length || shown > 0 || !groups.length;
   },
 
@@ -430,6 +448,8 @@ const PlaylistsPage = {
     renderTable(table, {
       rows,
       sort: this.sort,
+      // A row stays when it is drawn the same again (4.6).
+      drawn: true,
       rowKey: (p) => p.rowKey || p.id,
       rowClass: (p) => {
         if (isGroup(p)) return 'row--sgroup';

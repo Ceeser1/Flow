@@ -34,7 +34,7 @@ const Lyrics = {
   _hint: null,         // what it says instead of lines ({ songId, lines }), fading out
   _handScrolled: 0,    // when the drawer's list was last scrolled by hand
   LEAD: 0.2,           // a line is lit this much before its time
-  VIZ_LEAD: 0.2,       // over a visualizer the lines move up this much before (the move's length, style.css)
+  VIZ_LEAD: 0.2,       // over a visualizer the lines move up this much before (the move's length, styles/panels.css)
   VIZ_SMALL: 0.6,      // the next line's size there, of the line playing
   VIZ_GAP: 0.15,       // between the two rows there, in em
   PAUSE: 6,            // seconds without words that show as a note
@@ -53,13 +53,16 @@ const Lyrics = {
   },
 
   init() {
-    Player.onChange(() => this._follow());
+    Player.onChange(() => {
+      this._follow();
+      this.wake();
+    });
     Store.onLibrary(() => this._follow());
     Store.onSettings((patch) => {
       // Fetch/Sync Lyrics turned on: looked up now; off: only those kept. Asked
       // after the setting has reached the app (Store sends it after this).
       if ('lyricsOn' in patch) setTimeout(() => this.forgetAll());
-      if ('vizLyrics' in patch) this._placeViz();
+      if ('vizLyrics' in patch) this.wake();
     });
     // The phone has its lyrics below Now Playing instead (Mobile leaves the button out).
     const btn = $('btnLyrics');
@@ -68,8 +71,29 @@ const Lyrics = {
       btn.onclick = () => this.toggleDrawer();
     }
     this._drawButton();
-    setInterval(() => this._tick(), 200);
     this._follow();
+    this.wake();
+  },
+
+  /**
+   * The line being sung is looked for 5 times a second, but only while there
+   * is something to follow (4.6; it ran all the time): a song with timed
+   * lyrics playing, or the visualizer open or still holding the lyrics over
+   * it. wake() looks once now and starts or stops the ticker; called when
+   * the player, the lyrics or the visualizer change.
+   */
+  wake() {
+    this._tick();
+  },
+
+  _pace() {
+    const needed = !!(Visualizer.el || this._vizEl || (Player.isPlaying && this.synced));
+    if (needed && !this._ticker) {
+      this._ticker = setInterval(() => this._tick(), 200);
+    } else if (!needed && this._ticker) {
+      clearInterval(this._ticker);
+      this._ticker = 0;
+    }
   },
 
   /**
@@ -204,11 +228,14 @@ const Lyrics = {
   _tick() {
     this._placeViz();
     const synced = this.synced;
-    if (!synced) return;
-    const i = this.lineAt(synced, Player.position + this.LEAD);
-    if (i === this.index) return;
-    this.index = i;
-    this._drawLine();
+    if (synced) {
+      const i = this.lineAt(synced, Player.position + this.LEAD);
+      if (i !== this.index) {
+        this.index = i;
+        this._drawLine();
+      }
+    }
+    this._pace();
   },
 
   /** Plays the song from line `i` (lines with times only). */
@@ -221,6 +248,8 @@ const Lyrics = {
   },
 
   _drawAll() {
+    // Lyrics came or went: the ticker follows.
+    this._pace();
     this._drawButton();
     this._drawDrawer();
     this._drawPhone();

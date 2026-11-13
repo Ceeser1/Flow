@@ -56,6 +56,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const model = require('@flow/core/libraryModel');
+const { lock } = require('@flow/core/libraryPatch');
 const { applyCommand } = require('@flow/core/commands');
 const prof = require('@flow/core/profiles');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
@@ -145,7 +146,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   const covers = cover.createPairStore(path.join(config.home, 'covers'));
   const trash = createTrash({ dir: path.join(musicDir, '.flow-trash'), indexFile: path.join(config.home, 'trash.json'), log });
   // Both files are kept as their changes (libraryFile.js).
-  const libFile = libraryJournal(config);
+  // The journal keeps the rows themselves, locked once saved (4.6).
+  const libFile = libraryJournal(config, { rows: true });
   const stateFile = stateJournal(config);
   const raw = libFile.load();
   let data = model.sanitize(raw);
@@ -213,10 +215,13 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
 
   // ---- what changed (4.3) ----
   //
-  // `known` is the library as the apps were last told it: each song's fields
-  // (SONG_FIELDS), each playlist (with its owner and entries), each owner's
-  // follows and the profiles' names. track() compares the library to it after
-  // a change and stamps what differs with the revision about to be.
+  // `known` is the library as the apps were last told it: each song and each
+  // playlist (with its owner), each owner's follows and the profiles' names.
+  // track() compares the library to it after a change and stamps what differs
+  // with the revision about to be. Since 4.6 it holds the songs and playlists
+  // themselves, locked (libraryPatch.js lock), not a copy of their fields: one
+  // that is still the same row has not changed, any other is compared by the
+  // fields the apps get.
 
   const known = {
     songs: new Map(), lists: new Map(), follows: new Map(), groups: new Map(), names: '', sharedGroups: '',
@@ -241,30 +246,23 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     return [[prof.DEFAULT_OWNER, data.groups || []], ...Object.entries(profiles).map(([id, p]) => [id, p.groups || []])];
   }
 
-  const songCopy = (s) => Object.fromEntries(SONG_FIELDS.map((k) => [k, s[k]]));
   // A function made for the fields (4.3.5: 100 000 songs after every change).
   // eslint-disable-next-line no-new-func
   const sameSong = new Function('a', 's', `return ${SONG_FIELDS.map((k) => `a[${JSON.stringify(k)}] === s[${JSON.stringify(k)}]`).join(' && ')};`);
-  const listCopy = (owner, p) => ({
-    owner,
-    name: p.name,
-    createdAt: p.createdAt,
-    shared: !!p.shared,
-    favourites: !!p.favourites,
-    source: p.source ? `${p.source.url}\n${p.source.kind}` : '',
-    rules: p.rules ? JSON.stringify(p.rules) : '',
-    groups: (p.groups || []).join('\n'),
-    entries: p.entries.map((e) => [e.songId, e.addedAt]),
-  });
-  /** What the apps were told of a list (a listCopy) is still `p` of `owner`, compared as it is (no copy made, 4.3.5). */
-  function sameList(a, owner, p) {
-    if (a.owner !== owner || a.name !== p.name || a.createdAt !== p.createdAt || a.shared !== !!p.shared || a.favourites !== !!p.favourites
-      || a.source !== (p.source ? `${p.source.url}\n${p.source.kind}` : '') || a.groups !== (p.groups || []).join('\n') || a.entries.length !== p.entries.length) return false;
-    for (let i = 0; i < a.entries.length; i += 1) {
-      const e = p.entries[i];
-      if (a.entries[i][0] !== e.songId || a.entries[i][1] !== e.addedAt) return false;
+  const sourceOf = (p) => (p.source ? `${p.source.url}\n${p.source.kind}` : '');
+  /** Two rows of a playlist alike in what the apps get of it. */
+  function sameList(a, p) {
+    if (a.name !== p.name || a.createdAt !== p.createdAt || !!a.shared !== !!p.shared || !!a.favourites !== !!p.favourites
+      || sourceOf(a) !== sourceOf(p) || (a.groups || []).join('\n') !== (p.groups || []).join('\n')) return false;
+    if (a.entries !== p.entries) {
+      if (a.entries.length !== p.entries.length) return false;
+      for (let i = 0; i < a.entries.length; i += 1) {
+        const x = a.entries[i];
+        const e = p.entries[i];
+        if (x !== e && (x.songId !== e.songId || x.addedAt !== e.addedAt)) return false;
+      }
     }
-    return a.rules === (p.rules ? JSON.stringify(p.rules) : '');
+    return a.rules === p.rules || (a.rules ? JSON.stringify(a.rules) : '') === (p.rules ? JSON.stringify(p.rules) : '');
   }
 
   /**
@@ -284,8 +282,10 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     for (const s of data.songs) {
       ids.add(s.id);
       const was = known.songs.get(s.id);
+      // The row it was: not changed (4.6). Another one is kept from now, locked, and told when it differs.
+      if (was === s) continue;
+      known.songs.set(s.id, lock(s));
       if (was && sameSong(was, s)) continue;
-      known.songs.set(s.id, songCopy(s));
       stamp(state.stamps.s, s.id);
     }
     for (const id of known.songs.size === ids.size ? [] : [...known.songs.keys()]) {
@@ -300,11 +300,11 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     for (const [owner, p] of everyList()) {
       lists.add(p.id);
       const was = known.lists.get(p.id);
-      if (was && sameList(was, owner, p)) continue;
-      const copy = listCopy(owner, p);
+      if (was && was.row === p && was.owner === owner) continue;
+      known.lists.set(p.id, { owner, row: lock(p) });
+      if (was && was.owner === owner && sameList(was.row, p)) continue;
       // Given to another owner: gone from the one it was with.
       if (was && was.owner !== owner && rev !== null) state.tombs.p.push([p.id, rev, now, was.owner]);
-      known.lists.set(p.id, copy);
       stamp(state.stamps.p, p.id);
     }
     for (const [id, was] of [...known.lists.entries()]) {
@@ -530,13 +530,14 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
         const putBack = (playlists, l) => {
           const pl = playlists.find((x) => x.id === l.playlistId);
           if (!pl || pl.entries.some((x) => x.songId === song.id)) return;
-          pl.entries.splice(Math.min(Number(l.index) || 0, pl.entries.length), 0, { songId: song.id, addedAt: Number(l.addedAt) || Date.now() });
+          model.listToChange({ playlists }, pl).entries.splice(Math.min(Number(l.index) || 0, pl.entries.length), 0, { songId: song.id, addedAt: Number(l.addedAt) || Date.now() });
         };
         for (const l of e.lists || []) {
           if (l.owner === prof.DEFAULT_OWNER) putBack(d.playlists, l);
           else if (profiles[l.owner]) putBack(profiles[l.owner].playlists, l);
         }
-        for (const [pid, own] of Object.entries(e.own || {})) if (profiles[pid]) profiles[pid].songs[song.id] = { stats: own.stats };
+        // Another map with it in (4.6: the map a profile's own stats are in is locked once saved).
+        for (const [pid, own] of Object.entries(e.own || {})) if (profiles[pid]) profiles[pid].songs = { ...profiles[pid].songs, [song.id]: { stats: own.stats } };
         // Its stars came back with its places in the Favourites lists; the stats of
         // a profile from before 4.3 (kept with its star) too.
         resetStats([prof.DEFAULT_OWNER, ...Object.keys(e.own || {}).filter((pid) => profiles[pid])]);
@@ -917,7 +918,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
             if (path.resolve(dest) !== path.resolve(song.file) && fs.existsSync(song.file)) {
               try {
                 fs.renameSync(song.file, dest);
-                song.file = dest;
+                // The song to change (4.6): the one handed back may be locked when its names stayed.
+                model.songToChange(d, song.id).file = dest;
               } catch (err) {
                 log(`Could not rename ${song.file}: ${err.message}`);
               }
@@ -1801,8 +1803,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     const differs = (s) => String(stamps[s.id] || '') !== String(s.lyrics || '');
     if (!data.songs.some(differs)) return;
     mutate((d) => {
-      for (const s of d.songs) {
-        if (!differs(s)) continue;
+      for (let i = 0; i < d.songs.length; i += 1) {
+        if (!differs(d.songs[i])) continue;
+        const s = model.rowToChange(d.songs, i);
         if (stamps[s.id]) s.lyrics = String(stamps[s.id]);
         else delete s.lyrics;
       }

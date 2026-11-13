@@ -67,7 +67,10 @@ const Nav = {
     // And on Followed Playlists (4.5.1), as a followed one leaves its group.
     Groups.dropTarget($('menuFollowedList'), '');
     Groups.dropTarget($('menuFollowed'), '');
-    Store.onLibrary(() => this.drawMenu());
+    // Of the songs the menu shows only who added them ("All Songs from ...").
+    Store.onLibrary((lib, change) => {
+      if (change.rest() || change.came || change.went || change.field('addedBy')) this.drawMenu();
+    });
     Store.onServer(() => this.drawMenu());
     Player.onChange(() => this.drawMenu());
     Session.onChange(() => this.drawMenu());
@@ -310,6 +313,18 @@ const Nav = {
     this._drawArrow('trendMenuOpen', trendOpen, T('nav.section.what.listeningTrend'));
     $('menuPlaylistList').hidden = !playlistsOpen;
 
+    // Each list's rows are gathered and put in at the end (setChildren): a
+    // row that looks as it did stays in the page, so a menu drawn again with
+    // nothing changed is not touched. Every row therefore says in its data
+    // which playlist, group or jam it is (two can share a name), and what it
+    // does when clicked or dragged goes by those.
+    const gathered = [];
+    const gather = (id) => {
+      const rows = [];
+      gathered.push([id, rows]);
+      return { appendChild: (el) => rows.push(el) };
+    };
+
     // The list playing has the speaker, and its bar on the left stays green.
     // `groupId`: the group it shows in (its followed icon, 4.5.3).
     const item = (p, groupId = null) => {
@@ -320,6 +335,7 @@ const Nav = {
         + (playing ? '.menu__sub--playing' : ''), {
         type: 'button',
         title: p.name,
+        dataset: { id: p.id, in: groupId || '' },
         onclick: () => this.openPlaylist(p.id),
       },
       // Downloaded Songs has its icon before its name, a followed playlist its green one (4.5.1).
@@ -337,14 +353,14 @@ const Nav = {
     this._drawArrow('allSongsMenuOpen', allOpen, T('nav.section.what.downloaded'));
     this._arrows.allSongsMenuOpen.hidden = !froms.length;
     $('menuAllSongsList').hidden = !froms.length || !allOpen;
-    const allList = clear($('menuAllSongsList'));
+    const allList = gather('menuAllSongsList');
     for (const p of froms) allList.appendChild(item(p));
     const fromPlaying = froms.some((p) => p.id === Player.contextId);
     this._allPlaying.hidden = !Player.isPlaying || !(Player.contextId === 'all' || (fromPlaying && !allOpen));
 
     // Playlists: Favourites, then the playlists in no group (all of them with
     // "Playlists added to groups hide in the menu" off, 4.5.3).
-    const list = clear($('menuPlaylistList'));
+    const list = gather('menuPlaylistList');
     list.appendChild(item(Store.favouritesPlaylist()));
     for (const p of Store.menuPlaylists()) {
       const el = item(p);
@@ -366,7 +382,7 @@ const Nav = {
     $('menuGroups').hidden = !Store.canGroup();
     this._arrows.groupsMenuOpen.hidden = !groups.length;
     $('menuGroupsList').hidden = !Store.canGroup() || !groups.length || !groupsOpen;
-    const groupList = clear($('menuGroupsList'));
+    const groupList = gather('menuGroupsList');
     const inGroups = new Set(groups.flatMap((g) => Store.playlistsInGroup(g.id).map((p) => p.id)));
     this._groupsPlaying.hidden = groupsOpen || !Player.isPlaying || !inGroups.has(Player.contextId);
     $('menuGroups').classList.toggle('menu__item--active', this.page === 'playlist' && !groupsOpen && inGroups.has(this.playlistId));
@@ -392,6 +408,7 @@ const Nav = {
         type: 'button',
         title: followedOne ? T('groups.followed.open.tooltip', { group: g.name, profile: g.ownerName }) : T('groups.open.tooltip', { group: g.name }),
         'aria-expanded': String(open),
+        dataset: { group: g.id },
         onclick: () => this.openGroup(g.id),
       },
       h('span.menu__group-toggle', { role: 'button', title: toggleTitle, 'aria-label': toggleTitle, onclick: toggle },
@@ -418,7 +435,7 @@ const Nav = {
     $('menuFollowed').hidden = !followed.length;
     this._arrows.followedMenuOpen.hidden = !singleFollowed.length;
     $('menuFollowedList').hidden = !singleFollowed.length || !followedOpen;
-    const followedList = clear($('menuFollowedList'));
+    const followedList = gather('menuFollowedList');
     for (const p of singleFollowed) {
       const el = item(p);
       Groups.draggable(el, p);
@@ -435,7 +452,7 @@ const Nav = {
     const sessionsOpen = this._open('sessionsMenuOpen');
     this._drawArrow('sessionsMenuOpen', sessionsOpen, T('nav.section.what.jams'));
     $('menuSessionsList').hidden = !Session.visible || !sessionsOpen;
-    const sessionList = clear($('menuSessionsList'));
+    const sessionList = gather('menuSessionsList');
     if (Session.visible && sessionsOpen) {
       // A guest in another server's session: that server's songs, to play and queue.
       const guestList = Store.guestPlaylist();
@@ -443,6 +460,7 @@ const Nav = {
         sessionList.appendChild(h('button.menu__sub', {
           type: 'button',
           title: T('nav.jams.guestQueue.tooltip', { session: guestList.name }),
+          dataset: { id: GUEST_ID },
           onclick: () => this.openPlaylist(GUEST_ID),
         }, h('span.menu__sub-name', guestList.name)));
       }
@@ -456,6 +474,7 @@ const Nav = {
         sessionList.appendChild(h('button.menu__sub' + (s.playing ? '.menu__sub--playing' : ''), {
           type: 'button',
           title: tag ? `${s.name} (${lower})\n${song}` : `${s.name}\n${song}`,
+          dataset: { session: s.id },
           onclick: () => this.show('sessions', { sessionId: s.id }),
         },
         h('span.menu__sub-name', s.name),
@@ -471,6 +490,7 @@ const Nav = {
         sessionList.appendChild(h('button.menu__sub' + (s.playing ? '.menu__sub--playing' : ''), {
           type: 'button',
           title: T(joined ? 'nav.jams.nearby.joined.tooltip' : 'nav.jams.nearby.tooltip', { session: s.name, server: n.name, song }),
+          dataset: { session: s.id, server: n.id },
           onclick: () => this.show('sessions', { sessionId: s.id }),
         },
         h('span.menu__sub-name', label),
@@ -483,8 +503,9 @@ const Nav = {
     const trendOn = Store.settings.showTrend !== false;
     $('menuTrend').hidden = !trendOn;
     $('menuTrendList').hidden = !trendOn || !trendOpen;
-    const trendList = clear($('menuTrendList'));
+    const trendList = gather('menuTrendList');
     for (const p of Store.smartNames()) trendList.appendChild(item(p));
     this._trendPlaying.hidden = trendOpen || !(SmartLists.isSmart(Player.contextId) && Player.isPlaying);
+    for (const [id, rows] of gathered) setChildren($(id), rows);
   },
 };

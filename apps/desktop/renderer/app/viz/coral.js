@@ -32,8 +32,11 @@
     uniform vec4 seeds[${SEEDS}];   // x, y (cells), radius, 1
     uniform int count;
     out vec4 o;
+    // Round the edges (p is at most one cell out), without a division:
+    // nine of these a cell, up to forty times a frame.
     vec2 at(ivec2 p) {
-      return texelFetch(state, (p + size) % size, 0).xy;
+      p += size * (ivec2(lessThan(p, ivec2(0))) - ivec2(greaterThanEqual(p, size)));
+      return texelFetch(state, p, 0).xy;
     }
     void main() {
       ivec2 p = ivec2(gl_FragCoord.xy);
@@ -116,6 +119,7 @@
       this.age = 0;
       this.owed = 0;
       this.seeds = [];
+      this.seedData = new Float32Array(SEEDS * 4);
       this.flash = 0;
       this.w = 1;
       this.h = 1;
@@ -125,7 +129,8 @@
       const gl = this.gl;
       const tex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, null);
+      // Two numbers a cell: half of what four would be to read and write.
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, w, h, 0, gl.RG, gl.FLOAT, null);
       const f = this.linear ? gl.LINEAR : gl.NEAREST;
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, f);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, f);
@@ -148,11 +153,8 @@
       this.state = [this._target(this.sw, this.sh), this._target(this.sw, this.sh)];
       this.cur = 0;
       // Clear, with growths sprinkled about to start from.
-      const data = new Float32Array(this.sw * this.sh * 4);
-      for (let i = 0; i < this.sw * this.sh; i += 1) {
-        data[i * 4] = 1;
-        data[i * 4 + 3] = 1;
-      }
+      const data = new Float32Array(this.sw * this.sh * 2);
+      for (let i = 0; i < this.sw * this.sh; i += 1) data[i * 2] = 1;
       for (let k = 0; k < 40; k += 1) {
         const cx = Math.random() * this.sw;
         const cy = Math.random() * this.sh;
@@ -161,12 +163,12 @@
           for (let x = Math.floor(cx - r); x <= cx + r; x += 1) {
             if ((x - cx) ** 2 + (y - cy) ** 2 > r * r) continue;
             const i = ((y + this.sh) % this.sh) * this.sw + ((x + this.sw) % this.sw);
-            data[i * 4 + 1] = 0.5;
+            data[i * 2 + 1] = 0.5;
           }
         }
       }
       gl.bindTexture(gl.TEXTURE_2D, this.state[0].tex);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.sw, this.sh, gl.RGBA, gl.FLOAT, data);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.sw, this.sh, gl.RG, gl.FLOAT, data);
     }
 
     destroy() {
@@ -205,11 +207,14 @@
         const dst = this.state[1 - this.cur];
         VizGL.into(gl, dst);
         VizGL.bind(gl, u.state, src.tex, 0);
-        const seeds = s === 0 ? this.seeds.slice(0, SEEDS) : [];
-        const data = new Float32Array(SEEDS * 4);
-        seeds.forEach((d, i) => data.set(d, i * 4));
-        gl.uniform4fv(u.seeds, data);
-        gl.uniform1i(u.count, seeds.length);
+        // The new growths go in with the first step only.
+        if (s === 0) {
+          const count = Math.min(SEEDS, this.seeds.length);
+          const data = this.seedData;
+          for (let i = 0; i < count; i += 1) data.set(this.seeds[i], i * 4);
+          gl.uniform4fv(u.seeds, data);
+          gl.uniform1i(u.count, count);
+        } else if (s === 1) gl.uniform1i(u.count, 0);
         VizGL.screen(gl);
         this.cur = 1 - this.cur;
         if (s === 0) this.seeds = [];

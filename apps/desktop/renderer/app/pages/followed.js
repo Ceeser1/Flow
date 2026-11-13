@@ -9,8 +9,8 @@ const FollowedPage = {
   sort: { key: null, dir: null },
 
   init() {
-    Store.onLibrary(() => {
-      if (Nav.page === 'followed') this.render();
+    Store.onLibrary((lib, change) => {
+      if (Nav.page === 'followed' && !change.quiet()) this.render();
     });
   },
 
@@ -38,6 +38,8 @@ const FollowedPage = {
     renderTable($('followedTable'), {
       rows: Util.sortRows(followed, this.sort, (p, k) => this._value(p, k)),
       sort: this.sort,
+      // A row stays when it is drawn the same again (4.6).
+      drawn: true,
       rowKey: (p) => p.id,
       onSort: (key) => {
         this.sort = Util.cycleSort(this.sort, key);

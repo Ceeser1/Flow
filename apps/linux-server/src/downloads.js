@@ -85,7 +85,11 @@ const COMING = new Set(['queued', 'downloading', 'converting']);
 const QUEUE_MAX = 20;
 // How long what a batch that finished by itself did is told to the apps.
 const DONE_KEEP = 10 * 60 * 1000;
-const isBatchId = (id) => /^[0-9a-f]{12}$/.test(String(id || ''));
+// The apps are told that the downloads changed this long after a change
+// (several go together), a song's progress alone once in this long (4.6).
+const CHANGE_DELAY_MS = 100;
+const PROGRESS_EVERY_MS = 1000;
+const isBatchId =(id) => /^[0-9a-f]{12}$/.test(String(id || ''));
 
 class DownloadError extends Error {
   constructor(status, message) {
@@ -240,6 +244,41 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     if (!isAlive(batch)) return;
     fs.mkdirSync(dirOf(batch), { recursive: true });
     writeJsonAtomic(path.join(dirOf(batch), 'batch.json'), batch);
+    changed();
+  }
+
+  // ---- telling the apps (4.6) ----
+  //
+  // Whenever something the apps show of the downloads changes (a batch made,
+  // read, a song downloaded, saved or failed, a batch gone), onChange's
+  // listeners hear of it a moment later, several changes together; the
+  // server tells the apps on their live channels (server.js), and they ask
+  // for the batches then instead of every few seconds. A song's progress
+  // alone is told once a second at most.
+  const changeListeners = [];
+  let changeTimer = null;
+  let changeDue = 0;
+  let changeTold = 0;
+  function changed(progressOnly = false) {
+    if (stopped || !changeListeners.length) return;
+    const now = Date.now();
+    const due = progressOnly ? Math.max(now + CHANGE_DELAY_MS, changeTold + PROGRESS_EVERY_MS) : now + CHANGE_DELAY_MS;
+    // One on its way already that comes soon enough.
+    if (changeTimer && changeDue <= due) return;
+    clearTimeout(changeTimer);
+    changeDue = due;
+    changeTimer = setTimeout(() => {
+      changeTimer = null;
+      changeTold = Date.now();
+      for (const fn of changeListeners) {
+        try {
+          fn();
+        } catch (err) {
+          log(`Downloads: ${err.message}`);
+        }
+      }
+    }, Math.max(0, due - now));
+    if (changeTimer.unref) changeTimer.unref();
   }
 
   function drop(batch, why = 'thrown away') {
@@ -262,6 +301,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     }
     log(`Download batch ${batch.source.name ? `"${batch.source.name}" ` : ''}${why}`);
     turn();
+    changed();
   }
 
   /** Whatever a download that was cut off left behind: partial files of items not ready. */
@@ -538,6 +578,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
         ? `Looking up the songs on YouTube: ${p.done} of ${p.total}${p.known ? ` · ${p.known} already in the library` : ''}`
         : '');
       progress.set(`${batch.id}/list`, { frac: p.total ? p.done / p.total : null, text });
+      changed(true);
     };
     try {
       let items;
@@ -660,6 +701,8 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     const token = { cancelled: false, ytdlpArgs: ytdlpArgs(batch) };
     running.set(id, token);
     progress.set(id, { frac: null, text: 'Reading...' });
+    // Its turn has come (downloading now): told at once.
+    changed();
     const timer = setTimeout(() => {
       token.timedOut = true;
       if (token.cancel) token.cancel();
@@ -689,6 +732,7 @@ function createDownloads({ config, library, tools, log = () => {} }) {
       const file = await media.download({ ...probed, key: stemKey }, batch.options, (stage, frac, text) => {
         if (stage === 'prepare' && item.state === 'downloading') item.state = 'converting';
         progress.set(id, { frac, text });
+        changed(true);
       }, token, { dir });
       if (!alive()) {
         removeQuietly(file.path);
@@ -1373,8 +1417,13 @@ function createDownloads({ config, library, tools, log = () => {} }) {
     dropProfile,
     all,
     cancelKey,
+    /** fn() a moment after something the apps show of the downloads changed (4.6). */
+    onChange(fn) {
+      changeListeners.push(fn);
+    },
     stop() {
       stopped = true;
+      clearTimeout(changeTimer);
       for (const group of listing.values()) group.cancel();
       for (const group of peeking.values()) group.cancel();
       for (const group of searching.values()) group.cancel();

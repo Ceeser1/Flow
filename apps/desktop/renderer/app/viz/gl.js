@@ -696,6 +696,22 @@ const VizGL = {
     const h = f(f(x + y) * z);
     return f(h - Math.floor(h));
   },
+  /** NOISE's vnoise the same way: for a value that is the same all over a frame, worked out once rather than at each pixel. */
+  _vnoise(px, py) {
+    const f = Math.fround;
+    const ix = Math.floor(px);
+    const iy = Math.floor(py);
+    const fx = f(px - ix);
+    const fy = f(py - iy);
+    const ux = f(fx * fx * f(3 - 2 * fx));
+    const uy = f(fy * fy * f(3 - 2 * fy));
+    const a = this._hash12(ix, iy);
+    const b = this._hash12(ix + 1, iy);
+    const c = this._hash12(ix, iy + 1);
+    const d = this._hash12(ix + 1, iy + 1);
+    const top = a + (b - a) * ux;
+    return top + (c + (d - c) * ux - top) * uy;
+  },
   _HASH_A: Math.fround(0.1031),
   _HASH_K: Math.fround(33.33),
 

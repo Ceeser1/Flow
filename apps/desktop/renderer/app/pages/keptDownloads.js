@@ -29,7 +29,6 @@ const KeptDownloads = {
 
   init() {
     if (!this.on) return;
-    setInterval(() => this.save(), 3000);
     window.addEventListener('beforeunload', () => this.saveNow());
     this.restore();
   },
@@ -39,6 +38,23 @@ const KeptDownloads = {
     if (!this._ready) return;
     clearTimeout(this._timer);
     this._timer = setTimeout(() => this.save(), 300);
+    this._loop();
+  },
+
+  /**
+   * Every 3 seconds while something is kept (the cuts and names changed in
+   * the editor reach the file so), and not at all while nothing is (4.6; it
+   * ran all the time). Started again by the next change.
+   */
+  _loop() {
+    if (this._interval) return;
+    this._interval = setInterval(() => {
+      this.save();
+      if (this._empty) {
+        clearInterval(this._interval);
+        this._interval = 0;
+      }
+    }, 3000);
   },
 
   snapshot() {
@@ -54,7 +70,9 @@ const KeptDownloads = {
     if (!this._ready) return null;
     let text;
     try {
-      text = JSON.stringify(this.snapshot());
+      const snap = this.snapshot();
+      this._empty = !snap.queue.length && !snap.batches.length;
+      text = JSON.stringify(snap);
     } catch {
       return null;
     }
@@ -96,6 +114,7 @@ const KeptDownloads = {
     } finally {
       this._ready = true;
       this.save();
+      this._loop();
     }
   },
 

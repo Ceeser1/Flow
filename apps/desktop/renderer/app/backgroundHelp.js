@@ -12,7 +12,8 @@ const BackgroundHelp = {
   _modal: null,
 
   init() {
-    if (!Store.can('batteryHelp')) return;
+    // Only where the app can ask (the phone): the desktop showing the phone's layout (FLOW_UI=mobile) cannot.
+    if (!Store.can('batteryHelp') || !window.flow.onResume) return;
     window.flow.onResume(() => {
       if (this._modal) this._draw();
     });

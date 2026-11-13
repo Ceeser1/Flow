@@ -31,6 +31,12 @@
 // in a view is when it went into that list. Before 4.3 they were each song's
 // favouriteAt (the Default's in data.songs, a profile's in its songs):
 // ensureFavourites turns those into the lists once.
+//
+// Locked rows (4.6, libraryModel.js): a song or playlist that was saved is
+// locked and changed by a copy put in its place, and one that did not change
+// stays the row it was. absorb() therefore keeps every shared song and every
+// own stats entry that came back from the view as it went in, so a command
+// of a profile touches the rows it changed and no others.
 
 const crypto = require('crypto');
 const model = require('./libraryModel');
@@ -91,7 +97,21 @@ function ensureFavourites(data, profiles, now = Date.now()) {
 /** Songs' favouriteAt set from a Favourites playlist (when each went in), null for the rest. */
 function syncStars(songs, fav) {
   const at = new Map((fav ? fav.entries : []).map((e) => [e.songId, e.addedAt]));
-  for (const s of songs) s.favouriteAt = at.get(s.id) || null;
+  for (let i = 0; i < songs.length; i += 1) {
+    const star = at.get(songs[i].id) || null;
+    if (songs[i].favouriteAt !== star) model.rowToChange(songs, i).favouriteAt = star;
+  }
+}
+
+/** Two flat objects with the same fields holding the same values. */
+function flatSame(a, b) {
+  let n = 0;
+  for (const k in a) {
+    if (a[k] !== b[k]) return false;
+    n += 1;
+  }
+  for (const k in b) n -= 1;
+  return n === 0;
 }
 
 /** One profile's part, repaired against the library's songs. */
@@ -262,40 +282,100 @@ function absorb(data, profiles, profileId, v) {
     return;
   }
   const byId = new Map(data.songs.map((s) => [s.id, s]));
+  const before = (profiles[profileId] && profiles[profileId].songs) || {};
   const songs = [];
   const own = {};
+  // Whether its own entries are all the ones it had (then the map of them stays the one it was).
+  let ownAsBefore = true;
   for (const vs of v.songs) {
-    const shared = { ...(byId.get(vs.id) || {}) };
-    for (const [key, value] of Object.entries(vs)) if (!OWN.includes(key)) shared[key] = value;
-    if (!byId.has(vs.id)) {
-      // New to the library through this profile: the Default has not heard it yet.
-      shared.stats = model.emptyStats();
-      shared.favouriteAt = null;
+    const was = byId.get(vs.id);
+    // What every profile shares of it, as the view has it now. The same as before: the row it was (4.6).
+    let differs = !was;
+    if (was) {
+      for (const key in vs) {
+        if (key !== 'stats' && key !== 'favouriteAt' && vs[key] !== was[key]) {
+          differs = true;
+          break;
+        }
+      }
+    }
+    let shared = was;
+    if (differs) {
+      shared = { ...(was || {}) };
+      for (const key in vs) if (!OWN.includes(key)) shared[key] = vs[key];
+      if (!was) {
+        // New to the library through this profile: the Default has not heard it yet.
+        shared.stats = model.emptyStats();
+        shared.favouriteAt = null;
+      }
     }
     songs.push(shared);
-    // Its star is in the profile's Favourites list.
+    // Its star is in the profile's Favourites list. Its stats as they were: the entry it had.
+    const old = before[vs.id];
+    if (old && !('favouriteAt' in old) && old.stats && vs.stats && flatSame(old.stats, vs.stats)) {
+      own[vs.id] = old;
+      continue;
+    }
     const mine = { stats: vs.stats };
-    if (hasOwn(mine)) own[vs.id] = mine;
+    if (hasOwn(mine)) {
+      own[vs.id] = mine;
+      ownAsBefore = false;
+    } else if (old) ownAsBefore = false;
   }
   data.songs = songs;
   data.ignoredFiles = v.ignoredFiles;
   profiles[profileId] = {
-    playlists: v.playlists, groups: v.groups || [], songs: own, follows: v.follows, groupFollows: v.groupFollows || [], groupSkips: v.groupSkips || {}, playlistListened: v.playlistListened || {}, listening: v.listening || emptyListening(),
+    // Entries of songs gone from the view are still in the map it had: prune() takes them out.
+    playlists: v.playlists, groups: v.groups || [], songs: ownAsBefore && profiles[profileId] ? before : own, follows: v.follows, groupFollows: v.groupFollows || [], groupSkips: v.groupSkips || {}, playlistListened: v.playlistListened || {}, listening: v.listening || emptyListening(),
     statistics: v.statistics || emptyStatistics(),
   };
   prune(data, profiles);
 }
 
+// The song ids at the last prune() of a library's profiles, in order: while
+// they are still there in that order (songs only added at the end), no song
+// left, and no playlist or own entry can hold one that is gone.
+const prunedAt = new WeakMap();
+
+/** Whether a song left the library (or the songs changed places) since these profiles were pruned last. */
+function songLeft(data, profiles) {
+  const last = prunedAt.get(profiles);
+  const songs = data.songs;
+  let left = !last || songs.length < last.length;
+  if (!left) {
+    for (let i = 0; i < last.length; i += 1) {
+      if (songs[i].id !== last[i]) {
+        left = true;
+        break;
+      }
+    }
+  }
+  if (left || songs.length !== last.length) prunedAt.set(profiles, songs.map((s) => s.id));
+  return left;
+}
+
 /** Takes songs no longer in the library out of every playlist and profile. */
 function prune(data, profiles) {
-  const known = new Set(data.songs.map((s) => s.id));
-  const keep = (list) => {
-    for (const p of list) p.entries = p.entries.filter((e) => known.has(e.songId));
-  };
-  keep(data.playlists);
-  for (const p of Object.values(profiles)) {
-    keep(p.playlists);
-    for (const id of Object.keys(p.songs)) if (!known.has(id)) delete p.songs[id];
+  // The playlists and own entries are looked through only when a song left since the last time (4.6).
+  if (songLeft(data, profiles)) {
+    const known = new Set(data.songs.map((s) => s.id));
+    // Only a playlist that holds a song now gone gets another list of entries (the rest stay the rows they were).
+    const keep = (list) => {
+      for (const p of list.slice()) {
+        if (p.entries.some((e) => !known.has(e.songId))) model.listToChange({ playlists: list }, p).entries = p.entries.filter((e) => known.has(e.songId));
+      }
+    };
+    keep(data.playlists);
+    for (const p of Object.values(profiles)) {
+      keep(p.playlists);
+      // Its own entries of songs gone: another map without them (the one it had may be locked).
+      const gone = Object.keys(p.songs).filter((id) => !known.has(id));
+      if (gone.length) {
+        const songs = { ...p.songs };
+        for (const id of gone) delete songs[id];
+        p.songs = songs;
+      }
+    }
   }
   // A follow of a playlist that is gone (deleted, or its profile) goes too;
   // one that is only not shared for now waits for it to be shared again.
@@ -490,12 +570,14 @@ function movePlaylist(data, profiles, playlistId, toOwner) {
   if (playlist.favourites) throw new Error('Favourites always stay with their profile.');
   if (from === toOwner) return playlist.name;
   source.splice(source.indexOf(playlist), 1);
-  playlist.name = model.freePlaylistName({ playlists: target }, playlist.name);
-  target.push(playlist);
+  const name = model.freePlaylistName({ playlists: target }, playlist.name);
+  // Under another name there: another row (4.6: the one it was may be locked).
+  const moved = name === playlist.name ? playlist : { ...playlist, name };
+  target.push(moved);
   const owner = toOwner === DEFAULT_OWNER ? data : profiles[toOwner];
   owner.follows = (owner.follows || []).filter((id) => id !== playlistId);
   prune(data, profiles);
-  return playlist.name;
+  return moved.name;
 }
 
 module.exports = {

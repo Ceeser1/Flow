@@ -1,0 +1,648 @@
+/* Flow: the Playlists page, playlist groups, covers, the tables and one playlist's page. A part of the stylesheet (style.css first, then these in the order index.html links them). */
+
+/* ===== playlists page ===== */
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 22px 0 10px;
+}
+
+.section-head__title { margin: 0; font-size: 18px; color: var(--text-bright); }
+
+/* A section that opens and closes (Shared Playlists). */
+.section-head__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-bright);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.section-head__btn .menu__chevron .icon { width: 16px; height: 16px; }
+.section-head__btn.section-head__btn--open .menu__chevron { transform: rotate(90deg); }
+.link-cell__by { color: var(--text-dim); font-size: 13px; margin-left: 8px; font-weight: 400; }
+.pl-head__titlerow { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.pl-head__titlerow .page__title { min-width: 0; }
+
+/* ===== playlist groups (4.5, groups.js) ===== */
+
+/* The menu: a group as a folder below the single playlists, its playlists further in while open. */
+.menu__group .menu__chevron { margin: 0 -4px 0 -6px; }
+/* The arrow and the folder open and close the group, its name opens its page (4.5.2). */
+.menu__group-toggle { display: inline-flex; align-items: center; gap: 8px; flex: none; margin: -4px 0 -4px -4px; padding: 4px; border-radius: 6px; }
+.menu__group-toggle:hover { background: var(--glass-hi); }
+.menu__group-toggle:hover .menu__sub-icon { color: var(--text-bright); }
+.menu__group .menu__sub-icon { color: var(--text-dim); }
+.menu__group .menu__sub-name { font-weight: 600; }
+.menu__sub--in-group { padding-left: 34px; }
+.menu__sub--in-group.menu__sub--active,
+.menu__sub--in-group.menu__sub--playing { padding-left: 33px; }
+
+/* Dragging a playlist (the computer and the web player): where it can go lights up. */
+body.dragging-playlist .menu__group,
+body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s; }
+.drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; background: rgba(90, 140, 220, 0.12) !important; border-radius: 6px; }
+.drop-area { border-radius: var(--radius); }
+
+/* The Playlists page: each group's head with its table under it while open. */
+.groups-hint { margin: 8px 0 10px; font-size: 13px; }
+/* The setting mirrored under the Playlist Groups head (4.5.3). */
+.groups-setting { margin: -2px 0 12px; }
+.groups-setting .check { font-size: 14px; color: var(--text-bright); }
+.groups-setting__desc { margin: 2px 0 0 26px; font-size: 13px; max-width: 760px; }
+.groups { display: flex; flex-direction: column; gap: 8px; }
+.group { background: var(--glass); border-radius: var(--radius); padding: 4px 10px; }
+.group--open { padding-bottom: 10px; }
+.group__head { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.group__toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-bright);
+  cursor: pointer;
+  text-align: left;
+}
+.group__toggle:hover { background: var(--glass-hi); }
+.group__toggle .menu__chevron .icon { width: 16px; height: 16px; }
+.group__icon { display: inline-flex; color: var(--accent-hi); }
+.group__icon .icon { width: 20px; height: 20px; }
+/* One line (4.5.4): its name, then its details a little to the right. */
+.group__text { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
+.group__name { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group__sub { color: var(--text-dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.group .table { margin-top: 4px; }
+.group__empty { margin: 4px 0 6px 34px; font-size: 13px; }
+
+/* The Playlists page (4.5.3): each category's search (4.5.4: under its head, darker); each
+   list at most 10 entries tall (ui.js limitRows), then it scrolls in its box. */
+.search-box--section { max-width: 340px; margin: 0 0 10px; }
+.search-box--section .search-box__input { height: 30px; font-size: 13px; background: rgba(0, 0, 0, 0.3); }
+.search-box--section .search-box__input:focus { background: rgba(0, 0, 0, 0.36); }
+/* Your Playlists and Playlist Groups (4.5.4): a line above each, and the box for a new
+   one at the right of its head. */
+.playlists-part { margin-top: 24px; border-top: 2px solid #4a4a54; }
+/* Straight like the other (Your Playlists is a drop place, rounded for its light while dragged). */
+.playlists-part.drop-area:not(.drop-target) { border-radius: 0; }
+.playlists-part > .section-head:first-child { margin-top: 16px; }
+#page-playlists .section-head { flex-wrap: wrap; row-gap: 8px; }
+.section-new { display: flex; align-items: center; gap: 8px; margin-left: auto; align-self: center; }
+.section-new .input { width: 380px; min-width: 0; flex: 0 1 380px; }
+.section-new__error { margin: -4px 0 8px; text-align: right; }
+.search-box--section[hidden] { display: none; }
+.list-limit.list-limit--scrolls { overflow-y: auto; overscroll-behavior: contain; border-radius: var(--radius); }
+.list-limit.list-limit--scrolls .table th { background: #1b1b1f; }
+/* Touched on an outer quarter: the swipe scrolls the page instead (ui.js). */
+.list-limit.list-limit--page { overflow-y: hidden; overscroll-behavior: auto; }
+.groups.list-limit--scrolls { padding-right: 4px; }
+.list-nomatch { margin: 6px 0 0; font-size: 13px; }
+/* A group shared by another profile in Shared Playlists: its arrow and name open it, its playlists further in. */
+.sgroup { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; }
+.sgroup__toggle {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 24px; height: 24px; margin-left: -6px; padding: 0;
+  background: none; border: none; border-radius: 4px; cursor: pointer;
+}
+.sgroup__toggle:hover { background: var(--glass-hi); }
+.sgroup__toggle:hover .menu__chevron { color: var(--text-bright); }
+.sgroup__name .link-cell__icon { color: var(--accent-hi); }
+.table tbody tr.row--sgroup td { background: rgba(255, 255, 255, 0.035); }
+.row--in-sgroup .col-name { padding-left: 40px; }
+/* The share button of a group shared (on): it stays lit. */
+.act.act--blue.act--on { background: rgba(140, 200, 244, 0.28); border-color: rgba(140, 200, 244, 0.5); }
+#page-group .gr-unfollow { height: 34px; }
+
+/* Move to group: the groups as rows, "No group", and a new group by name. */
+.modal.modal--group-pick { width: 420px; }
+.group-pick__list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow-y: auto; }
+.group-pick__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  background: var(--glass);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-bright);
+  cursor: pointer;
+  text-align: left;
+}
+.group-pick__row:hover:not(:disabled) { background: var(--glass-hi); border-color: var(--line); }
+.group-pick__row:disabled { cursor: default; opacity: 0.5; }
+.group-pick__row--out { color: var(--text); }
+.group-pick__icon { display: inline-flex; color: var(--accent-hi); }
+.group-pick__row--out .group-pick__icon { color: var(--red); }
+.group-pick__icon .icon { width: 17px; height: 17px; }
+.group-pick__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-pick__count { color: var(--text-dim); font-size: 13px; }
+.group-pick__new { display: flex; gap: 8px; margin-top: 12px; }
+.group-pick__new .input { flex: 1; min-width: 0; }
+
+/* A group's Add playlists: a tick per playlist not in it. */
+.modal.modal--group-add { width: 460px; }
+.group-add__list { display: flex; flex-direction: column; gap: 2px; max-height: 55vh; overflow-y: auto; }
+.group-add__row { display: flex; gap: 10px; padding: 6px 8px; border-radius: 6px; }
+.group-add__row:hover { background: var(--glass); }
+.group-add__icon { display: inline-flex; color: var(--text-dim); }
+.group-add__icon .icon { width: 15px; height: 15px; }
+.group-add__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-add__from { color: var(--text-dim); font-size: 12px; }
+
+/* ===== covers (covers.js) ===== */
+
+/* A song's cover, square, with a note while there is none. */
+.cover {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--glass-btn);
+  color: var(--text-dim);
+}
+.cover__img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cover__note { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; opacity: 0.7; }
+.cover__note .icon { width: 50%; height: 50%; }
+.cover--row { width: 30px; height: 30px; }
+.cover--result { width: 32px; height: 32px; border-radius: 6px; }
+.cover--frame { width: 36px; height: 36px; border-radius: 5px; }
+/* The fixed-size ones are laid out on their own: a picture loading, failing
+   or swapped never makes a long list measure all its rows again. */
+.cover--row, .cover--result, .cover--frame, .cover--bar, .cover--editor { contain: strict; }
+
+/* A song list's Title: the cover, then the title. */
+.title-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.title-cell .cell-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue__row .cover--row { width: 32px; height: 32px; }
+.session-song .cover--row { width: 24px; height: 24px; }
+
+/* ===== tables ===== */
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(30, 30, 34, 0.45);
+  backdrop-filter: blur(8px);
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--line);
+  padding: 0;
+  height: 34px;
+}
+
+.th-sort,
+.th-plain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  background: none;
+  border: none;
+  color: inherit;
+  font-weight: 600;
+  text-align: left;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.6px;
+}
+
+.th-sort { cursor: pointer; }
+.th-sort:hover { color: var(--text-bright); }
+.th-sort--active { color: var(--accent); }
+.th-arrow { font-size: 9px; }
+
+.table td {
+  padding: 0 10px;
+  height: 40px;
+  border-bottom: 1px solid #28282e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Each song a shade darker than what lies behind the list, so the rows stand
+   apart from the clouds and the equalizer; lighter again under the pointer. */
+.table--songs tbody td { background: rgba(0, 0, 0, 0.14); }
+.table tbody tr:hover td { background: rgba(255, 255, 255, 0.035); }
+.table td:first-child, .table th:first-child { border-radius: 0; }
+
+.row--current td { color: var(--green); }
+.row--current .cell-title { font-weight: 600; }
+/* The song playing: a faint green row, easy to find while scrolling.
+   Over the same darker shade as the other rows, so the clouds do not wash it out. */
+.table--songs tbody tr.row--current td { background: linear-gradient(rgba(120, 200, 140, 0.14), rgba(120, 200, 140, 0.14)) rgba(0, 0, 0, 0.14); }
+.table--songs tbody tr.row--current:hover td { background: linear-gradient(rgba(120, 200, 140, 0.2), rgba(120, 200, 140, 0.2)) rgba(0, 0, 0, 0.14); }
+.row--pinned td { background: rgba(90, 140, 220, 0.06); }
+/* Shared Playlists and Your Playlists (4.5.3): each row a shade darker, as the songs are;
+   All Songs / Favourites and a shared group's row tinted over it, lighter under the pointer. */
+#sharedTable tbody td,
+#playlistsTable tbody td { background: rgba(0, 0, 0, 0.14); }
+#sharedTable tbody tr.row--pinned td,
+#playlistsTable tbody tr.row--pinned td { background: linear-gradient(rgba(90, 140, 220, 0.06), rgba(90, 140, 220, 0.06)) rgba(0, 0, 0, 0.14); }
+#sharedTable tbody tr.row--sgroup td { background: linear-gradient(rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.035)) rgba(0, 0, 0, 0.14); }
+#sharedTable tbody tr:hover td,
+#playlistsTable tbody tr:hover td { background: rgba(255, 255, 255, 0.035); }
+/* A session chosen in the menu, for a moment (pages/sessions.js). */
+.row--lit td,
+.mrow.row--lit,
+.nearby__row.row--lit { background: rgba(90, 140, 220, 0.18); transition: background 0.3s; }
+
+.cell-title { color: var(--text-bright); }
+.row--current .cell-title { color: var(--green); }
+/* The whole Title cell plays the song (playlist.js), and says so on hover. */
+/* A long list's spacers (windowRows): the rows not drawn, as tall as they would be. */
+.table tr.vspace td { height: auto; padding: 0; border: 0; background: none !important; }
+.table td.cell--play { cursor: pointer; }
+.table td.cell--play:hover .cell-title { text-decoration: underline; text-underline-offset: 3px; }
+
+.col-num { width: 100px; font-variant-numeric: tabular-nums; }
+.col-date { width: 130px; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.col-listened { width: 190px; font-variant-numeric: tabular-nums; }
+/* Room for four buttons (28px each, 6px apart) and the cell padding. */
+.col-actions { width: 150px; }
+.col-actions .th-plain { justify-content: flex-end; }
+.col-actions .actions { justify-content: flex-end; }
+
+/* The Playlists and Followed Playlists pages: Name is a share of the width,
+   Actions is fixed, and the columns between have no width, so the table
+   (fixed layout) splits what is left evenly, windowed or maximized. */
+.table--playlists .col-name { width: 30%; }
+.table--playlists .col-num,
+.table--playlists .col-listened,
+.table--playlists .col-date,
+.table--playlists .col-owner { width: auto; }
+/* Your listening trend: room for what each list is made from. */
+#trendTable .col-name { width: 22%; }
+#trendTable .col-owner { width: 40%; }
+
+/* Active Sessions (pages/sessions.js): the song takes what Name leaves; the
+   actions need room for "Ask again in 60 s" or "Joined" and Leave. */
+.table--sessions .col-song { width: 40%; }
+.table--sessions .col-actions { width: 190px; }
+.session-name,
+.session-song {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.session-name { gap: 10px; color: var(--text-bright); font-weight: 600; }
+.session-song .cell-title { overflow: hidden; text-overflow: ellipsis; }
+.session-tag {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: rgba(90, 140, 220, 0.2);
+  color: var(--accent-hi);
+  font-size: 11px;
+}
+.session-joined { display: inline-flex; align-items: center; gap: 4px; color: var(--green); font-weight: 600; }
+.session-joined .icon { width: 15px; height: 15px; }
+.sessions-mine { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.sessions-mine__icon { display: inline-flex; color: var(--accent); }
+.sessions-mine__text { flex: 1; min-width: 200px; color: var(--text-bright); }
+.sessions-mine__volume { flex-basis: 100%; }
+
+/* A song list: Duration, Added and Actions are fixed (84 + 130 + 116), and
+   what is left is split between Title, Artist and the columns Settings
+   shows (Album, Mix, Genre, Info; a listening trend list's From Playlist): each
+   gets its share of the rest as --w-<column> (playlist.js), Title takes the
+   remainder. Chromium drops a calc() that mixes % and px on a table column,
+   so playlist.js measures the table and hands the rest over in px as --rest.
+   Actions holds three buttons: Add to Queue, Play and More (songActions.js). */
+.table--songs { --fixed: 330px; }
+.table--songs .col-num { width: 84px; }
+.table--songs .col-actions { width: 116px; }
+.table--songs .col-artist { width: calc(var(--rest, 600px) * var(--w-artist, 0.35)); }
+.table--songs .col-mix { width: calc(var(--rest, 600px) * var(--w-mix, 0.2)); }
+.table--songs .col-album { width: calc(var(--rest, 600px) * var(--w-album, 0.2)); }
+.table--songs .col-genre { width: calc(var(--rest, 600px) * var(--w-genre, 0.12)); }
+.table--songs .col-subgenre { width: calc(var(--rest, 600px) * var(--w-subGenre, 0.12)); }
+.table--songs .col-from { width: calc(var(--rest, 600px) * var(--w-from, 0.22)); }
+
+.settings__ticks { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+
+.link-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+.link-cell span:last-child:not(.link-cell__by),
+.link-cell__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-cell:hover span:last-child:not(.link-cell__by),
+.link-cell:hover .link-cell__name { text-decoration: underline; }
+.link-cell__icon { color: var(--text-dim); }
+
+.rename-input { width: 100%; height: 28px; }
+
+.actions { display: flex; gap: 6px; align-items: center; }
+
+.act {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+
+.act .icon { width: 15px; height: 15px; }
+
+.act--green { background: rgba(120, 200, 140, 0.14); color: var(--green); }
+.act--green:hover { background: rgba(120, 200, 140, 0.28); border-color: rgba(120, 200, 140, 0.4); }
+.act--red { background: rgba(220, 120, 120, 0.14); color: var(--red); }
+.act--red:hover { background: rgba(220, 120, 120, 0.28); border-color: rgba(220, 120, 120, 0.4); }
+.act--grey { background: rgba(184, 184, 192, 0.12); color: var(--grey); }
+.act--grey:hover { background: rgba(184, 184, 192, 0.24); border-color: rgba(184, 184, 192, 0.35); }
+.act--done { background: rgba(120, 200, 140, 0.06); color: rgba(120, 200, 140, 0.55); cursor: default; }
+/* Adding songs to a playlist: a song just added, taken out again. */
+.act--orange { background: rgba(240, 150, 60, 0.16); color: #f0963c; }
+.act--orange:hover { background: rgba(240, 150, 60, 0.3); border-color: rgba(240, 150, 60, 0.45); }
+/* Favourite: an empty green star, filled gold once it is one. Download: light
+   grey (like Song Details) while the song is only on the server, gold once it
+   is here too. */
+.act--fav { background: rgba(120, 200, 140, 0.14); color: var(--green); }
+.act--fav:hover { background: rgba(120, 200, 140, 0.28); border-color: rgba(120, 200, 140, 0.4); }
+.act--dl { background: rgba(184, 184, 192, 0.12); color: var(--grey); }
+.act--dl:hover { background: rgba(184, 184, 192, 0.24); border-color: rgba(184, 184, 192, 0.35); }
+.act--fav-on, .act--dl-on { background: rgba(245, 190, 60, 0.16); color: #f5be3c; }
+.act--fav-on:hover, .act--dl-on:hover { background: rgba(245, 190, 60, 0.3); border-color: rgba(245, 190, 60, 0.45); }
+.act--open { background: rgba(184, 184, 192, 0.3); border-color: rgba(184, 184, 192, 0.45); color: var(--text-bright); }
+/* A playlist group's Update all (4.5): light blue as Update from source, its icon turning while it reads. */
+.act--blue { background: rgba(140, 200, 244, 0.12); color: #8cc8f4; }
+.act--blue:hover { background: rgba(140, 200, 244, 0.24); border-color: rgba(140, 200, 244, 0.4); }
+.act.pl-update--busy { border-color: rgba(140, 200, 244, 0.5); }
+.act.pl-update--busy .icon { animation: prog-spin 2s linear infinite; }
+
+/* A file saved whole (the phone's own): names and a preview, no trim. */
+.editor--whole .trim-head,
+.editor--whole .audio-canvas-wrap,
+.editor--whole .trim-slider,
+.editor--whole .time-group,
+.editor--whole .span-label { display: none !important; }
+
+/* More's tray: slides out to the left of the button, over the row. */
+.act-tray {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: #34343c;
+  border: 1px solid #4a4a54;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  transform-origin: right center;
+  transform: scaleX(0.4);
+  opacity: 0;
+  transition: transform 0.14s ease-out, opacity 0.14s ease-out;
+}
+
+.act-tray--in { transform: none; opacity: 1; }
+/* Opened from Settings (the profile's ⋯): over its window. */
+.act-tray--settings { z-index: 55; }
+
+/* "Add to playlists" beside the tray: your playlists with a box each, and Apply.
+   Ten rows show; more scroll. Looks like Settings (the app's own background at
+   93%, the same title, rows divided by thin lines), as does the dialog of the
+   same name in Song Details (.modal--picker, below). */
+.pl-picker {
+  position: fixed;
+  z-index: 41;
+  width: 280px;
+  padding: 14px 16px 16px;
+  background: rgba(30, 30, 34, 0.93);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pl-picker__title { margin: 0; font-size: 17px; font-weight: 600; color: var(--text-bright); }
+/* Opened from the player: which song it is about. */
+.pl-picker__song { margin-top: -4px; color: var(--text-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-picker__list { max-height: 340px; overflow-y: auto; }
+
+.pl-picker__row {
+  display: flex;
+  height: 38px;
+  padding: 0 2px;
+  border-bottom: 1px solid #34343c;
+  color: var(--text-bright);
+}
+
+.pl-picker__row:hover { background: rgba(255, 255, 255, 0.04); }
+.pl-picker__row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-picker__empty { padding: 8px 2px; color: var(--text-dim); }
+.pl-picker .btn { align-self: flex-end; margin-top: 4px; }
+
+/* ===== one playlist ===== */
+
+/* The panel behind a song list's top: title, controls, search, and the column
+   headers under it in the same colour, so it reads as one piece. Frosted, so
+   the clouds and the equalizer stay calm behind the controls. */
+.pl-top {
+  padding: 14px 10px 10px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--head-bg);
+  backdrop-filter: blur(14px);
+}
+/* No list under it (empty playlist): round all the way. */
+.pl-top:has(~ #plEmpty:not([hidden])) { border-radius: var(--radius); }
+.pl-top > :last-child { margin-bottom: 0; }
+/* The column names a little darker than the playlist's head above them. */
+.table--songs th { background: rgba(18, 18, 22, 0.84); backdrop-filter: blur(14px); }
+
+.pl-head { margin-bottom: 14px; }
+.pl-head .page__title { margin-bottom: 8px; }
+
+.pl-head__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.pl-meta { color: var(--text-dim); font-size: 14px; margin-right: 6px; }
+#plOfflineNote:empty { display: none; }
+/* Share at the row's right end, below Update (the phone orders its own, mobile.css). */
+.pl-head__row #plShare { margin-left: auto; }
+
+/* "Update from source" while its playlist's link is read (playlistUpdate.js): light blue, the icon
+   turning clockwise once every 2 seconds. */
+#plUpdate.pl-update--busy {
+  color: #8cc8f4;
+  border-color: rgba(140, 200, 244, 0.5);
+  background: rgba(140, 200, 244, 0.1);
+}
+#plUpdate.pl-update--busy .icon { animation: prog-spin 2s linear infinite; }
+
+/* Its popup: the songs added to and removed from the source side by side, the two ticks below. */
+.modal.modal--pl-update { width: 720px; }
+.pl-update__lists { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; }
+.pl-update__col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pl-update__head { margin: 4px 0 6px; font-weight: 600; color: var(--text-bright); }
+.pl-update__list {
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  max-height: 46vh;
+  overflow-y: auto;
+  background: var(--well);
+  border-radius: var(--radius);
+}
+.pl-update__row { display: flex; gap: 8px; align-items: baseline; padding: 3px 10px; min-width: 0; user-select: text; }
+.pl-update__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-update__note { flex: none; margin-left: auto; color: var(--text-dim); font-size: 12px; }
+.pl-update__empty { padding: 3px 10px; color: var(--text-dim); }
+.pl-update__checks { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px 0 10px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: var(--grey);
+  cursor: pointer;
+}
+
+.toggle:hover { border-color: #50505a; color: var(--text-bright); }
+
+.toggle__box {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #6a6a74;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle__box .icon { width: 12px; height: 12px; stroke-width: 3; }
+.toggle .icon { width: 16px; height: 16px; }
+
+.toggle--on {
+  color: var(--green);
+  border-color: rgba(120, 200, 140, 0.5);
+  background: rgba(120, 200, 140, 0.1);
+}
+
+.toggle--on .toggle__box { background: var(--green); border-color: var(--green); color: #1e1e22; }
+
+.btn--play {
+  height: 36px;
+  padding: 0 20px 0 16px;
+  border-radius: 18px;
+  background: var(--green);
+  color: #16261b;
+  font-weight: 700;
+}
+
+.btn--play:hover:not(:disabled) { background: #8ad49c; }
+.btn--play .icon { width: 16px; height: 16px; }
+
+.pick-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border-radius: var(--radius);
+  background: rgba(90, 140, 220, 0.14);
+  border: 1px solid rgba(90, 140, 220, 0.4);
+}
+
+.pl-search-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+/* "Artist: Dame" picked on the Search page, its X shows all songs again. */
+.pl-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 40%;
+  height: 28px;
+  padding: 0 4px 0 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-bright);
+  font-size: 13px;
+}
+.pl-field[hidden] { display: none; }
+.pl-field__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-field__x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.pl-field__x:hover { color: var(--text-bright); background: rgba(255, 255, 255, 0.08); }
+.pl-field__x .icon { width: 14px; height: 14px; }
+
+.empty {
+  padding: 50px 20px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 15px;
+}
+
+.empty p { margin: 0 0 16px; }
+.empty--small { padding: 24px; font-size: 13px; }

@@ -140,7 +140,10 @@
       const drift = [0.08 * Math.sin(this.wander * 0.17), 0.06 * Math.cos(this.wander * 0.13)];
       // Lines about every 15 pixels at 1080, breathing on the beat.
       const spacing = 0.0135 * (1 + 0.025 * this.glow);
-      const nh = a.playing ? a.noteHue() : { hue: 0.6, strength: 0 };
+      // The harmony's hue, only for the colours that follow it (the notes'
+      // analysis is a third of a millisecond); it glides, so 20 a second do.
+      const palette = COLORS[set('mrColors')] ?? 0;
+      const nh = a.playing && palette === 2 ? a.noteHue(1 / 20) : { hue: 0.6, strength: 0 };
       const k = Math.min(1, dt * 0.8 * (0.2 + nh.strength));
       this.hx += (Math.cos(nh.hue * Math.PI * 2) - this.hx) * k;
       this.hy += (Math.sin(nh.hue * Math.PI * 2) - this.hy) * k;
@@ -159,7 +162,7 @@
       gl.uniform1f(u.spacing, spacing);
       gl.uniform1f(u.glow, this.glow);
       gl.uniform1i(u.kind, KINDS[set('mrKind')] ?? 0);
-      gl.uniform1i(u.palette, COLORS[set('mrColors')] ?? 0);
+      gl.uniform1i(u.palette, palette);
       gl.uniform3f(u.hue1, ...hsv(hue, 0.8, 1));
       gl.uniform3f(u.hue2, ...hsv((hue + 0.45) % 1, 0.8, 1));
       gl.uniform3f(u.hue3, ...hsv((hue + 0.2) % 1, 0.6, 1));

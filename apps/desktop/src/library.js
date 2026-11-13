@@ -11,7 +11,7 @@ const paths = require('./paths');
 const tools = require('./tools');
 const model = require('@flow/core/libraryModel');
 const { fileJournalIo } = require('@flow/core/jsonFile');
-const { createJournal, LIBRARY_SPEC } = require('@flow/core/journalFile');
+const { createJournal, LIBRARY_SPEC, LIBRARY_ROWS } = require('@flow/core/journalFile');
 const { createLocalLibrary } = require('@flow/core/client/localLibrary');
 const { metaFromFile, findMoved } = require('@flow/core/fileMeta');
 const { AUDIO_EXTS } = require('@flow/core/formats');
@@ -20,7 +20,8 @@ const { parseFlowId } = require('@flow/core/tags');
 const { tr } = require('@flow/core/lang');
 
 // The library itself, shared with the Android app; saved to library.json here.
-const local = createLocalLibrary({ journal: createJournal(fileJournalIo, () => paths.libraryFile(), LIBRARY_SPEC) });
+// The journal keeps the songs and playlists themselves, locked once saved (4.6): no second copy of the library.
+const local = createLocalLibrary({ journal: createJournal(fileJournalIo, () => paths.libraryFile(), LIBRARY_SPEC, { rows: LIBRARY_ROWS }) });
 const {
   load, get, save, onChange, mutate, newId,
 } = local;
@@ -336,9 +337,9 @@ async function relocate(newDir, onProgress = () => {}) {
       }
       onProgress(plan.length, plan.length, '');
       mutate((d) => {
-        for (const s of d.songs) {
-          const to = done.get(s.file.toLowerCase());
-          if (to) s.file = to;
+        for (let i = 0; i < d.songs.length; i += 1) {
+          const to = done.get(d.songs[i].file.toLowerCase());
+          if (to) model.rowToChange(d.songs, i).file = to;
         }
         d.ignoredFiles = d.ignoredFiles.map((f) => (done.has(f) ? done.get(f).toLowerCase() : f));
       });

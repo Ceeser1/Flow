@@ -1108,7 +1108,7 @@
       lg.fillStyle = lit;
       const bpm = a.sure >= 0.35 && a.bpm ? String(Math.round(a.bpm)).padStart(3, ' ') : '---';
       for (let i = 0; i < 3; i += 1) seg7(lg, this.bpm.x + i * this.bpm.w * 1.45, this.bpm.y, this.bpm.w, this.bpm.h, bpm[i]);
-      const notes = a.notes();
+      const notes = a.notes(1 / 15); // the key: an 8 s average, 15 times a second is plenty
       const note = notes.key >= 0 ? T('viz.drawn.notes').split(' ')[notes.key] || NAMES[notes.key] : '';
       const key = notes.key >= 0 && notes.clarity > 0.2 ? `${note.toUpperCase()} ${notes.minor ? T('viz.drawn.hifi.minor') : T('viz.drawn.hifi.major')}` : '';
       if (key) {
@@ -1121,24 +1121,37 @@
       const gr = this.grid;
       const n = gr.cols;
       const nb = a.BANDS;
+      // Which bands each column reads, worked out once (the bands lie where
+      // they lie): from..to, the loudest of them the column's.
+      let map = this.colBands;
+      if (!map || map.n !== n || map.spec !== a._spec) {
+        map = { n, spec: a._spec, from: new Int16Array(n), to: new Int16Array(n) };
+        this.colBands = map;
+        for (let c = 0; c < n; c += 1) {
+          // Column c: a third of an octave from 31 Hz up, read off the bands.
+          const hz0 = 31.5 * 2 ** ((c - 0.5) / 3);
+          const hz1 = 31.5 * 2 ** ((c + 0.5) / 3);
+          let from = -1;
+          let to = -1;
+          for (let j = 0; j < nb; j += 1) {
+            const f = a.bandHz(j);
+            if (f < hz0 || f >= hz1) continue;
+            if (from < 0) from = j;
+            to = j + 1;
+          }
+          if (from < 0) {
+            // Narrower than a band down low: the nearest one.
+            const f = 31.5 * 2 ** (c / 3);
+            from = Math.max(0, Math.min(nb - 1, Math.round((Math.log(f / a.MIN_HZ) / Math.log(a.MAX_HZ / a.MIN_HZ)) * nb - 0.5)));
+            to = from + 1;
+          }
+          map.from[c] = from;
+          map.to[c] = to;
+        }
+      }
       for (let c = 0; c < n; c += 1) {
-        // Column c: a third of an octave from 31 Hz up, read off the bands.
-        const hz0 = 31.5 * 2 ** ((c - 0.5) / 3);
-        const hz1 = 31.5 * 2 ** ((c + 0.5) / 3);
         let v = 0;
-        let k = 0;
-        for (let j = 0; j < nb; j += 1) {
-          const f = a.bandHz(j);
-          if (f < hz0 || f >= hz1) continue;
-          v = Math.max(v, 0.55 * a.bands[j] + 0.45 * a.dynamic[j]);
-          k += 1;
-        }
-        if (!k) {
-          // Narrower than a band down low: the nearest one.
-          const f = 31.5 * 2 ** (c / 3);
-          const j = Math.max(0, Math.min(nb - 1, Math.round((Math.log(f / a.MIN_HZ) / Math.log(a.MAX_HZ / a.MIN_HZ)) * nb - 0.5)));
-          v = 0.55 * a.bands[j] + 0.45 * a.dynamic[j];
-        }
+        for (let j = map.from[c]; j < map.to[c]; j += 1) v = Math.max(v, 0.55 * a.bands[j] + 0.45 * a.dynamic[j]);
         v = Math.min(1, v * 1.05);
         this.cols[c] = Math.max(v, this.cols[c] - dt * 2.2);
         if (this.cols[c] >= this.peaks[c]) {
