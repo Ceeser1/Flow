@@ -258,6 +258,8 @@ const Player = {
     e.on('advanced', (songId, heard, reason) => this._advanced(songId, heard, reason));
     // Previous pressed outside the page (the phone's widget).
     e.on('previous', () => this.prev());
+    // The phone's player started songs by itself (its Alarm Clock, with nothing loaded here).
+    e.on('adopted', (songId) => this._adopted(songId));
     AudioFocus.register('player', () => this.pauseHere());
 
     this._bindBar();
@@ -1240,6 +1242,49 @@ const Player = {
     this._updateMediaSession();
     this._savePosition();
     this._emit();
+  },
+
+  /**
+   * The phone's player plays a song this page did not load: its Alarm Clock
+   * rang with nothing loaded here and started the songs handed along when it
+   * was set (alarmPlan). Taken as it is, as part of the list those were from.
+   */
+  _adopted(songId) {
+    if (this.remote || !Store.song(songId)) return;
+    const context = this.contextId || Nav.currentPlaylistId() || 'all';
+    this._endSession();
+    this.queue.start(context, this.idsOf(context), songId);
+    this.contextId = context;
+    this.currentId = songId;
+    this._pendingSeek = null;
+    this._startSession(songId);
+    this._updateMediaSession();
+    this._savePosition();
+    this._emit();
+  },
+
+  /**
+   * For the phone's Alarm Clock, set while nothing is loaded: what Play would
+   * play then, the list open from its top (a random song first with Shuffle),
+   * as the engine takes songs ([{ key, src, gain, meta }]). With a song
+   * loaded there is nothing to hand along: the phone's player has it.
+   */
+  alarmPlan() {
+    if (this.remote || this.currentId) return [];
+    const context = this.contextId || Nav.currentPlaylistId() || 'all';
+    const order = this.idsOf(context);
+    if (!order.length) return [];
+    const ahead = new PlayQueue(this.queue.random, this.queue.limit);
+    ahead.shuffle = this.queue.shuffle;
+    const items = [];
+    const seen = new Set();
+    for (let id = ahead.start(context, order); id && !seen.has(id) && items.length < this.UPCOMING; id = ahead.next(order)) {
+      seen.add(id);
+      const song = Store.song(id);
+      const src = song ? Store.audioSrc(song) : '';
+      if (src) items.push({ key: id, src, gain: this._normGain(id), meta: this._meta(song) });
+    }
+    return items;
   },
 
   /** What the system shows of a song (the phone's notification and lock screen): its big cover once here. */

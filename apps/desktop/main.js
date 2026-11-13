@@ -49,6 +49,8 @@ const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
 const { solveChallenge } = require('./src/lrclibChallenge');
 const { createGuestLink } = require('@flow/core/client/guest');
 const { createViewChannel } = require('@flow/core/client/viewChannel');
+const autostart = require('./src/autostart');
+const { createMiniPlayer } = require('./src/miniPlayer');
 
 let mainWindow = null;
 let downloadToken = null;
@@ -96,8 +98,13 @@ const isFirstInstance = app.requestSingleInstanceLock();
 if (!isFirstInstance) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
     if (!mainWindow) return;
+    // Started again for the Mini Player alone (Open on PC Start): that opens, Flow's window stays as it is.
+    if (autostart.asked(argv) && !MOBILE_UI) {
+      mini.open();
+      return;
+    }
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });
@@ -124,6 +131,21 @@ function restoredBounds() {
 // layout and leaves out what the phone cannot do, in a phone-sized window.
 const MOBILE_UI = process.env.FLOW_UI === 'mobile';
 
+// Started with the computer (the Mini Player's Open on PC Start, autostart.js):
+// the Mini Player shows at once, and Flow's window starts minimized.
+const START_MINI = autostart.asked(process.argv) && !MOBILE_UI;
+// Flow's window was maximized when last closed but started minimized: maximized once it is brought back.
+let maximizeOnRestore = false;
+
+// The Mini Player (src/miniPlayer.js): its window, and what goes between it and Flow's.
+const mini = createMiniPlayer({
+  settings,
+  mainWindow: () => mainWindow,
+  icon: paths.appIconPath(),
+  language: () => settings.get('language') || '',
+  onOpenChange: (open) => sendToWindow('mini:open', open),
+});
+
 function createWindow() {
   nativeTheme.themeSource = 'dark';
   Menu.setApplicationMenu(null);
@@ -147,21 +169,34 @@ function createWindow() {
       autoplayPolicy: 'no-user-gesture-required',
     },
   });
-  if (settings.get('windowMaximized') && !MOBILE_UI) mainWindow.maximize();
+  // Maximizing shows the window: one that starts minimized is maximized when it is brought back.
+  maximizeOnRestore = START_MINI && !!settings.get('windowMaximized');
+  if (settings.get('windowMaximized') && !MOBILE_UI && !START_MINI) mainWindow.maximize();
 
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => (START_MINI ? mainWindow.minimize() : mainWindow.show()));
+  mainWindow.on('restore', () => {
+    if (!maximizeOnRestore) return;
+    maximizeOnRestore = false;
+    mainWindow.maximize();
+  });
   // Imported songs not saved yet and links waiting in the Client queue are
   // kept over a restart (4.5.3, keptDownloads.js): closing asks nothing.
   mainWindow.on('close', () => {
     if (!MOBILE_UI) {
       settings.set({
         windowBounds: mainWindow.getNormalBounds(),
-        windowMaximized: mainWindow.isMaximized(),
+        windowMaximized: mainWindow.isMaximized() || maximizeOnRestore,
       });
     }
+    // The song the Mini Player shows, where it is now (Open on PC Start shows it again).
+    mini.keepNow();
   });
+  // Windows shutting down or signing out closes Flow without a 'close'.
+  mainWindow.on('session-end', () => mini.keepNow());
   mainWindow.on('closed', () => {
     mainWindow = null;
+    // The Mini Player only shows what this window plays: it goes with it.
+    mini.close();
   });
   // A join request flashed the taskbar button (session:notify): looked at now.
   mainWindow.on('focus', () => mainWindow.flashFrame(false));
@@ -246,6 +281,8 @@ const startInfo = () => ({
   // For the Windows media overlay, which only takes http(s) or data: artwork.
   iconDataUrl: iconDataUrl(),
   covers: coverDirs(),
+  // Whether the Mini Player is open (the player bar's button shows it).
+  miniOpen: mini.isOpen(),
 });
 
 /**
@@ -420,6 +457,7 @@ function useLanguage() {
 }
 // The window drawn again in the language just picked (will-navigate stops a reload from the page itself).
 ipcMain.on('app:reload', () => {
+  mini.reload();
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload();
 });
 ipcMain.on('i18n:language', (event) => {
@@ -1011,6 +1049,8 @@ app.whenReady().then(() => {
   if (app.isPackaged) app.setAppUserModelId('com.ceeser.flow');
   settings.load();
   useLanguage();
+  // Started with the computer: the Mini Player first, with the song it showed last, before the library is read.
+  if (START_MINI) mini.open({ byComputer: true });
   if (settings.get('musicDir')) paths.setMusicDir(settings.get('musicDir'));
   library.load();
   // But for the songs of the batches kept over the restart (4.5.3).
@@ -1085,6 +1125,7 @@ app.whenReady().then(() => {
     });
     library.watch();
     tools.refreshYtDlp();
+    mini.refreshAutostart();
     setInterval(() => backups.weekly(), BACKUP_CHECK_MS);
   }, 1500);
 });

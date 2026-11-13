@@ -29,6 +29,8 @@ test('strings.js is made from the sheet as it is now (npm run strings)', () => {
 test('every key the code asks for is in the sheet', () => {
   const sources = [
     ...files(path.join(__dirname, '..', 'renderer')),
+    // The Mini Player's own page.
+    ...files(path.join(__dirname, '..', 'mini')),
     ...files(path.join(__dirname, '..', 'src')),
     path.join(__dirname, '..', 'main.js'),
     ...files(path.join(ROOT, 'packages', 'core', 'src')),

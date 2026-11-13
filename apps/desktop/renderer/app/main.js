@@ -51,6 +51,8 @@
   SettingsPanel.init();
   SongActions.init();
   SleepTimer.init();
+  MiniPlayer.init(init.miniOpen);
+  Alarm.init();
   Keys.init();
   Mobile.init();
   // After Mobile: the phone's Now Playing has its lyrics frame by then.
@@ -90,6 +92,8 @@
   }
 
   Player.restore();
+  // From here on the Mini Player hears what plays (the last session's song is back).
+  MiniPlayer.ready();
   // A listening trend list last open stays shut while they are hidden.
   const last = init.settings.lastPlaylistId || 'all';
   Nav.openPlaylist(Store.settings.showTrend === false && SmartLists.isSmart(last) ? 'all' : last);

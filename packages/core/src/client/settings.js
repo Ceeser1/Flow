@@ -373,6 +373,16 @@ const DEFAULTS = {
   // the shutdown Windows has been told about: { endsAt, shutdownAt, ended },
   // times in ms, shutdownAt null without a shutdown.
   sleepTimer: null,
+  // The desktop's Mini Player (5.0), from its cogwheel: Lock position, Always
+  // on top, Open on PC Start; where its window was left ({ x, y }); and the
+  // song it showed last ({ songId, title, artist, cover, position, duration,
+  // list }), shown at once when it starts with the computer, before the
+  // library is read.
+  miniLocked: false,
+  miniOnTop: true,
+  miniAutostart: false,
+  miniBounds: null,
+  miniLast: null,
 
   // ---- the Settings window ----
   // The texts' language (i18n.js): '' for the device's, or 'en' / 'de'. Kept
@@ -541,6 +551,22 @@ function percent(v, fallback) {
   return Number.isFinite(n) ? Math.min(100, Math.max(1, n)) : fallback;
 }
 
+/** The song the Mini Player showed last (see DEFAULTS), or null. */
+function cleanMiniLast(m) {
+  if (!m || typeof m !== 'object' || !m.title) return null;
+  const text = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  const seconds = (v) => (Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : 0);
+  return {
+    songId: text(m.songId, 100),
+    title: text(m.title, 300),
+    artist: text(m.artist, 300),
+    cover: text(m.cover, 1000),
+    position: seconds(m.position),
+    duration: seconds(m.duration),
+    list: text(m.list, 300),
+  };
+}
+
 function clean(raw) {
   const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
   s.volume = Math.min(1, Math.max(0, Number(s.volume)));
@@ -578,6 +604,14 @@ function clean(raw) {
   const endsAt = st && typeof st === 'object' ? Number(st.endsAt) : NaN;
   const shutdownAt = st && Number.isFinite(Number(st.shutdownAt)) && st.shutdownAt !== null ? Number(st.shutdownAt) : null;
   s.sleepTimer = Number.isFinite(endsAt) ? { endsAt, shutdownAt, ended: st.ended === true } : null;
+  s.miniLocked = s.miniLocked === true;
+  s.miniOnTop = s.miniOnTop !== false;
+  s.miniAutostart = s.miniAutostart === true;
+  const mb = s.miniBounds;
+  s.miniBounds = mb && typeof mb === 'object' && Number.isFinite(Number(mb.x)) && Number.isFinite(Number(mb.y))
+    ? { x: Math.round(Number(mb.x)), y: Math.round(Number(mb.y)) }
+    : null;
+  s.miniLast = cleanMiniLast(s.miniLast);
 
   s.musicDir = typeof s.musicDir === 'string' ? s.musicDir : '';
   for (const key of ['serverHome', 'serverRemote']) s[key] = typeof s[key] === 'string' ? s[key].trim().slice(0, 300) : '';

@@ -44,6 +44,10 @@ const DESKTOP = {
   soundEq: true,
   // Songs of this device's own: Add Songs' "Open local File(s)" / "Open local Folder", Local Files.
   localFiles: true,
+  // The Mini Player (5.0): a small window of its own with the player's buttons.
+  miniPlayer: true,
+  // The Alarm Clock (5.0): Flow starts playing at a set time, also while closed (the phone's alarms).
+  alarm: false,
 };
 
 const ANDROID = {
@@ -68,6 +72,8 @@ const ANDROID = {
   guests: true,
   // Android 9 and newer (DynamicsProcessing): the app leaves it out before (main.js).
   soundEq: true,
+  miniPlayer: false,
+  alarm: true,
 };
 
 // The iPhone: as the Android phone, without what iOS has no need or room for.
@@ -81,6 +87,8 @@ const IOS = {
   scanQr: false,
   guests: false,
   soundEq: false,
+  // iOS starts no app's music at a set time while the app is closed.
+  alarm: false,
 };
 
 // The web player (apps/web): a page in a browser that only plays a Flow
@@ -111,6 +119,8 @@ const WEB = {
   guests: false,
   soundEq: true,
   localFiles: false,
+  miniPlayer: false,
+  alarm: false,
 };
 
 module.exports = {

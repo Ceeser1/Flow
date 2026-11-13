@@ -33,6 +33,8 @@
     "files": [
       "main.js",
       "preload.js",
+      "miniPreload.js",
+      "mini/**/*",
       "src/**/*",
       "renderer/**/*",
       "images/*.png",

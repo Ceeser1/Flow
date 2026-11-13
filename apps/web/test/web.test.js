@@ -167,8 +167,9 @@ test('window.flow answers every call of the desktop\'s, but those a browser cann
   // folder, the lyrics editor and lookups, backups, guests of other servers).
   // The reload that switches the language: the page loads again by itself.
   // Add Songs' downloads kept over a restart (4.5.3): only where songs download (the computer).
+  // The Mini Player (5.0) is a window of the computer's app.
   const notInBrowser = new Set(['openToolsFolder', 'toolStatus', 'checkImport', 'lookupInfo', 'setLyrics', 'lookupLyrics', 'searchLyrics', 'publishLyrics', 'backups', 'makeBackup', 'restoreBackup', 'guestLook',
-    'reload', 'saveDownloads', 'saveDownloadsNow', 'loadDownloads']);
+    'reload', 'saveDownloads', 'saveDownloadsNow', 'loadDownloads', 'toggleMini', 'miniState', 'onMiniCommand', 'onMiniOpen']);
   const missing = [...desktopCalls].filter((c) => !webCalls.has(c) && !notInBrowser.has(c));
   assert.deepEqual(missing, []);
 });

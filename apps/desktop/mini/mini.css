@@ -1,0 +1,324 @@
+/* Flow's Mini Player (5.0): a widget drawn in a window without a frame, see-through round its
+   corners. The palette is Flow's (renderer/style.css). */
+
+:root {
+  color-scheme: dark;
+  --bg: #1e1e22;
+  --panel: #2a2a30;
+  --line: #3a3a42;
+  --text: #d2d2d8;
+  --text-dim: #8a8a94;
+  --text-bright: #f2f2f6;
+  --accent: #5a8cdc;
+  --accent-hi: #6d9be4;
+  --green: #78c88c;
+  --red: #dc7878;
+  --glass-hi: rgba(255, 255, 255, 0.08);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+body {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Segoe UI", -apple-system, Roboto, system-ui, Ubuntu, "Noto Sans", sans-serif;
+  font-size: 13px;
+  user-select: none;
+}
+
+[hidden] { display: none !important; }
+button, input { font: inherit; color: inherit; }
+
+.icon { width: 18px; height: 18px; flex: none; display: block; pointer-events: none; }
+.icon--img { background: currentColor; -webkit-mask: center / contain no-repeat; mask: center / contain no-repeat; }
+.icon--note { -webkit-mask-image: url(../images/note.png); mask-image: url(../images/note.png); -webkit-mask-size: 82%; mask-size: 82%; }
+.skip-label { font-size: 12px; font-weight: 700; letter-spacing: -0.3px; }
+
+/* The widget itself. A hold anywhere that is not a button drags the window, unless
+   Lock position is on (or its menu or the volume is open: a click beside them closes them). */
+.mini {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0 14px 10px;
+  background: rgba(30, 30, 34, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  overflow: hidden;
+  -webkit-app-region: drag;
+}
+.mini--locked,
+.mini--popup { -webkit-app-region: no-drag; }
+
+button,
+input,
+.mini__track,
+.mini__menu,
+.mini__vol { -webkit-app-region: no-drag; }
+
+/* ---- the title row ---- */
+
+.mini__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  margin: 0 -6px 0 -2px;
+  flex: none;
+}
+.mini__logo { width: 16px; height: 16px; flex: none; border-radius: 4px; -webkit-user-drag: none; }
+.mini__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini__head-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+.mini__head-btn .icon { width: 15px; height: 15px; }
+.mini__head-btn:hover,
+.mini__head-btn[aria-expanded="true"] { color: var(--text-bright); background: var(--glass-hi); }
+.mini__head-btn--close:hover { color: #fff; background: rgba(220, 120, 120, 0.55); }
+
+/* ---- the song ---- */
+
+.mini__song {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 0;
+  flex: 1;
+}
+.mini__cover {
+  width: 60px;
+  height: 60px;
+  flex: none;
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.mini__cover img { width: 100%; height: 100%; object-fit: cover; display: block; -webkit-user-drag: none; }
+.mini__cover .icon { width: 26px; height: 26px; }
+.mini__text { flex: 1; min-width: 0; }
+.mini__title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-bright);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.mini__artist {
+  margin-top: 2px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini--empty .mini__title { color: var(--text-dim); font-weight: 600; }
+
+/* ---- the timeline ---- */
+
+.mini__time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex: none;
+}
+.mini__time {
+  min-width: 34px;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.mini__time--end { text-align: right; }
+.mini__track { position: relative; flex: 1; height: 18px; cursor: pointer; touch-action: none; }
+.mini__rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 7px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.mini__fill { height: 100%; width: 0; background: var(--accent); }
+.mini__track:hover .mini__fill,
+.mini__track--dragging .mini__fill { background: var(--green); }
+.mini__knob {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  transition: transform 0.1s;
+  pointer-events: none;
+}
+.mini__track:hover .mini__knob,
+.mini__track--dragging .mini__knob { transform: scale(1.4); }
+.mini--empty .mini__track { cursor: default; }
+.mini--empty .mini__knob { display: none; }
+
+/* ---- the buttons: the five in the middle, the volume at the right ---- */
+
+.mini__controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin-top: 2px;
+  flex: none;
+}
+.mini__buttons { display: flex; align-items: center; gap: 8px; }
+.mini__btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-bright);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+.mini__btn .icon { width: 17px; height: 17px; }
+.mini__btn:hover { background: var(--glass-hi); }
+.mini__btn:disabled { opacity: 0.35; background: none; cursor: default; }
+.mini__btn--main { width: 42px; height: 42px; background: var(--accent); color: #fff; }
+.mini__btn--main .icon { width: 19px; height: 19px; }
+.mini__btn--main:hover { background: var(--accent-hi); }
+.mini__side { display: flex; align-items: center; min-width: 0; }
+.mini__side--right { justify-content: flex-end; }
+.mini__icon-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.mini__icon-btn:hover,
+.mini__icon-btn[aria-expanded="true"] { color: var(--text-bright); background: var(--glass-hi); }
+
+/* ---- the volume slider, above its icon ---- */
+
+.mini__vol {
+  position: absolute;
+  right: 10px;
+  bottom: 56px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px 0 12px;
+  background: #2f2f36;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.mini__vol-slider {
+  --fill: 80%;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 130px;
+  height: 4px;
+  margin: 0;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--fill), #4a4a54 var(--fill));
+  outline: none;
+  cursor: pointer;
+}
+.mini__vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+.mini__vol-value {
+  width: 34px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the cogwheel's menu ---- */
+
+.mini__menu {
+  position: absolute;
+  top: 31px;
+  right: 8px;
+  min-width: 196px;
+  padding: 4px;
+  background: #2f2f36;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.mini__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 12px 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-bright);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mini__item:hover,
+.mini__item:focus-visible { background: var(--glass-hi); outline: none; }
+/* The green check before what is on; its room stays so the names line up. */
+.mini__check { width: 16px; height: 16px; flex: none; color: var(--green); }
+.mini__check .icon { width: 16px; height: 16px; stroke-width: 2.6; }
+.mini__divider { height: 1px; margin: 4px 6px; background: var(--line); }
+.mini__menu-error { padding: 2px 10px 4px 32px; font-size: 12px; color: var(--red); white-space: normal; max-width: 240px; }

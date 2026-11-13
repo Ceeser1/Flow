@@ -127,7 +127,7 @@ const Mobile = {
       $('playerTrack'),
       h('div.mp__times', $('playerTime')),
       h('div.mp__buttons', ...take('btnPrev', 'btnBack10', 'btnPlay', 'btnFwd10', 'btnNext')),
-      h('div.mp__extras', ...take('btnShuffle', 'btnRepeat', 'btnFavourite', 'btnAddToPlaylist', 'btnSleep', 'btnVisualizer', 'btnOutput')),
+      h('div.mp__extras', ...take('btnShuffle', 'btnRepeat', 'btnFavourite', 'btnAddToPlaylist', 'btnSleep', 'btnAlarm', 'btnVisualizer', 'btnOutput')),
       $('volWrap'),
       // The lyrics (lyrics.js), scrolled down to below the buttons.
       h('div.mp__lyrics.np-lyrics', { id: 'npLyrics', hidden: true }),

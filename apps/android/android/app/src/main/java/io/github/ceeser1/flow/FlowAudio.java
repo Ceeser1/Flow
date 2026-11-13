@@ -1,13 +1,17 @@
 package io.github.ceeser1.flow;
 
 import android.content.Intent;
+import android.os.Build;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
 /**
  * The page's way to FlowPlayer, for its audio engine (apps/android/src/engine.js):
@@ -17,8 +21,18 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * "advance" { from, id, key, heard, reason } and "signedIn" { token } (the
  * player signed in to the server again itself). keepSession(state) hands
  * SessionKeeper what the page last told the server, for while Flow is out of sight.
+ *
+ * The Alarm Clock (FlowAlarm, 5.0) too: alarmGet() answers how it is set,
+ * alarmSet({ on, hour, minute, days, texts, plan }) sets it or turns it off
+ * (plan: the songs to start with nothing loaded), alarmAct({ action: stop |
+ * snooze }) answers a ringing one, alarmNotifications() asks Android whether
+ * Flow may show notifications; each answers the alarm's state, which "alarm"
+ * also tells whenever it changes. "adopt" { state }: the player loaded songs
+ * itself (the alarm rang with nothing loaded), for the page to take.
  */
-@CapacitorPlugin(name = "FlowAudio")
+@CapacitorPlugin(name = "FlowAudio", permissions = {
+    @Permission(alias = "notifications", strings = { "android.permission.POST_NOTIFICATIONS" })
+})
 public class FlowAudio extends Plugin implements FlowPlayer.Events {
     private FlowPlayer player;
     private SessionKeeper keeper;
@@ -28,7 +42,50 @@ public class FlowAudio extends Plugin implements FlowPlayer.Events {
         player = FlowPlayer.get(getContext());
         player.setEvents(this);
         keeper = SessionKeeper.get(getContext());
+        FlowAlarm.setListener((state) -> notifyListeners("alarm", state));
         startService();
+    }
+
+    @PluginMethod
+    public void alarmGet(PluginCall call) {
+        call.resolve(FlowAlarm.state(getContext()));
+    }
+
+    @PluginMethod
+    public void alarmSet(PluginCall call) {
+        JSObject o = call.getData();
+        bridge.executeOnMainThread(() -> {
+            boolean on = o.optBoolean("on", false);
+            FlowAlarm.set(getContext(), on, o.optInt("hour", 7), o.optInt("minute", 0), o.optInt("days", 0), o.optJSONObject("texts"));
+            if (on) player.givePlan(o.optJSONArray("plan"));
+            else player.forgetPlan();
+            call.resolve(FlowAlarm.state(getContext()));
+        });
+    }
+
+    @PluginMethod
+    public void alarmAct(PluginCall call) {
+        String action = call.getString("action", "");
+        bridge.executeOnMainThread(() -> {
+            if ("snooze".equals(action) && FlowAlarm.ringing()) FlowAlarm.snooze(getContext());
+            else if ("stop".equals(action)) FlowAlarm.stop(getContext());
+            call.resolve(FlowAlarm.state(getContext()));
+        });
+    }
+
+    /** Android's "Allow Flow to send you notifications?" (from Android 13 on; before, they are allowed). */
+    @PluginMethod
+    public void alarmNotifications(PluginCall call) {
+        if (Build.VERSION.SDK_INT < 33 || getPermissionState("notifications") == PermissionState.GRANTED) {
+            call.resolve(FlowAlarm.state(getContext()));
+            return;
+        }
+        requestPermissionForAlias("notifications", call, "notificationsAnswered");
+    }
+
+    @PermissionCallback
+    private void notificationsAnswered(PluginCall call) {
+        call.resolve(FlowAlarm.state(getContext()));
     }
 
     @PluginMethod
@@ -121,6 +178,13 @@ public class FlowAudio extends Plugin implements FlowPlayer.Events {
     }
 
     @Override
+    public void onAdopt(JSObject state) {
+        JSObject e = new JSObject();
+        e.put("state", state);
+        notifyListeners("adopt", e);
+    }
+
+    @Override
     protected void handleOnStart() {
         keeper.away(false);
     }
@@ -133,6 +197,9 @@ public class FlowAudio extends Plugin implements FlowPlayer.Events {
     @Override
     protected void handleOnDestroy() {
         // The page is gone; the player and its music stay.
-        if (player.getEvents() == this) player.setEvents(null);
+        if (player.getEvents() == this) {
+            player.setEvents(null);
+            FlowAlarm.setListener(null);
+        }
     }
 }

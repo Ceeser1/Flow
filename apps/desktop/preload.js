@@ -185,4 +185,10 @@ contextBridge.exposeInMainWorld('flow', {
   backups: () => call('backups:list'),
   makeBackup: () => call('backups:make'),
   restoreBackup: (name) => call('backups:restore', name),
+  // The Mini Player (5.0, src/miniPlayer.js): the player bar's button opens and closes it,
+  // what plays goes to it, its buttons come back as { action, value }, and whether it is open.
+  toggleMini: () => ipcRenderer.send('mini:toggle'),
+  miniState: (state) => ipcRenderer.send('mini:state', state),
+  onMiniCommand: (fn) => ipcRenderer.on('mini:command', (_e, cmd) => fn(cmd)),
+  onMiniOpen: (fn) => ipcRenderer.on('mini:open', (_e, open) => fn(open)),
 });

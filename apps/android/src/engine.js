@@ -20,7 +20,8 @@
 // and the listens of the songs played meanwhile in `heardAway`. Flow swiped
 // away stops the music; a page that starts after the player was let go finds
 // the song it stopped on in `resume`. `startPlaying`: the widget's Play opened
-// Flow, so the page plays.
+// Flow, so the page plays. "adopted" (song id): the player started songs of
+// its own while this page had none loaded (the Alarm Clock).
 //
 // Song transitions are the player's own (setTransition; canFade is false, the
 // page does not fade): it moves on by itself, so it fades by itself too. So is
@@ -198,6 +199,26 @@ function createAudioEngine({
   });
   // The widget's Previous: the songs before are the queue's, not the player's.
   plugin.addListener('previous', () => emit('previous'));
+  // The player started songs this page did not load (its Alarm Clock rang with
+  // nothing loaded, and it had songs kept for that): its state, taken as it is.
+  plugin.addListener('adopt', (e) => {
+    const s = e && e.state;
+    if (!s || !s.id || !s.key) return;
+    id = s.id;
+    src = 'native';
+    paused = !s.pwr || s.st === ENDED;
+    t = s.t;
+    at = now();
+    st = s.st;
+    dur = s.d > 0 ? s.d : NaN;
+    rate = s.rate || 1;
+    startAt = null;
+    jumped = true;
+    sent.next = '';
+    sent.meta = '';
+    current = { key: s.key, playing: !paused, heard: 0 };
+    emit('adopted', s.key);
+  });
   plugin.addListener('error', (e) => {
     if (!e || e.id !== id) return;
     console.warn('Flow audio:', e.message);
@@ -258,6 +279,8 @@ function createAudioEngine({
       sent.rate = 1;
       sent.gain = gain;
       sent.next = '';
+      // The song loaded has no notification text yet, though it may be the same song as before.
+      sent.meta = '';
       op({ op: 'load', id, key, src: toPath(src), gain, at: startAt || 0, play: false });
       return !!src;
     },

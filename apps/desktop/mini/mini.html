@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: http: https:" />
+  <title>Flow Mini Player</title>
+  <link rel="stylesheet" href="mini.css" />
+</head>
+<body>
+<!-- The Mini Player (5.0): a widget, not a window. Its own frame is drawn here (mini.css, mini.js). -->
+<div id="mini" class="mini mini--empty">
+  <header class="mini__head">
+    <img class="mini__logo" src="../renderer/assets/icon.png" alt="" />
+    <span class="mini__name" data-i18n="mini.title">Flow Mini Player</span>
+    <button id="btnSettings" class="mini__head-btn" type="button" title="Settings" aria-haspopup="menu" aria-expanded="false" data-i18n-title="common.settings"></button>
+    <button id="btnClose" class="mini__head-btn mini__head-btn--close" type="button" title="Close Mini Player" data-i18n-title="mini.close"></button>
+  </header>
+
+  <!-- As the phone's widget: the cover with title and artist beside it, the timeline, the buttons. -->
+  <div class="mini__song">
+    <span id="cover" class="mini__cover" aria-hidden="true"></span>
+    <div class="mini__text">
+      <div id="title" class="mini__title" data-i18n="common.nothingPlaying">Nothing playing</div>
+      <div id="artist" class="mini__artist"></div>
+    </div>
+  </div>
+
+  <div class="mini__time-row">
+    <span id="time" class="mini__time">0:00</span>
+    <div id="track" class="mini__track">
+      <div class="mini__rail"><div id="fill" class="mini__fill"></div></div>
+      <div id="knob" class="mini__knob"></div>
+    </div>
+    <span id="length" class="mini__time mini__time--end">0:00</span>
+  </div>
+
+  <div class="mini__controls">
+    <span class="mini__side"></span>
+    <div class="mini__buttons">
+      <button id="btnPrev" class="mini__btn" type="button" title="Previous song" data-i18n-title="common.previousSong"></button>
+      <button id="btnBack10" class="mini__btn" type="button" title="Back 10 seconds" data-i18n-title="mini.back10"></button>
+      <button id="btnPlay" class="mini__btn mini__btn--main" type="button" title="Play" data-i18n-title="common.play"></button>
+      <button id="btnFwd10" class="mini__btn" type="button" title="Forward 10 seconds" data-i18n-title="mini.forward10"></button>
+      <button id="btnNext" class="mini__btn" type="button" title="Next song" data-i18n-title="common.nextSong"></button>
+    </div>
+    <span class="mini__side mini__side--right">
+      <button id="btnVolume" class="mini__icon-btn" type="button" title="Volume" aria-haspopup="true" aria-expanded="false" data-i18n-title="mini.volume"></button>
+    </span>
+  </div>
+
+  <!-- The volume icon clicked: the slider, above it. -->
+  <div id="volPop" class="mini__vol" hidden>
+    <input id="volSlider" class="mini__vol-slider" type="range" min="0" max="100" step="1" value="80"
+           aria-label="Volume" data-i18n-aria-label="window.player.volume.ariaLabel" />
+    <span id="volValue" class="mini__vol-value">80%</span>
+  </div>
+
+  <!-- The cogwheel's menu: a green check before what is on. -->
+  <div id="menu" class="mini__menu" role="menu" hidden>
+    <button id="tickLocked" class="mini__item" type="button" role="menuitemcheckbox" aria-checked="false">
+      <span class="mini__check"></span><span data-i18n="mini.settings.lock">Lock position</span></button>
+    <button id="tickOnTop" class="mini__item" type="button" role="menuitemcheckbox" aria-checked="false">
+      <span class="mini__check"></span><span data-i18n="mini.settings.onTop">Always on top</span></button>
+    <button id="tickAutostart" class="mini__item" type="button" role="menuitemcheckbox" aria-checked="false">
+      <span class="mini__check"></span><span data-i18n="mini.settings.autostart">Open on PC Start</span></button>
+    <div id="menuError" class="mini__menu-error" hidden></div>
+    <div class="mini__divider" role="separator"></div>
+    <button id="itemOpenFlow" class="mini__item" type="button" role="menuitem">
+      <span class="mini__check"></span><span data-i18n="mini.settings.openFlow">Open Flow</span></button>
+    <button id="itemClose" class="mini__item" type="button" role="menuitem">
+      <span class="mini__check"></span><span data-i18n="mini.close">Close Mini Player</span></button>
+  </div>
+</div>
+
+<script src="../renderer/app/strings.js"></script>
+<script src="../renderer/app/i18n.js"></script>
+<script src="../renderer/app/icons.js"></script>
+<script src="mini.js"></script>
+</body>
+</html>

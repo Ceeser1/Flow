@@ -8301,6 +8301,55 @@ sleepTimer.shutdown.at.tooltip
   en: Your PC shuts down at {time}
   de: Dein PC fährt um {time} herunter
 
+# ===== Mini Player =====
+
+# The small player in a window of its own (the button beside the Sleep Timer).
+
+mini.title
+  en: Flow Mini Player
+  de: Flow Mini-Player
+
+mini.button.tooltip
+  en: Mini Player: a small player that stays on your screen
+  de: Mini-Player: ein kleiner Player, der auf dem Bildschirm bleibt
+
+mini.button.close.tooltip
+  en: Close the Mini Player
+  de: Mini-Player schließen
+
+mini.close
+  en: Close Mini Player
+  de: Mini-Player schließen
+
+mini.back10
+  en: Back 10 seconds
+  de: 10 Sekunden zurück
+
+mini.forward10
+  en: Forward 10 seconds
+  de: 10 Sekunden vor
+
+mini.volume
+  en: Volume
+  de: Lautstärke
+
+# Mini Player › its cogwheel's menu
+mini.settings.lock
+  en: Lock position
+  de: Position sperren
+
+mini.settings.onTop
+  en: Always on top
+  de: Immer im Vordergrund
+
+mini.settings.autostart
+  en: Open on PC Start
+  de: Beim PC-Start öffnen
+
+mini.settings.openFlow
+  en: Open Flow
+  de: Flow öffnen
+
 # ===== Output device =====
 
 # The player bar's "Play on" menu: which speakers or headphones play the music
@@ -9298,6 +9347,136 @@ phone.error.isFolder
 ######################################################################
 
 # Text only the Android app shows.
+
+# ===== Alarm Clock =====
+
+# The button beside the Sleep Timer in Now Playing: Flow starts playing at a set time.
+
+alarm.title
+  en: Alarm Clock
+  de: Wecker
+
+alarm.button.tooltip
+  en: Alarm Clock: wake up with your music
+  de: Wecker: mit deiner Musik aufwachen
+
+alarm.button.on
+  en: Alarm at {time}
+  de: Wecker um {time}
+
+alarm.button.on.days
+  en: Alarm at {time} ({days})
+  de: Wecker um {time} ({days})
+
+alarm.intro
+  en: At this time Flow starts playing and fades the music in over {seconds} seconds.
+  de: Zu dieser Zeit startet Flow die Musik und blendet sie über {seconds} Sekunden ein.
+
+alarm.time.label
+  en: Time
+  de: Uhrzeit
+
+alarm.day.mon
+  en: Mon
+  de: Mo
+
+alarm.day.tue
+  en: Tue
+  de: Di
+
+alarm.day.wed
+  en: Wed
+  de: Mi
+
+alarm.day.thu
+  en: Thu
+  de: Do
+
+alarm.day.fri
+  en: Fri
+  de: Fr
+
+alarm.day.sat
+  en: Sat
+  de: Sa
+
+alarm.day.sun
+  en: Sun
+  de: So
+
+alarm.hint.once
+  en: No day picked: it rings once, {day} at {time}.
+  de: Kein Tag gewählt: Er klingelt einmal, {day} um {time}.
+
+alarm.hint.days
+  en: It rings on the days picked, next {day} at {time}.
+  de: Er klingelt an den gewählten Tagen, als Nächstes {day} um {time}.
+
+alarm.note
+  en: The music plays at the phone's media volume. If no song can be played, the phone's own alarm sound rings instead.
+  de: Die Musik spielt mit der Medienlautstärke des Handys. Kann kein Song abgespielt werden, klingelt stattdessen der Weckton des Handys.
+
+alarm.enterTime
+  en: Pick a time.
+  de: Wähle eine Uhrzeit.
+
+alarm.setButton
+  en: Set alarm
+  de: Wecker stellen
+
+alarm.turnOff
+  en: Turn off
+  de: Ausschalten
+
+alarm.set
+  en: Alarm set: Flow plays {day} at {time}.
+  de: Wecker gestellt: Flow spielt {day} um {time}.
+
+alarm.off
+  en: Alarm turned off.
+  de: Wecker ausgeschaltet.
+
+alarm.next
+  en: Next alarm: {day} at {time}
+  de: Nächster Wecker: {day} um {time}
+
+alarm.ringing
+  en: The alarm is ringing.
+  de: Der Wecker klingelt.
+
+alarm.snoozedUntil
+  en: Snoozed until {time}
+  de: Schlummert bis {time}
+
+alarm.stop
+  en: Stop Alarm
+  de: Wecker stoppen
+
+alarm.snooze
+  en: Snooze ({minutes} min)
+  de: Schlummern ({minutes} Min.)
+
+# Alarm Clock › the notification on the lock screen
+alarm.notification.title
+  en: Alarm at {time}
+  de: Wecker um {time}
+
+alarm.notification.snoozed
+  en: Alarm snoozed until {time}
+  de: Wecker schlummert bis {time}
+
+alarm.notification.noMusic
+  en: Flow could not play a song: this is your phone's alarm sound.
+  de: Flow konnte keinen Song abspielen: Das ist der Weckton deines Handys.
+
+# Alarm Clock › notifications not allowed
+alarm.notifications.off
+  en: Flow may not show notifications: there is no Stop Alarm or Snooze on the lock screen.
+  de: Flow darf keine Benachrichtigungen zeigen: Auf dem Sperrbildschirm gibt es kein „Wecker stoppen“ oder „Schlummern“.
+
+alarm.notifications.allow
+  en: Allow
+  de: Erlauben
 
 # ===== Settings =====
 

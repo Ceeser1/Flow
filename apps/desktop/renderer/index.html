@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="styles/panels.css" />
   <link rel="stylesheet" href="styles/visualizer.css" />
   <link rel="stylesheet" href="styles/sleepTimer.css" />
+  <link rel="stylesheet" href="styles/alarm.css" />
   <link rel="stylesheet" href="styles/server.css" />
   <link rel="stylesheet" href="styles/lyricsEdit.css" />
   <link rel="stylesheet" href="styles/group.css" />
@@ -500,6 +501,9 @@
         <div class="player__side player__right">
           <div class="player__sleep-slot">
             <button id="btnSleep" class="sleep-btn" type="button"></button>
+            <!-- The phone's Alarm Clock (alarm.js), and the computer's Mini Player (miniPlayer.js). -->
+            <button id="btnAlarm" class="sleep-btn" type="button" hidden></button>
+            <button id="btnMini" class="sleep-btn" type="button" aria-pressed="false"></button>
           </div>
           <!-- Where the music comes out (output.js). -->
           <button id="btnOutput" class="icon-btn player__output" type="button" aria-haspopup="menu"></button>
@@ -606,6 +610,8 @@
 <script src="app/viz/moire.js"></script>
 <script src="app/viz/fountain.js"></script>
 <script src="app/sleepTimer.js"></script>
+<script src="app/miniPlayer.js"></script>
+<script src="app/alarm.js"></script>
 <script src="app/songActions.js"></script>
 <script src="app/groups.js"></script>
 <script src="app/nav.js"></script>

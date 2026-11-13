@@ -59,6 +59,16 @@ import java.util.List;
  * The sleep timer runs here too (the page's timers stop with the screen off):
  * the music fades out over its last seconds, then pauses.
  *
+ * So does the Alarm Clock's music (FlowAlarm, 5.0): when it rings, what is
+ * loaded plays, its volume rising from nothing to full over a minute of
+ * playing. With nothing loaded (Flow's process started for the alarm) the
+ * songs kept for it play: the song loaded and those after it, written to a
+ * file whenever they change while an alarm waits. If nothing plays a while
+ * after it rang, FlowAlarm rings the phone's own alarm sound. The music is
+ * started by PlaybackService once that is in the foreground (alarmReady,
+ * then alarmPlay): Android lets only an app in the foreground take the
+ * sound, and Flow is in the background when an alarm rings.
+ *
  * Song Transition (crossfade) too: shortly before a song ends, a second
  * player (the tail) is made ready at the place the transition starts; there
  * it plays the song's end on, fading down, while this player moves on to the
@@ -90,6 +100,8 @@ final class FlowPlayer {
         void onAdvance(String from, String id, String key, double heard, String reason);
         /** The widget's Previous: the page goes back (it knows the songs before). */
         void onPrevious();
+        /** The player loaded songs itself (the Alarm Clock, with nothing loaded): its state, for the page to take. */
+        void onAdopt(JSObject state);
     }
 
     /** What the page knows a song in the playlist by: its id there, the song's id, its gain. */
@@ -151,6 +163,23 @@ final class FlowPlayer {
     private long sleepFadeMs = 10000;
     private float sleepFade = 1f;
     private final Runnable sleepTick = this::sleepCheck;
+    // The Alarm Clock: whether it rings (its music plays, fading in or faded in), how far the
+    // fade is (0 to 1) and how long its music has played; and the songs kept for it.
+    private static final long ALARM_FADE_MS = 60000;
+    private static final long ALARM_CHECK_MS = 20000;
+    private static final int PLAN_SONGS = 40;
+    private final File planFile;
+    private boolean alarmOn;
+    // The songs playing were loaded here for the alarm (a page with nothing loaded takes them).
+    private boolean alarmOwn;
+    // How often the alarm's music was started again after Android refused it the sound.
+    private int alarmRetries;
+    private float alarmFade = 1f;
+    private long alarmPlayedMs;
+    private long alarmTickAt;
+    private final Runnable alarmTick = this::alarmTick;
+    private final Runnable alarmCheck = this::alarmCheck;
+    private final Runnable planKeeper = this::keepPlan;
     // Song Transition: its length (ms; 0: none), the tail playing the end of the song
     // before (made ready for tailFor, from tailFrom), the song coming in (fading up), and
     // whether the move on is the transition's (told as "auto", a song that ended).
@@ -200,6 +229,7 @@ final class FlowPlayer {
         heardFile = new File(context.getFilesDir(), "audio-heard.json");
         lastFile = new File(context.getFilesDir(), "audio-last.json");
         eqFile = new File(context.getFilesDir(), "sound-eq.json");
+        planFile = new File(context.getFilesDir(), "alarm-plan.json");
         eqCurve = readEq();
         heardWhileAway = readHeard();
         music = new AudioAttributes.Builder()
@@ -253,6 +283,11 @@ final class FlowPlayer {
                     main.removeCallbacks(widget);
                     main.postDelayed(widget, 100);
                 }
+                // The song loaded, those after it or where it paused changed: kept for an alarm waiting.
+                if (ev.containsAny(Player.EVENT_PLAY_WHEN_READY_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION,
+                        Player.EVENT_TIMELINE_CHANGED)) {
+                    planSoon();
+                }
             }
 
             @Override
@@ -280,6 +315,19 @@ final class FlowPlayer {
             @Override
             public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
                 if (!playWhenReady) dropTail("paused");
+                // Paused by hand while the alarm rings (Flow's own Pause, the notification's): the alarm is answered.
+                if (!playWhenReady && alarmOn && (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
+                        || reason == Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE)) {
+                    FlowAlarm.stop(context);
+                }
+                // Android refused the alarm's music the sound (Flow only just in the foreground): tried again.
+                if (!playWhenReady && alarmOn && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS
+                        && alarmRetries < 3) {
+                    alarmRetries += 1;
+                    main.postDelayed(() -> {
+                        if (alarmOn && !exo.getPlayWhenReady()) exo.play();
+                    }, 700);
+                }
                 FlowLog.i((playWhenReady ? "play" : "pause") + " " + id + " (" + playReason(reason) + ")"
                         + (playWhenReady ? " on " + DeviceLog.output(context) : ""));
             }
@@ -307,6 +355,8 @@ final class FlowPlayer {
                     signIn(base, text);
                     return;
                 }
+                // The alarm's music cannot play: the phone's own alarm sound rings.
+                if (alarmOn) FlowAlarm.cannotPlay(context);
                 // Paused, nobody is waiting for it: Play tries it again.
                 if (!exo.getPlayWhenReady() && status != 401) {
                     FlowLog.i("(paused: not told)");
@@ -750,6 +800,206 @@ final class FlowPlayer {
         if (events != null) events.onState(s);
     }
 
+    /**
+     * The Alarm Clock rings: is there something to play? What is loaded, or
+     * with nothing loaded the songs kept for it, loaded now. False with
+     * neither. The music itself starts with alarmPlay().
+     */
+    boolean alarmReady() {
+        dropTail("alarm");
+        endFadeIn();
+        // A sleep timer still set would stop the alarm's music again.
+        sleepAt = 0;
+        main.removeCallbacks(sleepTick);
+        sleepFade = 1f;
+        alarmOwn = !hasSong() && loadPlan();
+        if (!hasSong()) FlowLog.i("alarm: nothing to play");
+        return hasSong();
+    }
+
+    /** The alarm's music plays, its volume rising from nothing to full over a minute of playing. */
+    void alarmPlay() {
+        if (!hasSong()) return;
+        boolean own = alarmOwn;
+        alarmOwn = false;
+        alarmOn = true;
+        alarmRetries = 0;
+        alarmFade = 0f;
+        alarmPlayedMs = 0;
+        alarmTickAt = SystemClock.elapsedRealtime();
+        applyVolume();
+        if (exo.getPlaybackState() == Player.STATE_ENDED) {
+            exo.seekTo(0);
+            endedTold = false;
+        }
+        if (exo.getPlaybackState() == Player.STATE_IDLE) exo.prepare();
+        exo.play();
+        main.removeCallbacks(alarmTick);
+        main.postDelayed(alarmTick, 250);
+        main.removeCallbacks(alarmCheck);
+        main.postDelayed(alarmCheck, ALARM_CHECK_MS);
+        FlowLog.i("alarm: plays " + id + (own ? " (kept for it)" : "") + ", fading in");
+        // A page that had nothing loaded takes the songs started here as its own.
+        if (own && events != null) events.onAdopt(state());
+    }
+
+    /** Four times a second while the alarm's music fades in: its volume by how long it has played. */
+    private void alarmTick() {
+        if (!alarmOn) return;
+        long now = SystemClock.elapsedRealtime();
+        if (exo.isPlaying()) alarmPlayedMs += now - alarmTickAt;
+        alarmTickAt = now;
+        float f = Math.min(1f, alarmPlayedMs / (float) ALARM_FADE_MS);
+        if (f != alarmFade) {
+            alarmFade = f;
+            applyVolume();
+        }
+        if (f < 1f) main.postDelayed(alarmTick, 250);
+        else FlowLog.i("alarm: at full volume");
+    }
+
+    /** A while after the alarm rang and still no music (no network, the server away): the phone's own alarm sound. */
+    private void alarmCheck() {
+        if (alarmOn && !exo.isPlaying()) FlowAlarm.cannotPlay(context);
+    }
+
+    /** The alarm is answered (stopped, snoozed) or set anew: `pause` stops the music it started; the volume is full again. */
+    void alarmStop(boolean pause) {
+        boolean was = alarmOn;
+        alarmOn = false;
+        main.removeCallbacks(alarmTick);
+        main.removeCallbacks(alarmCheck);
+        if (pause && was) exo.pause();
+        if (alarmFade != 1f) {
+            alarmFade = 1f;
+            applyVolume();
+        }
+    }
+
+    /** How far the alarm's fade is (0 to 1; 1 without one), for the tests. */
+    float alarmFade() {
+        return alarmFade;
+    }
+
+    /** The songs for an alarm waiting are written a moment after they change. */
+    private void planSoon() {
+        main.removeCallbacks(planKeeper);
+        if (FlowAlarm.waiting(context)) main.postDelayed(planKeeper, 1000);
+    }
+
+    /**
+     * The song loaded and those after it, with where it is, into a file: what
+     * the Alarm Clock starts when it rings with nothing loaded (Flow's
+     * process was stopped meanwhile). Only while an alarm waits; with nothing
+     * loaded the songs kept before stay.
+     */
+    void keepPlan() {
+        main.removeCallbacks(planKeeper);
+        if (!FlowAlarm.waiting(context) || exo.getMediaItemCount() == 0) return;
+        try {
+            JSONArray items = new JSONArray();
+            for (int i = Math.max(0, exo.getCurrentMediaItemIndex()); i < exo.getMediaItemCount() && items.length() < PLAN_SONGS; i += 1) {
+                MediaItem item = exo.getMediaItemAt(i);
+                Tag tag = tagOf(item);
+                if (tag == null || item.localConfiguration == null) continue;
+                Uri uri = item.localConfiguration.uri;
+                MediaMetadata md = item.mediaMetadata;
+                JSONObject meta = new JSONObject();
+                meta.put("title", md.title == null ? "" : md.title.toString());
+                meta.put("artist", md.artist == null ? "" : md.artist.toString());
+                meta.put("album", md.albumTitle == null ? "" : md.albumTitle.toString());
+                meta.put("artwork", md.artworkUri == null || md.artworkUri.getPath() == null ? "" : md.artworkUri.getPath());
+                JSONObject it = new JSONObject();
+                it.put("id", tag.id);
+                it.put("key", tag.key);
+                it.put("gain", (double) tag.gain);
+                it.put("src", "file".equals(uri.getScheme()) && uri.getPath() != null ? uri.getPath() : uri.toString());
+                it.put("meta", meta);
+                items.put(it);
+            }
+            writePlan(items, exo.getCurrentPosition() / 1000.0);
+        } catch (JSONException | IOException e) {
+            FlowLog.i("could not keep the alarm's songs: " + e.getMessage());
+        }
+    }
+
+    /**
+     * The alarm was set: the songs for it. With a song loaded, that and those
+     * after it; else the ones the page hands along ([{ key, src, gain, meta }],
+     * what its Play would play), from their start.
+     */
+    void givePlan(JSONArray items) {
+        if (exo.getMediaItemCount() > 0) {
+            keepPlan();
+            return;
+        }
+        if (items == null || items.length() == 0) return;
+        try {
+            JSONArray own = new JSONArray();
+            for (int i = 0; i < items.length() && own.length() < PLAN_SONGS; i += 1) {
+                JSONObject it = items.getJSONObject(i);
+                if (it.optString("src", "").isEmpty()) continue;
+                it.put("id", "alarm-" + i);
+                own.put(it);
+            }
+            writePlan(own, 0);
+        } catch (JSONException | IOException e) {
+            FlowLog.i("could not keep the alarm's songs: " + e.getMessage());
+        }
+    }
+
+    /** No alarm any more: its songs are forgotten. */
+    void forgetPlan() {
+        main.removeCallbacks(planKeeper);
+        planFile.delete();
+    }
+
+    private void writePlan(JSONArray items, double at) throws JSONException, IOException {
+        JSONObject plan = new JSONObject();
+        plan.put("items", items);
+        plan.put("at", at);
+        try (OutputStream out = new FileOutputStream(planFile)) {
+            out.write(plan.toString().getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /** The songs kept for the alarm loaded, paused where the first one was; false with none (that can play). */
+    private boolean loadPlan() {
+        try {
+            if (!planFile.isFile()) return false;
+            JSONObject plan = new JSONObject(new String(Files.readAllBytes(planFile.toPath()), StandardCharsets.UTF_8));
+            JSONArray items = plan.optJSONArray("items");
+            List<MediaItem> list = new ArrayList<>();
+            boolean firstThere = false;
+            for (int i = 0; items != null && i < items.length(); i += 1) {
+                JSONObject it = items.getJSONObject(i);
+                String src = it.optString("src", "");
+                // A song kept on the phone whose file is gone since.
+                if (src.isEmpty() || (src.startsWith("/") && !new File(src).isFile())) continue;
+                if (i == 0) firstThere = true;
+                list.add(item(it.optString("id", "alarm-" + i), it.optString("key", ""), (float) it.optDouble("gain", 1),
+                        src, it.optJSONObject("meta")));
+            }
+            if (list.isEmpty()) return false;
+            Tag first = tagOf(list.get(0));
+            id = first == null ? "" : first.id;
+            key = first == null ? "" : first.key;
+            gain = first == null ? 1f : first.gain;
+            endedTold = false;
+            signedInAgain = false;
+            durationMs = 0;
+            takeHeard();
+            exo.setMediaItems(list, 0, firstThere ? (long) (plan.optDouble("at", 0) * 1000) : 0);
+            exo.setPlaybackSpeed(1f);
+            exo.prepare();
+            FlowLog.i("alarm: " + list.size() + " songs kept for it loaded");
+            return true;
+        } catch (JSONException | IOException | RuntimeException e) {
+            FlowLog.i("the alarm's songs could not be read: " + e.getMessage());
+            return false;
+        }
+    }
+
     /** The sleep timer: fading over its last seconds, then the music pauses. */
     private void sleepCheck() {
         if (sleepAt <= 0) return;
@@ -864,7 +1114,7 @@ final class FlowPlayer {
             if (tail.getPlaybackState() == Player.STATE_ENDED) dropTail(null);
             else {
                 float p = Math.min(1f, Math.max(0f, (tail.getCurrentPosition() - tailFrom) / (float) Math.max(1, tailLength)));
-                tail.setVolume(Math.max(0f, Math.min(1f, volume * sleepFade * Math.min(1f, tailGain))) * (float) Math.cos(p * Math.PI / 2));
+                tail.setVolume(Math.max(0f, Math.min(1f, volume * sleepFade * alarmFade * Math.min(1f, tailGain))) * (float) Math.cos(p * Math.PI / 2));
                 if (p >= 1f) dropTail(null);
                 else going = true;
             }
@@ -911,7 +1161,7 @@ final class FlowPlayer {
 
     /** The app's volume times the song's gain: down by the player's volume, up by the enhancer. */
     private void applyVolume() {
-        exo.setVolume(Math.max(0f, Math.min(1f, volume * sleepFade * fadeIn * Math.min(1f, gain))));
+        exo.setVolume(Math.max(0f, Math.min(1f, volume * sleepFade * fadeIn * alarmFade * Math.min(1f, gain))));
         int mb = gain > 1f ? Math.round(2000f * (float) Math.log10(gain)) : 0;
         LoudnessEnhancer e = enhancer();
         if (e == null || mb == boostMb) return;

@@ -367,6 +367,14 @@
   border-color: rgba(224, 176, 112, 0.55);
 }
 .sleep-btn--on:hover { background: rgba(224, 176, 112, 0.3); }
+/* The Mini Player's button beside it, while the Mini Player is open: the same box in Flow's blue. */
+.sleep-btn--mini-on {
+  opacity: 1;
+  color: var(--accent-hi);
+  background: rgba(90, 140, 220, 0.2);
+  border-color: rgba(90, 140, 220, 0.55);
+}
+.sleep-btn--mini-on:hover { background: rgba(90, 140, 220, 0.3); }
 
 .player__volume {
   display: flex;
