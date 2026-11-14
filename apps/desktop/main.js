@@ -1160,6 +1160,8 @@ app.whenReady().then(() => {
   if (START_MINI) mini.open({ byComputer: true });
   if (settings.get('musicDir')) paths.setMusicDir(settings.get('musicDir'));
   library.load();
+  // The music folder is looked through in a moment (below): a server used for the first time waits for that (remote.js).
+  library.expectFirstScan();
   // But for the songs of the batches kept over the restart (4.5.3).
   downloader.clearCache(keptDownloads.cacheFiles());
   remote.init({
@@ -1171,11 +1173,12 @@ app.whenReady().then(() => {
     onLive: (ev) => sendToWindow('server:live', ev),
     // fromOthers: how many are copies downloaded from other servers; returning:
     // songs that came here while another server was in use.
+    // known: how many more songs here the server has already (they are not sent, and not asked about).
     confirmUpload: async ({
-      count, name, fromOthers = 0, returning = false,
+      count, name, fromOthers = 0, returning = false, known = 0,
     }) => {
-      const others = fromOthers
-        ? `${fromOthers === count ? T(count === 1 ? 'common.upload.fromOthers.it' : 'common.upload.fromOthers.all') : T('common.upload.fromOthers.some', { count: fromOthers })} ` : '';
+      const others = `${known ? `${T('desktop.upload.detail.alreadyThere', { count: known })} ` : ''}${fromOthers
+        ? `${fromOthers === count ? T(count === 1 ? 'common.upload.fromOthers.it' : 'common.upload.fromOthers.all') : T('common.upload.fromOthers.some', { count: fromOthers })} ` : ''}`;
       const { response } = await dialog.showMessageBox(dialogOwner(), {
         type: 'question',
         title: 'Flow',

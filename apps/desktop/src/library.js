@@ -178,6 +178,12 @@ async function scanOnce() {
 // put it in the library, and add it a second time.
 
 let chain = Promise.resolve();
+// The first look at the folder after the start (the songs it finds were here
+// before Flow knew of them: a first start, the folder filled by hand).
+let firstScanExpected = false;
+let firstScanDone = false;
+let firstScanEnded = null;
+const firstScanPromise = new Promise((resolve) => { firstScanEnded = resolve; });
 let busy = 0;
 let pending = false;
 let timer = null;
@@ -205,7 +211,30 @@ function scan() {
     return result;
   });
   chain = run.catch(() => {});
+  if (!firstScanDone) {
+    // Before whoever awaits this look goes on.
+    const ended = () => {
+      firstScanDone = true;
+      firstScanEnded();
+    };
+    run.then(ended, ended);
+  }
   return run;
+}
+
+/** The app starts and will look through the music folder shortly (main.js): firstScan waits for that look. */
+function expectFirstScan() {
+  firstScanExpected = true;
+}
+
+/**
+ * While the first look at the music folder after the start has not ended: a
+ * promise of its end; after it (and where no start announced one) null. (The
+ * server client waits for it before it asks whether the songs here may go up
+ * to a server used for the first time, remote.js.)
+ */
+function firstScan() {
+  return firstScanExpected && !firstScanDone ? firstScanPromise : null;
 }
 
 function requestScan(delay = 1500) {
@@ -353,6 +382,6 @@ async function relocate(newDir, onProgress = () => {}) {
 }
 
 module.exports = {
-  load, get, save, mutate, onChange, scan, newId, onScanned, quietly, watch, unwatch, findMoved, relocate,
+  load, get, save, mutate, onChange, scan, firstScan, expectFirstScan, newId, onScanned, quietly, watch, unwatch, findMoved, relocate,
   metaFromFile,
 };

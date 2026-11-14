@@ -8531,6 +8531,12 @@ desktop.upload.detail.known
   en: {fromOthers}Choose Not now to keep them on this computer only; Synchronize now in Settings uploads them later.
   de: {fromOthers}Wähle Nicht jetzt, um sie nur auf diesem Computer zu halten; Jetzt synchronisieren in den Einstellungen lädt sie später hoch.
 
+desktop.upload.detail.alreadyThere
+  en.one: {count} more song here is on that server already and is not sent.
+  de.one: {count} weiterer Song hier ist schon auf diesem Server und wird nicht gesendet.
+  en.other: {count} more songs here are on that server already and are not sent.
+  de.other: {count} weitere Songs hier sind schon auf diesem Server und werden nicht gesendet.
+
 desktop.upload.detail.newServer
   en: This is a Flow Server you have not used before. {fromOthers}If you are not sure it is yours, choose Not now: your songs stay on this computer, and Synchronize now in Settings uploads them later.
   de: Diesen Flow Server hast du noch nie genutzt. {fromOthers}Bist du nicht sicher, dass er dir gehört, wähle Nicht jetzt: Deine Songs bleiben auf diesem Computer, Jetzt synchronisieren in den Einstellungen lädt sie später hoch.

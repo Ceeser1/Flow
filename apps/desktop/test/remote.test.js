@@ -475,7 +475,7 @@ test('a Flow Server as the library, step by step', async (t) => {
     assert.deepEqual(remote.status().offline, []);
     await until(() => questions.length === 1, 'the question about the new song');
     assert.deepEqual({ ...questions[0], name: undefined }, {
-      count: 1, fromOthers: 1, returning: true, name: undefined,
+      count: 1, fromOthers: 1, returning: true, name: undefined, known: 0,
     });
     await until(async () => (await serverLibrary(one.base)).songs.some((s) => s.title === 'Unfinished Sympathy'), 'the upload to the first server');
     await remote.setOffline(model.ALL_SONGS_ID, true);
