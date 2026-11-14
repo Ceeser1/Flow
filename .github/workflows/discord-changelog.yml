@@ -1,0 +1,15 @@
+name: Post Changelog to Discord
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Release Notes to Discord
+        uses: svenstaro/discord-release-action@v1
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
+          color: 5814783
