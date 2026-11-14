@@ -16,6 +16,8 @@
   Store.uiMode = init.uiMode || 'desktop';
   Store.caps = init.caps || {};
   Store.version = init.version || '';
+  // Started in the tray (the Mini Player's Open on PC Start): see MiniPlayer.
+  Store.away = !!init.away;
   document.body.classList.toggle('mobile', Store.uiMode === 'mobile');
   document.body.classList.toggle('web', Store.web);
   Store.settings = init.settings;
@@ -61,7 +63,8 @@
   BackgroundHelp.init();
 
   // The chosen visualizer's shaders compiled ahead, once the window has
-  // settled, so opening it the first time does not wait for them.
+  // settled, so opening it the first time does not wait for them (in the
+  // tray: when the window is opened).
   setTimeout(() => Visualizer.warm(), 3000);
 
   window.flow.onLibraryChanged((msg) => Store.takeLibrary(msg));

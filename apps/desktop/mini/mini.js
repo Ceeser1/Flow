@@ -10,13 +10,14 @@
   const $ = (id) => document.getElementById(id);
   const root = $('mini');
 
-  // { hasSong, songId, title, artist, cover, list, playing, position, duration, at, volume, canVolume, live }
+  // { hasSong, songId, title, artist, cover, coverBig, list, playing, position, duration, at, volume, canVolume, live }
   let state = { hasSong: false };
-  // The cogwheel's ticks: { locked, onTop, autostart, canAutostart }.
+  // The cogwheel's ticks: { eq, coverBg, locked, onTop, autostart, canAutostart }.
   let ticks = {};
   let dragTime = null;      // the place the timeline is being dragged to (s), else null
   let ticker = null;
   let coverShown = null;
+  let backShown = '';
   // A volume set here is shown at once; Flow's own answer is taken again a moment later.
   let volumeSetAt = 0;
 
@@ -71,6 +72,35 @@
     box.replaceChildren(img);
   }
 
+  /** Cover as background: the song's big cover (the small one until that is here) behind everything, once it has loaded. */
+  function drawBackground() {
+    const src = ticks.coverBg && state.hasSong ? state.coverBig || state.cover || '' : '';
+    if (src === backShown) return;
+    backShown = src;
+    const bg = $('bg');
+    const none = () => {
+      bg.hidden = true;
+      root.classList.remove('mini--cover-bg');
+    };
+    if (!src) {
+      none();
+      bg.removeAttribute('src');
+      return;
+    }
+    // The one showing stays until the next has loaded; a cover that is gone: none.
+    const next = new Image();
+    next.onload = () => {
+      if (backShown !== src) return;
+      bg.src = src;
+      bg.hidden = false;
+      root.classList.add('mini--cover-bg');
+    };
+    next.onerror = () => {
+      if (backShown === src) none();
+    };
+    next.src = src;
+  }
+
   function drawVolume() {
     const v = Math.max(0, Math.min(1, Number(state.volume) || 0));
     $('btnVolume').hidden = state.canVolume === false;
@@ -88,6 +118,7 @@
     $('title').title = has ? [state.title, state.artist].filter(Boolean).join(' - ') : '';
     $('artist').textContent = has ? state.artist || '' : '';
     drawCover();
+    drawBackground();
     $('btnPlay').innerHTML = state.playing ? Icons.pause : Icons.play;
     $('btnPlay').title = state.playing ? T('common.pause') : T('common.play');
     for (const id of ['btnPrev', 'btnBack10', 'btnFwd10', 'btnNext']) $(id).disabled = !has;
@@ -95,17 +126,21 @@
     drawVolume();
     clearInterval(ticker);
     ticker = has && state.playing ? setInterval(drawTime, 250) : null;
+    // The equalizer follows what Flow's window plays (not a song only shown from last time).
+    MiniEq.sounding(has && !!state.playing && state.live !== false);
   }
 
   function drawTicks() {
     root.classList.toggle('mini--locked', !!ticks.locked);
-    const rows = [['tickLocked', ticks.locked], ['tickOnTop', ticks.onTop], ['tickAutostart', ticks.autostart]];
+    const rows = [['tickEq', ticks.eq], ['tickCoverBg', ticks.coverBg], ['tickLocked', ticks.locked], ['tickOnTop', ticks.onTop], ['tickAutostart', ticks.autostart]];
     for (const [id, on] of rows) {
       $(id).setAttribute('aria-checked', String(!!on));
       $(id).querySelector('.mini__check').innerHTML = on ? Icons.check : '';
     }
     // Only where Flow can start with the computer (Windows, Linux).
     $('tickAutostart').hidden = ticks.canAutostart === false;
+    drawBackground();
+    MiniEq.show(!!ticks.eq);
   }
 
   function take(next) {
@@ -181,6 +216,11 @@
   $('btnFwd10').innerHTML = Icons.fwd10;
 
   $('btnClose').onclick = () => window.mini.close();
+  $('btnOpenFlow').onclick = () => {
+    closeMenu();
+    closeVolume();
+    window.mini.openFlow();
+  };
   $('btnSettings').onclick = toggleMenu;
   $('btnVolume').onclick = toggleVolume;
   $('btnPrev').onclick = () => window.mini.do('prev');
@@ -198,6 +238,8 @@
     window.mini.do('toggle');
   };
 
+  $('tickEq').onclick = () => tick('eq');
+  $('tickCoverBg').onclick = () => tick('coverBg');
   $('tickLocked').onclick = () => tick('locked');
   $('tickOnTop').onclick = () => tick('onTop');
   $('tickAutostart').onclick = () => tick('autostart');
@@ -248,6 +290,33 @@
     track.addEventListener('pointercancel', up);
   });
 
+  // The edges and corners: held and dragged, the widget is resized. The window's size is the main
+  // process's to set (by where the mouse is); here only that an edge is held and that it moves.
+  for (const grip of document.querySelectorAll('.mini__grip')) {
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || ticks.locked) return;
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      window.mini.resize('start', grip.dataset.edge);
+      const end = () => {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', end);
+        grip.removeEventListener('pointercancel', end);
+        grip.removeEventListener('lostpointercapture', end);
+        window.mini.resize('end');
+      };
+      // A move without the button held: its release was missed, the drag is over.
+      const move = (ev) => {
+        if (ev.buttons & 1) window.mini.resize('move');
+        else end();
+      };
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', end);
+      grip.addEventListener('pointercancel', end);
+      grip.addEventListener('lostpointercapture', end);
+    });
+  }
+
   // A click beside the menu or the slider closes it; so do Escape and the window losing the focus.
   document.addEventListener('pointerdown', (e) => {
     if (!$('menu').hidden && !e.target.closest('#menu, #btnSettings')) closeMenu();
@@ -269,8 +338,11 @@
   document.addEventListener('contextmenu', (e) => e.preventDefault());
 
   window.mini.onState(take);
+  window.mini.onLevels((levels) => MiniEq.take(levels));
+  window.mini.onLook((look) => MiniEq.look(look));
   window.mini.hello().then((hello) => {
     if (!hello) return;
+    MiniEq.look(hello.look);
     ticks = hello.ticks || {};
     drawTicks();
     take(hello.state);

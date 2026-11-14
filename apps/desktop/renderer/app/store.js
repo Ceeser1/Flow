@@ -140,6 +140,9 @@ const Store = {
   uiMode: 'desktop',
   caps: {},
   version: '',
+  // The computer's app while its window is in the tray (miniPlayer.js): out of sight, only
+  // playing for the Mini Player. Nothing is drawn then (the clouds, the equalizer, a visualizer).
+  away: false,
   // The Flow Server's state (remote.js publicStatus); `on` false without one.
   server: { on: false, state: 'off', offline: [] },
   songsById: new Map(),

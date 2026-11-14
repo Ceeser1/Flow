@@ -38,7 +38,9 @@ Flow is made for private use.
 - Choose the **output device** (speakers, headphones, Bluetooth)
 - **Sleep timer**, media keys, and Flow remembers where you stopped
 - **Mini Player** (PC): a small widget with the song and its controls that can
-  stay on top of other windows and open when the computer starts
+  stay on top of other windows and open when the computer starts, while Flow
+  itself waits in the system tray; resize it by its edges, and show the
+  equalizer and the cover as its background if you like
 - **Alarm Clock** (Android): Flow starts playing at the time you set, on the
   days you pick, fading the music in; Stop or Snooze from the lock screen
 

@@ -373,11 +373,15 @@ const DEFAULTS = {
   // the shutdown Windows has been told about: { endsAt, shutdownAt, ended },
   // times in ms, shutdownAt null without a shutdown.
   sleepTimer: null,
-  // The desktop's Mini Player (5.0), from its cogwheel: Lock position, Always
-  // on top, Open on PC Start; where its window was left ({ x, y }); and the
-  // song it showed last ({ songId, title, artist, cover, position, duration,
-  // list }), shown at once when it starts with the computer, before the
-  // library is read.
+  // The desktop's Mini Player (5.0), from its cogwheel: Show Equalizer, Cover as background,
+  // Lock position, Always on top, Open on PC Start; where its window was left
+  // and how big ({ x, y, width, height }; one kept before it could be resized
+  // has no size and opens at the first one);
+  // and the song it showed last ({ songId, title, artist, cover, coverBig,
+  // position, duration, list }), shown at once when it starts with the
+  // computer, before the library is read.
+  miniEq: false,
+  miniCoverBg: false,
   miniLocked: false,
   miniOnTop: true,
   miniAutostart: false,
@@ -561,6 +565,7 @@ function cleanMiniLast(m) {
     title: text(m.title, 300),
     artist: text(m.artist, 300),
     cover: text(m.cover, 1000),
+    coverBig: text(m.coverBig, 1000),
     position: seconds(m.position),
     duration: seconds(m.duration),
     list: text(m.list, 300),
@@ -604,6 +609,8 @@ function clean(raw) {
   const endsAt = st && typeof st === 'object' ? Number(st.endsAt) : NaN;
   const shutdownAt = st && Number.isFinite(Number(st.shutdownAt)) && st.shutdownAt !== null ? Number(st.shutdownAt) : null;
   s.sleepTimer = Number.isFinite(endsAt) ? { endsAt, shutdownAt, ended: st.ended === true } : null;
+  s.miniEq = s.miniEq === true;
+  s.miniCoverBg = s.miniCoverBg === true;
   s.miniLocked = s.miniLocked === true;
   s.miniOnTop = s.miniOnTop !== false;
   s.miniAutostart = s.miniAutostart === true;
@@ -611,6 +618,11 @@ function clean(raw) {
   s.miniBounds = mb && typeof mb === 'object' && Number.isFinite(Number(mb.x)) && Number.isFinite(Number(mb.y))
     ? { x: Math.round(Number(mb.x)), y: Math.round(Number(mb.y)) }
     : null;
+  // Its size, once it was resized (the window keeps it within its limits).
+  if (s.miniBounds && Number(mb.width) > 0 && Number(mb.height) > 0 && Number.isFinite(Number(mb.width) + Number(mb.height))) {
+    s.miniBounds.width = Math.round(Number(mb.width));
+    s.miniBounds.height = Math.round(Number(mb.height));
+  }
   s.miniLast = cleanMiniLast(s.miniLast);
 
   s.musicDir = typeof s.musicDir === 'string' ? s.musicDir : '';

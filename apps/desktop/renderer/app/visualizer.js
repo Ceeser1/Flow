@@ -120,7 +120,7 @@ const Visualizer = {
   },
 
   open(id = Store.settings.visualizer) {
-    if (this.el) return;
+    if (this.el || Store.away) return;
     clearTimeout(this._rewarm);
     const pool = this._pool(id);
     const kind = pool ? this._nextOf(id) : id;
@@ -290,6 +290,8 @@ const Visualizer = {
    * song shows (for the next).
    */
   warm(id = Store.settings.visualizer) {
+    // In the tray nothing is made ahead (back does, once the window is opened).
+    if (Store.away) return;
     if (this._staged) this._staged.drop();
     this._staged = null;
     let kind = id;
@@ -375,6 +377,26 @@ const Visualizer = {
     this._closedAt = performance.now();
     if (typeof Lyrics !== 'undefined') Lyrics.wake();
     // Ready for its next opening (a Random's next one, if none waits yet).
+    clearTimeout(this._rewarm);
+    if (!this._staged) this._rewarm = setTimeout(() => this.warm(), 1500);
+  },
+
+  /**
+   * The window goes into the tray: the visualizer closed, and what was made
+   * ready for the next opening let go (those canvases hold the graphics
+   * card's memory).
+   */
+  rest() {
+    this.close();
+    clearTimeout(this._rewarm);
+    if (this._staged) this._staged.drop();
+    this._staged = null;
+    for (const canvas of this._kept.values()) VizGL.drop(canvas);
+    this._kept.clear();
+  },
+
+  /** The window is back from the tray: the chosen visualizer made ready again. */
+  back() {
     clearTimeout(this._rewarm);
     if (!this._staged) this._rewarm = setTimeout(() => this.warm(), 1500);
   },

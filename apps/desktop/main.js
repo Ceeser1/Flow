@@ -51,6 +51,7 @@ const { createGuestLink } = require('@flow/core/client/guest');
 const { createViewChannel } = require('@flow/core/client/viewChannel');
 const autostart = require('./src/autostart');
 const { createMiniPlayer } = require('./src/miniPlayer');
+const { createTray } = require('./src/tray');
 
 let mainWindow = null;
 let downloadToken = null;
@@ -93,20 +94,19 @@ const actions = createActions({
   trim: (song, start, end) => exporter.trimSong(song, start, end, { keep: true }),
 });
 
-// A second start just brings the running window forward.
+// A second start just brings the running window forward (out of the tray too).
 const isFirstInstance = app.requestSingleInstanceLock();
 if (!isFirstInstance) {
   app.quit();
 } else {
   app.on('second-instance', (_event, argv) => {
     if (!mainWindow) return;
-    // Started again for the Mini Player alone (Open on PC Start): that opens, Flow's window stays as it is.
+    // Started again for the Mini Player alone (Open on PC Start): that opens, as from the player bar.
     if (autostart.asked(argv) && !MOBILE_UI) {
       mini.open();
       return;
     }
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    showMain();
   });
 }
 
@@ -132,10 +132,29 @@ function restoredBounds() {
 const MOBILE_UI = process.env.FLOW_UI === 'mobile';
 
 // Started with the computer (the Mini Player's Open on PC Start, autostart.js):
-// the Mini Player shows at once, and Flow's window starts minimized.
+// the Mini Player shows at once, and Flow's window starts in the tray.
 const START_MINI = autostart.asked(process.argv) && !MOBILE_UI;
-// Flow's window was maximized when last closed but started minimized: maximized once it is brought back.
-let maximizeOnRestore = false;
+// Flow's window was maximized when last closed but started in the tray: maximized when it is first shown.
+let maximizeOnShow = false;
+
+// Flow's window in the tray (src/tray.js): hidden, with no taskbar button,
+// only playing for the Mini Player. It goes there when the Mini Player opens,
+// by its own X while the Mini Player is open (its music pauses), and on a
+// start with the computer; the tray icon, the Mini Player's Open Flow or
+// starting Flow again bring it back. Its page is told ('window:away') and
+// draws nothing meanwhile: an open visualizer is closed, no clouds, no
+// equalizer. Closing the Mini Player meanwhile quits Flow.
+let inTray = false;
+// Flow is closing for good: its window's X no longer sends it into the tray.
+let quitting = false;
+
+const tray = createTray({
+  icon: paths.appIconPath(),
+  texts: () => ({ openFlow: T('mini.settings.openFlow'), openMini: T('desktop.tray.openMini'), quit: T('desktop.tray.quit') }),
+  onOpen: () => showMain(),
+  onMini: () => mini.open(),
+  onQuit: () => quitFlow(),
+});
 
 // The Mini Player (src/miniPlayer.js): its window, and what goes between it and Flow's.
 const mini = createMiniPlayer({
@@ -143,8 +162,89 @@ const mini = createMiniPlayer({
   mainWindow: () => mainWindow,
   icon: paths.appIconPath(),
   language: () => settings.get('language') || '',
-  onOpenChange: (open) => sendToWindow('mini:open', open),
+  hideFlow: () => toTray(),
+  showFlow: () => showMain(),
+  onOpenChange: (open) => {
+    sendToWindow('mini:open', open);
+    // Closed while Flow's window is in the tray: nothing of Flow is left on the screen, so it quits (its music with it).
+    if (!open && inTray && mainWindow && !quitting) quitFlow();
+    else syncTray();
+  },
 });
+
+/** The tray icon is there while Flow's window is hidden and the Mini Player open. */
+function syncTray() {
+  tray.set(inTray && !!mainWindow && mini.isOpen());
+}
+
+/** Flow's window out of sight, into the tray (the Mini Player stays). `pause`: its music stops too (its X). */
+function toTray({ pause = false } = {}) {
+  if (!mainWindow || mainWindow.isDestroyed() || inTray) return;
+  const w = mainWindow;
+  inTray = true;
+  sendToWindow('window:away', { away: true, pause });
+  // Under a full-screen visualizer the page closes that and leaves full screen: the window is
+  // hidden once it is out of it (hidden sooner, it comes back into sight as it leaves). A page
+  // that has not left after 2 s is made to; after 4 s the window is hidden as it is.
+  const since = Date.now();
+  let made = false;
+  let wasFull = false;
+  const hide = () => {
+    if (!inTray || w.isDestroyed()) return;
+    const waited = Date.now() - since;
+    if (w.isFullScreen() && waited < 4000) {
+      wasFull = true;
+      if (waited > 2000 && !made) {
+        made = true;
+        w.setFullScreen(false);
+      }
+      setTimeout(hide, 50);
+      return;
+    }
+    if (wasFull) {
+      // A moment more: the page finishes leaving full screen with its next frames, and a hidden window gets none.
+      wasFull = false;
+      setTimeout(hide, 120);
+      return;
+    }
+    w.hide();
+  };
+  hide();
+  syncTray();
+}
+
+/** Flow's window is on the screen again: its page draws again, the tray icon goes. */
+function leftTray() {
+  if (!inTray) return;
+  inTray = false;
+  sendToWindow('window:away', { away: false });
+  syncTray();
+}
+
+/** Flow's window in front, out of the tray or the taskbar. */
+function showMain() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (maximizeOnShow) {
+    // Maximizing shows it.
+    maximizeOnShow = false;
+    mainWindow.maximize();
+  } else if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  leftTray();
+}
+
+/** A system dialog's window: Flow's, unless that is in the tray (a dialog of a hidden window would be out of sight too). */
+function dialogOwner() {
+  return mainWindow && !mainWindow.isDestroyed() && !inTray ? mainWindow : undefined;
+}
+
+/** Flow closes for good, also while the Mini Player is open (which goes with it). */
+function quitFlow() {
+  quitting = true;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+  else app.quit();
+}
 
 function createWindow() {
   nativeTheme.themeSource = 'dark';
@@ -158,6 +258,8 @@ function createWindow() {
     minWidth: MOBILE_UI ? 320 : 960,
     minHeight: MOBILE_UI ? 480 : 640,
     show: false,
+    // A start in the tray: nothing of the page is painted before the window is first shown.
+    paintWhenInitiallyHidden: !START_MINI,
     title: 'Flow',
     backgroundColor: '#1e1e22',
     icon: paths.appIconPath() || undefined,
@@ -169,23 +271,27 @@ function createWindow() {
       autoplayPolicy: 'no-user-gesture-required',
     },
   });
-  // Maximizing shows the window: one that starts minimized is maximized when it is brought back.
-  maximizeOnRestore = START_MINI && !!settings.get('windowMaximized');
+  // Maximizing shows the window: one that starts in the tray is maximized when it is first shown.
+  maximizeOnShow = START_MINI && !!settings.get('windowMaximized');
   if (settings.get('windowMaximized') && !MOBILE_UI && !START_MINI) mainWindow.maximize();
 
-  mainWindow.once('ready-to-show', () => (START_MINI ? mainWindow.minimize() : mainWindow.show()));
-  mainWindow.on('restore', () => {
-    if (!maximizeOnRestore) return;
-    maximizeOnRestore = false;
-    mainWindow.maximize();
-  });
+  inTray = START_MINI;
+  if (!START_MINI) mainWindow.once('ready-to-show', () => mainWindow.show());
+  // Shown by whatever way: out of the tray.
+  mainWindow.on('show', leftTray);
   // Imported songs not saved yet and links waiting in the Client queue are
   // kept over a restart (4.5.3, keptDownloads.js): closing asks nothing.
-  mainWindow.on('close', () => {
+  mainWindow.on('close', (e) => {
+    // While the Mini Player is open the X only sends Flow into the tray, its music paused: the Mini Player can play on.
+    if (!quitting && mini.isOpen()) {
+      e.preventDefault();
+      toTray({ pause: true });
+      return;
+    }
     if (!MOBILE_UI) {
       settings.set({
         windowBounds: mainWindow.getNormalBounds(),
-        windowMaximized: mainWindow.isMaximized() || maximizeOnRestore,
+        windowMaximized: mainWindow.isMaximized() || maximizeOnShow,
       });
     }
     // The song the Mini Player shows, where it is now (Open on PC Start shows it again).
@@ -195,6 +301,8 @@ function createWindow() {
   mainWindow.on('session-end', () => mini.keepNow());
   mainWindow.on('closed', () => {
     mainWindow = null;
+    inTray = false;
+    tray.set(false);
     // The Mini Player only shows what this window plays: it goes with it.
     mini.close();
   });
@@ -283,6 +391,8 @@ const startInfo = () => ({
   covers: coverDirs(),
   // Whether the Mini Player is open (the player bar's button shows it).
   miniOpen: mini.isOpen(),
+  // Whether the window is in the tray (a start with the computer): its page draws nothing until it is shown.
+  away: inTray,
 });
 
 /**
@@ -438,6 +548,7 @@ handle('settings:set', (patch) => {
   const wasRemote = remote.active();
   const next = settings.set(clean);
   if ('language' in clean) useLanguage();
+  mini.settingsChanged(clean);
   if (clean.normalize === true) loudnessFiller.run();
   remote.reconfigure(clean);
   if (clean.lyricsOn === true) {
@@ -962,15 +1073,11 @@ handle('sleep:notify', (body) => {
 
 // Active Sessions: someone asks to join, or this app became the host. A click brings Flow to the front.
 handle('session:notify', (body) => {
-  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFocused()) mainWindow.flashFrame(true);
+  // In the tray there is no taskbar button to flash: the notification alone tells.
+  if (mainWindow && !mainWindow.isDestroyed() && !inTray && !mainWindow.isFocused()) mainWindow.flashFrame(true);
   if (!Notification.isSupported()) return false;
   const n = new Notification({ title: T('desktop.window.activeSessions'), body: String(body || ''), icon: paths.appIconPath() || undefined });
-  n.on('click', () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-  });
+  n.on('click', () => showMain());
   n.show();
   return true;
 });
@@ -1069,7 +1176,7 @@ app.whenReady().then(() => {
     }) => {
       const others = fromOthers
         ? `${fromOthers === count ? T(count === 1 ? 'common.upload.fromOthers.it' : 'common.upload.fromOthers.all') : T('common.upload.fromOthers.some', { count: fromOthers })} ` : '';
-      const { response } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+      const { response } = await dialog.showMessageBox(dialogOwner(), {
         type: 'question',
         title: 'Flow',
         message: T(returning ? 'desktop.upload.text.afterOther' : 'desktop.upload.text', { count, server: name }),
@@ -1085,7 +1192,7 @@ app.whenReady().then(() => {
     // An upload the server has already, under other names.
     askExisting: async ({ local, server, name }) => {
       const label = (n) => `${[n.artist, n.title].filter(Boolean).join(' - ')}${n.mix ? ` (${n.mix})` : ''}`;
-      const { response, checkboxChecked } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+      const { response, checkboxChecked } = await dialog.showMessageBox(dialogOwner(), {
         type: 'question',
         title: 'Flow',
         message: T('desktop.sameSong.text', { song: label(local), server: name, serverSong: label(server) }),
@@ -1099,6 +1206,7 @@ app.whenReady().then(() => {
     },
   });
   createWindow();
+  syncTray();
   // Both in the background, once the window is up. The scan tells the window
   // itself when it changed anything, and from then on the folder is watched.
   library.onScanned((result) => {
@@ -1129,6 +1237,12 @@ app.whenReady().then(() => {
     setInterval(() => backups.weekly(), BACKUP_CHECK_MS);
   }, 1500);
 });
+
+// Quitting by any other way than the window's X (the tray's Quit Flow, the system): the X's way into the tray is off.
+app.on('before-quit', () => {
+  quitting = true;
+});
+app.on('will-quit', () => tray.set(false));
 
 app.on('window-all-closed', async () => {
   // Out of an Active Session first: a host hands it on at once.

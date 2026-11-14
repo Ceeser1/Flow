@@ -7,20 +7,41 @@
 // on to the Mini Player), and takes the Mini Player's buttons as commands
 // ('mini:command'). Its page is mini/mini.html, with miniPreload.js.
 //
-// Its cogwheel: Lock position (the window can no longer be dragged), Always
-// on top, Open on PC Start (autostart.js: Flow starts with the computer,
-// minimized, showing the Mini Player at once with the song it showed last,
-// kept in the settings as miniLast), Open Flow and Close Mini Player.
+// Its cogwheel: Show Equalizer (the app's equalizer, with the looks set in
+// Flow's Settings, standing on the widget's bottom edge: the Mini Player asks
+// for the bars' levels with each of its frames, 'mini:eq', Flow's window
+// answers them, 'mini:levels', so nothing is worked out while the Mini Player
+// does not draw), Cover as background, Lock position (the window can no longer
+// be dragged or resized), Always on top, Open on PC Start (autostart.js: Flow
+// starts with the computer, in the tray, showing the Mini Player at once with
+// the song it showed last, kept in the settings as miniLast), Open Flow and
+// Close Mini Player.
 //
-// Opening it from Flow's player bar minimizes Flow's window; Open Flow brings
-// that back, on the list playing. It goes when Flow's window is closed.
+// Its edges and corners resize it while Lock position is off. A see-through
+// window cannot be resized by the system, so the page tells when an edge is
+// held and moved ('mini:resize') and the size is set here, by where the mouse
+// is, within the limits below.
+//
+// Opening it from Flow's player bar sends Flow's window into the tray
+// (main.js, src/tray.js); Open Flow brings that back, on the list playing.
+// Closed while Flow's window is in the tray, Flow quits with it; while the
+// Mini Player is open, the X of Flow's window only sends that into the tray.
 
 const path = require('path');
 const { BrowserWindow, ipcMain, screen } = require('electron');
 const autostart = require('./autostart');
 
+// As it first opens.
 const WIDTH = 380;
-const HEIGHT = 200;
+const HEIGHT = 192;
+// The smallest: the five buttons and the volume beside each other; the title
+// row, one line of title and one of artist with the cover as high, the
+// timeline and the buttons (mini.css lays it out for these). The biggest:
+// one and a half times 380 x 200.
+const MIN_WIDTH = 300;
+const MIN_HEIGHT = 152;
+const MAX_WIDTH = 570;
+const MAX_HEIGHT = 300;
 // From the screen's edges, where it opens the first time (bottom right).
 const MARGIN = 24;
 // How often what it shows is written to the settings while a song plays (ms).
@@ -28,15 +49,60 @@ const KEEP_MS = 5000;
 // What the Mini Player's buttons may ask of Flow's window.
 const COMMANDS = new Set(['toggle', 'prev', 'next', 'back10', 'fwd10', 'seek', 'volume', 'mute', 'openFlow']);
 // Its cogwheel's ticks, by their settings.
-const TOGGLES = { locked: 'miniLocked', onTop: 'miniOnTop', autostart: 'miniAutostart' };
+const TOGGLES = {
+  eq: 'miniEq', coverBg: 'miniCoverBg', locked: 'miniLocked', onTop: 'miniOnTop', autostart: 'miniAutostart',
+};
+// The equalizer's looks, from Flow's Settings: the Mini Player's follows them.
+const LOOK = ['eqColors', 'eqHeight', 'eqShine', 'eqShineSpread', 'eqVisibility'];
+// How many bars the Mini Player may ask levels for (it has one every 4 px).
+const MOST_BARS = 512;
+const SIDES = ['x', 'y', 'width', 'height'];
+
+const within = (v, min, max) => Math.min(max, Math.max(min, Math.round(Number(v) || 0)));
+
+/** A size kept or asked for, within the limits; the first size where there is none. */
+function sizeOf(b) {
+  const has = !!b && Number(b.width) > 0 && Number(b.height) > 0;
+  return {
+    width: has ? within(b.width, MIN_WIDTH, MAX_WIDTH) : WIDTH,
+    height: has ? within(b.height, MIN_HEIGHT, MAX_HEIGHT) : HEIGHT,
+  };
+}
+
+/**
+ * The window's place and size while one of its edges is dragged: `start` its
+ * bounds when the edge was taken, `edge` which ('n', 's', 'e', 'w' or a
+ * corner as 'ne', 'sw', ...), `dx` / `dy` how far the mouse has gone since.
+ * The edge across stays where it is, also once a limit is reached.
+ */
+function resized(start, edge, dx, dy) {
+  const e = String(edge || '');
+  let {
+    x, y, width, height,
+  } = start;
+  if (e.includes('e')) width = within(start.width + dx, MIN_WIDTH, MAX_WIDTH);
+  if (e.includes('w')) {
+    width = within(start.width - dx, MIN_WIDTH, MAX_WIDTH);
+    x = start.x + start.width - width;
+  }
+  if (e.includes('s')) height = within(start.height + dy, MIN_HEIGHT, MAX_HEIGHT);
+  if (e.includes('n')) {
+    height = within(start.height - dy, MIN_HEIGHT, MAX_HEIGHT);
+    y = start.y + start.height - height;
+  }
+  return {
+    x, y, width, height,
+  };
+}
 
 /**
  * `settings`: src/settings. `mainWindow()`: Flow's window (or null). `icon`:
  * the window's icon file. `language()`: the texts' language chosen ('' the
- * computer's). `onOpenChange(open)`: told when it opens and closes.
+ * computer's). `hideFlow()`: Flow's window into the tray. `showFlow()`: it
+ * in front again. `onOpenChange(open)`: told when it opens and closes.
  */
 function createMiniPlayer({
-  settings, mainWindow, icon, language, onOpenChange = () => {},
+  settings, mainWindow, icon, language, hideFlow = () => {}, showFlow = () => {}, onOpenChange = () => {},
 }) {
   let win = null;
   // What Flow's window last said it plays; null until it has (a start with the computer).
@@ -46,6 +112,8 @@ function createMiniPlayer({
   let keptAt = 0;
   let keptKey = '';
   let moveTimer = null;
+  // An edge being dragged: { edge, bounds, cursor } as it was taken.
+  let sizing = null;
 
   const main = () => {
     const w = mainWindow();
@@ -57,7 +125,10 @@ function createMiniPlayer({
   const toMini = (channel, payload) => {
     if (isOpen()) win.webContents.send(channel, payload);
   };
+  const look = () => Object.fromEntries(LOOK.map((k) => [k, settings.get(k)]));
   const ticks = () => ({
+    eq: settings.get('miniEq'),
+    coverBg: settings.get('miniCoverBg'),
     locked: settings.get('miniLocked'),
     onTop: settings.get('miniOnTop'),
     autostart: settings.get('miniAutostart'),
@@ -73,21 +144,22 @@ function createMiniPlayer({
     };
   }
 
-  /** Where it was left, if that still is on a screen; else the bottom right of Flow's screen. */
+  /** Where it was left and how big, if that still is on a screen; else the bottom right of Flow's screen. */
   function place() {
     const b = settings.get('miniBounds');
+    const size = sizeOf(b);
     const onScreen = b && screen.getAllDisplays().some((d) => {
       const a = d.workArea;
-      return b.x + WIDTH > a.x + 40 && b.x < a.x + a.width - 40 && b.y >= a.y - 10 && b.y < a.y + a.height - 40;
+      return b.x + size.width > a.x + 40 && b.x < a.x + a.width - 40 && b.y >= a.y - 10 && b.y < a.y + a.height - 40;
     });
-    if (onScreen) return { x: b.x, y: b.y };
+    if (onScreen) return { x: b.x, y: b.y, ...size };
     const w = main();
     const display = w ? screen.getDisplayMatching(w.getNormalBounds()) : screen.getPrimaryDisplay();
     const a = display.workArea;
-    return { x: a.x + a.width - WIDTH - MARGIN, y: a.y + a.height - HEIGHT - MARGIN };
+    return { x: a.x + a.width - size.width - MARGIN, y: a.y + a.height - size.height - MARGIN, ...size };
   }
 
-  /** `byComputer`: started with the computer, Flow's window is not there yet (and stays minimized). */
+  /** `byComputer`: started with the computer, Flow's window is not there yet (and starts in the tray). */
   function open({ byComputer = false } = {}) {
     if (isOpen()) {
       win.show();
@@ -96,8 +168,6 @@ function createMiniPlayer({
     }
     win = new BrowserWindow({
       ...place(),
-      width: WIDTH,
-      height: HEIGHT,
       useContentSize: true,
       frame: false,
       transparent: true,
@@ -132,6 +202,7 @@ function createMiniPlayer({
     });
     w.on('closed', () => {
       clearTimeout(moveTimer);
+      sizing = null;
       if (win === w) win = null;
       waiting = [];
       onOpenChange(false);
@@ -140,15 +211,35 @@ function createMiniPlayer({
     w.webContents.on('will-navigate', (e) => e.preventDefault());
     w.loadFile(path.join(__dirname, '..', 'mini', 'mini.html'));
     onOpenChange(true);
-    // Opened from Flow: its window makes room.
-    if (!byComputer && main() && !main().isMinimized()) main().minimize();
+    // Opened from Flow: its window makes room, into the tray.
+    if (!byComputer) hideFlow();
   }
 
   function keepPlace() {
     if (!isOpen()) return;
-    const [x, y] = win.getPosition();
+    const now = win.getBounds();
     const b = settings.get('miniBounds');
-    if (!b || b.x !== x || b.y !== y) settings.set({ miniBounds: { x, y } });
+    if (!b || SIDES.some((k) => b[k] !== now[k])) settings.set({ miniBounds: now });
+  }
+
+  /**
+   * An edge of the Mini Player dragged (its page tells: 'start' with the edge,
+   * 'move' with each move of the mouse, 'end'). The size follows the mouse
+   * from where the edge was taken, so nothing adds up over the moves.
+   */
+  function resize(phase, edge) {
+    if (!isOpen()) return;
+    if (phase === 'start') {
+      sizing = settings.get('miniLocked') ? null : { edge, bounds: win.getBounds(), cursor: screen.getCursorScreenPoint() };
+    } else if (phase === 'move' && sizing) {
+      const at = screen.getCursorScreenPoint();
+      const to = resized(sizing.bounds, sizing.edge, at.x - sizing.cursor.x, at.y - sizing.cursor.y);
+      const now = win.getBounds();
+      if (SIDES.some((k) => to[k] !== now[k])) win.setBounds(to);
+    } else if (phase === 'end' && sizing) {
+      sizing = null;
+      keepPlace();
+    }
   }
 
   function close() {
@@ -157,11 +248,8 @@ function createMiniPlayer({
 
   /** Flow's window in front, on the list playing (the page's part: 'openFlow'). */
   function openFlow() {
-    const w = main();
-    if (!w) return;
-    if (w.isMinimized()) w.restore();
-    w.show();
-    w.focus();
+    if (!main()) return;
+    showFlow();
     command({ action: 'openFlow' });
   }
 
@@ -195,7 +283,7 @@ function createMiniPlayer({
       keptKey = '';
       return;
     }
-    const key = `${state.songId}|${state.playing ? 1 : 0}|${state.cover || ''}`;
+    const key = `${state.songId}|${state.playing ? 1 : 0}|${state.cover || ''}|${state.coverBig || ''}`;
     const t = Date.now();
     if (!now && key === keptKey && t - keptAt < KEEP_MS) return;
     keptKey = key;
@@ -205,7 +293,7 @@ function createMiniPlayer({
     const position = Math.max(0, Math.min(state.duration || Infinity, (Number(state.position) || 0) + moved));
     settings.set({
       miniLast: {
-        songId: state.songId, title: state.title, artist: state.artist, cover: state.cover, position, duration: state.duration, list: state.list,
+        songId: state.songId, title: state.title, artist: state.artist, cover: state.cover, coverBig: state.coverBig, position, duration: state.duration, list: state.list,
       },
     });
   }
@@ -218,6 +306,7 @@ function createMiniPlayer({
     if (name === 'autostart') autostart.set(on);
     settings.set({ [key]: on });
     if (name === 'onTop' && isOpen()) win.setAlwaysOnTop(on);
+    if (name === 'locked' && on) sizing = null;
     return ticks();
   }
 
@@ -232,7 +321,7 @@ function createMiniPlayer({
   ipcMain.handle('mini:hello', (event) => {
     if (!fromMini(event)) return null;
     return {
-      state: state || lastState(), ticks: ticks(), language: language(), platform: process.platform,
+      state: state || lastState(), ticks: ticks(), look: look(), language: language(), platform: process.platform,
     };
   });
   ipcMain.on('mini:do', (event, cmd) => {
@@ -246,6 +335,18 @@ function createMiniPlayer({
       return { ticks: ticks(), error: (err && err.message) || String(err) };
     }
   });
+  // The equalizer: the Mini Player asks for the levels of so many bars, Flow's window answers them.
+  ipcMain.on('mini:eq', (event, bars) => {
+    const w = main();
+    if (!fromMini(event) || !w || !state) return;
+    w.webContents.send('mini:eq', within(bars, 16, MOST_BARS));
+  });
+  ipcMain.on('mini:levels', (event, levels) => {
+    if (fromMain(event) && Array.isArray(levels) && levels.length <= MOST_BARS) toMini('mini:levels', levels);
+  });
+  ipcMain.on('mini:resize', (event, arg) => {
+    if (fromMini(event)) resize(arg && arg.phase, arg && arg.edge);
+  });
   ipcMain.on('mini:openFlow', (event) => {
     if (fromMini(event)) openFlow();
   });
@@ -257,6 +358,10 @@ function createMiniPlayer({
     open,
     close,
     isOpen,
+    /** Settings changed in Flow's window: the equalizer's looks go on to the Mini Player. */
+    settingsChanged(patch) {
+      if (patch && LOOK.some((k) => k in patch)) toMini('mini:look', look());
+    },
     /** Flow's window is going (or the computer shuts down): the song shown is kept as it is now. */
     keepNow: () => keep(true),
     /** Flow's window loads again (the language switched): its state comes anew, and the Mini Player's texts too. */
@@ -276,4 +381,6 @@ function createMiniPlayer({
   };
 }
 
-module.exports = { createMiniPlayer, WIDTH, HEIGHT };
+module.exports = {
+  createMiniPlayer, sizeOf, resized, WIDTH, HEIGHT, MIN_WIDTH, MIN_HEIGHT, MAX_WIDTH, MAX_HEIGHT,
+};

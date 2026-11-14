@@ -30,6 +30,11 @@
 // With WebGL 2 (and float targets) the same picture is made there instead,
 // far cheaper than the canvas's blur filters (see _webgl): the shine blurred
 // at a quarter size, the bars' softening at half size.
+//
+// The computer's Mini Player shows the same picture on its bottom edge
+// (mini/eq.js): it loads this file for the drawing alone (the canvas, geom,
+// levels, _look, _webgl, _draw, Palette) and gets its levels from here
+// (levelsFor).
 
 const Equalizer = {
   ctx: null,
@@ -154,12 +159,8 @@ const Equalizer = {
     }
 
     this.canvas = $('eqCanvas');
-    this.gl = this._webgl();
-    this.scratch = document.createElement('canvas');
-    this.glow = document.createElement('canvas'); // the shine, before it joins the bars
-    this._layout();
-    this._applyVisibility();
-    new ResizeObserver(() => this._layout()).observe(document.querySelector('.content'));
+    // Started in the tray, the picture is not made until the window is opened (rest).
+    if (!Store.away) this._startPicture();
     Store.onSettings((patch) => {
       if (['eqOn', 'eqHeight', 'eqShine', 'eqShineSpread', 'eqColors'].some((k) => k in patch)) this._layout();
       if ('eqVisibility' in patch) this._applyVisibility();
@@ -171,6 +172,40 @@ const Equalizer = {
       el.addEventListener('playing', () => this.wake());
     }
     return true;
+  },
+
+  /** The picture's canvases made and laid out (once). */
+  _startPicture() {
+    if (this.scratch) return;
+    this.gl = this._webgl();
+    this.scratch = document.createElement('canvas');
+    this.glow = document.createElement('canvas'); // the shine, before it joins the bars
+    this._layout();
+    this._applyVisibility();
+    new ResizeObserver(() => this._layout()).observe(document.querySelector('.content'));
+  },
+
+  /**
+   * The window goes into the tray (true): no more frames; the sound goes on
+   * as it is. It is back (false): the bars follow the music again (the
+   * picture made now, if the window began in the tray).
+   */
+  rest(on) {
+    if (!this.ctx) return;
+    if (on) {
+      if (this.raf !== null) cancelAnimationFrame(this.raf);
+      this.raf = null;
+      return;
+    }
+    this._startPicture();
+    if (this._sounding()) {
+      this.wake();
+      return;
+    }
+    // Nothing plays: what stood there when the window went is cleared.
+    this.levels.fill(0);
+    this.bass = 0;
+    this._draw();
   },
 
   get active() {
@@ -235,10 +270,28 @@ const Equalizer = {
     this.gain.gain.setTargetAtTime(v, this.ctx.currentTime, 0.015);
   },
 
-  /** Starts drawing; it stops by itself once paused and settled. */
+  /**
+   * The levels for another window's equalizer (the Mini Player's): of `bars`
+   * bars, 0..255 each, as it sounds right now (zeros while nothing sounds).
+   * That window asks with each of its frames, so this works while the window
+   * here is in the tray and draws nothing; the smoothing is that window's.
+   */
+  levelsFor(bars) {
+    const n = Math.max(16, Math.min(512, Math.round(Number(bars)) || 0));
+    const out = new Array(n).fill(0);
+    if (!this.ctx || !this._sounding()) return out;
+    if (!this.lent || this.lent.bars !== n) this.lent = new Spectrum.Analyser({ sampleRate: this.ctx.sampleRate, bars: n });
+    this.analyser.getFloatTimeDomainData(this.samples);
+    const db = this.lent.analyse(this.samples);
+    for (let i = 0; i < n; i += 1) out[i] = Math.round(Spectrum.unit(db[i], this.FLOOR_DB, this.CEIL_DB) * 255);
+    return out;
+  },
+
+  /** Starts drawing; it stops by itself once paused and settled. In the tray only the sound is woken. */
   wake() {
     if (!this.ctx) return;
     if (this.ctx.state === 'suspended') this.ctx.resume();
+    if (Store.away) return;
     if (this.raf === null) {
       this.lastFrame = performance.now();
       this.raf = requestAnimationFrame((t) => this._frame(t));
@@ -259,6 +312,7 @@ const Equalizer = {
   },
 
   _applyVisibility() {
+    if (!this.canvas) return;
     this.canvas.style.opacity = String((Store.settings.eqVisibility || 50) / 100);
   },
 
@@ -267,7 +321,7 @@ const Equalizer = {
   _layout() {
     const content = document.querySelector('.content');
     const player = $('player');
-    if (!content || !player || !this.canvas) return;
+    if (!content || !player || !this.canvas || !this.scratch) return;
     const width = content.clientWidth;
     // The top edge of the player bar.
     const lineY = player.offsetTop;

@@ -48,6 +48,7 @@ const Ambient = {
   bassAverage: 0,
   pulse: 0,         // 0..1, the swell of the last bass hit
   frozen: false,    // Windows' "Show animations" off: the clouds stand still
+  started: false,   // the canvas's drawing is made (not yet after a start in the tray)
 
   IDLE_FPS: 24,     // without a song they only drift, which needs no more
   // One puff: its strength in the middle, and how far the shine reaches, in
@@ -110,15 +111,46 @@ const Ambient = {
     });
     this._makeFalloff();
     this._makePuffs();
-    this.gl = this._webgl();
     // Each start somewhere else along the paths.
     this.time = Math.random() * 600;
-    this._layout();
-    new ResizeObserver(() => this._layout()).observe(document.querySelector('.content'));
-    this.raf = requestAnimationFrame((t) => this._frame(t));
     Store.onSettings((patch) => {
       if (['cloudsOn', 'cloudsIntensity', 'cloudsColors', 'cloudsAmount'].some((k) => k in patch)) this._draw();
     });
+    // Started in the tray, nothing is made or drawn until the window is opened (rest).
+    if (!Store.away) this._start();
+  },
+
+  /** The canvas's drawing made, and the frames started. */
+  _start() {
+    if (this.started) return;
+    this.started = true;
+    this.gl = this._webgl();
+    this._layout();
+    new ResizeObserver(() => this._layout()).observe(document.querySelector('.content'));
+    this.raf = requestAnimationFrame((t) => this._frame(t));
+  },
+
+  /**
+   * The window goes into the tray (true): no more frames. It is back
+   * (false): they drift on from where they stood, or start now if the window
+   * began in the tray.
+   */
+  rest(on) {
+    if (!this.canvas) return;
+    if (on) {
+      cancelAnimationFrame(this.raf);
+      this.raf = null;
+      return;
+    }
+    if (!this.started) {
+      this._start();
+      return;
+    }
+    if (this.raf !== null) return;
+    // The time away is not drifted through in one step.
+    this.lastFrame = 0;
+    this.lastDraw = 0;
+    this.raf = requestAnimationFrame((t) => this._frame(t));
   },
 
   /**
@@ -404,7 +436,7 @@ ${src}`);
 
   _draw() {
     const c = this.canvas;
-    if (!c) return;
+    if (!c || !this.started) return;
     const s = Store.settings;
     const puffs = s.cloudsOn === false ? 0 : this._puffs(c.width, c.height);
     if (this.gl) {

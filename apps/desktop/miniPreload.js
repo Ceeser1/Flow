@@ -10,14 +10,20 @@ contextBridge.exposeInMainWorld('flow', {
 });
 
 contextBridge.exposeInMainWorld('mini', {
-  /** { state, ticks: { locked, onTop, autostart, canAutostart }, platform } as the window starts. */
+  /** { state, ticks: { eq, coverBg, locked, onTop, autostart, canAutostart }, look (the equalizer's, from Flow's Settings), platform } as the window starts. */
   hello: () => ipcRenderer.invoke('mini:hello'),
   /** What Flow plays: { hasSong, songId, title, artist, cover, list, playing, position, duration, at, volume, canVolume, live }. */
   onState: (fn) => ipcRenderer.on('mini:state', (_e, state) => fn(state)),
   /** A button: toggle, prev, next, back10, fwd10, seek (seconds), volume (0-1). */
   do: (action, value) => ipcRenderer.send('mini:do', { action, value }),
-  /** A tick of the cogwheel (locked, onTop, autostart): { ticks, error }. */
+  /** A tick of the cogwheel (eq, coverBg, locked, onTop, autostart): { ticks, error }. */
   set: (name, value) => ipcRenderer.invoke('mini:set', { name, value }),
+  /** An edge dragged to resize: 'start' with the edge ('n', 'se', ...), 'move' as the mouse moves, 'end'. */
+  resize: (phase, edge) => ipcRenderer.send('mini:resize', { phase, edge }),
+  /** Show Equalizer: the levels of `bars` bars asked of Flow's window (0..255 each, they come to onLevels), and its looks when they change. */
+  wantLevels: (bars) => ipcRenderer.send('mini:eq', bars),
+  onLevels: (fn) => ipcRenderer.on('mini:levels', (_e, levels) => fn(levels)),
+  onLook: (fn) => ipcRenderer.on('mini:look', (_e, look) => fn(look)),
   openFlow: () => ipcRenderer.send('mini:openFlow'),
   close: () => ipcRenderer.send('mini:close'),
 });

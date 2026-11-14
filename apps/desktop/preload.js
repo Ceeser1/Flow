@@ -11,6 +11,15 @@ async function call(channel, arg) {
   throw err;
 }
 
+// The window going into the tray and coming back ('window:away', main.js). The last word is
+// kept for a page that only starts listening after it came (its start says how it was then).
+let awayLast = null;
+let awayFn = null;
+ipcRenderer.on('window:away', (_e, info) => {
+  awayLast = info;
+  if (awayFn) awayFn(info);
+});
+
 contextBridge.exposeInMainWorld('flow', {
   // The texts' language chosen in Settings ('' for the device's), read once: i18n.js needs it before anything is drawn.
   language: ipcRenderer.sendSync('i18n:language'),
@@ -191,4 +200,13 @@ contextBridge.exposeInMainWorld('flow', {
   miniState: (state) => ipcRenderer.send('mini:state', state),
   onMiniCommand: (fn) => ipcRenderer.on('mini:command', (_e, cmd) => fn(cmd)),
   onMiniOpen: (fn) => ipcRenderer.on('mini:open', (_e, open) => fn(open)),
+  // The Mini Player's equalizer: it asks for the levels of so many bars, they are sent back.
+  onMiniLevelsWanted: (fn) => ipcRenderer.on('mini:eq', (_e, bars) => fn(bars)),
+  miniLevels: (levels) => ipcRenderer.send('mini:levels', levels),
+  // Flow's window in the tray while the Mini Player is open: { away, pause } as it goes there
+  // (pause: by its X, the music stops) and comes back.
+  onAway: (fn) => {
+    awayFn = fn;
+    if (awayLast) fn(awayLast);
+  },
 });

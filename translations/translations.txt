@@ -8334,6 +8334,14 @@ mini.volume
   de: Lautstärke
 
 # Mini Player › its cogwheel's menu
+mini.settings.equalizer
+  en: Show Equalizer
+  de: Equalizer anzeigen
+
+mini.settings.coverBg
+  en: Cover as background
+  de: Cover als Hintergrund
+
 mini.settings.lock
   en: Lock position
   de: Position sperren
@@ -8463,6 +8471,15 @@ desktop.window.sleepTimer
 desktop.window.activeSessions
   en: Flow: Active Sessions
   de: Flow: Aktive Sessions
+
+# Windows and dialogs › the tray icon's menu (Flow in the tray while the Mini Player is open; its first entry is the Mini Player's "Open Flow")
+desktop.tray.openMini
+  en: Open Mini Player
+  de: Mini-Player öffnen
+
+desktop.tray.quit
+  en: Quit Flow
+  de: Flow beenden
 
 # Windows and dialogs › picking files and folders
 desktop.pick.musicFolder.title
