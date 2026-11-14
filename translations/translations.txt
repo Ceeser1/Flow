@@ -289,6 +289,18 @@ settings.appVisuals.equalizer.colorScheme.desc
   en: Spectrum colors bars by their height. Rainbow runs colors across the bars. Grayscale turns them whiter the taller they are.
   de: Spektrum färbt Balken nach Höhe. Regenbogen lässt Farben über die Balken laufen. Graustufen macht sie heller, je höher sie sind.
 
+settings.appVisuals.coverBg.label
+  en: Show Cover as background
+  de: Cover als Hintergrund anzeigen
+
+settings.appVisuals.coverBg.desc
+  en: The playing song's cover, large in the middle behind the clouds and the equalizer.
+  de: Das Cover des laufenden Songs, groß in der Mitte hinter den Wolken und dem Equalizer.
+
+settings.appVisuals.coverBg.visibility.label
+  en: Visibility
+  de: Sichtbarkeit
+
 # Color schemes of the background clouds and equalizer
 settings.appVisuals.colorScheme.yellow
   en: Yellow

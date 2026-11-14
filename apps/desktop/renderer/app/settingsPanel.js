@@ -212,7 +212,18 @@ const SettingsPanel = {
         when: () => Store.settings.eqOn,
         right: this._select({ key: 'eqColors', options: EQ_SCHEMES, when: () => Store.settings.eqOn }),
       }),
+      ] : []),
 
+      // The song's big cover behind the clouds (ambient.js); not the Mini
+      // Player's own Cover as background. A computer's window only.
+      Store.phone ? null : this._row({
+        key: 'coverBgOn',
+        label: T('settings.appVisuals.coverBg.label'),
+        desc: T('settings.appVisuals.coverBg.desc'),
+        right: this._slider({ key: 'coverBgVisibility', label: T('settings.appVisuals.coverBg.visibility.label'), min: 0, when: () => Store.settings.coverBgOn }),
+      }),
+
+      ...(Store.can('effects') ? [
       h('h3.settings__section', T('settings.visualizer.heading')),
       this._visualizerRow([
         ...this._frameRateRows(),

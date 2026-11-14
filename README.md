@@ -47,6 +47,7 @@ Flow is made for private use.
 ### Looks
 - A live **equalizer** and softly glowing **background clouds** that react to
   the bass
+- The playing song's **cover as background** (PC), large behind the list
 - Dozens of full-screen **visualizers**, with your own picture or video as the
   background
 - **English and German**
