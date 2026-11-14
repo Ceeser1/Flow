@@ -462,7 +462,7 @@ const DEFAULTS = {
   // The playing song's big cover behind the clouds and the equalizer (not
   // the Mini Player's own Cover as background), and how solid it shows
   // (percent, 0 = not at all).
-  coverBgOn: false,
+  coverBgOn: true,
   coverBgVisibility: 25,
 
   // The fullscreen Music Visualizer the player bar's button opens (VISUALIZERS).

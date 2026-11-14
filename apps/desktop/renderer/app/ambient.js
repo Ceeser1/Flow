@@ -79,12 +79,24 @@ const Ambient = {
   COVER_SHARE: 0.8, // its height against the room it is in the middle of
   COVER_ROUND: 0.05,
   // The cover has no edge to see: it thins from COVER_FADE_IN inside its edge
-  // to nothing COVER_FADE outside it (against its width, the same at every
-  // Visibility), along a bell curve (FADE_BELL: how far down the bell it is
+  // to nothing COVER_FADE outside it (against its width; further out the lower
+  // the Visibility, see FADE_MORE), along a bell curve (FADE_BELL: how far down the bell it is
   // cut off), which leaves it about half as solid at the edge itself.
   COVER_FADE_IN: 0.12,
   COVER_FADE: 0.2,
   FADE_BELL: 5,
+  // A very bright cover would show its edge as a bright halo on the dark page,
+  // so its fade (both ways) is made steeper: from a brightness of BRIGHT_FROM
+  // (its outer band's, 0..1) up to BRIGHT_FULL it narrows to STEEP_SCALE of
+  // the width above, the edge itself staying about half solid.
+  // The more see-through it is set (the lower the Visibility), the further out
+  // it reaches: the outer fade is (1 + FADE_MORE * transparency) times as long
+  // (transparency = 1 - Visibility), the picture made with room for the most.
+  FADE_MORE: 0.75,
+  BRIGHT_BAND: 0.05,
+  BRIGHT_FROM: 0.55,
+  BRIGHT_FULL: 0.8,
+  STEEP_SCALE: 0.4,
   // The baked picture (all against the cover's width): the cover at most
   // COVER_PIXELS wide (the big covers' size), the blur beginning BLUR_IN
   // inside its edge, as strong as BLUR_EDGE at the edge (a bell curve's
@@ -377,6 +389,7 @@ ${src}`);
     const coverTex = gl.createTexture();
     let hasCover = false;
     let pad = 0;
+    let scale = 1; // how much of the normal width of the fade the cover has (a bright one: steeper)
     return {
       /** The baked cover ({ image, pad }) into its texture (with mipmaps); false when that fails. */
       cover: (pic) => {
@@ -391,6 +404,7 @@ ${src}`);
         }
         if (!hasCover) return false;
         pad = pic.pad;
+        scale = pic.scale || 1;
         gl.generateMipmap(gl.TEXTURE_2D);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -479,7 +493,7 @@ ${src}`);
         if (showCover) gl.uniform4f(u.box, box.x, box.y, box.size, box.size * this.COVER_ROUND);
         gl.uniform1f(u.coverAlpha, showCover ? alpha : 0);
         gl.uniform1f(u.pad, pad);
-        gl.uniform2f(u.fade, showCover ? box.size * this.COVER_FADE_IN : 0, showCover ? box.size * this.COVER_FADE : 0);
+        gl.uniform2f(u.fade, showCover ? box.size * this.COVER_FADE_IN * scale : 0, showCover ? box.size * this.COVER_FADE * scale * this._reach(alpha) : 0);
         gl.uniform1f(u.bell, this.FADE_BELL);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
       },
@@ -604,7 +618,7 @@ ${src}`);
       // The baked cover with its fade in it, the surround reaching past the box.
       const more = box.size * this.coverPic.pad;
       out.globalAlpha = alpha;
-      out.drawImage(this._piece(), box.x - more, box.y - more, box.size + more * 2, box.size + more * 2);
+      out.drawImage(this._piece(alpha), box.x - more, box.y - more, box.size + more * 2, box.size + more * 2);
       out.globalAlpha = 1;
     }
     const P = this.puffData;
@@ -627,10 +641,11 @@ ${src}`);
    * each pixel is, as the WebGL way works it out while drawing), made once
    * for a cover, not for every frame.
    */
-  _piece() {
+  _piece(alpha) {
     const pic = this.coverPic;
     const was = this.coverPiece;
-    if (was && was.pic === pic) return was.canvas;
+    const reach = this._reach(alpha);
+    if (was && was.pic === pic && Math.abs(was.reach - reach) < 0.005) return was.canvas;
     const P = pic.image.width;
     const S = Math.round(P / (1 + 2 * pic.pad));
     const M = (P - S) / 2;
@@ -641,14 +656,14 @@ ${src}`);
         // In whole steps with a speckle of one step (no bands in the long faint end).
         let hash = Math.imul(i + 1, 0x9e3779b1);
         hash = Math.imul(hash ^ (hash >>> 15), 0x85ebca77);
-        data[i * 4 + 3] = 255 * this._solid(x + 0.5 - M, y + 0.5 - M, S) + ((hash ^ (hash >>> 13)) >>> 0) / 4294967296 - 0.5;
+        data[i * 4 + 3] = 255 * this._solid(x + 0.5 - M, y + 0.5 - M, S, pic.scale || 1, reach) + ((hash ^ (hash >>> 13)) >>> 0) / 4294967296 - 0.5;
       }
     }
     const canvas = document.createElement('canvas');
     canvas.width = P;
     canvas.height = P;
     canvas.getContext('2d').putImageData(new ImageData(data, P, P), 0, 0);
-    this.coverPiece = { pic, canvas };
+    this.coverPiece = { pic, canvas, reach };
     return canvas;
   },
 
@@ -714,21 +729,50 @@ ${src}`);
    * there outwards along a bell curve, to nothing COVER_FADE outside its
    * edge. The same the WebGL way works out for each pixel while drawing.
    */
-  _solid(x, y, size) {
-    const away = this._away(x, y, size);
+  _solid(x, y, size, scale = 1, reach = 1) {
+    const away = this._away(x, y, size, scale, reach);
     const end = Math.exp(-this.FADE_BELL);
     return (Math.exp(-this.FADE_BELL * away * away) - end) / (1 - end);
   },
 
   /** How far along its fade a point is: 0 in the cover's core, 1 where nothing of it is seen any more. */
-  _away(x, y, size) {
+  _away(x, y, size, scale = 1, reach = 1) {
     const round = size * this.COVER_ROUND;
     const half = size / 2;
-    const ax = Math.abs(x - half) - half + size * this.COVER_FADE_IN + round;
-    const ay = Math.abs(y - half) - half + size * this.COVER_FADE_IN + round;
+    const fadeIn = size * this.COVER_FADE_IN * scale;
+    const ax = Math.abs(x - half) - half + fadeIn + round;
+    const ay = Math.abs(y - half) - half + fadeIn + round;
     const ox = ax > 0 ? ax : 0;
     const oy = ay > 0 ? ay : 0;
-    return Math.min(1, Math.max(0, (Math.sqrt(ox * ox + oy * oy) - round) / Math.max(size * (this.COVER_FADE_IN + this.COVER_FADE), 1e-6)));
+    return Math.min(1, Math.max(0, (Math.sqrt(ox * ox + oy * oy) - round) / Math.max(size * (this.COVER_FADE_IN + this.COVER_FADE * reach) * scale, 1e-6)));
+  },
+
+  /** How many times as far the outer fade reaches at this opacity (0..1; the more see-through, the further): 1 to 1 + FADE_MORE. */
+  _reach(alpha) {
+    return 1 + this.FADE_MORE * (1 - Math.min(1, Math.max(0, alpha)));
+  },
+
+  /**
+   * How much of the normal width of the fade a cover gets (1, down to
+   * STEEP_SCALE): by how bright its outer band is (a cover's pixels, S x S,
+   * RGBA), the average of the band's brightness on the sRGB values.
+   */
+  _fadeScale(src, S) {
+    const band = Math.max(1, Math.round(S * this.BRIGHT_BAND));
+    let sum = 0;
+    let n = 0;
+    for (let y = 0; y < S; y += 1) {
+      const edgeRow = y < band || y >= S - band;
+      for (let x = 0; x < S; x += 1) {
+        if (!edgeRow && x === band) x = Math.max(band, S - band);
+        const q = (y * S + x) * 4;
+        sum += 0.2126 * src[q] + 0.7152 * src[q + 1] + 0.0722 * src[q + 2];
+        n += 1;
+      }
+    }
+    const bright = n ? sum / n / 255 : 0;
+    const t = Math.min(1, Math.max(0, (bright - this.BRIGHT_FROM) / (this.BRIGHT_FULL - this.BRIGHT_FROM)));
+    return 1 + (this.STEEP_SCALE - 1) * t * t * (3 - 2 * t);
   },
 
   /**
@@ -783,7 +827,7 @@ ${src}`);
     const h = img.naturalHeight || 0;
     if (!w || !h) return null;
     const S = Math.max(8, Math.min(this.COVER_PIXELS, Math.max(w, h)));
-    const M = Math.max(1, Math.round(S * this.COVER_FADE));
+    const M = Math.max(1, Math.round(S * this.COVER_FADE * (1 + this.FADE_MORE)));
     const canvas = document.createElement('canvas');
     canvas.width = S;
     canvas.height = S;
@@ -803,9 +847,10 @@ ${src}`);
       src = read(cut[0] * kx, cut[1] * ky, w - (cut[0] + cut[2]) * kx, h - (cut[1] + cut[3]) * ky);
     }
     yield;
+    const scale = this._fadeScale(src, S);
     const pixels = yield* this._surroundParts(src, S, M);
     const P = S + 2 * M;
-    return { image: new ImageData(pixels, P, P), pad: M / S };
+    return { image: new ImageData(pixels, P, P), pad: M / S, scale };
   },
 
   /**
@@ -956,7 +1001,7 @@ ${src}`);
       for (let x = 0; x < P; x += 1) {
         if (middle && x === deep) x = P - deep;
         const d = this._edge(x + 0.5 - M, y + 0.5 - M, S);
-        if (d <= -inset || (d > 0 && this._away(x + 0.5 - M, y + 0.5 - M, S) >= 1)) continue;
+        if (d <= -inset || (d > 0 && this._away(x + 0.5 - M, y + 0.5 - M, S, 1, 1 + this.FADE_MORE) >= 1)) continue;
         const u = (d + inset) / inset;
         const sigma = d < 0 ? atEdge * u * u : atEdge + (atEnd - atEdge) * Math.min(1, d / reach);
         const v = sigma * sigma;

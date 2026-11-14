@@ -204,3 +204,37 @@ test('how far outside the cover\'s rounded square a point lies', () => {
   // The square's own corner lies outside the rounded one.
   assert.ok(Math.abs(Ambient._edge(0, 0, size) - (Math.SQRT2 - 1) * round) < 1e-9);
 });
+
+test('a very bright cover gets a steeper fade, a dark or ordinary one the normal one', () => {
+  const S = 100;
+  const white = Ambient._fadeScale(cover(S, () => [250, 250, 250]), S);
+  const dark = Ambient._fadeScale(cover(S, () => [20, 20, 30]), S);
+  const middle = Ambient._fadeScale(cover(S, art), S);
+  assert.ok(Math.abs(white - Ambient.STEEP_SCALE) < 1e-9, `white ${white}`);
+  assert.equal(dark, 1);
+  assert.equal(middle, 1);
+  // Only the outer band counts: a bright middle with a dark rim is no bright cover.
+  assert.equal(Ambient._fadeScale(cover(S, (x, y) => (x > 10 && y > 10 && x < 90 && y < 90 ? [255, 255, 255] : [10, 10, 10])), S), 1);
+  // In between, in between.
+  const grey = Ambient._fadeScale(cover(S, () => [168, 168, 168]), S);
+  assert.ok(grey < 1 && grey > Ambient.STEEP_SCALE, `grey ${grey}`);
+  // Steeper: the same edge about half solid, gone sooner outside, whole later inside.
+  const size = 200;
+  const edge = Ambient._solid(0, size / 2, size, white);
+  assert.ok(edge > 0.4 && edge < 0.6, `at the edge ${edge}`);
+  assert.equal(Ambient._solid(-size * 0.1, size / 2, size, white), 0);
+  assert.ok(Ambient._solid(-size * 0.04, size / 2, size, white) < Ambient._solid(-size * 0.04, size / 2, size) / 2);
+  assert.equal(Ambient._solid(size * 0.06, size / 2, size, white), 1);
+});
+
+test('the more see-through (the lower the Visibility), the further out the fade reaches', () => {
+  assert.equal(Ambient._reach(1), 1);
+  assert.equal(Ambient._reach(0), 1 + Ambient.FADE_MORE);
+  assert.ok(Ambient._reach(0.25) > Ambient._reach(0.5));
+  const size = 200;
+  const out = -size * 0.3;
+  assert.equal(Ambient._solid(out, size / 2, size, 1, Ambient._reach(1)), 0);
+  assert.ok(Ambient._solid(out, size / 2, size, 1, Ambient._reach(0.25)) > 0);
+  // It is gone by the picture's own margin even at the most.
+  assert.equal(Ambient._solid(-size * Ambient.COVER_FADE * (1 + Ambient.FADE_MORE), size / 2, size, 1, Ambient._reach(0)), 0);
+});

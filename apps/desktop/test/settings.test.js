@@ -190,9 +190,11 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ cloudsAmount: 400 }).cloudsAmount, 100);
   assert.equal(settings.clean({ cloudsAmount: 'lots' }).cloudsAmount, 50);
   // The cover behind the clouds: off, a quarter visible; 0-100, 0 allowed.
-  assert.equal(d.coverBgOn, false);
+  assert.equal(d.coverBgOn, true);
   assert.equal(d.coverBgVisibility, 25);
   assert.equal(settings.clean({ coverBgOn: 'yes' }).coverBgOn, false);
+  assert.equal(settings.clean({ coverBgOn: false }).coverBgOn, false);
+  assert.equal(settings.clean({}).coverBgOn, true);
   assert.equal(settings.clean({ coverBgOn: true }).coverBgOn, true);
   assert.equal(settings.clean({ coverBgVisibility: 0 }).coverBgVisibility, 0);
   assert.equal(settings.clean({ coverBgVisibility: 140 }).coverBgVisibility, 100);
