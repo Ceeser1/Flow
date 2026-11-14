@@ -10,6 +10,14 @@
 // visualizer is open). A full bar is as high here against the widget as it is
 // in the app against the pages: a third of the height at Settings' 50%.
 //
+// To come out as strong as in the app, the picture is the app's made small,
+// not cut out of it. There the bars also run below the line they stand on
+// (behind the player bar), and their softening and their shine gather light
+// from both halves: so here the canvas goes on below the widget's bottom
+// edge, out of sight. And the app softens by a set number of pixels, made for
+// its tall bars: here that is brought into the measure of these bars, or the
+// shine is spread several times as thin.
+//
 // There is no sound in this window. With each frame the bars' levels are
 // asked of Flow's window (window.mini.wantLevels, at most 60 times a second),
 // which answers them from what it plays; the bars follow them here, quick up
@@ -37,6 +45,13 @@ const MiniEq = {
 
   ASK_MS: 16,         // between two asks
   STALE_MS: 400,      // an answer older than this counts as silence
+  // The app's picture this one is the small copy of: a full bar's height there (a window as Flow
+  // first opens), and how far its canvas goes on below the line, in bar heights (its player bar).
+  APP_REACH: 250,
+  BELOW: 0.48,
+  CORE_LEAST: 2,      // the bars' softening at least (px): under that the single bars show as stripes
+  core: 0,            // the app's own two blurs (px), as equalizer.js has them
+  shine: 0,
 
   /** The tick: the equalizer there (true) or gone. */
   show(on) {
@@ -82,6 +97,8 @@ const MiniEq = {
     E.gl = E._webgl();
     E.scratch = document.createElement('canvas');
     E.glow = document.createElement('canvas');
+    this.core = E.CORE_BLUR;
+    this.shine = E.SHINE_BLUR;
     new ResizeObserver(() => {
       if (this.on) this._layout();
     }).observe(document.getElementById('mini'));
@@ -89,8 +106,9 @@ const MiniEq = {
 
   /**
    * The canvas on the widget's bottom edge: as wide as the widget, as high as
-   * the bars and their shine reach (the line they stand on is its bottom), a
-   * bar every few pixels as in the app.
+   * the bars and their shine reach above the line they stand on (the widget's
+   * bottom edge) and going on below it out of sight, a bar every few pixels
+   * as in the app, its blurs in these bars' measure.
    */
   _layout() {
     const E = Equalizer;
@@ -99,12 +117,18 @@ const MiniEq = {
     const full = Math.max(1, root.clientHeight);
     const look = E._look();
     const reach = full * look.reach;
-    const height = Math.max(1, Math.round(Math.min(full, reach * Math.max(1, look.shine) * 1.05)));
+    const above = Math.max(1, Math.round(Math.min(full, reach * Math.max(1, look.shine) * 1.05)));
+    const below = Math.round(reach * this.BELOW);
+    const height = above + below;
     E.geom = {
-      width, height, top: full - height, center: height, reach, shine: look.shine,
+      width, height, top: full - above, center: above, reach, shine: look.shine,
     };
+    const k = reach / this.APP_REACH;
+    E.CORE_BLUR = Math.min(this.core, Math.max(this.CORE_LEAST, this.core * k));
+    E.SHINE_BLUR = Math.min(this.shine, this.shine * k);
     E.canvas.style.width = `${width}px`;
     E.canvas.style.height = `${height}px`;
+    E.canvas.style.bottom = `${-below}px`;
     E.canvas.style.opacity = String((Store.settings.eqVisibility || 50) / 100);
     const w = Math.max(1, Math.round(width * E.SCALE));
     const h = Math.max(1, Math.round(height * E.SCALE));
