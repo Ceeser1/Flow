@@ -33,7 +33,8 @@
   const FS = VizGL.NOISE + `
     in vec2 uv;
     uniform vec2 res;
-    uniform float time, glow, wiggle, flicker, touch;
+    uniform float time, glow;
+    uniform float flick[${MAX}];    // each tendril's flicker now (about 1)
     uniform bool full;              // the whole screen, no globe
     uniform vec4 tips[${MAX}];      // x, y (on the globe, -1..1; past the screen's edge when full), depth (-1 behind .. 1 in front), strength
     uniform vec3 cols[${MAX}];
@@ -69,7 +70,6 @@
           vec2 e = tip.xy;
           // Too far from its line for any of its light: skip it.
           if (segDist(q, vec2(0.0), e) > 0.27 * length(e) + 0.4) continue;
-          float seed = float(i) * 7.31;
           float d = 1e3;
           // The run with the nearest box first, so the others are mostly
           // ruled out by it (the nearest piece is the same whatever the order).
@@ -97,7 +97,7 @@
             }
           }
           float bright = tip.w * (0.55 + 0.45 * (tip.z * 0.5 + 0.5));
-          float fl = 1.0 - flicker * 0.5 * vnoise(vec2(time * 40.0, seed));
+          float fl = flick[i];
           light += cols[i] * (exp(-d * d / (px * px * 12.0)) * 1.5 + exp(-d * 14.0) * 0.4) * bright * fl;
           light += vec3(1.0) * exp(-d * d / (px * px * 1.5)) * 0.6 * bright * fl;
           // Where it meets the glass: a bright spot.
@@ -152,6 +152,7 @@
       // What goes to the GPU each frame, all of it written each time.
       this.tips = new Float32Array(MAX * 4);
       this.cols = new Float32Array(MAX * 3);
+      this.flick = new Float32Array(MAX);
       this.pts = new Float32Array(MAX * (PTS + RUNS) * 4);
       this.touch = 0;
       this.finger = [0, 0, 1];
@@ -272,6 +273,11 @@
         cols.set(c, i * 3);
       });
       const inner = pal ? pal[0] : hsv((this.age * 0.03) % 1, 0.6, 1);
+      // Each tendril's flicker, the same all along it: worked out here once
+      // (as the shader's noise would) rather than at every pixel near it.
+      const flicker = a.playing ? 0.3 + a.treble : 0.2;
+      const ft = Math.fround(Math.fround(this.age) * 40);
+      for (let i = 0; i < MAX; i += 1) this.flick[i] = 1 - flicker * 0.5 * VizGL._vnoise(ft, Math.fround(i * 7.31));
 
       gl.disable(gl.BLEND);
       VizGL.into(gl, null);
@@ -280,9 +286,7 @@
       gl.uniform2f(u.res, this.w, this.h);
       gl.uniform1f(u.time, this.age);
       gl.uniform1f(u.glow, this.glow);
-      gl.uniform1f(u.wiggle, a.playing ? a.mid : 0.2);
-      gl.uniform1f(u.flicker, a.playing ? 0.3 + a.treble : 0.2);
-      gl.uniform1f(u.touch, this.touch);
+      gl.uniform1fv(u.flick, this.flick);
       gl.uniform1i(u.full, full ? 1 : 0);
       gl.uniform4fv(u.tips, tips);
       gl.uniform3fv(u.cols, cols);

@@ -79,13 +79,16 @@ const ServerChip = {
         : kind === 'error' ? T('serverChip.short.needsAttention') : T('serverChip.short.offline');
     const extra = st.transfer ? (st.transferUp ? T('serverChip.extra.uploading') : T('serverChip.extra.downloading'))
       : st.queued ? T('serverChip.extra.waiting', { count: st.queued }) : '';
-    chip.className = `server-chip server-chip--${kind}`;
-    chip.title = [text, st.transfer, st.note].filter(Boolean).join('\n');
-    clear(chip).append(
+    // Only what differs is set: a state told again leaves the line as it is.
+    const cls = `server-chip server-chip--${kind}`;
+    if (chip.className !== cls) chip.className = cls;
+    const title = [text, st.transfer, st.note].filter(Boolean).join('\n');
+    if (chip.title !== title) chip.title = title;
+    setChildren(chip, [
       h('span.server-chip__dot'),
       h('span.server-chip__name', short),
-      extra ? h('span.server-chip__extra', extra) : '',
-    );
+      ...(extra ? [h('span.server-chip__extra', extra)] : []),
+    ]);
     // Losing the server and getting it back are worth a word; the rest the chip says.
     const online = st.state === 'online';
     if (this._wasOnline === true && st.state === 'offline') toast(T('serverChip.toast.lost'), 'info');

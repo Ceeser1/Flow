@@ -655,10 +655,14 @@
       }
 
       gl.disable(gl.BLEND);
-      VizGL.into(gl, this.emit);
-      gl.useProgram(this.emitP.p);
-      this._common(this.emitP.u, shape, panes, glass);
-      VizGL.screen(gl);
+      // The window's light at a third of the size, for the shafts and the
+      // floor: the whole-screen window has neither.
+      if (shape !== 2) {
+        VizGL.into(gl, this.emit);
+        gl.useProgram(this.emitP.p);
+        this._common(this.emitP.u, shape, panes, glass);
+        VizGL.screen(gl);
+      }
 
       const shafts = !!set('sgRays') && shape !== 2;
       if (shafts) {

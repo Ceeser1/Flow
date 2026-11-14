@@ -275,9 +275,13 @@ function start() {
     createGroup: call((name) => actions.createGroup(name)),
     renameGroup: call((id, name) => actions.renameGroup({ id, name })),
     deleteGroup: call((id) => actions.deleteGroup(id)),
-    setPlaylistGroup: call((playlistIds, groupId) => actions.setPlaylistGroup({ playlistIds, groupId })),
+    addToGroup: call((playlistIds, groupId) => actions.addToGroup({ playlistIds, groupId })),
+    removeFromGroup: call((playlistIds, groupId) => actions.removeFromGroup({ playlistIds, groupId })),
     setPlaylistShared: call((id, shared) => actions.setPlaylistShared({ id, shared })),
     setFollowing: call((id, isOn) => actions.setFollowing({ id, on: isOn })),
+    setGroupShared: call((id, shared) => actions.setGroupShared({ id, shared })),
+    setGroupFollowing: call((id, isOn) => actions.setGroupFollowing({ id, on: isOn })),
+    setGroupPlaylistFollowed: call((groupId, playlistId, isOn) => actions.setGroupPlaylistFollowed({ groupId, playlistId, on: isOn })),
     addSongToPlaylists: call((songId, playlistIds) => actions.addSongToPlaylists({ songId, playlistIds })),
     addSongsToPlaylist: call((playlistId, songIds) => actions.addSongsToPlaylist({ playlistId, songIds })),
     removeFromPlaylist: call((playlistId, songId) => actions.removeFromPlaylist({ playlistId, songId })),
@@ -297,8 +301,6 @@ function start() {
     })),
     findBySource: call((url, key) => actions.findBySource({ url, key })),
     findByMeta: call((meta) => actions.findByMeta(meta)),
-    rescan: call(() => library.scan()),
-    showSong: notHere('Showing a song\'s file'),
     openMusicFolder: notHere('Opening the music folder'),
     folderStats: notHere('The music folder'),
     chooseFolder: notHere('Choosing a folder'),
@@ -359,7 +361,6 @@ function start() {
     peaks: call(async (file, duration) => (await plugin.peaks({ path: String(file || ''), duration: Number(duration) || 0 })).peaks),
     sponsorSegments: call(() => []),
 
-    serverStatus: call(() => remote.status()),
     setServerSecret: call((text) => remote.setSecret(text)),
     syncNow: call(() => remote.syncNow()),
     setOffline: call((playlistId, isOn) => remote.setOffline(playlistId, !!isOn)),
@@ -392,7 +393,6 @@ function start() {
     sessions: call((body) => remote.sessions(body || null)),
     onServerLive: on('server:live'),
     onSettingsChanged: on('settings:changed'),
-    finishSong: notHere('Saving a download on the phone'),
     lyrics: call((songId) => lyricsClient.get(songId)),
     lyricsStats: call(() => lyricsClient.stats()),
     clearLyricsCache: call(() => lyricsClient.clear()),
@@ -488,6 +488,29 @@ function start() {
     appSettings: call(() => plugin.appSettings()),
     /** Back in Flow from elsewhere (Android's settings). */
     onResume: (fn) => plugin.addListener('resume', () => fn()),
+    /**
+     * The Alarm Clock (5.0, Android's: FlowAlarm.java). alarm(): { on, hour, minute, days (a bit
+     * each, Monday 1 to Sunday 64), ringing, snoozeAt, nextAt, notify (Flow may show notifications) }.
+     * setAlarm({ on, hour, minute, days, texts, plan }) sets or turns it off (texts: the
+     * notification's; plan: the songs to start with nothing loaded), alarmAct('stop' | 'snooze')
+     * answers a ringing one, askNotifications() is Android's question; each answers as alarm().
+     * onAlarm(fn): it rang, was stopped, snoozed or turned itself off.
+     */
+    ...(platform === 'ios' ? {} : {
+      alarm: call(() => audio.alarmGet()),
+      setAlarm: call((alarm) => audio.alarmSet({
+        ...alarm,
+        // The songs' files as the player takes them: paths, not the page's addresses of them.
+        plan: (alarm.plan || []).map((i) => ({
+          ...i,
+          src: fileAddressToPath(i.src, window.WEBVIEW_SERVER_URL || window.location.origin),
+          meta: i.meta ? { ...i.meta, artwork: i.meta.artwork ? fileAddressToPath(i.meta.artwork, window.WEBVIEW_SERVER_URL || window.location.origin) : '' } : null,
+        })),
+      })),
+      alarmAct: call((action) => audio.alarmAct({ action: String(action || '') })),
+      askNotifications: call(() => audio.alarmNotifications()),
+      onAlarm: (fn) => audio.addListener('alarm', (s) => fn(s)),
+    }),
     /** What the player plays through: the phone's own player, for the background (engine.js). */
     createAudioEngine: () => createAudioEngine({
       plugin: audio,

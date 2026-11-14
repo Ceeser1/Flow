@@ -275,9 +275,13 @@ function start() {
     createGroup: call((name) => actions.createGroup(name)),
     renameGroup: call((id, name) => actions.renameGroup({ id, name })),
     deleteGroup: call((id) => actions.deleteGroup(id)),
-    setPlaylistGroup: call((playlistIds, groupId) => actions.setPlaylistGroup({ playlistIds, groupId })),
+    addToGroup: call((playlistIds, groupId) => actions.addToGroup({ playlistIds, groupId })),
+    removeFromGroup: call((playlistIds, groupId) => actions.removeFromGroup({ playlistIds, groupId })),
     setPlaylistShared: call((id, shared) => actions.setPlaylistShared({ id, shared })),
     setFollowing: call((id, isOn) => actions.setFollowing({ id, on: isOn })),
+    setGroupShared: call((id, shared) => actions.setGroupShared({ id, shared })),
+    setGroupFollowing: call((id, isOn) => actions.setGroupFollowing({ id, on: isOn })),
+    setGroupPlaylistFollowed: call((groupId, playlistId, isOn) => actions.setGroupPlaylistFollowed({ groupId, playlistId, on: isOn })),
     addSongToPlaylists: call((songId, playlistIds) => actions.addSongToPlaylists({ songId, playlistIds })),
     addSongsToPlaylist: call((playlistId, songIds) => actions.addSongsToPlaylist({ playlistId, songIds })),
     removeFromPlaylist: call((playlistId, songId) => actions.removeFromPlaylist({ playlistId, songId })),
@@ -297,8 +301,6 @@ function start() {
     })),
     findBySource: call((url, key) => actions.findBySource({ url, key })),
     findByMeta: call((meta) => actions.findByMeta(meta)),
-    rescan: call(() => library.scan()),
-    showSong: notHere('common.notHere.showSongFile', 'Showing a song\'s file'),
     openMusicFolder: notHere('common.notHere.openMusicFolder', 'Opening the music folder'),
     folderStats: notHere('common.notHere.musicFolder', 'The music folder'),
     chooseFolder: notHere('common.notHere.chooseFolder', 'Choosing a folder'),
@@ -355,7 +357,6 @@ function start() {
       return new Uint8Array(await res.arrayBuffer());
     }),
 
-    serverStatus: call(() => remote.status()),
     /**
      * The web player's own Logout (the menu's server line): this browser
      * forgets the server, its password and token, the profile and what this
@@ -399,7 +400,6 @@ function start() {
     sessions: call((body) => remote.sessions(body || null)),
     onServerLive: on('server:live'),
     onSettingsChanged: on('settings:changed'),
-    finishSong: notHere('web.notHere.saveDownload', 'Saving a download'),
     lyrics: call((songId) => lyricsClient.get(songId)),
     lyricsStats: call(() => lyricsClient.stats()),
     clearLyricsCache: call(() => lyricsClient.clear()),

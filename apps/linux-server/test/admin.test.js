@@ -527,7 +527,8 @@ test('the rule "only who added a song deletes it"', async () => {
     const { tAnna, tBen, songId } = await annaAndBen(base);
     const annas = (await upload(base, 'up2', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 }, tAnna)).json.id;
     const nobodys = (await upload(base, 'up3', { title: 'Angel', artist: 'Massive Attack', format: 'mp3', duration: 380 })).json.id;
-    server.library.data.songs.find((s) => s.id === nobodys).addedBy = '';
+    // A song nobody added (put in by hand): set in the server's own library, as it changes a row (4.6: a saved row is locked).
+    require('@flow/core/libraryModel').songToChange(server.library.data, nobodys).addedBy = '';
     assert.equal((await get(base, '/api/library', tBen)).json.rules.songDelete, 'anyone');
     await post(base, '/api/admin/rules', { songDelete: 'owner' }, tAnna);
     assert.equal((await get(base, '/api/library', tBen)).json.rules.songDelete, 'owner');

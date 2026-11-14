@@ -265,7 +265,7 @@
       // The note dwelt on: the chroma over the last second or so. A new one
       // that has stood out half a second rings its figure, not sooner than
       // 2.5 s after the last, on a beat when the beat is clear.
-      const notes = a.notes();
+      const notes = a.notes(1 / 30); // averaged over most of a second below: 30 a second do
       const k = 1 - Math.exp(-dt / 0.8);
       let best = 0;
       for (let p = 0; p < 12; p += 1) {
@@ -326,7 +326,7 @@
       // The colour: chosen, or the harmony's, gliding.
       let sand = SAND[set('chColors')];
       if (!sand) {
-        const nh = a.noteHue();
+        const nh = a.noteHue(1 / 30);
         if (nh.strength > 0.15) {
           let d = nh.hue - this.hue;
           d -= Math.round(d);

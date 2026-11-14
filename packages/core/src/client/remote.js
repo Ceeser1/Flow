@@ -109,6 +109,7 @@ const LibraryPatch = require('../libraryPatch');
 const {
   createJournal, within, LIBRARY_SPEC, STATISTICS_SPEC,
 } = require('../journalFile');
+const { mergeChanges: mergeLibrary, lockRows } = require('./libraryMerge');
 
 /**
  * The client of one app. `env`: settings, library (Local Files), covers,
@@ -159,8 +160,9 @@ function createRemote(env) {
   // 4: listening, 3.5; 5: statistics, 3.6; 6: album, genre, subGenre, infoLooked, 3.6.3;
   // 7: a playlist's rules, 4.0; 8: songs without stats, the stats, Statistics
   // and shared playlists' details kept apart, Favourites as a playlist, 4.3;
-  // 9: playlist groups, 4.5).
-  const CACHE_FORMAT = 9;
+  // 9: playlist groups, 4.5; 10: shared groups and the groups followed, 4.5.3;
+  // 11: a playlist's groups, several, 4.5.3).
+  const CACHE_FORMAT = 11;
 
   function emptySync(serverId = '') {
     return {
@@ -252,7 +254,8 @@ function createRemote(env) {
   function cleanStatsCopy(raw) {
     if (!raw || typeof raw !== 'object') return emptyStatsCopy();
     const songs = {};
-    for (const [id, st] of Object.entries(raw.songs && typeof raw.songs === 'object' ? raw.songs : {})) songs[id] = model.sanitize({ songs: [{ id, file: 'x', stats: st }] }).songs[0].stats;
+    // Locked (4.6): a song's stats are replaced whole, and the row the window is shown holds them as they are.
+    for (const [id, st] of Object.entries(raw.songs && typeof raw.songs === 'object' ? raw.songs : {})) songs[id] = LibraryPatch.lock(model.cleanStats(st));
     return {
       rev: Number.isFinite(Number(raw.rev)) ? Number(raw.rev) : -1,
       owner: String(raw.owner || ''),
@@ -263,9 +266,15 @@ function createRemote(env) {
 
   // The copy is saved as its changes (4.3.4, journalFile.js): a star adds a
   // line to server-library.json.log instead of writing the whole copy again.
+  // Its songs, playlists and stats are locked rows (4.6): never written to,
+  // only replaced (libraryMerge.js, applyStats), so the journal holds the rows
+  // themselves to tell what changed, not a copy of the whole.
   const cacheJournal = createJournal(jsonFiles, CACHE_FILE, {
     ...within('library', LIBRARY_SPEC), 'stats.songs': 'map', ...within('statistics.data', STATISTICS_SPEC),
-  });
+  }, { rows: ['library.songs', 'library.playlists', 'library.sharedPlaylists', 'stats.songs'] });
+
+  /** The details of the playlists others share, locked rows like the copy's. */
+  const sharedDetails = (list) => model.sanitize({ sharedPlaylists: list.map((p) => ({ ...p, entries: [], partial: true })) }).sharedPlaylists.map(LibraryPatch.lock);
 
   function loadCache() {
     const raw = cacheJournal.load();
@@ -276,11 +285,11 @@ function createRemote(env) {
     return {
       serverId: String(raw.serverId || ''),
       rev: same ? Number(raw.rev) : -1,
-      library: model.sanitize(raw.library),
+      library: lockRows(model.sanitize(raw.library)),
       profile: String(raw.profile || ''),
       stats: same ? cleanStatsCopy(raw.stats) : emptyStatsCopy(),
       statistics: same && st ? { srev: Number(st.srev) || 0, owner: String(st.owner || ''), data: model.sanitize({ statistics: st.data }).statistics } : null,
-      shared: same && Array.isArray(raw.shared) ? model.sanitize({ sharedPlaylists: raw.shared.map((p) => ({ ...p, entries: [], partial: true })) }).sharedPlaylists : null,
+      shared: same && Array.isArray(raw.shared) ? sharedDetails(raw.shared) : null,
     };
   }
 
@@ -298,12 +307,26 @@ function createRemote(env) {
     sync = loadSync();
   }
 
+  let syncSaveTimer = null;
   function saveSync() {
+    clearTimeout(syncSaveTimer);
+    syncSaveTimer = null;
     try {
       jsonFiles.write(SYNC_FILE, sync);
     } catch {
       // Kept in memory; the next save tries again.
     }
+  }
+
+  /**
+   * Saved within a second, for what changes song after song (the queue while
+   * its songs go up): the whole file written after each one held the app up
+   * for most of a long upload. Lost in between (the app ended hard), a song
+   * that went up is only sent again, and the server answers that it has it.
+   */
+  function saveSyncSoon() {
+    if (syncSaveTimer) return;
+    syncSaveTimer = setTimeout(saveSync, 1000);
   }
 
   function saveCache() {
@@ -351,7 +374,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, downloadsLive: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, sharedGroups: false, multiGroups: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -447,6 +470,8 @@ function createRemote(env) {
       downloadQueue: status.state === 'online' && conn.downloads && conn.downloadQueue,
       // A list read waits for its songs to be chosen (4.4.1, the server's checklist).
       downloadReview: status.state === 'online' && conn.downloads && conn.downloadReview,
+      // It says on the live channel when its downloads change (4.6): asked for then, not every few seconds.
+      downloadsLive: status.state === 'online' && conn.downloads && conn.downloadsLive && status.live,
       // The server cuts its songs' files (Edit's trim).
       trim: status.state === 'online' && conn.trim,
       // Connected through the Tailscale address (away from home).
@@ -475,17 +500,35 @@ function createRemote(env) {
       playlistGroups: !!conn.playlistGroups,
       // Followed playlists in groups too (4.5.1).
       followedInGroups: !!conn.followedInGroups,
+      // Groups shared and followed (4.5.3).
+      sharedGroups: !!conn.sharedGroups,
+      // A playlist in several groups (4.5.3).
+      multiGroups: !!conn.multiGroups,
       tracked: tracked.list(),
     };
   }
 
   let statusTimer = null;
+  // The status the window was told last, as text: one that says the same is
+  // not told again (every look at the library asks for one, and the window
+  // draws its menu and pages again at each).
+  let statusTold = '';
   function emitStatus() {
     // Several changes in a row reach the window as one.
     if (statusTimer) return;
     statusTimer = setTimeout(() => {
       statusTimer = null;
-      hooks.onStatus(publicStatus());
+      const st = publicStatus();
+      let text = '';
+      try {
+        // But for when the server in use was last used: that is always now.
+        text = JSON.stringify({ ...st, servers: (st.servers || []).map((s) => (s.current ? { ...s, at: 0 } : s)) });
+      } catch {
+        // Told anyway.
+      }
+      if (text && text === statusTold) return;
+      statusTold = text;
+      hooks.onStatus(st);
     }, 30);
   }
 
@@ -527,8 +570,8 @@ function createRemote(env) {
    * A queued upload as the song it will become, for the window: added by the
    * profile signed in, as the server will have it.
    */
-  function uploadAsAddSong(cmd) {
-    const local = model.songById(library.get(), cmd.localId);
+  function uploadAsAddSong(cmd, localById = null) {
+    const local = localById ? localById.get(cmd.localId) : model.songById(library.get(), cmd.localId);
     if (!local) return null;
     return { type: 'addSong', at: cmd.at, playlistIds: cmd.playlistIds, song: { ...local, id: cmd.songId, addedBy: currentProfile() || DEFAULT_OWNER } };
   }
@@ -548,7 +591,8 @@ function createRemote(env) {
    */
   function previewListen(d, c, { song, totals }) {
     if (!song && !totals) return;
-    const s = c.type === 'recordListen' ? model.songById(d, String(c.songId)) : null;
+    const at = c.type === 'recordListen' ? d.songs.findIndex((x) => x.id === String(c.songId)) : -1;
+    const s = at >= 0 ? d.songs[at] : null;
     if (c.type === 'recordListen' && !s) return;
     const target = {
       ...model.emptyLibrary(),
@@ -556,6 +600,9 @@ function createRemote(env) {
       playlists: song ? d.playlists : [],
       sharedPlaylists: song ? d.sharedPlaylists : [],
       follows: d.follows,
+      groupFollows: d.groupFollows,
+      groupSkips: d.groupSkips,
+      sharedGroups: d.sharedGroups,
       playlistListened: song ? d.playlistListened : {},
       statistics: totals ? d.statistics : model.emptyLibrary().statistics,
     };
@@ -564,64 +611,95 @@ function createRemote(env) {
     } catch {
       // The server will say.
     }
-  }
-
-  /** The playlists others share, for the window: those followed (with their songs), then the rest by their details. */
-  function sharedForView(d) {
-    const names = d.profileNames || {};
-    const followed = new Set(d.follows || []);
-    const out = d.sharedPlaylists.filter((p) => followed.has(p.id));
-    const have = new Set(out.map((p) => p.id));
-    for (const p of cache.shared || []) {
-      if (have.has(p.id)) continue;
-      have.add(p.id);
-      const open = sharedOpen.get(p.id);
-      out.push(open ? JSON.parse(JSON.stringify(open)) : { ...p, entries: [] });
-    }
-    // A profile renamed: its name as the library has it now.
-    for (const p of out) if (names[p.ownerId]) p.ownerName = names[p.ownerId];
-    return out;
+    // The song as counted: a locked row was counted on a copy put in its place there (4.6).
+    if (s && song && target.songs[0] && target.songs[0] !== s) d.songs[at] = target.songs[0];
   }
 
   /**
-   * A copy of the library for the window to change freely (commands tried on
-   * it): its songs and playlists one by one (a song's fields are plain values
-   * but its stats, set anew below; a playlist's entries are added to), the
-   * rest whole. 100 000 songs: some 30 ms, where a copy through JSON took 0.5 s.
+   * The playlists others share, for the window: those followed (with their
+   * songs; also those in a followed group, 4.5.3), then the rest by their details.
    */
-  function viewCopy(src) {
-    const list = (p) => ({
-      ...p, entries: p.entries.map((e) => ({ ...e })), source: LibraryPatch.clone(p.source), rules: LibraryPatch.clone(p.rules),
-    });
-    const d = {};
-    for (const [k, v] of Object.entries(src)) {
-      if (k === 'songs') d.songs = v.map((s) => ({ ...s }));
-      else if (k === 'playlists' || k === 'sharedPlaylists') d[k] = v.map(list);
-      else d[k] = LibraryPatch.clone(v);
+  function sharedForView(d, lib) {
+    const names = d.profileNames || {};
+    const followed = model.followedIds(d);
+    // A profile renamed: its name as the library has it now. The rows are the
+    // copy's own, locked (4.6): another one only where the name differs.
+    const named = (p) => (names[p.ownerId] && names[p.ownerId] !== p.ownerName ? { ...p, ownerName: names[p.ownerId] } : p);
+    const out = [];
+    const have = new Set();
+    for (const p of lib.sharedPlaylists || []) {
+      if (!followed.has(p.id)) continue;
+      have.add(p.id);
+      out.push(named(LibraryPatch.lock(p)));
     }
-    return d;
+    for (const p of cache.shared || []) {
+      if (have.has(p.id)) continue;
+      have.add(p.id);
+      // Opened: with its songs; else by its details (no entries).
+      out.push(named(LibraryPatch.lock(sharedOpen.get(p.id) || p)));
+    }
+    for (const g of d.sharedGroups || []) if (names[g.ownerId]) g.ownerName = names[g.ownerId];
+    return out;
   }
 
+  // The rows the window is shown, kept between looks (4.6). A song there is
+  // the copy's song with the profile's stats of it, its star and the file of
+  // its copy here; while those are the same, so is the row made of them
+  // (locked). So a change makes the rows it touches anew and no others, and
+  // the window's channel tells a row that stayed by its being the same one,
+  // without a copy of the view to compare with (viewChannel.js). A change
+  // tried on the view (a waiting command, one made in the window) is made to
+  // a copy put in a locked row's place (libraryModel.js), so the rows kept
+  // here stay as the copy has them.
+  //   shownOf   the copy's row -> { st, star, row }: what its shown row was made of
+  //   madeOf    a shown row -> the copy's row it was made of
+  //   deviceOf  a Local Files row (locked) -> { servers, row }: its Downloaded Songs row
+  const shownOf = new WeakMap();
+  const madeOf = new WeakMap();
+  const deviceOf = new WeakMap();
+  const VIEW_ROWS = new Set(['songs', 'playlists', 'sharedPlaylists']);
+
   function buildView() {
-    const d = viewCopy(cache.library || model.emptyLibrary());
+    const lib = cache.library || model.emptyLibrary();
+    // Everything but the rows: a copy of the window's own, to change freely (commands tried on it).
+    const d = {};
+    for (const [k, v] of Object.entries(lib)) d[k] = VIEW_ROWS.has(k) ? null : LibraryPatch.clone(v);
     // The profile's own stats and time listened to each list (kept apart, 4.3).
     const st = statsOurs() ? cache.stats : null;
-    for (const s of d.songs) s.stats = st && st.songs[s.id] ? { ...st.songs[s.id] } : model.emptyStats();
+    // Favourites: the window's 'favourites', and each song's star from it.
+    let fav = null;
+    d.playlists = lib.playlists.map((p) => {
+      if (!p.favourites || fav) return LibraryPatch.lock(p);
+      const made = shownOf.get(p);
+      fav = made ? made.row : LibraryPatch.lock({ ...p, id: FAV, name: 'Favourites' });
+      if (!made) shownOf.set(p, { row: fav });
+      return fav;
+    });
+    const starred = new Map((fav ? fav.entries : []).map((e) => [e.songId, e.addedAt]));
+    const own = st ? st.songs : null;
+    d.songs = lib.songs.map((c) => {
+      const mine = own ? own[c.id] : undefined;
+      const star = starred.get(c.id) || null;
+      const made = shownOf.get(c);
+      if (made && made.st === mine && made.star === star) return made.row;
+      // The file of its copy here is set below (it goes by every song shown): until then the one it had.
+      const row = LibraryPatch.lock({
+        ...c, stats: mine || model.emptyStats(), favouriteAt: star, file: made ? made.row.file : '',
+      });
+      shownOf.set(c, { st: mine, star, row });
+      madeOf.set(row, c);
+      return row;
+    });
     d.playlistListened = st ? { ...st.playlistListened } : {};
     d.statistics = statisticsOurs() ? JSON.parse(JSON.stringify(cache.statistics.data)) : model.emptyLibrary().statistics;
-    // Favourites: the window's 'favourites', and each song's star from it.
-    const fav = d.playlists.find((p) => p.favourites);
-    if (fav) {
-      fav.id = FAV;
-      fav.name = 'Favourites';
-    }
-    const starred = new Map((fav ? fav.entries : []).map((e) => [e.songId, e.addedAt]));
-    for (const s of d.songs) s.favouriteAt = starred.get(s.id) || null;
-    d.sharedPlaylists = sharedForView(d);
+    d.sharedPlaylists = sharedForView(d, lib);
     // Sent but not in the copy yet (its answer came before the library did),
     // then everything still waiting.
+    // The songs here by id, made when the first upload waiting asks for one.
+    let localById = null;
     const apply = (c) => {
-      const cmd = c.type === 'upload' ? uploadAsAddSong(c) : c;
+      if (c.type === 'upload' && !localById) localById = new Map(library.get().songs.map((s) => [s.id, s]));
+      const cmd = c.type === 'upload' ? uploadAsAddSong(c, localById) : c;
       if (!cmd) return;
       try {
         applyCommand(d, cmd);
@@ -641,10 +719,26 @@ function createRemote(env) {
     }
     const copies = localCopies(d);
     const shown = new Set();
-    for (const s of d.songs) {
+    for (let i = 0; i < d.songs.length; i += 1) {
+      const s = d.songs[i];
       const copy = copies.get(s.id);
-      s.file = copy ? copy.file : '';
+      const file = copy ? copy.file : '';
       if (copy) shown.add(copy.id);
+      if (s.file === file) continue;
+      // A row a waiting change made is the view's own to write to.
+      if (!Object.isFrozen(s)) {
+        s.file = file;
+        continue;
+      }
+      // A kept row whose copy here came, went or moved: another in its place, kept for its song from now.
+      const row = LibraryPatch.lock({ ...s, file });
+      d.songs[i] = row;
+      const c = madeOf.get(s);
+      const made = c ? shownOf.get(c) : null;
+      if (made && made.row === s) {
+        made.row = row;
+        madeOf.set(row, c);
+      }
     }
     d.deviceSongs = deviceSongs(shown);
     d.ignoredFiles = [];
@@ -712,9 +806,24 @@ function createRemote(env) {
         on.get(lid).push(o.sync.serverName || 'Flow Server');
       }
     }
-    return library.get().songs.filter((s) => !shown.has(s.id)).map((s) => ({
-      ...LibraryPatch.clone(s), id: DEVICE + s.id, localId: s.id, isDevice: true, servers: on.get(s.id) || [],
-    }));
+    return library.get().songs.filter((s) => !shown.has(s.id)).map((s) => {
+      const servers = on.get(s.id) || [];
+      // A Local Files row that is locked stays as it is until another takes
+      // its place (4.6): so does the row made of it, while its servers do.
+      if (!Object.isFrozen(s)) {
+        return {
+          ...LibraryPatch.clone(s), id: DEVICE + s.id, localId: s.id, isDevice: true, servers,
+        };
+      }
+      const key = servers.join('\n');
+      const made = deviceOf.get(s);
+      if (made && made.servers === key) return made.row;
+      const row = LibraryPatch.lock({
+        ...s, id: DEVICE + s.id, localId: s.id, isDevice: true, servers,
+      });
+      deviceOf.set(s, { servers: key, row });
+      return row;
+    });
   }
 
   let viewTimer = null;
@@ -732,6 +841,15 @@ function createRemote(env) {
 
   function getView() {
     return view || buildView();
+  }
+
+  /**
+   * A view's songs by their id, as they are now: for a pass over the songs
+   * here that asks for the server's song of each (searched one by one, a few
+   * thousand songs cost millions of looks each time).
+   */
+  function songsById(v) {
+    return new Map(v.songs.map((s) => [s.id, s]));
   }
 
   // ---- connecting ----
@@ -972,6 +1090,7 @@ function createRemote(env) {
         const downloadCheck = Array.isArray(hello.features) && hello.features.includes('downloadCheck');
         const downloadQueue = Array.isArray(hello.features) && hello.features.includes('downloadQueue');
         const downloadReview = Array.isArray(hello.features) && hello.features.includes('downloadReview');
+        const downloadsLive = Array.isArray(hello.features) && hello.features.includes('downloadsLive');
         const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
@@ -984,10 +1103,12 @@ function createRemote(env) {
         const pair = Array.isArray(hello.features) && hello.features.includes('pair');
         const playlistGroups = Array.isArray(hello.features) && hello.features.includes('playlistGroups');
         const followedInGroups = Array.isArray(hello.features) && hello.features.includes('followedInGroups');
+        const sharedGroups = Array.isArray(hello.features) && hello.features.includes('sharedGroups');
+        const multiGroups = Array.isArray(hello.features) && hello.features.includes('multiGroups');
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, downloadsLive, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, sharedGroups, multiGroups, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -1157,7 +1278,9 @@ function createRemote(env) {
         return;
       }
     }
-    schedulePoll();
+    // With the live channel open at home there is nothing to look for: it
+    // brings the changes, and its loss starts this again (4.6).
+    if (!status.live || conn.via === 'remote') schedulePoll();
   }
 
   /** A request failed: offline (try again soon), or signed out. */
@@ -1218,7 +1341,7 @@ function createRemote(env) {
         ...cache,
         serverId: sync.serverId,
         rev: Number(r.json.rev),
-        library: model.sanitize(r.json.library),
+        library: lockRows(model.sanitize(r.json.library)),
         profile: owner,
         // Another profile's (or another server's) are of no use now.
         stats: cache.stats.owner === owner && cache.serverId === sync.serverId ? cache.stats : emptyStatsCopy(owner),
@@ -1239,44 +1362,21 @@ function createRemote(env) {
   /**
    * What changed since the copy's revision, merged into it: songs and
    * playlists (its own, Favourites too) new or changed, those gone, the
-   * follows, the groups (4.5), the playlists followed (with their songs), the profiles' names.
+   * follows, the groups (4.5), the playlists followed (with their songs; also
+   * those of a followed group), the groups the others share and those
+   * followed (4.5.3), the profiles' names.
    */
   function mergeChanges(c) {
-    const lib = cache.library || model.emptyLibrary();
-    const goneSongs = new Set((c.deletedSongs || []).map(String));
-    const changedSongs = new Map((c.songs || []).map((s) => [String(s.id), s]));
-    const songs = [];
-    for (const s of lib.songs) {
-      if (goneSongs.has(s.id)) continue;
-      const now = changedSongs.get(s.id);
-      songs.push(now || s);
-      changedSongs.delete(s.id);
+    // Only the rows that came are made anew; the rest stay the rows they were (4.6, libraryMerge.js).
+    cache.library = mergeLibrary(cache.library || model.emptyLibrary(), c);
+    // A song gone takes the stats kept of it along (they stayed in the copy and its file for good):
+    // another map without them (4.6: the one kept is locked once saved).
+    const gone = (c.deletedSongs || []).map(String).filter((id) => cache.stats.songs[id] !== undefined);
+    if (gone.length) {
+      const songs = { ...cache.stats.songs };
+      for (const id of gone) delete songs[id];
+      cache.stats = { ...cache.stats, songs };
     }
-    songs.push(...changedSongs.values());
-    const goneLists = new Set((c.deletedPlaylists || []).map(String));
-    const changedLists = new Map((c.playlists || []).map((p) => [String(p.id), p]));
-    const playlists = [];
-    for (const p of lib.playlists) {
-      if (goneLists.has(p.id)) continue;
-      playlists.push(changedLists.get(p.id) || p);
-      changedLists.delete(p.id);
-    }
-    playlists.push(...changedLists.values());
-    const follows = Array.isArray(c.follows) ? c.follows : lib.follows;
-    const groups = Array.isArray(c.groups) ? c.groups : lib.groups;
-    const unshared = new Set((c.unshared || []).map(String));
-    const changedShared = new Map((c.sharedPlaylists || []).map((p) => [String(p.id), p]));
-    const followed = new Set(follows);
-    const shared = [];
-    for (const p of lib.sharedPlaylists) {
-      if (unshared.has(p.id) || !followed.has(p.id)) continue;
-      shared.push(changedShared.get(p.id) || p);
-      changedShared.delete(p.id);
-    }
-    shared.push(...changedShared.values());
-    cache.library = model.sanitize({
-      ...lib, songs, playlists, groups, follows, sharedPlaylists: shared, profileNames: c.profileNames || lib.profileNames,
-    });
     cache.rev = Number(c.rev);
   }
 
@@ -1316,7 +1416,8 @@ function createRemote(env) {
     if (s.full) cache.stats = cleanStatsCopy({ rev: s.rev, owner, songs: s.songs, playlistListened: s.playlistListened });
     else {
       const clean = cleanStatsCopy({ songs: s.songs, playlistListened: s.playlistListened });
-      Object.assign(cache.stats.songs, clean.songs);
+      // Another map with them in (4.6: the one kept is locked once saved).
+      cache.stats.songs = { ...cache.stats.songs, ...clean.songs };
       if (s.playlistListened) cache.stats.playlistListened = clean.playlistListened;
       cache.stats.rev = Number(s.rev);
     }
@@ -1376,7 +1477,7 @@ function createRemote(env) {
   async function loadShared() {
     if (!active() || status.state !== 'online' || !conn.profiles) return null;
     const r = await call('/api/shared', { timeout: 30000 });
-    cache.shared = model.sanitize({ sharedPlaylists: (r.playlists || []).map((p) => ({ ...p, entries: [], partial: true })) }).sharedPlaylists;
+    cache.shared = sharedDetails(r.playlists || []);
     saveCache();
     refreshView();
     return cache.shared;
@@ -1394,7 +1495,9 @@ function createRemote(env) {
       refreshView();
       throw err;
     }
-    const [p] = model.sanitize({ songs: (cache.library || model.emptyLibrary()).songs, sharedPlaylists: [r.playlist] }).sharedPlaylists;
+    // Cleaned on its own against the copy's songs (4.6: not the whole library made anew for it), a locked row.
+    const have = new Set((cache.library || model.emptyLibrary()).songs.map((s) => s.id));
+    const p = r.playlist && r.playlist.id ? LibraryPatch.lock(model.cleanSharedPlaylist(r.playlist, (sid) => have.has(sid))) : null;
     if (p) sharedOpen.set(id, p);
     refreshView();
     return p || null;
@@ -1438,20 +1541,106 @@ function createRemote(env) {
     return out;
   }
 
-  /** Every id a command refers to, renamed (an upload the server gave another id). */
+  /**
+   * Every id a command refers to, renamed (an upload the server gave another
+   * id); many at once as a Map (from -> to), in one go through the queue.
+   */
   function renameSongId(from, to) {
+    const map = from instanceof Map ? from : new Map([[from, to]]);
+    if (!map.size) return;
+    const now = (id) => (map.has(id) ? map.get(id) : id);
     const fix = (c) => {
       if (!c) return;
-      if (c.songId === from) c.songId = to;
-      if (Array.isArray(c.songIds)) c.songIds = c.songIds.map((x) => (x === from ? to : x));
+      if (map.has(c.songId)) c.songId = map.get(c.songId);
+      if (Array.isArray(c.songIds) && c.songIds.some((x) => map.has(x))) c.songIds = c.songIds.map(now);
     };
     for (const c of sync.queue) fix(c);
     for (const x of sync.sent) fix(x.cmd);
-    for (const [lid, sid] of Object.entries(sync.songMap)) if (sid === from) sync.songMap[lid] = to;
+    for (const lid of Object.keys(sync.songMap)) {
+      const sid = sync.songMap[lid];
+      if (map.has(sid)) sync.songMap[lid] = map.get(sid);
+    }
+  }
+
+  // ---- songs the server has already ----
+  //
+  // A song here that the server has (found in the copy of its library as the
+  // server itself would find it for an upload) is not sent to be told so:
+  // with a few thousand songs here and there (Flow installed again, its music
+  // folder still full) every file went up, to be thrown away by the server.
+
+  /**
+   * The server's song for a song here, as the server finds it on upload (its
+   * existingFor: the song of that id, of the same source, or of the same
+   * names at the same length): a function (song here, the id it goes up
+   * under) -> the server's song or null. Null itself while the copy of its
+   * library is not the server's as it is now (offline, another profile's):
+   * then only the server can say.
+   */
+  function serverSongFinder() {
+    if (status.state !== 'online' || !copyOurs()) return null;
+    const songs = cache.library.songs;
+    const byId = new Map(songs.map((s) => [s.id, s]));
+    const same = model.sameSongIn(songs);
+    return (local, id = '') => byId.get(id) || same(local) || null;
+  }
+
+  /**
+   * The uploads waiting for songs the server has under the same names: taken
+   * off the queue, each song here tied to the server's as an upload answered
+   * "already here" ties it. Not saved (the caller does). Returns what was
+   * tied: [{ local, serverId }], for afterTied. One the server has under
+   * other names stays queued: it is asked about when its turn comes
+   * (uploadOne), without its file being sent either.
+   */
+  function tieKnownUploads() {
+    if (!sync.queue.some((c) => c.type === 'upload' && mine(c) && !c.onExisting)) return [];
+    const find = serverSongFinder();
+    if (!find) return [];
+    const localById = new Map(library.get().songs.map((s) => [s.id, s]));
+    const tied = [];
+    const done = new Set();
+    const renamed = new Map();
+    for (const c of sync.queue) {
+      if (c.type !== 'upload' || !mine(c) || c.onExisting) continue;
+      const local = localById.get(c.localId);
+      const there = local ? find(local, c.songId) : null;
+      if (!there || !model.sameNames(there, local)) continue;
+      done.add(c.cid);
+      if (there.id !== c.songId) renamed.set(c.songId, there.id);
+      sync.songMap[c.localId] = there.id;
+      tied.push({ local, serverId: there.id });
+    }
+    if (!tied.length) return tied;
+    sync.queue = sync.queue.filter((c) => !done.has(c.cid));
+    renameSongId(renamed);
+    return tied;
+  }
+
+  /**
+   * What follows an upload the server had already, for the songs tied
+   * without one: lyrics written here go to the server's song, and the file
+   * here goes when "Keep local files after server upload" is off (and no
+   * marked playlist needs it). A few at a time, so the app is not held up.
+   */
+  async function afterTied(tied) {
+    const keep = !!settings.get('serverKeepFiles');
+    let n = 0;
+    for (const { local, serverId } of tied) {
+      if (status.state !== 'online' || !active()) return;
+      await uploadLyrics(local, serverId);
+      if (!keep && !neededOffline(serverId)) await forgetLocal(local.id, { deleteFile: true });
+      n += 1;
+      if (n % 50 === 0) await new Promise((resolve) => { setTimeout(resolve, 0); });
+    }
   }
 
   let flushTimer = null;
   let flushing = null;
+  // While the queue is sent: the server's song for a song here (serverSongFinder), or null.
+  let knownSong = null;
+  // Songs tied to the server's without an upload (tieKnownUploads) whose follow-up (afterTied) the next flush does.
+  const tiedWaiting = [];
   const problems = [];
 
   /** Changes the server refused and songs that could not go up or down, told once. */
@@ -1487,10 +1676,10 @@ function createRemote(env) {
   function flush() {
     if (flushing) return flushing;
     flushing = (async () => {
-      if (status.state !== 'online' || !sync.queue.some(mine)) return;
+      if (status.state !== 'online' || (!sync.queue.some(mine) && !tiedWaiting.length)) return;
       existingChoice = null;
-      const uploads = sync.queue.filter((c) => c.type === 'upload' && mine(c)).length;
-      let canTransfer = uploads ? await transfersAllowed() : true;
+      let uploads = 0;
+      let canTransfer = true;
       const blocked = new Set();
       let uploadNo = 0;
       let trimsWaiting = 0;
@@ -1522,6 +1711,21 @@ function createRemote(env) {
         saveSync();
       };
       try {
+        // Songs the server has already are tied to its songs, not sent (the
+        // copy of its library asked for first where no live channel keeps it).
+        if (sync.queue.some((c) => c.type === 'upload' && mine(c))) {
+          if (!status.live) await refresh();
+          const tied = tieKnownUploads();
+          if (tied.length) {
+            saveSync();
+            refreshView();
+            tiedWaiting.push(...tied);
+          }
+          knownSong = serverSongFinder();
+        }
+        if (tiedWaiting.length) await afterTied(tiedWaiting.splice(0));
+        uploads = sync.queue.filter((c) => c.type === 'upload' && mine(c)).length;
+        canTransfer = uploads ? await transfersAllowed() : true;
         const pass = sync.queue.slice();
         const inPass = new Set(pass.map((c) => c.cid));
         for (let i = 0; i < pass.length; i += 1) {
@@ -1588,6 +1792,9 @@ function createRemote(env) {
         status.transfer = '';
         wentWrong(err);
       } finally {
+        knownSong = null;
+        // What the songs going up left to save (saveSyncSoon).
+        if (syncSaveTimer) saveSync();
         refreshView();
         reportProblems();
       }
@@ -1760,9 +1967,10 @@ function createRemote(env) {
   async function replaceStaleCopies(v) {
     const local = library.get();
     const stale = [];
+    const byId = songsById(v);
     for (const s of local.songs) {
       const sid = sync.songMap[s.id];
-      const there = sid && model.songById(v, sid);
+      const there = sid && byId.get(sid);
       if (there && (there.cut || '') !== (s.cut || '') && s.file && files.exists(s.file)) stale.push({ lid: s.id, there });
     }
     if (!stale.length) return;
@@ -1851,7 +2059,7 @@ function createRemote(env) {
     const local = model.songById(library.get(), cmd.localId);
     const drop = () => {
       sync.queue = sync.queue.filter((c) => c.cid !== cmd.cid);
-      saveSync();
+      saveSyncSoon();
     };
     if (!local || !files.exists(local.file)) {
       // Gone before it could go up: nothing to send.
@@ -1860,6 +2068,14 @@ function createRemote(env) {
       return;
     }
     const label = [local.artist, local.title].filter(Boolean).join(' - ');
+    // The server has it already (its library here says so): its file is not sent to be told that.
+    const there = knownSong && !cmd.onExisting ? knownSong(local, cmd.songId) : null;
+    if (there) {
+      await uploaded(cmd, local, number, total, {
+        existing: true, id: there.id, rev: cache.rev, names: { artist: there.artist, title: there.title, mix: there.mix },
+      });
+      return;
+    }
     status.transfer = tr('sync.transfer.uploading', 'Uploading {number} of {total}: {song}', { number, total, song: label });
     status.transferUp = true;
     emitStatus();
@@ -1915,12 +2131,21 @@ function createRemote(env) {
       problems.push(tr('sync.uploadFailed', '"{song}" could not be uploaded: {reason}', { song: label, reason: (r.json && r.json.error) || tr('connection.serverAnswered.lower', 'the server answered {status}', { status: r.status }) }));
       return;
     }
-    const serverId = String(r.json.id);
+    await uploaded(cmd, local, number, total, r.json);
+  }
+
+  /**
+   * A song's upload answered ({ existing, id, rev, names? }: by the server,
+   * or from its library here for a song it has already): the song here is
+   * tied to the server's, and what follows an upload follows.
+   */
+  async function uploaded(cmd, local, number, total, answer) {
+    const serverId = String(answer.id);
     // The same song is there under other names (renamed here or there): asked
     // what to do. An older server says no names: it keeps its own.
     let apply = false;
-    if (r.json.existing && serverId !== cmd.songId && r.json.names && !cmd.onExisting && !model.sameNames(r.json.names, local)) {
-      const choice = await askExisting(local, r.json.names);
+    if (answer.existing && serverId !== cmd.songId && answer.names && !cmd.onExisting && !model.sameNames(answer.names, local)) {
+      const choice = await askExisting(local, answer.names);
       if (choice === 'new') {
         cmd.onExisting = 'new';
         saveSync();
@@ -1931,18 +2156,18 @@ function createRemote(env) {
     }
     if (serverId !== cmd.songId) renameSongId(cmd.songId, serverId);
     sync.songMap[cmd.localId] = serverId;
-    drop();
-    sync.sent.push({ cmd: { ...cmd, songId: serverId }, rev: Number(r.json.rev) });
+    sync.queue = sync.queue.filter((c) => c.cid !== cmd.cid);
+    sync.sent.push({ cmd: { ...cmd, songId: serverId }, rev: Number(answer.rev) });
     // An upload shows as addSong until the library catches up; one the server
     // already had (existing) shows as that song straight away.
-    if (r.json.existing) sync.sent.pop();
+    if (answer.existing) sync.sent.pop();
     if (apply) {
       sync.queue.push(newCommand('editSong', {
         songId: serverId, title: local.title, artist: local.artist, mix: local.mix, album: local.album, genre: local.genre, subGenre: local.subGenre,
       }));
     }
-    saveSync();
-    if (!r.json.existing) await uploadCover(local, serverId);
+    saveSyncSoon();
+    if (!answer.existing) await uploadCover(local, serverId);
     await uploadLyrics(local, serverId);
     if (!settings.get('serverKeepFiles') && !neededOffline(serverId)) {
       await forgetLocal(cmd.localId, { deleteFile: true });
@@ -2076,6 +2301,7 @@ function createRemote(env) {
     const at = Date.now();
     const q = (type, args) => sync.queue.push(newCommand(type, { at, ...args }));
     const localIds = new Set(local.songs.map((s) => s.id));
+    const inView = new Set(v.songs.map((s) => s.id));
     // Songs that were here before this server and have not been OK'd to go up (askHeld).
     if (sync.held) sync.held = sync.held.filter((id) => localIds.has(id));
     const held = new Set(sync.held || []);
@@ -2096,7 +2322,7 @@ function createRemote(env) {
       }
       if (onlyNew) continue;
       const sid = sync.songMap[s.id];
-      if (!sid || !model.songById(v, sid)) continue;
+      if (!sid || !inView.has(sid)) continue;
       const now = snapOfSong(s);
       if (now.title !== was.title || now.artist !== was.artist || now.mix !== was.mix || !sameInfo(was, s)) {
         q('editSong', {
@@ -2205,10 +2431,15 @@ function createRemote(env) {
     }
 
     sync.snapshot = snap;
+    // Songs the server has already are tied to its songs at once, so they
+    // never show as waiting to go up (the live channel keeps its library here
+    // as it is; without it the flush asks for it first, and ties them then).
+    const tied = status.live ? tieKnownUploads() : [];
+    tiedWaiting.push(...tied);
     saveSync();
     refreshView();
     flushSoon();
-    return { count, firstTime };
+    return { count: count - tied.length, firstTime };
   }
 
   /**
@@ -2217,7 +2448,7 @@ function createRemote(env) {
    */
   function markedList(v, pid) {
     return model.playlistById(v, pid)
-      || ((v.follows || []).includes(pid) ? model.sharedPlaylistById(v, pid) : null);
+      || (model.isFollowed(v, pid) ? model.sharedPlaylistById(v, pid) : null);
   }
 
   /**
@@ -2244,7 +2475,7 @@ function createRemote(env) {
     const p = markedList(v, pid);
     if (p) return p.entries.map((e) => e.songId);
     const keep = sync.offlineKeep[pid];
-    if (keep && (v.follows || []).includes(pid)) return keep.songs;
+    if (keep && model.isFollowed(v, pid)) return keep.songs;
     return keep && keep.profile !== currentProfile() ? keep.songs : [];
   }
 
@@ -2269,7 +2500,7 @@ function createRemote(env) {
       if (p) sync.offlineKeep[pid] = { profile: currentProfile(), songs: p.entries.map((e) => e.songId) };
       // Gone (deleted, or no longer followed): no longer marked. A followed one
       // that is only not shared for the moment stays as it was.
-      else if ((!keep || keep.profile === currentProfile()) && !(v.follows || []).includes(pid)) {
+      else if ((!keep || keep.profile === currentProfile()) && !model.isFollowed(v, pid)) {
         sync.offline = sync.offline.filter((x) => x !== pid);
         delete sync.offlineKeep[pid];
       }
@@ -2297,6 +2528,7 @@ function createRemote(env) {
       const v = buildView();
       const local = library.get();
       const snap = sync.snapshot;
+      const byId = songsById(v);
       rememberMarked(v);
 
       // Names, favourites and loudness changed on the server, for copies not
@@ -2305,7 +2537,7 @@ function createRemote(env) {
       for (const s of local.songs) {
         const sid = sync.songMap[s.id];
         const was = snap && snap.songs[s.id];
-        const there = sid && model.songById(v, sid);
+        const there = sid && byId.get(sid);
         if (!there || !was) continue;
         const unchangedHere = s.title === was.title && s.artist === was.artist && s.mix === was.mix && !!s.favouriteAt === was.fav
           && sameInfo(was, s);
@@ -2329,7 +2561,7 @@ function createRemote(env) {
       let told = 0;
       for (const s of local.songs) {
         const sid = sync.songMap[s.id];
-        const there = sid && model.songById(v, sid);
+        const there = sid && byId.get(sid);
         if (there && !(there.duration > 0) && s.duration > 0 && !lengthsTold.has(sid)) {
           // Once per session: a server too old to take it would be asked forever.
           lengthsTold.add(sid);
@@ -2344,9 +2576,9 @@ function createRemote(env) {
       if (updates.length) {
         library.mutate((d) => {
           for (const { lid, patch } of updates) {
-            const s = model.songById(d, lid);
-            if (!s) continue;
-            Object.assign(s, patch);
+            if (!model.songById(d, lid)) continue;
+            // The song to change (4.6: a saved row is locked, a copy takes its place).
+            const s = Object.assign(model.songToChange(d, lid), patch);
             if (snap) snap.songs[lid] = snapOfSong(s);
           }
         });
@@ -2357,7 +2589,7 @@ function createRemote(env) {
       // lacks most of the songs (its library lost, not deleted song by song)
       // takes nothing with it.
       const waiting = new Set(sync.queue.filter((c) => c.type === 'upload').map((c) => c.localId));
-      const gone = Object.entries(sync.songMap).filter(([lid, sid]) => !waiting.has(lid) && !model.songById(v, sid));
+      const gone = Object.entries(sync.songMap).filter(([lid, sid]) => !waiting.has(lid) && !byId.has(sid));
       const mapped = Object.keys(sync.songMap).length;
       if (gone.length && (gone.length <= 20 || gone.length < mapped / 2)) {
         for (const [lid] of gone) await forgetLocal(lid, { deleteFile: true });
@@ -2395,6 +2627,8 @@ function createRemote(env) {
     const copies = localCopies(v);
     const want = [];
     const seen = new Set();
+    const byId = songsById(v);
+    const goingUp = new Set(sync.queue.filter((c) => c.type === 'upload').map((c) => c.songId));
     for (const pid of sync.offline) {
       const all = isAllList(pid);
       const p = all ? null : markedList(v, pid);
@@ -2404,8 +2638,8 @@ function createRemote(env) {
       for (const songId of songIds) {
         if (seen.has(songId) || copies.has(songId)) continue;
         seen.add(songId);
-        const s = model.songById(v, songId);
-        if (s && !sync.queue.some((c) => c.type === 'upload' && c.songId === s.id)) want.push(s);
+        const s = byId.get(songId);
+        if (s && !goingUp.has(s.id)) want.push(s);
       }
     }
     if (downloadsWaitNote && status.note === downloadsWaitNote) status.note = '';
@@ -2509,10 +2743,10 @@ function createRemote(env) {
 
   /** Copies downloaded for a playlist no longer marked (and in no other marked one) go. */
   async function dropUnneededCopies() {
-    const v = getView();
+    const inView = new Set(getView().songs.map((s) => s.id));
     for (const lid of Object.keys(sync.fetched)) {
       const sid = sync.songMap[lid];
-      if (!sid || !model.songById(v, sid)) continue;
+      if (!sid || !inView.has(sid)) continue;
       if (!neededOffline(sid)) await forgetLocal(lid, { deleteFile: true });
     }
   }
@@ -2772,14 +3006,24 @@ function createRemote(env) {
     if (asking) return asking;
     asking = (async () => {
       queueLocalChanges(); // drops the held songs that are gone
-      const count = (sync.held || []).length;
+      if (!(sync.held || []).length) return;
+      // Those the server has already need no upload: they are not asked
+      // about (and stay as they are, playing here as its songs' copies,
+      // unless the others may go up: then they are tied to its songs).
+      const find = serverSongFinder();
+      const localById = new Map(library.get().songs.map((x) => [x.id, x]));
+      const lacking = find ? sync.held.filter((lid) => {
+        const s = localById.get(lid);
+        return !s || !find(s, lid);
+      }) : sync.held.slice();
+      const count = lacking.length;
       if (!count) return;
       // How many of them are copies downloaded from other servers.
-      const fromOthers = sync.held.filter(copyFromElsewhere).length;
+      const fromOthers = lacking.filter(copyFromElsewhere).length;
       let yes = false;
       try {
         yes = !!(await hooks.confirmUpload({
-          count, name: conn.name, fromOthers, returning,
+          count, name: conn.name, fromOthers, returning, known: sync.held.length - count,
         }));
       } catch {
         yes = false;
@@ -2796,14 +3040,45 @@ function createRemote(env) {
     return asking;
   }
 
-  /** After connecting: what changed here goes up, then the server's changes come down. */
-  function afterConnect() {
+  // The first time with a server, while the music folder is still looked through: asked once that has ended.
+  let awaitingScan = false;
+
+  /**
+   * After connecting: what changed here goes up, then the server's changes
+   * come down. `scanned`: called again once the music folder's first look
+   * has ended (see below).
+   */
+  function afterConnect(scanned = false) {
+    // The first time with a server while the app still looks through its
+    // music folder (a first start: Flow installed again, the folder still
+    // full): the songs it finds were here before the server too. Taken up
+    // only once all are found, they are held back and asked about like the
+    // rest; taken up now, with none or some of them found, the others
+    // counted as added afterwards and went up without the question.
+    const scanning = !sync.snapshot && sync.held === null && typeof library.firstScan === 'function' ? library.firstScan() : null;
+    if (scanning) {
+      if (!awaitingScan) {
+        awaitingScan = true;
+        const gen = generation;
+        const go = () => {
+          awaitingScan = false;
+          if (gen === generation && active() && status.state === 'online') afterConnect(true);
+        };
+        scanning.then(go, go);
+      }
+      flushSoon();
+      afterServerChange();
+      return;
+    }
     const s = settings.all();
     // The first time with a server (none of the songs here has been through it),
     // they are held back until the user says they may go up.
-    const first = !sync.snapshot && sync.held === null && library.get().songs.length > 0;
+    // After the wait for the folder's first look also when something went up
+    // meanwhile (a song downloaded during it): all the others are held back.
+    const before = library.get().songs.filter((x) => !(sync.snapshot && sync.snapshot.songs[x.id]) && !sync.songMap[x.id]);
+    const first = (scanned || !sync.snapshot) && sync.held === null && before.length > 0;
     if (first) {
-      sync.held = library.get().songs.map((x) => x.id);
+      sync.held = before.map((x) => x.id);
       saveSync();
     }
     if (s.serverAutoSync || !sync.snapshot) queueLocalChanges();
@@ -2890,6 +3165,7 @@ function createRemote(env) {
    * the quickest answer counts (its time was read about halfway).
    */
   async function syncClock() {
+    live.clockAt = Date.now();
     let best = null;
     for (let i = 0; i < CLOCK_SAMPLES; i += 1) {
       const t0 = Date.now();
@@ -2904,6 +3180,9 @@ function createRemote(env) {
       if (!best || t1 - t0 < best.rtt) best = { rtt: t1 - t0, offset: Number(r.time) - (t0 + t1) / 2 };
     }
     if (!best || !status.live) return;
+    // The same within 2 ms: left as it is (told to the window, every part
+    // that shows the server would draw again, once a minute, for nothing).
+    if (Math.abs(best.offset - live.offset) < 2) return;
     live.offset = best.offset;
     emitStatus();
   }
@@ -2925,6 +3204,8 @@ function createRemote(env) {
       status.live = false;
       emitStatus();
       hooks.onLive({ type: 'down', data: {} });
+      // Without it the server is asked again now and then.
+      if (liveWanted()) schedulePoll();
     }
   }
 
@@ -3049,9 +3330,8 @@ function createRemote(env) {
       if (Number.isFinite(Number(data.serverTime))) live.offset = Number(data.serverTime) - Date.now();
       status.live = true;
       emitStatus();
+      // Measured now; again when this device plays or is in a session (sessions()), not while it rests.
       syncClock();
-      clearInterval(live.clockTimer);
-      live.clockTimer = setInterval(syncClock, CLOCK_EVERY_MS);
     }
     if (type === 'end') {
       // The sign-in no longer holds: connecting again signs in afresh. Unless
@@ -3081,6 +3361,10 @@ function createRemote(env) {
   async function sessions(body) {
     if (!active() || status.state !== 'online') throw new Error(tr('connection.unreachableNow', 'The server cannot be reached right now.'));
     if (!conn.sessions) throw new Error(tr('connection.tooOld.sessions', 'This Flow Server is too old for Active Sessions. Update it first.'));
+    // The clock is measured once a minute while this device tells what it
+    // plays or takes part in a session (4.6: not while it rests; it asked
+    // the server five times a minute, all day).
+    if (body && status.live && Date.now() - (live.clockAt || 0) >= CLOCK_EVERY_MS) syncClock();
     try {
       if (!body) return await call(`/api/sessions?client=${encodeURIComponent(clientId())}`, { timeout: 10000 });
       return await call('/api/sessions', { method: 'POST', json: { ...body, client: clientId() }, timeout: 10000 });
@@ -3887,6 +4171,8 @@ function createRemote(env) {
 
   function stop() {
     generation += 1;
+    // What waited to be saved (saveSyncSoon).
+    if (syncSaveTimer) saveSync();
     stopLive();
     clearTimeout(pollTimer);
     clearTimeout(retryTimer);

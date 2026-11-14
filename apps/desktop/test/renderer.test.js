@@ -283,7 +283,9 @@ test('the library reaches the window whole once, then as its changes, and the wi
     seq = msg.seq;
     return true;
   };
-  lib.songs[1].title = 'renamed';
+  // A row is changed by another put in its place (4.6: the channel keeps the rows themselves, locked).
+  assert.throws(() => { lib.songs[1].title = 'written into'; }, TypeError, 'a row the channel has is locked');
+  lib.songs[1] = { ...lib.songs[1], title: 'renamed' };
   ch.update(lib);
   assert.equal(sent.length, 1);
   assert.deepEqual(sent[0].patch.map((s) => s[1]), [['songs']]);
@@ -292,11 +294,11 @@ test('the library reaches the window whole once, then as its changes, and the wi
   assert.ok(take(sent[0]));
   assert.equal(mine.songs[0], kept, 'a song that stays is the same object');
   // A song's file tagged shows nowhere: nothing sent.
-  lib.songs[0].tagged = 'abc';
+  lib.songs[0] = { ...lib.songs[0], tagged: 'abc' };
   ch.update(lib);
   assert.equal(sent.length, 1);
   lib.songs.push(song('d'));
-  lib.playlists[0].entries.push({ songId: 'd', addedAt: 2 });
+  lib.playlists[0] = { ...lib.playlists[0], entries: [...lib.playlists[0].entries, { songId: 'd', addedAt: 2 }] };
   ch.update(lib);
   assert.ok(take(sent[1]));
   const { tagged: _a, ...want } = lib.songs[0];
@@ -312,4 +314,45 @@ test('the library reaches the window whole once, then as its changes, and the wi
   ch.whole(lib);
   assert.ok(take(sent[4]));
   assert.deepEqual(mine, JSON.parse(JSON.stringify(lib)));
+});
+
+test('index.html loads every script and stylesheet of the window, each of them there, a split script\'s parts after it', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const renderer = path.join(__dirname, '..', 'renderer');
+  const html = fs.readFileSync(path.join(renderer, 'index.html'), 'utf8');
+  const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
+  const styles = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)" \/>/g)].map((m) => m[1]);
+  // Every tag has one of those two shapes (the web player's and the phone's builds count on them).
+  assert.equal(scripts.length, (html.match(/<script/g) || []).length);
+  assert.equal(styles.length, (html.match(/<link /g) || []).length);
+  const there = [];
+  const walk = (dir, rel) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const name = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(path.join(dir, e.name), name);
+      else there.push(name);
+    }
+  };
+  walk(renderer, '');
+  // An AudioWorklet's module: seekCheck.js loads it itself.
+  const loadedOtherwise = new Set(['app/seekTap.js']);
+  assert.deepEqual([...scripts, ...styles].filter((f) => !there.includes(f)), [], 'named in index.html, not there');
+  assert.deepEqual(there.filter((f) => /\.(js|css)$/.test(f) && !scripts.includes(f) && !styles.includes(f) && !loadedOtherwise.has(f)), [], 'there, not loaded by index.html');
+  assert.deepEqual([...scripts, ...styles].filter((f, i, all) => all.indexOf(f) !== i), [], 'loaded twice');
+  // The base stylesheet first: the others (styles/) build on it, in their order.
+  assert.equal(styles[0], 'style.css');
+  // A part adds its methods to an object another script makes (extend(Owner, { ... })): after that script.
+  const text = new Map(scripts.map((s) => [s, fs.readFileSync(path.join(renderer, s), 'utf8')]));
+  let parts = 0;
+  for (const s of scripts) {
+    const m = /^extend\(([A-Za-z_$][\w$]*),/m.exec(text.get(s));
+    if (!m) continue;
+    parts += 1;
+    const declares = new RegExp(`^(?:const|let|var|class) ${m[1]}\\b`, 'm');
+    const owner = scripts.find((o) => declares.test(text.get(o)));
+    assert.ok(owner, `${s} adds to ${m[1]}, which no script makes`);
+    assert.ok(scripts.indexOf(owner) < scripts.indexOf(s), `${s} must come after ${owner}`);
+  }
+  assert.ok(parts >= 12, `${parts} parts found`);
 });

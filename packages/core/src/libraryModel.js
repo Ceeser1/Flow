@@ -30,15 +30,19 @@
 //             Kept for a later "update from source".
 //   shared    true: the other profiles on a Flow Server can see the playlist
 //             and follow it. Only its owner can change it.
-//   group     (4.5) the id of the playlist group it is in; left out while it
-//             is in none. One group at most; never Favourites.
+//   groups    (4.5.3; 4.5 had `group`, one id) the ids of the playlist groups
+//             it is in, left out while it is in none. Several at once; never
+//             Favourites.
 //   groups    (4.5) the owner's playlist groups, folders of playlists in the
 //             menu: [{ id, name, createdAt, followed? }], A to Z by name
 //             where shown. A group may be empty; deleting it leaves its
 //             playlists single. followed (4.5.1): the ids of the playlists
 //             this owner follows that it put into the group (a followed
-//             playlist is another profile's, so its group is kept here, by
-//             whoever follows it); one group at most, only while followed.
+//             playlist is another profile's, so its groups are kept here, by
+//             whoever follows it); in several groups too (4.5.3), only while followed.
+//             shared (4.5.3): the other profiles see the group, with the
+//             shared playlists in it, and can follow it. Sharing a group
+//             shares the owner's playlists in it, and one put into it later.
 //
 // With profiles (profiles.js) a library also carries what the other profiles
 // share with this one:
@@ -53,6 +57,17 @@
 //                    heard, listens, per month; never lowered by deleting songs
 //   sharedPlaylists  the other profiles' shared playlists, for reading:
 //                    { id, name, createdAt, entries, ownerId, ownerName }
+//   groupFollows     (4.5.3) ids of the shared groups this profile follows
+//   groupSkips       (4.5.3) { [groupId]: playlist ids } the playlists this
+//                    profile unfollowed inside a group it follows: that follow
+//                    counts only for its group (the same playlist in another
+//                    followed group stays, and one followed by itself is in
+//                    follows, under Followed Playlists)
+//   sharedGroups     (4.5.3) the other profiles' shared groups, for reading:
+//                    { id, name, createdAt, ownerId, ownerName, playlists }
+//                    (playlists: the ids of the shared ones in it, the owner's
+//                    and those it follows). A followed group's playlists come
+//                    with their songs, as the followed playlists do.
 //   profileNames     { [profileId]: name } of the server's profiles (and the
 //                    Default / Shared), for the songs' addedBy ("All Songs from ...")
 //
@@ -65,6 +80,15 @@
 // that list's entries are kept the same both ways (setFavourite, adding to it,
 // taking out of it). A playlist entry's addedAt is when it was put in that list.
 // Every mutation throws an Error whose message is fit to show the user.
+//
+// Locked rows (4.6): a song or playlist that was saved or sent is locked
+// (libraryPatch.js lock), because whoever keeps what changed holds the rows
+// themselves and takes a row that is still the same one as unchanged. So
+// every change here is made to a row that may be written to (songToChange,
+// listToChange): the row itself while it is not locked, else a copy of it
+// put in its place in the library. What is inside a row (a song's stats, a
+// playlist's entries, source and rules) is replaced, never written into; a
+// row is not copied when nothing about it changes.
 
 const { comparableUrl } = require('./text');
 const {
@@ -107,7 +131,7 @@ function cleanStats(raw) {
 const INFO_ROUND = 2;
 
 function emptyLibrary() {
-  return { version: 1, songs: [], playlists: [], groups: [], ignoredFiles: [], follows: [], sharedPlaylists: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {}, infoRound: INFO_ROUND };
+  return { version: 1, songs: [], playlists: [], groups: [], ignoredFiles: [], follows: [], groupFollows: [], groupSkips: {}, sharedPlaylists: [], sharedGroups: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {}, infoRound: INFO_ROUND };
 }
 
 /** The playlist groups (4.5): each once, with a name and an id. */
@@ -126,22 +150,55 @@ function cleanGroups(raw) {
     };
     const followed = cleanIds(g.followed);
     if (followed.length) group.followed = followed;
+    if (g.shared === true) group.shared = true;
     out.push(group);
+  }
+  return out;
+}
+
+/** { groupId: playlist ids } (4.5.3): only sensible ids, none empty. */
+function cleanSkips(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [id, list] of Object.entries(raw)) {
+    const ids = cleanIds(list);
+    if (/^[\w-]{1,64}$/.test(id) && ids.length) out[id] = ids;
+  }
+  return out;
+}
+
+/** The other profiles' shared groups (4.5.3), as the server sent them. */
+function cleanSharedGroups(raw) {
+  const out = [];
+  const seen = new Set();
+  for (const g of Array.isArray(raw) ? raw : []) {
+    if (!g || typeof g !== 'object') continue;
+    const id = String(g.id || '');
+    if (!/^[\w-]{1,64}$/.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      name: String(g.name || '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME) || 'Group',
+      createdAt: Number(g.createdAt) || Date.now(),
+      ownerId: String(g.ownerId || ''),
+      ownerName: String(g.ownerName || ''),
+      playlists: cleanIds(g.playlists),
+    });
   }
   return out;
 }
 
 /**
  * The followed playlists in the groups (4.5.1): only ones still followed
- * (`follows`), each in one group at most (the first that has it).
+ * (`follows`); in several groups too (4.5.3). With `shared` (4.5.3, the
+ * server: the ids of every playlist shared now), one its owner no longer
+ * shares leaves the groups too (the follow waits).
  */
-function keepFollowedInGroups(groups, follows) {
+function keepFollowedInGroups(groups, follows, shared = null) {
   const followed = new Set(follows || []);
-  const placed = new Set();
   for (const g of groups || []) {
     if (!g.followed) continue;
-    const ids = g.followed.filter((id) => followed.has(id) && !placed.has(id));
-    for (const id of ids) placed.add(id);
+    const ids = g.followed.filter((id) => followed.has(id) && (!shared || shared.has(id)));
     if (ids.length) g.followed = ids;
     else delete g.followed;
   }
@@ -244,40 +301,104 @@ function cleanRules(raw) {
   };
 }
 
+/** A song as kept, from whatever was read or sent; null for one without an id or a file. */
+function cleanSong(s) {
+  if (!s || !s.id || !s.file) return null;
+  return {
+    id: String(s.id),
+    file: String(s.file),
+    title: String(s.title || ''),
+    artist: String(s.artist || ''),
+    mix: String(s.mix || ''),
+    album: String(s.album || ''),
+    genre: String(s.genre || ''),
+    subGenre: String(s.subGenre || ''),
+    infoLooked: s.infoLooked === true,
+    duration: Number(s.duration) || 0,
+    format: String(s.format || ''),
+    sourceUrl: String(s.sourceUrl || ''),
+    sourceKey: String(s.sourceKey || ''),
+    sourcePlaylistUrl: String(s.sourcePlaylistUrl || ''),
+    addedAt: Number(s.addedAt) || Date.now(),
+    addedBy: String(s.addedBy || ''),
+    stats: cleanStats(s.stats),
+    // LUFS, for "Equalize volume"; null until measured (loudness.js).
+    loudness: cleanLoudness(s.loudness),
+    cover: cleanCover(s.cover),
+    tagged: cleanTagged(s.tagged),
+    cut: cleanCut(s.cut),
+    favouriteAt: Number(s.favouriteAt) || null,
+    // A Flow Server's: the stamp of its lyrics kept (4.3.1), an app's copy standing while it stays.
+    ...(s.lyrics ? { lyrics: String(s.lyrics).slice(0, 40) } : {}),
+  };
+}
+
+/** A playlist's entries as kept: each song once, only songs the library has (hasSong(id)). */
+function cleanEntries(list, hasSong) {
+  const inList = new Set();
+  const entries = [];
+  for (const e of Array.isArray(list) ? list : []) {
+    if (!e || !hasSong(e.songId) || inList.has(e.songId)) continue;
+    inList.add(e.songId);
+    entries.push({ songId: String(e.songId), addedAt: Number(e.addedAt) || Date.now() });
+  }
+  return entries;
+}
+
+/** A playlist of the library's own as kept (hasSong(id): the library has the song; groupIds: its groups, a Set). */
+function cleanPlaylist(p, hasSong, groupIds) {
+  const entries = cleanEntries(p.entries, hasSong);
+  const favourites = p.favourites === true;
+  const rules = favourites ? null : cleanRules(p.rules);
+  const list = {
+    id: String(p.id),
+    name: String(p.name || 'Playlist'),
+    createdAt: Number(p.createdAt) || Date.now(),
+    entries: rules ? [] : entries,
+    source: !favourites && p.source && p.source.url ? { url: String(p.source.url), kind: String(p.source.kind || '') } : null,
+    shared: p.shared === true && !rules,
+    rules,
+  };
+  if (favourites) list.favourites = true;
+  else {
+    // Several groups (4.5.3); a library from before has one, `group`.
+    const inGroups = cleanIds([...(Array.isArray(p.groups) ? p.groups : []), ...(p.group ? [p.group] : [])]).filter((id) => groupIds.has(id));
+    if (inGroups.length) list.groups = inGroups;
+  }
+  return list;
+}
+
+/** Another profile's shared playlist as kept. */
+function cleanSharedPlaylist(p, hasSong) {
+  const shared = {
+    id: String(p.id),
+    name: String(p.name || 'Playlist'),
+    createdAt: Number(p.createdAt) || Date.now(),
+    entries: cleanEntries(p.entries, hasSong),
+    ownerId: String(p.ownerId || ''),
+    ownerName: String(p.ownerName || ''),
+  };
+  // Another profile's Favourites (4.3); a list known only by its details
+  // (4.3: Shared Playlists before it is opened or followed) carries its
+  // number of songs and length instead of its entries.
+  if (p.favourites === true) shared.favourites = true;
+  if (p.partial === true) {
+    shared.partial = true;
+    shared.songCount = Math.max(0, Math.floor(Number(p.songCount) || 0));
+    shared.seconds = Math.max(0, Number(p.seconds) || 0);
+  }
+  return shared;
+}
+
 function sanitize(raw) {
   const data = emptyLibrary();
   if (!raw || typeof raw !== 'object') return data;
   const seenSongs = new Set();
+  const hasSong = (id) => seenSongs.has(id);
   for (const s of Array.isArray(raw.songs) ? raw.songs : []) {
     if (!s || !s.id || !s.file || seenSongs.has(s.id)) continue;
     seenSongs.add(s.id);
-    data.songs.push({
-      id: String(s.id),
-      file: String(s.file),
-      title: String(s.title || ''),
-      artist: String(s.artist || ''),
-      mix: String(s.mix || ''),
-      album: String(s.album || ''),
-      genre: String(s.genre || ''),
-      subGenre: String(s.subGenre || ''),
-      infoLooked: s.infoLooked === true,
-      duration: Number(s.duration) || 0,
-      format: String(s.format || ''),
-      sourceUrl: String(s.sourceUrl || ''),
-      sourceKey: String(s.sourceKey || ''),
-      sourcePlaylistUrl: String(s.sourcePlaylistUrl || ''),
-      addedAt: Number(s.addedAt) || Date.now(),
-      addedBy: String(s.addedBy || ''),
-      stats: cleanStats(s.stats),
-      // LUFS, for "Equalize volume"; null until measured (loudness.js).
-      loudness: cleanLoudness(s.loudness),
-      cover: cleanCover(s.cover),
-      tagged: cleanTagged(s.tagged),
-      cut: cleanCut(s.cut),
-      favouriteAt: Number(s.favouriteAt) || null,
-      // A Flow Server's: the stamp of its lyrics kept (4.3.1), an app's copy standing while it stays.
-      ...(s.lyrics ? { lyrics: String(s.lyrics).slice(0, 40) } : {}),
-    });
+    data.songs.push(cleanSong(s));
   }
   data.groups = cleanGroups(raw.groups);
   const groupIds = new Set(data.groups.map((g) => g.id));
@@ -285,30 +406,13 @@ function sanitize(raw) {
   for (const p of Array.isArray(raw.playlists) ? raw.playlists : []) {
     if (!p || !p.id || p.id === ALL_SONGS_ID || seenLists.has(p.id)) continue;
     seenLists.add(p.id);
-    const inList = new Set();
-    const entries = [];
-    for (const e of Array.isArray(p.entries) ? p.entries : []) {
-      if (!e || !seenSongs.has(e.songId) || inList.has(e.songId)) continue;
-      inList.add(e.songId);
-      entries.push({ songId: String(e.songId), addedAt: Number(e.addedAt) || Date.now() });
-    }
-    const favourites = p.favourites === true;
-    const rules = favourites ? null : cleanRules(p.rules);
-    const list = {
-      id: String(p.id),
-      name: String(p.name || 'Playlist'),
-      createdAt: Number(p.createdAt) || Date.now(),
-      entries: rules ? [] : entries,
-      source: !favourites && p.source && p.source.url ? { url: String(p.source.url), kind: String(p.source.kind || '') } : null,
-      shared: p.shared === true && !rules,
-      rules,
-    };
-    if (favourites) list.favourites = true;
-    else if (p.group && groupIds.has(String(p.group))) list.group = String(p.group);
-    data.playlists.push(list);
+    data.playlists.push(cleanPlaylist(p, hasSong, groupIds));
   }
   data.follows = cleanIds(raw.follows);
   keepFollowedInGroups(data.groups, data.follows);
+  data.groupFollows = cleanIds(raw.groupFollows);
+  data.groupSkips = cleanSkips(raw.groupSkips);
+  data.sharedGroups = cleanSharedGroups(raw.sharedGroups);
   data.playlistListened = cleanListened(raw.playlistListened);
   data.listening = cleanListening(raw.listening);
   data.statistics = cleanStatistics(raw.statistics);
@@ -318,31 +422,7 @@ function sanitize(raw) {
   for (const p of Array.isArray(raw.sharedPlaylists) ? raw.sharedPlaylists : []) {
     if (!p || !p.id || seenShared.has(p.id) || seenLists.has(p.id)) continue;
     seenShared.add(p.id);
-    const inList = new Set();
-    const entries = [];
-    for (const e of Array.isArray(p.entries) ? p.entries : []) {
-      if (!e || !seenSongs.has(e.songId) || inList.has(e.songId)) continue;
-      inList.add(e.songId);
-      entries.push({ songId: String(e.songId), addedAt: Number(e.addedAt) || Date.now() });
-    }
-    const shared = {
-      id: String(p.id),
-      name: String(p.name || 'Playlist'),
-      createdAt: Number(p.createdAt) || Date.now(),
-      entries,
-      ownerId: String(p.ownerId || ''),
-      ownerName: String(p.ownerName || ''),
-    };
-    // Another profile's Favourites (4.3); a list known only by its details
-    // (4.3: Shared Playlists before it is opened or followed) carries its
-    // number of songs and length instead of its entries.
-    if (p.favourites === true) shared.favourites = true;
-    if (p.partial === true) {
-      shared.partial = true;
-      shared.songCount = Math.max(0, Math.floor(Number(p.songCount) || 0));
-      shared.seconds = Math.max(0, Number(p.seconds) || 0);
-    }
-    data.sharedPlaylists.push(shared);
+    data.sharedPlaylists.push(cleanSharedPlaylist(p, hasSong));
   }
   if (Array.isArray(raw.ignoredFiles)) {
     data.ignoredFiles = [...new Set(raw.ignoredFiles.map((f) => String(f).toLowerCase()))];
@@ -383,6 +463,31 @@ function requireSong(data, id) {
   return s;
 }
 
+/** list[i] to write to: the row itself, or (locked, 4.6) a copy of it put in its place. */
+function rowToChange(list, i) {
+  const row = list[i];
+  if (!Object.isFrozen(row)) return row;
+  // A playlist's entries are added to and taken from: its copy has a list of its own (the same entries).
+  const copy = Array.isArray(row.entries) ? { ...row, entries: row.entries.slice() } : { ...row };
+  list[i] = copy;
+  return copy;
+}
+
+/** The song to change (4.6: itself, or a copy in its place when it is locked); throws when it is gone. */
+function songToChange(data, id) {
+  const i = data.songs.findIndex((s) => s.id === id);
+  if (i < 0) throw new Error(tr('common.songGone', 'That song no longer exists.'));
+  return rowToChange(data.songs, i);
+}
+
+/** `p`, one of data.playlists, to change (4.6: itself, or a copy in its place when it is locked). */
+function listToChange(data, p) {
+  if (!Object.isFrozen(p)) return p;
+  const i = data.playlists.indexOf(p);
+  if (i < 0) throw new Error('A playlist to change must be one of the library\'s own.');
+  return rowToChange(data.playlists, i);
+}
+
 /** The name trimmed, or an Error saying why it cannot be used. */
 function checkPlaylistName(data, name, exceptId = null) {
   const clean = String(name || '').replace(/\s+/g, ' ').trim();
@@ -415,20 +520,26 @@ function freePlaylistName(data, name) {
 
 /** Remembers where an imported playlist came from, unless it already knows. */
 function setPlaylistSource(data, id, source) {
-  const p = requirePlaylist(data, id);
-  if (!p.source && !p.favourites && source && source.url) p.source = { url: String(source.url), kind: String(source.kind || '') };
+  let p = requirePlaylist(data, id);
+  if (!p.source && !p.favourites && source && source.url) {
+    p = listToChange(data, p);
+    p.source = { url: String(source.url), kind: String(source.kind || '') };
+  }
   return p;
 }
 
 function renamePlaylist(data, id, name) {
   const p = requireOrdinary(data, id);
-  p.name = checkPlaylistName(data, name, id);
-  return p;
+  const clean = checkPlaylistName(data, name, id);
+  if (p.name === clean) return p;
+  const w = listToChange(data, p);
+  w.name = clean;
+  return w;
 }
 
 /** Makes a playlist a smart one with these rules (null: an ordinary, empty one again). */
 function setPlaylistRules(data, id, rules) {
-  const p = requireOrdinary(data, id);
+  const p = listToChange(data, requireOrdinary(data, id));
   p.rules = cleanRules(rules);
   p.entries = [];
   if (p.rules) p.shared = false;
@@ -439,8 +550,10 @@ function setPlaylistRules(data, id, rules) {
 function setPlaylistShared(data, id, shared) {
   const p = requirePlaylist(data, id);
   if (shared && p.rules) throw new Error(tr('core.library.smartNotShared', 'A smart playlist is made from your own listening, so it cannot be shared.'));
-  p.shared = !!shared;
-  return p;
+  if (p.shared === !!shared) return p;
+  const w = listToChange(data, p);
+  w.shared = !!shared;
+  return w;
 }
 
 /** A shared playlist of another profile, or null. */
@@ -453,6 +566,66 @@ function followPlaylist(data, id) {
   if (playlistById(data, id)) throw new Error(tr('core.library.ownNotFollowed', 'Your own playlists are always yours; there is nothing to follow.'));
   if (!sharedPlaylistById(data, id)) throw new Error(tr('core.library.noLongerShared', 'That playlist is no longer shared.'));
   data.follows = cleanIds([...(data.follows || []), id]);
+}
+
+/** Another profile's shared group (4.5.3), or null. */
+function sharedGroupById(data, id) {
+  return (data.sharedGroups || []).find((g) => g.id === id) || null;
+}
+
+/**
+ * The playlists this profile follows (4.5.3): those it follows itself, and
+ * those in the shared groups it follows. A Set of ids.
+ */
+function followedIds(data) {
+  const out = new Set(data.follows || []);
+  const groups = new Set(data.groupFollows || []);
+  for (const g of data.sharedGroups || []) if (groups.has(g.id)) for (const id of followedInGroup(data, g)) out.add(id);
+  return out;
+}
+
+/** A followed shared group's playlists this profile follows in it: all but those unfollowed there (4.5.3). */
+function followedInGroup(data, g) {
+  const skipped = (data.groupSkips || {})[g.id] || [];
+  return skipped.length ? g.playlists.filter((id) => !skipped.includes(id)) : g.playlists.slice();
+}
+
+/** Whether another profile's playlist is followed: by itself, or in a followed group (4.5.3). */
+function isFollowed(data, id) {
+  if ((data.follows || []).includes(id)) return true;
+  const groups = data.groupFollows || [];
+  return groups.length > 0 && (data.sharedGroups || []).some((g) => groups.includes(g.id) && followedInGroup(data, g).includes(id));
+}
+
+/**
+ * Follows a playlist inside a group this profile follows (4.5.3), or no
+ * longer: only for that group; the follow of the playlist itself and those
+ * of other groups stay as they are.
+ */
+function setGroupPlaylistFollowed(data, groupId, playlistId, on) {
+  if (!(data.groupFollows || []).includes(groupId)) throw new Error(tr('core.library.groupNotFollowed', 'You do not follow that group.'));
+  const skips = { ...(data.groupSkips || {}) };
+  const ids = (skips[groupId] || []).filter((id) => id !== playlistId);
+  if (!on) ids.push(String(playlistId));
+  if (ids.length) skips[groupId] = ids;
+  else delete skips[groupId];
+  data.groupSkips = skips;
+}
+
+/** Follows a group another profile shares (4.5.3). Your own cannot be followed. */
+function followGroup(data, id) {
+  if (groupById(data, id)) throw new Error(tr('core.library.ownGroupNotFollowed', 'Your own groups are always yours; there is nothing to follow.'));
+  if (!sharedGroupById(data, id)) throw new Error(tr('core.library.groupNoLongerShared', 'That group is no longer shared.'));
+  data.groupFollows = cleanIds([...(data.groupFollows || []), id]);
+}
+
+function unfollowGroup(data, id) {
+  data.groupFollows = (data.groupFollows || []).filter((x) => x !== id);
+  // What was unfollowed inside it goes with it: followed again, it is whole.
+  if (data.groupSkips && data.groupSkips[id]) {
+    data.groupSkips = { ...data.groupSkips };
+    delete data.groupSkips[id];
+  }
 }
 
 function unfollowPlaylist(data, id) {
@@ -514,24 +687,58 @@ function renameGroup(data, id, name) {
   return g;
 }
 
-/** The group goes; its playlists stay, single again. */
+/**
+ * Shares a group with the other profiles (4.5.3), or no longer. Shared, every
+ * playlist of the owner's in it is shared too (a smart one cannot be, so it
+ * stays the owner's alone); no longer shared, they stay as they are.
+ */
+function setGroupShared(data, id, shared) {
+  const g = requireGroup(data, id);
+  if (!shared) {
+    delete g.shared;
+    return g;
+  }
+  g.shared = true;
+  for (const p of data.playlists.slice()) if (inGroup(p, id) && !p.rules && !p.favourites && p.shared !== true) listToChange(data, p).shared = true;
+  return g;
+}
+
+/** Whether an own playlist is in group `id` (4.5.3: one of its groups). */
+function inGroup(p, id) {
+  return !!p.groups && p.groups.includes(id);
+}
+
+/** The group goes; its playlists stay (in their other groups, or single again). */
 function deleteGroup(data, id) {
   requireGroup(data, id);
   data.groups = data.groups.filter((g) => g.id !== id);
-  for (const p of data.playlists) if (p.group === id) delete p.group;
+  for (const p of data.playlists.slice()) if (inGroup(p, id)) leaveGroup(listToChange(data, p), id);
 }
 
-/** The group a playlist this owner follows is in (4.5.1), or null. */
+/** `p`: a playlist that may be written to (listToChange). */
+function leaveGroup(p, id) {
+  p.groups = (p.groups || []).filter((g) => g !== id);
+  if (!p.groups.length) delete p.groups;
+}
+
+/** The first group a playlist this owner follows is in (4.5.1), or null. */
 function groupOfFollowed(data, playlistId) {
   return (data.groups || []).find((g) => (g.followed || []).includes(playlistId)) || null;
 }
 
+/** Whether the playlist is one this owner follows rather than its own (4.5.1). */
+function isFollowedOne(data, playlistId) {
+  return !playlistById(data, playlistId) && (data.follows || []).includes(playlistId);
+}
+
 /**
- * Puts a playlist into a group, or (groupId '' or null) out of the one it is
- * in: one of the owner's own, or (4.5.1) one it follows.
+ * Puts a playlist into group `groupId` only, or (groupId '' or null) out of
+ * every group: one of the owner's own, or (4.5.1) one it follows. The
+ * "move" of the apps from before 4.5.3; they now add and take out one group
+ * at a time (addPlaylistToGroup, removePlaylistFromGroup).
  */
 function setPlaylistGroup(data, playlistId, groupId) {
-  if (!playlistById(data, playlistId) && (data.follows || []).includes(playlistId)) {
+  if (isFollowedOne(data, playlistId)) {
     if (groupId) requireGroup(data, groupId);
     for (const g of data.groups || []) {
       if (!g.followed) continue;
@@ -539,23 +746,61 @@ function setPlaylistGroup(data, playlistId, groupId) {
       if (!g.followed.length) delete g.followed;
     }
     if (!groupId) return null;
-    const g = groupById(data, groupId);
-    g.followed = [...(g.followed || []), String(playlistId)];
+    return addPlaylistToGroup(data, playlistId, groupId);
+  }
+  let p = requireOrdinary(data, playlistId);
+  if (p.groups !== undefined) {
+    p = listToChange(data, p);
+    delete p.groups;
+  }
+  if (!groupId) return p;
+  return addPlaylistToGroup(data, playlistId, groupId);
+}
+
+/**
+ * Puts a playlist into one more group (4.5.3), keeping the groups it is in:
+ * one of the owner's own (into a shared group it is shared too), or one it follows.
+ */
+function addPlaylistToGroup(data, playlistId, groupId) {
+  const g = requireGroup(data, groupId);
+  if (isFollowedOne(data, playlistId)) {
+    if (!(g.followed || []).includes(playlistId)) g.followed = [...(g.followed || []), String(playlistId)];
     return g;
   }
-  const p = requireOrdinary(data, playlistId);
-  if (!groupId) {
-    delete p.group;
-    return p;
+  let p = requireOrdinary(data, playlistId);
+  if (!inGroup(p, g.id)) {
+    p = listToChange(data, p);
+    p.groups = [...(p.groups || []), g.id];
   }
-  requireGroup(data, groupId);
-  p.group = String(groupId);
+  // Into a shared group: shared too (4.5.3).
+  if (g.shared && !p.rules && p.shared !== true) {
+    p = listToChange(data, p);
+    p.shared = true;
+  }
+  return p;
+}
+
+/** Takes a playlist out of one of its groups (4.5.3); its other groups keep it. */
+function removePlaylistFromGroup(data, playlistId, groupId) {
+  if (isFollowedOne(data, playlistId)) {
+    const g = groupById(data, groupId);
+    if (g && g.followed) {
+      g.followed = g.followed.filter((id) => id !== playlistId);
+      if (!g.followed.length) delete g.followed;
+    }
+    return g;
+  }
+  let p = requireOrdinary(data, playlistId);
+  if (p.groups !== undefined && (inGroup(p, groupId) || !p.groups.length)) {
+    p = listToChange(data, p);
+    leaveGroup(p, groupId);
+  }
   return p;
 }
 
 /** The playlists in a group (all of them, smart ones too). */
 function playlistsInGroup(data, id) {
-  return data.playlists.filter((p) => p.group === id);
+  return data.playlists.filter((p) => inGroup(p, id));
 }
 
 /**
@@ -588,7 +833,9 @@ function albumFor(album, title) {
   return cleanInfo(album) || cleanInfo(title);
 }
 
-function addSong(data, song) {
+function addSong(data, given) {
+  // A row of its own to write to (4.6: one handed over locked is copied).
+  const song = Object.isFrozen(given) ? { ...given } : given;
   song.stats = cleanStats(song.stats);
   song.infoLooked = song.infoLooked === true;
   song.genre = cleanInfo(song.genre);
@@ -604,7 +851,7 @@ function addSong(data, song) {
   data.songs.push(song);
   // Starred already (an upload brings its own): into the Favourites list too.
   const fav = song.favouriteAt ? favouritesList(data) : null;
-  if (fav && !fav.entries.some((e) => e.songId === song.id)) fav.entries.push({ songId: song.id, addedAt: song.favouriteAt });
+  if (fav && !fav.entries.some((e) => e.songId === song.id)) listToChange(data, fav).entries.push({ songId: song.id, addedAt: song.favouriteAt });
   const lower = String(song.file).toLowerCase();
   data.ignoredFiles = data.ignoredFiles.filter((f) => f !== lower);
   return song;
@@ -612,19 +859,32 @@ function addSong(data, song) {
 
 function updateSong(data, id, patch) {
   const s = requireSong(data, id);
+  const next = {};
   for (const key of ['title', 'artist', 'mix', 'file', 'duration', 'format']) {
-    if (patch[key] !== undefined) s[key] = patch[key];
+    if (patch[key] !== undefined) next[key] = patch[key];
   }
-  if (patch.genre !== undefined) s.genre = cleanInfo(patch.genre);
-  if (patch.subGenre !== undefined) s.subGenre = cleanInfo(patch.subGenre);
+  if (patch.genre !== undefined) next.genre = cleanInfo(patch.genre);
+  if (patch.subGenre !== undefined) next.subGenre = cleanInfo(patch.subGenre);
   // Set by hand, it counts as looked for: an empty one is the title.
   if (patch.album !== undefined) {
-    s.album = albumFor(patch.album, s.title);
-    s.infoLooked = true;
+    next.album = albumFor(patch.album, next.title !== undefined ? next.title : s.title);
+    next.infoLooked = true;
   }
-  if (patch.loudness !== undefined) s.loudness = cleanLoudness(patch.loudness);
-  if (patch.cut !== undefined) s.cut = cleanCut(patch.cut);
-  return s;
+  if (patch.loudness !== undefined) next.loudness = cleanLoudness(patch.loudness);
+  if (patch.cut !== undefined) next.cut = cleanCut(patch.cut);
+  return changeSong(data, s, next);
+}
+
+/** Song `s` with the fields of `next`: the song as it is when none differs (4.6), else the one to change, changed. */
+function changeSong(data, s, next) {
+  let differs = false;
+  for (const key in next) {
+    if (s[key] !== next[key]) {
+      differs = true;
+      break;
+    }
+  }
+  return differs ? Object.assign(songToChange(data, s.id), next) : s;
 }
 
 /**
@@ -635,7 +895,10 @@ function updateSong(data, id, patch) {
  */
 function startInfoRound(data) {
   if (data.infoRound >= INFO_ROUND) return false;
-  for (const s of data.songs) if (s.infoLooked && !(s.album && s.genre && s.subGenre)) s.infoLooked = false;
+  for (let i = 0; i < data.songs.length; i += 1) {
+    const s = data.songs[i];
+    if (s.infoLooked && !(s.album && s.genre && s.subGenre)) rowToChange(data.songs, i).infoLooked = false;
+  }
   data.infoRound = INFO_ROUND;
   return true;
 }
@@ -646,11 +909,9 @@ function startInfoRound(data) {
  */
 function setInfo(data, id, { album = '', genre = '', subGenre = '' } = {}) {
   const s = requireSong(data, id);
-  s.album = albumFor(s.album || album, s.title);
-  s.genre = cleanInfo(s.genre || genre);
-  s.subGenre = cleanInfo(s.subGenre || subGenre);
-  s.infoLooked = true;
-  return s;
+  return changeSong(data, s, {
+    album: albumFor(s.album || album, s.title), genre: cleanInfo(s.genre || genre), subGenre: cleanInfo(s.subGenre || subGenre), infoLooked: true,
+  });
 }
 
 /**
@@ -658,16 +919,12 @@ function setInfo(data, id, { album = '', genre = '', subGenre = '' } = {}) {
  * command: only whoever keeps the cover files calls it.
  */
 function setCover(data, id, version) {
-  const s = requireSong(data, id);
-  s.cover = cleanCover(version);
-  return s;
+  return changeSong(data, requireSong(data, id), { cover: cleanCover(version) });
 }
 
 /** What the song's file carries now (see cleanTagged); only whoever writes the files calls it. */
 function setTagged(data, id, value) {
-  const s = requireSong(data, id);
-  s.tagged = cleanTagged(value);
-  return s;
+  return changeSong(data, requireSong(data, id), { tagged: cleanTagged(value) });
 }
 
 /** A song whose file wants its tags written: new, cover settled, not written with this cover yet. */
@@ -677,15 +934,17 @@ function needsTags(s) {
 
 /** Makes a song a favourite or no longer one. Already so: left as it was. */
 function setFavourite(data, id, on, now = Date.now()) {
-  const s = requireSong(data, id);
-  if (on && !s.favouriteAt) s.favouriteAt = now;
-  if (!on) s.favouriteAt = null;
+  let s = requireSong(data, id);
+  if (on ? !s.favouriteAt : s.favouriteAt !== null) {
+    s = songToChange(data, id);
+    s.favouriteAt = on ? now : null;
+  }
   // The Favourites playlist (a Flow Server's) follows: the star is putting the song in it.
   const fav = favouritesList(data);
   if (fav) {
     const has = fav.entries.some((e) => e.songId === id);
-    if (on && !has) fav.entries.push({ songId: id, addedAt: s.favouriteAt });
-    if (!on && has) fav.entries = fav.entries.filter((e) => e.songId !== id);
+    if (on && !has) listToChange(data, fav).entries.push({ songId: id, addedAt: s.favouriteAt });
+    if (!on && has) listToChange(data, fav).entries = fav.entries.filter((e) => e.songId !== id);
   }
   return s;
 }
@@ -695,8 +954,7 @@ function starFollows(data, p, songId, on, now) {
   if (!p.favourites) return;
   const s = songById(data, songId);
   if (!s) return;
-  if (on && !s.favouriteAt) s.favouriteAt = now;
-  if (!on) s.favouriteAt = null;
+  if (on ? !s.favouriteAt : s.favouriteAt !== null) songToChange(data, songId).favouriteAt = on ? now : null;
 }
 
 /**
@@ -707,7 +965,8 @@ function starFollows(data, p, songId, on, now) {
 function removeSong(data, id, keepFile) {
   const s = requireSong(data, id);
   data.songs = data.songs.filter((x) => x.id !== id);
-  for (const p of data.playlists) p.entries = p.entries.filter((e) => e.songId !== id);
+  // Only the playlists that hold it get another list of entries.
+  for (const p of data.playlists.slice()) if (p.entries.some((e) => e.songId === id)) listToChange(data, p).entries = p.entries.filter((e) => e.songId !== id);
   if (keepFile) {
     const lower = s.file.toLowerCase();
     if (!data.ignoredFiles.includes(lower)) data.ignoredFiles.push(lower);
@@ -725,8 +984,8 @@ function addListenedTo(data, listId, songId, seconds) {
   const builtIn = listId === ALL_SONGS_ID || listId === 'favourites' || listId.startsWith('smart:');
   const list = builtIn ? null : (playlistById(data, listId) || sharedPlaylistById(data, listId));
   if (!builtIn && (!list || !list.entries.some((e) => e.songId === songId))) return;
-  // Another profile's list only counts while it is followed.
-  if (list && !playlistById(data, listId) && !(data.follows || []).includes(listId)) return;
+  // Another profile's list only counts while it is followed (itself, or its shared group, 4.5.3).
+  if (list && !playlistById(data, listId) && !isFollowed(data, listId)) return;
   if (!data.playlistListened || typeof data.playlistListened !== 'object') data.playlistListened = {};
   data.playlistListened[listId] = (data.playlistListened[listId] || 0) + seconds;
 }
@@ -753,7 +1012,7 @@ function recordListen(data, songId, { listened, duration, at = Date.now(), conte
   st.sessions += 1;
   st.listened += heard;
   st.lastPlayedAt = at;
-  s.stats = st;
+  songToChange(data, songId).stats = st;
   addListenedTo(data, contextId, songId, heard);
   recordListening(data, songId, heard, at, tz);
   recordStatistics(data, heard, at, tz);
@@ -780,7 +1039,7 @@ function addSongToPlaylists(data, songId, playlistIds, now = Date.now()) {
   for (const pid of playlistIds || []) {
     const p = requirePlaylist(data, pid);
     if (p.rules || p.entries.some((e) => e.songId === songId)) continue;
-    p.entries.push({ songId, addedAt: now });
+    listToChange(data, p).entries.push({ songId, addedAt: now });
     starFollows(data, p, songId, true, now);
     added += 1;
   }
@@ -788,12 +1047,13 @@ function addSongToPlaylists(data, songId, playlistIds, now = Date.now()) {
 }
 
 function addSongsToPlaylist(data, playlistId, songIds, now = Date.now()) {
-  const p = requirePlaylist(data, playlistId);
+  let p = requirePlaylist(data, playlistId);
   if (p.rules) throw new Error(tr('core.library.smartByRules', 'A smart playlist picks its songs by its rules: they cannot be added by hand.'));
   let added = 0;
   for (const sid of songIds || []) {
     requireSong(data, sid);
     if (p.entries.some((e) => e.songId === sid)) continue;
+    p = listToChange(data, p);
     p.entries.push({ songId: sid, addedAt: now });
     starFollows(data, p, sid, true, now);
     added += 1;
@@ -803,7 +1063,7 @@ function addSongsToPlaylist(data, playlistId, songIds, now = Date.now()) {
 
 function removeFromPlaylist(data, playlistId, songId) {
   const p = requirePlaylist(data, playlistId);
-  p.entries = p.entries.filter((e) => e.songId !== songId);
+  if (p.entries.some((e) => e.songId === songId)) listToChange(data, p).entries = p.entries.filter((e) => e.songId !== songId);
   starFollows(data, p, songId, false);
 }
 
@@ -888,11 +1148,12 @@ function sameNames(a, b) {
 
 module.exports = {
   ALL_SONGS_ID, ALL_SONGS_NAME, MAX_NAME, PLAYED_SHARE, EARLY_SKIP_SECONDS,
-  emptyLibrary, emptyStats, sanitize, recordListen, songById, playlistById, checkPlaylistName,
+  emptyLibrary, emptyStats, sanitize, cleanSong, cleanPlaylist, cleanSharedPlaylist, cleanStats, recordListen, songById, playlistById, checkPlaylistName, rowToChange, songToChange, listToChange,
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource, setPlaylistRules, cleanRules, recordAwayListen, favouritesList,
   RULE_FIELDS, RULE_OPS, RULE_SORTS,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
-  cleanGroups, keepFollowedInGroups, groupOfFollowed, groupById, checkGroupName, freeGroupName, createGroup, renameGroup, deleteGroup, setPlaylistGroup, playlistsInGroup,
+  sharedGroupById, followedIds, followedInGroup, isFollowed, setGroupPlaylistFollowed, followGroup, unfollowGroup, setGroupShared, cleanSharedGroups, cleanSkips,
+  cleanGroups, keepFollowedInGroups, groupOfFollowed, inGroup, addPlaylistToGroup, removePlaylistFromGroup, groupById, checkGroupName, freeGroupName, createGroup, renameGroup, deleteGroup, setPlaylistGroup, playlistsInGroup,
   addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta, findSameSong, sameSongIn, sameNames,

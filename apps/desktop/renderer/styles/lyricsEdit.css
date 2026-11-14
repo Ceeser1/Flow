@@ -1,0 +1,159 @@
+/* Flow: lyrics written or edited by hand. A part of the stylesheet (style.css first, then these in the order index.html links them). */
+
+/* ---- Lyrics written or edited by hand (lyricsEdit.js, 4.0) ---- */
+
+/* "Lyrics" after a downloaded song's title: a green ring with a tick, or a red one with a cross. */
+.lyrics-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+}
+.lyrics-badge .icon { width: 15px; height: 15px; }
+.lyrics-badge--yes { color: var(--green); }
+.lyrics-badge--no { color: var(--red); }
+.import__title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.import__title-row .import__title { min-width: 0; }
+
+/* The song editor's lyrics row (Add Songs): "Found lyrics: Show, Edit Lyrics". */
+.ed-lyrics { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.ed-lyrics__label { color: var(--text-dim); }
+.ed-lyrics:empty { display: none; }
+
+/* Show: each line with its times. */
+.modal--lyrics-show { width: min(640px, 100%); max-height: 85vh; }
+.lyrics-show__song { font-weight: 600; color: var(--text-bright); padding-bottom: 8px; }
+.lyrics-show__note { color: var(--text-dim); padding-bottom: 8px; }
+.lyrics-show__lines { display: flex; flex-direction: column; user-select: text; }
+.lyrics-show__row { display: flex; gap: 16px; padding: 3px 0; border-bottom: 1px solid #2c2c33; }
+.lyrics-show__time { flex: none; color: var(--text-dim); font-variant-numeric: tabular-nums; min-width: 0; white-space: nowrap; }
+.lyrics-show__time:empty { display: none; }
+.lyrics-show__text { color: var(--text); }
+.lyrics-show__text--pause { color: var(--text-dim); }
+.lyrics-show__source { font-size: 11px; color: var(--text-dim); padding-top: 10px; }
+
+/* Edit and Add: From - To and the words, a row a line. */
+.modal--lyrics-edit { width: min(900px, 100%); height: 90vh; }
+/* The lines scroll on their own; the player stays at the bottom. */
+.modal--lyrics-edit .modal__body { overflow: hidden; }
+.lyrics-edit__hint { flex: none; padding-bottom: 10px; white-space: normal; }
+/* The song's names, Search LRCLIB at the right. */
+.lyrics-edit__top { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.lyrics-edit__top .btn { flex: none; margin-top: -3px; }
+
+/* Search LRCLIB: the results at the left, the one picked's lines at the right. */
+.modal--lyrics-search { width: min(900px, 100%); height: 80vh; }
+.modal--lyrics-search .modal__body { display: flex; flex-direction: column; overflow: hidden; }
+.lyrics-search__bar { flex: none; display: flex; gap: 8px; }
+.lyrics-search__q { flex: 1; }
+.lyrics-search__note { flex: none; font-size: 12px; color: var(--text-dim); padding: 6px 0; min-height: 26px; }
+.lyrics-search__panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.lyrics-search__list,
+.lyrics-search__preview { overflow-y: auto; min-height: 0; border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.lyrics-search__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.lyrics-search__item:hover { background: var(--glass-hi); }
+.lyrics-search__item--on,
+.lyrics-search__item--on:hover { background: rgba(90, 140, 220, 0.3); }
+.lyrics-search__name { font-weight: 600; color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lyrics-search__meta { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-dim); }
+.lyrics-search__kind { flex: none; padding: 0 6px; border-radius: 8px; border: 1px solid var(--line); }
+.lyrics-search__kind--timed { color: #8fdc9b; border-color: rgba(108, 196, 126, 0.5); }
+.lyrics-search__empty { color: var(--text-dim); padding: 8px; display: flex; align-items: center; gap: 8px; }
+
+/* Publish to LRCLIB: what goes, under which names. */
+.modal--lyrics-publish { width: min(520px, 100%); }
+.lyrics-publish__text { margin: 0 0 12px; color: var(--text-dim); line-height: 1.5; }
+.lyrics-publish__field { display: grid; grid-template-columns: 70px minmax(0, 1fr); align-items: center; gap: 10px; margin-bottom: 8px; }
+.lyrics-publish__field > span:first-child { color: var(--text-dim); }
+.lyrics-publish__value { color: var(--text); }
+.lyrics-publish__status { display: flex; align-items: center; gap: 8px; color: var(--text-dim); min-height: 20px; }
+.lyrics-edit__paste-box { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.lyrics-edit__paste { height: auto; flex: 1; min-height: 200px; padding: 8px 10px; resize: none; font: inherit; line-height: 1.5; }
+.lyrics-edit__paste-box[hidden],
+.lyrics-edit__table[hidden] { display: none; }
+.lyrics-edit__paste-foot { display: flex; justify-content: flex-end; }
+.lyrics-edit__table { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; }
+.lyrics-edit__rows { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; min-height: 0; padding-right: 4px; }
+.lyrics-edit__head,
+.lyrics-edit__row {
+  display: grid;
+  grid-template-columns: 104px 10px 104px minmax(0, 1fr) 28px 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 4px;
+}
+.lyrics-edit__head { font-size: 12px; font-weight: 600; color: var(--text-dim); padding-bottom: 2px; padding-right: 8px; }
+/* A line with words: its colour (lyricsEdit.js COLOURS) as strong as on the
+   waveform, its boxes see-through over it. */
+.lyrics-edit__row--lit { background: rgba(var(--line-rgb), 0.55); box-shadow: inset 4px 0 0 rgb(var(--line-rgb)); }
+.lyrics-edit__row--lit .input { background: rgba(0, 0, 0, 0.3); border-color: rgba(255, 255, 255, 0.14); color: #fff; }
+.lyrics-edit__row--lit .input::placeholder { color: rgba(255, 255, 255, 0.55); }
+.lyrics-edit__row--lit .icon-btn { color: #fff; }
+/* The line sung where the player is. */
+.lyrics-edit__row--now { outline: 1px solid rgba(255, 255, 255, 0.55); outline-offset: -1px; }
+.lyrics-edit__words { position: relative; min-width: 0; }
+.lyrics-edit__words .lyrics-edit__text { width: 100%; }
+/* A line without words: music, a note in its box. */
+.lyrics-edit__note { display: none; position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--text-dim); pointer-events: none; }
+.lyrics-edit__note .icon { width: 16px; height: 16px; }
+.lyrics-edit__row--music .lyrics-edit__note { display: inline-flex; }
+.lyrics-edit__row--music .lyrics-edit__text { padding-left: 32px; }
+.lyrics-edit__time { height: 28px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
+/* Dragged left or right to change the time (lyricsEdit.js _scrub); typed in once clicked. */
+.lyrics-edit__time:not(:focus),
+.lyrics-edit--scrubbing,
+.lyrics-edit--scrubbing * { cursor: ew-resize !important; }
+.lyrics-edit--scrubbing { user-select: none; }
+.lyrics-edit__text { height: 28px; }
+.lyrics-edit__dash { color: var(--text-dim); text-align: center; }
+.lyrics-edit__add,
+.lyrics-edit__remove { width: 28px; height: 28px; }
+.lyrics-edit__add .icon { width: 14px; height: 14px; }
+.lyrics-edit__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 6px; }
+.lyrics-edit__shift { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); }
+.lyrics-edit__shift span { margin-right: 4px; }
+.lyrics-edit__shift-by { width: 80px; height: 28px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
+.lyrics-edit__error { flex: none; }
+/* The player: the waveform, then -5 s, play, +5 s and the place. */
+.lyrics-edit__player { flex: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.lyrics-edit__wave-wrap { position: relative; height: 84px; }
+.lyrics-edit__wave { display: block; width: 100%; height: 84px; background: rgba(0, 0, 0, 0.33); border-radius: 4px; cursor: pointer; touch-action: none; }
+.lyrics-edit__wave-status { font-size: 14px; }
+.lyrics-edit__wave-status[hidden] { display: none; }
+.lyrics-edit__transport { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 8px; }
+.lyrics-edit__insert { margin-left: 6px; }
+.lyrics-edit__speed-box { display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; font-size: 13px; color: var(--text-dim); }
+.lyrics-edit__speed { width: 100px; }
+.lyrics-edit__speed:disabled { opacity: 0.5; cursor: default; }
+.lyrics-edit__speed-value { width: 38px; font-variant-numeric: tabular-nums; color: var(--text); }
+.lyrics-edit__pitch { display: inline-flex; }
+.lyrics-edit__pitch .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.lyrics-edit__pitch .btn:last-child { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.lyrics-edit__pitch .btn.lyrics-edit__pitch--on { background: var(--accent); color: #fff; font-weight: 600; }
+.lyrics-edit__transport .round-btn--main { width: 40px; height: 40px; }
+.lyrics-edit__clock { margin-left: 6px; font-variant-numeric: tabular-nums; color: var(--text-bright); font-size: 15px; }
+.lyrics-edit__zoom { margin-left: auto; font-size: 12px; color: var(--text-dim); text-align: right; }
+.lyrics-edit__wave-wrap .playhead[hidden] { display: none; }
+.lyrics-edit__scroll { position: relative; height: 12px; margin-top: 4px; border-radius: 6px; background: rgba(255, 255, 255, 0.07); cursor: pointer; touch-action: none; }
+.lyrics-edit__scroll[hidden] { display: none; }
+.lyrics-edit__scroll-thumb { position: absolute; top: 1px; bottom: 1px; min-width: 14px; border-radius: 5px; background: #6a6a76; cursor: grab; }
+.lyrics-edit__scroll-thumb:hover { background: #8a8a96; }
+.input--bad, .input--bad:focus { border-color: var(--red); }
+
+/* Song Details: the song's words without times, and Edit / Add Lyrics under them. */
+.details__lyrics { white-space: pre-wrap; color: var(--text); padding: 10px 0 0; user-select: text; line-height: 1.5; max-height: 320px; overflow-y: auto; }
+.details__lyrics--none { color: var(--text-dim); }

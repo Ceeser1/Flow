@@ -39,6 +39,12 @@ const ServerImport = {
   init() {
     $('serverDownloadBtn').onclick = () => this.start();
     Store.onServer((st) => this._onServer(st));
+    // The server says when its downloads change (4.6): asked for then.
+    if (window.flow.onServerLive) {
+      window.flow.onServerLive((ev) => {
+        if (ev && ev.type === 'downloads') this._told();
+      });
+    }
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && this.available) this.poll();
     });
@@ -50,6 +56,15 @@ const ServerImport = {
     this.drawButtons();
     // Connected, to another server, or as another profile: fetch at once.
     const key = st && st.downloads ? `${st.base}|${st.profile ? st.profile.id : ''}` : '';
+    // The server's word on its downloads began or ended (its live channel opened or was lost): looked at
+    // once now, and from then on when it says so, or again every few seconds without it.
+    const told = this.announced;
+    if (key === this.lastKey && told !== this._wasAnnounced && key) {
+      this._wasAnnounced = told;
+      this.poll();
+      return;
+    }
+    this._wasAnnounced = told;
     if (key === this.lastKey) return;
     this.lastKey = key;
     if (key) {
@@ -67,6 +82,46 @@ const ServerImport = {
     return !!(Store.server && Store.server.downloads);
   },
 
+  /**
+   * The server says on the live channel when its downloads change (4.6):
+   * they are asked for then, and no timer asks in between.
+   */
+  get announced() {
+    return this.available && !!Store.server.downloadsLive;
+  },
+
+  /**
+   * The server's downloads changed: asked for now while Add Songs shows,
+   * else 5 seconds after the last look at the earliest (a song's progress
+   * comes every second, and is of no use on another page; what batches
+   * that finished did is still told).
+   */
+  _told() {
+    if (!this.available) return;
+    // One look at a time: a word that comes while the server is being asked
+    // is followed right after its answer. (A new look throws away the answer
+    // on its way; with words coming faster than answers, none would count.)
+    if (this._asking) {
+      this._again = true;
+      return;
+    }
+    const showing = Nav.page === 'add' && document.visibilityState === 'visible';
+    const wait = showing ? 0 : Math.max(0, (this._polledAt || 0) + 5000 - Date.now());
+    clearTimeout(this._toldTimer);
+    this._toldTimer = setTimeout(() => this._ask(), wait);
+  },
+
+  async _ask() {
+    this._asking = true;
+    this._again = false;
+    try {
+      await this.poll();
+    } finally {
+      this._asking = false;
+      if (this._again) this._told();
+    }
+  },
+
   /** It keeps several batches, taking turns (4.4). */
   get queues() {
     return this.available && !!Store.server.downloadQueue;
@@ -77,6 +132,17 @@ const ServerImport = {
     // A checklist waiting for its choice (review) holds no one up on the server.
     const coming = (b) => b.state === 'queued' || b.state === 'listing' || (b.state !== 'review' && (b.items || []).some((x) => ['queued', 'downloading', 'converting'].includes(x.state)));
     return this.rows.length > 0 || this.mine.some(coming) || ImportPanel.serverComing;
+  },
+
+  /**
+   * A batch of the profile's finishes by itself ("Automate 'Finish all'"):
+   * once its songs have come the server saves them and takes the batch away,
+   * without a word from here. Looked at as often as one still downloading,
+   * so its panel follows the songs being saved and goes when the batch does
+   * (it stood there with "Finish all" for up to half a minute).
+   */
+  get finishing() {
+    return this.mine.some((b) => !!(b.auto && b.auto.finish) && b.state === 'ready');
   },
 
   /** fn({ mine, rows }) whenever the server's queue changes (the Server queue frame draws it). */
@@ -151,12 +217,16 @@ const ServerImport = {
   schedule() {
     clearTimeout(this.timer);
     if (!this.available) return;
-    const fast = this.downloading && Nav.page === 'add' && document.visibilityState === 'visible';
+    // The server says when something changes: nothing to ask for meanwhile.
+    if (this.announced) return;
+    const fast = (this.downloading || this.finishing) && Nav.page === 'add' && document.visibilityState === 'visible';
     this.timer = setTimeout(() => this.poll(), fast ? 2000 : 30000);
   },
 
   async poll() {
     clearTimeout(this.timer);
+    clearTimeout(this._toldTimer);
+    this._polledAt = Date.now();
     // Out of reach: the batches are still on the server; the frames stay as they are.
     if (!this.available) return;
     const seq = ++this.seq;

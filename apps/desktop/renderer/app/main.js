@@ -16,6 +16,8 @@
   Store.uiMode = init.uiMode || 'desktop';
   Store.caps = init.caps || {};
   Store.version = init.version || '';
+  // Started in the tray (the Mini Player's Open on PC Start): see MiniPlayer.
+  Store.away = !!init.away;
   document.body.classList.toggle('mobile', Store.uiMode === 'mobile');
   document.body.classList.toggle('web', Store.web);
   Store.settings = init.settings;
@@ -39,6 +41,8 @@
   ServerImport.init();
   ClientQueue.init();
   QueuePanels.init();
+  // After the Client queue and the batches: what was kept over the restart comes back (4.5.3).
+  KeptDownloads.init();
   SongSearch.init();
   PlaylistsPage.init();
   FollowedPage.init();
@@ -49,6 +53,8 @@
   SettingsPanel.init();
   SongActions.init();
   SleepTimer.init();
+  MiniPlayer.init(init.miniOpen);
+  Alarm.init();
   Keys.init();
   Mobile.init();
   // After Mobile: the phone's Now Playing has its lyrics frame by then.
@@ -57,7 +63,8 @@
   BackgroundHelp.init();
 
   // The chosen visualizer's shaders compiled ahead, once the window has
-  // settled, so opening it the first time does not wait for them.
+  // settled, so opening it the first time does not wait for them (in the
+  // tray: when the window is opened).
   setTimeout(() => Visualizer.warm(), 3000);
 
   window.flow.onLibraryChanged((msg) => Store.takeLibrary(msg));
@@ -88,6 +95,8 @@
   }
 
   Player.restore();
+  // From here on the Mini Player hears what plays (the last session's song is back).
+  MiniPlayer.ready();
   // A listening trend list last open stays shut while they are hidden.
   const last = init.settings.lastPlaylistId || 'all';
   Nav.openPlaylist(Store.settings.showTrend === false && SmartLists.isSmart(last) ? 'all' : last);

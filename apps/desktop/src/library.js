@@ -11,7 +11,7 @@ const paths = require('./paths');
 const tools = require('./tools');
 const model = require('@flow/core/libraryModel');
 const { fileJournalIo } = require('@flow/core/jsonFile');
-const { createJournal, LIBRARY_SPEC } = require('@flow/core/journalFile');
+const { createJournal, LIBRARY_SPEC, LIBRARY_ROWS } = require('@flow/core/journalFile');
 const { createLocalLibrary } = require('@flow/core/client/localLibrary');
 const { metaFromFile, findMoved } = require('@flow/core/fileMeta');
 const { AUDIO_EXTS } = require('@flow/core/formats');
@@ -20,7 +20,8 @@ const { parseFlowId } = require('@flow/core/tags');
 const { tr } = require('@flow/core/lang');
 
 // The library itself, shared with the Android app; saved to library.json here.
-const local = createLocalLibrary({ journal: createJournal(fileJournalIo, () => paths.libraryFile(), LIBRARY_SPEC) });
+// The journal keeps the songs and playlists themselves, locked once saved (4.6): no second copy of the library.
+const local = createLocalLibrary({ journal: createJournal(fileJournalIo, () => paths.libraryFile(), LIBRARY_SPEC, { rows: LIBRARY_ROWS }) });
 const {
   load, get, save, onChange, mutate, newId,
 } = local;
@@ -177,6 +178,12 @@ async function scanOnce() {
 // put it in the library, and add it a second time.
 
 let chain = Promise.resolve();
+// The first look at the folder after the start (the songs it finds were here
+// before Flow knew of them: a first start, the folder filled by hand).
+let firstScanExpected = false;
+let firstScanDone = false;
+let firstScanEnded = null;
+const firstScanPromise = new Promise((resolve) => { firstScanEnded = resolve; });
 let busy = 0;
 let pending = false;
 let timer = null;
@@ -204,7 +211,30 @@ function scan() {
     return result;
   });
   chain = run.catch(() => {});
+  if (!firstScanDone) {
+    // Before whoever awaits this look goes on.
+    const ended = () => {
+      firstScanDone = true;
+      firstScanEnded();
+    };
+    run.then(ended, ended);
+  }
   return run;
+}
+
+/** The app starts and will look through the music folder shortly (main.js): firstScan waits for that look. */
+function expectFirstScan() {
+  firstScanExpected = true;
+}
+
+/**
+ * While the first look at the music folder after the start has not ended: a
+ * promise of its end; after it (and where no start announced one) null. (The
+ * server client waits for it before it asks whether the songs here may go up
+ * to a server used for the first time, remote.js.)
+ */
+function firstScan() {
+  return firstScanExpected && !firstScanDone ? firstScanPromise : null;
 }
 
 function requestScan(delay = 1500) {
@@ -336,9 +366,9 @@ async function relocate(newDir, onProgress = () => {}) {
       }
       onProgress(plan.length, plan.length, '');
       mutate((d) => {
-        for (const s of d.songs) {
-          const to = done.get(s.file.toLowerCase());
-          if (to) s.file = to;
+        for (let i = 0; i < d.songs.length; i += 1) {
+          const to = done.get(d.songs[i].file.toLowerCase());
+          if (to) model.rowToChange(d.songs, i).file = to;
         }
         d.ignoredFiles = d.ignoredFiles.map((f) => (done.has(f) ? done.get(f).toLowerCase() : f));
       });
@@ -352,6 +382,6 @@ async function relocate(newDir, onProgress = () => {}) {
 }
 
 module.exports = {
-  load, get, save, mutate, onChange, scan, newId, onScanned, quietly, watch, unwatch, findMoved, relocate,
+  load, get, save, mutate, onChange, scan, firstScan, expectFirstScan, newId, onScanned, quietly, watch, unwatch, findMoved, relocate,
   metaFromFile,
 };

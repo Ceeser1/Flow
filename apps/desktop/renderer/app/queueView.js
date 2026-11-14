@@ -50,22 +50,41 @@ const QueueView = {
     // Topped up first, so the list is the one Next will follow.
     // (In another device's session the host's queue is shown as it is.)
     if (Player.contextId && !Player.remote) Player.queue.fill(Player.idsOf(Player.contextId));
-    clear(box);
     const q = Player.queue;
 
+    // Drawn in place (4.6; it was emptied and filled at every change of the
+    // player or the library): each part keeps its node while it is the same
+    // (a song's row: the same song, unchanged, at the same place), so only
+    // what differs is put into the page.
+    const kept = box._parts || new Map();
+    const parts = new Map();
+    const nodes = [];
+    const put = (key, song, make) => {
+      const old = kept.get(key);
+      let node = old && old.song === song ? old.node : null;
+      if (node) {
+        // Left as a drag ended on it.
+        node.style.transform = '';
+        node.classList.remove('queue__row--dragging', 'queue__row--held');
+      } else {
+        node = make();
+      }
+      parts.set(key, { node, song });
+      nodes.push(node);
+    };
+
     const current = Player.currentId ? Store.song(Player.currentId) : null;
-    box.appendChild(h('div.queue__head', T('common.nowPlaying')));
-    box.appendChild(current
-      ? this._row(current, { now: true })
-      : h('div.queue__empty', T('common.nothingIsPlaying')));
+    put('head:now', null, () => h('div.queue__head', T('common.nowPlaying')));
+    if (current) put(`now:${current.id}:${Player.isPlaying ? 1 : 0}`, current, () => this._row(current, { now: true }));
+    else put('empty:now', null, () => h('div.queue__empty', T('common.nothingIsPlaying')));
 
     const manual = q.manual.map((id) => Store.song(id));
     if (manual.some(Boolean)) {
-      box.appendChild(h('div.queue__head',
+      put('head:manual', null, () => h('div.queue__head',
         h('span', T('queue.nextInQueue')),
         h('button.link-btn.queue__clear', { type: 'button', onclick: () => Player.clearQueue() }, T('common.clear'))));
       manual.forEach((song, i) => {
-        if (song) box.appendChild(this._row(song, { part: 'manual', index: i }));
+        if (song) put(`manual:${i}:${song.id}`, song, () => this._row(song, { part: 'manual', index: i }));
       });
     }
 
@@ -75,7 +94,7 @@ const QueueView = {
       // The list's songs, then those "Continue with similar songs" added.
       const similar = (i) => q.dj && q.dj.has(q.auto[i]);
       if (!similar(0)) {
-        box.appendChild(h('div.queue__head',
+        put(`head:auto:${q.shuffle ? 1 : 0}:${listName}`, null, () => h('div.queue__head',
           h('span', T('queue.nextFrom', { list: listName })),
           q.shuffle ? h('span.queue__note', T('queue.shuffled')) : null));
       }
@@ -83,13 +102,15 @@ const QueueView = {
       auto.forEach((song, i) => {
         if (similar(i) && !headed) {
           headed = true;
-          box.appendChild(h('div.queue__head', h('span', T('queue.thenSimilar'))));
+          put('head:similar', null, () => h('div.queue__head', h('span', T('queue.thenSimilar'))));
         }
-        if (song) box.appendChild(this._row(song, { part: 'auto', index: i }));
+        if (song) put(`auto:${i}:${song.id}`, song, () => this._row(song, { part: 'auto', index: i }));
       });
     } else if (!manual.some(Boolean)) {
-      box.appendChild(h('div.queue__empty', T('queue.empty')));
+      put('empty', null, () => h('div.queue__empty', T('queue.empty')));
     }
+    box._parts = parts;
+    setChildren(box, nodes, { alike: false, gone: (node) => releaseCovers([node]) });
   },
 
   _row(song, { now = false, part = null, index = 0 }) {

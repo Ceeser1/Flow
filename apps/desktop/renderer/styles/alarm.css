@@ -1,0 +1,60 @@
+/* Flow: the phone's Alarm Clock window (alarm.js). A part of the stylesheet (style.css first, then these in the order index.html links them). */
+
+.modal--alarm { width: 460px; }
+.alarm__intro { margin: 0 0 12px; color: var(--text-dim); }
+
+/* Ringing, snoozed, or when it rings next: an amber band with Stop Alarm and Snooze. */
+.alarm__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(224, 176, 112, 0.14);
+  color: var(--amber);
+}
+.alarm__status-text { flex: 1; min-width: 140px; }
+
+.alarm__row { display: flex; align-items: center; gap: 12px; }
+.alarm__label { color: var(--text-dim); }
+.alarm__time {
+  width: 160px;
+  height: 48px;
+  font-size: 22px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mon to Sun: a day ticked is Flow's blue. */
+.alarm__days { display: flex; gap: 6px; margin-top: 14px; }
+.alarm__day {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  color: var(--text);
+  cursor: pointer;
+}
+.alarm__day[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+.alarm__hint { margin-top: 10px; min-height: 18px; color: var(--text-bright); }
+.alarm__note { margin: 10px 0 0; font-size: 12px; color: var(--text-dim); }
+
+/* Flow may not show notifications: said in red, with Allow. */
+.alarm__notify {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(220, 120, 120, 0.14);
+  color: var(--text-bright);
+}
+.alarm__notify span { flex: 1; min-width: 160px; }

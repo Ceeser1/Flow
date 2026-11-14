@@ -96,7 +96,9 @@
     }
 
     void main() {
-      vec3 c = mix(texture(src, kaleido(uv, segA)).rgb, texture(src, kaleido(uv, segB)).rgb, mixB);
+      // (But while one number of mirrors glides into the next, only that one is looked up.)
+      vec3 c = texture(src, kaleido(uv, segB)).rgb;
+      if (mixB < 1.0) c = mix(texture(src, kaleido(uv, segA)).rgb, c, mixB);
       vec2 v = uv - 0.5;
       v.x *= aspect;
       c *= 1.0 - 0.35 * smoothstep(0.4, 1.1, length(v));

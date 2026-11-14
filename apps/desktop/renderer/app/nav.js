@@ -6,10 +6,15 @@ const Nav = {
   page: null,
   playlistId: null,
   groupId: null, // the group page's group (4.5.2)
-  // The pages shown before this one ({ page, playlistId }), for the phone's
-  // Back; the last is the one Back returns to.
+  // The pages shown before this one ({ page, playlistId, groupId, scroll }),
+  // for Back (the phone's, the mouse's side button, Alt+Left); the last is
+  // the one Back returns to. `ahead`: those Back left, for Forward (4.5.5),
+  // emptied once another page is opened. 50 each; `scroll` is how far the
+  // page was scrolled when it was left, and it opens there again.
   history: [],
+  ahead: [],
   _at: null,
+  STEPS: 50,
 
   init() {
     // The main scroll bar's track reaches the window's top once the page is scrolled, and stops where
@@ -20,6 +25,8 @@ const Nav = {
       pages.classList.toggle('pages--end', pages.scrollTop + pages.clientHeight >= pages.scrollHeight - 1);
     };
     pages.addEventListener('scroll', edges, { passive: true });
+    this._initSideButtons();
+    this._initBrowserHistory();
     const sizes = new ResizeObserver(edges);
     sizes.observe(pages);
     for (const node of pages.querySelectorAll('.page')) sizes.observe(node);
@@ -60,11 +67,16 @@ const Nav = {
     // And on Followed Playlists (4.5.1), as a followed one leaves its group.
     Groups.dropTarget($('menuFollowedList'), '');
     Groups.dropTarget($('menuFollowed'), '');
-    Store.onLibrary(() => this.drawMenu());
+    // Of the songs the menu shows only who added them ("All Songs from ...").
+    Store.onLibrary((lib, change) => {
+      if (change.rest() || change.came || change.went || change.field('addedBy')) this.drawMenu();
+    });
     Store.onServer(() => this.drawMenu());
     Player.onChange(() => this.drawMenu());
     Session.onChange(() => this.drawMenu());
     Store.onSettings((patch) => {
+      // Playlists added to groups shown under Playlists too, or not (4.5.3).
+      if ('groupedHideInMenu' in patch) this.drawMenu();
       if (!('showTrend' in patch)) return;
       // Hidden while its page or one of its lists is open: back to All Songs.
       if (!patch.showTrend && (this.page === 'trend' || (this.page === 'playlist' && SmartLists.isSmart(this.playlistId)))) {
@@ -124,9 +136,18 @@ const Nav = {
     if (this.page === 'add' && page !== 'add') AddPage.audio.pause();
     if (page === 'group') this.groupId = opts.groupId || this.groupId;
     const at = { page, playlistId: page === 'playlist' ? this.playlistId : null, groupId: page === 'group' ? this.groupId : null };
-    if (this._at && !opts.back && (this._at.page !== at.page || this._at.playlistId !== at.playlistId || this._at.groupId !== at.groupId)) {
-      this.history.push(this._at);
-      if (this.history.length > 50) this.history.shift();
+    const moved = this._at && (this._at.page !== at.page || this._at.playlistId !== at.playlistId || this._at.groupId !== at.groupId);
+    if (moved) {
+      // Where it was left, to come back to (4.5.5).
+      this._at.scroll = $('pages').scrollTop;
+      if (opts.back) this._keep(this.ahead, this._at);
+      else {
+        this._keep(this.history, this._at);
+        if (!opts.forward) {
+          this.ahead = [];
+          this._browserStep();
+        }
+      }
     }
     this._at = at;
     this.page = page;
@@ -143,27 +164,114 @@ const Nav = {
     else if (page === 'trend') TrendPage.show(opts);
     else if (page === 'playlist') PlaylistPage.show(this.playlistId, opts);
     this.drawMenu();
+    if (opts.scroll) this._scrollTo(opts.scroll);
+  },
+
+  _keep(list, at) {
+    list.push(at);
+    if (list.length > this.STEPS) list.shift();
+  },
+
+  /**
+   * Back or Forward opened a page: scrolled to where it was left, once the
+   * page is tall enough (a long list may grow over a few frames).
+   */
+  _scrollTo(top) {
+    const pages = $('pages');
+    let tries = 0;
+    const go = () => {
+      pages.scrollTop = top;
+      if (Math.abs(pages.scrollTop - top) > 1 && tries++ < 20) requestAnimationFrame(go);
+    };
+    go();
+    requestAnimationFrame(go);
+  },
+
+  /** The mouse's side buttons (4.5.5): back and forward, not with a popup or the visualizer open. */
+  _initSideButtons() {
+    // The web player's browser does them itself, into its history (_initBrowserHistory).
+    if (Store.web) return;
+    const side = (e) => e.button === 3 || e.button === 4;
+    for (const type of ['mousedown', 'auxclick']) {
+      window.addEventListener(type, (e) => {
+        if (side(e)) e.preventDefault();
+      }, true);
+    }
+    window.addEventListener('mouseup', (e) => {
+      if (!side(e)) return;
+      e.preventDefault();
+      if (Modal.top() || Visualizer.shown) return;
+      if (e.button === 3) this.back();
+      else this.forward();
+    }, true);
+  },
+
+  /**
+   * The web player (4.5.5): each page opened is a step in the browser's
+   * history too, so its Back and Forward (its buttons, the mouse's side
+   * buttons, Alt+arrows) go through Flow's pages instead of leaving it.
+   */
+  _initBrowserHistory() {
+    if (!Store.web || !window.history || !window.history.pushState) return;
+    this._browserAt = 0;
+    try {
+      window.history.replaceState({ flowStep: 0 }, '');
+    } catch {
+      return;
+    }
+    window.addEventListener('popstate', (e) => {
+      const step = e.state && typeof e.state.flowStep === 'number' ? e.state.flowStep : null;
+      if (step === null) return;
+      const back = step < this._browserAt;
+      this._browserAt = step;
+      if (Modal.top()) Modal.top().dismiss();
+      if (back) this.back({ browser: true });
+      else this.forward({ browser: true });
+    });
+  },
+
+  _browserStep() {
+    if (this._browserAt === undefined) return;
+    this._browserAt += 1;
+    try {
+      window.history.pushState({ flowStep: this._browserAt }, '');
+    } catch {
+      // A browser that refuses: Flow's own steps still work.
+    }
   },
 
   /** Goes back to the page shown before this one; false when there is none. */
-  back() {
-    while (this.history.length) {
-      const prev = this.history.pop();
-      // A group deleted since is skipped (4.5.2).
-      if (prev.page === 'group') {
-        if (!Store.group(prev.groupId)) continue;
-        this.show('group', { back: true, groupId: prev.groupId });
+  back(opts = {}) {
+    return this._walk(this.history, { back: true }, opts);
+  },
+
+  /** Forward again to the page Back left (4.5.5); false when there is none. */
+  forward(opts = {}) {
+    return this._walk(this.ahead, { forward: true }, opts);
+  },
+
+  /**
+   * One step through `list`: the last place in it that still exists (a
+   * playlist or a group deleted since is skipped), opened where it was
+   * scrolled. On the web player a step of Flow's own (not the browser's)
+   * moves the browser's history along with it.
+   */
+  _walk(list, how, opts) {
+    while (list.length) {
+      const to = list.pop();
+      if (to.page === 'group' && !Store.group(to.groupId)) continue;
+      if (to.page === 'playlist' && !Store.playlist(to.playlistId)) continue;
+      if (Store.web && !opts.browser && this._browserAt !== undefined) {
+        // The browser's step instead, which comes back here as its popstate.
+        list.push(to);
+        window.history.go(how.back ? -1 : 1);
         return true;
       }
-      if (prev.page !== 'playlist') {
-        this.show(prev.page, { back: true });
-        return true;
-      }
-      // A playlist deleted since is skipped.
-      if (Store.playlist(prev.playlistId)) {
-        this.openPlaylist(prev.playlistId, { back: true });
-        return true;
-      }
+      const o = { ...how, scroll: to.scroll || 0 };
+      if (to.page === 'group') this.show('group', { ...o, groupId: to.groupId });
+      else if (to.page === 'playlist') this.openPlaylist(to.playlistId, o);
+      else this.show(to.page, o);
+      return true;
     }
     return false;
   },
@@ -186,6 +294,8 @@ const Nav = {
   },
 
   drawMenu() {
+    // Not while a playlist is dragged onto a group (4.5.4): once it is dropped.
+    if (Groups.holdWhileDragging('menu', () => this.drawMenu())) return;
     $('menuSearch').classList.toggle('menu__item--active', this.page === 'search');
     $('menuAdd').classList.toggle('menu__item--active', this.page === 'add');
     $('menuAllSongs').classList.toggle('menu__item--active', this.page === 'playlist' && this.playlistId === 'all');
@@ -203,8 +313,21 @@ const Nav = {
     this._drawArrow('trendMenuOpen', trendOpen, T('nav.section.what.listeningTrend'));
     $('menuPlaylistList').hidden = !playlistsOpen;
 
+    // Each list's rows are gathered and put in at the end (setChildren): a
+    // row that looks as it did stays in the page, so a menu drawn again with
+    // nothing changed is not touched. Every row therefore says in its data
+    // which playlist, group or jam it is (two can share a name), and what it
+    // does when clicked or dragged goes by those.
+    const gathered = [];
+    const gather = (id) => {
+      const rows = [];
+      gathered.push([id, rows]);
+      return { appendChild: (el) => rows.push(el) };
+    };
+
     // The list playing has the speaker, and its bar on the left stays green.
-    const item = (p) => {
+    // `groupId`: the group it shows in (its followed icon, 4.5.3).
+    const item = (p, groupId = null) => {
       const active = this.page === 'playlist' && this.playlistId === p.id;
       const playing = Player.contextId === p.id && Player.isPlaying;
       return h('button.menu__sub'
@@ -212,10 +335,11 @@ const Nav = {
         + (playing ? '.menu__sub--playing' : ''), {
         type: 'button',
         title: p.name,
+        dataset: { id: p.id, in: groupId || '' },
         onclick: () => this.openPlaylist(p.id),
       },
       // Downloaded Songs has its icon before its name, a followed playlist its green one (4.5.1).
-      p.isDevice || p.isShared ? h('span.menu__sub-icon', { html: listIcon(p) }) : null,
+      p.isDevice || p.isShared ? h('span.menu__sub-icon', { html: listIcon(p, groupId) }) : null,
       h('span.menu__sub-name', p.menuName || p.name),
       playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null);
     };
@@ -229,15 +353,16 @@ const Nav = {
     this._drawArrow('allSongsMenuOpen', allOpen, T('nav.section.what.downloaded'));
     this._arrows.allSongsMenuOpen.hidden = !froms.length;
     $('menuAllSongsList').hidden = !froms.length || !allOpen;
-    const allList = clear($('menuAllSongsList'));
+    const allList = gather('menuAllSongsList');
     for (const p of froms) allList.appendChild(item(p));
     const fromPlaying = froms.some((p) => p.id === Player.contextId);
     this._allPlaying.hidden = !Player.isPlaying || !(Player.contextId === 'all' || (fromPlaying && !allOpen));
 
-    // Playlists: Favourites, then the playlists in no group.
-    const list = clear($('menuPlaylistList'));
+    // Playlists: Favourites, then the playlists in no group (all of them with
+    // "Playlists added to groups hide in the menu" off, 4.5.3).
+    const list = gather('menuPlaylistList');
     list.appendChild(item(Store.favouritesPlaylist()));
-    for (const p of Store.singlePlaylists()) {
+    for (const p of Store.menuPlaylists()) {
       const el = item(p);
       Groups.draggable(el, p);
       list.appendChild(el);
@@ -249,15 +374,20 @@ const Nav = {
     // plays and its bar while one of them is open. Followed playlists can
     // be in them too. On the computer a playlist can be dragged onto a
     // folder, or onto the single ones to leave its group (groups.js).
-    const groups = Store.groups();
+    // The shared groups followed (4.5.3) come last, with the green folder, to
+    // open and play but not to change (nothing is dropped onto them).
+    const own = Store.groups();
+    const followedGroups = Store.followedGroups();
+    const groups = [...own, ...followedGroups];
     $('menuGroups').hidden = !Store.canGroup();
     this._arrows.groupsMenuOpen.hidden = !groups.length;
     $('menuGroupsList').hidden = !Store.canGroup() || !groups.length || !groupsOpen;
-    const groupList = clear($('menuGroupsList'));
+    const groupList = gather('menuGroupsList');
     const inGroups = new Set(groups.flatMap((g) => Store.playlistsInGroup(g.id).map((p) => p.id)));
     this._groupsPlaying.hidden = groupsOpen || !Player.isPlaying || !inGroups.has(Player.contextId);
     $('menuGroups').classList.toggle('menu__item--active', this.page === 'playlist' && !groupsOpen && inGroups.has(this.playlistId));
     for (const g of groups) {
+      const followedOne = !!g.isShared;
       const inside = Store.playlistsInGroup(g.id);
       const open = Groups.isOpen(g.id);
       // The group played as one list (4.5.2), or (closed) one of its playlists.
@@ -276,23 +406,24 @@ const Nav = {
         + (active ? '.menu__sub--active' : '')
         + (playing ? '.menu__sub--playing' : ''), {
         type: 'button',
-        title: T('groups.open.tooltip', { group: g.name }),
+        title: followedOne ? T('groups.followed.open.tooltip', { group: g.name, profile: g.ownerName }) : T('groups.open.tooltip', { group: g.name }),
         'aria-expanded': String(open),
+        dataset: { group: g.id },
         onclick: () => this.openGroup(g.id),
       },
       h('span.menu__group-toggle', { role: 'button', title: toggleTitle, 'aria-label': toggleTitle, onclick: toggle },
         h('span.menu__chevron' + (open ? '.menu__chevron--open' : ''), { html: Icons.chevron }),
-        h('span.menu__sub-icon', { html: Icons.folder })),
+        h('span.menu__sub-icon', { html: followedOne ? Icons.folderFollowed : Icons.folder })),
       h('span.menu__sub-name', g.name),
       playing ? h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') }) : null);
-      Groups.dropTarget(folder, g.id);
+      if (!followedOne) Groups.dropTarget(folder, g.id);
       groupList.appendChild(folder);
       if (!open) continue;
       for (const p of inside) {
-        const el = item(p);
+        const el = item(p, g.id);
         el.classList.add('menu__sub--in-group');
-        Groups.draggable(el, p);
-        Groups.dropTarget(el, g.id);
+        Groups.draggable(el, p, followedOne ? '' : g.id);
+        if (!followedOne) Groups.dropTarget(el, g.id);
         groupList.appendChild(el);
       }
     }
@@ -304,7 +435,7 @@ const Nav = {
     $('menuFollowed').hidden = !followed.length;
     this._arrows.followedMenuOpen.hidden = !singleFollowed.length;
     $('menuFollowedList').hidden = !singleFollowed.length || !followedOpen;
-    const followedList = clear($('menuFollowedList'));
+    const followedList = gather('menuFollowedList');
     for (const p of singleFollowed) {
       const el = item(p);
       Groups.draggable(el, p);
@@ -321,7 +452,7 @@ const Nav = {
     const sessionsOpen = this._open('sessionsMenuOpen');
     this._drawArrow('sessionsMenuOpen', sessionsOpen, T('nav.section.what.jams'));
     $('menuSessionsList').hidden = !Session.visible || !sessionsOpen;
-    const sessionList = clear($('menuSessionsList'));
+    const sessionList = gather('menuSessionsList');
     if (Session.visible && sessionsOpen) {
       // A guest in another server's session: that server's songs, to play and queue.
       const guestList = Store.guestPlaylist();
@@ -329,6 +460,7 @@ const Nav = {
         sessionList.appendChild(h('button.menu__sub', {
           type: 'button',
           title: T('nav.jams.guestQueue.tooltip', { session: guestList.name }),
+          dataset: { id: GUEST_ID },
           onclick: () => this.openPlaylist(GUEST_ID),
         }, h('span.menu__sub-name', guestList.name)));
       }
@@ -342,6 +474,7 @@ const Nav = {
         sessionList.appendChild(h('button.menu__sub' + (s.playing ? '.menu__sub--playing' : ''), {
           type: 'button',
           title: tag ? `${s.name} (${lower})\n${song}` : `${s.name}\n${song}`,
+          dataset: { session: s.id },
           onclick: () => this.show('sessions', { sessionId: s.id }),
         },
         h('span.menu__sub-name', s.name),
@@ -357,6 +490,7 @@ const Nav = {
         sessionList.appendChild(h('button.menu__sub' + (s.playing ? '.menu__sub--playing' : ''), {
           type: 'button',
           title: T(joined ? 'nav.jams.nearby.joined.tooltip' : 'nav.jams.nearby.tooltip', { session: s.name, server: n.name, song }),
+          dataset: { session: s.id, server: n.id },
           onclick: () => this.show('sessions', { sessionId: s.id }),
         },
         h('span.menu__sub-name', label),
@@ -369,8 +503,9 @@ const Nav = {
     const trendOn = Store.settings.showTrend !== false;
     $('menuTrend').hidden = !trendOn;
     $('menuTrendList').hidden = !trendOn || !trendOpen;
-    const trendList = clear($('menuTrendList'));
+    const trendList = gather('menuTrendList');
     for (const p of Store.smartNames()) trendList.appendChild(item(p));
     this._trendPlaying.hidden = trendOpen || !(SmartLists.isSmart(Player.contextId) && Player.isPlaying);
+    for (const [id, rows] of gathered) setChildren($(id), rows);
   },
 };

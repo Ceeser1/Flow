@@ -114,7 +114,7 @@
       float h2 = dot(cross(pos, vel), cross(pos, vel));
       vec3 col = vec3(0.0);
       float hidden = 0.0;
-      vec3 ringLight = vec3(0.0);
+      float ring = 0.0;
       float crossings = 0.0;
       bool swallowed = false;
       for (int i = 0; i < 220; i++) {
@@ -123,8 +123,10 @@
         if (r < 1.0) { swallowed = true; break; }
         if (r > 40.0 && dot(pos, vel) > 0.0) break;
         float dt = clamp(0.07 * r, 0.03, 1.2);
-        // Close in to the disk: smaller steps, so it is not skipped.
-        dt = min(dt, max(0.05, abs(pos.y) * 0.6 + 0.04));
+        // Close in to the disk: smaller steps, so it is not skipped. (Only
+        // out to where it ends, 13, and a step's length past it: a ray
+        // crossing its plane further out met hundreds of small steps for nothing.)
+        if (r2 - pos.y * pos.y < 225.0) dt = min(dt, max(0.05, abs(pos.y) * 0.6 + 0.04));
         // And round the photon sphere, so its ring comes out smooth.
         dt = min(dt, 0.025 + abs(r - 1.5) * 0.35);
         vec3 prev = pos;
@@ -143,8 +145,11 @@
         }
         // The ring of light round the shadow, shimmering with the highs.
         // (Only for rays that get away again: those falling in stay black.)
-        ringLight += (1.0 - hidden) * tint(0.9) * exp(-pow(r - 1.5, 2.0) * 18.0) * dt * 0.035 * (0.4 + shimmer * 1.6);
+        // (Its colour and strength are the same all along the ray: put to it
+        // after the loop. Further than 1.2 from it there is nothing of it.)
+        if (abs(r - 1.5) < 1.2) ring += (1.0 - hidden) * exp(-(r - 1.5) * (r - 1.5) * 18.0) * dt;
       }
+      vec3 ringLight = tint(0.9) * (ring * 0.035 * (0.4 + shimmer * 1.6));
       vec2 bend = vec2(0.0);
       float starsShow = 0.0;
       if (!swallowed) {

@@ -10,7 +10,8 @@
 //            gets only what changed (changes(), 4.3).
 //   stamps   the revision each song, playlist and owner's follows last
 //            changed at, and that of the profiles' names (4.3); each
-//            owner's playlist groups too (g, 4.5).
+//            owner's playlist groups too (g, 4.5), and every owner's shared
+//            groups with what the others see in them, as one (sg, 4.5.3).
 //   tombs    songs and playlists gone (deleted, or a playlist given to
 //            another owner) with the revision they went at, kept 30 days;
 //            floor: an app whose revision is older than what they reach back
@@ -55,6 +56,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const model = require('@flow/core/libraryModel');
+const { lock } = require('@flow/core/libraryPatch');
 const { applyCommand } = require('@flow/core/commands');
 const prof = require('@flow/core/profiles');
 const { writeJsonAtomic, readJson } = require('@flow/core/jsonFile');
@@ -98,7 +100,7 @@ const DOWNLOADS_DIR = 'Downloads';
 const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource', 'setPlaylistRules',
   'addSongToPlaylists', 'addSongsToPlaylist', 'removeFromPlaylist', 'deleteSong', 'editSong',
   'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'recordAwayListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist',
-  'createGroup', 'renameGroup', 'deleteGroup', 'setPlaylistGroup']);
+  'createGroup', 'renameGroup', 'deleteGroup', 'setPlaylistGroup', 'setGroupShared', 'followGroup', 'unfollowGroup', 'setGroupPlaylistFollowed', 'addPlaylistToGroup', 'removePlaylistFromGroup']);
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');
@@ -144,7 +146,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   const covers = cover.createPairStore(path.join(config.home, 'covers'));
   const trash = createTrash({ dir: path.join(musicDir, '.flow-trash'), indexFile: path.join(config.home, 'trash.json'), log });
   // Both files are kept as their changes (libraryFile.js).
-  const libFile = libraryJournal(config);
+  // The journal keeps the rows themselves, locked once saved (4.6).
+  const libFile = libraryJournal(config, { rows: true });
   const stateFile = stateJournal(config);
   const raw = libFile.load();
   let data = model.sanitize(raw);
@@ -163,7 +166,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     touched: rawState.touched && typeof rawState.touched === 'object' ? rawState.touched : {},
     seen: Array.isArray(rawState.seen) ? rawState.seen.map(String) : [],
     stamps: {
-      s: counts(rs.s), p: counts(rs.p), o: counts(rs.o), g: counts(rs.g), n: count(rs.n),
+      s: counts(rs.s), p: counts(rs.p), o: counts(rs.o), g: counts(rs.g), n: count(rs.n), sg: count(rs.sg),
     },
     tombs: { s: tombList(rt.s, 3), p: tombList(rt.p, 4) },
     floor: count(rawState.floor),
@@ -212,13 +215,16 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
 
   // ---- what changed (4.3) ----
   //
-  // `known` is the library as the apps were last told it: each song's fields
-  // (SONG_FIELDS), each playlist (with its owner and entries), each owner's
-  // follows and the profiles' names. track() compares the library to it after
-  // a change and stamps what differs with the revision about to be.
+  // `known` is the library as the apps were last told it: each song and each
+  // playlist (with its owner), each owner's follows and the profiles' names.
+  // track() compares the library to it after a change and stamps what differs
+  // with the revision about to be. Since 4.6 it holds the songs and playlists
+  // themselves, locked (libraryPatch.js lock), not a copy of their fields: one
+  // that is still the same row has not changed, any other is compared by the
+  // fields the apps get.
 
   const known = {
-    songs: new Map(), lists: new Map(), follows: new Map(), groups: new Map(), names: '',
+    songs: new Map(), lists: new Map(), follows: new Map(), groups: new Map(), names: '', sharedGroups: '',
   };
 
   /** Every playlist with its owner: [owner, playlist]. */
@@ -228,9 +234,11 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     return out;
   }
 
-  /** Every owner's follows: [owner, ids]. */
+  /** Every owner's follows: [owner, ids, group ids and what it unfollowed inside them (4.5.3)]. */
   function everyFollows() {
-    return [[prof.DEFAULT_OWNER, data.follows || []], ...Object.entries(profiles).map(([id, p]) => [id, p.follows || []])];
+    const groupsOf = (p) => [...(p.groupFollows || []), JSON.stringify(p.groupSkips || {})];
+    return [[prof.DEFAULT_OWNER, data.follows || [], groupsOf(data)],
+      ...Object.entries(profiles).map(([id, p]) => [id, p.follows || [], groupsOf(p)])];
   }
 
   /** Every owner's playlist groups (4.5): [owner, groups]. */
@@ -238,30 +246,23 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     return [[prof.DEFAULT_OWNER, data.groups || []], ...Object.entries(profiles).map(([id, p]) => [id, p.groups || []])];
   }
 
-  const songCopy = (s) => Object.fromEntries(SONG_FIELDS.map((k) => [k, s[k]]));
   // A function made for the fields (4.3.5: 100 000 songs after every change).
   // eslint-disable-next-line no-new-func
   const sameSong = new Function('a', 's', `return ${SONG_FIELDS.map((k) => `a[${JSON.stringify(k)}] === s[${JSON.stringify(k)}]`).join(' && ')};`);
-  const listCopy = (owner, p) => ({
-    owner,
-    name: p.name,
-    createdAt: p.createdAt,
-    shared: !!p.shared,
-    favourites: !!p.favourites,
-    source: p.source ? `${p.source.url}\n${p.source.kind}` : '',
-    rules: p.rules ? JSON.stringify(p.rules) : '',
-    group: p.group || '',
-    entries: p.entries.map((e) => [e.songId, e.addedAt]),
-  });
-  /** What the apps were told of a list (a listCopy) is still `p` of `owner`, compared as it is (no copy made, 4.3.5). */
-  function sameList(a, owner, p) {
-    if (a.owner !== owner || a.name !== p.name || a.createdAt !== p.createdAt || a.shared !== !!p.shared || a.favourites !== !!p.favourites
-      || a.source !== (p.source ? `${p.source.url}\n${p.source.kind}` : '') || a.group !== (p.group || '') || a.entries.length !== p.entries.length) return false;
-    for (let i = 0; i < a.entries.length; i += 1) {
-      const e = p.entries[i];
-      if (a.entries[i][0] !== e.songId || a.entries[i][1] !== e.addedAt) return false;
+  const sourceOf = (p) => (p.source ? `${p.source.url}\n${p.source.kind}` : '');
+  /** Two rows of a playlist alike in what the apps get of it. */
+  function sameList(a, p) {
+    if (a.name !== p.name || a.createdAt !== p.createdAt || !!a.shared !== !!p.shared || !!a.favourites !== !!p.favourites
+      || sourceOf(a) !== sourceOf(p) || (a.groups || []).join('\n') !== (p.groups || []).join('\n')) return false;
+    if (a.entries !== p.entries) {
+      if (a.entries.length !== p.entries.length) return false;
+      for (let i = 0; i < a.entries.length; i += 1) {
+        const x = a.entries[i];
+        const e = p.entries[i];
+        if (x !== e && (x.songId !== e.songId || x.addedAt !== e.addedAt)) return false;
+      }
     }
-    return a.rules === (p.rules ? JSON.stringify(p.rules) : '');
+    return a.rules === p.rules || (a.rules ? JSON.stringify(a.rules) : '') === (p.rules ? JSON.stringify(p.rules) : '');
   }
 
   /**
@@ -281,8 +282,10 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     for (const s of data.songs) {
       ids.add(s.id);
       const was = known.songs.get(s.id);
+      // The row it was: not changed (4.6). Another one is kept from now, locked, and told when it differs.
+      if (was === s) continue;
+      known.songs.set(s.id, lock(s));
       if (was && sameSong(was, s)) continue;
-      known.songs.set(s.id, songCopy(s));
       stamp(state.stamps.s, s.id);
     }
     for (const id of known.songs.size === ids.size ? [] : [...known.songs.keys()]) {
@@ -297,11 +300,11 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     for (const [owner, p] of everyList()) {
       lists.add(p.id);
       const was = known.lists.get(p.id);
-      if (was && sameList(was, owner, p)) continue;
-      const copy = listCopy(owner, p);
+      if (was && was.row === p && was.owner === owner) continue;
+      known.lists.set(p.id, { owner, row: lock(p) });
+      if (was && was.owner === owner && sameList(was.row, p)) continue;
       // Given to another owner: gone from the one it was with.
       if (was && was.owner !== owner && rev !== null) state.tombs.p.push([p.id, rev, now, was.owner]);
-      known.lists.set(p.id, copy);
       stamp(state.stamps.p, p.id);
     }
     for (const [id, was] of [...known.lists.entries()]) {
@@ -312,9 +315,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       if (rev !== null) state.tombs.p.push([id, rev, now, was.owner]);
     }
     const owners = new Set();
-    for (const [owner, follows] of everyFollows()) {
+    for (const [owner, follows, groupFollows] of everyFollows()) {
       owners.add(owner);
-      const text = follows.join('\n');
+      const text = `${follows.join('\n')}\n#${groupFollows.join('\n')}`;
       if (known.follows.get(owner) === text) continue;
       known.follows.set(owner, text);
       stamp(state.stamps.o, owner);
@@ -336,6 +339,13 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       if (groupOwners.has(owner)) continue;
       known.groups.delete(owner);
       delete state.stamps.g[owner];
+    }
+    // Every owner's shared groups with the playlists the others see in them (4.5.3), one stamp for all.
+    const sharedGroups = JSON.stringify(prof.sharedGroupsFor(data, profiles, profileNames(), null, true));
+    if (known.sharedGroups !== sharedGroups) {
+      known.sharedGroups = sharedGroups;
+      changed = true;
+      if (rev !== null) state.stamps.sg = rev;
     }
     const names = JSON.stringify(profileNames());
     if (known.names !== names) {
@@ -520,13 +530,14 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
         const putBack = (playlists, l) => {
           const pl = playlists.find((x) => x.id === l.playlistId);
           if (!pl || pl.entries.some((x) => x.songId === song.id)) return;
-          pl.entries.splice(Math.min(Number(l.index) || 0, pl.entries.length), 0, { songId: song.id, addedAt: Number(l.addedAt) || Date.now() });
+          model.listToChange({ playlists }, pl).entries.splice(Math.min(Number(l.index) || 0, pl.entries.length), 0, { songId: song.id, addedAt: Number(l.addedAt) || Date.now() });
         };
         for (const l of e.lists || []) {
           if (l.owner === prof.DEFAULT_OWNER) putBack(d.playlists, l);
           else if (profiles[l.owner]) putBack(profiles[l.owner].playlists, l);
         }
-        for (const [pid, own] of Object.entries(e.own || {})) if (profiles[pid]) profiles[pid].songs[song.id] = { stats: own.stats };
+        // Another map with it in (4.6: the map a profile's own stats are in is locked once saved).
+        for (const [pid, own] of Object.entries(e.own || {})) if (profiles[pid]) profiles[pid].songs = { ...profiles[pid].songs, [song.id]: { stats: own.stats } };
         // Its stars came back with its places in the Favourites lists; the stats of
         // a profile from before 4.3 (kept with its star) too.
         resetStats([prof.DEFAULT_OWNER, ...Object.keys(e.own || {}).filter((pid) => profiles[pid])]);
@@ -640,15 +651,19 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   const playlistsOfOwner = (owner) => (owner === prof.DEFAULT_OWNER ? data.playlists : (profiles[owner] || {}).playlists || []);
   const followsOfOwner = (owner) => (owner === prof.DEFAULT_OWNER ? data.follows : (profiles[owner] || {}).follows) || [];
   const groupsOfOwner = (owner) => (owner === prof.DEFAULT_OWNER ? data.groups : (profiles[owner] || {}).groups) || [];
+  const groupFollowsOf = (owner) => (owner === prof.DEFAULT_OWNER ? data.groupFollows : (profiles[owner] || {}).groupFollows) || [];
+  const groupSkipsOf = (owner) => (owner === prof.DEFAULT_OWNER ? data.groupSkips : (profiles[owner] || {}).groupSkips) || {};
 
   /**
    * What changed for an app signed in to `profileId` (null: the Default)
    * since the library's revision `since` (4.3, GET /api/library, the live
    * channel): { rev, full, from, songs, deletedSongs, playlists (its own,
    * Favourites too), deletedPlaylists, follows?, groups? (4.5), sharedPlaylists (the ones it
-   * follows, with their songs), unshared (followed ones no longer shared),
-   * profileNames? }. Too old, unknown or -1: everything as { rev, full: true,
-   * library: { songs, playlists, groups, follows, sharedPlaylists, profileNames } }.
+   * follows, with their songs; also those of the groups it follows, 4.5.3),
+   * unshared (followed ones no longer shared), groupFollows? and sharedGroups?
+   * (4.5.3: the groups the others share with it), profileNames? }. Too old,
+   * unknown or -1: everything as { rev, full: true, library: { songs,
+   * playlists, groups, follows, groupFollows, sharedPlaylists, sharedGroups, profileNames } }.
    * Songs come without stats and stars: those are each owner's (statsChanges,
    * the Favourites list).
    */
@@ -667,15 +682,28 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       unshared: [],
     };
     const followsChanged = newer(state.stamps.o, owner);
-    if (followsChanged) out.follows = followsOfOwner(owner).slice();
+    if (followsChanged) {
+      out.follows = followsOfOwner(owner).slice();
+      out.groupFollows = groupFollowsOf(owner).slice();
+      out.groupSkips = { ...groupSkipsOf(owner) };
+    }
     if (newer(state.stamps.g, owner)) out.groups = groupsOfOwner(owner).map((g) => ({ ...g }));
+    // The groups the others share (4.5.3): those followed bring their playlists along.
+    const sharedGroups = prof.sharedGroupsFor(data, profiles, names, owner === prof.DEFAULT_OWNER ? null : owner);
+    const groupsChanged = full || state.stamps.sg > from;
+    if (groupsChanged) out.sharedGroups = sharedGroups;
+    const direct = new Set(followsOfOwner(owner));
+    const followed = new Set(direct);
+    const inGroups = new Set(groupFollowsOf(owner));
+    const skips = groupSkipsOf(owner);
+    for (const g of sharedGroups) if (inGroups.has(g.id)) for (const id of g.playlists) if (!(skips[g.id] || []).includes(id)) followed.add(id);
     const others = new Map();
     for (const [o, p] of everyList()) if (o !== owner) others.set(p.id, [o, p]);
-    for (const id of followsOfOwner(owner)) {
+    for (const id of followed) {
       const hit = others.get(id);
-      if (!hit || (!followsChanged && !newer(state.stamps.p, id))) continue;
+      if (!hit || (!followsChanged && !groupsChanged && !newer(state.stamps.p, id))) continue;
       if (hit[1].shared) out.sharedPlaylists.push(sharedOut(names, hit[0], hit[1]));
-      else out.unshared.push(id);
+      else if (direct.has(id)) out.unshared.push(id);
     }
     if (full || state.stamps.n > from) out.profileNames = names;
     if (full) {
@@ -684,7 +712,16 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
         rev: out.rev,
         full: true,
         library: {
-          songs: out.songs, playlists: out.playlists, groups: groupsOfOwner(owner).map((g) => ({ ...g })), follows: out.follows, sharedPlaylists: out.sharedPlaylists, profileNames: names, ignoredFiles: [],
+          songs: out.songs,
+          playlists: out.playlists,
+          groups: groupsOfOwner(owner).map((g) => ({ ...g })),
+          follows: out.follows,
+          groupFollows: out.groupFollows,
+          groupSkips: out.groupSkips,
+          sharedPlaylists: out.sharedPlaylists,
+          sharedGroups: out.sharedGroups,
+          profileNames: names,
+          ignoredFiles: [],
         },
       };
     }
@@ -697,7 +734,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   /** Whether changes() found nothing for the app. */
   function noChanges(c) {
     return !c.full && !c.songs.length && !c.playlists.length && !c.sharedPlaylists.length && !c.unshared.length
-      && !c.deletedSongs.length && !c.deletedPlaylists.length && !c.follows && !c.groups && !c.profileNames;
+      && !c.deletedSongs.length && !c.deletedPlaylists.length && !c.follows && !c.groups && !c.sharedGroups && !c.groupFollows && !c.groupSkips && !c.profileNames;
   }
 
   /**
@@ -881,7 +918,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
             if (path.resolve(dest) !== path.resolve(song.file) && fs.existsSync(song.file)) {
               try {
                 fs.renameSync(song.file, dest);
-                song.file = dest;
+                // The song to change (4.6): the one handed back may be locked when its names stayed.
+                model.songToChange(d, song.id).file = dest;
               } catch (err) {
                 log(`Could not rename ${song.file}: ${err.message}`);
               }
@@ -1765,8 +1803,9 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     const differs = (s) => String(stamps[s.id] || '') !== String(s.lyrics || '');
     if (!data.songs.some(differs)) return;
     mutate((d) => {
-      for (const s of d.songs) {
-        if (!differs(s)) continue;
+      for (let i = 0; i < d.songs.length; i += 1) {
+        if (!differs(d.songs[i])) continue;
+        const s = model.rowToChange(d.songs, i);
         if (stamps[s.id]) s.lyrics = String(stamps[s.id]);
         else delete s.lyrics;
       }

@@ -68,6 +68,20 @@
                 android:resource="@xml/flow_widget_tall_info" />
         </receiver>
 
+        <!-- The Alarm Clock (5.0): it rings (Android's alarm), its notification's Stop Alarm and
+             Snooze; and what makes Android forget alarms, after which it is set again: the phone
+             starting, Flow updated, the clock or the time zone changed. -->
+        <receiver
+            android:name=".FlowAlarm"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -87,4 +101,10 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- "Let Flow always run in the background?": Android's own question (battery help). -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- The Alarm Clock: an alarm at the minute (an alarm clock's own right from Android 13 on; before,
+         the user's to take away), set again after the phone starts, and its notification. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

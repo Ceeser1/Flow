@@ -14,11 +14,13 @@ const ui = () => (typeof Modal !== 'undefined' && typeof confirmDialog === 'func
  * came to the phone while another server was in use.
  */
 async function upload({
-  count, name, fromOthers = 0, returning = false,
+  count, name, fromOthers = 0, returning = false, known = 0,
 }) {
   if (!ui()) return false;
   const songs = count === 1 ? 'song' : `${count} songs`;
-  const others = fromOthers ? ` ${fromOthers === count ? (count === 1 ? 'It was' : 'All of them were') : `${fromOthers} of them were`} downloaded from another Flow Server.` : '';
+  // known: how many more songs here the server has already (they are not sent, and not asked about).
+  const there = known ? ` ${known === 1 ? '1 more song here is' : `${known} more songs here are`} on that server already and ${known === 1 ? 'is' : 'are'} not sent.` : '';
+  const others = `${there}${fromOthers ? ` ${fromOthers === count ? (count === 1 ? 'It was' : 'All of them were') : `${fromOthers} of them were`} downloaded from another Flow Server.` : ''}`;
   const answer = await confirmDialog({
     title: `Upload ${count === 1 ? 'your song' : `your ${count} songs`}?`,
     message: returning

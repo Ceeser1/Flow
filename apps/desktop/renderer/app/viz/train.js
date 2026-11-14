@@ -114,6 +114,8 @@
           float hs = hash12(vec2(i + o, seed + 4.0));
           float cx = (i + 0.5 + o + (hash12(vec2(i + o, seed + 5.0)) - 0.5) * 0.5) * slot;
           float h = size * (0.6 + 0.5 * hs) * (row == 1 ? 1.2 : 1.0);
+          // Too far to the side of it (tree() says the same): its ground is not asked for.
+          if (abs(x - cx) > h * 0.45) continue;
           float base = groundAt(cx, g) - 0.006;
           float kind = hash12(vec2(i + o, seed + 6.0)) * (wood ? 0.7 : 1.0);
           float c = tree(vec2(x - cx, (y - base) * WY), h, kind, hs, px);
@@ -123,10 +125,10 @@
       return cover;
     }
 
-    // The land through the window at w (window space: x along, y up from its bottom 0 to its top 1).
-    vec3 land(vec2 w) {
+    // The land far off through the window at w: the sky, the mountains, the
+    // hills and the trees on them (all that the fields in front cover).
+    vec3 farLand(vec2 w, float snowy) {
       vec3 col;
-      float snowy = snow;
       // The sky: dark blue, the stars, the moon.
       float up = w.y - HOR;
       col = mix(vec3(0.07, 0.08, 0.13), vec3(0.012, 0.016, 0.045), smoothstep(0.0, 0.5, up)) * (1.0 - 0.45 * rain);
@@ -198,14 +200,18 @@
         }
       }
       // The mountains, far off, their tops in the moonlight.
+      // (Never higher than HOR + 0.2: above that their ridge is not worked out.)
       float mx = w.x + dist * 0.012;
-      float mh = HOR + 0.03 + 0.17 * ridge(mx, 1.0, 1.4);
-      if (w.y < mh) {
-        col = mix(vec3(0.035, 0.042, 0.07), vec3(0.11, 0.12, 0.16), smoothstep(mh - 0.05, mh, w.y) * (0.3 + 0.7 * snowy));
+      if (w.y < HOR + 0.2) {
+        float mh = HOR + 0.03 + 0.17 * ridge(mx, 1.0, 1.4);
+        if (w.y < mh) {
+          col = mix(vec3(0.035, 0.042, 0.07), vec3(0.11, 0.12, 0.16), smoothstep(mh - 0.05, mh, w.y) * (0.3 + 0.7 * snowy));
+        }
       }
       // The hills, the villages' lights on them.
+      // (Never higher than HOR + 0.08.)
       float hx = w.x + dist * 0.05;
-      float hh = HOR + 0.01 + 0.07 * ridge(hx, 4.0, 2.2);
+      float hh = w.y < HOR + 0.08 ? HOR + 0.01 + 0.07 * ridge(hx, 4.0, 2.2) : 0.0;
       if (w.y < hh) {
         col = mix(vec3(0.018, 0.024, 0.036), vec3(0.08, 0.085, 0.11), snowy * smoothstep(hh - 0.08, hh, w.y));
         float vc = floor(hx / 0.9);
@@ -225,9 +231,19 @@
         col = mix(col, tcol * 1.5 + vec3(0.006, 0.008, 0.014), tc.y);
         col = mix(col, tcol, tc.x);
       }
+      return col;
+    }
+
+    // The land through the window at w (window space: x along, y up from its bottom 0 to its top 1).
+    vec3 land(vec2 w) {
+      vec3 col = vec3(0.0);
+      float snowy = snow;
       // The fields: farmhouses with lit windows, trees alone, together, in woods.
+      // They cover all of the land far off below their edge, which is only
+      // worked out above it.
       float fx = w.x + dist * 0.18;
       float fh = HOR - 0.02 + 0.012 * ridge(fx, 8.0, 3.0);
+      if (w.y >= fh) col = farLand(w, snowy);
       if (w.y < fh) {
         col = mix(vec3(0.016, 0.021, 0.024), vec3(0.1, 0.105, 0.13), snowy * 0.8);
         // Furrows running away, in the moonlight.
@@ -303,8 +319,8 @@
           }
         }
       }
-      // The trees close by, smeared by the speed.
-      {
+      // The trees close by, smeared by the speed (none reaches 0.37).
+      if (w.y < 0.371) {
         float ground = 0.1;
         float tx = w.x + dist * 0.55;
         float smear = speed * 0.55 / 60.0;

@@ -22,9 +22,12 @@
 // search's pick), picks + name (several uploads picked from a search), local
 // (the files and folders picked), update ({ playlist, listing, server } of a
 // playlist's Update), updating, auto: { complete, finish }, peek: null while
-// reading, { name, count, single, sourceTotal }, or { error } }. They live in
-// the window only: closing Flow asks first (main.js), naming them. The
-// Client queue frame draws them (queuePanels.js).
+// reading, { name, count, single, sourceTotal }, or { error } }. They are
+// kept over a restart (4.5.3, keptDownloads.js), and so are the batches
+// they became: a batch whose songs were cut off downloading comes back with
+// an entry of its own at the front ({ resume: batch, indexes }), so they
+// download again before the next link. The Client queue frame draws them
+// (queuePanels.js).
 
 const ClientQueue = {
   entries: [],
@@ -33,10 +36,21 @@ const ClientQueue = {
   _seq: 0,
   _timer: 0,
 
-  init() {
-    // A safety net for a turn no state change announced (a dialog closed, say).
-    setInterval(() => {
-      if (this.entries.length) this.kick();
+  init() {},
+
+  /**
+   * A safety net for a turn no state change announced (a dialog closed,
+   * say): every 3 seconds, only while links wait (4.6; it ran all the time).
+   */
+  _net() {
+    if (this._netTimer || !this.entries.length) return;
+    this._netTimer = setInterval(() => {
+      if (!this.entries.length) {
+        clearInterval(this._netTimer);
+        this._netTimer = 0;
+        return;
+      }
+      this.kick();
     }, 3000);
   },
 
@@ -56,6 +70,7 @@ const ClientQueue = {
   },
 
   _changed() {
+    this._net();
     for (const fn of this._listeners) {
       try {
         fn(this.entries);
@@ -64,6 +79,7 @@ const ClientQueue = {
       }
     }
     if (window.flow.setQueuePending) window.flow.setQueuePending({ count: this.entries.length, names: this.entries.map((e) => this.label(e)) }).catch(() => {});
+    KeptDownloads.schedule();
     if (typeof ServerImport !== 'undefined') ServerImport.drawButtons();
   },
 
@@ -125,13 +141,40 @@ const ClientQueue = {
     ImportPanel.followAuto(auto);
   },
 
-  /** Its Cancel: out of the queue, its reading stopped. */
+  /** Its Cancel: out of the queue, its reading stopped (a batch's resume: its songs stay failed). */
   cancel(id) {
     const e = this.entries.find((x) => x.id === id);
     if (!e) return;
     this.entries = this.entries.filter((x) => x !== e);
-    window.flow.cancelPeek(e.id).catch(() => {});
+    if (e.resume) e.resume._dropResume(e.indexes);
+    else window.flow.cancelPeek(e.id).catch(() => {});
     this._changed();
+  },
+
+  /** An entry as kept over a restart: its link and choices, nothing of this run's. */
+  keepOf(e) {
+    const out = {};
+    for (const key of ['url', 'kind', 'title', 'picks', 'name', 'local', 'update', 'updating', 'auto']) if (e[key] !== undefined) out[key] = e[key];
+    return out;
+  },
+
+  /**
+   * Back after a restart (4.5.3, KeptDownloads): `list` in its order, the
+   * resumes of batches first; each link's name read again.
+   */
+  restore(list) {
+    for (const entry of list) {
+      const e = { ...entry, id: `q${Date.now().toString(36)}${(this._seq += 1)}`, peek: null };
+      if (e.resume) {
+        e.peek = {
+          name: e.resume.name || e.resume._finalName(), count: e.indexes.length, single: false, sourceTotal: 0,
+        };
+      }
+      this.entries.push(e);
+      if (!e.resume) this._peek(e);
+    }
+    this._changed();
+    this.kick();
   },
 
   /** This computer may be free now: the next one starts (once things have settled). */
@@ -151,10 +194,17 @@ const ClientQueue = {
   async _run(e) {
     this.running = true;
     try {
-      await AddPage.runEntry(e);
+      if (e.resume) {
+        await e.resume._resume(e.indexes);
+      } else {
+        // The batches it makes know it, to start it again after a restart.
+        ImportPanel.entry = this.keepOf(e);
+        await AddPage.runEntry(e);
+      }
     } catch (err) {
       toast((err && err.message) || T('common.wentWrong'), 'error');
     } finally {
+      ImportPanel.entry = null;
       this.running = false;
       if (typeof ServerImport !== 'undefined') ServerImport.drawButtons();
       this.kick();

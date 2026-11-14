@@ -16,10 +16,16 @@ const SPEC = {
   songs: 'list', playlists: 'list', sharedPlaylists: 'list', deviceSongs: 'list',
 };
 const IGNORE = ['tagged'];
+// Their rows are kept themselves, locked, not copied (4.6, libraryPatch.js
+// createDiffer): what the window was sent last is the rows as they were, and
+// a row that is still the same one is not looked at. Whoever makes the
+// library given here (Local Files, remote.js's view) changes a row by
+// putting another in its place.
+const ROWS = ['songs', 'playlists', 'sharedPlaylists', 'deviceSongs'];
 
 /** send(message): to the window ('library:changed'). */
 function createViewChannel(send) {
-  const differ = LibraryPatch.createDiffer(SPEC, { ignore: IGNORE });
+  const differ = LibraryPatch.createDiffer(SPEC, { ignore: IGNORE, rows: ROWS });
   let seq = 0;
   return {
     /** The window took `lib` another way (its start): its number, which the next change fits. */
@@ -49,4 +55,4 @@ function createViewChannel(send) {
   };
 }
 
-module.exports = { createViewChannel, SPEC, IGNORE };
+module.exports = { createViewChannel, SPEC, IGNORE, ROWS };

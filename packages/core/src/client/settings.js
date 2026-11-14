@@ -373,6 +373,20 @@ const DEFAULTS = {
   // the shutdown Windows has been told about: { endsAt, shutdownAt, ended },
   // times in ms, shutdownAt null without a shutdown.
   sleepTimer: null,
+  // The desktop's Mini Player (5.0), from its cogwheel: Show Equalizer, Cover as background,
+  // Lock position, Always on top, Open on PC Start; where its window was left
+  // and how big ({ x, y, width, height }; one kept before it could be resized
+  // has no size and opens at the first one);
+  // and the song it showed last ({ songId, title, artist, cover, coverBig,
+  // position, duration, list }), shown at once when it starts with the
+  // computer, before the library is read.
+  miniEq: false,
+  miniCoverBg: false,
+  miniLocked: false,
+  miniOnTop: true,
+  miniAutostart: false,
+  miniBounds: null,
+  miniLast: null,
 
   // ---- the Settings window ----
   // The texts' language (i18n.js): '' for the device's, or 'en' / 'de'. Kept
@@ -418,6 +432,9 @@ const DEFAULTS = {
   // "Continue with similar songs" when the list playing has played through
   // (4.0, autoDj.js), instead of it starting over.
   autoDj: false,
+  // Playlists added to groups hide in the menu's Playlists (and Followed
+  // Playlists), shown only inside their groups there (4.5.3).
+  groupedHideInMenu: true,
   // The song lists' optional columns (All Songs, the playlists), each one
   // sortable and searched: Album, Genre, Info (subGenre) and Mix; Album
   // unless turned off, the others when asked.
@@ -442,6 +459,11 @@ const DEFAULTS = {
   eqShine: true,
   eqShineSpread: 50,
   eqColors: 'rainbow',
+  // The playing song's big cover behind the clouds and the equalizer (not
+  // the Mini Player's own Cover as background), and how solid it shows
+  // (percent, 0 = not at all).
+  coverBgOn: false,
+  coverBgVisibility: 50,
 
   // The fullscreen Music Visualizer the player bar's button opens (VISUALIZERS).
   visualizer: 'bars',
@@ -538,6 +560,23 @@ function percent(v, fallback) {
   return Number.isFinite(n) ? Math.min(100, Math.max(1, n)) : fallback;
 }
 
+/** The song the Mini Player showed last (see DEFAULTS), or null. */
+function cleanMiniLast(m) {
+  if (!m || typeof m !== 'object' || !m.title) return null;
+  const text = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  const seconds = (v) => (Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : 0);
+  return {
+    songId: text(m.songId, 100),
+    title: text(m.title, 300),
+    artist: text(m.artist, 300),
+    cover: text(m.cover, 1000),
+    coverBig: text(m.coverBig, 1000),
+    position: seconds(m.position),
+    duration: seconds(m.duration),
+    list: text(m.list, 300),
+  };
+}
+
 function clean(raw) {
   const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
   s.volume = Math.min(1, Math.max(0, Number(s.volume)));
@@ -575,6 +614,21 @@ function clean(raw) {
   const endsAt = st && typeof st === 'object' ? Number(st.endsAt) : NaN;
   const shutdownAt = st && Number.isFinite(Number(st.shutdownAt)) && st.shutdownAt !== null ? Number(st.shutdownAt) : null;
   s.sleepTimer = Number.isFinite(endsAt) ? { endsAt, shutdownAt, ended: st.ended === true } : null;
+  s.miniEq = s.miniEq === true;
+  s.miniCoverBg = s.miniCoverBg === true;
+  s.miniLocked = s.miniLocked === true;
+  s.miniOnTop = s.miniOnTop !== false;
+  s.miniAutostart = s.miniAutostart === true;
+  const mb = s.miniBounds;
+  s.miniBounds = mb && typeof mb === 'object' && Number.isFinite(Number(mb.x)) && Number.isFinite(Number(mb.y))
+    ? { x: Math.round(Number(mb.x)), y: Math.round(Number(mb.y)) }
+    : null;
+  // Its size, once it was resized (the window keeps it within its limits).
+  if (s.miniBounds && Number(mb.width) > 0 && Number(mb.height) > 0 && Number.isFinite(Number(mb.width) + Number(mb.height))) {
+    s.miniBounds.width = Math.round(Number(mb.width));
+    s.miniBounds.height = Math.round(Number(mb.height));
+  }
+  s.miniLast = cleanMiniLast(s.miniLast);
 
   s.musicDir = typeof s.musicDir === 'string' ? s.musicDir : '';
   for (const key of ['serverHome', 'serverRemote']) s[key] = typeof s[key] === 'string' ? s[key].trim().slice(0, 300) : '';
@@ -592,7 +646,7 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 100 && v)
     .slice(0, 100));
   for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
-    'sponsorBlock', 'sponsorBlockIntros', 'autoComplete', 'autoFinish', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix']) s[key] = s[key] === true;
+    'sponsorBlock', 'sponsorBlockIntros', 'autoComplete', 'autoFinish', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix', 'coverBgOn']) s[key] = s[key] === true;
   if (!s.dcScale75) {
     s.dcScale = '75';
     s.dcScale75 = true;
@@ -608,7 +662,7 @@ function clean(raw) {
   delete s.hlSpin;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   if (!['', 'en', 'de'].includes(s.language)) s.language = '';
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'groupedHideInMenu', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'thumbCovers', 'highResCovers', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;
@@ -625,6 +679,8 @@ function clean(raw) {
   for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'eqHeight', 'eqVisibility', 'eqShineSpread']) {
     s[key] = percent(s[key], DEFAULTS[key]);
   }
+  const cover = Math.round(Number(s.coverBgVisibility));
+  s.coverBgVisibility = Number.isFinite(cover) ? Math.min(100, Math.max(0, cover)) : DEFAULTS.coverBgVisibility;
   if (!EQ_COLORS.includes(s.eqColors)) s.eqColors = DEFAULTS.eqColors;
   if (!CLOUD_COLORS.includes(s.cloudsColors)) s.cloudsColors = DEFAULTS.cloudsColors;
   const amount = Math.round(Number(s.cloudsAmount) / 10) * 10;

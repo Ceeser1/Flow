@@ -124,8 +124,12 @@ const PlaylistPage = {
     new ResizeObserver(() => this._sizeColumns()).observe($('plTableWrap'));
 
     Player.orderOf = (contextId) => this.orderedIds(contextId);
-    Store.onLibrary(() => {
+    Store.onLibrary((lib, change) => {
       if (Nav.page !== 'playlist') return;
+      // Nothing the list shows changed (a listen counted, a cover, loudness
+      // measured): it stays as it is drawn. A list whose songs are picked by
+      // what was listened to follows a listen.
+      if (change.quiet() && !(change.field('stats') && this._picksByStats(this.id))) return;
       if (!Store.playlist(this.id)) {
         Nav.openPlaylist('all');
         return;
@@ -245,6 +249,10 @@ const PlaylistPage = {
     const node = $('plField');
     const field = view.field;
     node.hidden = !field;
+    // As it is drawn already (the same list and pick): left alone.
+    const shown = field ? `${this.id}\u0000${field.key}\u0000${field.value}` : '';
+    if (node._shown === shown) return;
+    node._shown = shown;
     clear(node);
     if (!field) return;
     const label = {
@@ -288,27 +296,34 @@ const PlaylistPage = {
     return this.rowsFor(id).map((r) => r.song.id);
   },
 
+  /** A list whose songs follow what was listened to: a listening trend list, or a smart playlist (its rules may count plays). */
+  _picksByStats(id) {
+    const p = Store.playlist(id);
+    return !!p && (!!p.isSmart || !!p.isRuled);
+  },
+
   render() {
     const p = Store.playlist(this.id);
     if (!p) return;
-    $('plTitle').textContent = p.name;
+    setText($('plTitle'), p.name);
     const all = Store.rowsOf(this.id);
     // Known by its details only while its songs are on their way.
     const total = p.partial ? p.seconds || 0 : all.reduce((sum, r) => sum + (r.song.duration || 0), 0);
     const by = p.isShared && p.ownerName ? `${T('playlist.header.sharedBy', { profile: p.ownerName })} ` : '';
-    $('plMeta').textContent = `${by}${p.isRuled ? `${T('playlist.header.smartPlaylist')} ` : ''}${Util.plural(p.partial ? p.songCount || 0 : all.length, 'song')} · ${Util.fmtClock(total)}`;
+    setText($('plMeta'), `${by}${p.isRuled ? `${T('playlist.header.smartPlaylist')} ` : ''}${Util.plural(p.partial ? p.songCount || 0 : all.length, 'song')} · ${Util.fmtClock(total)}`);
     $('plMeta').title = p.isRuled ? PlaylistRules.describe(p.rules) : '';
     $('plRules').hidden = !p.isRuled;
     if (p.isRuled) {
       $('plRules').title = T('playlist.rules.tooltip', { rules: PlaylistRules.describe(p.rules) });
-      $('plRules').innerHTML = Store.uiMode === 'mobile' ? Icons.pulse : `${Icons.pulse}<span>${T('common.editRules')}</span>`;
+      setHtml($('plRules'), Store.uiMode === 'mobile' ? Icons.pulse : `${Icons.pulse}<span>${T('common.editRules')}</span>`);
       $('plRules').setAttribute('aria-label', T('common.editRules'));
     }
     $('plSearch').placeholder = T('playlist.search.placeholder', { playlist: p.name });
 
     const target = this.pickFor ? Store.playlist(this.pickFor) : null;
     $('plPickBanner').hidden = !target;
-    if (target) {
+    if (target && $('plPickText')._shown !== target.name) {
+      $('plPickText')._shown = target.name;
       const [before, after = ''] = T('window.playlist.pick.banner', { playlist: '\u0000' }).split('\u0000');
       clear($('plPickText')).append(before, h('strong', target.name), after);
     }
@@ -340,10 +355,10 @@ const PlaylistPage = {
       : T('playlist.follow.tooltip');
     if (Store.uiMode === 'mobile') {
       // Only the icon on the phone, green while shared (or followed).
-      btn.innerHTML = Icons.share;
+      setHtml(btn, Icons.share);
       btn.setAttribute('aria-label', mine ? (on ? T('playlist.share.shared') : T('common.share')) : (on ? T('playlist.follow.following') : T('common.follow')));
     } else {
-      btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.share}<span>${mine ? T('common.share') : T('playlist.follow.following')}</span>`;
+      setHtml(btn, `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.share}<span>${mine ? T('common.share') : T('playlist.follow.following')}</span>`);
     }
   },
 
@@ -396,17 +411,17 @@ const PlaylistPage = {
     btn.setAttribute('aria-pressed', String(on));
     if (Store.uiMode === 'mobile') {
       // Only the icon on the phone, golden while the playlist is kept here.
-      btn.innerHTML = Icons.download;
+      setHtml(btn, Icons.download);
       btn.title = T(`playlist.download.button${on ? '.done' : ''}.tooltip.${Store.hereKey}`);
       btn.setAttribute('aria-label', btn.title);
     } else {
-      btn.innerHTML = `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.download}<span>${T('common.download')}</span>`;
+      setHtml(btn, `<span class="toggle__box">${on ? Icons.check : ''}</span>${Icons.download}<span>${T('common.download')}</span>`);
     }
     const rows = Store.rowsOf(this.id);
     const here = rows.filter((r) => r.song.file).length;
-    note.textContent = !rows.length ? ''
+    setText(note, !rows.length ? ''
       : here === rows.length ? (on ? T('playlist.download.state.allDownloaded') : T(`playlist.download.state.allHere.${Store.hereKey}`, { count: rows.length }))
-        : on ? T('playlist.download.state.someDownloaded', { done: here, count: rows.length }) : here ? T(`playlist.download.state.someHere.${Store.hereKey}`, { done: here, count: rows.length }) : '';
+        : on ? T('playlist.download.state.someDownloaded', { done: here, count: rows.length }) : here ? T(`playlist.download.state.someHere.${Store.hereKey}`, { done: here, count: rows.length }) : '');
   },
 
   renderTable() {
@@ -433,10 +448,12 @@ const PlaylistPage = {
       $('plEmptyAction').hidden = smart || favourites || !!p.isShared || !!p.isDevice || !!p.isRuled;
       $('plEmptyAction').textContent = this.id === 'all' ? T('common.addSongs') : T('playlist.empty.addFromAllSongs');
     }
-    $('plFiltered').textContent = (view.filter || view.field) && !empty ? T('playlist.showing', { shown: rows.length, count }) : '';
+    setText($('plFiltered'), (view.filter || view.field) && !empty ? T('playlist.showing', { shown: rows.length, count }) : '');
     this._drawField(view);
 
-    this._playButtons = new Map();
+    // The table is drawn again in place (4.6, renderTable): the rows that
+    // still show the same stay, with their Play buttons; those of the rows
+    // going are let go as they go (onRowsRemoved).
     const pickTarget = this.pickFor ? Store.playlist(this.pickFor) : null;
     const pickSet = pickTarget ? new Set(pickTarget.entries.map((e) => e.songId)) : null;
 
@@ -444,10 +461,18 @@ const PlaylistPage = {
     const smartList = !!p.isSmart;
     const extra = this._extraColumns(smartList);
     this._shareColumns(extra.map((c) => c.key));
+    const offline = !!(Store.server.on && Store.can('offline'));
     renderTable($('plTable'), {
       rows,
       sort: view.sort,
       rowKey: (r) => r.song.id,
+      // What a row shows: its song as the lists show it (Store.look: the
+      // same while nothing a list shows changed), when it was added, while
+      // adding songs to a playlist whether it is in it, and in a listening
+      // trend list its playlists.
+      shows: (r) => [Store.look(r.song), r.addedAt, !!pickSet && pickSet.has(r.song.id), smartList ? this._from(r.song) : ''],
+      // What all rows go by: the list, the playlist songs are added to, and whether songs can be kept here (the phone's mark).
+      look: [this.id, pickTarget ? `${pickTarget.id}\n${pickTarget.name}` : '', smartList ? 1 : 0, offline ? 1 : 0].join('\u0000'),
       onSort: (key) => {
         view.sort = Util.cycleSort(view.sort, key);
         this.renderTable();
@@ -474,6 +499,8 @@ const PlaylistPage = {
       ],
       mobile: this._touchRows(pickTarget, pickSet, smartList),
     });
+    // A Play button no longer in the page (whatever took its row out) is let go.
+    for (const [songId, btn] of this._playButtons) if (!btn.isConnected) this._playButtons.delete(songId);
     this._drawPlayState();
   },
 
@@ -658,7 +685,9 @@ const PlaylistPage = {
 
   /** More's buttons for a song (on the phone, its action sheet). */
   /** `listId`: the list the song is shown in (a group page's frame shows another than this page's). */
-  _moreButtons(song, listId = this.id) {
+  _moreButtons(shown, listId = this.id) {
+    // The song as it is now: its row may have stayed while a listen was counted or its cover came (4.6).
+    const song = Store.song(shown.id) || shown;
     // Another server's song (a guest in its session): it plays and queues there, nothing more.
     if (song.foreign) return [];
     // A song here that is not the server's (Downloaded Songs) only plays, and can be deleted from here.
@@ -740,13 +769,13 @@ const PlaylistPage = {
     const p = Store.playlist(this.id);
     const listActive = Player.contextId === this.id && !!Player.currentId;
     const listPlaying = listActive && Player.isPlaying;
-    $('plPlay').innerHTML = (listPlaying ? Icons.pause : Icons.play) + `<span>${listPlaying ? T('common.pause') : T('common.play')}</span>`;
+    setHtml($('plPlay'), (listPlaying ? Icons.pause : Icons.play) + `<span>${listPlaying ? T('common.pause') : T('common.play')}</span>`);
     $('plPlay').disabled = !p || !Store.rowsOf(this.id).length;
     $('plShuffle').classList.toggle('toggle--on', Player.queue.shuffle);
     $('plShuffle').setAttribute('aria-pressed', String(Player.queue.shuffle));
     // The phone's is only the icon, green while on.
-    $('plShuffle').innerHTML = Store.uiMode === 'mobile' ? Icons.shuffle
-      : `<span class="toggle__box">${Player.queue.shuffle ? Icons.check : ''}</span>${Icons.shuffle}<span>${T('common.shuffle')}</span>`;
+    setHtml($('plShuffle'), Store.uiMode === 'mobile' ? Icons.shuffle
+      : `<span class="toggle__box">${Player.queue.shuffle ? Icons.check : ''}</span>${Icons.shuffle}<span>${T('common.shuffle')}</span>`);
     $('plShuffle').setAttribute('aria-label', T('common.shuffle'));
 
     for (const tr of document.querySelectorAll('#plTable tbody tr, #plTableList .mrow')) {

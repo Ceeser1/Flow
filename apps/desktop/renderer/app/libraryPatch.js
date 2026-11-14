@@ -22,6 +22,13 @@
 //   ['map', path, { put, gone }]               put: { key: value }; gone: keys
 //
 // Values are plain JSON (undefined counts as missing).
+//
+// Locked rows (4.6): a song or playlist that was saved or sent is locked for
+// good (lock(): frozen all the way down), and whoever changes it puts a copy
+// in its place (libraryModel.js songToChange, listToChange). So what was told
+// last need not be a copy of every row: createDiffer's `rows` keeps the rows
+// themselves, and a row that is still the same one has not changed. A write
+// to a locked row throws instead of going unnoticed.
 
 (function (root, factory) {
   const api = factory();
@@ -71,9 +78,29 @@
       for (let i = 0; i < v.length; i += 1) out[i] = v[i] === undefined ? null : clone(v[i]);
       return out;
     }
-    const out = {};
-    for (const k in v) if (v[k] !== undefined) out[k] = clone(v[k]);
+    // Copied whole, then gone through (4.6): made a field at a time, the copy
+    // of an object with many fields is kept as a table by the engine, three
+    // times the size of the object it copies and slower to compare.
+    const out = { ...v };
+    for (const k in out) {
+      const x = out[k];
+      if (x === undefined) delete out[k];
+      else if (x !== null && typeof x === 'object') out[k] = clone(x);
+    }
     return out;
+  }
+
+  /**
+   * Locks a row for good, all the way down (4.6): it can no longer be written
+   * to, so it is told from a changed one by being the same object. What is
+   * locked already is locked all the way down (only lock() locks rows).
+   */
+  function lock(v) {
+    if (v === null || typeof v !== 'object' || Object.isFrozen(v)) return v;
+    Object.freeze(v);
+    if (Array.isArray(v)) for (let i = 0; i < v.length; i += 1) lock(v[i]);
+    else for (const k in v) lock(v[k]);
+    return v;
   }
 
   // A list's items have mostly the same fields: compared by a function made
@@ -160,6 +187,8 @@
       const old = wasArr[i];
       const item = now[i];
       if (!old || !item || old.id !== item.id) break;
+      // The row itself, kept and locked (4.6): alike.
+      if (old === item) continue;
       ic.see(item);
       if (!ic.alike(old, item)) {
         put.push(item);
@@ -182,8 +211,9 @@
       const item = now[j];
       const id = item && item.id;
       ids.add(id);
-      ic.see(item);
       const old = before.get(id);
+      if (old === item) continue;
+      ic.see(item);
       if (old === undefined || !ic.alike(old, item)) {
         put.push(item);
         at.push(j);
@@ -208,23 +238,37 @@
     return done(step);
   }
 
-  function mapStep(was, now, ignore, known) {
+  /**
+   * size (4.6, createDiffer): { n } how many keys `was` holds, when known;
+   * set to how many `now` holds. With it `was` is gone through for keys no
+   * longer there only when some are missing.
+   */
+  function mapStep(was, now, ignore, known, size = null) {
     const old = isObj(was) ? was : {};
     const ic = itemCompare(known || fieldsOf(Object.values(old)), ignore);
     const put = {};
     let n = 0;
+    let had = 0;
+    let has = 0;
     for (const k in now) {
       const v = now[k];
       if (v === undefined) continue;
-      ic.see(v);
+      has += 1;
       const o = old[k];
+      if (o !== undefined) had += 1;
+      // The same value, or the row itself (4.6): alike.
+      if (o === v) continue;
+      ic.see(v);
       if (o === undefined || !ic.alike(o, v)) {
         put[k] = clone(v);
         n += 1;
       }
     }
     const gone = [];
-    for (const k in old) if (old[k] !== undefined && now[k] === undefined) gone.push(k);
+    if (!size || size.n === undefined || had < size.n) {
+      for (const k in old) if (old[k] !== undefined && now[k] === undefined) gone.push(k);
+    }
+    if (size) size.n = has;
     return n || gone.length ? { put, gone } : null;
   }
 
@@ -255,29 +299,38 @@
    * a Map (path -> Set) of the fields the items of `was`'s lists and maps
    * have, kept by createDiffer between calls (filled in when missing).
    */
-  function diff(was, now, spec = {}, { ignore = null, known = null } = {}) {
+  function diff(was, now, spec = {}, { ignore = null, known = null, sizes = null } = {}) {
     const skip = ignore ? new Set(ignore) : null;
     const rules = compile(spec);
     const steps = [];
-    const fieldsAt = (path, items) => {
+    // The fields of a list's or map's items, listed the first time only (items(): them, made when asked for).
+    const fieldsAt = (key, items) => {
       if (!known) return null;
-      const key = path.join('\u0001');
       let f = known.get(key);
-      if (!f) known.set(key, (f = fieldsOf(items)));
+      if (!f) known.set(key, (f = fieldsOf(items())));
       return f;
+    };
+    const sizeAt = (key) => {
+      if (!sizes) return null;
+      let s = sizes.get(key);
+      if (!s) sizes.set(key, (s = { n: undefined }));
+      return s;
     };
     const walk = (a, b, at) => {
       for (const k in b) {
         const v = b[k];
         if (v === undefined) continue;
+        const old = a ? a[k] : undefined;
+        // The same value, or (4.6) a kept map of rows that is still the one it was: nothing to look at.
+        if (old === v) continue;
         const p = [...at, k];
         const kind = rules.kindOf(p);
-        const old = a ? a[k] : undefined;
         if (kind === 'list' && Array.isArray(v)) {
-          const s = listStep(old, v, skip, fieldsAt(p, Array.isArray(old) ? old : []));
+          const s = listStep(old, v, skip, fieldsAt(p.join('\u0001'), () => (Array.isArray(old) ? old : [])));
           if (s) steps.push(['list', p, s]);
         } else if (kind === 'map' && isObj(v)) {
-          const s = mapStep(old, v, skip, fieldsAt(p, isObj(old) ? Object.values(old) : []));
+          const key = p.join('\u0001');
+          const s = mapStep(old, v, skip, fieldsAt(key, () => (isObj(old) ? Object.values(old) : [])), sizeAt(key));
           if (s) steps.push(['map', p, s]);
         } else if (isObj(v) && isObj(old) && rules.walkInto(p)) {
           walk(old, v, p);
@@ -366,13 +419,58 @@
    * Keeps a copy of the value last told, to tell only what changed since.
    * next(value): the steps from the value told last ([] when alike, null when
    * none was: the first time, or after reset()); `value` is the one told now.
+   *
+   * rows (4.6): paths of the spec ('songs', 'profiles.*.playlists') whose
+   * rows are kept themselves instead of copied, and locked: a row that is
+   * still the same one is alike without a look, any other is compared as
+   * ever. Whoever owns the value must change such a row by putting another in
+   * its place (a write to a locked one throws). A list of rows is the
+   * owner's to add to and take from; a map of rows is kept itself and locked
+   * too (one that is still the same map is not gone through at all), so its
+   * owner puts another map in its place to change it. The rest is copied as before.
    */
-  function createDiffer(spec, { ignore = null } = {}) {
+  function createDiffer(spec, { ignore = null, rows = null } = {}) {
     let last = null;
     let known = new Map();
+    let sizes = new Map();
+    const byRow = rows && rows.length ? compile(Object.fromEntries(rows.map((p) => [p, 'rows']))) : null;
+    // What is kept of the value at `path`: a copy, but of `rows` the list (or map) with the rows themselves, locked.
+    const taken = (v, path) => {
+      if (v === null || typeof v !== 'object') return v;
+      if (byRow.kindOf(path)) {
+        if (!Array.isArray(v)) return lock(v);
+        const out = v.slice();
+        for (let i = 0; i < out.length; i += 1) lock(out[i]);
+        return out;
+      }
+      if (!isObj(v) || !byRow.walkInto(path)) return clone(v);
+      const out = {};
+      for (const k in v) if (v[k] !== undefined) out[k] = taken(v[k], [...path, k]);
+      return out;
+    };
+    // The rows of `v` (the value told now, at `path`) taken into `mine`, what is kept there: those not kept yet are locked.
+    const adopt = (mine, v, path) => {
+      for (const k in v) {
+        const x = v[k];
+        if (x === null || typeof x !== 'object') continue;
+        const p = [...path, k];
+        if (byRow.kindOf(p)) {
+          const was = mine[k] !== null && typeof mine[k] === 'object' ? mine[k] : null;
+          if (Array.isArray(x)) {
+            const out = x.slice();
+            for (let i = 0; i < out.length; i += 1) if (!was || was[i] !== out[i]) lock(out[i]);
+            mine[k] = out;
+          } else if (was !== x) mine[k] = lock(x);
+        } else if (isObj(x) && byRow.walkInto(p)) {
+          if (!isObj(mine[k])) mine[k] = {};
+          adopt(mine[k], x, p);
+        }
+      }
+    };
     const keep = (value) => {
-      last = clone(value);
+      last = byRow ? taken(value, []) : clone(value);
       known = new Map();
+      sizes = new Map();
     };
     return {
       /** Whether a value was told yet. */
@@ -387,8 +485,15 @@
           keep(value);
           return null;
         }
-        const steps = diff(last, value, spec, { ignore, known });
-        if (steps.length) apply(last, steps, { inPlace: true });
+        const steps = diff(last, value, spec, { ignore, known, sizes });
+        if (!byRow) {
+          if (steps.length) apply(last, steps, { inPlace: true });
+          return steps;
+        }
+        // The rows are taken as they are now; what changed in the rest is copied in.
+        const rest = steps.filter(([kind, path]) => (kind !== 'list' && kind !== 'map') || !byRow.kindOf(path));
+        if (rest.length) apply(last, rest, { inPlace: true });
+        adopt(last, value, []);
         return steps;
       },
     };
@@ -401,6 +506,6 @@
   }
 
   return {
-    same, clone, diff, apply, createDiffer, plainCompare,
+    same, clone, lock, diff, apply, createDiffer, plainCompare,
   };
 }));

@@ -6,29 +6,60 @@
 // every frame. Canvas 2D draws long paths on the CPU (see landscape.js), so
 // whatever is made of many lines or pixels goes through here.
 
+// A visualizer's big shaders take the browser seconds to compile, and the
+// page (or at least the picture) stands still meanwhile. Two ways round it,
+// by what the browser can do:
+//   - It compiles in the background (KHR_parallel_shader_compile: Chromium,
+//     so Flow itself and the phones, and Safari): the next visualizer's
+//     canvas is made ahead with its programs compiling in it (stage).
+//   - It does not, and keeps nothing compiled for the next canvas either
+//     (Firefox: every opening compiled again, on the thread that paints, so
+//     compiling ahead would hold the picture up just as long): the canvas
+//     is kept when a visualizer is done with it (lose only empties it), its
+//     programs staying compiled in it, and the next visualizer is made in
+//     the same canvas. So each compiles once and opens at once after that.
+//     One canvas for all of them (of the same WebGL options), since each
+//     canvas kept costs the browser its full-screen buffers (some 100 MB).
+
 const VizGL = {
   /** The canvas's WebGL 2, or null (the visualizer then says so). */
   context(canvas, opts = {}) {
-    return canvas.getContext('webgl2', {
-      alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false, ...opts,
-    });
+    const gl = canvas.getContext('webgl2', this._options(opts));
+    if (gl && !this.background()) this._watch(gl, this.key(opts));
+    return gl;
+  },
+
+  _options(opts) {
+    return { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false, ...opts };
+  },
+
+  /** A context's options as one text: canvases kept (lose) are told apart by it, a context having its options for good. */
+  key(opts) {
+    return JSON.stringify(this._options(opts === true ? {} : opts || {}));
+  },
+
+  // The programs waiting in a canvas's context for its visualizer to ask
+  // for them (started ahead by stage, or kept from its last time by lose):
+  // context -> [{ vs, fs, p, v, f }].
+  _started: new WeakMap(),
+  // What a visualizer made in a context whose programs are kept (_watch):
+  // context -> { programs: [{ vs, fs, p, v, f }], things: Map(delete -> Set) }.
+  _made: new WeakMap(),
+  _parallel: null,
+
+  /** Whether the browser compiles programs in the background (asked once, of a canvas of its own). */
+  background() {
+    if (this._parallel === null) {
+      const gl = document.createElement('canvas').getContext('webgl2');
+      this._parallel = !!(gl && gl.getExtension('KHR_parallel_shader_compile'));
+      this._drop(gl);
+    }
+    return this._parallel;
   },
 
   /** A program from its two shaders (compiled now, waiting for it); u: its uniforms by name. */
   program(gl, vs, fs) {
-    const shader = (type, src) => {
-      const s = gl.createShader(type);
-      gl.shaderSource(s, '#version 300 es\nprecision highp float;\n' + src);
-      gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s));
-      return s;
-    };
-    const p = gl.createProgram();
-    gl.attachShader(p, shader(gl.VERTEX_SHADER, vs));
-    gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
-    gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('program: ' + gl.getProgramInfoLog(p));
-    return { p, u: this._uniforms(gl, p) };
+    return this._finish(gl, this._start(gl, vs, fs));
   },
 
   /**
@@ -40,22 +71,39 @@ const VizGL = {
    */
   programLater(gl, vs, fs) {
     const ext = gl.getExtension('KHR_parallel_shader_compile');
-    const { p, v, f } = this._link(gl, vs, fs);
+    const started = this._start(gl, vs, fs);
     let result = null;
     return {
-      ready: () => !!result || !ext || gl.getProgramParameter(p, ext.COMPLETION_STATUS_KHR),
+      ready: () => !!result || !ext || gl.getProgramParameter(started.p, ext.COMPLETION_STATUS_KHR),
       done: () => {
-        if (result) return result;
-        if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-          for (const s of [v, f]) {
-            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s));
-          }
-          throw new Error('program: ' + gl.getProgramInfoLog(p));
-        }
-        result = { p, u: this._uniforms(gl, p) };
+        if (!result) result = this._finish(gl, started);
         return result;
       },
     };
+  },
+
+  /** A program started (_link) as program() gives it: { p, u }, waiting for it if it must, throwing if it failed. */
+  _finish(gl, { p, v, f }) {
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      for (const s of [v, f]) {
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s));
+      }
+      throw new Error('program: ' + gl.getProgramInfoLog(p));
+    }
+    return { p, u: this._uniforms(gl, p) };
+  },
+
+  /**
+   * The program of these two shaders, compiling or compiled: the one waiting
+   * in this context (_started; each handed out once), else started now.
+   */
+  _start(gl, vs, fs) {
+    const list = this._started.get(gl);
+    const at = list ? list.findIndex((s) => s.vs === vs && s.fs === fs) : -1;
+    const started = at < 0 ? { vs, fs, ...this._link(gl, vs, fs) } : list.splice(at, 1)[0];
+    const made = this._made.get(gl);
+    if (made) made.programs.push(started);
+    return started;
   },
 
   /** Starts compiling and linking a program, without asking how it went (which would wait for it). */
@@ -76,24 +124,38 @@ const VizGL = {
   },
 
   /**
-   * Compiles a visualizer's shaders ahead, so that when it opens the browser
-   * has them cached (shared between canvases) and nothing waits: make is its
-   * create(canvas). Run on a throwaway canvas, its programs are only noted
-   * (none compiled there); they are compiled in a context of their own, in
-   * the background (KHR_parallel_shader_compile; without it, not at all, as
-   * it would hold the page up just the same), which is dropped once they
-   * are done. Returns a function that stops it sooner.
+   * A visualizer's canvas made ahead, so that it opens without a wait: make
+   * is its create(canvas). Run on a throwaway canvas first, its programs
+   * and its context's options are only noted (nothing compiled there); the
+   * programs are then started in the canvas returned, whose context keeps
+   * them until the visualizer is made in that canvas and asks for them
+   * (program and programLater hand out the one started from the same two
+   * shaders). Nothing here waits for them: the browser compiles them in the
+   * background, asked now and then how far they are (some are only
+   * finished once asked). Being the visualizer's own programs in its own
+   * canvas, this does not need the browser to keep compiled programs for
+   * another canvas (Chromium keeps a few megabytes of them, which the big
+   * ones soon fill). Returns { canvas, drop() } (drop: not wanted after
+   * all), or null with nothing to compile, no WebGL 2, or a browser that
+   * cannot compile in the background (there it would hold the picture up
+   * now instead of later: see the top).
    */
-  warm(make) {
+  stage(make) {
+    if (!this.background()) return null;
     const sources = [];
-    const { program, programLater } = this;
+    let opts = null;
+    const { program, programLater, context } = this;
     this.program = (gl, vs, fs) => {
       sources.push([vs, fs]);
       return { p: null, u: {} };
     };
     this.programLater = (gl, vs, fs) => {
       sources.push([vs, fs]);
-      return { ready: () => false, done: () => { throw new Error('only being warmed'); } };
+      return { ready: () => false, done: () => { throw new Error('only being noted'); } };
+    };
+    this.context = (canvas, o = {}) => {
+      opts = opts || o;
+      return context.call(this, canvas, o);
     };
     const scratch = document.createElement('canvas');
     try {
@@ -104,28 +166,30 @@ const VizGL = {
     } finally {
       this.program = program;
       this.programLater = programLater;
+      this.context = context;
     }
     this.lose(scratch.getContext('webgl2'));
+    if (!sources.length) return null;
 
     const canvas = document.createElement('canvas');
-    canvas.width = 1;
-    canvas.height = 1;
-    const gl = sources.length ? this.context(canvas) : null;
-    const ext = gl && gl.getExtension('KHR_parallel_shader_compile');
-    if (!ext) {
-      this.lose(gl);
-      return () => {};
-    }
-    const progs = sources.map(([vs, fs]) => this._link(gl, vs, fs).p);
-    let timer = null;
-    const stop = () => {
-      clearInterval(timer);
-      this.lose(gl);
+    const gl = this.context(canvas, opts || {});
+    if (!gl) return null;
+    this._started.set(gl, sources.map(([vs, fs]) => ({ vs, fs, ...this._link(gl, vs, fs) })));
+    gl.flush();
+    const ext = gl.getExtension('KHR_parallel_shader_compile');
+    // Those not handed out yet: the others are their visualizer's by now.
+    const timer = ext ? setInterval(() => {
+      const left = this._started.get(gl) || [];
+      if (gl.isContextLost() || left.every((s) => gl.getProgramParameter(s.p, ext.COMPLETION_STATUS_KHR))) clearInterval(timer);
+    }, 250) : null;
+    return {
+      canvas,
+      drop: () => {
+        clearInterval(timer);
+        this._started.delete(gl);
+        this.lose(gl);
+      },
     };
-    timer = setInterval(() => {
-      if (gl.isContextLost() || progs.every((p) => gl.getProgramParameter(p, ext.COMPLETION_STATUS_KHR))) stop();
-    }, 250);
-    return stop;
   },
 
   /** A program's uniforms by name, located once. */
@@ -514,10 +578,135 @@ const VizGL = {
   },
   _lines: new WeakMap(),
 
-  /** Frees the GPU's memory now rather than whenever the page gets round to it. */
+  /**
+   * A visualizer done with its context: the GPU's memory freed now rather
+   * than whenever the page gets round to it. Where its programs are kept
+   * (_watch) the context stays, emptied: all else made in it deleted, its
+   * settings as at first, its programs waiting for whichever visualizer is
+   * made in the same canvas next and asks for them (kept, drop).
+   */
   lose(gl) {
+    const made = gl && this._made.get(gl);
+    if (made && !gl.isContextLost()) this._empty(gl, made);
+    else this._drop(gl);
+  },
+
+  _drop(gl) {
     const ext = gl && gl.getExtension('WEBGL_lose_context');
     if (ext) ext.loseContext();
+  },
+
+  /** Whether a canvas's context holds programs for the next visualizer made in it (lose). */
+  kept(canvas) {
+    const gl = canvas.getContext('webgl2');
+    return !!gl && !gl.isContextLost() && this._made.has(gl) && (this._started.get(gl) || []).length > 0;
+  },
+
+  /** A kept canvas not wanted any more: its context gone for good. */
+  drop(canvas) {
+    const gl = canvas.getContext('webgl2');
+    if (!gl) return;
+    this._made.delete(gl);
+    this._started.delete(gl);
+    this._drop(gl);
+  },
+
+  // What a context makes besides programs, and what deletes each.
+  THINGS: [
+    ['createTexture', 'deleteTexture'], ['createBuffer', 'deleteBuffer'], ['createFramebuffer', 'deleteFramebuffer'],
+    ['createRenderbuffer', 'deleteRenderbuffer'], ['createVertexArray', 'deleteVertexArray'], ['createSampler', 'deleteSampler'],
+    ['createTransformFeedback', 'deleteTransformFeedback'], ['createQuery', 'deleteQuery'], ['fenceSync', 'deleteSync'],
+  ],
+
+  /** From here on notes what is made in a context (its programs: _start), for lose to keep the programs and delete the rest. */
+  _watch(gl, key) {
+    const before = this._made.get(gl);
+    if (before) {
+      // A kept canvas handed to a visualizer of other options: Visualizer's mistake (its gl says them).
+      if (before.key !== key) console.warn('VizGL: this canvas was made with other options', before.key, key);
+      return;
+    }
+    const made = { key, programs: [], things: new Map() };
+    this._made.set(gl, made);
+    for (const [create, del] of this.THINGS) {
+      const set = new Set();
+      made.things.set(del, set);
+      const creating = gl[create];
+      const deleting = gl[del];
+      gl[create] = (...args) => {
+        const thing = creating.apply(gl, args);
+        if (thing) set.add(thing);
+        return thing;
+      };
+      gl[del] = (thing) => {
+        set.delete(thing);
+        deleting.call(gl, thing);
+      };
+    }
+  },
+
+  /** A watched context as a new one, but for its programs, which wait for the next visualizer made in it. */
+  _empty(gl, made) {
+    for (const [del, set] of made.things) {
+      for (const thing of [...set]) gl[del](thing);
+    }
+    this._started.set(gl, [...(this._started.get(gl) || []), ...made.programs.splice(0)]);
+    // The helpers' own, made per context: made again with the next visualizer.
+    for (const own of [this._blurs, this._shrinks, this._lines]) own.delete(gl);
+
+    gl.useProgram(null);
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+    for (const target of [gl.ARRAY_BUFFER, gl.ELEMENT_ARRAY_BUFFER, gl.PIXEL_PACK_BUFFER, gl.PIXEL_UNPACK_BUFFER, gl.UNIFORM_BUFFER, gl.COPY_READ_BUFFER, gl.COPY_WRITE_BUFFER]) gl.bindBuffer(target, null);
+    for (let i = 0, n = gl.getParameter(gl.MAX_VERTEX_ATTRIBS); i < n; i += 1) {
+      gl.disableVertexAttribArray(i);
+      gl.vertexAttribDivisor(i, 0);
+    }
+    for (let i = 0, n = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS); i < n; i += 1) {
+      gl.activeTexture(gl.TEXTURE0 + i);
+      for (const target of [gl.TEXTURE_2D, gl.TEXTURE_CUBE_MAP, gl.TEXTURE_3D, gl.TEXTURE_2D_ARRAY]) gl.bindTexture(target, null);
+      gl.bindSampler(i, null);
+    }
+    gl.activeTexture(gl.TEXTURE0);
+    for (const cap of [gl.BLEND, gl.CULL_FACE, gl.DEPTH_TEST, gl.POLYGON_OFFSET_FILL, gl.SAMPLE_ALPHA_TO_COVERAGE, gl.SAMPLE_COVERAGE, gl.SCISSOR_TEST, gl.STENCIL_TEST, gl.RASTERIZER_DISCARD]) gl.disable(cap);
+    gl.enable(gl.DITHER);
+    gl.blendEquation(gl.FUNC_ADD);
+    gl.blendFunc(gl.ONE, gl.ZERO);
+    gl.blendColor(0, 0, 0, 0);
+    gl.colorMask(true, true, true, true);
+    gl.clearColor(0, 0, 0, 0);
+    gl.depthFunc(gl.LESS);
+    gl.depthMask(true);
+    gl.depthRange(0, 1);
+    gl.clearDepth(1);
+    gl.stencilFunc(gl.ALWAYS, 0, 0xffffffff);
+    gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+    gl.stencilMask(0xffffffff);
+    gl.clearStencil(0);
+    gl.cullFace(gl.BACK);
+    gl.frontFace(gl.CCW);
+    gl.lineWidth(1);
+    gl.polygonOffset(0, 0);
+    gl.pixelStorei(gl.PACK_ALIGNMENT, 4);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.BROWSER_DEFAULT_WEBGL);
+    for (const name of [gl.PACK_ROW_LENGTH, gl.PACK_SKIP_PIXELS, gl.PACK_SKIP_ROWS, gl.UNPACK_ROW_LENGTH, gl.UNPACK_IMAGE_HEIGHT, gl.UNPACK_SKIP_PIXELS, gl.UNPACK_SKIP_ROWS, gl.UNPACK_SKIP_IMAGES]) gl.pixelStorei(name, 0);
+    gl.drawBuffers([gl.BACK]);
+    gl.readBuffer(gl.BACK);
+    gl.hint(gl.GENERATE_MIPMAP_HINT, gl.DONT_CARE);
+    gl.hint(gl.FRAGMENT_SHADER_DERIVATIVE_HINT, gl.DONT_CARE);
+    // A new canvas's size.
+    gl.canvas.width = 300;
+    gl.canvas.height = 150;
+    gl.viewport(0, 0, 300, 150);
+    gl.scissor(0, 0, 300, 150);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    // Now: what was deleted is only given back once the context is next heard of.
+    gl.flush();
   },
 
   /** '#rrggbb' as [r, g, b] 0..1. */
@@ -695,6 +884,22 @@ const VizGL = {
     z = f(z + d);
     const h = f(f(x + y) * z);
     return f(h - Math.floor(h));
+  },
+  /** NOISE's vnoise the same way: for a value that is the same all over a frame, worked out once rather than at each pixel. */
+  _vnoise(px, py) {
+    const f = Math.fround;
+    const ix = Math.floor(px);
+    const iy = Math.floor(py);
+    const fx = f(px - ix);
+    const fy = f(py - iy);
+    const ux = f(fx * fx * f(3 - 2 * fx));
+    const uy = f(fy * fy * f(3 - 2 * fy));
+    const a = this._hash12(ix, iy);
+    const b = this._hash12(ix + 1, iy);
+    const c = this._hash12(ix, iy + 1);
+    const d = this._hash12(ix + 1, iy + 1);
+    const top = a + (b - a) * ux;
+    return top + (c + (d - c) * ux - top) * uy;
   },
   _HASH_A: Math.fround(0.1031),
   _HASH_K: Math.fround(33.33),

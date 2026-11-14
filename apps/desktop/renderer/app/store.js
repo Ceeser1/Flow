@@ -30,6 +30,102 @@ function sameEntries(entries, songs, at) {
   return true;
 }
 
+// A song's fields no list shows: a listen counted, its loudness measured, its
+// tags written, its info or lyrics looked up, and its cover (Covers puts a new
+// picture into the boxes showing it by itself). A change of only these leaves
+// every list as it is drawn.
+const QUIET_SONG_FIELDS = ['stats', 'loudness', 'tagged', 'infoLooked', 'cover', 'lyrics'];
+// The parts of the library that are lists of songs.
+const SONG_PARTS = ['songs', 'deviceSongs'];
+
+/**
+ * What a change of the library changed, for Store.onLibrary's listeners
+ * (fn(library, change)), so that each part of the window draws again only
+ * for what it shows: a page whose songs, playlists and names are as they
+ * were stays as it is drawn.
+ *
+ *   whole        everything may differ (the library came whole, not as a patch)
+ *   before       the library as it was
+ *   parts        the library's parts touched ('songs', 'playlists', 'follows' ...)
+ *   came, went   songs were added, or are gone
+ *   moved        the songs' order changed
+ *   ids          the songs that changed (not those that came or went)
+ *   fields       the fields in which they differ from before
+ *   alike        the songs (as they were) that changed only in what no list shows
+ */
+function libraryChange(before, steps, songsBefore) {
+  const c = {
+    whole: !steps,
+    before,
+    parts: new Set(),
+    came: false,
+    went: false,
+    moved: false,
+    ids: new Set(),
+    fields: new Set(),
+    alike: [],
+
+    /** The songs themselves changed: some came, went or moved, or one differs in a field that is not one of `ignore`. */
+    songs(ignore = QUIET_SONG_FIELDS) {
+      if (this.whole || this.came || this.went || this.moved) return true;
+      for (const f of this.fields) if (!ignore.includes(f)) return true;
+      return false;
+    },
+
+    /** One of the songs that stayed differs in one of `fields`. */
+    field(...fields) {
+      return this.whole || fields.some((f) => this.fields.has(f));
+    },
+
+    /** One of these parts of the library changed (a part that is a list of songs: in any way). */
+    part(...names) {
+      return this.whole || names.some((n) => this.parts.has(n));
+    },
+
+    /** Something other than the songs changed: a playlist, a group, what is followed, the profiles' names ... */
+    rest() {
+      if (this.whole) return true;
+      for (const p of this.parts) if (!SONG_PARTS.includes(p)) return true;
+      return false;
+    },
+
+    /** Nothing a list of songs or playlists shows changed. */
+    quiet() {
+      return !this.songs() && !this.rest();
+    },
+  };
+  for (const [kind, path, arg] of steps || []) {
+    const part = String(path[0]);
+    c.parts.add(part);
+    if (!SONG_PARTS.includes(part) || path.length !== 1) continue;
+    // Set or deleted whole: any of its songs may differ.
+    if (kind !== 'list' || !arg) {
+      c.came = true;
+      c.went = true;
+      continue;
+    }
+    if (arg.gone && arg.gone.length) c.went = true;
+    if (arg.order) c.moved = true;
+    for (const x of arg.put || []) {
+      const old = songsBefore.get(x.id);
+      if (!old) {
+        c.came = true;
+        continue;
+      }
+      c.ids.add(x.id);
+      let shown = false;
+      const differs = (k) => {
+        c.fields.add(k);
+        if (!QUIET_SONG_FIELDS.includes(k)) shown = true;
+      };
+      for (const k in x) if (old[k] !== x[k] && !LibraryPatch.same(old[k], x[k])) differs(k);
+      for (const k in old) if (!(k in x) && old[k] !== undefined) differs(k);
+      if (!shown) c.alike.push(old);
+    }
+  }
+  return c;
+}
+
 const Store = {
   library: { songs: [], playlists: [], ignoredFiles: [] },
   settings: {},
@@ -44,6 +140,9 @@ const Store = {
   uiMode: 'desktop',
   caps: {},
   version: '',
+  // The computer's app while its window is in the tray (miniPlayer.js): out of sight, only
+  // playing for the Mini Player. Nothing is drawn then (the clouds, the equalizer, a visualizer).
+  away: false,
   // The Flow Server's state (remote.js publicStatus); `on` false without one.
   server: { on: false, state: 'off', offline: [] },
   songsById: new Map(),
@@ -84,6 +183,8 @@ const Store = {
 
   /** steps: what changed since the library before (a patch), when that is how it came. */
   setLibrary(lib, steps = null) {
+    // What changed, told to the listeners: worked out against the songs as they were.
+    const change = libraryChange(this.library, steps, this.songsById);
     this.library = lib;
     // The songs here that are not the server's (Downloaded Songs) can be played and queued too.
     // A patch changes only its songs (100 000: the map is not made again).
@@ -105,6 +206,12 @@ const Store = {
     } else {
       this.songsById = new Map([...lib.songs, ...(lib.deviceSongs || [])].map((s) => [s.id, s]));
     }
+    // A song that changed only in what no list shows looks as before (Store.look): a row drawn for it stays.
+    for (const old of change.alike) {
+      const look = this._looks.get(old);
+      const now = this.songsById.get(old.id);
+      if (look && now && now !== old) this._looks.set(now, look);
+    }
     // Smart playlists (4.0): their songs are the ones their rules pick, now.
     for (const p of lib.playlists) {
       if (!p.rules) continue;
@@ -118,8 +225,33 @@ const Store = {
         this.holding.get(e.songId).push({ id: p.id, name: p.name });
       }
     }
-    for (const fn of this._listeners) fn(lib);
+    for (const fn of this._listeners) fn(lib, change);
     this._prepare(lib);
+  },
+
+  /**
+   * A song as the lists show it, as a value to compare (4.6): the same
+   * number while the song is the same object, and carried over when it
+   * changed only in what no list shows (a listen counted, its loudness
+   * measured, a cover: QUIET_SONG_FIELDS). A row drawn for a song stays
+   * while this does (renderTable's shows); what the row does later must
+   * therefore ask for the song again (Store.song) where it needs those fields.
+   */
+  look(song) {
+    let n = this._looks.get(song);
+    if (!n) {
+      n = (this._lookCount += 1);
+      this._looks.set(song, n);
+    }
+    return n;
+  },
+  _looks: new WeakMap(),
+  _lookCount: 0,
+
+  /** The listeners told that the songs known changed without the library doing so (a session's or another server's songs). */
+  _tellWhole() {
+    const change = libraryChange(this.library, null, this.songsById);
+    for (const fn of this._listeners) fn(this.library, change);
   },
 
   /**
@@ -228,14 +360,14 @@ const Store = {
     if (key === this._sessionSongsKey) return;
     this._sessionSongsKey = key;
     this.sessionSongs = new Map((songs || []).map((s) => [s.id, { ...s, file: '', foreign: true, cover: null }]));
-    for (const fn of this._listeners) fn(this.library);
+    this._tellWhole();
   },
 
   /** Another server's songs (a guest in its session), or none (null). */
   setForeign(songs, name = '') {
     this.foreign = new Map((songs || []).map((s) => [s.id, { ...s, file: '', foreign: true }]));
     this.foreignName = name;
-    for (const fn of this._listeners) fn(this.library);
+    this._tellWhole();
   },
 
   playlist(id) {
@@ -271,13 +403,13 @@ const Store = {
 
   _shared(p) {
     const owner = this.profileName(p.ownerId) || p.ownerName;
-    // A followed one carries the group this profile put it into (4.5.1).
-    const g = this.canGroupFollowed() && this.isFollowing(p.id)
-      ? (this.library.groups || []).find((x) => (x.followed || []).includes(p.id)) : null;
+    // A followed one carries the groups this profile put it into (4.5.1; several, 4.5.3).
+    const inGroups = this.canGroupFollowed() && this.isFollowing(p.id)
+      ? (this.library.groups || []).filter((x) => (x.followed || []).includes(p.id)).map((x) => x.id) : [];
     return {
       // "James' Favorites" for a name ending in s.
       ...p, ownerName: owner, isShared: true, ...(p.favourites ? { name: T(/s$/i.test(owner) ? 'common.favouritesOf.s' : 'common.favouritesOf', { profile: owner }) } : {}),
-      ...(g ? { group: g.id } : {}),
+      ...(inGroups.length ? { groups: inGroups } : {}),
     };
   },
 
@@ -300,9 +432,28 @@ const Store = {
     return this.sharedPlaylists().filter((p) => this.isFollowing(p.id));
   },
 
-  /** The followed playlists in no group (4.5.1), A to Z: the menu's Followed Playlists. */
+  /** Whether another profile's playlist is followed: itself, or in a group followed (4.5.3). */
+  followsList(id) {
+    if (this.isFollowing(id)) return true;
+    return this.followedGroups().some((g) => this.isFollowingInGroup(g.id, id));
+  },
+
+  /**
+   * Whether a playlist is followed inside a shared group you follow (4.5.3):
+   * all of them are until unfollowed there, which counts for that group only.
+   */
+  isFollowingInGroup(groupId, playlistId) {
+    if (!this.isFollowingGroup(groupId)) return false;
+    return !((this.library.groupSkips || {})[groupId] || []).includes(playlistId);
+  },
+
+  /**
+   * The menu's Followed Playlists, A to Z: those in no group of yours (4.5.1),
+   * or all of them with "Playlists added to groups hide in the menu" off (4.5.3).
+   */
   singleFollowed() {
-    return this.followedPlaylists().filter((p) => !this.groupOf(p));
+    const all = this.followedPlaylists();
+    return this.settings.groupedHideInMenu === false ? all : all.filter((p) => !this.groupsOf(p).length);
   },
 
   /** Seconds this profile has listened to a list (as the one playing), 0 for none. */
@@ -516,19 +667,56 @@ const Store = {
     return !p.isFavourites && !p.favourites && !!this.library.playlists.find((x) => x.id === p.id);
   },
 
+  /** Groups can be shared and followed (4.5.3): a Flow Server with profiles that keeps that. */
+  canShareGroups() {
+    return this.canShare() && this.canGroup() && !!this.server.sharedGroups;
+  },
+
+  /**
+   * The groups other profiles share (4.5.3), A to Z: { id, name, createdAt,
+   * ownerId, ownerName, playlists (ids), isShared }.
+   */
+  sharedGroups() {
+    if (!this.canShareGroups()) return [];
+    return (this.library.sharedGroups || [])
+      .map((g) => ({ ...g, ownerName: this.profileName(g.ownerId) || g.ownerName, isShared: true }))
+      .sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
+  isFollowingGroup(id) {
+    return (this.library.groupFollows || []).includes(id);
+  },
+
+  /** The shared groups this profile follows (4.5.3), A to Z: at the bottom of the menu's Playlist Groups. */
+  followedGroups() {
+    return this.sharedGroups().filter((g) => this.isFollowingGroup(g.id));
+  },
+
+  /**
+   * A shared group's playlists the window knows (4.5.3), A to Z: with their
+   * songs when followed, else by their details once Shared Playlists fetched them.
+   */
+  listsOfSharedGroup(g) {
+    return (g.playlists || []).map((id) => this.playlist(id)).filter(Boolean)
+      .sort((a, b) => Util.compareValues(a.name, b.name));
+  },
+
   /** The playlist groups, A to Z; none where groups cannot be kept. */
   groups() {
     if (!this.canGroup()) return [];
     return [...(this.library.groups || [])].sort((a, b) => Util.compareValues(a.name, b.name));
   },
 
+  /** One of your groups, or (4.5.3) a shared one you follow (isShared: its owner's, to read). */
   group(id) {
-    return this.canGroup() ? (this.library.groups || []).find((g) => g.id === id) || null : null;
+    if (!this.canGroup()) return null;
+    return (this.library.groups || []).find((g) => g.id === id) || this.followedGroups().find((g) => g.id === id) || null;
   },
 
-  /** The group a playlist is in, or null. */
-  groupOf(p) {
-    return p && p.group ? this.group(p.group) : null;
+  /** The groups of yours a playlist is in (4.5.3: several), A to Z; [] for none. */
+  groupsOf(p) {
+    if (!p || !p.groups || !p.groups.length || !this.canGroup()) return [];
+    return this.groups().filter((g) => p.groups.includes(g.id));
   },
 
   /**
@@ -562,16 +750,24 @@ const Store = {
 
   /** A group's playlists, A to Z: your own, and (4.5.1) the followed ones put into it. */
   playlistsInGroup(id) {
-    if (!this.group(id)) return [];
-    const own = this.sortedPlaylists().filter((p) => p.group === id);
-    const followed = this.canGroupFollowed() ? this.followedPlaylists().filter((p) => p.group === id) : [];
+    const g = this.group(id);
+    if (!g) return [];
+    // A followed group (4.5.3): the playlists its owner has in it, but those unfollowed there.
+    if (g.isShared) return this.listsOfSharedGroup(g).filter((p) => this.isFollowingInGroup(id, p.id));
+    const own = this.sortedPlaylists().filter((p) => (p.groups || []).includes(id));
+    const followed = this.canGroupFollowed() ? this.followedPlaylists().filter((p) => (p.groups || []).includes(id)) : [];
     if (!followed.length) return own;
     return [...own, ...followed].sort((a, b) => Util.compareValues(a.name, b.name));
   },
 
-  /** The playlists in no group, A to Z (Favourites is not one of them). */
-  singlePlaylists() {
-    return this.sortedPlaylists().filter((p) => !this.groupOf(p));
+  /**
+   * The menu's Playlists, A to Z (Favourites is not one of them): those in
+   * no group, or all of them with "Playlists added to groups hide in the
+   * menu" off (4.5.3). The Playlists page lists all in Your Playlists.
+   */
+  menuPlaylists() {
+    const all = this.sortedPlaylists();
+    return this.settings.groupedHideInMenu === false ? all : all.filter((p) => !this.groupsOf(p).length);
   },
 
   /** The ones songs can be put into by hand: not the smart ones (their rules pick their songs). */

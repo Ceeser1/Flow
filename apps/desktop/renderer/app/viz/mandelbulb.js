@@ -41,16 +41,31 @@
         if (r > 2.0) break;
         float th = acos(clamp(z.z / r, -1.0, 1.0)) * power + twist;
         float ph = atan(z.y, z.x) * power;
-        dr = pow(r, power - 1.0) * power * dr + 1.0;
-        z = pow(r, power) * vec3(sin(th) * cos(ph), sin(th) * sin(ph), cos(th)) + p;
+        // One pow for both: r to the power is that to power - 1, times r.
+        float rp = pow(r, power - 1.0);
+        dr = rp * power * dr + 1.0;
+        z = rp * r * vec3(sin(th) * cos(ph), sin(th) * sin(ph), cos(th)) + p;
         trap = min(trap, vec4(abs(z), dot(z, z)));
       }
       return 0.5 * log(max(r, 1e-6)) * r / dr;
     }
 
+    // The distance alone (the march, the normal, the shadow: hundreds a
+    // pixel; the traps are only wanted where the ray hits).
     float bulbD(vec3 p) {
-      vec4 t;
-      return bulb(p, t);
+      vec3 z = p;
+      float dr = 1.0;
+      float r = length(z);
+      for (int i = 0; i < 8; i++) {
+        r = length(z);
+        if (r > 2.0) break;
+        float th = acos(clamp(z.z / r, -1.0, 1.0)) * power + twist;
+        float ph = atan(z.y, z.x) * power;
+        float rp = pow(r, power - 1.0);
+        dr = rp * power * dr + 1.0;
+        z = rp * r * vec3(sin(th) * cos(ph), sin(th) * sin(ph), cos(th)) + p;
+      }
+      return 0.5 * log(max(r, 1e-6)) * r / dr;
     }
 
     vec3 normalAt(vec3 p, float e) {
@@ -109,10 +124,9 @@
         float pix = 1.2 / res.y;
         bool hit = false;
         float steps = 0.0;
-        vec4 trap;
         for (int i = 0; i < 110; i++) {
           vec3 p = eye + rd * t;
-          float d = bulb(p, trap);
+          float d = bulbD(p);
           glow += exp(-d * 90.0) * 0.0035 * step(0.004, d);
           if (d < pix * t) { hit = true; break; }
           t += d * 0.9;
@@ -121,6 +135,9 @@
         }
         if (hit) {
           vec3 p = eye + rd * t;
+          // Its traps, where the march stopped.
+          vec4 trap;
+          bulb(p, trap);
           vec3 n = normalAt(p, pix * t * 0.5);
           // A key light above and beside the eye, a fill in the second colour from below.
           vec3 l = normalize(up * 0.8 + rt * 0.5 - fw * 0.4);
@@ -230,7 +247,10 @@
       const twist = breathe * (0.35 * Math.sin(this.morph * 0.21) + 0.25 * a.throb * playing);
       const target = a.playing ? 0.15 + 0.5 * a.throb + 0.3 * a.intensity : 0.1;
       this.glow += (target - this.glow) * Math.min(1, dt * 8);
-      const nh = a.playing ? a.noteHue() : { hue: 0, strength: 0 };
+      // The harmony's hue, only for the colours that follow it (the notes'
+      // analysis is a third of a millisecond); it glides, so 20 a second do.
+      const palette = COLORS[set('mbColors')] ?? 0;
+      const nh = a.playing && palette === 0 ? a.noteHue(1 / 20) : { hue: 0, strength: 0 };
       const k = Math.min(1, dt * 0.8 * (0.2 + nh.strength));
       this.hx += (Math.cos(nh.hue * Math.PI * 2) - this.hx) * k;
       this.hy += (Math.sin(nh.hue * Math.PI * 2) - this.hy) * k;
@@ -249,7 +269,7 @@
       gl.uniform1f(u.glowAmt, this.glow);
       gl.uniform1f(u.hue, hue);
       gl.uniform1f(u.hue2, (hue + 0.12) % 1);
-      gl.uniform1i(u.palette, COLORS[set('mbColors')] ?? 0);
+      gl.uniform1i(u.palette, palette);
       VizGL.screen(gl);
 
       VizGL.blur(gl, this.t, this.b1, this.b2, 1);

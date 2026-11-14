@@ -192,7 +192,9 @@ const PROTOCOL = 2;
 // smartPlaylists: a playlist's rules are kept (4.0). pair: QR codes' pairing codes (4.0).
 // playlistGroups: the groups' commands and each owner's groups in the library (4.5).
 // followedInGroups: followed playlists put into groups too, kept in the group's followed (4.5.1).
-const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups'];
+// sharedGroups: groups shared (with their playlists) and followed, sharedGroups and groupFollows in the library (4.5.3).
+// multiGroups: a playlist in several groups (its `groups`), addPlaylistToGroup and removePlaylistFromGroup (4.5.3).
+const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'multiGroups'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;
@@ -959,7 +961,7 @@ function createHttpServer({
       // From home at level 3 and 4 no password is asked for, so none is announced.
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
-      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck', 'downloadQueue', 'downloadReview'] : []), ...(live ? ['sessions'] : []),
+      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck', 'downloadQueue', 'downloadReview', ...(live ? ['downloadsLive'] : [])] : []), ...(live ? ['sessions'] : []),
         ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics', 'ownLyrics', 'lyricsSync'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,

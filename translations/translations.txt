@@ -91,6 +91,13 @@ settings.general.similarSongs.desc
   en: When the list playing has played through, songs like the last ones you heard follow (the same artists, genre, Info or album, those you listen to most first) instead of the list starting over. The Queue shows them as "Then similar songs".
   de: Ist die laufende Liste durchgespielt, folgen statt eines Neustarts Songs wie die zuletzt gehörten (gleiche Interpreten, Genre, Info oder Album, meistgehörte zuerst). Die Warteschlange zeigt sie als „Dann ähnliche Songs“.
 
+settings.general.groupedHideInMenu.label
+  en: Playlists added to groups hide in the menu
+  de: Playlists in Gruppen im Menü ausblenden
+
+settings.general.groupedHideInMenu.desc
+  en: If enabled, playlists added to groups will only show inside the Playlist Group(s) in the menu. All stay visible on the playlists site under 'Your Playlists'. If disabled, each playlist added to group(s) still shows as a single playlist in the menu under 'Playlists'.
+  de: Wenn aktiviert, erscheinen Playlists, die Gruppen hinzugefügt wurden, im Menü nur in ihren Playlist-Gruppen. Auf der Seite Playlists bleiben alle unter „Deine Playlists“ sichtbar. Wenn deaktiviert, erscheint jede Playlist in Gruppen im Menü auch weiterhin einzeln unter „Playlists“.
 settings.general.songColumns.label
   en: Show filterable columns for Songs
   de: Filterbare Spalten für Songs anzeigen
@@ -98,6 +105,95 @@ settings.general.songColumns.label
 settings.general.songColumns.desc
   en: Extra columns in All Songs and the playlists. Each can be sorted by a click on its heading, and the Search page finds what is in it.
   de: Zusätzliche Spalten in „Alle Songs“ und den Playlists. Jede lässt sich per Klick auf ihre Überschrift sortieren, und die Seite „Suche“ findet ihren Inhalt.
+
+settings.general.keybinds.label
+  en: Keybinds / Shortcuts
+  de: Tastenbelegung / Tastenkürzel
+
+settings.general.keybinds.desc
+  en: Flow has some shortcuts to navigate
+  de: Flow hat einige Tastenkürzel zum Navigieren
+
+settings.general.keybinds.show
+  en: Show Keybinds
+  de: Tastenkürzel anzeigen
+
+# The window Show Keybinds opens (4.5.5): each key, then what it does.
+keybinds.title
+  en: Keybinds / Shortcuts
+  de: Tastenbelegung / Tastenkürzel
+
+keybinds.key.space
+  en: Space
+  de: Leertaste
+
+keybinds.key.ctrl
+  en: Ctrl
+  de: Strg
+
+keybinds.key.alt
+  en: Alt
+  de: Alt
+
+keybinds.key.esc
+  en: Esc
+  de: Esc
+
+keybinds.key.mouseBack
+  en: Mouse back button
+  de: Maustaste Zurück
+
+keybinds.key.mouseForward
+  en: Mouse forward button
+  de: Maustaste Vor
+
+keybinds.key.mediaKeys
+  en: Media keys
+  de: Medientasten
+
+keybinds.playPause
+  en: Play or pause
+  de: Abspielen oder pausieren
+
+keybinds.skip
+  en: 10 seconds back or forward (on Add Songs in the song being edited)
+  de: 10 Sekunden zurück oder vor (unter „Songs hinzufügen“ im Song, der gerade bearbeitet wird)
+
+keybinds.prevNext
+  en: Previous or next song
+  de: Vorheriger oder nächster Song
+
+keybinds.volume
+  en: Volume up or down by 5 %
+  de: Lautstärke um 5 % lauter oder leiser
+
+keybinds.backForward
+  en: Back or forward through the pages and playlists you opened
+  de: Zurück oder vor durch die Seiten und Playlists, die du geöffnet hast
+
+keybinds.mouse
+  en: The same with the mouse
+  de: Dasselbe mit der Maus
+
+keybinds.visualizer
+  en: In the full-screen visualizer: the one before or after it
+  de: Im Vollbild-Visualizer: der davor oder danach
+
+keybinds.search
+  en: Open Search
+  de: Suche öffnen
+
+keybinds.escape
+  en: Close a window or the visualizer, or stop editing a name
+  de: Ein Fenster oder den Visualizer schließen oder das Bearbeiten eines Namens beenden
+
+keybinds.media
+  en: Play, pause, next and previous song, also while Flow is in the background
+  de: Abspielen, Pause, nächster und vorheriger Song, auch wenn Flow im Hintergrund ist
+
+keybinds.note
+  en: The keys do nothing while you type in a box, except Ctrl+F and Esc.
+  de: Während du in ein Feld tippst, tun die Tasten nichts, außer Strg+F und Esc.
 
 # ── Settings › App Visuals ──
 
@@ -192,6 +288,18 @@ settings.appVisuals.equalizer.colorScheme.label
 settings.appVisuals.equalizer.colorScheme.desc
   en: Spectrum colors bars by their height. Rainbow runs colors across the bars. Grayscale turns them whiter the taller they are.
   de: Spektrum färbt Balken nach Höhe. Regenbogen lässt Farben über die Balken laufen. Graustufen macht sie heller, je höher sie sind.
+
+settings.appVisuals.coverBg.label
+  en: Show Cover as background
+  de: Cover als Hintergrund anzeigen
+
+settings.appVisuals.coverBg.desc
+  en: The playing song's cover, large in the middle behind the clouds and the equalizer.
+  de: Das Cover des laufenden Songs, groß in der Mitte hinter den Wolken und dem Equalizer.
+
+settings.appVisuals.coverBg.visibility.label
+  en: Visibility
+  de: Sichtbarkeit
 
 # Color schemes of the background clouds and equalizer
 settings.appVisuals.colorScheme.yellow
@@ -1486,6 +1594,9 @@ import.progress.downloadingAgain
   en: Downloading {songs} again
   de: Erneuter Download von {songs}
 
+import.progress.resuming
+  en: Carrying on with {songs} cut off when Flow closed
+  de: Weiter mit {songs}, die beim Schließen von Flow abgebrochen wurden
 import.progress.openingFiles
   en: Opening {files}
   de: Öffnen von {files}
@@ -1819,6 +1930,10 @@ import.song.cancelled
   en: canceled
   de: abgebrochen
 
+# A song cut off downloading when Flow closed (4.5.3): it downloads again by itself
+import.song.interrupted
+  en: Cut off when Flow closed. It downloads again by itself.
+  de: Beim Schließen von Flow abgebrochen. Er lädt von selbst noch einmal.
 import.song.preparing
   en: preparing...
   de: wird vorbereitet...
@@ -3544,6 +3659,12 @@ add.queue.added.client
   en: Added to the Client queue.
   de: Zur Client-Warteschlange hinzugefügt.
 
+# At the start: the downloads of this computer kept over the restart are back (4.5.3)
+add.kept.restored
+  en.one: Back from last time: {batches} and {links} in the Client queue
+  de.one: Zurück vom letzten Mal: {batches} und {links} in der Client-Warteschlange
+  en.other: Back from last time: {batches} and {links} in the Client queue
+  de.other: Zurück vom letzten Mal: {batches} und {links} in der Client-Warteschlange
 add.queue.added.server
   en: Added to the Server queue.
   de: Zur Server-Warteschlange hinzugefügt.
@@ -5475,20 +5596,20 @@ groups.created
   de: Gruppe „{group}“ erstellt
 
 groups.moveTo
-  en: Move to group
-  de: In Gruppe verschieben
+  en: Add to group
+  de: Zu Gruppe hinzufügen
 
 groups.hint
-  en: Drag a playlist from the menu or from above onto a group, or use the Move to group button at the right. Playlists dragged out get removed from the group.
-  de: Zieh eine Playlist aus dem Menü oder von oben auf eine Gruppe, oder nimm rechts den Knopf In Gruppe verschieben. Herausgezogene Playlists werden aus der Gruppe entfernt.
+  en: Drag a playlist from the menu or from above onto a group, or use the Add to group button at the right. A playlist can be in several groups. Dragged out of a group, it is removed from that group.
+  de: Zieh eine Playlist aus dem Menü oder von oben auf eine Gruppe, oder nimm rechts den Knopf Zu Gruppe hinzufügen. Eine Playlist kann in mehreren Gruppen sein. Aus einer Gruppe herausgezogen, wird sie aus dieser Gruppe entfernt.
 
 groups.removeFrom
   en: Remove from group
   de: Aus der Gruppe entfernen
 
 groups.hint.phone
-  en: Put a playlist into a group with Move to group in its menu, or hold several playlists to choose them and move them together.
-  de: Steck eine Playlist mit In Gruppe verschieben in ihrem Menü in eine Gruppe, oder halte mehrere Playlists gedrückt, um sie auszuwählen und zusammen zu verschieben.
+  en: Put a playlist into groups with Add to group in its menu, or hold several playlists to choose them and add them together. A playlist can be in several groups.
+  de: Steck eine Playlist mit Zu Gruppe hinzufügen in ihrem Menü in Gruppen, oder halte mehrere Playlists gedrückt, um sie auszuwählen und zusammen hinzuzufügen. Eine Playlist kann in mehreren Gruppen sein.
 
 groups.hint.none
   en: A group keeps playlists together, like a folder. It shows in the menu below your playlists.
@@ -5564,10 +5685,88 @@ groups.hide.tooltip
   en: Hide the playlists in "{group}"
   de: Die Playlists in „{group}“ ausblenden
 
+# Shared groups (4.5.3): a group shared with the other profiles, its playlists with it
+
+groups.sharedMark
+  en: Shared
+  de: Geteilt
+
+groups.share.tooltip
+  en: Share "{group}" with the other profiles. Its playlists get shared with it.
+  de: „{group}“ mit den anderen Profilen teilen. Ihre Playlists werden mit geteilt.
+
+groups.share.on.tooltip
+  en: "{group}" is shared with the other profiles. Click to stop sharing it
+  de: „{group}“ ist mit den anderen Profilen geteilt. Klick, um sie nicht mehr zu teilen
+
+groups.shared
+  en: Group "{group}" shared
+  de: Gruppe „{group}“ geteilt
+
+groups.shared.withLists
+  en.one: Group "{group}" shared, and {playlists} in it along with it
+  de.one: Gruppe „{group}“ geteilt, samt {playlists} darin
+  en.other: Group "{group}" shared, and {playlists} in it along with it
+  de.other: Gruppe „{group}“ geteilt, samt {playlists} darin
+
+groups.unshared
+  en: Group "{group}" is no longer shared
+  de: Gruppe „{group}“ wird nicht mehr geteilt
+
+groups.unshared.listsStay
+  en: Group "{group}" is no longer shared. Its playlists stay shared; you can stop sharing each one on its own page.
+  de: Gruppe „{group}“ wird nicht mehr geteilt. Ihre Playlists bleiben geteilt; jede kannst du auf ihrer eigenen Seite nicht mehr teilen.
+
+# A group another profile shares: in Shared Playlists, and once followed at the bottom of the menu's Playlist Groups
+
+groups.follow
+  en: Follow Group
+  de: Gruppe folgen
+
+groups.unfollow
+  en: Unfollow Group
+  de: Gruppe entfolgen
+
+groups.follow.tooltip
+  en: Follow "{group}" by {profile}: it shows in the menu under Playlist Groups
+  de: „{group}“ von {profile} folgen: Sie erscheint im Menü unter Playlist-Gruppen
+
+groups.unfollow.tooltip
+  en: Stop following "{group}"
+  de: „{group}“ nicht mehr folgen
+
+groups.followed
+  en: You follow "{group}" by {profile} now. It is in the menu under Playlist Groups
+  de: Du folgst jetzt „{group}“ von {profile}. Sie ist im Menü unter Playlist-Gruppen
+
+groups.unfollowed
+  en: You no longer follow "{group}"
+  de: Du folgst „{group}“ nicht mehr
+
+groups.followed.open.tooltip
+  en: Open the page of "{group}", shared by {profile}
+  de: Die Seite von „{group}“ öffnen, geteilt von {profile}
 groups.empty
   en: No playlists in this group yet. Drag one here, or use Add playlists.
   de: Noch keine Playlists in dieser Gruppe. Zieh eine hierher, oder nimm Playlists hinzufügen.
 
+# A playlist inside a group you follow: followed there or not, for that group only
+
+groups.inGroup.unfollow.tooltip
+  en: Stop following "{playlist}" in {group} (only in this group)
+  de: „{playlist}“ in {group} nicht mehr folgen (nur in dieser Gruppe)
+
+groups.inGroup.follow.tooltip
+  en: Follow "{playlist}" in {group} again
+  de: „{playlist}“ in {group} wieder folgen
+
+groups.inGroup.unfollowed
+  en: You no longer follow "{playlist}" in {group}
+  de: Du folgst „{playlist}“ in {group} nicht mehr
+
+groups.inGroup.followed
+  en: You follow "{playlist}" in {group} again
+  de: Du folgst „{playlist}“ in {group} wieder
 groups.empty.phone
   en: No playlists in this group yet. Add some with the + button.
   de: Noch keine Playlists in dieser Gruppe. Füg welche mit dem + hinzu.
@@ -5621,10 +5820,10 @@ groups.delete.title
   de: Gruppe löschen
 
 groups.delete.text
-  en.one: Delete the group "{group}"? Its {playlists} stays, as a single playlist again.
-  de.one: Die Gruppe „{group}“ löschen? Ihre {playlists} bleibt, wieder als einzelne Playlist.
-  en.other: Delete the group "{group}"? Its {playlists} stay, as single playlists again.
-  de.other: Die Gruppe „{group}“ löschen? Ihre {playlists} bleiben, wieder als einzelne Playlists.
+  en.one: Delete the group "{group}"? Its {playlists} stays, in your playlists and its other groups.
+  de.one: Die Gruppe „{group}“ löschen? Ihre {playlists} bleibt, bei deinen Playlists und in ihren anderen Gruppen.
+  en.other: Delete the group "{group}"? Its {playlists} stay, in your playlists and their other groups.
+  de.other: Die Gruppe „{group}“ löschen? Ihre {playlists} bleiben, bei deinen Playlists und in ihren anderen Gruppen.
 
 groups.delete.textEmpty
   en: Delete the group "{group}"? It has no playlists.
@@ -5635,32 +5834,32 @@ groups.delete.done
   de: Gruppe „{group}“ gelöscht
 
 groups.moved
-  en: "{playlist}" moved to {group}
-  de: „{playlist}“ nach {group} verschoben
+  en: "{playlist}" added to {group}
+  de: „{playlist}“ zu {group} hinzugefügt
 
 groups.movedMany
-  en: {playlists} moved to {group}
-  de: {playlists} nach {group} verschoben
+  en: {playlists} added to {group}
+  de: {playlists} zu {group} hinzugefügt
 
 groups.followedMoved
   en: You follow "{playlist}" now, in {group}
   de: Du folgst „{playlist}“ jetzt, in {group}
 
 groups.movedOut
-  en: "{playlist}" is no longer in a group
-  de: „{playlist}“ ist in keiner Gruppe mehr
+  en: "{playlist}" removed from {group}
+  de: „{playlist}“ aus {group} entfernt
 
 groups.movedOutMany
-  en: {playlists} are no longer in a group
-  de: {playlists} sind in keiner Gruppe mehr
+  en: {playlists} removed from {group}
+  de: {playlists} aus {group} entfernt
 
 groups.pick.title
-  en: Move "{playlist}" to a group
-  de: „{playlist}“ in eine Gruppe verschieben
+  en: Groups of "{playlist}"
+  de: Gruppen von „{playlist}“
 
 groups.pick.titleMany
-  en: Move {playlists} to a group
-  de: {playlists} in eine Gruppe verschieben
+  en: Groups of {playlists}
+  de: Gruppen von {playlists}
 
 groups.pick.noGroups
   en: No groups yet. Name a new one below.
@@ -5671,9 +5870,12 @@ groups.pick.newName
   de: Neue Gruppe
 
 groups.pick.create
-  en: Create and move
-  de: Erstellen und verschieben
+  en: Create
+  de: Erstellen
 
+groups.pick.done
+  en: Done
+  de: Fertig
 # ===== Smart playlists =====
 
 # Playlists that fill themselves by rules, and the ready-made lists of "Your listening trend".
@@ -7428,6 +7630,11 @@ common.count.links
   en.other: {count} links
   de.other: {count} Links
 
+common.count.imports
+  en.one: {count} import
+  de.one: {count} Import
+  en.other: {count} imports
+  de.other: {count} Importe
 common.count.playlists
   en.one: {count} playlist
   de.one: {count} Playlist
@@ -7446,6 +7653,11 @@ common.count.sharedPlaylists
   en.other: {count} shared playlists
   de.other: {count} geteilte Playlists
 
+common.count.sharedGroups
+  en.one: {count} shared group
+  de.one: {count} geteilte Gruppe
+  en.other: {count} shared groups
+  de.other: {count} geteilte Gruppen
 common.count.profiles
   en.one: {count} profile
   de.one: {count} Profil
@@ -7694,6 +7906,10 @@ window.playlists.new.add
   en: Add new playlist
   de: Neue Playlist hinzufügen
 
+window.playlists.new.addSmart
+  en: Add smart playlist
+  de: Smarte Playlist hinzufügen
+
 window.playlists.new.smart
   en: Smart playlist
   de: Smarte Playlist
@@ -7718,6 +7934,23 @@ window.playlists.groups.add
   en: Add new group
   de: Neue Gruppe hinzufügen
 
+# Each category's search box on the Playlists page (4.5.3)
+
+window.playlists.search.shared
+  en: Search shared playlists and groups
+  de: Geteilte Playlists und Gruppen durchsuchen
+
+window.playlists.search.yours
+  en: Search your playlists
+  de: Deine Playlists durchsuchen
+
+window.playlists.search.groups
+  en: Search groups and their playlists
+  de: Gruppen und ihre Playlists durchsuchen
+
+window.playlists.search.none
+  en: Nothing here matches the search.
+  de: Hier passt nichts zur Suche.
 window.followed.subheading
   en: Playlists you follow
   de: Playlists, denen du folgst
@@ -8080,6 +8313,63 @@ sleepTimer.shutdown.at.tooltip
   en: Your PC shuts down at {time}
   de: Dein PC fährt um {time} herunter
 
+# ===== Mini Player =====
+
+# The small player in a window of its own (the button beside the Sleep Timer).
+
+mini.title
+  en: Flow Mini Player
+  de: Flow Mini-Player
+
+mini.button.tooltip
+  en: Mini Player: a small player that stays on your screen
+  de: Mini-Player: ein kleiner Player, der auf dem Bildschirm bleibt
+
+mini.button.close.tooltip
+  en: Close the Mini Player
+  de: Mini-Player schließen
+
+mini.close
+  en: Close Mini Player
+  de: Mini-Player schließen
+
+mini.back10
+  en: Back 10 seconds
+  de: 10 Sekunden zurück
+
+mini.forward10
+  en: Forward 10 seconds
+  de: 10 Sekunden vor
+
+mini.volume
+  en: Volume
+  de: Lautstärke
+
+# Mini Player › its cogwheel's menu
+mini.settings.equalizer
+  en: Show Equalizer
+  de: Equalizer anzeigen
+
+mini.settings.coverBg
+  en: Cover as background
+  de: Cover als Hintergrund
+
+mini.settings.lock
+  en: Lock position
+  de: Position sperren
+
+mini.settings.onTop
+  en: Always on top
+  de: Immer im Vordergrund
+
+mini.settings.autostart
+  en: Open on PC Start
+  de: Beim PC-Start öffnen
+
+mini.settings.openFlow
+  en: Open Flow
+  de: Flow öffnen
+
 # ===== Output device =====
 
 # The player bar's "Play on" menu: which speakers or headphones play the music
@@ -8194,32 +8484,14 @@ desktop.window.activeSessions
   en: Flow: Active Sessions
   de: Flow: Aktive Sessions
 
-# Windows and dialogs › closing Flow with imported songs not saved
-desktop.quit.text
-  en.one: {count} imported song is not saved yet.
-  de.one: {count} importierter Song ist ungespeichert.
-  en.other: {count} imported songs are not saved yet.
-  de.other: {count} importierte Songs sind ungespeichert.
+# Windows and dialogs › the tray icon's menu (Flow in the tray while the Mini Player is open; its first entry is the Mini Player's "Open Flow")
+desktop.tray.openMini
+  en: Open Mini Player
+  de: Mini-Player öffnen
 
-desktop.quit.detail
-  en: They are only kept until Flow closes. Go back and press "Finish all" to save them, or quit and lose them.
-  de: Sie bleiben nur, bis Flow schließt. Geh zurück und drücke „Alle abschließen“ zum Speichern, oder beende und verliere sie.
-
-desktop.quit.queued
-  en.one: {count} link in the Client queue will not be downloaded:
-  de.one: {count} Link in der Client-Warteschlange wird nicht geladen:
-  en.other: {count} links in the Client queue will not be downloaded:
-  de.other: {count} Links in der Client-Warteschlange werden nicht geladen:
-
-desktop.quit.queuedOnly
-  en.one: {count} link is still waiting in the Client queue.
-  de.one: {count} Link wartet noch in der Client-Warteschlange.
-  en.other: {count} links are still waiting in the Client queue.
-  de.other: {count} Links warten noch in der Client-Warteschlange.
-
-desktop.quit.quitAnyway
-  en: Quit anyway
-  de: Trotzdem beenden
+desktop.tray.quit
+  en: Quit Flow
+  de: Flow beenden
 
 # Windows and dialogs › picking files and folders
 desktop.pick.musicFolder.title
@@ -8258,6 +8530,12 @@ desktop.upload.text
 desktop.upload.detail.known
   en: {fromOthers}Choose Not now to keep them on this computer only; Synchronize now in Settings uploads them later.
   de: {fromOthers}Wähle Nicht jetzt, um sie nur auf diesem Computer zu halten; Jetzt synchronisieren in den Einstellungen lädt sie später hoch.
+
+desktop.upload.detail.alreadyThere
+  en.one: {count} more song here is on that server already and is not sent.
+  de.one: {count} weiterer Song hier ist schon auf diesem Server und wird nicht gesendet.
+  en.other: {count} more songs here are on that server already and are not sent.
+  de.other: {count} weitere Songs hier sind schon auf diesem Server und werden nicht gesendet.
 
 desktop.upload.detail.newServer
   en: This is a Flow Server you have not used before. {fromOthers}If you are not sure it is yours, choose Not now: your songs stay on this computer, and Synchronize now in Settings uploads them later.
@@ -8751,10 +9029,20 @@ core.library.noLongerShared
   en: That playlist is no longer shared.
   de: Diese Playlist wird nicht mehr geteilt.
 
+core.library.ownGroupNotFollowed
+  en: Your own groups are always yours; there is nothing to follow.
+  de: Deine eigenen Gruppen gehören immer dir; da gibt es nichts zu folgen.
+
+core.library.groupNoLongerShared
+  en: That group is no longer shared.
+  de: Diese Gruppe wird nicht mehr geteilt.
 core.library.smartByRules
   en: A smart playlist picks its songs by its rules: they cannot be added by hand.
   de: Eine smarte Playlist wählt ihre Songs nach Regeln: Von Hand lassen sie sich nicht hinzufügen.
 
+core.library.groupNotFollowed
+  en: You do not follow that group.
+  de: Du folgst dieser Gruppe nicht.
 core.folder.choose
   en: Please choose a folder.
   de: Bitte wähle einen Ordner.
@@ -9094,6 +9382,136 @@ phone.error.isFolder
 ######################################################################
 
 # Text only the Android app shows.
+
+# ===== Alarm Clock =====
+
+# The button beside the Sleep Timer in Now Playing: Flow starts playing at a set time.
+
+alarm.title
+  en: Alarm Clock
+  de: Wecker
+
+alarm.button.tooltip
+  en: Alarm Clock: wake up with your music
+  de: Wecker: mit deiner Musik aufwachen
+
+alarm.button.on
+  en: Alarm at {time}
+  de: Wecker um {time}
+
+alarm.button.on.days
+  en: Alarm at {time} ({days})
+  de: Wecker um {time} ({days})
+
+alarm.intro
+  en: At this time Flow starts playing and fades the music in over {seconds} seconds.
+  de: Zu dieser Zeit startet Flow die Musik und blendet sie über {seconds} Sekunden ein.
+
+alarm.time.label
+  en: Time
+  de: Uhrzeit
+
+alarm.day.mon
+  en: Mon
+  de: Mo
+
+alarm.day.tue
+  en: Tue
+  de: Di
+
+alarm.day.wed
+  en: Wed
+  de: Mi
+
+alarm.day.thu
+  en: Thu
+  de: Do
+
+alarm.day.fri
+  en: Fri
+  de: Fr
+
+alarm.day.sat
+  en: Sat
+  de: Sa
+
+alarm.day.sun
+  en: Sun
+  de: So
+
+alarm.hint.once
+  en: No day picked: it rings once, {day} at {time}.
+  de: Kein Tag gewählt: Er klingelt einmal, {day} um {time}.
+
+alarm.hint.days
+  en: It rings on the days picked, next {day} at {time}.
+  de: Er klingelt an den gewählten Tagen, als Nächstes {day} um {time}.
+
+alarm.note
+  en: The music plays at the phone's media volume. If no song can be played, the phone's own alarm sound rings instead.
+  de: Die Musik spielt mit der Medienlautstärke des Handys. Kann kein Song abgespielt werden, klingelt stattdessen der Weckton des Handys.
+
+alarm.enterTime
+  en: Pick a time.
+  de: Wähle eine Uhrzeit.
+
+alarm.setButton
+  en: Set alarm
+  de: Wecker stellen
+
+alarm.turnOff
+  en: Turn off
+  de: Ausschalten
+
+alarm.set
+  en: Alarm set: Flow plays {day} at {time}.
+  de: Wecker gestellt: Flow spielt {day} um {time}.
+
+alarm.off
+  en: Alarm turned off.
+  de: Wecker ausgeschaltet.
+
+alarm.next
+  en: Next alarm: {day} at {time}
+  de: Nächster Wecker: {day} um {time}
+
+alarm.ringing
+  en: The alarm is ringing.
+  de: Der Wecker klingelt.
+
+alarm.snoozedUntil
+  en: Snoozed until {time}
+  de: Schlummert bis {time}
+
+alarm.stop
+  en: Stop Alarm
+  de: Wecker stoppen
+
+alarm.snooze
+  en: Snooze ({minutes} min)
+  de: Schlummern ({minutes} Min.)
+
+# Alarm Clock › the notification on the lock screen
+alarm.notification.title
+  en: Alarm at {time}
+  de: Wecker um {time}
+
+alarm.notification.snoozed
+  en: Alarm snoozed until {time}
+  de: Wecker schlummert bis {time}
+
+alarm.notification.noMusic
+  en: Flow could not play a song: this is your phone's alarm sound.
+  de: Flow konnte keinen Song abspielen: Das ist der Weckton deines Handys.
+
+# Alarm Clock › notifications not allowed
+alarm.notifications.off
+  en: Flow may not show notifications: there is no Stop Alarm or Snooze on the lock screen.
+  de: Flow darf keine Benachrichtigungen zeigen: Auf dem Sperrbildschirm gibt es kein „Wecker stoppen“ oder „Schlummern“.
+
+alarm.notifications.allow
+  en: Allow
+  de: Erlauben
 
 # ===== Settings =====
 

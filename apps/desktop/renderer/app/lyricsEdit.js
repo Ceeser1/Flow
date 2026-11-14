@@ -820,7 +820,7 @@ const LyricsEdit = {
       const rgb = music ? null : this.COLOURS[n % this.COLOURS.length];
       n = music ? 0 : n + 1;
       row.classList.toggle('lyrics-edit__row--music', music);
-      // Its colour as the waveform has it (style.css .lyrics-edit__row--lit).
+      // Its colour as the waveform has it (styles/lyricsEdit.css .lyrics-edit__row--lit).
       row.classList.toggle('lyrics-edit__row--lit', !!rgb);
       if (rgb) row.style.setProperty('--line-rgb', String(rgb));
       else row.style.removeProperty('--line-rgb');

@@ -149,8 +149,22 @@ body.mobile .menu__sub { height: 44px; font-size: 15px; }
 body.mobile .menu__sub--in-group { padding-left: 34px; }
 body.mobile .group { padding: 2px 8px; }
 body.mobile .group__head { min-height: 56px; gap: 6px; }
+/* The phone keeps a group's details under its name: its buttons leave no room beside it. */
+body.mobile .group__text { flex-direction: column; align-items: flex-start; gap: 0; }
 body.mobile .group__head .actions { gap: 4px; }
-body.mobile .group-new { flex-wrap: wrap; }
+/* The Playlists page: the box for a new playlist or group on a line of its own under its head (4.5.4), the searches full wide. */
+body.mobile #page-playlists .section-head { flex-wrap: wrap; }
+body.mobile .section-new { flex: 1 1 100%; flex-wrap: wrap; margin-left: 0; }
+body.mobile .section-new .input { flex: 1 1 100%; width: auto; height: 44px; }
+body.mobile .section-new .btn { flex: 1 1 auto; height: 44px; }
+body.mobile .section-new__error { margin: 0 0 8px; text-align: left; }
+body.mobile .search-box--section { max-width: none; }
+body.mobile .search-box--section .search-box__input { height: 38px; font-size: 15px; }
+/* A shared group's row: its arrow and folder in front; its playlists further in. */
+body.mobile .sgroup__lead { gap: 2px; background: none; width: 52px; }
+body.mobile .sgroup__lead .menu__chevron .icon { width: 16px; height: 16px; }
+body.mobile .mrow.row--sgroup { background: rgba(255, 255, 255, 0.035); }
+body.mobile .mrow.row--in-sgroup { padding-left: 28px; }
 body.mobile .group-pick__row { min-height: 48px; }
 body.mobile .group-add__row { min-height: 44px; }
 body.mobile .menu__subs { flex: none; overflow: visible; }

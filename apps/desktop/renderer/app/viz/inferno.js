@@ -138,7 +138,17 @@
         }
         acc = mix(acc, vec3(1.0, s, rowCrown), rowCov);
       }
-      o = vec4(acc, 1.0);
+      // With them, the burnt ground's smouldering patches below the ridge:
+      // they lie where they are, so the picture reads them here rather than
+      // working them out again at every pixel of every frame.
+      float r = ridge(uv.x);
+      float patches = 0.0;
+      if (Y < r) {
+        float d = 1.0 - sqrt(1.0 - clamp((Y + 0.04) / (r + 0.04), 0.0, 1.0));
+        float s = 1.0 / (1.0 + ${FAR}.0 * d);
+        patches = smoothstep(0.6, 0.8, fbm(vec2(X, Y * 1.8) / (0.2 * s)));
+      }
+      o = vec4(acc, patches);
     }`;
 
   const SIM_FS = VizGL.NOISE + `
@@ -270,19 +280,23 @@
       col = mix(col, lit, dense * 0.85);
       // The hillside: burnt ground, hazier up the hill, with fires smouldering in it.
       vec3 haze = mix(vec3(0.03, 0.024, 0.024), ember, 0.4) * (0.25 + 0.5 * blaze);
+      // The forest as drawn once: the trees, and the ground's patches.
+      vec4 f = texture(forest, uv);
       if (trees > 0.5 && above < 0.0) {
         float d = depthAt(p.y, r);
         float s = 1.0 / (1.0 + ${FAR}.0 * d);
         float edge = smoothstep(0.0, 0.0015, -above);
         vec3 ground = mix(vec3(0.016, 0.010, 0.007), haze, 0.1 + 0.45 * d);
         vec2 gp = vec2(p.x * aspect, p.y * 1.8) / (0.2 * s);
-        float burns = smoothstep(0.6, 0.8, fbm(gp)) * (0.55 + 0.45 * vnoise(gp * 2.0 + vec2(0.0, -time * 0.8)));
-        ground += burning(0.45 + 0.35 * burns) * burns * 0.22 * (1.0 - 0.5 * d);
+        // (The patches from the forest's picture; only they flicker.)
+        if (f.a > 0.0) {
+          float burns = f.a * (0.55 + 0.45 * vnoise(gp * 2.0 + vec2(0.0, -time * 0.8)));
+          ground += burning(0.45 + 0.35 * burns) * burns * 0.22 * (1.0 - 0.5 * d);
+        }
         col = mix(col, ground, edge);
       }
       // The trees, dark against the fire, lit at their edges by it, embers
       // glowing in their crowns; hazier up the hill.
-      vec4 f = texture(forest, uv);
       float cov = f.r * trees;
       float ts = clamp(f.g / max(f.r, 1e-3), 0.15, 1.0);
       float td = (1.0 / ts - 1.0) / ${FAR}.0;

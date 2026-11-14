@@ -210,6 +210,7 @@
           one();
           next();
         };
+        if (/^https?:/i.test(src)) img.crossOrigin = 'anonymous';
         img.src = src;
       };
       for (let i = 0; i < 6; i += 1) next();
@@ -284,6 +285,7 @@
         finish();
       };
       img.onerror = standIn;
+      if (/^https?:/i.test(src)) img.crossOrigin = 'anonymous';
       img.src = src;
     }
 

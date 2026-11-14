@@ -417,10 +417,18 @@ function createMedia({
     }
   }
 
-  /** Empties the download cache. Called at startup: anything in it was abandoned. */
-  function clearCache() {
+  /**
+   * Empties the download cache. Called at startup: anything in it was
+   * abandoned, but for `keep` (a Set of lower-cased full paths: songs of a
+   * batch kept over the restart, 4.5.3).
+   */
+  function clearCache(keep = null) {
     const dir = cacheDir();
-    for (const f of filesStartingWith(dir, '')) removeQuietly(path.join(dir, f));
+    for (const f of filesStartingWith(dir, '')) {
+      const full = path.join(dir, f);
+      if (keep && keep.has(path.resolve(full).toLowerCase())) continue;
+      removeQuietly(full);
+    }
   }
 
   /**

@@ -243,12 +243,6 @@
       this._findPhase(e, n, lag);
     }
 
-    _smoothMean() {
-      let s = 0;
-      for (let L = this.minLag; L <= this.maxLag; L += 1) s += this.smooth[L];
-      return s / (this.maxLag - this.minLag + 1);
-    }
-
     /** Where the beats fall: the offset back from now whose comb of beats sums highest. */
     _findPhase(e, n, lag) {
       const span = Math.ceil(lag);

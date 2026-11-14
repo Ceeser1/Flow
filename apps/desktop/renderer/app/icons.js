@@ -49,7 +49,14 @@ const Icons = (() => {
     sessions: svg('<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.1a5 5 0 0 1 5 4.9"/>'),
     pulse: svg('<path d="M3 12h4l3-7 4 14 3-7h4"/>'),
     folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+    // A shared group you follow (4.5.3): the folder in green with a green + inside it (style.css).
+    folderFollowed: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/>')
+      .replace('class="icon"', 'class="icon icon--followed-group"'),
     moon: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
+    // A rounded rectangle with Play inside: the Mini Player (5.0).
+    miniPlayer: svg('<rect x="2.5" y="5" width="19" height="14" rx="3.5"/><path d="M10 9.2v5.6a.6.6 0 0 0 .92.5l4.4-2.8a.6.6 0 0 0 0-1L10.92 8.7a.6.6 0 0 0-.92.5z" fill="currentColor" stroke="none"/>'),
+    // An alarm clock: the phone's Alarm Clock (5.0).
+    alarm: svg('<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.4 1.6"/><path d="M5 3.5L2.5 6M19 3.5L21.5 6"/><path d="M7.4 18.6L6 20.5M16.6 18.6l1.4 1.9"/>'),
     more: svg('<circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/>', true),    speaker: svg('<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>'),
     menu: svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),
     chevronDown: svg('<path d="M6 9l6 6 6-6"/>'),

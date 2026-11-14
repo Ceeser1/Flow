@@ -11,6 +11,15 @@ async function call(channel, arg) {
   throw err;
 }
 
+// The window going into the tray and coming back ('window:away', main.js). The last word is
+// kept for a page that only starts listening after it came (its start says how it was then).
+let awayLast = null;
+let awayFn = null;
+ipcRenderer.on('window:away', (_e, info) => {
+  awayLast = info;
+  if (awayFn) awayFn(info);
+});
+
 contextBridge.exposeInMainWorld('flow', {
   // The texts' language chosen in Settings ('' for the device's), read once: i18n.js needs it before anything is drawn.
   language: ipcRenderer.sendSync('i18n:language'),
@@ -35,9 +44,16 @@ contextBridge.exposeInMainWorld('flow', {
   createGroup: (name) => call('library:createGroup', name),
   renameGroup: (id, name) => call('library:renameGroup', { id, name }),
   deleteGroup: (id) => call('library:deleteGroup', id),
-  setPlaylistGroup: (playlistIds, groupId) => call('library:setPlaylistGroup', { playlistIds, groupId }),
+  // Several groups per playlist (4.5.3): one more group, or out of one.
+  addToGroup: (playlistIds, groupId) => call('library:addToGroup', { playlistIds, groupId }),
+  removeFromGroup: (playlistIds, groupId) => call('library:removeFromGroup', { playlistIds, groupId }),
   setPlaylistShared: (id, shared) => call('library:setPlaylistShared', { id, shared }),
   setFollowing: (id, on) => call('library:setFollowing', { id, on }),
+  // Shared groups (4.5.3): a group shared with its playlists, and one the others share followed.
+  setGroupShared: (id, shared) => call('library:setGroupShared', { id, shared }),
+  setGroupFollowing: (id, on) => call('library:setGroupFollowing', { id, on }),
+  // A playlist inside a followed group, followed there or no longer (that group only).
+  setGroupPlaylistFollowed: (groupId, playlistId, on) => call('library:setGroupPlaylistFollowed', { groupId, playlistId, on }),
   addSongToPlaylists: (songId, playlistIds) => call('library:addSongToPlaylists', { songId, playlistIds }),
   addSongsToPlaylist: (playlistId, songIds) => call('library:addSongsToPlaylist', { playlistId, songIds }),
   removeFromPlaylist: (playlistId, songId) => call('library:removeFromPlaylist', { playlistId, songId }),
@@ -58,8 +74,6 @@ contextBridge.exposeInMainWorld('flow', {
   }),
   findBySource: (url, key) => call('library:findBySource', { url, key }),
   findByMeta: (meta) => call('library:findByMeta', meta),
-  rescan: () => call('library:rescan'),
-  showSong: (songId) => call('shell:showSong', songId),
   openMusicFolder: () => call('shell:openMusicFolder'),
   openToolsFolder: () => call('tools:openFolder'),
   toolStatus: () => call('tools:status'),
@@ -89,6 +103,11 @@ contextBridge.exposeInMainWorld('flow', {
   peekLink: (id, url, song) => call('download:peek', { id, url, song }),
   cancelPeek: (id) => call('download:peekCancel', id),
   setQueuePending: (info) => call('queue:pending', info),
+  // Add Songs' downloads kept over a restart (4.5.3): sent at every change, once
+  // more (sync) as the window closes, and read back once it has started.
+  saveDownloads: (state) => call('downloads:save', state),
+  saveDownloadsNow: (state) => ipcRenderer.sendSync('downloads:saveSync', state),
+  loadDownloads: () => call('downloads:load'),
   cancelImport: () => call('import:cancel'),
   onImportProgress: (fn) => ipcRenderer.on('import:progress', (_e, p) => fn(p)),
   openUrl: (url) => call('shell:openUrl', url),
@@ -104,7 +123,6 @@ contextBridge.exposeInMainWorld('flow', {
   sponsorSegments: (key, url) => call('sponsor:segments', { key, url }),
 
   // A Flow Server (Settings: Use a Flow Server).
-  serverStatus: () => call('server:status'),
   setServerSecret: (text) => call('server:setSecret', text),
   syncNow: () => call('server:syncNow'),
   setOffline: (playlistId, on) => call('server:setOffline', { playlistId, on }),
@@ -134,7 +152,6 @@ contextBridge.exposeInMainWorld('flow', {
   // The live channel's events: { type, data } (Active Sessions).
   onServerLive: (fn) => ipcRenderer.on('server:live', (_e, ev) => fn(ev)),
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),
-  finishSong: (job) => call('song:finish', job),
   lookupInfo: (song) => call('song:lookupInfo', song),
   // A song's lyrics (4.0): { found, synced: [{ t, text }] | null, plain, instrumental }.
   lyrics: (songId) => call('song:lyrics', songId),
@@ -177,4 +194,19 @@ contextBridge.exposeInMainWorld('flow', {
   backups: () => call('backups:list'),
   makeBackup: () => call('backups:make'),
   restoreBackup: (name) => call('backups:restore', name),
+  // The Mini Player (5.0, src/miniPlayer.js): the player bar's button opens and closes it,
+  // what plays goes to it, its buttons come back as { action, value }, and whether it is open.
+  toggleMini: () => ipcRenderer.send('mini:toggle'),
+  miniState: (state) => ipcRenderer.send('mini:state', state),
+  onMiniCommand: (fn) => ipcRenderer.on('mini:command', (_e, cmd) => fn(cmd)),
+  onMiniOpen: (fn) => ipcRenderer.on('mini:open', (_e, open) => fn(open)),
+  // The Mini Player's equalizer: it asks for the levels of so many bars, they are sent back.
+  onMiniLevelsWanted: (fn) => ipcRenderer.on('mini:eq', (_e, bars) => fn(bars)),
+  miniLevels: (levels) => ipcRenderer.send('mini:levels', levels),
+  // Flow's window in the tray while the Mini Player is open: { away, pause } as it goes there
+  // (pause: by its X, the music stops) and comes back.
+  onAway: (fn) => {
+    awayFn = fn;
+    if (awayLast) fn(awayLast);
+  },
 });

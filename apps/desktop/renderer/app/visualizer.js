@@ -92,7 +92,9 @@ const Visualizer = {
   _idle: null,
   _resize: null,
   _ahead: null,        // a Random's next one, picked (and warmed) ahead: { random, kind }
-  _unwarm: null,       // stops the warming going on (warm)
+  _staged: null,       // the canvas made ahead for one (warm): { kind, canvas, drop }
+  _kept: new Map(),    // the canvases kept with the visualizers' programs compiled in them (VizGL.lose, in a browser that keeps none itself): their WebGL options (VizGL.key) -> canvas
+  _rewarm: null,
 
   // Bars (how many: Settings' brCount)
   FLOOR_DB: -64,
@@ -118,7 +120,8 @@ const Visualizer = {
   },
 
   open(id = Store.settings.visualizer) {
-    if (this.el) return;
+    if (this.el || Store.away) return;
+    clearTimeout(this._rewarm);
     const pool = this._pool(id);
     const kind = pool ? this._nextOf(id) : id;
     if (!VISUALIZERS.some((v) => v.id === kind && v.ready)) return;
@@ -129,6 +132,8 @@ const Visualizer = {
 
     const close = iconButton('viz-full__close', Icons.x, Store.can('keyboard') ? T('viz.close.withKey') : T('common.close'), () => this.close());
     this.el = h('div.viz-full', close);
+    // The lyrics go over it: their ticker starts (it rests while nothing needs it).
+    if (typeof Lyrics !== 'undefined') setTimeout(() => Lyrics.wake(), 0);
     // Anywhere, the player bar included, since that is over the layer; but
     // on the Queue (a drawer over it) they get out of the way instead.
     this._onPointer = (e) => {
@@ -164,7 +169,11 @@ const Visualizer = {
    */
   _mount(kind) {
     this.kind = kind;
-    this.canvas = h('canvas.viz-full__canvas');
+    // Its canvas: the one made ahead for it, else the one kept from the last, else a new one.
+    const staged = this._takeStaged(kind);
+    const kept = staged ? null : this._takeKept(kind);
+    this.canvas = staged || kept || h('canvas.viz-full__canvas');
+    this._fromKept = !!kept;
     this.stage = h('div.viz-full__stage', this.canvas);
     this.el.insertBefore(this.stage, this.el.firstChild);
     if (!Equalizer.active) {
@@ -173,8 +182,9 @@ const Visualizer = {
     if (kind === 'bars') this.stage.appendChild(this._barsPanel());
     const def = this.scenes[kind];
     if (def && def.options) this.stage.appendChild(this._cfgPanel(T('viz.settings.title', { visualizer: def.name }), def.options));
-    if (def && def.click) this.canvas.addEventListener('click', () => this.scene && def.click(this.scene));
-    if (def && def.hint) this.canvas.title = def.hint;
+    // Set, not added: a kept canvas has had its visualizer before.
+    this.canvas.onclick = def && def.click ? () => this.scene && def.click(this.scene) : null;
+    this.canvas.title = (def && def.hint) || '';
     if (!Equalizer.active) return;
     this.samples = new Float32Array(Equalizer.analyser.fftSize);
     VizAudio.reset({ stereo: !!(def && def.stereo) });
@@ -207,6 +217,7 @@ const Visualizer = {
     if (this._cfgOutside) document.removeEventListener('pointerdown', this._cfgOutside, true);
     this._cfgOutside = null;
     this._draft = null;
+    const made = !!this.scene;
     if (this.scene) {
       try {
         if (this.scene.destroy) this.scene.destroy();
@@ -215,9 +226,19 @@ const Visualizer = {
       }
       this.scene = null;
     }
+    // Its canvas with the programs compiled in it, for the next visualizer of
+    // the same WebGL options (only where VizGL keeps them: _takeKept).
+    const def = this.scenes[this.kind];
+    if ((made || this._fromKept) && def && def.gl && this.canvas && VizGL.kept(this.canvas)) this._keep(VizGL.key(def.gl), this.canvas);
+    this._fromKept = false;
     if (this.stage) this.stage.remove();
     this.stage = null;
     this.canvas = null;
+    // Bars' background and gradient, made for its canvas.
+    this._back = null;
+    this._grad = null;
+    this._gradCtx = null;
+    this._gradFill = null;
   },
 
   /** All of them in Settings' order: the categories', then any in none of them. */
@@ -260,16 +281,19 @@ const Visualizer = {
   },
 
   /**
-   * Gets the visualizer `id` ready to open without a wait: its shaders
-   * compiled ahead (VizGL.warm), which the first time (before the browser
-   * has them cached) can take seconds. A Random picks its next one now and
-   * warms that. Whatever was being warmed before is dropped. Called at
-   * startup, on choosing one in Settings, and while a Random that moves on
-   * with each song shows (for the next).
+   * Gets the visualizer `id` ready to open without a wait: its canvas made
+   * ahead with its shaders compiling in it (VizGL.stage), which the first
+   * time (before the browser has them cached) can take seconds; _mount then
+   * makes it in that canvas. A Random picks its next one now and gets that
+   * ready. Whatever was got ready before is dropped. Called at startup, on
+   * choosing one in Settings, and while a Random that moves on with each
+   * song shows (for the next).
    */
   warm(id = Store.settings.visualizer) {
-    if (this._unwarm) this._unwarm();
-    this._unwarm = null;
+    // In the tray nothing is made ahead (back does, once the window is opened).
+    if (Store.away) return;
+    if (this._staged) this._staged.drop();
+    this._staged = null;
     let kind = id;
     const pool = this._pool(id);
     if (pool) {
@@ -277,8 +301,52 @@ const Visualizer = {
       this._ahead = { random: id, kind };
     }
     const def = this.scenes[kind];
-    if (!def || !def.gl || kind === this.kind) return;
-    this._unwarm = VizGL.warm((canvas) => def.create(canvas));
+    if (!def || !def.gl || (this.el && kind === this.kind)) return;
+    const made = VizGL.stage((canvas) => def.create(canvas));
+    if (made) this._staged = { kind, ...made };
+  },
+
+  /** The canvas made ahead for `kind` (warm), its visualizer's from here on; null if there is none (or its WebGL is gone). */
+  _takeStaged(kind) {
+    const staged = this._staged;
+    if (!staged || staged.kind !== kind) return null;
+    this._staged = null;
+    const gl = staged.canvas.getContext('webgl2');
+    if (!gl || gl.isContextLost()) {
+      staged.drop();
+      return null;
+    }
+    staged.canvas.classList.add('viz-full__canvas');
+    return staged.canvas;
+  },
+
+  /**
+   * Keeps a canvas a visualizer is done with, for the next one of the same
+   * WebGL options (_takeKept): one canvas for all of them, as each kept
+   * one costs the browser its full-screen buffers (some 100 MB in Firefox).
+   */
+  _keep(key, canvas) {
+    canvas.remove();
+    const before = this._kept.get(key);
+    if (before && before !== canvas) VizGL.drop(before);
+    this._kept.set(key, canvas);
+  },
+
+  /**
+   * The canvas kept for visualizers of `kind`'s WebGL options, with the
+   * programs of those that showed in it compiled (its own too, if it did):
+   * this visualizer's from here on. Null if there is none (or its WebGL is gone).
+   */
+  _takeKept(kind) {
+    const def = this.scenes[kind];
+    if (!def || !def.gl) return null;
+    const key = VizGL.key(def.gl);
+    const canvas = this._kept.get(key);
+    if (!canvas) return null;
+    this._kept.delete(key);
+    if (VizGL.kept(canvas)) return canvas;
+    VizGL.drop(canvas);
+    return null;
   },
 
   /** Opened as Random with "a new one with each song": the song changing moves it on. */
@@ -307,6 +375,30 @@ const Visualizer = {
     this.el.remove();
     this.el = null;
     this._closedAt = performance.now();
+    if (typeof Lyrics !== 'undefined') Lyrics.wake();
+    // Ready for its next opening (a Random's next one, if none waits yet).
+    clearTimeout(this._rewarm);
+    if (!this._staged) this._rewarm = setTimeout(() => this.warm(), 1500);
+  },
+
+  /**
+   * The window goes into the tray: the visualizer closed, and what was made
+   * ready for the next opening let go (those canvases hold the graphics
+   * card's memory).
+   */
+  rest() {
+    this.close();
+    clearTimeout(this._rewarm);
+    if (this._staged) this._staged.drop();
+    this._staged = null;
+    for (const canvas of this._kept.values()) VizGL.drop(canvas);
+    this._kept.clear();
+  },
+
+  /** The window is back from the tray: the chosen visualizer made ready again. */
+  back() {
+    clearTimeout(this._rewarm);
+    if (!this._staged) this._rewarm = setTimeout(() => this.warm(), 1500);
   },
 
   /**
@@ -465,15 +557,25 @@ const Visualizer = {
   },
 
   _background(ctx, w, hgt) {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, w, hgt);
-    // Winamp's faint dotted grid.
-    ctx.fillStyle = 'rgba(80, 80, 90, 0.35)';
-    const step = Math.round(hgt / 8);
-    const dot = Math.max(1, Math.round(hgt / 500));
-    for (let y = step; y < hgt; y += step) {
-      for (let x = 0; x < w; x += dot * 6) ctx.fillRect(x, y, dot * 2, dot);
+    // Drawn once for the size (a thousand and more dots), then only copied.
+    let back = this._back;
+    if (!back || back.width !== w || back.height !== hgt) {
+      back = document.createElement('canvas');
+      back.width = w;
+      back.height = hgt;
+      this._back = back;
+      const b = back.getContext('2d', { alpha: false });
+      b.fillStyle = '#000';
+      b.fillRect(0, 0, w, hgt);
+      // Winamp's faint dotted grid.
+      b.fillStyle = 'rgba(80, 80, 90, 0.35)';
+      const step = Math.round(hgt / 8);
+      const dot = Math.max(1, Math.round(hgt / 500));
+      for (let y = step; y < hgt; y += step) {
+        for (let x = 0; x < w; x += dot * 6) b.fillRect(x, y, dot * 2, dot);
+      }
     }
+    ctx.drawImage(back, 0, 0);
   },
 
   /** The bars' colours from the floor (0) to the top (1), as a gradient's stops. */
@@ -511,8 +613,15 @@ const Visualizer = {
     const scheme = set.brColors;
     let grad = null;
     if (scheme !== 'rainbow') {
-      grad = ctx.createLinearGradient(0, floor, 0, floor - full);
-      for (const [at, colour] of this._barStops(scheme)) grad.addColorStop(at, colour);
+      // The same gradient until the colours or the size change.
+      const key = `${scheme}|${scheme === 'custom' ? this.setting('brColor') : ''}|${floor}|${full}`;
+      if (this._grad !== key || this._gradCtx !== ctx) {
+        this._grad = key;
+        this._gradCtx = ctx;
+        this._gradFill = ctx.createLinearGradient(0, floor, 0, floor - full);
+        for (const [at, colour] of this._barStops(scheme)) this._gradFill.addColorStop(at, colour);
+      }
+      grad = this._gradFill;
     }
     const led = set.brStyle === 'led';
     const cap = Math.max(2, Math.round(hgt / 90));

@@ -360,6 +360,47 @@ test('each page names its songs differently from the pages before it', async () 
   assert.equal(new Set(ids).size, 4);
 });
 
+test('the same song loaded again takes its notification text along again', async () => {
+  const { plugin, engine } = setup();
+  const meta = { title: 'Teardrop', artist: 'Massive Attack', album: 'Evening', artwork: '' };
+  engine.load('http://pi/a', 1, { key: 's1' });
+  engine.setMeta(meta);
+  await settle();
+  // Stopped and started again, or the same song picked a second time: a new item in the player, without a text yet.
+  engine.load('http://pi/a', 1, { key: 's1' });
+  engine.setMeta(meta);
+  await settle();
+  assert.deepEqual(plugin.runs.map((ops) => ops[0].meta), [meta, meta]);
+});
+
+test('songs the player started itself (the Alarm Clock, nothing loaded here) are taken as they are', async () => {
+  const { plugin, engine, events, tick } = setup();
+  const adopted = [];
+  engine.on('adopted', (key) => adopted.push(key));
+  assert.equal(engine.loaded, false);
+  plugin.fire('adopt', { state: { id: 'alarm-0', key: 's7', pwr: true, st: 3, t: 12, d: 200, rate: 1 } });
+  assert.deepEqual(adopted, ['s7']);
+  assert.equal(engine.loaded, true);
+  assert.equal(engine.paused, false);
+  assert.equal(engine.duration, 200);
+  assert.deepEqual(engine.current, { key: 's7', playing: true, heard: 0 });
+  tick(3000);
+  assert.equal(engine.time, 15);
+  // From here on its states are this song's: a pause from the notification is heard.
+  events.length = 0;
+  plugin.fire('state', { id: 'alarm-0', pwr: false, st: 3, t: 15, d: 200, rate: 1 });
+  assert.deepEqual(events, ['pause', 'timeupdate']);
+  // The page's next songs go to the player again, and the notification's text.
+  engine.setNext([{ key: 's8', src: 'http://pi/b', gain: 1 }]);
+  engine.setMeta({ title: 'Wake', artist: '', album: '', artwork: '' });
+  await settle();
+  assert.deepEqual(plugin.runs[0].map((o) => o.op), ['next', 'meta']);
+  // Without a song in it, nothing is taken.
+  plugin.fire('adopt', { state: { id: '', key: '' } });
+  plugin.fire('adopt', null);
+  assert.equal(adopted.length, 1);
+});
+
 test('a file the page knows by its Capacitor address is played from its path', () => {
   const origin = 'http://localhost';
   assert.equal(fileAddressToPath(`${origin}/_capacitor_file_/data/user/0/x/files/covers/a%20b.jpg?v=3&r=1`, origin), '/data/user/0/x/files/covers/a b.jpg');

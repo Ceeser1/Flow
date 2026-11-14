@@ -26,7 +26,8 @@ Flow is made for private use.
   on the PC (followed playlists too), and update every imported playlist of a
   group at once. Each group has its own page: its playlists as frames that
   open and close, one search for all of them, Play (a random playlist, or with
-  Shuffle songs from all of them) and Download for the whole group
+  Shuffle songs from all of them) and Download for the whole group.
+  Groups can be shared with the other profiles, who can follow them
 - **Your listening trend**: most listened, least skipped, long time no see, …
 - **Continue with similar songs** when a playlist ends
 
@@ -36,10 +37,17 @@ Flow is made for private use.
 - **Sound equalizer** with presets
 - Choose the **output device** (speakers, headphones, Bluetooth)
 - **Sleep timer**, media keys, and Flow remembers where you stopped
+- **Mini Player** (PC): a small widget with the song and its controls that can
+  stay on top of other windows and open when the computer starts, while Flow
+  itself waits in the system tray; resize it by its edges, and show the
+  equalizer and the cover as its background if you like
+- **Alarm Clock** (Android): Flow starts playing at the time you set, on the
+  days you pick, fading the music in; Stop or Snooze from the lock screen
 
 ### Looks
 - A live **equalizer** and softly glowing **background clouds** that react to
   the bass
+- The playing song's **cover as background** (PC), large behind the list
 - Dozens of full-screen **visualizers**, with your own picture or video as the
   background
 - **English and German**

@@ -315,4 +315,15 @@ async function finish(job, onProgress) {
   return summary;
 }
 
-module.exports = { list, download, search, peek, listLocal, prepareLocal, finish, groupToken, eachItem, useLibrary };
+/**
+ * The computer's files of a batch kept over a restart (4.5.3,
+ * keptDownloads.js): listed again, so Move Originals may delete them as it
+ * could before Flow closed.
+ */
+function allowLocal(files) {
+  for (const f of files || []) if (typeof f === 'string' && f) localListed.add(path.resolve(f).toLowerCase());
+}
+
+module.exports = {
+  list, download, search, peek, listLocal, prepareLocal, finish, groupToken, eachItem, useLibrary, allowLocal,
+};

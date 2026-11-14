@@ -35,8 +35,9 @@ const SongActions = {
       }
     }, true);
     // The row may be redrawn or gone. The player's popup holds its song itself.
-    Store.onLibrary(() => {
-      if (!this.pickerAnchor) this.close();
+    // More closes when its row is drawn again; a change no list shows leaves the rows, and it, where they are.
+    Store.onLibrary((lib, change) => {
+      if (!this.pickerAnchor && !change.quiet()) this.close();
     });
   },
 
