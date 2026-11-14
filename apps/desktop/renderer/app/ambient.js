@@ -91,8 +91,8 @@ const Ambient = {
   // width) and BLUR_END from BLUR_OUT outside it on.
   COVER_PIXELS: 512,
   COVER_BLUR_IN: 0.044,
-  COVER_BLUR_EDGE: 0.0165,
-  COVER_BLUR_END: 0.044,
+  COVER_BLUR_EDGE: 0.02,
+  COVER_BLUR_END: 0.062,
   COVER_BLUR_OUT: 0.11,
   BAKE_MS: 3,       // of making it, then the page's turn again
   BAKE_STEP: 60000, // pixels blurred in one part of making it (well under a millisecond)
