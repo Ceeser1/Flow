@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- German (translations/translations.txt, ANDROID): what Android itself shows, by the phone's language. -->
+<resources>
+    <string name="widget_tall_description">Der laufende Song mit Zeitleiste, mit Zurück, Play/Pause und Weiter</string>
+    <string name="widget_description">Der laufende Song, mit Play/Pause und Weiter</string>
+    <string name="widget_tall_name">Flow mit Zeitleiste</string>
+    <string name="widget_idle">Tippe auf Play zum Hören</string>
+    <string name="widget_previous">Zurück</string>
+    <string name="widget_next">Weiter</string>
+    <string name="error_player_refused">Der Player hat abgelehnt.</string>
+    <string name="error_volume_refused">Das Handy hat Flow die Lautstärke nicht ändern lassen.</string>
+    <string name="error_scanner_failed">Der QR-Scanner konnte nicht starten (er kommt mit den Google-Play-Diensten): %1$s</string>
+    <string name="error_upload_failed">Der Upload ist fehlgeschlagen.</string>
+    <string name="error_cannot_play_kind">Flow kann diese Dateiart auf dem Handy nicht abspielen (MP3, M4A, AAC, Opus, Ogg, FLAC und WAV gehen).</string>
+</resources>

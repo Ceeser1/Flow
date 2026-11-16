@@ -27,6 +27,8 @@
 // page does not fade): it moves on by itself, so it fades by itself too. So is
 // Settings' Equalizer (setSoundEq): the page does not hear the sound.
 
+const { tr } = require('@flow/core/lang');
+
 // A state's place within this of where the page has it is taken this much (see onState).
 const SMOOTH_MAX = 0.25;
 const SMOOTH = 0.2;
@@ -298,7 +300,7 @@ function createAudioEngine({
     },
 
     play() {
-      if (!src) return Promise.reject(new Error('No song is loaded.'));
+      if (!src) return Promise.reject(new Error(tr('phone.error.noSongLoaded', 'No song is loaded.')));
       if (st === ENDED) {
         // As an <audio>: an ended song plays from the start again.
         t = 0;

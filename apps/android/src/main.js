@@ -22,6 +22,7 @@ const { createGuestLink } = require('@flow/core/client/guest');
 const caps = require('@flow/core/client/caps');
 const { createViewChannel } = require('@flow/core/client/viewChannel');
 const { MP3_QUALITIES } = require('@flow/core/formats');
+const { tr, useTranslator } = require('@flow/core/lang');
 const {
   platform, plugin, audio, fileUrl, fs, path, info,
 } = require('./native');
@@ -31,6 +32,14 @@ const { createLocalFiles } = require('./localFiles');
 const { sharedLink } = require('./share');
 const ask = require('./ask');
 const { version } = require('../package.json');
+
+// The shared client's messages (the server connection, uploads, Download
+// (Server), a guest's) and the phone's own in the window's language: i18n.js
+// loads after this bundle, so it is asked only when a message is made.
+useTranslator((key, vars) => {
+  const i18n = typeof window !== 'undefined' && window.I18n;
+  return i18n && i18n.has(key) ? i18n.t(key, vars) : null;
+});
 
 // ---- events to the window (the preload's on* calls) ----
 
@@ -104,9 +113,9 @@ function start() {
    */
   async function bringSong(songId) {
     const song = actions.currentLibrary().songs.find((s) => s.id === songId);
-    if (!song) throw new Error('That song is not in your library.');
+    if (!song) throw new Error(tr('common.songNotInLibrary', 'That song is not in your library.'));
     const audio = remote.active() ? await remote.songAudio(songId) : { file: song.file, temp: false };
-    if (!audio.file || !fs.exists(audio.file)) throw new Error(`"${song.title}" has no file to send along.`);
+    if (!audio.file || !fs.exists(audio.file)) throw new Error(tr('common.error.noFileToSend', '"{song}" has no file to send along.', { song: song.title }));
     const gid = `g-${settings.clientId().slice(0, 12)}-${songId}`.replace(/[^\w-]/g, '').slice(0, 64);
     const ext = (/\.([a-z0-9]+)$/i.exec(song.file || audio.file) || [])[1] || song.format || 'mp3';
     try {
@@ -204,15 +213,16 @@ function start() {
       try {
         return copy(await fn(...args.map(copy)));
       } catch (err) {
-        const e = new Error((err && err.message) || String(err) || 'Something went wrong.');
+        const e = new Error((err && err.message) || String(err) || tr('common.wentWrong', 'Something went wrong.'));
         e.cancelled = !!(err && err.cancelled);
         throw e;
       }
     };
   }
 
-  const notHere = (what) => call(() => {
-    throw new Error(`${what} is not possible on the phone.`);
+  // `key` / `english`: what cannot be done ("Downloading on the phone").
+  const notHere = (key, english) => call(() => {
+    throw new Error(tr('phone.notHere', '{what} is not possible on the phone.', { what: tr(key, english) }));
   });
   const nothing = () => {};
 
@@ -220,6 +230,10 @@ function start() {
   let attached = null;
 
   const flow = {
+    // The texts' language chosen in Settings ('' for the phone's), read once as
+    // the desktop's preload does: i18n.js needs it before anything is drawn, and
+    // the page loads again to switch (Settings > General > Language).
+    language: settings.get('language') || '',
     init: call(async () => {
       attached = await audio.attach().catch(() => null);
       return {
@@ -301,20 +315,20 @@ function start() {
     })),
     findBySource: call((url, key) => actions.findBySource({ url, key })),
     findByMeta: call((meta) => actions.findByMeta(meta)),
-    openMusicFolder: notHere('Opening the music folder'),
-    folderStats: notHere('The music folder'),
-    chooseFolder: notHere('Choosing a folder'),
-    moveMusicFolder: notHere('Moving the music folder'),
+    openMusicFolder: notHere('common.notHere.openMusicFolder', 'Opening the music folder'),
+    folderStats: notHere('common.notHere.musicFolder', 'The music folder'),
+    chooseFolder: notHere('common.notHere.chooseFolder', 'Choosing a folder'),
+    moveMusicFolder: notHere('common.notHere.moveMusicFolder', 'Moving the music folder'),
     onFolderProgress: nothing,
 
     // Add Songs on the phone downloads through the server ("Download (Server)");
     // local files are its own (localFiles.js).
-    probe: notHere('Downloading on the phone'),
-    listImport: notHere('Importing on the phone'),
+    probe: notHere('phone.notHere.download', 'Downloading on the phone'),
+    listImport: notHere('phone.notHere.import', 'Importing on the phone'),
     // A song's name typed into the box goes to the server too (serverDownloads 'search').
-    searchSongs: notHere('Searching for songs on the phone'),
+    searchSongs: notHere('phone.notHere.searchSongs', 'Searching for songs on the phone'),
     cancelSearch: call(nothing),
-    downloadImport: notHere('Importing on the phone'),
+    downloadImport: notHere('phone.notHere.import', 'Importing on the phone'),
     pickLocalFiles: call(() => local.pick(false)),
     // A visualizer's picture (as the desktop's viz:savePicture), in Flow's files.
     saveVizPicture: call((name, bytes) => {
@@ -348,12 +362,12 @@ function start() {
       if (/^https:\/\//i.test(String(url || ''))) return plugin.openUrl({ url: String(url) });
       return undefined;
     }),
-    scheduleShutdown: notHere('Shutting down'),
+    scheduleShutdown: notHere('common.notHere.shutDown', 'Shutting down'),
     cancelShutdown: call(() => false),
     // Notifications come with playing in the background.
     notify: call(() => false),
     notifySession: call(() => false),
-    download: notHere('Downloading on the phone'),
+    download: notHere('phone.notHere.download', 'Downloading on the phone'),
     cancelDownload: call(nothing),
     discardDownload: call((cachePath) => local.discard(cachePath)),
     onDownloadProgress: nothing,
@@ -408,7 +422,7 @@ function start() {
       if (action === 'bring') return bringSong(String(args.songId || ''));
       if (action === 'status') return guest.status();
       if (action === 'list') return guest.list();
-      throw new Error(`Unknown guest action ${action}.`);
+      throw new Error(tr('common.error.unknownGuestAction', 'Unknown guest action {action}.', { action }));
     }),
     onGuestLive: on('guest:live'),
     onGuestChanged: on('guest:changed'),
@@ -418,7 +432,7 @@ function start() {
     scanQr: call(async () => {
       const r = await plugin.scanQr();
       if (r && r.cancelled) {
-        const err = new Error('Scan called off');
+        const err = new Error(tr('phone.error.scanCalledOff', 'Scan called off'));
         err.cancelled = true;
         throw err;
       }

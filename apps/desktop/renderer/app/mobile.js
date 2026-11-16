@@ -116,6 +116,9 @@ const Mobile = {
     const take = (...ids) => ids.map((id) => $(id));
     const collapse = iconButton('mp__collapse', Icons.chevronLeft, T('mobile.backToList'), () => this.collapsePlayer());
     collapse.id = 'playerCollapse';
+    // Now Playing shows the player's cover across the screen's width: the 512 x 512 one (the
+    // thumbnail standing in until it is here), not the 128 x 128 thumbnail of the bar's 44 px.
+    $('playerCover').dataset.coverSize = 'big';
     const parts = [
       collapse,
       $('playerFrom'),

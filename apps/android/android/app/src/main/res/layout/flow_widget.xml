@@ -46,7 +46,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
-            android:text="Tap play to listen"
+            android:text="@string/widget_idle"
             android:textColor="#8A8A94"
             android:textSize="13sp" />
     </LinearLayout>
@@ -68,7 +68,7 @@
         android:layout_height="44dp"
         android:layout_marginStart="4dp"
         android:background="@android:color/transparent"
-        android:contentDescription="Next"
+        android:contentDescription="@string/widget_next"
         android:padding="11dp"
         android:scaleType="fitCenter"
         android:src="@drawable/widget_next" />

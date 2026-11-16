@@ -297,6 +297,11 @@ settings.appVisuals.coverBg.desc
   en: The playing song's cover, large in the middle behind the clouds and the equalizer.
   de: Das Cover des laufenden Songs, groß in der Mitte hinter den Wolken und dem Equalizer.
 
+# The same where there is no background equalizer (the phone apps)
+settings.appVisuals.coverBg.desc.noEqualizer
+  en: The playing song's cover, large in the middle behind the clouds.
+  de: Das Cover des laufenden Songs, groß in der Mitte hinter den Wolken.
+
 settings.appVisuals.coverBg.visibility.label
   en: Visibility
   de: Sichtbarkeit

@@ -60,7 +60,7 @@
                 android:layout_marginTop="2dp"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:text="Tap play to listen"
+                android:text="@string/widget_idle"
                 android:textColor="#8A8A94"
                 android:textSize="14sp" />
         </LinearLayout>
@@ -119,7 +119,7 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="@android:color/transparent"
-            android:contentDescription="Previous"
+            android:contentDescription="@string/widget_previous"
             android:padding="12dp"
             android:scaleType="fitCenter"
             android:src="@drawable/widget_prev" />
@@ -141,7 +141,7 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="@android:color/transparent"
-            android:contentDescription="Next"
+            android:contentDescription="@string/widget_next"
             android:padding="12dp"
             android:scaleType="fitCenter"
             android:src="@drawable/widget_next" />

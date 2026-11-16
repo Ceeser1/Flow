@@ -6,6 +6,7 @@
 // (apps/ios: FlowSync.swift answers through prompt(), FlowNative.swift).
 
 const { registerPlugin, Capacitor } = require('@capacitor/core');
+const { tr } = require('@flow/core/lang');
 
 /** 'android' or 'ios'. */
 const platform = Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
@@ -15,7 +16,7 @@ const plugin = registerPlugin('FlowNative');
 const audio = registerPlugin('FlowAudio');
 
 function sync() {
-  if (!globalThis.FlowSync) throw new Error('This only works in Flow\'s phone app.');
+  if (!globalThis.FlowSync) throw new Error(tr('phone.error.onlyInApp', 'This only works in Flow\'s phone app.'));
   return globalThis.FlowSync;
 }
 

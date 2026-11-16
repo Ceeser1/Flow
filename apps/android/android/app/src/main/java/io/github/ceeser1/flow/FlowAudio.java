@@ -98,7 +98,7 @@ public class FlowAudio extends Plugin implements FlowPlayer.Events {
                 call.resolve(player.state());
             } catch (Exception e) {
                 FlowLog.i("operations failed: " + e);
-                call.reject(e.getMessage() == null ? "The player refused." : e.getMessage());
+                call.reject(e.getMessage() == null ? getContext().getString(R.string.error_player_refused) : e.getMessage());
             }
         });
     }

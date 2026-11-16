@@ -38,14 +38,18 @@
 // back; a solid scheme gives them all that one. The amount at 50% is the
 // first half of CLOUDS (the look as designed), 100% all of them, 0% none.
 //
-// Show Cover as background (a computer's window): the playing song's big
+// Show Cover as background (from 5.0.2 on the phones too): the playing song's big
 // cover on the background, under the clouds, at its Visibility, in the middle
 // of what shows of the list (between the bottom of its column names, where
 // they are now, and the player bar; pages without a list from their top), 80%
-// as tall as that, its corners rounded by 5% of its size. In WebGL the clouds
-// are then drawn onto nothing (their colour and how much they cover) and laid
-// over the background with the cover on it, which is the same picture as
-// before while there is no cover.
+// as tall as that, its corners rounded by 5% of its size. Cover and clouds are
+// two layers, the clouds in front: they are what they are over the plain
+// background, and the cover's own light is added whole, so a cloud is as
+// strong over the cover as beside it and does not dim the cover (laid over the
+// cover as a see-through sheet, a cloud lost up to 40% of its strength over a
+// bright cover and read as lying behind it). In WebGL the clouds are drawn
+// onto nothing (their colour and how much they cover) for that; with no cover
+// the picture is the same as before.
 //
 // The cover has no edge to see, it comes out of the background: from a little
 // inside its edge it thins more and more, through the edge, to nothing well
@@ -72,7 +76,7 @@ const Ambient = {
   coverKey: '',     // the song and address it is (or is being) loaded for
   coverJob: null,   // the baking under way, if any (another one, or none, ends it)
   coverBox: null,   // where it goes: { x, y, size } in the canvas's pixels
-  coverPiece: null, // the canvas way's copy of it with the fade in it: { pic, canvas }
+  coverPiece: null, // the canvas way's copy of it with the fade in it: { pic, canvas, mask, reach }
   lastPlace: 0,
   PLACE_MS: 250,    // how often its place is looked at again (pages, banners)
   scrolled: false,  // the page was scrolled since: its place is looked at with the next frame
@@ -103,8 +107,8 @@ const Ambient = {
   // width) and BLUR_END from BLUR_OUT outside it on.
   COVER_PIXELS: 512,
   COVER_BLUR_IN: 0.044,
-  COVER_BLUR_EDGE: 0.02,
-  COVER_BLUR_END: 0.062,
+  COVER_BLUR_EDGE: 0.021,
+  COVER_BLUR_END: 0.0651,
   COVER_BLUR_OUT: 0.11,
   BAKE_MS: 3,       // of making it, then the page's turn again
   BAKE_STEP: 60000, // pixels blurred in one part of making it (well under a millisecond)
@@ -342,7 +346,10 @@ ${src}`);
             float m = (exp(-bell * away * away) - exp(-bell)) / (1.0 - exp(-bell)) * coverAlpha;
             base = mix(bg, texture(cover, ((px - box.xy) / box.z + pad) / (1.0 + 2.0 * pad)).rgb, m);
           }
-          o = vec4(c.rgb + base * (1.0 - c.a) + (hash12(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+          // Two layers: the background with the cover on it, and the clouds in front of that. The clouds
+          // are what they are over the plain background (laid over it), and the cover's own light is
+          // added whole: a cloud is as strong over the cover as beside it, and does not dim the cover.
+          o = vec4(c.rgb + bg * (1.0 - c.a) + (base - bg) + (hash12(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
         }`);
     } catch (err) {
       console.warn(err);
@@ -614,13 +621,30 @@ ${src}`);
     const out = c.getContext('2d');
     out.fillStyle = this.background;
     out.fillRect(0, 0, c.width, c.height);
-    if (alpha > 0) {
-      // The baked cover with its fade in it, the surround reaching past the box.
-      const more = box.size * this.coverPic.pad;
+    // Two layers, as the WebGL way has them: the clouds are laid over the plain background and the
+    // cover's own light is added whole, so a cloud is as strong over the cover as beside it. Here in
+    // three steps: the background taken away where the cover goes (as much as the cover is solid),
+    // the clouds, then the cover's light added (the baked cover with its fade in it, the surround
+    // reaching past the box).
+    const piece = alpha > 0 ? this._piece(alpha) : null;
+    const more = piece ? box.size * this.coverPic.pad : 0;
+    if (piece) {
       out.globalAlpha = alpha;
-      out.drawImage(this._piece(alpha), box.x - more, box.y - more, box.size + more * 2, box.size + more * 2);
+      out.drawImage(piece.mask, box.x - more, box.y - more, box.size + more * 2, box.size + more * 2);
       out.globalAlpha = 1;
     }
+    this._cloudsOnto(out, puffs);
+    if (piece) {
+      out.globalAlpha = alpha;
+      out.globalCompositeOperation = 'lighter';
+      out.drawImage(piece.canvas, box.x - more, box.y - more, box.size + more * 2, box.size + more * 2);
+      out.globalCompositeOperation = 'source-over';
+      out.globalAlpha = 1;
+    }
+  },
+
+  /** The canvas way's clouds: the first `puffs` of puffData, each a round gradient laid over what is there. */
+  _cloudsOnto(out, puffs) {
     const P = this.puffData;
     for (let k = 0; k < puffs; k += 1) {
       const q = k * 7;
@@ -637,15 +661,16 @@ ${src}`);
   },
 
   /**
-   * The canvas way's picture: the baked cover with its fade in it (how solid
-   * each pixel is, as the WebGL way works it out while drawing), made once
-   * for a cover, not for every frame.
+   * The canvas way's pictures: { canvas, mask }, the baked cover with its
+   * fade in it (how solid each pixel is, as the WebGL way works it out while
+   * drawing) and the same shape in black (what takes the background away
+   * under it), made once for a cover, not for every frame.
    */
   _piece(alpha) {
     const pic = this.coverPic;
     const was = this.coverPiece;
     const reach = this._reach(alpha);
-    if (was && was.pic === pic && Math.abs(was.reach - reach) < 0.005) return was.canvas;
+    if (was && was.pic === pic && Math.abs(was.reach - reach) < 0.005) return was;
     const P = pic.image.width;
     const S = Math.round(P / (1 + 2 * pic.pad));
     const M = (P - S) / 2;
@@ -663,8 +688,16 @@ ${src}`);
     canvas.width = P;
     canvas.height = P;
     canvas.getContext('2d').putImageData(new ImageData(data, P, P), 0, 0);
-    this.coverPiece = { pic, canvas, reach };
-    return canvas;
+    const mask = document.createElement('canvas');
+    mask.width = P;
+    mask.height = P;
+    const shape = mask.getContext('2d');
+    shape.drawImage(canvas, 0, 0);
+    shape.globalCompositeOperation = 'source-in';
+    shape.fillStyle = '#000';
+    shape.fillRect(0, 0, P, P);
+    this.coverPiece = { pic, canvas, mask, reach };
+    return this.coverPiece;
   },
 
   /**
@@ -675,7 +708,7 @@ ${src}`);
   _wantCover() {
     const s = Store.settings;
     const id = Player.currentId;
-    const song = s.coverBgOn && !Store.phone && id ? Store.song(id) || (Player.remote ? { ...Player.remote.state, id } : null) : null;
+    const song = s.coverBgOn && id ? Store.song(id) || (Player.remote ? { ...Player.remote.state, id } : null) : null;
     const list = song ? Covers.candidates(song, 'big') : [];
     const key = list.length ? `${id}|${list[0]}` : '';
     if (key === this.coverKey) return;
@@ -1109,7 +1142,9 @@ ${src}`);
       }
     }
     const room = Math.max(0, bottom - top);
-    const size = Math.max(1, Math.round(Math.min(room * this.COVER_SHARE, width)));
+    // A phone's list is narrower than it is tall: there the cover is COVER_SHARE of the narrower
+    // side, so its fade shows at the sides too instead of the cover filling the width.
+    const size = Math.max(1, Math.round(Store.phone ? Math.min(room, width) * this.COVER_SHARE : Math.min(room * this.COVER_SHARE, width)));
     const box = { x: Math.round(left + (width - size) / 2), y: Math.round(top + (room - size) / 2), size };
     const was = this.coverBox;
     this.coverBox = box;

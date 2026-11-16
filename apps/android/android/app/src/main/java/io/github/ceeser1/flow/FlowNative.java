@@ -172,7 +172,7 @@ public class FlowNative extends Plugin {
             am.setStreamVolume(AudioManager.STREAM_MUSIC, (int) Math.round(v * max), 0);
         } catch (SecurityException e) {
             // Do Not Disturb may refuse it.
-            call.reject("The phone did not let Flow change its volume.");
+            call.reject(getContext().getString(R.string.error_volume_refused));
             return;
         }
         mediaVolume(call);
@@ -227,7 +227,7 @@ public class FlowNative extends Plugin {
                 })
                 .addOnFailureListener((e) -> {
                     FlowLog.i("code scanner failed: " + e.getMessage());
-                    call.reject("The QR code scanner could not start (it comes with Google Play services): " + e.getMessage());
+                    call.reject(getContext().getString(R.string.error_scanner_failed, String.valueOf(e.getMessage())));
                 });
     }
 
@@ -644,7 +644,7 @@ public class FlowNative extends Plugin {
                 String ext = extOf(name);
                 if (!AUDIO_EXTS.contains(ext)) ext = extOfMime(cr.getType(u));
                 if (ext.isEmpty()) {
-                    call.reject("Flow cannot play this kind of file on the phone (MP3, M4A, AAC, Opus, Ogg, FLAC and WAV play).");
+                    call.reject(getContext().getString(R.string.error_cannot_play_kind));
                     return;
                 }
                 dest = new File(stem + "." + ext);
@@ -788,7 +788,7 @@ public class FlowNative extends Plugin {
             } catch (IOException e) {
                 call.reject(e.getMessage() == null ? "The connection failed." : e.getMessage(), "OFFLINE");
             } catch (Exception e) {
-                call.reject(e.getMessage() == null ? "The upload failed." : e.getMessage());
+                call.reject(e.getMessage() == null ? getContext().getString(R.string.error_upload_failed) : e.getMessage());
             } finally {
                 if (conn != null) conn.disconnect();
             }

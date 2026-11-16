@@ -85,7 +85,7 @@ const SettingsPanel = {
     this._refresh = [];
     const body = h('div.settings', ...this._sections([
       h('h3.settings__section', T('settings.general.heading')),
-      // Only where the app keeps the choice itself (the desktop app) for now.
+      // Where the app keeps the choice itself (the desktop app, the web player, the phones).
       typeof window.flow.language === 'string' ? this._row({
         label: T('settings.general.language.label'),
         desc: T('settings.general.language.desc'),
@@ -215,11 +215,11 @@ const SettingsPanel = {
       ] : []),
 
       // The song's big cover behind the clouds (ambient.js); not the Mini
-      // Player's own Cover as background. A computer's window only.
-      Store.phone ? null : this._row({
+      // Player's own Cover as background. Everywhere (from 5.0.2 on the phones too).
+      this._row({
         key: 'coverBgOn',
         label: T('settings.appVisuals.coverBg.label'),
-        desc: T('settings.appVisuals.coverBg.desc'),
+        desc: T(Store.can('effects') ? 'settings.appVisuals.coverBg.desc' : 'settings.appVisuals.coverBg.desc.noEqualizer'),
         right: this._slider({ key: 'coverBgVisibility', label: T('settings.appVisuals.coverBg.visibility.label'), min: 0, when: () => Store.settings.coverBgOn }),
       }),
 
