@@ -183,7 +183,10 @@ module.exports = { createJournal, KEY };
 // The parts of a library (libraryModel.sanitize's shape) compared item by
 // item: its songs and playlists, and the listening records that grow with
 // every listen (listening.js, the Statistics' days and sessions).
-const STATISTICS_SPEC = { days: 'map', sessions: 'map', months: 'map' };
+// Internet Radio's (5.1) months, days and stations grow the same way.
+const STATISTICS_SPEC = {
+  days: 'map', sessions: 'map', months: 'map', 'radio.days': 'map', 'radio.months': 'map', 'radio.stations': 'map',
+};
 const LISTENING_SPEC = { 'songMonths.*': 'map', days: 'map' };
 
 /** `spec` for a value found at `prefix` ('library', 'profiles.*'). */

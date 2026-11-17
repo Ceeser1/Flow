@@ -607,6 +607,7 @@ handle('library:trimSong', (arg) => actions.trimSong(arg));
 handle('library:setFavourite', (arg) => actions.setFavourite(arg));
 handle('library:recordListen', (arg) => actions.recordListen(arg));
 handle('library:recordAwayListen', (arg) => actions.recordAwayListen(arg));
+handle('library:recordRadioListen', (arg) => actions.recordRadioListen(arg));
 handle('stats:private', () => privateStats.get());
 handle('stats:removeTracked', ({ serverId, profileId }) => remote.removeTracked(serverId, profileId));
 // Fetched when the window shows them (4.3): the profile's Statistics, the playlists others share, one of them.

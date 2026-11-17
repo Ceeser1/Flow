@@ -21,9 +21,14 @@
   const MONTHS = [T('common.month.january'), T('common.month.february'), T('common.month.march'), T('common.month.april'), T('common.month.may'), T('common.month.june'), T('common.month.july'), T('common.month.august'), T('common.month.september'), T('common.month.october'), T('common.month.november'), T('common.month.december')];
   const WEEKDAYS = [T('common.weekday.sunday'), T('common.weekday.monday'), T('common.weekday.tuesday'), T('common.weekday.wednesday'), T('common.weekday.thursday'), T('common.weekday.friday'), T('common.weekday.saturday')];
   const pad2 = (n) => String(n).padStart(2, '0');
-  const emptyStatistics = () => ({
-    since: 0, seconds: 0, listens: 0, months: {}, days: {}, sessions: {}, longest: null,
+  const emptyRadio = () => ({
+    seconds: 0, listens: 0, months: {}, days: {}, stations: {},
   });
+  const emptyStatistics = () => ({
+    since: 0, seconds: 0, listens: 0, months: {}, days: {}, sessions: {}, longest: null, radio: emptyRadio(),
+  });
+  // Internet Radio's part (5.1), whatever an older server or app sent.
+  const radioOf = (st) => (st && st.radio && typeof st.radio === 'object' ? st.radio : emptyRadio());
 
   /** 'YYYY-MM' of a moment, in this machine's time. */
   function monthKey(ms) {
@@ -56,27 +61,33 @@
   /**
    * The Activity graph: a bar per month from the month `createdAt` (the
    * profile was made, Private started) to the month of `now`, oldest first:
-   * { key, name ("October"), short ("Oct"), year, hours, share } where share
-   * is the month's hours against the highest month's (0 to 1).
+   * { key, name ("October"), short ("Oct"), year, hours, radio, total, share }:
+   * hours of songs, of Internet Radio (5.1, its own part of the bar), both,
+   * and share the month's total against the highest month's (0 to 1).
    */
   function months(statistics, createdAt, now = Date.now()) {
     const st = statistics || emptyStatistics();
+    const radio = radioOf(st);
     const start = Number(createdAt) || Number(st.since) || now;
     const last = monthKey(now);
     const out = [];
     for (let k = monthKey(Math.min(start, now)); k <= last && out.length < 1200; k = nextMonth(k)) {
       const index = Number(k.slice(5)) - 1;
+      const hours = (Number((st.months || {})[k]) || 0) / 3600;
+      const radioHours = (Number((radio.months || {})[k]) || 0) / 3600;
       out.push({
         key: k,
         name: MONTHS[index],
         short: MONTHS[index].slice(0, 3),
         year: k.slice(0, 4),
-        hours: (Number((st.months || {})[k]) || 0) / 3600,
+        hours,
+        radio: radioHours,
+        total: hours + radioHours,
         share: 0,
       });
     }
-    const max = Math.max(0, ...out.map((m) => m.hours));
-    for (const m of out) m.share = max ? m.hours / max : 0;
+    const max = Math.max(0, ...out.map((m) => m.total));
+    for (const m of out) m.share = max ? m.total / max : 0;
     return out;
   }
 
@@ -92,14 +103,17 @@
     const list = months(st, new Date(new Date(start).getFullYear(), 0, 1).getTime(), now);
     const out = [];
     let total = 0;
+    let radio = 0;
     list.forEach((m, i) => {
       out.push(m);
       total += m.hours;
+      radio += m.radio;
       if (m.key.endsWith('-12') || i === list.length - 1) {
         out.push({
-          isTotal: true, isYear: true, key: m.year, name: m.year, short: m.year, year: m.year, hours: total,
+          isTotal: true, isYear: true, key: m.year, name: m.year, short: m.year, year: m.year, hours: total, radio, total: total + radio,
         });
         total = 0;
+        radio = 0;
       }
     });
     return out;
@@ -116,6 +130,7 @@
   function daily(statistics, month, now = Date.now()) {
     const st = statistics || emptyStatistics();
     const days = st.days || {};
+    const radioDays = radioOf(st).days || {};
     const today = dayKey(now);
     const shown = /^\d{4}-\d{2}$/.test(month || '') ? month : today.slice(0, 7);
     // The current week: from Monday on.
@@ -124,23 +139,28 @@
     const length = new Date(y, mon, 0).getDate();
     const out = [];
     let total = 0;
+    let radioTotal = 0;
     for (let d = 1; d <= length; d += 1) {
       const key = `${shown}-${pad2(d)}`;
       if (key > today) break;
       const weekday = WEEKDAYS[new Date(y, mon - 1, d).getDay()];
       const date = T('stats.activity.day.date', { day: pad2(d), month: pad2(mon) });
       const hours = (Number(days[key]) || 0) / 3600;
+      const radio = (Number(radioDays[key]) || 0) / 3600;
       total += hours;
+      radioTotal += radio;
       out.push({
         key,
         name: key >= monday ? weekday : date,
         short: key >= monday ? weekday.slice(0, 3) : date,
         title: T('stats.activity.day.tooltip', { weekday: weekday.slice(0, 3), date, year: y }),
         hours,
+        radio,
+        total: hours + radio,
       });
     }
     out.push({
-      isTotal: true, isMonth: true, key: shown, name: MONTHS[mon - 1], short: MONTHS[mon - 1].slice(0, 3), year: String(y), hours: total,
+      isTotal: true, isMonth: true, key: shown, name: MONTHS[mon - 1], short: MONTHS[mon - 1].slice(0, 3), year: String(y), hours: total, radio: radioTotal, total: total + radioTotal,
     });
     return out;
   }
@@ -233,6 +253,28 @@
     ]];
   }
 
+  /**
+   * Internet Radio's part of the picked one's numbers (5.1), or null when it
+   * never heard any: { rows: [[label, value]] (time, stations listened to: those
+   * heard 30 seconds or more in all), top: [{ name, time }] the TOP stations
+   * most heard }.
+   */
+  const TOP = 5;
+  function radioFacts(src) {
+    const r = radioOf(src && src.statistics);
+    if (!(Number(r.seconds) > 0)) return null;
+    const stations = Object.values(r.stations || {}).filter((x) => x && Number(x.seconds) > 0);
+    const top = stations.slice().sort((a, b) => b.seconds - a.seconds).slice(0, TOP)
+      .map((x) => ({ name: x.name || T('common.internetRadio'), time: Util.fmtListened(x.seconds) }));
+    return {
+      rows: [
+        [T('common.timeListened'), Util.fmtListened(r.seconds)],
+        [T('stats.radio.stationsListened'), String(stations.filter((x) => x.seconds >= 30).length)],
+      ],
+      top,
+    };
+  }
+
   /** The app's Private Statistics as a source. */
   function privateSource(data) {
     const d = data || {};
@@ -250,6 +292,7 @@
         days: d.days || {},
         sessions: d.sessions || {},
         longest: d.longest || null,
+        radio: d.radio || emptyRadio(),
       },
       addedSongs: Number(d.added) || 0,
       current: false,
@@ -309,6 +352,6 @@
   }
 
   return {
-    PRIVATE, MONTHS, months, timeline, daily, streaks, scale, title, facts, sources, currentId, privateSource,
+    PRIVATE, MONTHS, months, timeline, daily, streaks, scale, title, facts, radioFacts, sources, currentId, privateSource,
   };
 }));

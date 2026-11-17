@@ -99,7 +99,7 @@ const DOWNLOADS_DIR = 'Downloads';
 // upload; the upload itself adds the song here.
 const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource', 'setPlaylistRules',
   'addSongToPlaylists', 'addSongsToPlaylist', 'removeFromPlaylist', 'deleteSong', 'editSong',
-  'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'recordAwayListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist',
+  'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'recordAwayListen', 'recordRadioListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist',
   'createGroup', 'renameGroup', 'deleteGroup', 'setPlaylistGroup', 'setGroupShared', 'followGroup', 'unfollowGroup', 'setGroupPlaylistFollowed', 'addPlaylistToGroup', 'removePlaylistFromGroup']);
 
 function newId() {
@@ -377,9 +377,12 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
 
   const ownerOf = (profileId) => profileId || prof.DEFAULT_OWNER;
 
-  /** An owner's songs' stats changed (listens counted): its stats revision moves on. */
-  function markStats(owner, songIds, lists = false) {
-    if (!songIds.length && !lists) return;
+  /**
+   * An owner's songs' stats changed (listens counted): its stats revision moves
+   * on. `totals`: only its Statistics' totals changed (Internet Radio, 5.1).
+   */
+  function markStats(owner, songIds, lists = false, totals = false) {
+    if (!songIds.length && !lists && !totals) return;
     const rev = (state.srev[owner] || 0) + 1;
     state.srev[owner] = rev;
     const stamps = state.sstamps[owner] || (state.sstamps[owner] = {});
@@ -868,6 +871,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     // The songs listens were counted for (their stats changed), and whether one counted for a list.
     const heard = [];
     let heardLists = false;
+    // Internet Radio heard (5.1): the profile's Statistics changed, its other apps fetch them.
+    let heardRadio = false;
     const list = (Array.isArray(commands) ? commands : []).slice(0, 5000);
     let applied = 0;
     let remembered = 0;
@@ -908,6 +913,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
             if (c.contextId) heardLists = true;
           }
           if (profileId && c.type === 'recordListen' && !c.jamMember && !r.skipped && r.value) forDefault.push(c);
+          if (c.type === 'recordRadioListen' && !r.skipped && r.value) heardRadio = true;
           if (!r.skipped && c.type === 'deleteSong') toBin.push({ file: r.value.file, record: keptOf(r.value.id) });
           const gone = !r.skipped && c.type === 'deletePlaylist' ? r.value : [];
           for (const s of gone) toBin.push({ file: s.file, record: keptOf(s.id) });
@@ -957,8 +963,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
           const kind = model.recordListen(d, String(c.songId), { listened: c.listened, duration: c.duration, at: Number(c.at) || Date.now(), tz: c.tz });
           if (kind) forDefaultIds.push(String(c.songId));
         }
-        if (heard.length || heardLists) {
-          markStats(ownerOf(profileId), heard, heardLists);
+        if (heard.length || heardLists || heardRadio) {
+          markStats(ownerOf(profileId), heard, heardLists, heardRadio);
           told.push(ownerOf(profileId));
         }
         if (forDefaultIds.length) {

@@ -182,6 +182,8 @@ contextBridge.exposeInMainWorld('flow', {
   shareLink: () => call('server:shareLink'),
   // Away listens (a guest in another server's session): totals only.
   recordAwayListen: (song, listened, duration) => call('library:recordAwayListen', { song, listened, duration }),
+  // A piece of Internet Radio heard (5.1, radio.js).
+  recordRadioListen: (station, listened, listen) => call('library:recordRadioListen', { station, listened, listen }),
   // A guest in another server's session (4.0): look for them, then join,
   // session ({ body }), leave, songs, status, list.
   guestLook: () => call('guest:look'),

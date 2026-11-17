@@ -11,7 +11,14 @@
 // started from, the star) and keeps it while paused, until a song is started
 // again. While it has the bar, the bar's buttons, the keys, the media keys and
 // the Mini Player's buttons work the station (Player.toggle and the others ask
-// Radio.owns first). Nothing is counted into the statistics.
+// Radio.owns first).
+//
+// The time heard counts in the Statistics' Internet Radio (5.1), its own
+// category: in pieces, a minute at a time while it plays and the rest when it
+// stops (paused, another station, a song, the stream lost, the window
+// closed), so hours heard are not lost with the app (at most the last
+// minute). Each piece goes to this device's Private Statistics and, queued
+// with the profile in use, to its Flow Server, also when it is sent later.
 //
 // Paused, the stream is let go of (no listening on in the background); Play
 // connects again, so it plays live rather than from where it was paused.
@@ -33,6 +40,10 @@ const Radio = {
   // How long it has played this time: seconds before the last start, and since when.
   heard: 0,
   heardSince: 0,
+  // Of that, how much is counted in the Statistics already.
+  counted: 0,
+  PIECE_S: 60,
+  LISTEN_S: 30,
   _listeners: [],
   _timer: null,
 
@@ -86,8 +97,19 @@ const Radio = {
       if ('showRadio' in patch && patch.showRadio === false && this.station) this.release();
     });
     this._timer = setInterval(() => {
-      if (this.playing) this._drawTime();
+      if (!this.playing) return;
+      this._drawTime();
+      if (this.seconds - this.counted >= this.PIECE_S) this._count();
     }, 1000);
+    // The window closing: what it heard since the last piece.
+    window.addEventListener('beforeunload', () => {
+      if (!this.station) return;
+      if (this.heardSince) {
+        this.heard += (Date.now() - this.heardSince) / 1000;
+        this.heardSince = Date.now();
+      }
+      this._count();
+    });
   },
 
   onChange(fn) {
@@ -179,10 +201,17 @@ const Radio = {
     if (!station || !this.el) return;
     if (list) this.list = list.slice();
     const other = !this.isCurrent(station);
+    if (other && this.station) {
+      // The station before: what it played since its last piece.
+      if (this.heardSince) this.heard += (Date.now() - this.heardSince) / 1000;
+      this.heardSince = 0;
+      this._count();
+    }
     this.station = { ...station };
     if (other) {
       this.heard = 0;
       this.heardSince = 0;
+      this.counted = 0;
       // A directory station counts as played there (radio-browser.info asks apps to).
       if (!station.own && window.flow.radio) window.flow.radio.click(station.id).catch(() => {});
     }
@@ -227,6 +256,7 @@ const Radio = {
   _letGo() {
     if (this.heardSince) this.heard += (Date.now() - this.heardSince) / 1000;
     this.heardSince = 0;
+    this._count();
     this.connecting = false;
     if (!this.el.paused) this.el.pause();
     if (this.el.getAttribute('src')) {
@@ -241,6 +271,7 @@ const Radio = {
     this._letGo();
     this.station = null;
     this.heard = 0;
+    this.counted = 0;
     for (const fn of this._listeners) fn();
     $('player').classList.remove('player--radio');
     $('playerFrom').title = T('window.player.from.tooltip');
@@ -258,6 +289,23 @@ const Radio = {
     const at = list.findIndex((s) => s.id === this.station.id);
     const to = list[((at < 0 ? (delta > 0 ? -1 : 0) : at) + delta + list.length) % list.length];
     if (to) this.play(to);
+  },
+
+  /**
+   * What the station played since its last piece, into the Statistics
+   * (window.flow.recordRadioListen): this device's and the profile's. Less
+   * than a second waits for the next. The piece in which this time reaches
+   * LISTEN_S seconds counts as a listen of it.
+   */
+  _count() {
+    const st = this.station;
+    if (!st || !window.flow.recordRadioListen) return;
+    const now = this.seconds;
+    const piece = Math.round((now - this.counted) * 10) / 10;
+    if (!(piece >= 1)) return;
+    const listen = this.counted < this.LISTEN_S && now >= this.LISTEN_S;
+    this.counted = now;
+    window.flow.recordRadioListen({ id: st.id, name: st.name }, piece, listen).catch(() => {});
   },
 
   /** Seconds it has played this time. */

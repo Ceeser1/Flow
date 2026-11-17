@@ -5516,6 +5516,22 @@ stats.activity.year.tooltip
   en: {year}: {hours} listened
   de: {year}: {hours} gehört
 
+stats.activity.split
+  en: (songs {songs}, Internet Radio {radio})
+  de: (Songs {songs}, Internetradio {radio})
+
+stats.activity.songs
+  en: Songs
+  de: Songs
+
+stats.radio.stationsListened
+  en: Stations listened to
+  de: Gehörte Sender
+
+stats.radio.top
+  en: Most listened stations
+  de: Meistgehörte Sender
+
 stats.activity.clickForDays
   en: - click for its days
   de: - klicken für die Tage

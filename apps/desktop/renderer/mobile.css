@@ -1025,6 +1025,8 @@ body.mobile .stats__month { width: 44px; font-size: 12px; }
 /* The numbers as one list, the labels lined up. */
 body.mobile .stats__facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; }
 body.mobile .stats__facts > dl { display: contents; }
+/* The radio's most heard stations under its numbers, across the width. */
+body.mobile .stats__radio .stats__top { grid-column: 1 / -1; margin-top: 6px; }
 body.mobile .stats__mode { height: 32px; padding: 0 14px; font-size: 13px; }
 /* The bars and the lines over them: as high as each other (style.css's 156px on the PC). */
 body.mobile .stats__graph .stats__barbox,

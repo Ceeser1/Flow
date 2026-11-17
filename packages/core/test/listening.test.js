@@ -173,7 +173,7 @@ test('the Statistics totals: time, listens of 30 s or more, months in the app\'s
   m.removeSong(d, 's1');
   assert.equal(d.statistics.seconds, 290);
   assert.deepEqual(L.cleanStatistics({ since: -1, seconds: 'x', listens: 2.7, months: { '2026-1': 5, '2026-02': 9 } }), {
-    since: 0, seconds: 0, listens: 2, months: { '2026-02': 9 }, days: {}, sessions: {}, run: null, late: null, longest: null,
+    since: 0, seconds: 0, listens: 2, months: { '2026-02': 9 }, days: {}, sessions: {}, run: null, late: null, longest: null, radio: L.emptyRadio(),
   });
   const copy = L.copyStatistics(d.statistics);
   copy.months['2026-10'] = 1;

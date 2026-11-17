@@ -124,6 +124,7 @@ const COMMANDS = {
   setDuration: [cmd('setDuration', { songId: 's7', duration: 187 }), cmd('setDuration', { songId: 's1', duration: 9 })],
   recordListen: [cmd('recordListen', { songId: 's1', listened: 190, duration: 200, contextId: 'p1', tz: -60 }), cmd('recordListen', { songId: 's1', listened: 3, duration: 200 }), cmd('recordListen', { songId: 's7', listened: 40, duration: 120, contextId: 'all' }), cmd('recordListen', { songId: 's5', listened: 12, duration: 200, contextId: 'sh1' })],
   recordAwayListen: [cmd('recordAwayListen', { listened: 100, duration: 200, tz: 0 })],
+  recordRadioListen: [cmd('recordRadioListen', { station: 'abc-123', name: 'One FM', listened: 60, tz: 0 }), cmd('recordRadioListen', { station: 'url:http://x.example/live', name: 'Own', listened: 12.5, listen: true })],
   trimSong: [cmd('trimSong', { songId: 's4', start: 2, end: 150, cut: 'abcdef12' }), cmd('trimSong', { songId: 's4', start: 2, end: 150, cut: 'abcdef12' })],
   addSong: [cmd('addSong', { song: { id: 's9', file: '/music/Nine.mp3', title: 'Nine', artist: 'A', duration: 100, addedAt: T + 9, favouriteAt: T + 99 }, playlistIds: ['p1', 'nope'] }), cmd('addSong', { song: { id: 's9', file: '/music/Nine.mp3', title: 'Nine' } })],
 };

@@ -92,7 +92,7 @@
 
 const { comparableUrl } = require('./text');
 const {
-  emptyListening, cleanListening, recordListening, emptyStatistics, cleanStatistics, recordStatistics,
+  emptyListening, cleanListening, recordListening, emptyStatistics, cleanStatistics, recordStatistics, recordRadio,
 } = require('./listening');
 const { tr } = require('./lang');
 
@@ -1032,6 +1032,21 @@ function recordAwayListen(data, { listened, duration, at = Date.now(), tz = null
   return heard;
 }
 
+/**
+ * A piece of Internet Radio heard (5.1, listening.recordRadio): its own
+ * category in the Statistics, not the songs'. `id` / `name`: the station.
+ */
+function recordRadioListen(data, {
+  id, name, listened, at = Date.now(), tz = null, listen = false,
+}) {
+  const heard = Math.max(0, Number(listened) || 0);
+  if (!(heard > 0) || !id) return null;
+  recordRadio(data, {
+    id: String(id), name, seconds: heard, at, tz, listen: !!listen,
+  });
+  return heard;
+}
+
 /** Adds one song to several playlists. Lists that already hold it are skipped. */
 function addSongToPlaylists(data, songId, playlistIds, now = Date.now()) {
   requireSong(data, songId);
@@ -1148,7 +1163,7 @@ function sameNames(a, b) {
 
 module.exports = {
   ALL_SONGS_ID, ALL_SONGS_NAME, MAX_NAME, PLAYED_SHARE, EARLY_SKIP_SECONDS,
-  emptyLibrary, emptyStats, sanitize, cleanSong, cleanPlaylist, cleanSharedPlaylist, cleanStats, recordListen, songById, playlistById, checkPlaylistName, rowToChange, songToChange, listToChange,
+  emptyLibrary, emptyStats, sanitize, cleanSong, cleanPlaylist, cleanSharedPlaylist, cleanStats, recordListen, recordRadioListen, songById, playlistById, checkPlaylistName, rowToChange, songToChange, listToChange,
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource, setPlaylistRules, cleanRules, recordAwayListen, favouritesList,
   RULE_FIELDS, RULE_OPS, RULE_SORTS,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,

@@ -6,7 +6,9 @@
 // removable. Statistics for profile: the picked
 // one's numbers (with its streaks and longest sessions) and its Activity, a
 // bar per month back to when it was made, or per day (Monthly / Daily; a
-// month clicked opens its days).
+// month clicked opens its days). Internet Radio (5.1) has its own part: its
+// time, the stations listened to and the most heard ones, and in Activity the
+// top of each bar in its own colour.
 // A server's pencil names it on this device, as Switch server's does.
 // The numbers come from statistics.js; drawn when Settings opens, and again
 // a moment after the status or the Private Statistics change (every listen
@@ -89,6 +91,7 @@ const Stats = {
       this._block(Statistics.title(shown, Store.settings.serverNames),
         // Two columns side by side; one list on phones.
         h('div.stats__facts', ...Statistics.facts(shown).map((rows) => h('dl.admin__facts', ...rows.flatMap(([k, v]) => [h('dt', k), h('dd', v)])))),
+        this._radio(shown),
         this._activityHead(),
         this._graph(shown, mobile)),
     );
@@ -194,6 +197,22 @@ const Stats = {
     });
   },
 
+  // ---- Internet Radio (5.1) ----
+
+  /** The radio's numbers and its most heard stations; nothing when it never played. */
+  _radio(src) {
+    const r = Statistics.radioFacts(src);
+    if (!r) return null;
+    const top = r.top.length
+      ? h('div.stats__top',
+        h('div.stats__toph', T('stats.radio.top')),
+        h('ol.stats__toplist', ...r.top.map((x) => h('li', h('span.stats__topname', { title: x.name }, x.name), h('span.stats__toptime', x.time)))))
+      : null;
+    return h('div.stats__radio',
+      h('h4.stats__head.stats__radiohead', T('common.internetRadio')),
+      h('div.stats__facts', h('dl.admin__facts', ...r.rows.flatMap(([k, v]) => [h('dt', k), h('dd', v)])), top));
+  },
+
   // ---- Activity ----
 
   _hours(hours) {
@@ -237,14 +256,20 @@ const Stats = {
     const items = daily
       ? Statistics.daily(src.statistics, this._month, Date.now())
       : Statistics.timeline(src.statistics, src.createdAt, Date.now());
-    const scale = Statistics.scale(Math.max(0, ...items.filter((x) => !x.isTotal).map((x) => x.hours)));
+    // Songs and Internet Radio (5.1) together: the radio the top of each bar.
+    const total = (x) => (x.total !== undefined ? x.total : x.hours);
+    const scale = Statistics.scale(Math.max(0, ...items.filter((x) => !x.isTotal).map(total)));
     const col = (m) => {
-      const share = scale.top ? Math.min(1, m.hours / scale.top) : 0;
-      const bar = this._bar(share, mobile ? 136 : 156, m.isTotal ? '.stats__bar--year' : '');
-      const hours = this._hours(m.hours) || (m.isTotal ? T('stats.time.hours', { hours: 0 }) : '');
+      const all = total(m);
+      const share = scale.top ? Math.min(1, all / scale.top) : 0;
+      const bar = this._bar(share, mobile ? 136 : 156, m.isTotal ? '.stats__bar--year' : '', all > 0 ? (m.radio || 0) / all : 0);
+      const hours = this._hours(all) || (m.isTotal ? T('stats.time.hours', { hours: 0 }) : '');
       const month = m.title || T('stats.activity.monthName', { month: m.name, year: m.year });
       let title = hours ? T('stats.activity.month.tooltip', { month, hours }) : T('stats.activity.month.nothing.tooltip', { month });
       if (m.isYear) title = T('stats.activity.year.tooltip', { year: m.year, hours });
+      if (m.radio > 0) {
+        title += ' ' + T('stats.activity.split', { songs: this._hours(m.hours) || T('stats.time.hours', { hours: 0 }), radio: this._hours(m.radio) });
+      }
       const open = !daily && !m.isTotal;
       if (open) title += ` ${T('stats.activity.clickForDays')}`;
       return h('div.stats__month' + (m.isTotal ? '.stats__month--year' : '') + (open ? '.stats__month--open' : ''), {
@@ -263,22 +288,35 @@ const Stats = {
     // Newest first in the row, laid out from the right (row-reverse): the
     // graph opens on the current month (or today) without scrolling, hidden or not.
     const scroller = h('div.stats__scroll', { dataset: { shows: this._shows() } }, ...items.slice().reverse().map(col));
+    // Which colour is which, once the radio is in it.
+    const legend = items.some((x) => x.radio > 0)
+      ? h('div.stats__legend',
+        h('span.stats__key', h('span.stats__swatch'), T('stats.activity.songs')),
+        h('span.stats__key', h('span.stats__swatch.stats__swatch--radio'), T('common.internetRadio')))
+      : null;
     // Each line starts at its number on the left and runs to the right, behind the bars.
     const lines = scale.lines.map((hours) => {
       const line = h('div.stats__gline', h('span.stats__gnum', this._step(hours, scale.step)), h('span.stats__grule'));
       line.style.bottom = `${Math.round((hours / scale.top) * 1000) / 10}%`;
       return line;
     });
-    return h('div.stats__graph', h('div.stats__grid', ...lines), scroller);
+    const graph = h('div.stats__graph', h('div.stats__grid', ...lines), scroller);
+    return legend ? h('div', graph, legend) : graph;
   },
 
   /**
-   * A bar `share` of its box (`box` px high) tall. One too low for its round
-   * top (nothing listened: 1px) is flat: the corners drew stray pixels.
+   * A bar `share` of its box (`box` px high) tall, its top `radio` of it
+   * (0 to 1) Internet Radio's. One too low for its round top (nothing
+   * listened: 1px) is flat: the corners drew stray pixels.
    */
-  _bar(share, box, cls = '') {
+  _bar(share, box, cls = '', radio = 0) {
     const bar = h('span.stats__bar' + cls + (share * box < 4 ? '.stats__bar--flat' : ''));
     bar.style.height = `${Math.round(share * 1000) / 10}%`;
+    if (radio > 0) {
+      const part = h('span.stats__bar-radio');
+      part.style.height = `${Math.round(Math.min(1, radio) * 1000) / 10}%`;
+      bar.appendChild(part);
+    }
     return bar;
   },
 };

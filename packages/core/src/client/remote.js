@@ -374,7 +374,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, downloadsLive: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, sharedGroups: false, multiGroups: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, downloadsLive: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, radioStats: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, sharedGroups: false, multiGroups: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -577,7 +577,7 @@ function createRemote(env) {
   }
 
   // Commands counted in the stats (and the Statistics totals), not the library.
-  const LISTENS = new Set(['recordListen', 'recordAwayListen']);
+  const LISTENS = new Set(['recordListen', 'recordAwayListen', 'recordRadioListen']);
 
   /** The stats copy is the signed-in profile's. */
   const statsOurs = () => cache.stats.owner === currentProfile() && cache.stats.rev >= 0;
@@ -1096,6 +1096,8 @@ function createRemote(env) {
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
         const pin = Array.isArray(hello.features) && hello.features.includes('pin');
         const statistics = Array.isArray(hello.features) && hello.features.includes('statistics');
+        // Internet Radio's Statistics (5.1): an older server would turn the radio's pieces down.
+        const radioStats = Array.isArray(hello.features) && hello.features.includes('radioStats');
         const lyrics = Array.isArray(hello.features) && hello.features.includes('lyrics');
         const ownLyrics = Array.isArray(hello.features) && hello.features.includes('ownLyrics');
         const lyricsSync = Array.isArray(hello.features) && hello.features.includes('lyricsSync');
@@ -1108,7 +1110,7 @@ function createRemote(env) {
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, downloadsLive, search, sessions, trim, admin, pin, statistics, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, sharedGroups, multiGroups, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, downloadsLive, search, sessions, trim, admin, pin, statistics, radioStats, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, sharedGroups, multiGroups, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -1749,6 +1751,13 @@ function createRemote(env) {
                 pass.push(x);
               }
             }
+            continue;
+          }
+          // A server without the radio's Statistics (before 5.1) would turn the piece down: it counted
+          // in this device's Private Statistics, it is let go of here without a word.
+          if (c.type === 'recordRadioListen' && !conn.radioStats) {
+            sync.queue = sync.queue.filter((x) => x.cid !== c.cid);
+            saveSync();
             continue;
           }
           const refs = [c.songId, ...(Array.isArray(c.songIds) ? c.songIds : [])];
