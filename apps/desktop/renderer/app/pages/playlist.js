@@ -703,6 +703,8 @@ const PlaylistPage = {
       ...(Store.server.on && Store.can('offline') ? [this._downloadButton(song)] : []),
       iconButton('act.act--grey', Icons.search, T('common.songDetails'), () => SongDetails.open(song.id)),
       iconButton('act.act--grey', Icons.pencil, T('playlist.song.edit'), () => this.edit(song)),
+      // 5.1.2: a list of songs like this one, or like its (first) artist.
+      ...this._radioButtons(song),
     ];
     if (Store.isAllSongs(listId)) {
       buttons.push(iconButton('act.act--red', Icons.x, T('common.deleteSong'), () => this.deleteSong(song)));
@@ -713,6 +715,16 @@ const PlaylistPage = {
     }
     // All Songs and the listening trend lists: put the song into playlists from here, the leftmost button.
     if (Store.isAllSongs(listId) || this._picksItself(listId)) buttons.unshift(SongActions.playlistButton(song));
+    return buttons;
+  },
+
+  /** Song radio, and Artist radio for its first artist (5.1.2, Player.startRadio). */
+  _radioButtons(song) {
+    const buttons = [iconButton('act.act--grey', Icons.songRadio, T('playlist.song.songRadio'), () => Player.startRadio({ songId: song.id }))];
+    const artist = SmartLists.artistsOf(song.artist)[0];
+    if (artist) {
+      buttons.push(iconButton('act.act--grey', Icons.artistRadio, T('playlist.song.artistRadio', { artist }), () => Player.startRadio({ artist })));
+    }
     return buttons;
   },
 

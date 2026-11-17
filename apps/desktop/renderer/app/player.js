@@ -149,6 +149,41 @@ const Player = {
     this.load(first, context, { fromQueue: true });
   },
 
+  // A song radio or artist radio: this many songs.
+  RADIO_SONGS: 100,
+
+  /**
+   * Song radio / Artist radio (5.1.2, a song's More): a list of songs like
+   * that song (it plays first) or that artist (autoDj.js radio), played as
+   * a list of its own, "Song radio: <title>" in the bar and the Queue. Its
+   * end goes on as any list's: over again, or Continue with similar songs.
+   * In a session, it plays on the host as a list from here.
+   */
+  startRadio(seed) {
+    const song = seed && seed.songId ? Store.song(seed.songId) : null;
+    if (seed && seed.songId && !song) return false;
+    const ids = AutoDJ.radio(Store.library.songs, seed, this.RADIO_SONGS, String(Math.random()));
+    // The song alone (or nothing like the artist) is no radio.
+    if (ids.length < 2) {
+      toast(T('player.toast.radioTooFew'), 'error');
+      return false;
+    }
+    const name = song
+      ? T('player.radio.song', { title: song.title || T('common.untitled') })
+      : T('player.radio.artist', { artist: seed.artist });
+    const context = this.addList(ids, name);
+    const order = this.idsOf(context);
+    if (this.remote) {
+      this._remotePlaySong(order[0], context);
+      return true;
+    }
+    this.repeat = false;
+    // From its first song; laid out already (alike first, artists spread), or with shuffle drawn from.
+    const first = this.queue.start(context, order, order[0]);
+    this.load(first, context, { fromQueue: true });
+    return true;
+  },
+
   /**
    * Carries on where another device left off (it was a session's host): its
    * song at its place, its list and queue, Repeat and Shuffle as they were.

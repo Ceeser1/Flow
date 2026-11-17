@@ -2430,6 +2430,14 @@ playlist.song.edit
   en: Edit
   de: Bearbeiten
 
+playlist.song.songRadio
+  en: Start song radio
+  de: Song-Radio starten
+
+playlist.song.artistRadio
+  en: Start artist radio ({artist})
+  de: Interpreten-Radio starten ({artist})
+
 playlist.song.removeFromPlaylists
   en: Remove from Playlist(s)
   de: Aus Playlist(s) entfernen
@@ -5363,6 +5371,15 @@ player.session
   en: Session
   de: Session
 
+# A song radio / artist radio playing (5.1.2): its name in the player bar and the Queue.
+player.radio.song
+  en: Song radio: {title}
+  de: Song-Radio: {title}
+
+player.radio.artist
+  en: Artist radio: {artist}
+  de: Interpreten-Radio: {artist}
+
 # Player bar › messages
 player.toast.couldNotPlay
   en: Could not play "{song}". {reason}
@@ -5387,6 +5404,10 @@ player.toast.unreachableNotDownloaded
 player.toast.queued
   en: Added "{song}" to the queue
   de: „{song}“ eingereiht
+
+player.toast.radioTooFew
+  en: Not enough songs like it in the library for a radio
+  de: Zu wenige ähnliche Songs in der Bibliothek für ein Radio
 
 player.toast.queuedInSession
   en: Added "{song}" to the queue of {session}

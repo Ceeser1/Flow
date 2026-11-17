@@ -41,6 +41,9 @@ const Icons = (() => {
     circleX: svg('<circle cx="12" cy="12" r="9.5"/><path d="M8.8 8.8l6.4 6.4M15.2 8.8l-6.4 6.4"/>'),
     // Internet Radio (5.1): a radio with its antenna.
     radio: svg('<path d="M7 7.5l10-4"/><rect x="3" y="7.5" width="18" height="13" rx="2"/><circle cx="15.5" cy="14" r="3"/><path d="M6.5 12h4M6.5 16h4"/>'),
+    // Song radio (5.1.2): waves going out from a point; Artist radio: from a person.
+    songRadio: svg('<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4"/><path d="M19.1 4.9a10 10 0 0 1 0 14.2M4.9 19.1a10 10 0 0 1 0-14.2"/>'),
+    artistRadio: svg('<circle cx="12" cy="8.5" r="3.2"/><path d="M6.5 20a5.5 5.5 0 0 1 11 0"/><path d="M18.6 5a6 6 0 0 1 0 7M5.4 12a6 6 0 0 1 0-7"/>'),
     star: svg('<path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.7l5.9-.9z"/>'),
     starFilled: svg('<path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.7l5.9-.9z"/>', true),
     volume: svg('<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>'),
