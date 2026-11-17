@@ -277,8 +277,8 @@ function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000, pag
      * a lowest bitrate (`quality`, kbit/s; 0 any, RADIO_NO_INFO only those
      * without one), the most played first; `page` from 0. Worked out here from
      * the whole directory (HLS streams left out: the player cannot play them).
-     * { stations, more, total, facets }: facets = what each picker offers under
-     * the other filters, with how many stations.
+     * { stations, more, total, all, facets }: all = the whole list's stations,
+     * facets = what each picker offers under the other filters, with how many stations.
      */
     async search({ name = '', country = '', genre = '', quality = 0, page = 0 } = {}) {
       const data = await list();
@@ -294,6 +294,8 @@ function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000, pag
         stations: found.slice(from, from + PAGE).map((e) => ({ ...e.st })),
         more: found.length > from + PAGE,
         total: found.length,
+        // How many stations the whole list has (playable ones).
+        all: data.entries.length,
         facets: facets(data, f),
       };
     },

@@ -102,6 +102,7 @@ test('the directory: the whole list fetched once, HLS left out, filtered here, t
   assert.deepEqual(r.stations.map((s) => s.name), ['Café 2000', 'Rock One', 'Rock Unknown']);
   assert.equal(r.total, 3);
   assert.equal(r.more, false);
+  assert.equal((await d.search({ quality: 320 })).all, 3, 'the whole list, whatever the filters');
   // Three pages at once, from the second host (the first failed), the answer short: done.
   assert.equal(calls.filter((u) => u.startsWith('https://de1.')).length, 3);
   const before = calls.length;

@@ -6806,6 +6806,10 @@ radio.others.heading
   en: Other Internet Radios
   de: Weitere Internetradios
 
+radio.others.scanned
+  en: ({count} scanned)
+  de: ({count} durchsucht)
+
 radio.others.search.placeholder
   en: Search stations
   de: Sender suchen

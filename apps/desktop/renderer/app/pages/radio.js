@@ -21,6 +21,8 @@ const RadioPage = {
   others: [],
   page: 0,
   more: false,
+  // How many stations the whole directory has (0 until it is loaded).
+  all: 0,
   loading: false,
   error: '',
   // Each list's sort (a column's name clicked); none: favourites newest first, the others most played first.
@@ -214,10 +216,8 @@ const RadioPage = {
     const page = next ? this.page + 1 : 0;
     this.loading = true;
     this.error = '';
-    if (!next) {
-      this.others = [];
-      this.more = false;
-    }
+    // The stations shown stay until the new ones are here (the answer is quick once the list is loaded).
+    if (!next) this.more = false;
     this._drawOthers();
     try {
       const r = await window.flow.radio.search({
@@ -228,14 +228,18 @@ const RadioPage = {
         page,
       });
       if (seq !== this._seq) return;
-      const seen = new Set(this.others.map((s) => s.id));
-      this.others = [...this.others, ...r.stations.filter((s) => !seen.has(s.id))];
+      const before = next ? this.others : [];
+      const seen = new Set(before.map((s) => s.id));
+      this.others = [...before, ...r.stations.filter((s) => !seen.has(s.id))];
       this.page = page;
       this.more = r.more;
+      this.all = r.all || 0;
       this._useFacets(r.facets);
     } catch (err) {
       if (seq !== this._seq) return;
       this.error = (err && err.message) || String(err);
+      // What was shown is not what was asked for any more.
+      if (!next) this.others = [];
     }
     this.loading = false;
     this._drawOthers();
@@ -317,11 +321,13 @@ const RadioPage = {
       columns: this._columns('o', () => rows),
     });
     $('radioOtherTable').hidden = !rows.length;
+    // The whole directory's playable stations, once the list is here.
+    $('radioOtherCount').textContent = this.all ? T('radio.others.scanned', { count: I18n.num(this.all) }) : '';
     const note = $('radioOtherNote');
     clear(note);
     if (this.error) {
       note.append(h('p', this.error), h('button.btn.btn--small', { type: 'button', onclick: () => this.search() }, T('radio.others.retry')));
-    } else if (this.loading) {
+    } else if (this.loading && !rows.length) {
       note.append(h('p', T('radio.others.loading')));
     } else if (!rows.length) {
       note.append(h('p', T('radio.others.none')));
