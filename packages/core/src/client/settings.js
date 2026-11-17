@@ -332,6 +332,21 @@ const VIZ_OPTIONS = {
 // What the app remembers between sessions. Small and flat, read once at start
 // and written whenever the window changes something. Some only mean something
 // on one of the apps (the window's size on the desktop).
+// Global hotkeys' first combos (5.1.3): Ctrl+Alt+Shift with a letter, which
+// neither types a character (Ctrl+Alt alone is AltGr on many keyboards) nor
+// is taken by Windows or the common programs (Ctrl+Alt+Shift+arrows select
+// columns in code editors).
+const GLOBAL_KEYS = {
+  playPause: 'Ctrl+Alt+Shift+P',
+  next: 'Ctrl+Alt+Shift+N',
+  prev: 'Ctrl+Alt+Shift+B',
+  volumeUp: 'Ctrl+Alt+Shift+U',
+  volumeDown: 'Ctrl+Alt+Shift+D',
+  mute: 'Ctrl+Alt+Shift+M',
+  favourite: 'Ctrl+Alt+Shift+F',
+  showFlow: '',
+};
+
 const DEFAULTS = {
   volume: 0.8,
   shuffle: false,
@@ -445,6 +460,10 @@ const DEFAULTS = {
   // Smarter shuffle (5.1.1, queue.js): no artist twice in a row where the list
   // has others, and songs mostly skipped early drawn less often.
   smartShuffle: true,
+  // Global hotkeys (5.1.3, the desktop app's src/globalKeys.js): on, and each
+  // action's combo (an Electron accelerator; '' for none).
+  globalKeysOn: true,
+  globalKeys: { ...GLOBAL_KEYS },
   // Playlists added to groups hide in the menu's Playlists (and Followed
   // Playlists), shown only inside their groups there (4.5.3).
   groupedHideInMenu: true,
@@ -692,7 +711,10 @@ function clean(raw) {
   s.radioCountry = /^[A-Z]{2}$/.test(String(s.radioCountry)) ? s.radioCountry : '';
   s.radioGenre = typeof s.radioGenre === 'string' ? s.radioGenre.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
   s.radioQuality = RADIO_QUALITIES.includes(Number(s.radioQuality)) ? Number(s.radioQuality) : 0;
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'showRadio', 'smartShuffle', 'groupedHideInMenu', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+  const keys = s.globalKeys && typeof s.globalKeys === 'object' && !Array.isArray(s.globalKeys) ? s.globalKeys : {};
+  s.globalKeys = Object.fromEntries(Object.entries(GLOBAL_KEYS).map(([action, def]) => [action,
+    typeof keys[action] === 'string' && /^[A-Za-z0-9+]{0,60}$/.test(keys[action]) ? keys[action] : def]));
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'showRadio', 'smartShuffle', 'globalKeysOn', 'groupedHideInMenu', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'thumbCovers', 'highResCovers', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;
@@ -810,4 +832,6 @@ function createSettings({ read, write }) {
   return { load, all, get, set, clientId };
 }
 
-module.exports = { createSettings, cloudsOffOnce, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, VISUALIZERS, VIZ_OPTIONS };
+module.exports = {
+  createSettings, cloudsOffOnce, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, VISUALIZERS, VIZ_OPTIONS, GLOBAL_KEYS,
+};

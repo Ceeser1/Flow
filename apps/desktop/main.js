@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, screen, dialog, Notification, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, screen, dialog, Notification, session, globalShortcut } = require('electron');
 const { execFile } = require('child_process');
 const fs = require('fs');
 const zlib = require('zlib');
@@ -16,6 +16,11 @@ app.setPath('userData', paths.userDataDir());
 // one session (Random), the first ones were pushed out again by the last and
 // compiled again from nothing when they came round.
 app.commandLine.appendSwitch('gpu-program-cache-size-kb', '32768');
+// Global hotkeys (5.1.3) on Wayland, which gives no program the keys of
+// other windows: through the desktop's portal (it asks once to allow them).
+if (process.platform === 'linux' && /wayland/i.test(process.env.XDG_SESSION_TYPE || '')) {
+  app.commandLine.appendSwitch('enable-features', 'GlobalShortcutsPortal');
+}
 
 const settings = require('./src/settings');
 const I18n = require('./renderer/app/i18n');
@@ -54,6 +59,8 @@ const autostart = require('./src/autostart');
 const { createMiniPlayer } = require('./src/miniPlayer');
 const { createTray } = require('./src/tray');
 const radio = require('@flow/core/radio');
+const { createGlobalKeys } = require('./src/globalKeys');
+const { GLOBAL_KEYS } = require('@flow/core/client/settings');
 
 let mainWindow = null;
 let downloadToken = null;
@@ -173,6 +180,21 @@ const mini = createMiniPlayer({
     else syncTray();
   },
 });
+
+// Global hotkeys (5.1.3, src/globalKeys.js): each press to the window
+// (keys.js), Show Flow done here.
+const globalKeys = createGlobalKeys({
+  globalShortcut,
+  settings,
+  onAction: (action) => {
+    if (action === 'showFlow') showMain();
+    else sendToWindow('keys:global', action);
+  },
+});
+handle('keys:globalStatus', () => globalKeys.status());
+handle('keys:globalSet', ({ action, accel } = {}) => globalKeys.set(String(action || ''), String(accel || '')));
+handle('keys:globalOn', (on) => globalKeys.setOn(!!on));
+handle('keys:globalReset', () => globalKeys.reset(GLOBAL_KEYS));
 
 /** The tray icon is there while Flow's window is hidden and the Mini Player open. */
 function syncTray() {
@@ -1262,6 +1284,7 @@ app.whenReady().then(() => {
   });
   createWindow();
   syncTray();
+  globalKeys.apply();
   // Both in the background, once the window is up. The scan tells the window
   // itself when it changed anything, and from then on the folder is watched.
   library.onScanned((result) => {
@@ -1297,7 +1320,10 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   quitting = true;
 });
-app.on('will-quit', () => tray.set(false));
+app.on('will-quit', () => {
+  tray.set(false);
+  globalShortcut.unregisterAll();
+});
 
 app.on('window-all-closed', async () => {
   // Out of an Active Session first: a host hands it on at once.

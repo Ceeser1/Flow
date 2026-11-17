@@ -127,8 +127,8 @@ settings.general.keybinds.label
   de: Tastenbelegung / Tastenkürzel
 
 settings.general.keybinds.desc
-  en: Flow has some shortcuts to navigate
-  de: Flow hat einige Tastenkürzel zum Navigieren
+  en: Flow has some shortcuts to navigate, and global hotkeys that work while it is in the background (on the computer)
+  de: Flow hat einige Tastenkürzel zum Navigieren und globale Tastenkürzel, die auch im Hintergrund funktionieren (am Computer)
 
 settings.general.keybinds.show
   en: Show Keybinds
@@ -210,6 +210,111 @@ keybinds.media
 keybinds.note
   en: The keys do nothing while you type in a box, except Ctrl+F and Esc.
   de: Während du in ein Feld tippst, tun die Tasten nichts, außer Strg+F und Esc.
+
+keybinds.key.shift
+  en: Shift
+  de: Umschalt
+
+keybinds.key.super
+  en: Win
+  de: Win
+
+# Global hotkeys (5.1.3, the computer only): below the keys above in the same window.
+keybinds.global.title
+  en: Global hotkeys
+  de: Globale Tastenkürzel
+
+keybinds.global.on
+  en: Use global hotkeys
+  de: Globale Tastenkürzel verwenden
+
+keybinds.global.desc
+  en: These work while Flow is in the background or in the tray too. Click a combination and press a new one; Esc keeps the old one, Backspace removes it.
+  de: Diese funktionieren auch, wenn Flow im Hintergrund oder im Infobereich ist. Klicke auf eine Kombination und drücke eine neue; Esc behält die alte, Rücktaste entfernt sie.
+
+keybinds.global.playPause
+  en: Play or pause
+  de: Abspielen oder pausieren
+
+keybinds.global.next
+  en: Next song
+  de: Nächster Song
+
+keybinds.global.prev
+  en: Previous song
+  de: Vorheriger Song
+
+keybinds.global.volumeUp
+  en: Volume up by 5 %
+  de: Lautstärke um 5 % lauter
+
+keybinds.global.volumeDown
+  en: Volume down by 5 %
+  de: Lautstärke um 5 % leiser
+
+keybinds.global.mute
+  en: Mute or unmute
+  de: Stumm schalten oder wieder laut
+
+keybinds.global.favourite
+  en: Favorite the song playing (or take it out)
+  de: Laufenden Song zu den Favoriten (oder heraus)
+
+keybinds.global.showFlow
+  en: Show Flow
+  de: Flow anzeigen
+
+keybinds.global.none
+  en: None
+  de: Keins
+
+keybinds.global.change
+  en: Click, then press the new combination
+  de: Klicken, dann die neue Kombination drücken
+
+keybinds.global.clear
+  en: Remove this hotkey
+  de: Dieses Tastenkürzel entfernen
+
+keybinds.global.press
+  en: Press keys...
+  de: Tasten drücken...
+
+keybinds.global.pressHint
+  en: Press the new combination (Esc keeps the old one, Backspace removes it).
+  de: Drücke die neue Kombination (Esc behält die alte, Rücktaste entfernt sie).
+
+keybinds.global.takenNow
+  en: Taken by another program: pick another
+  de: Von einem anderen Programm belegt: wähle eine andere
+
+keybinds.global.reset
+  en: Reset to the default hotkeys
+  de: Auf die Standard-Tastenkürzel zurücksetzen
+
+keybinds.global.refused.invalid
+  en: That key can't be a hotkey.
+  de: Diese Taste kann kein Tastenkürzel sein.
+
+keybinds.global.refused.modifier
+  en: A hotkey needs Ctrl, Alt or Win, or it would take the key away from typing everywhere.
+  de: Ein Tastenkürzel braucht Strg, Alt oder Win, sonst fehlt die Taste überall beim Tippen.
+
+keybinds.global.refused.altgr
+  en: Ctrl+Alt with a letter or number is AltGr on many keyboards (@, €, {}): add Shift.
+  de: Strg+Alt mit einem Buchstaben oder einer Zahl ist auf vielen Tastaturen AltGr (@, €, {}): nimm Umschalt dazu.
+
+keybinds.global.refused.system
+  en: The system keeps this combination for itself.
+  de: Diese Kombination behält das System für sich.
+
+keybinds.global.refused.own
+  en: Already used for "{action}".
+  de: Schon belegt für „{action}“.
+
+keybinds.global.refused.taken
+  en: Another program uses this combination already: pick another.
+  de: Ein anderes Programm verwendet diese Kombination schon: wähle eine andere.
 
 # ── Settings › App Visuals ──
 

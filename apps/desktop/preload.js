@@ -213,6 +213,16 @@ contextBridge.exposeInMainWorld('flow', {
   // The Mini Player's equalizer: it asks for the levels of so many bars, they are sent back.
   onMiniLevelsWanted: (fn) => ipcRenderer.on('mini:eq', (_e, bars) => fn(bars)),
   miniLevels: (levels) => ipcRenderer.send('mini:levels', levels),
+  // Global hotkeys (5.1.3, src/globalKeys.js): their state { on, keys, taken },
+  // a new combo for an action (answers { ok, reason, status }), on / off, all
+  // back to the first ones, and each press as its action.
+  globalKeys: {
+    status: () => call('keys:globalStatus'),
+    set: (action, accel) => call('keys:globalSet', { action, accel }),
+    setOn: (on) => call('keys:globalOn', !!on),
+    reset: () => call('keys:globalReset'),
+    onPress: (fn) => ipcRenderer.on('keys:global', (_e, action) => fn(action)),
+  },
   // Flow's window in the tray while the Mini Player is open: { away, pause } as it goes there
   // (pause: by its X, the music stops) and comes back.
   onAway: (fn) => {
