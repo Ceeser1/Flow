@@ -104,11 +104,13 @@
 
   /**
    * One click on a column header: ascending, then descending, then back to the
-   * list's own order. A different column always starts at ascending.
+   * list's own order. A different column always starts at ascending, or at
+   * `first` ('desc': the highest first, as a quality).
    */
-  function cycleSort(state, key) {
-    if (!state || state.key !== key) return { key, dir: 'asc' };
-    if (state.dir === 'asc') return { key, dir: 'desc' };
+  function cycleSort(state, key, first = 'asc') {
+    const second = first === 'asc' ? 'desc' : 'asc';
+    if (!state || state.key !== key) return { key, dir: first };
+    if (state.dir === first) return { key, dir: second };
     return { key: null, dir: null };
   }
 

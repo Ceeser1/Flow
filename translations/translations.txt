@@ -6842,6 +6842,18 @@ radio.filter.genre.all
   en: All genres
   de: Alle Genres
 
+radio.filter.quality.all
+  en: All qualities
+  de: Alle Qualitäten
+
+radio.filter.quality.atLeast
+  en: {rate} kbit/s or more
+  de: Ab {rate} kbit/s
+
+radio.filter.quality.noInfo
+  en: No Info
+  de: Keine Angabe
+
 radio.filter.clear
   en: Show all again
   de: Wieder alle zeigen

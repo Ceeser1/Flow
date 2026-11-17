@@ -35,6 +35,8 @@
 .radio-others-head { flex-wrap: wrap; row-gap: 10px; margin-top: 30px; }
 .radio-filters { display: flex; align-items: center; gap: 10px; margin-left: auto; align-self: center; flex-wrap: wrap; }
 .radio-filters__search { width: 240px; margin: 0; }
+/* The same dark grey as the Country and Genre boxes beside it, not see-through. */
+.radio-filters__search .search-box__input { background: var(--well); }
 .radio-source { margin: -2px 0 10px; font-size: 13px; }
 .radio-more { display: flex; justify-content: center; margin: 14px 0 24px; }
 #radioOtherNote p { margin: 0 0 10px; }
@@ -44,6 +46,7 @@
 .combo__label { color: var(--text-dim); font-size: 13px; }
 .combo__field { position: relative; display: inline-flex; }
 .combo__input { width: 190px; padding-right: 28px; }
+.combo--quality .combo__input { width: 160px; }
 .combo--set .combo__input { border-color: rgba(120, 200, 140, 0.5); color: var(--text-bright); }
 .combo__clear {
   position: absolute; right: 4px; top: 50%; transform: translateY(-50%);

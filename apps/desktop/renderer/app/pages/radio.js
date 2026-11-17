@@ -5,12 +5,15 @@
 // becomes a favourite at once), this profile's Favourite Radios (10 rows at
 // most, then the box scrolls), then "Other Internet Radios": the stations of
 // radio-browser.info, the most played first, 100 at a time, narrowed by the
-// search (names), Country and Genre (both pickers can be typed into to narrow
-// their list; the last ones picked are kept). A favourite is not repeated in
+// search (names), Country, Genre and Quality (the pickers can be typed into to
+// narrow their list; the last ones picked are kept). A favourite is not repeated in
 // the second list.
 //
 // Each row: Play / Pause before its picture and name, its country, genres and
 // quality, and the star at its right.
+
+// The Quality filter's steps in kbit/s, then "No Info" (-1): only stations without one (core radio.js RADIO_QUALITIES).
+const RADIO_QUALITIES = [320, 256, 192, 128, 64, -1];
 
 const RadioPage = {
   others: [],
@@ -18,7 +21,9 @@ const RadioPage = {
   more: false,
   loading: false,
   error: '',
+  // Each list's sort (a column's name clicked); none: favourites newest first, the others most played first.
   sort: { key: null, dir: null },
+  othersSort: { key: null, dir: null },
   _seq: 0,
   _started: false,
   _countries: [],
@@ -58,6 +63,17 @@ const RadioPage = {
       value: () => Store.settings.radioGenre || '',
       onPick: (v) => {
         Store.saveSettings({ radioGenre: v });
+        this.search();
+      },
+    });
+    // At least this many kbit/s (the directory's bitrateMin), the best first.
+    this.quality = combo($('radioQuality'), {
+      label: T('radio.column.quality'),
+      all: T('radio.filter.quality.all'),
+      options: () => RADIO_QUALITIES.map((q) => ({ value: String(q), label: q < 0 ? T('radio.filter.quality.noInfo') : T('radio.filter.quality.atLeast', { rate: q }) })),
+      value: () => (Store.settings.radioQuality ? String(Store.settings.radioQuality) : ''),
+      onPick: (v) => {
+        Store.saveSettings({ radioQuality: Number(v) || 0 });
         this.search();
       },
     });
@@ -182,6 +198,7 @@ const RadioPage = {
         name: $('radioSearch').value.trim(),
         country: Store.settings.radioCountry || '',
         genre: Store.settings.radioGenre || '',
+        quality: Store.settings.radioQuality || 0,
         page,
       });
       if (seq !== this._seq) return;
@@ -208,8 +225,14 @@ const RadioPage = {
     if (key === 'name') return st.name;
     if (key === 'country') return st.own ? '' : this.countryName(st);
     if (key === 'genre') return this._genreText(st);
-    if (key === 'quality') return st.bitrate || 0;
+    // No bitrate known: last either way.
+    if (key === 'quality') return st.bitrate || '';
     return '';
+  },
+
+  /** A click on a column's name: A-Z, Z-A, the list's own order; the quality high-low first. */
+  _nextSort(sort, key) {
+    return Util.cycleSort(sort, key, key === 'quality' ? 'desc' : 'asc');
   },
 
   _genreText(st) {
@@ -233,13 +256,13 @@ const RadioPage = {
       rows,
       sort: this.sort,
       onSort: (key) => {
-        this.sort = Util.cycleSort(this.sort, key);
+        this.sort = this._nextSort(this.sort, key);
         this._drawFavourites();
       },
       rowKey: (st) => st.id,
       rowClass: (st) => (Radio.isCurrent(st) ? 'row--current' : ''),
       onRowDblClick: (st) => Radio.toggleStation(st, rows),
-      columns: this._columns('f', () => rows, true),
+      columns: this._columns('f', () => rows),
     });
     limitRows($('radioFavBox'), 'tbody tr', 10);
   },
@@ -248,16 +271,23 @@ const RadioPage = {
     const favs = Radio.favourites();
     const favIds = new Set(favs.map((f) => f.id));
     const favUrls = new Set(favs.map((f) => f.url));
-    const rows = this.others.filter((s) => !favIds.has(s.id) && !favUrls.has(s.url));
+    const shown = this.others.filter((s) => !favIds.has(s.id) && !favUrls.has(s.url));
+    // The stations loaded so far (the most played first), sorted here; more loaded go in sorted too.
+    const rows = Util.sortRows(shown, this.othersSort, (st, k) => this._value(st, k));
     this._playButtons.forEach((btn, key) => {
       if (key.startsWith('o:')) this._playButtons.delete(key);
     });
     renderTable($('radioOtherTable'), {
       rows,
+      sort: this.othersSort,
+      onSort: (key) => {
+        this.othersSort = this._nextSort(this.othersSort, key);
+        this._drawOthers();
+      },
       rowKey: (st) => st.id,
       rowClass: (st) => (Radio.isCurrent(st) ? 'row--current' : ''),
       onRowDblClick: (st) => Radio.toggleStation(st, rows),
-      columns: this._columns('o', () => rows, false),
+      columns: this._columns('o', () => rows),
     });
     $('radioOtherTable').hidden = !rows.length;
     const note = $('radioOtherNote');
@@ -274,7 +304,8 @@ const RadioPage = {
   },
 
   /** The columns of both lists; `tag` keeps their Play buttons apart. */
-  _columns(tag, rows, sortable) {
+  _columns(tag, rows) {
+    const sortable = true;
     return [
       {
         key: 'play',

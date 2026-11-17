@@ -1,6 +1,6 @@
 {
   "name": "flow-web",
-  "version": "5.0.2",
+  "version": "5.1.0",
   "description": "Flow's web player: the desktop renderer in a browser, as a client of a Flow Server",
   "private": true,
   "scripts": {

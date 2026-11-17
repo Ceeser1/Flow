@@ -19,6 +19,10 @@ const HOSTS = ['all.api.radio-browser.info', 'de1.api.radio-browser.info', 'de2.
 // are free text: the rare ones are mostly places, names and typos).
 const MIN_GENRE_STATIONS = 200;
 const PAGE = 100;
+// The Quality filter's steps: at least this many kbit/s (a station whose bitrate is not known is left out then),
+// and RADIO_NO_INFO: only the stations whose bitrate is not known.
+const RADIO_NO_INFO = -1;
+const RADIO_QUALITIES = [320, 256, 192, 128, 64, RADIO_NO_INFO];
 
 const text = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
@@ -125,11 +129,13 @@ function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000 } = 
     },
 
     /**
-     * Stations matching a name, a country (its code) and a genre, the most
-     * played first; `page` from 0. HLS streams are left out: the player
-     * cannot play them. { stations, more } (more: another page may follow).
+     * Stations matching a name, a country (its code), a genre and a lowest
+     * bitrate (`quality`, kbit/s; 0 any, RADIO_NO_INFO only those without one),
+     * the most played first; `page` from 0.
+     * HLS streams are left out: the player cannot play them. { stations, more }
+     * (more: another page may follow).
      */
-    async search({ name = '', country = '', genre = '', page = 0 } = {}) {
+    async search({ name = '', country = '', genre = '', quality = 0, page = 0 } = {}) {
       const q = new URLSearchParams({ order: 'clickcount', reverse: 'true', hidebroken: 'true', limit: String(PAGE), offset: String(Math.max(0, page | 0) * PAGE) });
       if (text(name, 100)) q.set('name', text(name, 100));
       if (/^[A-Z]{2}$/i.test(country)) q.set('countrycode', country.toUpperCase());
@@ -137,6 +143,8 @@ function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000 } = 
         q.set('tag', text(genre, 60));
         q.set('tagExact', 'true');
       }
+      if (Number(quality) === RADIO_NO_INFO) q.set('bitrateMax', '0');
+      else if (RADIO_QUALITIES.includes(Number(quality))) q.set('bitrateMin', String(Number(quality)));
       const list = await ask(`/json/stations/search?${q}`);
       const raw = Array.isArray(list) ? list : [];
       const stations = raw.filter((s) => !Number(s.hls)).map(fromDirectory).filter(Boolean);
@@ -249,5 +257,5 @@ async function readSome(res, max) {
 }
 
 module.exports = {
-  createDirectory, checkStream, cleanStation, fromDirectory, httpUrl, parsePls, parseM3u, isHls, MIN_GENRE_STATIONS,
+  createDirectory, checkStream, cleanStation, fromDirectory, httpUrl, parsePls, parseM3u, isHls, MIN_GENRE_STATIONS, RADIO_QUALITIES, RADIO_NO_INFO,
 };

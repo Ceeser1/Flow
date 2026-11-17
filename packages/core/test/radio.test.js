@@ -97,6 +97,24 @@ test('the directory leaves out HLS stations and keeps the first host that answer
   assert.match(calls[1], /^https:\/\/de1\..*countrycode=DE.*tag=rock/);
   await d.search({});
   assert.match(calls[2], /^https:\/\/de1\./);
+  assert.doesNotMatch(calls[2], /bitrate/);
+});
+
+test('the Quality filter: at least a bitrate, or only the stations without one', async () => {
+  const calls = [];
+  const d = radio.createDirectory({ fetch: async (url) => (calls.push(url), { ok: true, status: 200, json: async () => [] }) });
+  await d.search({ quality: 192 });
+  await d.search({ quality: radio.RADIO_NO_INFO });
+  await d.search({ quality: 100 });
+  assert.match(calls[0], /bitrateMin=192/);
+  assert.doesNotMatch(calls[0], /bitrateMax/);
+  assert.match(calls[1], /bitrateMax=0/);
+  assert.doesNotMatch(calls[1], /bitrateMin/);
+  assert.doesNotMatch(calls[2], /bitrate/);
+  assert.equal(clean({}).radioQuality, 0);
+  assert.equal(clean({ radioQuality: '256' }).radioQuality, 256);
+  assert.equal(clean({ radioQuality: -1 }).radioQuality, -1);
+  assert.equal(clean({ radioQuality: 100 }).radioQuality, 0);
 });
 
 test('settings keep each profile\'s favourite stations, cleaned', () => {

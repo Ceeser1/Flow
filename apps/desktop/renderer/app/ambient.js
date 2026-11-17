@@ -189,6 +189,8 @@ const Ambient = {
       if (['cloudsOn', 'cloudsIntensity', 'cloudsColors', 'cloudsAmount', 'coverBgOn', 'coverBgVisibility'].some((k) => k in patch)) this._draw();
     });
     Player.onChange(() => this._wantCover());
+    // A station in the bar: no song's cover (it comes back with the next song).
+    if (typeof Radio !== 'undefined') Radio.onChange(() => this._wantCover());
     Covers.onArrived((ids) => {
       if (!Player.currentId || (ids && !ids.includes(Player.currentId))) return;
       // Asked again: the big one may be there now.
@@ -707,7 +709,8 @@ ${src}`);
    */
   _wantCover() {
     const s = Store.settings;
-    const id = Player.currentId;
+    const radio = typeof Radio !== 'undefined' && Radio.owns();
+    const id = radio ? null : Player.currentId;
     const song = s.coverBgOn && id ? Store.song(id) || (Player.remote ? { ...Player.remote.state, id } : null) : null;
     const list = song ? Covers.candidates(song, 'big') : [];
     const key = list.length ? `${id}|${list[0]}` : '';

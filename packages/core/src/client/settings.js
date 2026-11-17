@@ -7,7 +7,7 @@
 const { DEFAULT_MP3_QUALITY, clampQuality } = require('../formats');
 const { BROWSERS } = require('../cookies');
 const { randomBase64Url } = require('./common');
-const { cleanStation } = require('../radio');
+const { cleanStation, RADIO_QUALITIES } = require('../radio');
 
 // The visualizers' own settings (their cogwheels, apps/desktop/renderer/app/
 // viz/), by what they may be: ['color', default] a '#rrggbb'; ['bool',
@@ -433,6 +433,8 @@ const DEFAULTS = {
   radioFavs: {},
   radioCountry: '',
   radioGenre: '',
+  // The Quality filter: the lowest bitrate shown (kbit/s, one of RADIO_QUALITIES), 0 all, -1 only those without one.
+  radioQuality: 0,
   // Lyrics (4.0): the player's Lyrics and the phone's below Now Playing, and
   // the line playing over a full-screen visualizer.
   lyricsOn: true,
@@ -686,6 +688,7 @@ function clean(raw) {
   s.radioFavs = cleanRadioFavs(s.radioFavs);
   s.radioCountry = /^[A-Z]{2}$/.test(String(s.radioCountry)) ? s.radioCountry : '';
   s.radioGenre = typeof s.radioGenre === 'string' ? s.radioGenre.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+  s.radioQuality = RADIO_QUALITIES.includes(Number(s.radioQuality)) ? Number(s.radioQuality) : 0;
   for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'showRadio', 'groupedHideInMenu', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'thumbCovers', 'highResCovers', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
