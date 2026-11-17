@@ -153,6 +153,16 @@ contextBridge.exposeInMainWorld('flow', {
   onServerLive: (fn) => ipcRenderer.on('server:live', (_e, ev) => fn(ev)),
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),
   lookupInfo: (song) => call('song:lookupInfo', song),
+  // Internet Radio (5.1): the directory's countries, genres and stations ({ name, country, genre, page }),
+  // a directory station played (click), an address checked, a stream let into Web Audio (allow).
+  radio: {
+    countries: () => call('radio:countries'),
+    genres: () => call('radio:genres'),
+    search: (q) => call('radio:search', q),
+    click: (id) => call('radio:click', id),
+    check: (url) => call('radio:check', url),
+    allow: (url) => call('radio:allow', url),
+  },
   // A song's lyrics (4.0): { found, synced: [{ t, text }] | null, plain, instrumental }.
   lyrics: (songId) => call('song:lyrics', songId),
   // Lyrics written or edited here (4.0): lines [{ t, end, text }], or null to

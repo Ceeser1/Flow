@@ -83,6 +83,14 @@ settings.general.listeningTrends.desc
   en: If disabled, your listening trend category will be hidden in the menu and the search.
   de: Wenn deaktiviert, wird deine Hörtrend-Kategorie im Menü und in der Suche ausgeblendet.
 
+settings.general.showRadio.label
+  en: Show Internet Radio
+  de: Internetradio anzeigen
+
+settings.general.showRadio.desc
+  en: If disabled, the Internet Radio category will be hidden in the menu.
+  de: Wenn deaktiviert, wird die Kategorie Internetradio im Menü ausgeblendet.
+
 settings.general.similarSongs.label
   en: Continue with similar songs
   de: Mit ähnlichen Songs weitermachen
@@ -6741,6 +6749,203 @@ mobile.list.stopChoosing
 mobile.list.chosen
   en: {count} chosen
   de: {count} ausgewählt
+
+# ===== Internet Radio =====
+
+# The Internet Radio page (5.1) and the player bar while a station plays.
+
+common.internetRadio
+  en: Internet Radio
+  de: Internetradio
+
+radio.add.placeholder
+  en: Paste a radio stream's address (http://... or https://...)
+  de: Adresse eines Radiostreams einfügen (http://... oder https://...)
+
+radio.add.button
+  en: Add Radio
+  de: Radio hinzufügen
+
+radio.add.checking
+  en: Checking...
+  de: Wird geprüft...
+
+radio.add.empty
+  en: Please paste the address of a radio stream first.
+  de: Bitte füge zuerst die Adresse eines Radiostreams ein.
+
+# A station added by its address, checked: it is a favourite now
+radio.add.done
+  en: {station} was added to your Favourite Radios.
+  de: {station} wurde zu deinen Lieblingsradios hinzugefügt.
+
+# Added, but the address did not say whether a stream is there
+radio.add.unchecked
+  en: {station} was added. Flow could not tell whether a stream is there: if it does not play, check the address.
+  de: {station} wurde hinzugefügt. Flow konnte nicht erkennen, ob dort ein Stream ist: Spielt er nicht, prüfe die Adresse.
+
+radio.add.exists
+  en: {station} is already in your Favourite Radios.
+  de: {station} ist schon in deinen Lieblingsradios.
+
+radio.favourites.heading
+  en: Favourite Radios
+  de: Lieblingsradios
+
+radio.favourites.empty
+  en: No favourites yet. Star a station below, or add one by its address above.
+  de: Noch keine Favoriten. Markiere unten einen Sender mit dem Stern oder füge oben einen über seine Adresse hinzu.
+
+radio.count
+  en.one: 1 station
+  en.other: {count} stations
+  de.one: 1 Sender
+  de.other: {count} Sender
+
+radio.others.heading
+  en: Other Internet Radios
+  de: Weitere Internetradios
+
+radio.others.search.placeholder
+  en: Search stations
+  de: Sender suchen
+
+radio.others.source
+  en: Stations from radio-browser.info, the most played first.
+  de: Sender von radio-browser.info, die meistgehörten zuerst.
+
+radio.others.loading
+  en: Loading stations...
+  de: Sender werden geladen...
+
+radio.others.none
+  en: No stations match the search and filters.
+  de: Keine Sender passen zur Suche und den Filtern.
+
+radio.others.more
+  en: Show more
+  de: Mehr anzeigen
+
+radio.others.retry
+  en: Try again
+  de: Erneut versuchen
+
+radio.filter.country
+  en: Country
+  de: Land
+
+radio.filter.country.all
+  en: All countries
+  de: Alle Länder
+
+radio.filter.genre.all
+  en: All genres
+  de: Alle Genres
+
+radio.filter.clear
+  en: Show all again
+  de: Wieder alle zeigen
+
+radio.filter.none
+  en: Nothing matches.
+  de: Nichts passt.
+
+radio.column.station
+  en: Station
+  de: Sender
+
+radio.column.quality
+  en: Quality
+  de: Qualität
+
+# A stream's bitrate, e.g. "128 kbit/s"
+radio.kbits
+  en: {rate} kbit/s
+  de: {rate} kbit/s
+
+# In the Country column for a station added by its address
+radio.own
+  en: Added by you
+  de: Von dir hinzugefügt
+
+radio.favourite.add
+  en: Add to Favourite Radios
+  de: Zu Lieblingsradios hinzufügen
+
+radio.favourite.remove
+  en: Remove from Favourite Radios
+  de: Aus Lieblingsradios entfernen
+
+radio.removed
+  en: {station} was removed from your Favourite Radios.
+  de: {station} wurde aus deinen Lieblingsradios entfernt.
+
+common.undo
+  en: Undo
+  de: Rückgängig
+
+# The player bar's time while a station plays, e.g. "Live · 12:34"
+radio.bar.live
+  en: Live
+  de: Live
+
+radio.bar.connecting
+  en: Connecting...
+  de: Verbinde...
+
+radio.bar.previous
+  en: Previous station
+  de: Vorheriger Sender
+
+radio.bar.next
+  en: Next station
+  de: Nächster Sender
+
+radio.bar.open.tooltip
+  en: Open Internet Radio
+  de: Internetradio öffnen
+
+radio.toast.cannotPlay
+  en: {station} cannot be played right now.
+  de: {station} kann gerade nicht abgespielt werden.
+
+radio.toast.lost
+  en: The connection to {station} was lost.
+  de: Die Verbindung zu {station} ist abgebrochen.
+
+# Checking a station's address (Add Radio), and the station directory
+
+core.radio.directoryUnreachable
+  en: The radio directory (radio-browser.info) cannot be reached right now.
+  de: Das Radioverzeichnis (radio-browser.info) ist gerade nicht erreichbar.
+
+core.radio.notAnAddress
+  en: That is not a web address (it should start with http:// or https://).
+  de: Das ist keine Webadresse (sie sollte mit http:// oder https:// beginnen).
+
+core.radio.noAnswer
+  en: The address did not answer in time.
+  de: Die Adresse hat nicht rechtzeitig geantwortet.
+
+core.radio.unreachable
+  en: The address cannot be reached.
+  de: Die Adresse ist nicht erreichbar.
+
+core.radio.httpError
+  en: The address answered with an error ({status}).
+  de: Die Adresse hat mit einem Fehler geantwortet ({status}).
+
+core.radio.noStream
+  en: No radio stream was found at that address.
+  de: Unter dieser Adresse wurde kein Radiostream gefunden.
+
+core.radio.hls
+  en: This station streams as HLS (.m3u8), which Flow cannot play.
+  de: Dieser Sender streamt als HLS (.m3u8), das Flow nicht abspielen kann.
+
+core.radio.webPage
+  en: That is a web page, not a radio stream. The stream's own address is needed (often on the station's page as "Listen" or a .m3u / .pls link).
+  de: Das ist eine Webseite, kein Radiostream. Gebraucht wird die Adresse des Streams selbst (oft auf der Seite des Senders als „Hören“ oder als .m3u- / .pls-Link).
 
 # ===== Common =====
 

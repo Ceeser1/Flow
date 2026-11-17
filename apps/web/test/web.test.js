@@ -168,8 +168,9 @@ test('window.flow answers every call of the desktop\'s, but those a browser cann
   // The reload that switches the language: the page loads again by itself.
   // Add Songs' downloads kept over a restart (4.5.3): only where songs download (the computer).
   // The Mini Player (5.0) is a window of the computer's app, and so is the tray its window hides in.
+  // Internet Radio (5.1) is the computer's only for now (caps.radio).
   const notInBrowser = new Set(['openToolsFolder', 'toolStatus', 'checkImport', 'lookupInfo', 'setLyrics', 'lookupLyrics', 'searchLyrics', 'publishLyrics', 'backups', 'makeBackup', 'restoreBackup', 'guestLook',
-    'reload', 'saveDownloads', 'saveDownloadsNow', 'loadDownloads', 'toggleMini', 'miniState', 'onMiniCommand', 'onMiniOpen', 'onMiniLevelsWanted', 'miniLevels', 'onAway']);
+    'reload', 'saveDownloads', 'saveDownloadsNow', 'loadDownloads', 'toggleMini', 'miniState', 'onMiniCommand', 'onMiniOpen', 'onMiniLevelsWanted', 'miniLevels', 'onAway', 'radio']);
   const missing = [...desktopCalls].filter((c) => !webCalls.has(c) && !notInBrowser.has(c));
   assert.deepEqual(missing, []);
 });

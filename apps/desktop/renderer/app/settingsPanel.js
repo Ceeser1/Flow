@@ -118,6 +118,12 @@ const SettingsPanel = {
         label: T('settings.general.listeningTrends.label'),
         desc: T('settings.general.listeningTrends.desc'),
       }),
+      // Internet Radio (5.1), where this app plays it.
+      Store.can('radio') ? this._row({
+        key: 'showRadio',
+        label: T('settings.general.showRadio.label'),
+        desc: T('settings.general.showRadio.desc'),
+      }) : null,
       this._row({
         key: 'autoDj',
         label: T('settings.general.similarSongs.label'),

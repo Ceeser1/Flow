@@ -7,6 +7,7 @@
 const { DEFAULT_MP3_QUALITY, clampQuality } = require('../formats');
 const { BROWSERS } = require('../cookies');
 const { randomBase64Url } = require('./common');
+const { cleanStation } = require('../radio');
 
 // The visualizers' own settings (their cogwheels, apps/desktop/renderer/app/
 // viz/), by what they may be: ['color', default] a '#rrggbb'; ['bool',
@@ -425,6 +426,13 @@ const DEFAULTS = {
   soundEqCustom: [],
   // The menu's Your listening trend entry and its lists.
   showTrend: true,
+  // Internet Radio (5.1): its menu entry and page; each profile's favourite
+  // stations ("<server id>/<profile id>", or "private" without a server ->
+  // [station], radio.js cleanStation), newest first; the page's last filters.
+  showRadio: true,
+  radioFavs: {},
+  radioCountry: '',
+  radioGenre: '',
   // Lyrics (4.0): the player's Lyrics and the phone's below Now Playing, and
   // the line playing over a full-screen visualizer.
   lyricsOn: true,
@@ -577,6 +585,19 @@ function cleanMiniLast(m) {
   };
 }
 
+/** Internet Radio's favourites: per profile key, up to 500 stations each, no station twice. */
+function cleanRadioFavs(raw) {
+  const all = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  return Object.fromEntries(Object.entries(all)
+    .filter(([k, v]) => k && k.length <= 200 && Array.isArray(v))
+    .slice(0, 100)
+    .map(([k, v]) => {
+      const seen = new Set();
+      const list = v.map(cleanStation).filter((st) => st && !seen.has(st.id) && seen.add(st.id)).slice(0, 500);
+      return [k, list];
+    }));
+}
+
 function clean(raw) {
   const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
   s.volume = Math.min(1, Math.max(0, Number(s.volume)));
@@ -662,7 +683,10 @@ function clean(raw) {
   delete s.hlSpin;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   if (!['', 'en', 'de'].includes(s.language)) s.language = '';
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'groupedHideInMenu', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+  s.radioFavs = cleanRadioFavs(s.radioFavs);
+  s.radioCountry = /^[A-Z]{2}$/.test(String(s.radioCountry)) ? s.radioCountry : '';
+  s.radioGenre = typeof s.radioGenre === 'string' ? s.radioGenre.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'showRadio', 'groupedHideInMenu', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'thumbCovers', 'highResCovers', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;

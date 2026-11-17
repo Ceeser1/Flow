@@ -20,6 +20,7 @@
   <link rel="stylesheet" href="styles/server.css" />
   <link rel="stylesheet" href="styles/lyricsEdit.css" />
   <link rel="stylesheet" href="styles/group.css" />
+  <link rel="stylesheet" href="styles/radio.css" />
   <!-- The phone's layout, all under body.mobile (mobile.js). -->
   <link rel="stylesheet" href="mobile.css" />
 </head>
@@ -39,6 +40,8 @@
     <!-- Every song; under it, with a Flow Server, the songs each profile added. -->
     <button id="menuAllSongs" class="menu__item" type="button"></button>
     <nav id="menuAllSongsList" class="menu__subs" aria-label="Downloaded Songs, and All Songs by who added them" hidden data-i18n-aria-label="window.menu.downloaded.ariaLabel"></nav>
+    <!-- Internet Radio (5.1): unless switched off in Settings > General (radio.js, pages/radio.js). -->
+    <button id="menuRadio" class="menu__item" type="button" hidden></button>
     <button id="menuPlaylists" class="menu__item" type="button"></button>
     <nav id="menuPlaylistList" class="menu__subs" aria-label="Playlists" data-i18n-aria-label="common.playlists"></nav>
     <!-- The playlist groups (4.5.1: their own entry), where a Flow Server keeps them or without one. -->
@@ -326,6 +329,41 @@
         </div>
       </section>
 
+      <!-- Internet Radio (5.1, pages/radio.js): a station added by its address, this
+           profile's Favourite Radios (10 at most, then the box scrolls), then the
+           directory's stations with a search, Country and Genre. -->
+      <section id="page-radio" class="page page--playlists page--radio" hidden>
+        <h1 class="page__title" data-i18n="common.internetRadio">Internet Radio</h1>
+        <div class="radio-add">
+          <input id="radioUrl" class="input input--big" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="Paste a radio stream's address (http://... or https://...)" data-i18n-placeholder="radio.add.placeholder" />
+          <button id="radioAddBtn" class="btn btn--primary btn--big" type="button" data-i18n="radio.add.button">Add Radio</button>
+        </div>
+        <div id="radioAddError" class="form-error radio-add__error"></div>
+        <div class="section-head">
+          <h2 class="section-head__title" data-i18n="radio.favourites.heading">Favourite Radios</h2>
+          <span id="radioFavCount" class="muted-text"></span>
+        </div>
+        <div id="radioFavBox" class="list-limit"><table id="radioFavTable" class="table table--playlists table--radio"></table></div>
+        <p id="radioFavEmpty" class="muted-text" hidden data-i18n="radio.favourites.empty">No favourites yet. Star a station below, or add one by its address above.</p>
+        <div class="section-head radio-others-head">
+          <h2 class="section-head__title" data-i18n="radio.others.heading">Other Internet Radios</h2>
+          <div class="radio-filters">
+            <div class="search-box radio-filters__search">
+              <span class="search-box__icon"></span>
+              <input id="radioSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false"
+                     placeholder="Search stations" data-i18n-placeholder="radio.others.search.placeholder" />
+            </div>
+            <div id="radioCountry" class="combo"></div>
+            <div id="radioGenre" class="combo"></div>
+          </div>
+        </div>
+        <p id="radioSource" class="muted-text radio-source" data-i18n="radio.others.source">Stations from radio-browser.info, the most played first.</p>
+        <table id="radioOtherTable" class="table table--playlists table--radio"></table>
+        <div id="radioOtherNote" class="empty empty--small" hidden></div>
+        <div class="radio-more"><button id="radioMore" class="btn" type="button" hidden data-i18n="radio.others.more">Show more</button></div>
+      </section>
+
       <!-- Followed Playlists -->
       <section id="page-followed" class="page page--playlists" hidden>
         <h1 class="page__title" data-i18n="common.followedPlaylists">Followed Playlists</h1>
@@ -525,6 +563,8 @@
 <!-- The next song, while a song transition fades it in (player.js). -->
 <audio id="fadeAudio" preload="auto"></audio>
 <audio id="previewAudio" preload="auto"></audio>
+<!-- An Internet Radio station (radio.js). -->
+<audio id="radioAudio" preload="none"></audio>
 
 <script src="app/strings.js"></script>
 <script src="app/i18n.js"></script>
@@ -612,6 +652,7 @@
 <script src="app/sleepTimer.js"></script>
 <script src="app/miniPlayer.js"></script>
 <script src="app/alarm.js"></script>
+<script src="app/radio.js"></script>
 <script src="app/songActions.js"></script>
 <script src="app/groups.js"></script>
 <script src="app/nav.js"></script>
@@ -636,6 +677,7 @@
 <script src="app/pages/group.js"></script>
 <script src="app/pages/sessions.js"></script>
 <script src="app/pages/trend.js"></script>
+<script src="app/pages/radio.js"></script>
 <script src="app/pages/playlist.js"></script>
 <script src="app/pages/playlistUpdate.js"></script>
 <script src="app/details.js"></script>

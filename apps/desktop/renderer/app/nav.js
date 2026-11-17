@@ -37,6 +37,10 @@ const Nav = {
     // The speaker while All Songs plays, or a part of it that is folded away.
     this._allPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
     $('menuAllSongs').appendChild(this._allPlaying);
+    // Internet Radio (5.1): one entry, the speaker while a station plays.
+    $('menuRadio').innerHTML = Icons.radio + `<span>${T('common.internetRadio')}</span>`;
+    this._radioPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
+    $('menuRadio').appendChild(this._radioPlaying);
     this._entry('menuPlaylists', T('common.playlists'), 'playlistsMenuOpen');
     this._entry('menuGroups', T('common.playlistGroups'), 'groupsMenuOpen', { icon: Icons.folder });
     // The speaker while one of the groups' lists plays and they are folded away.
@@ -55,6 +59,7 @@ const Nav = {
     $('menuSearch').onclick = () => this.show('search');
     $('menuAdd').onclick = () => this.show('add');
     $('menuAllSongs').onclick = () => this.openPlaylist('all');
+    $('menuRadio').onclick = () => this.show('radio');
     $('menuPlaylists').onclick = () => this.show('playlists');
     // Playlist Groups: the Playlists page at its groups.
     $('menuGroups').onclick = () => this.show('playlists', { at: 'groups' });
@@ -74,9 +79,15 @@ const Nav = {
     Store.onServer(() => this.drawMenu());
     Player.onChange(() => this.drawMenu());
     Session.onChange(() => this.drawMenu());
+    Radio.onChange(() => this.drawMenu());
     Store.onSettings((patch) => {
       // Playlists added to groups shown under Playlists too, or not (4.5.3).
       if ('groupedHideInMenu' in patch) this.drawMenu();
+      // Internet Radio switched off while its page is open: back to All Songs.
+      if ('showRadio' in patch) {
+        if (!patch.showRadio && this.page === 'radio') this.openPlaylist('all');
+        else this.drawMenu();
+      }
       if (!('showTrend' in patch)) return;
       // Hidden while its page or one of its lists is open: back to All Songs.
       if (!patch.showTrend && (this.page === 'trend' || (this.page === 'playlist' && SmartLists.isSmart(this.playlistId)))) {
@@ -125,6 +136,11 @@ const Nav = {
     arrow.setAttribute('aria-expanded', String(open));
   },
 
+  /** Whether the menu has Internet Radio (this app plays it, and it is not switched off). */
+  radioShown() {
+    return Store.can('radio') && Store.settings.showRadio !== false;
+  },
+
   currentPlaylistId() {
     return this.page === 'playlist' ? this.playlistId : null;
   },
@@ -162,6 +178,7 @@ const Nav = {
     else if (page === 'group') GroupPage.show(this.groupId, opts);
     else if (page === 'sessions') SessionsPage.show(opts);
     else if (page === 'trend') TrendPage.show(opts);
+    else if (page === 'radio') RadioPage.show(opts);
     else if (page === 'playlist') PlaylistPage.show(this.playlistId, opts);
     this.drawMenu();
     if (opts.scroll) this._scrollTo(opts.scroll);
@@ -300,6 +317,9 @@ const Nav = {
     $('menuAdd').classList.toggle('menu__item--active', this.page === 'add');
     $('menuAllSongs').classList.toggle('menu__item--active', this.page === 'playlist' && this.playlistId === 'all');
     $('menuPlaylists').classList.toggle('menu__item--active', this.page === 'playlists');
+    $('menuRadio').classList.toggle('menu__item--active', this.page === 'radio');
+    $('menuRadio').hidden = !Nav.radioShown();
+    this._radioPlaying.hidden = !Radio.playing;
     $('menuFollowed').classList.toggle('menu__item--active', this.page === 'followed');
     $('menuSessions').classList.toggle('menu__item--active', this.page === 'sessions');
     $('menuTrend').classList.toggle('menu__item--active', this.page === 'trend');

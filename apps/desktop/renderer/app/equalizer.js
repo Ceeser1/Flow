@@ -212,6 +212,30 @@ const Equalizer = {
     return !!this.ctx;
   },
 
+  /**
+   * One more element into the same sound (Internet Radio's, radio.js): its
+   * own gains, then everything the player's go through, so the volume, the
+   * sound equalizer, the output device and all that listens hear it too.
+   */
+  addElement(el) {
+    if (!this.ctx || this.channels.has(el)) return !!this.ctx;
+    try {
+      const norm = this.ctx.createGain();
+      const fade = this.ctx.createGain();
+      this.ctx.createMediaElementSource(el).connect(norm);
+      norm.connect(fade);
+      fade.connect(this.mix);
+      this.channels.set(el, { norm, fade });
+    } catch (err) {
+      console.warn('Not into the equalizer:', err);
+      return false;
+    }
+    this.elements = [...this.elements, el];
+    el.addEventListener('play', () => this.wake());
+    el.addEventListener('playing', () => this.wake());
+    return true;
+  },
+
   /** The gains of one of the player's elements, or null without Web Audio. */
   channel(el) {
     return this.channels ? this.channels.get(el) || null : null;

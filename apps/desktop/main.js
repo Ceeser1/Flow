@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, screen, dialog, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, screen, dialog, Notification, session } = require('electron');
 const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -52,6 +52,7 @@ const { createViewChannel } = require('@flow/core/client/viewChannel');
 const autostart = require('./src/autostart');
 const { createMiniPlayer } = require('./src/miniPlayer');
 const { createTray } = require('./src/tray');
+const radio = require('@flow/core/radio');
 
 let mainWindow = null;
 let downloadToken = null;
@@ -1147,6 +1148,46 @@ handle('sponsor:segments', ({ key, url }) => sponsorSegments(key, url));
 // One song's album, genre and Info from Apple's and Discogs' search, for Add Songs' editor.
 handle('song:lookupInfo', (song) => lookupInfo(song || {}));
 
+// ---- Internet Radio (5.1) ----
+//
+// The stations Flow suggests (radio-browser.info), and a station added by hand
+// checked. The window cannot ask other sites itself (its page allows only its
+// own), so it asks here.
+const radioDirectory = radio.createDirectory();
+handle('radio:countries', () => radioDirectory.countries());
+handle('radio:genres', () => radioDirectory.genres());
+handle('radio:search', (q) => radioDirectory.search(q || {}));
+handle('radio:click', (id) => radioDirectory.click(id));
+handle('radio:check', (url) => radio.checkStream(url));
+// A station plays through the window's Web Audio (the equalizer, the clouds, the
+// visualizers), which hears only a stream sent with CORS, and almost no station
+// sends it. The streams the window says it plays get it added here, as does
+// wherever such a request is sent on to (the same request id).
+const radioStreams = new Set();
+const radioRequests = new Set();
+handle('radio:allow', (url) => {
+  const u = radio.httpUrl(url);
+  if (!u) return false;
+  radioStreams.add(u);
+  if (radioStreams.size > 200) radioStreams.delete(radioStreams.values().next().value);
+  return true;
+});
+function allowRadioStreams(ses) {
+  ses.webRequest.onHeadersReceived({ urls: ['http://*/*', 'https://*/*'] }, (details, done) => {
+    const ours = details.resourceType === 'media' && (radioRequests.has(details.id) || radioStreams.has(details.url));
+    if (!ours) {
+      done({});
+      return;
+    }
+    radioRequests.add(details.id);
+    if (radioRequests.size > 500) radioRequests.delete(radioRequests.values().next().value);
+    const headers = { ...details.responseHeaders };
+    const has = Object.keys(headers).some((k) => k.toLowerCase() === 'access-control-allow-origin');
+    if (!has) headers['Access-Control-Allow-Origin'] = ['*'];
+    done({ responseHeaders: headers });
+  });
+}
+
 // ---- startup ----
 
 app.whenReady().then(() => {
@@ -1156,6 +1197,7 @@ app.whenReady().then(() => {
   if (app.isPackaged) app.setAppUserModelId('com.ceeser.flow');
   settings.load();
   useLanguage();
+  allowRadioStreams(session.defaultSession);
   // Started with the computer: the Mini Player first, with the song it showed last, before the library is read.
   if (START_MINI) mini.open({ byComputer: true });
   if (settings.get('musicDir')) paths.setMusicDir(settings.get('musicDir'));

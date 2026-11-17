@@ -523,7 +523,16 @@ const Player = {
     this.load(first, contextId, { fromQueue: true });
   },
 
+  /** Whether an Internet Radio station has the bar (radio.js): its buttons work the station then. */
+  _radio() {
+    return typeof Radio !== 'undefined' && Radio.owns();
+  },
+
   toggle() {
+    if (this._radio()) {
+      Radio.toggle();
+      return;
+    }
     if (this._remoteDo('toggle')) return;
     if (!this.currentId) {
       const context = this.contextId || Nav.currentPlaylistId() || 'all';
@@ -535,6 +544,10 @@ const Player = {
   },
 
   pause() {
+    if (this._radio()) {
+      Radio.pause();
+      return;
+    }
     if (this._remoteDo('pause')) return;
     this.pauseHere();
   },
@@ -548,6 +561,10 @@ const Player = {
 
   /** Next, pressed: another song started by hand, so Repeat goes off. */
   next() {
+    if (this._radio()) {
+      Radio.step(1);
+      return;
+    }
     if (this._remoteDo('next')) return;
     this.repeat = false;
     this._advance();
@@ -583,6 +600,10 @@ const Player = {
   },
 
   prev() {
+    if (this._radio()) {
+      Radio.step(-1);
+      return;
+    }
     if (this._remoteDo('prev')) return;
     if (!this.contextId) return;
     this.repeat = false;
@@ -671,6 +692,8 @@ const Player = {
   },
 
   seek(seconds) {
+    // A live station has no place to go to.
+    if (this._radio()) return;
     if (!this.currentId) return;
     if (this.remote) {
       const d = this.duration;
@@ -697,6 +720,7 @@ const Player = {
   },
 
   skip(delta) {
+    if (this._radio()) return;
     this.seek(this.position + delta);
   },
 
@@ -1423,6 +1447,10 @@ const Player = {
       if (song) SongActions.pickPlaylists($('btnAddToPlaylist'), song, { above: true });
     };
     $('btnFavourite').onclick = () => {
+      if (this._radio()) {
+        Radio.toggleFavourite(Radio.station);
+        return;
+      }
       const song = this.currentId && Store.song(this.currentId);
       if (song) attempt(() => window.flow.setFavourite(song.id, !song.favouriteAt));
     };
@@ -1430,6 +1458,10 @@ const Player = {
     const [before, after = ''] = T('window.player.from', { playlist: '\u0000' }).split('\u0000');
     $('playerFrom').replaceChildren(before, $('playerFromName'), after);
     $('playerFrom').onclick = () => {
+      if (this._radio()) {
+        Nav.show('radio');
+        return;
+      }
       if (this.contextId && Store.playlist(this.contextId)) Nav.openPlaylist(this.contextId);
     };
 
@@ -1505,6 +1537,10 @@ const Player = {
   },
 
   _drawBar() {
+    if (this._radio()) {
+      Radio.drawBar();
+      return;
+    }
     const known = this.currentId ? Store.song(this.currentId) : null;
     // In remote mode, a song newer than this library shows as the host names it.
     const song = known || (this.remote && this.currentId ? { ...this.remote.state, id: this.currentId } : null);
@@ -1558,6 +1594,10 @@ const Player = {
   },
 
   _drawTime(dragTime) {
+    if (this._radio()) {
+      Radio._drawTime();
+      return;
+    }
     const d = this.duration;
     let t = this.currentId ? this.position : 0;
     if (this._pendingSeek !== null && !this.remote) t = this._pendingSeek;
@@ -1615,6 +1655,10 @@ const Player = {
   },
 
   _updateMediaSession() {
+    if (this._radio()) {
+      Radio._updateMediaSession();
+      return;
+    }
     const song = this.currentId ? Store.song(this.currentId) : null;
     // The engine's own notification (the phone's), with the song's cover.
     this.engine.setMeta(song ? this._meta(song) : null);
