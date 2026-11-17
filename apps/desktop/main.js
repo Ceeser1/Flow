@@ -60,6 +60,7 @@ const { createMiniPlayer } = require('./src/miniPlayer');
 const { createTray } = require('./src/tray');
 const radio = require('@flow/core/radio');
 const { createGlobalKeys } = require('./src/globalKeys');
+const { createThumbar } = require('./src/thumbar');
 const { GLOBAL_KEYS } = require('@flow/core/client/settings');
 
 let mainWindow = null;
@@ -165,6 +166,16 @@ const tray = createTray({
   onQuit: () => quitFlow(),
 });
 
+// The taskbar's Previous, Play / Pause and Next under Flow's preview
+// (5.1.4, Windows; src/thumbar.js): clicked, as the global hotkeys.
+const thumbar = createThumbar({
+  window: () => mainWindow,
+  onAction: (action) => sendToWindow('keys:global', action),
+  texts: () => ({
+    prev: T('desktop.thumbar.prev'), play: T('desktop.thumbar.play'), pause: T('desktop.thumbar.pause'), next: T('desktop.thumbar.next'),
+  }),
+});
+
 // The Mini Player (src/miniPlayer.js): its window, and what goes between it and Flow's.
 const mini = createMiniPlayer({
   settings,
@@ -173,6 +184,7 @@ const mini = createMiniPlayer({
   language: () => settings.get('language') || '',
   hideFlow: () => toTray(),
   showFlow: () => showMain(),
+  onState: (state) => thumbar.state(state),
   onOpenChange: (open) => {
     sendToWindow('mini:open', open);
     // Closed while Flow's window is in the tray: nothing of Flow is left on the screen, so it quits (its music with it).
@@ -301,8 +313,11 @@ function createWindow() {
 
   inTray = START_MINI;
   if (!START_MINI) mainWindow.once('ready-to-show', () => mainWindow.show());
-  // Shown by whatever way: out of the tray.
-  mainWindow.on('show', leftTray);
+  // Shown by whatever way: out of the tray, and the taskbar's buttons set again (Windows forgets them while hidden).
+  mainWindow.on('show', () => {
+    leftTray();
+    thumbar.shown();
+  });
   // Imported songs not saved yet and links waiting in the Client queue are
   // kept over a restart (4.5.3, keptDownloads.js): closing asks nothing.
   mainWindow.on('close', (e) => {
@@ -571,7 +586,10 @@ handle('settings:set', (patch) => {
   delete clean.serverSecret;
   const wasRemote = remote.active();
   const next = settings.set(clean);
-  if ('language' in clean) useLanguage();
+  if ('language' in clean) {
+    useLanguage();
+    thumbar.refresh();
+  }
   mini.settingsChanged(clean);
   if (clean.normalize === true) loudnessFiller.run();
   remote.reconfigure(clean);

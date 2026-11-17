@@ -8869,6 +8869,23 @@ desktop.tray.quit
   en: Quit Flow
   de: Flow beenden
 
+# The buttons under Flow's preview in the Windows taskbar (5.1.4).
+desktop.thumbar.prev
+  en: Previous
+  de: Zurück
+
+desktop.thumbar.play
+  en: Play
+  de: Abspielen
+
+desktop.thumbar.pause
+  en: Pause
+  de: Pause
+
+desktop.thumbar.next
+  en: Next
+  de: Weiter
+
 # Windows and dialogs › picking files and folders
 desktop.pick.musicFolder.title
   en: Choose where Flow saves your songs
