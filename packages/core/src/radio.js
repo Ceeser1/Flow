@@ -5,6 +5,13 @@
 // asks apps to name themselves (User-Agent) and to say when a station is
 // played (click), which ranks the popular ones higher for everyone.
 //
+// The whole directory is fetched (about 60 MB, LIST_PAGE stations a request)
+// and kept as a copy (`copy`: { read, write }, the app's; a gzip file of about
+// 4 MB on the desktop), fetched again behind
+// it once a day old. The search, the filters and how many stations each
+// picker's entries have under the other filters are all worked out here from
+// it, so the pickers only offer what is there.
+//
 // A station added by hand is checked first (checkStream): a real web address,
 // and where the answer tells, a sound stream behind it. Many stations hand
 // out a small playlist file (.pls / .m3u) instead of the stream itself: its
@@ -23,8 +30,19 @@ const PAGE = 100;
 // and RADIO_NO_INFO: only the stations whose bitrate is not known.
 const RADIO_NO_INFO = -1;
 const RADIO_QUALITIES = [320, 256, 192, 128, 64, RADIO_NO_INFO];
+// The whole list: this many stations a request, this many requests at once, at most this many requests.
+const LIST_PAGE = 10000;
+const LIST_AT_ONCE = 3;
+const MAX_LIST_PAGES = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Unused this long, the list is let go of in memory (read from its copy again when wanted).
+const IDLE_MS = 15 * 60 * 1000;
 
 const text = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+// Names compared without case and accents.
+const fold = (s) => String(s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+/** Whether a station has a quality: at least q kbit/s, or (RADIO_NO_INFO) none known. */
+const atQuality = (st, q) => (q === RADIO_NO_INFO ? !st.bitrate : st.bitrate >= q);
 
 function httpUrl(raw) {
   const s = String(raw || '').trim();
@@ -78,19 +96,22 @@ function fromDirectory(s) {
   });
 }
 
-function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000 } = {}) {
+function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000, pageTimeoutMs = 60000, copy = null, maxAgeMs = DAY_MS, idleMs = IDLE_MS, minGenre = MIN_GENRE_STATIONS } = {}) {
   let host = null;
-  let countries = null;
-  let genres = null;
+  // The whole list as loaded: { at, entries, genres }, or null until it is asked for (and after a while unused).
+  let all = null;
+  let loading = null;
+  let refreshing = null;
+  let idleTimer = null;
 
-  async function ask(path) {
+  async function ask(path, ms = timeoutMs) {
     const order = host ? [host, ...HOSTS.filter((h) => h !== host)] : HOSTS;
     let last = null;
     for (const h of order) {
       try {
         const res = await get(`https://${h}${path}`, {
           headers: { 'User-Agent': agentName(), Accept: 'application/json' },
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: AbortSignal.timeout(ms),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -105,50 +126,176 @@ function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000 } = 
     throw e;
   }
 
+  /** Every station of the directory, LIST_PAGE at a time (a few at once), HLS left out. */
+  async function download() {
+    const stations = [];
+    const seen = new Set();
+    for (let first = 0; ; first += LIST_AT_ONCE) {
+      const pages = await Promise.all(Array.from({ length: LIST_AT_ONCE }, (_, i) => {
+        const q = new URLSearchParams({ order: 'name', hidebroken: 'true', limit: String(LIST_PAGE), offset: String((first + i) * LIST_PAGE) });
+        return ask(`/json/stations/search?${q}`, pageTimeoutMs);
+      }));
+      let short = false;
+      for (const raw of pages) {
+        const list = Array.isArray(raw) ? raw : [];
+        if (list.length < LIST_PAGE) short = true;
+        for (const s of list) {
+          if (Number(s.hls) || seen.has(s.stationuuid)) continue;
+          const st = fromDirectory(s);
+          if (!st) continue;
+          seen.add(st.id);
+          stations.push({ ...st, clicks: Math.max(0, Number(s.clickcount) || 0) });
+        }
+      }
+      if (short || first + LIST_AT_ONCE >= MAX_LIST_PAGES) break;
+    }
+    return { at: Date.now(), stations };
+  }
+
+  /** The kept copy ({ at, stations }), or null. */
+  function readCache() {
+    if (!copy) return null;
+    try {
+      const data = copy.read();
+      return data && Array.isArray(data.stations) && Number(data.at) ? data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeCache(data) {
+    if (!copy) return;
+    try {
+      copy.write(data);
+    } catch {
+      // Only a copy: downloaded again next time.
+    }
+  }
+
+  /** The list made ready for filtering: each station's name and genres folded once, the most played first. */
+  function prepare({ at, stations }) {
+    const entries = [];
+    const tagCount = new Map();
+    for (const raw of stations) {
+      const st = cleanStation(raw);
+      if (!st || st.own) continue;
+      const tags = [...new Set(st.tags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))];
+      for (const t of tags) tagCount.set(t, (tagCount.get(t) || 0) + 1);
+      entries.push({ st, clicks: Math.max(0, Number(raw.clicks) || 0), name: fold(st.name), tags });
+    }
+    entries.sort((a, b) => b.clicks - a.clicks || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    const genres = new Set([...tagCount].filter(([, n]) => n >= minGenre).map(([t]) => t));
+    return { at: Number(at) || 0, entries, genres };
+  }
+
+  /** A new copy from the directory, kept; the one in use stays until it is here. */
+  function refresh() {
+    if (!refreshing) {
+      refreshing = download()
+        .then((data) => {
+          writeCache(data);
+          all = prepare(data);
+          return all;
+        })
+        .finally(() => {
+          refreshing = null;
+        });
+    }
+    return refreshing;
+  }
+
+  /** The whole list: the kept copy (a new one fetched behind it once a day old), else downloaded. */
+  async function list() {
+    clearTimeout(idleTimer);
+    // Not used for a while: let go of (the copy on disk is quick to read again).
+    idleTimer = setTimeout(() => {
+      if (!refreshing) all = null;
+    }, idleMs);
+    if (idleTimer.unref) idleTimer.unref();
+    if (!all && !loading) {
+      loading = (async () => {
+        const kept = readCache();
+        if (kept) {
+          all = prepare(kept);
+          return all;
+        }
+        return refresh();
+      })().finally(() => {
+        loading = null;
+      });
+    }
+    if (loading) await loading;
+    if (Date.now() - all.at > maxAgeMs) refresh().catch(() => {});
+    return all;
+  }
+
+  /** Whether an entry passes the filters, all but `skip` ('country', 'genre' or 'quality': its own count). */
+  function passes(e, f, skip) {
+    if (f.name && !e.name.includes(f.name)) return false;
+    if (skip !== 'country' && f.country && e.st.countryCode !== f.country) return false;
+    if (skip !== 'genre' && f.genre && !e.tags.includes(f.genre)) return false;
+    if (skip !== 'quality' && f.quality && !atQuality(e.st, f.quality)) return false;
+    return true;
+  }
+
+  /** What each picker offers under the other filters (and the name searched): { countries, genres, qualities }. */
+  function facets(data, f) {
+    const countries = new Map();
+    const genres = new Map();
+    const qualities = Object.fromEntries(RADIO_QUALITIES.map((q) => [q, 0]));
+    for (const e of data.entries) {
+      if (f.name && !e.name.includes(f.name)) continue;
+      if (e.st.countryCode && passes(e, f, 'country')) {
+        let c = countries.get(e.st.countryCode);
+        if (!c) {
+          c = { code: e.st.countryCode, names: new Map(), stations: 0 };
+          countries.set(c.code, c);
+        }
+        c.stations += 1;
+        if (e.st.country) c.names.set(e.st.country, (c.names.get(e.st.country) || 0) + 1);
+      }
+      if (passes(e, f, 'genre')) {
+        for (const t of e.tags) if (data.genres.has(t)) genres.set(t, (genres.get(t) || 0) + 1);
+      }
+      if (passes(e, f, 'quality')) {
+        for (const q of RADIO_QUALITIES) if (atQuality(e.st, q)) qualities[q] += 1;
+      }
+    }
+    const mostNamed = (names) => [...names].sort((a, b) => b[1] - a[1]).map(([n]) => n)[0] || '';
+    return {
+      countries: [...countries.values()]
+        .map((c) => ({ code: c.code, name: mostNamed(c.names) || c.code, stations: c.stations }))
+        .sort((a, b) => b.stations - a.stations),
+      genres: [...genres].map(([name, stations]) => ({ name, stations })).sort((a, b) => b.stations - a.stations),
+      qualities,
+    };
+  }
+
   return {
-    /** [{ code, name, stations }], the most stations first. */
-    async countries() {
-      if (!countries) {
-        const list = await ask('/json/countries?order=stationcount&reverse=true&hidebroken=true');
-        countries = (Array.isArray(list) ? list : [])
-          .map((c) => ({ code: String(c.iso_3166_1 || '').toUpperCase(), name: text(c.name, 100), stations: Number(c.stationcount) || 0 }))
-          .filter((c) => /^[A-Z]{2}$/.test(c.code) && c.stations > 0);
-      }
-      return countries;
-    },
-
-    /** [{ name, stations }]: the genres many stations name, the most first. */
-    async genres() {
-      if (!genres) {
-        const list = await ask('/json/tags?order=stationcount&reverse=true&hidebroken=true&limit=400');
-        genres = (Array.isArray(list) ? list : [])
-          .map((t) => ({ name: text(t.name, 60), stations: Number(t.stationcount) || 0 }))
-          .filter((t) => t.name && t.stations >= MIN_GENRE_STATIONS);
-      }
-      return genres;
-    },
-
     /**
-     * Stations matching a name, a country (its code), a genre and a lowest
-     * bitrate (`quality`, kbit/s; 0 any, RADIO_NO_INFO only those without one),
-     * the most played first; `page` from 0.
-     * HLS streams are left out: the player cannot play them. { stations, more }
-     * (more: another page may follow).
+     * Stations matching a name (part of it), a country (its code), a genre and
+     * a lowest bitrate (`quality`, kbit/s; 0 any, RADIO_NO_INFO only those
+     * without one), the most played first; `page` from 0. Worked out here from
+     * the whole directory (HLS streams left out: the player cannot play them).
+     * { stations, more, total, facets }: facets = what each picker offers under
+     * the other filters, with how many stations.
      */
     async search({ name = '', country = '', genre = '', quality = 0, page = 0 } = {}) {
-      const q = new URLSearchParams({ order: 'clickcount', reverse: 'true', hidebroken: 'true', limit: String(PAGE), offset: String(Math.max(0, page | 0) * PAGE) });
-      if (text(name, 100)) q.set('name', text(name, 100));
-      if (/^[A-Z]{2}$/i.test(country)) q.set('countrycode', country.toUpperCase());
-      if (text(genre, 60)) {
-        q.set('tag', text(genre, 60));
-        q.set('tagExact', 'true');
-      }
-      if (Number(quality) === RADIO_NO_INFO) q.set('bitrateMax', '0');
-      else if (RADIO_QUALITIES.includes(Number(quality))) q.set('bitrateMin', String(Number(quality)));
-      const list = await ask(`/json/stations/search?${q}`);
-      const raw = Array.isArray(list) ? list : [];
-      const stations = raw.filter((s) => !Number(s.hls)).map(fromDirectory).filter(Boolean);
-      return { stations, more: raw.length >= PAGE };
+      const data = await list();
+      const f = {
+        name: fold(text(name, 100)),
+        country: /^[A-Z]{2}$/i.test(country) ? country.toUpperCase() : '',
+        genre: text(genre, 60).toLowerCase(),
+        quality: RADIO_QUALITIES.includes(Number(quality)) ? Number(quality) : 0,
+      };
+      const found = data.entries.filter((e) => passes(e, f, null));
+      const from = Math.max(0, page | 0) * PAGE;
+      return {
+        stations: found.slice(from, from + PAGE).map((e) => ({ ...e.st })),
+        more: found.length > from + PAGE,
+        total: found.length,
+        facets: facets(data, f),
+      };
     },
 
     /** A directory station is played: counted there (best effort). */

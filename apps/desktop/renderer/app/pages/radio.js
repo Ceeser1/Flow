@@ -6,7 +6,9 @@
 // most, then the box scrolls), then "Other Internet Radios": the stations of
 // radio-browser.info, the most played first, 100 at a time, narrowed by the
 // search (names), Country, Genre and Quality (the pickers can be typed into to
-// narrow their list; the last ones picked are kept). A favourite is not repeated in
+// narrow their list; the last ones picked are kept). The main process has the
+// whole directory and filters it (core radio.js): each picker offers only what
+// is there under the other filters and the name searched, with how many stations. A favourite is not repeated in
 // the second list.
 //
 // Each row: Play / Pause before its picture and name, its country, genres and
@@ -26,8 +28,10 @@ const RadioPage = {
   othersSort: { key: null, dir: null },
   _seq: 0,
   _started: false,
+  // The pickers' entries ({ value, label, n: stations under the other filters }), from the last search.
   _countries: [],
   _genres: [],
+  _qualities: null,
   _playButtons: new Map(),
   _searchTimer: null,
 
@@ -49,7 +53,7 @@ const RadioPage = {
     this.country = combo($('radioCountry'), {
       label: T('radio.filter.country'),
       all: T('radio.filter.country.all'),
-      options: () => this._countries,
+      options: () => this._offer(this._countries, Store.settings.radioCountry),
       value: () => Store.settings.radioCountry || '',
       onPick: (v) => {
         Store.saveSettings({ radioCountry: v });
@@ -59,18 +63,20 @@ const RadioPage = {
     this.genre = combo($('radioGenre'), {
       label: T('common.genre'),
       all: T('radio.filter.genre.all'),
-      options: () => this._genres,
+      options: () => this._offer(this._genres, Store.settings.radioGenre),
       value: () => Store.settings.radioGenre || '',
       onPick: (v) => {
         Store.saveSettings({ radioGenre: v });
         this.search();
       },
     });
-    // At least this many kbit/s (the directory's bitrateMin), the best first.
+    // At least this many kbit/s, the best first, then No Info (only those without one).
     this.quality = combo($('radioQuality'), {
       label: T('radio.column.quality'),
       all: T('radio.filter.quality.all'),
-      options: () => RADIO_QUALITIES.map((q) => ({ value: String(q), label: q < 0 ? T('radio.filter.quality.noInfo') : T('radio.filter.quality.atLeast', { rate: q }) })),
+      // Before the first answer: every step, without counts.
+      options: () => this._offer(this._qualities || RADIO_QUALITIES.map((rate) => ({ value: String(rate), label: this._qualityLabel(rate), n: null })),
+        Store.settings.radioQuality ? String(Store.settings.radioQuality) : ''),
       value: () => (Store.settings.radioQuality ? String(Store.settings.radioQuality) : ''),
       onPick: (v) => {
         Store.saveSettings({ radioQuality: Number(v) || 0 });
@@ -92,7 +98,6 @@ const RadioPage = {
   show() {
     if (!this._started) {
       this._started = true;
-      this._loadFilters();
       this.search();
     }
     this.render();
@@ -138,26 +143,47 @@ const RadioPage = {
 
   // ---- the directory ----
 
-  async _loadFilters() {
+  /**
+   * The pickers' entries from a search's answer: what each offers under the
+   * other filters (and the name searched), with how many stations.
+   */
+  _useFacets(facets) {
+    if (!facets) return;
     const names = this._regionNames();
-    try {
-      const list = await window.flow.radio.countries();
-      this._countries = list
-        .map((c) => ({ value: c.code, label: names(c.code) || c.name, hint: I18n.num(c.stations) }))
-        .sort((a, b) => a.label.localeCompare(b.label, I18n.lang));
-    } catch {
-      this._countries = [];
-    }
-    try {
-      const list = await window.flow.radio.genres();
-      this._genres = list
-        .map((g) => ({ value: g.name, label: g.name.replace(/(^|[\s/-])\p{L}/gu, (m) => m.toUpperCase()), hint: I18n.num(g.stations) }))
-        .sort((a, b) => a.label.localeCompare(b.label, I18n.lang));
-    } catch {
-      this._genres = [];
-    }
+    this._countries = (facets.countries || [])
+      .map((c) => ({ value: c.code, label: names(c.code) || c.name, n: c.stations }))
+      .sort((a, b) => a.label.localeCompare(b.label, I18n.lang));
+    this._genres = (facets.genres || [])
+      .map((g) => ({ value: g.name, label: this._genreLabel(g.name), n: g.stations }))
+      .sort((a, b) => a.label.localeCompare(b.label, I18n.lang));
+    const q = facets.qualities || {};
+    this._qualities = RADIO_QUALITIES.map((rate) => ({ value: String(rate), label: this._qualityLabel(rate), n: Number(q[rate]) || 0 }));
     this.country.draw();
     this.genre.draw();
+    this.quality.draw();
+  },
+
+  /**
+   * A picker's entries with their counts, those without a station under the
+   * other filters left out; the one picked stays (with 0), so it can be seen and changed.
+   */
+  _offer(list, picked) {
+    const out = list.filter((o) => o.n === null || o.n > 0 || o.value === picked)
+      .map((o) => ({ value: o.value, label: o.label, hint: o.n === null ? '' : I18n.num(o.n) }));
+    if (picked && !out.some((o) => o.value === picked)) {
+      const label = RADIO_QUALITIES.includes(Number(picked)) ? this._qualityLabel(Number(picked))
+        : /^[A-Z]{2}$/.test(picked) ? this._regionNames()(picked) || picked : this._genreLabel(picked);
+      out.push({ value: picked, label, hint: I18n.num(0) });
+    }
+    return out;
+  },
+
+  _genreLabel(name) {
+    return String(name).replace(/(^|[\s/-])\p{L}/gu, (m) => m.toUpperCase());
+  },
+
+  _qualityLabel(rate) {
+    return rate < 0 ? T('radio.filter.quality.noInfo') : T('radio.filter.quality.atLeast', { rate });
   },
 
   /** A country's name in Flow's language, from its code ('' when the browser has none). */
@@ -206,6 +232,7 @@ const RadioPage = {
       this.others = [...this.others, ...r.stations.filter((s) => !seen.has(s.id))];
       this.page = page;
       this.more = r.more;
+      this._useFacets(r.facets);
     } catch (err) {
       if (seq !== this._seq) return;
       this.error = (err && err.message) || String(err);

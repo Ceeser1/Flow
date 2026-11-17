@@ -156,8 +156,6 @@ contextBridge.exposeInMainWorld('flow', {
   // Internet Radio (5.1): the directory's countries, genres and stations ({ name, country, genre, page }),
   // a directory station played (click), an address checked, a stream let into Web Audio (allow).
   radio: {
-    countries: () => call('radio:countries'),
-    genres: () => call('radio:genres'),
     search: (q) => call('radio:search', q),
     click: (id) => call('radio:click', id),
     check: (url) => call('radio:check', url),

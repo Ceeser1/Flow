@@ -78,39 +78,87 @@ test('an unknown type, or a Shoutcast ICY answer, is taken unchecked', async () 
   assert.equal((await radio.checkStream('http://icy.example:8000/', { fetch: get })).checked, false);
 });
 
-test('the directory leaves out HLS stations and keeps the first host that answers', async () => {
-  const calls = [];
-  const stations = [
-    { stationuuid: '11111111-aaaa', name: 'One', url: 'http://one.example/live', url_resolved: 'http://one.example/live', countrycode: 'de', tags: 'rock,pop', codec: 'MP3', bitrate: 128, hls: 0 },
-    { stationuuid: '22222222-bbbb', name: 'Two', url: 'http://two.example/a.m3u8', hls: 1 },
-  ];
-  const get = async (url) => {
+// A directory of a few stations, answering the whole-list pages (the first page holds them all).
+function fakeDirectory(stations, calls = []) {
+  return async (url) => {
     calls.push(url);
     if (url.startsWith('https://all.')) throw new TypeError('fetch failed');
-    return { ok: true, status: 200, json: async () => stations };
+    const offset = Number(new URL(url).searchParams.get('offset')) || 0;
+    return { ok: true, status: 200, json: async () => (offset === 0 ? stations : []) };
   };
-  const d = radio.createDirectory({ fetch: get });
-  const r = await d.search({ country: 'DE', genre: 'rock' });
-  assert.equal(r.stations.length, 1);
-  assert.equal(r.stations[0].name, 'One');
-  assert.equal(r.stations[0].countryCode, 'DE');
-  assert.match(calls[1], /^https:\/\/de1\..*countrycode=DE.*tag=rock/);
-  await d.search({});
-  assert.match(calls[2], /^https:\/\/de1\./);
-  assert.doesNotMatch(calls[2], /bitrate/);
+}
+
+const STATIONS = [
+  { stationuuid: '11111111-aaaa', name: 'Rock One', url: 'http://one.example/live', countrycode: 'de', country: 'Germany', tags: 'rock,2000s', codec: 'MP3', bitrate: 320, clickcount: 50, hls: 0 },
+  { stationuuid: '22222222-bbbb', name: 'Two', url: 'http://two.example/a.m3u8', countrycode: 'de', tags: 'rock', hls: 1 },
+  { stationuuid: '33333333-cccc', name: 'Café 2000', url: 'http://three.example/live', countrycode: 'fr', country: 'France', tags: '2000s', codec: 'AAC', bitrate: 128, clickcount: 90, hls: 0 },
+  { stationuuid: '44444444-dddd', name: 'Rock Unknown', url: 'http://four.example/live', countrycode: 'de', country: 'Germany', tags: 'Rock, Pop', bitrate: 0, clickcount: 10, hls: 0 },
+];
+
+test('the directory: the whole list fetched once, HLS left out, filtered here, the most played first', async () => {
+  const calls = [];
+  const d = radio.createDirectory({ fetch: fakeDirectory(STATIONS, calls), minGenre: 1 });
+  const r = await d.search({});
+  assert.deepEqual(r.stations.map((s) => s.name), ['Café 2000', 'Rock One', 'Rock Unknown']);
+  assert.equal(r.total, 3);
+  assert.equal(r.more, false);
+  // Three pages at once, from the second host (the first failed), the answer short: done.
+  assert.equal(calls.filter((u) => u.startsWith('https://de1.')).length, 3);
+  const before = calls.length;
+  assert.deepEqual((await d.search({ country: 'de', genre: 'rock' })).stations.map((s) => s.name), ['Rock One', 'Rock Unknown']);
+  assert.deepEqual((await d.search({ name: 'cafe' })).stations.map((s) => s.name), ['Café 2000']);
+  assert.deepEqual((await d.search({ quality: 192 })).stations.map((s) => s.name), ['Rock One']);
+  assert.deepEqual((await d.search({ quality: radio.RADIO_NO_INFO })).stations.map((s) => s.name), ['Rock Unknown']);
+  assert.equal((await d.search({ quality: 100 })).total, 3);
+  assert.equal(calls.length, before, 'filtering asks the directory nothing');
 });
 
-test('the Quality filter: at least a bitrate, or only the stations without one', async () => {
-  const calls = [];
-  const d = radio.createDirectory({ fetch: async (url) => (calls.push(url), { ok: true, status: 200, json: async () => [] }) });
-  await d.search({ quality: 192 });
-  await d.search({ quality: radio.RADIO_NO_INFO });
-  await d.search({ quality: 100 });
-  assert.match(calls[0], /bitrateMin=192/);
-  assert.doesNotMatch(calls[0], /bitrateMax/);
-  assert.match(calls[1], /bitrateMax=0/);
-  assert.doesNotMatch(calls[1], /bitrateMin/);
-  assert.doesNotMatch(calls[2], /bitrate/);
+test('each picker offers only what is there under the other filters, with counts', async () => {
+  const d = radio.createDirectory({ fetch: fakeDirectory(STATIONS), minGenre: 1 });
+  const f = (await d.search({ quality: 320 })).facets;
+  assert.deepEqual(f.genres, [{ name: 'rock', stations: 1 }, { name: '2000s', stations: 1 }]);
+  assert.deepEqual(f.countries, [{ code: 'DE', name: 'Germany', stations: 1 }]);
+  // Its own filter left out of its own counts.
+  assert.equal(f.qualities[320], 1);
+  assert.equal(f.qualities[128], 2);
+  assert.equal(f.qualities[radio.RADIO_NO_INFO], 1);
+  const g = (await d.search({ genre: '2000s' })).facets;
+  assert.deepEqual(g.countries.map((c) => c.code).sort(), ['DE', 'FR']);
+  assert.equal(g.qualities[320], 1);
+  assert.equal(g.qualities[radio.RADIO_NO_INFO], 0);
+  const n = (await d.search({ name: 'rock' })).facets;
+  assert.deepEqual(n.countries, [{ code: 'DE', name: 'Germany', stations: 2 }]);
+  // A genre few stations name is not offered.
+  const few = radio.createDirectory({ fetch: fakeDirectory(STATIONS), minGenre: 2 });
+  assert.deepEqual((await few.search({})).facets.genres.map((x) => x.name).sort(), ['2000s', 'rock']);
+});
+
+test('the list is kept as a copy, used at once, and fetched again behind it once a day old', async () => {
+  let kept = null;
+  const copy = { read: () => kept && JSON.parse(kept), write: (data) => { kept = JSON.stringify(data); } };
+  {
+    await radio.createDirectory({ fetch: fakeDirectory(STATIONS), copy }).search({});
+    assert.ok(kept);
+    const calls = [];
+    const fresh = radio.createDirectory({ fetch: fakeDirectory([], calls), copy });
+    assert.equal((await fresh.search({})).total, 3);
+    assert.equal(calls.length, 0, 'a fresh copy needs no directory');
+    // A day old: still answered from it, a new list fetched behind it.
+    const old = radio.createDirectory({ fetch: fakeDirectory(STATIONS.slice(0, 1), calls), copy, maxAgeMs: -1 });
+    assert.equal((await old.search({})).total, 3);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(calls.length > 0);
+    assert.equal((await old.search({})).total, 1);
+    // Nothing kept and the directory away: the error says so.
+    const away = radio.createDirectory({ fetch: async () => { throw new TypeError('fetch failed'); } });
+    await assert.rejects(away.search({}), /radio-browser.info/);
+    // A copy that cannot be read is as none.
+    const broken = radio.createDirectory({ fetch: fakeDirectory(STATIONS), copy: { read: () => { throw new Error('bad'); }, write: () => {} } });
+    assert.equal((await broken.search({})).total, 3);
+  }
+});
+
+test('the Quality setting is one of the steps, or all', () => {
   assert.equal(clean({}).radioQuality, 0);
   assert.equal(clean({ radioQuality: '256' }).radioQuality, 256);
   assert.equal(clean({ radioQuality: -1 }).radioQuality, -1);

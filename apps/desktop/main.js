@@ -3,6 +3,7 @@
 const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, screen, dialog, Notification, session } = require('electron');
 const { execFile } = require('child_process');
 const fs = require('fs');
+const zlib = require('zlib');
 const path = require('path');
 
 const paths = require('./src/paths');
@@ -1150,12 +1151,20 @@ handle('song:lookupInfo', (song) => lookupInfo(song || {}));
 
 // ---- Internet Radio (5.1) ----
 //
-// The stations Flow suggests (radio-browser.info), and a station added by hand
-// checked. The window cannot ask other sites itself (its page allows only its
-// own), so it asks here.
-const radioDirectory = radio.createDirectory();
-handle('radio:countries', () => radioDirectory.countries());
-handle('radio:genres', () => radioDirectory.genres());
+// The stations Flow suggests (radio-browser.info: the whole list, kept in the
+// cache folder and filtered here), and a station added by hand checked. The
+// window cannot ask other sites itself (its page allows only its own), so it asks here.
+const radioCopyFile = () => path.join(paths.cacheDir(), 'radio-stations.json.gz');
+const radioDirectory = radio.createDirectory({
+  copy: {
+    read: () => (fs.existsSync(radioCopyFile()) ? JSON.parse(zlib.gunzipSync(fs.readFileSync(radioCopyFile())).toString('utf8')) : null),
+    write: (data) => {
+      const tmp = `${radioCopyFile()}.tmp`;
+      fs.writeFileSync(tmp, zlib.gzipSync(JSON.stringify(data)));
+      fs.renameSync(tmp, radioCopyFile());
+    },
+  },
+});
 handle('radio:search', (q) => radioDirectory.search(q || {}));
 handle('radio:click', (id) => radioDirectory.click(id));
 handle('radio:check', (url) => radio.checkStream(url));
