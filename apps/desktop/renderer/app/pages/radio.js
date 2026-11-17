@@ -225,6 +225,8 @@ const RadioPage = {
         country: Store.settings.radioCountry || '',
         genre: Store.settings.radioGenre || '',
         quality: Store.settings.radioQuality || 0,
+        sort: this.othersSort.key ? { ...this.othersSort } : null,
+        lang: I18n.lang,
         page,
       });
       if (seq !== this._seq) return;
@@ -302,9 +304,8 @@ const RadioPage = {
     const favs = Radio.favourites();
     const favIds = new Set(favs.map((f) => f.id));
     const favUrls = new Set(favs.map((f) => f.url));
-    const shown = this.others.filter((s) => !favIds.has(s.id) && !favUrls.has(s.url));
-    // The stations loaded so far (the most played first), sorted here; more loaded go in sorted too.
-    const rows = Util.sortRows(shown, this.othersSort, (st, k) => this._value(st, k));
+    // Already in the order picked: the main process sorts the whole list before it hands out pages.
+    const rows = this.others.filter((s) => !favIds.has(s.id) && !favUrls.has(s.url));
     this._playButtons.forEach((btn, key) => {
       if (key.startsWith('o:')) this._playButtons.delete(key);
     });
@@ -313,7 +314,7 @@ const RadioPage = {
       sort: this.othersSort,
       onSort: (key) => {
         this.othersSort = this._nextSort(this.othersSort, key);
-        this._drawOthers();
+        this.search();
       },
       rowKey: (st) => st.id,
       rowClass: (st) => (Radio.isCurrent(st) ? 'row--current' : ''),

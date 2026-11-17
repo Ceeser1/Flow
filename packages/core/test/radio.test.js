@@ -134,6 +134,18 @@ test('each picker offers only what is there under the other filters, with counts
   assert.deepEqual((await few.search({})).facets.genres.map((x) => x.name).sort(), ['2000s', 'rock']);
 });
 
+test('a column order sorts the whole list before the pages, those without a value last', async () => {
+  const d = radio.createDirectory({ fetch: fakeDirectory(STATIONS), minGenre: 1 });
+  const names = async (sort, q = {}) => (await d.search({ ...q, sort, lang: 'en' })).stations.map((s) => s.name);
+  assert.deepEqual(await names({ key: 'quality', dir: 'asc' }), ['Café 2000', 'Rock One', 'Rock Unknown']);
+  assert.deepEqual(await names({ key: 'quality', dir: 'desc' }), ['Rock One', 'Café 2000', 'Rock Unknown']);
+  assert.deepEqual(await names({ key: 'name', dir: 'desc' }), ['Rock Unknown', 'Rock One', 'Café 2000']);
+  assert.deepEqual(await names({ key: 'country', dir: 'asc' }), ['Café 2000', 'Rock One', 'Rock Unknown']);
+  assert.deepEqual(await names({ key: 'quality', dir: 'asc' }, { country: 'DE' }), ['Rock One', 'Rock Unknown']);
+  // An order it does not know: the most played first.
+  assert.deepEqual(await names({ key: 'url', dir: 'asc' }), ['Café 2000', 'Rock One', 'Rock Unknown']);
+});
+
 test('the list is kept as a copy, used at once, and fetched again behind it once a day old', async () => {
   let kept = null;
   const copy = { read: () => kept && JSON.parse(kept), write: (data) => { kept = JSON.stringify(data); } };

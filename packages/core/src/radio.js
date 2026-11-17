@@ -35,6 +35,8 @@ const LIST_PAGE = 10000;
 const LIST_AT_ONCE = 3;
 const MAX_LIST_PAGES = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
+// The columns the list can be sorted by (search's `sort.key`).
+const SORT_KEYS = ['name', 'country', 'genre', 'quality'];
 // Unused this long, the list is let go of in memory (read from its copy again when wanted).
 const IDLE_MS = 15 * 60 * 1000;
 
@@ -278,16 +280,63 @@ function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000, pag
     };
   }
 
+  /**
+   * The whole list in a column's order ('name', 'country', 'genre' or
+   * 'quality'; dir 'asc' or 'desc'), those without a value last either way,
+   * the most played first among equals; made once per order and list.
+   * Countries by their names in `lang` (as the page shows them).
+   */
+  function sortedEntries(data, { key, dir }, lang) {
+    const id = `${key}|${dir}|${lang}`;
+    if (!data.sorted) data.sorted = new Map();
+    if (data.sorted.has(id)) return data.sorted.get(id);
+    let regions = null;
+    try {
+      regions = new Intl.DisplayNames([lang || 'en'], { type: 'region' });
+    } catch {
+      regions = null;
+    }
+    const countryName = (st) => {
+      try {
+        return (st.countryCode && regions && regions.of(st.countryCode)) || st.country;
+      } catch {
+        return st.country;
+      }
+    };
+    const valueOf = {
+      name: (st) => st.name,
+      country: countryName,
+      genre: (st) => st.tags.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 3).join(', '),
+      quality: (st) => st.bitrate || '',
+    }[key];
+    const collator = new Intl.Collator(lang || undefined, { sensitivity: 'base', numeric: true });
+    const sign = dir === 'desc' ? -1 : 1;
+    // data.entries is the most played first: kept among equals (a stable sort).
+    const keyed = data.entries.map((e) => ({ e, v: valueOf(e.st) }));
+    keyed.sort((a, b) => {
+      const ea = a.v === '';
+      const eb = b.v === '';
+      if (ea || eb) return ea === eb ? 0 : (ea ? 1 : -1);
+      return sign * (typeof a.v === 'number' ? a.v - b.v : collator.compare(a.v, b.v));
+    });
+    const out = keyed.map((x) => x.e);
+    // A handful of orders at most; the oldest let go of.
+    if (data.sorted.size >= 8) data.sorted.delete(data.sorted.keys().next().value);
+    data.sorted.set(id, out);
+    return out;
+  }
+
   return {
     /**
      * Stations matching a name (part of it), a country (its code), a genre and
      * a lowest bitrate (`quality`, kbit/s; 0 any, RADIO_NO_INFO only those
-     * without one), the most played first; `page` from 0. Worked out here from
-     * the whole directory (HLS streams left out: the player cannot play them).
+     * without one), the most played first or in a column's order (`sort`:
+     * { key, dir }, `lang` for the countries' names); `page` from 0. Worked out
+     * here from the whole directory (HLS streams left out: the player cannot play them).
      * { stations, more, total, all, facets }: all = the whole list's stations,
      * facets = what each picker offers under the other filters, with how many stations.
      */
-    async search({ name = '', country = '', genre = '', quality = 0, page = 0 } = {}) {
+    async search({ name = '', country = '', genre = '', quality = 0, page = 0, sort = null, lang = '' } = {}) {
       const data = await list();
       const f = {
         name: fold(text(name, 100)),
@@ -295,7 +344,10 @@ function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000, pag
         genre: text(genre, 60).toLowerCase(),
         quality: RADIO_QUALITIES.includes(Number(quality)) ? Number(quality) : 0,
       };
-      const found = data.entries.filter((e) => passes(e, f, null));
+      const order = sort && SORT_KEYS.includes(sort.key) && ['asc', 'desc'].includes(sort.dir)
+        ? sortedEntries(data, sort, /^[a-z]{2,3}(-[A-Za-z0-9]+)*$/.test(String(lang)) ? String(lang) : '')
+        : data.entries;
+      const found = order.filter((e) => passes(e, f, null));
       const from = Math.max(0, page | 0) * PAGE;
       return {
         stations: found.slice(from, from + PAGE).map((e) => ({ ...e.st })),
