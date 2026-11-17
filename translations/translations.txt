@@ -355,8 +355,12 @@ settings.appVisuals.clouds.colorScheme.label
   de: Farbschema der Wolken
 
 settings.appVisuals.clouds.colorScheme.desc
-  en: Rainbow gives each cloud a random color as it comes.
-  de: Regenbogen gibt jeder neuen Wolke eine zufällige Farbe.
+  en: Rainbow gives each cloud a random color as it comes. From cover takes the colors of the playing song's cover.
+  de: Regenbogen gibt jeder neuen Wolke eine zufällige Farbe. Vom Cover nimmt die Farben des Covers des laufenden Songs.
+
+settings.appVisuals.clouds.colorScheme.cover
+  en: From cover
+  de: Vom Cover
 
 settings.appVisuals.clouds.amount.label
   en: Clouds amount

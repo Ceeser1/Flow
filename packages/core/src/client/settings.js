@@ -479,8 +479,9 @@ const DEFAULTS = {
   cloudsIntensity: 50,
   cloudsBass: true,
   cloudsBassAmount: 50,
-  // Their colours: 'rainbow' (each cloud its own) or one of the solid ones
-  // (CLOUD_COLORS), and how many there are (percent, 0-100 in steps of 10).
+  // Their colours: 'rainbow' (each cloud its own), 'cover' (the playing
+  // song's cover's, 5.1.5) or one of the solid ones (CLOUD_COLORS), and how
+  // many there are (percent, 0-100 in steps of 10).
   cloudsColors: 'rainbow',
   cloudsAmount: 50,
   // The equalizer: height and shine in percent, and its colours.
@@ -581,7 +582,7 @@ const DEFAULTS = {
 
 const SOUND_EQ_PRESETS = ['standard', 'bass', 'subtle', 'intimate', 'custom'];
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
-const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
+const CLOUD_COLORS = ['rainbow', 'cover', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 // The ones that can be chosen; 'random-<category>' picks one of a
 // category's each time (VIZ_CATEGORIES in the desktop's visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy', 'other'];

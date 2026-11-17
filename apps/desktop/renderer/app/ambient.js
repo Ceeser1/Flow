@@ -35,7 +35,12 @@
 // app's GPU work.
 //
 // Settings: in Rainbow each cloud takes a random colour every time it comes
-// back; a solid scheme gives them all that one. The amount at 50% is the
+// back; a solid scheme gives them all that one. From cover (5.1.5): the
+// playing song's cover's colours (coverColors.js, from its small picture),
+// one to each cloud in turn, as colourful and as light as clouds are; on a
+// new song they turn into the new cover's over about two seconds. Without a
+// cover (a station, a song without one) they keep the last cover's colours,
+// and before any, Rainbow's. The amount at 50% is the
 // first half of CLOUDS (the look as designed), 100% all of them, 0% none.
 //
 // Show Cover as background (from 5.0.2 on the phones too): the playing song's big
@@ -78,6 +83,10 @@ const Ambient = {
   coverBox: null,   // where it goes: { x, y, size } in the canvas's pixels
   coverPiece: null, // the canvas way's copy of it with the fade in it: { pic, canvas, mask, reach }
   lastPlace: 0,
+  palette: null,    // From cover: the cover's colours ([h, s, l] each), or null before the first
+  paletteKey: '',   // the song and picture they are (being) taken from
+  paletteAt: 0,     // when the clouds' colours last moved towards them (ms)
+  paletteMoving: false, // the clouds still turning into a new cover's colours
   PLACE_MS: 250,    // how often its place is looked at again (pages, banners)
   scrolled: false,  // the page was scrolled since: its place is looked at with the next frame
   COVER_SHARE: 0.8, // its height against the room it is in the middle of
@@ -160,6 +169,10 @@ const Ambient = {
     { sat: 82, light: 47, size: 0.2, x: [0.35, 0.28, 131], y: [0.5, 0.35, 163], hueSwing: 16, cycle: 113 },
   ],
 
+  // From cover: how fast the clouds take a new cover's colours (ms; about
+  // three times this until they are there).
+  PALETTE_FADE_MS: 700,
+
   // The solid schemes: [hue, saturation, lightness], as the equalizer's.
   SOLID: {
     white: [0, 0, 78],
@@ -186,6 +199,7 @@ const Ambient = {
     this.time = Math.random() * 600;
     Store.onSettings((patch) => {
       if ('coverBgOn' in patch) this._wantCover();
+      if ('cloudsColors' in patch) this._wantPalette();
       if (['cloudsOn', 'cloudsIntensity', 'cloudsColors', 'cloudsAmount', 'coverBgOn', 'coverBgVisibility'].some((k) => k in patch)) this._draw();
     });
     Player.onChange(() => this._wantCover());
@@ -193,8 +207,9 @@ const Ambient = {
     if (typeof Radio !== 'undefined') Radio.onChange(() => this._wantCover());
     Covers.onArrived((ids) => {
       if (!Player.currentId || (ids && !ids.includes(Player.currentId))) return;
-      // Asked again: the big one may be there now.
+      // Asked again: the big one may be there now (and the small one From cover reads).
       this.coverKey = '';
+      this.paletteKey = '';
       this._wantCover();
     });
     this._wantCover();
@@ -588,7 +603,7 @@ ${src}`);
     // about half the GPU's work there, drawn for nothing.
     if (Visualizer.shown) return;
     // With nothing playing and no pulse left to fade, fewer frames will do (a cover that moved is drawn at once).
-    const lively = Equalizer.bass > 0 || this.pulse > 0.002;
+    const lively = Equalizer.bass > 0 || this.pulse > 0.002 || this.paletteMoving;
     if (!moved && !lively && now - this.lastDraw < 1000 / this.IDLE_FPS) return;
     if (!this.frozen) this.time += (now - (this.lastDraw || now)) / 1000;
     this.lastDraw = now;
@@ -708,6 +723,8 @@ ${src}`);
    * none; the one shown stays until the next is ready. Drawn once it is.
    */
   _wantCover() {
+    // The clouds' From cover follows the same song (each its own picture).
+    this._wantPalette();
     const s = Store.settings;
     const radio = typeof Radio !== 'undefined' && Radio.owns();
     const id = radio ? null : Player.currentId;
@@ -754,6 +771,53 @@ ${src}`);
       else none();
     };
     // A Flow Server's cover on a page of another address (the web player): asked for as WebGL may read it.
+    if (/^https?:/i.test(list[0])) img.crossOrigin = 'anonymous';
+    img.src = list[0];
+  },
+
+  /**
+   * From cover (5.1.5): the playing song's cover's colours, taken from its
+   * small picture once it has loaded. None to be had: the last ones stay.
+   */
+  _wantPalette() {
+    if (Store.settings.cloudsColors !== 'cover') {
+      this.paletteKey = '';
+      return;
+    }
+    const radio = typeof Radio !== 'undefined' && Radio.owns();
+    const id = radio ? null : Player.currentId;
+    const song = id ? Store.song(id) || (Player.remote ? { ...Player.remote.state, id } : null) : null;
+    const list = song ? Covers.candidates(song, 'small') : [];
+    const key = list.length ? `${id}|${list[0]}` : '';
+    if (!key || key === this.paletteKey) return;
+    this.paletteKey = key;
+    const img = new Image();
+    let at = 0;
+    img.onload = () => {
+      if (this.paletteKey !== key) return;
+      try {
+        const S = 24;
+        const c = document.createElement('canvas');
+        c.width = S;
+        c.height = S;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, S, S);
+        const found = CoverColors.palette(ctx.getImageData(0, 0, S, S).data);
+        if (!found.length) return;
+        this.palette = found;
+        this.paletteMoving = true;
+        this._draw();
+      } catch {
+        // A picture that may not be read (another address without CORS): the colours stay.
+      }
+    };
+    img.onerror = () => {
+      if (this.paletteKey !== key) return;
+      at += 1;
+      if (at < list.length) img.src = list[at];
+      // Not here yet (fetched for the player bar): tried again when it arrives.
+      else this.paletteKey = '';
+    };
     if (/^https?:/i.test(list[0])) img.crossOrigin = 'anonymous';
     img.src = list[0];
   },
@@ -1172,6 +1236,13 @@ ${src}`);
     const intensity = (s.cloudsIntensity || 50) / 50;
     const at = ([centre, reach, period], phase) => centre + reach * Math.sin((tau * t) / period + phase);
     const solid = this.SOLID[s.cloudsColors] || null;
+    // From cover, once a cover's colours are here: each cloud moves towards
+    // its colour by the time since the last frame.
+    const fromCover = s.cloudsColors === 'cover' && this.palette ? this.palette : null;
+    const nowMs = performance.now();
+    const step = this.frozen || !this.paletteAt ? 1 : 1 - Math.exp(-Math.min(1000, nowMs - this.paletteAt) / this.PALETTE_FADE_MS);
+    this.paletteAt = nowMs;
+    let moving = false;
     const amount = Number.isFinite(s.cloudsAmount) ? s.cloudsAmount : 50;
     const count = Math.round((this.CLOUDS.length * amount) / 100);
     if (!this.puffData) {
@@ -1191,7 +1262,8 @@ ${src}`);
         return;
       }
       // Rainbow: a new colour each time it comes back.
-      if (cl.away || cl.hue == null) {
+      const back = cl.away || cl.hue == null;
+      if (back) {
         cl.hue = Math.random() * 360;
         cl.away = false;
       }
@@ -1199,11 +1271,34 @@ ${src}`);
       const y = at(cl.y, i * 2.3 + 1) * h;
       // Growing as it comes, shrinking as it goes.
       const r = cl.size * side * swell * (0.7 + 0.3 * here);
-      const hue = solid ? solid[0] : Number((cl.hue + cl.hueSwing * Math.sin((tau * t) / 211 + i)).toFixed(1));
-      const sat = solid ? solid[1] : cl.sat;
-      const light = solid ? solid[2] : cl.light;
-      const colour = `hsla(${solid ? hue : hue.toFixed(1)}, ${sat}%, ${light}%, `;
-      const rgb = this._rgb(hue, sat, light);
+      let hue = solid ? solid[0] : Number((cl.hue + cl.hueSwing * Math.sin((tau * t) / 211 + i)).toFixed(1));
+      let sat = solid ? solid[1] : cl.sat;
+      let light = solid ? solid[2] : cl.light;
+      let colour;
+      let rgb;
+      if (fromCover) {
+        const [ch, cs, cl2] = CoverColors.forCloud(fromCover[i % fromCover.length], cl.light);
+        // A little of Rainbow's slow swing, so a one-colour cover is not one flat colour.
+        hue = (ch + 0.4 * cl.hueSwing * Math.sin((tau * t) / 211 + i) + 360) % 360;
+        sat = cs;
+        light = cl2;
+        const want = this._rgb(hue, sat, light);
+        // New, or back from being away: in the cover's colour at once.
+        if (!cl.rgbNow || back) cl.rgbNow = [want[0], want[1], want[2]];
+        for (let k = 0; k < 3; k += 1) {
+          const d = want[k] - cl.rgbNow[k];
+          // Still on its way while more than about 5 steps of 255 off.
+          if (Math.abs(d) > 0.02) moving = true;
+          cl.rgbNow[k] += d * step;
+        }
+        rgb = cl.rgbNow;
+        colour = `rgba(${Math.round(rgb[0] * 255)}, ${Math.round(rgb[1] * 255)}, ${Math.round(rgb[2] * 255)}, `;
+      } else {
+        colour = `hsla(${solid ? hue : hue.toFixed(1)}, ${sat}%, ${light}%, `;
+        rgb = this._rgb(hue, sat, light);
+        // What From cover turns from, when it is picked.
+        cl.rgbNow = [rgb[0], rgb[1], rgb[2]];
+      }
       const strength = Math.min(1, this.PUFF_ALPHA * intensity * here * brighter);
 
       for (const p of cl.puffs) {
@@ -1220,6 +1315,7 @@ ${src}`);
         n += 1;
       }
     });
+    this.paletteMoving = moving;
     return n;
   },
 

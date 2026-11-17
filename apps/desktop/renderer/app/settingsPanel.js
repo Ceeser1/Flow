@@ -21,9 +21,10 @@ const EQ_SCHEMES = [
   ['black', T('common.color.black')],
 ];
 
-// The clouds: each its own colour, or all one (the equalizer's solid ones).
+// The clouds: each its own colour, the playing song's cover's (5.1.5), or all one (the equalizer's solid ones).
 const CLOUD_SCHEMES = [
   ['rainbow', T('common.color.rainbow')],
+  ['cover', T('settings.appVisuals.clouds.colorScheme.cover')],
   ...EQ_SCHEMES.filter(([v]) => !['spectrum', 'rainbow', 'greyscale'].includes(v)),
 ];
 
