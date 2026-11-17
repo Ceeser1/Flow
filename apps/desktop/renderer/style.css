@@ -179,14 +179,58 @@ button, input, select { font: inherit; color: inherit; }
 /* ===== menu ===== */
 
 .menu {
-  /* Darker at the top, the old colour in the middle, lighter at the bottom. */
+  /* Darker at the top, the old colour in the middle, lighter at the bottom; the roots over it (.roots). */
   background: linear-gradient(to bottom, #111114, var(--menu-bg) 50%, #212126);
+  position: relative;
+  /* The roots go behind the menu's entries, over its background. */
+  isolation: isolate;
   border-right: 1px solid #25252a;
   display: flex;
   flex-direction: column;
   padding: 16px 12px 12px;
   min-height: 0;
 }
+
+/* Faint roots growing down from the top of the menu, some reaching out over the
+   content's background (assets/roots-*.svg, made by scripts/make-menu-roots.js),
+   at two depths: far ones fainter, thinner and soft, near ones crisp.
+   menuRoots.js drifts them slowly and lets them follow the mouse a little, the
+   near ones more (parallax: a fake 3D). Each picture is shown twice, in the menu
+   and behind the content (between the clouds and the equalizer), laid the same
+   on the window, so a root crosses the menu's edge without a seam; each layer
+   is its own on the GPU and only moved, never drawn again. 10 px larger than
+   where it shows on each side, so its edges never show while it moves. */
+.roots {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.roots--menu { z-index: -1; }
+.roots--content { z-index: 0; }
+.roots__layer {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  /* The pictures' size: the menu's part (248 + 2 x 10) and 500 px beyond it. */
+  width: 768px;
+  height: calc(100% + 20px);
+  background: top left / 768px auto no-repeat;
+  /* About the menu's top middle, in both places. */
+  transform-origin: 134px 0;
+  will-change: transform, opacity;
+}
+.roots--content .roots__layer { left: calc(-10px - var(--menu-w)); }
+.roots__layer--far { background-image: url("assets/roots-far.svg"); }
+.roots__layer--near { background-image: url("assets/roots-near.svg"); }
+/* The menu's depth spilling over its edge: a soft shade on the background, gone after 220 px. */
+.roots__shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgba(10, 10, 12, 0.42), rgba(10, 10, 12, 0.16) 90px, rgba(10, 10, 12, 0) 220px);
+}
+/* The phone layout: the menu is a drawer over the page, nothing grows out of it. */
+body.mobile .roots--content { display: none; }
 
 .brand {
   display: flex;

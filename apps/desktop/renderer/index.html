@@ -29,6 +29,8 @@
 
   <!-- ===== Menu ===== -->
   <aside class="menu">
+    <!-- The roots behind the menu, far and near (menuRoots.js moves them). -->
+    <div class="roots roots--menu" aria-hidden="true"><div class="roots__layer roots__layer--far"></div><div class="roots__layer roots__layer--near"></div></div>
     <div class="brand">
       <span class="brand__name">Flow</span>
       <button id="menuSettings" class="settings-btn" type="button" title="Settings" aria-label="Settings" data-i18n-aria-label="common.settings" data-i18n-title="common.settings"></button>
@@ -63,6 +65,8 @@
     <!-- The drifting colour clouds, and over them the equalizer, behind the
          pages and the player bar. -->
     <canvas id="ambientCanvas" class="ambient-canvas" aria-hidden="true"></canvas>
+    <!-- The menu's roots reaching out over the background, with the menu's shade (menuRoots.js). -->
+    <div class="roots roots--content" aria-hidden="true"><div class="roots__shade"></div><div class="roots__layer roots__layer--far"></div><div class="roots__layer roots__layer--near"></div></div>
     <canvas id="eqCanvas" class="eq-canvas" aria-hidden="true"></canvas>
     <div id="pages" class="pages">
 
@@ -592,6 +596,7 @@
 <script src="app/soundEq.js"></script>
 <script src="app/equalizer.js"></script>
 <script src="app/ambient.js"></script>
+<script src="app/menuRoots.js"></script>
 <script src="app/landscape.js"></script>
 <script src="app/seekCheck.js"></script>
 <script src="app/audioEngine.js"></script>

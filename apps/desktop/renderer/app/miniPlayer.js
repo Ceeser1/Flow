@@ -143,6 +143,7 @@ const MiniPlayer = {
     Store.away = !!away;
     if (away) Visualizer.rest();
     Ambient.rest(Store.away);
+    MenuRoots.rest(Store.away);
     Equalizer.rest(Store.away);
     if (!away) Visualizer.back();
   },
