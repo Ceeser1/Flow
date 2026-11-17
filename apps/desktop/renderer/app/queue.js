@@ -31,6 +31,12 @@
 // random song of a random one of them, so a short playlist plays as often as
 // a long one; no song is drawn again until every song has been.
 //
+// Smarter shuffle (5.1.1, `smart`, set by the Player while Settings ask for
+// it): a song drawn is, where the list allows, not by an artist of the song
+// before it, and songs this profile mostly skips early are drawn less often
+// (each song's `weight`, 0 to 1: they come later in the round, so in a long
+// list they rarely come at all). Every song still has its turn each round.
+//
 // Every call that may add songs is handed the list as it is shown right now
 // (`ids`), so a new sort or search counts from the next song added. Without
 // shuffle the list is followed from `cursor`, the last song taken from it,
@@ -57,6 +63,7 @@
       this.dj = new Set();   // songs continueWith added
       this.djOn = false;     // the list has played through: similar songs follow
       this.poolsOf = null;   // contextId => the song ids of each of its parts, or null: one list
+      this.smart = null;     // id => { artists: [folded names], weight: 0..1 } or null, or null: plain shuffle
     }
 
     /**
@@ -77,12 +84,83 @@
      */
     _draw(ids, ok) {
       const pools = this._pools(ids);
+      const before = this._lastArtists();
       if (!pools) {
         const pool = ids.filter(ok);
-        return pool.length ? this._pick(pool) : null;
+        return pool.length ? this._choose(pool, before) : null;
       }
-      const open = pools.map((p) => p.filter(ok)).filter((p) => p.length);
-      return open.length ? this._pick(this._pick(open)) : null;
+      let open = pools.map((p) => p.filter(ok)).filter((p) => p.length);
+      if (!open.length) return null;
+      // Smarter shuffle: a part with a song by someone else, where there is one.
+      if (before) {
+        const other = open.filter((p) => p.some((x) => !this._shares(x, before)));
+        if (other.length) open = other;
+      }
+      return this._choose(this._pick(open), before);
+    }
+
+    /** The artists of the song the next one follows (the last queued, else the one playing); null without Smarter shuffle. */
+    _lastArtists() {
+      if (!this.smart) return null;
+      const last = this.auto.length ? this.auto[this.auto.length - 1] : this.currentId;
+      const info = last ? this.smart(last) : null;
+      return info && info.artists && info.artists.length ? new Set(info.artists) : null;
+    }
+
+    _shares(id, artists) {
+      const info = this.smart(id);
+      return !!info && (info.artists || []).some((a) => artists.has(a));
+    }
+
+    /**
+     * One song of `pool`: at random, or with Smarter shuffle not by an artist
+     * of `before` where the pool has another, and drawn by each song's weight
+     * times how many songs of its artist the pool still has.
+     */
+    _choose(pool, before) {
+      if (!this.smart) return this._pick(pool);
+      // A long list (All Songs of a big library): songs tried at random,
+      // each taken by its weight, so a draw does not go through all of them
+      // (a round's last few, where the artists' counts matter, are short).
+      if (pool.length > PlayQueue.SAMPLE_OVER) {
+        for (let i = 0; i < 64; i += 1) {
+          const x = this._pick(pool);
+          if (before && this._shares(x, before)) continue;
+          const info = this.smart(x);
+          const w = info && Number.isFinite(info.weight) ? info.weight : 1;
+          if (this.random() < w) return x;
+        }
+      }
+      let list = pool;
+      if (before) {
+        const other = pool.filter((x) => !this._shares(x, before));
+        if (other.length) list = other;
+      }
+      // An artist with many songs left comes sooner, so the round does not
+      // end on a row of theirs.
+      const left = new Map();
+      const infos = pool.map((x) => this.smart(x));
+      for (const info of infos) {
+        const a = info && info.artists && info.artists[0];
+        if (a) left.set(a, (left.get(a) || 0) + 1);
+      }
+      const byId = new Map(pool.map((x, i) => [x, infos[i]]));
+      let total = 0;
+      const weights = list.map((x) => {
+        const info = byId.get(x);
+        const w = info && Number.isFinite(info.weight) ? Math.max(0, Math.min(1, info.weight)) : 1;
+        const a = info && info.artists && info.artists[0];
+        const v = w * (a ? left.get(a) : 1);
+        total += v;
+        return v;
+      });
+      if (!(total > 0)) return this._pick(list);
+      let r = this.random() * total;
+      for (let i = 0; i < list.length; i += 1) {
+        r -= weights[i];
+        if (r < 0) return list[i];
+      }
+      return list[list.length - 1];
     }
 
     /** The next similar song (continueWith), or null. */
@@ -115,6 +193,18 @@
       if (this.shuffle) {
         const queued = new Set(this.auto);
         let id = this._draw(ids, (x) => !this.used.has(x) && !queued.has(x) && x !== this.currentId);
+        // Smarter shuffle: what is left of the round is all by the artist just
+        // queued. The next round starts now, those songs in it.
+        if (id && !this.continueWith) {
+          const before = this._lastArtists();
+          if (before && this._shares(id, before)) {
+            const next = this._draw(ids, (x) => !queued.has(x) && x !== this.currentId);
+            if (next && !this._shares(next, before)) {
+              this.used.clear();
+              id = next;
+            }
+          }
+        }
         if (!id && this.continueWith) {
           this.djOn = true;
           return this._similar();
@@ -340,6 +430,22 @@
     }
   }
 
+  /**
+   * How gladly Smarter shuffle draws a song, by this profile's stats of it
+   * ({ plays, stops, skips }): 1 unless it was skipped early (under 30
+   * seconds) twice or more, down to 0.2 for one skipped early four times or
+   * more and never heard longer.
+   */
+  PlayQueue.shuffleWeight = (stats) => {
+    const st = stats || {};
+    const early = Number(st.skips) || 0;
+    if (early < 2) return 1;
+    const heard = (Number(st.plays) || 0) + (Number(st.stops) || 0);
+    return 1 - 0.8 * (early / (early + heard)) * Math.min(1, early / 4);
+  };
+
+  // Smarter shuffle draws from a list longer than this by trying songs at random.
+  PlayQueue.SAMPLE_OVER = 500;
   PlayQueue.LIMIT = 20;
   // Similar songs queued past the list's end.
   PlayQueue.DJ_AHEAD = 10;

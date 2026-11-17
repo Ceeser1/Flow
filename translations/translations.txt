@@ -99,6 +99,14 @@ settings.general.similarSongs.desc
   en: When the list playing has played through, songs like the last ones you heard follow (the same artists, genre, Info or album, those you listen to most first) instead of the list starting over. The Queue shows them as "Then similar songs".
   de: Ist die laufende Liste durchgespielt, folgen statt eines Neustarts Songs wie die zuletzt gehörten (gleiche Interpreten, Genre, Info oder Album, meistgehörte zuerst). Die Warteschlange zeigt sie als „Dann ähnliche Songs“.
 
+settings.general.smartShuffle.label
+  en: Smarter shuffle
+  de: Schlaueres Zufallsprinzip
+
+settings.general.smartShuffle.desc
+  en: With shuffle on, the same artist never plays twice in a row (unless the list has no one else), and songs you usually skip within the first 30 seconds come up less often. Every song still gets its turn.
+  de: Bei Zufallswiedergabe läuft nie zweimal hintereinander derselbe Interpret (außer die Liste hat keinen anderen), und Songs, die du meist in den ersten 30 Sekunden überspringst, kommen seltener. Jeder Song kommt trotzdem dran.
+
 settings.general.groupedHideInMenu.label
   en: Playlists added to groups hide in the menu
   de: Playlists in Gruppen im Menü ausblenden

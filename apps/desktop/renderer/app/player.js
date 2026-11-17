@@ -190,6 +190,7 @@ const Player = {
     this._applyVolume();
     this.queue.setShuffle(Store.settings.shuffle);
     this._applyAutoDj();
+    this._applySmartShuffle();
 
     const e = this.engine;
     e.on('play', () => {
@@ -321,6 +322,7 @@ const Player = {
         if (this.contextId && !this.remote) this.queue.fill(this.idsOf(this.contextId));
         this._emit();
       }
+      if ('smartShuffle' in patch) this._applySmartShuffle();
       if ('crossfade' in patch || 'crossfadeSeconds' in patch) this._syncUpcoming();
       if (!('normalize' in patch)) return;
       if (this.currentId) this.engine.setGain(this._normGain(this.currentId), true);
@@ -631,6 +633,32 @@ const Player = {
       : null;
     // Turned off: the list again, from where it was.
     if (!this.queue.continueWith) this.queue._leaveDj();
+  },
+
+  /**
+   * Settings' "Smarter shuffle" (5.1.1): with shuffle, the song drawn is not
+   * by an artist of the one before it where the list has others, and songs
+   * this profile mostly skips early come less often (queue.js).
+   */
+  _applySmartShuffle() {
+    this.queue.smart = Store.settings.smartShuffle !== false ? (id) => this._shuffleInfo(id) : null;
+  },
+
+  // A song's artist line -> its artists, folded (Smarter shuffle asks for them with every song drawn).
+  _artistsSeen: new Map(),
+
+  /** What Smarter shuffle goes by for a song: its artists, and how gladly it is drawn (0.2 to 1). */
+  _shuffleInfo(id) {
+    const song = Store.song(id);
+    if (!song) return null;
+    const line = String(song.artist || '');
+    let artists = this._artistsSeen.get(line);
+    if (!artists) {
+      if (this._artistsSeen.size > 5000) this._artistsSeen.clear();
+      artists = SmartLists.artistsOf(line).map((a) => a.toLowerCase().replace(/\s+/g, ' ').trim()).filter(Boolean);
+      this._artistsSeen.set(line, artists);
+    }
+    return { artists, weight: PlayQueue.shuffleWeight(song.stats) };
   },
 
   toggleRepeat() {
@@ -1229,6 +1257,7 @@ const Player = {
       const ahead = new PlayQueue(this.queue.random, this.queue.limit);
       ahead.restore(this.queue.snapshot());
       ahead.continueWith = this.queue.continueWith;
+      ahead.smart = this.queue.smart;
       const order = this.contextId ? this.idsOf(this.contextId) : [];
       while (ids.length < this.UPCOMING) {
         const id = ahead.next(order);
@@ -1300,6 +1329,7 @@ const Player = {
     if (!order.length) return [];
     const ahead = new PlayQueue(this.queue.random, this.queue.limit);
     ahead.shuffle = this.queue.shuffle;
+    ahead.smart = this.queue.smart;
     const items = [];
     const seen = new Set();
     for (let id = ahead.start(context, order); id && !seen.has(id) && items.length < this.UPCOMING; id = ahead.next(order)) {
@@ -1331,6 +1361,7 @@ const Player = {
     const ahead = new PlayQueue(this.queue.random, this.queue.limit);
     ahead.restore(this.queue.snapshot());
     ahead.continueWith = this.queue.continueWith;
+    ahead.smart = this.queue.smart;
     return ahead.next(this.contextId ? this.idsOf(this.contextId) : []) || '';
   },
 

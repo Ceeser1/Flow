@@ -129,6 +129,11 @@ const SettingsPanel = {
         label: T('settings.general.similarSongs.label'),
         desc: T('settings.general.similarSongs.desc'),
       }),
+      this._row({
+        key: 'smartShuffle',
+        label: T('settings.general.smartShuffle.label'),
+        desc: T('settings.general.smartShuffle.desc'),
+      }),
       // Also under the Playlist Groups head on the Playlists page (4.5.3).
       Store.canGroup() ? this._row({
         key: 'groupedHideInMenu',

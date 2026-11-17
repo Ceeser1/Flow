@@ -442,6 +442,9 @@ const DEFAULTS = {
   // "Continue with similar songs" when the list playing has played through
   // (4.0, autoDj.js), instead of it starting over.
   autoDj: false,
+  // Smarter shuffle (5.1.1, queue.js): no artist twice in a row where the list
+  // has others, and songs mostly skipped early drawn less often.
+  smartShuffle: true,
   // Playlists added to groups hide in the menu's Playlists (and Followed
   // Playlists), shown only inside their groups there (4.5.3).
   groupedHideInMenu: true,
@@ -689,7 +692,7 @@ function clean(raw) {
   s.radioCountry = /^[A-Z]{2}$/.test(String(s.radioCountry)) ? s.radioCountry : '';
   s.radioGenre = typeof s.radioGenre === 'string' ? s.radioGenre.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
   s.radioQuality = RADIO_QUALITIES.includes(Number(s.radioQuality)) ? Number(s.radioQuality) : 0;
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'showRadio', 'groupedHideInMenu', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'showRadio', 'smartShuffle', 'groupedHideInMenu', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'thumbCovers', 'highResCovers', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;
