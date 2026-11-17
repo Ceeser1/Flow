@@ -60,13 +60,6 @@ function httpUrl(raw) {
   return u.href;
 }
 
-// Directory stations Flow shows under a name of its own, by their id (only
-// that station, whatever the directory calls it later).
-const STATION_NAMES = {
-  // "Deutschlandfunk | DLF | OPUS 24k"
-  '5a6946a2-f02f-4fd1-a16b-558c90150041': 'Deutschlandfunk ÖRR',
-};
-
 /** One station as Flow keeps it (a favourite) or shows it; null when it has no stream. */
 function cleanStation(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -75,7 +68,7 @@ function cleanStation(raw) {
   const id = text(raw.id, 100) || `url:${url}`;
   return {
     id,
-    name: (Object.hasOwn(STATION_NAMES, id) && STATION_NAMES[id]) || text(raw.name, 200) || new URL(url).hostname,
+    name: text(raw.name, 200) || new URL(url).hostname,
     url,
     favicon: httpUrl(raw.favicon) || '',
     homepage: httpUrl(raw.homepage) || '',
