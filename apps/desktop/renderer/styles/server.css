@@ -173,6 +173,8 @@ body.mobile .switch-where { text-align: left; }
 /* Internet Radio's numbers: its time and stations on the left, the most heard on the right. */
 .stats__radio { margin-top: 14px; }
 .stats__radiohead { margin-bottom: 6px; }
+/* Its rows from the top, not spread over the height of the list beside them. */
+.stats__radio .admin__facts { align-content: start; }
 .stats__top { min-width: 0; font-size: 12px; }
 .stats__toph { color: var(--text-dim); margin-bottom: 4px; }
 .stats__toplist { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
