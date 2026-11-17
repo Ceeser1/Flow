@@ -166,6 +166,16 @@ test('the Quality setting is one of the steps, or all', () => {
   assert.equal(clean({ radioQuality: 100 }).radioQuality, 0);
 });
 
+test('a station Flow renames is shown under its own name, only that one', () => {
+  const st = (id, name) => radio.cleanStation({ id, name, url: 'http://dlf.example/live' });
+  assert.equal(st('5a6946a2-f02f-4fd1-a16b-558c90150041', 'Deutschlandfunk | DLF | OPUS 24k').name, 'Deutschlandfunk ÖRR');
+  assert.equal(st('3cd11a2a-4a42-44d7-b349-a652af7573dd', 'Deutschlandfunk | DLF | OPUS 64k').name, 'Deutschlandfunk | DLF | OPUS 64k');
+  assert.equal(st('toString', 'Plain').name, 'Plain');
+  // A favourite kept under the old name shows the new one too.
+  const favs = clean({ radioFavs: { private: [{ id: '5a6946a2-f02f-4fd1-a16b-558c90150041', name: 'Deutschlandfunk | DLF | OPUS 24k', url: 'http://dlf.example/live' }] } }).radioFavs;
+  assert.equal(favs.private[0].name, 'Deutschlandfunk ÖRR');
+});
+
 test('settings keep each profile\'s favourite stations, cleaned', () => {
   const s = clean({
     radioFavs: {
