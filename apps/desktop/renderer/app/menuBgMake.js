@@ -14,7 +14,8 @@
 //
 // Every picture is white on nothing, four times as strong as it looks as
 // designed: menuBg.js shows it at Settings' Visibility, 25 % by default, so
-// 100 % can be four times that. Pictures that are moved on and on (Currents,
+// 100 % can be four times that (and make's `times` as strong again: the phone
+// layout's, menuBg.js). Pictures that are moved on and on (Currents,
 // Stars, Mist, Scales) are tiles: they go on into themselves at their edges, so
 // the layer showing them can be moved by a whole tile without a seam. Vines and
 // Circuit go on into themselves to the sides, and Vinyl's is wide: so every
@@ -73,6 +74,11 @@ const MenuBgMake = (() => {
   function starts(style, seed, own) {
     return (part) => (seed ? number(`${style}:${seed}:${part}`) : own[part]);
   }
+
+  // How many times as strong as that the pictures are made just now (make's `gain`: more for a phone's screen).
+  let gain = 1;
+  /** A picture's opacity as strong as the pictures are made just now (whole at most). */
+  const strong = (opacity) => Math.round(Math.min(1, opacity * gain) * 1e4) / 1e4;
 
   const svg = (w, h, defs, body) => `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' viewBox='0 0 ${w} ${h}'>${defs ? `<defs>${defs}</defs>` : ''}${body}</svg>`;
 
@@ -180,7 +186,7 @@ const MenuBgMake = (() => {
       + `<mask id='mh'><rect width='${W}' height='${H}' fill='url(#h)'/></mask>`
       + (blur ? `<filter id='b' x='-5%' y='-5%' width='110%' height='110%'><feGaussianBlur stdDeviation='${blur}'/></filter>` : '')
       + '</defs>'
-      + `<g mask='url(#mv)'><g mask='url(#mh)'><g opacity='${opacity}'${blur ? " filter='url(#b)'" : ''} fill='none' stroke='#fff' stroke-linecap='round' stroke-linejoin='round'>${paths.join('')}</g></g></g></svg>`;
+      + `<g mask='url(#mv)'><g mask='url(#mh)'><g opacity='${strong(opacity)}'${blur ? " filter='url(#b)'" : ''} fill='none' stroke='#fff' stroke-linecap='round' stroke-linejoin='round'>${paths.join('')}</g></g></g></svg>`;
   }
 
   // The roots beyond the menu, for reaching over further than the menu's own picture does: main roots
@@ -211,7 +217,7 @@ const MenuBgMake = (() => {
     }
     return svg(W, H, rootsDown(top) + `<mask id='mv'><rect width='${W}' height='${H}' fill='url(#v)'/></mask>`
       + (blur ? `<filter id='b' x='-5%' y='-5%' width='110%' height='110%'><feGaussianBlur stdDeviation='${blur}'/></filter>` : ''),
-    `<g mask='url(#mv)'><g opacity='${opacity}'${blur ? " filter='url(#b)'" : ''} fill='none' stroke='#fff' stroke-linecap='round' stroke-linejoin='round'>${paths.join('')}</g></g>`);
+    `<g mask='url(#mv)'><g opacity='${strong(opacity)}'${blur ? " filter='url(#b)'" : ''} fill='none' stroke='#fff' stroke-linecap='round' stroke-linejoin='round'>${paths.join('')}</g></g>`);
   }
 
   // The ones in use (near: crisp; far: fainter, thinner, soft), four times as strong as they look as designed.
@@ -268,7 +274,7 @@ const MenuBgMake = (() => {
     }
     const defs = "<linearGradient id='t' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#fff' stop-opacity='0'/><stop offset='0.14' stop-color='#fff'/><stop offset='0.86' stop-color='#fff'/><stop offset='1' stop-color='#fff' stop-opacity='0'/></linearGradient>"
       + (blur ? `<filter id='b' x='-20%' y='-5%' width='140%' height='110%'><feGaussianBlur stdDeviation='${blur}'/></filter>` : '');
-    return svg(W, T, defs, `<g opacity='${opacity}'${blur ? " filter='url(#b)'" : ''} fill='none' stroke='url(#t)' stroke-linecap='round'>${paths.join('')}</g>`);
+    return svg(W, T, defs, `<g opacity='${strong(opacity)}'${blur ? " filter='url(#b)'" : ''} fill='none' stroke='url(#t)' stroke-linecap='round'>${paths.join('')}</g>`);
   }
 
   function currents(start) {
@@ -342,11 +348,11 @@ const MenuBgMake = (() => {
     });
     return {
       files: {
-        'stars-far.svg': svg(W, T, '', `<g opacity='0.19'>${far[0]}${far[1]}</g>`),
-        'stars-mid-a.svg': svg(W, T, '', `<g opacity='0.26'>${mid[0]}</g>`),
-        'stars-mid-b.svg': svg(W, T, '', `<g opacity='0.26'>${mid[1]}</g>`),
-        'stars-near-a.svg': svg(W, T, glow, `<g opacity='0.36'>${near[0]}${shapes[0]}</g>`),
-        'stars-near-b.svg': svg(W, T, glow, `<g opacity='0.36'>${near[1]}${shapes[1]}</g>`),
+        'stars-far.svg': svg(W, T, '', `<g opacity='${strong(0.19)}'>${far[0]}${far[1]}</g>`),
+        'stars-mid-a.svg': svg(W, T, '', `<g opacity='${strong(0.26)}'>${mid[0]}</g>`),
+        'stars-mid-b.svg': svg(W, T, '', `<g opacity='${strong(0.26)}'>${mid[1]}</g>`),
+        'stars-near-a.svg': svg(W, T, glow, `<g opacity='${strong(0.36)}'>${near[0]}${shapes[0]}</g>`),
+        'stars-near-b.svg': svg(W, T, glow, `<g opacity='${strong(0.36)}'>${near[1]}${shapes[1]}</g>`),
       },
     };
   }
@@ -383,7 +389,7 @@ const MenuBgMake = (() => {
       + `<circle cx='${CX}' cy='${CY}' r='124' stroke-width='0.5' stroke-opacity='0.6'/>`;
     const out = {
       files: {
-        'vinyl-grooves.svg': svg(W, H, '', `<g opacity='0.085' fill='none' stroke='#fff'>${label}${rings.map((g) => circle(g, g.a, g.w)).join('')}</g>`),
+        'vinyl-grooves.svg': svg(W, H, '', `<g opacity='${strong(0.085)}' fill='none' stroke='#fff'>${label}${rings.map((g) => circle(g, g.a, g.w)).join('')}</g>`),
         'vinyl-mask.svg': svg(W, H, '', `<g fill='none' stroke='#fff'>${label}${rings.map((g) => circle(g, 0.45 + g.a * 0.55, g.w + 0.5)).join('')}</g>`),
       },
     };
@@ -421,7 +427,7 @@ const MenuBgMake = (() => {
       }
     }
     const defs = "<radialGradient id='m'><stop offset='0' stop-color='#fff' stop-opacity='1'/><stop offset='0.45' stop-color='#fff' stop-opacity='0.45'/><stop offset='1' stop-color='#fff' stop-opacity='0'/></radialGradient>";
-    return svg(W, T, defs, `<g opacity='${opacity}' fill='url(#m)'>${parts.join('')}</g>`);
+    return svg(W, T, defs, `<g opacity='${strong(opacity)}' fill='url(#m)'>${parts.join('')}</g>`);
   }
 
   function mist(start) {
@@ -634,7 +640,7 @@ const MenuBgMake = (() => {
     const defs = `<linearGradient id='v' gradientUnits='userSpaceOnUse' x1='0' y1='${H}' x2='0' y2='0'><stop offset='0' stop-color='#fff'/><stop offset='0.5' stop-color='#fff' stop-opacity='0.8'/><stop offset='1' stop-color='#fff' stop-opacity='0.3'/></linearGradient>`
       + `<mask id='mv'><rect width='${W}' height='${H}' fill='url(#v)'/></mask>`;
     return {
-      files: { 'circuit.svg': svg(W, H, defs, `<g mask='url(#mv)'><g opacity='0.085' fill='none' stroke='#fff' stroke-width='1' stroke-linejoin='miter'>${parts.join('')}</g></g>`) },
+      files: { 'circuit.svg': svg(W, H, defs, `<g mask='url(#mv)'><g opacity='${strong(0.085)}' fill='none' stroke='#fff' stroke-width='1' stroke-linejoin='miter'>${parts.join('')}</g></g>`) },
       ways,
     };
   }
@@ -722,7 +728,7 @@ const MenuBgMake = (() => {
     const defs = `<linearGradient id='v' gradientUnits='userSpaceOnUse' x1='0' y1='${H}' x2='0' y2='0'><stop offset='0' stop-color='#fff'/><stop offset='0.5' stop-color='#fff' stop-opacity='0.8'/><stop offset='1' stop-color='#fff' stop-opacity='0.3'/></linearGradient>`
       + `<mask id='mv'><rect width='${W}' height='${H}' fill='url(#v)'/></mask>`
       + (blur ? `<filter id='b' x='-5%' y='-5%' width='110%' height='110%'><feGaussianBlur stdDeviation='${blur}'/></filter>` : '');
-    return svg(W, H, defs, `<g mask='url(#mv)'><g opacity='${opacity}'${blur ? " filter='url(#b)'" : ''}>`
+    return svg(W, H, defs, `<g mask='url(#mv)'><g opacity='${strong(opacity)}'${blur ? " filter='url(#b)'" : ''}>`
       + `<g fill='none' stroke='#fff' stroke-linecap='round' stroke-linejoin='round'>${paths.join('')}</g>`
       + `<g fill='#fff' fill-opacity='0.75'>${leaves.join('')}</g></g></g>`);
   }
@@ -793,12 +799,12 @@ const MenuBgMake = (() => {
       + `C${f(W * (0.76 - 0.2 * point))} ${f(under + dy)} ${W} ${f(side + dy)} ${W} ${BAND + dy}`;
     const body = `${rim(0)}V0H0Z`;
     const defs = `<linearGradient id='l' gradientUnits='userSpaceOnUse' x1='0' y1='${BAND - 4}' x2='0' y2='${tip}'><stop offset='0' stop-color='#fff' stop-opacity='0'/><stop offset='0.55' stop-color='#fff' stop-opacity='0.12'/><stop offset='1' stop-color='#fff' stop-opacity='0.5'/></linearGradient>`;
-    const picture = svg(W, H, defs, `<path d='${rim(2.4)}' fill='none' stroke='#000' stroke-width='3.2' opacity='0.1'/>`
-      + `<path d='${rim(1.5)}' fill='none' stroke='#000' stroke-width='1.8' opacity='0.2'/>`
+    const picture = svg(W, H, defs, `<path d='${rim(2.4)}' fill='none' stroke='#000' stroke-width='3.2' opacity='${strong(0.1)}'/>`
+      + `<path d='${rim(1.5)}' fill='none' stroke='#000' stroke-width='1.8' opacity='${strong(0.2)}'/>`
       + `<path d='${body}' fill='${MENU_COLOUR}'/>`
-      + `<path d='${body}' fill='url(#l)' opacity='0.1'/>`
-      + (look.ridge ? `<path d='M${W / 2} ${f(BAND + DEEP * 0.1)}V${f(tip - 1.5)}' fill='none' stroke='#fff' stroke-width='0.7' opacity='${(0.07 * look.ridge).toFixed(3)}'/>` : '')
-      + `<path d='${rim(0)}' fill='none' stroke='#fff' stroke-width='0.9' opacity='0.1'/>`);
+      + `<path d='${body}' fill='url(#l)' opacity='${strong(0.1)}'/>`
+      + (look.ridge ? `<path d='M${W / 2} ${f(BAND + DEEP * 0.1)}V${f(tip - 1.5)}' fill='none' stroke='#fff' stroke-width='0.7' opacity='${strong(0.07 * look.ridge).toFixed(3)}'/>` : '')
+      + `<path d='${rim(0)}' fill='none' stroke='#fff' stroke-width='0.9' opacity='${strong(0.1)}'/>`);
     return { files: { 'scales.svg': picture }, look };
   }
 
@@ -820,10 +826,16 @@ const MenuBgMake = (() => {
     dice,
     /**
      * A style's pictures (and what goes with them) for a seed; none: its standard look. `more`: also the
-     * pictures a style needs only for reaching over beyond the menu (Roots).
+     * pictures a style needs only for reaching over beyond the menu (Roots). `times`: how many times as
+     * strong as on the computer they are made (a phone's screen shows such faint pictures far fainter).
      */
-    make(style, seed = '', more = false) {
-      return STYLES[style](clean(seed), more);
+    make(style, seed = '', more = false, times = 1) {
+      gain = Math.max(0, Number(times) || 1);
+      try {
+        return STYLES[style](clean(seed), more);
+      } finally {
+        gain = 1;
+      }
     },
     scalesLook: (seed = '') => scalesLook(clean(seed)),
     // For scripts/make-menu-roots.js: one picture of roots, every number its own.

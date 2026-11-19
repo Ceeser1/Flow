@@ -54,6 +54,7 @@
 //
 // Visibility: the pictures are made four times as strong as they look as
 // designed, and shown at Settings' Visibility: 25 % as designed, 100 % whole.
+// On the phone layout they are made PHONE times as strong again (`gain`).
 
 const MenuBg = {
   box: null, // in the menu
@@ -91,6 +92,12 @@ const MenuBg = {
   MARGIN: 20,
   // The Visibility that gives the look as designed.
   VISIBILITY: 25,
+  // The phone layout: everything this many times as strong. A phone's screen shows what is so little lighter
+  // than the menu far fainter than a monitor does: as made for the computer it could hardly be seen there
+  // even at Visibility 100 %.
+  PHONE: 1.5,
+  // How many times as strong the pictures are made, and what is drawn here shown (PHONE on the phone layout).
+  gain: 1,
   STYLES: {},
 
   init() {
@@ -98,6 +105,7 @@ const MenuBg = {
     this.out = $('menuBgOut');
     if (!this.box) return;
     this.resting = !!Store.away;
+    this.gain = document.body.classList.contains('mobile') ? this.PHONE : 1;
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.reduced = motion.matches;
     motion.addEventListener('change', () => {
@@ -168,7 +176,7 @@ const MenuBg = {
   _make(id, seed, more) {
     this.made = {};
     try {
-      const { files, ...rest } = MenuBgMake.make(id, seed, more);
+      const { files, ...rest } = MenuBgMake.make(id, seed, more, this.gain);
       for (const [name, text] of Object.entries(files)) this.urls[name] = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
       this.made = rest;
     } catch (e) {
@@ -696,7 +704,7 @@ MenuBg.STYLES.vinyl = {
     const turn = `rotate(${(-70 + (t / this.ROUND) * 360 + fx * this.MOUSE).toFixed(2)}deg)`;
     for (const { grooves, glint, light } of this.sets) {
       bg.put(grooves, 'none', 1);
-      bg.put(glint, 'none', this.GLINT);
+      bg.put(glint, 'none', Math.min(1, this.GLINT * bg.gain));
       bg.move(light, turn);
     }
   },
