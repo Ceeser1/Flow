@@ -48,7 +48,7 @@ const DESKTOP = {
   miniPlayer: true,
   // The Alarm Clock (5.0): Flow starts playing at a set time, also while closed (the phone's alarms).
   alarm: false,
-  // Internet Radio (5.1): its menu entry and page, stations played live (the desktop app first).
+  // Internet Radio (5.1): its menu entry and page, stations played live.
   radio: true,
 };
 
@@ -76,8 +76,8 @@ const ANDROID = {
   soundEq: true,
   miniPlayer: false,
   alarm: true,
-  // Not on the phones yet (their player plays library songs only).
-  radio: false,
+  // Through the phone's own player, so a station plays on in the background.
+  radio: true,
 };
 
 // The iPhone: as the Android phone, without what iOS has no need or room for.
@@ -93,6 +93,8 @@ const IOS = {
   soundEq: false,
   // iOS starts no app's music at a set time while the app is closed.
   alarm: false,
+  // Its player (apps/ios) has no live streams yet.
+  radio: false,
 };
 
 // The web player (apps/web): a page in a browser that only plays a Flow

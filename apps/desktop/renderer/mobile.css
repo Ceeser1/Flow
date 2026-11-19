@@ -767,6 +767,28 @@ body.mobile .pl-search-row { flex-wrap: wrap; gap: 6px; }
 body.mobile .pl-search-row .search-box { flex: 1 1 100%; height: 44px; }
 body.mobile .pick-banner { position: sticky; top: 0; z-index: 3; }
 
+/* Internet Radio: the address box above its button, the search and pickers one under the other. */
+body.mobile .radio-add { flex-direction: column; }
+body.mobile .radio-add .input { flex: none; height: 48px; }
+body.mobile .radio-add .btn { width: 100%; }
+body.mobile .radio-others-head { display: block; }
+body.mobile .radio-filters { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin: 10px 0 0; }
+body.mobile .radio-filters__search { width: 100%; height: 44px; }
+body.mobile .combo { display: grid; grid-template-columns: 76px minmax(0, 1fr); }
+body.mobile .combo__field { display: flex; min-width: 0; }
+body.mobile .combo__input,
+body.mobile .combo--quality .combo__input { width: 100%; height: 44px; font-size: 15px; }
+body.mobile .combo__clear { width: 36px; height: 36px; }
+body.mobile .combo__list { left: 0; right: 0; width: auto; max-height: 40vh; }
+body.mobile .combo__opt { min-height: 44px; font-size: 15px; }
+body.mobile .mrow .radio-pic { width: 44px; height: 44px; border-radius: 6px; }
+body.mobile .mrow .radio-pic .icon { width: 22px; height: 22px; }
+body.mobile .mrow .act--fav { width: 44px; height: 44px; flex: none; background: none; }
+body.mobile .mrow .act--fav .icon { width: 22px; height: 22px; }
+/* A station in Now Playing: its picture in the cover's place, no song buttons. */
+body.mobile .player--radio #btnRadios { display: none; }
+body.mobile .mp--open.player--radio #playerCover .radio-pic .icon { width: 40%; height: 40%; }
+
 /* ===== full-screen popups: Queue, Settings ===== */
 
 body.mobile .modal-backdrop--drawer { padding: 0; }

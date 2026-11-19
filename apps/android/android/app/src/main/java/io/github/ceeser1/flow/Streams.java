@@ -9,10 +9,12 @@ import androidx.media3.common.PlaybackException;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DataSpec;
 import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
+import androidx.media3.exoplayer.source.ProgressiveMediaSource;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 import androidx.media3.extractor.DefaultExtractorsFactory;
@@ -43,6 +45,10 @@ import java.io.IOException;
  * not matter; in step with other devices (Active Sessions) it is an echo.
  * The frames are counted instead (index seeking): a seek further on than
  * read so far reads on to the place.
+ *
+ * An Internet Radio station (liveFactory) is another server's stream: no token,
+ * http and https may send on to each other, and a stream that cannot be
+ * reached is given up on after a few tries, for the page to say so.
  */
 @OptIn(markerClass = UnstableApi.class)
 final class Streams {
@@ -50,6 +56,8 @@ final class Streams {
     private static final long RETRY_FOR_MS = 10 * 60 * 1000;
     // Waits of 1, 2, 4, 8 s, then RETRY_MAX_MS each: about RETRY_FOR_MS in all.
     private static final int RETRIES = 4 + (int) ((RETRY_FOR_MS - 15000) / RETRY_MAX_MS);
+    // A station: this many tries again before the page hears that it is lost.
+    private static final int LIVE_RETRIES = 3;
 
     // The token every request goes with ('': each address's own).
     private static volatile String token = "";
@@ -66,6 +74,13 @@ final class Streams {
         DefaultExtractorsFactory extractors = new DefaultExtractorsFactory()
                 .setMp3ExtractorFlags(Mp3Extractor.FLAG_ENABLE_INDEX_SEEKING);
         return new DefaultMediaSourceFactory(sources, extractors).setLoadErrorHandlingPolicy(new Patience());
+    }
+
+    /** Internet Radio's stations. */
+    static MediaSource.Factory liveFactory(Context context) {
+        DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true);
+        return new ProgressiveMediaSource.Factory(new DefaultDataSource.Factory(context, http), new DefaultExtractorsFactory())
+                .setLoadErrorHandlingPolicy(new LivePatience());
     }
 
     /** An address the page sent: the token in it is the one to use, if the page has a new one. */
@@ -92,7 +107,10 @@ final class Streams {
 
     private static String tokenOf(String src) {
         if (src == null || !(src.startsWith("http://") || src.startsWith("https://"))) return "";
-        String t = Uri.parse(src).getQueryParameter("t");
+        // Only a Flow Server's song: a radio station's address may have a "t" of its own.
+        Uri uri = Uri.parse(src);
+        if (baseOf(uri).isEmpty()) return "";
+        String t = uri.getQueryParameter("t");
         return t == null ? "" : t;
     }
 
@@ -104,6 +122,15 @@ final class Streams {
         String old = uri.getQueryParameter("t");
         if (old == null || old.equals(t)) return spec;
         return spec.withUri(Uri.parse(uri.toString().replaceFirst("([?&]t=)[^&]*", "$1" + Uri.encode(t))));
+    }
+
+    /** A station: a refusal fails at once, anything else after a few tries. */
+    private static final class LivePatience extends DefaultLoadErrorHandlingPolicy {
+        @Override
+        public long getRetryDelayMsFor(LoadErrorHandlingPolicy.LoadErrorInfo info) {
+            if (info.exception instanceof HttpDataSource.InvalidResponseCodeException || info.errorCount > LIVE_RETRIES) return C.TIME_UNSET;
+            return super.getRetryDelayMsFor(info);
+        }
     }
 
     /** A broken stream tried again for a while; a refusal not. */

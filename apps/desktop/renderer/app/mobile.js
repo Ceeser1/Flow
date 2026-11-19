@@ -24,6 +24,7 @@ const Mobile = {
     group: T('common.playlistGroups'),
     sessions: T('common.activeSessions'),
     trend: T('common.yourListeningTrend'),
+    radio: T('common.internetRadio'),
   },
 
   init() {
@@ -391,7 +392,7 @@ const Mobile = {
           settings.el.classList.add('modal--pulled', 'modal--sliding');
           settings.el.style.transform = `translateX(${Math.min(0, dx - settings.el.offsetWidth)}px)`;
         }
-        if (mode === 'onward' && this._onPlayingList() && Player.currentId) {
+        if (mode === 'onward' && this._onPlayingList() && (Player.currentId || Radio.owns())) {
           // On the list playing: Now Playing comes in from the right under the finger.
           mode = 'player';
           const bar = $('player');
@@ -461,11 +462,13 @@ const Mobile = {
   _onward() {
     const list = this._playingList();
     if (list && !this._onPlayingList()) Nav.openPlaylist(list);
-    else if (Player.currentId) this.expandPlayer();
+    else if (Player.currentId || Radio.owns()) this.expandPlayer();
   },
 
   /** The list playing (or last played), when it is one Flow can show. */
   _playingList() {
+    // A station has the player: Now Playing is next, there is no list to go to.
+    if (Radio.owns()) return null;
     return Player.contextId && Store.playlist(Player.contextId) ? Player.contextId : null;
   },
 

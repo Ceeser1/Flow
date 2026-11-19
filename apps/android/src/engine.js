@@ -26,6 +26,12 @@
 // Song transitions are the player's own (setTransition; canFade is false, the
 // page does not fade): it moves on by itself, so it fades by itself too. So is
 // Settings' Equalizer (setSoundEq): the page does not hear the sound.
+//
+// An Internet Radio station plays through the same player, so it has the
+// notification, the lock screen and the background too. stationElement() is
+// what radio.js drives, with the calls of the desktop's <audio>. A station
+// loaded puts the song out of the player: the engine then has none loaded
+// (`loaded` false, the place kept), and the player's Play loads it again.
 
 const { tr } = require('@flow/core/lang');
 
@@ -70,6 +76,12 @@ function createAudioEngine({
   let following = null;   // the timer asking for the place while follow() is on
   let nexts = 0;
   const sent = { rate: 1, gain: null, volume: null, meta: '', next: '', sleep: 0, soundEq: null };
+  // The station in the player ('': a song, or nothing), and what its element says.
+  let stationId = '';
+  let stations = 0;
+  const station = {
+    handlers: {}, src: '', paused: true, playing: false, error: null, meta: null,
+  };
 
   // Still playing from before this page (or loaded, paused): taken as it is.
   let current = null;
@@ -143,7 +155,47 @@ function createAudioEngine({
     return dur > 0 ? Math.min(moved, dur) : moved;
   }
 
+  function stationEmit(type) {
+    for (const fn of station.handlers[type] || []) {
+      try {
+        fn();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  }
+
+  /** The player's state while it has the station: told as an <audio> tells it. */
+  function onStationState(s) {
+    const nowPaused = !s.pwr;
+    if (nowPaused !== station.paused) {
+      station.paused = nowPaused;
+      if (nowPaused) station.playing = false;
+      stationEmit(nowPaused ? 'pause' : 'play');
+    }
+    if (nowPaused) return;
+    if (s.st === READY && !station.playing) {
+      station.playing = true;
+      stationEmit('playing');
+    } else if (s.st === BUFFERING && station.playing) {
+      station.playing = false;
+      stationEmit('waiting');
+    }
+  }
+
+  /** The station is out of the player (a song loaded over it, or let go of). */
+  function forgetStation() {
+    stationId = '';
+    station.src = '';
+    station.paused = true;
+    station.playing = false;
+  }
+
   function onState(s) {
+    if (s && stationId && s.id === stationId) {
+      if (!inflight) onStationState(s);
+      return;
+    }
     if (inflight || !s || s.id !== id) return;
     // The place was read a moment ago over there (s.at, the same wall clock): it has moved on since.
     const lag = s.at > 0 ? Math.max(0, Math.min(1000, wall() - s.at)) / 1000 : 0;
@@ -176,6 +228,12 @@ function createAudioEngine({
 
   plugin.addListener('state', onState);
   plugin.addListener('ended', (e) => {
+    if (e && stationId && e.id === stationId) {
+      station.paused = true;
+      station.playing = false;
+      stationEmit('ended');
+      return;
+    }
     if (!e || e.id !== id) return;
     st = ENDED;
     if (dur > 0) t = dur;
@@ -222,6 +280,14 @@ function createAudioEngine({
     emit('adopted', s.key);
   });
   plugin.addListener('error', (e) => {
+    if (e && stationId && e.id === stationId) {
+      console.warn('Flow audio:', e.message);
+      station.error = { message: e.message || '' };
+      station.paused = true;
+      station.playing = false;
+      stationEmit('error');
+      return;
+    }
     if (!e || e.id !== id) return;
     console.warn('Flow audio:', e.message);
     st = IDLE;
@@ -266,6 +332,7 @@ function createAudioEngine({
     startPlaying,
 
     load(source, gain, { at: start = 0, key = '' } = {}) {
+      forgetStation();
       current = null;
       loads += 1;
       id = `${prefix}${loads}`;
@@ -296,7 +363,8 @@ function createAudioEngine({
       t = 0;
       dur = NaN;
       startAt = null;
-      op({ op: 'unload' });
+      // The player has a station: it is not this song's to stop.
+      if (!stationId) op({ op: 'unload' });
     },
 
     play() {
@@ -359,7 +427,7 @@ function createAudioEngine({
     },
 
     setRate(r) {
-      if (r === sent.rate) return;
+      if (stationId || r === sent.rate) return;
       t = time();
       at = now();
       rate = r;
@@ -368,7 +436,7 @@ function createAudioEngine({
     },
 
     setGain(gain) {
-      if (gain === sent.gain) return;
+      if (stationId || gain === sent.gain) return;
       sent.gain = gain;
       op({ op: 'gain', gain });
     },
@@ -381,6 +449,7 @@ function createAudioEngine({
 
     /** What the notification and the lock screen show: { title, artist, album, artwork }. */
     setMeta(meta) {
+      if (stationId) return;
       const m = metaOut(meta);
       const key = JSON.stringify(m);
       if (key === sent.meta) return;
@@ -394,6 +463,8 @@ function createAudioEngine({
      */
     movesOn: true,
     setNext(items, { repeat = false } = {}) {
+      // A station has no songs after it.
+      if (stationId) return;
       const list = (items || []).filter((i) => i && i.src);
       const k = JSON.stringify([repeat, list.map((i) => [i.key, i.src, i.gain, i.meta])]);
       if (k === sent.next) return;
@@ -440,6 +511,78 @@ function createAudioEngine({
       if (k === sent.soundEq) return;
       sent.soundEq = k;
       op({ op: 'soundEq', hz, db });
+    },
+
+    /**
+     * What Internet Radio plays through (radio.js): the calls of an <audio>
+     * it uses. `keepsLoaded`: paused, a station stays in the player, so the
+     * notification can start it again (it connects anew then, FlowPlayer).
+     */
+    stationElement() {
+      return {
+        keepsLoaded: true,
+        crossOrigin: '',
+        volume: 1,
+        addEventListener(type, fn) {
+          (station.handlers[type] = station.handlers[type] || []).push(fn);
+        },
+        get paused() {
+          return station.paused;
+        },
+        get error() {
+          return station.error;
+        },
+        /** The notification's text for the station loaded next: { title, artist, album, artwork }. */
+        setMeta(meta) {
+          station.meta = meta || null;
+        },
+        set src(address) {
+          // The song in the player gives way; its place stays for when it is played again.
+          src = '';
+          paused = true;
+          st = IDLE;
+          current = null;
+          startAt = null;
+          sent.next = '';
+          sent.meta = '';
+          sent.gain = null;
+          stations += 1;
+          stationId = `${prefix}r${stations}`;
+          station.src = String(address || '');
+          station.paused = true;
+          station.playing = false;
+          station.error = null;
+          op({
+            op: 'load', id: stationId, key: '', src: station.src, gain: 1, at: 0, play: false, live: true, meta: metaOut(station.meta),
+          });
+        },
+        get src() {
+          return station.src;
+        },
+        getAttribute: (name) => (name === 'src' && station.src ? station.src : null),
+        removeAttribute(name) {
+          if (name !== 'src' || !stationId) return;
+          forgetStation();
+          op({ op: 'unload' });
+        },
+        load() {},
+        play() {
+          if (!stationId) return Promise.reject(new Error(tr('phone.error.noSongLoaded', 'No song is loaded.')));
+          if (station.paused) {
+            station.paused = false;
+            queueMicrotask(() => stationEmit('play'));
+          }
+          op({ op: 'play' });
+          return Promise.resolve();
+        },
+        pause() {
+          if (!stationId || station.paused) return;
+          station.paused = true;
+          station.playing = false;
+          queueMicrotask(() => stationEmit('pause'));
+          op({ op: 'pause' });
+        },
+      };
     },
 
     // Output devices are the phone's own business.

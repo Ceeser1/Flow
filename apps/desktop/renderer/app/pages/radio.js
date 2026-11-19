@@ -12,7 +12,9 @@
 // the second list.
 //
 // Each row: Play / Pause before its picture and name, its country, genres and
-// quality, and the star at its right.
+// quality, and the star at its right. On the phone a row of two lines: a tap
+// plays or pauses, the star at its end. The phones ask the directory for each
+// page (core radio.js createOnlineDirectory), so their Quality picker has no counts.
 
 // The Quality filter's steps in kbit/s, then "No Info" (-1): only stations without one (core radio.js RADIO_QUALITIES).
 const RADIO_QUALITIES = [320, 256, 192, 128, 64, -1];
@@ -158,8 +160,8 @@ const RadioPage = {
     this._genres = (facets.genres || [])
       .map((g) => ({ value: g.name, label: this._genreLabel(g.name), n: g.stations }))
       .sort((a, b) => a.label.localeCompare(b.label, I18n.lang));
-    const q = facets.qualities || {};
-    this._qualities = RADIO_QUALITIES.map((rate) => ({ value: String(rate), label: this._qualityLabel(rate), n: Number(q[rate]) || 0 }));
+    const q = facets.qualities;
+    this._qualities = q ? RADIO_QUALITIES.map((rate) => ({ value: String(rate), label: this._qualityLabel(rate), n: Number(q[rate]) || 0 })) : null;
     this.country.draw();
     this.genre.draw();
     this.quality.draw();
@@ -296,6 +298,7 @@ const RadioPage = {
       rowClass: (st) => (Radio.isCurrent(st) ? 'row--current' : ''),
       onRowDblClick: (st) => Radio.toggleStation(st, rows),
       columns: this._columns('f', () => rows),
+      mobile: this._touchRows(() => rows),
     });
     limitRows($('radioFavBox'), 'tbody tr', 10);
   },
@@ -320,8 +323,10 @@ const RadioPage = {
       rowClass: (st) => (Radio.isCurrent(st) ? 'row--current' : ''),
       onRowDblClick: (st) => Radio.toggleStation(st, rows),
       columns: this._columns('o', () => rows),
+      mobile: this._touchRows(() => rows),
     });
-    $('radioOtherTable').hidden = !rows.length;
+    // The phone's rows are a list after the table, which stays hidden.
+    if (Store.uiMode !== 'mobile') $('radioOtherTable').hidden = !rows.length;
     // The whole directory's playable stations, once the list is here.
     $('radioOtherCount').textContent = this.all ? T('radio.others.scanned', { count: I18n.num(this.all) }) : '';
     const note = $('radioOtherNote');
@@ -335,6 +340,24 @@ const RadioPage = {
     }
     note.hidden = !note.firstChild;
     $('radioMore').hidden = this.loading || !!this.error || !this.more;
+  },
+
+  /** A station's star: in or out of Favourite Radios. */
+  _star(st) {
+    const on = Radio.isFavourite(st);
+    return iconButton(on ? 'act.act--fav.act--fav-on' : 'act.act--fav', on ? Icons.starFilled : Icons.star,
+      on ? T('radio.favourite.remove') : T('radio.favourite.add'), () => Radio.toggleFavourite(st));
+  },
+
+  /** The phone's rows (touchList.js): the picture, the name, what is known of it below, the star at the end. */
+  _touchRows(rows) {
+    return {
+      lead: (st) => Radio.picture(st),
+      title: (st) => st.name,
+      sub: (st) => [st.own ? T('radio.own') : this.countryName(st), this._genreText(st), this._quality(st)].filter(Boolean).join(' · '),
+      tap: (st) => Radio.toggleStation(st, rows()),
+      side: (st) => this._star(st),
+    };
   },
 
   /** The columns of both lists; `tag` keeps their Play buttons apart. */
@@ -380,18 +403,14 @@ const RadioPage = {
         label: '',
         cls: 'col-radio-star',
         sortable: false,
-        render: (st) => {
-          const on = Radio.isFavourite(st);
-          return iconButton(on ? 'act.act--fav.act--fav-on' : 'act.act--fav', on ? Icons.starFilled : Icons.star,
-            on ? T('radio.favourite.remove') : T('radio.favourite.add'), () => Radio.toggleFavourite(st));
-        },
+        render: (st) => this._star(st),
       },
     ];
   },
 
   /** Only what changes when a station starts or stops: the Play buttons and the row lit. */
   _drawPlaying() {
-    for (const tr of document.querySelectorAll('#radioFavTable tbody tr, #radioOtherTable tbody tr')) {
+    for (const tr of document.querySelectorAll('#radioFavTable tbody tr, #radioOtherTable tbody tr, #radioFavTableList .mrow, #radioOtherTableList .mrow')) {
       tr.classList.toggle('row--current', !!Radio.station && tr.dataset.id === Radio.station.id);
     }
     for (const [key, btn] of this._playButtons) {

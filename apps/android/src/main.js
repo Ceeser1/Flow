@@ -20,6 +20,7 @@ const { createLyricsFolder } = require('@flow/core/client/lyricsFolder');
 const { encode: encodeQr } = require('@flow/core/qr');
 const { createGuestLink } = require('@flow/core/client/guest');
 const caps = require('@flow/core/client/caps');
+const radioDirectory = require('@flow/core/radio');
 const { createViewChannel } = require('@flow/core/client/viewChannel');
 const { MP3_QUALITIES } = require('@flow/core/formats');
 const { tr, useTranslator } = require('@flow/core/lang');
@@ -229,6 +230,24 @@ function start() {
   // What the phone's player had when this page started (FlowAudio.attach), for its engine.
   let attached = null;
 
+  // Internet Radio: the directory asked through the page (it allows any
+  // origin; a page cannot name itself in a User-Agent), a station's address
+  // checked by the phone itself (most streams allow no page to read them).
+  const stations = radioDirectory.createOnlineDirectory({
+    fetch: (url, { signal }) => fetch(url, { headers: { Accept: 'application/json' }, signal }),
+  });
+  const peekStream = async (url) => {
+    const r = await plugin.radioPeek({ url });
+    const headers = { 'content-type': r.type || '', 'icy-name': r.icyName || '' };
+    return {
+      ok: r.status >= 200 && r.status < 300,
+      status: r.status,
+      url: r.url || url,
+      headers: { get: (name) => headers[String(name).toLowerCase()] || null },
+      text: async () => r.text || '',
+    };
+  };
+
   const flow = {
     // The texts' language chosen in Settings ('' for the phone's), read once as
     // the desktop's preload does: i18n.js needs it before anything is drawn, and
@@ -413,6 +432,7 @@ function start() {
     onLyricsChanged: on('lyrics:changed'),
     shareLink: call(() => remote.shareLink()),
     recordAwayListen: call((song, listened, duration) => actions.recordAwayListen({ song, listened, duration })),
+    recordRadioListen: call((station, listened, listen) => actions.recordRadioListen({ station, listened, listen })),
     guestLook: call(() => guest.look()),
     guest: call((action, args = {}) => {
       if (action === 'join') return guest.join(args.serverId, args.sessionId, args.mode);
@@ -511,6 +531,13 @@ function start() {
      * onAlarm(fn): it rang, was stopped, snoozed or turned itself off.
      */
     ...(platform === 'ios' ? {} : {
+      radio: {
+        search: call((q) => stations.search(q || {})),
+        click: call((id) => stations.click(id)),
+        check: call((url) => radioDirectory.checkStream(url, { fetch: peekStream })),
+        // The desktop's lets the window hear a stream; the phone's player needs no leave.
+        allow: call(() => true),
+      },
       alarm: call(() => audio.alarmGet()),
       setAlarm: call((alarm) => audio.alarmSet({
         ...alarm,

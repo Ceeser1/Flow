@@ -16,6 +16,11 @@
 // and where the answer tells, a sound stream behind it. Many stations hand
 // out a small playlist file (.pls / .m3u) instead of the stream itself: its
 // first stream is taken. Plain Node; `fetch` can be given for the tests.
+//
+// The phones ask the directory instead of keeping it (createOnlineDirectory):
+// it sends no compressed answers, so the whole list is some 60 MB to fetch and
+// a lot to hold in a phone's page. Each search is a small question to the
+// directory there, which also does the filtering and the sorting.
 
 const { agentName } = require('./agent');
 const { tr } = require('./lang');
@@ -98,15 +103,10 @@ function fromDirectory(s) {
   });
 }
 
-function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000, pageTimeoutMs = 60000, copy = null, maxAgeMs = DAY_MS, idleMs = IDLE_MS, minGenre = MIN_GENRE_STATIONS } = {}) {
+/** Asks the directory's servers, the one that answered last first. */
+function createAsker(get, timeoutMs) {
   let host = null;
-  // The whole list as loaded: { at, entries, genres }, or null until it is asked for (and after a while unused).
-  let all = null;
-  let loading = null;
-  let refreshing = null;
-  let idleTimer = null;
-
-  async function ask(path, ms = timeoutMs) {
+  return async function ask(path, ms = timeoutMs) {
     const order = host ? [host, ...HOSTS.filter((h) => h !== host)] : HOSTS;
     let last = null;
     for (const h of order) {
@@ -126,7 +126,26 @@ function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000, pag
     const e = new Error(tr('core.radio.directoryUnreachable', 'The radio directory (radio-browser.info) cannot be reached right now.'));
     e.cause = last;
     throw e;
+  };
+}
+
+/** A directory station is played: counted there (best effort). */
+async function clickStation(ask, id) {
+  if (!/^[\w-]{8,64}$/.test(String(id || ''))) return;
+  try {
+    await ask(`/json/url/${encodeURIComponent(id)}`);
+  } catch {
+    // Only a courtesy to the directory.
   }
+}
+
+function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000, pageTimeoutMs = 60000, copy = null, maxAgeMs = DAY_MS, idleMs = IDLE_MS, minGenre = MIN_GENRE_STATIONS } = {}) {
+  const ask = createAsker(get, timeoutMs);
+  // The whole list as loaded: { at, entries, genres }, or null until it is asked for (and after a while unused).
+  let all = null;
+  let loading = null;
+  let refreshing = null;
+  let idleTimer = null;
 
   /** Every station of the directory, LIST_PAGE at a time (a few at once), HLS left out. */
   async function download() {
@@ -352,15 +371,91 @@ function createDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000, pag
       };
     },
 
-    /** A directory station is played: counted there (best effort). */
-    async click(id) {
-      if (!/^[\w-]{8,64}$/.test(String(id || ''))) return;
-      try {
-        await ask(`/json/url/${encodeURIComponent(id)}`);
-      } catch {
-        // Only a courtesy to the directory.
+    click: (id) => clickStation(ask, id),
+  };
+}
+
+// The directory's own names of the columns the list can be sorted by.
+const ONLINE_ORDER = {
+  name: 'name', country: 'country', genre: 'tags', quality: 'bitrate',
+};
+
+/**
+ * The directory as the phones use it: search() answers as createDirectory's,
+ * each page asked for there. What the pickers offer is the whole directory's
+ * (countries and genres with their stations, asked for once a day), not
+ * narrowed by the other filters; `qualities` is left out (the page then offers
+ * every step, without counts), and `total` is null (only whether there is `more`).
+ */
+function createOnlineDirectory({ fetch: get = globalThis.fetch, timeoutMs = 10000, maxAgeMs = DAY_MS, minGenre = MIN_GENRE_STATIONS } = {}) {
+  const ask = createAsker(get, timeoutMs);
+  let known = null;
+  let asking = null;
+
+  /** { at, all, countries, genres }: kept a day; failing, the last known, or nothing to offer yet. */
+  async function overview() {
+    if (known && Date.now() - known.at < maxAgeMs) return known;
+    if (!asking) {
+      asking = Promise.all([
+        ask('/json/countries?hidebroken=true'),
+        ask('/json/tags?order=stationcount&reverse=true&hidebroken=true&limit=500'),
+        ask('/json/stats'),
+      ]).then(([countries, tags, stats]) => {
+        known = {
+          at: Date.now(),
+          all: Math.max(0, Number(stats && stats.stations) || 0),
+          countries: (Array.isArray(countries) ? countries : [])
+            .map((c) => ({ code: String(c.iso_3166_1 || '').toUpperCase(), name: text(c.name, 100), stations: Math.max(0, Number(c.stationcount) || 0) }))
+            .filter((c) => /^[A-Z]{2}$/.test(c.code) && c.stations > 0)
+            .sort((a, b) => b.stations - a.stations),
+          genres: (Array.isArray(tags) ? tags : [])
+            .map((t) => ({ name: text(t.name, 60).toLowerCase(), stations: Math.max(0, Number(t.stationcount) || 0) }))
+            .filter((t) => t.name && t.stations >= minGenre),
+        };
+        return known;
+      }).catch(() => known || { all: 0, countries: [], genres: [] }).finally(() => {
+        asking = null;
+      });
+    }
+    return asking;
+  }
+
+  return {
+    async search({ name = '', country = '', genre = '', quality = 0, page = 0, sort = null } = {}) {
+      const at = Math.max(0, page | 0);
+      const rate = RADIO_QUALITIES.includes(Number(quality)) ? Number(quality) : 0;
+      const sorted = sort && ONLINE_ORDER[sort.key] && ['asc', 'desc'].includes(sort.dir);
+      const q = new URLSearchParams({
+        order: sorted ? ONLINE_ORDER[sort.key] : 'clickcount',
+        reverse: String(sorted ? sort.dir === 'desc' : true),
+        hidebroken: 'true',
+        // One more than a page: whether there is another.
+        limit: String(PAGE + 1),
+        offset: String(at * PAGE),
+      });
+      const named = text(name, 100);
+      if (named) q.set('name', named);
+      if (/^[A-Z]{2}$/i.test(country)) q.set('countrycode', country.toUpperCase());
+      const tag = text(genre, 60).toLowerCase();
+      if (tag) {
+        q.set('tag', tag);
+        q.set('tagExact', 'true');
       }
+      if (rate === RADIO_NO_INFO) q.set('bitrateMax', '0');
+      else if (rate > 0) q.set('bitrateMin', String(rate));
+      const [raw, over] = await Promise.all([ask(`/json/stations/search?${q}`), overview()]);
+      const list = Array.isArray(raw) ? raw : [];
+      return {
+        // HLS streams left out: the player cannot play them.
+        stations: list.slice(0, PAGE).filter((s) => !Number(s.hls)).map(fromDirectory).filter(Boolean),
+        more: list.length > PAGE,
+        total: null,
+        all: over.all,
+        facets: { countries: over.countries, genres: over.genres },
+      };
     },
+
+    click: (id) => clickStation(ask, id),
   };
 }
 
@@ -458,5 +553,5 @@ async function readSome(res, max) {
 }
 
 module.exports = {
-  createDirectory, checkStream, cleanStation, fromDirectory, httpUrl, parsePls, parseM3u, isHls, MIN_GENRE_STATIONS, RADIO_QUALITIES, RADIO_NO_INFO,
+  createDirectory, createOnlineDirectory, checkStream, cleanStation, fromDirectory, httpUrl, parsePls, parseM3u, isHls, MIN_GENRE_STATIONS, RADIO_QUALITIES, RADIO_NO_INFO,
 };

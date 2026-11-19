@@ -514,7 +514,8 @@ const Player = {
 
   /** Whether the current song has nothing to play from (its server was out of reach) but now could have. */
   _unloaded() {
-    const song = this._putBack() ? Store.song(this.currentId) : null;
+    // A station has the phone's player: the song waits until it is played again.
+    const song = this._putBack() && !this._radio() ? Store.song(this.currentId) : null;
     return !!song && !!Store.audioSrc(song);
   },
 

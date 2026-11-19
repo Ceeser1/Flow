@@ -194,3 +194,78 @@ test('settings keep each profile\'s favourite stations, cleaned', () => {
   assert.equal(s.showRadio, true);
   assert.equal(clean({ showRadio: false }).showRadio, false);
 });
+
+// ---- the phones: each search asked of the directory ----
+
+function onlineDirectory(pages, asked = [], { overviewFails = false } = {}) {
+  return radio.createOnlineDirectory({
+    minGenre: 100,
+    fetch: async (url) => {
+      const u = new URL(url);
+      asked.push(u);
+      const json = (data) => ({ ok: true, status: 200, json: async () => data });
+      if (u.pathname === '/json/stations/search') return json(pages(u.searchParams));
+      if (overviewFails) throw new Error('offline');
+      if (u.pathname === '/json/countries') return json([{ name: 'Germany', iso_3166_1: 'DE', stationcount: 900 }, { name: 'Nowhere', iso_3166_1: '', stationcount: 5 }, { name: 'Austria', iso_3166_1: 'at', stationcount: 40 }]);
+      if (u.pathname === '/json/tags') return json([{ name: 'Rock', stationcount: 500 }, { name: 'rare', stationcount: 3 }]);
+      if (u.pathname === '/json/stats') return json({ stations: 52963 });
+      throw new Error(`asked for ${u.pathname}`);
+    },
+  });
+}
+const dirStation = (n, extra = {}) => ({
+  stationuuid: `aaaaaaaa-${n}`, name: `Station ${n}`, url_resolved: `http://s.example/${n}`, countrycode: 'DE', tags: 'rock', codec: 'MP3', bitrate: 128, hls: 0, ...extra,
+});
+
+test('the phones: a search goes to the directory with its filters, the most played first', async () => {
+  const asked = [];
+  const d = onlineDirectory(() => [dirStation(1), dirStation(2, { hls: 1 }), dirStation(3)], asked);
+  const r = await d.search({ name: ' rock fm ', country: 'de', genre: ' Rock ', quality: 128 });
+  const q = asked.find((u) => u.pathname === '/json/stations/search').searchParams;
+  assert.equal(q.get('name'), 'rock fm');
+  assert.equal(q.get('countrycode'), 'DE');
+  assert.equal(q.get('tag'), 'rock');
+  assert.equal(q.get('tagExact'), 'true');
+  assert.equal(q.get('bitrateMin'), '128');
+  assert.equal(q.get('order'), 'clickcount');
+  assert.equal(q.get('reverse'), 'true');
+  assert.equal(q.get('hidebroken'), 'true');
+  assert.deepEqual(r.stations.map((s) => s.name), ['Station 1', 'Station 3'], 'HLS left out');
+  assert.equal(r.more, false);
+  assert.equal(r.all, 52963);
+  assert.deepEqual(r.facets.countries, [{ code: 'DE', name: 'Germany', stations: 900 }, { code: 'AT', name: 'Austria', stations: 40 }]);
+  assert.deepEqual(r.facets.genres, [{ name: 'rock', stations: 500 }], 'a rare tag is no genre');
+  assert.equal(r.facets.qualities, undefined, 'the page offers every step without counts');
+});
+
+test('the phones: pages, a column\'s order, and "No Info" as stations without a bitrate', async () => {
+  const asked = [];
+  const d = onlineDirectory((q) => Array.from({ length: Number(q.get('limit')) }, (_, i) => dirStation(i)), asked);
+  const r = await d.search({ page: 2, sort: { key: 'quality', dir: 'desc' }, quality: radio.RADIO_NO_INFO });
+  const q = asked.find((u) => u.pathname === '/json/stations/search').searchParams;
+  assert.equal(q.get('offset'), '200');
+  assert.equal(q.get('limit'), '101');
+  assert.equal(q.get('order'), 'bitrate');
+  assert.equal(q.get('reverse'), 'true');
+  assert.equal(q.get('bitrateMax'), '0');
+  assert.equal(q.get('bitrateMin'), null);
+  assert.equal(r.stations.length, 100);
+  assert.equal(r.more, true);
+  await d.search({ sort: { key: 'genre', dir: 'asc' } });
+  const last = asked.filter((u) => u.pathname === '/json/stations/search').pop().searchParams;
+  assert.equal(last.get('order'), 'tags');
+  assert.equal(last.get('reverse'), 'false');
+});
+
+test('the phones: the pickers are asked for once, and failing they do not stop the stations', async () => {
+  const asked = [];
+  const d = onlineDirectory(() => [dirStation(1)], asked);
+  await d.search({});
+  await d.search({ name: 'x' });
+  assert.equal(asked.filter((u) => u.pathname === '/json/countries').length, 1);
+  const off = onlineDirectory(() => [dirStation(1)], [], { overviewFails: true });
+  const r = await off.search({});
+  assert.equal(r.stations.length, 1);
+  assert.deepEqual(r.facets, { countries: [], genres: [] });
+  assert.equal(r.all, 0);
+});

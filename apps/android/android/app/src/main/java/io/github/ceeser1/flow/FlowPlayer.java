@@ -81,6 +81,10 @@ import java.util.List;
  * in again itself (ServerSignIn), tells the page the new token and plays on
  * where it was. Only when that does not work does the page hear the error.
  *
+ * An Internet Radio station is loaded as a song is, marked live: it has no
+ * place to come back to, so after a pause it connects anew and plays what is
+ * on the air now.
+ *
  * It takes audio focus (a call or another player pauses it), pauses when
  * headphones are pulled out, and keeps the CPU and Wi-Fi awake while it plays.
  * Everything here runs on the main thread, as ExoPlayer wants.
@@ -199,6 +203,10 @@ final class FlowPlayer {
     private final Runnable crossTick = this::crossTick;
     private final AudioAttributes music;
     private final MediaSource.Factory sources;
+    private final MediaSource.Factory liveSources;
+    // What is loaded is a station (Internet Radio), and it was paused since it last played.
+    private boolean live;
+    private boolean livePaused;
     // Signing in to the server again (a song refused with 401), and whether it
     // has since this player last played: refused again after it, the page is told.
     private boolean signingIn;
@@ -237,6 +245,7 @@ final class FlowPlayer {
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                 .build();
         sources = Streams.factory(context);
+        liveSources = Streams.liveFactory(context);
         exo = new ExoPlayer.Builder(context)
                 .setMediaSourceFactory(sources)
                 .setAudioAttributes(music, true)
@@ -314,6 +323,11 @@ final class FlowPlayer {
 
             @Override
             public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+                if (live && !playWhenReady) livePaused = true;
+                else if (live && livePaused) {
+                    livePaused = false;
+                    connectLive();
+                }
                 if (!playWhenReady) dropTail("paused");
                 // Paused by hand while the alarm rings (Flow's own Pause, the notification's): the alarm is answered.
                 if (!playWhenReady && alarmOn && (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
@@ -557,10 +571,15 @@ final class FlowPlayer {
                     gain = (float) op.optDouble("gain", 1);
                     String src = op.optString("src", "");
                     boolean play = op.optBoolean("play", false);
+                    live = op.optBoolean("live", false) && !src.isEmpty();
+                    livePaused = false;
                     if (src.isEmpty()) {
                         exo.stop();
                         exo.clearMediaItems();
                         play = false;
+                    } else if (live) {
+                        exo.setMediaSource(liveSources.createMediaSource(item(id, key, gain, src, op.optJSONObject("meta"))));
+                        exo.prepare();
                     } else {
                         exo.setMediaItem(item(id, key, gain, src, op.optJSONObject("meta")), (long) (op.optDouble("at", 0) * 1000));
                         exo.prepare();
@@ -593,6 +612,8 @@ final class FlowPlayer {
                     break;
                 case "unload":
                     dropTail("unloaded");
+                    live = false;
+                    livePaused = false;
                     exo.stop();
                     exo.clearMediaItems();
                     exo.setPlayWhenReady(false);
@@ -648,6 +669,14 @@ final class FlowPlayer {
             }
         }
         return plays;
+    }
+
+    /** The station loaded, connected to anew. */
+    private void connectLive() {
+        MediaItem item = exo.getCurrentMediaItem();
+        if (item == null) return;
+        exo.setMediaSource(liveSources.createMediaSource(item));
+        exo.prepare();
     }
 
     /**
@@ -908,7 +937,7 @@ final class FlowPlayer {
                 meta.put("title", md.title == null ? "" : md.title.toString());
                 meta.put("artist", md.artist == null ? "" : md.artist.toString());
                 meta.put("album", md.albumTitle == null ? "" : md.albumTitle.toString());
-                meta.put("artwork", md.artworkUri == null || md.artworkUri.getPath() == null ? "" : md.artworkUri.getPath());
+                meta.put("artwork", md.artworkUri == null || !"file".equals(md.artworkUri.getScheme()) || md.artworkUri.getPath() == null ? "" : md.artworkUri.getPath());
                 JSONObject it = new JSONObject();
                 it.put("id", tag.id);
                 it.put("key", tag.key);
@@ -1212,7 +1241,7 @@ final class FlowPlayer {
         return tag instanceof Tag ? (Tag) tag : null;
     }
 
-    /** What the notification and the lock screen show: { title, artist, album, artwork (a file) }. */
+    /** What the notification and the lock screen show: { title, artist, album, artwork (a file, or a station's picture by its address) }. */
     private static MediaMetadata metadata(JSONObject meta) {
         MediaMetadata.Builder md = new MediaMetadata.Builder();
         if (meta == null) return md.build();
@@ -1220,7 +1249,8 @@ final class FlowPlayer {
         md.setArtist(meta.optString("artist", ""));
         md.setAlbumTitle(meta.optString("album", ""));
         String artwork = meta.optString("artwork", "");
-        if (!artwork.isEmpty()) md.setArtworkUri(Uri.fromFile(new File(artwork)));
+        if (artwork.startsWith("http://") || artwork.startsWith("https://")) md.setArtworkUri(Uri.parse(artwork));
+        else if (!artwork.isEmpty()) md.setArtworkUri(Uri.fromFile(new File(artwork)));
         return md.build();
     }
 

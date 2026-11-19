@@ -57,6 +57,10 @@ const Lyrics = {
       this._follow();
       this.wake();
     });
+    // The phone's Now Playing shows no song's lyrics while a station has the player.
+    Radio.onChange(() => {
+      if (Mobile.on) this._drawPhone();
+    });
     Store.onLibrary(() => this._follow());
     Store.onSettings((patch) => {
       // Fetch/Sync Lyrics turned on: looked up now; off: only those kept. Asked
@@ -468,7 +472,7 @@ const Lyrics = {
     const frame = $('npLyrics');
     if (!frame) return;
     const lines = this.lines;
-    const show = !this._note() && lines.length > 0;
+    const show = !this._note() && lines.length > 0 && !Radio.owns();
     if (frame.hidden === show) {
       frame.hidden = !show;
       Mobile.fitLyrics();

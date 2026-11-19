@@ -23,6 +23,11 @@
 // Paused, the stream is let go of (no listening on in the background); Play
 // connects again, so it plays live rather than from where it was paused.
 //
+// On the phone a station plays through the phone's own player instead of the
+// <audio> (Player.engine.stationElement, the same calls), for the
+// notification, the lock screen and the background. Paused there it stays
+// loaded, so the notification can start it again.
+//
 // Each profile has its own Favourite Radios (Settings' radioFavs, kept on this
 // device under "<server id>/<profile id>", or "private" without a server); a
 // station added by hand (the page's Add Radio) is one at once.
@@ -48,9 +53,11 @@ const Radio = {
   _timer: null,
 
   init() {
-    this.el = $('radioAudio');
-    if (!this.el || !Store.can('radio')) return;
-    Equalizer.addElement(this.el);
+    if (!Store.can('radio')) return;
+    this.el = Player.engine.stationElement ? Player.engine.stationElement() : $('radioAudio');
+    if (!this.el) return;
+    // The phone's player shapes its sound itself.
+    if (!this.el.keepsLoaded) Equalizer.addElement(this.el);
     // Without Web Audio the element has the volume itself.
     Player.onVolume((v) => {
       if (!Equalizer.active) this.el.volume = v;
@@ -69,7 +76,11 @@ const Radio = {
         this._emit();
       }
     });
-    el.addEventListener('pause', () => this._emit());
+    el.addEventListener('pause', () => {
+      // Paused outside the page too on the phone (the notification, headphones pulled out, a call).
+      if (el.keepsLoaded) this._stopClock();
+      this._emit();
+    });
     el.addEventListener('error', () => {
       if (!this.station || !el.getAttribute('src')) return;
       const lost = this.heardSince || this.heard;
@@ -226,6 +237,11 @@ const Radio = {
     // Another station picked meanwhile.
     if (!this.isCurrent(station)) return;
     this.el.crossOrigin = 'anonymous';
+    if (this.el.setMeta) {
+      this.el.setMeta({
+        title: station.name, artist: T('common.internetRadio'), album: 'Flow', artwork: station.favicon || '',
+      });
+    }
     this.el.src = station.url;
     try {
       await this.el.play();
@@ -249,17 +265,23 @@ const Radio = {
   /** Paused: the stream is let go of; the station stays in the bar. */
   pause() {
     if (!this.station || !this.el) return;
-    this._letGo();
+    this._letGo(!!this.el.keepsLoaded);
     this._emit();
   },
 
-  _letGo() {
+  /** What it played until now counted; the clock stands until it plays again. */
+  _stopClock() {
     if (this.heardSince) this.heard += (Date.now() - this.heardSince) / 1000;
     this.heardSince = 0;
     this._count();
     this.connecting = false;
+  },
+
+  /** `keep`: the station stays loaded (the phone's pause). */
+  _letGo(keep = false) {
+    this._stopClock();
     if (!this.el.paused) this.el.pause();
-    if (this.el.getAttribute('src')) {
+    if (!keep && this.el.getAttribute('src')) {
       this.el.removeAttribute('src');
       this.el.load();
     }
@@ -359,8 +381,9 @@ const Radio = {
       $('btnFavourite').dataset.icon = String(fav);
       $('btnFavourite').innerHTML = fav ? Icons.starFilled : Icons.star;
     }
-    $('btnLyrics').hidden = true;
-    $('noLyrics').hidden = true;
+    // The phone's bar has neither (its lyrics are in Now Playing).
+    if ($('btnLyrics')) $('btnLyrics').hidden = true;
+    if ($('noLyrics')) $('noLyrics').hidden = true;
     this._drawTime();
   },
 
