@@ -93,3 +93,10 @@
 .player--radio #btnQueue { visibility: hidden; }
 .player--radio .cover--bar .radio-pic { width: 100%; height: 100%; border-radius: 5px; }
 .player--radio .cover--bar .radio-pic .icon { width: 26px; height: 26px; }
+
+/* What the station plays (5.3.1), fainter after its name; "No Song Info" when it says nothing. */
+.player__radio-song { color: var(--text-dim); font-weight: 400; }
+
+/* A favourite's pencil before its star (5.3.1). */
+.table--radio .col-radio-rename { width: 40px; text-align: right; padding-right: 0; }
+.radio-side { display: inline-flex; align-items: center; gap: 2px; }

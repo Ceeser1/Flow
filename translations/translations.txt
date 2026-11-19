@@ -7278,6 +7278,24 @@ radio.toast.lost
   en: The connection to {station} was lost.
   de: Die Verbindung zu {station} ist abgebrochen.
 
+# Where the song a station plays is shown (the player bar, Now Playing, the Mini Player), when the station does not say
+radio.noSongInfo
+  en: No Song Info
+  de: Keine Songinfo
+
+# A favourite station's pencil: a name of its own
+radio.rename.tooltip
+  en: Rename {station}
+  de: {station} umbenennen
+
+radio.rename.title
+  en: Rename station
+  de: Sender umbenennen
+
+radio.rename.button
+  en: Rename
+  de: Umbenennen
+
 # Checking a station's address (Add Radio), and the station directory
 
 core.radio.directoryUnreachable
@@ -7311,6 +7329,27 @@ core.radio.hls
 core.radio.webPage
   en: That is a web page, not a radio stream. The stream's own address is needed (often on the station's page as "Listen" or a .m3u / .pls link).
   de: Das ist eine Webseite, kein Radiostream. Gebraucht wird die Adresse des Streams selbst (oft auf der Seite des Senders als „Hören“ oder als .m3u- / .pls-Link).
+
+# A Flow Server never plays its own machine's addresses through for the web player
+core.radio.refused
+  en: That address may not be asked.
+  de: Diese Adresse darf nicht abgefragt werden.
+
+core.radio.quiet
+  en: The station went quiet.
+  de: Der Sender ist verstummt.
+
+core.radio.notAStation
+  en: That is not a radio station.
+  de: Das ist kein Radiosender.
+
+core.radio.notAFavourite
+  en: That station is not one of your Favourite Radios.
+  de: Dieser Sender ist keins deiner Lieblingsradios.
+
+core.radio.favsOnDevice
+  en: Favourite Radios are kept on this device here.
+  de: Lieblingsradios werden hier auf diesem Gerät gespeichert.
 
 # ===== Common =====
 
@@ -10406,3 +10445,8 @@ web.notHere.saveDownload
 web.notHere.joinOtherServer
   en: Joining another server's session
   de: Der Beitritt zur Session eines anderen Servers
+
+# Internet Radio in the browser plays through the Flow Server; an older server cannot
+web.radio.serverTooOld
+  en: This Flow Server cannot play Internet Radio yet. It needs Flow Server 5.3.1 or newer.
+  de: Dieser Flow Server kann noch kein Internetradio abspielen. Dafür braucht er Flow Server 5.3.1 oder neuer.

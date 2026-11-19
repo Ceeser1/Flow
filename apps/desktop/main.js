@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, screen, dialog, Notification, session, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, screen, dialog, Notification, globalShortcut } = require('electron');
 const { execFile } = require('child_process');
 const fs = require('fs');
 const zlib = require('zlib');
@@ -59,6 +59,7 @@ const autostart = require('./src/autostart');
 const { createMiniPlayer } = require('./src/miniPlayer');
 const { createTray } = require('./src/tray');
 const radio = require('@flow/core/radio');
+const radioStream = require('@flow/core/radioStream');
 const { createGlobalKeys } = require('./src/globalKeys');
 const { createThumbar } = require('./src/thumbar');
 const { GLOBAL_KEYS } = require('@flow/core/client/settings');
@@ -648,6 +649,8 @@ handle('library:setFavourite', (arg) => actions.setFavourite(arg));
 handle('library:recordListen', (arg) => actions.recordListen(arg));
 handle('library:recordAwayListen', (arg) => actions.recordAwayListen(arg));
 handle('library:recordRadioListen', (arg) => actions.recordRadioListen(arg));
+handle('library:setRadioFavourite', (arg) => actions.setRadioFavourite(arg));
+handle('library:renameRadio', (arg) => actions.renameRadio(arg));
 handle('stats:private', () => privateStats.get());
 handle('stats:removeTracked', ({ serverId, profileId }) => remote.removeTracked(serverId, profileId));
 // Fetched when the window shows them (4.3): the profile's Statistics, the playlists others share, one of them.
@@ -1209,34 +1212,68 @@ const radioDirectory = radio.createDirectory({
 handle('radio:search', (q) => radioDirectory.search(q || {}));
 handle('radio:click', (id) => radioDirectory.click(id));
 handle('radio:check', (url) => radio.checkStream(url));
-// A station plays through the window's Web Audio (the equalizer, the clouds, the
-// visualizers), which hears only a stream sent with CORS, and almost no station
-// sends it. The streams the window says it plays get it added here, as does
-// wherever such a request is sent on to (the same request id).
-const radioStreams = new Set();
-const radioRequests = new Set();
-handle('radio:allow', (url) => {
-  const u = radio.httpUrl(url);
-  if (!u) return false;
-  radioStreams.add(u);
-  if (radioStreams.size > 200) radioStreams.delete(radioStreams.values().next().value);
-  return true;
-});
-function allowRadioStreams(ses) {
-  ses.webRequest.onHeadersReceived({ urls: ['http://*/*', 'https://*/*'] }, (details, done) => {
-    const ours = details.resourceType === 'media' && (radioRequests.has(details.id) || radioStreams.has(details.url));
-    if (!ours) {
-      done({});
-      return;
-    }
-    radioRequests.add(details.id);
-    if (radioRequests.size > 500) radioRequests.delete(radioRequests.values().next().value);
-    const headers = { ...details.responseHeaders };
-    const has = Object.keys(headers).some((k) => k.toLowerCase() === 'access-control-allow-origin');
-    if (!has) headers['Access-Control-Allow-Origin'] = ['*'];
-    done({ responseHeaders: headers });
-  });
-}
+
+// A station plays in the window from here, through core radioStream.js's
+// relay on 127.0.0.1 (5.3.1): one connection to the station gives the sound,
+// sent with the CORS header the window's Web Audio needs to hear it (the
+// equalizer, the clouds, the visualizers), and what the station plays now
+// (its ICY title), told to the window ('radio:info'). The address carries a
+// secret of this run, so nothing else on the computer plays through it.
+const radioRelay = (() => {
+  const secret = require('crypto').randomBytes(12).toString('hex');
+  const streams = new Map();
+  let count = 0;
+  let listening = null;
+  function start() {
+    if (listening) return listening;
+    listening = new Promise((resolve, reject) => {
+      const server = require('http').createServer((req, res) => {
+        const m = /^\/radio\/([0-9a-f]+)\/(\d+)$/.exec(String(req.url || '').split('?')[0]);
+        const stream = m && m[1] === secret ? Number(m[2]) : 0;
+        const url = stream ? streams.get(stream) : null;
+        if (!url || (req.method !== 'GET' && req.method !== 'HEAD')) {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+        if (req.method === 'HEAD') {
+          res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Access-Control-Allow-Origin': '*' });
+          res.end();
+          return;
+        }
+        radioStream.relay(url, res, {
+          onInfo: (info) => sendToWindow('radio:info', { stream, meta: !!info.meta, title: info.title || '', name: info.name || '' }),
+        }).catch((err) => {
+          if (res.headersSent) {
+            res.destroy();
+            return;
+          }
+          res.writeHead(err.status || 502, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+          res.end(err.message);
+        });
+      });
+      server.on('error', (err) => {
+        listening = null;
+        reject(err);
+      });
+      server.listen(0, '127.0.0.1', () => resolve(server.address().port));
+    });
+    return listening;
+  }
+  return {
+    /** The address the window plays a station from: { stream (its number, for 'radio:info'), src }. */
+    async open(raw) {
+      const url = radio.httpUrl(raw);
+      if (!url) throw new Error(T('core.radio.notAnAddress'));
+      const port = await start();
+      count += 1;
+      streams.set(count, url);
+      if (streams.size > 50) streams.delete(streams.keys().next().value);
+      return { stream: count, src: `http://127.0.0.1:${port}/radio/${secret}/${count}` };
+    },
+  };
+})();
+handle('radio:open', (url) => radioRelay.open(url));
 
 // ---- startup ----
 
@@ -1247,7 +1284,6 @@ app.whenReady().then(() => {
   if (app.isPackaged) app.setAppUserModelId('com.ceeser.flow');
   settings.load();
   useLanguage();
-  allowRadioStreams(session.defaultSession);
   // Started with the computer: the Mini Player first, with the song it showed last, before the library is read.
   if (START_MINI) mini.open({ byComputer: true });
   if (settings.get('musicDir')) paths.setMusicDir(settings.get('musicDir'));

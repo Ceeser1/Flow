@@ -147,8 +147,12 @@ const Nav = {
     arrow.setAttribute('aria-expanded', String(open));
   },
 
-  /** Whether the menu has Internet Radio (this app plays it, and it is not switched off). */
+  /**
+   * Whether the menu has Internet Radio (this app plays it, and it is not
+   * switched off); the web player's only with a server that plays stations through (5.3.1).
+   */
   radioShown() {
+    if (Store.can('radioByServer') && !(Store.server && Store.server.radioRelay)) return false;
     return Store.can('radio') && Store.settings.showRadio !== false;
   },
 

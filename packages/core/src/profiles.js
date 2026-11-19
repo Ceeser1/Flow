@@ -9,7 +9,7 @@
 //             no profile, called "Default / Shared": its playlists,
 //             favourites and stats are what an app sees while no profile is
 //             signed in.
-//   profiles  { [profileId]: { playlists: [...], groups: [...] (4.5), songs: { [songId]: { stats, favouriteAt } }, follows: [playlistId], groupFollows: [groupId], groupSkips: { groupId: [playlistId] } (4.5.3), playlistListened: {...}, listening, statistics } }
+//   profiles  { [profileId]: { playlists: [...], groups: [...] (4.5), songs: { [songId]: { stats, favouriteAt } }, follows: [playlistId], groupFollows: [groupId], groupSkips: { groupId: [playlistId] } (4.5.3), playlistListened: {...}, listening, statistics, radioFavs (5.3.1) } }
 //
 // Playlists can be shared (playlist.shared): the other profiles, and the
 // Default, then see them read-only in their view (sharedPlaylists) and can
@@ -120,9 +120,9 @@ function cleanProfile(data, raw) {
   // sanitize() already knows how playlists must look and drops entries for
   // songs that are not there.
   const {
-    playlists, groups, follows, groupFollows, groupSkips, playlistListened, listening, statistics,
+    playlists, groups, follows, groupFollows, groupSkips, playlistListened, listening, statistics, radioFavs,
   } = model.sanitize({
-    songs: data.songs, playlists: r.playlists, groups: r.groups, follows: r.follows, groupFollows: r.groupFollows, groupSkips: r.groupSkips, playlistListened: r.playlistListened, listening: r.listening, statistics: r.statistics,
+    songs: data.songs, playlists: r.playlists, groups: r.groups, follows: r.follows, groupFollows: r.groupFollows, groupSkips: r.groupSkips, playlistListened: r.playlistListened, listening: r.listening, statistics: r.statistics, radioFavs: r.radioFavs,
   });
   const known = new Set(data.songs.map((s) => s.id));
   const songs = {};
@@ -134,7 +134,7 @@ function cleanProfile(data, raw) {
     if (hasOwn(kept)) songs[id] = kept;
   }
   return {
-    playlists, groups, songs, follows, groupFollows, groupSkips, playlistListened, listening, statistics,
+    playlists, groups, songs, follows, groupFollows, groupSkips, playlistListened, listening, statistics, radioFavs,
   };
 }
 
@@ -233,11 +233,11 @@ function view(data, profiles, profileId, names = {}) {
     // The Default's songs carry its stars themselves, as its Favourites list has them.
     syncStars(data.songs, model.favouritesList(data));
     return {
-      ...data, groups: data.groups || [], follows: (data.follows || []).slice(), groupFollows: (data.groupFollows || []).slice(), groupSkips: { ...(data.groupSkips || {}) }, statistics: copyStatistics(data.statistics), sharedPlaylists, sharedGroups,
+      ...data, groups: data.groups || [], follows: (data.follows || []).slice(), groupFollows: (data.groupFollows || []).slice(), groupSkips: { ...(data.groupSkips || {}) }, statistics: copyStatistics(data.statistics), radioFavs: data.radioFavs || [], sharedPlaylists, sharedGroups,
     };
   }
   const p = profiles[profileId] || {
-    playlists: [], groups: [], songs: {}, follows: [], groupFollows: [], groupSkips: {}, playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(),
+    playlists: [], groups: [], songs: {}, follows: [], groupFollows: [], groupSkips: {}, playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), radioFavs: [],
   };
   const fav = model.favouritesList(p);
   const starred = new Map((fav ? fav.entries : []).map((e) => [e.songId, e.addedAt]));
@@ -255,6 +255,7 @@ function view(data, profiles, profileId, names = {}) {
     playlistListened: { ...(p.playlistListened || {}) },
     listening: copyListening(p.listening),
     statistics: copyStatistics(p.statistics),
+    radioFavs: p.radioFavs || [],
     sharedPlaylists,
     sharedGroups,
   };
@@ -278,6 +279,7 @@ function absorb(data, profiles, profileId, v) {
     data.playlistListened = v.playlistListened || {};
     data.listening = v.listening || emptyListening();
     data.statistics = v.statistics || emptyStatistics();
+    data.radioFavs = v.radioFavs || [];
     prune(data, profiles);
     return;
   }
@@ -328,6 +330,7 @@ function absorb(data, profiles, profileId, v) {
     // Entries of songs gone from the view are still in the map it had: prune() takes them out.
     playlists: v.playlists, groups: v.groups || [], songs: ownAsBefore && profiles[profileId] ? before : own, follows: v.follows, groupFollows: v.groupFollows || [], groupSkips: v.groupSkips || {}, playlistListened: v.playlistListened || {}, listening: v.listening || emptyListening(),
     statistics: v.statistics || emptyStatistics(),
+    radioFavs: v.radioFavs || [],
   };
   prune(data, profiles);
 }
@@ -453,7 +456,7 @@ function addProfile(data, profiles, profileId, newId = randomId, now = Date.now(
   });
   playlists.unshift(favouritesFrom(profileId, [], now));
   profiles[profileId] = {
-    playlists, groups, songs: {}, follows: [], groupFollows: [], groupSkips: {}, playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(now),
+    playlists, groups, songs: {}, follows: [], groupFollows: [], groupSkips: {}, playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(now), radioFavs: [],
   };
 }
 

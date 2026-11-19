@@ -29,7 +29,7 @@ function lockRows(lib) {
  * `lib` (a copy as kept: clean, its rows locked) with the changes `c` of
  * library.changes() ({ songs, deletedSongs, playlists, deletedPlaylists,
  * follows?, groups?, groupFollows?, groupSkips?, sharedPlaylists, unshared,
- * sharedGroups?, profileNames? }): a new library, its rows locked, the ones
+ * sharedGroups?, radioFavs?, profileNames? }): a new library, its rows locked, the ones
  * nothing changed in being those of `lib`.
  */
 function mergeChanges(lib, c) {
@@ -94,6 +94,8 @@ function mergeChanges(lib, c) {
     groupSkips,
     sharedGroups,
     profileNames: c.profileNames || lib.profileNames,
+    // Favourite Radios (5.3.1): sent whole when they changed.
+    radioFavs: Array.isArray(c.radioFavs) ? c.radioFavs : lib.radioFavs,
   });
   const groupIds = new Set(rest.groups.map((g) => g.id));
   const groupsCame = Array.isArray(c.groups);

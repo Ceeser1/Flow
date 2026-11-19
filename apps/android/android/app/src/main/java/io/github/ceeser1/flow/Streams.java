@@ -7,6 +7,7 @@ import androidx.annotation.OptIn;
 import androidx.media3.common.C;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DataSpec;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
@@ -76,10 +77,11 @@ final class Streams {
         return new DefaultMediaSourceFactory(sources, extractors).setLoadErrorHandlingPolicy(new Patience());
     }
 
-    /** Internet Radio's stations. */
-    static MediaSource.Factory liveFactory(Context context) {
+    /** Internet Radio's stations; what they play is told to `songInfo` (IcyReader, 5.3.1). */
+    static MediaSource.Factory liveFactory(Context context, IcyReader.Listener songInfo) {
         DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true);
-        return new ProgressiveMediaSource.Factory(new DefaultDataSource.Factory(context, http), new DefaultExtractorsFactory())
+        DataSource.Factory read = new IcyReader.Factory(new DefaultDataSource.Factory(context, http), songInfo);
+        return new ProgressiveMediaSource.Factory(read, new DefaultExtractorsFactory())
                 .setLoadErrorHandlingPolicy(new LivePatience());
     }
 

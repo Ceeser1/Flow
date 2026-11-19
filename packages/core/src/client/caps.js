@@ -50,6 +50,8 @@ const DESKTOP = {
   alarm: false,
   // Internet Radio (5.1): its menu entry and page, stations played live.
   radio: true,
+  // Stations play through the Flow Server (5.3.1, its feature radioRelay): the web player's way.
+  radioByServer: false,
 };
 
 const ANDROID = {
@@ -78,6 +80,7 @@ const ANDROID = {
   alarm: true,
   // Through the phone's own player, so a station plays on in the background.
   radio: true,
+  radioByServer: false,
 };
 
 // The iPhone: as the Android phone, without what iOS has no need or room for.
@@ -93,8 +96,6 @@ const IOS = {
   soundEq: false,
   // iOS starts no app's music at a set time while the app is closed.
   alarm: false,
-  // Its player (apps/ios) has no live streams yet.
-  radio: false,
 };
 
 // The web player (apps/web): a page in a browser that only plays a Flow
@@ -127,8 +128,11 @@ const WEB = {
   localFiles: false,
   miniPlayer: false,
   alarm: false,
-  // Not in the browser yet: most stations send no CORS headers, and many are plain http.
-  radio: false,
+  // Internet Radio (5.3.1): most stations send no CORS header (Web Audio would hear nothing) and many
+  // are plain http (an https page may not play them), so they play through the Flow Server, which also
+  // reads what they play; only with a server that does (radioRelay).
+  radio: true,
+  radioByServer: true,
 };
 
 module.exports = {

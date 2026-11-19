@@ -344,6 +344,29 @@ function createActions({
     return change((d) => model.recordRadioListen(d, { id: args.station, name: args.name, listened: heard, tz, listen }), 'recordRadioListen', args);
   }
 
+  /**
+   * Favourite Radios kept by a Flow Server for the profile (5.3.1; feature
+   * radioFavs, remote.js). Without one, or with a server from before, the
+   * window keeps them in this device's settings instead (radio.js).
+   */
+  function needsServer() {
+    if (!remote.active() || !remote.status().radioFavs) {
+      throw new Error(tr('core.radio.favsOnDevice', 'Favourite Radios are kept on this device here.'));
+    }
+  }
+
+  /** A station in or out of them; `index`: where an Undo puts it back. */
+  function setRadioFavourite({ station, on, index = null }) {
+    needsServer();
+    return remote.command('setRadioFavourite', { station, on: !!on, ...(Number.isInteger(index) ? { index } : {}) });
+  }
+
+  /** A favourite station's own name ('' its own one back). */
+  function renameRadio({ stationId, name }) {
+    needsServer();
+    return remote.command('renameRadio', { stationId: String(stationId || ''), name: String(name || '') });
+  }
+
   const findBySource = ({ url, key }) => model.findBySource(currentLibrary(), { url, key });
   // With meta.duration: only a song of the same length (model.findSameSong).
   const findByMeta = (meta) => (meta && meta.duration
@@ -378,6 +401,8 @@ function createActions({
     recordListen,
     recordAwayListen,
     recordRadioListen,
+    setRadioFavourite,
+    renameRadio,
     findBySource,
     findByMeta,
   };

@@ -6,7 +6,8 @@ import Foundation
 /// of operations and answers the state after them, state() answers where it
 /// is, attach() what the page starting finds (FlowPlayer.attach). Events:
 /// "state", "ended" { id }, "error" { id, message, status, unsupported }, "advance" { from,
-/// id, key, heard, reason }, "signedIn" { token } and "previous".
+/// id, key, heard, reason }, "signedIn" { token }, "previous" and "songInfo" { id, meta, title }
+/// (what an Internet Radio station plays, 5.3.1).
 /// keepSession(state) hands SessionKeeper what the page last told the server,
 /// for while Flow is out of sight.
 @objc(FlowAudioPlugin)
@@ -83,5 +84,9 @@ public class FlowAudioPlugin: CAPPlugin, CAPBridgedPlugin, FlowPlayerEvents {
 
     func onPrevious() {
         notifyListeners("previous", data: [:])
+    }
+
+    func onSongInfo(_ id: String, _ meta: Bool, _ title: String) {
+        notifyListeners("songInfo", data: ["id": id, "meta": meta, "title": title])
     }
 }

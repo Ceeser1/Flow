@@ -322,6 +322,23 @@ const TYPES = {
       };
     },
   },
+  // Favourite Radios (5.3.1): a station in or out of the profile's (`index`:
+  // where an Undo puts it back), and a name of its own for one.
+  setRadioFavourite: {
+    keys: (c) => [`r:${str(c.station && c.station.id)}`],
+    run(d, c) {
+      model.setRadioFavourite(d, c.station, !!c.on, Number.isInteger(c.index) ? c.index : null);
+      return {};
+    },
+  },
+  renameRadio: {
+    keys: (c) => [`r:${c.stationId}:name`],
+    run(d, c) {
+      if (!(d.radioFavs || []).some((f) => f.id === str(c.stationId))) return { skipped: 'gone' };
+      model.renameRadio(d, str(c.stationId), c.name);
+      return {};
+    },
+  },
   // A song trimmed: only ever applied by the app, to show it at its new
   // length before the server has cut its file (the server cuts it through
   // POST /api/songs/:id/trim). base: the cut it was trimmed from; cut: the

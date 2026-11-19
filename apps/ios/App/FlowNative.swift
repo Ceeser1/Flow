@@ -34,6 +34,7 @@ public class FlowNativePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "power", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "allowBackground", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "appSettings", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "radioPeek", returnType: CAPPluginReturnPromise),
     ]
 
     /// The plugin of the page there now (a share arriving reaches it).
@@ -324,6 +325,29 @@ public class FlowNativePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    // MARK: Internet Radio (5.3.1)
+
+    /// What a radio station's address answers, for Internet Radio's Add Radio
+    /// (core radio.js checkStream, through the page's peekStream), as
+    /// FlowNative.java's: { status, url (after being sent on), type, icyName,
+    /// text (the start of a playlist or page; none of a sound stream) }.
+    /// Rejected with OFFLINE when it cannot be reached (a Shoutcast "ICY 200 OK"
+    /// is one iOS cannot read: its message says so, and the page takes the
+    /// address as it is).
+    @objc func radioPeek(_ call: CAPPluginCall) {
+        guard let url = URL(string: call.getString("url") ?? ""), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            call.reject("That is not a web address.", "OFFLINE")
+            return
+        }
+        RadioPeek.shared.peek(url) { result, problem in
+            if let r = result {
+                call.resolve(r)
+            } else {
+                call.reject(problem ?? "The address cannot be reached.", "OFFLINE")
+            }
+        }
+    }
+
     // MARK: a link shared to Flow
 
     /// Another app's Share > Flow (the share extension, through flow://share):
@@ -331,5 +355,103 @@ public class FlowNativePlugin: CAPPlugin, CAPBridgedPlugin {
     /// the page listens (a share may be what starts Flow).
     func shared(text: String, subject: String = "") {
         notifyListeners("share", data: ["text": text, "subject": subject], retainUntilConsumed: true)
+    }
+}
+
+/// FlowNative.radioPeek's asking: the answer's head, and up to 64 KB of a
+/// playlist or page (a sound stream is let go of at its head).
+final class RadioPeek: NSObject, URLSessionDataDelegate {
+    static let shared = RadioPeek()
+    private static let most = 64 * 1024
+
+    private final class Job {
+        let url: URL
+        let done: ([String: Any]?, String?) -> Void
+        var response: HTTPURLResponse?
+        var data = Data()
+        var finished = false
+        init(url: URL, done: @escaping ([String: Any]?, String?) -> Void) {
+            self.url = url
+            self.done = done
+        }
+    }
+
+    private lazy var session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 20
+        config.httpAdditionalHeaders = ["User-Agent": "Flow Client", "Icy-MetaData": "0"]
+        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }()
+    private var jobs: [Int: Job] = [:]
+    private let lock = NSLock()
+
+    func peek(_ url: URL, done: @escaping ([String: Any]?, String?) -> Void) {
+        let task = session.dataTask(with: url)
+        lock.lock()
+        jobs[task.taskIdentifier] = Job(url: url, done: done)
+        lock.unlock()
+        task.resume()
+    }
+
+    private func jobOf(_ task: URLSessionTask) -> Job? {
+        lock.lock()
+        defer { lock.unlock() }
+        return jobs[task.taskIdentifier]
+    }
+
+    /// The answer so far to the page, once.
+    private func finish(_ task: URLSessionTask, problem: String? = nil) {
+        lock.lock()
+        let j = jobs.removeValue(forKey: task.taskIdentifier)
+        lock.unlock()
+        guard let job = j, !job.finished else { return }
+        job.finished = true
+        guard let http = job.response else {
+            job.done(nil, problem ?? "The address cannot be reached.")
+            return
+        }
+        let type = http.value(forHTTPHeaderField: "Content-Type") ?? ""
+        var r: [String: Any] = [
+            "status": http.statusCode,
+            "url": http.url?.absoluteString ?? job.url.absoluteString,
+            "type": type,
+            "icyName": http.value(forHTTPHeaderField: "icy-name") ?? "",
+        ]
+        if !job.data.isEmpty {
+            r["text"] = String(data: job.data, encoding: .utf8) ?? String(data: job.data, encoding: .isoLatin1) ?? ""
+        }
+        job.done(r, nil)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard let job = jobOf(dataTask), let http = response as? HTTPURLResponse else {
+            completionHandler(.cancel)
+            finish(dataTask)
+            return
+        }
+        job.response = http
+        let lower = (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
+        let sound = lower.hasPrefix("audio/") && !lower.contains("mpegurl") && !lower.contains("m3u") && !lower.contains("pls")
+        if sound || !(200..<300).contains(http.statusCode) {
+            completionHandler(.cancel)
+            finish(dataTask)
+        } else {
+            completionHandler(.allow)
+        }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard let job = jobOf(dataTask) else { return }
+        job.data.append(data)
+        if job.data.count >= RadioPeek.most {
+            finish(dataTask)
+            dataTask.cancel()
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        finish(task, problem: error?.localizedDescription)
     }
 }

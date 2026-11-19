@@ -70,6 +70,9 @@
 //                    with their songs, as the followed playlists do.
 //   profileNames     { [profileId]: name } of the server's profiles (and the
 //                    Default / Shared), for the songs' addedBy ("All Songs from ...")
+//   radioFavs        (5.3.1) this profile's Favourite Radios, the newest first:
+//                    stations as radio.js cleanStation makes them, a name of its
+//                    own when renamed (the directory's then in `listedName`)
 //
 // "All Songs" is not stored: it is every song, and a song's addedAt is when it
 // was downloaded. "Favourites" is the songs with a favouriteAt, which is when
@@ -95,6 +98,7 @@ const {
   emptyListening, cleanListening, recordListening, emptyStatistics, cleanStatistics, recordStatistics, recordRadio,
 } = require('./listening');
 const { tr } = require('./lang');
+const { cleanStation } = require('./radio');
 
 const ALL_SONGS_ID = 'all';
 const ALL_SONGS_NAME = 'All Songs';
@@ -131,7 +135,7 @@ function cleanStats(raw) {
 const INFO_ROUND = 2;
 
 function emptyLibrary() {
-  return { version: 1, songs: [], playlists: [], groups: [], ignoredFiles: [], follows: [], groupFollows: [], groupSkips: {}, sharedPlaylists: [], sharedGroups: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {}, infoRound: INFO_ROUND };
+  return { version: 1, songs: [], playlists: [], groups: [], ignoredFiles: [], follows: [], groupFollows: [], groupSkips: {}, sharedPlaylists: [], sharedGroups: [], playlistListened: {}, listening: emptyListening(), statistics: emptyStatistics(), profileNames: {}, infoRound: INFO_ROUND, radioFavs: [] };
 }
 
 /** The playlist groups (4.5): each once, with a name and an id. */
@@ -417,6 +421,7 @@ function sanitize(raw) {
   data.listening = cleanListening(raw.listening);
   data.statistics = cleanStatistics(raw.statistics);
   data.profileNames = cleanNames(raw.profileNames);
+  data.radioFavs = cleanRadioFavs(raw.radioFavs);
   data.infoRound = Math.max(0, Math.floor(Number(raw.infoRound) || 0));
   const seenShared = new Set();
   for (const p of Array.isArray(raw.sharedPlaylists) ? raw.sharedPlaylists : []) {
@@ -1161,6 +1166,73 @@ function sameNames(a, b) {
     && norm(a && a.mix) === norm(b && b.mix);
 }
 
+// ---- Favourite Radios (5.3.1) ----
+
+// At most this many favourite stations a profile.
+const MAX_RADIO_FAVS = 500;
+
+/** A favourite station as kept: cleanStation's, with its own name and the directory's (listedName) when renamed. */
+function cleanRadioFav(raw) {
+  const st = cleanStation(raw);
+  if (!st) return null;
+  const listed = typeof raw.listedName === 'string' ? raw.listedName.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+  if (listed && listed !== st.name) st.listedName = listed;
+  return st;
+}
+
+/** Favourite Radios as kept: each station once (by id), MAX_RADIO_FAVS at most. */
+function cleanRadioFavs(raw) {
+  const out = [];
+  const seen = new Set();
+  for (const r of Array.isArray(raw) ? raw : []) {
+    const st = cleanRadioFav(r);
+    if (!st || seen.has(st.id)) continue;
+    seen.add(st.id);
+    out.push(st);
+    if (out.length >= MAX_RADIO_FAVS) break;
+  }
+  return out;
+}
+
+/**
+ * A station into this profile's Favourite Radios (first, or at `index`: an
+ * Undo puts it back where it was) or out of them. One already in keeps its place
+ * and the name it was given.
+ */
+function setRadioFavourite(data, station, on, index = null) {
+  const favs = data.radioFavs || [];
+  const st = cleanRadioFav(station);
+  if (!st) throw new Error(tr('core.radio.notAStation', 'That is not a radio station.'));
+  const at = favs.findIndex((f) => f.id === st.id);
+  if (!on) {
+    if (at >= 0) data.radioFavs = favs.filter((f) => f.id !== st.id);
+    return null;
+  }
+  if (at >= 0) return favs[at];
+  const list = favs.slice();
+  const to = Number.isInteger(index) ? Math.max(0, Math.min(index, list.length)) : 0;
+  list.splice(to, 0, st);
+  data.radioFavs = list.slice(0, MAX_RADIO_FAVS);
+  return st;
+}
+
+/** A favourite station's own name; '' gives it back the one it was found by. */
+function renameRadio(data, id, name) {
+  const favs = data.radioFavs || [];
+  const at = favs.findIndex((f) => f.id === id);
+  if (at < 0) throw new Error(tr('core.radio.notAFavourite', 'That station is not one of your Favourite Radios.'));
+  const st = favs[at];
+  const listed = st.listedName || st.name;
+  const clean = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 200) || listed;
+  const next = { ...st, name: clean };
+  if (clean === listed) delete next.listedName;
+  else next.listedName = listed;
+  const list = favs.slice();
+  list[at] = next;
+  data.radioFavs = list;
+  return next;
+}
+
 module.exports = {
   ALL_SONGS_ID, ALL_SONGS_NAME, MAX_NAME, PLAYED_SHARE, EARLY_SKIP_SECONDS,
   emptyLibrary, emptyStats, sanitize, cleanSong, cleanPlaylist, cleanSharedPlaylist, cleanStats, recordListen, recordRadioListen, songById, playlistById, checkPlaylistName, rowToChange, songToChange, listToChange,
@@ -1172,4 +1244,5 @@ module.exports = {
   addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,
   addSongToPlaylists, addSongsToPlaylist, removeFromPlaylist,
   findBySource, findByMeta, findSameSong, sameSongIn, sameNames,
+  cleanRadioFavs, setRadioFavourite, renameRadio, MAX_RADIO_FAVS,
 };

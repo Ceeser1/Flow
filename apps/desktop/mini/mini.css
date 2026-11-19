@@ -436,3 +436,8 @@ input,
 .mini__grip--ne,
 .mini__grip--sw { cursor: nesw-resize; }
 .mini--locked .mini__grip { display: none; }
+
+/* A station (5.3.1): no place to go to, as in Flow's own player bar. */
+.mini--radio .mini__track { cursor: default; }
+.mini--radio .mini__knob { display: none; }
+.mini--radio .mini__fill { opacity: 0.35; }

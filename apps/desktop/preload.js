@@ -154,12 +154,15 @@ contextBridge.exposeInMainWorld('flow', {
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),
   lookupInfo: (song) => call('song:lookupInfo', song),
   // Internet Radio (5.1): the directory's countries, genres and stations ({ name, country, genre, page }),
-  // a directory station played (click), an address checked, a stream let into Web Audio (allow).
+  // a directory station played (click), an address checked.
   radio: {
     search: (q) => call('radio:search', q),
     click: (id) => call('radio:click', id),
     check: (url) => call('radio:check', url),
-    allow: (url) => call('radio:allow', url),
+    // The address the window plays a station from (5.3.1: through the main process): { stream, src }.
+    open: (url) => call('radio:open', url),
+    // What the station plays now ({ stream, meta, title, name }), as it changes.
+    onInfo: (fn) => ipcRenderer.on('radio:info', (event, info) => fn(info)),
   },
   // A song's lyrics (4.0): { found, synced: [{ t, text }] | null, plain, instrumental }.
   lyrics: (songId) => call('song:lyrics', songId),
@@ -184,6 +187,9 @@ contextBridge.exposeInMainWorld('flow', {
   recordAwayListen: (song, listened, duration) => call('library:recordAwayListen', { song, listened, duration }),
   // A piece of Internet Radio heard (5.1, radio.js).
   recordRadioListen: (station, listened, listen) => call('library:recordRadioListen', { station, listened, listen }),
+  // Favourite Radios kept by the Flow Server for the profile (5.3.1).
+  setRadioFavourite: (station, on, index = null) => call('library:setRadioFavourite', { station, on, index }),
+  renameRadio: (stationId, name) => call('library:renameRadio', { stationId, name }),
   // A guest in another server's session (4.0): look for them, then join,
   // session ({ body }), leave, songs, status, list.
   guestLook: () => call('guest:look'),

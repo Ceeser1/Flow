@@ -16,6 +16,8 @@ protocol FlowPlayerEvents: AnyObject {
     func onAdvance(_ from: String, _ id: String, _ key: String, _ heard: Double, _ reason: String)
     /// Previous on the lock screen: the page goes back (it knows the songs before).
     func onPrevious()
+    /// What the Internet Radio station loaded plays (5.3.1): `meta` whether it says, `title` what ('' nothing).
+    func onSongInfo(_ id: String, _ meta: Bool, _ title: String)
 }
 
 /// The iPhone's player, FlowPlayer.java's counterpart: one AVQueuePlayer for
@@ -47,6 +49,15 @@ protocol FlowPlayerEvents: AnyObject {
 /// the background, without a page), what plays is kept in a file all along
 /// (saveResume): the song, the songs after it, the place; Play plays it from
 /// there (resumeAlone), and a page that starts later takes it over.
+///
+/// An Internet Radio station (5.3.1) is loaded as a song is, marked live: it
+/// streams straight from the station (not through StreamLoader), and after a
+/// pause it connects anew and plays what is on the air now. What it plays
+/// comes with its stream (ICY StreamTitle, AVPlayerItemMetadataOutput): it
+/// goes to the page ("songInfo") and onto the lock screen and the widget, the
+/// station's name above, the song below, or the page's "No Song Info"
+/// (meta.noInfo) when the station has said nothing a few seconds after it
+/// began to play. Next, Previous and seeking are off for a station.
 ///
 /// Equalize volume turns a song down by the player's volume, up through an
 /// audio tap (Boost). Song Transition (crossfade) as on Android: shortly
@@ -141,6 +152,18 @@ final class FlowPlayer: NSObject {
     private var artwork: (path: String, art: MPMediaItemArtwork)?
     private var waitingSince: Double?
 
+    // Internet Radio (5.3.1): a station is loaded, it was paused since it last played, its meta from
+    // the page ({ title, artist, album, artwork, noInfo }), what it plays now, whether that was told.
+    private var live = false
+    private var livePaused = false
+    private var liveMeta: [String: Any]?
+    private var liveSong = ""
+    private var liveTold = false
+    private var liveOutput: AVPlayerItemMetadataOutput?
+    private var liveQuiet: DispatchWorkItem?
+    // A station's picture (its address), loaded once for the lock screen.
+    private var liveArt: (url: String, art: MPMediaItemArtwork?)?
+
     private override init() {
         super.init()
         heardAway = readJsonArray(heardFile)
@@ -199,6 +222,12 @@ final class FlowPlayer: NSObject {
             case "volume":
                 volume = Float(FlowPlayer.num(op["volume"]) ?? 1)
                 applyVolume()
+            case "liveMeta":
+                // The station loaded renamed (5.3.1).
+                if live, let m = op["meta"] as? [String: Any] {
+                    liveMeta = m
+                    updateNowPlaying()
+                }
             case "meta":
                 if let item = player.currentItem, var tag = tags[ObjectIdentifier(item)] {
                     tag.meta = op["meta"] as? [String: Any]
@@ -215,6 +244,10 @@ final class FlowPlayer: NSObject {
         let newSrc = op["src"] as? String ?? ""
         let play = FlowPlayer.bool(op["play"])
         let at = FlowPlayer.num(op["at"]) ?? 0
+        let isLive = FlowPlayer.bool(op["live"]) && !newSrc.isEmpty
+        endLive()
+        live = isLive
+        liveMeta = isLive ? op["meta"] as? [String: Any] : nil
         _ = takeHeard()
         dropTail("another song")
         endFadeIn()
@@ -226,14 +259,14 @@ final class FlowPlayer: NSObject {
         gain = Float(FlowPlayer.num(op["gain"]) ?? 1)
         ended = false
         failedTold = ""
-        pendingSeek = at > 0 ? at : nil
+        pendingSeek = at > 0 && !isLive ? at : nil
         itemNow = nil
-        StreamLoader.shared.fromPage(newSrc)
+        if !isLive { StreamLoader.shared.fromPage(newSrc) }
         setRate(1)
         if newSrc.isEmpty {
             wantPlay = false
             player.pause()
-        } else if let item = makeItem(newSrc) {
+        } else if let item = isLive ? makeLiveItem(newSrc) : makeItem(newSrc) {
             tags[ObjectIdentifier(item)] = Tag(id: id, key: key, gain: gain, src: newSrc, meta: op["meta"] as? [String: Any])
             player.insert(item, after: nil)
             itemNow = item
@@ -286,6 +319,7 @@ final class FlowPlayer: NSObject {
 
     private func unload() {
         _ = takeHeard()
+        endLive()
         dropTail("unloaded")
         endFadeIn()
         player.removeAllItems()
@@ -300,8 +334,11 @@ final class FlowPlayer: NSObject {
 
     func play() {
         guard !src.isEmpty else { return }
-        // As an <audio> does: a song that failed is tried again, one that ended starts again.
-        if player.currentItem == nil || player.currentItem?.status == .failed {
+        // A station: on the air now, not where it was paused.
+        if live && (livePaused || ended || player.currentItem == nil || player.currentItem?.status == .failed) {
+            reconnectLive()
+        } else if player.currentItem == nil || player.currentItem?.status == .failed {
+            // As an <audio> does: a song that failed is tried again, one that ended starts again.
             reload()
         } else if ended {
             player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
@@ -327,6 +364,7 @@ final class FlowPlayer: NSObject {
     func pause(_ why: String) {
         let was = wantPlay
         wantPlay = false
+        if live { livePaused = true }
         player.pause()
         dropTail("paused")
         if was { FlowLog.i("pause \(id) (\(why))") }
@@ -336,6 +374,8 @@ final class FlowPlayer: NSObject {
     }
 
     private func seek(_ t: Double) {
+        // A station has no place to go to.
+        if live { return }
         ended = false
         dropTail("seek")
         guard let item = player.currentItem, item.status == .readyToPlay else {
@@ -471,6 +511,7 @@ final class FlowPlayer: NSObject {
                 FlowLog.i(String(format: "waited %.1f s for data of %@", now - since, id) + (playing ? "" : " (then stopped)"))
             }
         }
+        if playing && live { watchQuiet() }
         tellState()
         updateNowPlaying()
     }
@@ -929,6 +970,11 @@ final class FlowPlayer: NSObject {
     /// Flow closed (swiped away): the music stops; its song, place and listen
     /// are kept for the next start.
     func letGo() {
+        // A station stops with Flow; nothing of it is kept.
+        if live {
+            pause("closed")
+            return
+        }
         guard !key.isEmpty else { return }
         saveResume()
         let last: [String: Any] = ["key": key, "at": position(), "heard": heardSoFar() / 1000]
@@ -1076,7 +1122,8 @@ final class FlowPlayer: NSObject {
     /// the place (on a pause, a new song, a new queue, going out of sight, and
     /// every half minute while playing).
     private func saveResume() {
-        guard let item = player.currentItem, let tag = tags[ObjectIdentifier(item)] else { return }
+        // A station is not what the widget's Play starts again without a page: the song kept stays.
+        guard !live, let item = player.currentItem, let tag = tags[ObjectIdentifier(item)] else { return }
         resumeSavedAt = ProcessInfo.processInfo.systemUptime
         let next = player.items().dropFirst().compactMap { tags[ObjectIdentifier($0)] }.map(tagJson)
         let r: [String: Any] = [
@@ -1111,6 +1158,7 @@ final class FlowPlayer: NSObject {
     func nowPlayingNow() -> [String: Any] {
         let info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         return [
+            "live": info[MPNowPlayingInfoPropertyIsLiveStream] as? Bool ?? false,
             "title": info[MPMediaItemPropertyTitle] as? String ?? "",
             "artist": info[MPMediaItemPropertyArtist] as? String ?? "",
             "duration": info[MPMediaItemPropertyPlaybackDuration] as? Double ?? 0,
@@ -1123,9 +1171,18 @@ final class FlowPlayer: NSObject {
     /// What the lock screen and Control Center show: the song's names and cover, its place.
     private func updateNowPlaying() {
         let center = MPNowPlayingInfoCenter.default()
+        // Next, Previous and a place to go to are a song's, not a station's.
+        let commands = MPRemoteCommandCenter.shared()
+        commands.nextTrackCommand.isEnabled = !live
+        commands.previousTrackCommand.isEnabled = !live
+        commands.changePlaybackPositionCommand.isEnabled = !live
         guard !src.isEmpty, let item = player.currentItem else {
             center.nowPlayingInfo = nil
             WidgetFeed.stopped()
+            return
+        }
+        if live {
+            updateLiveNowPlaying(center)
             return
         }
         let meta = tags[ObjectIdentifier(item)]?.meta
@@ -1155,6 +1212,110 @@ final class FlowPlayer: NSObject {
         return art
     }
 
+    // MARK: Internet Radio (5.3.1)
+
+    /// A station's stream, straight from the station, with its ICY metadata read.
+    private func makeLiveItem(_ source: String) -> AVPlayerItem? {
+        guard let url = URL(string: source), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
+        let item = AVPlayerItem(url: url)
+        let output = AVPlayerItemMetadataOutput(identifiers: nil)
+        output.setDelegate(self, queue: DispatchQueue.main)
+        item.add(output)
+        liveOutput = output
+        liveTold = false
+        return item
+    }
+
+    /// The station loaded, connected to anew (after a pause, or one that was cut off).
+    private func reconnectLive() {
+        let meta = player.currentItem.flatMap { tags[ObjectIdentifier($0)]?.meta } ?? liveMeta
+        player.removeAllItems()
+        tags.removeAll()
+        failedTold = ""
+        itemNow = nil
+        ended = false
+        livePaused = false
+        liveQuiet?.cancel()
+        liveQuiet = nil
+        guard let item = makeLiveItem(src) else { return }
+        tags[ObjectIdentifier(item)] = Tag(id: id, key: key, gain: 1, src: src, meta: meta)
+        player.insert(item, after: nil)
+        itemNow = item
+        applyVolume()
+        watch(item)
+        FlowLog.i("station \(id) connected anew")
+    }
+
+    /// No station any more (another song or station loaded, or nothing).
+    private func endLive() {
+        live = false
+        livePaused = false
+        liveMeta = nil
+        liveSong = ""
+        liveTold = false
+        liveOutput = nil
+        liveQuiet?.cancel()
+        liveQuiet = nil
+    }
+
+    /// A station that has said nothing a few seconds after it began to play says nothing: "No Song Info".
+    private func watchQuiet() {
+        guard live, !liveTold, liveQuiet == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.liveQuiet = nil
+            if self.live && !self.liveTold && self.player.timeControlStatus == .playing {
+                self.songInfo(false, "")
+            }
+        }
+        liveQuiet = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
+    }
+
+    /// What the station plays now: onto the lock screen and the widget, and to the page.
+    private func songInfo(_ meta: Bool, _ title: String) {
+        guard live else { return }
+        liveTold = true
+        liveSong = title
+        updateNowPlaying()
+        events?.onSongInfo(id, meta, title)
+    }
+
+    /// The lock screen and the widget for a station: its name, what it plays, live (no length, no place).
+    private func updateLiveNowPlaying(_ center: MPNowPlayingInfoCenter) {
+        let meta = liveMeta ?? [:]
+        let title = meta["title"] as? String ?? ""
+        let song = liveSong.isEmpty ? (meta["noInfo"] as? String ?? meta["artist"] as? String ?? "") : liveSong
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: title,
+            MPMediaItemPropertyArtist: song,
+            MPMediaItemPropertyAlbumTitle: meta["album"] as? String ?? "",
+            MPNowPlayingInfoPropertyIsLiveStream: true,
+            MPNowPlayingInfoPropertyPlaybackRate: player.timeControlStatus == .playing ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+        ]
+        if let art = liveArtwork(meta["artwork"] as? String ?? "") { info[MPMediaItemPropertyArtwork] = art }
+        center.nowPlayingInfo = info
+        WidgetFeed.tell(title: title, artist: song, playing: wantPlay, position: 0, duration: -1, artwork: "")
+    }
+
+    /// A station's picture by its address, loaded once (the lock screen shows it when it is there).
+    private func liveArtwork(_ address: String) -> MPMediaItemArtwork? {
+        guard address.hasPrefix("http://") || address.hasPrefix("https://"), let url = URL(string: address) else { return nil }
+        if let a = liveArt, a.url == address { return a.art }
+        liveArt = (address, nil)
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let data = data, let image = UIImage(data: data), image.size.width > 1 else { return }
+            DispatchQueue.main.async {
+                guard let self = self, self.liveArt?.url == address else { return }
+                self.liveArt = (address, MPMediaItemArtwork(boundsSize: image.size) { _ in image })
+                self.updateNowPlaying()
+            }
+        }.resume()
+        return nil
+    }
+
     // MARK: helpers
 
     static func num(_ v: Any?) -> Double? {
@@ -1177,5 +1338,30 @@ final class FlowPlayer: NSObject {
     /// An address without the server's token, for the log.
     static func redact(_ source: String) -> String {
         source.replacingOccurrences(of: "([?&]t=)[^&]*", with: "$1...", options: .regularExpression)
+    }
+}
+
+/// What a station's stream says it plays (5.3.1): its ICY StreamTitle.
+extension FlowPlayer: AVPlayerItemMetadataOutputPushDelegate {
+    func metadataOutput(_ output: AVPlayerItemMetadataOutput, didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
+                        from track: AVPlayerItemTrack?) {
+        guard live, output === liveOutput else { return }
+        for group in groups {
+            for item in group.items {
+                let named = item.identifier == .icyMetadataStreamTitle || (item.key as? String) == "StreamTitle"
+                guard named else { continue }
+                songInfo(true, FlowPlayer.cleanTitle(item.stringValue ?? ""))
+                return
+            }
+        }
+    }
+
+    /// A StreamTitle as shown: '' for an empty one (only dashes or dots), at most 300 characters.
+    static func cleanTitle(_ raw: String) -> String {
+        let t = raw.replacingOccurrences(of: "[\\u0000-\\u001f]+", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.range(of: "^[-\\u2013\\u2014|.:\\s]*$", options: .regularExpression) != nil { return "" }
+        return String(t.prefix(300))
     }
 }

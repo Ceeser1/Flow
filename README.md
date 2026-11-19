@@ -39,6 +39,9 @@ Flow is made for private use.
 - **Sound equalizer** with presets
 - Choose the **output device** (speakers, headphones, Bluetooth)
 - **Sleep timer**, media keys, and Flow remembers where you stopped
+- **Internet Radio**: thousands of stations from radio-browser.info, or any
+  stream by its address, with what the station plays right now; your
+  favourite stations, with names of your own, on all your devices
 - **Mini Player** (PC): a small widget with the song and its controls that can
   stay on top of other windows and open when the computer starts, while Flow
   itself waits in the system tray; resize it by its edges, and show the
