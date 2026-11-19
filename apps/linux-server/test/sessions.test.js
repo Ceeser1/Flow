@@ -9,7 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
-  createSessions, REQUEST_MS, COOLDOWN_MS, GRACE_MS, PAUSED_LISTED_MS, MAX_MEMBERS,
+  createSessions, REQUEST_MS, COOLDOWN_MS, GRACE_MS, PAUSED_LISTED_MS, MAX_MEMBERS, VOTE_HOLD_MS,
 } = require('../src/sessions');
 const { startServer } = require('../src/server');
 const { connect } = require('../testing/liveClient');
@@ -292,6 +292,164 @@ test('controls: members only, a whitelist, songs checked, carried to the host', 
   }, (err) => err.status === 429);
   t.clock.advance(11000);
   t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'next' });
+});
+
+/** A third and a fourth device in the host's session. */
+function joinMore(t, sessionId, ...clients) {
+  for (const client of clients) {
+    if (!t.live.has(client)) t.live.connect(client, { profileName: 'Ben', device: client.slice(0, 4) });
+    const { requestId } = t.sessions.handle(client, { type: 'join', sessionId });
+    t.sessions.handle('host-aaaaaaaa', { type: 'answer', requestId, accept: true });
+  }
+  t.clock.advance(200);
+  for (const c of ['host-aaaaaaaa', 'join-bbbbbbbb', ...clients]) t.live.clear(c);
+}
+
+test('queue only: a member adds to the queue and nothing else; the rule comes and goes with the host\'s state', () => {
+  const t = setup();
+  joined(t);
+  t.live.clear('join-bbbbbbbb');
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ queueOnly: true }) });
+  // The member is told the rule as it changes.
+  assert.deepEqual(t.live.take('join-bbbbbbbb', 'session').session.rules, { queueOnly: true, skipVote: false });
+  assert.equal(t.live.take('join-bbbbbbbb', 'state').state.queueOnly, true);
+  t.live.clear('host-aaaaaaaa');
+  for (const action of ['toggle', 'pause', 'play', 'next', 'prev', 'queueClear', 'shuffle', 'repeat', 'queueRemove', 'queueMove', 'queuePlay']) {
+    assert.throws(() => t.sessions.handle('join-bbbbbbbb', { type: 'control', action }), (err) => err.status === 403 && err.extra.rule === 'queueOnly', action);
+  }
+  assert.throws(() => t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'seek', position: 5 }), /only the host controls/);
+  assert.throws(() => t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'playSong', songId: 's2' }), /only the host controls/);
+  assert.throws(() => t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'playPlaylist', playlistId: 'p1' }), /only the host controls/);
+  assert.equal(t.live.take('host-aaaaaaaa', 'control'), null);
+  t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'queueAdd', songId: 's2' });
+  assert.deepEqual(t.live.take('host-aaaaaaaa', 'control').args, { songId: 's2' });
+  // The volume is its own permission.
+  assert.throws(() => t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'volume', value: 0.3 }), /does not let others/);
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ queueOnly: true, allowVolume: true }) });
+  t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'volume', value: 0.3 });
+  assert.deepEqual(t.live.take('host-aaaaaaaa', 'control').args, { value: 0.3 });
+  // A controller that is no member is not bound by it.
+  t.sessions.controlSession(t.sessions.list()[0].id, 'pause', {}, { profileName: 'Alexa' });
+  assert.equal(t.live.take('host-aaaaaaaa', 'control').action, 'pause');
+  // Off again: everything as before.
+  t.live.clear('join-bbbbbbbb');
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing() });
+  assert.deepEqual(t.live.take('join-bbbbbbbb', 'session').session.rules, { queueOnly: false, skipVote: false });
+  t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'pause' });
+  assert.equal(t.live.take('host-aaaaaaaa', 'control').action, 'pause');
+  // A state that changes no rule tells the members no session again.
+  t.live.clear('join-bbbbbbbb');
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ position: 50 }) });
+  assert.equal(t.live.take('join-bbbbbbbb', 'session'), null);
+});
+
+test('votes to skip: more than half of the members, the host not counted; taken back, gone with the song', () => {
+  const t = setup();
+  const sessionId = joined(t);
+  joinMore(t, sessionId, 'join-cccccccc', 'join-dddddddd');
+  // No vote asked for: Next skips, and a vote is nothing this session knows.
+  t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'next' });
+  assert.deepEqual(t.live.take('host-aaaaaaaa', 'control').args, {});
+  assert.throws(() => t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'skipVote', on: true }), /needs no vote/);
+
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ skipVote: true }) });
+  assert.deepEqual(t.live.take('join-cccccccc', 'session').session.votes, { clients: [], needed: 2 });
+  for (const c of ['host-aaaaaaaa', 'join-bbbbbbbb', 'join-cccccccc', 'join-dddddddd']) t.live.clear(c);
+
+  // One of three: counted, everyone told, nothing skipped.
+  assert.deepEqual(t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'skipVote', on: true }), { voted: true, votes: 1, needed: 2 });
+  assert.equal(t.live.take('host-aaaaaaaa', 'control'), null);
+  const told = t.live.take('host-aaaaaaaa', 'session');
+  assert.deepEqual(told.session.votes, { clients: ['join-bbbbbbbb'], needed: 2 });
+  assert.equal(told.vote.on, true);
+  assert.equal(told.vote.by.client, 'join-bbbbbbbb');
+  assert.deepEqual(t.live.take('join-dddddddd', 'session').session.votes.clients, ['join-bbbbbbbb']);
+  // The same vote again counts once (and tells nobody).
+  assert.deepEqual(t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'skipVote', on: true }), { voted: true, votes: 1, needed: 2 });
+  assert.equal(t.live.take('host-aaaaaaaa', 'session'), null);
+  // Taken back.
+  assert.deepEqual(t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'skipVote', on: false }), { voted: false, votes: 0, needed: 2 });
+  assert.equal(t.live.all('join-cccccccc', 'session').pop().vote.on, false);
+  // An app before 5.3 presses Next: that is its vote.
+  assert.deepEqual(t.sessions.handle('join-cccccccc', { type: 'control', action: 'next' }), { voted: true, votes: 1, needed: 2 });
+  for (const c of ['host-aaaaaaaa', 'join-bbbbbbbb', 'join-cccccccc', 'join-dddddddd']) t.live.clear(c);
+
+  // The second of three is more than half: the host goes on, told how the vote went and whose did it.
+  assert.deepEqual(t.sessions.handle('join-dddddddd', { type: 'control', action: 'skipVote', on: true }), { voted: false, skipped: true });
+  const c = t.live.take('host-aaaaaaaa', 'control');
+  assert.equal(c.action, 'next');
+  assert.deepEqual(c.args, { vote: { votes: 2, needed: 2 } });
+  assert.equal(c.from.client, 'join-dddddddd');
+  const done = t.live.take('join-bbbbbbbb', 'session');
+  assert.deepEqual(done.skipped, { votes: 2, needed: 2 });
+  assert.deepEqual(done.session.votes.clients, []);
+  // Pressed again before the next song is told: not a vote against the song after it.
+  assert.deepEqual(t.sessions.handle('join-dddddddd', { type: 'control', action: 'next' }), { voted: false, skipped: true });
+  assert.deepEqual(t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'next' }), { voted: false, skipped: true });
+  assert.equal(t.live.take('host-aaaaaaaa', 'control'), null);
+
+  // The next song: votes start at none; one for it is gone when it ends.
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ skipVote: true, songId: 's2' }) });
+  t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'skipVote', on: true });
+  for (const x of ['join-bbbbbbbb', 'join-cccccccc']) t.live.clear(x);
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ skipVote: true, songId: 's3' }) });
+  assert.deepEqual(t.live.take('join-cccccccc', 'session').session.votes.clients, []);
+  // The same song still playing keeps its votes.
+  t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'skipVote', on: true });
+  t.live.clear('join-cccccccc');
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ skipVote: true, songId: 's3', position: 80 }) });
+  assert.equal(t.live.take('join-cccccccc', 'session'), null);
+  assert.deepEqual(t.sessions.view('join-cccccccc').mine.session.votes, { clients: ['join-bbbbbbbb'], needed: 2 });
+  // No longer asked for: the votes go, Next skips again.
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ songId: 's3' }) });
+  assert.deepEqual(t.live.all('join-cccccccc', 'session').pop().session.votes.clients, []);
+  t.live.clear('host-aaaaaaaa');
+  t.sessions.handle('join-cccccccc', { type: 'control', action: 'next' });
+  assert.deepEqual(t.live.take('host-aaaaaaaa', 'control').args, {});
+});
+
+test('votes to skip: one member alone decides; a member leaving can settle it; the host\'s own Next is its own', () => {
+  const t = setup();
+  const sessionId = joined(t);
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ skipVote: true, queueOnly: true }) });
+  t.live.clear('host-aaaaaaaa');
+  // With "queue only" too, Next is still the vote; one member is more than half of one.
+  assert.deepEqual(t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'next' }), { voted: false, skipped: true });
+  assert.deepEqual(t.live.take('host-aaaaaaaa', 'control').args, { vote: { votes: 1, needed: 1 } });
+  assert.throws(() => t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'prev' }), /only the host controls/);
+  // The song stays the same (the only one of its list): a vote counts again after a moment.
+  t.clock.advance(VOTE_HOLD_MS + 10);
+  t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'next' });
+  assert.equal(t.live.take('host-aaaaaaaa', 'control').action, 'next');
+
+  // Four members, two votes (three needed); one who did not vote leaves: two of three is enough.
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ skipVote: true, songId: 's2' }) });
+  joinMore(t, sessionId, 'join-cccccccc', 'join-dddddddd', 'join-eeeeeeee');
+  assert.equal(t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'skipVote', on: true }).needed, 3);
+  assert.deepEqual(t.sessions.handle('join-cccccccc', { type: 'control', action: 'skipVote', on: true }), { voted: true, votes: 2, needed: 3 });
+  assert.equal(t.live.take('host-aaaaaaaa', 'control'), null);
+  t.sessions.handle('join-eeeeeeee', { type: 'leave' });
+  assert.deepEqual(t.live.take('host-aaaaaaaa', 'control').args, { vote: { votes: 2, needed: 2 } });
+  // A voter leaving takes its vote along.
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ skipVote: true, songId: 's3' }) });
+  t.sessions.handle('join-dddddddd', { type: 'control', action: 'skipVote', on: true });
+  t.sessions.handle('join-dddddddd', { type: 'leave' });
+  assert.deepEqual(t.sessions.view('join-bbbbbbbb').mine.session.votes, { clients: [], needed: 2 });
+
+  // The host away for a moment when the vote is won: skipped when it is back.
+  t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'skipVote', on: true });
+  t.live.drop('host-aaaaaaaa');
+  assert.deepEqual(t.sessions.handle('join-cccccccc', { type: 'control', action: 'skipVote', on: true }), { voted: true, votes: 2, needed: 2 });
+  t.live.clear('host-aaaaaaaa');
+  t.live.connect('host-aaaaaaaa', { profileName: 'Ceeser', device: 'Living room' });
+  assert.deepEqual(t.live.take('host-aaaaaaaa', 'control').args, { vote: { votes: 2, needed: 2 } });
+
+  // The host leaves: the votes are not the next host's.
+  t.sessions.handle('host-aaaaaaaa', { type: 'state', state: playing({ skipVote: true, songId: 's4' }) });
+  t.sessions.handle('join-cccccccc', { type: 'control', action: 'skipVote', on: true });
+  t.sessions.handle('host-aaaaaaaa', { type: 'leave' });
+  assert.deepEqual(t.live.take('join-bbbbbbbb', 'hostChanged').session.votes, { clients: [], needed: 1 });
+  assert.throws(() => t.sessions.handle('join-bbbbbbbb', { type: 'control', action: 'next' }), /plays on its own/);
 });
 
 test('the host leaving hands over to the next in line, which plays on from where it was', () => {

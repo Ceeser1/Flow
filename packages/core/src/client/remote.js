@@ -374,7 +374,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, downloadsLive: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, radioStats: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, sharedGroups: false, multiGroups: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, downloadsLive: false, search: false, sessions: false, sessionRules: false, trim: false, admin: false, pin: false, statistics: false, radioStats: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, sharedGroups: false, multiGroups: false, pair: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -478,6 +478,8 @@ function createRemote(env) {
       tailscale: conn.via === 'remote' && isTailscaleAddress(conn.address),
       // Active Sessions: the server has them, and the live channel is open.
       sessions: status.state === 'online' && conn.sessions,
+      // The server keeps a session's host's rules (5.3): queue only, votes to skip.
+      sessionRules: status.state === 'online' && conn.sessions && conn.sessionRules,
       // Administration: the server has it and this profile is an admin (or the master).
       admin: status.state === 'online' && conn.admin && !!(sync.profile && sync.profile.admin),
       master: status.state === 'online' && conn.admin && !!(sync.profile && sync.profile.master),
@@ -1092,6 +1094,7 @@ function createRemote(env) {
         const downloadReview = Array.isArray(hello.features) && hello.features.includes('downloadReview');
         const downloadsLive = Array.isArray(hello.features) && hello.features.includes('downloadsLive');
         const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
+        const sessionRules = Array.isArray(hello.features) && hello.features.includes('sessionRules');
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
         const pin = Array.isArray(hello.features) && hello.features.includes('pin');
@@ -1110,7 +1113,7 @@ function createRemote(env) {
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, downloadsLive, search, sessions, trim, admin, pin, statistics, radioStats, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, sharedGroups, multiGroups, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, downloadsLive, search, sessions, sessionRules, trim, admin, pin, statistics, radioStats, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, sharedGroups, multiGroups, pair,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);

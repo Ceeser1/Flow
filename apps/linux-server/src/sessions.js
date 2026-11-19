@@ -25,6 +25,7 @@
 //   cancelJoin                        take the request back
 //   answer  { requestId, accept }      the host's Accept / Decline
 //   control { action, ...args }        a member's button, carried out by the host
+//                                     (bound by the host's rules, see below)
 //   mode    { mode }                  a member switches between remote and here
 //   leave                             out of the session (the host hands over)
 //
@@ -47,6 +48,15 @@
 // controls take their ids like the library's, and members stream them
 // (GET /api/sessions/songs/:gid/audio, a guest through its own route).
 //
+// The host's rules (5.3), told with its state: `queueOnly` leaves the members
+// one button, adding a song to the queue (and the host's volume where that is
+// allowed); everything else is the host's. `skipVote` makes a member's Next a
+// vote (control `skipVote { on }`, taken back with on: false; a plain `next`
+// counts as one): the song is skipped once more than half of the members want
+// it, the host not counted, whose own Next skips at once. Votes are for the
+// song playing and gone with it, and with a member that leaves. The members
+// see both in the session's `rules` and `votes` { clients, needed }.
+//
 // For other controllers (a smart home, later): controlSession() and
 // controlPlayer() take the same actions without being a member, players()
 // lists every app connected (playing or not), and playPlaylist is worked
@@ -65,6 +75,11 @@ const PAUSED_LISTED_MS = 2 * 60 * 1000;
 // Buttons per member, at most CONTROL_LIMIT within CONTROL_WINDOW.
 const CONTROL_LIMIT = 30;
 const CONTROL_WINDOW = 10 * 1000;
+// Skipped by a vote: votes for that song are not counted again for this long
+// (a Next pressed twice must not skip the song after it too).
+const VOTE_HOLD_MS = 5000;
+// What a member may still do where the host lets them only add to the queue.
+const QUEUE_ONLY = new Set(['queueAdd', 'volume']);
 const MAX_IDS = 20000;
 const ID = /^[\w-]{1,64}$/;
 const CLIENT = /^[\w-]{8,64}$/;
@@ -144,6 +159,9 @@ function cleanState(s) {
     crossfade: num(s.crossfade, 0, 20),
     // How late the host's speakers sound (ms, set by ear), for devices playing along.
     outputDelay: num(s.outputDelay, -1000, 3000),
+    // The host's rules for the members: only adding to the queue; Next is a vote.
+    queueOnly: bool(s.queueOnly),
+    skipVote: bool(s.skipVote),
   };
 }
 
@@ -213,6 +231,9 @@ function createSessions({
     ...(m.guest ? { guest: true, serverName: m.serverName } : {}),
   });
 
+  /** How many of the members (the host is none of them) it takes to skip: more than half. */
+  const votesNeeded = (s) => Math.floor((s.members.length - 1) / 2) + 1;
+
   /** A session song as members see it. */
   const songOut = (x) => ({
     id: x.gid, title: x.title, artist: x.artist, mix: x.mix, duration: x.duration, format: x.format, by: x.byName,
@@ -225,6 +246,9 @@ function createSessions({
       hostClient: hostOf(s).client,
       members: s.members.map(member),
       allowVolume: !!(s.state && s.state.allowVolume),
+      rules: { queueOnly: !!(s.state && s.state.queueOnly), skipVote: !!(s.state && s.state.skipVote) },
+      // Who wants the song playing skipped, and how many it takes.
+      votes: { clients: [...s.votes], needed: votesNeeded(s) },
       // The songs guests brought, ready to play.
       songs: [...s.songs.values()].filter((x) => x.ready).map(songOut),
     };
@@ -303,7 +327,7 @@ function createSessions({
       // Nothing loaded and no session: nothing to tell anyone.
       if (!st.songId) return { sessionId: null };
       s = {
-        id: newId(), members: [{ ...me, joinedAt: now(), mode: 'host' }], state: null, sampledAt: 0, pausedAt: now(), createdAt: now(), idleTimer: null, songs: new Map(),
+        id: newId(), members: [{ ...me, joinedAt: now(), mode: 'host' }], state: null, sampledAt: 0, pausedAt: now(), createdAt: now(), idleTimer: null, songs: new Map(), votes: new Set(), voteSong: null, voteHold: null,
       };
       sessions.set(s.id, s);
       memberOf.set(client, s.id);
@@ -318,6 +342,11 @@ function createSessions({
     s.sampledAt = st.at !== null && Math.abs(st.at - now()) < 5000 ? st.at : now();
     delete st.at;
     s.state = st;
+    // The votes were for the song before, or are no longer asked for.
+    const votesGone = s.votes.size > 0 && (!st.skipVote || st.songId !== s.voteSong);
+    if (votesGone) s.votes.clear();
+    if (s.voteHold && st.songId !== s.voteHold.songId) s.voteHold = null;
+    const rulesChanged = !!was && (was.queueOnly !== st.queueOnly || was.skipVote !== st.skipVote);
     // No longer shared: open requests are turned away (the host closed its prompts itself).
     if (!st.shared) {
       for (const r of [...requests.values()]) if (r.sessionId === s.id) cancelRequest(r.id, { toJoiner: { reason: 'unshared' }, toHost: false });
@@ -330,6 +359,7 @@ function createSessions({
     }
     const out = stateNow(s);
     for (const m of s.members.slice(1)) send(m.client, 'state', { sessionId: s.id, state: out });
+    if ((votesGone || rulesChanged) && s.members.length > 1) toMembers(s, 'session', { session: detail(s) });
     dropWhenIdle(s);
     pushList();
     return { sessionId: s.id };
@@ -493,6 +523,47 @@ function createSessions({
     return { sent: true };
   }
 
+  /**
+   * Enough votes: the host is told to go on (a `next` with how the vote went),
+   * and the members that it was skipped. `from`: whose vote did it. False while
+   * there are too few, or the host cannot be reached (counted again once it is back).
+   */
+  function tally(s, from = null) {
+    if (!s.state || !s.state.skipVote || !s.votes.size) return false;
+    const needed = votesNeeded(s);
+    const votes = s.votes.size;
+    if (votes < needed) return false;
+    const by = from || s.members.find((m) => s.votes.has(m.client)) || {};
+    const sent = send(hostOf(s).client, 'control', {
+      sessionId: s.id, action: 'next', args: { vote: { votes, needed } }, from: { client: by.client || null, profileName: by.profileName || '', device: by.device || '' },
+    });
+    if (!sent) return false;
+    s.votes.clear();
+    s.voteHold = { songId: s.state.songId, until: now() + VOTE_HOLD_MS };
+    toMembers(s, 'session', { session: detail(s), skipped: { votes, needed } });
+    return true;
+  }
+
+  /** A member wants the song playing skipped (`on`), or no longer does. */
+  function vote(s, me, on) {
+    const songId = s.state.songId;
+    if (!songId) throw new SessionError(409, 'Nothing is playing.');
+    // Skipped by the vote a moment ago; the next song is on its way.
+    if (s.voteHold && s.voteHold.songId === songId && s.voteHold.until > now()) return { voted: false, skipped: true };
+    if (s.voteSong !== songId) {
+      s.votes.clear();
+      s.voteSong = songId;
+    }
+    const had = s.votes.has(me.client);
+    if (on) s.votes.add(me.client);
+    else s.votes.delete(me.client);
+    if (had === on) return { voted: on, votes: s.votes.size, needed: votesNeeded(s) };
+    if (tally(s, me)) return { voted: false, skipped: true };
+    const m = s.members.find((x) => x.client === me.client);
+    toMembers(s, 'session', { session: detail(s), vote: { by: member(m), on } });
+    return { voted: on, votes: s.votes.size, needed: votesNeeded(s) };
+  }
+
   function control(client, body) {
     const me = who(client);
     const s = sessions.get(memberOf.get(client));
@@ -500,6 +571,13 @@ function createSessions({
     if (hostOf(s).client === client) throw new SessionError(409, 'The host plays on its own.');
     rateLimit(client);
     const { type, action, ...args } = body;
+    // The host's rules for its members (controllers that are none are not bound by them).
+    const rules = s.state || {};
+    if (action === 'skipVote' && !rules.skipVote) throw new SessionError(409, 'Skipping needs no vote in this session.');
+    if (action === 'skipVote' || (action === 'next' && rules.skipVote)) return vote(s, me, action === 'next' || args.on !== false);
+    if (rules.queueOnly && !QUEUE_ONLY.has(action)) {
+      throw new SessionError(403, 'In this session only the host controls what plays. You can add songs to the queue.', { rule: 'queueOnly' });
+    }
     return forward(s, action, cleanControl(action, args, me, s), me);
   }
 
@@ -564,6 +642,7 @@ function createSessions({
     const i = s.members.findIndex((m) => m.client === client);
     const [gone] = s.members.splice(i, 1);
     memberOf.delete(client);
+    s.votes.delete(client);
     send(client, 'left', { sessionId: s.id, reason });
     if (!s.members.length) {
       end(s, reason);
@@ -581,6 +660,9 @@ function createSessions({
       if (next > 0) s.members.unshift(s.members.splice(next, 1)[0]);
       const host = hostOf(s);
       host.mode = 'host';
+      // Votes are among a host's members: another host, counted anew.
+      s.votes.clear();
+      s.voteHold = null;
       const state = stateNow(s);
       if (s.state) {
         s.state = { ...s.state, position: state.position };
@@ -598,6 +680,8 @@ function createSessions({
       log(`Session ${s.id}: ${previous.profileName || 'Default'} - ${previous.device} left, ${host.profileName || 'Default'} - ${host.device} hosts now`);
     } else {
       toMembers(s, 'session', { session: detail(s), left: member(gone) });
+      // Fewer members: the votes there are may be enough now.
+      tally(s);
     }
     dropWhenIdle(s);
     pushList();
@@ -617,6 +701,8 @@ function createSessions({
       send(client, 'session', { session: detail(s), resumed: true });
       if (hostOf(s).client === client) {
         for (const r of requests.values()) if (r.sessionId === s.id) send(client, 'joinRequest', requestEvent(r));
+        // A vote that was won while it was away.
+        tally(s);
       } else if (s.state) {
         send(client, 'state', { sessionId: s.id, state: stateNow(s) });
       }
@@ -776,5 +862,5 @@ function createSessions({
 }
 
 module.exports = {
-  createSessions, SessionError, MAX_MEMBERS, REQUEST_MS, COOLDOWN_MS, GRACE_MS, PAUSED_LISTED_MS,
+  createSessions, SessionError, MAX_MEMBERS, REQUEST_MS, COOLDOWN_MS, GRACE_MS, PAUSED_LISTED_MS, VOTE_HOLD_MS,
 };

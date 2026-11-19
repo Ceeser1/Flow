@@ -127,7 +127,8 @@ Open to anyone (only the refusals above apply).
   without it); `download` when the server can download
   songs itself (yt-dlp and ffmpeg there, not turned off), and with it
   `search` (searching by a song's name; older servers lack it); `sessions` for
-  Active Sessions; `trim` when ffmpeg is there. From 4.0: `smartPlaylists`
+  Active Sessions (from 5.3 with `sessionRules`: a host's "queue only" and
+  votes to skip); `trim` when ffmpeg is there. From 4.0: `smartPlaylists`
   (a playlist's `rules` kept, see Commands), `pair` (pairing codes for QR
   codes, see [Pairing](#pairing-qr-codes)), `lyrics` (`GET
   /api/songs/<id>/lyrics`), from 4.0 `ownLyrics` (`PUT
@@ -621,7 +622,7 @@ client needs its live channel open to take part; it hears back there.
     "playing": true, "listeners": 1,
     "members": [{ "client": "...", "profileName": "Sam", "device": "Living room PC", "mode": "host", "joinedAt": 1760270000000 }]
   }],
-  "mine": { "session": { "id", "name", "hostClient", "members", "allowVolume" }, "state": { ... }, "host": false },
+  "mine": { "session": { "id", "name", "hostClient", "members", "allowVolume", "rules", "votes", "songs" }, "state": { ... }, "host": false },
   "request": { "requestId": "...", "sessionId": "...", "expiresIn": 42000 }
 }
 ```
@@ -651,7 +652,8 @@ plays, in order; leave out when unchanged), `queue` (`{ contextId, currentId,
 shuffle, manual, auto, used, cursor, history }`), `at` (when `position` was
 read, in server time), `name` ("Profile - Output device"), `shared` (false:
 not listed for others), `allowVolume`, `volume` (0-1), `crossfade`
-(seconds), `outputDelay` (ms).
+(seconds), `outputDelay` (ms), and from 5.3 the host's rules for its
+members, `queueOnly` and `skipVote` (below).
 
 **`control` actions:**
 
@@ -666,6 +668,28 @@ not listed for others), `allowVolume`, `volume` (0-1), `crossfade`
 | `playSong` | `songId`, `ids?`, `contextName?`, `contextId?` |
 | `playPlaylist` | `playlistId` or `name` (`"all"` / "All Songs" works too); worked out from the library |
 | `volume` | `value` (0-1); only when the host allows it (403) |
+| `skipVote` | `on` (false takes the vote back); only where the host asks for votes (409 otherwise). → `{ voted, votes, needed }`, or `{ voted: false, skipped: true }` when it settled the vote |
+
+**The host's rules** (from 5.3; `sessionRules` in the hello's `features`),
+set in its `state` and shown to the members as `session.rules`
+(`{ queueOnly, skipVote }`):
+
+- `queueOnly`: a member's `control` is taken for `queueAdd` (and `volume`,
+  where allowed) only; anything else is answered 403 with `rule:
+  "queueOnly"`. With `skipVote` too, `next` and `skipVote` stay (the vote).
+- `skipVote`: a member's `next` is its vote (as `skipVote` with `on: true`)
+  and answered like one. Once more than half of the members want the song
+  playing skipped (the host is not counted: 1 of 1, 2 of 2, 2 of 3, 3 of 4
+  ...), the host gets `control` with `action: "next"` and `args: { vote:
+  { votes, needed } }`, and every member a `session` event with `skipped:
+  { votes, needed }`. `session.votes` is `{ clients, needed }`: who has
+  voted, and how many it takes. Votes are for the song playing: gone when
+  the host's `songId` changes, with a member that leaves (the votes left
+  are counted again) and with another host. The host's own Next is not a
+  control and skips at once.
+
+Controllers that are no members (`controlSession`, `controlPlayer` in
+`sessions.js`) are not bound by the rules.
 
 ```sh
 curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
@@ -680,7 +704,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/jso
 | `joinRequest` | the host | `{ requestId, sessionId, client, profileName, device, ip, expiresIn }`, and `guest: true` with `serverName` for a guest from another server (4.0) |
 | `joinCancelled` | the host | `{ requestId, sessionId }`: taken back or run out |
 | `joinResult` | who asked | `{ requestId, sessionId, ok: true, session, state }`, or `ok: false` with `reason`: `declined` (+ `retryIn`), `expired`, `full`, `ended`, `unshared` |
-| `session` | every member, when members change | `{ session }` |
+| `session` | every member, when members, the host's rules or the votes change | `{ session }`, with `joined` / `left` (a member), `hostChanged`, and from 5.3 `vote: { by, on }` (a member voted to skip, or took it back) or `skipped: { votes, needed }` |
 | `state` | the members | `{ sessionId, state }` |
 | `control` | the host | `{ sessionId, action, args, from: { client, profileName, device } }` |
 | `hostChanged` | the new host | `{ sessionId, previous: { client, profileName, device }, reason, state, session }` |

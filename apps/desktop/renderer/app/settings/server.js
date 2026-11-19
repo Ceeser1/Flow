@@ -206,8 +206,30 @@ extend(SettingsPanel, {
         desc: T('settings.jam.guestVolume.desc'),
         when: on,
       }),
+      this._row({
+        key: 'sessionQueueOnly',
+        label: T('settings.jam.queueOnly.label'),
+        desc: this._rulesDesc(T('settings.jam.queueOnly.desc')),
+        when: on,
+      }),
+      this._row({
+        key: 'sessionSkipVote',
+        label: T('settings.jam.skipVote.label'),
+        desc: this._rulesDesc(T('settings.jam.skipVote.desc')),
+        when: on,
+      }),
       this._outputDelayRow(on),
     ];
+  },
+
+  /** A host's rule's description (5.3); connected to a server before that, it says what that one cannot do. */
+  _rulesDesc(text) {
+    const older = h('span');
+    this._refresh.push(() => {
+      const s = Store.server;
+      older.textContent = s.state === 'online' && s.sessions && !s.sessionRules ? ` ${T('settings.jam.rules.olderServer')}` : '';
+    });
+    return h('span', text, older);
   },
 
   /** Output delay, as in the player's output menu: for the output playing now (only with the Flow Server, for jams). */

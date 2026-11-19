@@ -267,20 +267,44 @@ const SessionsPage = {
     const names = others.map((x) => Session._who(x));
     const text = m.host
       ? T('sessions.state.hosting', { names: names.join(', ') })
-      : T('sessions.state.member', { session: m.session.name });
+      // "What you press plays there" only where the host lets its members press it all.
+      : T(Session.rules.queueOnly ? 'sessions.state.member.short' : 'sessions.state.member', { session: m.session.name });
     box.append(
       h('span.sessions-mine__icon', { html: Icons.sessions }),
       h('span.sessions-mine__text', text),
       h('button.btn', { type: 'button', onclick: () => this._leave() }, T('common.leaveSession')),
     );
-    if (m.host) box.append(this._volumeBox());
+    if (m.host) {
+      box.append(
+        this._hostBox('sessionAllowVolume', T('sessions.mayChangeVolume')),
+        this._hostBox('sessionQueueOnly', T('sessions.rules.queueOnly')),
+        this._hostBox('sessionSkipVote', T('sessions.rules.skipVote')),
+      );
+      const v = Session.votes;
+      if (v && v.count) box.append(h('div.sessions-mine__rules', T('sessions.vote.count', { votes: v.count, needed: v.needed })));
+    } else {
+      const rules = this._rulesText();
+      if (rules) box.append(h('div.sessions-mine__rules', rules));
+    }
   },
 
-  /** The host's choice: devices in the session may change this one's volume. */
-  _volumeBox() {
-    const box = h('input', { type: 'checkbox', checked: !!Store.settings.sessionAllowVolume });
-    box.addEventListener('change', () => Store.saveSettings({ sessionAllowVolume: box.checked }));
-    return h('label.check.sessions-mine__volume', box, h('span', T('sessions.mayChangeVolume')));
+  /**
+   * A host's choice, as in Settings > Flow Server > Jam session: devices in
+   * the session may change this one's volume, only add to the queue, vote to skip.
+   */
+  _hostBox(key, label) {
+    const box = h('input', { type: 'checkbox', checked: !!Store.settings[key] });
+    box.addEventListener('change', () => Store.saveSettings({ [key]: box.checked }));
+    return h('label.check.sessions-mine__volume', box, h('span', label));
+  },
+
+  /** What the host of the session this app is in lets its members do (nothing said where that is everything). */
+  _rulesText() {
+    const r = Session.rules;
+    const v = Session.votes;
+    const count = v ? ` ${T('sessions.vote.count', { votes: v.count, needed: v.needed })}` : '';
+    if (r.queueOnly) return T(r.skipVote ? 'sessions.rules.member.queueAndVote' : 'sessions.rules.member.queueOnly') + count;
+    return r.skipVote ? T('sessions.rules.member.vote') + count : '';
   },
 
   /** Counts down a request or a wait while this page shows one. */

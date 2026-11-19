@@ -287,6 +287,43 @@
 .round-btn--main .icon { width: 20px; height: 20px; }
 .preview-transport .round-btn--main { width: 40px; height: 40px; }
 
+/* ---- a session's host's rules on the buttons (session.js _drawRules, 5.3) ---- */
+/* Where skipping needs a vote: the votes there are, on Next ("1/2"), and Next
+   lit once this device has given its own. */
+.round-btn[data-votes] { position: relative; }
+.round-btn[data-votes]::after {
+  content: attr(data-votes);
+  position: absolute;
+  top: -6px;
+  right: -9px;
+  min-width: 16px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.round-btn--voted,
+.round-btn--voted:hover:not(:disabled) {
+  background: rgba(120, 200, 140, 0.2);
+  border-color: rgba(120, 200, 140, 0.55);
+  color: var(--text-bright);
+}
+/* Where the host's members only add to the queue: the other buttons are dimmed
+   for them (pressed, they say why), and the timeline is not to be dragged. */
+.player--queue-only #btnPrev,
+.player--queue-only #btnPlay,
+.player--queue-only #btnBack10,
+.player--queue-only #btnFwd10,
+.player--queue-only #btnShuffle,
+.player--queue-only #btnRepeat,
+.player--no-next #btnNext { opacity: 0.35; }
+.player--queue-only #playerTrack { opacity: 0.5; pointer-events: none; }
+
 .skip-label { font-size: 12px; font-weight: 700; letter-spacing: -0.3px; }
 
 /* Left of the main buttons: the time, then Shuffle, Repeat, Visualizer and

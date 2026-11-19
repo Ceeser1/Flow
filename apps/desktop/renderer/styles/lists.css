@@ -330,6 +330,8 @@ body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s;
 .sessions-mine__icon { display: inline-flex; color: var(--accent); }
 .sessions-mine__text { flex: 1; min-width: 200px; color: var(--text-bright); }
 .sessions-mine__volume { flex-basis: 100%; }
+/* What the host lets its members do, and how a vote to skip stands (5.3). */
+.sessions-mine__rules { flex-basis: 100%; color: var(--text-dim); }
 
 /* A song list: Duration, Added and Actions are fixed (84 + 130 + 116), and
    what is left is split between Title, Artist and the columns Settings

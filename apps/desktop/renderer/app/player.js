@@ -732,6 +732,7 @@ const Player = {
   },
 
   toggleRepeat() {
+    if (this._remoteRefused('repeat')) return;
     if (this._remoteDo('repeat', { on: !this.repeat })) {
       this.repeat = !this.repeat;
       this._emit();
@@ -767,6 +768,7 @@ const Player = {
 
   /** An entry of the Queue popup dragged to another place in its part. */
   moveInQueue(part, from, to) {
+    if (this._remoteRefused('queueMove')) return;
     // In remote mode it moves here at once too; the host's next state confirms it.
     this._remoteDo('queueMove', { part, from, to });
     this.queue.move(part, from, to);
@@ -774,6 +776,7 @@ const Player = {
   },
 
   removeFromQueue(part, index) {
+    if (this._remoteRefused('queueRemove')) return;
     if (this._remoteDo('queueRemove', { part, index })) {
       this.queue[part].splice(index, 1);
       this._emit();
@@ -784,6 +787,7 @@ const Player = {
   },
 
   clearQueue() {
+    if (this._remoteRefused('queueClear')) return;
     this._remoteDo('queueClear');
     this.queue.clearManual();
     this._emit();
@@ -794,6 +798,11 @@ const Player = {
     if (this._radio()) return;
     if (!this.currentId) return;
     if (this.remote) {
+      if (this._remoteRefused('seek')) {
+        // The place it was dragged to is not the host's.
+        this._drawTime();
+        return;
+      }
       const d = this.duration;
       const to = Math.max(0, Math.min(d ? d - 0.05 : seconds, seconds));
       this._remoteDo('seek', { position: to });
@@ -860,6 +869,7 @@ const Player = {
   },
 
   setShuffle(on) {
+    if (this._remoteRefused('shuffle')) return;
     if (this._remoteDo('shuffle', { on: !!on })) {
       this.queue.shuffle = !!on;
       this._emit();
@@ -920,7 +930,17 @@ const Player = {
   /** In remote mode: the button goes to the host. True when it was sent. */
   _remoteDo(action, args = {}) {
     if (!this.remote) return false;
-    Session.control(action, args);
+    // The host's rules (5.3): what it keeps to itself is not sent, and Next may be a vote.
+    if (this._remoteRefused(action)) return true;
+    if (action === 'next' && Session.rules.skipVote) Session.voteSkip();
+    else Session.control(action, args);
+    return true;
+  },
+
+  /** In remote mode, a button the host keeps to itself (its members only add to the queue): said so, nothing done. */
+  _remoteRefused(action) {
+    if (!this.remote || Session.allows(action)) return false;
+    Session.refused();
     return true;
   },
 

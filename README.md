@@ -71,6 +71,8 @@ Flow is made for private use.
 - Join a session and control the music, or **play along in sync** on your own
   speakers
 - Delay your speakers by ear so Bluetooth speakers play in time
+- As the host, let the others **only add songs to the queue**, and make
+  skipping a **vote** (more than half of them)
 - Guests from other servers in the same home network can join too
 
 ### Statistics
