@@ -17,6 +17,7 @@ const model = require('@flow/core/libraryModel');
 const { metaFromFile } = require('@flow/core/fileMeta');
 const { songFileStem, splitSongPath } = require('@flow/core/text');
 const { randomHex } = require('@flow/core/client/common');
+const { tr } = require('@flow/core/lang');
 
 /**
  * plugin: FlowNative; fs, path: the phone's files (native.js); stageDir:
@@ -53,7 +54,7 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
   async function pick(folder) {
     const r = await plugin.pickAudio({ folder });
     if (!r || r.cancelled || !(r.items || []).length) {
-      if (r && !r.cancelled && folder) throw new Error('No audio files were found in this folder.');
+      if (r && !r.cancelled && folder) throw new Error(tr('phone.error.noAudioInFolder', 'No audio files were found in this folder.'));
       return null;
     }
     pickNo += 1;
@@ -71,7 +72,7 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
       const p = picks.get(String(id));
       picks.delete(String(id));
       if (!p) continue;
-      if (p.folder) name = p.name || 'Folder';
+      if (p.folder) name = p.name || tr('phone.localFiles.folder', 'Folder');
       if (p.truncated) truncated = 'files';
       for (const f of p.items) {
         if (p.folder) placeOfPick.set(f.uri, [f.folder, f.name].filter(Boolean).join('/'));
@@ -80,7 +81,7 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
         });
       }
     }
-    if (!items.length) throw new Error('The file could not be opened.');
+    if (!items.length) throw new Error(tr('common.fileNotOpened', 'The file could not be opened.'));
     if (!name) name = items.length === 1 ? items[0].title : `${items.length} files`;
     return { local: true, source: 'Local', sourceUrl: '', name, truncated, items };
   }
@@ -101,7 +102,7 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
           break;
         }
         progress({ phase: 'item', index: it.index, status: 'current' }, run);
-        progress({ phase: 'download', index: it.index, number: n + 1, total: items.length, title: it.title, frac: null, text: 'Copying...' }, run);
+        progress({ phase: 'download', index: it.index, number: n + 1, total: items.length, title: it.title, frac: null, text: tr('phone.localFiles.copying', 'Copying...') }, run);
         const stem = path.join(stageDir, `local-${randomHex(5)}`);
         try {
           const r = await plugin.importAudio({ uri: it.path, stem, cover: `${stem}.jpg` });
@@ -213,7 +214,7 @@ function createLocalFiles({ plugin, fs, path, stageDir, library, covers, exporte
       onProgress({ phase: 'saving', number, total: toSave, title: [meta.artist, meta.title].filter(Boolean).join(' - ') });
       try {
         const cachePath = String(e.cachePath || '');
-        if (!cachePath.startsWith(`${stageDir}/`) || !fs.exists(cachePath)) throw new Error('Its file is gone.');
+        if (!cachePath.startsWith(`${stageDir}/`) || !fs.exists(cachePath)) throw new Error(tr('phone.error.fileGone', 'Its file is gone.'));
         const format = path.extname(cachePath).slice(1).toLowerCase();
         const place = splitSongPath(placeOfStaged.get(cachePath));
         placeOfStaged.delete(cachePath);

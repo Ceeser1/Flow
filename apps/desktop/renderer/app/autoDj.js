@@ -24,6 +24,8 @@
   const INFO = 2;
   const ALBUM = 2;
   const MIX_UP = 2;
+  // A radio's neighbourhood: an Info or genre the seed comes with in the library.
+  const NEAR = 1;
   const SEEDS = 5;
 
   const fold = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -97,5 +99,110 @@
     return list.slice(0, count).map((x) => x.id);
   }
 
-  return { similar, taste, unwanted };
+  /** The value most of `values` share (empty ones left out), or ''. */
+  function mostOf(values) {
+    const count = new Map();
+    for (const v of values) if (v) count.set(v, (count.get(v) || 0) + 1);
+    let best = '';
+    let most = 0;
+    for (const [v, n] of count) {
+      if (n > most) {
+        best = v;
+        most = n;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Song radio and Artist radio (5.1.2): a list of up to `count` songs like
+   * one song ({ songId }: it comes first) or one artist ({ artist }: their
+   * genre and Info are what most of their songs have). Alike as for
+   * similar(); the seed's own artists make at most a third of a song radio
+   * and half of an artist radio, and no artist comes twice in a row where
+   * others are left. `salt`: a different one gives another mix of the songs
+   * alike (each start of a radio). Empty when nothing is alike.
+   */
+  function radio(songs, seed, count = 100, salt = '') {
+    const byId = new Map(songs.map((s) => [s.id, s]));
+    const own = seed && seed.songId ? byId.get(seed.songId) : null;
+    let base;
+    if (own) {
+      base = traits(own);
+    } else if (seed && seed.artist) {
+      const name = fold(seed.artist);
+      const theirs = songs.filter((s) => SmartLists.artistsOf(s.artist).some((a) => fold(a) === name));
+      if (!theirs.length) return [];
+      base = {
+        artists: new Set([name]),
+        genre: mostOf(theirs.map((s) => fold(s.genre))),
+        info: mostOf(theirs.map((s) => fold(s.subGenre))),
+        album: '',
+      };
+    } else {
+      return [];
+    }
+    const key = `${own ? own.id : fold(seed.artist)}|${salt}`;
+    const all = songs.map((s) => ({ s, t: traits(s) }));
+    const isMine = (t) => [...t.artists].some((a) => base.artists.has(a));
+    // The neighbourhood in this library: the Info and genres that the seed's
+    // artists and genre come with (a rare genre still finds its kind: their
+    // Hardstyle songs' Info "Hands Up" leads to Dance songs with that Info).
+    const nearInfo = new Set();
+    const nearGenre = new Set();
+    for (const { t } of all) {
+      if (!isMine(t) && !(base.genre && t.genre === base.genre)) continue;
+      if (t.info) nearInfo.add(t.info);
+      if (t.genre) nearGenre.add(t.genre);
+    }
+    const scored = [];
+    for (const { s, t } of all) {
+      if (own && s.id === own.id) continue;
+      if (unwanted(s)) continue;
+      let points = 0;
+      const mine = isMine(t);
+      for (const a of t.artists) if (base.artists.has(a)) points += ARTIST;
+      if (t.genre && t.genre === base.genre) points += GENRE;
+      if (t.info && t.info === base.info) points += INFO;
+      if (t.album && t.album === base.album) points += ALBUM;
+      // One's genre the other's Info (genre House, Info House).
+      if ((t.info && t.info === base.genre) || (t.genre && t.genre === base.info)) points += INFO;
+      if (t.info && t.info !== base.info && nearInfo.has(t.info)) points += NEAR;
+      if (t.genre && t.genre !== base.genre && nearGenre.has(t.genre)) points += NEAR;
+      if (points <= 0) continue;
+      scored.push({
+        id: s.id, mine, artists: t.artists, same: `${fold(s.artist)}|${fold(s.title)}|${fold(s.mix)}`, score: points + taste(s) + MIX_UP * mixUp(s.id, key),
+      });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    // A song the library has twice (the same artist, title and mix) once.
+    const seen = new Set(own ? [`${fold(own.artist)}|${fold(own.title)}|${fold(own.mix)}`] : []);
+    const mineList = [];
+    const others = [];
+    for (const x of scored) {
+      if (seen.has(x.same)) continue;
+      seen.add(x.same);
+      (x.mine ? mineList : others).push(x);
+    }
+    // The seed's artists at most a third of a song radio (half of an artist
+    // radio) of what is found; with few others alike, still a few of theirs.
+    const room = Math.max(0, count - (own ? 1 : 0));
+    const ratio = own ? 1 / 2 : 1;
+    const mineMost = Math.min(Math.round(room * (own ? 1 / 3 : 1 / 2)), Math.max(5, Math.round(Math.min(others.length, room) * ratio)));
+    const mineTake = mineList.slice(0, mineMost);
+    const picked = [...mineTake, ...others.slice(0, room - mineTake.length)].sort((a, b) => b.score - a.score);
+    // Spread out: each next one, the best left not by an artist of the one before.
+    const out = own ? [{ id: own.id, artists: base.artists }] : [];
+    const left = picked.slice();
+    while (left.length) {
+      const before = out.length ? out[out.length - 1].artists : new Set();
+      let i = left.findIndex((x) => ![...x.artists].some((a) => before.has(a)));
+      if (i < 0) i = 0;
+      out.push(left[i]);
+      left.splice(i, 1);
+    }
+    return out.map((x) => x.id);
+  }
+
+  return { similar, radio, taste, unwanted };
 }));

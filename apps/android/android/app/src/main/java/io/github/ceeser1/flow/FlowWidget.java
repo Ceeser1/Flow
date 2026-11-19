@@ -89,7 +89,7 @@ public class FlowWidget extends AppWidgetProvider {
 
         RemoteViews v = new RemoteViews(context.getPackageName(), tall ? R.layout.flow_widget_tall : R.layout.flow_widget);
         v.setTextViewText(R.id.widget_title, has && md.title != null ? md.title : "Flow");
-        v.setTextViewText(R.id.widget_artist, has ? (md.artist != null ? md.artist : "") : "Tap play to listen");
+        v.setTextViewText(R.id.widget_artist, has ? (md.artist != null ? md.artist : "") : context.getString(R.string.widget_idle));
         Bitmap cover = has ? cover(md.artworkUri) : null;
         if (cover != null) v.setImageViewBitmap(R.id.widget_cover, cover);
         else v.setImageViewResource(R.id.widget_cover, R.drawable.widget_note);

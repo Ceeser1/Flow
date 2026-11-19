@@ -6,6 +6,8 @@
 // window's dialogs (ui.js: Modal, confirmDialog, h) are there by the time a
 // server is connected to; without them the answer is the careful one.
 
+const { tr } = require('@flow/core/lang');
+
 const ui = () => (typeof Modal !== 'undefined' && typeof confirmDialog === 'function' && typeof h === 'function');
 
 /**
@@ -17,19 +19,32 @@ async function upload({
   count, name, fromOthers = 0, returning = false, known = 0,
 }) {
   if (!ui()) return false;
-  const songs = count === 1 ? 'song' : `${count} songs`;
+  const one = count === 1;
+  const songs = one ? 'song' : '{count} songs';
   // known: how many more songs here the server has already (they are not sent, and not asked about).
-  const there = known ? ` ${known === 1 ? '1 more song here is' : `${known} more songs here are`} on that server already and ${known === 1 ? 'is' : 'are'} not sent.` : '';
-  const others = `${there}${fromOthers ? ` ${fromOthers === count ? (count === 1 ? 'It was' : 'All of them were') : `${fromOthers} of them were`} downloaded from another Flow Server.` : ''}`;
+  const there = known ? ` ${tr('desktop.upload.detail.alreadyThere', known === 1
+    ? '{count} more song here is on that server already and is not sent.'
+    : '{count} more songs here are on that server already and are not sent.', { count: known })}` : '';
+  let from = '';
+  if (fromOthers && fromOthers === count) {
+    from = one ? tr('common.upload.fromOthers.it', 'It was downloaded from another Flow Server.')
+      : tr('common.upload.fromOthers.all', 'All of them were downloaded from another Flow Server.');
+  } else if (fromOthers) {
+    from = tr('common.upload.fromOthers.some', fromOthers === 1
+      ? '{count} of them was downloaded from another Flow Server.'
+      : '{count} of them were downloaded from another Flow Server.', { count: fromOthers });
+  }
+  // {fromOthers} in the sentences: what the server has already and where the songs came from, each with a space before it.
+  const vars = { count, server: name, fromOthers: `${there}${from ? ` ${from}` : ''}` };
   const answer = await confirmDialog({
-    title: `Upload ${count === 1 ? 'your song' : `your ${count} songs`}?`,
+    title: tr('phone.upload.title', one ? 'Upload your song?' : 'Upload your {count} songs?', vars),
     message: returning
-      ? `Upload the ${songs} that came to this phone while you used another Flow Server to "${name}"?${others} `
-        + 'Choose Not now to keep them on this phone only; Synchronize now in Settings uploads them later.'
-      : `Upload the ${songs} on this phone to "${name}"? This is a Flow Server you have not used before.${others} `
-        + 'If you are not sure it is yours, choose Not now: your songs stay on this phone, and Synchronize now in Settings uploads them later.',
-    confirmLabel: 'Upload',
-    cancelLabel: 'Not now',
+      ? tr('phone.upload.text.afterOther', `Upload the ${songs} that came to this phone while you used another Flow Server to "{server}"?{fromOthers} `
+        + 'Choose Not now to keep them on this phone only; Synchronize now in Settings uploads them later.', vars)
+      : tr('phone.upload.text', `Upload the ${songs} on this phone to "{server}"? This is a Flow Server you have not used before.{fromOthers} `
+        + 'If you are not sure it is yours, choose Not now: your songs stay on this phone, and Synchronize now in Settings uploads them later.', vars),
+    confirmLabel: tr('common.upload', 'Upload'),
+    cancelLabel: tr('common.notNow', 'Not now'),
   });
   return !!answer;
 }
@@ -42,17 +57,17 @@ function existing({ local, server, name }) {
     let choice = 'keep';
     const box = h('input', { type: 'checkbox' });
     Modal.open({
-      title: 'Already on the server',
+      title: tr('phone.sameSong.title', 'Already on the server'),
       className: 'modal--small',
       body: [
-        h('p.modal__text', `"${label(local)}" is on "${name}" already, as "${label(server)}". It is the same song under other names: `
-          + 'use the names from here on the server, keep the server\'s, or upload it as a song of its own?'),
-        h('label.check.modal__check', box, h('span', 'Do the same for the other songs of this upload')),
+        h('p.modal__text', tr('phone.sameSong.text', '"{song}" is on "{server}" already, as "{serverSong}". It is the same song under other names: '
+          + 'use the names from here on the server, keep the server\'s, or upload it as a song of its own?', { song: label(local), server: name, serverSong: label(server) })),
+        h('label.check.modal__check', box, h('span', tr('common.sameSong.forAll', 'Do the same for the other songs of this upload'))),
       ],
       buttons: [
-        { label: 'New song', onClick: () => { choice = 'new'; } },
-        { label: 'Keep the server\'s', onClick: () => { choice = 'keep'; } },
-        { label: 'Use these', kind: 'primary', onClick: () => { choice = 'apply'; } },
+        { label: tr('phone.sameSong.newSong', 'New song'), onClick: () => { choice = 'new'; } },
+        { label: tr('common.sameSong.keepServers', 'Keep the server\'s'), onClick: () => { choice = 'keep'; } },
+        { label: tr('phone.sameSong.useThese', 'Use these'), kind: 'primary', onClick: () => { choice = 'apply'; } },
       ],
       onClose: () => resolve({ choice, all: box.checked }),
     });

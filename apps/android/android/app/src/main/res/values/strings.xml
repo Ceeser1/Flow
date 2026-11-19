@@ -1,9 +1,19 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Flow</string>
-    <string name="title_activity_main">Flow</string>
-    <string name="package_name">io.github.ceeser1.flow</string>
-    <string name="custom_url_scheme">io.github.ceeser1.flow</string>
+    <string name="app_name" translatable="false">Flow</string>
+    <string name="title_activity_main" translatable="false">Flow</string>
+    <string name="package_name" translatable="false">io.github.ceeser1.flow</string>
+    <string name="custom_url_scheme" translatable="false">io.github.ceeser1.flow</string>
     <string name="widget_tall_description">The song playing and its timeline, with Previous, Play/Pause and Next</string>
     <string name="widget_description">The song playing, with Play/Pause and Next</string>
+    <!-- The widgets' and the native part's texts; German in values-de (from translations/translations.txt, ANDROID). -->
+    <string name="widget_tall_name">Flow with timeline</string>
+    <string name="widget_idle">Tap play to listen</string>
+    <string name="widget_previous">Previous</string>
+    <string name="widget_next">Next</string>
+    <string name="error_player_refused">The player refused.</string>
+    <string name="error_volume_refused">The phone did not let Flow change its volume.</string>
+    <string name="error_scanner_failed">The QR code scanner could not start (it comes with Google Play services): %1$s</string>
+    <string name="error_upload_failed">The upload failed.</string>
+    <string name="error_cannot_play_kind">Flow cannot play this kind of file on the phone (MP3, M4A, AAC, Opus, Ogg, FLAC and WAV play).</string>
 </resources>

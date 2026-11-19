@@ -172,7 +172,7 @@ public class FlowNative extends Plugin {
             am.setStreamVolume(AudioManager.STREAM_MUSIC, (int) Math.round(v * max), 0);
         } catch (SecurityException e) {
             // Do Not Disturb may refuse it.
-            call.reject("The phone did not let Flow change its volume.");
+            call.reject(getContext().getString(R.string.error_volume_refused));
             return;
         }
         mediaVolume(call);
@@ -227,7 +227,7 @@ public class FlowNative extends Plugin {
                 })
                 .addOnFailureListener((e) -> {
                     FlowLog.i("code scanner failed: " + e.getMessage());
-                    call.reject("The QR code scanner could not start (it comes with Google Play services): " + e.getMessage());
+                    call.reject(getContext().getString(R.string.error_scanner_failed, String.valueOf(e.getMessage())));
                 });
     }
 
@@ -296,6 +296,60 @@ public class FlowNative extends Plugin {
      * and no file. Unreachable, timed out or cut off: rejected with code OFFLINE.
      * Progress goes out as "downloadProgress" { id, frac } when `id` is given.
      */
+    /**
+     * What a radio station's address answers, for Internet Radio's Add Radio
+     * (core radio.js checkStream): { status, url (after being sent on), type,
+     * icyName, text (the first of a playlist or page; none of a sound stream) }.
+     * Rejected with OFFLINE when it cannot be reached.
+     */
+    @PluginMethod
+    public void radioPeek(PluginCall call) {
+        String url = call.getString("url", "");
+        work.execute(() -> {
+            HttpURLConnection conn = null;
+            try {
+                URL at = new URL(url);
+                int status;
+                for (int hops = 0; ; hops += 1) {
+                    conn = (HttpURLConnection) at.openConnection();
+                    conn.setInstanceFollowRedirects(false);
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(10000);
+                    conn.setRequestProperty("User-Agent", "Flow Client");
+                    conn.setRequestProperty("Icy-MetaData", "0");
+                    status = conn.getResponseCode();
+                    String next = conn.getHeaderField("Location");
+                    if (status < 300 || status >= 400 || next == null || hops >= 5) break;
+                    at = new URL(at, next);
+                    conn.disconnect();
+                }
+                String type = conn.getContentType() == null ? "" : conn.getContentType();
+                JSObject result = new JSObject();
+                result.put("status", status);
+                result.put("url", at.toString());
+                result.put("type", type);
+                String icy = conn.getHeaderField("icy-name");
+                result.put("icyName", icy == null ? "" : icy);
+                String lower = type.toLowerCase(java.util.Locale.ROOT);
+                boolean sound = lower.startsWith("audio/") && !lower.contains("mpegurl") && !lower.contains("m3u") && !lower.contains("pls");
+                if (status >= 200 && status < 300 && !sound) {
+                    java.io.ByteArrayOutputStream got = new java.io.ByteArrayOutputStream();
+                    try (InputStream in = conn.getInputStream()) {
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while (got.size() < 65536 && (n = in.read(buf)) > 0) got.write(buf, 0, n);
+                    }
+                    result.put("text", new String(got.toByteArray(), java.nio.charset.StandardCharsets.UTF_8));
+                }
+                call.resolve(result);
+            } catch (IOException | RuntimeException e) {
+                call.reject(e.getMessage() == null ? "The address cannot be reached." : e.getMessage(), "OFFLINE");
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        });
+    }
+
     @PluginMethod
     public void download(PluginCall call) {
         String url = call.getString("url", "");
@@ -644,7 +698,7 @@ public class FlowNative extends Plugin {
                 String ext = extOf(name);
                 if (!AUDIO_EXTS.contains(ext)) ext = extOfMime(cr.getType(u));
                 if (ext.isEmpty()) {
-                    call.reject("Flow cannot play this kind of file on the phone (MP3, M4A, AAC, Opus, Ogg, FLAC and WAV play).");
+                    call.reject(getContext().getString(R.string.error_cannot_play_kind));
                     return;
                 }
                 dest = new File(stem + "." + ext);
@@ -788,7 +842,7 @@ public class FlowNative extends Plugin {
             } catch (IOException e) {
                 call.reject(e.getMessage() == null ? "The connection failed." : e.getMessage(), "OFFLINE");
             } catch (Exception e) {
-                call.reject(e.getMessage() == null ? "The upload failed." : e.getMessage());
+                call.reject(e.getMessage() == null ? getContext().getString(R.string.error_upload_failed) : e.getMessage());
             } finally {
                 if (conn != null) conn.disconnect();
             }

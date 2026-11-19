@@ -324,6 +324,26 @@ function createActions({
     return change((d) => model.recordAwayListen(d, { listened, duration, tz }), 'recordAwayListen', { listened, duration, tz });
   }
 
+  /**
+   * A piece of Internet Radio heard here (5.1; radio.js sends one a minute
+   * while a station plays, and the rest when it stops): this device's Private
+   * Statistics and the totals of the profile in use (queued with it while
+   * offline, sent when it is back; Local Files' without a server). A server
+   * without the radio's Statistics gets nothing (remote.js). `listen`: the
+   * piece that made its session one of 30 seconds or more.
+   */
+  function recordRadioListen({ station = {}, listened, listen = false }) {
+    const heard = Math.max(0, Number(listened) || 0);
+    if (!(heard > 0) || !station.id) return null;
+    const tz = new Date().getTimezoneOffset();
+    if (privateStats) privateStats.recordRadio({ station, listened: heard, tz, listen });
+    if (remote.active() && !remote.status().profile) return null;
+    const args = {
+      station: String(station.id), name: String(station.name || ''), listened: heard, tz, ...(listen ? { listen: true } : {}),
+    };
+    return change((d) => model.recordRadioListen(d, { id: args.station, name: args.name, listened: heard, tz, listen }), 'recordRadioListen', args);
+  }
+
   const findBySource = ({ url, key }) => model.findBySource(currentLibrary(), { url, key });
   // With meta.duration: only a song of the same length (model.findSameSong).
   const findByMeta = (meta) => (meta && meta.duration
@@ -357,6 +377,7 @@ function createActions({
     setFavourite,
     recordListen,
     recordAwayListen,
+    recordRadioListen,
     findBySource,
     findByMeta,
   };

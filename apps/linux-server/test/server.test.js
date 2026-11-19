@@ -349,7 +349,7 @@ async function get(base, route, token) {
 
 test('profiles over the network: make, sign in with a PIN, rename, sign out, delete', async () => {
   await withServer(async ({ base }) => {
-    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'multiGroups', 'sessions', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
+    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'radioStats', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'multiGroups', 'sessions', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
     await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
     assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null, createProfiles: true });
@@ -1085,6 +1085,24 @@ test('Statistics: start at 0 on the first 3.6 run; a profile listen counts for t
     assert.equal((await get(base, '/api/library', anna.token)).json.library.statistics, undefined);
     const own = (await get(base, '/api/stats', anna.token)).json;
     assert.deepEqual([own.full, own.songs.s1.plays], [true, 1], 'her own stats of the song');
+
+    // Internet Radio (5.1): in pieces, Anna's own category; not the songs' numbers, not the Default's.
+    assert.ok((await get(base, '/api/hello')).json.features.includes('radioStats'));
+    const srev = lib.statsRev(anna.profile.id);
+    const pieces = await command(base, [
+      { cid: 'r1', at: at + 60000, type: 'recordRadioListen', station: 'abc-123', name: 'One FM', listened: 60, tz: 0, listen: true },
+      { cid: 'r2', at: at + 120000, type: 'recordRadioListen', station: 'abc-123', name: 'One FM', listened: 60, tz: 0 },
+      { cid: 'r3', at: at + 150000, type: 'recordRadioListen', station: 'url:http://own.example/live', name: 'Own', listened: 20, tz: 0 },
+    ], as(anna.token));
+    assert.ok(pieces.results.every((r) => r.ok), JSON.stringify(pieces.results));
+    const radio = (await get(base, '/api/statistics', anna.token)).json.statistics.radio;
+    assert.deepEqual([radio.seconds, radio.listens], [140, 1]);
+    assert.deepEqual(radio.stations['abc-123'], { name: 'One FM', seconds: 120, listens: 1 });
+    assert.equal(Object.keys(radio.stations).length, 2, 'a hand-added station under a code made from its address');
+    assert.equal(Object.values(radio.months).reduce((a, b) => a + b, 0), 140);
+    assert.deepEqual([stats(anna.profile.id).seconds, stats(anna.profile.id).listens], [300, 1], 'the numbers of the songs as they were');
+    assert.equal(stats(null).radio.seconds, 0, 'not in the Default');
+    assert.ok(lib.statsRev(anna.profile.id) > srev, 'her other apps fetch them');
 
     // Deleting the song lowers nothing.
     await command(base, [{ cid: 'd1', at: Date.now(), type: 'deleteSong', songId: 's1' }], as(anna.token));

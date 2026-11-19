@@ -149,6 +149,63 @@ const Player = {
     this.load(first, context, { fromQueue: true });
   },
 
+  // A song radio or artist radio: this many songs.
+  RADIO_SONGS: 100,
+
+  /**
+   * Song radio / Artist radio (5.1.2; the Radios popup of the player bar and
+   * of a song's More): a list of songs like that song (it plays first) or
+   * that artist (autoDj.js radio). Since 5.2 it is a temporary playlist
+   * (tempLists.js), "<title> Radio" or "<artist> Radio": it shows in the
+   * menu, its page opens, and it plays from its first song. The same radio
+   * started again is a new list with another mix. Its end goes on as any
+   * list's: over again, or Continue with similar songs. In a session, it
+   * plays on the host as a list from here.
+   */
+  startRadio(seed) {
+    const song = seed && seed.songId ? Store.song(seed.songId) : null;
+    if (seed && seed.songId && !song) return false;
+    const ids = AutoDJ.radio(Store.library.songs, seed, this.RADIO_SONGS, String(Math.random()));
+    // The song alone (or nothing like the artist) is no radio.
+    if (ids.length < 2) {
+      toast(T('player.toast.radioTooFew'), 'error');
+      return false;
+    }
+    const list = TempLists.add({
+      title: song ? song.title || T('common.untitled') : seed.artist,
+      wrap: (name) => T('temp.radio.name', { name }),
+      ids,
+      seed: song ? { songId: song.id } : { artist: seed.artist },
+      // Not a saved playlist's name either: saved, it keeps its own.
+      taken: (name) => Store.playlistNameTaken(name),
+    });
+    const context = list.id;
+    const order = this.idsOf(context);
+    if (this.remote) {
+      this._remotePlaySong(order[0], context);
+    } else {
+      this.repeat = false;
+      // From its first song; laid out already (alike first, artists spread), or with shuffle drawn from.
+      const first = this.queue.start(context, order, order[0]);
+      this.load(first, context, { fromQueue: true });
+    }
+    Nav.openPlaylist(context);
+    return true;
+  },
+
+  /**
+   * The list playing got another id (5.2: a temporary playlist saved, now a
+   * playlist of the library): the song and what comes next stay as they are.
+   */
+  moveList(from, to) {
+    if (this.queue.contextId === from) this.queue.contextId = to;
+    if (this.contextId !== from) return;
+    this.contextId = to;
+    this._updateMediaSession();
+    this._savePosition();
+    this._emit();
+  },
+
   /**
    * Carries on where another device left off (it was a session's host): its
    * song at its place, its list and queue, Repeat and Shuffle as they were.
@@ -190,6 +247,7 @@ const Player = {
     this._applyVolume();
     this.queue.setShuffle(Store.settings.shuffle);
     this._applyAutoDj();
+    this._applySmartShuffle();
 
     const e = this.engine;
     e.on('play', () => {
@@ -278,6 +336,18 @@ const Player = {
       this._drawBar();
       this._syncUpcoming();
     });
+    // A temporary playlist (5.2) thrown away while it plays: its song plays
+    // on, and what comes next is All Songs'. A song taken out of it: the bar
+    // and the songs coming next follow.
+    TempLists.onChange(() => {
+      if (this.remote) return;
+      if (TempLists.isTemp(this.contextId) && !TempLists.get(this.contextId)) {
+        if (this.currentId) this.carryOnIn('all');
+        else this.contextId = 'all';
+      }
+      this._drawBar();
+      this._syncUpcoming();
+    });
     // Signed in again (the server's session had ended): the songs coming next
     // are asked for with the new token, and one that stopped carries on.
     let token = Store.server.token;
@@ -321,6 +391,7 @@ const Player = {
         if (this.contextId && !this.remote) this.queue.fill(this.idsOf(this.contextId));
         this._emit();
       }
+      if ('smartShuffle' in patch) this._applySmartShuffle();
       if ('crossfade' in patch || 'crossfadeSeconds' in patch) this._syncUpcoming();
       if (!('normalize' in patch)) return;
       if (this.currentId) this.engine.setGain(this._normGain(this.currentId), true);
@@ -335,7 +406,7 @@ const Player = {
       try {
         window.flow.setSettingsNow({
           lastSongId: this.currentId,
-          lastContextId: this.contextId,
+          lastContextId: this._contextToKeep(),
           lastPosition: this.position,
           volume: this.volume,
           listenSession: this._sessionToKeep(),
@@ -443,7 +514,8 @@ const Player = {
 
   /** Whether the current song has nothing to play from (its server was out of reach) but now could have. */
   _unloaded() {
-    const song = this._putBack() ? Store.song(this.currentId) : null;
+    // A station has the phone's player: the song waits until it is played again.
+    const song = this._putBack() && !this._radio() ? Store.song(this.currentId) : null;
     return !!song && !!Store.audioSrc(song);
   },
 
@@ -523,7 +595,16 @@ const Player = {
     this.load(first, contextId, { fromQueue: true });
   },
 
+  /** Whether an Internet Radio station has the bar (radio.js): its buttons work the station then. */
+  _radio() {
+    return typeof Radio !== 'undefined' && Radio.owns();
+  },
+
   toggle() {
+    if (this._radio()) {
+      Radio.toggle();
+      return;
+    }
     if (this._remoteDo('toggle')) return;
     if (!this.currentId) {
       const context = this.contextId || Nav.currentPlaylistId() || 'all';
@@ -535,6 +616,10 @@ const Player = {
   },
 
   pause() {
+    if (this._radio()) {
+      Radio.pause();
+      return;
+    }
     if (this._remoteDo('pause')) return;
     this.pauseHere();
   },
@@ -548,6 +633,10 @@ const Player = {
 
   /** Next, pressed: another song started by hand, so Repeat goes off. */
   next() {
+    if (this._radio()) {
+      Radio.step(1);
+      return;
+    }
     if (this._remoteDo('next')) return;
     this.repeat = false;
     this._advance();
@@ -583,6 +672,10 @@ const Player = {
   },
 
   prev() {
+    if (this._radio()) {
+      Radio.step(-1);
+      return;
+    }
     if (this._remoteDo('prev')) return;
     if (!this.contextId) return;
     this.repeat = false;
@@ -610,6 +703,32 @@ const Player = {
       : null;
     // Turned off: the list again, from where it was.
     if (!this.queue.continueWith) this.queue._leaveDj();
+  },
+
+  /**
+   * Settings' "Smarter shuffle" (5.1.1): with shuffle, the song drawn is not
+   * by an artist of the one before it where the list has others, and songs
+   * this profile mostly skips early come less often (queue.js).
+   */
+  _applySmartShuffle() {
+    this.queue.smart = Store.settings.smartShuffle !== false ? (id) => this._shuffleInfo(id) : null;
+  },
+
+  // A song's artist line -> its artists, folded (Smarter shuffle asks for them with every song drawn).
+  _artistsSeen: new Map(),
+
+  /** What Smarter shuffle goes by for a song: its artists, and how gladly it is drawn (0.2 to 1). */
+  _shuffleInfo(id) {
+    const song = Store.song(id);
+    if (!song) return null;
+    const line = String(song.artist || '');
+    let artists = this._artistsSeen.get(line);
+    if (!artists) {
+      if (this._artistsSeen.size > 5000) this._artistsSeen.clear();
+      artists = SmartLists.artistsOf(line).map((a) => a.toLowerCase().replace(/\s+/g, ' ').trim()).filter(Boolean);
+      this._artistsSeen.set(line, artists);
+    }
+    return { artists, weight: PlayQueue.shuffleWeight(song.stats) };
   },
 
   toggleRepeat() {
@@ -671,6 +790,8 @@ const Player = {
   },
 
   seek(seconds) {
+    // A live station has no place to go to.
+    if (this._radio()) return;
     if (!this.currentId) return;
     if (this.remote) {
       const d = this.duration;
@@ -697,6 +818,7 @@ const Player = {
   },
 
   skip(delta) {
+    if (this._radio()) return;
     this.seek(this.position + delta);
   },
 
@@ -1205,6 +1327,7 @@ const Player = {
       const ahead = new PlayQueue(this.queue.random, this.queue.limit);
       ahead.restore(this.queue.snapshot());
       ahead.continueWith = this.queue.continueWith;
+      ahead.smart = this.queue.smart;
       const order = this.contextId ? this.idsOf(this.contextId) : [];
       while (ids.length < this.UPCOMING) {
         const id = ahead.next(order);
@@ -1276,6 +1399,7 @@ const Player = {
     if (!order.length) return [];
     const ahead = new PlayQueue(this.queue.random, this.queue.limit);
     ahead.shuffle = this.queue.shuffle;
+    ahead.smart = this.queue.smart;
     const items = [];
     const seen = new Set();
     for (let id = ahead.start(context, order); id && !seen.has(id) && items.length < this.UPCOMING; id = ahead.next(order)) {
@@ -1307,6 +1431,7 @@ const Player = {
     const ahead = new PlayQueue(this.queue.random, this.queue.limit);
     ahead.restore(this.queue.snapshot());
     ahead.continueWith = this.queue.continueWith;
+    ahead.smart = this.queue.smart;
     return ahead.next(this.contextId ? this.idsOf(this.contextId) : []) || '';
   },
 
@@ -1378,12 +1503,18 @@ const Player = {
       return;
     }
     // The time also counts for the list that was playing, if the song is in it
-    // (one queued from elsewhere is not).
-    let list = contextId ? Store.playlist(contextId) : null;
+    // (one queued from elsewhere is not). A temporary playlist (5.2) is kept
+    // nowhere, so nothing is counted for it; the song's own listen still is.
+    let list = contextId && !TempLists.isTemp(contextId) ? Store.playlist(contextId) : null;
     // A group played as one list (4.5.2): the time counts for its playlist holding the song.
     if (list && list.isGroupList) list = Store.playlistsInGroup(list.groupId).find((p) => (p.entries || []).some((e) => e.songId === songId)) || null;
     const inList = !!list && list.entries.some((e) => e.songId === songId);
     window.flow.recordListen(songId, listened, duration, inList ? list.id : null, jamMember).catch(() => {});
+  },
+
+  /** The list playing, to carry on in at the next start: a temporary playlist (5.2) is gone by then, so All Songs. */
+  _contextToKeep() {
+    return TempLists.isTemp(this.contextId) ? 'all' : this.contextId;
   },
 
   _sessionToKeep() {
@@ -1394,7 +1525,7 @@ const Player = {
   _savePosition() {
     Store.saveSettings({
       lastSongId: this.currentId,
-      lastContextId: this.contextId,
+      lastContextId: this._contextToKeep(),
       lastPosition: this.currentId ? this.position : 0,
       listenSession: this._sessionToKeep(),
     });
@@ -1422,7 +1553,17 @@ const Player = {
       const song = this.currentId && Store.song(this.currentId);
       if (song) SongActions.pickPlaylists($('btnAddToPlaylist'), song, { above: true });
     };
+    // Radios (5.2): a song radio or an artist radio from the song playing, picked in a popup over the button.
+    $('btnRadios').innerHTML = Icons.songRadio;
+    $('btnRadios').onclick = () => {
+      const song = this.currentId && Store.song(this.currentId);
+      if (song) SongActions.pickRadio($('btnRadios'), song, { above: true });
+    };
     $('btnFavourite').onclick = () => {
+      if (this._radio()) {
+        Radio.toggleFavourite(Radio.station);
+        return;
+      }
       const song = this.currentId && Store.song(this.currentId);
       if (song) attempt(() => window.flow.setFavourite(song.id, !song.favouriteAt));
     };
@@ -1430,6 +1571,10 @@ const Player = {
     const [before, after = ''] = T('window.player.from', { playlist: '\u0000' }).split('\u0000');
     $('playerFrom').replaceChildren(before, $('playerFromName'), after);
     $('playerFrom').onclick = () => {
+      if (this._radio()) {
+        Nav.show('radio');
+        return;
+      }
       if (this.contextId && Store.playlist(this.contextId)) Nav.openPlaylist(this.contextId);
     };
 
@@ -1505,6 +1650,10 @@ const Player = {
   },
 
   _drawBar() {
+    if (this._radio()) {
+      Radio.drawBar();
+      return;
+    }
     const known = this.currentId ? Store.song(this.currentId) : null;
     // In remote mode, a song newer than this library shows as the host names it.
     const song = known || (this.remote && this.currentId ? { ...this.remote.state, id: this.currentId } : null);
@@ -1544,6 +1693,8 @@ const Player = {
     const fav = !!known && !!known.favouriteAt;
     $('btnAddToPlaylist').disabled = !known || !!known.isDevice;
     $('btnFavourite').disabled = !known || !!known.isDevice;
+    // A radio is made from the library's songs: not from another server's song (a guest in its session).
+    $('btnRadios').disabled = !known || !!known.isDevice || !!known.foreign;
     $('btnFavourite').classList.toggle('sq-btn--fav-on', fav);
     $('btnFavourite').setAttribute('aria-pressed', String(fav));
     $('btnFavourite').title = fav ? T('common.unfavourite') : T('common.favourite');
@@ -1558,6 +1709,10 @@ const Player = {
   },
 
   _drawTime(dragTime) {
+    if (this._radio()) {
+      Radio._drawTime();
+      return;
+    }
     const d = this.duration;
     let t = this.currentId ? this.position : 0;
     if (this._pendingSeek !== null && !this.remote) t = this._pendingSeek;
@@ -1615,6 +1770,10 @@ const Player = {
   },
 
   _updateMediaSession() {
+    if (this._radio()) {
+      Radio._updateMediaSession();
+      return;
+    }
     const song = this.currentId ? Store.song(this.currentId) : null;
     // The engine's own notification (the phone's), with the song's cover.
     this.engine.setMeta(song ? this._meta(song) : null);

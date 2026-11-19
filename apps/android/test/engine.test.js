@@ -407,3 +407,119 @@ test('a file the page knows by its Capacitor address is played from its path', (
   assert.equal(fileAddressToPath('http://192.168.0.61:7878/api/songs/x/audio?t=1', origin), 'http://192.168.0.61:7878/api/songs/x/audio?t=1');
   assert.equal(fileAddressToPath('', origin), '');
 });
+
+// ---- Internet Radio: a station through the same player ----
+
+function stationSetup() {
+  const made = setup();
+  const el = made.engine.stationElement();
+  const heard = [];
+  for (const type of ['play', 'playing', 'waiting', 'pause', 'ended', 'error']) el.addEventListener(type, () => heard.push(type));
+  return { ...made, el, heard };
+}
+
+test('a station loaded and played in one turn goes over as one live load, with its notification text', async () => {
+  const { plugin, el, heard } = stationSetup();
+  el.setMeta({ title: 'SWR3', artist: 'Internet Radio', album: 'Flow', artwork: 'http://s.example/logo.png' });
+  el.src = 'http://s.example/live?t=abc';
+  await el.play();
+  await settle();
+  assert.deepEqual(plugin.runs, [[{
+    op: 'load', id: 'r1', key: '', src: 'http://s.example/live?t=abc', gain: 1, at: 0, play: true, live: true,
+    meta: { title: 'SWR3', artist: 'Internet Radio', album: 'Flow', artwork: 'http://s.example/logo.png' },
+  }]]);
+  assert.equal(el.paused, false);
+  assert.equal(el.getAttribute('src'), 'http://s.example/live?t=abc');
+  assert.deepEqual(heard, ['play']);
+});
+
+test('the player\'s state of a station is told as an <audio> tells it, and is none of the song\'s business', async () => {
+  const { plugin, engine, el, heard, events } = stationSetup();
+  el.src = 'http://s.example/live';
+  el.play();
+  await settle();
+  heard.length = 0;
+  events.length = 0;
+  plugin.fire('state', state({ id: 'r1', pwr: true, st: 2, d: -1 }));
+  plugin.fire('state', state({ id: 'r1', pwr: true, st: 3, d: -1 }));
+  plugin.fire('state', state({ id: 'r1', pwr: true, st: 3, d: -1 }));
+  plugin.fire('state', state({ id: 'r1', pwr: true, st: 2, d: -1 }));
+  plugin.fire('state', state({ id: 'r1', pwr: true, st: 3, d: -1 }));
+  // Paused from the notification, or headphones pulled out.
+  plugin.fire('state', state({ id: 'r1', pwr: false, st: 3, d: -1 }));
+  assert.deepEqual(heard, ['playing', 'waiting', 'playing', 'pause']);
+  assert.equal(el.paused, true);
+  assert.deepEqual(events, [], 'the song hears nothing of it');
+  assert.equal(engine.paused, true);
+});
+
+test('a station puts the song out of the player: its place stays, what the song sends waits', async () => {
+  const { plugin, engine, el } = stationSetup();
+  engine.load('http://pi/a', 1, { at: 42, key: 's1' });
+  await settle();
+  assert.equal(engine.loaded, true);
+  el.src = 'http://s.example/live';
+  await settle();
+  assert.equal(engine.loaded, false);
+  assert.equal(engine.time, 42);
+  plugin.runs.length = 0;
+  engine.setNext([{ key: 's2', src: 'http://pi/b', gain: 1, meta: null }]);
+  engine.setMeta({ title: 'A song' });
+  engine.setGain(0.5);
+  engine.setRate(1.1);
+  engine.unload();
+  await settle();
+  assert.deepEqual(plugin.runs, [], 'nothing of the song reaches the station');
+});
+
+test('a song loaded over a station takes the player back: letting the station go then stops nothing', async () => {
+  const { plugin, engine, el, heard } = stationSetup();
+  el.src = 'http://s.example/live';
+  el.play();
+  await settle();
+  engine.load('http://pi/a', 1, { key: 's1' });
+  engine.play();
+  await settle();
+  assert.equal(el.getAttribute('src'), null);
+  assert.equal(el.paused, true);
+  plugin.runs.length = 0;
+  heard.length = 0;
+  el.pause();
+  el.removeAttribute('src');
+  plugin.fire('state', state({ id: 'r1', pwr: false, st: 3 }));
+  await settle();
+  assert.deepEqual(plugin.runs, []);
+  assert.deepEqual(heard, []);
+  // The song's next songs go over again.
+  engine.setNext([{ key: 's2', src: 'http://pi/b', gain: 1, meta: null }]);
+  await settle();
+  assert.equal(plugin.runs[0][0].op, 'next');
+});
+
+test('a station let go of unloads the player; paused it stays loaded; a lost stream is its error', async () => {
+  const { plugin, el, heard } = stationSetup();
+  assert.equal(el.keepsLoaded, true);
+  el.src = 'http://s.example/live';
+  el.play();
+  await settle();
+  plugin.runs.length = 0;
+  el.pause();
+  await settle();
+  assert.deepEqual(plugin.runs, [[{ op: 'pause' }]]);
+  assert.equal(el.getAttribute('src'), 'http://s.example/live');
+  el.play();
+  await settle();
+  heard.length = 0;
+  plugin.fire('error', { id: 'other', message: 'not this one' });
+  assert.deepEqual(heard, []);
+  plugin.fire('error', { id: 'r1', message: 'gone' });
+  assert.deepEqual(heard, ['error']);
+  assert.ok(el.error);
+  assert.equal(el.paused, true);
+  plugin.runs.length = 0;
+  el.removeAttribute('src');
+  await settle();
+  assert.deepEqual(plugin.runs, [[{ op: 'unload' }]]);
+  assert.equal(el.getAttribute('src'), null);
+  await assert.rejects(el.play());
+});

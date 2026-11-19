@@ -20,6 +20,9 @@ const Icons = (() => {
     followed: img('followed'),
     shuffle: img('shuffle'),
     playlists: svg('<path d="M4 6h12M4 11h12M4 16h7"/><circle cx="17" cy="17" r="3"/><path d="M20 17V6h2"/>'),
+    // A list with a clock: the temporary playlists (5.2). A disk: one of them saved.
+    tempList: svg('<path d="M4 6h12M4 11h7M4 16h4"/><circle cx="16.5" cy="16" r="4.5"/><path d="M16.5 13.8V16l1.6 1"/>'),
+    save: svg('<path d="M5 3.5h11l3.5 3.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5z"/><path d="M7.5 3.5v5h8v-5"/><path d="M7.5 20.5V13h9v7.5"/>'),
     // A folder: a playlist group (4.5).
     folder: svg('<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/>'),
     list: svg('<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>'),
@@ -33,12 +36,19 @@ const Icons = (() => {
     lyrics: svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'),
     // Two arrows round: read again (a playlist's Update).
     refresh: svg('<path d="M4 11a8 8 0 0 1 14.9-3.9L20 8.5"/><path d="M20 4v4.5h-4.5"/><path d="M20 13a8 8 0 0 1-14.9 3.9L4 15.5"/><path d="M4 20v-4.5h4.5"/>'),
+    // A die: a seed thrown (Settings' Show a Menu background).
+    dice: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><g fill="currentColor" stroke="none"><circle cx="8.4" cy="8.4" r="1.5"/><circle cx="15.6" cy="8.4" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="8.4" cy="15.6" r="1.5"/><circle cx="15.6" cy="15.6" r="1.5"/></g>'),
     pencil: img('edit'),
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
     check: svg('<path d="M5 12.5l4.5 4.5L19 7"/>'),
     // In a ring: lyrics found, or none (Add Songs).
     circleCheck: svg('<circle cx="12" cy="12" r="9.5"/><path d="M7.5 12.5l3 3 6-6.5"/>'),
     circleX: svg('<circle cx="12" cy="12" r="9.5"/><path d="M8.8 8.8l6.4 6.4M15.2 8.8l-6.4 6.4"/>'),
+    // Internet Radio (5.1): a radio with its antenna.
+    radio: svg('<path d="M7 7.5l10-4"/><rect x="3" y="7.5" width="18" height="13" rx="2"/><circle cx="15.5" cy="14" r="3"/><path d="M6.5 12h4M6.5 16h4"/>'),
+    // Song radio (5.1.2): waves going out from a point; Artist radio: from a person.
+    songRadio: svg('<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4"/><path d="M19.1 4.9a10 10 0 0 1 0 14.2M4.9 19.1a10 10 0 0 1 0-14.2"/>'),
+    artistRadio: svg('<circle cx="12" cy="8.5" r="3.2"/><path d="M6.5 20a5.5 5.5 0 0 1 11 0"/><path d="M18.6 5a6 6 0 0 1 0 7M5.4 12a6 6 0 0 1 0-7"/>'),
     star: svg('<path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.7l5.9-.9z"/>'),
     starFilled: svg('<path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.7l5.9-.9z"/>', true),
     volume: svg('<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>'),

@@ -153,6 +153,14 @@ contextBridge.exposeInMainWorld('flow', {
   onServerLive: (fn) => ipcRenderer.on('server:live', (_e, ev) => fn(ev)),
   onSettingsChanged: (fn) => ipcRenderer.on('settings:changed', (_e, patch) => fn(patch)),
   lookupInfo: (song) => call('song:lookupInfo', song),
+  // Internet Radio (5.1): the directory's countries, genres and stations ({ name, country, genre, page }),
+  // a directory station played (click), an address checked, a stream let into Web Audio (allow).
+  radio: {
+    search: (q) => call('radio:search', q),
+    click: (id) => call('radio:click', id),
+    check: (url) => call('radio:check', url),
+    allow: (url) => call('radio:allow', url),
+  },
   // A song's lyrics (4.0): { found, synced: [{ t, text }] | null, plain, instrumental }.
   lyrics: (songId) => call('song:lyrics', songId),
   // Lyrics written or edited here (4.0): lines [{ t, end, text }], or null to
@@ -174,6 +182,8 @@ contextBridge.exposeInMainWorld('flow', {
   shareLink: () => call('server:shareLink'),
   // Away listens (a guest in another server's session): totals only.
   recordAwayListen: (song, listened, duration) => call('library:recordAwayListen', { song, listened, duration }),
+  // A piece of Internet Radio heard (5.1, radio.js).
+  recordRadioListen: (station, listened, listen) => call('library:recordRadioListen', { station, listened, listen }),
   // A guest in another server's session (4.0): look for them, then join,
   // session ({ body }), leave, songs, status, list.
   guestLook: () => call('guest:look'),
@@ -203,6 +213,16 @@ contextBridge.exposeInMainWorld('flow', {
   // The Mini Player's equalizer: it asks for the levels of so many bars, they are sent back.
   onMiniLevelsWanted: (fn) => ipcRenderer.on('mini:eq', (_e, bars) => fn(bars)),
   miniLevels: (levels) => ipcRenderer.send('mini:levels', levels),
+  // Global hotkeys (5.1.3, src/globalKeys.js): their state { on, keys, taken },
+  // a new combo for an action (answers { ok, reason, status }), on / off, all
+  // back to the first ones, and each press as its action.
+  globalKeys: {
+    status: () => call('keys:globalStatus'),
+    set: (action, accel) => call('keys:globalSet', { action, accel }),
+    setOn: (on) => call('keys:globalOn', !!on),
+    reset: () => call('keys:globalReset'),
+    onPress: (fn) => ipcRenderer.on('keys:global', (_e, action) => fn(action)),
+  },
   // Flow's window in the tray while the Mini Player is open: { away, pause } as it goes there
   // (pause: by its X, the music stops) and comes back.
   onAway: (fn) => {

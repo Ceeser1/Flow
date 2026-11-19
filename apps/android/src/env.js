@@ -13,6 +13,7 @@ const {
   platform, fs, path, plugin, info, secrets, isMetered,
 } = require('./native');
 const { request, stream } = require('./http');
+const { tr } = require('@flow/core/lang');
 const { createCovers } = require('./covers');
 
 function readJson(file) {
@@ -132,7 +133,7 @@ function createEnv({ tellCovers }) {
       rename: (from, to) => fs.rename(from, to),
       read: (p) => {
         const bytes = fs.readBytes(p);
-        if (!bytes) throw new Error(`Not there: ${p}`);
+        if (!bytes) throw new Error(tr('common.error.notThere', 'Not there: {path}', { path: p }));
         return bytes;
       },
       mkdir: (dir) => fs.mkdir(dir),
@@ -151,7 +152,7 @@ function createEnv({ tellCovers }) {
       },
       // A server's song is cut by the server; the phone cuts no files itself.
       trimSong: async () => {
-        throw new Error('Songs are cut by the Flow Server, not on the phone.');
+        throw new Error(tr('phone.error.cutByServer', 'Songs are cut by the Flow Server, not on the phone.'));
       },
     },
     http: { request, stream },

@@ -24,6 +24,7 @@ const Mobile = {
     group: T('common.playlistGroups'),
     sessions: T('common.activeSessions'),
     trend: T('common.yourListeningTrend'),
+    radio: T('common.internetRadio'),
   },
 
   init() {
@@ -116,6 +117,9 @@ const Mobile = {
     const take = (...ids) => ids.map((id) => $(id));
     const collapse = iconButton('mp__collapse', Icons.chevronLeft, T('mobile.backToList'), () => this.collapsePlayer());
     collapse.id = 'playerCollapse';
+    // Now Playing shows the player's cover across the screen's width: the 512 x 512 one (the
+    // thumbnail standing in until it is here), not the 128 x 128 thumbnail of the bar's 44 px.
+    $('playerCover').dataset.coverSize = 'big';
     const parts = [
       collapse,
       $('playerFrom'),
@@ -127,7 +131,7 @@ const Mobile = {
       $('playerTrack'),
       h('div.mp__times', $('playerTime')),
       h('div.mp__buttons', ...take('btnPrev', 'btnBack10', 'btnPlay', 'btnFwd10', 'btnNext')),
-      h('div.mp__extras', ...take('btnShuffle', 'btnRepeat', 'btnFavourite', 'btnAddToPlaylist', 'btnSleep', 'btnAlarm', 'btnVisualizer', 'btnOutput')),
+      h('div.mp__extras', ...take('btnShuffle', 'btnRepeat', 'btnFavourite', 'btnAddToPlaylist', 'btnRadios', 'btnSleep', 'btnAlarm', 'btnVisualizer', 'btnOutput')),
       $('volWrap'),
       // The lyrics (lyrics.js), scrolled down to below the buttons.
       h('div.mp__lyrics.np-lyrics', { id: 'npLyrics', hidden: true }),
@@ -388,7 +392,7 @@ const Mobile = {
           settings.el.classList.add('modal--pulled', 'modal--sliding');
           settings.el.style.transform = `translateX(${Math.min(0, dx - settings.el.offsetWidth)}px)`;
         }
-        if (mode === 'onward' && this._onPlayingList() && Player.currentId) {
+        if (mode === 'onward' && this._onPlayingList() && (Player.currentId || Radio.owns())) {
           // On the list playing: Now Playing comes in from the right under the finger.
           mode = 'player';
           const bar = $('player');
@@ -458,11 +462,13 @@ const Mobile = {
   _onward() {
     const list = this._playingList();
     if (list && !this._onPlayingList()) Nav.openPlaylist(list);
-    else if (Player.currentId) this.expandPlayer();
+    else if (Player.currentId || Radio.owns()) this.expandPlayer();
   },
 
   /** The list playing (or last played), when it is one Flow can show. */
   _playingList() {
+    // A station has the player: Now Playing is next, there is no list to go to.
+    if (Radio.owns()) return null;
     return Player.contextId && Store.playlist(Player.contextId) ? Player.contextId : null;
   },
 

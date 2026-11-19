@@ -311,6 +311,17 @@ const TYPES = {
       return { value: model.recordAwayListen(d, { listened: c.listened, duration: c.duration, at: c.at, tz: c.tz }) };
     },
   },
+  // A piece of Internet Radio heard (5.1): the Statistics' radio only.
+  recordRadioListen: {
+    keys: () => [],
+    run(d, c) {
+      return {
+        value: model.recordRadioListen(d, {
+          id: str(c.station), name: str(c.name), listened: c.listened, at: c.at, tz: c.tz, listen: !!c.listen,
+        }),
+      };
+    },
+  },
   // A song trimmed: only ever applied by the app, to show it at its new
   // length before the server has cut its file (the server cuts it through
   // POST /api/songs/:id/trim). base: the cut it was trimmed from; cut: the

@@ -351,6 +351,8 @@ body.mobile .mp--open .sq-btn__img,
 body.mobile .mp--open .sq-btn .icon { width: 22px; height: 22px; }
 body.mobile .mp--open .sleep-btn { width: 48px; height: 48px; border-radius: 12px; }
 body.mobile .mp--open .sleep-btn .icon { width: 22px; height: 22px; }
+/* Seven of them since Radios (5.2): on a screen under 376 px wide they give way a little instead of running out of it. */
+body.mobile .mp--open .mp__extras > button { flex: 0 1 48px; min-width: 36px; }
 /* The Queue: right of the title and artist, its picture only. */
 body.mobile .mp--open #btnQueue {
   grid-area: queue;
@@ -483,6 +485,10 @@ body.mobile .sheet__item--danger,
 body.mobile .sheet__item--danger .sheet__icon { color: var(--red); }
 body.mobile .sheet__item--on .sheet__icon { color: #f5be3c; }
 body.mobile .sheet__item--on .sheet__label { color: var(--accent-hi); }
+/* A row of two lines (the Radios sheet, 5.2): what it starts, and from what below it. */
+body.mobile .sheet__item--two { min-height: 60px; }
+body.mobile .sheet__item--two .sheet__label { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+body.mobile .sheet__from { color: var(--text-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Dialogs on the phone: as wide as the screen allows, bigger buttons. */
 body.mobile .modal { width: 100%; }
@@ -743,6 +749,15 @@ body.mobile .pl-update__lists { grid-template-columns: 1fr; }
 body.mobile .pl-update__list { max-height: 30vh; }
 body.mobile #plRules { order: 6; }
 body.mobile #plOfflineNote { order: 7; }
+/* A temporary playlist (5.2): "Save" with its icon, then the red X, in Share's place. */
+body.mobile .pl-temp-actions { order: 8; gap: 10px; }
+/* Shuffle then stays beside Play; the two keep the right end (on the next line, together, where the screen is too narrow). */
+body.mobile .pl-head__row:has(.pl-temp-actions:not([hidden])) #plShuffle { margin-left: 0; }
+body.mobile #plSave { padding: 0 16px 0 12px; flex: none; }
+body.mobile #plSave .icon { width: 20px; height: 20px; }
+body.mobile #plDiscard { width: 44px; flex: none; }
+body.mobile #plDiscard .icon { width: 20px; height: 20px; }
+body.mobile .pl-temp-hint { margin: -2px 0 10px; font-size: 14px; }
 body.mobile :is(#plShuffle, #plOffline, #plShare, #plUpdate, #plRules) { width: 44px; padding: 0; justify-content: center; flex: none; }
 body.mobile :is(#plShuffle, #plOffline, #plShare, #plUpdate, #plRules) .icon { width: 20px; height: 20px; }
 /* Download golden while the playlist is kept on the phone; Shuffle and Share green while on. */
@@ -751,6 +766,28 @@ body.mobile :is(#plShuffle, #plShare).toggle--on { background: rgba(120, 200, 14
 body.mobile .pl-search-row { flex-wrap: wrap; gap: 6px; }
 body.mobile .pl-search-row .search-box { flex: 1 1 100%; height: 44px; }
 body.mobile .pick-banner { position: sticky; top: 0; z-index: 3; }
+
+/* Internet Radio: the address box above its button, the search and pickers one under the other. */
+body.mobile .radio-add { flex-direction: column; }
+body.mobile .radio-add .input { flex: none; height: 48px; }
+body.mobile .radio-add .btn { width: 100%; }
+body.mobile .radio-others-head { display: block; }
+body.mobile .radio-filters { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin: 10px 0 0; }
+body.mobile .radio-filters__search { width: 100%; height: 44px; }
+body.mobile .combo { display: grid; grid-template-columns: 76px minmax(0, 1fr); }
+body.mobile .combo__field { display: flex; min-width: 0; }
+body.mobile .combo__input,
+body.mobile .combo--quality .combo__input { width: 100%; height: 44px; font-size: 15px; }
+body.mobile .combo__clear { width: 36px; height: 36px; }
+body.mobile .combo__list { left: 0; right: 0; width: auto; max-height: 40vh; }
+body.mobile .combo__opt { min-height: 44px; font-size: 15px; }
+body.mobile .mrow .radio-pic { width: 44px; height: 44px; border-radius: 6px; }
+body.mobile .mrow .radio-pic .icon { width: 22px; height: 22px; }
+body.mobile .mrow .act--fav { width: 44px; height: 44px; flex: none; background: none; }
+body.mobile .mrow .act--fav .icon { width: 22px; height: 22px; }
+/* A station in Now Playing: its picture in the cover's place, no song buttons. */
+body.mobile .player--radio #btnRadios { display: none; }
+body.mobile .mp--open.player--radio #playerCover .radio-pic .icon { width: 40%; height: 40%; }
 
 /* ===== full-screen popups: Queue, Settings ===== */
 
@@ -837,6 +874,8 @@ body.mobile .settings__right .settings__control { flex: 1; }
 body.mobile .settings__right select,
 body.mobile .settings__right .input { height: 44px; max-width: 100%; }
 body.mobile .settings__right .btn { height: 40px; }
+body.mobile .settings__right .settings__seed { width: 96px; }
+body.mobile .settings__right .settings__dice { width: 44px; height: 44px; }
 
 /* ===== Add Songs ===== */
 
@@ -1025,6 +1064,8 @@ body.mobile .stats__month { width: 44px; font-size: 12px; }
 /* The numbers as one list, the labels lined up. */
 body.mobile .stats__facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; }
 body.mobile .stats__facts > dl { display: contents; }
+/* The radio's most heard stations under its numbers, across the width. */
+body.mobile .stats__radio .stats__top { grid-column: 1 / -1; margin-top: 6px; }
 body.mobile .stats__mode { height: 32px; padding: 0 14px; font-size: 13px; }
 /* The bars and the lines over them: as high as each other (style.css's 156px on the PC). */
 body.mobile .stats__graph .stats__barbox,

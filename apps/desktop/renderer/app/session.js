@@ -892,7 +892,8 @@ const Session = {
         break;
       case 'playPlaylist':
         // One of this app's own playlists plays as such; anything else as the list given.
-        if (args.contextId && Store.playlist(args.contextId)) {
+        // (Not a temporary playlist, 5.2: "temp:1" there is another list than "temp:1" here.)
+        if (args.contextId && !TempLists.isTemp(args.contextId) && Store.playlist(args.contextId)) {
           if (Player.contextId === args.contextId && Player.currentId) {
             if (!Player.isPlaying) Player.toggle();
           } else Player.togglePlaylist(args.contextId);

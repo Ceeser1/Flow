@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: http: https:; media-src file: blob: http: https:" />
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: http: https:; media-src file: blob: http: https:" />
   <title>Flow</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="styles/search.css" />
@@ -20,6 +20,8 @@
   <link rel="stylesheet" href="styles/server.css" />
   <link rel="stylesheet" href="styles/lyricsEdit.css" />
   <link rel="stylesheet" href="styles/group.css" />
+  <link rel="stylesheet" href="styles/radio.css" />
+  <link rel="stylesheet" href="styles/menuBg.css" />
   <!-- The phone's layout, all under body.mobile (mobile.js). -->
   <link rel="stylesheet" href="mobile.css" />
 </head>
@@ -28,6 +30,8 @@
 
   <!-- ===== Menu ===== -->
   <aside class="menu">
+    <!-- The menu's background texture (menuBg.js builds and moves it when Settings' Show a Menu background is on). -->
+    <div id="menuBg" class="menubg menubg--menu" aria-hidden="true" hidden></div>
     <div class="brand">
       <span class="brand__name">Flow</span>
       <button id="menuSettings" class="settings-btn" type="button" title="Settings" aria-label="Settings" data-i18n-aria-label="common.settings" data-i18n-title="common.settings"></button>
@@ -39,6 +43,11 @@
     <!-- Every song; under it, with a Flow Server, the songs each profile added. -->
     <button id="menuAllSongs" class="menu__item" type="button"></button>
     <nav id="menuAllSongsList" class="menu__subs" aria-label="Downloaded Songs, and All Songs by who added them" hidden data-i18n-aria-label="window.menu.downloaded.ariaLabel"></nav>
+    <!-- Internet Radio (5.1): unless switched off in Settings > General (radio.js, pages/radio.js). -->
+    <button id="menuRadio" class="menu__item" type="button" hidden></button>
+    <!-- Temporary Playlists (5.2, tempLists.js): this session's radios, only while there is one. -->
+    <button id="menuTemp" class="menu__item" type="button" hidden></button>
+    <nav id="menuTempList" class="menu__subs" aria-label="Temporary Playlists" hidden data-i18n-aria-label="common.temporaryPlaylists"></nav>
     <button id="menuPlaylists" class="menu__item" type="button"></button>
     <nav id="menuPlaylistList" class="menu__subs" aria-label="Playlists" data-i18n-aria-label="common.playlists"></nav>
     <!-- The playlist groups (4.5.1: their own entry), where a Flow Server keeps them or without one. -->
@@ -60,6 +69,9 @@
     <!-- The drifting colour clouds, and over them the equalizer, behind the
          pages and the player bar. -->
     <canvas id="ambientCanvas" class="ambient-canvas" aria-hidden="true"></canvas>
+    <!-- The menu's background texture where it reaches over the content's background (Settings' Reach over):
+         shown under the clouds' canvas (menuBg.css), which is see-through for it then. -->
+    <div id="menuBgOut" class="menubg menubg--content" aria-hidden="true" hidden></div>
     <canvas id="eqCanvas" class="eq-canvas" aria-hidden="true"></canvas>
     <div id="pages" class="pages">
 
@@ -326,6 +338,43 @@
         </div>
       </section>
 
+      <!-- Internet Radio (5.1, pages/radio.js): a station added by its address, this
+           profile's Favourite Radios (10 at most, then the box scrolls), then the
+           directory's stations with a search, Country and Genre. -->
+      <section id="page-radio" class="page page--playlists page--radio" hidden>
+        <h1 class="page__title" data-i18n="common.internetRadio">Internet Radio</h1>
+        <div class="radio-add">
+          <input id="radioUrl" class="input input--big" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="Paste a radio stream's address (http://... or https://...)" data-i18n-placeholder="radio.add.placeholder" />
+          <button id="radioAddBtn" class="btn btn--primary btn--big" type="button" data-i18n="radio.add.button">Add Radio</button>
+        </div>
+        <div id="radioAddError" class="form-error radio-add__error"></div>
+        <div class="section-head">
+          <h2 class="section-head__title" data-i18n="radio.favourites.heading">Favourite Radios</h2>
+          <span id="radioFavCount" class="muted-text"></span>
+        </div>
+        <div id="radioFavBox" class="list-limit"><table id="radioFavTable" class="table table--playlists table--radio"></table></div>
+        <p id="radioFavEmpty" class="muted-text" hidden data-i18n="radio.favourites.empty">No favourites yet. Star a station below, or add one by its address above.</p>
+        <div class="section-head radio-others-head">
+          <h2 class="section-head__title" data-i18n="radio.others.heading">Other Internet Radios</h2>
+          <span id="radioOtherCount" class="muted-text"></span>
+          <div class="radio-filters">
+            <div class="search-box radio-filters__search">
+              <span class="search-box__icon"></span>
+              <input id="radioSearch" class="search-box__input" type="search" autocomplete="off" spellcheck="false"
+                     placeholder="Search stations" data-i18n-placeholder="radio.others.search.placeholder" />
+            </div>
+            <div id="radioCountry" class="combo"></div>
+            <div id="radioGenre" class="combo"></div>
+            <div id="radioQuality" class="combo combo--quality"></div>
+          </div>
+        </div>
+        <p id="radioSource" class="muted-text radio-source" data-i18n="radio.others.source">Stations from radio-browser.info, the most played first.</p>
+        <table id="radioOtherTable" class="table table--playlists table--radio"></table>
+        <div id="radioOtherNote" class="empty empty--small" hidden></div>
+        <div class="radio-more"><button id="radioMore" class="btn" type="button" hidden data-i18n="radio.others.more">Show more</button></div>
+      </section>
+
       <!-- Followed Playlists -->
       <section id="page-followed" class="page page--playlists" hidden>
         <h1 class="page__title" data-i18n="common.followedPlaylists">Followed Playlists</h1>
@@ -417,8 +466,14 @@
             <span id="plOfflineNote" class="pl-meta" hidden></span>
             <button id="plShare" class="toggle" type="button" aria-pressed="false" hidden></button>
             <button id="plRules" class="toggle" type="button" hidden title="Change the rules that pick this playlist's songs" data-i18n-title="window.playlist.rules.tooltip"></button>
+            <!-- A temporary playlist (5.2): Save makes a playlist of it, the X throws it away (playlist.js). -->
+            <span id="plTempActions" class="pl-temp-actions" hidden>
+              <button id="plSave" class="toggle" type="button" hidden></button>
+              <button id="plDiscard" class="toggle toggle--danger" type="button" hidden></button>
+            </span>
           </div>
         </div>
+        <div id="plTempHint" class="pl-temp-hint" hidden data-i18n="window.playlist.temp.hint">This playlist will be removed at the end of your session unless you save it.</div>
         <div id="plPickBanner" class="pick-banner" hidden>
           <!-- "Adding songs to <name>: ..." (window.playlist.pick.banner), the name in bold (playlist.js). -->
           <span id="plPickText"></span>
@@ -504,6 +559,8 @@
             <!-- The phone's Alarm Clock (alarm.js), and the computer's Mini Player (miniPlayer.js). -->
             <button id="btnAlarm" class="sleep-btn" type="button" hidden></button>
             <button id="btnMini" class="sleep-btn" type="button" aria-pressed="false"></button>
+            <!-- Radios (5.2): a song radio or an artist radio from the song playing (songActions.js pickRadio). -->
+            <button id="btnRadios" class="sleep-btn" type="button" aria-haspopup="dialog" title="Radios" data-i18n-title="common.radios" data-i18n-aria-label="common.radios"></button>
           </div>
           <!-- Where the music comes out (output.js). -->
           <button id="btnOutput" class="icon-btn player__output" type="button" aria-haspopup="menu"></button>
@@ -525,6 +582,8 @@
 <!-- The next song, while a song transition fades it in (player.js). -->
 <audio id="fadeAudio" preload="auto"></audio>
 <audio id="previewAudio" preload="auto"></audio>
+<!-- An Internet Radio station (radio.js). -->
+<audio id="radioAudio" preload="none"></audio>
 
 <script src="app/strings.js"></script>
 <script src="app/i18n.js"></script>
@@ -537,6 +596,7 @@
 <script src="app/statistics.js"></script>
 <script src="app/icons.js"></script>
 <script src="app/dom.js"></script>
+<script src="app/tempLists.js"></script>
 <script src="app/store.js"></script>
 <script src="app/covers.js"></script>
 <script src="app/ui.js"></script>
@@ -549,7 +609,10 @@
 <script src="app/notes.js"></script>
 <script src="app/soundEq.js"></script>
 <script src="app/equalizer.js"></script>
+<script src="app/coverColors.js"></script>
 <script src="app/ambient.js"></script>
+<script src="app/menuBgMake.js"></script>
+<script src="app/menuBg.js"></script>
 <script src="app/landscape.js"></script>
 <script src="app/seekCheck.js"></script>
 <script src="app/audioEngine.js"></script>
@@ -612,6 +675,7 @@
 <script src="app/sleepTimer.js"></script>
 <script src="app/miniPlayer.js"></script>
 <script src="app/alarm.js"></script>
+<script src="app/radio.js"></script>
 <script src="app/songActions.js"></script>
 <script src="app/groups.js"></script>
 <script src="app/nav.js"></script>
@@ -636,6 +700,7 @@
 <script src="app/pages/group.js"></script>
 <script src="app/pages/sessions.js"></script>
 <script src="app/pages/trend.js"></script>
+<script src="app/pages/radio.js"></script>
 <script src="app/pages/playlist.js"></script>
 <script src="app/pages/playlistUpdate.js"></script>
 <script src="app/details.js"></script>

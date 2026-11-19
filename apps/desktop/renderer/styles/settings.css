@@ -94,6 +94,11 @@
 .settings__value { width: 44px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
 .settings__note { color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
 .settings__slider { width: 160px; }
+/* Show a Menu background's Style: the texture's seed beside it (six letters and digits) and the dice that throws one. */
+.settings__seed { width: 82px; height: 28px; padding: 0 8px; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+.settings__dice { width: 30px; height: 28px; padding: 0; }
+.settings__dice .icon { width: 18px; height: 18px; }
+.settings__dice:disabled { opacity: 0.5; cursor: default; }
 /* Settings > Equalizer's curve (soundEq.js): the graph across the whole row. */
 .sound-eq { padding: 12px 0 14px; border-bottom: 1px solid #34343c; }
 .sound-eq__canvas { display: block; width: 100%; height: 240px; background: rgba(0, 0, 0, 0.22); border-radius: 8px; touch-action: none; outline: none; }

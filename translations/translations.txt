@@ -83,6 +83,14 @@ settings.general.listeningTrends.desc
   en: If disabled, your listening trend category will be hidden in the menu and the search.
   de: Wenn deaktiviert, wird deine Hörtrend-Kategorie im Menü und in der Suche ausgeblendet.
 
+settings.general.showRadio.label
+  en: Show Internet Radio
+  de: Internetradio anzeigen
+
+settings.general.showRadio.desc
+  en: If disabled, the Internet Radio category will be hidden in the menu.
+  de: Wenn deaktiviert, wird die Kategorie Internetradio im Menü ausgeblendet.
+
 settings.general.similarSongs.label
   en: Continue with similar songs
   de: Mit ähnlichen Songs weitermachen
@@ -90,6 +98,14 @@ settings.general.similarSongs.label
 settings.general.similarSongs.desc
   en: When the list playing has played through, songs like the last ones you heard follow (the same artists, genre, Info or album, those you listen to most first) instead of the list starting over. The Queue shows them as "Then similar songs".
   de: Ist die laufende Liste durchgespielt, folgen statt eines Neustarts Songs wie die zuletzt gehörten (gleiche Interpreten, Genre, Info oder Album, meistgehörte zuerst). Die Warteschlange zeigt sie als „Dann ähnliche Songs“.
+
+settings.general.smartShuffle.label
+  en: Smarter shuffle
+  de: Schlaueres Zufallsprinzip
+
+settings.general.smartShuffle.desc
+  en: With shuffle on, the same artist never plays twice in a row (unless the list has no one else), and songs you usually skip within the first 30 seconds come up less often. Every song still gets its turn.
+  de: Bei Zufallswiedergabe läuft nie zweimal hintereinander derselbe Interpret (außer die Liste hat keinen anderen), und Songs, die du meist in den ersten 30 Sekunden überspringst, kommen seltener. Jeder Song kommt trotzdem dran.
 
 settings.general.groupedHideInMenu.label
   en: Playlists added to groups hide in the menu
@@ -111,8 +127,8 @@ settings.general.keybinds.label
   de: Tastenbelegung / Tastenkürzel
 
 settings.general.keybinds.desc
-  en: Flow has some shortcuts to navigate
-  de: Flow hat einige Tastenkürzel zum Navigieren
+  en: Flow has some shortcuts to navigate, and global hotkeys that work while it is in the background (on the computer)
+  de: Flow hat einige Tastenkürzel zum Navigieren und globale Tastenkürzel, die auch im Hintergrund funktionieren (am Computer)
 
 settings.general.keybinds.show
   en: Show Keybinds
@@ -195,6 +211,111 @@ keybinds.note
   en: The keys do nothing while you type in a box, except Ctrl+F and Esc.
   de: Während du in ein Feld tippst, tun die Tasten nichts, außer Strg+F und Esc.
 
+keybinds.key.shift
+  en: Shift
+  de: Umschalt
+
+keybinds.key.super
+  en: Win
+  de: Win
+
+# Global hotkeys (5.1.3, the computer only): below the keys above in the same window.
+keybinds.global.title
+  en: Global hotkeys
+  de: Globale Tastenkürzel
+
+keybinds.global.on
+  en: Use global hotkeys
+  de: Globale Tastenkürzel verwenden
+
+keybinds.global.desc
+  en: These work while Flow is in the background or in the tray too. Click a combination and press a new one; Esc keeps the old one, Backspace removes it.
+  de: Diese funktionieren auch, wenn Flow im Hintergrund oder im Infobereich ist. Klicke auf eine Kombination und drücke eine neue; Esc behält die alte, Rücktaste entfernt sie.
+
+keybinds.global.playPause
+  en: Play or pause
+  de: Abspielen oder pausieren
+
+keybinds.global.next
+  en: Next song
+  de: Nächster Song
+
+keybinds.global.prev
+  en: Previous song
+  de: Vorheriger Song
+
+keybinds.global.volumeUp
+  en: Volume up by 5 %
+  de: Lautstärke um 5 % lauter
+
+keybinds.global.volumeDown
+  en: Volume down by 5 %
+  de: Lautstärke um 5 % leiser
+
+keybinds.global.mute
+  en: Mute or unmute
+  de: Stumm schalten oder wieder laut
+
+keybinds.global.favourite
+  en: Favorite the song playing (or take it out)
+  de: Laufenden Song zu den Favoriten (oder heraus)
+
+keybinds.global.showFlow
+  en: Show Flow
+  de: Flow anzeigen
+
+keybinds.global.none
+  en: None
+  de: Keins
+
+keybinds.global.change
+  en: Click, then press the new combination
+  de: Klicken, dann die neue Kombination drücken
+
+keybinds.global.clear
+  en: Remove this hotkey
+  de: Dieses Tastenkürzel entfernen
+
+keybinds.global.press
+  en: Press keys...
+  de: Tasten drücken...
+
+keybinds.global.pressHint
+  en: Press the new combination (Esc keeps the old one, Backspace removes it).
+  de: Drücke die neue Kombination (Esc behält die alte, Rücktaste entfernt sie).
+
+keybinds.global.takenNow
+  en: Taken by another program: pick another
+  de: Von einem anderen Programm belegt: wähle eine andere
+
+keybinds.global.reset
+  en: Reset to the default hotkeys
+  de: Auf die Standard-Tastenkürzel zurücksetzen
+
+keybinds.global.refused.invalid
+  en: That key can't be a hotkey.
+  de: Diese Taste kann kein Tastenkürzel sein.
+
+keybinds.global.refused.modifier
+  en: A hotkey needs Ctrl, Alt or Win, or it would take the key away from typing everywhere.
+  de: Ein Tastenkürzel braucht Strg, Alt oder Win, sonst fehlt die Taste überall beim Tippen.
+
+keybinds.global.refused.altgr
+  en: Ctrl+Alt with a letter or number is AltGr on many keyboards (@, €, {}): add Shift.
+  de: Strg+Alt mit einem Buchstaben oder einer Zahl ist auf vielen Tastaturen AltGr (@, €, {}): nimm Umschalt dazu.
+
+keybinds.global.refused.system
+  en: The system keeps this combination for itself.
+  de: Diese Kombination behält das System für sich.
+
+keybinds.global.refused.own
+  en: Already used for "{action}".
+  de: Schon belegt für „{action}“.
+
+keybinds.global.refused.taken
+  en: Another program uses this combination already: pick another.
+  de: Ein anderes Programm verwendet diese Kombination schon: wähle eine andere.
+
 # ── Settings › App Visuals ──
 
 settings.appVisuals.heading
@@ -234,8 +355,12 @@ settings.appVisuals.clouds.colorScheme.label
   de: Farbschema der Wolken
 
 settings.appVisuals.clouds.colorScheme.desc
-  en: Rainbow gives each cloud a random color as it comes.
-  de: Regenbogen gibt jeder neuen Wolke eine zufällige Farbe.
+  en: Rainbow gives each cloud a random color as it comes. From cover takes the colors of the playing song's cover.
+  de: Regenbogen gibt jeder neuen Wolke eine zufällige Farbe. Vom Cover nimmt die Farben des Covers des laufenden Songs.
+
+settings.appVisuals.clouds.colorScheme.cover
+  en: From cover
+  de: Vom Cover
 
 settings.appVisuals.clouds.amount.label
   en: Clouds amount
@@ -297,9 +422,93 @@ settings.appVisuals.coverBg.desc
   en: The playing song's cover, large in the middle behind the clouds and the equalizer.
   de: Das Cover des laufenden Songs, groß in der Mitte hinter den Wolken und dem Equalizer.
 
+# The same where there is no background equalizer (the phone apps)
+settings.appVisuals.coverBg.desc.noEqualizer
+  en: The playing song's cover, large in the middle behind the clouds.
+  de: Das Cover des laufenden Songs, groß in der Mitte hinter den Wolken.
+
 settings.appVisuals.coverBg.visibility.label
   en: Visibility
   de: Sichtbarkeit
+
+settings.appVisuals.menuBg.label
+  en: Show a Menu background
+  de: Menü-Hintergrund anzeigen
+
+settings.appVisuals.menuBg.desc
+  en: Shows a texture as the menu's background, so it doesn't look as empty.
+  de: Zeigt eine Textur als Hintergrund des Menüs, damit es nicht so leer wirkt.
+
+settings.appVisuals.menuBg.animate.label
+  en: Animate
+  de: Animieren
+
+settings.appVisuals.menuBg.animate.desc
+  en: Slightly moves the selected texture and applies parallax.
+  de: Bewegt die gewählte Textur leicht und wendet Parallaxe an.
+
+settings.appVisuals.menuBg.style.desc
+  en: Which texture is shown in the menu's background.
+  de: Welche Textur der Hintergrund des Menüs zeigt.
+
+# The box beside the texture: letters and digits its look is made from
+settings.appVisuals.menuBg.seed.placeholder
+  en: Seed
+  de: Seed
+
+settings.appVisuals.menuBg.seed.tooltip
+  en: Up to 6 letters and digits that decide how this texture looks. Empty: its standard look.
+  de: Bis zu 6 Buchstaben und Ziffern, die bestimmen, wie diese Textur aussieht. Leer: ihr Standard-Aussehen.
+
+settings.appVisuals.menuBg.seed.random
+  en: Random seed
+  de: Zufälliger Seed
+
+# The texture going on beyond the menu's edge, and how far (a slider)
+settings.appVisuals.menuBg.reach.label
+  en: Reach over
+  de: Hinausragen
+
+settings.appVisuals.menuBg.reach.desc
+  en: Lets the menu background extend into the content's background.
+  de: Lässt den Menü-Hintergrund in den Hintergrund des Inhalts hineinragen.
+
+settings.appVisuals.menuBg.reach.slider
+  en: Reach
+  de: Reichweite
+
+# The menu background's textures
+settings.appVisuals.menuBg.style.roots
+  en: Roots
+  de: Wurzeln
+
+settings.appVisuals.menuBg.style.vines
+  en: Vines
+  de: Ranken
+
+settings.appVisuals.menuBg.style.currents
+  en: Currents
+  de: Strömung
+
+settings.appVisuals.menuBg.style.stars
+  en: Stars
+  de: Sterne
+
+settings.appVisuals.menuBg.style.vinyl
+  en: Vinyl
+  de: Vinyl
+
+settings.appVisuals.menuBg.style.mist
+  en: Mist
+  de: Nebel
+
+settings.appVisuals.menuBg.style.circuit
+  en: Circuit
+  de: Schaltkreis
+
+settings.appVisuals.menuBg.style.scales
+  en: Scales
+  de: Schuppen
 
 # Color schemes of the background clouds and equalizer
 settings.appVisuals.colorScheme.yellow
@@ -2179,6 +2388,27 @@ playlist.header.smartPlaylist
   en: Smart playlist ·
   de: Smarte Playlist ·
 
+# A temporary playlist (5.2: a song radio or an artist radio): kept only until Flow is closed, unless it is saved.
+playlist.header.temporaryPlaylist
+  en: Temporary Playlist ·
+  de: Temporäre Playlist ·
+
+playlist.temp.save
+  en: Save playlist
+  de: Playlist speichern
+
+playlist.temp.save.tooltip
+  en: Keep this playlist: it moves to Your Playlists and is a normal playlist from then on
+  de: Diese Playlist behalten: Sie kommt zu „Deine Playlists“ und ist ab dann eine normale Playlist
+
+playlist.temp.discard.tooltip
+  en: Remove this temporary playlist
+  de: Diese temporäre Playlist entfernen
+
+playlist.temp.saved
+  en: Saved "{playlist}" to Your Playlists
+  de: „{playlist}“ in „Deine Playlists“ gespeichert
+
 playlist.search.placeholder
   en: Search song titles in {playlist}
   de: Songtitel in {playlist} suchen
@@ -2408,6 +2638,15 @@ playlist.song.play.tooltip
 playlist.song.edit
   en: Edit
   de: Bearbeiten
+
+# The Radios popup (5.2), of a song's More and of the player bar: below each, the song or the artist it starts from.
+radios.startSong
+  en: Start Song-Radio...
+  de: Song-Radio starten...
+
+radios.startArtist
+  en: Start Artist-Radio...
+  de: Interpreten-Radio starten...
 
 playlist.song.removeFromPlaylists
   en: Remove from Playlist(s)
@@ -5276,6 +5515,10 @@ nav.section.what.playlists
   en: the playlists
   de: Playlists
 
+nav.section.what.temporaryPlaylists
+  en: the temporary playlists
+  de: temporäre Playlists
+
 nav.section.what.followedPlaylists
   en: the followed playlists
   de: Gefolgte Playlists
@@ -5342,6 +5585,11 @@ player.session
   en: Session
   de: Session
 
+# A song radio / artist radio (5.2): the name of its temporary playlist, after the song or the artist.
+temp.radio.name
+  en: {name} Radio
+  de: {name} Radio
+
 # Player bar › messages
 player.toast.couldNotPlay
   en: Could not play "{song}". {reason}
@@ -5366,6 +5614,10 @@ player.toast.unreachableNotDownloaded
 player.toast.queued
   en: Added "{song}" to the queue
   de: „{song}“ eingereiht
+
+player.toast.radioTooFew
+  en: Not enough songs like it in the library for a radio
+  de: Zu wenige ähnliche Songs in der Bibliothek für ein Radio
 
 player.toast.queuedInSession
   en: Added "{song}" to the queue of {session}
@@ -5502,6 +5754,22 @@ stats.activity.monthName
 stats.activity.year.tooltip
   en: {year}: {hours} listened
   de: {year}: {hours} gehört
+
+stats.activity.split
+  en: (songs {songs}, Internet Radio {radio})
+  de: (Songs {songs}, Internetradio {radio})
+
+stats.activity.songs
+  en: Songs
+  de: Songs
+
+stats.radio.stationsListened
+  en: Stations listened to
+  de: Gehörte Sender
+
+stats.radio.top
+  en: Most listened stations
+  de: Meistgehörte Sender
 
 stats.activity.clickForDays
   en: - click for its days
@@ -6737,6 +7005,219 @@ mobile.list.chosen
   en: {count} chosen
   de: {count} ausgewählt
 
+# ===== Internet Radio =====
+
+# The Internet Radio page (5.1) and the player bar while a station plays.
+
+common.internetRadio
+  en: Internet Radio
+  de: Internetradio
+
+radio.add.placeholder
+  en: Paste a radio stream's address (http://... or https://...)
+  de: Adresse eines Radiostreams einfügen (http://... oder https://...)
+
+radio.add.button
+  en: Add Radio
+  de: Radio hinzufügen
+
+radio.add.checking
+  en: Checking...
+  de: Wird geprüft...
+
+radio.add.empty
+  en: Please paste the address of a radio stream first.
+  de: Bitte füge zuerst die Adresse eines Radiostreams ein.
+
+# A station added by its address, checked: it is a favourite now
+radio.add.done
+  en: {station} was added to your Favourite Radios.
+  de: {station} wurde zu deinen Lieblingsradios hinzugefügt.
+
+# Added, but the address did not say whether a stream is there
+radio.add.unchecked
+  en: {station} was added. Flow could not tell whether a stream is there: if it does not play, check the address.
+  de: {station} wurde hinzugefügt. Flow konnte nicht erkennen, ob dort ein Stream ist: Spielt er nicht, prüfe die Adresse.
+
+radio.add.exists
+  en: {station} is already in your Favourite Radios.
+  de: {station} ist schon in deinen Lieblingsradios.
+
+radio.favourites.heading
+  en: Favourite Radios
+  de: Lieblingsradios
+
+radio.favourites.empty
+  en: No favourites yet. Star a station below, or add one by its address above.
+  de: Noch keine Favoriten. Markiere unten einen Sender mit dem Stern oder füge oben einen über seine Adresse hinzu.
+
+radio.count
+  en.one: 1 station
+  en.other: {count} stations
+  de.one: 1 Sender
+  de.other: {count} Sender
+
+radio.others.heading
+  en: Other Internet Radios
+  de: Weitere Internetradios
+
+radio.others.scanned
+  en: ({count} scanned)
+  de: ({count} durchsucht)
+
+radio.others.search.placeholder
+  en: Search stations
+  de: Sender suchen
+
+radio.others.source
+  en: Stations from radio-browser.info, the most played first.
+  de: Sender von radio-browser.info, die meistgehörten zuerst.
+
+radio.others.loading
+  en: Loading stations...
+  de: Sender werden geladen...
+
+radio.others.none
+  en: No stations match the search and filters.
+  de: Keine Sender passen zur Suche und den Filtern.
+
+radio.others.more
+  en: Show more
+  de: Mehr anzeigen
+
+radio.others.retry
+  en: Try again
+  de: Erneut versuchen
+
+radio.filter.country
+  en: Country
+  de: Land
+
+radio.filter.country.all
+  en: All countries
+  de: Alle Länder
+
+radio.filter.genre.all
+  en: All genres
+  de: Alle Genres
+
+radio.filter.quality.all
+  en: All qualities
+  de: Alle Qualitäten
+
+radio.filter.quality.atLeast
+  en: {rate} kbit/s or more
+  de: Ab {rate} kbit/s
+
+radio.filter.quality.noInfo
+  en: No Info
+  de: Keine Angabe
+
+radio.filter.clear
+  en: Show all again
+  de: Wieder alle zeigen
+
+radio.filter.none
+  en: Nothing matches.
+  de: Nichts passt.
+
+radio.column.station
+  en: Station
+  de: Sender
+
+radio.column.quality
+  en: Quality
+  de: Qualität
+
+# A stream's bitrate, e.g. "128 kbit/s"
+radio.kbits
+  en: {rate} kbit/s
+  de: {rate} kbit/s
+
+# In the Country column for a station added by its address
+radio.own
+  en: Added by you
+  de: Von dir hinzugefügt
+
+radio.favourite.add
+  en: Add to Favourite Radios
+  de: Zu Lieblingsradios hinzufügen
+
+radio.favourite.remove
+  en: Remove from Favourite Radios
+  de: Aus Lieblingsradios entfernen
+
+radio.removed
+  en: {station} was removed from your Favourite Radios.
+  de: {station} wurde aus deinen Lieblingsradios entfernt.
+
+common.undo
+  en: Undo
+  de: Rückgängig
+
+# The player bar's time while a station plays, e.g. "Live · 12:34"
+radio.bar.live
+  en: Live
+  de: Live
+
+radio.bar.connecting
+  en: Connecting...
+  de: Verbinde...
+
+radio.bar.previous
+  en: Previous station
+  de: Vorheriger Sender
+
+radio.bar.next
+  en: Next station
+  de: Nächster Sender
+
+radio.bar.open.tooltip
+  en: Open Internet Radio
+  de: Internetradio öffnen
+
+radio.toast.cannotPlay
+  en: {station} cannot be played right now.
+  de: {station} kann gerade nicht abgespielt werden.
+
+radio.toast.lost
+  en: The connection to {station} was lost.
+  de: Die Verbindung zu {station} ist abgebrochen.
+
+# Checking a station's address (Add Radio), and the station directory
+
+core.radio.directoryUnreachable
+  en: The radio directory (radio-browser.info) cannot be reached right now.
+  de: Das Radioverzeichnis (radio-browser.info) ist gerade nicht erreichbar.
+
+core.radio.notAnAddress
+  en: That is not a web address (it should start with http:// or https://).
+  de: Das ist keine Webadresse (sie sollte mit http:// oder https:// beginnen).
+
+core.radio.noAnswer
+  en: The address did not answer in time.
+  de: Die Adresse hat nicht rechtzeitig geantwortet.
+
+core.radio.unreachable
+  en: The address cannot be reached.
+  de: Die Adresse ist nicht erreichbar.
+
+core.radio.httpError
+  en: The address answered with an error ({status}).
+  de: Die Adresse hat mit einem Fehler geantwortet ({status}).
+
+core.radio.noStream
+  en: No radio stream was found at that address.
+  de: Unter dieser Adresse wurde kein Radiostream gefunden.
+
+core.radio.hls
+  en: This station streams as HLS (.m3u8), which Flow cannot play.
+  de: Dieser Sender streamt als HLS (.m3u8), das Flow nicht abspielen kann.
+
+core.radio.webPage
+  en: That is a web page, not a radio stream. The stream's own address is needed (often on the station's page as "Listen" or a .m3u / .pls link).
+  de: Das ist eine Webseite, kein Radiostream. Gebraucht wird die Adresse des Streams selbst (oft auf der Seite des Senders als „Hören“ oder als .m3u- / .pls-Link).
+
 # ===== Common =====
 
 # Small pieces used all over the app.
@@ -7227,6 +7708,14 @@ common.followedPlaylists
 common.playlistGroups
   en: Playlist Groups
   de: Playlist-Gruppen
+
+common.temporaryPlaylists
+  en: Temporary Playlists
+  de: Temporäre Playlists
+
+common.radios
+  en: Radios
+  de: Radios
 
 common.activeJams
   en: Active Jams
@@ -8008,6 +8497,10 @@ window.playlist.noMatches
   en: No songs match the search.
   de: Keine Songs passen zur Suche.
 
+window.playlist.temp.hint
+  en: This playlist will be removed at the end of your session unless you save it.
+  de: Diese Playlist wird am Ende deiner Sitzung entfernt, wenn du sie nicht speicherst.
+
 # The window › the player bar
 window.player.playHere
   en: Play here
@@ -8492,6 +8985,23 @@ desktop.tray.openMini
 desktop.tray.quit
   en: Quit Flow
   de: Flow beenden
+
+# The buttons under Flow's preview in the Windows taskbar (5.1.4).
+desktop.thumbar.prev
+  en: Previous
+  de: Zurück
+
+desktop.thumbar.play
+  en: Play
+  de: Abspielen
+
+desktop.thumbar.pause
+  en: Pause
+  de: Pause
+
+desktop.thumbar.next
+  en: Next
+  de: Weiter
 
 # Windows and dialogs › picking files and folders
 desktop.pick.musicFolder.title

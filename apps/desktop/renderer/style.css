@@ -90,7 +90,7 @@ button, input, select { font: inherit; color: inherit; }
   min-height: 0;
 }
 
-/* The clouds (ambient.js): solid, painted with the page background. */
+/* The clouds (ambient.js): solid, painted with the page background (see-through for the menu's texture where it reaches over). */
 .ambient-canvas {
   position: absolute;
   inset: 0;
@@ -179,8 +179,11 @@ button, input, select { font: inherit; color: inherit; }
 /* ===== menu ===== */
 
 .menu {
-  /* Darker at the top, the old colour in the middle, lighter at the bottom. */
+  /* Darker at the top, the old colour in the middle, lighter at the bottom; the background texture over it (styles/menuBg.css). */
   background: linear-gradient(to bottom, #111114, var(--menu-bg) 50%, #212126);
+  position: relative;
+  /* The texture goes behind the menu's entries, over its background. */
+  isolation: isolate;
   border-right: 1px solid #25252a;
   display: flex;
   flex-direction: column;

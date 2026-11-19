@@ -59,7 +59,7 @@
         <receiver
             android:name=".FlowWidgetTall"
             android:exported="false"
-            android:label="Flow with timeline">
+            android:label="@string/widget_tall_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

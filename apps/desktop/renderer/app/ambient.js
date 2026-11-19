@@ -22,6 +22,15 @@
 // as rings that fade out and start again. Solid, only the colour is rounded,
 // in steps too small to see.
 //
+// Except under WebGL while the menu's background texture reaches over the
+// content (menuBg.js, Settings' Reach over), which lies behind all of this:
+// then the picture is see-through where neither a cloud nor the cover is
+// (seeThrough), and the page's background and the texture show from under it.
+// It holds its colour already times how solid it is there (a 255th of a step,
+// speckled as before) and is laid over what is under it by that, so it keeps
+// as many steps as the solid one; over the plain background it comes to the
+// same picture.
+//
 // At full size: Chromium speckles colour fades by a step to hide banding,
 // invisible pixel by pixel, but a canvas drawn smaller and stretched turns the
 // speckles into a grid. The equalizer's canvas lies on top of this one.
@@ -35,17 +44,36 @@
 // app's GPU work.
 //
 // Settings: in Rainbow each cloud takes a random colour every time it comes
-// back; a solid scheme gives them all that one. The amount at 50% is the
+// back; a solid scheme gives them all that one. From cover (5.1.5): the
+// playing song's cover's colours (coverColors.js, from its small picture),
+// one to each cloud in turn, as colourful and as light as clouds are; on a
+// new song they turn into the new cover's over about two seconds. Without a
+// cover (a station, a song without one) they keep the last cover's colours,
+// and before any, Rainbow's. The amount at 50% is the
 // first half of CLOUDS (the look as designed), 100% all of them, 0% none.
 //
-// Show Cover as background (a computer's window): the playing song's big
+// Show Cover as background (from 5.0.2 on the phones too): the playing song's big
 // cover on the background, under the clouds, at its Visibility, in the middle
-// of the list (between the bottom of its column names, where they stand
-// unscrolled, and the player bar; pages without a list from their top), 80%
-// as tall as that, its corners rounded by 5% of its size. In WebGL the clouds
-// are then drawn onto nothing (their colour and how much they cover) and laid
-// over the background with the cover on it, which is the same picture as
-// before while there is no cover.
+// of what shows of the list (between the bottom of its column names, where
+// they are now, and the player bar; pages without a list from their top), 80%
+// as tall as that, its corners rounded by 5% of its size. Cover and clouds are
+// two layers, the clouds in front: they are what they are over the plain
+// background, and the cover's own light is added whole, so a cloud is as
+// strong over the cover as beside it and does not dim the cover (laid over the
+// cover as a see-through sheet, a cloud lost up to 40% of its strength over a
+// bright cover and read as lying behind it). In WebGL the clouds are drawn
+// onto nothing (their colour and how much they cover) for that; with no cover
+// the picture is the same as before.
+//
+// The cover has no edge to see, it comes out of the background: from a little
+// inside its edge it thins more and more, through the edge, to nothing well
+// outside it (the same at every Visibility). Its last few percent blur more
+// and more towards the edge, and outside it the picture goes on as a blur of
+// that outer band (mirrored at the edge, never the last row of pixels pulled
+// outwards). That picture, the cover with its surround, is made once when a cover
+// has loaded (_bake), not while drawing: a frame only reads it. A plain frame
+// round the artwork (a white border in the file) is left out first, so the
+// surround has the artwork's colours and not the frame's.
 
 const Ambient = {
   canvas: null,
@@ -58,14 +86,59 @@ const Ambient = {
   pulse: 0,         // 0..1, the swell of the last bass hit
   frozen: false,    // Windows' "Show animations" off: the clouds stand still
   started: false,   // the canvas's drawing is made (not yet after a start in the tray)
-  coverImg: null,   // the loaded cover shown (Show Cover as background), or null
+  clear: false,     // the picture is see-through where neither a cloud nor the cover is (seeThrough)
+  coverPic: null,   // the cover shown (Show Cover as background) with its surround, baked: { image, pad }, or null
   coverKey: '',     // the song and address it is (or is being) loaded for
+  coverJob: null,   // the baking under way, if any (another one, or none, ends it)
   coverBox: null,   // where it goes: { x, y, size } in the canvas's pixels
+  coverPiece: null, // the canvas way's copy of it with the fade in it: { pic, canvas, mask, reach }
   lastPlace: 0,
+  palette: null,    // From cover: the cover's colours ([h, s, l] each), or null before the first
+  paletteKey: '',   // the song and picture they are (being) taken from
+  paletteAt: 0,     // when the clouds' colours last moved towards them (ms)
+  paletteMoving: false, // the clouds still turning into a new cover's colours
   PLACE_MS: 250,    // how often its place is looked at again (pages, banners)
+  scrolled: false,  // the page was scrolled since: its place is looked at with the next frame
   COVER_SHARE: 0.8, // its height against the room it is in the middle of
   COVER_ROUND: 0.05,
-  COVER_FADE: 0.1,  // how far outside its edge it fades out, against its width, at Visibility 100%
+  // The cover has no edge to see: it thins from COVER_FADE_IN inside its edge
+  // to nothing COVER_FADE outside it (against its width; further out the lower
+  // the Visibility, see FADE_MORE), along a bell curve (FADE_BELL: how far down the bell it is
+  // cut off), which leaves it about half as solid at the edge itself.
+  COVER_FADE_IN: 0.12,
+  COVER_FADE: 0.2,
+  FADE_BELL: 5,
+  // A very bright cover would show its edge as a bright halo on the dark page,
+  // so its fade (both ways) is made steeper: from a brightness of BRIGHT_FROM
+  // (its outer band's, 0..1) up to BRIGHT_FULL it narrows to STEEP_SCALE of
+  // the width above, the edge itself staying about half solid.
+  // The more see-through it is set (the lower the Visibility), the further out
+  // it reaches: the outer fade is (1 + FADE_MORE * transparency) times as long
+  // (transparency = 1 - Visibility), the picture made with room for the most.
+  FADE_MORE: 0.75,
+  BRIGHT_BAND: 0.05,
+  BRIGHT_FROM: 0.55,
+  BRIGHT_FULL: 0.8,
+  STEEP_SCALE: 0.4,
+  // The baked picture (all against the cover's width): the cover at most
+  // COVER_PIXELS wide (the big covers' size), the blur beginning BLUR_IN
+  // inside its edge, as strong as BLUR_EDGE at the edge (a bell curve's
+  // width) and BLUR_END from BLUR_OUT outside it on.
+  COVER_PIXELS: 512,
+  COVER_BLUR_IN: 0.044,
+  COVER_BLUR_EDGE: 0.021,
+  COVER_BLUR_END: 0.0651,
+  COVER_BLUR_OUT: 0.11,
+  BAKE_MS: 3,       // of making it, then the page's turn again
+  BAKE_STEP: 60000, // pixels blurred in one part of making it (well under a millisecond)
+  // A plain frame round the artwork is left out when it is at most this wide
+  // on every side, one colour (each channel within FRAME_STEP of it, in
+  // FRAME_PLAIN of a row's pixels), and ends at once (FRAME_OVER of the row
+  // after it another colour).
+  COVER_FRAME: 0.08,
+  FRAME_STEP: 18,
+  FRAME_PLAIN: 0.95,
+  FRAME_OVER: 0.5,
 
   IDLE_FPS: 24,     // without a song they only drift, which needs no more
   // One puff: its strength in the middle, and how far the shine reaches, in
@@ -106,6 +179,10 @@ const Ambient = {
     { sat: 82, light: 47, size: 0.2, x: [0.35, 0.28, 131], y: [0.5, 0.35, 163], hueSwing: 16, cycle: 113 },
   ],
 
+  // From cover: how fast the clouds take a new cover's colours (ms; about
+  // three times this until they are there).
+  PALETTE_FADE_MS: 700,
+
   // The solid schemes: [hue, saturation, lightness], as the equalizer's.
   SOLID: {
     white: [0, 0, 78],
@@ -132,13 +209,17 @@ const Ambient = {
     this.time = Math.random() * 600;
     Store.onSettings((patch) => {
       if ('coverBgOn' in patch) this._wantCover();
+      if ('cloudsColors' in patch) this._wantPalette();
       if (['cloudsOn', 'cloudsIntensity', 'cloudsColors', 'cloudsAmount', 'coverBgOn', 'coverBgVisibility'].some((k) => k in patch)) this._draw();
     });
     Player.onChange(() => this._wantCover());
+    // A station in the bar: no song's cover (it comes back with the next song).
+    if (typeof Radio !== 'undefined') Radio.onChange(() => this._wantCover());
     Covers.onArrived((ids) => {
       if (!Player.currentId || (ids && !ids.includes(Player.currentId))) return;
-      // Asked again: the big one may be there now.
+      // Asked again: the big one may be there now (and the small one From cover reads).
       this.coverKey = '';
+      this.paletteKey = '';
       this._wantCover();
     });
     this._wantCover();
@@ -146,14 +227,36 @@ const Ambient = {
     if (!Store.away) this._start();
   },
 
+  /**
+   * The picture see-through where neither a cloud nor the cover is (true), or solid as usual: for what lies
+   * under it (the menu's background texture reaching over, menuBg.js). Says whether it is see-through now:
+   * only WebGL's picture can be (the canvas's own keeps too few steps of faint colour that way), and not
+   * before it has started.
+   */
+  seeThrough(on) {
+    const clear = !!on && !!this.gl;
+    if (clear !== this.clear) {
+      this.clear = clear;
+      this._draw();
+    }
+    return clear;
+  },
+
   /** The canvas's drawing made, and the frames started. */
   _start() {
     if (this.started) return;
     this.started = true;
     this.gl = this._webgl();
-    if (this.gl && this.coverImg && !this.gl.cover(this.coverImg)) this.coverImg = null;
+    if (this.gl && this.coverPic && !this.gl.cover(this.coverPic)) this.coverPic = null;
     this._layout();
     new ResizeObserver(() => this._layout()).observe(document.querySelector('.content'));
+    // Scrolling moves the list's column names, and with them the cover's room.
+    const pages = $('pages');
+    if (pages) {
+      pages.addEventListener('scroll', () => {
+        this.scrolled = true;
+      }, { passive: true });
+    }
     this.raf = requestAnimationFrame((t) => this._frame(t));
   },
 
@@ -192,7 +295,7 @@ const Ambient = {
   _webgl() {
     let gl = null;
     try {
-      gl = this.canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false });
+      gl = this.canvas.getContext('webgl2', { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: true });
     } catch {
       gl = null;
     }
@@ -257,13 +360,16 @@ ${src}`);
         }`, `
         in vec2 uv;
         uniform sampler2D clouds;              // their colour times how much they cover, and that
-        uniform sampler2D cover;
+        uniform sampler2D cover;               // the cover with its surround (baked)
+        uniform float pad;                     // the surround's width on each side, against the cover's
         uniform vec2 part;                     // how much of the target the screen covers (from its top left)
         uniform vec3 bg;
         uniform float screenH;
         uniform vec4 box;                      // the cover's left, top, size and corner radius (pixels, y down)
         uniform float coverAlpha;              // 0: no cover
-        uniform float fade;                    // how far outside the cover it fades out (pixels)
+        uniform vec2 fade;                     // how far inside the cover's edge it begins to thin, and how far outside it is gone (pixels)
+        uniform float bell;                    // how far down the bell curve it thins along is cut off
+        uniform float clear;                   // 1: see-through where neither a cloud nor the cover is (the menu's texture lies under it)
         out vec4 o;
         float hash12(vec2 p) {
           vec3 p3 = fract(vec3(p.xyx) * .1031);
@@ -272,17 +378,31 @@ ${src}`);
         }
         void main() {
           vec4 c = texture(clouds, vec2(uv.x * part.x, 1.0 - (1.0 - uv.y) * part.y));
-          vec3 base = bg;
+          // How solid the cover is here, and its colour.
+          float m = 0.0;
+          vec3 pic = bg;
           if (coverAlpha > 0.0) {
             vec2 px = vec2(gl_FragCoord.x, screenH - gl_FragCoord.y);
-            vec2 hs = vec2(box.z * 0.5);
-            vec2 d = abs(px - box.xy - hs) - hs + box.w;
-            float edge = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - box.w;
-            // Inside the cover whole; outside it fades away over fade pixels (its edge colours carried on).
-            float m = (1.0 - smoothstep(0.0, max(fade, 1.0), edge)) * coverAlpha;
-            base = mix(bg, texture(cover, (px - box.xy) / box.z).rgb, m);
+            // The cover's core (the cover drawn in by fade.x, its corners as round) shows whole. From
+            // there outwards it thins along a bell curve, through its edge, to nothing fade.y outside
+            // it (the baked surround): no edge to see, the picture comes out of the background.
+            vec2 d = abs(px - box.xy - vec2(box.z * 0.5)) - vec2(box.z * 0.5 - fade.x) + box.w;
+            float away = clamp((length(max(d, 0.0)) - box.w) / max(fade.x + fade.y, 1.0), 0.0, 1.0);
+            m = (exp(-bell * away * away) - exp(-bell)) / (1.0 - exp(-bell)) * coverAlpha;
+            pic = texture(cover, ((px - box.xy) / box.z + pad) / (1.0 + 2.0 * pad)).rgb;
           }
-          o = vec4(c.rgb + base * (1.0 - c.a) + (hash12(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+          float speckle = (hash12(gl_FragCoord.xy) - 0.5) / 255.0;
+          // Two layers: the background with the cover on it, and the clouds in front of that. The clouds
+          // are what they are over the plain background (laid over it), and the cover's own light is
+          // added whole: a cloud is as strong over the cover as beside it, and does not dim the cover.
+          if (clear < 0.5) {
+            o = vec4(c.rgb + bg * (1.0 - c.a) + m * (pic - bg) + speckle, 1.0);
+          } else {
+            // The same picture with the background left out: what is under the canvas shows by as much as
+            // neither cloud nor cover is there (the colour here is already times how solid it is).
+            float solid = min(1.0, c.a + m);
+            o = vec4(max(vec3(0.0), c.rgb + m * pic - bg * max(0.0, c.a + m - 1.0) + speckle * step(0.002, solid)), solid);
+          }
         }`);
     } catch (err) {
       console.warn(err);
@@ -293,12 +413,15 @@ ${src}`);
       falloff: gl.getUniformLocation(puffProg, 'falloff[0]'),
       clouds: gl.getUniformLocation(showProg, 'clouds'),
       cover: gl.getUniformLocation(showProg, 'cover'),
+      pad: gl.getUniformLocation(showProg, 'pad'),
       part: gl.getUniformLocation(showProg, 'part'),
       bg: gl.getUniformLocation(showProg, 'bg'),
       screenH: gl.getUniformLocation(showProg, 'screenH'),
       box: gl.getUniformLocation(showProg, 'box'),
       coverAlpha: gl.getUniformLocation(showProg, 'coverAlpha'),
       fade: gl.getUniformLocation(showProg, 'fade'),
+      bell: gl.getUniformLocation(showProg, 'bell'),
+      clear: gl.getUniformLocation(showProg, 'clear'),
     };
     gl.useProgram(puffProg);
     gl.uniform1fv(u.falloff, this.falloff.map(([, v]) => v));
@@ -326,20 +449,23 @@ ${src}`);
     let h = 1;
     const coverTex = gl.createTexture();
     let hasCover = false;
+    let pad = 0;
+    let scale = 1; // how much of the normal width of the fade the cover has (a bright one: steeper)
     return {
-      /** The cover's picture into its texture (with mipmaps); false when WebGL may not read it. */
-      cover: (img) => {
+      /** The baked cover ({ image, pad }) into its texture (with mipmaps); false when that fails. */
+      cover: (pic) => {
         gl.bindTexture(gl.TEXTURE_2D, coverTex);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
         try {
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, pic.image);
           hasCover = true;
         } catch {
           hasCover = false;
         }
-        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
         if (!hasCover) return false;
+        pad = pic.pad;
+        scale = pic.scale || 1;
         gl.generateMipmap(gl.TEXTURE_2D);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -370,15 +496,16 @@ ${src}`);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         target = { tex, fb, w: tw, h: th };
       },
-      /** n puffs, and the cover where box says ({ x, y, size }) at alpha (0: none). */
-      draw: (n, box, alpha) => {
+      /** n puffs, and the cover where box says ({ x, y, size }) at alpha (0: none); `clear`: see-through where neither is. */
+      draw: (n, box, alpha, clear) => {
         if (!target) return;
         const showCover = hasCover && !!box && alpha > 0;
         if (!n && !showCover) {
-          // The plain background, straight onto the screen.
+          // The plain background (or nothing at all), straight onto the screen.
           gl.bindFramebuffer(gl.FRAMEBUFFER, null);
           gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-          gl.clearColor(bg[0], bg[1], bg[2], 1);
+          if (clear) gl.clearColor(0, 0, 0, 0);
+          else gl.clearColor(bg[0], bg[1], bg[2], 1);
           gl.clear(gl.COLOR_BUFFER_BIT);
           return;
         }
@@ -427,7 +554,10 @@ ${src}`);
         gl.uniform1f(u.screenH, gl.drawingBufferHeight);
         if (showCover) gl.uniform4f(u.box, box.x, box.y, box.size, box.size * this.COVER_ROUND);
         gl.uniform1f(u.coverAlpha, showCover ? alpha : 0);
-        gl.uniform1f(u.fade, showCover ? this._fade(box, alpha) : 0);
+        gl.uniform1f(u.pad, pad);
+        gl.uniform2f(u.fade, showCover ? box.size * this.COVER_FADE_IN * scale : 0, showCover ? box.size * this.COVER_FADE * scale * this._reach(alpha) : 0);
+        gl.uniform1f(u.bell, this.FADE_BELL);
+        gl.uniform1f(u.clear, clear ? 1 : 0);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
       },
     };
@@ -493,20 +623,27 @@ ${src}`);
     this.raf = requestAnimationFrame((t) => this._frame(t));
     const dt = Math.min(100, Math.max(0, now - (this.lastFrame || now)));
     this.lastFrame = now;
-    // The cover's place: another page, a banner over the list.
-    if (this.coverImg && !Visualizer.shown && now - this.lastPlace >= this.PLACE_MS) {
+    // The cover's place: another page, a banner over the list (looked at now
+    // and then), the list scrolled (looked at with this frame, so it follows).
+    const scrolled = this.scrolled;
+    this.scrolled = false;
+    let moved = false;
+    if (this.coverPic && !Visualizer.shown && (scrolled || now - this.lastPlace >= this.PLACE_MS)) {
       this.lastPlace = now;
-      if (this._place()) this._draw();
+      moved = this._place();
     }
-    // Turned off in Settings: the plain background, drawn once by _draw.
-    if (Store.settings.cloudsOn === false) return;
+    // Turned off in Settings: the plain background, drawn once by _draw (and when the cover moved).
+    if (Store.settings.cloudsOn === false) {
+      if (moved) this._draw();
+      return;
+    }
     this._follow(dt);
     // Under the full-screen visualizer nobody would see them: they were
     // about half the GPU's work there, drawn for nothing.
     if (Visualizer.shown) return;
-    // With nothing playing and no pulse left to fade, fewer frames will do.
-    const lively = Equalizer.bass > 0 || this.pulse > 0.002;
-    if (!lively && now - this.lastDraw < 1000 / this.IDLE_FPS) return;
+    // With nothing playing and no pulse left to fade, fewer frames will do (a cover that moved is drawn at once).
+    const lively = Equalizer.bass > 0 || this.pulse > 0.002 || this.paletteMoving;
+    if (!moved && !lively && now - this.lastDraw < 1000 / this.IDLE_FPS) return;
     if (!this.frozen) this.time += (now - (this.lastDraw || now)) / 1000;
     this.lastDraw = now;
     this._draw();
@@ -530,38 +667,40 @@ ${src}`);
     if (!c || !this.started) return;
     const s = Store.settings;
     const puffs = s.cloudsOn === false ? 0 : this._puffs(c.width, c.height);
-    if (this.coverImg && !this.coverBox) this._place();
-    const box = this.coverImg ? this.coverBox : null;
+    if (this.coverPic && !this.coverBox) this._place();
+    const box = this.coverPic ? this.coverBox : null;
     const alpha = box && s.coverBgOn ? (Number(s.coverBgVisibility) || 0) / 100 : 0;
     if (this.gl) {
-      this.gl.draw(puffs, box, alpha);
+      this.gl.draw(puffs, box, alpha, this.clear);
       return;
     }
     const out = c.getContext('2d');
     out.fillStyle = this.background;
     out.fillRect(0, 0, c.width, c.height);
-    if (alpha > 0) {
-      // The cover with its edges carried on outwards, masked by a blurred rounded rectangle (the fade).
-      const fade = Math.max(1, Math.ceil(this._fade(box, alpha)));
-      const full = box.size + fade * 2;
-      const piece = document.createElement('canvas');
-      piece.width = full;
-      piece.height = full;
-      const p = piece.getContext('2d');
-      // Under it the cover stretched and blurred: its edge colours, not a second picture.
-      p.filter = `blur(${fade / 2}px)`;
-      p.drawImage(this.coverImg, 0, 0, full, full);
-      p.filter = 'none';
-      p.drawImage(this.coverImg, fade, fade, box.size, box.size);
-      p.globalCompositeOperation = 'destination-in';
-      p.filter = `blur(${fade / 4}px)`;
-      p.beginPath();
-      p.roundRect(fade / 2, fade / 2, full - fade, full - fade, box.size * this.COVER_ROUND + fade / 2);
-      p.fill();
+    // Two layers, as the WebGL way has them: the clouds are laid over the plain background and the
+    // cover's own light is added whole, so a cloud is as strong over the cover as beside it. Here in
+    // three steps: the background taken away where the cover goes (as much as the cover is solid),
+    // the clouds, then the cover's light added (the baked cover with its fade in it, the surround
+    // reaching past the box).
+    const piece = alpha > 0 ? this._piece(alpha) : null;
+    const more = piece ? box.size * this.coverPic.pad : 0;
+    if (piece) {
       out.globalAlpha = alpha;
-      out.drawImage(piece, box.x - fade, box.y - fade);
+      out.drawImage(piece.mask, box.x - more, box.y - more, box.size + more * 2, box.size + more * 2);
       out.globalAlpha = 1;
     }
+    this._cloudsOnto(out, puffs);
+    if (piece) {
+      out.globalAlpha = alpha;
+      out.globalCompositeOperation = 'lighter';
+      out.drawImage(piece.canvas, box.x - more, box.y - more, box.size + more * 2, box.size + more * 2);
+      out.globalCompositeOperation = 'source-over';
+      out.globalAlpha = 1;
+    }
+  },
+
+  /** The canvas way's clouds: the first `puffs` of puffData, each a round gradient laid over what is there. */
+  _cloudsOnto(out, puffs) {
     const P = this.puffData;
     for (let k = 0; k < puffs; k += 1) {
       const q = k * 7;
@@ -578,60 +717,510 @@ ${src}`);
   },
 
   /**
+   * The canvas way's pictures: { canvas, mask }, the baked cover with its
+   * fade in it (how solid each pixel is, as the WebGL way works it out while
+   * drawing) and the same shape in black (what takes the background away
+   * under it), made once for a cover, not for every frame.
+   */
+  _piece(alpha) {
+    const pic = this.coverPic;
+    const was = this.coverPiece;
+    const reach = this._reach(alpha);
+    if (was && was.pic === pic && Math.abs(was.reach - reach) < 0.005) return was;
+    const P = pic.image.width;
+    const S = Math.round(P / (1 + 2 * pic.pad));
+    const M = (P - S) / 2;
+    const data = new Uint8ClampedArray(pic.image.data);
+    for (let y = 0; y < P; y += 1) {
+      for (let x = 0; x < P; x += 1) {
+        const i = y * P + x;
+        // In whole steps with a speckle of one step (no bands in the long faint end).
+        let hash = Math.imul(i + 1, 0x9e3779b1);
+        hash = Math.imul(hash ^ (hash >>> 15), 0x85ebca77);
+        data[i * 4 + 3] = 255 * this._solid(x + 0.5 - M, y + 0.5 - M, S, pic.scale || 1, reach) + ((hash ^ (hash >>> 13)) >>> 0) / 4294967296 - 0.5;
+      }
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = P;
+    canvas.height = P;
+    canvas.getContext('2d').putImageData(new ImageData(data, P, P), 0, 0);
+    const mask = document.createElement('canvas');
+    mask.width = P;
+    mask.height = P;
+    const shape = mask.getContext('2d');
+    shape.drawImage(canvas, 0, 0);
+    shape.globalCompositeOperation = 'source-in';
+    shape.fillStyle = '#000';
+    shape.fillRect(0, 0, P, P);
+    this.coverPiece = { pic, canvas, mask, reach };
+    return this.coverPiece;
+  },
+
+  /**
    * Show Cover as background: the playing song's big cover loaded (the
-   * thumbnail standing in until it is here), or none; the one shown stays
-   * until the next has loaded. Drawn once it is.
+   * thumbnail standing in until it is here) and baked with its surround, or
+   * none; the one shown stays until the next is ready. Drawn once it is.
    */
   _wantCover() {
+    // The clouds' From cover follows the same song (each its own picture).
+    this._wantPalette();
     const s = Store.settings;
-    const id = Player.currentId;
-    const song = s.coverBgOn && !Store.phone && id ? Store.song(id) || (Player.remote ? { ...Player.remote.state, id } : null) : null;
+    const radio = typeof Radio !== 'undefined' && Radio.owns();
+    const id = radio ? null : Player.currentId;
+    const song = s.coverBgOn && id ? Store.song(id) || (Player.remote ? { ...Player.remote.state, id } : null) : null;
     const list = song ? Covers.candidates(song, 'big') : [];
     const key = list.length ? `${id}|${list[0]}` : '';
     if (key === this.coverKey) return;
     this.coverKey = key;
+    // A cover still being baked is no longer the one wanted.
+    this.coverJob = null;
+    const none = () => {
+      if (!this.coverPic) return;
+      this.coverPic = null;
+      this.coverPiece = null;
+      this._draw();
+    };
     if (!key) {
-      if (this.coverImg) {
-        this.coverImg = null;
-        this._draw();
-      }
+      none();
       return;
     }
     const img = new Image();
     let at = 0;
     img.onload = () => {
       if (this.coverKey !== key) return;
-      this.coverImg = img;
-      if (this.gl && !this.gl.cover(img)) this.coverImg = null;
-      this._place();
-      this._draw();
+      const job = {};
+      this.coverJob = job;
+      this._bake(img, () => this.coverJob === job, (pic) => {
+        this.coverJob = null;
+        if (!pic || (this.gl && !this.gl.cover(pic))) {
+          none();
+          return;
+        }
+        this.coverPic = pic;
+        this.coverPiece = null;
+        this._place();
+        this._draw();
+      });
     };
     img.onerror = () => {
       if (this.coverKey !== key) return;
       if (at === 0) Covers.askBig(song);
       at += 1;
       if (at < list.length) img.src = list[at];
-      else if (this.coverImg) {
-        this.coverImg = null;
-        this._draw();
-      }
+      else none();
     };
     // A Flow Server's cover on a page of another address (the web player): asked for as WebGL may read it.
     if (/^https?:/i.test(list[0])) img.crossOrigin = 'anonymous';
     img.src = list[0];
   },
 
-  /** How far outside the cover's edge it fades out (pixels): COVER_FADE of its width at 100% Visibility, less with less. */
-  _fade(box, alpha) {
-    return box.size * this.COVER_FADE * alpha;
+  /**
+   * From cover (5.1.5): the playing song's cover's colours, taken from its
+   * small picture once it has loaded. None to be had: the last ones stay.
+   */
+  _wantPalette() {
+    if (Store.settings.cloudsColors !== 'cover') {
+      this.paletteKey = '';
+      return;
+    }
+    const radio = typeof Radio !== 'undefined' && Radio.owns();
+    const id = radio ? null : Player.currentId;
+    const song = id ? Store.song(id) || (Player.remote ? { ...Player.remote.state, id } : null) : null;
+    const list = song ? Covers.candidates(song, 'small') : [];
+    const key = list.length ? `${id}|${list[0]}` : '';
+    if (!key || key === this.paletteKey) return;
+    this.paletteKey = key;
+    const img = new Image();
+    let at = 0;
+    img.onload = () => {
+      if (this.paletteKey !== key) return;
+      try {
+        const S = 24;
+        const c = document.createElement('canvas');
+        c.width = S;
+        c.height = S;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, S, S);
+        const found = CoverColors.palette(ctx.getImageData(0, 0, S, S).data);
+        if (!found.length) return;
+        this.palette = found;
+        this.paletteMoving = true;
+        this._draw();
+      } catch {
+        // A picture that may not be read (another address without CORS): the colours stay.
+      }
+    };
+    img.onerror = () => {
+      if (this.paletteKey !== key) return;
+      at += 1;
+      if (at < list.length) img.src = list[at];
+      // Not here yet (fetched for the player bar): tried again when it arrives.
+      else this.paletteKey = '';
+    };
+    if (/^https?:/i.test(list[0])) img.crossOrigin = 'anonymous';
+    img.src = list[0];
+  },
+
+  /**
+   * How solid the cover is at a point (1 whole, 0 gone), x and y from its top
+   * left corner in the units of `size`, its width: whole in its core (the
+   * cover drawn in by COVER_FADE_IN, its corners as round), thinning from
+   * there outwards along a bell curve, to nothing COVER_FADE outside its
+   * edge. The same the WebGL way works out for each pixel while drawing.
+   */
+  _solid(x, y, size, scale = 1, reach = 1) {
+    const away = this._away(x, y, size, scale, reach);
+    const end = Math.exp(-this.FADE_BELL);
+    return (Math.exp(-this.FADE_BELL * away * away) - end) / (1 - end);
+  },
+
+  /** How far along its fade a point is: 0 in the cover's core, 1 where nothing of it is seen any more. */
+  _away(x, y, size, scale = 1, reach = 1) {
+    const round = size * this.COVER_ROUND;
+    const half = size / 2;
+    const fadeIn = size * this.COVER_FADE_IN * scale;
+    const ax = Math.abs(x - half) - half + fadeIn + round;
+    const ay = Math.abs(y - half) - half + fadeIn + round;
+    const ox = ax > 0 ? ax : 0;
+    const oy = ay > 0 ? ay : 0;
+    return Math.min(1, Math.max(0, (Math.sqrt(ox * ox + oy * oy) - round) / Math.max(size * (this.COVER_FADE_IN + this.COVER_FADE * reach) * scale, 1e-6)));
+  },
+
+  /** How many times as far the outer fade reaches at this opacity (0..1; the more see-through, the further): 1 to 1 + FADE_MORE. */
+  _reach(alpha) {
+    return 1 + this.FADE_MORE * (1 - Math.min(1, Math.max(0, alpha)));
+  },
+
+  /**
+   * How much of the normal width of the fade a cover gets (1, down to
+   * STEEP_SCALE): by how bright its outer band is (a cover's pixels, S x S,
+   * RGBA), the average of the band's brightness on the sRGB values.
+   */
+  _fadeScale(src, S) {
+    const band = Math.max(1, Math.round(S * this.BRIGHT_BAND));
+    let sum = 0;
+    let n = 0;
+    for (let y = 0; y < S; y += 1) {
+      const edgeRow = y < band || y >= S - band;
+      for (let x = 0; x < S; x += 1) {
+        if (!edgeRow && x === band) x = Math.max(band, S - band);
+        const q = (y * S + x) * 4;
+        sum += 0.2126 * src[q] + 0.7152 * src[q + 1] + 0.0722 * src[q + 2];
+        n += 1;
+      }
+    }
+    const bright = n ? sum / n / 255 : 0;
+    const t = Math.min(1, Math.max(0, (bright - this.BRIGHT_FROM) / (this.BRIGHT_FULL - this.BRIGHT_FROM)));
+    return 1 + (this.STEEP_SCALE - 1) * t * t * (3 - 2 * t);
+  },
+
+  /**
+   * How far a point lies outside the cover's rounded square (below 0:
+   * inside), in the units of `size`, the cover's width; x and y from the
+   * cover's top left corner.
+   */
+  _edge(x, y, size) {
+    const round = size * this.COVER_ROUND;
+    const half = size / 2;
+    const ax = Math.abs(x - half) - half + round;
+    const ay = Math.abs(y - half) - half + round;
+    const ox = ax > 0 ? ax : 0;
+    const oy = ay > 0 ? ay : 0;
+    return Math.sqrt(ox * ox + oy * oy) + Math.min(Math.max(ax, ay), 0) - round;
+  },
+
+  /**
+   * The cover with its surround, made once when a cover has loaded, in small
+   * parts (BAKE_MS of work, then the page's turn again, so no frame of the
+   * equalizer is lost over it): done({ image, pad }) at the end, image an
+   * ImageData with the cover in its middle and the surround `pad` of the
+   * cover's width on each side; done(null) when the page may not read the
+   * picture. Given up without a word once still() says no (another cover is
+   * wanted by then).
+   */
+  _bake(img, still, done) {
+    const parts = this._bakeParts(img);
+    const turn = () => {
+      if (!still()) return;
+      const end = performance.now() + this.BAKE_MS;
+      let part;
+      try {
+        do part = parts.next(); while (!part.done && performance.now() < end);
+      } catch {
+        done(null);
+        return;
+      }
+      if (part.done) done(part.value);
+      else setTimeout(turn, 0);
+    };
+    turn();
+  },
+
+  /**
+   * The parts of _bake, one after another: the cover's pixels read (at most
+   * COVER_PIXELS wide, on black), a plain frame round its artwork left out,
+   * the surround made. Returns { image, pad }, or null for an empty picture.
+   */
+  *_bakeParts(img) {
+    const w = img.naturalWidth || 0;
+    const h = img.naturalHeight || 0;
+    if (!w || !h) return null;
+    const S = Math.max(8, Math.min(this.COVER_PIXELS, Math.max(w, h)));
+    const M = Math.max(1, Math.round(S * this.COVER_FADE * (1 + this.FADE_MORE)));
+    const canvas = document.createElement('canvas');
+    canvas.width = S;
+    canvas.height = S;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingQuality = 'high';
+    const read = (sx, sy, sw, sh) => {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, S, S);
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, S, S);
+      return ctx.getImageData(0, 0, S, S).data;
+    };
+    let src = read(0, 0, w, h);
+    const cut = this._frameOf(src, S);
+    if (cut) {
+      const kx = w / S;
+      const ky = h / S;
+      src = read(cut[0] * kx, cut[1] * ky, w - (cut[0] + cut[2]) * kx, h - (cut[1] + cut[3]) * ky);
+    }
+    yield;
+    const scale = this._fadeScale(src, S);
+    const pixels = yield* this._surroundParts(src, S, M);
+    const P = S + 2 * M;
+    return { image: new ImageData(pixels, P, P), pad: M / S, scale };
+  },
+
+  /**
+   * A plain frame round the artwork in a cover's pixels (S x S, RGBA): how
+   * many rows to leave out at the left, top, right and bottom, or null
+   * without one. A frame is the same single colour on all four sides from
+   * the edge inwards, at most COVER_FRAME wide, and ends at once along most
+   * of each side. A plain background does not end like that (the artwork
+   * comes in bit by bit), so it stays.
+   */
+  _frameOf(src, S) {
+    const most = Math.floor(S * this.COVER_FRAME);
+    if (most < 1) return null;
+    const step = this.FRAME_STEP;
+    // The pixel k rows in from a side, i along it.
+    const sides = [
+      (k, i) => (i * S + k) * 4,
+      (k, i) => (k * S + i) * 4,
+      (k, i) => (i * S + S - 1 - k) * 4,
+      (k, i) => ((S - 1 - k) * S + i) * 4,
+    ];
+    let colour = null;
+    const cut = [];
+    for (const px of sides) {
+      // The frame's colour: the outermost row's, the same on every side.
+      const c = [0, 0, 0];
+      for (let i = 0; i < S; i += 1) {
+        const q = px(0, i);
+        c[0] += src[q];
+        c[1] += src[q + 1];
+        c[2] += src[q + 2];
+      }
+      for (let j = 0; j < 3; j += 1) c[j] /= S;
+      if (!colour) colour = c;
+      else if (c.some((v, j) => Math.abs(v - colour[j]) > step)) return null;
+      // How much of row k has that colour.
+      const share = (k) => {
+        let n = 0;
+        for (let i = 0; i < S; i += 1) {
+          const q = px(k, i);
+          if (Math.abs(src[q] - colour[0]) <= step && Math.abs(src[q + 1] - colour[1]) <= step && Math.abs(src[q + 2] - colour[2]) <= step) n += 1;
+        }
+        return n / S;
+      };
+      let k = 0;
+      while (k <= most && share(k) >= this.FRAME_PLAIN) k += 1;
+      if (k < 1 || k > most || share(k + 1) > this.FRAME_OVER) return null;
+      // The row it ends in is half frame, half artwork: left out as well.
+      cut.push(k + 1);
+    }
+    return cut;
+  },
+
+  /**
+   * The baked picture's pixels (RGBA, S + 2 M wide) from a cover's (S x S,
+   * RGBA): the cover in the middle, M more on each side, where it goes on
+   * mirrored at its edge. From COVER_BLUR_IN inside the cover's rounded edge
+   * outwards each pixel is blurred, the more the further out, so the cover's
+   * rim softens and the surround is a blur of the cover's outer band.
+   *
+   * The blur: three rounds of a square average whose reach is each pixel's
+   * own (together a bell curve of the width wanted there), each average four
+   * reads from the sums of all pixels above and left of a point; a reach
+   * between two whole numbers is the two averages mixed.
+   */
+  _surround(src, S, M) {
+    const parts = this._surroundParts(src, S, M);
+    for (;;) {
+      const part = parts.next();
+      if (part.done) return part.value;
+    }
+  },
+
+  /** _surround in parts (a millisecond or two each), the pixels returned at the end. */
+  *_surroundParts(src, S, M) {
+    const P = S + 2 * M;
+    const out = this._mirrored(src, S, M);
+    yield;
+    const rim = yield* this._rimParts(S, M);
+    const sums = new Float64Array((P + 1) * (P + 1));
+    const val = new Float32Array(P * P);
+    for (let ch = 0; ch < 3; ch += 1) {
+      this._channel(out, val, ch);
+      for (let round = 0; round < 3; round += 1) {
+        this._sums(val, sums, P);
+        yield;
+        // The sums stay as they are for the round, so its averages can be taken a stretch at a time.
+        for (let from = 0; from < rim.count; from += this.BAKE_STEP) {
+          this._averages(val, sums, rim, P, from, Math.min(rim.count, from + this.BAKE_STEP));
+          yield;
+        }
+      }
+      this._settle(out, val, rim, ch);
+    }
+    return out;
+  },
+
+  /** A cover's pixels (S x S) in the middle of the baked picture's (S + 2 M wide), going on mirrored at its edges. */
+  _mirrored(src, S, M) {
+    const P = S + 2 * M;
+    const out = new Uint8ClampedArray(P * P * 4);
+    const from = new Int32Array(P);
+    for (let i = 0; i < P; i += 1) {
+      const s = i - M;
+      from[i] = Math.min(S - 1, Math.max(0, s < 0 ? -1 - s : s >= S ? 2 * S - 1 - s : s));
+    }
+    for (let y = 0; y < P; y += 1) {
+      const row = from[y] * S;
+      for (let x = 0; x < P; x += 1) {
+        const q = (row + from[x]) * 4;
+        const o = (y * P + x) * 4;
+        out[o] = src[q];
+        out[o + 1] = src[q + 1];
+        out[o + 2] = src[q + 2];
+        out[o + 3] = 255;
+      }
+    }
+    return out;
+  },
+
+  /**
+   * The baked picture's pixels that are blurred: { count, at (which pixel),
+   * n and f (its average's reach: whole, and the share of the next one up) }.
+   * The bell curve's width wanted at a pixel: none COVER_BLUR_IN inside the
+   * cover's edge, rising gently at first to COVER_BLUR_EDGE at the edge, on
+   * to COVER_BLUR_END at COVER_BLUR_OUT outside it, and as strong from there on.
+   * Where nothing of the cover is seen any more (past the far end of its
+   * fade, in the surround's corners) nothing is blurred. In parts, a band of
+   * rows each.
+   */
+  *_rimParts(S, M) {
+    const P = S + 2 * M;
+    const inset = S * this.COVER_BLUR_IN;
+    const atEdge = S * this.COVER_BLUR_EDGE;
+    const atEnd = S * this.COVER_BLUR_END;
+    const reach = Math.max(1, S * this.COVER_BLUR_OUT);
+    // Rows in the middle are looked at near their two ends alone: further in than `deep` nothing is blurred
+    // (in the rounded corners the blur reaches a little deeper than along the sides).
+    const deep = Math.min(P >> 1, M + Math.ceil(inset + 0.3 * S * this.COVER_ROUND) + 1);
+    const most = P * P - (P - 2 * deep) * (P - 2 * deep);
+    const at = new Uint32Array(most);
+    const n = new Uint16Array(most);
+    const f = new Float32Array(most);
+    let count = 0;
+    for (let y = 0; y < P; y += 1) {
+      if (y && y % 48 === 0) yield;
+      const middle = y >= deep && y < P - deep;
+      for (let x = 0; x < P; x += 1) {
+        if (middle && x === deep) x = P - deep;
+        const d = this._edge(x + 0.5 - M, y + 0.5 - M, S);
+        if (d <= -inset || (d > 0 && this._away(x + 0.5 - M, y + 0.5 - M, S, 1, 1 + this.FADE_MORE) >= 1)) continue;
+        const u = (d + inset) / inset;
+        const sigma = d < 0 ? atEdge * u * u : atEdge + (atEnd - atEdge) * Math.min(1, d / reach);
+        const v = sigma * sigma;
+        if (v < 0.02) continue;
+        // Three averages over 2 k + 1 pixels are as wide as a bell curve whose width squared is k (k + 1).
+        const k = Math.floor((Math.sqrt(1 + 4 * v) - 1) / 2);
+        at[count] = y * P + x;
+        n[count] = k;
+        f[count] = (v - k * (k + 1)) / (2 * (k + 1));
+        count += 1;
+      }
+    }
+    return { count, at, n, f };
+  },
+
+  /** One colour (0, 1, 2) of the picture's pixels into val. */
+  _channel(out, val, ch) {
+    for (let i = 0, o = ch; i < val.length; i += 1, o += 4) val[i] = out[o];
+  },
+
+  /** sums (P + 1 wide, its first row and column 0): at each point the sum of val's pixels above and left of it. */
+  _sums(val, sums, P) {
+    const W = P + 1;
+    for (let y = 0; y < P; y += 1) {
+      let run = 0;
+      const a = (y + 1) * W + 1;
+      const b = y * W + 1;
+      const r = y * P;
+      for (let x = 0; x < P; x += 1) {
+        run += val[r + x];
+        sums[a + x] = sums[b + x] + run;
+      }
+    }
+  },
+
+  /** Each of the rim's pixels from `from` up to `to` in val becomes the average of the square round it (as far as the picture goes), read from sums. */
+  _averages(val, sums, rim, P, from, to) {
+    const W = P + 1;
+    const { at, n, f } = rim;
+    for (let k = from; k < to; k += 1) {
+      const i = at[k];
+      const y = (i / P) | 0;
+      const x = i - y * P;
+      const reach = n[k];
+      const more = f[k];
+      let x0 = x - reach < 0 ? 0 : x - reach;
+      let x1 = x + reach + 1 > P ? P : x + reach + 1;
+      let y0 = y - reach < 0 ? 0 : y - reach;
+      let y1 = y + reach + 1 > P ? P : y + reach + 1;
+      let v = (sums[y1 * W + x1] - sums[y0 * W + x1] - sums[y1 * W + x0] + sums[y0 * W + x0]) / ((x1 - x0) * (y1 - y0));
+      if (more > 0) {
+        if (x0 > 0) x0 -= 1;
+        if (x1 < P) x1 += 1;
+        if (y0 > 0) y0 -= 1;
+        if (y1 < P) y1 += 1;
+        v += more * ((sums[y1 * W + x1] - sums[y0 * W + x1] - sums[y1 * W + x0] + sums[y0 * W + x0]) / ((x1 - x0) * (y1 - y0)) - v);
+      }
+      val[i] = v;
+    }
+  },
+
+  /** The rim's blurred pixels of one colour back into the picture, in whole steps with a speckle of one step (no bands in the wide soft fades). */
+  _settle(out, val, rim, ch) {
+    const { count, at } = rim;
+    for (let k = 0; k < count; k += 1) {
+      const i = at[k];
+      let hash = Math.imul(i * 3 + ch + 1, 0x9e3779b1);
+      hash = Math.imul(hash ^ (hash >>> 15), 0x85ebca77);
+      out[i * 4 + ch] = val[i] + ((hash ^ (hash >>> 13)) >>> 0) / 4294967296 - 0.5;
+    }
   },
 
   /**
    * Where the cover goes, in the canvas's pixels: in the middle of the room
-   * between the bottom of the shown page's column names (where they stand
-   * unscrolled; a page without a list from its top) and the player bar,
-   * COVER_SHARE as tall as that room, never wider than the list. True when
-   * that moved.
+   * between the bottom of the shown page's column names and the player bar,
+   * COVER_SHARE as tall as that room, never wider than the list. The column
+   * names where they are now: under a banner while the page is at its top,
+   * at the top of the page once the banner is scrolled away (where they
+   * stay), so the cover is in the middle of what shows of the list. A page
+   * without a list: from its top. True when that moved.
    */
   _place() {
     const content = document.querySelector('.content');
@@ -649,15 +1238,19 @@ ${src}`);
     if (th && th.offsetParent) {
       const tr = th.closest('table').getBoundingClientRect();
       const rest = tr.top + pages.scrollTop - cr.top + th.offsetHeight;
-      // Far down the page (a list under other things) it is not the list's head.
+      // Far down the page (a list under other things) it is not the list's head:
+      // told by where it stands unscrolled, so scrolling never changes that.
       if (rest > top && rest < (top + bottom) / 2) {
-        top = rest;
+        // Scrolled, the names have moved up, at most to the top of the page.
+        top = Math.max(top, Math.min(rest, th.getBoundingClientRect().bottom - cr.top));
         left = tr.left - cr.left;
         width = tr.width;
       }
     }
     const room = Math.max(0, bottom - top);
-    const size = Math.max(1, Math.round(Math.min(room * this.COVER_SHARE, width)));
+    // A phone's list is narrower than it is tall: there the cover is COVER_SHARE of the narrower
+    // side, so its fade shows at the sides too instead of the cover filling the width.
+    const size = Math.max(1, Math.round(Store.phone ? Math.min(room, width) * this.COVER_SHARE : Math.min(room * this.COVER_SHARE, width)));
     const box = { x: Math.round(left + (width - size) / 2), y: Math.round(top + (room - size) / 2), size };
     const was = this.coverBox;
     this.coverBox = box;
@@ -682,6 +1275,13 @@ ${src}`);
     const intensity = (s.cloudsIntensity || 50) / 50;
     const at = ([centre, reach, period], phase) => centre + reach * Math.sin((tau * t) / period + phase);
     const solid = this.SOLID[s.cloudsColors] || null;
+    // From cover, once a cover's colours are here: each cloud moves towards
+    // its colour by the time since the last frame.
+    const fromCover = s.cloudsColors === 'cover' && this.palette ? this.palette : null;
+    const nowMs = performance.now();
+    const step = this.frozen || !this.paletteAt ? 1 : 1 - Math.exp(-Math.min(1000, nowMs - this.paletteAt) / this.PALETTE_FADE_MS);
+    this.paletteAt = nowMs;
+    let moving = false;
     const amount = Number.isFinite(s.cloudsAmount) ? s.cloudsAmount : 50;
     const count = Math.round((this.CLOUDS.length * amount) / 100);
     if (!this.puffData) {
@@ -701,7 +1301,8 @@ ${src}`);
         return;
       }
       // Rainbow: a new colour each time it comes back.
-      if (cl.away || cl.hue == null) {
+      const back = cl.away || cl.hue == null;
+      if (back) {
         cl.hue = Math.random() * 360;
         cl.away = false;
       }
@@ -709,11 +1310,34 @@ ${src}`);
       const y = at(cl.y, i * 2.3 + 1) * h;
       // Growing as it comes, shrinking as it goes.
       const r = cl.size * side * swell * (0.7 + 0.3 * here);
-      const hue = solid ? solid[0] : Number((cl.hue + cl.hueSwing * Math.sin((tau * t) / 211 + i)).toFixed(1));
-      const sat = solid ? solid[1] : cl.sat;
-      const light = solid ? solid[2] : cl.light;
-      const colour = `hsla(${solid ? hue : hue.toFixed(1)}, ${sat}%, ${light}%, `;
-      const rgb = this._rgb(hue, sat, light);
+      let hue = solid ? solid[0] : Number((cl.hue + cl.hueSwing * Math.sin((tau * t) / 211 + i)).toFixed(1));
+      let sat = solid ? solid[1] : cl.sat;
+      let light = solid ? solid[2] : cl.light;
+      let colour;
+      let rgb;
+      if (fromCover) {
+        const [ch, cs, cl2] = CoverColors.forCloud(fromCover[i % fromCover.length], cl.light);
+        // A little of Rainbow's slow swing, so a one-colour cover is not one flat colour.
+        hue = (ch + 0.4 * cl.hueSwing * Math.sin((tau * t) / 211 + i) + 360) % 360;
+        sat = cs;
+        light = cl2;
+        const want = this._rgb(hue, sat, light);
+        // New, or back from being away: in the cover's colour at once.
+        if (!cl.rgbNow || back) cl.rgbNow = [want[0], want[1], want[2]];
+        for (let k = 0; k < 3; k += 1) {
+          const d = want[k] - cl.rgbNow[k];
+          // Still on its way while more than about 5 steps of 255 off.
+          if (Math.abs(d) > 0.02) moving = true;
+          cl.rgbNow[k] += d * step;
+        }
+        rgb = cl.rgbNow;
+        colour = `rgba(${Math.round(rgb[0] * 255)}, ${Math.round(rgb[1] * 255)}, ${Math.round(rgb[2] * 255)}, `;
+      } else {
+        colour = `hsla(${solid ? hue : hue.toFixed(1)}, ${sat}%, ${light}%, `;
+        rgb = this._rgb(hue, sat, light);
+        // What From cover turns from, when it is picked.
+        cl.rgbNow = [rgb[0], rgb[1], rgb[2]];
+      }
       const strength = Math.min(1, this.PUFF_ALPHA * intensity * here * brighter);
 
       for (const p of cl.puffs) {
@@ -730,6 +1354,7 @@ ${src}`);
         n += 1;
       }
     });
+    this.paletteMoving = moving;
     return n;
   },
 

@@ -105,3 +105,47 @@ test('a list of several parts (a group\'s mix, 4.5.2) is shuffled by its parts: 
   q2.start('pl', ['a', 'b', 'c']);
   assert.equal(q2.currentId, 'a');
 });
+
+test('song radio: the song first, alike songs after, its artist at most a third, no artist twice in a row', () => {
+  const lib = [...LIB];
+  for (let i = 0; i < 20; i += 1) lib.push(song(`moby${i}`, 'Moby', { genre: 'Electronic' }));
+  for (let i = 0; i < 20; i += 1) lib.push(song(`elec${i}`, `Artist ${i}`, { genre: 'Electronic' }));
+  const ids = AutoDJ.radio(lib, { songId: 'porcelain' }, 30, 'a');
+  assert.equal(ids[0], 'porcelain');
+  assert.equal(new Set(ids).size, ids.length);
+  assert.ok(ids.length <= 30);
+  const byId = new Map(lib.map((s) => [s.id, s]));
+  const moby = ids.filter((id) => byId.get(id).artist === 'Moby').length;
+  assert.ok(moby - 1 <= Math.round(29 / 3), `Moby ${moby}`);
+  for (let i = 1; i < ids.length; i += 1) assert.notEqual(byId.get(ids[i]).artist, byId.get(ids[i - 1]).artist, ids.join(','));
+  assert.ok(!ids.includes('numb'), 'nothing alike');
+  // Another start, another mix of the same songs.
+  const again = AutoDJ.radio(lib, { songId: 'porcelain' }, 30, 'b');
+  assert.notDeepEqual(again, ids);
+  assert.deepEqual(AutoDJ.radio(lib, { songId: 'porcelain' }, 30, 'a'), ids);
+});
+
+test('artist radio: their songs (a duet too) and songs of their genre; nothing for an unknown artist', () => {
+  const ids = AutoDJ.radio(LIB, { artist: 'massive attack' }, 10, 'x');
+  assert.ok(ids.includes('teardrop') && ids.includes('angel'));
+  assert.ok(ids.includes('roads'), 'the same genre');
+  assert.ok(!ids.includes('glory'), 'skipped early more than heard');
+  assert.ok(!ids.includes('numb') && !ids.includes('porcelain'));
+  assert.deepEqual(AutoDJ.radio(LIB, { artist: 'Nobody' }), []);
+  assert.deepEqual(AutoDJ.radio(LIB, { songId: 'missing' }), []);
+});
+
+test('radio: a song the library has twice comes once, and a rare genre finds its neighbours through Info', () => {
+  const lib = [
+    song('seed', 'Hard One', { genre: 'Hardstyle', subGenre: 'Hands Up' }),
+    song('mine2', 'Hard One', { genre: 'Hardstyle' }),
+    song('dup1', 'Twice', { title: 'Monster', genre: 'Hardstyle' }),
+    song('dup2', 'Twice', { title: 'Monster', genre: 'Hardstyle' }),
+    song('hands', 'Dancer', { genre: 'Dance', subGenre: 'Hands Up' }),
+    song('pop', 'Singer', { genre: 'Pop', subGenre: 'Ballad' }),
+  ];
+  const ids = AutoDJ.radio(lib, { songId: 'seed' }, 10, 'z');
+  assert.equal(ids.filter((id) => id === 'dup1' || id === 'dup2').length, 1);
+  assert.ok(ids.includes('hands'), 'Dance with the Info Hands Up');
+  assert.ok(!ids.includes('pop'));
+});

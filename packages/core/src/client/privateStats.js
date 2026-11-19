@@ -6,11 +6,12 @@
 // files; never sent anywhere. Shared by the Flow apps; no Node.
 //
 //   { device, since, seconds, listens, months, days, sessions, run, late,
-//     longest, added, songs }
+//     longest, radio, added, songs }
 //
 //   device   this install's id (settings.clientId), fixed once written
 //   since    when Private started (ms): its "Created at"
-//   seconds ... longest   as a library owner's statistics (listening.js)
+//   seconds ... radio     as a library owner's statistics (listening.js;
+//                         radio: Internet Radio, 5.1)
 //   added    songs this device put into Flow: downloaded, imported, saved
 //            (a song's Finish), approved from a Download (Server); not songs
 //            found by scanning a folder
@@ -19,7 +20,7 @@
 //            differs between the servers and Local Files)
 
 const {
-  cleanStatistics, copyStatistics, recordStatistics, LISTEN_SECONDS,
+  cleanStatistics, copyStatistics, recordStatistics, recordRadio: countRadio, LISTEN_SECONDS,
 } = require('../listening');
 
 const FILE = 'private-statistics.json';
@@ -60,6 +61,7 @@ function cleanPrivate(raw, now = Date.now()) {
     run: st.run,
     late: st.late,
     longest: st.longest,
+    radio: st.radio,
     added: Math.max(0, Math.floor(Number(r.added) || 0)),
     songs: cleanSongs(r.songs),
   };
@@ -124,6 +126,23 @@ function createPrivateStats({ jsonFiles, deviceId = () => '', onChange = () => {
     return true;
   }
 
+  /**
+   * A piece of Internet Radio heard here (5.1): `station` { id, name },
+   * `listened` seconds ending at `at`; `listen`: the piece that made its
+   * session one of 30 seconds or more.
+   */
+  function recordRadio({
+    station, listened, at = Date.now(), tz = null, listen = false,
+  }) {
+    const heard = Math.max(0, Number(listened) || 0);
+    if (!(heard > 0) || !station || !station.id) return false;
+    countRadio({ statistics: load() }, {
+      id: String(station.id), name: station.name, seconds: heard, at, tz, listen: !!listen,
+    });
+    save();
+    return true;
+  }
+
   /** `count` songs this device put into Flow. */
   function added(count = 1) {
     const n = Math.max(0, Math.floor(Number(count) || 0));
@@ -133,7 +152,7 @@ function createPrivateStats({ jsonFiles, deviceId = () => '', onChange = () => {
   }
 
   return {
-    load, get, recordListen, added,
+    load, get, recordListen, recordRadio, added,
   };
 }
 

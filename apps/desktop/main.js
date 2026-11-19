@@ -1,8 +1,9 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, screen, dialog, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, screen, dialog, Notification, session, globalShortcut } = require('electron');
 const { execFile } = require('child_process');
 const fs = require('fs');
+const zlib = require('zlib');
 const path = require('path');
 
 const paths = require('./src/paths');
@@ -15,6 +16,11 @@ app.setPath('userData', paths.userDataDir());
 // one session (Random), the first ones were pushed out again by the last and
 // compiled again from nothing when they came round.
 app.commandLine.appendSwitch('gpu-program-cache-size-kb', '32768');
+// Global hotkeys (5.1.3) on Wayland, which gives no program the keys of
+// other windows: through the desktop's portal (it asks once to allow them).
+if (process.platform === 'linux' && /wayland/i.test(process.env.XDG_SESSION_TYPE || '')) {
+  app.commandLine.appendSwitch('enable-features', 'GlobalShortcutsPortal');
+}
 
 const settings = require('./src/settings');
 const I18n = require('./renderer/app/i18n');
@@ -52,6 +58,10 @@ const { createViewChannel } = require('@flow/core/client/viewChannel');
 const autostart = require('./src/autostart');
 const { createMiniPlayer } = require('./src/miniPlayer');
 const { createTray } = require('./src/tray');
+const radio = require('@flow/core/radio');
+const { createGlobalKeys } = require('./src/globalKeys');
+const { createThumbar } = require('./src/thumbar');
+const { GLOBAL_KEYS } = require('@flow/core/client/settings');
 
 let mainWindow = null;
 let downloadToken = null;
@@ -156,6 +166,16 @@ const tray = createTray({
   onQuit: () => quitFlow(),
 });
 
+// The taskbar's Previous, Play / Pause and Next under Flow's preview
+// (5.1.4, Windows; src/thumbar.js): clicked, as the global hotkeys.
+const thumbar = createThumbar({
+  window: () => mainWindow,
+  onAction: (action) => sendToWindow('keys:global', action),
+  texts: () => ({
+    prev: T('desktop.thumbar.prev'), play: T('desktop.thumbar.play'), pause: T('desktop.thumbar.pause'), next: T('desktop.thumbar.next'),
+  }),
+});
+
 // The Mini Player (src/miniPlayer.js): its window, and what goes between it and Flow's.
 const mini = createMiniPlayer({
   settings,
@@ -164,6 +184,7 @@ const mini = createMiniPlayer({
   language: () => settings.get('language') || '',
   hideFlow: () => toTray(),
   showFlow: () => showMain(),
+  onState: (state) => thumbar.state(state),
   onOpenChange: (open) => {
     sendToWindow('mini:open', open);
     // Closed while Flow's window is in the tray: nothing of Flow is left on the screen, so it quits (its music with it).
@@ -171,6 +192,21 @@ const mini = createMiniPlayer({
     else syncTray();
   },
 });
+
+// Global hotkeys (5.1.3, src/globalKeys.js): each press to the window
+// (keys.js), Show Flow done here.
+const globalKeys = createGlobalKeys({
+  globalShortcut,
+  settings,
+  onAction: (action) => {
+    if (action === 'showFlow') showMain();
+    else sendToWindow('keys:global', action);
+  },
+});
+handle('keys:globalStatus', () => globalKeys.status());
+handle('keys:globalSet', ({ action, accel } = {}) => globalKeys.set(String(action || ''), String(accel || '')));
+handle('keys:globalOn', (on) => globalKeys.setOn(!!on));
+handle('keys:globalReset', () => globalKeys.reset(GLOBAL_KEYS));
 
 /** The tray icon is there while Flow's window is hidden and the Mini Player open. */
 function syncTray() {
@@ -277,8 +313,11 @@ function createWindow() {
 
   inTray = START_MINI;
   if (!START_MINI) mainWindow.once('ready-to-show', () => mainWindow.show());
-  // Shown by whatever way: out of the tray.
-  mainWindow.on('show', leftTray);
+  // Shown by whatever way: out of the tray, and the taskbar's buttons set again (Windows forgets them while hidden).
+  mainWindow.on('show', () => {
+    leftTray();
+    thumbar.shown();
+  });
   // Imported songs not saved yet and links waiting in the Client queue are
   // kept over a restart (4.5.3, keptDownloads.js): closing asks nothing.
   mainWindow.on('close', (e) => {
@@ -547,7 +586,10 @@ handle('settings:set', (patch) => {
   delete clean.serverSecret;
   const wasRemote = remote.active();
   const next = settings.set(clean);
-  if ('language' in clean) useLanguage();
+  if ('language' in clean) {
+    useLanguage();
+    thumbar.refresh();
+  }
   mini.settingsChanged(clean);
   if (clean.normalize === true) loudnessFiller.run();
   remote.reconfigure(clean);
@@ -605,6 +647,7 @@ handle('library:trimSong', (arg) => actions.trimSong(arg));
 handle('library:setFavourite', (arg) => actions.setFavourite(arg));
 handle('library:recordListen', (arg) => actions.recordListen(arg));
 handle('library:recordAwayListen', (arg) => actions.recordAwayListen(arg));
+handle('library:recordRadioListen', (arg) => actions.recordRadioListen(arg));
 handle('stats:private', () => privateStats.get());
 handle('stats:removeTracked', ({ serverId, profileId }) => remote.removeTracked(serverId, profileId));
 // Fetched when the window shows them (4.3): the profile's Statistics, the playlists others share, one of them.
@@ -1147,6 +1190,54 @@ handle('sponsor:segments', ({ key, url }) => sponsorSegments(key, url));
 // One song's album, genre and Info from Apple's and Discogs' search, for Add Songs' editor.
 handle('song:lookupInfo', (song) => lookupInfo(song || {}));
 
+// ---- Internet Radio (5.1) ----
+//
+// The stations Flow suggests (radio-browser.info: the whole list, kept in the
+// cache folder and filtered here), and a station added by hand checked. The
+// window cannot ask other sites itself (its page allows only its own), so it asks here.
+const radioCopyFile = () => path.join(paths.cacheDir(), 'radio-stations.json.gz');
+const radioDirectory = radio.createDirectory({
+  copy: {
+    read: () => (fs.existsSync(radioCopyFile()) ? JSON.parse(zlib.gunzipSync(fs.readFileSync(radioCopyFile())).toString('utf8')) : null),
+    write: (data) => {
+      const tmp = `${radioCopyFile()}.tmp`;
+      fs.writeFileSync(tmp, zlib.gzipSync(JSON.stringify(data)));
+      fs.renameSync(tmp, radioCopyFile());
+    },
+  },
+});
+handle('radio:search', (q) => radioDirectory.search(q || {}));
+handle('radio:click', (id) => radioDirectory.click(id));
+handle('radio:check', (url) => radio.checkStream(url));
+// A station plays through the window's Web Audio (the equalizer, the clouds, the
+// visualizers), which hears only a stream sent with CORS, and almost no station
+// sends it. The streams the window says it plays get it added here, as does
+// wherever such a request is sent on to (the same request id).
+const radioStreams = new Set();
+const radioRequests = new Set();
+handle('radio:allow', (url) => {
+  const u = radio.httpUrl(url);
+  if (!u) return false;
+  radioStreams.add(u);
+  if (radioStreams.size > 200) radioStreams.delete(radioStreams.values().next().value);
+  return true;
+});
+function allowRadioStreams(ses) {
+  ses.webRequest.onHeadersReceived({ urls: ['http://*/*', 'https://*/*'] }, (details, done) => {
+    const ours = details.resourceType === 'media' && (radioRequests.has(details.id) || radioStreams.has(details.url));
+    if (!ours) {
+      done({});
+      return;
+    }
+    radioRequests.add(details.id);
+    if (radioRequests.size > 500) radioRequests.delete(radioRequests.values().next().value);
+    const headers = { ...details.responseHeaders };
+    const has = Object.keys(headers).some((k) => k.toLowerCase() === 'access-control-allow-origin');
+    if (!has) headers['Access-Control-Allow-Origin'] = ['*'];
+    done({ responseHeaders: headers });
+  });
+}
+
 // ---- startup ----
 
 app.whenReady().then(() => {
@@ -1156,6 +1247,7 @@ app.whenReady().then(() => {
   if (app.isPackaged) app.setAppUserModelId('com.ceeser.flow');
   settings.load();
   useLanguage();
+  allowRadioStreams(session.defaultSession);
   // Started with the computer: the Mini Player first, with the song it showed last, before the library is read.
   if (START_MINI) mini.open({ byComputer: true });
   if (settings.get('musicDir')) paths.setMusicDir(settings.get('musicDir'));
@@ -1210,6 +1302,7 @@ app.whenReady().then(() => {
   });
   createWindow();
   syncTray();
+  globalKeys.apply();
   // Both in the background, once the window is up. The scan tells the window
   // itself when it changed anything, and from then on the folder is watched.
   library.onScanned((result) => {
@@ -1245,7 +1338,10 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   quitting = true;
 });
-app.on('will-quit', () => tray.set(false));
+app.on('will-quit', () => {
+  tray.set(false);
+  globalShortcut.unregisterAll();
+});
 
 app.on('window-all-closed', async () => {
   // Out of an Active Session first: a host hands it on at once.

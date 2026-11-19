@@ -31,9 +31,11 @@
   Covers.init(init.covers);
 
   Player.init();
+  Radio.init();
   Output.init();
   Session.init();
   Ambient.init();
+  MenuBg.init();
   Nav.init();
   SearchPage.init();
   AddPage.init();
@@ -49,6 +51,7 @@
   GroupPage.init();
   SessionsPage.init();
   TrendPage.init();
+  RadioPage.init();
   PlaylistPage.init();
   SettingsPanel.init();
   SongActions.init();

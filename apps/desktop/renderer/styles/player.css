@@ -360,6 +360,8 @@
 
 .sleep-btn:hover { opacity: 1; background: var(--glass-hi); }
 .sleep-btn .icon { width: 17px; height: 17px; }
+/* Radios (5.2) with no song to make one from. */
+.sleep-btn:disabled { opacity: 0.3; background: none; cursor: default; }
 .sleep-btn--on {
   opacity: 1;
   color: var(--amber);
@@ -427,6 +429,11 @@
 /* A narrow window: the main buttons closer together and a shorter volume
    slider without its number, so both sides keep their buttons
    (after the rules they change). */
+/* Under 1260 px the volume makes room first (three buttons right of the main ones since Radios, 5.2). */
+@media (max-width: 1260px) {
+  .volume-slider { width: 72px; }
+  .vol-value { display: none; }
+}
 @media (max-width: 1180px) {
   .player__buttons { gap: 8px; }
   .volume-slider { width: 72px; }
@@ -441,4 +448,8 @@
   .sq-btn,
   .sleep-btn { width: 26px; height: 26px; }
   .player__extras { gap: 2px; }
+  /* Three buttons right of the main ones since Radios (5.2): closer together, and the volume slider gives them its room. */
+  .player__sleep-slot { gap: 2px; }
+  .player__right { gap: 6px; }
+  .volume-slider { width: 48px; }
 }

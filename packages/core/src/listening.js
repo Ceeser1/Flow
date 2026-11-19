@@ -28,6 +28,12 @@
 //               of each month (by the month it ended in) { 'YYYY-MM':
 //               { start, end, seconds } },
 //               and run / late / longest as above
+//               radio: Internet Radio (5.1), a category of its own, not in the
+//               numbers above: { seconds, listens, months, days, stations }
+//               with listens = station sessions of 30 seconds or more, months
+//               and days as above, stations { key: { name, seconds, listens } }
+//               (key: the directory's id, or a code made from a hand-added
+//               station's address), the RADIO_STATIONS most heard kept
 //
 // Dates and hours are the app's own: a listen carries its time zone offset
 // (Date.getTimezoneOffset(), minutes), and one without (an app from before
@@ -45,10 +51,64 @@ const SONG_ID = /^[\w-]{1,64}$/;
 
 // A listen this long or longer is one for the Statistics' Listened songs.
 const LISTEN_SECONDS = 30;
+// The stations kept in statistics.radio.stations: the most heard.
+const RADIO_STATIONS = 300;
+const STATION_KEY = /^[\w-]{1,64}$/;
 
 function emptyStatistics(since = 0) {
   return {
-    since: Number(since) || 0, seconds: 0, listens: 0, months: {}, days: {}, sessions: {}, run: null, late: null, longest: null,
+    since: Number(since) || 0, seconds: 0, listens: 0, months: {}, days: {}, sessions: {}, run: null, late: null, longest: null, radio: emptyRadio(),
+  };
+}
+
+function emptyRadio() {
+  return { seconds: 0, listens: 0, months: {}, days: {}, stations: {} };
+}
+
+/** A station's key in statistics.radio.stations: its id, or a code made from it (an address). */
+function stationKey(id) {
+  const s = String(id || '');
+  if (STATION_KEY.test(s)) return s;
+  // FNV-1a, 32 bits: short, the same everywhere.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `u${h.toString(16)}`;
+}
+
+function cleanRadio(raw) {
+  const r = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const stations = {};
+  const list = r.stations && typeof r.stations === 'object' && !Array.isArray(r.stations) ? r.stations : {};
+  for (const [key, st] of Object.entries(list)) {
+    if (!STATION_KEY.test(key) || !st || typeof st !== 'object') continue;
+    const seconds = Math.max(0, Number(st.seconds) || 0);
+    if (!seconds) continue;
+    stations[key] = {
+      name: typeof st.name === 'string' ? st.name.replace(/\s+/g, ' ').trim().slice(0, 200) : '',
+      seconds,
+      listens: Math.max(0, Math.floor(Number(st.listens) || 0)),
+    };
+  }
+  return {
+    seconds: Math.max(0, Number(r.seconds) || 0),
+    listens: Math.max(0, Math.floor(Number(r.listens) || 0)),
+    months: cleanSeconds(r.months, (k) => MONTH.test(k)),
+    days: cleanSeconds(r.days, (k) => DAY.test(k)),
+    stations,
+  };
+}
+
+function copyRadio(r) {
+  const src = r || emptyRadio();
+  return {
+    seconds: Number(src.seconds) || 0,
+    listens: Number(src.listens) || 0,
+    months: { ...(src.months || {}) },
+    days: { ...(src.days || {}) },
+    stations: Object.fromEntries(Object.entries(src.stations || {}).map(([k, v]) => [k, { ...v }])),
   };
 }
 
@@ -64,6 +124,7 @@ function cleanStatistics(raw) {
     run: cleanRun(r.run),
     late: cleanRun(r.late),
     longest: cleanRun(r.longest),
+    radio: cleanRadio(r.radio),
   };
 }
 
@@ -77,6 +138,7 @@ function copyStatistics(st) {
     run: src.run ? { ...src.run } : null,
     late: src.late ? { ...src.late } : null,
     longest: src.longest ? { ...src.longest } : null,
+    radio: copyRadio(src.radio),
   };
 }
 
@@ -262,6 +324,52 @@ function recordStatistics(data, seconds, at = Date.now(), tz = null) {
 }
 
 /**
+ * Counts `seconds` of an Internet Radio station heard, ending at `at` (ms),
+ * into `data.statistics.radio` (5.1): the time, by month and by day in the
+ * app's time zone (`tz`, as recordStatistics), and for the station (`id`,
+ * `name`). The radio counts in pieces (a minute at a time while it plays,
+ * radio.js), so a piece says whether it is the one that made its session a
+ * listen (`listen`: 30 seconds heard). Not in the songs' numbers.
+ */
+function recordRadio(data, { id, name = '', seconds, at = Date.now(), tz = null, listen = false }) {
+  const secs = Number(seconds);
+  const end = Number(at) || Date.now();
+  if (!(secs > 0) || !id) return;
+  if (!data.statistics || typeof data.statistics !== 'object') data.statistics = emptyStatistics();
+  const st = data.statistics;
+  if (!st.since) st.since = end;
+  if (!st.radio || typeof st.radio !== 'object') st.radio = emptyRadio();
+  const r = st.radio;
+  for (const k of ['months', 'days', 'stations']) if (!r[k] || typeof r[k] !== 'object') r[k] = {};
+  r.seconds = tenth((Number(r.seconds) || 0) + secs);
+  if (listen) r.listens = (Number(r.listens) || 0) + 1;
+  const offset = (cleanTz(tz) ?? new Date(end).getTimezoneOffset()) * 60000;
+  let t = end - secs * 1000;
+  while (t < end) {
+    const local = new Date(t - offset);
+    const dayEnd = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + 1) + offset;
+    const piece = (Math.min(end, dayEnd) - t) / 1000;
+    const day = `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`;
+    r.months[day.slice(0, 7)] = tenth((r.months[day.slice(0, 7)] || 0) + piece);
+    r.days[day] = tenth((r.days[day] || 0) + piece);
+    t = dayEnd;
+  }
+  const key = stationKey(id);
+  const was = r.stations[key] || { name: '', seconds: 0, listens: 0 };
+  r.stations[key] = {
+    name: String(name || was.name || '').replace(/\s+/g, ' ').trim().slice(0, 200),
+    seconds: tenth(was.seconds + secs),
+    listens: was.listens + (listen ? 1 : 0),
+  };
+  // Only the most heard stations are kept.
+  const keys = Object.keys(r.stations);
+  if (keys.length > RADIO_STATIONS) {
+    const least = keys.sort((a, b) => r.stations[a].seconds - r.stations[b].seconds).slice(0, keys.length - RADIO_STATIONS);
+    for (const k of least) if (k !== key) delete r.stations[k];
+  }
+}
+
+/**
  * What songs' stats add up to: `listens`, the times a song was heard for 30
  * seconds or more (full listens and stops; libraryModel.recordListen), and
  * `seconds` heard in all. `statsList`: the stats of one owner's songs.
@@ -280,4 +388,5 @@ function listenTotals(statsList) {
 module.exports = {
   emptyListening, cleanListening, copyListening, recordListening, listenTotals, cleanTz, RUN_GAP,
   emptyStatistics, cleanStatistics, copyStatistics, recordStatistics, LISTEN_SECONDS,
+  emptyRadio, cleanRadio, recordRadio, stationKey,
 };

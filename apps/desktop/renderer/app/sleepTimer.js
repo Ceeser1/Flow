@@ -161,6 +161,8 @@ const SleepTimer = {
     const s = this.state;
     // This device's music; in someone else's session that host plays on.
     Player.pauseHere();
+    // An Internet Radio station too (radio.js).
+    if (typeof Radio !== 'undefined') Radio.pause();
     Player.setSleepFade(1);
     if (!s.shutdownAt) {
       this._stop();

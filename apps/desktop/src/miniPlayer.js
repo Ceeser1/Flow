@@ -100,9 +100,11 @@ function resized(start, edge, dx, dy) {
  * the window's icon file. `language()`: the texts' language chosen ('' the
  * computer's). `hideFlow()`: Flow's window into the tray. `showFlow()`: it
  * in front again. `onOpenChange(open)`: told when it opens and closes.
+ * `onState(state)`: what Flow's window plays, each time it says (the
+ * taskbar's buttons, thumbar.js).
  */
 function createMiniPlayer({
-  settings, mainWindow, icon, language, hideFlow = () => {}, showFlow = () => {}, onOpenChange = () => {},
+  settings, mainWindow, icon, language, hideFlow = () => {}, showFlow = () => {}, onOpenChange = () => {}, onState = () => {},
 }) {
   let win = null;
   // What Flow's window last said it plays; null until it has (a start with the computer).
@@ -267,6 +269,7 @@ function createMiniPlayer({
     const first = !state;
     state = { ...(next || {}), live: true };
     toMini('mini:state', state);
+    onState(state);
     keep();
     if (!first) return;
     const w = main();

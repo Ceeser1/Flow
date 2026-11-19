@@ -30,6 +30,12 @@ Now Playing, the Queue, Settings.
 - **From 4.0** as on the desktop: lyrics (scroll Now Playing down), smart
   playlists, Continue with similar songs, a playlist's Update, and Share
   for the server's QR code.
+- **From 5.0.2** also: Settings > General > **Language** (like the phone,
+  English or Deutsch; Flow reloads to switch), with every message of the
+  app in that language (the server connection, uploads, what the phone
+  cannot do); the widgets and Android's own messages follow the phone's
+  language. **Show Cover as background** (Settings > App Visuals), and Now
+  Playing shows the song's 512 x 512 cover instead of the list's thumbnail.
 - **Settings > Equalizer** (Android 9 and newer): the sound shaped by a curve
   of 8 to 48 bands or a ready-made one (Bass Boost, Subtle, Intimate), as on
   the desktop. Android's player does it, so it works with the screen off too.

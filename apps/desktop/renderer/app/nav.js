@@ -37,6 +37,15 @@ const Nav = {
     // The speaker while All Songs plays, or a part of it that is folded away.
     this._allPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
     $('menuAllSongs').appendChild(this._allPlaying);
+    // Internet Radio (5.1): one entry, the speaker while a station plays.
+    $('menuRadio').innerHTML = Icons.radio + `<span>${T('common.internetRadio')}</span>`;
+    this._radioPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
+    $('menuRadio').appendChild(this._radioPlaying);
+    // Temporary Playlists (5.2): above Playlists, only while this session has one.
+    this._entry('menuTemp', T('common.temporaryPlaylists'), 'tempMenuOpen', { icon: Icons.tempList });
+    // The speaker while one of them plays and they are folded away.
+    this._tempPlaying = h('span.menu__playing', { html: Icons.speaker, title: T('common.playing') });
+    $('menuTemp').appendChild(this._tempPlaying);
     this._entry('menuPlaylists', T('common.playlists'), 'playlistsMenuOpen');
     this._entry('menuGroups', T('common.playlistGroups'), 'groupsMenuOpen', { icon: Icons.folder });
     // The speaker while one of the groups' lists plays and they are folded away.
@@ -55,6 +64,13 @@ const Nav = {
     $('menuSearch').onclick = () => this.show('search');
     $('menuAdd').onclick = () => this.show('add');
     $('menuAllSongs').onclick = () => this.openPlaylist('all');
+    $('menuRadio').onclick = () => this.show('radio');
+    // Temporary Playlists has no page of its own: the list made last opens.
+    $('menuTemp').onclick = () => {
+      const latest = TempLists.latest();
+      if (latest) this.openPlaylist(latest.id);
+    };
+    TempLists.onChange(() => this.drawMenu());
     $('menuPlaylists').onclick = () => this.show('playlists');
     // Playlist Groups: the Playlists page at its groups.
     $('menuGroups').onclick = () => this.show('playlists', { at: 'groups' });
@@ -74,9 +90,15 @@ const Nav = {
     Store.onServer(() => this.drawMenu());
     Player.onChange(() => this.drawMenu());
     Session.onChange(() => this.drawMenu());
+    Radio.onChange(() => this.drawMenu());
     Store.onSettings((patch) => {
       // Playlists added to groups shown under Playlists too, or not (4.5.3).
       if ('groupedHideInMenu' in patch) this.drawMenu();
+      // Internet Radio switched off while its page is open: back to All Songs.
+      if ('showRadio' in patch) {
+        if (!patch.showRadio && this.page === 'radio') this.openPlaylist('all');
+        else this.drawMenu();
+      }
       if (!('showTrend' in patch)) return;
       // Hidden while its page or one of its lists is open: back to All Songs.
       if (!patch.showTrend && (this.page === 'trend' || (this.page === 'playlist' && SmartLists.isSmart(this.playlistId)))) {
@@ -125,6 +147,11 @@ const Nav = {
     arrow.setAttribute('aria-expanded', String(open));
   },
 
+  /** Whether the menu has Internet Radio (this app plays it, and it is not switched off). */
+  radioShown() {
+    return Store.can('radio') && Store.settings.showRadio !== false;
+  },
+
   currentPlaylistId() {
     return this.page === 'playlist' ? this.playlistId : null;
   },
@@ -162,6 +189,7 @@ const Nav = {
     else if (page === 'group') GroupPage.show(this.groupId, opts);
     else if (page === 'sessions') SessionsPage.show(opts);
     else if (page === 'trend') TrendPage.show(opts);
+    else if (page === 'radio') RadioPage.show(opts);
     else if (page === 'playlist') PlaylistPage.show(this.playlistId, opts);
     this.drawMenu();
     if (opts.scroll) this._scrollTo(opts.scroll);
@@ -289,7 +317,8 @@ const Nav = {
       return;
     }
     this.playlistId = Store.playlist(id) ? id : 'all';
-    Store.saveSettings({ lastPlaylistId: this.playlistId });
+    // A temporary playlist (5.2) is gone with the session: the next start opens the last list that stays.
+    if (!TempLists.isTemp(this.playlistId)) Store.saveSettings({ lastPlaylistId: this.playlistId });
     this.show('playlist', opts);
   },
 
@@ -300,6 +329,9 @@ const Nav = {
     $('menuAdd').classList.toggle('menu__item--active', this.page === 'add');
     $('menuAllSongs').classList.toggle('menu__item--active', this.page === 'playlist' && this.playlistId === 'all');
     $('menuPlaylists').classList.toggle('menu__item--active', this.page === 'playlists');
+    $('menuRadio').classList.toggle('menu__item--active', this.page === 'radio');
+    $('menuRadio').hidden = !Nav.radioShown();
+    this._radioPlaying.hidden = !Radio.playing;
     $('menuFollowed').classList.toggle('menu__item--active', this.page === 'followed');
     $('menuSessions').classList.toggle('menu__item--active', this.page === 'sessions');
     $('menuTrend').classList.toggle('menu__item--active', this.page === 'trend');
@@ -357,6 +389,19 @@ const Nav = {
     for (const p of froms) allList.appendChild(item(p));
     const fromPlaying = froms.some((p) => p.id === Player.contextId);
     this._allPlaying.hidden = !Player.isPlaying || !(Player.contextId === 'all' || (fromPlaying && !allOpen));
+
+    // Temporary Playlists (5.2): this session's radios, the newest first;
+    // the entry only while there is one. Folded away, it has the speaker
+    // while one of them plays and is lit while one of them is open.
+    const temps = TempLists.all();
+    const tempOpen = this._open('tempMenuOpen');
+    this._drawArrow('tempMenuOpen', tempOpen, T('nav.section.what.temporaryPlaylists'));
+    $('menuTemp').hidden = !temps.length;
+    $('menuTempList').hidden = !temps.length || !tempOpen;
+    const tempList = gather('menuTempList');
+    for (const p of temps) tempList.appendChild(item(p));
+    this._tempPlaying.hidden = tempOpen || !Player.isPlaying || !temps.some((p) => p.id === Player.contextId);
+    $('menuTemp').classList.toggle('menu__item--active', !tempOpen && this.page === 'playlist' && TempLists.isTemp(this.playlistId));
 
     // Playlists: Favourites, then the playlists in no group (all of them with
     // "Playlists added to groups hide in the menu" off, 4.5.3).

@@ -7,6 +7,7 @@
 const { DEFAULT_MP3_QUALITY, clampQuality } = require('../formats');
 const { BROWSERS } = require('../cookies');
 const { randomBase64Url } = require('./common');
+const { cleanStation, RADIO_QUALITIES } = require('../radio');
 
 // The visualizers' own settings (their cogwheels, apps/desktop/renderer/app/
 // viz/), by what they may be: ['color', default] a '#rrggbb'; ['bool',
@@ -331,6 +332,21 @@ const VIZ_OPTIONS = {
 // What the app remembers between sessions. Small and flat, read once at start
 // and written whenever the window changes something. Some only mean something
 // on one of the apps (the window's size on the desktop).
+// Global hotkeys' first combos (5.1.3): Ctrl+Alt+Shift with a letter, which
+// neither types a character (Ctrl+Alt alone is AltGr on many keyboards) nor
+// is taken by Windows or the common programs (Ctrl+Alt+Shift+arrows select
+// columns in code editors).
+const GLOBAL_KEYS = {
+  playPause: 'Ctrl+Alt+Shift+P',
+  next: 'Ctrl+Alt+Shift+N',
+  prev: 'Ctrl+Alt+Shift+B',
+  volumeUp: 'Ctrl+Alt+Shift+U',
+  volumeDown: 'Ctrl+Alt+Shift+D',
+  mute: 'Ctrl+Alt+Shift+M',
+  favourite: 'Ctrl+Alt+Shift+F',
+  showFlow: '',
+};
+
 const DEFAULTS = {
   volume: 0.8,
   shuffle: false,
@@ -346,9 +362,10 @@ const DEFAULTS = {
   // The listen in progress when the app closed, carried on at the next start
   // if the same song is still loaded: { songId, listened }.
   listenSession: null,
-  // Whether the lists under the menu's Playlists, Playlist Groups (4.5.1),
-  // Followed Playlists and Your listening trend entries show (the trend
-  // lists closed until opened).
+  // Whether the lists under the menu's Temporary Playlists (5.2), Playlists,
+  // Playlist Groups (4.5.1), Followed Playlists and Your listening trend
+  // entries show (the trend lists closed until opened).
+  tempMenuOpen: true,
   playlistsMenuOpen: true,
   groupsMenuOpen: true,
   followedMenuOpen: true,
@@ -425,6 +442,15 @@ const DEFAULTS = {
   soundEqCustom: [],
   // The menu's Your listening trend entry and its lists.
   showTrend: true,
+  // Internet Radio (5.1): its menu entry and page; each profile's favourite
+  // stations ("<server id>/<profile id>", or "private" without a server ->
+  // [station], radio.js cleanStation), newest first; the page's last filters.
+  showRadio: true,
+  radioFavs: {},
+  radioCountry: '',
+  radioGenre: '',
+  // The Quality filter: the lowest bitrate shown (kbit/s, one of RADIO_QUALITIES), 0 all, -1 only those without one.
+  radioQuality: 0,
   // Lyrics (4.0): the player's Lyrics and the phone's below Now Playing, and
   // the line playing over a full-screen visualizer.
   lyricsOn: true,
@@ -432,6 +458,13 @@ const DEFAULTS = {
   // "Continue with similar songs" when the list playing has played through
   // (4.0, autoDj.js), instead of it starting over.
   autoDj: false,
+  // Smarter shuffle (5.1.1, queue.js): no artist twice in a row where the list
+  // has others, and songs mostly skipped early drawn less often.
+  smartShuffle: true,
+  // Global hotkeys (5.1.3, the desktop app's src/globalKeys.js): on, and each
+  // action's combo (an Electron accelerator; '' for none).
+  globalKeysOn: true,
+  globalKeys: { ...GLOBAL_KEYS },
   // Playlists added to groups hide in the menu's Playlists (and Followed
   // Playlists), shown only inside their groups there (4.5.3).
   groupedHideInMenu: true,
@@ -447,8 +480,9 @@ const DEFAULTS = {
   cloudsIntensity: 50,
   cloudsBass: true,
   cloudsBassAmount: 50,
-  // Their colours: 'rainbow' (each cloud its own) or one of the solid ones
-  // (CLOUD_COLORS), and how many there are (percent, 0-100 in steps of 10).
+  // Their colours: 'rainbow' (each cloud its own), 'cover' (the playing
+  // song's cover's, 5.1.5) or one of the solid ones (CLOUD_COLORS), and how
+  // many there are (percent, 0-100 in steps of 10).
   cloudsColors: 'rainbow',
   cloudsAmount: 50,
   // The equalizer: height and shine in percent, and its colours.
@@ -462,8 +496,26 @@ const DEFAULTS = {
   // The playing song's big cover behind the clouds and the equalizer (not
   // the Mini Player's own Cover as background), and how solid it shows
   // (percent, 0 = not at all).
-  coverBgOn: false,
-  coverBgVisibility: 50,
+  coverBgOn: true,
+  coverBgVisibility: 25,
+  // A texture as the menu's background (the desktop's menuBg.js): which
+  // one (MENU_BG_STYLES), how strong it shows (percent, 0 = not at all; 25 is
+  // the look as first designed, 100 four times that), and whether it moves
+  // (drifting and following the mouse), how fast (percent, 0 = only the mouse
+  // moves it; 20 is the pace as first designed, 100 five times that).
+  menuBgOn: false,
+  menuBgVisibility: 50,
+  menuBgAnimate: true,
+  menuBgSpeed: 25,
+  menuBgStyle: 'roots',
+  // A seed for each style that has one (style: up to six of A-Z and 0-9): its
+  // pictures are made from it instead of its standard look.
+  menuBgSeeds: {},
+  // Whether the texture goes on beyond the menu's edge over the content's
+  // background, and how far before it has faded out (percent of the content's
+  // width). Not on the phone's layout, whose menu is a drawer over the page.
+  menuBgReachOn: true,
+  menuBgReach: 25,
 
   // The fullscreen Music Visualizer the player bar's button opens (VISUALIZERS).
   visualizer: 'bars',
@@ -549,7 +601,9 @@ const DEFAULTS = {
 
 const SOUND_EQ_PRESETS = ['standard', 'bass', 'subtle', 'intimate', 'custom'];
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
-const CLOUD_COLORS = ['rainbow', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
+const CLOUD_COLORS = ['rainbow', 'cover', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
+// The textures the menu's background can show.
+const MENU_BG_STYLES = ['roots', 'vines', 'currents', 'stars', 'vinyl', 'mist', 'circuit', 'scales'];
 // The ones that can be chosen; 'random-<category>' picks one of a
 // category's each time (VIZ_CATEGORIES in the desktop's visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy', 'other'];
@@ -577,6 +631,19 @@ function cleanMiniLast(m) {
   };
 }
 
+/** Internet Radio's favourites: per profile key, up to 500 stations each, no station twice. */
+function cleanRadioFavs(raw) {
+  const all = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  return Object.fromEntries(Object.entries(all)
+    .filter(([k, v]) => k && k.length <= 200 && Array.isArray(v))
+    .slice(0, 100)
+    .map(([k, v]) => {
+      const seen = new Set();
+      const list = v.map(cleanStation).filter((st) => st && !seen.has(st.id) && seen.add(st.id)).slice(0, 500);
+      return [k, list];
+    }));
+}
+
 function clean(raw) {
   const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
   s.volume = Math.min(1, Math.max(0, Number(s.volume)));
@@ -592,6 +659,7 @@ function clean(raw) {
   s.listenSession = ls && typeof ls === 'object' && ls.songId
     ? { songId: String(ls.songId), listened: Math.max(0, Number(ls.listened) || 0) }
     : null;
+  s.tempMenuOpen = s.tempMenuOpen !== false;
   s.playlistsMenuOpen = s.playlistsMenuOpen !== false;
   s.groupsMenuOpen = s.groupsMenuOpen !== false;
   s.followedMenuOpen = s.followedMenuOpen !== false;
@@ -646,7 +714,7 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 100 && v)
     .slice(0, 100));
   for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
-    'sponsorBlock', 'sponsorBlockIntros', 'autoComplete', 'autoFinish', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix', 'coverBgOn']) s[key] = s[key] === true;
+    'sponsorBlock', 'sponsorBlockIntros', 'autoComplete', 'autoFinish', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix', 'coverBgOn', 'menuBgOn', 'menuBgAnimate', 'menuBgReachOn']) s[key] = s[key] === true;
   if (!s.dcScale75) {
     s.dcScale = '75';
     s.dcScale75 = true;
@@ -662,7 +730,14 @@ function clean(raw) {
   delete s.hlSpin;
   s.cookiesBrowser = BROWSERS.some((b) => b.id === s.cookiesBrowser) ? s.cookiesBrowser : '';
   if (!['', 'en', 'de'].includes(s.language)) s.language = '';
-  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'groupedHideInMenu', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
+  s.radioFavs = cleanRadioFavs(s.radioFavs);
+  s.radioCountry = /^[A-Z]{2}$/.test(String(s.radioCountry)) ? s.radioCountry : '';
+  s.radioGenre = typeof s.radioGenre === 'string' ? s.radioGenre.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+  s.radioQuality = RADIO_QUALITIES.includes(Number(s.radioQuality)) ? Number(s.radioQuality) : 0;
+  const keys = s.globalKeys && typeof s.globalKeys === 'object' && !Array.isArray(s.globalKeys) ? s.globalKeys : {};
+  s.globalKeys = Object.fromEntries(Object.entries(GLOBAL_KEYS).map(([action, def]) => [action,
+    typeof keys[action] === 'string' && /^[A-Za-z0-9+]{0,60}$/.test(keys[action]) ? keys[action] : def]));
+  for (const key of ['keepMp3', 'crossfade', 'normalize', 'showTrend', 'showRadio', 'smartShuffle', 'globalKeysOn', 'groupedHideInMenu', 'lyricsOn', 'vizLyrics', 'colAlbum', 'cloudsOn', 'cloudsBass', 'eqOn', 'eqShine',
     'serverKeepFiles', 'thumbCovers', 'highResCovers', 'serverAutoSync', 'serverHomeOn', 'serverRemoteOn', 'sessionShare',
     'synBumps', 'synBobbing', 'synCameraTilt', 'synCarTilt']) {
     s[key] = s[key] !== false;
@@ -679,8 +754,19 @@ function clean(raw) {
   for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'eqHeight', 'eqVisibility', 'eqShineSpread']) {
     s[key] = percent(s[key], DEFAULTS[key]);
   }
-  const cover = Math.round(Number(s.coverBgVisibility));
-  s.coverBgVisibility = Number.isFinite(cover) ? Math.min(100, Math.max(0, cover)) : DEFAULTS.coverBgVisibility;
+  // Percent with 0 allowed.
+  for (const key of ['coverBgVisibility', 'menuBgVisibility', 'menuBgSpeed', 'menuBgReach']) {
+    const v = Math.round(Number(s[key]));
+    s[key] = Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : DEFAULTS[key];
+  }
+  if (!MENU_BG_STYLES.includes(s.menuBgStyle)) s.menuBgStyle = DEFAULTS.menuBgStyle;
+  const seeds = {};
+  for (const style of MENU_BG_STYLES) {
+    const seed = s.menuBgSeeds && typeof s.menuBgSeeds === 'object' ? s.menuBgSeeds[style] : '';
+    const text = typeof seed === 'string' ? seed.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) : '';
+    if (text) seeds[style] = text;
+  }
+  s.menuBgSeeds = seeds;
   if (!EQ_COLORS.includes(s.eqColors)) s.eqColors = DEFAULTS.eqColors;
   if (!CLOUD_COLORS.includes(s.cloudsColors)) s.cloudsColors = DEFAULTS.cloudsColors;
   const amount = Math.round(Number(s.cloudsAmount) / 10) * 10;
@@ -780,4 +866,6 @@ function createSettings({ read, write }) {
   return { load, all, get, set, clientId };
 }
 
-module.exports = { createSettings, cloudsOffOnce, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, VISUALIZERS, VIZ_OPTIONS };
+module.exports = {
+  createSettings, cloudsOffOnce, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, MENU_BG_STYLES, VISUALIZERS, VIZ_OPTIONS, GLOBAL_KEYS,
+};
