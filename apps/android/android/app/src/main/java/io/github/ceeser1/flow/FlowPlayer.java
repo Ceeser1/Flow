@@ -83,7 +83,10 @@ import java.util.List;
  *
  * An Internet Radio station is loaded as a song is, marked live: it has no
  * place to come back to, so after a pause it connects anew and plays what is
- * on the air now.
+ * on the air now. What it plays (5.3.1, read from its stream by IcyReader)
+ * goes to the page ("songInfo") and into what the notification, the lock
+ * screen and the widget show: the station's name, and below it the song, or
+ * the page's "No Song Info" (meta.noInfo) when the station says nothing.
  *
  * It takes audio focus (a call or another player pauses it), pauses when
  * headphones are pulled out, and keeps the CPU and Wi-Fi awake while it plays.
@@ -106,6 +109,8 @@ final class FlowPlayer {
         void onPrevious();
         /** The player loaded songs itself (the Alarm Clock, with nothing loaded): its state, for the page to take. */
         void onAdopt(JSObject state);
+        /** What the station loaded plays (5.3.1): `meta` whether it says, `title` what ('' nothing). */
+        void onSongInfo(String id, boolean meta, String title);
     }
 
     /** What the page knows a song in the playlist by: its id there, the song's id, its gain. */
@@ -207,6 +212,9 @@ final class FlowPlayer {
     // What is loaded is a station (Internet Radio), and it was paused since it last played.
     private boolean live;
     private boolean livePaused;
+    // The station's own meta from the page ({ title, artist, album, artwork, noInfo }), and what it plays now ('' none).
+    private JSONObject liveMeta;
+    private String liveSong = "";
     // Signing in to the server again (a song refused with 401), and whether it
     // has since this player last played: refused again after it, the page is told.
     private boolean signingIn;
@@ -245,7 +253,7 @@ final class FlowPlayer {
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                 .build();
         sources = Streams.factory(context);
-        liveSources = Streams.liveFactory(context);
+        liveSources = Streams.liveFactory(context, (meta, title) -> main.post(() -> songInfo(meta, title)));
         exo = new ExoPlayer.Builder(context)
                 .setMediaSourceFactory(sources)
                 .setAudioAttributes(music, true)
@@ -573,6 +581,8 @@ final class FlowPlayer {
                     boolean play = op.optBoolean("play", false);
                     live = op.optBoolean("live", false) && !src.isEmpty();
                     livePaused = false;
+                    liveMeta = live ? op.optJSONObject("meta") : null;
+                    liveSong = "";
                     if (src.isEmpty()) {
                         exo.stop();
                         exo.clearMediaItems();
@@ -614,6 +624,7 @@ final class FlowPlayer {
                     dropTail("unloaded");
                     live = false;
                     livePaused = false;
+                    liveMeta = null;
                     exo.stop();
                     exo.clearMediaItems();
                     exo.setPlayWhenReady(false);
@@ -656,6 +667,13 @@ final class FlowPlayer {
                     eq.apply(exo.getAudioSessionId(), eqCurve);
                     if (tailEq != null) tailEq.apply(tail.getAudioSessionId(), eqCurve);
                     break;
+                case "liveMeta":
+                    // The station loaded renamed (5.3.1).
+                    if (live && op.optJSONObject("meta") != null) {
+                        liveMeta = op.optJSONObject("meta");
+                        showLive();
+                    }
+                    break;
                 case "meta": {
                     MediaItem current = exo.getCurrentMediaItem();
                     if (current != null) {
@@ -669,6 +687,33 @@ final class FlowPlayer {
             }
         }
         return plays;
+    }
+
+    /**
+     * What the station plays now (IcyReader, on this thread): into the
+     * notification, the lock screen and the widget (the item's own metadata,
+     * the same address: the player plays on), and to the page.
+     */
+    private void songInfo(boolean meta, String title) {
+        if (!live || liveMeta == null) return;
+        String song = title == null ? "" : title;
+        boolean changed = !song.equals(liveSong);
+        liveSong = song;
+        if (changed) showLive();
+        if (events != null) events.onSongInfo(id, meta, song);
+    }
+
+    /** The station's name and what it plays, as the notification, the lock screen and the widget show them. */
+    private void showLive() {
+        MediaItem current = exo.getCurrentMediaItem();
+        if (!live || liveMeta == null || current == null) return;
+        try {
+            JSONObject shown = new JSONObject(liveMeta.toString());
+            shown.put("artist", liveSong.isEmpty() ? liveMeta.optString("noInfo", liveMeta.optString("artist", "")) : liveSong);
+            exo.replaceMediaItem(exo.getCurrentMediaItemIndex(), current.buildUpon().setMediaMetadata(metadata(shown)).build());
+        } catch (JSONException e) {
+            FlowLog.i("song info not shown: " + e.getMessage());
+        }
     }
 
     /** The station loaded, connected to anew. */

@@ -32,6 +32,8 @@
 // what radio.js drives, with the calls of the desktop's <audio>. A station
 // loaded puts the song out of the player: the engine then has none loaded
 // (`loaded` false, the place kept), and the player's Play loads it again.
+// What the station plays (5.3.1) the phone's player reads from its stream
+// ("songInfo"); the element tells it as 'songinfo' (its songInfo: { meta, title }).
 
 const { tr } = require('@flow/core/lang');
 
@@ -80,7 +82,7 @@ function createAudioEngine({
   let stationId = '';
   let stations = 0;
   const station = {
-    handlers: {}, src: '', paused: true, playing: false, error: null, meta: null,
+    handlers: {}, src: '', paused: true, playing: false, error: null, meta: null, songInfo: null,
   };
 
   // Still playing from before this page (or loaded, paused): taken as it is.
@@ -227,6 +229,12 @@ function createAudioEngine({
   }
 
   plugin.addListener('state', onState);
+  // What the station plays, read by the phone's player (5.3.1).
+  plugin.addListener('songInfo', (e) => {
+    if (!e || !stationId || e.id !== stationId) return;
+    station.songInfo = { meta: !!e.meta, title: String(e.title || '') };
+    stationEmit('songinfo');
+  });
   plugin.addListener('ended', (e) => {
     if (e && stationId && e.id === stationId) {
       station.paused = true;
@@ -532,9 +540,18 @@ function createAudioEngine({
         get error() {
           return station.error;
         },
-        /** The notification's text for the station loaded next: { title, artist, album, artwork }. */
+        /** What the station plays: { meta (it says), title } ('songinfo'), null until its stream has said. */
+        get songInfo() {
+          return station.songInfo;
+        },
+        /** The notification's text for the station loaded next: { title, artist, album, artwork, noInfo }. */
         setMeta(meta) {
           station.meta = meta || null;
+        },
+        /** The station loaded renamed (5.3.1): the notification, the lock screen and the widget show it at once. */
+        retitle(meta) {
+          station.meta = meta || null;
+          if (stationId && meta) op({ op: 'liveMeta', meta: metaOut(meta) });
         },
         set src(address) {
           // The song in the player gives way; its place stays for when it is played again.
@@ -552,6 +569,7 @@ function createAudioEngine({
           station.paused = true;
           station.playing = false;
           station.error = null;
+          station.songInfo = null;
           op({
             op: 'load', id: stationId, key: '', src: station.src, gain: 1, at: 0, play: false, live: true, meta: metaOut(station.meta),
           });

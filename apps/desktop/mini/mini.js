@@ -10,7 +10,8 @@
   const $ = (id) => document.getElementById(id);
   const root = $('mini');
 
-  // { hasSong, songId, title, artist, cover, coverBig, list, playing, position, duration, at, volume, canVolume, live }
+  // { hasSong, songId, title, artist, cover, coverBig, list, playing, position, duration, at, volume, canVolume, live,
+  //   radio (5.3.1: a station; then liveText is the word for Live, `connecting` while it connects) }
   let state = { hasSong: false };
   // The cogwheel's ticks: { eq, coverBg, locked, onTop, autostart, canAutostart }.
   let ticks = {};
@@ -41,6 +42,14 @@
   }
 
   function drawTime() {
+    if (state.radio) {
+      // A station: how long it has played, Live at the end, the line full while it plays.
+      $('time').textContent = clock(position());
+      $('length').textContent = String(state.liveText || 'Live');
+      $('fill').style.width = state.playing && !state.connecting ? '100%' : '0%';
+      $('knob').style.left = '0%';
+      return;
+    }
     const d = Number(state.duration) || 0;
     const t = dragTime !== null ? dragTime : position();
     const frac = d > 0 ? Math.min(1, t / d) : 0;
@@ -52,29 +61,37 @@
 
   function drawCover() {
     const src = state.hasSong ? state.cover || '' : '';
-    if (src === coverShown) return;
-    coverShown = src;
+    // The note differs for a station: drawn again when that changes.
+    const shown = `${state.radio ? 'r' : 's'}|${src}`;
+    if (shown === coverShown) return;
+    coverShown = shown;
     const box = $('cover');
     const note = () => {
-      box.innerHTML = Icons.library;
+      box.innerHTML = state.radio ? Icons.radio : Icons.library;
     };
     if (!src) {
       note();
       return;
     }
+    // A station's picture is only put in once it has loaded (many have none that loads).
+    if (state.radio) note();
     const img = new Image();
     img.alt = '';
     // A cover that is gone (its file, or its server): the note.
     img.onerror = () => {
-      if (coverShown === src) note();
+      if (coverShown === shown) note();
+    };
+    img.onload = () => {
+      if (coverShown === shown && state.radio) box.replaceChildren(img);
     };
     img.src = src;
-    box.replaceChildren(img);
+    if (!state.radio) box.replaceChildren(img);
   }
 
   /** Cover as background: the song's big cover (the small one until that is here) behind everything, once it has loaded. */
   function drawBackground() {
-    const src = ticks.coverBg && state.hasSong ? state.coverBig || state.cover || '' : '';
+    // Not a station's picture: the app shows no cover behind a station either.
+    const src = ticks.coverBg && state.hasSong && !state.radio ? state.coverBig || state.cover || '' : '';
     if (src === backShown) return;
     backShown = src;
     const bg = $('bg');
@@ -114,6 +131,7 @@
   function draw() {
     const has = !!state.hasSong;
     root.classList.toggle('mini--empty', !has);
+    root.classList.toggle('mini--radio', !!state.radio);
     $('title').textContent = has ? state.title || T('common.untitled') : T('common.nothingPlaying');
     $('title').title = has ? [state.title, state.artist].filter(Boolean).join(' - ') : '';
     $('artist').textContent = has ? state.artist || '' : '';
@@ -121,7 +139,11 @@
     drawBackground();
     $('btnPlay').innerHTML = state.playing ? Icons.pause : Icons.play;
     $('btnPlay').title = state.playing ? T('common.pause') : T('common.play');
-    for (const id of ['btnPrev', 'btnBack10', 'btnFwd10', 'btnNext']) $(id).disabled = !has;
+    for (const id of ['btnPrev', 'btnBack10', 'btnFwd10', 'btnNext']) {
+      $(id).disabled = !has;
+      // A station has none of these.
+      $(id).hidden = !!state.radio;
+    }
     drawTime();
     drawVolume();
     clearInterval(ticker);

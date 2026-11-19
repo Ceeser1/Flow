@@ -1,6 +1,6 @@
 {
   "name": "@flow/core",
-  "version": "5.2.0",
+  "version": "5.3.1",
   "description": "Flow's library model, title parsing and formats: plain Node, shared by every Flow app",
   "private": true,
   "exports": {

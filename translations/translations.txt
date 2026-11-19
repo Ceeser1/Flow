@@ -994,6 +994,27 @@ settings.jam.guestVolume.desc
   en: Devices that joined what you play can pause, skip, start and queue songs. Ticked, they can also turn your volume up and down.
   de: Beigetretene Geräte können pausieren, überspringen, starten und Songs einreihen. Angehakt auch deine Lautstärke ändern.
 
+# A host's rules for the devices that joined (5.3)
+settings.jam.queueOnly.label
+  en: Devices in my Active Session may only add songs to the queue
+  de: Geräte meiner aktiven Session dürfen nur Songs einreihen
+
+settings.jam.queueOnly.desc
+  en: Devices that joined can no longer pause, seek, skip, start songs or change the queue. Only you control what plays.
+  de: Beigetretene Geräte können nicht mehr pausieren, spulen, überspringen, Songs starten oder die Warteschlange ändern. Nur du steuerst, was spielt.
+
+settings.jam.skipVote.label
+  en: Skipping a song in my Active Session needs a vote
+  de: Überspringen in meiner aktiven Session braucht eine Abstimmung
+
+settings.jam.skipVote.desc
+  en: Next song on a device that joined is a vote. The song is skipped once more than half of them voted for it. Your own Next song skips at once.
+  de: „Nächster Song“ auf einem beigetretenen Gerät ist eine Stimme. Übersprungen wird, sobald mehr als die Hälfte dafür gestimmt hat. Dein eigenes „Nächster Song“ überspringt sofort.
+
+settings.jam.rules.olderServer
+  en: Works fully only with a Flow Server from version 5.3 on.
+  de: Funktioniert vollständig erst mit einem Flow Server ab Version 5.3.
+
 settings.jam.outputDelay.keptPerOutput
   en: Kept for each output; this is {output}.
   de: Pro Ausgabe gespeichert; dies ist {output}.
@@ -3876,6 +3897,79 @@ sessions.toast.connectionLost.host
 sessions.toast.queued
   en: {who} added "{song}" to the queue
   de: {who} hat „{song}“ eingereiht
+
+# Active Sessions › the host's rules (5.3): its members only add to the queue, skipping needs a vote
+sessions.rules.queueOnly
+  en: They may only add songs to the queue
+  de: Zuhörer dürfen nur Songs einreihen
+
+sessions.rules.skipVote
+  en: Skipping needs their vote
+  de: Überspringen braucht ihre Abstimmung
+
+sessions.state.member.short
+  en: You are in {session}.
+  de: Du bist in {session}.
+
+sessions.rules.member.queueOnly
+  en: The host controls what plays. You can add songs to the queue.
+  de: Der Host steuert, was spielt. Du kannst Songs einreihen.
+
+sessions.rules.member.queueAndVote
+  en: The host controls what plays. You can add songs to the queue and vote to skip with Next song.
+  de: Der Host steuert, was spielt. Du kannst Songs einreihen und mit „Nächster Song“ fürs Überspringen stimmen.
+
+sessions.rules.member.vote
+  en: Skipping needs a vote here: Next song is your vote.
+  de: Überspringen braucht hier eine Abstimmung: „Nächster Song“ ist deine Stimme.
+
+sessions.rules.refused
+  en: Only the host controls what plays in this session. You can add songs to the queue.
+  de: In dieser Session steuert nur der Host, was spielt. Du kannst Songs einreihen.
+
+sessions.rules.refused.vote
+  en: Only the host controls what plays in this session. You can add songs to the queue and vote to skip with Next song.
+  de: In dieser Session steuert nur der Host, was spielt. Du kannst Songs einreihen und mit „Nächster Song“ fürs Überspringen stimmen.
+
+sessions.request.canQueueOnly
+  en: Once in, they can add songs to the queue here.
+  de: Einmal drin, können sie hier Songs einreihen.
+
+sessions.request.canQueueAndVote
+  en: Once in, they can add songs to the queue here and vote to skip.
+  de: Einmal drin, können sie hier Songs einreihen und fürs Überspringen stimmen.
+
+sessions.vote.count
+  en: Votes to skip: {votes} of {needed}.
+  de: Stimmen fürs Überspringen: {votes} von {needed}.
+
+sessions.vote.next
+  en: Vote to skip this song ({votes} of {needed} votes)
+  de: Fürs Überspringen stimmen ({votes} von {needed} Stimmen)
+
+sessions.vote.next.voted
+  en: You voted to skip ({votes} of {needed} votes). Press again to take it back
+  de: Du hast fürs Überspringen gestimmt ({votes} von {needed} Stimmen). Nochmal drücken nimmt es zurück
+
+sessions.vote.next.host
+  en: Next song ({votes} of {needed} voted to skip)
+  de: Nächster Song ({votes} von {needed} wollen überspringen)
+
+sessions.vote.toast.voted
+  en: You voted to skip this song ({votes} of {needed})
+  de: Du hast fürs Überspringen gestimmt ({votes} von {needed})
+
+sessions.vote.toast.takenBack
+  en: Your vote to skip is taken back
+  de: Deine Stimme fürs Überspringen ist zurückgenommen
+
+sessions.vote.toast.wants
+  en: {who} wants to skip this song ({votes} of {needed})
+  de: {who} will diesen Song überspringen ({votes} von {needed})
+
+sessions.vote.toast.skipped
+  en: Skipped by vote ({votes} of {needed})
+  de: Per Abstimmung übersprungen ({votes} von {needed})
 
 # ===== Add Songs =====
 
@@ -7184,6 +7278,24 @@ radio.toast.lost
   en: The connection to {station} was lost.
   de: Die Verbindung zu {station} ist abgebrochen.
 
+# Where the song a station plays is shown (the player bar, Now Playing, the Mini Player), when the station does not say
+radio.noSongInfo
+  en: No Song Info
+  de: Keine Songinfo
+
+# A favourite station's pencil: a name of its own
+radio.rename.tooltip
+  en: Rename {station}
+  de: {station} umbenennen
+
+radio.rename.title
+  en: Rename station
+  de: Sender umbenennen
+
+radio.rename.button
+  en: Rename
+  de: Umbenennen
+
 # Checking a station's address (Add Radio), and the station directory
 
 core.radio.directoryUnreachable
@@ -7217,6 +7329,27 @@ core.radio.hls
 core.radio.webPage
   en: That is a web page, not a radio stream. The stream's own address is needed (often on the station's page as "Listen" or a .m3u / .pls link).
   de: Das ist eine Webseite, kein Radiostream. Gebraucht wird die Adresse des Streams selbst (oft auf der Seite des Senders als „Hören“ oder als .m3u- / .pls-Link).
+
+# A Flow Server never plays its own machine's addresses through for the web player
+core.radio.refused
+  en: That address may not be asked.
+  de: Diese Adresse darf nicht abgefragt werden.
+
+core.radio.quiet
+  en: The station went quiet.
+  de: Der Sender ist verstummt.
+
+core.radio.notAStation
+  en: That is not a radio station.
+  de: Das ist kein Radiosender.
+
+core.radio.notAFavourite
+  en: That station is not one of your Favourite Radios.
+  de: Dieser Sender ist keins deiner Lieblingsradios.
+
+core.radio.favsOnDevice
+  en: Favourite Radios are kept on this device here.
+  de: Lieblingsradios werden hier auf diesem Gerät gespeichert.
 
 # ===== Common =====
 
@@ -10312,3 +10445,8 @@ web.notHere.saveDownload
 web.notHere.joinOtherServer
   en: Joining another server's session
   de: Der Beitritt zur Session eines anderen Servers
+
+# Internet Radio in the browser plays through the Flow Server; an older server cannot
+web.radio.serverTooOld
+  en: This Flow Server cannot play Internet Radio yet. It needs Flow Server 5.3.1 or newer.
+  de: Dieser Flow Server kann noch kein Internetradio abspielen. Dafür braucht er Flow Server 5.3.1 oder neuer.

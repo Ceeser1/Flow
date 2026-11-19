@@ -73,6 +73,10 @@
 .queue__dur { color: var(--text-dim); font-variant-numeric: tabular-nums; flex: none; }
 .queue__remove { visibility: hidden; }
 .queue__row:hover .queue__remove { visibility: visible; }
+/* In a session whose host keeps the queue to itself (5.3): to look at only. */
+.queue--locked .queue__row[data-part] { cursor: default; }
+.queue--locked .queue__row[data-part]:hover { background: none; }
+.queue--locked .queue__row[data-part] .queue__grab img { opacity: 0 !important; }
 
 /* ---- Active Sessions of other servers nearby (sessions.js, 4.0) ---- */
 

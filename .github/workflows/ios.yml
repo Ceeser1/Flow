@@ -14,7 +14,7 @@ on:
       steps:
         description: Steps files in apps/ios/testing/steps (without .js), in order
         required: false
-        default: smoke offline effects sessions widget
+        default: smoke offline effects sessions widget radio
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -101,7 +101,7 @@ jobs:
       - name: Test in the Simulator
         run: |
           failed=0
-          for steps in ${{ inputs.steps || 'smoke offline effects sessions widget' }}; do
+          for steps in ${{ inputs.steps || 'smoke offline effects sessions widget radio' }}; do
             node apps/ios/testing/run.js --video --device "${{ matrix.device }}" --ios "${{ matrix.ios }}" \
               --app apps/ios/build/Build/Products/Debug-iphonesimulator/Flow.app \
               --steps "apps/ios/testing/steps/$steps.js" \

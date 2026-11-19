@@ -27,6 +27,7 @@ const { encode: encodeQr } = require('@flow/core/qr');
 const caps = require('@flow/core/client/caps');
 const { createViewChannel } = require('@flow/core/client/viewChannel');
 const { MP3_QUALITIES } = require('@flow/core/formats');
+const radioDirectory = require('@flow/core/radio');
 const { tr, useTranslator } = require('@flow/core/lang');
 const { createEnv } = require('./env');
 const { version } = require('../package.json');
@@ -203,6 +204,94 @@ function start() {
       }
     };
   }
+
+  // ---- Internet Radio (5.3.1) ----
+  //
+  // The directory (radio-browser.info, which lets any page ask it) is asked
+  // from here, a page at a time, as on the phones. A station plays through
+  // the Flow Server (GET /api/radio/stream, feature radioRelay): the browser
+  // could not let Web Audio hear most stations itself, nor play one on plain
+  // http from this https page. What it plays is asked of the server every few
+  // seconds while it plays (GET /api/radio/now), and told as the desktop's
+  // main process tells it ('radio:info').
+  const stations = radioDirectory.createOnlineDirectory({
+    fetch: (url, { signal }) => fetch(url, { headers: { Accept: 'application/json' }, signal }),
+  });
+  const RADIO_ASK_MS = 5000;
+  const radioStreams = new Map(); // the window's number of a stream -> { id (the server's name for it), timer }
+  let radioCount = 0;
+
+  /** The server to play through, or an Error saying why there is none. */
+  function radioServer() {
+    const st = remote.status();
+    if (st.state !== 'online' || !st.base) throw new Error(tr('common.unreachable', 'The server cannot be reached.'));
+    if (!st.radioRelay) throw new Error(tr('web.radio.serverTooOld', 'This Flow Server cannot play Internet Radio yet. It needs Flow Server 5.3.1 or newer.'));
+    return st;
+  }
+
+  const radioHeaders = (st, json = false) => ({
+    ...(st.token ? { Authorization: `Bearer ${st.token}` } : {}), ...(json ? { 'Content-Type': 'application/json' } : {}),
+  });
+
+  /** What a stream plays, asked of the server until the window lets the stream go. */
+  function askRadio(n) {
+    const s = radioStreams.get(n);
+    if (!s) return;
+    let st;
+    try {
+      st = radioServer();
+    } catch {
+      s.timer = setTimeout(() => askRadio(n), RADIO_ASK_MS);
+      return;
+    }
+    fetch(`${st.base}/api/radio/now?s=${encodeURIComponent(s.id)}`, { headers: radioHeaders(st) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((now) => {
+        if (!radioStreams.has(n) || !now || now.gone) return;
+        const key = `${now.meta}|${now.title}`;
+        if (key === s.told) return;
+        s.told = key;
+        emit('radio:info', { stream: n, meta: !!now.meta, title: String(now.title || ''), name: String(now.name || '') });
+      })
+      .catch(() => {})
+      .finally(() => {
+        const left = radioStreams.get(n);
+        if (left) left.timer = setTimeout(() => askRadio(n), RADIO_ASK_MS);
+      });
+  }
+
+  const radioCalls = {
+    search: call((q) => stations.search(q || {})),
+    click: call((id) => stations.click(id)),
+    /** Add Radio's check, by the server (the page cannot read most streams): { url, name, checked }. */
+    check: call(async (url) => {
+      const st = radioServer();
+      const r = await fetch(`${st.base}/api/radio/check`, { method: 'POST', headers: radioHeaders(st, true), body: JSON.stringify({ url: String(url || '') }) });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json.code ? tr(`core.radio.${json.code}`, json.error || '') : (json.error || tr('common.serverFailed', 'The server could not send it.')));
+      return json;
+    }),
+    /** The address the window plays a station from (through the server): { stream, src }. */
+    open: call((url) => {
+      const st = radioServer();
+      radioCount += 1;
+      const n = radioCount;
+      const id = `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+      radioStreams.set(n, { id, timer: null, told: '' });
+      const s = radioStreams.get(n);
+      s.timer = setTimeout(() => askRadio(n), 1200);
+      const q = [`u=${encodeURIComponent(String(url || ''))}`, `s=${id}`, st.token ? `t=${encodeURIComponent(st.token)}` : ''].filter(Boolean).join('&');
+      return { stream: n, src: `${st.base}/api/radio/stream?${q}` };
+    }),
+    /** The window let a stream go: no more asking what it plays. */
+    close: (n) => {
+      const s = radioStreams.get(n);
+      if (!s) return;
+      clearTimeout(s.timer);
+      radioStreams.delete(n);
+    },
+    onInfo: on('radio:info'),
+  };
 
   // `key` / `english`: what cannot be done ("Downloading in the browser").
   const notHere = (key, english) => call(() => {
@@ -406,6 +495,11 @@ function start() {
     onLyricsChanged: on('lyrics:changed'),
     shareLink: call(() => remote.shareLink()),
     recordAwayListen: call((song, listened, duration) => actions.recordAwayListen({ song, listened, duration })),
+    // Internet Radio (5.3.1): played through the server, its time in the Statistics, the profile's favourites there.
+    radio: radioCalls,
+    recordRadioListen: call((station, listened, listen) => actions.recordRadioListen({ station, listened, listen })),
+    setRadioFavourite: call((station, on, index = null) => actions.setRadioFavourite({ station, on, index })),
+    renameRadio: call((stationId, name) => actions.renameRadio({ stationId, name })),
     // Guests of other servers' sessions need the network searched (caps.guests is off).
     guest: notHere('web.notHere.joinOtherServer', 'Joining another server\'s session'),
     onGuestLive: nothing,

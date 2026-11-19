@@ -7,6 +7,10 @@
 // list shown, as the player bar's Play does), Pause while something does;
 // what plays comes from what Flow's window tells the Mini Player.
 //
+// An Internet Radio station (5.3.1) has Play / Pause only, as in the Mini
+// Player: Previous and Next are hidden for it. The preview's tooltip names
+// what plays: the song and its artist, or the station and what it plays.
+//
 // Windows forgets the buttons when the window is hidden (the tray), so they
 // are set again whenever it shows. The icons are drawn here, white on
 // nothing, at 16, 24 and 32 pixels (100, 150 and 200 % display scaling).
@@ -80,6 +84,10 @@ function createThumbar({ window, onAction, texts }) {
   const on = process.platform === 'win32';
   let icons = null;
   let playing = false;
+  let radio = false;
+  // The preview's tooltip ('' Windows' own: the window's title), and the one set.
+  let tip = '';
+  let tipShown = null;
   // What is set now ('' none yet): set again only when it changes, or the window shows.
   let shown = '';
 
@@ -87,16 +95,24 @@ function createThumbar({ window, onAction, texts }) {
     if (!on) return false;
     const w = window();
     if (!w || w.isDestroyed()) return false;
-    const key = playing ? 'pause' : 'play';
+    const key = `${playing ? 'pause' : 'play'}${radio ? '|radio' : ''}`;
+    if (force || tip !== tipShown) {
+      try {
+        w.setThumbnailToolTip(tip);
+        tipShown = tip;
+      } catch {
+        tipShown = null;
+      }
+    }
     if (!force && key === shown) return true;
     if (!icons) icons = { play: icon('play'), pause: icon('pause'), prev: icon('prev'), next: icon('next') };
     const t = texts();
     let ok = false;
     try {
       ok = w.setThumbarButtons([
-        { tooltip: t.prev, icon: icons.prev, click: () => onAction('prev') },
+        { tooltip: t.prev, icon: icons.prev, click: () => onAction('prev'), flags: radio ? ['hidden'] : [] },
         { tooltip: playing ? t.pause : t.play, icon: playing ? icons.pause : icons.play, click: () => onAction('playPause') },
-        { tooltip: t.next, icon: icons.next, click: () => onAction('next') },
+        { tooltip: t.next, icon: icons.next, click: () => onAction('next'), flags: radio ? ['hidden'] : [] },
       ]);
     } catch {
       ok = false;
@@ -107,9 +123,12 @@ function createThumbar({ window, onAction, texts }) {
   }
 
   return {
-    /** What Flow's window plays now ({ playing }). */
+    /** What Flow's window plays now (the Mini Player's state: { hasSong, playing, radio, title, artist }). */
     state(next) {
-      playing = !!(next && next.playing);
+      const s = next || {};
+      playing = !!s.playing;
+      radio = !!s.radio;
+      tip = s.hasSong ? [s.title, s.artist].filter(Boolean).join(' – ').slice(0, 250) : '';
       apply();
     },
     /** The window has shown (first, or out of the tray): Windows wants the buttons again. */

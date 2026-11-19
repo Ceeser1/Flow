@@ -574,6 +574,10 @@ const DEFAULTS = {
   sessionShare: true,
   sessionAutoAccept: false,
   sessionAllowVolume: false,
+  // This one's rules as a session's host (5.3): the devices that joined only
+  // add songs to the queue; their Next is a vote (more than half of them skip).
+  sessionQueueOnly: false,
+  sessionSkipVote: false,
   // The output the music plays on ('' for Windows' default), and its name to
   // find it again should its id change (output.js).
   outputDevice: '',
@@ -713,7 +717,7 @@ function clean(raw) {
     .map(([k, v]) => [k, typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, 80) : ''])
     .filter(([k, v]) => k && k.length <= 100 && v)
     .slice(0, 100));
-  for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
+  for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionQueueOnly', 'sessionSkipVote', 'sessionPlayHere', 'outputDelayOn',
     'sponsorBlock', 'sponsorBlockIntros', 'autoComplete', 'autoFinish', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix', 'coverBgOn', 'menuBgOn', 'menuBgAnimate', 'menuBgReachOn']) s[key] = s[key] === true;
   if (!s.dcScale75) {
     s.dcScale = '75';

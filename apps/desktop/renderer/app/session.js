@@ -75,6 +75,52 @@ const Session = {
     return !!this.mine && !this.mine.host;
   },
 
+  /**
+   * The rules of the session this app is in, as its host set them (5.3):
+   * queueOnly (the devices that joined only add songs to the queue) and
+   * skipVote (their Next is a vote).
+   */
+  get rules() {
+    const r = this.mine && this.mine.session.rules;
+    return { queueOnly: !!(r && r.queueOnly), skipVote: !!(r && r.skipVote) };
+  },
+
+  /**
+   * Who wants the song playing skipped: { count, needed, mine }, or null
+   * where skipping needs no vote. The host is not counted and has no vote.
+   */
+  get votes() {
+    if (!this.mine || !this.rules.skipVote) return null;
+    const v = this.mine.session.votes || {};
+    const clients = Array.isArray(v.clients) ? v.clients : [];
+    return { count: clients.length, needed: v.needed || 1, mine: clients.includes(Store.server.clientId) };
+  },
+
+  /** Whether a button of this app's reaches the host (a member's where the host keeps the rest to itself). */
+  allows(action) {
+    if (!this.isMember) return true;
+    const r = this.rules;
+    return !r.queueOnly || action === 'queueAdd' || action === 'volume' || (action === 'next' && r.skipVote);
+  },
+
+  /** A button the host keeps to itself was pressed: said so (not at every press). */
+  refused() {
+    if (Date.now() - (this._refusedAt || 0) < 4000) return;
+    this._refusedAt = Date.now();
+    toast(T(this.rules.skipVote ? 'sessions.rules.refused.vote' : 'sessions.rules.refused'), 'info');
+  },
+
+  /** Next, pressed where skipping needs a vote: this app's vote, or (pressed again) taken back. */
+  voteSkip() {
+    const v = this.votes;
+    const on = !(v && v.mine);
+    this._call({ type: 'control', action: 'skipVote', on }).then((r) => {
+      // Skipped with it: everyone is told so (_onSession).
+      if (!r || r.skipped) return;
+      toast(on ? T('sessions.vote.toast.voted', { votes: r.votes, needed: r.needed }) : T('sessions.vote.toast.takenBack'), 'info');
+    }, (err) => toast(err.message, 'error'));
+  },
+
   /** The listed sessions of other apps. */
   others() {
     return this.list.filter((s) => s.host.client !== Store.server.clientId);
@@ -193,7 +239,7 @@ const Session = {
     Store.onSettings((patch) => {
       // No longer shared: the server turns open requests away.
       if (patch.sessionShare === false) this._closePrompts();
-      if ('sessionAllowVolume' in patch || 'sessionShare' in patch) this._changed(true);
+      if (['sessionAllowVolume', 'sessionShare', 'sessionQueueOnly', 'sessionSkipVote'].some((key) => key in patch)) this._changed(true);
     });
     Store.onLibrary(() => this._songArrived());
     // Another output (chosen, or Windows' default changed): the session's name changes with it.
@@ -432,7 +478,7 @@ const Session = {
       className: 'modal--small',
       body: [
         h('p.modal__text', T('sessions.request.text', { who })),
-        h('p.muted-text', T('sessions.request.canControl')
+        h('p.muted-text', T(this._canKey())
           + (r.guest ? ` ${T('sessions.request.isGuest')}` : '')
           + (r.ip && r.device ? ` ${T('sessions.request.fromIp', { ip: r.ip })}` : '')),
       ],
@@ -450,6 +496,13 @@ const Session = {
     const timer = setTimeout(() => modal.close(), (r.expiresIn || 60000) + 2000);
     this._prompts.set(r.requestId, { modal, timer, who });
     this._notify(T('sessions.request.text', { who }));
+  },
+
+  /** What someone asking to join will be able to do here, by this host's rules. */
+  _canKey() {
+    const s = Store.settings;
+    if (!s.sessionQueueOnly) return 'sessions.request.canControl';
+    return s.sessionSkipVote ? 'sessions.request.canQueueAndVote' : 'sessions.request.canQueueOnly';
   },
 
   _closePrompts() {
@@ -486,6 +539,7 @@ const Session = {
     $('playerHere').title = here
       ? (drift ? T('sessions.chip.playHere.drift.tooltip', { ms: Math.round(Math.abs(Player.remote.drift) * 1000) }) : T('sessions.chip.playHere.tooltip'))
       : T('sessions.chip.remoteOnly.tooltip');
+    this._drawRules(m);
     if (pill.hidden) return;
     const text = m.host ? T('sessions.chip.hosting', { count: company })
       : this.guest ? T('sessions.chip.guest', { session: m.session.name, server: this.guest.name }) : T('sessions.chip.member', { session: m.session.name });
@@ -494,6 +548,32 @@ const Session = {
     pill.title = m.host
       ? m.session.members.slice(1).map((x) => this._who(x)).join('\n')
       : T('sessions.chip.tooltip');
+  },
+
+  /**
+   * The host's rules on the player's buttons (5.3): in a session whose members
+   * only add to the queue, the others are dimmed for them (pressed, they say
+   * why); where skipping needs a vote, Next is the vote, lit once given, with
+   * the count on it ("1/2"), which the host sees on its own Next too.
+   */
+  _drawRules(m) {
+    const bar = $('player');
+    const next = $('btnNext');
+    const locked = !!m && !m.host && this.rules.queueOnly;
+    const v = m ? this.votes : null;
+    bar.classList.toggle('player--queue-only', locked);
+    bar.classList.toggle('player--no-next', locked && !v);
+    next.classList.toggle('round-btn--vote', !!v && !m.host);
+    next.classList.toggle('round-btn--voted', !!v && v.mine);
+    const count = v && v.count ? `${v.count}/${v.needed}` : '';
+    if (count) next.dataset.votes = count;
+    else delete next.dataset.votes;
+    // A station's Next is the radio's own (radio.js).
+    if (Player._radio()) return;
+    const vars = v ? { votes: v.count, needed: v.needed } : null;
+    if (v && !m.host) next.title = T(v.mine ? 'sessions.vote.next.voted' : 'sessions.vote.next', vars);
+    else if (v && v.count) next.title = T('sessions.vote.next.host', vars);
+    else next.title = T('common.nextSong');
   },
 
   /** Asks the server where this app stands (after a new stream). */
@@ -611,7 +691,12 @@ const Session = {
     this.mine = { session: data.session, host };
     this._sessionSongs(data.session);
     if (host) this.sessionId = data.session.id;
-    if (data.joined && data.joined.client !== me) {
+    const votes = data.session.votes || {};
+    if (data.skipped) {
+      toast(T('sessions.vote.toast.skipped', data.skipped), 'info');
+    } else if (data.vote && data.vote.on && data.vote.by && data.vote.by.client !== me) {
+      toast(T('sessions.vote.toast.wants', { who: this._who(data.vote.by), votes: (votes.clients || []).length, needed: votes.needed || 1 }), 'info');
+    } else if (data.joined && data.joined.client !== me) {
       toast(T(host ? 'sessions.toast.joinedYours' : 'sessions.toast.joinedThe', { who: this._who(data.joined) }), 'info');
     } else if (data.left && data.left.client !== me) {
       toast(T(host ? 'sessions.toast.leftYours' : 'sessions.toast.leftThe', { who: this._who(data.left) }), 'info');
@@ -806,6 +891,9 @@ const Session = {
       name: this.name(),
       shared: Store.settings.sessionShare !== false,
       allowVolume: !!Store.settings.sessionAllowVolume,
+      // This host's rules for the devices that joined (5.3; kept by the server).
+      queueOnly: !!Store.settings.sessionQueueOnly,
+      skipVote: !!Store.settings.sessionSkipVote,
       volume: Store.can('volume') ? Player.volume : this._mediaVolume,
       crossfade: Store.settings.crossfade ? Store.settings.crossfadeSeconds : 0,
     };
@@ -867,6 +955,14 @@ const Session = {
       const s = Store.song(id);
       return s ? s.title : T('sessions.name.aSong');
     };
+    // A server before 5.3 does not keep this host's rules: a member's button
+    // they forbid is left undone here (its votes cannot be counted there, so
+    // only this app's own Next skips).
+    if (from && from.client && !Store.server.sessionRules) {
+      const s = Store.settings;
+      if (s.sessionSkipVote && action === 'next') return;
+      if (s.sessionQueueOnly && action !== 'queueAdd' && action !== 'volume') return;
+    }
     switch (action) {
       case 'toggle': Player.toggle(); break;
       case 'play': if (!Player.isPlaying) Player.toggle(); break;

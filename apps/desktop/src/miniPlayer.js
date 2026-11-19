@@ -280,7 +280,8 @@ function createMiniPlayer({
 
   /** The song shown into the settings: at once when it or its playing changes, else every few seconds. */
   function keep(now = false) {
-    if (!state) return;
+    // A station (5.3.1) is not what Open on PC Start plays again: the song kept stays.
+    if (!state || state.radio) return;
     if (!state.hasSong) {
       if (settings.get('miniLast')) settings.set({ miniLast: null });
       keptKey = '';

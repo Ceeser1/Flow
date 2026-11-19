@@ -433,6 +433,8 @@ function start() {
     shareLink: call(() => remote.shareLink()),
     recordAwayListen: call((song, listened, duration) => actions.recordAwayListen({ song, listened, duration })),
     recordRadioListen: call((station, listened, listen) => actions.recordRadioListen({ station, listened, listen })),
+    setRadioFavourite: call((station, on, index = null) => actions.setRadioFavourite({ station, on, index })),
+    renameRadio: call((stationId, name) => actions.renameRadio({ stationId, name })),
     guestLook: call(() => guest.look()),
     guest: call((action, args = {}) => {
       if (action === 'join') return guest.join(args.serverId, args.sessionId, args.mode);
@@ -530,14 +532,13 @@ function start() {
      * answers a ringing one, askNotifications() is Android's question; each answers as alarm().
      * onAlarm(fn): it rang, was stopped, snoozed or turned itself off.
      */
+    // Internet Radio: on the iPhone too since 5.3.1 (its player plays live streams now).
+    radio: {
+      search: call((q) => stations.search(q || {})),
+      click: call((id) => stations.click(id)),
+      check: call((url) => radioDirectory.checkStream(url, { fetch: peekStream })),
+    },
     ...(platform === 'ios' ? {} : {
-      radio: {
-        search: call((q) => stations.search(q || {})),
-        click: call((id) => stations.click(id)),
-        check: call((url) => radioDirectory.checkStream(url, { fetch: peekStream })),
-        // The desktop's lets the window hear a stream; the phone's player needs no leave.
-        allow: call(() => true),
-      },
       alarm: call(() => audio.alarmGet()),
       setAlarm: call((alarm) => audio.alarmSet({
         ...alarm,

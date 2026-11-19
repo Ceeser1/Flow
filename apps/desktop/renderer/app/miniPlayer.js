@@ -10,6 +10,11 @@
 // The song shown is also kept by the main process for "Open on PC Start",
 // so it is told even while the Mini Player is closed (then every few seconds).
 //
+// An Internet Radio station in the player bar (radio.js) shows here too
+// (5.3.1): its name, what it plays ("No Song Info" when it says nothing),
+// Live and how long it has played; Previous, Next and the 10 seconds back and
+// on are not there for it. The taskbar's buttons go by the same state.
+//
 // Its Show Equalizer draws the equalizer there (mini/eq.js): the levels come
 // from here, asked for with each of its frames (Equalizer.levelsFor), so they
 // are worked out also while this window is in the tray and draws nothing.
@@ -52,6 +57,7 @@ const MiniPlayer = {
     // Its equalizer (Show Equalizer): the levels it asks for with each of its frames.
     window.flow.onMiniLevelsWanted((bars) => window.flow.miniLevels(Equalizer.levelsFor(bars)));
     Player.onChange(() => this.send());
+    Radio.onChange(() => this.send());
     Player.onSeek(() => this.send());
     Player.onVolume(() => this.send());
     Covers.onArrived((ids) => {
@@ -61,7 +67,7 @@ const MiniPlayer = {
     });
     // The time moves on by the clock over there; told again so it stays right.
     setInterval(() => {
-      if (!Player.isPlaying) return;
+      if (!Player.isPlaying && !Radio.playing) return;
       this._beat += 1;
       if (this.open || this._beat % 5 === 0) this.send();
     }, 1000);
@@ -86,6 +92,7 @@ const MiniPlayer = {
   },
 
   _state() {
+    if (Radio.owns()) return this._radioState();
     const id = Player.currentId;
     const known = id ? Store.song(id) : null;
     // In remote mode, a song newer than this library shows as the host names it.
@@ -108,6 +115,29 @@ const MiniPlayer = {
     };
   },
 
+  /** A station in the player bar: as a song, without its buttons and its place (radio: true). */
+  _radioState() {
+    const st = Radio.station;
+    return {
+      hasSong: true,
+      radio: true,
+      songId: '',
+      title: st.name,
+      artist: Radio.songLine(),
+      cover: st.favicon || '',
+      coverBig: '',
+      list: T('common.internetRadio'),
+      playing: Radio.playing,
+      connecting: Radio.connecting,
+      liveText: T('radio.bar.live'),
+      position: Radio.seconds,
+      duration: 0,
+      at: Date.now(),
+      volume: Player._shownVolume(),
+      canVolume: Store.can('volume'),
+    };
+  },
+
   /**
    * The song's big cover, for the Mini Player's "Cover as background" (the
    * small one until the big one is here). Looked up once per song and cover,
@@ -122,6 +152,8 @@ const MiniPlayer = {
 
   /** A button of the Mini Player's. */
   _do({ action, value }) {
+    // A station has none of a song's buttons there (a key of the computer's may still send them).
+    if (Radio.owns() && ['prev', 'next', 'back10', 'fwd10', 'seek'].includes(action)) return;
     if (action === 'toggle') Player.toggle();
     else if (action === 'prev') Player.prev();
     else if (action === 'next') Player.next();

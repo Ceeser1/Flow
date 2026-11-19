@@ -178,6 +178,15 @@ public class FlowAudio extends Plugin implements FlowPlayer.Events {
     }
 
     @Override
+    public void onSongInfo(String id, boolean meta, String title) {
+        JSObject e = new JSObject();
+        e.put("id", id);
+        e.put("meta", meta);
+        e.put("title", title);
+        notifyListeners("songInfo", e);
+    }
+
+    @Override
     public void onAdopt(JSObject state) {
         JSObject e = new JSObject();
         e.put("state", state);

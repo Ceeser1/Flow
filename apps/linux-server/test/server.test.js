@@ -349,7 +349,7 @@ async function get(base, route, token) {
 
 test('profiles over the network: make, sign in with a PIN, rename, sign out, delete', async () => {
   await withServer(async ({ base }) => {
-    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'radioStats', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'multiGroups', 'sessions', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
+    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'radioStats', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'multiGroups', 'radioFavs', 'radioRelay', 'sessions', 'sessionRules', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
     await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
     assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null, createProfiles: true });
@@ -1292,5 +1292,111 @@ test('playlist groups (4.5): made, filled and renamed by commands, sent as chang
   } finally {
     await server.close();
     fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test('Favourite Radios (5.3.1): each profile its own, sent as their change, renamed, kept over a restart', async () => {
+  const dirs = tempDirs();
+  const start = () => startServer({ home: dirs.home, music: dirs.music, port: 0, host: '127.0.0.1', discoveryPort: null });
+  let server = await start();
+  let base = `http://127.0.0.1:${server.port}`;
+  const as = (t) => ({ Authorization: `Bearer ${t}` });
+  const swr = { id: 'b1c2d3e4-0000-1111-2222-333344445555', name: 'SWR3', url: 'https://liveradio.swr.de/sw282p3/swr3/play.mp3', countryCode: 'DE', tags: 'pop', bitrate: 128 };
+  const own = { id: 'url:http://own.example/live', name: 'own.example', url: 'http://own.example/live', own: true };
+  let anna;
+  try {
+    const hello = (await get(base, '/api/hello')).json;
+    assert.ok(hello.features.includes('radioFavs') && hello.features.includes('radioRelay'));
+    anna = (await post(base, '/api/profiles', { name: 'Anna', pin: '1111', device: 'pc' })).json;
+    const ben = (await post(base, '/api/profiles', { name: 'Ben', device: 'phone' })).json;
+    const before = (await get(base, '/api/library', anna.token)).json.rev;
+    const r = await command(base, [
+      { cid: 'f1', at: Date.now(), type: 'setRadioFavourite', station: swr, on: true },
+      { cid: 'f2', at: Date.now(), type: 'setRadioFavourite', station: own, on: true },
+      { cid: 'f3', at: Date.now(), type: 'renameRadio', stationId: own.id, name: 'My Own FM' },
+    ], as(anna.token));
+    assert.ok(r.results.every((x) => x.ok), JSON.stringify(r.results));
+    const delta = (await get(base, `/api/library?since=${before}&as=${anna.profile.id}`, anna.token)).json;
+    assert.equal(delta.full, false);
+    assert.deepEqual(delta.radioFavs.map((s) => [s.id, s.name, s.listedName]), [[own.id, 'My Own FM', 'own.example'], [swr.id, 'SWR3', undefined]]);
+    // Ben's are his own, and none of Anna's change is his.
+    const benLib = (await get(base, '/api/library', ben.token)).json.library;
+    assert.deepEqual(benLib.radioFavs, []);
+    const benRev = (await get(base, '/api/library', ben.token)).json.rev;
+    assert.equal((await get(base, `/api/library?since=${benRev}&as=${ben.profile.id}`, ben.token)).status, 204);
+    // Out again, and back in at its place (Undo); a name given back.
+    await command(base, [
+      { cid: 'f4', at: Date.now(), type: 'setRadioFavourite', station: swr, on: false },
+      { cid: 'f5', at: Date.now(), type: 'setRadioFavourite', station: swr, on: true, index: 1 },
+      { cid: 'f6', at: Date.now(), type: 'renameRadio', stationId: own.id, name: '' },
+      { cid: 'f7', at: Date.now(), type: 'renameRadio', stationId: 'gone', name: 'X' },
+    ], as(anna.token));
+    const lib = (await get(base, '/api/library', anna.token)).json.library;
+    assert.deepEqual(lib.radioFavs.map((s) => [s.id, s.name, s.listedName]), [[own.id, 'own.example', undefined], [swr.id, 'SWR3', undefined]]);
+  } finally {
+    await server.close();
+  }
+  server = await start();
+  base = `http://127.0.0.1:${server.port}`;
+  try {
+    const lib = (await get(base, '/api/library', anna.token)).json.library;
+    assert.deepEqual(lib.radioFavs.map((s) => s.id), [own.id, swr.id], 'kept over a restart');
+  } finally {
+    await server.close();
+    fs.rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test('Internet Radio through the server (5.3.1): the sound without its metadata, what plays, the check', async () => {
+  const net = require('net');
+  const every = 16;
+  const meta = (t) => {
+    const b = Buffer.from(`StreamTitle='${t}';`);
+    const n = Math.ceil(b.length / 16);
+    return Buffer.concat([Buffer.from([n]), b, Buffer.alloc(n * 16 - b.length)]);
+  };
+  const station = net.createServer((s) => {
+    s.once('data', (req) => {
+      if (/^GET \/page/.test(req.toString())) {
+        s.end('HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html>router</html>');
+        return;
+      }
+      s.write(`ICY 200 OK\r\nicy-name: Test FM\r\nicy-metaint: ${every}\r\ncontent-type: audio/mpeg\r\n\r\n`);
+      s.write(Buffer.concat([Buffer.alloc(16, 1), meta('Massive Attack - Teardrop'), Buffer.alloc(16, 2), Buffer.from([0])]));
+      const keep = setInterval(() => s.write(Buffer.concat([Buffer.alloc(16, 3), Buffer.from([0])])), 50);
+      s.on('close', () => clearInterval(keep));
+      s.on('error', () => clearInterval(keep));
+    });
+  });
+  await new Promise((r) => station.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${station.address().port}/live`;
+  const was = process.env.FLOW_SERVER_RADIO_LOOPBACK;
+  try {
+    await withServer(async ({ base }) => {
+      // Never the machine itself, unless the tests say so.
+      process.env.FLOW_SERVER_RADIO_LOOPBACK = 'off';
+      const refused = await fetch(`${base}/api/radio/stream?s=abcdef1&u=${encodeURIComponent(url)}`);
+      assert.equal(refused.status, 403);
+      process.env.FLOW_SERVER_RADIO_LOOPBACK = 'on';
+      const ac = new AbortController();
+      const res = await fetch(`${base}/api/radio/stream?s=abcdef2&u=${encodeURIComponent(url)}`, { signal: ac.signal });
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('access-control-allow-origin'), '*');
+      const reader = res.body.getReader();
+      const got = [];
+      while (got.length < 40) got.push(...(await reader.read()).value);
+      assert.deepEqual(got.slice(0, 33), [...Buffer.alloc(16, 1), ...Buffer.alloc(16, 2), 3], 'the sound only');
+      const now = (await get(base, '/api/radio/now?s=abcdef2')).json;
+      assert.deepEqual(now, { meta: true, title: 'Massive Attack - Teardrop', name: 'Test FM' });
+      ac.abort();
+      assert.deepEqual((await post(base, '/api/radio/check', { url })).json, { url, name: 'Test FM', checked: true });
+      const page = await post(base, '/api/radio/check', { url: url.replace('/live', '/page') });
+      assert.deepEqual([page.status, page.json.code], [400, 'webPage']);
+      assert.equal((await get(base, '/api/radio/now?s=unknown1')).json.gone, true);
+    });
+  } finally {
+    if (was === undefined) delete process.env.FLOW_SERVER_RADIO_LOOPBACK;
+    else process.env.FLOW_SERVER_RADIO_LOOPBACK = was;
+    station.close();
   }
 });

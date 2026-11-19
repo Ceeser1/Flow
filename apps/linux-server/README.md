@@ -589,6 +589,13 @@ The server keeps the sessions in memory only, so a restart ends them:
   previous, seek, shuffle, repeat, the queue, a song or a playlist of the
   library) and sent to the host, at most 30 per 10 seconds per app. Volume
   only when the host allows it.
+- The host's rules (from 5.3, `sessionRules` in the hello's features), told
+  with its state: `queueOnly` leaves its members adding to the queue (and
+  the volume, where allowed), anything else is answered 403; `skipVote`
+  makes a member's Next a vote, and the host is told to go on once more than
+  half of the members (the host is not counted) want the song playing
+  skipped. Votes go with the song, with a member that leaves and with
+  another host.
 - A host that leaves hands over to the next app in joining order at once; a
   live channel that drops hands over after 15 seconds (back in time, nothing
   changes). The last app out ends the session.

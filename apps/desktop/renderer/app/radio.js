@@ -28,11 +28,26 @@
 // notification, the lock screen and the background. Paused there it stays
 // loaded, so the notification can start it again.
 //
-// Each profile has its own Favourite Radios (Settings' radioFavs, kept on this
-// device under "<server id>/<profile id>", or "private" without a server); a
-// station added by hand (the page's Add Radio) is one at once.
+// What the station plays now (5.3.1) is told by the stream itself (its ICY
+// StreamTitle): on the computer and in the web player the stream plays
+// through a relay (window.flow.radio.open: the main process's, or the Flow
+// Server's) that reads it on the way (onInfo); on the phones the phone's own
+// player reads it (the station element's 'songinfo'). A station that tells
+// nothing shows "No Song Info". The bar, Now Playing, the Mini Player, the
+// taskbar and the system's media overlay show the station's name and that.
+//
+// Each profile has its own Favourite Radios. A Flow Server that keeps them
+// (5.3.1, its feature radioFavs) has them in the profile's library, synced to
+// every device of the profile (window.flow.setRadioFavourite, renameRadio);
+// without a server, or with one from before, they are this device's
+// (Settings' radioFavs, under "<server id>/<profile id>", or "private"
+// without a server), as before. A device's own for a profile go up to its
+// server once that keeps them (_moveUp). A station added by hand (the page's
+// Add Radio) is one at once; a favourite can be given a name of its own.
 
 const RADIO_PRIVATE = 'private';
+// What a favourite keeps of a station (core radio.js cleanStation).
+const RADIO_FIELDS = ['id', 'name', 'url', 'favicon', 'homepage', 'country', 'countryCode', 'tags', 'codec', 'bitrate', 'own', 'listedName'];
 
 const Radio = {
   el: null,
@@ -47,9 +62,16 @@ const Radio = {
   heardSince: 0,
   // Of that, how much is counted in the Statistics already.
   counted: 0,
+  // The relay's number of the stream playing (0: none, or the phone's player), and what it said
+  // it plays: { meta (it tells), title } (null: not heard yet).
+  stream: 0,
+  info: null,
+  // Favourite lists of this device moved up to their server already (keys), this run.
+  _movedUp: new Set(),
   PIECE_S: 60,
   LISTEN_S: 30,
   _listeners: [],
+  _favListeners: [],
   _timer: null,
 
   init() {
@@ -95,15 +117,31 @@ const Radio = {
       this._letGo();
       this._emit();
     });
+    // What the station plays: the phone's player reads it itself.
+    el.addEventListener('songinfo', () => this._takeInfo(el.songInfo || {}));
+    if (window.flow.radio && window.flow.radio.onInfo) {
+      window.flow.radio.onInfo((info) => {
+        if (info && this.stream && info.stream === this.stream) this._takeInfo(info);
+      });
+    }
     // A song started (or the player resumed by anything) takes the bar back,
     // as does joining another device's session.
     Player.onChange(() => {
       if (this.station && (Player.isPlaying || Player.remote)) this.release();
     });
-    // Another profile or server: its own favourites.
-    Store.onServer(() => this._emit());
+    // Another profile or server: its own favourites (and a device's go up to a server that keeps them).
+    Store.onServer(() => {
+      this._moveUp();
+      this._favsChanged();
+      this._emit();
+    });
+    // The server's favourites changed (here or on another device of the profile).
+    Store.onLibrary(() => {
+      this._moveUp();
+      if (this._favsChanged()) this._favsEmit();
+    });
     Store.onSettings((patch) => {
-      if ('radioFavs' in patch) this._emit();
+      if ('radioFavs' in patch && this._favsChanged()) this._favsEmit();
       // Turned off in Settings: what plays stops and the bar goes back.
       if ('showRadio' in patch && patch.showRadio === false && this.station) this.release();
     });
@@ -127,6 +165,16 @@ const Radio = {
     this._listeners.push(fn);
   },
 
+  /** The profile's Favourite Radios changed (one in or out, renamed; here or on another device). */
+  onFavourites(fn) {
+    this._favListeners.push(fn);
+  },
+
+  _favsEmit() {
+    for (const fn of this._favListeners) fn();
+    this._emit();
+  },
+
   _emit() {
     for (const fn of this._listeners) fn();
     if (this.station) this.drawBar();
@@ -148,49 +196,155 @@ const Radio = {
 
   // ---- favourites ----
 
-  /** The profile the favourites are kept for (Statistics' keys). */
+  /** The profile the favourites are kept for on this device (Statistics' keys). */
   key() {
     const s = Store.server;
     return s && s.on && s.profile && s.serverId ? `${s.serverId}/${s.profile.id}` : RADIO_PRIVATE;
   },
 
+  /** Whether the profile's favourites are its server's (5.3.1), not this device's. */
+  onServer() {
+    const s = Store.server;
+    return !!(s && s.on && s.radioFavs && window.flow.setRadioFavourite);
+  },
+
   favourites() {
+    if (this.onServer()) return (Store.library && Store.library.radioFavs) || [];
     return (Store.settings.radioFavs || {})[this.key()] || [];
+  },
+
+  /** Whether the favourites differ from the ones last drawn (the server's library changes for much else). */
+  _favsChanged() {
+    const now = this.favourites();
+    if (now === this._favsSeen) return false;
+    const text = JSON.stringify(now);
+    this._favsSeen = now;
+    if (text === this._favsText) return false;
+    this._favsText = text;
+    return true;
   },
 
   isFavourite(station) {
     return !!station && this.favourites().some((f) => f.id === station.id);
   },
 
-  /** In or out of this profile's Favourite Radios; the newest first. */
-  setFavourite(station, on) {
+  /** The favourite of that station (its own name, if it was given one), or null. */
+  favouriteOf(station) {
+    return (station && this.favourites().find((f) => f.id === station.id)) || null;
+  },
+
+  /** What a favourite keeps of a station. */
+  _keep(station) {
+    const out = {};
+    for (const k of RADIO_FIELDS) if (station[k] !== undefined && station[k] !== '') out[k] = station[k];
+    return out;
+  },
+
+  /** In or out of this profile's Favourite Radios; the newest first (`index`: where an Undo puts it back). */
+  setFavourite(station, on, index = null) {
+    const st = this._keep(station);
+    if (this.onServer()) {
+      window.flow.setRadioFavourite(st, !!on, index).catch((err) => toast((err && err.message) || String(err), 'error'));
+      return;
+    }
     const key = this.key();
     const all = { ...(Store.settings.radioFavs || {}) };
     const now = all[key] || [];
-    const rest = now.filter((f) => f.id !== station.id);
-    all[key] = on ? [{ ...station }, ...rest] : rest;
+    if (on && now.some((f) => f.id === st.id)) return;
+    const rest = now.filter((f) => f.id !== st.id);
+    if (on) rest.splice(Number.isInteger(index) ? Math.max(0, Math.min(index, rest.length)) : 0, 0, st);
+    all[key] = rest;
     Store.saveSettings({ radioFavs: all });
   },
 
-  /** The star of a station: out again with Undo when it was one added by hand (it is gone then). */
+  /** The star of a station: out again with Undo (a station added by hand is gone then). */
   toggleFavourite(station) {
-    if (!this.isFavourite(station)) {
+    const kept = this.favouriteOf(station);
+    if (!kept) {
       this.setFavourite(station, true);
       return;
     }
     const at = this.favourites().findIndex((f) => f.id === station.id);
-    this.setFavourite(station, false);
-    toast(T('radio.removed', { station: station.name }), 'info', {
+    this.setFavourite(kept, false);
+    toast(T('radio.removed', { station: kept.name }), 'info', {
       label: T('common.undo'),
-      onClick: () => {
-        const key = this.key();
-        const all = { ...(Store.settings.radioFavs || {}) };
-        const list = (all[key] || []).filter((f) => f.id !== station.id);
-        list.splice(Math.max(0, Math.min(at, list.length)), 0, station);
-        all[key] = list;
-        Store.saveSettings({ radioFavs: all });
-      },
+      onClick: () => this.setFavourite(kept, true, at),
     });
+  },
+
+  /**
+   * A favourite's own name; empty gives it back the one it came with (its
+   * directory's, or what an added stream named itself). Asked for in a popup.
+   */
+  async rename(station) {
+    const kept = this.favouriteOf(station);
+    if (!kept) return;
+    const typed = await promptDialog({
+      title: T('radio.rename.title'), value: kept.name, confirmLabel: T('radio.rename.button'), maxLength: 200,
+    });
+    if (typed === null) return;
+    const name = typed.replace(/\s+/g, ' ').trim();
+    if (name === kept.name) return;
+    const listed = kept.listedName || kept.name;
+    if (this.onServer()) {
+      window.flow.renameRadio(kept.id, name).catch((err) => toast((err && err.message) || String(err), 'error'));
+    } else {
+      const key = this.key();
+      const all = { ...(Store.settings.radioFavs || {}) };
+      all[key] = (all[key] || []).map((f) => {
+        if (f.id !== kept.id) return f;
+        const next = { ...f, name: name || listed };
+        if (next.name === listed) delete next.listedName;
+        else next.listedName = listed;
+        return next;
+      });
+      Store.saveSettings({ radioFavs: all });
+    }
+    // The station in the bar is that one: its new name there too (and in the phone's notification).
+    if (this.isCurrent(kept)) {
+      this.station = { ...this.station, name: name || listed };
+      if (this.el.retitle) this.el.retitle(this._phoneMeta(this.station));
+      this._emit();
+    }
+  },
+
+  /**
+   * This device's favourites of the profile in use go up to its server once
+   * it keeps them (5.3.1), the oldest first so they keep their order there,
+   * those it has already left out; then they are the server's only.
+   */
+  _moveUp() {
+    if (!this.onServer()) return;
+    const key = this.key();
+    if (key === RADIO_PRIVATE || this._movedUp.has(key)) return;
+    // The server's library of this profile not here yet: later.
+    if (!Store.library || !Array.isArray(Store.library.radioFavs)) return;
+    this._movedUp.add(key);
+    const mine = (Store.settings.radioFavs || {})[key];
+    if (!Array.isArray(mine) || !mine.length) return;
+    const there = new Set(Store.library.radioFavs.map((f) => f.id));
+    for (const st of mine.slice().reverse()) {
+      if (!there.has(st.id)) window.flow.setRadioFavourite(this._keep(st), true, null).catch(() => {});
+    }
+    const all = { ...(Store.settings.radioFavs || {}) };
+    delete all[key];
+    Store.saveSettings({ radioFavs: all });
+  },
+
+  // ---- what the station plays (5.3.1) ----
+
+  /** What the relay or the phone's player says the stream plays now. */
+  _takeInfo({ meta = false, title = '' } = {}) {
+    const next = { meta: !!meta, title: String(title || '') };
+    if (this.info && this.info.meta === next.meta && this.info.title === next.title) return;
+    this.info = next;
+    this._emit();
+  },
+
+  /** The song the station plays ("Artist - Title" as it sends it), or "No Song Info"; '' until the stream has said. */
+  songLine() {
+    if (!this.station || !this.info) return '';
+    return this.info.title || T('radio.noSongInfo');
   },
 
   // ---- playing ----
@@ -228,21 +382,33 @@ const Radio = {
     }
     AudioFocus.claim('radio');
     this.connecting = true;
+    // A new connection: what it plays is told anew (the phone's pause keeps the station loaded, and what it last told).
+    if (other || !this.el.keepsLoaded) this.info = null;
     this._emit();
-    try {
-      if (window.flow.radio) await window.flow.radio.allow(station.url);
-    } catch {
-      // Without it the sound may stay silent through Web Audio, but it is tried.
+    // On the computer and in the web player through the relay (the sound for Web Audio, and what plays).
+    let src = station.url;
+    let stream = 0;
+    if (window.flow.radio && window.flow.radio.open) {
+      try {
+        const opened = await window.flow.radio.open(station.url);
+        src = opened.src;
+        stream = opened.stream;
+      } catch {
+        if (!this.isCurrent(station)) return;
+        toast(T('radio.toast.cannotPlay', { station: station.name }), 'error');
+        this._letGo();
+        this._emit();
+        return;
+      }
     }
     // Another station picked meanwhile.
     if (!this.isCurrent(station)) return;
+    if (this.stream && this.stream !== stream && window.flow.radio && window.flow.radio.close) window.flow.radio.close(this.stream);
+    this.stream = stream;
     this.el.crossOrigin = 'anonymous';
-    if (this.el.setMeta) {
-      this.el.setMeta({
-        title: station.name, artist: T('common.internetRadio'), album: 'Flow', artwork: station.favicon || '',
-      });
-    }
-    this.el.src = station.url;
+    // The phone's notification and lock screen: the station, and what it plays (its player fills that in).
+    if (this.el.setMeta) this.el.setMeta(this._phoneMeta(station));
+    this.el.src = src;
     try {
       await this.el.play();
     } catch (err) {
@@ -260,6 +426,13 @@ const Radio = {
     if (!this.station) return;
     if (this.playing) this.pause();
     else this.play(this.station);
+  },
+
+  /** What the phone's player shows for a station (it puts what the station plays in place of `artist`). */
+  _phoneMeta(station) {
+    return {
+      title: station.name, artist: T('radio.noSongInfo'), album: T('common.internetRadio'), artwork: station.favicon || '', noInfo: T('radio.noSongInfo'),
+    };
   },
 
   /** Paused: the stream is let go of; the station stays in the bar. */
@@ -285,6 +458,10 @@ const Radio = {
       this.el.removeAttribute('src');
       this.el.load();
     }
+    if (!keep && this.stream) {
+      if (window.flow.radio && window.flow.radio.close) window.flow.radio.close(this.stream);
+      this.stream = 0;
+    }
   },
 
   /** The bar back to the songs: the station stops. */
@@ -292,6 +469,7 @@ const Radio = {
     if (!this.station) return;
     this._letGo();
     this.station = null;
+    this.info = null;
     this.heard = 0;
     this.counted = 0;
     for (const fn of this._listeners) fn();
@@ -343,9 +521,16 @@ const Radio = {
     const bar = $('player');
     bar.classList.remove('player--empty', 'player--remote');
     bar.classList.add('player--radio');
-    $('playerTitle').textContent = st.name;
-    $('playerTitle').title = st.name;
-    if ($('playerSub')) $('playerSub').textContent = T('common.internetRadio');
+    const line = this.songLine();
+    if ($('playerSub')) {
+      // The phone's player: the station, what it plays below it.
+      $('playerTitle').textContent = st.name;
+      $('playerSub').textContent = line;
+    } else {
+      // The computer's: one line, the station and (fainter) what it plays.
+      $('playerTitle').replaceChildren(h('span', st.name), line ? h('span.player__radio-song', ` · ${line}`) : '');
+    }
+    $('playerTitle').title = line ? `${st.name}\n${line}` : st.name;
     // The station's picture, or the radio; only when the station changes.
     const cover = $('playerCover');
     const key = `radio:${st.id}`;
@@ -418,8 +603,8 @@ const Radio = {
     try {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: this.station.name,
-        artist: T('common.internetRadio'),
-        album: 'Flow',
+        artist: this.songLine() || T('common.internetRadio'),
+        album: T('common.internetRadio'),
         artwork: this.station.favicon ? [{ src: this.station.favicon }] : (Store.iconDataUrl ? [{ src: Store.iconDataUrl, sizes: '256x256', type: 'image/png' }] : []),
       });
       navigator.mediaSession.playbackState = this.playing ? 'playing' : 'paused';

@@ -12,8 +12,9 @@
 // the second list.
 //
 // Each row: Play / Pause before its picture and name, its country, genres and
-// quality, and the star at its right. On the phone a row of two lines: a tap
-// plays or pauses, the star at its end. The phones ask the directory for each
+// quality, and the star at its right; a favourite also has a pencil before
+// the star, for a name of its own (5.3.1). On the phone a row of two lines: a
+// tap plays or pauses, the pencil and the star at its end. The phones ask the directory for each
 // page (core radio.js createOnlineDirectory), so their Quality picker has no counts.
 
 // The Quality filter's steps in kbit/s, then "No Info" (-1): only stations without one (core radio.js RADIO_QUALITIES).
@@ -90,8 +91,9 @@ const RadioPage = {
     Radio.onChange(() => {
       if (Nav.page === 'radio') this._drawPlaying();
     });
-    Store.onSettings((patch) => {
-      if ('radioFavs' in patch && Nav.page === 'radio') this.render();
+    // The profile's favourites changed (on this device, or synced from another).
+    Radio.onFavourites(() => {
+      if (Nav.page === 'radio') this.render();
     });
     // Another profile: its own favourites.
     Store.onServer(() => {
@@ -298,7 +300,7 @@ const RadioPage = {
       rowClass: (st) => (Radio.isCurrent(st) ? 'row--current' : ''),
       onRowDblClick: (st) => Radio.toggleStation(st, rows),
       columns: this._columns('f', () => rows),
-      mobile: this._touchRows(() => rows),
+      mobile: this._touchRows(() => rows, true),
     });
     limitRows($('radioFavBox'), 'tbody tr', 10);
   },
@@ -349,14 +351,22 @@ const RadioPage = {
       on ? T('radio.favourite.remove') : T('radio.favourite.add'), () => Radio.toggleFavourite(st));
   },
 
-  /** The phone's rows (touchList.js): the picture, the name, what is known of it below, the star at the end. */
-  _touchRows(rows) {
+  /** A favourite's pencil: a name of its own (5.3.1). */
+  _rename(st) {
+    return iconButton('act.act--grey.act--rename', Icons.pencil, T('radio.rename.tooltip', { station: st.name }), () => Radio.rename(st));
+  },
+
+  /**
+   * The phone's rows (touchList.js): the picture, the name, what is known of
+   * it below, the star at the end (`favs`: the pencil before it).
+   */
+  _touchRows(rows, favs = false) {
     return {
       lead: (st) => Radio.picture(st),
       title: (st) => st.name,
       sub: (st) => [st.own ? T('radio.own') : this.countryName(st), this._genreText(st), this._quality(st)].filter(Boolean).join(' · '),
       tap: (st) => Radio.toggleStation(st, rows()),
-      side: (st) => this._star(st),
+      side: (st) => (favs ? h('span.radio-side', this._rename(st), this._star(st)) : this._star(st)),
     };
   },
 
@@ -385,7 +395,8 @@ const RadioPage = {
         sortable,
         render: (st) => h('button.link-cell.radio-name', {
           type: 'button',
-          title: st.homepage ? `${st.name}\n${st.homepage}` : `${st.name}\n${st.url}`,
+          // A favourite with a name of its own: the one it came with too.
+          title: [st.listedName ? `${st.name} (${st.listedName})` : st.name, st.homepage || st.url].join('\n'),
           onclick: () => Radio.toggleStation(st, rows()),
         }, Radio.picture(st), h('span.link-cell__name', st.name)),
       },
@@ -398,6 +409,13 @@ const RadioPage = {
       },
       { key: 'genre', label: T('common.genre'), cls: 'col-radio-genre', sortable, render: (st) => h('span.muted-text', this._genreText(st)) },
       { key: 'quality', label: T('radio.column.quality'), cls: 'col-radio-quality', sortable, render: (st) => h('span.muted-text', this._quality(st)) },
+      ...(tag === 'f' ? [{
+        key: 'rename',
+        label: '',
+        cls: 'col-radio-rename',
+        sortable: false,
+        render: (st) => this._rename(st),
+      }] : []),
       {
         key: 'star',
         label: '',

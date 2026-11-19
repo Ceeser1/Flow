@@ -27,6 +27,7 @@ const QueueView = {
       onClose: () => {
         Player._listeners = Player._listeners.filter((fn) => fn !== redraw);
         Store._listeners = Store._listeners.filter((fn) => fn !== redraw);
+        Session._listeners = Session._listeners.filter((fn) => fn !== redraw);
         this.modal = null;
         this.listEl = null;
         this.drag = null;
@@ -34,6 +35,8 @@ const QueueView = {
     });
     Player.onChange(redraw);
     Store.onLibrary(redraw);
+    // A session's host changing what its members may do with the queue.
+    Session.onChange(redraw);
     // On the phone it goes away swiped to either side, unless a song is held.
     if (Mobile.on) Mobile.swipeToClose(this.modal, ['left', 'right'], () => !!(this.drag || this._held));
     this.draw();
@@ -51,6 +54,11 @@ const QueueView = {
     // (In another device's session the host's queue is shown as it is.)
     if (Player.contextId && !Player.remote) Player.queue.fill(Player.idsOf(Player.contextId));
     const q = Player.queue;
+    // In a session whose members only add to the queue (5.3), it is to look at:
+    // no x, no Clear, nothing to drag or to click on.
+    const locked = this._locked();
+    const lk = locked ? ':locked' : '';
+    box.classList.toggle('queue--locked', locked);
 
     // Drawn in place (4.6; it was emptied and filled at every change of the
     // player or the library): each part keeps its node while it is the same
@@ -80,11 +88,11 @@ const QueueView = {
 
     const manual = q.manual.map((id) => Store.song(id));
     if (manual.some(Boolean)) {
-      put('head:manual', null, () => h('div.queue__head',
+      put(`head:manual${lk}`, null, () => h('div.queue__head',
         h('span', T('queue.nextInQueue')),
-        h('button.link-btn.queue__clear', { type: 'button', onclick: () => Player.clearQueue() }, T('common.clear'))));
+        locked ? null : h('button.link-btn.queue__clear', { type: 'button', onclick: () => Player.clearQueue() }, T('common.clear'))));
       manual.forEach((song, i) => {
-        if (song) put(`manual:${i}:${song.id}`, song, () => this._row(song, { part: 'manual', index: i }));
+        if (song) put(`manual:${i}:${song.id}${lk}`, song, () => this._row(song, { part: 'manual', index: i, locked }));
       });
     }
 
@@ -104,7 +112,7 @@ const QueueView = {
           headed = true;
           put('head:similar', null, () => h('div.queue__head', h('span', T('queue.thenSimilar'))));
         }
-        if (song) put(`auto:${i}:${song.id}`, song, () => this._row(song, { part: 'auto', index: i }));
+        if (song) put(`auto:${i}:${song.id}${lk}`, song, () => this._row(song, { part: 'auto', index: i, locked }));
       });
     } else if (!manual.some(Boolean)) {
       put('empty', null, () => h('div.queue__empty', T('queue.empty')));
@@ -113,7 +121,12 @@ const QueueView = {
     setChildren(box, nodes, { alike: false, gone: (node) => releaseCovers([node]) });
   },
 
-  _row(song, { now = false, part = null, index = 0 }) {
+  /** The host of the session this app is in keeps the queue to itself (its members only add to it). */
+  _locked() {
+    return !Session.allows('queueMove');
+  },
+
+  _row(song, { now = false, part = null, index = 0, locked = false }) {
     const text = h('span.queue__text',
       h('span.queue__title', song.title + (song.mix ? ` (${song.mix})` : '')),
       h('span.queue__artist', song.artist || ''));
@@ -126,10 +139,10 @@ const QueueView = {
         h('span.queue__dur', Util.fmtClock(song.duration)));
     }
     const row = h('div.queue__row', {
-      title: T('queue.song.play.tooltip', { song: song.title }),
+      title: locked ? '' : T('queue.song.play.tooltip', { song: song.title }),
       dataset: { part, index: String(index) },
       onclick: (e) => {
-        if (this._justDragged || e.target.closest('button')) return;
+        if (this._justDragged || e.target.closest('button') || this._locked()) return;
         Player.playFromQueue(part, index);
       },
     },
@@ -138,7 +151,7 @@ const QueueView = {
     Covers.el(song),
     text,
     h('span.queue__dur', Util.fmtClock(song.duration)),
-    iconButton('act.act--red.queue__remove', Icons.x, T('queue.song.remove'), () => Player.removeFromQueue(part, index)));
+    locked ? null : iconButton('act.act--red.queue__remove', Icons.x, T('queue.song.remove'), () => Player.removeFromQueue(part, index)));
     row.addEventListener('pointerdown', (e) => this._press(e, row));
     // The phone's own menu on a long press.
     row.addEventListener('contextmenu', (e) => {
@@ -155,7 +168,7 @@ const QueueView = {
   // bottom edge) keeps them right.
 
   _press(e, row) {
-    if (e.button !== 0 || e.target.closest('button')) return;
+    if (e.button !== 0 || e.target.closest('button') || this._locked()) return;
     // A finger moving straight away scrolls the list: it takes a song by its
     // handle, or held still for a moment.
     if (e.pointerType === 'touch' && !e.target.closest('.queue__grab')) this._hold(e, row);

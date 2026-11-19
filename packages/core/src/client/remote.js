@@ -161,8 +161,8 @@ function createRemote(env) {
   // 7: a playlist's rules, 4.0; 8: songs without stats, the stats, Statistics
   // and shared playlists' details kept apart, Favourites as a playlist, 4.3;
   // 9: playlist groups, 4.5; 10: shared groups and the groups followed, 4.5.3;
-  // 11: a playlist's groups, several, 4.5.3).
-  const CACHE_FORMAT = 11;
+  // 11: a playlist's groups, several, 4.5.3; 12: Favourite Radios, 5.3.1).
+  const CACHE_FORMAT = 12;
 
   function emptySync(serverId = '') {
     return {
@@ -170,6 +170,8 @@ function createRemote(env) {
       serverId, serverName: '', addresses: { home: '', remote: '', secret: '' }, token: '', profile: null, queue: [], sent: [], songMap: {}, listMap: {}, snapshot: null, held: null, offline: [], offlineKeep: {}, fetched: {}, kept: {}, profilePin: '', remoteFilled: false, homeFilled: false,
       // Logged out while the server could not be reached: it is told at the next connection.
       logoutPending: false,
+      // The server keeps the profiles' Favourite Radios (5.3.1): known from its last hello, also while away.
+      radioFavs: false,
     };
   }
 
@@ -191,6 +193,7 @@ function createRemote(env) {
     if (s.snapshot && (typeof s.snapshot !== 'object' || !s.snapshot.songs || !s.snapshot.lists)) s.snapshot = null;
     s.serverId = String(s.serverId || '');
     s.serverName = String(s.serverName || '');
+    s.radioFavs = s.radioFavs === true;
     const a = s.addresses && typeof s.addresses === 'object' ? s.addresses : {};
     s.addresses = { home: String(a.home || ''), remote: String(a.remote || ''), secret: String(a.secret || '') };
     return s;
@@ -374,7 +377,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, downloadsLive: false, search: false, sessions: false, trim: false, admin: false, pin: false, statistics: false, radioStats: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, sharedGroups: false, multiGroups: false, pair: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, downloadsLive: false, search: false, sessions: false, sessionRules: false, trim: false, admin: false, pin: false, statistics: false, radioStats: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, sharedGroups: false, multiGroups: false, pair: false, radioRelay: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -478,6 +481,8 @@ function createRemote(env) {
       tailscale: conn.via === 'remote' && isTailscaleAddress(conn.address),
       // Active Sessions: the server has them, and the live channel is open.
       sessions: status.state === 'online' && conn.sessions,
+      // The server keeps a session's host's rules (5.3): queue only, votes to skip.
+      sessionRules: status.state === 'online' && conn.sessions && conn.sessionRules,
       // Administration: the server has it and this profile is an admin (or the master).
       admin: status.state === 'online' && conn.admin && !!(sync.profile && sync.profile.admin),
       master: status.state === 'online' && conn.admin && !!(sync.profile && sync.profile.master),
@@ -504,6 +509,11 @@ function createRemote(env) {
       sharedGroups: !!conn.sharedGroups,
       // A playlist in several groups (4.5.3).
       multiGroups: !!conn.multiGroups,
+      // Favourite Radios kept by the server for each profile (5.3.1); known from its last hello.
+      radioFavs: !!sync.radioFavs,
+      // Internet Radio played through the server (5.3.1): the web player's way to play a station
+      // (known from its hello this run, so the menu entry stays while the server is away for a moment).
+      radioRelay: !!conn.radioRelay,
       tracked: tracked.list(),
     };
   }
@@ -1092,6 +1102,7 @@ function createRemote(env) {
         const downloadReview = Array.isArray(hello.features) && hello.features.includes('downloadReview');
         const downloadsLive = Array.isArray(hello.features) && hello.features.includes('downloadsLive');
         const sessions = Array.isArray(hello.features) && hello.features.includes('sessions');
+        const sessionRules = Array.isArray(hello.features) && hello.features.includes('sessionRules');
         const trim = Array.isArray(hello.features) && hello.features.includes('trim');
         const admin = Array.isArray(hello.features) && hello.features.includes('admin');
         const pin = Array.isArray(hello.features) && hello.features.includes('pin');
@@ -1107,10 +1118,17 @@ function createRemote(env) {
         const followedInGroups = Array.isArray(hello.features) && hello.features.includes('followedInGroups');
         const sharedGroups = Array.isArray(hello.features) && hello.features.includes('sharedGroups');
         const multiGroups = Array.isArray(hello.features) && hello.features.includes('multiGroups');
+        // Internet Radio (5.3.1): the profiles' Favourite Radios kept there, stations played through it.
+        const radioFavs = Array.isArray(hello.features) && hello.features.includes('radioFavs');
+        const radioRelay = Array.isArray(hello.features) && hello.features.includes('radioRelay');
+        if (sync.radioFavs !== radioFavs) {
+          sync.radioFavs = radioFavs;
+          saveSync();
+        }
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, downloadsLive, search, sessions, trim, admin, pin, statistics, radioStats, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, sharedGroups, multiGroups, pair,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, downloadsLive, search, sessions, sessionRules, trim, admin, pin, statistics, radioStats, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, sharedGroups, multiGroups, pair, radioRelay,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);

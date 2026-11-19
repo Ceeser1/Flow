@@ -11,7 +11,8 @@
 //   stamps   the revision each song, playlist and owner's follows last
 //            changed at, and that of the profiles' names (4.3); each
 //            owner's playlist groups too (g, 4.5), and every owner's shared
-//            groups with what the others see in them, as one (sg, 4.5.3).
+//            groups with what the others see in them, as one (sg, 4.5.3);
+//            each owner's Favourite Radios (r, 5.3.1).
 //   tombs    songs and playlists gone (deleted, or a playlist given to
 //            another owner) with the revision they went at, kept 30 days;
 //            floor: an app whose revision is older than what they reach back
@@ -100,7 +101,8 @@ const DOWNLOADS_DIR = 'Downloads';
 const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', 'setPlaylistSource', 'setPlaylistRules',
   'addSongToPlaylists', 'addSongsToPlaylist', 'removeFromPlaylist', 'deleteSong', 'editSong',
   'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'recordAwayListen', 'recordRadioListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist',
-  'createGroup', 'renameGroup', 'deleteGroup', 'setPlaylistGroup', 'setGroupShared', 'followGroup', 'unfollowGroup', 'setGroupPlaylistFollowed', 'addPlaylistToGroup', 'removePlaylistFromGroup']);
+  'createGroup', 'renameGroup', 'deleteGroup', 'setPlaylistGroup', 'setGroupShared', 'followGroup', 'unfollowGroup', 'setGroupPlaylistFollowed', 'addPlaylistToGroup', 'removePlaylistFromGroup',
+  'setRadioFavourite', 'renameRadio']);
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');
@@ -166,7 +168,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     touched: rawState.touched && typeof rawState.touched === 'object' ? rawState.touched : {},
     seen: Array.isArray(rawState.seen) ? rawState.seen.map(String) : [],
     stamps: {
-      s: counts(rs.s), p: counts(rs.p), o: counts(rs.o), g: counts(rs.g), n: count(rs.n), sg: count(rs.sg),
+      s: counts(rs.s), p: counts(rs.p), o: counts(rs.o), g: counts(rs.g), r: counts(rs.r), n: count(rs.n), sg: count(rs.sg),
     },
     tombs: { s: tombList(rt.s, 3), p: tombList(rt.p, 4) },
     floor: count(rawState.floor),
@@ -224,7 +226,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   // fields the apps get.
 
   const known = {
-    songs: new Map(), lists: new Map(), follows: new Map(), groups: new Map(), names: '', sharedGroups: '',
+    songs: new Map(), lists: new Map(), follows: new Map(), groups: new Map(), radio: new Map(), names: '', sharedGroups: '',
   };
 
   /** Every playlist with its owner: [owner, playlist]. */
@@ -244,6 +246,11 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   /** Every owner's playlist groups (4.5): [owner, groups]. */
   function everyGroups() {
     return [[prof.DEFAULT_OWNER, data.groups || []], ...Object.entries(profiles).map(([id, p]) => [id, p.groups || []])];
+  }
+
+  /** Every owner's Favourite Radios (5.3.1): [owner, stations]. */
+  function everyRadio() {
+    return [[prof.DEFAULT_OWNER, data.radioFavs || []], ...Object.entries(profiles).map(([id, p]) => [id, p.radioFavs || []])];
   }
 
   // A function made for the fields (4.3.5: 100 000 songs after every change).
@@ -339,6 +346,24 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       if (groupOwners.has(owner)) continue;
       known.groups.delete(owner);
       delete state.stamps.g[owner];
+    }
+    // Favourite Radios (5.3.1): a list that is still the one it was has not changed.
+    const radioOwners = new Set();
+    for (const [owner, favs] of everyRadio()) {
+      radioOwners.add(owner);
+      const was = known.radio.get(owner);
+      if (was && was.row === favs) continue;
+      const text = JSON.stringify(favs);
+      known.radio.set(owner, { row: favs, text });
+      if (was && was.text === text) continue;
+      // An owner with none yet (every one, at the first start with 5.3.1) is nothing to tell.
+      if (!was && !favs.length) continue;
+      stamp(state.stamps.r, owner);
+    }
+    for (const owner of [...known.radio.keys()]) {
+      if (radioOwners.has(owner)) continue;
+      known.radio.delete(owner);
+      delete state.stamps.r[owner];
     }
     // Every owner's shared groups with the playlists the others see in them (4.5.3), one stamp for all.
     const sharedGroups = JSON.stringify(prof.sharedGroupsFor(data, profiles, profileNames(), null, true));
@@ -656,6 +681,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   const groupsOfOwner = (owner) => (owner === prof.DEFAULT_OWNER ? data.groups : (profiles[owner] || {}).groups) || [];
   const groupFollowsOf = (owner) => (owner === prof.DEFAULT_OWNER ? data.groupFollows : (profiles[owner] || {}).groupFollows) || [];
   const groupSkipsOf = (owner) => (owner === prof.DEFAULT_OWNER ? data.groupSkips : (profiles[owner] || {}).groupSkips) || {};
+  const radioOf = (owner) => (owner === prof.DEFAULT_OWNER ? data.radioFavs : (profiles[owner] || {}).radioFavs) || [];
 
   /**
    * What changed for an app signed in to `profileId` (null: the Default)
@@ -664,9 +690,10 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
    * Favourites too), deletedPlaylists, follows?, groups? (4.5), sharedPlaylists (the ones it
    * follows, with their songs; also those of the groups it follows, 4.5.3),
    * unshared (followed ones no longer shared), groupFollows? and sharedGroups?
-   * (4.5.3: the groups the others share with it), profileNames? }. Too old,
-   * unknown or -1: everything as { rev, full: true, library: { songs,
-   * playlists, groups, follows, groupFollows, sharedPlaylists, sharedGroups, profileNames } }.
+   * (4.5.3: the groups the others share with it), radioFavs? (5.3.1: its
+   * Favourite Radios), profileNames? }. Too old, unknown or -1: everything as
+   * { rev, full: true, library: { songs, playlists, groups, follows,
+   * groupFollows, sharedPlaylists, sharedGroups, radioFavs, profileNames } }.
    * Songs come without stats and stars: those are each owner's (statsChanges,
    * the Favourites list).
    */
@@ -691,6 +718,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       out.groupSkips = { ...groupSkipsOf(owner) };
     }
     if (newer(state.stamps.g, owner)) out.groups = groupsOfOwner(owner).map((g) => ({ ...g }));
+    if (newer(state.stamps.r, owner)) out.radioFavs = radioOf(owner).map((st) => ({ ...st }));
     // The groups the others share (4.5.3): those followed bring their playlists along.
     const sharedGroups = prof.sharedGroupsFor(data, profiles, names, owner === prof.DEFAULT_OWNER ? null : owner);
     const groupsChanged = full || state.stamps.sg > from;
@@ -723,6 +751,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
           groupSkips: out.groupSkips,
           sharedPlaylists: out.sharedPlaylists,
           sharedGroups: out.sharedGroups,
+          radioFavs: radioOf(owner).map((st) => ({ ...st })),
           profileNames: names,
           ignoredFiles: [],
         },
@@ -737,7 +766,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   /** Whether changes() found nothing for the app. */
   function noChanges(c) {
     return !c.full && !c.songs.length && !c.playlists.length && !c.sharedPlaylists.length && !c.unshared.length
-      && !c.deletedSongs.length && !c.deletedPlaylists.length && !c.follows && !c.groups && !c.sharedGroups && !c.groupFollows && !c.groupSkips && !c.profileNames;
+      && !c.deletedSongs.length && !c.deletedPlaylists.length && !c.follows && !c.groups && !c.sharedGroups && !c.groupFollows && !c.groupSkips && !c.radioFavs && !c.profileNames;
   }
 
   /**

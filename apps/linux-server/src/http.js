@@ -83,6 +83,12 @@
 //   GET  /api/sessions/songs/:gid/audio   a song a guest brought into this app's session (sessions.js)
 //   GET  /api/sessions                 { sessions, mine, request }: Active Sessions
 //   POST /api/sessions { type, ... }   taking part in them (sessions.js)
+//   GET  /api/radio/stream?u=&s=       an Internet Radio station played through, for
+//                                      the web player (5.3.1, feature "radioRelay";
+//                                      radioRelay.js): the sound only
+//   GET  /api/radio/now?s=             { meta, title, name }: what that stream plays
+//   POST /api/radio/check { url }      Add Radio's check: { url, name, checked }, or
+//                                      { error, code } (core radioStream.js)
 //
 // Downloads by the server (downloads.js; only when /api/hello lists the
 // "download" feature). Without the "downloadQueue" feature (servers before
@@ -183,6 +189,7 @@ const { createVorbis } = require('./vorbis');
 const { createAdminRoutes } = require('./admin');
 const { createPairing, LIFE_MS: PAIR_LIFE_MS } = require('./pairing');
 const { createGuests } = require('./guests');
+const { createRadioRelay } = require('./radioRelay');
 
 // 2 (4.3): the library comes as what changed (GET /api/library?since=), the
 // stats apart from it, Favourites as playlists, changes pushed on the live channel.
@@ -194,7 +201,7 @@ const PROTOCOL = 2;
 // followedInGroups: followed playlists put into groups too, kept in the group's followed (4.5.1).
 // sharedGroups: groups shared (with their playlists) and followed, sharedGroups and groupFollows in the library (4.5.3).
 // multiGroups: a playlist in several groups (its `groups`), addPlaylistToGroup and removePlaylistFromGroup (4.5.3).
-const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'radioStats', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'multiGroups'];
+const FEATURES = ['profiles', 'admin', 'pin', 'statistics', 'radioStats', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'multiGroups', 'radioFavs', 'radioRelay'];
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 const MAX_COVER = 4 * 1024 * 1024;
@@ -215,9 +222,11 @@ const MIME = {
 };
 
 class HttpError extends Error {
-  constructor(status, message) {
+  /** `extra`: more fields for the answer's JSON (an error's code). */
+  constructor(status, message, extra = undefined) {
     super(message);
     this.status = status;
+    if (extra) this.extra = extra;
   }
 }
 
@@ -467,6 +476,8 @@ function createHttpServer({
     });
   }
   const vorbis = createVorbis({ home: () => config.home, ffmpeg: tools.ffmpeg, log });
+  // Internet Radio played through for the web player (5.3.1).
+  const radio = createRadioRelay({ log });
   // Sessions of levels 3 and 4 do not outlive the server's run.
   const startedAt = Date.now();
 
@@ -961,7 +972,7 @@ function createHttpServer({
       // From home at level 3 and 4 no password is asked for, so none is announced.
       const home = openAtHome(client);
       // Downloading only with yt-dlp and ffmpeg on the machine.
-      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck', 'downloadQueue', 'downloadReview', ...(live ? ['downloadsLive'] : [])] : []), ...(live ? ['sessions'] : []),
+      const features = [...FEATURES, ...(downloads && downloads.available() ? ['download', 'search', 'downloadCheck', 'downloadQueue', 'downloadReview', ...(live ? ['downloadsLive'] : [])] : []), ...(live ? ['sessions', 'sessionRules'] : []),
         ...(tools.ffmpeg() ? ['trim'] : []), ...(lyrics ? ['lyrics', 'ownLyrics', 'lyricsSync'] : []), ...(guests && cfg.guests ? ['guests'] : [])];
       const answer = {
         app: 'flow-server', protocol: PROTOCOL, features, version, id: cfg.id, name: cfg.name, password: !!cfg.password && !home,
@@ -1147,6 +1158,37 @@ function createHttpServer({
     m = /^\/api\/songs\/([\w-]{1,64})$/.exec(p);
     if (m && req.method === 'PUT') return upload(req, res, url, m[1], profileId, { ip: client.ip, device: entry ? entry.device : '' });
     if (p.startsWith('/api/downloads')) return downloadRoute(req, res, p, profileId, url);
+    if (p.startsWith('/api/radio/')) return radioRoute(req, res, p, url, entry, client);
+    throw new HttpError(404, 'Nothing here.');
+  }
+
+  /** Internet Radio through the server (radioRelay.js): the app is its token's, else its address. */
+  async function radioRoute(req, res, p, url, entry, client) {
+    const app = (entry && (entry.client || entry.hash)) || client.ip;
+    if (p === '/api/radio/stream' && (req.method === 'GET' || req.method === 'HEAD')) {
+      if (req.method === 'HEAD') {
+        res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' });
+        res.end();
+        return;
+      }
+      try {
+        await radio.stream(res, { url: url.searchParams.get('u') || '', id: url.searchParams.get('s') || '', app });
+      } catch (err) {
+        throw new HttpError(err.status || 502, err.message, err.code ? { code: err.code } : undefined);
+      }
+      return;
+    }
+    if (p === '/api/radio/now' && req.method === 'GET') {
+      return sendJson(res, 200, radio.now(url.searchParams.get('s'), app) || { meta: false, title: '', name: '', gone: true });
+    }
+    if (p === '/api/radio/check' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      try {
+        return sendJson(res, 200, await radio.check(String((body && body.url) || '')));
+      } catch (err) {
+        throw new HttpError(err.status && err.status < 500 ? 400 : 502, err.message, { code: err.code || 'unreachable' });
+      }
+    }
     throw new HttpError(404, 'Nothing here.');
   }
 

@@ -127,7 +127,8 @@ Open to anyone (only the refusals above apply).
   without it); `download` when the server can download
   songs itself (yt-dlp and ffmpeg there, not turned off), and with it
   `search` (searching by a song's name; older servers lack it); `sessions` for
-  Active Sessions; `trim` when ffmpeg is there. From 4.0: `smartPlaylists`
+  Active Sessions (from 5.3 with `sessionRules`: a host's "queue only" and
+  votes to skip); `trim` when ffmpeg is there. From 4.0: `smartPlaylists`
   (a playlist's `rules` kept, see Commands), `pair` (pairing codes for QR
   codes, see [Pairing](#pairing-qr-codes)), `lyrics` (`GET
   /api/songs/<id>/lyrics`), from 4.0 `ownLyrics` (`PUT
@@ -139,7 +140,10 @@ Open to anyone (only the refusals above apply).
   `sharedGroups` (groups shared and followed: a group's `shared`,
   `sharedGroups`, `groupFollows` and `groupSkips` in the library, see Commands),
   `multiGroups` (a playlist in several groups: its `groups`,
-  `addPlaylistToGroup` and `removePlaylistFromGroup`).
+  `addPlaylistToGroup` and `removePlaylistFromGroup`). From 5.3.1:
+  `radioFavs` (each profile's Favourite Radios: `radioFavs` in the library,
+  `setRadioFavourite` and `renameRadio`) and `radioRelay` (Internet Radio
+  played through the server, see [Internet Radio](#internet-radio)).
 - `password`: whether this caller has to sign in.
 - `tailscale`: only at level 2 and up, only to callers on a private network
   that did not come through a proxy.
@@ -197,7 +201,7 @@ Query: `since=<rev>` and `as=<profile id>` (both optional).
 {
   "rev": 412,
   "full": true,
-  "library": { "songs": [...], "playlists": [...], "groups": [...], "follows": [...], "groupFollows": [...], "groupSkips": {...}, "sharedPlaylists": [...], "sharedGroups": [...], "profileNames": {...}, "ignoredFiles": [] },
+  "library": { "songs": [...], "playlists": [...], "groups": [...], "follows": [...], "groupFollows": [...], "groupSkips": {...}, "sharedPlaylists": [...], "sharedGroups": [...], "radioFavs": [...], "profileNames": {...}, "ignoredFiles": [] },
   "profile": { "id": "9f3a1c0b7e2d", "name": "Sam", "pin": false, "createdAt": 1760270000000, "admin": false, "master": false },
   "rules": { "createProfiles": true, "songDelete": "anyone" }
 }
@@ -217,8 +221,9 @@ Query: `since=<rev>` and `as=<profile id>` (both optional).
 ```
 
 `songs` and `playlists` hold the whole of each one that changed (or is new);
-`follows`, `groupFollows`, `groupSkips`, `groups`, `sharedGroups` and
-`profileNames` come only when they changed (`groups` whole, all of this
+`follows`, `groupFollows`, `groupSkips`, `groups`, `sharedGroups`,
+`radioFavs` (5.3.1) and `profileNames` come only when they changed (`groups`
+and `radioFavs` whole, all of this
 profile's; `sharedGroups` whole, all the others share with it). `profile` is null
 without one. `rules` (3.5): the admins' rules as they touch this caller:
 whether it may make profiles, and `songDelete` `"owner"` when only who added
@@ -232,6 +237,7 @@ gzipped to a caller that sends `Accept-Encoding: gzip`.
 | `groups` | 4.5: this profile's playlist groups, folders of playlists: `[{ id, name, createdAt, followed? }]`. A group may be empty. `followed` (4.5.1): the ids of the playlists this profile follows that it put into the group (another profile's playlist has no `groups` of the follower's); in several groups too (4.5.3), gone when unfollowed or when its owner no longer shares it (4.5.3). `shared` (4.5.3): `true` while the other profiles see the group |
 | `sharedPlaylists` | the playlists of others this profile follows, with their songs: `{ id, name, createdAt, entries, ownerId, ownerName, favourites? }`; also those in the groups it follows, but those it unfollowed there (4.5.3) (the others: `GET /api/shared`) |
 | `follows` | ids of the shared playlists this profile follows |
+| `radioFavs` | 5.3.1: this profile's Favourite Radios, the newest first: `[{ id, name, url, favicon, homepage, country, countryCode, tags, codec, bitrate, own, listedName? }]` (`id`: radio-browser.info's station id, or `url:<address>` for one added by its address, `own: true`); `listedName` while it has a name of its own (the name it came with) |
 | `sharedGroups` | 4.5.3: the groups the other profiles share with this one: `[{ id, name, createdAt, ownerId, ownerName, playlists }]`; `playlists`: the ids of the shared playlists in it (the owner's, and those the owner follows that are still shared) |
 | `groupFollows` | 4.5.3: ids of the shared groups this profile follows (a follow waits while the group is not shared, and goes when it is deleted) |
 | `groupSkips` | 4.5.3: `{ [groupId]: [playlistId] }`, the playlists this profile unfollowed inside a group it follows: for that group only |
@@ -335,6 +341,8 @@ app's `client` id too, its live channel does not send those again.
 | `renameGroup` | `groupId`, `name` | 4.5 |
 | `deleteGroup` | `groupId` | 4.5: the group goes, its playlists stay (in no group). Always wins, like a delete of a playlist |
 | `addPlaylistToGroup` / `removePlaylistFromGroup` | `playlistId`, `groupId` | 4.5.3 (`multiGroups`): into one more group, or out of one, its other groups kept; own or followed playlists as for `setPlaylistGroup`; into a shared group an own one is shared too |
+| `setRadioFavourite` | `station`, `on`, `index?` | 5.3.1 (`radioFavs`): a station into this profile's Favourite Radios (first, or at `index`: an Undo) or out of them (`on: false`); one already in keeps its place and name |
+| `renameRadio` | `stationId`, `name` | 5.3.1: a favourite station's own name; `""` gives it back the one it came with. `skipped: "gone"` when it is no favourite |
 | `setPlaylistGroup` | `playlistId`, `groupId` | 4.5: the playlist into that group only (out of every other), or `""` out of all; `skipped: "gone"` when the group or the playlist is no longer there. Not Favourites. From 4.5.1 also a playlist this profile follows (kept in the group's `followed`); one not followed is `skipped: "gone"`, so an app follows it first (`followPlaylist`, then this, in one batch) |
 | `setGroupShared` | `groupId`, `shared` | 4.5.3: the other profiles see the group (with its shared playlists) and can follow it. Shared, every playlist of the owner's in it is shared too (not a smart one), and one put into it later; no longer shared, they stay shared |
 | `followGroup` / `unfollowGroup` | `groupId` | 4.5.3: another profile's shared group; its playlists come with their songs as followed ones do, without being in `follows`. Not one's own |
@@ -557,6 +565,38 @@ master admin. Nobody changes their own profile or the master's here.
 | `POST /api/admin/backups/restore` | `{ name }` | *master*: the library and the profiles put back as they were (a backup of now made first): `{ songs, back, missing, kept, profiles }` |
 | `POST /api/admin/password` | `{ current, password }` or `{ current, remove: true }` | *master*: the server password changed (or taken away, levels 1 and 2 only). Every device is signed out; the master's own gets `{ token }`. 403 for a wrong `current` |
 
+## Internet Radio
+
+5.3.1, feature `radioRelay`: the web player's stations play through the
+server. A page cannot let its Web Audio hear most stations itself (they send
+no CORS header), nor play one on plain http from an https page, nor read what
+a station plays. The server never asks itself or the machine's own services
+(loopback, link-local) and passes on sound only (a web page or anything else
+is refused). At most 2 streams at once per app, 12 in all.
+
+### GET /api/radio/stream?u=\<address\>&s=\<name\>
+
+The station at `u` played through (`?t=` for the token, as a song's audio):
+the sound only, its ICY metadata taken out, `Access-Control-Allow-Origin: *`.
+A `.pls` / `.m3u` is followed to its first stream. `s`: the app's own name
+for this stream (6 to 64 letters, digits, `-`, `_`), to ask what it plays.
+403 for an address not to be asked, 415 for no stream there (a page, HLS),
+503 with too many streams, 502 / 504 when the station cannot be reached.
+
+### GET /api/radio/now?s=\<name\>
+
+`{ meta, title, name }`: whether the station says what it plays (ICY
+metadata), what that is now (`"Artist - Title"` as it sends it; `""` none) and
+its `icy-name`. Kept a minute after the stream ended; unknown: `{ gone: true }`.
+
+### POST /api/radio/check `{ url }`
+
+Add Radio's check, by the same rules: `{ url, name, checked }` (`url`: the
+stream's own address, a playlist's first stream; `name`: its `icy-name`;
+`checked: false` when no sound type was named). Else 400 / 502 with `{ error,
+code }`, `code` one of `notAnAddress`, `noAnswer`, `unreachable`,
+`httpError`, `noStream`, `hls`, `webPage`, `refused`.
+
 ## Live channel
 
 ### GET /api/live?client=\<install id\>&device=\<name\>&rev=\<rev\>&srev=\<stats rev\>
@@ -621,7 +661,7 @@ client needs its live channel open to take part; it hears back there.
     "playing": true, "listeners": 1,
     "members": [{ "client": "...", "profileName": "Sam", "device": "Living room PC", "mode": "host", "joinedAt": 1760270000000 }]
   }],
-  "mine": { "session": { "id", "name", "hostClient", "members", "allowVolume" }, "state": { ... }, "host": false },
+  "mine": { "session": { "id", "name", "hostClient", "members", "allowVolume", "rules", "votes", "songs" }, "state": { ... }, "host": false },
   "request": { "requestId": "...", "sessionId": "...", "expiresIn": 42000 }
 }
 ```
@@ -651,7 +691,8 @@ plays, in order; leave out when unchanged), `queue` (`{ contextId, currentId,
 shuffle, manual, auto, used, cursor, history }`), `at` (when `position` was
 read, in server time), `name` ("Profile - Output device"), `shared` (false:
 not listed for others), `allowVolume`, `volume` (0-1), `crossfade`
-(seconds), `outputDelay` (ms).
+(seconds), `outputDelay` (ms), and from 5.3 the host's rules for its
+members, `queueOnly` and `skipVote` (below).
 
 **`control` actions:**
 
@@ -666,6 +707,28 @@ not listed for others), `allowVolume`, `volume` (0-1), `crossfade`
 | `playSong` | `songId`, `ids?`, `contextName?`, `contextId?` |
 | `playPlaylist` | `playlistId` or `name` (`"all"` / "All Songs" works too); worked out from the library |
 | `volume` | `value` (0-1); only when the host allows it (403) |
+| `skipVote` | `on` (false takes the vote back); only where the host asks for votes (409 otherwise). → `{ voted, votes, needed }`, or `{ voted: false, skipped: true }` when it settled the vote |
+
+**The host's rules** (from 5.3; `sessionRules` in the hello's `features`),
+set in its `state` and shown to the members as `session.rules`
+(`{ queueOnly, skipVote }`):
+
+- `queueOnly`: a member's `control` is taken for `queueAdd` (and `volume`,
+  where allowed) only; anything else is answered 403 with `rule:
+  "queueOnly"`. With `skipVote` too, `next` and `skipVote` stay (the vote).
+- `skipVote`: a member's `next` is its vote (as `skipVote` with `on: true`)
+  and answered like one. Once more than half of the members want the song
+  playing skipped (the host is not counted: 1 of 1, 2 of 2, 2 of 3, 3 of 4
+  ...), the host gets `control` with `action: "next"` and `args: { vote:
+  { votes, needed } }`, and every member a `session` event with `skipped:
+  { votes, needed }`. `session.votes` is `{ clients, needed }`: who has
+  voted, and how many it takes. Votes are for the song playing: gone when
+  the host's `songId` changes, with a member that leaves (the votes left
+  are counted again) and with another host. The host's own Next is not a
+  control and skips at once.
+
+Controllers that are no members (`controlSession`, `controlPlayer` in
+`sessions.js`) are not bound by the rules.
 
 ```sh
 curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
@@ -680,7 +743,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/jso
 | `joinRequest` | the host | `{ requestId, sessionId, client, profileName, device, ip, expiresIn }`, and `guest: true` with `serverName` for a guest from another server (4.0) |
 | `joinCancelled` | the host | `{ requestId, sessionId }`: taken back or run out |
 | `joinResult` | who asked | `{ requestId, sessionId, ok: true, session, state }`, or `ok: false` with `reason`: `declined` (+ `retryIn`), `expired`, `full`, `ended`, `unshared` |
-| `session` | every member, when members change | `{ session }` |
+| `session` | every member, when members, the host's rules or the votes change | `{ session }`, with `joined` / `left` (a member), `hostChanged`, and from 5.3 `vote: { by, on }` (a member voted to skip, or took it back) or `skipped: { votes, needed }` |
 | `state` | the members | `{ sessionId, state }` |
 | `control` | the host | `{ sessionId, action, args, from: { client, profileName, device } }` |
 | `hostChanged` | the new host | `{ sessionId, previous: { client, profileName, device }, reason, state, session }` |
