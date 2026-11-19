@@ -2388,6 +2388,27 @@ playlist.header.smartPlaylist
   en: Smart playlist ·
   de: Smarte Playlist ·
 
+# A temporary playlist (5.2: a song radio or an artist radio): kept only until Flow is closed, unless it is saved.
+playlist.header.temporaryPlaylist
+  en: Temporary Playlist ·
+  de: Temporäre Playlist ·
+
+playlist.temp.save
+  en: Save playlist
+  de: Playlist speichern
+
+playlist.temp.save.tooltip
+  en: Keep this playlist: it moves to Your Playlists and is a normal playlist from then on
+  de: Diese Playlist behalten: Sie kommt zu „Deine Playlists“ und ist ab dann eine normale Playlist
+
+playlist.temp.discard.tooltip
+  en: Remove this temporary playlist
+  de: Diese temporäre Playlist entfernen
+
+playlist.temp.saved
+  en: Saved "{playlist}" to Your Playlists
+  de: „{playlist}“ in „Deine Playlists“ gespeichert
+
 playlist.search.placeholder
   en: Search song titles in {playlist}
   de: Songtitel in {playlist} suchen
@@ -2618,13 +2639,14 @@ playlist.song.edit
   en: Edit
   de: Bearbeiten
 
-playlist.song.songRadio
-  en: Start song radio
-  de: Song-Radio starten
+# The Radios popup (5.2), of a song's More and of the player bar: below each, the song or the artist it starts from.
+radios.startSong
+  en: Start Song-Radio...
+  de: Song-Radio starten...
 
-playlist.song.artistRadio
-  en: Start artist radio ({artist})
-  de: Interpreten-Radio starten ({artist})
+radios.startArtist
+  en: Start Artist-Radio...
+  de: Interpreten-Radio starten...
 
 playlist.song.removeFromPlaylists
   en: Remove from Playlist(s)
@@ -5493,6 +5515,10 @@ nav.section.what.playlists
   en: the playlists
   de: Playlists
 
+nav.section.what.temporaryPlaylists
+  en: the temporary playlists
+  de: temporäre Playlists
+
 nav.section.what.followedPlaylists
   en: the followed playlists
   de: Gefolgte Playlists
@@ -5559,14 +5585,10 @@ player.session
   en: Session
   de: Session
 
-# A song radio / artist radio playing (5.1.2): its name in the player bar and the Queue.
-player.radio.song
-  en: Song radio: {title}
-  de: Song-Radio: {title}
-
-player.radio.artist
-  en: Artist radio: {artist}
-  de: Interpreten-Radio: {artist}
+# A song radio / artist radio (5.2): the name of its temporary playlist, after the song or the artist.
+temp.radio.name
+  en: {name} Radio
+  de: {name} Radio
 
 # Player bar › messages
 player.toast.couldNotPlay
@@ -7687,6 +7709,14 @@ common.playlistGroups
   en: Playlist Groups
   de: Playlist-Gruppen
 
+common.temporaryPlaylists
+  en: Temporary Playlists
+  de: Temporäre Playlists
+
+common.radios
+  en: Radios
+  de: Radios
+
 common.activeJams
   en: Active Jams
   de: Aktive Jams
@@ -8466,6 +8496,10 @@ window.playlist.pick.banner
 window.playlist.noMatches
   en: No songs match the search.
   de: Keine Songs passen zur Suche.
+
+window.playlist.temp.hint
+  en: This playlist will be removed at the end of your session unless you save it.
+  de: Diese Playlist wird am Ende deiner Sitzung entfernt, wenn du sie nicht speicherst.
 
 # The window › the player bar
 window.player.playHere

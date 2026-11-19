@@ -478,6 +478,32 @@ body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s;
 .pl-picker__empty { padding: 8px 2px; color: var(--text-dim); }
 .pl-picker .btn { align-self: flex-end; margin-top: 4px; }
 
+/* "Radios" (5.2, songActions.js pickRadio): the same popup with two rows,
+   Start Song-Radio and Start Artist-Radio, each with what it starts from below it. */
+.radio-pick { width: 264px; padding-bottom: 8px; }
+.radio-pick__list { display: flex; flex-direction: column; margin: 0 -8px; }
+.radio-pick__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 50px;
+  padding: 6px 8px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-bright);
+  cursor: pointer;
+  text-align: left;
+}
+.radio-pick__row:hover { background: rgba(255, 255, 255, 0.07); }
+.radio-pick__icon { flex: none; display: inline-flex; color: var(--grey); }
+.radio-pick__icon .icon { width: 19px; height: 19px; }
+.radio-pick__row:hover .radio-pick__icon { color: var(--text-bright); }
+.radio-pick__text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.radio-pick__label { font-weight: 600; }
+.radio-pick__from { color: var(--text-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* ===== one playlist ===== */
 
 /* The panel behind a song list's top: title, controls, search, and the column
@@ -509,6 +535,13 @@ body.dragging-playlist .group { transition: background 0.1s, outline-color 0.1s;
 #plOfflineNote:empty { display: none; }
 /* Share at the row's right end, below Update (the phone orders its own, mobile.css). */
 .pl-head__row #plShare { margin-left: auto; }
+/* A temporary playlist (5.2) has Save playlist there instead, the red X that
+   throws it away right of it, and its hint in a row of its own above the search. */
+.pl-temp-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 14px; }
+.toggle:disabled { opacity: 0.5; cursor: default; }
+.toggle--danger { width: 36px; padding: 0; justify-content: center; color: var(--red); }
+.toggle--danger:hover:not(:disabled) { color: var(--red); border-color: rgba(220, 120, 120, 0.5); background: rgba(220, 120, 120, 0.14); }
+.pl-temp-hint { margin: -4px 0 12px; color: var(--amber); font-size: 13px; }
 
 /* "Update from source" while its playlist's link is read (playlistUpdate.js): light blue, the icon
    turning clockwise once every 2 seconds. */

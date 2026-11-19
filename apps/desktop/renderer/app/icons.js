@@ -20,6 +20,9 @@ const Icons = (() => {
     followed: img('followed'),
     shuffle: img('shuffle'),
     playlists: svg('<path d="M4 6h12M4 11h12M4 16h7"/><circle cx="17" cy="17" r="3"/><path d="M20 17V6h2"/>'),
+    // A list with a clock: the temporary playlists (5.2). A disk: one of them saved.
+    tempList: svg('<path d="M4 6h12M4 11h7M4 16h4"/><circle cx="16.5" cy="16" r="4.5"/><path d="M16.5 13.8V16l1.6 1"/>'),
+    save: svg('<path d="M5 3.5h11l3.5 3.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5z"/><path d="M7.5 3.5v5h8v-5"/><path d="M7.5 20.5V13h9v7.5"/>'),
     // A folder: a playlist group (4.5).
     folder: svg('<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/>'),
     list: svg('<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>'),

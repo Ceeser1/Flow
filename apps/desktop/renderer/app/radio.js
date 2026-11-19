@@ -348,6 +348,8 @@ const Radio = {
     $('btnBack10').disabled = true;
     $('btnFwd10').disabled = true;
     $('btnAddToPlaylist').disabled = true;
+    // The Radios popup (5.2) makes a list from a song of the library: a station is none.
+    $('btnRadios').disabled = true;
     const fav = this.isFavourite(st);
     $('btnFavourite').disabled = false;
     $('btnFavourite').classList.toggle('sq-btn--fav-on', fav);

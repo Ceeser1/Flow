@@ -153,11 +153,14 @@ const Player = {
   RADIO_SONGS: 100,
 
   /**
-   * Song radio / Artist radio (5.1.2, a song's More): a list of songs like
-   * that song (it plays first) or that artist (autoDj.js radio), played as
-   * a list of its own, "Song radio: <title>" in the bar and the Queue. Its
-   * end goes on as any list's: over again, or Continue with similar songs.
-   * In a session, it plays on the host as a list from here.
+   * Song radio / Artist radio (5.1.2; the Radios popup of the player bar and
+   * of a song's More): a list of songs like that song (it plays first) or
+   * that artist (autoDj.js radio). Since 5.2 it is a temporary playlist
+   * (tempLists.js), "<title> Radio" or "<artist> Radio": it shows in the
+   * menu, its page opens, and it plays from its first song. The same radio
+   * started again is a new list with another mix. Its end goes on as any
+   * list's: over again, or Continue with similar songs. In a session, it
+   * plays on the host as a list from here.
    */
   startRadio(seed) {
     const song = seed && seed.songId ? Store.song(seed.songId) : null;
@@ -168,20 +171,39 @@ const Player = {
       toast(T('player.toast.radioTooFew'), 'error');
       return false;
     }
-    const name = song
-      ? T('player.radio.song', { title: song.title || T('common.untitled') })
-      : T('player.radio.artist', { artist: seed.artist });
-    const context = this.addList(ids, name);
+    const list = TempLists.add({
+      title: song ? song.title || T('common.untitled') : seed.artist,
+      wrap: (name) => T('temp.radio.name', { name }),
+      ids,
+      seed: song ? { songId: song.id } : { artist: seed.artist },
+      // Not a saved playlist's name either: saved, it keeps its own.
+      taken: (name) => Store.playlistNameTaken(name),
+    });
+    const context = list.id;
     const order = this.idsOf(context);
     if (this.remote) {
       this._remotePlaySong(order[0], context);
-      return true;
+    } else {
+      this.repeat = false;
+      // From its first song; laid out already (alike first, artists spread), or with shuffle drawn from.
+      const first = this.queue.start(context, order, order[0]);
+      this.load(first, context, { fromQueue: true });
     }
-    this.repeat = false;
-    // From its first song; laid out already (alike first, artists spread), or with shuffle drawn from.
-    const first = this.queue.start(context, order, order[0]);
-    this.load(first, context, { fromQueue: true });
+    Nav.openPlaylist(context);
     return true;
+  },
+
+  /**
+   * The list playing got another id (5.2: a temporary playlist saved, now a
+   * playlist of the library): the song and what comes next stay as they are.
+   */
+  moveList(from, to) {
+    if (this.queue.contextId === from) this.queue.contextId = to;
+    if (this.contextId !== from) return;
+    this.contextId = to;
+    this._updateMediaSession();
+    this._savePosition();
+    this._emit();
   },
 
   /**
@@ -314,6 +336,18 @@ const Player = {
       this._drawBar();
       this._syncUpcoming();
     });
+    // A temporary playlist (5.2) thrown away while it plays: its song plays
+    // on, and what comes next is All Songs'. A song taken out of it: the bar
+    // and the songs coming next follow.
+    TempLists.onChange(() => {
+      if (this.remote) return;
+      if (TempLists.isTemp(this.contextId) && !TempLists.get(this.contextId)) {
+        if (this.currentId) this.carryOnIn('all');
+        else this.contextId = 'all';
+      }
+      this._drawBar();
+      this._syncUpcoming();
+    });
     // Signed in again (the server's session had ended): the songs coming next
     // are asked for with the new token, and one that stopped carries on.
     let token = Store.server.token;
@@ -372,7 +406,7 @@ const Player = {
       try {
         window.flow.setSettingsNow({
           lastSongId: this.currentId,
-          lastContextId: this.contextId,
+          lastContextId: this._contextToKeep(),
           lastPosition: this.position,
           volume: this.volume,
           listenSession: this._sessionToKeep(),
@@ -1468,12 +1502,18 @@ const Player = {
       return;
     }
     // The time also counts for the list that was playing, if the song is in it
-    // (one queued from elsewhere is not).
-    let list = contextId ? Store.playlist(contextId) : null;
+    // (one queued from elsewhere is not). A temporary playlist (5.2) is kept
+    // nowhere, so nothing is counted for it; the song's own listen still is.
+    let list = contextId && !TempLists.isTemp(contextId) ? Store.playlist(contextId) : null;
     // A group played as one list (4.5.2): the time counts for its playlist holding the song.
     if (list && list.isGroupList) list = Store.playlistsInGroup(list.groupId).find((p) => (p.entries || []).some((e) => e.songId === songId)) || null;
     const inList = !!list && list.entries.some((e) => e.songId === songId);
     window.flow.recordListen(songId, listened, duration, inList ? list.id : null, jamMember).catch(() => {});
+  },
+
+  /** The list playing, to carry on in at the next start: a temporary playlist (5.2) is gone by then, so All Songs. */
+  _contextToKeep() {
+    return TempLists.isTemp(this.contextId) ? 'all' : this.contextId;
   },
 
   _sessionToKeep() {
@@ -1484,7 +1524,7 @@ const Player = {
   _savePosition() {
     Store.saveSettings({
       lastSongId: this.currentId,
-      lastContextId: this.contextId,
+      lastContextId: this._contextToKeep(),
       lastPosition: this.currentId ? this.position : 0,
       listenSession: this._sessionToKeep(),
     });
@@ -1511,6 +1551,12 @@ const Player = {
     $('btnAddToPlaylist').onclick = () => {
       const song = this.currentId && Store.song(this.currentId);
       if (song) SongActions.pickPlaylists($('btnAddToPlaylist'), song, { above: true });
+    };
+    // Radios (5.2): a song radio or an artist radio from the song playing, picked in a popup over the button.
+    $('btnRadios').innerHTML = Icons.songRadio;
+    $('btnRadios').onclick = () => {
+      const song = this.currentId && Store.song(this.currentId);
+      if (song) SongActions.pickRadio($('btnRadios'), song, { above: true });
     };
     $('btnFavourite').onclick = () => {
       if (this._radio()) {
@@ -1646,6 +1692,8 @@ const Player = {
     const fav = !!known && !!known.favouriteAt;
     $('btnAddToPlaylist').disabled = !known || !!known.isDevice;
     $('btnFavourite').disabled = !known || !!known.isDevice;
+    // A radio is made from the library's songs: not from another server's song (a guest in its session).
+    $('btnRadios').disabled = !known || !!known.isDevice || !!known.foreign;
     $('btnFavourite').classList.toggle('sq-btn--fav-on', fav);
     $('btnFavourite').setAttribute('aria-pressed', String(fav));
     $('btnFavourite').title = fav ? T('common.unfavourite') : T('common.favourite');

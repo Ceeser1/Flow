@@ -310,8 +310,24 @@ const Store = {
   },
 
   setServer(st) {
+    const before = this._libraryOf(this.server);
     this.server = st || { on: false, state: 'off', offline: [] };
+    // The temporary playlists (5.2) are of the library they were made from:
+    // another server's or profile's songs are not theirs.
+    if (this._libraryOf(this.server) !== before) TempLists.clear();
     for (const fn of this._serverListeners || []) fn(this.server);
+  },
+
+  /** Whose library the window shows: Local Files, or a Flow Server's for a profile. */
+  _libraryOf(st) {
+    return st && st.on ? `server|${st.serverId || ''}|${st.profile ? st.profile.id : ''}` : 'local';
+  },
+
+  /** Whether a playlist of the library has this name (whatever the case), or it is All Songs': not free for another. */
+  playlistNameTaken(name) {
+    const lower = String(name || '').toLowerCase();
+    return lower === ALL_SONGS_NAME.toLowerCase() || lower === 'all songs'
+      || this.library.playlists.some((p) => !p.favourites && String(p.name || '').toLowerCase() === lower);
   },
 
   /** Returns what stops listening. */
@@ -376,6 +392,8 @@ const Store = {
     if (id === FAVOURITES_ID) return this.favouritesPlaylist();
     if (SmartLists.isSmart(id)) return this.smartPlaylist(id);
     if (id === GUEST_ID) return this.guestPlaylist();
+    // A temporary playlist (5.2, tempLists.js): this session's only, in no library.
+    if (TempLists.isTemp(id)) return TempLists.get(id);
     if (String(id).startsWith(FROM_PREFIX)) return this.fromPlaylist(id.slice(FROM_PREFIX.length));
     if (String(id).startsWith(GROUP_PREFIX)) return this.groupPlaylist(id.slice(GROUP_PREFIX.length));
     const own = this.library.playlists.find((p) => p.id === id);

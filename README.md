@@ -30,6 +30,8 @@ Flow is made for private use.
   Groups can be shared with the other profiles, who can follow them
 - **Your listening trend**: most listened, least skipped, long time no see, …
 - **Continue with similar songs** when a playlist ends
+- **Song and artist radios**: up to 100 songs like the one playing, or like
+  its artist, as a temporary playlist you can save or throw away
 
 ### Playback
 - **Song transitions** (crossfade) and **Equalize volume**, so every song plays

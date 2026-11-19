@@ -4,6 +4,11 @@
 // a search box, and the songs. Each list remembers its own search and sort
 // while the app runs, and the player follows the list exactly as shown.
 //
+// A temporary playlist (5.2, tempLists.js: a song radio or an artist radio)
+// has the same page, with "Temporary Playlist" before its numbers, a hint
+// that it goes with the session, and at the right Save playlist (it becomes
+// a playlist of the library) and a red X (it is thrown away).
+//
 // "Adding songs to" mode: the + on a row of the Playlists page opens All Songs
 // with `pickFor` set (so does creating a playlist), and every row's + then
 // adds straight to that list, its X takes a song out again.
@@ -104,6 +109,19 @@ const PlaylistPage = {
       }
       attempt(() => window.flow.setPlaylistShared(p.id, !p.shared));
     };
+    $('plSave').onclick = () => this.saveTemp(this.id);
+    $('plDiscard').onclick = () => this.discardTemp(this.id);
+    // A temporary playlist changed: a song taken out of the one shown, or it
+    // was thrown away (the next newest one opens then, else All Songs).
+    TempLists.onChange(() => {
+      if (Nav.page !== 'playlist' || !TempLists.isTemp(this.id)) return;
+      if (Store.playlist(this.id)) {
+        this.render();
+        return;
+      }
+      const next = TempLists.latest();
+      Nav.openPlaylist(next ? next.id : 'all');
+    });
     Store.onServer(() => {
       if (Nav.page === 'playlist') {
         this._drawOffline();
@@ -310,7 +328,8 @@ const PlaylistPage = {
     // Known by its details only while its songs are on their way.
     const total = p.partial ? p.seconds || 0 : all.reduce((sum, r) => sum + (r.song.duration || 0), 0);
     const by = p.isShared && p.ownerName ? `${T('playlist.header.sharedBy', { profile: p.ownerName })} ` : '';
-    setText($('plMeta'), `${by}${p.isRuled ? `${T('playlist.header.smartPlaylist')} ` : ''}${Util.plural(p.partial ? p.songCount || 0 : all.length, 'song')} · ${Util.fmtClock(total)}`);
+    const kind = p.isRuled ? `${T('playlist.header.smartPlaylist')} ` : p.isTemp ? `${T('playlist.header.temporaryPlaylist')} ` : '';
+    setText($('plMeta'), `${by}${kind}${Util.plural(p.partial ? p.songCount || 0 : all.length, 'song')} · ${Util.fmtClock(total)}`);
     $('plMeta').title = p.isRuled ? PlaylistRules.describe(p.rules) : '';
     $('plRules').hidden = !p.isRuled;
     if (p.isRuled) {
@@ -331,7 +350,122 @@ const PlaylistPage = {
     this._drawOffline();
     this._drawShare();
     this._drawUpdate();
+    this._drawTemp();
     this.renderTable();
+  },
+
+  /**
+   * A temporary playlist's own (5.2): the hint above the search that it goes
+   * with the session, and at the row's right end Save playlist ("Save" on
+   * the phone) and the red X that throws it away.
+   */
+  _drawTemp() {
+    const p = Store.playlist(this.id);
+    const temp = !!(p && p.isTemp);
+    $('plTempHint').hidden = !temp;
+    // The two in one box, so a narrow screen moves them to the next line together.
+    $('plTempActions').hidden = !temp;
+    $('plSave').hidden = !temp;
+    $('plDiscard').hidden = !temp;
+    if (!temp) return;
+    const save = $('plSave');
+    const html = `${Icons.save}<span>${T(Store.uiMode === 'mobile' ? 'common.save' : 'playlist.temp.save')}</span>`;
+    if (save.dataset.html !== html) {
+      save.innerHTML = html;
+      save.dataset.html = html;
+    }
+    save.title = T('playlist.temp.save.tooltip');
+    save.setAttribute('aria-label', T('playlist.temp.save'));
+    save.disabled = this._saving === p.id;
+    const discard = $('plDiscard');
+    if (!discard.firstChild) discard.innerHTML = Icons.x;
+    discard.title = T('playlist.temp.discard.tooltip');
+    discard.setAttribute('aria-label', discard.title);
+    discard.disabled = this._saving === p.id;
+  },
+
+  // The temporary playlist being saved (its id), or null.
+  _saving: null,
+
+  /**
+   * Save playlist (5.2): the temporary playlist becomes a playlist of the
+   * library (with a Flow Server, of the profile there), under its name (the
+   * next free one when a playlist took it meanwhile), with its songs in
+   * their order. What plays goes on from it as it is, and the page shows the
+   * saved one as it showed this one: its search, its sort, where it was
+   * scrolled.
+   */
+  async saveTemp(id) {
+    const list = TempLists.get(id);
+    if (!list || this._saving) return;
+    // The songs still in the library (one deleted since is left out).
+    const ids = list.entries.map((e) => e.songId).filter((songId) => {
+      const song = Store.songsById.get(songId);
+      return !!song && !song.isDevice;
+    });
+    this._saving = id;
+    this._drawTemp();
+    let saved = null;
+    await attempt(async () => {
+      const p = await window.flow.createPlaylist(TempLists.saveName(list, (name) => Store.playlistNameTaken(name)));
+      if (ids.length) await window.flow.addSongsToPlaylist(p.id, ids);
+      saved = p;
+    });
+    if (saved) await this._whenSaved(saved.id, ids.length);
+    this._saving = null;
+    if (!saved || !Store.playlist(saved.id)) {
+      if (Nav.page === 'playlist' && this.id === id) this._drawTemp();
+      return;
+    }
+    // Still there (not thrown away meanwhile): what it showed and played is the saved one's now.
+    if (TempLists.get(id)) {
+      if (this.views.has(id)) this.views.set(saved.id, this.views.get(id));
+      this.views.delete(id);
+      Player.moveList(id, saved.id);
+      const shown = Nav.page === 'playlist' && this.id === id;
+      const scroll = shown ? $('pages').scrollTop : 0;
+      if (shown) Nav.openPlaylist(saved.id, { scroll });
+      TempLists.remove(id);
+    }
+    toast(T('playlist.temp.saved', { playlist: Store.playlist(saved.id).name }), 'success');
+  },
+
+  /**
+   * Resolves once the library has playlist `id` with its `count` songs: at
+   * once, or with the library event that brings them (with a Flow Server it
+   * may come after the answer). Given up after a few seconds.
+   */
+  _whenSaved(id, count) {
+    const there = () => {
+      const p = Store.playlist(id);
+      return !!p && p.entries.length >= count;
+    };
+    if (there()) return Promise.resolve();
+    return new Promise((resolve) => {
+      let timer = 0;
+      const listener = () => {
+        if (!there()) return;
+        clearTimeout(timer);
+        Store._listeners = Store._listeners.filter((f) => f !== listener);
+        resolve();
+      };
+      timer = setTimeout(() => {
+        Store._listeners = Store._listeners.filter((f) => f !== listener);
+        resolve();
+      }, 5000);
+      Store.onLibrary(listener);
+    });
+  },
+
+  /**
+   * The red X (5.2): the temporary playlist is thrown away, without a
+   * question. Its page gives way to the next newest one, else All Songs
+   * (init's TempLists.onChange); a song of it that plays goes on playing.
+   */
+  discardTemp(id) {
+    if (this._saving === id) return;
+    this.views.delete(id);
+    TempLists.remove(id);
   },
 
   /**
@@ -343,7 +477,7 @@ const PlaylistPage = {
     const p = Store.playlist(this.id);
     const btn = $('plShare');
     // Favourites on a Flow Server (4.3) is a playlist of your own too.
-    const mine = !!p && !p.isAll && !p.isFrom && (!p.isFavourites || !!p.favourites) && !p.isSmart && !p.isShared && !p.isDevice && !p.isRuled && !p.isGuest;
+    const mine = !!p && !p.isAll && !p.isFrom && (!p.isFavourites || !!p.favourites) && !p.isSmart && !p.isShared && !p.isDevice && !p.isRuled && !p.isGuest && !p.isTemp;
     const can = !!p && Store.canShare() && (mine || p.isShared);
     btn.hidden = !can;
     if (!can) return;
@@ -402,7 +536,7 @@ const PlaylistPage = {
     const btn = $('plOffline');
     const note = $('plOfflineNote');
     // A playlist another profile shares can be downloaded once it is followed.
-    const can = !!p && Store.server.on && Store.can('offline') && (!p.isFavourites || !!p.favourites) && !p.isSmart && !p.isRuled && !p.isDevice && !p.isGuest && (!p.isShared || Store.isFollowing(p.id));
+    const can = !!p && Store.server.on && Store.can('offline') && (!p.isFavourites || !!p.favourites) && !p.isSmart && !p.isRuled && !p.isDevice && !p.isGuest && !p.isTemp && (!p.isShared || Store.isFollowing(p.id));
     btn.hidden = !can;
     note.hidden = !can;
     if (!can) return;
@@ -445,7 +579,8 @@ const PlaylistPage = {
       else if (p.isDevice) $('plEmptyText').textContent = T(`playlist.empty.downloaded.${Store.hereKey}`);
       else if (p.isRuled) $('plEmptyText').textContent = T('playlist.empty.smart');
       else $('plEmptyText').textContent = T('playlist.empty.playlist');
-      $('plEmptyAction').hidden = smart || favourites || !!p.isShared || !!p.isDevice || !!p.isRuled;
+      // A temporary playlist emptied by hand stays empty: songs are not added to it.
+      $('plEmptyAction').hidden = smart || favourites || !!p.isShared || !!p.isDevice || !!p.isRuled || !!p.isTemp;
       $('plEmptyAction').textContent = this.id === 'all' ? T('common.addSongs') : T('playlist.empty.addFromAllSongs');
     }
     setText($('plFiltered'), (view.filter || view.field) && !empty ? T('playlist.showing', { shown: rows.length, count }) : '');
@@ -558,7 +693,7 @@ const PlaylistPage = {
       actions.push({ icon: Icons.x, label: T('common.deleteSongs'), short: T('common.delete'), kind: 'danger', run: (rows) => this.deleteSongs(rows.map((r) => r.song)) });
     } else if (!smartList && listId !== FAVOURITES_ID && !readOnly) {
       actions.push({ icon: Icons.x, label: T('playlist.song.removeFromPlaylist'), short: T('common.remove'), kind: 'danger', run: (rows) => attempt(async () => {
-        for (const r of rows) await window.flow.removeFromPlaylist(listId, r.song.id);
+        for (const r of rows) await this._takeOut(listId, r.song.id);
         toast(p ? T('playlist.selection.removed', { songs: Util.plural(rows.length, 'song'), playlist: p.name })
           : T('playlist.selection.removed.thePlaylist', { songs: Util.plural(rows.length, 'song') }), 'success');
       }) });
@@ -703,8 +838,8 @@ const PlaylistPage = {
       ...(Store.server.on && Store.can('offline') ? [this._downloadButton(song)] : []),
       iconButton('act.act--grey', Icons.search, T('common.songDetails'), () => SongDetails.open(song.id)),
       iconButton('act.act--grey', Icons.pencil, T('playlist.song.edit'), () => this.edit(song)),
-      // 5.1.2: a list of songs like this one, or like its (first) artist.
-      ...this._radioButtons(song),
+      // Radios (5.2): a popup with Start Song-Radio and Start Artist-Radio (its first artist's).
+      SongActions.radioButton(song),
     ];
     if (Store.isAllSongs(listId)) {
       buttons.push(iconButton('act.act--red', Icons.x, T('common.deleteSong'), () => this.deleteSong(song)));
@@ -715,16 +850,6 @@ const PlaylistPage = {
     }
     // All Songs and the listening trend lists: put the song into playlists from here, the leftmost button.
     if (Store.isAllSongs(listId) || this._picksItself(listId)) buttons.unshift(SongActions.playlistButton(song));
-    return buttons;
-  },
-
-  /** Song radio, and Artist radio for its first artist (5.1.2, Player.startRadio). */
-  _radioButtons(song) {
-    const buttons = [iconButton('act.act--grey', Icons.songRadio, T('playlist.song.songRadio'), () => Player.startRadio({ songId: song.id }))];
-    const artist = SmartLists.artistsOf(song.artist)[0];
-    if (artist) {
-      buttons.push(iconButton('act.act--grey', Icons.artistRadio, T('playlist.song.artistRadio', { artist }), () => Player.startRadio({ artist })));
-    }
     return buttons;
   },
 
@@ -807,9 +932,16 @@ const PlaylistPage = {
   async removeFromList(song, listId = this.id) {
     const p = Store.playlist(listId);
     await attempt(async () => {
-      await window.flow.removeFromPlaylist(listId, song.id);
+      await this._takeOut(listId, song.id);
       toast(p ? T('playlist.remove.done', { song: song.title, playlist: p.name }) : T('playlist.remove.done.thePlaylist', { song: song.title }), 'success');
     });
+  },
+
+  /** A song out of a list: a temporary playlist's (5.2) in memory only, as the list itself; any other's in the library. */
+  _takeOut(listId, songId) {
+    if (!TempLists.isTemp(listId)) return window.flow.removeFromPlaylist(listId, songId);
+    TempLists.removeSong(listId, songId);
+    return Promise.resolve();
   },
 
   /** From a listening trend list: takes the song out of every playlist of yours that holds it. */

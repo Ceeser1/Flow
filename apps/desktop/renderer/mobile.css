@@ -351,6 +351,8 @@ body.mobile .mp--open .sq-btn__img,
 body.mobile .mp--open .sq-btn .icon { width: 22px; height: 22px; }
 body.mobile .mp--open .sleep-btn { width: 48px; height: 48px; border-radius: 12px; }
 body.mobile .mp--open .sleep-btn .icon { width: 22px; height: 22px; }
+/* Seven of them since Radios (5.2): on a screen under 376 px wide they give way a little instead of running out of it. */
+body.mobile .mp--open .mp__extras > button { flex: 0 1 48px; min-width: 36px; }
 /* The Queue: right of the title and artist, its picture only. */
 body.mobile .mp--open #btnQueue {
   grid-area: queue;
@@ -483,6 +485,10 @@ body.mobile .sheet__item--danger,
 body.mobile .sheet__item--danger .sheet__icon { color: var(--red); }
 body.mobile .sheet__item--on .sheet__icon { color: #f5be3c; }
 body.mobile .sheet__item--on .sheet__label { color: var(--accent-hi); }
+/* A row of two lines (the Radios sheet, 5.2): what it starts, and from what below it. */
+body.mobile .sheet__item--two { min-height: 60px; }
+body.mobile .sheet__item--two .sheet__label { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+body.mobile .sheet__from { color: var(--text-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Dialogs on the phone: as wide as the screen allows, bigger buttons. */
 body.mobile .modal { width: 100%; }
@@ -743,6 +749,15 @@ body.mobile .pl-update__lists { grid-template-columns: 1fr; }
 body.mobile .pl-update__list { max-height: 30vh; }
 body.mobile #plRules { order: 6; }
 body.mobile #plOfflineNote { order: 7; }
+/* A temporary playlist (5.2): "Save" with its icon, then the red X, in Share's place. */
+body.mobile .pl-temp-actions { order: 8; gap: 10px; }
+/* Shuffle then stays beside Play; the two keep the right end (on the next line, together, where the screen is too narrow). */
+body.mobile .pl-head__row:has(.pl-temp-actions:not([hidden])) #plShuffle { margin-left: 0; }
+body.mobile #plSave { padding: 0 16px 0 12px; flex: none; }
+body.mobile #plSave .icon { width: 20px; height: 20px; }
+body.mobile #plDiscard { width: 44px; flex: none; }
+body.mobile #plDiscard .icon { width: 20px; height: 20px; }
+body.mobile .pl-temp-hint { margin: -2px 0 10px; font-size: 14px; }
 body.mobile :is(#plShuffle, #plOffline, #plShare, #plUpdate, #plRules) { width: 44px; padding: 0; justify-content: center; flex: none; }
 body.mobile :is(#plShuffle, #plOffline, #plShare, #plUpdate, #plRules) .icon { width: 20px; height: 20px; }
 /* Download golden while the playlist is kept on the phone; Shuffle and Share green while on. */

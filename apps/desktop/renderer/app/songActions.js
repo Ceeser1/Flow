@@ -2,7 +2,7 @@
 
 // A song row's Actions: two buttons always there (Add to Queue and Play) and
 // "More" (three dots), which slides the rest out to its left (Download,
-// Favourite, Song Details, Edit, Delete / Remove). The tray floats over the page rather than
+// Favourite, Song Details, Edit, Radios, Delete / Remove). The tray floats over the page rather than
 // sitting in the cell, which cuts off anything wider than itself. One tray is
 // open at a time; a click anywhere else, a scroll, Escape or any of its
 // buttons closes it.
@@ -10,8 +10,9 @@
 const SongActions = {
   tray: null,
   anchor: null,
-  picker: null, // the "Add to Playlists" popup beside the tray (or above the player's button)
+  picker: null, // the "Add to Playlists" or "Radios" popup beside the tray (or above the player's button)
   pickerAnchor: null, // the player's button it opened from
+  pickerFrom: null, // the button it opened from, the tray's or the player's
 
   init() {
     const outside = (e) => {
@@ -90,13 +91,7 @@ const SongActions = {
    */
   pickPlaylists(anchor, song, { above = false } = {}) {
     if (document.body.classList.contains('mobile')) return this._pickPlaylistsSheet(song);
-    if (this.picker) {
-      const again = this.pickerAnchor === anchor;
-      this.picker.remove();
-      this.picker = null;
-      this.pickerAnchor = null;
-      if (again || !above) return;
-    }
+    if (this._closePicker(anchor)) return;
     const lists = Store.editablePlaylists();
     const had = new Set(lists.filter((p) => p.entries.some((e) => e.songId === song.id)).map((p) => p.id));
     const boxes = new Map();
@@ -115,10 +110,32 @@ const SongActions = {
       above ? h('div.pl-picker__song', { title: Util.songLine(song) }, Util.songLine(song)) : null,
       h('div.pl-picker__list', ...(rows.length ? rows : [h('div.pl-picker__empty', T('songActions.noPlaylists'))])),
       apply);
+    this._placePicker(picker, anchor, above);
+  },
+
+  /**
+   * A popup that is open goes. True when it was opened from this very button:
+   * the click only closes it. From another one, the new popup takes its place.
+   */
+  _closePicker(anchor) {
+    if (!this.picker) return false;
+    const again = this.pickerFrom === anchor;
+    this.picker.remove();
+    this.picker = null;
+    this.pickerAnchor = null;
+    this.pickerFrom = null;
+    return again;
+  },
+
+  /**
+   * Shows a popup: `above` over the player's button, from its left edge (kept
+   * in the window); else left of the tray, its top level with the tray's.
+   */
+  _placePicker(picker, anchor, above) {
     document.body.appendChild(picker);
     this.picker = picker;
+    this.pickerFrom = anchor;
     if (above) {
-      // Over the player's button, from its left edge (kept in the window).
       const r = anchor.getBoundingClientRect();
       const width = picker.getBoundingClientRect().width;
       picker.style.left = `${Math.max(8, Math.min(Math.round(r.left), window.innerWidth - width - 8))}px`;
@@ -126,11 +143,71 @@ const SongActions = {
       this.pickerAnchor = anchor;
       return;
     }
-    // Left of the tray, its top level with the tray's.
     const t = this.tray ? this.tray.getBoundingClientRect() : anchor.getBoundingClientRect();
     picker.style.right = `${Math.round(window.innerWidth - t.left + 6)}px`;
     const height = picker.getBoundingClientRect().height;
     picker.style.top = `${Math.max(8, Math.min(Math.round(t.top), window.innerHeight - height - 8))}px`;
+  },
+
+  /**
+   * The tray's "Radios" button (5.2): one button for both radios, opening
+   * their popup to the tray's left instead of closing the tray. See pickRadio.
+   */
+  radioButton(song) {
+    const btn = iconButton('act.act--grey', Icons.songRadio, T('common.radios'), () => this.pickRadio(btn, song));
+    btn.dataset.keepOpen = '1';
+    return btn;
+  },
+
+  /**
+   * "Radios" (5.2): Start Song-Radio and Start Artist-Radio for a song, each
+   * with what it starts from below it (the song's title; its first artist).
+   * One of them makes the radio (Player.startRadio: a temporary playlist,
+   * opened and playing) and closes the popup and the tray; so does a click
+   * anywhere else. `above`: opened from the player's button, over it. On the
+   * phone it is a sheet from the bottom.
+   */
+  pickRadio(anchor, song, { above = false } = {}) {
+    const artist = SmartLists.artistsOf(song.artist)[0] || '';
+    const kinds = [
+      { icon: Icons.songRadio, label: T('radios.startSong'), from: song.title || T('common.untitled'), seed: { songId: song.id } },
+      artist ? { icon: Icons.artistRadio, label: T('radios.startArtist'), from: artist, seed: { artist } } : null,
+    ].filter(Boolean);
+    if (document.body.classList.contains('mobile')) return this._pickRadioSheet(kinds);
+    if (this._closePicker(anchor)) return;
+    const rows = kinds.map((k) => h('button.radio-pick__row', {
+      type: 'button',
+      onclick: () => {
+        this.close();
+        Player.startRadio(k.seed);
+      },
+    },
+    h('span.radio-pick__icon', { html: k.icon }),
+    h('span.radio-pick__text', h('span.radio-pick__label', k.label), h('span.radio-pick__from', { title: k.from }, k.from))));
+    const picker = h('div.pl-picker.radio-pick', { role: 'dialog', 'aria-label': T('common.radios') },
+      h('div.pl-picker__title', T('common.radios')),
+      h('div.radio-pick__list', ...rows));
+    this._placePicker(picker, anchor, above);
+  },
+
+  /** The phone's Radios: the same two, as a sheet rising from the bottom. */
+  _pickRadioSheet(kinds) {
+    let handle = null;
+    const rows = kinds.map((k) => h('button.sheet__item.sheet__item--two', {
+      type: 'button',
+      onclick: () => {
+        handle.close();
+        Player.startRadio(k.seed);
+      },
+    },
+    h('span.sheet__icon', { html: k.icon }),
+    h('span.sheet__label', h('span.sheet__line', k.label), h('span.sheet__from', k.from))));
+    handle = Modal.open({
+      title: T('common.radios'),
+      sheet: true,
+      className: 'modal--actions',
+      body: [h('div.sheet__list', ...rows)],
+    });
   },
 
   /** The phone's Add to Playlists: the same list with boxes, as a sheet with Apply. */
@@ -177,6 +254,7 @@ const SongActions = {
     if (this.picker) this.picker.remove();
     this.picker = null;
     this.pickerAnchor = null;
+    this.pickerFrom = null;
     if (this.tray) this.tray.remove();
     if (this.anchor) {
       this.anchor.classList.remove('act--open');

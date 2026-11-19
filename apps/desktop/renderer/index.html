@@ -45,6 +45,9 @@
     <nav id="menuAllSongsList" class="menu__subs" aria-label="Downloaded Songs, and All Songs by who added them" hidden data-i18n-aria-label="window.menu.downloaded.ariaLabel"></nav>
     <!-- Internet Radio (5.1): unless switched off in Settings > General (radio.js, pages/radio.js). -->
     <button id="menuRadio" class="menu__item" type="button" hidden></button>
+    <!-- Temporary Playlists (5.2, tempLists.js): this session's radios, only while there is one. -->
+    <button id="menuTemp" class="menu__item" type="button" hidden></button>
+    <nav id="menuTempList" class="menu__subs" aria-label="Temporary Playlists" hidden data-i18n-aria-label="common.temporaryPlaylists"></nav>
     <button id="menuPlaylists" class="menu__item" type="button"></button>
     <nav id="menuPlaylistList" class="menu__subs" aria-label="Playlists" data-i18n-aria-label="common.playlists"></nav>
     <!-- The playlist groups (4.5.1: their own entry), where a Flow Server keeps them or without one. -->
@@ -463,8 +466,14 @@
             <span id="plOfflineNote" class="pl-meta" hidden></span>
             <button id="plShare" class="toggle" type="button" aria-pressed="false" hidden></button>
             <button id="plRules" class="toggle" type="button" hidden title="Change the rules that pick this playlist's songs" data-i18n-title="window.playlist.rules.tooltip"></button>
+            <!-- A temporary playlist (5.2): Save makes a playlist of it, the X throws it away (playlist.js). -->
+            <span id="plTempActions" class="pl-temp-actions" hidden>
+              <button id="plSave" class="toggle" type="button" hidden></button>
+              <button id="plDiscard" class="toggle toggle--danger" type="button" hidden></button>
+            </span>
           </div>
         </div>
+        <div id="plTempHint" class="pl-temp-hint" hidden data-i18n="window.playlist.temp.hint">This playlist will be removed at the end of your session unless you save it.</div>
         <div id="plPickBanner" class="pick-banner" hidden>
           <!-- "Adding songs to <name>: ..." (window.playlist.pick.banner), the name in bold (playlist.js). -->
           <span id="plPickText"></span>
@@ -550,6 +559,8 @@
             <!-- The phone's Alarm Clock (alarm.js), and the computer's Mini Player (miniPlayer.js). -->
             <button id="btnAlarm" class="sleep-btn" type="button" hidden></button>
             <button id="btnMini" class="sleep-btn" type="button" aria-pressed="false"></button>
+            <!-- Radios (5.2): a song radio or an artist radio from the song playing (songActions.js pickRadio). -->
+            <button id="btnRadios" class="sleep-btn" type="button" aria-haspopup="dialog" title="Radios" data-i18n-title="common.radios" data-i18n-aria-label="common.radios"></button>
           </div>
           <!-- Where the music comes out (output.js). -->
           <button id="btnOutput" class="icon-btn player__output" type="button" aria-haspopup="menu"></button>
@@ -585,6 +596,7 @@
 <script src="app/statistics.js"></script>
 <script src="app/icons.js"></script>
 <script src="app/dom.js"></script>
+<script src="app/tempLists.js"></script>
 <script src="app/store.js"></script>
 <script src="app/covers.js"></script>
 <script src="app/ui.js"></script>
