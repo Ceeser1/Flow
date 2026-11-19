@@ -837,6 +837,8 @@ body.mobile .settings__right .settings__control { flex: 1; }
 body.mobile .settings__right select,
 body.mobile .settings__right .input { height: 44px; max-width: 100%; }
 body.mobile .settings__right .btn { height: 40px; }
+body.mobile .settings__right .settings__seed { width: 96px; }
+body.mobile .settings__right .settings__dice { width: 44px; height: 44px; }
 
 /* ===== Add Songs ===== */
 

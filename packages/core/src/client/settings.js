@@ -497,6 +497,24 @@ const DEFAULTS = {
   // (percent, 0 = not at all).
   coverBgOn: true,
   coverBgVisibility: 25,
+  // A texture as the menu's background (the desktop's menuBg.js): which
+  // one (MENU_BG_STYLES), how strong it shows (percent, 0 = not at all; 25 is
+  // the look as first designed, 100 four times that), and whether it moves
+  // (drifting and following the mouse), how fast (percent, 0 = only the mouse
+  // moves it; 20 is the pace as first designed, 100 five times that).
+  menuBgOn: false,
+  menuBgVisibility: 50,
+  menuBgAnimate: true,
+  menuBgSpeed: 25,
+  menuBgStyle: 'roots',
+  // A seed for each style that has one (style: up to six of A-Z and 0-9): its
+  // pictures are made from it instead of its standard look.
+  menuBgSeeds: {},
+  // Whether the texture goes on beyond the menu's edge over the content's
+  // background, and how far before it has faded out (percent of the content's
+  // width). Not on the phone's layout, whose menu is a drawer over the page.
+  menuBgReachOn: true,
+  menuBgReach: 25,
 
   // The fullscreen Music Visualizer the player bar's button opens (VISUALIZERS).
   visualizer: 'bars',
@@ -583,6 +601,8 @@ const DEFAULTS = {
 const SOUND_EQ_PRESETS = ['standard', 'bass', 'subtle', 'intimate', 'custom'];
 const EQ_COLORS = ['spectrum', 'rainbow', 'greyscale', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
 const CLOUD_COLORS = ['rainbow', 'cover', 'white', 'red', 'green', 'yellow', 'blue', 'purple', 'black'];
+// The textures the menu's background can show.
+const MENU_BG_STYLES = ['roots', 'vines', 'currents', 'stars', 'vinyl', 'mist', 'circuit', 'scales'];
 // The ones that can be chosen; 'random-<category>' picks one of a
 // category's each time (VIZ_CATEGORIES in the desktop's visualizer.js).
 const VIZ_CATEGORY_IDS = ['equalizers', 'worlds', 'trippy', 'other'];
@@ -692,7 +712,7 @@ function clean(raw) {
     .filter(([k, v]) => k && k.length <= 100 && v)
     .slice(0, 100));
   for (const key of ['serverOn', 'serverMetered', 'useCookies', 'shareCookies', 'sessionAutoAccept', 'sessionAllowVolume', 'sessionPlayHere', 'outputDelayOn',
-    'sponsorBlock', 'sponsorBlockIntros', 'autoComplete', 'autoFinish', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix', 'coverBgOn']) s[key] = s[key] === true;
+    'sponsorBlock', 'sponsorBlockIntros', 'autoComplete', 'autoFinish', 'batteryHelpShown', 'cloudsPhoneOff', 'dcScale75', 'colGenre', 'colSubGenre', 'colMix', 'coverBgOn', 'menuBgOn', 'menuBgAnimate', 'menuBgReachOn']) s[key] = s[key] === true;
   if (!s.dcScale75) {
     s.dcScale = '75';
     s.dcScale75 = true;
@@ -732,8 +752,19 @@ function clean(raw) {
   for (const key of ['cloudsIntensity', 'cloudsBassAmount', 'eqHeight', 'eqVisibility', 'eqShineSpread']) {
     s[key] = percent(s[key], DEFAULTS[key]);
   }
-  const cover = Math.round(Number(s.coverBgVisibility));
-  s.coverBgVisibility = Number.isFinite(cover) ? Math.min(100, Math.max(0, cover)) : DEFAULTS.coverBgVisibility;
+  // Percent with 0 allowed.
+  for (const key of ['coverBgVisibility', 'menuBgVisibility', 'menuBgSpeed', 'menuBgReach']) {
+    const v = Math.round(Number(s[key]));
+    s[key] = Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : DEFAULTS[key];
+  }
+  if (!MENU_BG_STYLES.includes(s.menuBgStyle)) s.menuBgStyle = DEFAULTS.menuBgStyle;
+  const seeds = {};
+  for (const style of MENU_BG_STYLES) {
+    const seed = s.menuBgSeeds && typeof s.menuBgSeeds === 'object' ? s.menuBgSeeds[style] : '';
+    const text = typeof seed === 'string' ? seed.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) : '';
+    if (text) seeds[style] = text;
+  }
+  s.menuBgSeeds = seeds;
   if (!EQ_COLORS.includes(s.eqColors)) s.eqColors = DEFAULTS.eqColors;
   if (!CLOUD_COLORS.includes(s.cloudsColors)) s.cloudsColors = DEFAULTS.cloudsColors;
   const amount = Math.round(Number(s.cloudsAmount) / 10) * 10;
@@ -834,5 +865,5 @@ function createSettings({ read, write }) {
 }
 
 module.exports = {
-  createSettings, cloudsOffOnce, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, VISUALIZERS, VIZ_OPTIONS, GLOBAL_KEYS,
+  createSettings, cloudsOffOnce, clean, DEFAULTS, EQ_COLORS, CLOUD_COLORS, MENU_BG_STYLES, VISUALIZERS, VIZ_OPTIONS, GLOBAL_KEYS,
 };

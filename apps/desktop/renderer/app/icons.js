@@ -33,6 +33,8 @@ const Icons = (() => {
     lyrics: svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'),
     // Two arrows round: read again (a playlist's Update).
     refresh: svg('<path d="M4 11a8 8 0 0 1 14.9-3.9L20 8.5"/><path d="M20 4v4.5h-4.5"/><path d="M20 13a8 8 0 0 1-14.9 3.9L4 15.5"/><path d="M4 20v-4.5h4.5"/>'),
+    // A die: a seed thrown (Settings' Show a Menu background).
+    dice: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><g fill="currentColor" stroke="none"><circle cx="8.4" cy="8.4" r="1.5"/><circle cx="15.6" cy="8.4" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="8.4" cy="15.6" r="1.5"/><circle cx="15.6" cy="15.6" r="1.5"/></g>'),
     pencil: img('edit'),
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
     check: svg('<path d="M5 12.5l4.5 4.5L19 7"/>'),

@@ -35,7 +35,7 @@
   Output.init();
   Session.init();
   Ambient.init();
-  MenuRoots.init();
+  MenuBg.init();
   Nav.init();
   SearchPage.init();
   AddPage.init();

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: http: https:; media-src file: blob: http: https:" />
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: http: https:; media-src file: blob: http: https:" />
   <title>Flow</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="styles/search.css" />
@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="styles/lyricsEdit.css" />
   <link rel="stylesheet" href="styles/group.css" />
   <link rel="stylesheet" href="styles/radio.css" />
+  <link rel="stylesheet" href="styles/menuBg.css" />
   <!-- The phone's layout, all under body.mobile (mobile.js). -->
   <link rel="stylesheet" href="mobile.css" />
 </head>
@@ -29,8 +30,8 @@
 
   <!-- ===== Menu ===== -->
   <aside class="menu">
-    <!-- The roots behind the menu, far and near (menuRoots.js moves them). -->
-    <div class="roots roots--menu" aria-hidden="true"><div class="roots__layer roots__layer--far"></div><div class="roots__layer roots__layer--near"></div></div>
+    <!-- The menu's background texture (menuBg.js builds and moves it when Settings' Show a Menu background is on). -->
+    <div id="menuBg" class="menubg menubg--menu" aria-hidden="true" hidden></div>
     <div class="brand">
       <span class="brand__name">Flow</span>
       <button id="menuSettings" class="settings-btn" type="button" title="Settings" aria-label="Settings" data-i18n-aria-label="common.settings" data-i18n-title="common.settings"></button>
@@ -65,8 +66,9 @@
     <!-- The drifting colour clouds, and over them the equalizer, behind the
          pages and the player bar. -->
     <canvas id="ambientCanvas" class="ambient-canvas" aria-hidden="true"></canvas>
-    <!-- The menu's roots reaching out over the background, with the menu's shade (menuRoots.js). -->
-    <div class="roots roots--content" aria-hidden="true"><div class="roots__shade"></div><div class="roots__layer roots__layer--far"></div><div class="roots__layer roots__layer--near"></div></div>
+    <!-- The menu's background texture where it reaches over the content's background (Settings' Reach over):
+         shown under the clouds' canvas (menuBg.css), which is see-through for it then. -->
+    <div id="menuBgOut" class="menubg menubg--content" aria-hidden="true" hidden></div>
     <canvas id="eqCanvas" class="eq-canvas" aria-hidden="true"></canvas>
     <div id="pages" class="pages">
 
@@ -597,7 +599,8 @@
 <script src="app/equalizer.js"></script>
 <script src="app/coverColors.js"></script>
 <script src="app/ambient.js"></script>
-<script src="app/menuRoots.js"></script>
+<script src="app/menuBgMake.js"></script>
+<script src="app/menuBg.js"></script>
 <script src="app/landscape.js"></script>
 <script src="app/seekCheck.js"></script>
 <script src="app/audioEngine.js"></script>

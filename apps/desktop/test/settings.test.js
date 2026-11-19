@@ -199,6 +199,40 @@ test('settings are kept within their ranges', () => {
   assert.equal(settings.clean({ coverBgVisibility: 0 }).coverBgVisibility, 0);
   assert.equal(settings.clean({ coverBgVisibility: 140 }).coverBgVisibility, 100);
   assert.equal(settings.clean({ coverBgVisibility: 'lots' }).coverBgVisibility, 25);
+  // The menu's background texture: off, a quarter visible, moving at a fifth of the speed, Roots.
+  assert.equal(d.menuBgOn, false);
+  assert.equal(d.menuBgVisibility, 50);
+  assert.equal(d.menuBgAnimate, true);
+  assert.equal(d.menuBgSpeed, 25);
+  assert.equal(d.menuBgStyle, 'roots');
+  assert.equal(settings.clean({}).menuBgOn, false);
+  assert.equal(settings.clean({ menuBgOn: 'yes' }).menuBgOn, false);
+  assert.equal(settings.clean({ menuBgOn: true }).menuBgOn, true);
+  assert.equal(settings.clean({}).menuBgAnimate, true);
+  assert.equal(settings.clean({ menuBgAnimate: false }).menuBgAnimate, false);
+  assert.equal(settings.clean({ menuBgVisibility: 0 }).menuBgVisibility, 0);
+  assert.equal(settings.clean({ menuBgVisibility: 140 }).menuBgVisibility, 100);
+  assert.equal(settings.clean({ menuBgVisibility: 'lots' }).menuBgVisibility, 50);
+  assert.equal(settings.clean({ menuBgSpeed: 0 }).menuBgSpeed, 0);
+  assert.equal(settings.clean({ menuBgSpeed: -5 }).menuBgSpeed, 0);
+  assert.equal(settings.clean({ menuBgSpeed: 'fast' }).menuBgSpeed, 25);
+  assert.equal(settings.clean({ menuBgStyle: 'marble' }).menuBgStyle, 'roots');
+  for (const style of ['roots', 'vines', 'currents', 'stars', 'vinyl', 'mist', 'circuit', 'scales']) {
+    assert.equal(settings.clean({ menuBgStyle: style }).menuBgStyle, style);
+  }
+  // Reaching over into the content's background: on, 25 % of its width.
+  assert.equal(d.menuBgReachOn, true);
+  assert.equal(d.menuBgReach, 25);
+  assert.equal(settings.clean({}).menuBgReachOn, true);
+  assert.equal(settings.clean({ menuBgReachOn: false }).menuBgReachOn, false);
+  assert.equal(settings.clean({ menuBgReach: 0 }).menuBgReach, 0);
+  assert.equal(settings.clean({ menuBgReach: 250 }).menuBgReach, 100);
+  assert.equal(settings.clean({ menuBgReach: 'far' }).menuBgReach, 25);
+  // A seed for each texture: capitals and digits, six at most; empty ones and unknown textures dropped.
+  assert.deepEqual(d.menuBgSeeds, {});
+  assert.deepEqual(settings.clean({ menuBgSeeds: 'AB12' }).menuBgSeeds, {});
+  assert.deepEqual(settings.clean({ menuBgSeeds: { circuit: 'ab-12 cd9x', vines: '', marble: 'ABC', stars: 7, roots: 'R00T' } }).menuBgSeeds, { roots: 'R00T', circuit: 'AB12CD' });
+  assert.notEqual(settings.clean({}).menuBgSeeds, settings.clean({}).menuBgSeeds);
   // Settings' folded categories and the phone's last category: kept, tidied.
   assert.deepEqual(d.settingsCollapsed, []);
   assert.equal(d.settingsCategory, '');

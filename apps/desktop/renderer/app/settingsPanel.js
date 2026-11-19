@@ -28,6 +28,10 @@ const CLOUD_SCHEMES = [
   ...EQ_SCHEMES.filter(([v]) => !['spectrum', 'rainbow', 'greyscale'].includes(v)),
 ];
 
+// The textures of Show a Menu background (the core's MENU_BG_STYLES, menuBg.js STYLES).
+const MENU_BG_STYLES = ['roots', 'vines', 'currents', 'stars', 'vinyl', 'mist', 'circuit', 'scales']
+  .map((id) => [id, T(`settings.appVisuals.menuBg.style.${id}`)]);
+
 function fmtBytes(bytes) {
   if (bytes >= 1e9) return T('common.size.gigabytes', { size: I18n.num(bytes / 1e9, 1) });
   if (bytes >= 1e6) return T('common.size.megabytes', { size: Math.round(bytes / 1e6) });
@@ -233,6 +237,39 @@ const SettingsPanel = {
         label: T('settings.appVisuals.coverBg.label'),
         desc: T(Store.can('effects') ? 'settings.appVisuals.coverBg.desc' : 'settings.appVisuals.coverBg.desc.noEqualizer'),
         right: this._slider({ key: 'coverBgVisibility', label: T('settings.appVisuals.coverBg.visibility.label'), min: 0, when: () => Store.settings.coverBgOn }),
+      }),
+
+      // A texture as the menu's background (menuBg.js), off until turned on:
+      // how strong it shows, whether it moves and how fast, and which one.
+      this._row({
+        key: 'menuBgOn',
+        label: T('settings.appVisuals.menuBg.label'),
+        desc: T('settings.appVisuals.menuBg.desc'),
+        right: this._slider({ key: 'menuBgVisibility', label: T('settings.appVisuals.coverBg.visibility.label'), min: 0, when: () => Store.settings.menuBgOn }),
+      }),
+      this._row({
+        key: 'menuBgAnimate',
+        label: T('settings.appVisuals.menuBg.animate.label'),
+        desc: T('settings.appVisuals.menuBg.animate.desc'),
+        sub: true,
+        when: () => Store.settings.menuBgOn,
+        right: this._slider({ key: 'menuBgSpeed', label: T('viz.shared.speed'), min: 0, when: () => Store.settings.menuBgOn && Store.settings.menuBgAnimate }),
+      }),
+      this._row({
+        label: T('viz.shared.style'),
+        desc: T('settings.appVisuals.menuBg.style.desc'),
+        sub: true,
+        when: () => Store.settings.menuBgOn,
+        right: this._menuBgStyle(),
+      }),
+      // Not on the phone: its menu is a drawer over the page, with no content beside it to reach over.
+      Store.phone ? null : this._row({
+        key: 'menuBgReachOn',
+        label: T('settings.appVisuals.menuBg.reach.label'),
+        desc: T('settings.appVisuals.menuBg.reach.desc'),
+        sub: true,
+        when: () => Store.settings.menuBgOn,
+        right: this._slider({ key: 'menuBgReach', label: T('settings.appVisuals.menuBg.reach.slider'), min: 0, when: () => Store.settings.menuBgOn && Store.settings.menuBgReachOn }),
       }),
 
       ...(Store.can('effects') ? [
@@ -543,6 +580,72 @@ const SettingsPanel = {
       if (I18n.resolve(choice) !== I18n.lang) (window.flow.reload || (() => window.location.reload()))();
     });
     return select;
+  },
+
+  /**
+   * Show a Menu background's Style: the texture, and beside it that texture's seed (menuBgMake.js: up to six
+   * letters and digits its pictures are made from; empty: the ones Flow comes with), typed or thrown with the
+   * dice. Every texture keeps its own.
+   */
+  _menuBgStyle() {
+    const select = h('select.select', { 'aria-label': T('viz.shared.style') });
+    for (const [v, text] of MENU_BG_STYLES) select.appendChild(h('option', { value: v }, text));
+    select.value = String(Store.settings.menuBgStyle);
+    const seedOf = () => MenuBgMake.clean((Store.settings.menuBgSeeds || {})[select.value]);
+    // All the seeds, with this texture's set (or gone).
+    const patch = (seed) => {
+      const all = { ...(Store.settings.menuBgSeeds || {}) };
+      if (seed) all[select.value] = seed;
+      else delete all[select.value];
+      return { menuBgSeeds: all };
+    };
+    const input = h('input.input.settings__seed', {
+      type: 'text',
+      maxLength: 6,
+      spellcheck: false,
+      autocomplete: 'off',
+      placeholder: T('settings.appVisuals.menuBg.seed.placeholder'),
+      title: T('settings.appVisuals.menuBg.seed.tooltip'),
+      'aria-label': T('settings.appVisuals.menuBg.seed.placeholder'),
+      autocapitalize: 'characters',
+      value: seedOf(),
+    });
+    let timer = null;
+    input.addEventListener('input', () => {
+      const seed = MenuBgMake.clean(input.value);
+      if (input.value !== seed) input.value = seed;
+      // Shown once the typing pauses: every seed on the way would have its pictures made.
+      clearTimeout(timer);
+      timer = setTimeout(() => Store.previewSettings(patch(seed)), 350);
+    });
+    input.addEventListener('change', () => {
+      clearTimeout(timer);
+      Store.saveSettings(patch(MenuBgMake.clean(input.value)));
+    });
+    const dice = h('button.btn.btn--small.settings__dice', {
+      type: 'button',
+      html: Icons.dice,
+      title: T('settings.appVisuals.menuBg.seed.random'),
+      'aria-label': T('settings.appVisuals.menuBg.seed.random'),
+      onclick: () => {
+        clearTimeout(timer);
+        input.value = MenuBgMake.dice();
+        Store.saveSettings(patch(input.value));
+      },
+    });
+    select.addEventListener('change', () => {
+      clearTimeout(timer);
+      Store.saveSettings({ menuBgStyle: select.value });
+      input.value = seedOf();
+    });
+    this._refresh.push(() => {
+      const off = !Store.settings.menuBgOn;
+      select.disabled = off;
+      input.disabled = off;
+      dice.disabled = off;
+      if (document.activeElement !== input) input.value = seedOf();
+    });
+    return h('div.settings__control', select, input, dice);
   },
 
   _select({ key, options, when }) {

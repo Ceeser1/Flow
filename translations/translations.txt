@@ -431,6 +431,85 @@ settings.appVisuals.coverBg.visibility.label
   en: Visibility
   de: Sichtbarkeit
 
+settings.appVisuals.menuBg.label
+  en: Show a Menu background
+  de: Menü-Hintergrund anzeigen
+
+settings.appVisuals.menuBg.desc
+  en: Shows a texture as the menu's background, so it doesn't look as empty.
+  de: Zeigt eine Textur als Hintergrund des Menüs, damit es nicht so leer wirkt.
+
+settings.appVisuals.menuBg.animate.label
+  en: Animate
+  de: Animieren
+
+settings.appVisuals.menuBg.animate.desc
+  en: Slightly moves the selected texture and applies parallax.
+  de: Bewegt die gewählte Textur leicht und wendet Parallaxe an.
+
+settings.appVisuals.menuBg.style.desc
+  en: Which texture is shown in the menu's background.
+  de: Welche Textur der Hintergrund des Menüs zeigt.
+
+# The box beside the texture: letters and digits its look is made from
+settings.appVisuals.menuBg.seed.placeholder
+  en: Seed
+  de: Seed
+
+settings.appVisuals.menuBg.seed.tooltip
+  en: Up to 6 letters and digits that decide how this texture looks. Empty: its standard look.
+  de: Bis zu 6 Buchstaben und Ziffern, die bestimmen, wie diese Textur aussieht. Leer: ihr Standard-Aussehen.
+
+settings.appVisuals.menuBg.seed.random
+  en: Random seed
+  de: Zufälliger Seed
+
+# The texture going on beyond the menu's edge, and how far (a slider)
+settings.appVisuals.menuBg.reach.label
+  en: Reach over
+  de: Hinausragen
+
+settings.appVisuals.menuBg.reach.desc
+  en: Lets the menu background extend into the content's background.
+  de: Lässt den Menü-Hintergrund in den Hintergrund des Inhalts hineinragen.
+
+settings.appVisuals.menuBg.reach.slider
+  en: Reach
+  de: Reichweite
+
+# The menu background's textures
+settings.appVisuals.menuBg.style.roots
+  en: Roots
+  de: Wurzeln
+
+settings.appVisuals.menuBg.style.vines
+  en: Vines
+  de: Ranken
+
+settings.appVisuals.menuBg.style.currents
+  en: Currents
+  de: Strömung
+
+settings.appVisuals.menuBg.style.stars
+  en: Stars
+  de: Sterne
+
+settings.appVisuals.menuBg.style.vinyl
+  en: Vinyl
+  de: Vinyl
+
+settings.appVisuals.menuBg.style.mist
+  en: Mist
+  de: Nebel
+
+settings.appVisuals.menuBg.style.circuit
+  en: Circuit
+  de: Schaltkreis
+
+settings.appVisuals.menuBg.style.scales
+  en: Scales
+  de: Schuppen
+
 # Color schemes of the background clouds and equalizer
 settings.appVisuals.colorScheme.yellow
   en: Yellow

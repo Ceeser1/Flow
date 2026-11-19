@@ -1,0 +1,151 @@
+/* The menu's background texture (Settings > App Visuals > Show a Menu
+   background; app/menuBg.js builds a style's layers, shows them as strong as
+   Settings' Visibility and moves them). Each layer is a picture made beforehand
+   (by menuBgMake.js from the style's seed, when the style is chosen: Flow
+   comes with none), its own on the GPU and only moved, never drawn again.
+   Hidden until menuBg.js shows it. */
+.menubg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* Behind the menu's entries, over its background. */
+.menubg--menu { z-index: -1; }
+/* And behind the content where the texture reaches over (Settings' Reach
+   over): from the menu's edge as wide as Settings' Reach (menuBg.js sets the
+   width, a percent of the content's), fading out to nothing at its right end.
+   At the very back, under the clouds' canvas (the cover and the clouds, see-
+   through for it meanwhile) and the equalizer's; only where that canvas cannot
+   be see-through does it lie on it, under the equalizer. */
+.menubg--content {
+  z-index: 0;
+  right: auto;
+  /* Fading as an in-out sine: slowly at first, fastest in the middle, slowly out. */
+  -webkit-mask-image: linear-gradient(to right, #000 0, rgba(0, 0, 0, 0.976) 10%, rgba(0, 0, 0, 0.905) 20%, rgba(0, 0, 0, 0.794) 30%, rgba(0, 0, 0, 0.655) 40%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0.345) 60%, rgba(0, 0, 0, 0.206) 70%, rgba(0, 0, 0, 0.095) 80%, rgba(0, 0, 0, 0.024) 90%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 0, rgba(0, 0, 0, 0.976) 10%, rgba(0, 0, 0, 0.905) 20%, rgba(0, 0, 0, 0.794) 30%, rgba(0, 0, 0, 0.655) 40%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0.345) 60%, rgba(0, 0, 0, 0.206) 70%, rgba(0, 0, 0, 0.095) 80%, rgba(0, 0, 0, 0.024) 90%, transparent 100%);
+}
+.menubg--content.menubg--under { z-index: -1; }
+/* In it, a box that begins at the window's left edge as the menu's does: what
+   is built in it lies on the window as what is built in the menu, so the
+   texture crosses the menu's edge without a seam. As wide as the window, not
+   as the Reach: so the layers in it keep their size while Reach changes (a
+   layer of another size is drawn anew, which made dragging Reach stutter), and
+   the box around it only uncovers more or less of them. */
+.menubg__far {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--menu-w));
+  width: 100vw;
+}
+/* The phone layout: the menu is a drawer over the page, nothing reaches out of it. */
+body.mobile .menubg--content { display: none; }
+
+.menubg__layer {
+  position: absolute;
+  background-repeat: no-repeat;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+/* A picture that goes on into itself at its edges, laid over the whole menu. */
+.menubg__tile { background-repeat: repeat; }
+
+/* The pictures that grow from one of the menu's edges (Roots, Vines, Vinyl,
+   Circuit) are made for a menu up to their own height; menuBg.js (fit) makes
+   their layer as tall as the menu and the picture larger where the menu is
+   taller, so they cover its whole height on any window. Vines' and Circuit's
+   go on into themselves to the sides and Vinyl's is wider than any window:
+   their layers are as wide as their box. */
+
+/* Roots: its two pictures (768 x 1400: the menu's part, 248 + 2 x 10, and 500 px
+   beyond it), 10 px larger than where they show on each side, so their edges
+   never show while they move; turned about the menu's top middle. Behind the
+   content two more, of the roots that hang there: as wide as their box, going
+   on into themselves to the side. */
+.mb-roots {
+  top: -10px;
+  left: -10px;
+  background-position: top left;
+  transform-origin: 134px 0;
+}
+.mb-roots-more {
+  width: calc(100% + 20px);
+  background-repeat: repeat-x;
+}
+/* The menu's depth spilling over its edge: a soft shade on the background, gone after 220 px. */
+.mb-roots-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgba(10, 10, 12, 0.42), rgba(10, 10, 12, 0.16) 90px, rgba(10, 10, 12, 0) 220px);
+}
+
+/* Vines: their two pictures stand on the menu's bottom edge (a margin lower,
+   so the edge never shows), and sway about its middle. */
+.mb-vines {
+  left: -20px;
+  bottom: -20px;
+  width: calc(100% + 40px);
+  background-repeat: repeat-x;
+  background-position: bottom left;
+  transform-origin: 144px 100%;
+}
+
+/* Vinyl: the grooves from the menu's bottom left corner (the record's middle
+   lies 40 px beyond it both ways), and over them the light: the turning
+   beams (a small picture stretched over the whole record), seen through a
+   second picture of the grooves. */
+.mb-vinyl {
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  background-position: bottom left;
+}
+.mb-vinyl-glint {
+  overflow: hidden;
+  -webkit-mask-position: bottom left;
+  mask-position: bottom left;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.mb-vinyl-light {
+  position: absolute;
+  will-change: transform;
+}
+
+/* Mist: thickest at the menu's bottom, thinning out all the way up to its top. */
+.menubg--mist {
+  -webkit-mask-image: linear-gradient(to top, #000 0, rgba(0, 0, 0, 0.8) 25%, rgba(0, 0, 0, 0.5) 55%, rgba(0, 0, 0, 0.22) 85%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 0, rgba(0, 0, 0, 0.8) 25%, rgba(0, 0, 0, 0.5) 55%, rgba(0, 0, 0, 0.22) 85%, transparent 100%);
+}
+
+/* Circuit: the traces from the menu's bottom edge, and the lights running
+   along them (each a small glow, its middle on the menu's bottom left corner
+   until menuBg.js moves it along a trace). */
+.mb-circuit {
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  background-repeat: repeat-x;
+  background-position: bottom left;
+}
+.mb-circuit-light {
+  left: -9px;
+  bottom: -9px;
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0, rgba(255, 255, 255, 0.5) 14%, rgba(255, 255, 255, 0.14) 40%, rgba(255, 255, 255, 0) 70%);
+}
+
+/* Scales: a row of them (menuBg.js lays the rows under one another, each over
+   the next). The rows are whole and their box is as solid as Settings'
+   Visibility: a scale is filled, and only whole does it hide the one under it. */
+.mb-scales-all {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+.mb-scales {
+  background-repeat: repeat-x;
+  opacity: 1;
+}

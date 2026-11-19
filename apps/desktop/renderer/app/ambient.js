@@ -22,6 +22,15 @@
 // as rings that fade out and start again. Solid, only the colour is rounded,
 // in steps too small to see.
 //
+// Except under WebGL while the menu's background texture reaches over the
+// content (menuBg.js, Settings' Reach over), which lies behind all of this:
+// then the picture is see-through where neither a cloud nor the cover is
+// (seeThrough), and the page's background and the texture show from under it.
+// It holds its colour already times how solid it is there (a 255th of a step,
+// speckled as before) and is laid over what is under it by that, so it keeps
+// as many steps as the solid one; over the plain background it comes to the
+// same picture.
+//
 // At full size: Chromium speckles colour fades by a step to hide banding,
 // invisible pixel by pixel, but a canvas drawn smaller and stretched turns the
 // speckles into a grid. The equalizer's canvas lies on top of this one.
@@ -77,6 +86,7 @@ const Ambient = {
   pulse: 0,         // 0..1, the swell of the last bass hit
   frozen: false,    // Windows' "Show animations" off: the clouds stand still
   started: false,   // the canvas's drawing is made (not yet after a start in the tray)
+  clear: false,     // the picture is see-through where neither a cloud nor the cover is (seeThrough)
   coverPic: null,   // the cover shown (Show Cover as background) with its surround, baked: { image, pad }, or null
   coverKey: '',     // the song and address it is (or is being) loaded for
   coverJob: null,   // the baking under way, if any (another one, or none, ends it)
@@ -217,6 +227,21 @@ const Ambient = {
     if (!Store.away) this._start();
   },
 
+  /**
+   * The picture see-through where neither a cloud nor the cover is (true), or solid as usual: for what lies
+   * under it (the menu's background texture reaching over, menuBg.js). Says whether it is see-through now:
+   * only WebGL's picture can be (the canvas's own keeps too few steps of faint colour that way), and not
+   * before it has started.
+   */
+  seeThrough(on) {
+    const clear = !!on && !!this.gl;
+    if (clear !== this.clear) {
+      this.clear = clear;
+      this._draw();
+    }
+    return clear;
+  },
+
   /** The canvas's drawing made, and the frames started. */
   _start() {
     if (this.started) return;
@@ -270,7 +295,7 @@ const Ambient = {
   _webgl() {
     let gl = null;
     try {
-      gl = this.canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false });
+      gl = this.canvas.getContext('webgl2', { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: true });
     } catch {
       gl = null;
     }
@@ -344,6 +369,7 @@ ${src}`);
         uniform float coverAlpha;              // 0: no cover
         uniform vec2 fade;                     // how far inside the cover's edge it begins to thin, and how far outside it is gone (pixels)
         uniform float bell;                    // how far down the bell curve it thins along is cut off
+        uniform float clear;                   // 1: see-through where neither a cloud nor the cover is (the menu's texture lies under it)
         out vec4 o;
         float hash12(vec2 p) {
           vec3 p3 = fract(vec3(p.xyx) * .1031);
@@ -352,7 +378,9 @@ ${src}`);
         }
         void main() {
           vec4 c = texture(clouds, vec2(uv.x * part.x, 1.0 - (1.0 - uv.y) * part.y));
-          vec3 base = bg;
+          // How solid the cover is here, and its colour.
+          float m = 0.0;
+          vec3 pic = bg;
           if (coverAlpha > 0.0) {
             vec2 px = vec2(gl_FragCoord.x, screenH - gl_FragCoord.y);
             // The cover's core (the cover drawn in by fade.x, its corners as round) shows whole. From
@@ -360,13 +388,21 @@ ${src}`);
             // it (the baked surround): no edge to see, the picture comes out of the background.
             vec2 d = abs(px - box.xy - vec2(box.z * 0.5)) - vec2(box.z * 0.5 - fade.x) + box.w;
             float away = clamp((length(max(d, 0.0)) - box.w) / max(fade.x + fade.y, 1.0), 0.0, 1.0);
-            float m = (exp(-bell * away * away) - exp(-bell)) / (1.0 - exp(-bell)) * coverAlpha;
-            base = mix(bg, texture(cover, ((px - box.xy) / box.z + pad) / (1.0 + 2.0 * pad)).rgb, m);
+            m = (exp(-bell * away * away) - exp(-bell)) / (1.0 - exp(-bell)) * coverAlpha;
+            pic = texture(cover, ((px - box.xy) / box.z + pad) / (1.0 + 2.0 * pad)).rgb;
           }
+          float speckle = (hash12(gl_FragCoord.xy) - 0.5) / 255.0;
           // Two layers: the background with the cover on it, and the clouds in front of that. The clouds
           // are what they are over the plain background (laid over it), and the cover's own light is
           // added whole: a cloud is as strong over the cover as beside it, and does not dim the cover.
-          o = vec4(c.rgb + bg * (1.0 - c.a) + (base - bg) + (hash12(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+          if (clear < 0.5) {
+            o = vec4(c.rgb + bg * (1.0 - c.a) + m * (pic - bg) + speckle, 1.0);
+          } else {
+            // The same picture with the background left out: what is under the canvas shows by as much as
+            // neither cloud nor cover is there (the colour here is already times how solid it is).
+            float solid = min(1.0, c.a + m);
+            o = vec4(max(vec3(0.0), c.rgb + m * pic - bg * max(0.0, c.a + m - 1.0) + speckle * step(0.002, solid)), solid);
+          }
         }`);
     } catch (err) {
       console.warn(err);
@@ -385,6 +421,7 @@ ${src}`);
       coverAlpha: gl.getUniformLocation(showProg, 'coverAlpha'),
       fade: gl.getUniformLocation(showProg, 'fade'),
       bell: gl.getUniformLocation(showProg, 'bell'),
+      clear: gl.getUniformLocation(showProg, 'clear'),
     };
     gl.useProgram(puffProg);
     gl.uniform1fv(u.falloff, this.falloff.map(([, v]) => v));
@@ -459,15 +496,16 @@ ${src}`);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         target = { tex, fb, w: tw, h: th };
       },
-      /** n puffs, and the cover where box says ({ x, y, size }) at alpha (0: none). */
-      draw: (n, box, alpha) => {
+      /** n puffs, and the cover where box says ({ x, y, size }) at alpha (0: none); `clear`: see-through where neither is. */
+      draw: (n, box, alpha, clear) => {
         if (!target) return;
         const showCover = hasCover && !!box && alpha > 0;
         if (!n && !showCover) {
-          // The plain background, straight onto the screen.
+          // The plain background (or nothing at all), straight onto the screen.
           gl.bindFramebuffer(gl.FRAMEBUFFER, null);
           gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-          gl.clearColor(bg[0], bg[1], bg[2], 1);
+          if (clear) gl.clearColor(0, 0, 0, 0);
+          else gl.clearColor(bg[0], bg[1], bg[2], 1);
           gl.clear(gl.COLOR_BUFFER_BIT);
           return;
         }
@@ -519,6 +557,7 @@ ${src}`);
         gl.uniform1f(u.pad, pad);
         gl.uniform2f(u.fade, showCover ? box.size * this.COVER_FADE_IN * scale : 0, showCover ? box.size * this.COVER_FADE * scale * this._reach(alpha) : 0);
         gl.uniform1f(u.bell, this.FADE_BELL);
+        gl.uniform1f(u.clear, clear ? 1 : 0);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
       },
     };
@@ -632,7 +671,7 @@ ${src}`);
     const box = this.coverPic ? this.coverBox : null;
     const alpha = box && s.coverBgOn ? (Number(s.coverBgVisibility) || 0) / 100 : 0;
     if (this.gl) {
-      this.gl.draw(puffs, box, alpha);
+      this.gl.draw(puffs, box, alpha, this.clear);
       return;
     }
     const out = c.getContext('2d');
