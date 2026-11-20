@@ -13,7 +13,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
 const tools = require('./tools');
-const { parseLoudness } = require('@flow/core/tags');
+const { parseLoudness, LOUDNESS_FILTER } = require('@flow/core/tags');
 
 const BATCH = 25;
 const BATCH_MS = 20000;
@@ -26,7 +26,7 @@ function measure(file) {
     if (!ffmpeg) return resolve(null);
     const proc = spawn(ffmpeg, [
       '-hide_banner', '-nostats', '-nostdin', '-i', file,
-      '-vn', '-af', 'ebur128=framelog=quiet', '-f', 'null', '-',
+      '-vn', '-af', LOUDNESS_FILTER, '-f', 'null', '-',
     ], { windowsHide: true });
     child = proc;
     try {
@@ -37,9 +37,10 @@ function measure(file) {
     const err = [];
     proc.stderr.on('data', (d) => err.push(String(d)));
     proc.on('error', () => resolve(null));
-    proc.on('close', () => {
+    proc.on('close', (code) => {
       if (child === proc) child = null;
-      resolve(parseLoudness(err.join('')));
+      // An ffmpeg that failed measured nothing, whatever it printed.
+      resolve(code === 0 ? parseLoudness(err.join('')) : null);
     });
   });
 }

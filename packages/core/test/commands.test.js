@@ -70,6 +70,10 @@ test('favourites, loudness and listens', () => {
   assert.equal(m.songById(d, 's2').favouriteAt, 50);
   applyCommand(d, { type: 'setLoudness', songId: 's2', loudness: -9.5 });
   assert.equal(m.songById(d, 's2').loudness, -9.5);
+  // An app that measured nothing (0, from a meter that never ran) leaves what is known.
+  assert.deepEqual(applyCommand(d, { type: 'setLoudness', songId: 's2', loudness: 0 }), { skipped: 'unmeasured' });
+  assert.deepEqual(applyCommand(d, { type: 'setLoudness', songId: 's2', loudness: null }), { skipped: 'unmeasured' });
+  assert.equal(m.songById(d, 's2').loudness, -9.5);
   assert.deepEqual(applyCommand(d, { type: 'recordListen', songId: 's2', listened: 350, duration: 360, at: 60 }), { value: 'play' });
   assert.equal(m.songById(d, 's2').stats.plays, 1);
 });

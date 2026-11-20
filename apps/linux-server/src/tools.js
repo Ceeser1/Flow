@@ -12,7 +12,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile, spawn } = require('child_process');
-const { parseLoudness } = require('@flow/core/tags');
+const { parseLoudness, LOUDNESS_FILTER } = require('@flow/core/tags');
 
 function onPath(name) {
   const exe = process.platform === 'win32' ? `${name}.exe` : name;
@@ -113,8 +113,9 @@ function run(args, timeout = 10 * 60 * 1000) {
 
 /** The song's loudness in LUFS, or null. */
 async function measureLoudness(file) {
-  const r = await run(['-i', file, '-vn', '-af', 'ebur128=framelog=quiet', '-f', 'null', '-']);
-  return parseLoudness(r.stderr);
+  const r = await run(['-i', file, '-vn', '-af', LOUDNESS_FILTER, '-f', 'null', '-']);
+  // An ffmpeg that failed measured nothing, whatever it printed.
+  return r.ok ? parseLoudness(r.stderr) : null;
 }
 
 module.exports = { ffmpeg, ffprobe, ytdlp, canDownload, jsRuntime, probe, measureLoudness, onPath };

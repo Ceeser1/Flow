@@ -96,6 +96,13 @@ test('the loudness is read from the summary of ffmpeg\'s ebur128', () => {
   // Silence reads as the meter's floor: nothing to go by.
   assert.equal(parseLoudness('Summary:\n  Integrated loudness:\n    I:         -70.0 LUFS'), null);
   assert.equal(parseLoudness('No such file'), null);
+  // A meter ffmpeg could not start (an older ffmpeg, an option it does not know) prints a summary of zeros.
+  assert.equal(parseLoudness(`[Parsed_ebur128_0 @ 0x1] Error applying options to the filter.
+[Parsed_ebur128_0 @ 0x1] Summary:
+
+  Integrated loudness:
+    I:           0.0 LUFS
+    Threshold:   0.0 LUFS`), null);
 });
 
 test('a song\'s loudness is kept, and only as a number', () => {
@@ -103,8 +110,10 @@ test('a song\'s loudness is kept, and only as a number', () => {
     { id: 'a', file: 'a.mp3', loudness: -11.2 },
     { id: 'b', file: 'b.mp3' },
     { id: 'c', file: 'c.mp3', loudness: 'loud' },
+    // Kept by a server whose meter never ran (up to 5.3.1): not measured.
+    { id: 'd', file: 'd.mp3', loudness: 0 },
   ] });
-  assert.deepEqual(data.songs.map((s) => s.loudness), [-11.2, null, null]);
+  assert.deepEqual(data.songs.map((s) => s.loudness), [-11.2, null, null, null]);
   m.updateSong(data, 'b', { loudness: -8 });
   assert.equal(m.songById(data, 'b').loudness, -8);
 });

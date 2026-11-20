@@ -81,13 +81,20 @@ body.mobile .menu {
   left: 0;
   z-index: 47;
   width: min(84vw, 320px);
-  padding: calc(16px + var(--safe-top)) 12px 0;
+  /* No space of its own at the top: the name's (below), so the background texture, which sticks to the top
+     while the drawer scrolls (styles/menuBg.css), begins at the very top. */
+  padding: 0 12px;
   overflow-y: auto;
   transform: translateX(-100%);
+  /* A layer of its own all the time, not only while it slides: so nothing is put together anew at the moment it
+     has slid in (the background texture's layers went missing for a few frames then, on a phone). */
+  will-change: transform;
   transition: transform 0.22s ease-out, visibility 0s 0.22s;
   visibility: hidden;
   box-shadow: none;
 }
+
+body.mobile .menu > .brand { margin-top: calc(16px + var(--safe-top)); }
 
 body.mobile.drawer-open .menu {
   transform: none;
@@ -749,11 +756,11 @@ body.mobile .pl-update__lists { grid-template-columns: 1fr; }
 body.mobile .pl-update__list { max-height: 30vh; }
 body.mobile #plRules { order: 6; }
 body.mobile #plOfflineNote { order: 7; }
-/* A temporary playlist (5.2): "Save" with its icon, then the red X, in Share's place. */
+/* A temporary playlist (5.2): Save as its icon, then the red X, in Share's place. */
 body.mobile .pl-temp-actions { order: 8; gap: 10px; }
 /* Shuffle then stays beside Play; the two keep the right end (on the next line, together, where the screen is too narrow). */
 body.mobile .pl-head__row:has(.pl-temp-actions:not([hidden])) #plShuffle { margin-left: 0; }
-body.mobile #plSave { padding: 0 16px 0 12px; flex: none; }
+body.mobile #plSave { width: 44px; padding: 0; justify-content: center; flex: none; }
 body.mobile #plSave .icon { width: 20px; height: 20px; }
 body.mobile #plDiscard { width: 44px; flex: none; }
 body.mobile #plDiscard .icon { width: 20px; height: 20px; }

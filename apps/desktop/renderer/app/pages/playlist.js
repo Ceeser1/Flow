@@ -109,8 +109,8 @@ const PlaylistPage = {
       }
       attempt(() => window.flow.setPlaylistShared(p.id, !p.shared));
     };
-    $('plSave').onclick = () => this.saveTemp(this.id);
-    $('plDiscard').onclick = () => this.discardTemp(this.id);
+    $('plSave').onclick = () => this.askSaveTemp(this.id);
+    $('plDiscard').onclick = () => this.askDiscardTemp(this.id);
     // A temporary playlist changed: a song taken out of the one shown, or it
     // was thrown away (the next newest one opens then, else All Songs).
     TempLists.onChange(() => {
@@ -356,8 +356,9 @@ const PlaylistPage = {
 
   /**
    * A temporary playlist's own (5.2): the hint above the search that it goes
-   * with the session, and at the row's right end Save playlist ("Save" on
-   * the phone) and the red X that throws it away.
+   * with the session, and at the row's right end Save playlist (on the phone
+   * only its icon, as the row's other buttons there) and the red X that
+   * throws it away. Both ask first (askSaveTemp, askDiscardTemp).
    */
   _drawTemp() {
     const p = Store.playlist(this.id);
@@ -369,7 +370,7 @@ const PlaylistPage = {
     $('plDiscard').hidden = !temp;
     if (!temp) return;
     const save = $('plSave');
-    const html = `${Icons.save}<span>${T(Store.uiMode === 'mobile' ? 'common.save' : 'playlist.temp.save')}</span>`;
+    const html = Store.uiMode === 'mobile' ? Icons.save : `${Icons.save}<span>${T('playlist.temp.save')}</span>`;
     if (save.dataset.html !== html) {
       save.innerHTML = html;
       save.dataset.html = html;
@@ -386,6 +387,31 @@ const PlaylistPage = {
 
   // The temporary playlist being saved (its id), or null.
   _saving: null,
+
+  /** Save playlist pressed: asked first, with the playlist's name (the two buttons sit side by side, and the phone's are icons). */
+  async askSaveTemp(id) {
+    const list = TempLists.get(id);
+    if (!list || this._saving) return;
+    const ok = await confirmDialog({
+      title: T('playlist.temp.save'),
+      message: T('playlist.temp.save.confirm', { playlist: list.name }),
+      confirmLabel: T('common.save'),
+    });
+    if (ok) this.saveTemp(id);
+  },
+
+  /** The red X pressed: asked first, as what it throws away cannot be brought back. */
+  async askDiscardTemp(id) {
+    const list = TempLists.get(id);
+    if (!list || this._saving === id) return;
+    const ok = await confirmDialog({
+      title: T('playlist.temp.discard.confirm.title'),
+      message: T('playlist.temp.discard.confirm', { playlist: list.name }),
+      confirmLabel: T('common.remove'),
+      danger: true,
+    });
+    if (ok) this.discardTemp(id);
+  },
 
   /**
    * Save playlist (5.2): the temporary playlist becomes a playlist of the
@@ -458,8 +484,8 @@ const PlaylistPage = {
   },
 
   /**
-   * The red X (5.2): the temporary playlist is thrown away, without a
-   * question. Its page gives way to the next newest one, else All Songs
+   * The red X (5.2), once its question is answered: the temporary playlist
+   * is thrown away. Its page gives way to the next newest one, else All Songs
    * (init's TempLists.onChange); a song of it that plays goes on playing.
    */
   discardTemp(id) {

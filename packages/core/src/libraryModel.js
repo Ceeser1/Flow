@@ -223,7 +223,10 @@ function cleanListened(raw) {
 function cleanLoudness(v) {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  // Exactly 0 was never measured (tags.js parseLoudness): a server whose ffmpeg
+  // could not run the meter kept it for its songs up to 5.3.1, and every app
+  // then turned those songs down as far as it goes. Not measured: measured again.
+  return Number.isFinite(n) && n !== 0 ? n : null;
 }
 
 /** A cover version (a short hash), '-' for none found, else null: not looked for. */

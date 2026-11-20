@@ -2426,6 +2426,19 @@ playlist.temp.discard.tooltip
   en: Remove this temporary playlist
   de: Diese temporäre Playlist entfernen
 
+# Both buttons ask first.
+playlist.temp.save.confirm
+  en: Save "{playlist}" to Your Playlists? It is a normal playlist from then on.
+  de: „{playlist}“ in „Deine Playlists“ speichern? Sie ist ab dann eine normale Playlist.
+
+playlist.temp.discard.confirm.title
+  en: Remove temporary playlist
+  de: Temporäre Playlist entfernen
+
+playlist.temp.discard.confirm
+  en: Remove the temporary playlist "{playlist}"? It cannot be brought back; its songs stay in your library.
+  de: Die temporäre Playlist „{playlist}“ entfernen? Sie lässt sich nicht zurückholen; ihre Songs bleiben in deiner Bibliothek.
+
 playlist.temp.saved
   en: Saved "{playlist}" to Your Playlists
   de: „{playlist}“ in „Deine Playlists“ gespeichert

@@ -41,6 +41,16 @@
 }
 /* The phone layout: the menu is a drawer over the page, nothing reaches out of it. */
 body.mobile .menubg--content { display: none; }
+/* The drawer scrolls as a whole (mobile.css), and the texture must not go up with its entries: it sticks to the
+   drawer's top, across its padding to the sides, as tall as the drawer and taking no room in it (menuBg.js sets
+   its height and the same margin back up below it, _phoneBox). The drawer's own space at the top is the first
+   entry's there (mobile.css), so the texture begins at the drawer's very top edge. */
+body.mobile .menubg--menu {
+  position: sticky;
+  inset: 0 auto auto;
+  flex: none;
+  margin: 0 -12px;
+}
 
 .menubg__layer {
   position: absolute;

@@ -103,6 +103,8 @@ const Mobile = {
   openDrawer() {
     this.drawerOpen = true;
     document.body.classList.add('drawer-open');
+    // The menu's background texture moves only while the drawer is in sight.
+    if (typeof MenuBg !== 'undefined') MenuBg.wake();
   },
 
   closeDrawer() {
@@ -400,7 +402,10 @@ const Mobile = {
           bar.classList.add('mp--dragging');
           bar.style.transform = `translateX(${window.innerWidth + dx}px)`;
         }
-        if (mode === 'open' || mode === 'close') document.body.classList.add('drawer-dragging');
+        if (mode === 'open' || mode === 'close') {
+          document.body.classList.add('drawer-dragging');
+          if (typeof MenuBg !== 'undefined') MenuBg.wake();
+        }
         return true;
       },
       move: (dx) => {

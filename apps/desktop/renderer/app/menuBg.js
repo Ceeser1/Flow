@@ -44,7 +44,10 @@
 // then, the mouse not followed either), while Flow is in the tray, or while
 // nothing of it moves (Speed 0 and the mouse where it was: the next move of the
 // mouse wakes it); two a second, changing nothing, under the full-screen
-// visualizer and on the phone layout while its menu is closed.
+// visualizer. On the phone layout none while its menu (a drawer) is closed:
+// opening it wakes the texture (wake), which goes on at once from where it
+// stood, so nothing of it changes at some later moment, with the drawer just
+// slid in (it did, up to half a second after: a jump towards the finger).
 //
 // Speed: every style has its own `speed`, its pace at Settings' Speed 100 %; all
 // its other numbers (pixels a second, periods) are at pace 1. So a style that is
@@ -78,6 +81,9 @@ const MenuBg = {
   time: 0,
   // How solid the layers show now (0 to 1), from Settings' Visibility.
   strength: 0,
+  // The phone layout (its menu a drawer), and the height its box there has now (_phoneBox).
+  phone: false,
+  _phoneTall: 0,
   // Windows' "Show animations" off; Flow in the tray.
   reduced: false,
   resting: false,
@@ -105,7 +111,8 @@ const MenuBg = {
     this.out = $('menuBgOut');
     if (!this.box) return;
     this.resting = !!Store.away;
-    this.gain = document.body.classList.contains('mobile') ? this.PHONE : 1;
+    this.phone = document.body.classList.contains('mobile');
+    this.gain = this.phone ? this.PHONE : 1;
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.reduced = motion.matches;
     motion.addEventListener('change', () => {
@@ -133,11 +140,43 @@ const MenuBg = {
       });
       sized.observe(this.box);
       sized.observe(this.out);
+      // The phone layout: the texture's box as tall as the drawer it sticks in.
+      if (this.phone && this.box.parentElement) new ResizeObserver(() => this._phoneBox()).observe(this.box.parentElement);
     }
+    this._phoneBox();
     Store.onSettings((patch) => {
       if (Object.keys(patch || {}).some((k) => k.startsWith('menuBg'))) this._apply();
     });
     this._apply();
+  },
+
+  /**
+   * The phone layout: its menu is a drawer that scrolls as a whole, so the texture's box sticks to the drawer's
+   * top (menuBg.css) instead of lying in what scrolls: as tall as the drawer, with as much margin back up below it,
+   * so the entries begin where they would without it.
+   */
+  _phoneBox() {
+    if (!this.phone || !this.box.parentElement) return;
+    const tall = this.box.parentElement.clientHeight;
+    if (!tall || tall === this._phoneTall) return;
+    this._phoneTall = tall;
+    this.box.style.height = `${tall}px`;
+    this.box.style.marginBottom = `${-tall}px`;
+  },
+
+  /** The phone layout's drawer opens (or is pulled out by a finger): frames again, on from where it stood, without a jump. */
+  wake() {
+    if (!this.box || !this.phone) return;
+    clearTimeout(this.timer);
+    this.timer = null;
+    this.last = 0;
+    this._run();
+  },
+
+  /** Whether the phone layout's drawer is out of sight (closed, and not being pulled out). */
+  _drawerShut() {
+    const c = document.body.classList;
+    return this.phone && !c.contains('drawer-open') && !c.contains('drawer-dragging');
   },
 
   /** Flow's window into the tray (true): no more frames; back (false): on from where it stood. */
@@ -340,7 +379,7 @@ const MenuBg = {
   /** A frame planned if it is there and moves and none is planned yet; none any more otherwise. */
   _run() {
     if (!this.box) return;
-    if (!this.style || this._still() || this.resting) {
+    if (!this.style || this._still() || this.resting || this._drawerShut()) {
       if (this.raf !== null) cancelAnimationFrame(this.raf);
       clearTimeout(this.timer);
       this.raf = null;
@@ -394,9 +433,13 @@ const MenuBg = {
       else this._plan(fps);
       return;
     }
+    // The phone's drawer shut: no frames at all until it opens (wake).
+    if (this._drawerShut()) {
+      this.last = 0;
+      return;
+    }
     // Not seen: nothing changed (and the time not counted, so it goes on from there).
-    const hidden = document.hidden || (typeof Visualizer !== 'undefined' && Visualizer.shown)
-      || (document.body.classList.contains('mobile') && !document.body.classList.contains('drawer-open'));
+    const hidden = document.hidden || (typeof Visualizer !== 'undefined' && Visualizer.shown);
     const dt = this.last ? Math.min(0.6, (now - this.last) / 1000) : 0;
     this.last = now;
     if (hidden) {

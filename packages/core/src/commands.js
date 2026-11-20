@@ -278,7 +278,10 @@ const TYPES = {
     keys: () => [],
     run(d, c) {
       if (!model.songById(d, str(c.songId))) return { skipped: 'gone' };
-      model.updateSong(d, str(c.songId), { loudness: c.loudness });
+      // Nothing measured (an older app's 0): what is known stays.
+      const lufs = Number(c.loudness);
+      if (c.loudness === null || c.loudness === '' || !Number.isFinite(lufs) || lufs === 0) return { skipped: 'unmeasured' };
+      model.updateSong(d, str(c.songId), { loudness: lufs });
       return {};
     },
   },

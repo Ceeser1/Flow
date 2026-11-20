@@ -55,8 +55,10 @@ const Player = {
   queue: new PlayQueue(),
   // Equalize volume: every song is brought to this loudness, but turned up by
   // at most MAX_BOOST_DB (quiet recordings would only get noisy) and down by
-  // at most MAX_CUT_DB.
-  TARGET_LUFS: -14,
+  // at most MAX_CUT_DB. -11 (5.3.1: -14, the streaming services' level): most
+  // songs are mastered far louder (a typical one about -8), so at -14 nearly
+  // all of them were turned down, by about 6 dB.
+  TARGET_LUFS: -11,
   MAX_BOOST_DB: 8,
   MAX_CUT_DB: 14,
   currentId: null,

@@ -14,6 +14,7 @@ import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackException;
+import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.HttpDataSource;
@@ -33,6 +34,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -70,9 +72,21 @@ import java.util.List;
  * sound, and Flow is in the background when an alarm rings.
  *
  * Song Transition (crossfade) too: shortly before a song ends, a second
- * player (the tail) is made ready at the place the transition starts; there
- * it plays the song's end on, fading down, while this player moves on to the
- * next song, fading it up. A pause, a seek or another song cuts the tail.
+ * player (the tail) is made ready a few seconds before the place the
+ * transition starts. From there it plays the song along with this player,
+ * unheard, and is brought in step with it (its place against this player's
+ * measured, the difference made up by playing a little faster or slower for
+ * a moment), so that at the transition's start it can take the song over
+ * without a jump: it plays the song's end on, fading down, while this player
+ * moves on to the next song, fading it up. (Up to 5.3.1 it was started only
+ * at that moment, timed by this player's place. But a player tells a place
+ * up to a quarter of a second old (it looks at its place only when it wakes
+ * to hand on more sound), so the moment came late by that much and the tail
+ * began behind: the song's last tenth of a second or two was heard twice.)
+ * A tail that is not in step at the moment (it had too little time: a pause
+ * or a seek just before) does not take over: that song ends as without a
+ * transition. A pause holds a tail playing along, to go on with the song; a
+ * pause while it is heard, a seek or another song cuts it.
  *
  * Songs from a Flow Server are fetched as Streams has it: with the newest
  * token, and a stream that broke off (no network for a while) tried again
@@ -127,6 +141,20 @@ final class FlowPlayer {
     }
 
     private static final int TICK_MS = 250;
+    // Song Transition: how long the tail plays along unheard before it takes the song over (time to get in
+    // step); how long its place is left to settle before it is measured (after it started, after a correction);
+    // within how many ms it counts as in step; from how far off it is set to the place instead of nudged there;
+    // and how much faster or slower it plays at most while it is nudged.
+    // A player's place is as old as its last look at it (see the top): for measuring, both are made to look
+    // (poke), and their places read LOOK_MS later.
+    private static final long ALONG_MS = 7000;
+    private static final long SETTLE_MS = 1200;
+    private static final long LOOK_MS = 8;
+    private static final long IN_STEP_MS = 8;
+    // And how far off it may be at most when it takes the song over (more would be heard as a jump).
+    private static final long STEP_MOST_MS = 40;
+    private static final long FAR_OFF_MS = 400;
+    private static final float NUDGE_MOST = 0.2f;
     private static FlowPlayer instance;
 
     static FlowPlayer get(Context context) {
@@ -190,21 +218,46 @@ final class FlowPlayer {
     private final Runnable alarmCheck = this::alarmCheck;
     private final Runnable planKeeper = this::keepPlan;
     // Song Transition: its length (ms; 0: none), the tail playing the end of the song
-    // before (made ready for tailFor, from tailFrom), the song coming in (fading up), and
-    // whether the move on is the transition's (told as "auto", a song that ended).
+    // before (made ready for tailFor at tailStart, taking the song over at tailFrom), the
+    // song coming in (fading up), and whether the move on is the transition's (told as
+    // "auto", a song that ended).
     private long transitionMs = 0;
     private ExoPlayer tail;
     private String tailFor = "";
+    private long tailStart = 0;
     private long tailFrom = 0;
     private long tailLength = 0;
     private float tailGain = 1f;
     private LoudnessEnhancer tailEnhancer;
+    // The tail plays along unheard (tailAlong, its start planned: alongSet; tailHeld: paused with this
+    // player), then is heard (tailOn).
+    private boolean alongSet;
+    private boolean tailAlong;
+    private boolean tailHeld;
+    private boolean tailOn;
+    // Getting in step: since when its place runs steadily (elapsed ms; -1: not yet), the differences
+    // measured for the next verdict (ms; the tail ahead: above 0), until when it is nudged (0: not), and
+    // whether it was set to the place once.
+    private long stepSince = -1;
+    private final long[] stepOffs = new long[5];
+    private int stepN;
+    private long nudgeUntil;
+    private boolean stepSought;
     private boolean crossStartSet;
     private boolean crossing;
     private String fadeInId = "";
     private long fadeInMs = 0;
     private float fadeIn = 1f;
+    private final Runnable alongStart = this::alongStart;
+    private final Runnable alongTick = this::alongTick;
+    private final Runnable alongLook = this::alongLook;
+    // The transition's two fades go by the clock from here (elapsed ms; the tail's with what it was in already).
+    private long tailOnAt;
+    private float tailOnP;
+    private long fadeInSeen = -1;
+    private long fadeInSeenAt;
     private final Runnable crossStart = this::crossStart;
+    private final Runnable crossGo = this::crossGo;
     private final Runnable crossTick = this::crossTick;
     private final AudioAttributes music;
     private final MediaSource.Factory sources;
@@ -336,7 +389,10 @@ final class FlowPlayer {
                     livePaused = false;
                     connectLive();
                 }
-                if (!playWhenReady) dropTail("paused");
+                if (!playWhenReady) {
+                    if (tailOn) dropTail("paused");
+                    else holdTail();
+                }
                 // Paused by hand while the alarm rings (Flow's own Pause, the notification's): the alarm is answered.
                 if (!playWhenReady && alarmOn && (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
                         || reason == Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE)) {
@@ -1097,14 +1153,15 @@ final class FlowPlayer {
 
     /**
      * Song Transition, checked while playing: the tail made ready a while
-     * before the transition starts, and its start set to the moment. None
-     * with Repeat, without a next song, or for a song too short (a transition
-     * is at most a third of it).
+     * before the transition starts, set playing along (unheard) ALONG_MS
+     * before it, and the transition's start set to the moment. None with
+     * Repeat, without a next song, or for a song too short (a transition is
+     * at most a third of it).
      */
     private void checkTransition() {
         // Not while the tail still plays the end of the song before.
-        if (tail != null && tail.getPlayWhenReady()) return;
-        if (transitionMs <= 0 || crossStartSet || exo.getRepeatMode() == Player.REPEAT_MODE_ONE || !exo.hasNextMediaItem()) return;
+        if (tailOn) return;
+        if (transitionMs <= 0 || exo.getRepeatMode() == Player.REPEAT_MODE_ONE || !exo.hasNextMediaItem()) return;
         long d = exo.getDuration();
         if (d == C.TIME_UNSET || d <= 0) return;
         long length = Math.min(transitionMs, d / 3);
@@ -1113,24 +1170,46 @@ final class FlowPlayer {
         long pos = exo.getCurrentPosition();
         long left = from - pos;
         if (left > 12000) return;
+        float speed = Math.max(0.1f, exo.getPlaybackParameters().speed);
         if (tail == null || !tailFor.equals(id) || tailFrom != from) {
             // Too late to make it ready: this one goes over without a transition.
             if (left < 1500) return;
-            makeTail(from, length);
+            // Playing along from ALONG_MS before the transition; found later than that (a seek, a short
+            // song), from a second from now, which it needs to get ready.
+            makeTail(Math.max(from - ALONG_MS, Math.min(from, pos + 1000)), from, length);
             return;
         }
-        if (left > 1200) return;
+        if (!tailAlong) {
+            long wait = tailStart - pos;
+            if (wait > 1200 || alongSet) return;
+            alongSet = true;
+            main.postDelayed(alongStart, Math.max(0, (long) (wait / speed)));
+            return;
+        }
+        if (tailHeld) {
+            // On after a pause: along again, and brought in step anew.
+            tailHeld = false;
+            tail.play();
+            stepSince = -1;
+            stepN = 0;
+            stepSought = false;
+            main.postDelayed(alongTick, 50);
+        }
+        if (left > 1200 || crossStartSet) return;
         crossStartSet = true;
-        main.postDelayed(crossStart, Math.max(0, (long) (left / Math.max(0.1f, exo.getPlaybackParameters().speed))));
+        main.postDelayed(crossStart, Math.max(0, (long) (left / speed)));
     }
 
-    /** The song playing again in the tail, ready (paused) at the place its transition starts. */
-    private void makeTail(long from, long length) {
+    /** The song playing again in the tail, ready (paused) at `start`, to take the song over at `from`. */
+    private void makeTail(long start, long from, long length) {
         dropTail(null);
         MediaItem current = exo.getCurrentMediaItem();
         if (current == null) return;
-        tail = new ExoPlayer.Builder(context).setMediaSourceFactory(sources).setAudioAttributes(music, false).build();
-        tail.setMediaItem(current, from);
+        // It works at a steady pace (not only when it must hand on more sound): its place is fresh whenever it is
+        // read, and a nudge takes as long as it is given. It lives for a few seconds a song.
+        tail = new ExoPlayer.Builder(context).setMediaSourceFactory(sources).setAudioAttributes(music, false)
+                .experimentalSetDynamicSchedulingEnabled(false).build();
+        tail.setMediaItem(current, start);
         tail.setPlaybackParameters(exo.getPlaybackParameters());
         tail.setVolume(0f);
         if (!eqCurve.flat()) {
@@ -1140,27 +1219,26 @@ final class FlowPlayer {
         tail.prepare();
         tail.setPlayWhenReady(false);
         tailFor = id;
+        tailStart = start;
         tailFrom = from;
         tailLength = length;
         tailGain = gain;
-        FlowLog.i("transition of " + id + " made ready at " + Math.round(from / 100.0) / 10.0 + " s, " + length + " ms");
+        FlowLog.i("transition of " + id + " made ready at " + Math.round(start / 100.0) / 10.0 + " s, starting at "
+                + Math.round(from / 100.0) / 10.0 + " s, " + length + " ms");
     }
 
-    /** The moment: the tail plays the song's end on, and this player moves on to the next one, which fades up. */
-    private void crossStart() {
-        crossStartSet = false;
-        if (tail == null || !tailFor.equals(id) || !exo.isPlaying() || !exo.hasNextMediaItem()) {
+    /** The tail starts playing along with this player, unheard; alongTick brings it in step. */
+    private void alongStart() {
+        alongSet = false;
+        if (tail == null || !tailFor.equals(id) || tailAlong || tailOn) return;
+        if (!exo.isPlaying()) {
             dropTail("not playing on");
             return;
         }
-        if (tail.getPlaybackState() != Player.STATE_READY) {
-            dropTail("its song was not ready");
-            return;
-        }
-        // Where this player has got to, should the moment have come late.
-        long at = exo.getCurrentPosition();
-        if (at > tailFrom + 150) tail.seekTo(at);
+        tail.setVolume(0f);
+        // Not ready yet (a slow network): it starts when it is, late, and is set to the place then.
         tail.play();
+        // What turns a quiet song up, put on its sound now: unheard, should that click.
         if (tailGain > 1f) {
             try {
                 tailEnhancer = new LoudnessEnhancer(tail.getAudioSessionId());
@@ -1170,31 +1248,202 @@ final class FlowPlayer {
                 tailEnhancer = null;
             }
         }
+        tailAlong = true;
+        stepSince = -1;
+        stepN = 0;
+        nudgeUntil = 0;
+        stepSought = false;
+        main.postDelayed(alongTick, 50);
+    }
+
+    /** This player paused: a tail playing along pauses with it (checkTransition sets it going again), one waiting for its start waits on. */
+    private void holdTail() {
+        main.removeCallbacks(crossStart);
+        main.removeCallbacks(crossGo);
+        main.removeCallbacks(alongStart);
+        main.removeCallbacks(alongTick);
+        main.removeCallbacks(alongLook);
+        crossStartSet = false;
+        alongSet = false;
+        if (tail == null || !tailAlong || tailHeld) return;
+        if (nudgeUntil > 0) {
+            tail.setPlaybackParameters(exo.getPlaybackParameters());
+            nudgeUntil = 0;
+        }
+        tail.pause();
+        tailHeld = true;
+    }
+
+    /** A player made to look at its place now (anything sent to it makes it work), so that what it tells is fresh. */
+    private static void poke(ExoPlayer player) {
+        player.createMessage((type, payload) -> { }).send();
+    }
+
+    /**
+     * Twenty times a second while the tail plays along unheard: both players
+     * are made to look at their places, which alongLook reads a moment later.
+     */
+    private void alongTick() {
+        main.removeCallbacks(alongTick);
+        main.removeCallbacks(alongLook);
+        if (tail == null || !tailAlong || tailOn || tailHeld) return;
+        if (!exo.isPlaying()) {
+            // (A pause holds it by itself; this is a player held up: waiting for data, another app's sound.)
+            dropTail("not playing on");
+            return;
+        }
+        main.postDelayed(alongTick, 50);
+        poke(exo);
+        poke(tail);
+        main.postDelayed(alongLook, LOOK_MS);
+    }
+
+    /**
+     * The tail's place against this player's. Two players started apart are
+     * never at the same place: the tail's is left to settle, measured (the
+     * middle one of five looks), and what it is off made up by playing it a
+     * little faster or slower for a moment, then measured again. Nobody
+     * hears that: it is silent until it takes the song over. Far off (it got
+     * ready late), it is set to the place once instead.
+     */
+    private void alongLook() {
+        if (tail == null || !tailAlong || tailOn || tailHeld || !exo.isPlaying()) return;
+        long now = SystemClock.elapsedRealtime();
+        if (!tail.isPlaying()) {
+            stepSince = -1;
+            stepN = 0;
+            return;
+        }
+        if (stepSince < 0) {
+            stepSince = now;
+            stepN = 0;
+            return;
+        }
+        if (nudgeUntil > 0) {
+            if (now < nudgeUntil) return;
+            tail.setPlaybackParameters(exo.getPlaybackParameters());
+            nudgeUntil = 0;
+            stepSince = now;
+            stepN = 0;
+            return;
+        }
+        if (now - stepSince < SETTLE_MS) return;
+        stepOffs[stepN] = tail.getCurrentPosition() - exo.getCurrentPosition();
+        stepN += 1;
+        if (stepN < stepOffs.length) return;
+        long[] sorted = stepOffs.clone();
+        Arrays.sort(sorted);
+        long off = sorted[sorted.length / 2];
+        stepN = 0;
+        PlaybackParameters own = exo.getPlaybackParameters();
+        long left = (long) ((tailFrom - exo.getCurrentPosition()) / Math.max(0.1f, own.speed));
+        if (Math.abs(off) <= IN_STEP_MS) {
+            // In step: looked at again in a while.
+            stepSince = now - SETTLE_MS + 500;
+            return;
+        }
+        if (Math.abs(off) > FAR_OFF_MS && !stepSought && left > 1800) {
+            // Ahead by about what a player needs to carry on after being set to a place.
+            stepSought = true;
+            tail.seekTo(exo.getCurrentPosition() + 120);
+            stepSince = -1;
+            FlowLog.i("transition: the tail " + off + " ms off, set to the place");
+            return;
+        }
+        // What it is nudged now is heard only once what it has already handed on has played: that must be
+        // over, and its speed its own again, before it takes the song over.
+        long room = left - 900;
+        if (room < 250) return;
+        long ms = Math.min(room, Math.max(300, Math.abs(off) * 6));
+        float rate = Math.max(-NUDGE_MOST, Math.min(NUDGE_MOST, -off / (float) ms));
+        tail.setPlaybackParameters(new PlaybackParameters(own.speed * (1f + rate), own.pitch));
+        nudgeUntil = now + ms;
+        FlowLog.i("transition: the tail " + off + " ms off, nudged " + Math.round(rate * 1000) / 10.0 + " % for " + ms + " ms");
+    }
+
+    /** The moment has come: a last look at both players' places (crossGo reads them). */
+    private void crossStart() {
+        if (tail == null || !tailFor.equals(id) || !exo.isPlaying() || !exo.hasNextMediaItem()) {
+            dropTail("not playing on");
+            return;
+        }
+        if (!tailAlong || tailHeld || !tail.isPlaying()) {
+            dropTail("its song was not ready");
+            return;
+        }
+        main.removeCallbacks(alongTick);
+        main.removeCallbacks(alongLook);
+        if (nudgeUntil > 0) {
+            tail.setPlaybackParameters(exo.getPlaybackParameters());
+            nudgeUntil = 0;
+        }
+        poke(exo);
+        poke(tail);
+        main.postDelayed(crossGo, LOOK_MS);
+    }
+
+    /**
+     * The tail, playing along in step, is heard and plays the song's end on,
+     * and this player moves on to the next one, which fades up. Not in step
+     * (it had too little time for that), it does not take over: the song
+     * plays to its end as without a transition, which is better than a jump.
+     */
+    private void crossGo() {
+        crossStartSet = false;
+        if (tail == null || !tailFor.equals(id) || !exo.isPlaying() || !exo.hasNextMediaItem() || !tailAlong || tailHeld || !tail.isPlaying()) {
+            dropTail("not playing on");
+            return;
+        }
+        long off = tail.getCurrentPosition() - exo.getCurrentPosition();
+        if (Math.abs(off) > STEP_MOST_MS) {
+            dropTail("not in step: " + off + " ms off");
+            return;
+        }
+        tailOnAt = SystemClock.elapsedRealtime();
+        tailOnP = Math.min(1f, Math.max(0f, (tail.getCurrentPosition() - tailFrom) / (float) Math.max(1, tailLength)));
+        fadeInSeen = -1;
         int next = exo.getNextMediaItemIndex();
         Tag tag = tagOf(exo.getMediaItemAt(next));
         fadeInId = tag == null ? "" : tag.id;
         fadeInMs = tailLength;
         crossing = true;
-        FlowLog.i("transition from " + id + " to " + fadeInId);
+        tailOn = true;
+        FlowLog.i("transition from " + id + " to " + fadeInId + ", the tail " + off + " ms off");
+        // The tail heard first, then this player on to the next song: nothing is missing between them.
+        crossTick();
         exo.seekToNextMediaItem();
         crossTick();
     }
 
-    /** Twenty times a second during a transition: the tail down, the song coming in up, each by its own place. */
+    /**
+     * Twenty times a second during a transition: the tail down, the song
+     * coming in up. The tail by the clock since it took the song over; the
+     * song coming in by its own place (one that starts late still fades up
+     * from nothing), carried on by the clock between the player's looks at
+     * it, so the fade does not go in steps.
+     */
     private void crossTick() {
         main.removeCallbacks(crossTick);
         boolean going = false;
-        if (tail != null && tail.getPlayWhenReady()) {
+        if (tail != null && tailOn) {
             if (tail.getPlaybackState() == Player.STATE_ENDED) dropTail(null);
             else {
-                float p = Math.min(1f, Math.max(0f, (tail.getCurrentPosition() - tailFrom) / (float) Math.max(1, tailLength)));
+                float speed = Math.max(0.1f, exo.getPlaybackParameters().speed);
+                float p = Math.min(1f, tailOnP + (SystemClock.elapsedRealtime() - tailOnAt) * speed / (float) Math.max(1, tailLength));
                 tail.setVolume(Math.max(0f, Math.min(1f, volume * sleepFade * alarmFade * Math.min(1f, tailGain))) * (float) Math.cos(p * Math.PI / 2));
                 if (p >= 1f) dropTail(null);
                 else going = true;
             }
         }
         if (!fadeInId.isEmpty() && id.equals(fadeInId)) {
-            float p = Math.min(1f, exo.getCurrentPosition() / (float) Math.max(1, fadeInMs));
+            long now = SystemClock.elapsedRealtime();
+            long place = exo.getCurrentPosition();
+            if (place != fadeInSeen) {
+                fadeInSeen = place;
+                fadeInSeenAt = now;
+            }
+            if (exo.isPlaying()) place += Math.min(400, (long) ((now - fadeInSeenAt) * Math.max(0.1f, exo.getPlaybackParameters().speed)));
+            float p = Math.min(1f, place / (float) Math.max(1, fadeInMs));
             fadeIn = (float) Math.sin(p * Math.PI / 2);
             applyVolume();
             if (p >= 1f) endFadeIn();
@@ -1215,9 +1464,18 @@ final class FlowPlayer {
     /** No tail (any more): the end of the song before stops, or the transition is not to be (why: logged). */
     private void dropTail(String why) {
         main.removeCallbacks(crossStart);
+        main.removeCallbacks(crossGo);
+        main.removeCallbacks(alongStart);
+        main.removeCallbacks(alongTick);
+        main.removeCallbacks(alongLook);
         crossStartSet = false;
+        alongSet = false;
         if (tail == null) return;
-        boolean playing = tail.getPlayWhenReady();
+        boolean playing = tailOn;
+        tailAlong = false;
+        tailHeld = false;
+        tailOn = false;
+        nudgeUntil = 0;
         if (tailEnhancer != null) {
             tailEnhancer.release();
             tailEnhancer = null;
