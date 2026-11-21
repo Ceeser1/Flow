@@ -349,7 +349,7 @@ async function get(base, route, token) {
 
 test('profiles over the network: make, sign in with a PIN, rename, sign out, delete', async () => {
   await withServer(async ({ base }) => {
-    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'radioStats', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'multiGroups', 'radioFavs', 'radioRelay', 'sessions', 'sessionRules', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
+    assert.deepEqual((await get(base, '/api/hello')).json.features, ['profiles', 'admin', 'pin', 'statistics', 'radioStats', 'smartPlaylists', 'pair', 'playlistGroups', 'followedInGroups', 'sharedGroups', 'multiGroups', 'radioFavs', 'radioRelay', 'collabPlaylists', 'sessions', 'sessionRules', 'lyrics', 'ownLyrics', 'lyricsSync', 'guests']);
     await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
     await command(base, [{ cid: 'c1', at: Date.now(), type: 'createPlaylist', playlistId: 'p1', name: 'Evening' }]);
     assert.deepEqual((await get(base, '/api/profiles')).json, { profiles: [], current: null, createProfiles: true });
@@ -948,6 +948,73 @@ test('playlists shared by a profile reach the others, with the owner\'s name, an
     const saved = require('../src/libraryFile').readLibrary(server.config); // the file and its log (4.3.4)
     assert.deepEqual(saved.profiles[ben.profile.id].follows, ['pa']);
     assert.equal(saved.profiles[anna.profile.id].playlists.find((p) => p.id === 'pa').shared, true);
+  });
+});
+
+test('collaborative playlists (5.4.0): asked, approved, songs added and removed by a member, seen by everyone as it should', async () => {
+  await withServer(async ({ base, server }) => {
+    await upload(base, 's1', { title: 'Teardrop', artist: 'Massive Attack', format: 'mp3', duration: 330 });
+    await upload(base, 's2', { title: 'Roads', artist: 'Portishead', format: 'mp3', duration: 300 });
+    await upload(base, 's3', { title: 'Glory Box', artist: 'Portishead', format: 'mp3', duration: 310 });
+    assert.ok((await get(base, '/api/hello')).json.features.includes('collabPlaylists'));
+    const anna = (await post(base, '/api/profiles', { name: 'Anna', pin: '1111', device: 'pc' })).json;
+    const ben = (await post(base, '/api/profiles', { name: 'Ben', device: 'phone' })).json;
+    const cleo = (await post(base, '/api/profiles', { name: 'Cleo', device: 'tablet' })).json;
+    const as = (t) => ({ Authorization: `Bearer ${t}` });
+    let n = 0;
+    const send = async (who, ...cmds) => (await command(base, cmds.map((c) => ({ cid: `c${(n += 1)}`, at: Date.now(), ...c })), as(who.token))).results;
+    await send(anna,
+      { type: 'createPlaylist', playlistId: 'pa', name: 'Evening' },
+      { type: 'addSongsToPlaylist', playlistId: 'pa', songIds: ['s1'] },
+      { type: 'setPlaylistShared', playlistId: 'pa', shared: true },
+      { type: 'setPlaylistCollab', playlistId: 'pa', on: true });
+    const details = (await get(base, '/api/shared', ben.token)).json.playlists;
+    assert.deepEqual(details.find((p) => p.id === 'pa').collab, { on: true, me: '' });
+
+    await send(ben, { type: 'requestCollab', playlistId: 'pa', on: true });
+    await send(cleo, { type: 'requestCollab', playlistId: 'pa', on: true });
+    assert.equal((await get(base, '/api/shared', ben.token)).json.playlists.find((p) => p.id === 'pa').collab.me, 'requested');
+    let own = (await get(base, '/api/library', anna.token)).json.library.playlists.find((p) => p.id === 'pa');
+    assert.deepEqual(own.collab.requests, [ben.profile.id, cleo.profile.id]);
+    // Not yet a member: nothing changes.
+    assert.equal((await send(ben, { type: 'addSongsToPlaylist', playlistId: 'pa', songIds: ['s2'] }))[0].skipped, 'gone');
+
+    const revBen = (await get(base, '/api/library', ben.token)).json.rev;
+    await send(anna, { type: 'answerCollab', playlistId: 'pa', profileId: ben.profile.id, approve: true }, { type: 'answerCollab', playlistId: 'pa', profileId: cleo.profile.id, approve: false });
+    // Ben hears it as a change: he follows it now, and may change it.
+    const answer = (await get(base, `/api/library?since=${revBen}&as=${ben.profile.id}`, ben.token)).json;
+    const delta = answer.full ? answer.library : answer;
+    assert.deepEqual(delta.follows, ['pa']);
+    assert.equal(delta.sharedPlaylists[0].collab.me, 'member');
+    await send(ben, { type: 'addSongsToPlaylist', playlistId: 'pa', songIds: ['s2', 's3'] }, { type: 'removeFromPlaylist', playlistId: 'pa', songId: 's1' });
+    // The rename stays Anna's.
+    assert.equal((await send(ben, { type: 'renamePlaylist', playlistId: 'pa', name: 'Bens' }))[0].skipped, 'gone');
+
+    own = (await get(base, '/api/library', anna.token)).json.library.playlists.find((p) => p.id === 'pa');
+    assert.equal(own.name, 'Evening');
+    assert.deepEqual(own.entries.map((e) => [e.songId, e.addedBy]), [['s2', ben.profile.id], ['s3', ben.profile.id]]);
+    assert.deepEqual(own.collab.counts, { [ben.profile.id]: { added: 2, removed: 1 } });
+    const benRow = (await get(base, '/api/library', ben.token)).json.library.sharedPlaylists.find((p) => p.id === 'pa');
+    assert.deepEqual(benRow.collab.members, [{ id: anna.profile.id, added: 0, removed: 0 }, { id: ben.profile.id, added: 2, removed: 1 }]);
+    assert.equal((await get(base, '/api/shared', cleo.token)).json.playlists.find((p) => p.id === 'pa').collab.me, '', 'declined: may ask again');
+
+    // The owner's next change reaches the member as a change of the followed playlist.
+    const revBen2 = (await get(base, '/api/library', ben.token)).json.rev;
+    await send(anna, { type: 'addSongsToPlaylist', playlistId: 'pa', songIds: ['s1'] });
+    const next = (await get(base, `/api/library?since=${revBen2}&as=${ben.profile.id}`, ben.token)).json;
+    assert.equal(next.full, false);
+    assert.deepEqual(next.sharedPlaylists.map((p) => p.entries.map((e) => [e.songId, e.addedBy === anna.profile.id])), [[['s2', false], ['s3', false], ['s1', true]]]);
+    assert.deepEqual(next.sharedPlaylists[0].collab.members[0], { id: anna.profile.id, added: 1, removed: 0 });
+    await send(anna, { type: 'removeFromPlaylist', playlistId: 'pa', songId: 's1' });
+    // Ben leaves: still followed, not his to change any more.
+    await send(ben, { type: 'leaveCollab', playlistId: 'pa' });
+    assert.equal((await send(ben, { type: 'removeFromPlaylist', playlistId: 'pa', songId: 's2' }))[0].skipped, 'gone');
+    const after = (await get(base, '/api/library', ben.token)).json.library;
+    assert.deepEqual(after.follows, ['pa']);
+    assert.equal(after.sharedPlaylists[0].collab.me, '');
+    // Kept in the library file.
+    const saved = require('../src/libraryFile').readLibrary(server.config);
+    assert.deepEqual(saved.profiles[anna.profile.id].playlists.find((p) => p.id === 'pa').collab, { on: true, members: [], requests: [], counts: { [ben.profile.id]: { added: 2, removed: 1 }, [anna.profile.id]: { added: 1, removed: 1 } } });
   });
 });
 

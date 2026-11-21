@@ -340,16 +340,69 @@ function cleanSong(s) {
   };
 }
 
-/** A playlist's entries as kept: each song once, only songs the library has (hasSong(id)). */
+/**
+ * A playlist's entries as kept: each song once, only songs the library has
+ * (hasSong(id)). In a collaborative playlist (5.4.0) an entry also says which
+ * profile put the song in (addedBy); one without came from the owner.
+ */
 function cleanEntries(list, hasSong) {
   const inList = new Set();
   const entries = [];
   for (const e of Array.isArray(list) ? list : []) {
     if (!e || !hasSong(e.songId) || inList.has(e.songId)) continue;
     inList.add(e.songId);
-    entries.push({ songId: String(e.songId), addedAt: Number(e.addedAt) || Date.now() });
+    const entry = { songId: String(e.songId), addedAt: Number(e.addedAt) || Date.now() };
+    if (typeof e.addedBy === 'string' && PROFILE_ID.test(e.addedBy)) entry.addedBy = e.addedBy;
+    entries.push(entry);
   }
   return entries;
+}
+
+// Collaborative playlists (5.4.0). The owner of a shared playlist can make it
+// a collaboration (`collab.on`); other profiles then ask to join (requests),
+// the owner approves them (members) or declines, and members add and remove
+// any song in it. Only the owner renames it, shares it, turns collaboration
+// on or off and handles who is in it. Turned off (or the playlist no longer
+// shared), members and requests stay, without their rights, until it is on
+// again. `counts` holds each profile's songs added and removed since then.
+// Not for Favourites, smart playlists or a server's Default / Shared, which
+// anyone can use without signing in.
+const PROFILE_ID = /^[\w-]{1,64}$/;
+
+/** A playlist's collaboration as kept, or null for none. */
+function cleanCollab(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const members = cleanIds(raw.members).filter((id) => PROFILE_ID.test(id));
+  const requests = cleanIds(raw.requests).filter((id) => PROFILE_ID.test(id) && !members.includes(id));
+  const counts = {};
+  const rawCounts = raw.counts && typeof raw.counts === 'object' ? raw.counts : {};
+  for (const [id, c] of Object.entries(rawCounts)) {
+    if (!PROFILE_ID.test(id) || !c || typeof c !== 'object') continue;
+    const added = Math.max(0, Math.floor(Number(c.added) || 0));
+    const removed = Math.max(0, Math.floor(Number(c.removed) || 0));
+    if (added || removed) counts[id] = { added, removed };
+  }
+  return { on: raw.on === true, members, requests, counts };
+}
+
+/**
+ * Another owner's collaborative playlist as one profile sees it (on its shared
+ * row): whether it is on, the profile's own part in it (me: 'member',
+ * 'requested' or ''), and for a member the people in it with their counts,
+ * the owner first. Null for none.
+ */
+function cleanCollabView(raw) {
+  if (!raw || typeof raw !== 'object' || raw.on !== true) return null;
+  const me = raw.me === 'member' || raw.me === 'requested' ? raw.me : '';
+  const view = { on: true, me };
+  if (me === 'member' && Array.isArray(raw.members)) {
+    view.members = raw.members.filter((m) => m && PROFILE_ID.test(String(m.id))).map((m) => ({
+      id: String(m.id),
+      added: Math.max(0, Math.floor(Number(m.added) || 0)),
+      removed: Math.max(0, Math.floor(Number(m.removed) || 0)),
+    }));
+  }
+  return view;
 }
 
 /** A playlist of the library's own as kept (hasSong(id): the library has the song; groupIds: its groups, a Set). */
@@ -371,6 +424,9 @@ function cleanPlaylist(p, hasSong, groupIds) {
     // Several groups (4.5.3); a library from before has one, `group`.
     const inGroups = cleanIds([...(Array.isArray(p.groups) ? p.groups : []), ...(p.group ? [p.group] : [])]).filter((id) => groupIds.has(id));
     if (inGroups.length) list.groups = inGroups;
+    // A collaboration (5.4.0); never for a smart playlist.
+    const collab = rules ? null : cleanCollab(p.collab);
+    if (collab) list.collab = collab;
   }
   return list;
 }
@@ -389,6 +445,9 @@ function cleanSharedPlaylist(p, hasSong) {
   // (4.3: Shared Playlists before it is opened or followed) carries its
   // number of songs and length instead of its entries.
   if (p.favourites === true) shared.favourites = true;
+  // Its collaboration as this profile sees it (5.4.0).
+  const collab = p.favourites === true ? null : cleanCollabView(p.collab);
+  if (collab) shared.collab = collab;
   if (p.partial === true) {
     shared.partial = true;
     shared.songCount = Math.max(0, Math.floor(Number(p.songCount) || 0));
@@ -444,6 +503,34 @@ function songById(data, id) {
 
 function playlistById(data, id) {
   return data.playlists.find((p) => p.id === id) || null;
+}
+
+/** Whether this library may change the songs of another owner's shared playlist: it is a member of its collaboration (5.4.0). */
+function canEditShared(p) {
+  return !!(p && p.collab && p.collab.on && p.collab.me === 'member');
+}
+
+/** A playlist whose songs this library may change: its own, or another's it collaborates on (5.4.0). Null for none. */
+function editablePlaylist(data, id) {
+  return playlistById(data, id) || (data.sharedPlaylists || []).find((p) => p.id === id && canEditShared(p)) || null;
+}
+
+/** An editable playlist (editablePlaylist), or an Error saying why not. */
+function requireEditable(data, id) {
+  if (id === ALL_SONGS_ID) throw new Error(tr('core.library.allSongsFixed', 'All Songs cannot be changed.'));
+  const p = editablePlaylist(data, id);
+  if (!p) throw new Error(tr('core.library.playlistGone', 'That playlist no longer exists.'));
+  return p;
+}
+
+/** `p`, an editable playlist, to change: one of the library's own (listToChange) or of its shared rows (5.4.0). */
+function editableToChange(data, p) {
+  if (!Object.isFrozen(p)) return p;
+  const own = data.playlists.indexOf(p);
+  if (own >= 0) return rowToChange(data.playlists, own);
+  const i = (data.sharedPlaylists || []).indexOf(p);
+  if (i < 0) throw new Error('A playlist to change must be one of the library\'s own.');
+  return rowToChange(data.sharedPlaylists, i);
 }
 
 function requirePlaylist(data, id) {
@@ -1060,9 +1147,9 @@ function addSongToPlaylists(data, songId, playlistIds, now = Date.now()) {
   requireSong(data, songId);
   let added = 0;
   for (const pid of playlistIds || []) {
-    const p = requirePlaylist(data, pid);
+    const p = requireEditable(data, pid);
     if (p.rules || p.entries.some((e) => e.songId === songId)) continue;
-    listToChange(data, p).entries.push({ songId, addedAt: now });
+    editableToChange(data, p).entries.push({ songId, addedAt: now });
     starFollows(data, p, songId, true, now);
     added += 1;
   }
@@ -1070,13 +1157,13 @@ function addSongToPlaylists(data, songId, playlistIds, now = Date.now()) {
 }
 
 function addSongsToPlaylist(data, playlistId, songIds, now = Date.now()) {
-  let p = requirePlaylist(data, playlistId);
+  let p = requireEditable(data, playlistId);
   if (p.rules) throw new Error(tr('core.library.smartByRules', 'A smart playlist picks its songs by its rules: they cannot be added by hand.'));
   let added = 0;
   for (const sid of songIds || []) {
     requireSong(data, sid);
     if (p.entries.some((e) => e.songId === sid)) continue;
-    p = listToChange(data, p);
+    p = editableToChange(data, p);
     p.entries.push({ songId: sid, addedAt: now });
     starFollows(data, p, sid, true, now);
     added += 1;
@@ -1085,9 +1172,82 @@ function addSongsToPlaylist(data, playlistId, songIds, now = Date.now()) {
 }
 
 function removeFromPlaylist(data, playlistId, songId) {
-  const p = requirePlaylist(data, playlistId);
-  if (p.entries.some((e) => e.songId === songId)) listToChange(data, p).entries = p.entries.filter((e) => e.songId !== songId);
+  const p = requireEditable(data, playlistId);
+  if (p.entries.some((e) => e.songId === songId)) editableToChange(data, p).entries = p.entries.filter((e) => e.songId !== songId);
   starFollows(data, p, songId, false);
+}
+
+// ---- collaborative playlists (5.4.0) ----
+
+/** The owner turns its shared playlist's collaboration on or off (off keeps who is in it, without their rights). */
+function setPlaylistCollab(data, id, on) {
+  const p = requireOrdinary(data, id);
+  if (on && p.rules) throw new Error(tr('core.library.smartNoCollab', 'A smart playlist picks its songs by its rules, so others cannot add to it.'));
+  if (on && !p.shared) throw new Error(tr('core.library.collabNeedsShare', 'Share the playlist first: only a shared playlist can be a collaboration.'));
+  const was = p.collab;
+  if (!!(was && was.on) === !!on) return p;
+  const w = listToChange(data, p);
+  w.collab = { members: [], requests: [], counts: {}, ...(was || {}), on: !!on };
+  return w;
+}
+
+/** The owner approves a request to join its playlist's collaboration, or declines it. */
+function answerCollab(data, id, profileId, approve) {
+  const p = requireOrdinary(data, id);
+  const c = p.collab;
+  const who = String(profileId || '');
+  if (!c || !c.requests.includes(who)) return p;
+  const w = listToChange(data, p);
+  w.collab = {
+    ...c,
+    requests: c.requests.filter((x) => x !== who),
+    members: approve && !c.members.includes(who) ? [...c.members, who] : c.members,
+  };
+  return w;
+}
+
+/** The owner takes a profile out of its playlist's collaboration. */
+function removeCollaborator(data, id, profileId) {
+  const p = requireOrdinary(data, id);
+  const c = p.collab;
+  const who = String(profileId || '');
+  if (!c || !c.members.includes(who)) return p;
+  const w = listToChange(data, p);
+  w.collab = { ...c, members: c.members.filter((x) => x !== who) };
+  return w;
+}
+
+/** A shared row of this library and its place among them, or an Error when the playlist is no longer shared. */
+function sharedRow(data, id) {
+  const list = data.sharedPlaylists || [];
+  const i = list.findIndex((p) => p.id === id);
+  if (i < 0) throw new Error(tr('core.library.noLongerShared', 'That playlist is no longer shared.'));
+  return [list, i];
+}
+
+/** Asks to join another owner's collaborative playlist (on), or takes the request back. */
+function requestCollab(data, id, on) {
+  const [list, i] = sharedRow(data, id);
+  const p = list[i];
+  if (!p.collab || !p.collab.on) throw new Error(tr('core.library.collabOff', 'That playlist is no longer a collaboration.'));
+  if (p.collab.me === 'member') return p;
+  const me = on ? 'requested' : '';
+  if (p.collab.me === me) return p;
+  const w = rowToChange(list, i);
+  w.collab = { ...p.collab, me };
+  return w;
+}
+
+/** Leaves another owner's playlist one collaborates on: it stays followed, to listen to. */
+function leaveCollab(data, id) {
+  const [list, i] = sharedRow(data, id);
+  const p = list[i];
+  if (!p.collab || p.collab.me !== 'member') return p;
+  const w = rowToChange(list, i);
+  const rest = { ...p.collab, me: '' };
+  delete rest.members;
+  w.collab = rest;
+  return w;
 }
 
 /**
@@ -1242,6 +1402,7 @@ module.exports = {
   createPlaylist, renamePlaylist, deletePlaylist, freePlaylistName, setPlaylistSource, setPlaylistRules, cleanRules, recordAwayListen, favouritesList,
   RULE_FIELDS, RULE_OPS, RULE_SORTS,
   setPlaylistShared, sharedPlaylistById, followPlaylist, unfollowPlaylist,
+  cleanCollab, cleanCollabView, canEditShared, editablePlaylist, setPlaylistCollab, answerCollab, removeCollaborator, requestCollab, leaveCollab, PROFILE_ID,
   sharedGroupById, followedIds, followedInGroup, isFollowed, setGroupPlaylistFollowed, followGroup, unfollowGroup, setGroupShared, cleanSharedGroups, cleanSkips,
   cleanGroups, keepFollowedInGroups, groupOfFollowed, inGroup, addPlaylistToGroup, removePlaylistFromGroup, groupById, checkGroupName, freeGroupName, createGroup, renameGroup, deleteGroup, setPlaylistGroup, playlistsInGroup,
   addSong, updateSong, setInfo, startInfoRound, cleanInfo, albumFor, setCover, cleanCover, setTagged, cleanTagged, cleanCut, needsTags, setFavourite, removeSong, songsOnlyIn,

@@ -109,6 +109,11 @@ const PlaylistPage = {
       }
       attempt(() => window.flow.setPlaylistShared(p.id, !p.shared));
     };
+    // Collaborative playlists (5.4.0, collab.js). On the phone the three are icons in the row with Share.
+    $('plCollab').onclick = () => Collab.toggle(Store.playlist(this.id));
+    $('plCollabCount').onclick = () => Collab.open(Store.playlist(this.id));
+    $('plCollabExit').onclick = () => Collab.exit(Store.playlist(this.id));
+    if (Store.uiMode === 'mobile') $('plShare').after($('plCollab'), $('plCollabCount'), $('plCollabExit'));
     $('plSave').onclick = () => this.askSaveTemp(this.id);
     $('plDiscard').onclick = () => this.askDiscardTemp(this.id);
     // A temporary playlist changed: a song taken out of the one shown, or it
@@ -126,6 +131,7 @@ const PlaylistPage = {
       if (Nav.page === 'playlist') {
         this._drawOffline();
         this._drawShare();
+        Collab.drawHead(Store.playlist(this.id));
         this._drawUpdate();
       }
     });
@@ -213,6 +219,7 @@ const PlaylistPage = {
     if (key === 'from') return Util.sortKey(this._from(s));
     if (key === 'duration') return s.duration || 0;
     if (key === 'added') return row.addedAt;
+    if (key === 'addedBy') return Util.sortKey(Collab.addedBy(Store.playlist(this.id), row));
     return '';
   },
 
@@ -349,6 +356,7 @@ const PlaylistPage = {
 
     this._drawOffline();
     this._drawShare();
+    Collab.drawHead(p);
     this._drawUpdate();
     this._drawTemp();
     this.renderTable();
@@ -606,7 +614,7 @@ const PlaylistPage = {
       else if (p.isRuled) $('plEmptyText').textContent = T('playlist.empty.smart');
       else $('plEmptyText').textContent = T('playlist.empty.playlist');
       // A temporary playlist emptied by hand stays empty: songs are not added to it.
-      $('plEmptyAction').hidden = smart || favourites || !!p.isShared || !!p.isDevice || !!p.isRuled || !!p.isTemp;
+      $('plEmptyAction').hidden = smart || favourites || (!!p.isShared && !p.canEdit) || !!p.isDevice || !!p.isRuled || !!p.isTemp;
       $('plEmptyAction').textContent = this.id === 'all' ? T('common.addSongs') : T('playlist.empty.addFromAllSongs');
     }
     setText($('plFiltered'), (view.filter || view.field) && !empty ? T('playlist.showing', { shown: rows.length, count }) : '');
@@ -621,6 +629,8 @@ const PlaylistPage = {
     // A listening trend list also says which of your playlists each song is from.
     const smartList = !!p.isSmart;
     const extra = this._extraColumns(smartList);
+    // A collaboration (5.4.0): who put each song in, small and dim, after when.
+    const collab = Collab.isOn(p);
     this._shareColumns(extra.map((c) => c.key));
     const offline = !!(Store.server.on && Store.can('offline'));
     renderTable($('plTable'), {
@@ -631,9 +641,9 @@ const PlaylistPage = {
       // same while nothing a list shows changed), when it was added, while
       // adding songs to a playlist whether it is in it, and in a listening
       // trend list its playlists.
-      shows: (r) => [Store.look(r.song), r.addedAt, !!pickSet && pickSet.has(r.song.id), smartList ? this._from(r.song) : ''],
+      shows: (r) => [Store.look(r.song), r.addedAt, !!pickSet && pickSet.has(r.song.id), smartList ? this._from(r.song) : '', collab ? Collab.addedBy(p, r) : ''],
       // What all rows go by: the list, the playlist songs are added to, and whether songs can be kept here (the phone's mark).
-      look: [this.id, pickTarget ? `${pickTarget.id}\n${pickTarget.name}` : '', smartList ? 1 : 0, offline ? 1 : 0].join('\u0000'),
+      look: [this.id, pickTarget ? `${pickTarget.id}\n${pickTarget.name}` : '', smartList ? 1 : 0, offline ? 1 : 0, collab ? 1 : 0, p.canEdit ? 1 : 0].join('\u0000'),
       onSort: (key) => {
         view.sort = Util.cycleSort(view.sort, key);
         this.renderTable();
@@ -656,6 +666,7 @@ const PlaylistPage = {
         ...extra,
         { key: 'duration', label: T('common.duration'), cls: 'col-num', render: (r) => Util.fmtClock(r.song.duration) },
         { key: 'added', label: T('common.added'), cls: 'col-date', render: (r) => Util.fmtDate(r.addedAt) },
+        ...(collab ? [{ key: 'addedBy', label: T('collab.addedBy'), cls: 'col-by', render: (r) => h('span.col-by__name', Collab.addedBy(p, r)) }] : []),
         { key: 'actions', label: T('common.actions'), sortable: false, cls: 'col-actions', render: (r) => this._actions(r, pickTarget, pickSet) },
       ],
       mobile: this._touchRows(pickTarget, pickSet, smartList),
@@ -673,7 +684,9 @@ const PlaylistPage = {
   _touchRows(pickTarget, pickSet, smartList) {
     const listId = this.id;
     const p = Store.playlist(listId);
-    const readOnly = !!(p && (p.isShared || p.isDevice || p.isGuest));
+    // A shared playlist is its owner's, unless this profile collaborates on it (5.4.0).
+    const readOnly = !!(p && ((p.isShared && !p.canEdit) || p.isDevice || p.isGuest));
+    const collab = Collab.isOn(p);
     // Downloaded Songs: queued, or deleted from this device; nothing else (some only play).
     // Another server's songs (a guest): queued there.
     const actions = p && p.isGuest ? [
@@ -729,6 +742,7 @@ const PlaylistPage = {
       title: (r) => r.song.title,
       sub: (r) => {
         const line = [r.song.artist, r.song.mix ? `(${r.song.mix})` : ''].filter(Boolean).join(' - ');
+        if (collab) return `${line} · ${Collab.addedBy(p, r)}`;
         return smartList && this._from(r.song) ? `${line} · ${this._from(r.song)}` : line;
       },
       // A song kept here (downloaded from the server).
@@ -857,7 +871,7 @@ const PlaylistPage = {
     }
     // A playlist another profile shares can only be changed by its owner; Downloaded Songs by nobody.
     const list = Store.playlist(listId) || {};
-    const readOnly = !!(list.isShared || list.isDevice);
+    const readOnly = !!((list.isShared && !list.canEdit) || list.isDevice);
     const buttons = [
       this._favButton(song),
       // With a Flow Server the songs are streamed, and one can be kept here too.

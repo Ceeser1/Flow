@@ -102,7 +102,9 @@ const ALLOWED = new Set(['createPlaylist', 'renamePlaylist', 'deletePlaylist', '
   'addSongToPlaylists', 'addSongsToPlaylist', 'removeFromPlaylist', 'deleteSong', 'editSong',
   'setFavourite', 'setLoudness', 'setDuration', 'recordListen', 'recordAwayListen', 'recordRadioListen', 'setPlaylistShared', 'followPlaylist', 'unfollowPlaylist',
   'createGroup', 'renameGroup', 'deleteGroup', 'setPlaylistGroup', 'setGroupShared', 'followGroup', 'unfollowGroup', 'setGroupPlaylistFollowed', 'addPlaylistToGroup', 'removePlaylistFromGroup',
-  'setRadioFavourite', 'renameRadio']);
+  'setRadioFavourite', 'renameRadio',
+  // Collaborative playlists (5.4.0).
+  'setPlaylistCollab', 'answerCollab', 'removeCollaborator', 'requestCollab', 'leaveCollab']);
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');
@@ -261,12 +263,14 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   function sameList(a, p) {
     if (a.name !== p.name || a.createdAt !== p.createdAt || !!a.shared !== !!p.shared || !!a.favourites !== !!p.favourites
       || sourceOf(a) !== sourceOf(p) || (a.groups || []).join('\n') !== (p.groups || []).join('\n')) return false;
+    // A collaboration (5.4.0): who is in it, who asks, their counts.
+    if (a.collab !== p.collab && JSON.stringify(a.collab || null) !== JSON.stringify(p.collab || null)) return false;
     if (a.entries !== p.entries) {
       if (a.entries.length !== p.entries.length) return false;
       for (let i = 0; i < a.entries.length; i += 1) {
         const x = a.entries[i];
         const e = p.entries[i];
-        if (x !== e && (x.songId !== e.songId || x.addedAt !== e.addedAt)) return false;
+        if (x !== e && (x.songId !== e.songId || x.addedAt !== e.addedAt || x.addedBy !== e.addedBy)) return false;
       }
     }
     return a.rules === p.rules || (a.rules ? JSON.stringify(a.rules) : '') === (p.rules ? JSON.stringify(p.rules) : '');
@@ -673,9 +677,13 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
   }
 
   const ownerName = (names, id) => (id === prof.DEFAULT_OWNER ? prof.DEFAULT_NAME : names[id] || 'Unknown');
-  const sharedOut = (names, ownerId, p) => ({
-    id: p.id, name: p.name, createdAt: p.createdAt, entries: p.entries, ownerId, ownerName: ownerName(names, ownerId), ...(p.favourites ? { favourites: true } : {}),
-  });
+  const sharedOut = (names, ownerId, p, viewerId) => {
+    // A collaboration as this profile sees it (5.4.0).
+    const collab = prof.collabFor(p, ownerId, viewerId);
+    return {
+      id: p.id, name: p.name, createdAt: p.createdAt, entries: p.entries, ownerId, ownerName: ownerName(names, ownerId), ...(p.favourites ? { favourites: true } : {}), ...(collab ? { collab } : {}),
+    };
+  };
   const playlistsOfOwner = (owner) => (owner === prof.DEFAULT_OWNER ? data.playlists : (profiles[owner] || {}).playlists || []);
   const followsOfOwner = (owner) => (owner === prof.DEFAULT_OWNER ? data.follows : (profiles[owner] || {}).follows) || [];
   const groupsOfOwner = (owner) => (owner === prof.DEFAULT_OWNER ? data.groups : (profiles[owner] || {}).groups) || [];
@@ -733,7 +741,7 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     for (const id of followed) {
       const hit = others.get(id);
       if (!hit || (!followsChanged && !groupsChanged && !newer(state.stamps.p, id))) continue;
-      if (hit[1].shared) out.sharedPlaylists.push(sharedOut(names, hit[0], hit[1]));
+      if (hit[1].shared) out.sharedPlaylists.push(sharedOut(names, hit[0], hit[1], profileId || null));
       else if (direct.has(id)) out.unshared.push(id);
     }
     if (full || state.stamps.n > from) out.profileNames = names;
@@ -783,6 +791,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
       ownerId: p.ownerId,
       ownerName: p.ownerName,
       ...(p.favourites ? { favourites: true } : {}),
+      // A collaboration (5.4.0): open to join, asked, or joined.
+      ...(p.collab ? { collab: p.collab } : {}),
       songCount: p.entries.length,
       seconds: Math.round(p.entries.reduce((n, e) => n + (length.get(e.songId) || 0), 0)),
     }));
@@ -909,6 +919,8 @@ function createLibrary(config, log = () => {}, { coverDeps = null, convertQuietM
     const ctx = {
       keepSongs: () => others || (others = prof.songsOfOthers(data, profiles, profileId)),
       deleteRefusal: (song) => deleteRefusal(song, profileId, admin),
+      // The Default / Shared cannot own or join a collaboration (5.4.0).
+      noProfile: !profileId,
     };
     const apply = (d) => {
       for (const c of list) {

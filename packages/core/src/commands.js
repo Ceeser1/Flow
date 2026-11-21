@@ -23,8 +23,14 @@
 // profile still has in a playlist or its favourites, so "delete the playlist
 // and its songs" keeps those. deleteRefusal(song): why this profile may not
 // delete the song for everyone ('' when it may; the admins' rule "only who
-// added a song deletes it"). An app's preview has no ctx: it takes the
-// playlist away and leaves the songs to the server's answer.
+// added a song deletes it"). noProfile: the command comes from the Default /
+// Shared, which cannot own or join a collaboration (5.4.0). An app's preview
+// has no ctx: it takes the playlist away and leaves the songs to the server's
+// answer.
+//
+// A collaborator's songs going into or out of another owner's playlist (5.4.0)
+// change that playlist's row among the shared ones; profiles.js absorb() puts
+// it back into the owner's part, with who did it.
 
 const model = require('./libraryModel');
 const { tr } = require('./lang');
@@ -170,6 +176,49 @@ const TYPES = {
       return {};
     },
   },
+  // Collaborative playlists (5.4.0): the owner's switch and answers, and the others' requests.
+  setPlaylistCollab: {
+    keys: (c) => [`p:${c.playlistId}:collab`],
+    run(d, c, fresh, ctx) {
+      if (ctx.noProfile && c.on) throw new Error(tr('core.library.collabNeedsProfile', 'Sign in to a profile to own or join a collaboration.'));
+      if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
+      model.setPlaylistCollab(d, str(c.playlistId), !!c.on);
+      return {};
+    },
+  },
+  answerCollab: {
+    keys: () => [],
+    run(d, c) {
+      if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
+      model.answerCollab(d, str(c.playlistId), str(c.profileId), !!c.approve);
+      return {};
+    },
+  },
+  removeCollaborator: {
+    keys: () => [],
+    run(d, c) {
+      if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
+      model.removeCollaborator(d, str(c.playlistId), str(c.profileId));
+      return {};
+    },
+  },
+  requestCollab: {
+    keys: () => [],
+    run(d, c, fresh, ctx) {
+      if (ctx.noProfile) throw new Error(tr('core.library.collabNeedsProfile', 'Sign in to a profile to own or join a collaboration.'));
+      if (!model.sharedPlaylistById(d, str(c.playlistId))) return { skipped: 'gone' };
+      model.requestCollab(d, str(c.playlistId), c.on !== false);
+      return {};
+    },
+  },
+  leaveCollab: {
+    keys: () => [],
+    run(d, c) {
+      if (!model.sharedPlaylistById(d, str(c.playlistId))) return { skipped: 'gone' };
+      model.leaveCollab(d, str(c.playlistId));
+      return {};
+    },
+  },
   // Following a playlist another profile shares: a list of the profile's own.
   followPlaylist: {
     keys: (c) => [`f:${c.playlistId}`],
@@ -221,7 +270,8 @@ const TYPES = {
     keys: (c) => ids(c.playlistIds).map((pid) => `p:${pid}:e:${c.songId}`),
     run(d, c, fresh) {
       if (!model.songById(d, str(c.songId))) return { skipped: 'gone' };
-      const lists = ids(c.playlistIds).filter((pid) => model.playlistById(d, pid) && fresh(`p:${pid}:e:${c.songId}`));
+      // Its own playlists, and those of others it collaborates on (5.4.0).
+      const lists = ids(c.playlistIds).filter((pid) => model.editablePlaylist(d, pid) && fresh(`p:${pid}:e:${c.songId}`));
       return { value: model.addSongToPlaylists(d, str(c.songId), lists, c.at) };
     },
   },
@@ -229,7 +279,7 @@ const TYPES = {
     keys: (c) => ids(c.songIds).map((sid) => `p:${c.playlistId}:e:${sid}`),
     run(d, c, fresh) {
       const pid = str(c.playlistId);
-      if (!model.playlistById(d, pid)) return { skipped: 'gone' };
+      if (!model.editablePlaylist(d, pid)) return { skipped: 'gone' };
       const songs = ids(c.songIds).filter((sid) => model.songById(d, sid) && fresh(`p:${pid}:e:${sid}`));
       return { value: model.addSongsToPlaylist(d, pid, songs, c.at) };
     },
@@ -237,7 +287,7 @@ const TYPES = {
   removeFromPlaylist: {
     keys: (c) => [`p:${c.playlistId}:e:${c.songId}`],
     run(d, c) {
-      if (!model.playlistById(d, str(c.playlistId))) return { skipped: 'gone' };
+      if (!model.editablePlaylist(d, str(c.playlistId))) return { skipped: 'gone' };
       model.removeFromPlaylist(d, str(c.playlistId), str(c.songId));
       return {};
     },

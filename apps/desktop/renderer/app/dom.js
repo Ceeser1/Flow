@@ -268,6 +268,8 @@ function listIcon(p, groupId = null) {
   if (p.isAll || p.isFrom) return Icons.library;
   if (p.isDevice) return Icons.download;
   // One you follow (4.5.1), or follow inside the followed group it shows in (4.5.3): the green followed icon.
+  // One it collaborates on (5.4.0): the collab icon, green ("can edit").
+  if (p.isShared && p.canEdit && Store.isFollowing(p.id)) return Icons.collab.replace('icon--collab', 'icon--collab icon--can-edit');
   if (p.isShared && (Store.isFollowing(p.id) || (groupId && Store.isFollowingInGroup(groupId, p.id)))) return Icons.followed;
   // Yours, or another profile's shared with you (4.3).
   if (p.isFavourites || p.favourites) return Icons.star;

@@ -251,7 +251,8 @@ const PlaylistsPage = {
     try {
       // On the phone Follow is at the end of the row, or with Move to group (4.5.1) in its More.
       const grouping = Store.canGroupFollowed();
-      this._drawTable($('sharedTable'), sharedRows, (p) => this._sharedActions(p), grouping ? null : (p) => this._sharedSide(p),
+      // A collaboration's Request Collab (5.4.0) shows at the row's end there too.
+      this._drawTable($('sharedTable'), sharedRows, (p) => this._sharedActions(p), grouping ? (p) => Collab.requestButton(p) : (p) => this._sharedSide(p),
         grouping ? (p) => this._sharedMore(p) : null);
       this._dragRows($('sharedTable'));
       this._drawTable($('playlistsTable'), rows, (p) => this._actions(p), null, (p) => this._moreButtons(p), this._select());
@@ -559,7 +560,8 @@ const PlaylistsPage = {
   _sharedActions(p) {
     if (p.isAll || (p.inSharedGroup && !p.isShared)) return h('span.muted', '');
     if (p.isGroupRow) return h('div.actions', this._followGroupButton(p.group));
-    return h('div.actions', this._followButton(p), this._sharedGroupButton(p));
+    // A collaboration (5.4.0): Request Collab, before Follow.
+    return h('div.actions', Collab.requestButton(p), this._followButton(p), this._sharedGroupButton(p));
   },
 
   /**
@@ -628,6 +630,7 @@ const PlaylistsPage = {
     }
     const on = Store.isFollowing(p.id);
     return [
+      Collab.sheetItem(p),
       { icon: on ? Icons.x : Icons.plus, label: on ? T('common.unfollow') : T('common.follow'), kind: on ? 'danger' : '', onClick: () => attempt(() => window.flow.setFollowing(p.id, !on)) },
       this._sharedGroupButton(p),
     ];
@@ -636,7 +639,7 @@ const PlaylistsPage = {
   _actions(p) {
     if (p.isFavourites) return h('span.muted', '');
     // A followed playlist in a group (4.5.1): Move to group and Unfollow.
-    if (p.isShared) return h('div.actions', this._sharedGroupButton(p), this._followButton(p));
+    if (p.isShared) return h('div.actions', ...this._moreButtons(p));
     return h('div.actions', ...this._moreButtons(p));
   },
 
@@ -645,7 +648,11 @@ const PlaylistsPage = {
   _moreButtons(p) {
     if (p.isFavourites) return null;
     if (p.isShared) {
-      return [this._sharedGroupButton(p),
+      return [
+        // One it collaborates on (5.4.0): Add Songs, as for its own.
+        p.canEdit ? iconButton('act.act--green', Icons.plus, T('common.addSongs'), () => Nav.openPlaylist('all', { pickFor: p.id })) : null,
+        Collab.requestButton(p),
+        this._sharedGroupButton(p),
         iconButton('act.act--red', Icons.x, T('common.unfollow'), () => attempt(() => window.flow.setFollowing(p.id, false)))];
     }
     return [
@@ -677,7 +684,9 @@ const PlaylistsPage = {
   _sharedSide(p) {
     if (p.isAll || (p.inSharedGroup && !p.isShared)) return h('span');
     if (p.isGroupRow) return this._followGroupButton(p.group);
-    return this._followButton(p);
+    // A collaboration (5.4.0): its Request Collab beside Follow.
+    const ask = Collab.requestButton(p);
+    return ask ? h('span.actions', ask, this._followButton(p)) : this._followButton(p);
   },
 
   async remove(p) {

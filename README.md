@@ -28,6 +28,9 @@ Flow is made for private use.
   open and close, one search for all of them, Play (a random playlist, or with
   Shuffle songs from all of them) and Download for the whole group.
   Groups can be shared with the other profiles, who can follow them
+- **Collaborative playlists**: let other profiles ask to join a playlist you
+  share; those you approve add and remove songs with you, and every song shows
+  who added it
 - **Your listening trend**: most listened, least skipped, long time no see, …
 - **Continue with similar songs** when a playlist ends
 - **Song and artist radios**: up to 100 songs like the one playing, or like

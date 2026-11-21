@@ -367,6 +367,12 @@ function start() {
     addToGroup: call((playlistIds, groupId) => actions.addToGroup({ playlistIds, groupId })),
     removeFromGroup: call((playlistIds, groupId) => actions.removeFromGroup({ playlistIds, groupId })),
     setPlaylistShared: call((id, shared) => actions.setPlaylistShared({ id, shared })),
+    // Collaborative playlists (5.4.0).
+    setPlaylistCollab: call((id, on) => actions.setPlaylistCollab({ id, on })),
+    answerCollab: call((id, profileId, approve) => actions.answerCollab({ id, profileId, approve })),
+    removeCollaborator: call((id, profileId) => actions.removeCollaborator({ id, profileId })),
+    requestCollab: call((id, on) => actions.requestCollab({ id, on })),
+    leaveCollab: call((id) => actions.leaveCollab({ id })),
     setFollowing: call((id, isOn) => actions.setFollowing({ id, on: isOn })),
     setGroupShared: call((id, shared) => actions.setGroupShared({ id, shared })),
     setGroupFollowing: call((id, isOn) => actions.setGroupFollowing({ id, on: isOn })),

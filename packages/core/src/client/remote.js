@@ -377,7 +377,7 @@ function createRemote(env) {
   // the server knows profiles, whether it downloads songs itself and whether it
   // has Active Sessions (a live channel).
   const conn = {
-    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, downloadsLive: false, search: false, sessions: false, sessionRules: false, trim: false, admin: false, pin: false, statistics: false, radioStats: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, sharedGroups: false, multiGroups: false, pair: false, radioRelay: false,
+    base: '', token: '', via: '', name: '', address: '', profiles: false, downloads: false, downloadCheck: false, downloadQueue: false, downloadReview: false, downloadsLive: false, search: false, sessions: false, sessionRules: false, trim: false, admin: false, pin: false, statistics: false, radioStats: false, lyrics: false, ownLyrics: false, lyricsSync: false, smartPlaylists: false, playlistGroups: false, followedInGroups: false, sharedGroups: false, multiGroups: false, pair: false, radioRelay: false, collabPlaylists: false,
   };
   const status = {
     state: 'off', // off | connecting | online | offline | password | error
@@ -501,6 +501,8 @@ function createRemote(env) {
       // Smart playlists (4.0): a server from before keeps no rules. Known while
       // it was reached once (the setting is kept while away from it).
       smartPlaylists: !!conn.smartPlaylists,
+      // Collaborative playlists (5.4.0): the server keeps them; a profile is needed to own or join one.
+      collabPlaylists: !!conn.collabPlaylists,
       // Playlist groups (4.5): the same, for a server from before.
       playlistGroups: !!conn.playlistGroups,
       // Followed playlists in groups too (4.5.1).
@@ -1121,6 +1123,8 @@ function createRemote(env) {
         // Internet Radio (5.3.1): the profiles' Favourite Radios kept there, stations played through it.
         const radioFavs = Array.isArray(hello.features) && hello.features.includes('radioFavs');
         const radioRelay = Array.isArray(hello.features) && hello.features.includes('radioRelay');
+        // Collaborative playlists (5.4.0).
+        const collabPlaylists = Array.isArray(hello.features) && hello.features.includes('collabPlaylists');
         if (sync.radioFavs !== radioFavs) {
           sync.radioFavs = radioFavs;
           saveSync();
@@ -1128,7 +1132,7 @@ function createRemote(env) {
         if (profiles) token = await restoreProfile(base, token);
         if (gen !== generation) return false;
         Object.assign(conn, {
-          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, downloadsLive, search, sessions, sessionRules, trim, admin, pin, statistics, radioStats, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, sharedGroups, multiGroups, pair, radioRelay,
+          base, token, via, name: String(hello.name || 'Flow Server'), address, profiles, downloads, downloadCheck, downloadQueue, downloadReview, downloadsLive, search, sessions, sessionRules, trim, admin, pin, statistics, radioStats, lyrics, ownLyrics, lyricsSync, smartPlaylists, playlistGroups, followedInGroups, sharedGroups, multiGroups, pair, radioRelay, collabPlaylists,
         });
         if (via === 'remote') lastHomeTry = Date.now();
         rememberAddress(via, address, hello.password);
@@ -1706,6 +1710,7 @@ function createRemote(env) {
       let batch = [];
       // Songs the server deleted with a playlist: their copies here go too.
       const deleted = [];
+      let askShared = false;
       const sendBatch = async () => {
         if (!batch.length) return;
         const sending = batch;
@@ -1725,6 +1730,8 @@ function createRemote(env) {
           done.add(c.cid);
           if (r.ok) sync.sent.push({ cmd: c, rev: res.rev, srev: res.srev });
           if (r.ok && Array.isArray(r.deletedSongs)) deleted.push(...r.deletedSongs.map(String));
+          // A request to join a collaboration (5.4.0) is seen on the shared playlists' details, which nothing pushes: asked again.
+          if (r.ok && c.type === 'requestCollab') askShared = true;
           if (!r.ok) problems.push(tr('sync.problem.changeRefused', 'The server did not take a change: {reason}', { reason: r.error }));
         }
         sync.queue = sync.queue.filter((c) => !done.has(c.cid));
@@ -1794,6 +1801,7 @@ function createRemote(env) {
           if (batch.length >= 200) await sendBatch();
         }
         await sendBatch();
+        if (askShared) loadShared().catch(() => {});
         if (deleted.length) {
           const ids = new Set(deleted);
           for (const [lid, sid] of Object.entries(sync.songMap)) {

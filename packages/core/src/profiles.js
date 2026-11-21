@@ -14,6 +14,11 @@
 // Playlists can be shared (playlist.shared): the other profiles, and the
 // Default, then see them read-only in their view (sharedPlaylists) and can
 // follow them (follows). The Default's own follows are data.follows.
+// A shared playlist can be a collaboration (5.4.0, playlist.collab,
+// libraryModel.js): each other profile sees its own part in it on its shared
+// row (collabFor), asks to join or leaves there, and a member adds and removes
+// songs there; absorb() carries those back into the owner's playlist, with
+// who added each song and the counts. An approved profile follows it at once.
 // Groups can be shared too (4.5.3, group.shared): the others see them with
 // the shared playlists in them (sharedGroups) and can follow them
 // (groupFollows); a followed group's playlists count as followed.
@@ -160,6 +165,7 @@ function sharedFor(data, profiles, names, viewerId) {
   const add = (ownerId, ownerName, playlists) => {
     for (const p of playlists) {
       if (!p.shared) continue;
+      const collab = collabFor(p, ownerId, viewerId);
       out.push({
         id: p.id,
         name: p.name,
@@ -168,6 +174,7 @@ function sharedFor(data, profiles, names, viewerId) {
         ownerId,
         ownerName,
         ...(p.favourites ? { favourites: true } : {}),
+        ...(collab ? { collab } : {}),
       });
     }
   };
@@ -176,6 +183,25 @@ function sharedFor(data, profiles, names, viewerId) {
     if (id !== viewerId) add(id, (names && names[id]) || 'Unknown', p.playlists);
   }
   return out;
+}
+
+/**
+ * A playlist's collaboration as `viewerId` (null: the Default) sees it on its
+ * shared row (5.4.0): null while it is off; else { on, me } and, for a member,
+ * everyone in it with their songs added and removed, the owner first.
+ */
+function collabFor(p, ownerId, viewerId) {
+  const c = p.collab;
+  if (!c || !c.on || p.favourites || p.rules || ownerId === DEFAULT_OWNER) return null;
+  let me = '';
+  if (viewerId && c.members.includes(viewerId)) me = 'member';
+  else if (viewerId && c.requests.includes(viewerId)) me = 'requested';
+  const view = { on: true, me };
+  if (me === 'member') {
+    const count = (id) => ({ id, added: (c.counts[id] || {}).added || 0, removed: (c.counts[id] || {}).removed || 0 });
+    view.members = [count(ownerId), ...c.members.map(count)];
+  }
+  return view;
 }
 
 /** Every owner's part: [ownerId, part], the Default's (`data`) first. */
@@ -241,7 +267,7 @@ function view(data, profiles, profileId, names = {}) {
   };
   const fav = model.favouritesList(p);
   const starred = new Map((fav ? fav.entries : []).map((e) => [e.songId, e.addedAt]));
-  return {
+  const v = {
     ...data,
     songs: data.songs.map((s) => {
       const own = p.songs[s.id];
@@ -259,7 +285,17 @@ function view(data, profiles, profileId, names = {}) {
     sharedPlaylists,
     sharedGroups,
   };
+  // Its collaborations as they are now (5.4.0): the view's playlists are its
+  // own rows, which commands may change in place, so absorb() needs to know
+  // what they were.
+  const collabs = new Map();
+  for (const l of p.playlists) if (l.collab) collabs.set(l.id, { entries: l.entries.slice(), members: l.collab.members.slice() });
+  if (collabs.size) collabBefore.set(v, collabs);
+  return v;
 }
+
+// A view -> its collaborative playlists' entries and members when it was made (5.4.0).
+const collabBefore = new WeakMap();
 
 /**
  * Puts a profile's view, changed by commands, back: the songs' shared fields
@@ -326,6 +362,12 @@ function absorb(data, profiles, profileId, v) {
   }
   data.songs = songs;
   data.ignoredFiles = v.ignoredFiles;
+  // Collaborative playlists (5.4.0): who put the new songs of its own in, the
+  // profiles it just approved following them, and what it did in others'.
+  let ids = null;
+  const inLibrary = (id) => (ids || (ids = new Set(songs.map((s) => s.id)))).has(id);
+  collabOwn(profiles, profileId, collabBefore.get(v), v.playlists, inLibrary);
+  collabOthers(data, profiles, profileId, v.sharedPlaylists || [], inLibrary);
   profiles[profileId] = {
     // Entries of songs gone from the view are still in the map it had: prune() takes them out.
     playlists: v.playlists, groups: v.groups || [], songs: ownAsBefore && profiles[profileId] ? before : own, follows: v.follows, groupFollows: v.groupFollows || [], groupSkips: v.groupSkips || {}, playlistListened: v.playlistListened || {}, listening: v.listening || emptyListening(),
@@ -333,6 +375,103 @@ function absorb(data, profiles, profileId, v) {
     radioFavs: v.radioFavs || [],
   };
   prune(data, profiles);
+}
+
+/**
+ * The entries of `now` against those of `before`, a playlist of a
+ * collaboration (5.4.0): new songs get `by` as who added them (unless they
+ * say), and `by`'s counts go up by what came and went. Answers { entries,
+ * collab } when anything changed, else null.
+ */
+function collabChange(before, now, by, collab, inLibrary) {
+  const had = new Map(before.map((e) => [e.songId, e]));
+  const kept = new Set();
+  let added = 0;
+  let stamped = false;
+  const entries = now.map((e) => {
+    const was = had.get(e.songId);
+    if (was) {
+      kept.add(e.songId);
+      return e.addedBy || !was.addedBy ? e : was;
+    }
+    added += 1;
+    if (e.addedBy) return e;
+    stamped = true;
+    return { songId: e.songId, addedAt: e.addedAt, addedBy: by };
+  });
+  // A song deleted from the library is not one taken out of the playlist.
+  const removed = before.length === kept.size ? 0 : before.filter((e) => !kept.has(e.songId) && inLibrary(e.songId)).length;
+  if (!added && !removed && !stamped && before.length === kept.size) return null;
+  let next = collab;
+  if (collab && collab.on && (added || removed)) {
+    const c = collab.counts[by] || { added: 0, removed: 0 };
+    next = { ...collab, counts: { ...collab.counts, [by]: { added: c.added + added, removed: c.removed + removed } } };
+  }
+  return { entries, collab: next };
+}
+
+/**
+ * A profile's own playlists after its commands (5.4.0): in each that has a
+ * collaboration, the songs it added say so and its counts go up; profiles it
+ * just approved follow the playlist (their own follows, outside its view).
+ */
+function collabOwn(profiles, profileId, before, now, inLibrary) {
+  for (let i = 0; i < now.length; i += 1) {
+    const p = now[i];
+    if (!p.collab) continue;
+    const was = before && before.get(p.id);
+    let row = p;
+    if (was) {
+      const change = collabChange(was.entries, p.entries, profileId, p.collab, inLibrary);
+      if (change) {
+        row = model.rowToChange(now, i);
+        row.entries = change.entries;
+        row.collab = change.collab;
+      }
+    }
+    const fresh = row.collab.members.filter((id) => !(was && was.members.includes(id)));
+    for (const id of fresh) {
+      const part = profiles[id];
+      if (part && !(part.follows || []).includes(p.id)) part.follows = [...(part.follows || []), p.id];
+    }
+  }
+}
+
+/**
+ * What a profile did in others' collaborative playlists (5.4.0), from its
+ * view's shared rows into their owners' playlists: a request asked or taken
+ * back, the collaboration left, and, as a member while it is on, songs added
+ * and removed (with who added them, and its counts).
+ */
+function collabOthers(data, profiles, profileId, rows, inLibrary) {
+  for (const row of rows) {
+    if (!row.collab || !row.ownerId || !profiles[row.ownerId]) continue;
+    const list = profiles[row.ownerId].playlists;
+    const i = list.findIndex((p) => p.id === row.id);
+    if (i < 0) continue;
+    const p = list[i];
+    const c = p.collab;
+    if (!c || !p.shared) continue;
+    const member = c.members.includes(profileId);
+    const requested = c.requests.includes(profileId);
+    const me = row.collab.me;
+    let collab = c;
+    if (!member && c.on && me === 'requested' && !requested) collab = { ...c, requests: [...c.requests, profileId] };
+    else if (requested && me !== 'requested') collab = { ...c, requests: c.requests.filter((id) => id !== profileId) };
+    else if (member && me !== 'member') collab = { ...c, members: c.members.filter((id) => id !== profileId) };
+    let entries = p.entries;
+    if (member && c.on && me === 'member') {
+      const change = collabChange(p.entries, row.entries, profileId, collab, inLibrary);
+      if (change) {
+        entries = change.entries;
+        collab = change.collab;
+      }
+    }
+    if (collab === c && entries === p.entries) continue;
+    const w = model.rowToChange(list, i);
+    w.collab = collab;
+    w.entries = entries;
+  }
 }
 
 // The song ids at the last prune() of a library's profiles, in order: while
@@ -378,6 +517,17 @@ function prune(data, profiles) {
         for (const id of gone) delete songs[id];
         p.songs = songs;
       }
+    }
+  }
+  // A collaboration (5.4.0) keeps only profiles that are there, never its own owner (a playlist given to another owner).
+  for (const [ownerId, part] of everyOwner(data, profiles)) {
+    const list = part.playlists || [];
+    for (let i = 0; i < list.length; i += 1) {
+      const c = list[i].collab;
+      if (!c) continue;
+      const keep = (id) => id !== ownerId && !!profiles[id];
+      if (c.members.every(keep) && c.requests.every(keep)) continue;
+      model.rowToChange(list, i).collab = { ...c, members: c.members.filter(keep), requests: c.requests.filter(keep) };
     }
   }
   // A follow of a playlist that is gone (deleted, or its profile) goes too;
@@ -448,6 +598,8 @@ function addProfile(data, profiles, profileId, newId = randomId, now = Date.now(
       source: p.source ? { ...p.source } : null,
       shared: false,
     };
+    // Not a collaboration either (5.4.0): that is the playlist's own, not its copy's.
+    delete copy.collab;
     const inGroups = (p.groups || []).filter((id) => groupIds.has(id)).map((id) => groupIds.get(id));
     delete copy.group;
     if (inGroups.length) copy.groups = inGroups;
@@ -584,5 +736,5 @@ function movePlaylist(data, profiles, playlistId, toOwner) {
 }
 
 module.exports = {
-  allPlaylists, playlistOwner, movePlaylist, ownerSummary, startStatistics, songsOfOthers, sanitizeProfiles, view, absorb, prune, addProfile, removeProfile, sharedFor, sharedGroupsFor, ensureFavourites, favId, FAV_PREFIX, DEFAULT_OWNER, DEFAULT_NAME,
+  collabFor, allPlaylists, playlistOwner, movePlaylist, ownerSummary, startStatistics, songsOfOthers, sanitizeProfiles, view, absorb, prune, addProfile, removeProfile, sharedFor, sharedGroupsFor, ensureFavourites, favId, FAV_PREFIX, DEFAULT_OWNER, DEFAULT_NAME,
 };

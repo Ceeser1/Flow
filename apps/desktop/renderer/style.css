@@ -73,6 +73,7 @@ button, input, select { font: inherit; color: inherit; }
 /* A shared group you follow (4.5.3): its folder and the + inside it green, wherever it shows. */
 .icon.icon--followed-group { color: var(--green) !important; }
 .icon--shuffle { -webkit-mask-image: url(../images/shuffle.png); mask-image: url(../images/shuffle.png); }
+.icon--collab { -webkit-mask-image: url(../images/collab.png); mask-image: url(../images/collab.png); -webkit-mask-size: 86%; mask-size: 86%; }
 
 /* ===== layout ===== */
 

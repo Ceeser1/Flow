@@ -409,6 +409,14 @@ const Store = {
   },
 
   /**
+   * Collaborative playlists (5.4.0): a Flow Server that keeps them, and a
+   * profile signed in (the Default / Shared can neither own nor join one).
+   */
+  canCollab() {
+    return this.canShare() && !!this.server.collabPlaylists && !!this.server.profile;
+  },
+
+  /**
    * The playlists other profiles share, A to Z. Another profile's Favourites
    * (4.3) is "Anna's Favourites". One not followed and not opened yet comes
    * by its details only (partial: songCount and seconds instead of its songs).
@@ -428,6 +436,8 @@ const Store = {
       // "James' Favorites" for a name ending in s.
       ...p, ownerName: owner, isShared: true, ...(p.favourites ? { name: T(/s$/i.test(owner) ? 'common.favouritesOf.s' : 'common.favouritesOf', { profile: owner }) } : {}),
       ...(inGroups.length ? { groups: inGroups } : {}),
+      // A collaboration it is in (5.4.0): its songs are this profile's to add and remove.
+      canEdit: this.canCollab() && !!p.collab && !!p.collab.on && p.collab.me === 'member',
     };
   },
 
@@ -790,7 +800,10 @@ const Store = {
 
   /** The ones songs can be put into by hand: not the smart ones (their rules pick their songs). */
   editablePlaylists() {
-    return this.sortedPlaylists().filter((p) => !p.isRuled);
+    const own = this.sortedPlaylists().filter((p) => !p.isRuled);
+    // And the collaborations it is in (5.4.0), followed, with their songs.
+    const theirs = this.canCollab() ? this.sharedPlaylists().filter((p) => p.canEdit && !p.partial && this.isFollowing(p.id)) : [];
+    return theirs.length ? [...own, ...theirs].sort((a, b) => Util.compareValues(a.name, b.name)) : own;
   },
 
   /** Songs of a playlist as rows: the song plus when it was added to this list. */
@@ -809,11 +822,13 @@ const Store = {
       const song = this.song(e.songId);
       if (!song) continue;
       const o = old ? old[rows.length] : null;
-      if (o && o.song === song && o.addedAt === e.addedAt) {
+      // In a collaboration (5.4.0) a row also says which profile put the song in.
+      const by = e.addedBy || '';
+      if (o && o.song === song && o.addedAt === e.addedAt && o.addedBy === by) {
         rows.push(o);
       } else {
         same = false;
-        rows.push({ song, addedAt: e.addedAt });
+        rows.push({ song, addedAt: e.addedAt, addedBy: by });
       }
     }
     if (same && rows.length === old.length) {

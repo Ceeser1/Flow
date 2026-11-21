@@ -32,11 +32,16 @@ function library() {
       { id: 'p3', name: 'Smart', createdAt: T, rules: { match: 'all', conditions: [{ field: 'artist', op: 'contains', value: 'Artist' }], sort: 'added', limit: 0 } },
       { id: 'p4', name: 'Empty', createdAt: T, entries: [] },
       { id: 'p5', name: 'Lone', createdAt: T, groups: ['g1'], entries: [{ songId: 's8', addedAt: T }] },
+      // A collaboration (5.4.0): one member, one request.
+      { id: 'p6', name: 'Ours', createdAt: T, shared: true, collab: { on: true, members: ['m1'], requests: ['r1'], counts: { m1: { added: 1, removed: 0 } } }, entries: [{ songId: 's1', addedAt: T }, { songId: 's2', addedAt: T, addedBy: 'm1' }] },
     ],
     follows: ['sh1'],
     sharedPlaylists: [
       { id: 'sh1', name: 'Theirs', createdAt: T, ownerId: 'x', ownerName: 'X', entries: [{ songId: 's5', addedAt: T }] },
       { id: 'sh2', name: 'Theirs too', createdAt: T, ownerId: 'x', ownerName: 'X', entries: [{ songId: 's6', addedAt: T }] },
+      // Others' collaborations (5.4.0): one this library is in, one it is not.
+      { id: 'sh3', name: 'Joined', createdAt: T, ownerId: 'x', ownerName: 'X', collab: { on: true, me: 'member', members: [{ id: 'x', added: 0, removed: 0 }, { id: 'me', added: 2, removed: 1 }] }, entries: [{ songId: 's5', addedAt: T }, { songId: 's6', addedAt: T, addedBy: 'me' }] },
+      { id: 'sh4', name: 'Open to join', createdAt: T, ownerId: 'x', ownerName: 'X', collab: { on: true, me: '' }, entries: [{ songId: 's7', addedAt: T }] },
     ],
     sharedGroups: [{ id: 'sg1', name: 'Their group', createdAt: T, ownerId: 'x', ownerName: 'X', playlists: ['sh2'] }],
   });
@@ -114,9 +119,14 @@ const COMMANDS = {
   deletePlaylist: [cmd('deletePlaylist', { playlistId: 'p4' }), cmd('deletePlaylist', { playlistId: 'p5', deleteSongs: true }), cmd('deletePlaylist', { playlistId: 'p2', deleteSongs: true }), cmd('deletePlaylist', { playlistId: 'fav-default' })],
   setPlaylistSource: [cmd('setPlaylistSource', { playlistId: 'p2', source: { url: 'https://example.com/a', kind: 'playlist' } }), cmd('setPlaylistSource', { playlistId: 'p2', source: { url: 'https://example.com/b', kind: 'playlist' } })],
   setPlaylistRules: [cmd('setPlaylistRules', { playlistId: 'p2', rules: { match: 'all', conditions: [{ field: 'title', op: 'contains', value: 'a' }] } }), cmd('setPlaylistRules', { playlistId: 'p2', rules: null })],
-  addSongToPlaylists: [cmd('addSongToPlaylists', { songId: 's5', playlistIds: ['p1', 'fav-default', 'p3', 'p2'] }), cmd('addSongToPlaylists', { songId: 's5', playlistIds: ['p1'] })],
+  addSongToPlaylists: [cmd('addSongToPlaylists', { songId: 's5', playlistIds: ['p1', 'fav-default', 'p3', 'p2'] }), cmd('addSongToPlaylists', { songId: 's5', playlistIds: ['p1'] }), cmd('addSongToPlaylists', { songId: 's1', playlistIds: ['sh3', 'sh4', 'p6'] })],
   addSongsToPlaylist: [cmd('addSongsToPlaylist', { playlistId: 'p1', songIds: ['s6', 's7', 's1'] }), cmd('addSongsToPlaylist', { playlistId: 'fav-default', songIds: ['s2', 's3'] }), cmd('addSongsToPlaylist', { playlistId: 'p3', songIds: ['s2'] }), cmd('addSongsToPlaylist', { playlistId: 'p1', songIds: ['s6'] })],
-  removeFromPlaylist: [cmd('removeFromPlaylist', { playlistId: 'p1', songId: 's2' }), cmd('removeFromPlaylist', { playlistId: 'p1', songId: 's2' }), cmd('removeFromPlaylist', { playlistId: 'fav-default', songId: 's1' })],
+  removeFromPlaylist: [cmd('removeFromPlaylist', { playlistId: 'sh3', songId: 's5' }), cmd('removeFromPlaylist', { playlistId: 'sh4', songId: 's7' }), cmd('removeFromPlaylist', { playlistId: 'p1', songId: 's2' }), cmd('removeFromPlaylist', { playlistId: 'p1', songId: 's2' }), cmd('removeFromPlaylist', { playlistId: 'fav-default', songId: 's1' })],
+  setPlaylistCollab: [cmd('setPlaylistCollab', { playlistId: 'p6', on: false }), cmd('setPlaylistCollab', { playlistId: 'p6', on: false }), cmd('setPlaylistCollab', { playlistId: 'p6', on: true }), cmd('setPlaylistCollab', { playlistId: 'p2', on: true }), cmd('setPlaylistShared', { playlistId: 'p2', shared: true }), cmd('setPlaylistCollab', { playlistId: 'p2', on: true }), cmd('setPlaylistCollab', { playlistId: 'fav-default', on: true })],
+  answerCollab: [cmd('answerCollab', { playlistId: 'p6', profileId: 'nobody', approve: true }), cmd('answerCollab', { playlistId: 'p6', profileId: 'r1', approve: true }), cmd('answerCollab', { playlistId: 'p6', profileId: 'r1', approve: false })],
+  removeCollaborator: [cmd('removeCollaborator', { playlistId: 'p6', profileId: 'm1' }), cmd('removeCollaborator', { playlistId: 'p6', profileId: 'm1' })],
+  requestCollab: [cmd('requestCollab', { playlistId: 'sh4', on: true }), cmd('requestCollab', { playlistId: 'sh4', on: true }), cmd('requestCollab', { playlistId: 'sh4', on: false }), cmd('requestCollab', { playlistId: 'sh3', on: true }), cmd('requestCollab', { playlistId: 'sh1', on: true })],
+  leaveCollab: [cmd('leaveCollab', { playlistId: 'sh4' }), cmd('leaveCollab', { playlistId: 'sh3' }), cmd('addSongToPlaylists', { songId: 's2', playlistIds: ['sh3'] })],
   deleteSong: [cmd('deleteSong', { songId: 's3' }), cmd('deleteSong', { songId: 's1' }), cmd('deleteSong', { songId: 's3' })],
   editSong: [cmd('editSong', { songId: 's4', artist: 'Someone', title: 'Renamed', mix: 'Live' }), cmd('editSong', { songId: 's2', artist: 'A', title: 'B', mix: '', album: '', genre: 'Rock', subGenre: 'Melodic' }), cmd('editSong', { songId: 's2', artist: 'A', title: ' ', mix: '' })],
   setFavourite: [cmd('setFavourite', { songId: 's2', on: true }), cmd('setFavourite', { songId: 's2', on: true }), cmd('setFavourite', { songId: 's1', on: false }), cmd('setFavourite', { songId: 's5', on: false })],

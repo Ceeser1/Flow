@@ -180,6 +180,33 @@ function createActions({
     return change((d) => model.setPlaylistShared(d, id, !!shared), 'setPlaylistShared', { playlistId: id, shared: !!shared });
   }
 
+  // Collaborative playlists (5.4.0, a Flow Server's): the owner's switch and
+  // answers, and the others' requests and leaving. Each needs the server.
+  function collab(type, args) {
+    if (!remote.active()) throw new Error(tr('songs.error.followNeedsServer', 'Following playlists needs a Flow Server.'));
+    return remote.command(type, args);
+  }
+
+  function setPlaylistCollab({ id, on }) {
+    return collab('setPlaylistCollab', { playlistId: id, on: !!on });
+  }
+
+  function answerCollab({ id, profileId, approve }) {
+    return collab('answerCollab', { playlistId: id, profileId: String(profileId), approve: !!approve });
+  }
+
+  function removeCollaborator({ id, profileId }) {
+    return collab('removeCollaborator', { playlistId: id, profileId: String(profileId) });
+  }
+
+  function requestCollab({ id, on }) {
+    return collab('requestCollab', { playlistId: id, on: !!on });
+  }
+
+  function leaveCollab({ id }) {
+    return collab('leaveCollab', { playlistId: id });
+  }
+
   function setFollowing({ id, on }) {
     if (!remote.active()) throw new Error(tr('songs.error.followNeedsServer', 'Following playlists needs a Flow Server.'));
     const result = remote.command(on ? 'followPlaylist' : 'unfollowPlaylist', { playlistId: id });
@@ -387,6 +414,11 @@ function createActions({
     addToGroup,
     removeFromGroup,
     setPlaylistShared,
+    setPlaylistCollab,
+    answerCollab,
+    removeCollaborator,
+    requestCollab,
+    leaveCollab,
     setFollowing,
     setGroupShared,
     setGroupFollowing,

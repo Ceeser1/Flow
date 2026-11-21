@@ -18,6 +18,8 @@ const Icons = (() => {
     share: img('share'),
     // A playlist you follow (4.5.1), green (style.css).
     followed: img('followed'),
+    // Collaborative playlists (5.4.0): two people, the user's own picture, coloured by its button (white, green, amber, red).
+    collab: img('collab'),
     shuffle: img('shuffle'),
     playlists: svg('<path d="M4 6h12M4 11h12M4 16h7"/><circle cx="17" cy="17" r="3"/><path d="M20 17V6h2"/>'),
     // A list with a clock: the temporary playlists (5.2). A disk: one of them saved.

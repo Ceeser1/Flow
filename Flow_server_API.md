@@ -143,7 +143,8 @@ Open to anyone (only the refusals above apply).
   `addPlaylistToGroup` and `removePlaylistFromGroup`). From 5.3.1:
   `radioFavs` (each profile's Favourite Radios: `radioFavs` in the library,
   `setRadioFavourite` and `renameRadio`) and `radioRelay` (Internet Radio
-  played through the server, see [Internet Radio](#internet-radio)).
+  played through the server, see [Internet Radio](#internet-radio)). From
+  5.4.0: `collabPlaylists` (collaborative playlists, see Commands).
 - `password`: whether this caller has to sign in.
 - `tailscale`: only at level 2 and up, only to callers on a private network
   that did not come through a proxy.
@@ -337,6 +338,11 @@ app's `client` id too, its live channel does not send those again.
 | `setPlaylistSource` | `playlistId`, `source: { url, kind }` | the link a playlist was imported from |
 | `setPlaylistShared` | `playlistId`, `shared` | other profiles may see and follow it |
 | `followPlaylist` / `unfollowPlaylist` | `playlistId` | another profile's shared playlist |
+| `setPlaylistCollab` | `playlistId`, `on` | 5.4.0 (`collabPlaylists`): the owner's shared playlist a collaboration or not (off keeps its members and requests, without their rights). Not Favourites or a smart playlist; never from the Default / Shared (`ok: false`); not shared: `ok: false` |
+| `requestCollab` | `playlistId`, `on` | 5.4.0: asks to join another profile's collaboration (`on: false`: takes the request back). Not from the Default / Shared |
+| `answerCollab` | `playlistId`, `profileId`, `approve` | 5.4.0, the owner: a request approved (the profile follows the playlist at once) or declined |
+| `removeCollaborator` | `playlistId`, `profileId` | 5.4.0, the owner: a member out; it keeps following |
+| `leaveCollab` | `playlistId` | 5.4.0: a member leaves another profile's collaboration; it keeps following |
 | `createGroup` | `groupId`, `name` | 4.5: a new playlist group with the id the client chose; a name taken already gets " (2)". `value`: its id |
 | `renameGroup` | `groupId`, `name` | 4.5 |
 | `deleteGroup` | `groupId` | 4.5: the group goes, its playlists stay (in no group). Always wins, like a delete of a playlist |
@@ -350,6 +356,16 @@ app's `client` id too, its live channel does not send those again.
 | `addSongToPlaylists` | `songId`, `playlistIds` | one song into several playlists |
 | `addSongsToPlaylist` | `playlistId`, `songIds` | several songs into one playlist |
 | `removeFromPlaylist` | `playlistId`, `songId` | |
+
+The three above also work on another profile's playlist this profile is a
+member of while it is shared and its collaboration on (5.4.0): the server
+puts the change into the owner's playlist, each new entry with `addedBy`
+(the profile), and counts each profile's songs added and removed in the
+playlist's `collab.counts`. The owner's own playlist carries `collab: { on,
+members, requests, counts }`; another profile sees its part on the shared
+row (`GET /api/shared`, `sharedPlaylists`): `collab: { on, me }` (`me`:
+`member`, `requested` or `""`), and a member also `members: [{ id, added,
+removed }]`, the owner first.
 | `deleteSong` | `songId` | for everyone; the file goes to `.flow-trash` for 30 days, the song with it (an admin can restore it). With the rule `songDelete: "owner"` only the profile that added it and the admins may (`ok: false` with the reason otherwise; `deletePlaylist` then keeps those songs) |
 | `editSong` | `songId`, `artist`, `title`, `mix` | new names (title required); the file is renamed and its tags rewritten |
 | `setFavourite` | `songId`, `on` | into the profile's Favourites playlist, or out of it |

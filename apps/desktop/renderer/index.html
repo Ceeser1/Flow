@@ -454,8 +454,16 @@
         <div class="pl-head">
           <div class="pl-head__titlerow">
             <h1 id="plTitle" class="page__title"></h1>
-            <button id="plUpdate" class="toggle" type="button" hidden
-                    title="Download the songs added to this playlist's source since it was imported" data-i18n-title="window.playlist.update.tooltip"></button>
+            <div class="pl-head__end">
+              <!-- A collaborative playlist (5.4.0, collab.js): the owner's switch, how many are in it (+ requests), a member's Exit. -->
+              <span id="plCollabBox" class="pl-collab" hidden>
+                <button id="plCollab" class="toggle collab-toggle" type="button" aria-pressed="false" hidden></button>
+                <button id="plCollabCount" class="toggle collab-count" type="button" hidden></button>
+                <button id="plCollabExit" class="toggle collab-exit" type="button" hidden></button>
+              </span>
+              <button id="plUpdate" class="toggle" type="button" hidden
+                      title="Download the songs added to this playlist's source since it was imported" data-i18n-title="window.playlist.update.tooltip"></button>
+            </div>
           </div>
           <div class="pl-head__row">
             <span id="plMeta" class="pl-meta"></span>
@@ -677,6 +685,7 @@
 <script src="app/alarm.js"></script>
 <script src="app/radio.js"></script>
 <script src="app/songActions.js"></script>
+<script src="app/collab.js"></script>
 <script src="app/groups.js"></script>
 <script src="app/nav.js"></script>
 <script src="app/pages/search.js"></script>

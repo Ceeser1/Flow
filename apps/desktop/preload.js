@@ -48,6 +48,12 @@ contextBridge.exposeInMainWorld('flow', {
   addToGroup: (playlistIds, groupId) => call('library:addToGroup', { playlistIds, groupId }),
   removeFromGroup: (playlistIds, groupId) => call('library:removeFromGroup', { playlistIds, groupId }),
   setPlaylistShared: (id, shared) => call('library:setPlaylistShared', { id, shared }),
+  // Collaborative playlists (5.4.0).
+  setPlaylistCollab: (id, on) => call('library:setPlaylistCollab', { id, on }),
+  answerCollab: (id, profileId, approve) => call('library:answerCollab', { id, profileId, approve }),
+  removeCollaborator: (id, profileId) => call('library:removeCollaborator', { id, profileId }),
+  requestCollab: (id, on) => call('library:requestCollab', { id, on }),
+  leaveCollab: (id) => call('library:leaveCollab', { id }),
   setFollowing: (id, on) => call('library:setFollowing', { id, on }),
   // Shared groups (4.5.3): a group shared with its playlists, and one the others share followed.
   setGroupShared: (id, shared) => call('library:setGroupShared', { id, shared }),

@@ -6251,6 +6251,149 @@ groups.pick.create
 groups.pick.done
   en: Done
   de: Fertig
+# ===== Collaborative playlists =====
+
+# A shared playlist its owner opens for others to add and remove songs (5.4.0). The owner's switch, the
+# count button "(icon) 1 (+1)", the pop-up with requests and collaborators, the others' Request Collab.
+
+collab.toggle
+  en: Collaboration Playlist
+  de: Kollaborations-Playlist
+
+collab.toggle.off.tooltip
+  en: Let other profiles ask to add and remove songs in this playlist with you
+  de: Andere Profile dürfen fragen, ob sie mit dir Songs zu dieser Playlist hinzufügen und entfernen können
+
+collab.toggle.on.tooltip
+  en: This playlist is a collaboration. Click to pause it: the collaborators keep their place but cannot change songs until it is on again
+  de: Diese Playlist ist eine Kollaboration. Klicken pausiert sie: Die Mitwirkenden bleiben, können aber keine Songs ändern, bis sie wieder an ist
+
+collab.on.text
+  en: Make "{playlist}" a collaboration? Other profiles can then ask to join, and those you approve can add and remove songs. The name and sharing stay yours.
+  de: „{playlist}“ zu einer Kollaboration machen? Andere Profile können dann fragen, ob sie mitmachen dürfen, und wen du annimmst, der kann Songs hinzufügen und entfernen. Name und Teilen bleiben bei dir.
+
+collab.off.title
+  en: Pause the collaboration
+  de: Kollaboration pausieren
+
+collab.off.text
+  en: Pause the collaboration on "{playlist}"? The collaborators keep their place but cannot change songs until you turn it on again.
+  de: Die Kollaboration bei „{playlist}“ pausieren? Die Mitwirkenden bleiben, können aber keine Songs ändern, bis du sie wieder einschaltest.
+
+collab.count.tooltip
+  en: {people} in this collaboration, {requests} waiting. Click to see them
+  de: {people} in dieser Kollaboration, {requests} offen. Klicken zum Ansehen
+
+collab.count.member.tooltip
+  en: {people} in this collaboration. Click to see them
+  de: {people} in dieser Kollaboration. Klicken zum Ansehen
+
+common.count.collaborators
+  en.one: {count} person
+  de.one: {count} Person
+  en.other: {count} people
+  de.other: {count} Personen
+
+common.count.requests
+  en.one: {count} request
+  de.one: {count} Anfrage
+  en.other: {count} requests
+  de.other: {count} Anfragen
+
+collab.title
+  en: Collaboration: {playlist}
+  de: Kollaboration: {playlist}
+
+collab.requests
+  en: Requests
+  de: Anfragen
+
+collab.requests.none
+  en: No one is asking to join right now.
+  de: Gerade fragt niemand, ob er mitmachen darf.
+
+collab.approve
+  en: Approve
+  de: Annehmen
+
+collab.decline
+  en: Decline
+  de: Ablehnen
+
+collab.people
+  en: Collaborators
+  de: Mitwirkende
+
+collab.added
+  en: Added
+  de: Hinzugefügt
+
+collab.removed
+  en: Removed
+  de: Entfernt
+
+collab.owner
+  en: Owner
+  de: Besitzer
+
+collab.remove
+  en: Remove from the collaboration
+  de: Aus der Kollaboration entfernen
+
+collab.unknown
+  en: Unknown profile
+  de: Unbekanntes Profil
+
+# Who put a song into a collaborative playlist: the column's head on the computer.
+collab.addedBy
+  en: Added by
+  de: Hinzugefügt von
+
+collab.exit
+  en: Exit collaboration
+  de: Kollaboration verlassen
+
+collab.exit.tooltip
+  en: Stop adding and removing songs in this playlist. You keep following it
+  de: Keine Songs mehr in dieser Playlist hinzufügen und entfernen. Du folgst ihr weiter
+
+collab.exit.text
+  en: Leave the collaboration on "{playlist}"? You keep following it, but only {profile} can let you back in.
+  de: Die Kollaboration bei „{playlist}“ verlassen? Du folgst ihr weiter, aber nur {profile} kann dich wieder aufnehmen.
+
+collab.exit.confirm
+  en: Exit
+  de: Verlassen
+
+collab.exit.done
+  en: You left the collaboration on "{playlist}"
+  de: Du hast die Kollaboration bei „{playlist}“ verlassen
+
+# The others' button on the Playlists page: white to ask, amber while asked, green once in.
+collab.request
+  en: Request Collab
+  de: Mitmachen anfragen
+
+collab.request.asked
+  en: Collab requested. Click to take the request back
+  de: Mitmachen angefragt. Klicken, um die Anfrage zurückzuziehen
+
+collab.request.withdraw
+  en: Take the collab request back
+  de: Anfrage zurückziehen
+
+collab.request.member
+  en: You collaborate on this playlist. Click to see who else does
+  de: Du wirkst an dieser Playlist mit. Klicken, um zu sehen, wer noch
+
+collab.request.sent
+  en: Asked {profile} to let you collaborate on "{playlist}"
+  de: {profile} gefragt, ob du bei „{playlist}“ mitmachen darfst
+
+collab.request.withdrawn
+  en: Took back your request for "{playlist}"
+  de: Deine Anfrage für „{playlist}“ zurückgezogen
+
 # ===== Smart playlists =====
 
 # Playlists that fill themselves by rules, and the ready-made lists of "Your listening trend".
@@ -9684,6 +9827,22 @@ core.library.ownNotFollowed
 core.library.noLongerShared
   en: That playlist is no longer shared.
   de: Diese Playlist wird nicht mehr geteilt.
+
+core.library.collabNeedsShare
+  en: Share the playlist first: only a shared playlist can be a collaboration.
+  de: Teile die Playlist zuerst: Nur eine geteilte Playlist kann eine Kollaboration sein.
+
+core.library.smartNoCollab
+  en: A smart playlist picks its songs by its rules, so others cannot add to it.
+  de: Eine smarte Playlist wählt ihre Songs nach ihren Regeln, darum können andere nichts hinzufügen.
+
+core.library.collabOff
+  en: That playlist is no longer a collaboration.
+  de: Diese Playlist ist keine Kollaboration mehr.
+
+core.library.collabNeedsProfile
+  en: Sign in to a profile to own or join a collaboration.
+  de: Melde dich bei einem Profil an, um eine Kollaboration zu führen oder bei einer mitzumachen.
 
 core.library.ownGroupNotFollowed
   en: Your own groups are always yours; there is nothing to follow.
